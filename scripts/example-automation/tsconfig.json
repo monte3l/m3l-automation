@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
+  },
+  "references": [{ "path": "../../packages/m3l-common/tsconfig.build.json" }],
+  "include": ["src/**/*.ts"],
+  "exclude": ["dist", "node_modules"]
+}

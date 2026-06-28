@@ -1,0 +1,37 @@
+version: 2
+updates:
+  # Weekly grouped version updates for all devDependencies.
+  # Security updates (advisory-triggered) run separately and bypass grouping.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Europe/Rome
+    groups:
+      toolchain:
+        patterns:
+          - typescript
+          - typescript-eslint
+          - eslint
+          - eslint-*
+          - "@eslint/*"
+          - "@types/*"
+          - prettier
+          - vitest
+          - "@vitest/*"
+          - turbo
+          - lefthook
+          - knip
+          - publint
+          - "@arethetypeswrong/*"
+      release-tooling:
+        patterns:
+          - semantic-release
+          - "@semantic-release/*"
+          - commitlint
+          - "@commitlint/*"
+    labels:
+      - dependencies
+    open-pull-requests-limit: 5

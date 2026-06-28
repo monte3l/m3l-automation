@@ -1,0 +1,52 @@
+{
+  "name": "@m3l-automation/workspace",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Monorepo root for @m3l-automation/m3l-common and the automation scripts that consume it.",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint:md": "rumdl check . --no-cache --exclude \"node_modules/**,.claude/**,**/dist/**,CHANGELOG.md,.github/pull_request_template.md,docs/adr/template.md\"",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "knip": "knip",
+    "check:api": "node bin/check-exports-snapshot.mjs",
+    "check:exports": "publint packages/m3l-common && attw --pack packages/m3l-common --profile esm-only",
+    "prepare": "lefthook install"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.4",
+    "@commitlint/config-conventional": "21.1.0",
+    "@commitlint/lint": "21.1.0",
+    "@commitlint/load": "21.1.0",
+    "@commitlint/types": "21.1.0",
+    "@eslint/js": "10.0.1",
+    "@semantic-release/changelog": "6.0.3",
+    "@semantic-release/git": "10.0.1",
+    "@types/node": "26.0.1",
+    "@vitest/coverage-v8": "4.1.9",
+    "eslint": "10.6.0",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import-x": "4.17.0",
+    "eslint-plugin-tsdoc": "0.5.2",
+    "knip": "6.22.0",
+    "lefthook": "2.1.9",
+    "prettier": "3.9.0",
+    "publint": "0.3.21",
+    "rumdl": "0.2.24",
+    "semantic-release": "25.0.5",
+    "turbo": "2.10.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.62.0",
+    "vitest": "4.1.9"
+  }
+}

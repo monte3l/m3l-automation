@@ -1,0 +1,77 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: claude-pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: "--model claude-sonnet-4-6"
+          prompt: |
+            Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }} against the project conventions below. Post your findings as a single PR comment. Only flag real violations that are visible in the diff — do not speculate about code outside it.
+
+            ## TypeScript
+            - No `any` — use `unknown` and narrow with type guards
+            - No non-null `!` assertions in `src/`
+            - All exported symbols must have TSDoc; primary entry points need an `@example`
+
+            ## ESM imports
+            - Relative imports must carry a `.js` extension (`./foo.js`, not `./foo`)
+            - No CommonJS constructs (`require`, `module.exports`, `__dirname`)
+
+            ## Error handling
+            - Only throw instances of `M3LError` subclasses, never bare strings
+            - Chain underlying failures with the `cause` option
+
+            ## Testing
+            - Every exported function must have at least one happy-path test and one failure-path test
+            - Tests import from `src/` with `.js` extensions
+            - No network calls or filesystem access in unit tests (mock collaborators)
+            - Coverage thresholds are 80% lines/functions/branches/statements
+
+            ## Security
+            - No hardcoded secrets, tokens, or credentials in source or tests
+            - Validate all external input at the public API boundary
+
+            ## Commit hygiene
+            - PR title must follow Conventional Commits: `feat:` (minor), `fix:` (patch), `feat!:` or `BREAKING CHANGE:` footer (major), `docs:`/`refactor:`/`test:`/`chore:` (no release)
+
+            ## Verdict (REQUIRED — this gate is blocking)
+            After posting the comment, your FINAL action MUST be to write the
+            verdict to a file at the repo root named `.claude-review-verdict`:
+            - write exactly `PASS` if you found NO real violations;
+            - write exactly `FAIL` if you found one or more real violations.
+            Write nothing else to that file. The job fails the merge gate unless
+            the file contains `PASS`.
+
+      # Blocking gate (rules 01/04: writer ≠ reviewer). The job fails unless the
+      # reviewer explicitly wrote PASS — fail-closed if the review did not run.
+      # Requires a branch-protection rule on `main` marking this check required;
+      # see docs/contributing/branch-protection.md.
+      - name: Enforce review verdict
+        run: |
+          verdict="$(tr -d '[:space:]' < .claude-review-verdict 2>/dev/null || true)"
+          echo "Claude review verdict: ${verdict:-<missing>}"
+          if [ "$verdict" != "PASS" ]; then
+            echo "::error::Claude PR review did not pass (verdict: ${verdict:-missing}). See the review comment on the PR."
+            exit 1
+          fi

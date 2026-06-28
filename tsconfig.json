@@ -1,0 +1,7 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/m3l-common/tsconfig.build.json" },
+    { "path": "./scripts/example-automation" }
+  ]
+}
