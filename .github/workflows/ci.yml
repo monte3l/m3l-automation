@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Secret scan runs first and independently (rules 05 / security.md):
+      # no committed secret should ever reach the build.
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      # Block on HIGH/CRITICAL advisories before spending runner minutes on the
+      # rest of the pipeline (rules 05 / security gate requirement).
+      - name: Security audit
+        run: pnpm audit --audit-level=high
+
+      - name: Validate commit messages
+        if: github.event_name == 'pull_request'
+        run: node bin/lint-commit.mjs --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }}
+
+      # Fast-first ordering (rules 05): cheap checks short-circuit the slow ones.
+      - name: Lint
+        run: pnpm lint
+
+      # Prettier only --write's in the pre-commit hook; this catches drift from
+      # any commit that bypassed hooks.
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Lint Markdown
+        run: pnpm lint:md
+
+      - name: Type-check
+        run: pnpm typecheck
+
+      # The exports map is the public API contract; fail if it drifted from the
+      # committed snapshot without a deliberate update (rules 04 / semver).
+      - name: Check public API snapshot
+        run: pnpm check:api
+
+      # Run with coverage so the thresholds in vitest.config.ts actually gate
+      # CI (rules 02): `vitest run` alone never evaluates them.
+      - name: Test (with coverage gate)
+        run: pnpm test:coverage
+
+      - name: Build
+        run: pnpm build
+
+      # Publish correctness (exports map / ESM / types resolution) and
+      # dead-code detection. Run after build so the dist/ artifacts exist.
+      - name: Check package exports (publint + are-the-types-wrong)
+        run: pnpm check:exports
+
+      - name: Unused files / exports / dependencies (knip)
+        run: pnpm knip

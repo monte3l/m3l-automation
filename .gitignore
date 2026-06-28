@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build output (tsc-owned; never committed)
+dist/
+*.tsbuildinfo
+
+# Turborepo local cache / logs
+.turbo/
+
+# rumdl markdown-lint cache (CI uses --no-cache; this guards manual runs)
+.rumdl_cache/
+
+# Test / coverage artifacts
+coverage/
+
+# M3LScript run output (timestamped archival dirs)
+data/output/*
+!data/output/.gitkeep
+
+# Logs and OS cruft
+*.log
+.DS_Store
+
+# Local env / secrets (NPM_TOKEN, GITHUB_TOKEN live in CI vault only)
+.env
+.env.*
+!.env.example

@@ -1,0 +1,14 @@
+{
+  ".": {
+    "default": "./dist/index.js",
+    "types": "./dist/index.d.ts"
+  },
+  "./aws": {
+    "default": "./dist/aws/index.js",
+    "types": "./dist/aws/index.d.ts"
+  },
+  "./core": {
+    "default": "./dist/core/index.js",
+    "types": "./dist/core/index.d.ts"
+  }
+}
