@@ -162,6 +162,11 @@ BREAKING CHANGE: M3LError.code is now M3LError.errorCode.
 - Releases are automated from `main`. **Never** bump the `version`
   field in `package.json` by hand — `semantic-release` owns it.
 - Never `git push --force` to a shared branch.
+- **Release gate:** the `release.yml` workflow runs `semantic-release --dry-run`
+  on every merge to `main` while the `RELEASE_ENABLED` repository variable is
+  unset. This validates the full plugin chain without publishing. When all 21
+  submodules are complete, set `gh variable set RELEASE_ENABLED --body true` to
+  publish the attested `1.0.0` on the next merge. See ADR-0011.
 
 ## Definition of Done
 

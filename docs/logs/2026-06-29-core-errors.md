@@ -6,8 +6,6 @@ records what shipped, what matched the plan, what diverged and why, and the
 durable lessons for the remaining 20 submodules.
 
 Plan of record: [`docs/plans/errors-submodule-implementation.md`](../plans/errors-submodule-implementation.md).
-Follow-up plan (this cleanup + PR):
-[`docs/plans/core-errors-coverage-log-pr.md`](../plans/core-errors-coverage-log-pr.md).
 
 ## Summary
 
