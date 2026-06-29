@@ -1,14 +1,35 @@
-# `@m3l-automation/m3l-common`
+<p align="center">
+<img src="docs/assets/m3l-wordmark.svg" alt="m3l-common" width="260" height="64">
+</p>
+
+<p align="center">
+<img src="docs/assets/m3l-hero.svg" alt="m3l-common quick-start terminal pane" width="700">
+</p>
+
+<p align="center">
+<a href="https://github.com/monte3l/m3l-automation/actions/workflows/ci.yml"><img src="https://github.com/monte3l/m3l-automation/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+<a href="https://nodejs.org/en/"><img src="https://img.shields.io/badge/node-%3E%3D24-A6E22E?style=flat-square&labelColor=272822" alt="node >=24"></a>
+<a href="https://nodejs.org/api/esm.html"><img src="https://img.shields.io/badge/esm-only-66D9EF?style=flat-square&labelColor=272822" alt="ESM only"></a>
+<a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-66D9EF?style=flat-square&labelColor=272822" alt="TypeScript strict"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-A6E22E?style=flat-square&labelColor=272822" alt="Apache-2.0"></a>
+<a href="docs/implementation-status.md"><img src="https://img.shields.io/badge/status-pre--release-FD971F?style=flat-square&labelColor=272822" alt="status: pre-release"></a>
+<a href="docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-2%2F22-FD971F?style=flat-square&labelColor=272822" alt="modules: 2/22"></a>
+</p>
 
 > **Status: early development — scaffold and specs are complete; implementation is in progress.**
-> Version `0.0.0-development`. All documented APIs are design targets; no submodule is implemented yet.
-> See [Implementation status](docs/implementation-status.md) for the per-module breakdown.
+> Version `0.0.0-development`. All documented APIs are design targets; 2 of 22 submodules are
+> implemented (`errors`, `events`). See [Implementation status](docs/implementation-status.md)
+> for the per-module breakdown.
 
-A shared infrastructure library for automation scripts and AWS Lambda handlers. It provides enterprise-grade building blocks — application scaffolding, configuration, logging, error handling, file import/export, polling/retry resilience, and AWS credential and client management — so consumer scripts stay free of boilerplate.
+A shared infrastructure library for automation scripts and AWS Lambda handlers. It provides
+enterprise-grade building blocks — application scaffolding, configuration, logging, error
+handling, file import/export, polling/retry resilience, and AWS credential and client management
+— so consumer scripts stay free of boilerplate.
 
 ## Features (target API — not yet implemented)
 
-The following capabilities describe the target design. Progress is tracked in [docs/implementation-status.md](docs/implementation-status.md).
+The following capabilities describe the target design. Progress is tracked in
+[docs/implementation-status.md](docs/implementation-status.md).
 
 - **Application framework** — `Core.M3LScript` is a single entry point for CLI scripts and Lambda handlers, wiring together environment detection, configuration loading, logging, interactive prompts, graceful shutdown, process fault guards, and file archival.
 - **Multi-source configuration** — resolve typed parameters across CLI args, JSON/YAML files, environment variables, Lambda event payloads, and presets, with static defaults and async fallbacks.
@@ -68,7 +89,8 @@ import { Core, AWS } from "@m3l-automation/m3l-common";
 - [Getting started](docs/getting-started.md)
 - [Implementation status](docs/implementation-status.md) — per-module progress tracker
 - [Architecture overview](docs/m3l-common-architecture.md)
-- [Contributing](docs/contributing/contributing.md)
+- [Contributing](.github/CONTRIBUTING.md)
+- [Docs site](https://monte3l.github.io/m3l-automation/)
 
 ## License
 

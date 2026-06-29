@@ -36,6 +36,19 @@
   },
   "homepage": "https://github.com/monte3l/m3l-automation/tree/main/packages/m3l-common#readme",
   "bugs": "https://github.com/monte3l/m3l-automation/issues",
+  "author": "Enrico Lionello",
+  "keywords": [
+    "automation",
+    "cli",
+    "aws",
+    "typescript",
+    "esm",
+    "logging",
+    "configuration",
+    "retry",
+    "polling",
+    "lambda"
+  ],
   "publishConfig": {
     "access": "public",
     "provenance": true
