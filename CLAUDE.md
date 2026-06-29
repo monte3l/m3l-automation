@@ -14,7 +14,7 @@
 
  PROJECT SHAPE (drives every section below)
    Published npm library · TypeScript (strict) · ESM only ·
-   built with tsc (no bundler) · pnpm · Node.js 22 LTS floor ·
+   built with tsc (no bundler) · pnpm · Node.js 24 LTS floor ·
    Vitest · ESLint + Prettier · semantic-release · public API
    exposed via package.json subpath exports.
 
@@ -148,7 +148,7 @@ packages/
   m3l-common/           # the published library (@m3l-automation/m3l-common)
     src/
       index.ts          # main entry / public barrel (re-exports Core + AWS)
-      core/index.ts     # Core namespace barrel (18 submodules surfaced here)
+      core/index.ts     # Core namespace barrel (19 submodules surfaced here)
       aws/index.ts      # AWS namespace barrel (3 submodules surfaced here)
       internal/         # NOT exported; no "exports" entry; may change freely
     dist/               # tsc output (ESM .js + .d.ts) — generated, never edit
@@ -495,9 +495,7 @@ that reviews it" structural, and keeps the hub's context lean.
   durable memory the isolated spokes do not share.
 - The `implement-submodule` skill encodes this loop end-to-end; `new-subpath`
   scaffolds a greenfield module and hands off to it.
-- **Current state**: the library is a documented scaffold — 0 of 21
-  submodules are implemented. See `docs/implementation-status.md` for the
-  authoritative tracker and suggested build order.
+- **Current state**: 2 of 22 submodules are implemented (`errors`, `events`). See `docs/implementation-status.md` for the authoritative tracker and suggested build order.
 - **Lessons learned**: `docs/logs/` holds per-submodule work logs. The
   `core/errors` log (`docs/logs/2026-06-29-core-errors.md`) is the durable
   source for the process lessons baked into the spoke prompts — front-load exact

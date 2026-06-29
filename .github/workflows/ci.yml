@@ -68,6 +68,15 @@ jobs:
       - name: Check public API snapshot
         run: pnpm check:api
 
+      # Doc-provenance sidecars anchor reference-page headings to source symbols
+      # at a git commit. Fail if a heading or symbol is missing; warn on staleness.
+      - name: Check doc provenance
+        run: pnpm check:provenance
+
+      # Submodule counts in prose must match the files in docs/reference/.
+      - name: Check doc counts
+        run: pnpm check:doc-counts
+
       # Run with coverage so the thresholds in vitest.config.ts actually gate
       # CI (rules 02): `vitest run` alone never evaluates them.
       - name: Test (with coverage gate)

@@ -20,6 +20,8 @@
     "test:watch": "vitest",
     "knip": "knip",
     "check:api": "node bin/check-exports-snapshot.mjs",
+    "check:provenance": "node bin/check-doc-provenance.mjs",
+    "check:doc-counts": "node bin/check-doc-counts.mjs",
     "check:exports": "publint packages/m3l-common && attw --pack packages/m3l-common --profile esm-only",
     "prepare": "lefthook install"
   },
