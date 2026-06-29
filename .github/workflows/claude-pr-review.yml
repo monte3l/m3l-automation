@@ -25,7 +25,7 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: "--model claude-sonnet-4-6"
+          claude_args: "--model claude-sonnet-4-6 --allowedTools Bash,Read,Write,Edit"
           prompt: |
             Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }} against the project conventions below. Post your findings as a single PR comment. Only flag real violations that are visible in the diff — do not speculate about code outside it.
 
@@ -56,12 +56,15 @@ jobs:
             - PR title must follow Conventional Commits: `feat:` (minor), `fix:` (patch), `feat!:` or `BREAKING CHANGE:` footer (major), `docs:`/`refactor:`/`test:`/`chore:` (no release)
 
             ## Verdict (REQUIRED — this gate is blocking)
-            After posting the comment, your FINAL action MUST be to write the
-            verdict to a file at the repo root named `.claude-review-verdict`:
-            - write exactly `PASS` if you found NO real violations;
-            - write exactly `FAIL` if you found one or more real violations.
-            Write nothing else to that file. The job fails the merge gate unless
-            the file contains `PASS`.
+            After posting the comment, your FINAL action MUST be to run exactly
+            one of these two Bash commands (choose based on your verdict):
+
+              echo -n 'PASS' > "$GITHUB_WORKSPACE/.claude-review-verdict"
+              echo -n 'FAIL' > "$GITHUB_WORKSPACE/.claude-review-verdict"
+
+            Use the Bash tool — do NOT use the Write tool for this step.
+            $GITHUB_WORKSPACE is the absolute path to the checked-out repo.
+            The job fails the merge gate unless the file contains exactly `PASS`.
 
       # Blocking gate (rules 01/04: writer ≠ reviewer). The job fails unless the
       # reviewer explicitly wrote PASS — fail-closed if the review did not run.
