@@ -1,0 +1,43 @@
+[
+  {
+    "query": "add a brand-new scheduler module to the library — there's no spec or src for it yet",
+    "should_trigger": true
+  },
+  {
+    "query": "I need a new audit-log capability in the library — nothing exists for this yet",
+    "should_trigger": true
+  },
+  {
+    "query": "scaffold a new aws module for DynamoDB operations from scratch",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to add a new feature area to the library — a 'cache' module — nothing exists yet",
+    "should_trigger": true
+  },
+  {
+    "query": "set up a new core subpath for HTTP utilities, greenfield, no existing code",
+    "should_trigger": true
+  },
+  {
+    "query": "implement the core/polling submodule — it already has a spec at docs/reference/core/polling.md",
+    "should_trigger": false
+  },
+  {
+    "query": "fill in the errors module — it's documented and has placeholder tests",
+    "should_trigger": false
+  },
+  {
+    "query": "create a PR for the new json module I scaffolded",
+    "should_trigger": false
+  },
+  {
+    "query": "commit the scaffolding I just did for the cache module",
+    "should_trigger": false
+  },
+  {
+    "query": "scaffold a new automation script called report-generator",
+    "should_trigger": false
+  },
+  { "query": "what version will the next release be?", "should_trigger": false }
+]

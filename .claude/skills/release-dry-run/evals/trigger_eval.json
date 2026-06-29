@@ -1,0 +1,38 @@
+[
+  {
+    "query": "what version will this release? I just merged a feat: commit",
+    "should_trigger": true
+  },
+  {
+    "query": "preview the release — did my commits bump the version correctly?",
+    "should_trigger": true
+  },
+  {
+    "query": "will this be a breaking release? I renamed a public property",
+    "should_trigger": true
+  },
+  {
+    "query": "sanity-check my Conventional Commits before I push to main",
+    "should_trigger": true
+  },
+  {
+    "query": "what's the next version number if I merge this PR?",
+    "should_trigger": true
+  },
+  {
+    "query": "I only merged chore: commits — will a release be triggered?",
+    "should_trigger": true
+  },
+  {
+    "query": "run a dry-run of semantic-release so I can see the release notes",
+    "should_trigger": true
+  },
+  { "query": "actually publish the release to npm", "should_trigger": false },
+  { "query": "create a PR for this branch", "should_trigger": false },
+  { "query": "commit my staged changes", "should_trigger": false },
+  { "query": "implement the core/errors submodule", "should_trigger": false },
+  {
+    "query": "run pnpm test:coverage and show the report",
+    "should_trigger": false
+  }
+]

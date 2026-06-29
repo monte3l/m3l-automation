@@ -1,0 +1,45 @@
+{
+  "skill_name": "new-subpath",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Add a new core submodule called 'json' — it should provide utilities for navigating JSON field paths and formatting JSON output.",
+      "expected_output": "Scaffolded packages/m3l-common/src/core/json/index.ts with stub exports throwing M3LNotImplementedError; re-exported from src/core/index.ts; failing placeholder tests at tests/json.test.ts; spec stub at docs/reference/core/json.md; row added to docs/implementation-status.md. No new exports-map entry added.",
+      "files": [],
+      "expectations": [
+        "Creates packages/m3l-common/src/core/json/index.ts with exported stub functions/classes that throw M3LNotImplementedError",
+        "Re-exports the new module from packages/m3l-common/src/core/index.ts using 'export * from \"./json/index.js\"'",
+        "Creates packages/m3l-common/tests/json.test.ts with at least one failing happy-path test",
+        "Creates docs/reference/core/json.md as a spec stub",
+        "Adds a row to docs/implementation-status.md for the new module",
+        "Does NOT add a new entry to the package.json exports map",
+        "Relative imports in the generated code carry the .js extension",
+        "Tells the user to run implement-submodule next"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Add a new aws submodule for DynamoDB operations — 'dynamo'.",
+      "expected_output": "Scaffolded under packages/m3l-common/src/aws/dynamo/ and re-exported from src/aws/index.ts. Stub exports, failing tests, spec stub, and status row created. No exports-map change.",
+      "files": [],
+      "expectations": [
+        "Creates packages/m3l-common/src/aws/dynamo/index.ts under the aws namespace",
+        "Re-exports from packages/m3l-common/src/aws/index.ts",
+        "Creates tests/dynamo.test.ts with failing placeholder tests",
+        "Creates docs/reference/aws/dynamo.md spec stub",
+        "Does NOT modify the exports map in package.json"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Scaffold a new core/polling submodule — but wait, there's already a docs/reference/core/polling.md spec page.",
+      "expected_output": "Skill detects the spec page already exists and stops, telling the user to use implement-submodule directly instead of new-subpath.",
+      "files": [],
+      "expectations": [
+        "Skill checks for an existing docs/reference spec page before scaffolding",
+        "Skill stops and redirects the user to implement-submodule when a spec page already exists",
+        "No files are created or overwritten"
+      ]
+    }
+  ]
+}

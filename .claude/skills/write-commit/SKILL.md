@@ -19,6 +19,18 @@ Commits standard exactly — from picking the right type to deciding whether a
 body is worth writing. The goal is to make every commit self-explanatory to a
 reviewer who wasn't in the room.
 
+## Checklist (copy-paste before drafting)
+
+- [ ] Read `git diff --staged` — understand every changed file
+- [ ] Pick the type from the table in Step 2 (when in doubt, `chore:` does not
+      release; `feat:` does)
+- [ ] Draft a subject ≤ 70 chars, imperative, lowercase after `type:`
+- [ ] Decide body: needed for `feat:` / `fix:` / non-obvious `chore:`; omit for
+      mechanical chores
+- [ ] Add `Co-Authored-By:` footer when Claude authored the commit
+- [ ] Add `BREAKING CHANGE:` footer for `feat!:` commits
+- [ ] Run `git commit -m "..."` with the full message
+
 ## Step 1 — Understand the change
 
 ```bash

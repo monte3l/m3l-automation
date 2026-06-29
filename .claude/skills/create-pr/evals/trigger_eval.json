@@ -1,0 +1,38 @@
+[
+  { "query": "open a PR for this branch", "should_trigger": true },
+  {
+    "query": "create a pull request — I've implemented core/errors and everything passes",
+    "should_trigger": true
+  },
+  {
+    "query": "ship this for review, it's a breaking change that renames M3LPaths.outputDir",
+    "should_trigger": true
+  },
+  {
+    "query": "push and PR — CI workflow update to skip Dependabot PRs",
+    "should_trigger": true
+  },
+  { "query": "submit my changes for review", "should_trigger": true },
+  { "query": "make a PR, I added the retry submodule", "should_trigger": true },
+  {
+    "query": "get this merged — I fixed the missing .js extension in the core barrel",
+    "should_trigger": true
+  },
+  {
+    "query": "commit my staged changes — I just ran prettier on pnpm-workspace.yaml",
+    "should_trigger": false
+  },
+  { "query": "implement the core/config submodule", "should_trigger": false },
+  {
+    "query": "preview what the next release version will be",
+    "should_trigger": false
+  },
+  {
+    "query": "scaffold a new script called data-exporter",
+    "should_trigger": false
+  },
+  {
+    "query": "run pnpm test and show me the coverage report",
+    "should_trigger": false
+  }
+]
