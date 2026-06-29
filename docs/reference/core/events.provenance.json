@@ -1,0 +1,40 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/events.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/events/M3LEventEmitterBase.ts",
+          "symbol": "M3LEventEmitterBase",
+          "lines": "33-139"
+        },
+        {
+          "file": "packages/m3l-common/src/core/events/M3LEventEmitterBase.ts",
+          "symbol": "M3LEventEmitter",
+          "lines": "155-186"
+        }
+      ],
+      "commit": "cf05fc95c51cb51ec259446e3216bb78368268f8",
+      "retrieved": "2026-06-29"
+    },
+    {
+      "heading": "`M3LEventEmitterBase<TEventMap>`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/events/M3LEventEmitterBase.ts",
+          "symbol": "M3LEventEmitterBase",
+          "lines": "33-139"
+        },
+        {
+          "file": "packages/m3l-common/src/core/events/M3LEventEmitterBase.ts",
+          "symbol": "M3LEventHandler",
+          "lines": "11-13"
+        }
+      ],
+      "commit": "cf05fc95c51cb51ec259446e3216bb78368268f8",
+      "retrieved": "2026-06-29"
+    }
+  ]
+}

@@ -109,6 +109,9 @@ spokes are for. The writer is never the reviewer; keep that separation structura
 
 7. **Final verify and report.** Run
    `pnpm -C packages/m3l-common build && pnpm test && pnpm lint && pnpm typecheck`.
+   Generate or update the module's provenance sidecar
+   (`docs/reference/<ns>/<name>.provenance.json`) and run `pnpm check:provenance`
+   to confirm it is clean.
    Report the new exports, the review verdict, any deps added (with approval),
    and the state-file transitions. Remind the user the commit should be a `feat:`
    (a new submodule surfaced through the barrel is a minor, not a breaking change,

@@ -18,6 +18,9 @@ coverage/
 data/output/*
 !data/output/.gitkeep
 
+# Skill eval workspaces (generated artefacts from skill-creator runs)
+.claude/skills/*/**-workspace/
+
 # Logs and OS cruft
 *.log
 .DS_Store
