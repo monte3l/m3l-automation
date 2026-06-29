@@ -65,6 +65,11 @@ export default tseslint.config(
         { name: "require", message: "CommonJS only; this package is ESM." },
       ],
       "import-x/no-commonjs": "error",
+
+      // Workspace packages resolve via dist/, which doesn't exist pre-build.
+      // TypeScript (pnpm typecheck) is the authoritative resolver for these
+      // imports, so suppressing the ESLint check here is safe.
+      "import-x/no-unresolved": ["error", { ignore: ["^@m3l-automation/"] }],
     },
   },
   {

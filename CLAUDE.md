@@ -238,14 +238,14 @@ and this table in sync.
 
 Six GitHub Actions workflows in `.github/workflows/`:
 
-| Workflow | Trigger | Purpose |
-| ----------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------- |
-| `ci.yml` | push / PR → main | 12-step pipeline: secrets → audit → lint → format:check → lint:md → typecheck → check:api → test:coverage (80 % gate) → build → check:exports → knip |
-| `release.yml` | `ci.yml` success on main | semantic-release: npm publish + GitHub release |
-| `claude-pr-review.yml` | PR opened / sync / reopened | **Mandatory blocking gate** — produces PASS/FAIL verdict; merge requires PASS |
-| `claude-assistant.yml` | @claude in issues / PRs | On-demand Claude Code assistant |
-| `dependabot.yml` | Weekly (Mondays) | Grouped dependency updates (toolchain + release-tooling groups) |
-| `dependency-review.yml` | PR → main | Blocks HIGH/CRITICAL vulnerability advisories |
+| Workflow                | Trigger                     | Purpose                                                                                                                                              |
+| ----------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`                | push / PR → main            | 12-step pipeline: secrets → audit → lint → format:check → lint:md → typecheck → check:api → test:coverage (80 % gate) → build → check:exports → knip |
+| `release.yml`           | `ci.yml` success on main    | semantic-release: npm publish + GitHub release                                                                                                       |
+| `claude-pr-review.yml`  | PR opened / sync / reopened | **Mandatory blocking gate** — produces PASS/FAIL verdict; merge requires PASS                                                                        |
+| `claude-assistant.yml`  | @claude in issues / PRs     | On-demand Claude Code assistant                                                                                                                      |
+| `dependabot.yml`        | Weekly (Mondays)            | Grouped dependency updates (toolchain + release-tooling groups)                                                                                      |
+| `dependency-review.yml` | PR → main                   | Blocks HIGH/CRITICAL vulnerability advisories                                                                                                        |
 
 ## Code Style
 
