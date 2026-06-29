@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 64" width="260" height="64" role="img" aria-label="m3l-common">
-  <rect width="260" height="64" fill="#272822"/>
-  <text x="16" y="41" font-family="ui-monospace,'Cascadia Code','SF Mono',Menlo,Consolas,'Courier New',monospace" font-size="28" font-weight="600" fill="#F8F8F2" letter-spacing="0.5">m3l-common</text>
-  <rect x="16" y="50" width="168" height="2" fill="#A6E22E" rx="1"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 267 64" width="267" height="64" role="img" aria-label="m3l-automation">
+  <rect width="267" height="64" fill="#272822"/>
+  <text x="16" y="41" font-family="ui-monospace,'Cascadia Code','SF Mono',Menlo,Consolas,'Courier New',monospace" font-size="28" font-weight="600" fill="#F8F8F2" letter-spacing="0.5">m3l-automation</text>
+  <rect x="16" y="50" width="235" height="2" fill="#A6E22E" rx="1"/>
 </svg>
