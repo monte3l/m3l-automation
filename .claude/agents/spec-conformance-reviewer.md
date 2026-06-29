@@ -25,6 +25,11 @@ Read the spec page for the target module (and any contracts it references in
   errors, MONOREPO vs STANDALONE path anchoring, provider-priority/alias
   resolution order, TTY-aware rendering, Lambda per-invocation reset.
 - **Error modes**: which `M3LError` subclasses are thrown and when.
+- **Contract nuances**: the easy-to-miss precision the spokes will otherwise
+  guess wrong — weakly-typed params (e.g. `cause: unknown`, not `Error`),
+  pass-through vs. normalizing semantics, and the _exact_ error a function
+  throws (e.g. what `unwrap` throws on an `Err`). Surface these explicitly so
+  the tests don't over-constrain a type and the implementer doesn't drift.
 
 Output it as a checklist so downstream phases can tick items off.
 

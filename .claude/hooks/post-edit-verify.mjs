@@ -4,12 +4,18 @@
  *
  * Lefthook + CI already gate at commit/push time, but that feedback arrives
  * late. After an edit to a `.ts`/`.mts`/`.cts` file under a package's `src`,
- * `tests` (or a script's `src`), this runs three checks **scoped to that
+ * `tests` (or a script's `src`), this runs four checks **scoped to that
  * package** so the signal is immediate without paying the whole-monorepo cost:
  *
  *   1. prettier --write   (auto-format the edited file)
- *   2. <pkg> typecheck     (`tsc -p tsconfig.json` per package)
- *   3. vitest related      (only the tests that import the edited file)
+ *   2. eslint              (lint the edited file; flat config from repo root)
+ *   3. <pkg> typecheck     (`tsc -p tsconfig.json` per package)
+ *   4. vitest related      (only the tests that import the edited file)
+ *
+ * eslint runs in-loop (not just at the hub's `pnpm lint` gate) so eslint-only
+ * failures — needless assertions, unused params, intentional non-`Error`
+ * throws that trip `only-throw-error` / `prefer-promise-reject-errors` and
+ * want a justified `eslint-disable` — surface here, not a round later.
  *
  * On any failure it exits 2 with a concise stderr summary, which Claude Code
  * surfaces back to the model as advisory feedback. The edit has already been
@@ -98,13 +104,21 @@ if (fmt && fmt.status !== 0) {
   failures.push(`prettier:\n${(fmt.stderr || fmt.stdout || "").trim()}`);
 }
 
-// 2. Type-check the owning package.
+// 2. Lint the edited file (single file; flat config resolves from repo root
+//    and honours its own `ignores`, so no per-package wrapper is needed).
+//    Report-only (no --fix) so the root cause is addressed, not masked.
+const lint = run("pnpm", ["exec", "eslint", abs]);
+if (lint && lint.status !== 0) {
+  failures.push(`eslint:\n${(lint.stdout || lint.stderr || "").trim()}`);
+}
+
+// 3. Type-check the owning package.
 const tc = run("pnpm", ["-C", pkgDir, "typecheck"]);
 if (tc && tc.status !== 0) {
   failures.push(`typecheck:\n${(tc.stdout || tc.stderr || "").trim()}`);
 }
 
-// 3. Run only the tests related to the edited file.
+// 4. Run only the tests related to the edited file.
 const vt = run("pnpm", ["exec", "vitest", "related", abs, "--run"]);
 if (vt && vt.status !== 0) {
   failures.push(`vitest related:\n${(vt.stdout || vt.stderr || "").trim()}`);

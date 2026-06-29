@@ -26,6 +26,10 @@ files. Ground every finding in the project standards.
 4. **Testability** — happy + failure path per export; behavior, not internals;
    deterministic and isolated. If a unit is hard to test, flag it as a design
    signal.
+5. **Lint hygiene** — `pnpm lint` is clean, and every `eslint-disable` is
+   narrow (`-next-line`, never file-wide) and carries a `-- <rationale>`. An
+   unexplained or over-broad suppression is a finding; an intentional non-`Error`
+   throw in an error-channel test is legitimate _when_ it is justified inline.
 
 ## SOLID + project invariants (rules 03, coding-standards)
 

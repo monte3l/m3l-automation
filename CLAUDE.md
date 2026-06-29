@@ -498,6 +498,12 @@ that reviews it" structural, and keeps the hub's context lean.
 - **Current state**: the library is a documented scaffold — 0 of 21
   submodules are implemented. See `docs/implementation-status.md` for the
   authoritative tracker and suggested build order.
+- **Lessons learned**: `docs/logs/` holds per-submodule work logs. The
+  `core/errors` log (`docs/logs/2026-06-29-core-errors.md`) is the durable
+  source for the process lessons baked into the spoke prompts — front-load exact
+  contract nuances, lint in-loop, justify error-channel `eslint-disable`, read
+  coverage from `coverage-final.json` (the v8 text table hides 100% files), and
+  trust the CLI over the IDE/LSP.
 
 **Claude Code hooks** (`.claude/settings.json`) provide runtime enforcement on
 top of the advisory text in this file:
@@ -508,7 +514,9 @@ top of the advisory text in this file:
   and `node_modules/`.
 - **PostToolUse (Write/Edit):** `guard-exports-semver.mjs` warns when the exports
   map changes without a matching semver commit; `post-edit-verify.mjs`
-  auto-formats, type-checks, and runs tests on the edited package.
+  auto-formats, **lints (eslint)**, type-checks, and runs the related tests on
+  the edited package — so eslint-only failures surface in the spoke loop, not a
+  round later at the hub's `pnpm lint` gate.
 
 ## Task Workflow
 
