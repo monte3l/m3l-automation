@@ -31,7 +31,9 @@ function run(cmd, args) {
     env: process.env,
   });
   if (res.error) {
-    throw new Error(`Failed to spawn ${cmd}: ${res.error.message}`);
+    throw new Error(`Failed to spawn ${cmd}: ${res.error.message}`, {
+      cause: res.error,
+    });
   }
   return res;
 }
