@@ -1,0 +1,77 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/errors.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/errors/M3LError.ts",
+          "symbol": "M3LError",
+          "lines": "59-123"
+        },
+        {
+          "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
+          "symbol": "M3LResult",
+          "lines": "59-59"
+        },
+        {
+          "file": "packages/m3l-common/src/core/errors/M3LErrorUtils.ts",
+          "symbol": "getErrorMessage",
+          "lines": "40-48"
+        }
+      ],
+      "commit": "cf05fc95c51cb51ec259446e3216bb78368268f8",
+      "retrieved": "2026-06-29"
+    },
+    {
+      "heading": "`M3LError`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/errors/M3LError.ts",
+          "symbol": "M3LError",
+          "lines": "59-123"
+        },
+        {
+          "file": "packages/m3l-common/src/core/errors/M3LError.ts",
+          "symbol": "M3LErrorOptions",
+          "lines": "25-38"
+        }
+      ],
+      "commit": "cf05fc95c51cb51ec259446e3216bb78368268f8",
+      "retrieved": "2026-06-29"
+    },
+    {
+      "heading": "`M3LResult<T, E>`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
+          "symbol": "M3LResult",
+          "lines": "59-59"
+        },
+        {
+          "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
+          "symbol": "ok",
+          "lines": "76-78"
+        },
+        {
+          "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
+          "symbol": "err",
+          "lines": "91-93"
+        },
+        {
+          "file": "packages/m3l-common/src/core/errors/M3LErrorUtils.ts",
+          "symbol": "getErrorMessage",
+          "lines": "40-48"
+        },
+        {
+          "file": "packages/m3l-common/src/core/errors/M3LErrorUtils.ts",
+          "symbol": "wrapError",
+          "lines": "97-109"
+        }
+      ],
+      "commit": "cf05fc95c51cb51ec259446e3216bb78368268f8",
+      "retrieved": "2026-06-29"
+    }
+  ]
+}
