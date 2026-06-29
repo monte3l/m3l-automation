@@ -228,6 +228,7 @@ services. The only secrets are CI-only release tokens (`NPM_TOKEN`,
 | Format check  | `pnpm format:check`               | CI          |
 | API snapshot  | `pnpm check:api`                  | pre-commit  |
 | Test coverage | `pnpm test:coverage`              | pre-push    |
+| Barrel sync   | `pnpm check:scaffold`             | pre-publish |
 
 These map to package.json scripts (`test` -> `vitest run`, `typecheck`
 -> `turbo run typecheck`, `build` -> `turbo run build`, etc.). Turbo
@@ -240,7 +241,7 @@ Six GitHub Actions workflows in `.github/workflows/`:
 
 | Workflow                | Trigger                     | Purpose                                                                                                                                              |
 | ----------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ci.yml`                | push / PR → main            | 12-step pipeline: secrets → audit → lint → format:check → lint:md → typecheck → check:api → test:coverage (80 % gate) → build → check:exports → knip |
+| `ci.yml`                | push / PR → main            | 13-step pipeline: secrets → audit → lint → format:check → lint:md → typecheck → check:api → test:coverage (80 % gate) → build → check:exports → check:scaffold → knip |
 | `release.yml`           | `ci.yml` success on main    | semantic-release: npm publish + GitHub release                                                                                                       |
 | `claude-pr-review.yml`  | PR opened / sync / reopened | **Mandatory blocking gate** — produces PASS/FAIL verdict; merge requires PASS                                                                        |
 | `claude-assistant.yml`  | @claude in issues / PRs     | On-demand Claude Code assistant                                                                                                                      |
