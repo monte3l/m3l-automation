@@ -26,14 +26,20 @@ than editing it.
    private helpers under `src/internal/` (never re-exported). Re-export the
    module from the namespace barrel `src/<ns>/index.ts`
    (`export * from "./<module>/index.js";`).
-3. Drive `pnpm -C packages/m3l-common typecheck`, `pnpm test`, **and `pnpm
-lint`** to green. Refactor for clarity once green; keep running all three.
-   Clear eslint findings yourself rather than leaving them for the hub gate —
-   most (needless assertions, unused params/type-params) are real fixes, not
-   suppressions. Reach for a narrow `eslint-disable-next-line … -- <why>` only
-   when the lint is genuinely wrong for the case (e.g. an intentional non-`Error`
-   throw that proves an unknown channel); never blanket-disable a file. Trust the
-   CLI (`pnpm typecheck`/`lint`/`test`) over IDE/LSP diagnostics — they lag and
+3. Drive `pnpm -C packages/m3l-common typecheck`, `pnpm test`, and — as a
+   **separate final step** — **`pnpm lint` (workspace root, no `-C` flag)** to
+   green. Running lint at workspace root covers `tests/` as well as `src/` and
+   matches the hub's gate exactly. Refactor for clarity once green; keep running
+   all three.
+   Clear eslint findings in `src/` yourself rather than leaving them for the hub
+   gate — most (needless assertions, unused params/type-params) are real fixes,
+   not suppressions. Reach for a narrow `eslint-disable-next-line … -- <why>`
+   only when the lint is genuinely wrong for the case (e.g. an intentional
+   non-`Error` throw that proves an unknown channel); never blanket-disable a
+   file. **If `pnpm lint` reports violations in `tests/` (outside your write
+   scope), do not attempt to fix them — report them to the hub immediately so a
+   `test-author` spoke can be dispatched before the gate.** Trust the CLI
+   (`pnpm typecheck`/`lint`/`test`) over IDE/LSP diagnostics — they lag and
    misreport against the project `tsconfig`.
 4. Report what you implemented, the exports you added, and the final
    test/typecheck/lint status. If you needed a runtime dependency that wasn't
