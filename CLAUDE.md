@@ -229,6 +229,7 @@ services. The only secrets are CI-only release tokens (`NPM_TOKEN`,
 | API snapshot  | `pnpm check:api`                  | pre-commit  |
 | Test coverage | `pnpm test:coverage`              | pre-push    |
 | Barrel sync   | `pnpm check:scaffold`             | pre-publish |
+| Dep hygiene   | `pnpm check:deps`                 | CI          |
 
 These map to package.json scripts (`test` -> `vitest run`, `typecheck`
 -> `turbo run typecheck`, `build` -> `turbo run build`, etc.). Turbo

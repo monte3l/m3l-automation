@@ -47,7 +47,10 @@ let outdatedData;
 try {
   const raw = (outdatedRes.stdout || "").trim();
   outdatedData = raw ? JSON.parse(raw) : {};
-} catch {
+} catch (err) {
+  process.stderr.write(
+    `check:deps: warning — could not parse pnpm outdated output; skipping outdated-major check. (${/** @type {Error} */ (err).message})\n`,
+  );
   outdatedData = {};
 }
 
@@ -67,14 +70,18 @@ const outdatedEntries = Array.isArray(outdatedData)
 const majorBumps = outdatedEntries.filter((e) => {
   const currentMajor = parseInt((e.current ?? "0").split(".")[0], 10);
   const latestMajor = parseInt((e.latest ?? "0").split(".")[0], 10);
-  return !isNaN(currentMajor) && !isNaN(latestMajor) && latestMajor > currentMajor;
+  return (
+    !isNaN(currentMajor) && !isNaN(latestMajor) && latestMajor > currentMajor
+  );
 });
 
 if (majorBumps.length > 0) {
   const rows = majorBumps
     .map((e) => `  ${e.name.padEnd(50)} ${e.current} → ${e.latest}`)
     .join("\n");
-  sections.push(`MAJOR VERSION UPDATES AVAILABLE (${majorBumps.length}):\n${rows}`);
+  sections.push(
+    `MAJOR VERSION UPDATES AVAILABLE (${majorBumps.length}):\n${rows}`,
+  );
 }
 
 // ── 2. Deprecated packages ───────────────────────────────────────────────────
@@ -85,7 +92,10 @@ let listData;
 try {
   const raw = (listRes.stdout || "").trim();
   listData = raw ? JSON.parse(raw) : [];
-} catch {
+} catch (err) {
+  process.stderr.write(
+    `check:deps: warning — could not parse pnpm list output; skipping deprecated-package check. (${/** @type {Error} */ (err).message})\n`,
+  );
   listData = [];
 }
 
@@ -101,7 +111,8 @@ for (const pkg of Array.isArray(listData) ? listData : [listData]) {
 }
 
 const deprecated = Object.entries(allDeps).filter(
-  ([, info]) => typeof info.deprecated === "string" && info.deprecated.length > 0,
+  ([, info]) =>
+    typeof info.deprecated === "string" && info.deprecated.length > 0,
 );
 
 if (deprecated.length > 0) {
@@ -116,12 +127,20 @@ if (deprecated.length > 0) {
 // A frozen-lockfile install is a no-op on an already-installed tree; pnpm
 // will emit peer warnings to stderr without changing anything on disk.
 const installRes = run("pnpm", ["install", "--frozen-lockfile"]);
+if (installRes.status !== 0) {
+  process.stderr.write(
+    `check:deps: warning — pnpm install --frozen-lockfile exited with status ${String(installRes.status)}; peer-dependency check may be incomplete.\n`,
+  );
+}
 const peerLines = (installRes.stderr || "")
   .split("\n")
   .filter(
     (l) =>
       /peer/i.test(l) &&
-      (/warn/i.test(l) || /error/i.test(l) || /missing/i.test(l) || /unmet/i.test(l)),
+      (/warn/i.test(l) ||
+        /error/i.test(l) ||
+        /missing/i.test(l) ||
+        /unmet/i.test(l)),
   );
 
 if (peerLines.length > 0) {
@@ -145,5 +164,7 @@ if (sections.length > 0) {
   process.exit(1);
 }
 
-console.log("✓  check:deps — no major bumps, deprecated packages, or peer issues found.");
+console.log(
+  "✓  check:deps — no major bumps, deprecated packages, or peer issues found.",
+);
 process.exit(0);
