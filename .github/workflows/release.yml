@@ -39,8 +39,16 @@ jobs:
         run: pnpm build
 
       # semantic-release owns the version; tokens come from the CI vault only.
+      # RELEASE_ENABLED repo variable gates the publish: unset → dry-run only.
+      # Set it with: gh variable set RELEASE_ENABLED --body true
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: pnpm exec semantic-release
+          NPM_CONFIG_PROVENANCE: "true"
+        run: |
+          if [[ "${{ vars.RELEASE_ENABLED }}" == "true" ]]; then
+            pnpm exec semantic-release
+          else
+            pnpm exec semantic-release --dry-run
+          fi

@@ -29,7 +29,15 @@
     "build": "tsc -b tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/monte3l/m3l-automation.git",
+    "directory": "packages/m3l-common"
+  },
+  "homepage": "https://github.com/monte3l/m3l-automation/tree/main/packages/m3l-common#readme",
+  "bugs": "https://github.com/monte3l/m3l-automation/issues",
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   }
 }
