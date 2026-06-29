@@ -44,6 +44,16 @@ flips to green — but the rest of the discipline below is identical.)
 6. Run `pnpm test` (and `pnpm typecheck`). In tests-first mode, confirm the
    expected red; in backfill mode, iterate to green. Never mute or retry-mask a
    flaky test — diagnose it.
+7. Run `pnpm exec eslint <your test file>` and clear every finding before
+   handing back. Tests that exercise an **error channel** deliberately throw or
+   reject non-`Error` values to prove normalization; these trip
+   `@typescript-eslint/only-throw-error` and
+   `@typescript-eslint/prefer-promise-reject-errors`. Suppress them **narrowly**
+   with a justified `eslint-disable-next-line … -- <why>` comment — never widen
+   the suppression and never "fix" the throw into a real `Error` (that would
+   stop testing the unknown channel). Don't leave eslint failures for the hub.
+8. Trust the CLI (`pnpm test` / `pnpm typecheck` / `pnpm exec eslint`) over IDE
+   or LSP diagnostics — they lag and misreport against the project `tsconfig`.
 
 ## What good tests look like
 
@@ -85,6 +95,18 @@ expect(done).toBe(true);
 vi.useFakeTimers();
 await vi.advanceTimersByTimeAsync(100);
 expect(done).toBe(true);
+```
+
+**5 — Narrowly justify an intentional non-`Error` throw/reject:**
+
+```ts
+// good — proves the unknown channel; suppression is one line + a rationale
+// eslint-disable-next-line @typescript-eslint/only-throw-error -- intentional non-Error to verify tryCatch captures it un-normalized
+expect(() =>
+  tryCatch(() => {
+    throw "boom";
+  }),
+).toMatchObject({ ok: false });
 ```
 
 ## Rules

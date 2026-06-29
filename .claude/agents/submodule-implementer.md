@@ -26,11 +26,19 @@ than editing it.
    private helpers under `src/internal/` (never re-exported). Re-export the
    module from the namespace barrel `src/<ns>/index.ts`
    (`export * from "./<module>/index.js";`).
-3. Drive `pnpm -C packages/m3l-common typecheck` and `pnpm test` to green.
-   Refactor for clarity once green; keep running tests.
-4. Report what you implemented, the exports you added, and the final test/typecheck
-   status. If you needed a runtime dependency that wasn't already approved/installed,
-   STOP and report it — do not run `pnpm add` or hand-edit `pnpm-lock.yaml`.
+3. Drive `pnpm -C packages/m3l-common typecheck`, `pnpm test`, **and `pnpm
+lint`** to green. Refactor for clarity once green; keep running all three.
+   Clear eslint findings yourself rather than leaving them for the hub gate —
+   most (needless assertions, unused params/type-params) are real fixes, not
+   suppressions. Reach for a narrow `eslint-disable-next-line … -- <why>` only
+   when the lint is genuinely wrong for the case (e.g. an intentional non-`Error`
+   throw that proves an unknown channel); never blanket-disable a file. Trust the
+   CLI (`pnpm typecheck`/`lint`/`test`) over IDE/LSP diagnostics — they lag and
+   misreport against the project `tsconfig`.
+4. Report what you implemented, the exports you added, and the final
+   test/typecheck/lint status. If you needed a runtime dependency that wasn't
+   already approved/installed, STOP and report it — do not run `pnpm add` or
+   hand-edit `pnpm-lock.yaml`.
 
 ## Project invariants (these are how review will judge you)
 
