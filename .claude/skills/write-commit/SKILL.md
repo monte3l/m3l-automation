@@ -210,7 +210,7 @@ changed, why, or whether they need to read the diff._
 chore: bake core/errors pipeline lessons into hooks and spoke prompts
 
 The first submodule (core/errors) surfaced process friction logged in
-docs/logs/<session-date>-core-errors.md. Encode the durable fixes so the
+docs/logs/2026-06-29-core-errors.md. Encode the durable fixes so the
 remaining submodules don't re-hit them.
 
 - post-edit-verify hook now runs eslint in-loop (prettier → eslint →

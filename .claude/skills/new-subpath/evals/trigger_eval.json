@@ -1,10 +1,10 @@
 [
   {
-    "query": "add a brand-new core module called json — it doesn't have a spec or src directory yet",
+    "query": "add a brand-new scheduler module to the library — there's no spec or src for it yet",
     "should_trigger": true
   },
   {
-    "query": "create a new library capability for text extraction — there's no existing module for this",
+    "query": "I need a new audit-log capability in the library — nothing exists for this yet",
     "should_trigger": true
   },
   {
