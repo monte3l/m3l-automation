@@ -1,9 +1,9 @@
 <p align="center">
-<img src="docs/assets/m3l-wordmark.svg" alt="m3l-common" width="260" height="64">
+<img src="docs/assets/m3l-wordmark.svg" alt="m3l-automation" width="267" height="64">
 </p>
 
 <p align="center">
-<img src="docs/assets/m3l-hero.svg" alt="m3l-common quick-start terminal pane" width="700">
+<img src="docs/assets/m3l-hero.svg" alt="m3l-automation quick-start terminal pane" width="700">
 </p>
 
 <p align="center">
