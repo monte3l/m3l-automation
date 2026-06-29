@@ -1,6 +1,0 @@
-feat: implement core/errors submodule with M3LError hierarchy and M3LResult
-
-Add the M3LError typed-error hierarchy and M3LResult discriminated-union
-type under packages/m3l-common/src/core/errors/. Both are re-exported
-through the ./core barrel; the three-entry exports map (., ./core, ./aws)
-is unchanged.

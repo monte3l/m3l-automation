@@ -1,1 +1,0 @@
-chore: format pnpm-workspace.yaml with prettier
