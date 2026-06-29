@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # Secret scan runs first and independently (rules 05 / security.md):
       # no committed secret should ever reach the build.

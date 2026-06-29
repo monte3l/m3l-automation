@@ -15,4 +15,4 @@
  * @packageDocumentation
  */
 
-export {};
+export * from "./errors/index.js";
