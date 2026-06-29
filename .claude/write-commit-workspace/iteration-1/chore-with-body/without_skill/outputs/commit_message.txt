@@ -1,0 +1,18 @@
+chore: tighten spoke lint discipline and spec-reviewer type-bound caveat
+
+Three agent prompt updates, no src/test/exports-map changes:
+
+- submodule-implementer: clarify that `pnpm lint` must be run at the
+  workspace root (not `-C packages/m3l-common`) so it covers `tests/`
+  and matches the hub gate exactly; add explicit rule that test-file
+  lint violations outside the implementer's write scope must be
+  escalated to the hub rather than fixed in-place.
+
+- test-author: mirror the same workspace-root lint discipline — iterate
+  quickly with `pnpm exec eslint <file>`, but confirm clean with
+  `pnpm lint` before handing back.
+
+- spec-conformance-reviewer: add a constraint-tightening caveat so
+  reviewers tag generic type bounds (e.g. `extends object` vs
+  `extends Record<string, unknown>`) as verify-before-fix rather than
+  must-fix, and document the TypeScript structural-typing reason.

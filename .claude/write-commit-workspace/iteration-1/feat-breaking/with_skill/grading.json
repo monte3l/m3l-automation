@@ -1,0 +1,30 @@
+{
+  "expectations": [
+    {
+      "text": "Subject line starts with 'feat!:' (breaking change marker present)",
+      "passed": true,
+      "evidence": "Subject is 'feat!: rename M3LPaths.outputDir to M3LPaths.archiveDir' — starts with 'feat!:'"
+    },
+    {
+      "text": "Subject line names the renamed symbol (outputDir or archiveDir)",
+      "passed": true,
+      "evidence": "Subject contains both 'outputDir' and 'archiveDir'"
+    },
+    {
+      "text": "Body includes migration instructions (what consumers must change)",
+      "passed": true,
+      "evidence": "Body bullet: 'Migration: replace `paths.outputDir` with `paths.archiveDir` everywhere'"
+    },
+    {
+      "text": "Body includes a BREAKING CHANGE note (footer or prose)",
+      "passed": true,
+      "evidence": "Footer: 'BREAKING CHANGE: M3LPaths.outputDir removed; use archiveDir instead.'"
+    },
+    {
+      "text": "Body includes a Co-Authored-By footer with noreply@anthropic.com",
+      "passed": true,
+      "evidence": "Footer: 'Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>'"
+    }
+  ],
+  "summary": { "passed": 5, "failed": 0, "total": 5, "pass_rate": 1.0 }
+}

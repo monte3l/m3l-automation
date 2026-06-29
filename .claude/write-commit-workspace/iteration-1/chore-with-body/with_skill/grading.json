@@ -1,0 +1,30 @@
+{
+  "expectations": [
+    {
+      "text": "Subject line starts with 'chore:' in lowercase",
+      "passed": true,
+      "evidence": "Subject is 'chore: bake core/events pipeline lessons into hooks and spoke prompt' — starts with 'chore:' lowercase"
+    },
+    {
+      "text": "Subject line is 70 characters or fewer",
+      "passed": true,
+      "evidence": "'chore: bake core/events pipeline lessons into hooks and spoke prompt' = 67 characters"
+    },
+    {
+      "text": "A body is present (this chore has a non-obvious why)",
+      "passed": true,
+      "evidence": "Body is present: explains the core/events friction and the fixes encoded"
+    },
+    {
+      "text": "Body includes a semver impact statement ('no semver impact', 'zero semver impact', or equivalent)",
+      "passed": true,
+      "evidence": "Body ends with verbatim standard phrase: 'No src/, test, or exports-map changes; zero semver impact.'"
+    },
+    {
+      "text": "Body includes a Co-Authored-By footer with noreply@anthropic.com",
+      "passed": true,
+      "evidence": "Footer: 'Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>'"
+    }
+  ],
+  "summary": { "passed": 5, "failed": 0, "total": 5, "pass_rate": 1.0 }
+}

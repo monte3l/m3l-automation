@@ -1,0 +1,20 @@
+{
+  "eval_id": 4,
+  "eval_name": "feat-breaking",
+  "prompt": "Commit my staged changes. I renamed M3LPaths.outputDir to M3LPaths.archiveDir everywhere — internal call-sites and the public type. This is a breaking change for any consumer using the old property name.",
+  "assertions": [
+    {
+      "text": "Subject line starts with 'feat!:' (breaking change marker present)"
+    },
+    {
+      "text": "Subject line names the renamed symbol (outputDir or archiveDir)"
+    },
+    {
+      "text": "Body includes migration instructions (what consumers must change)"
+    },
+    { "text": "Body includes a BREAKING CHANGE note (footer or prose)" },
+    {
+      "text": "Body includes a Co-Authored-By footer with noreply@anthropic.com"
+    }
+  ]
+}

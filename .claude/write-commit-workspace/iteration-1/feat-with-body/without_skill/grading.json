@@ -1,0 +1,35 @@
+{
+  "expectations": [
+    {
+      "text": "Subject line starts with 'feat:' in lowercase",
+      "passed": true,
+      "evidence": "Subject is 'feat: implement core/errors submodule with M3LError hierarchy and M3LResult' — starts with 'feat:' lowercase"
+    },
+    {
+      "text": "Subject line uses imperative present tense (e.g. 'implement' or 'add', not 'implemented' or 'added')",
+      "passed": true,
+      "evidence": "Verb is 'implement' — imperative present tense"
+    },
+    {
+      "text": "Subject line is 70 characters or fewer",
+      "passed": false,
+      "evidence": "'feat: implement core/errors submodule with M3LError hierarchy and M3LResult' = 76 characters, exceeds 70-char commitlint limit"
+    },
+    {
+      "text": "Body mentions at least one public symbol (M3LError, M3LResult, M3LErrorUtils, or similar)",
+      "passed": true,
+      "evidence": "Body mentions M3LError and M3LResult"
+    },
+    {
+      "text": "Body includes a semver impact statement (e.g. 'exports map unchanged' or 'no semver break')",
+      "passed": true,
+      "evidence": "Body states 'the three-entry exports map (., ./core, ./aws) is unchanged'"
+    },
+    {
+      "text": "Body includes a Co-Authored-By footer with noreply@anthropic.com",
+      "passed": false,
+      "evidence": "No Co-Authored-By footer present"
+    }
+  ],
+  "summary": { "passed": 4, "failed": 2, "total": 6, "pass_rate": 0.667 }
+}

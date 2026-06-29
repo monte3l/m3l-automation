@@ -1,0 +1,1 @@
+ci: skip claude-pr-review for dependabot[bot] PRs
