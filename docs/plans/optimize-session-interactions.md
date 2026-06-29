@@ -77,9 +77,7 @@ mirroring `post-edit-verify.mjs`:
 
 ## 3. CI-failure triage skill
 
-**Why:** Session `f17d6121` shows *"investigate the failure reason for run
-
-# …"* — done by hand with ad-hoc `gh` calls. CI is the mandatory blocking gate,
+**Why:** Session `f17d6121` shows _"investigate the failure reason for run …"_ — done by hand with ad-hoc `gh` calls. CI is the mandatory blocking gate
 
 so this recurs.
 

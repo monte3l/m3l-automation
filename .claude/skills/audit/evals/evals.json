@@ -1,0 +1,91 @@
+{
+  "skill_name": "audit",
+  "iteration": 2,
+  "note": "plan_mode_entered assertion dropped — EnterPlanMode unavailable in subagent eval context",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "audit the CI pipeline — I want to understand what gates we have, what's missing, and make a plan to fill any gaps",
+      "expected_output": "Parallel Explore agents fanned out over CI facets, findings aggregated with EXISTING/GAP/INCONSISTENCY prefixes preserved, clarifying questions via AskUserQuestion, structured plan written inline.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "parallel_explore_agents",
+          "description": "Summary mentions 3+ Explore agents spawned in parallel (single message)"
+        },
+        {
+          "name": "report_format_used",
+          "description": "Aggregated findings preserve EXISTING: / GAP: / INCONSISTENCY: prefixes on individual items (not rewritten as prose Theme labels)"
+        },
+        {
+          "name": "gaps_verified",
+          "description": "Summary notes claimed gaps were verified against actual repo files before surfacing"
+        },
+        {
+          "name": "ask_user_question_called",
+          "description": "AskUserQuestion was used for clarifying questions (not skipped)"
+        },
+        {
+          "name": "no_files_edited",
+          "description": "No source, test, or config files were written or edited"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "review the current state of our documentation — are the docs consistent with what's actually implemented?",
+      "expected_output": "Parallel Explore agents over doc facets, EXISTING/GAP/INCONSISTENCY prefixes preserved in aggregated summary, AskUserQuestion, structured plan inline.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "parallel_explore_agents",
+          "description": "Summary mentions 3+ Explore agents spawned in parallel"
+        },
+        {
+          "name": "report_format_used",
+          "description": "Aggregated findings preserve EXISTING: / GAP: / INCONSISTENCY: prefixes"
+        },
+        {
+          "name": "gaps_verified",
+          "description": "Claimed gaps verified against actual repo state before surfacing"
+        },
+        {
+          "name": "ask_user_question_called",
+          "description": "AskUserQuestion used (not skipped)"
+        },
+        {
+          "name": "no_files_edited",
+          "description": "No source, test, or config files edited"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "spawn Explore subagents to audit the hook coverage in this repo and then plan how to close any gaps",
+      "expected_output": "Parallel Explore agents over hook facets, EXISTING/GAP/INCONSISTENCY prefixes preserved, AskUserQuestion, structured plan inline.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "parallel_explore_agents",
+          "description": "Summary mentions 3+ Explore agents spawned in parallel"
+        },
+        {
+          "name": "report_format_used",
+          "description": "Aggregated findings preserve EXISTING: / GAP: / INCONSISTENCY: prefixes"
+        },
+        {
+          "name": "gaps_verified",
+          "description": "Claimed gaps verified against actual repo state before surfacing"
+        },
+        {
+          "name": "ask_user_question_called",
+          "description": "AskUserQuestion used (not skipped)"
+        },
+        {
+          "name": "no_files_edited",
+          "description": "No source, test, or config files edited"
+        }
+      ]
+    }
+  ]
+}
