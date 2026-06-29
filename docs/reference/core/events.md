@@ -21,7 +21,7 @@ Public surface (`events/index.ts`):
 - `on<TEvent>(event, handler)` — subscribe a typed handler; the handler's payload type is inferred from `TEventMap[TEvent]`.
 - `off<TEvent>(event, handler)` — unsubscribe a previously registered handler.
 - `emit<TEvent>(event, payload)` _(protected)_ — synchronously invoke all handlers; errors thrown by an individual handler are caught so one failure does not stop the others.
-- `emitAsync<TEvent>(event, payload)` _(protected)_ — awaits all handlers via `Promise.all`, supporting async handlers.
+- `emitAsync<TEvent>(event, payload)` _(protected)_ — awaits all handlers via `Promise.allSettled`, so a rejecting handler does not prevent others from running.
 
 ## Usage examples
 

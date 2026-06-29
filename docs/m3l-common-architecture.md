@@ -133,7 +133,7 @@ Available providers: `M3LCommandLineConfigProvider`, `M3LJSONConfigProvider`, `M
 
 `events/M3LEventEmitterBase.ts`: `emit()` (protected) catches errors thrown by individual handlers so that one failing handler does not prevent others from running.
 
-`events/M3LEventEmitterBase.ts`: `emitAsync()` (protected) awaits all handlers via `Promise.all`, supporting async handlers.
+`events/M3LEventEmitterBase.ts`: `emitAsync()` (protected) awaits all handlers via `Promise.allSettled`, so a rejecting handler does not prevent others from running.
 
 ---
 
