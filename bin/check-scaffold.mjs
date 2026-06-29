@@ -42,8 +42,16 @@ function barrelExports(barrelPath) {
 }
 
 const namespaces = [
-  { name: "core", dir: join(pkgSrc, "core"), barrel: join(pkgSrc, "core/index.ts") },
-  { name: "aws",  dir: join(pkgSrc, "aws"),  barrel: join(pkgSrc, "aws/index.ts") },
+  {
+    name: "core",
+    dir: join(pkgSrc, "core"),
+    barrel: join(pkgSrc, "core/index.ts"),
+  },
+  {
+    name: "aws",
+    dir: join(pkgSrc, "aws"),
+    barrel: join(pkgSrc, "aws/index.ts"),
+  },
 ];
 
 let errors = 0;
