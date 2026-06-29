@@ -488,7 +488,8 @@ that reviews it" structural, and keeps the hub's context lean.
 
 - **Spokes**: `Explore` (research), `spec-conformance-reviewer` (contract +
   doc-vs-code), `test-author` (tests-first / RED), `submodule-implementer`
-  (implementation / GREEN), `code-reviewer` and `security-reviewer` (review).
+  (implementation / GREEN), `code-reviewer`, `security-reviewer`,
+  `type-design-analyzer`, and `silent-failure-hunter` (review).
 - **TDD**: tests are written from the documented contract and fail first, then
   the implementer makes them pass; review follows.
 - **Live status**: `docs/implementation-status.md` is the source of truth for
