@@ -79,5 +79,13 @@ CONTRACT events.md:113 requires handler errors be isolated (one failing handler
          rethrows. src/core/events/index.ts:55
 ```
 
+**Constraint-tightening caveat:** When flagging a generic type bound as drifted
+(e.g. code uses `extends object`, spec says `extends Record<string, unknown>`),
+verify whether the tighter constraint accepts a plain interface —
+`new Cls<{ x: number }>()` must still compile, since `{ x: number }` has no
+index signature and does not satisfy `Record<string, unknown>`. Tag these as
+**verify-before-fix** rather than must-fix, and note the TypeScript structural
+typing reason.
+
 Stay strictly within the documented contract — don't invent requirements the
 spec doesn't state, and don't review code quality (that's `code-reviewer`'s job).

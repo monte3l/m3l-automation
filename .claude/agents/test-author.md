@@ -44,8 +44,11 @@ flips to green — but the rest of the discipline below is identical.)
 6. Run `pnpm test` (and `pnpm typecheck`). In tests-first mode, confirm the
    expected red; in backfill mode, iterate to green. Never mute or retry-mask a
    flaky test — diagnose it.
-7. Run `pnpm exec eslint <your test file>` and clear every finding before
-   handing back. Tests that exercise an **error channel** deliberately throw or
+7. Run `pnpm exec eslint <your test file>` to iterate quickly. Before handing
+   back, run **`pnpm lint` (workspace root, no `-C` flag)** and confirm the
+   file is clean — this matches the hub gate exactly and surfaces type-aware
+   findings that per-file eslint can miss. Clear every finding before handing
+   back. Tests that exercise an **error channel** deliberately throw or
    reject non-`Error` values to prove normalization; these trip
    `@typescript-eslint/only-throw-error` and
    `@typescript-eslint/prefer-promise-reject-errors`. Suppress them **narrowly**
