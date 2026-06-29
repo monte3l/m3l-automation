@@ -1,0 +1,38 @@
+[
+  { "query": "commit this", "should_trigger": true },
+  {
+    "query": "write a commit message for my staged changes — I added the M3LError hierarchy",
+    "should_trigger": true
+  },
+  {
+    "query": "make a commit, I just fixed a missing .js extension in the core barrel",
+    "should_trigger": true
+  },
+  {
+    "query": "stage and commit my changes — I updated the CI workflow to skip Dependabot PRs",
+    "should_trigger": true
+  },
+  {
+    "query": "draft a commit message for this refactor of internal/timing.ts",
+    "should_trigger": true
+  },
+  {
+    "query": "I renamed M3LPaths.outputDir to archiveDir, this is a breaking change — commit it",
+    "should_trigger": true
+  },
+  {
+    "query": "help me write the git commit for adding the new polling submodule",
+    "should_trigger": true
+  },
+  { "query": "create a pull request for this branch", "should_trigger": false },
+  { "query": "implement the core/errors submodule", "should_trigger": false },
+  {
+    "query": "run the test suite and show me the results",
+    "should_trigger": false
+  },
+  { "query": "what version will this release?", "should_trigger": false },
+  {
+    "query": "scaffold a new script called invoice-importer",
+    "should_trigger": false
+  }
+]

@@ -1,6 +1,12 @@
 ---
 name: new-script
-description: Scaffold a new automation script under scripts/<name> that consumes @m3l-automation/m3l-common via workspace:* and wires the M3LScript lifecycle. Use when the user asks to create a new automation, script, or job in this monorepo.
+description: >-
+  Scaffold a new automation script under scripts/<name> that consumes
+  @m3l-automation/m3l-common via workspace:* and wires the M3LScript lifecycle.
+  Use when the user asks to create a new automation, script, or job in this
+  monorepo — including "build a script", "write an automation", "add a job",
+  "scaffold a new command", or any request to stand up a new runnable entry
+  point that uses the library.
 ---
 
 # new-script
