@@ -8,7 +8,10 @@ export default defineConfig({
       provider: "v8",
       include: ["packages/*/src/**/*.ts"],
       exclude: ["**/index.ts", "**/*.d.ts"],
-      reporter: ["text", "html"],
+      // `json` emits coverage-final.json: the v8 text table hides files that
+      // are 100% on every metric, so the JSON is the authoritative per-file
+      // record when investigating a suspected gap.
+      reporter: ["text", "html", "json"],
       // Pyramid + safety-net discipline (rules 02). Thresholds start modest
       // so a fresh scaffold passes; raise as the library gains real code.
       thresholds: {

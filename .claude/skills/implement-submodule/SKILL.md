@@ -62,7 +62,12 @@ concrete file paths), and record progress in the durable state file
    `docs/m3l-common-architecture.md`) and return the exact list of promised
    exports (names + shapes) plus the behavioral contracts (e.g. handler-error
    isolation, per-call backoff, `toJSON()` on errors, MONOREPO path anchoring).
-   Keep this contract text — you'll hand it to the next two spokes.
+   Keep this contract text — you'll hand it to the next two spokes. **Front-load
+   the exact contract nuances** verbatim into those hand-offs: weakly-typed
+   params (e.g. `cause: unknown`, not `Error`), pass-through vs. normalizing
+   semantics, and which specific error a function throws (e.g. what `unwrap`
+   throws on an `Err`). Precision here prevents the tests from over-constraining
+   a type and saves a re-work round — especially for weaker routed models.
 
 4. **Phase 2 — RED.** Dispatch `test-author` with the contract and the target
    test path (`packages/m3l-common/tests/<module>.test.ts`). It writes happy +
@@ -132,6 +137,31 @@ export class M3LPoller {
 bad:  write src/<module>/index.ts, then backfill a test that mirrors it
 good: test-author writes tests from the doc contract → they fail → implementer makes them pass
 ```
+
+**5 — Justify intentional `eslint-disable` on error-channel tests:**
+
+```ts
+// A module that tests its error channel will throw/reject non-`Error` values
+// to prove normalization, tripping `only-throw-error` /
+// `prefer-promise-reject-errors`. Disable narrowly, with a `--` rationale —
+// don't let it reach the hub gate or get "fixed" into a real Error.
+// eslint-disable-next-line @typescript-eslint/only-throw-error -- intentional non-Error to verify the unknown channel
+throw "a string";
+```
+
+**Tooling notes to relay to the spokes:**
+
+- `post-edit-verify` now runs **eslint in-loop** (prettier → eslint → typecheck
+  → vitest-related). Spokes should resolve eslint findings themselves, not defer
+  them to the hub's `pnpm lint` gate — that defeats the in-loop signal.
+- Read coverage from `coverage/coverage-final.json`, **not** the `pnpm
+test:coverage` text table: the v8 text reporter hides files that are 100% on
+  every metric, so an "absent" file is not an uncovered file. Use `pnpm exec
+vitest` / `pnpm test:coverage` (bare `npx vitest` fails to resolve
+  `@vitest/coverage-v8` under pnpm).
+- Trust the **CLI gate over the IDE/LSP** in this harness: editor diagnostics
+  lag and misreport against the project `tsconfig`. A passing `pnpm typecheck` /
+  `pnpm lint` is the source of truth.
 
 ## Boundaries
 
