@@ -1,0 +1,44 @@
+[
+  { "query": "implement the core/errors submodule", "should_trigger": true },
+  {
+    "query": "build the retry stuff — exponential back-off with jitter",
+    "should_trigger": true
+  },
+  {
+    "query": "fill in the polling module, it's already documented in docs/reference/core/polling.md",
+    "should_trigger": true
+  },
+  {
+    "query": "let's do the config submodule — it reads from data/config/",
+    "should_trigger": true
+  },
+  {
+    "query": "wire up the HTTP client — the spec is at docs/reference/core/network.md",
+    "should_trigger": true
+  },
+  {
+    "query": "flesh out the core/text submodule so it can extract text from PDFs",
+    "should_trigger": true
+  },
+  {
+    "query": "write the code for the aws credentials module",
+    "should_trigger": true
+  },
+  {
+    "query": "implement the core/json submodule — it has a spec at docs/reference/core/json.md",
+    "should_trigger": true
+  },
+  {
+    "query": "scaffold a new subpath for a feature we haven't specced yet",
+    "should_trigger": false
+  },
+  {
+    "query": "create a PR for the errors module I just implemented",
+    "should_trigger": false
+  },
+  {
+    "query": "commit my staged changes to the polling implementation",
+    "should_trigger": false
+  },
+  { "query": "what version will the next release be?", "should_trigger": false }
+]

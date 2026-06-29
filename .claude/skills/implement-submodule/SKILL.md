@@ -39,6 +39,25 @@ concrete file paths), and record progress in the durable state file
 | 3. GREEN (impl) | `submodule-implementer`                                               | `src/` only | the contract + the failing tests |
 | 4. Review       | `code-reviewer` + `spec-conformance-reviewer` (+ `security-reviewer`) | nothing     | the diff + the doc path          |
 
+## Progress checklist (copy-paste at the start of each run)
+
+- [ ] Phase 0 — Dep gate: list any required runtime deps and get user approval
+      (skip for dep-free modules)
+- [ ] Phase 1 — Contract: `spec-conformance-reviewer` → extract exact exports +
+      behavioral contracts; save the contract text
+- [ ] Phase 2 — RED: `test-author` → writes failing tests; update status file
+      → 🧪
+- [ ] Phase 3 — GREEN: `submodule-implementer` → writes `src/` until tests
+      pass; update status file → 🟢
+- [ ] Phase 4 — Review: `code-reviewer` + `spec-conformance-reviewer` (parallel);
+      add `security-reviewer` for aws/secrets/logging surface; iterate until
+      clean; update status file → ✅
+- [ ] Final verify: `pnpm build && pnpm test && pnpm lint && pnpm typecheck`
+- [ ] Report: new exports, review verdict, deps (if any), state-file transitions
+
+**Rule: you (the hub) never edit `src/**` or `tests/**`** — that is what the
+spokes are for. The writer is never the reviewer; keep that separation structural.
+
 ## Steps
 
 1. **Resolve the target.** Read `docs/implementation-status.md`, confirm the
