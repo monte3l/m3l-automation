@@ -44,6 +44,11 @@ jobs:
       - name: Security audit
         run: pnpm audit --audit-level=high
 
+      # Gates outdated majors, deprecated packages, and peer mismatches — the
+      # dimensions pnpm audit does not cover (vulnerabilities are above).
+      - name: Check dependencies
+        run: pnpm check:deps
+
       - name: Validate commit messages
         if: github.event_name == 'pull_request'
         run: node bin/lint-commit.mjs --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }}
