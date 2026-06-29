@@ -28,7 +28,7 @@ _Reviewed_ = passed `code-reviewer` + `spec-conformance-reviewer` (+ `security-r
 
 | Submodule   | Spec                  | Symbols (≈) | Status | Tests | Reviewed | Notes (runtime deps → dependency gate)                                        |
 | ----------- | --------------------- | ----------- | ------ | ----- | -------- | ----------------------------------------------------------------------------- |
-| errors      | `core/errors.md`      | 22          | ❌     | ❌    | ❌       | none — **foundational**, implement first                                      |
+| errors      | `core/errors.md`      | 22          | ✅     | ✅    | ✅       | done — 101 tests, ~98% cov; conformant + code-reviewed (must-fixes applied)   |
 | events      | `core/events.md`      | 3           | ❌     | ❌    | ❌       | none — **foundational** (emitter base)                                        |
 | security    | `core/security.md`    | 2           | ❌     | ❌    | ❌       | none — pure fns; good pipeline smoke test                                     |
 | environment | `core/environment.md` | 7           | ❌     | ❌    | ❌       | none — drives `M3LPaths`                                                      |
