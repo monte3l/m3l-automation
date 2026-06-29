@@ -19,6 +19,10 @@ export default defineConfig({
         functions: 80,
         branches: 80,
         statements: 80,
+        // coverage.all defaults to false in v8, so only files that appear in
+        // the report (i.e. files with at least one test) are gated — not-yet-
+        // implemented modules simply don't show up and won't trip this gate.
+        perFile: true,
       },
     },
   },
