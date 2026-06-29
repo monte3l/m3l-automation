@@ -90,5 +90,11 @@ jobs:
       - name: Check package exports (publint + are-the-types-wrong)
         run: pnpm check:exports
 
+      # Barrel re-export completeness: every src/core|aws/<mod>/index.ts must
+      # appear in its namespace barrel and vice-versa. Runs after build so the
+      # barrel is proven to compile before we assert it is complete.
+      - name: Check barrel re-exports (scaffold)
+        run: pnpm check:scaffold
+
       - name: Unused files / exports / dependencies (knip)
         run: pnpm knip
