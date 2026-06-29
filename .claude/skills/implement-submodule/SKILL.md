@@ -32,12 +32,12 @@ things matter: pass each spoke **explicit context** (target module, the contract
 concrete file paths), and record progress in the durable state file
 `docs/implementation-status.md` after every phase.
 
-| Phase           | Spoke (subagent)                                                                                                                                                                            | Writes      | Hand it                          |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | -------------------------------- |
-| 1. Contract     | `spec-conformance-reviewer`                                                                                                                                                                 | nothing     | the doc path                     |
-| 2. RED (tests)  | `test-author`                                                                                                                                                                               | tests only  | the contract + target paths      |
-| 3. GREEN (impl) | `submodule-implementer`                                                                                                                                                                     | `src/` only | the contract + the failing tests |
-| 4. Review       | `code-reviewer` + `spec-conformance-reviewer` (+ `security-reviewer`) (+ `type-design-analyzer` when exports include public types) (+ `silent-failure-hunter` when error/async paths exist) | nothing     | the diff + the doc path          |
+| Phase           | Spoke (subagent)                                                                                                                                                                                                                                   | Writes      | Hand it                          |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | -------------------------------- |
+| 1. Contract     | `spec-conformance-reviewer`                                                                                                                                                                                                                        | nothing     | the doc path                     |
+| 2. RED (tests)  | `test-author`                                                                                                                                                                                                                                      | tests only  | the contract + target paths      |
+| 3. GREEN (impl) | `submodule-implementer`                                                                                                                                                                                                                            | `src/` only | the contract + the failing tests |
+| 4. Review       | `code-reviewer` + `spec-conformance-reviewer` (+ `security-reviewer`) (+ `type-design-analyzer` whenever the module introduces or changes public types — every Core/AWS module qualifies) (+ `silent-failure-hunter` when error/async paths exist) | nothing     | the diff + the doc path          |
 
 ## Progress checklist (copy-paste at the start of each run)
 
@@ -51,7 +51,7 @@ concrete file paths), and record progress in the durable state file
       pass; update status file → 🟢
 - [ ] Phase 4 — Review: `code-reviewer` + `spec-conformance-reviewer` (parallel);
       add `security-reviewer` for aws/secrets/logging surface;
-      add `type-design-analyzer` when the module introduces public types (Core/AWS modules always qualify);
+      add `type-design-analyzer` whenever the module introduces or changes public types (every Core/AWS module qualifies);
       add `silent-failure-hunter` when the module has error-handling or async paths;
       iterate until clean; update status file → ✅
 - [ ] Final verify: `pnpm build && pnpm test && pnpm lint && pnpm typecheck`
