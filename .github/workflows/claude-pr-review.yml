@@ -47,7 +47,13 @@ jobs:
             - Every exported function must have at least one happy-path test and one failure-path test
             - Tests import from `src/` with `.js` extensions
             - No network calls or filesystem access in unit tests (mock collaborators)
-            - Coverage thresholds are 80% lines/functions/branches/statements
+            - Coverage thresholds are 80% lines/functions/branches/statements; run `pnpm test:coverage` to verify
+            - The v8 text reporter omits files that are 100% covered — absence from the table is NOT a gap; if coverage looks incomplete, check `coverage/coverage-final.json` directly
+            - Tests for error channels may carry `// eslint-disable-next-line only-throw-error` or `// eslint-disable-next-line prefer-promise-reject-errors`; these are acceptable when intentionally verifying that code handles non-Error throws/rejections — do not flag them
+
+            ## Exports map
+            - If the diff touches `src/core/index.ts`, `src/aws/index.ts`, or the `exports` field in `package.json`, run `pnpm check:api` to confirm the snapshot is unchanged
+            - An unexpected snapshot diff is a semver event and must be reflected in the PR title (`feat!:` or `BREAKING CHANGE:` footer)
 
             ## Security
             - No hardcoded secrets, tokens, or credentials in source or tests
