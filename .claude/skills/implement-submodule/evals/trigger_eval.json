@@ -25,8 +25,8 @@
     "should_trigger": true
   },
   {
-    "query": "add a brand-new core module called json that doesn't exist yet",
-    "should_trigger": false
+    "query": "implement the core/json submodule — it has a spec at docs/reference/core/json.md",
+    "should_trigger": true
   },
   {
     "query": "scaffold a new subpath for a feature we haven't specced yet",
