@@ -2,7 +2,7 @@
 
 `@m3l-automation/m3l-common` is a shared infrastructure library for every automation script, Lambda handler, and tool that needs enterprise-grade building blocks — application scaffolding, multi-source configuration, structured logging, interactive prompts, file import/export, full-text search, polling/retry resilience, and AWS credential and client management. It is written in TypeScript (strict), ships ESM-only, targets Node.js 24+, and keeps runtime dependencies minimal.
 
-> **Development status:** Version `0.0.0-development`. Scaffold and exports map are wired; all 21 submodules are documented but none are implemented yet. See [Implementation status](implementation-status.md) for the per-module breakdown.
+> **Development status:** Version `0.0.0-development`. 22 submodules documented; `errors` + `events` implemented (2 of 22). See [Implementation status](implementation-status.md) for the per-module breakdown.
 
 ## Import paths
 
@@ -39,6 +39,7 @@ import { Core, AWS } from "@m3l-automation/m3l-common";
 ### Architecture
 
 - [Architecture overview](m3l-common-architecture.md) — package shape, namespaces, and module map
+- [Implementation plan](m3l-common-implementation.md) — initial build strategy and milestone breakdown
 
 ### API Reference — Core
 
