@@ -69,8 +69,8 @@ importers:
         specifier: 0.3.21
         version: 0.3.21
       rumdl:
-        specifier: 0.2.24
-        version: 0.2.24
+        specifier: 0.2.26
+        version: 0.2.26
       semantic-release:
         specifier: 25.0.5
         version: 25.0.5(typescript@6.0.3)
@@ -708,48 +708,48 @@ packages:
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
 
-  '@rumdl/cli-darwin-arm64@0.2.24':
-    resolution: {integrity: sha512-FX0gVJ/fxQtEIcMlnKMyEnKnV5/PJKhc6u6z7bKH3FfjZTgEmKKRQUCWj3jdY3ddt/9Tt48R4V4TlPbRz1CU+Q==}
+  '@rumdl/cli-darwin-arm64@0.2.26':
+    resolution: {integrity: sha512-zv1BBCHB8rH5X4rGHHUNYQOBplX5E5LWcSwdJcJHY4dUzOmENU1RbRK1rqlKNfAPgL1HccAwEyr14NYbXEDg6A==}
     engines: {node: '>=18.0.0'}
     cpu: [arm64]
     os: [darwin]
 
-  '@rumdl/cli-darwin-x64@0.2.24':
-    resolution: {integrity: sha512-ATuACiNOpeGRjXLtxhn2qWnCsT60zds8LsBPU85nsGYkuSVExs0eqW677TTTuwY7o1vTk1lJSl3d6FZAiXkfyw==}
+  '@rumdl/cli-darwin-x64@0.2.26':
+    resolution: {integrity: sha512-mXykA6JIGJzWMo8nDs/J4RdX9RscWK8Tl0hK9aA3+hUnJZ+V7F7wmoiNaHzZRwv6DQtVYEzX2q9RkXhwa1kxJw==}
     engines: {node: '>=18.0.0'}
     cpu: [x64]
     os: [darwin]
 
-  '@rumdl/cli-linux-arm64-musl@0.2.24':
-    resolution: {integrity: sha512-cWIsMQAZF/IT/FKsTsDeQYCYB0QTznYYV+YN7MiwWrVuMtzgmtK1it1SGN/8MFGx1z1qt0r0UqQhzJZ6I6Gbvg==}
+  '@rumdl/cli-linux-arm64-musl@0.2.26':
+    resolution: {integrity: sha512-gEtjyLbQ0OM6+IRAqOs9hsT6WQdiK1s/LZUo0/4ysY2BPUVotMLE1thcuu4uCOYl//5ocQRvtqw0BTTVHVWi5g==}
     engines: {node: '>=18.0.0'}
     cpu: [arm64]
     os: [linux]
     libc: [musl]
 
-  '@rumdl/cli-linux-arm64@0.2.24':
-    resolution: {integrity: sha512-XbakH0mSWnRdJrTb959BhxXd31qYClTf3y8VXB9Q3Bo7sc2kcot6Tfuoe4KbHbHv/mTyi/HsBqqxF3al7p0rfw==}
+  '@rumdl/cli-linux-arm64@0.2.26':
+    resolution: {integrity: sha512-Hpz9RzMuFSJggmmKzGzl+yt9WqFsH7tBcrTkD85IL4MBqXpB1TtYEpDHkdPmIV2zEQF/RRQymTjpyqTUShnUBQ==}
     engines: {node: '>=18.0.0'}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@rumdl/cli-linux-x64-musl@0.2.24':
-    resolution: {integrity: sha512-bEYbCs9MCa9FSaA1KLJT4zkQztvkz4/7I8qDxX79ok/6/RxLHTj8Z8N+D7SDZqcujU3HupO27ZtM79sW1Lnh6Q==}
+  '@rumdl/cli-linux-x64-musl@0.2.26':
+    resolution: {integrity: sha512-yu42zJS+kGEdM/PJoAJQXdwZVne2NCLhDLKYO1LrRuQIAZvihmGKKX3Cuq5NHLEy1zaTnhY/7hM+T3aKePSu2w==}
     engines: {node: '>=18.0.0'}
     cpu: [x64]
     os: [linux]
     libc: [musl]
 
-  '@rumdl/cli-linux-x64@0.2.24':
-    resolution: {integrity: sha512-tB+z361UFWc59NZaNg6Rby6k1LJIh5nAaBI3FSscrf1GLe8jYV6D4w90yiiPI6pLQlMQJn1+VnVlgPxFGSkVBg==}
+  '@rumdl/cli-linux-x64@0.2.26':
+    resolution: {integrity: sha512-50pa5USq+zay2BsYd9GasdpEjmh7Txw8EQkXzSkZPs4kEfOy6An+mJbeRp04dg6YCMvahVt6gex2xywGgKWSUQ==}
     engines: {node: '>=18.0.0'}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@rumdl/cli-win32-x64@0.2.24':
-    resolution: {integrity: sha512-IgdM8u1dh6CKNa8YvKeUuLYlDS+wTrKt3bRexXlUVh+smQF4DTi151kRUUP8dvITvkb2KDIXkjJYziDDtJ4idg==}
+  '@rumdl/cli-win32-x64@0.2.26':
+    resolution: {integrity: sha512-2GmtJpLSb2qu084wo60N7/ahv/fJ89KOorVLsjVd2kZbRk3zvdzFztHYfJpwOWUABY8D9GB0/E90BlP9uUMc8Q==}
     engines: {node: '>=18.0.0'}
     cpu: [x64]
     os: [win32]
@@ -2467,8 +2467,8 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
-  rumdl@0.2.24:
-    resolution: {integrity: sha512-c6uc1Voz+PsqThfyRp5GgahMdgMTR8W3+OvXnC/mCtqP2iv4Hd7z7E4xtpafZIXZJbOQioBkuorn8JDWse74Aw==}
+  rumdl@0.2.26:
+    resolution: {integrity: sha512-P/AAH8D/7wMnkkKibTn0DH6D+1VhZm02dWXnGqlnwYIYpf1TV/g7mH4BwAvjbaH1NL/wZZc41HT6zMGsic84UA==}
     engines: {node: '>=18.0.0'}
     hasBin: true
 
@@ -3482,25 +3482,25 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@rumdl/cli-darwin-arm64@0.2.24':
+  '@rumdl/cli-darwin-arm64@0.2.26':
     optional: true
 
-  '@rumdl/cli-darwin-x64@0.2.24':
+  '@rumdl/cli-darwin-x64@0.2.26':
     optional: true
 
-  '@rumdl/cli-linux-arm64-musl@0.2.24':
+  '@rumdl/cli-linux-arm64-musl@0.2.26':
     optional: true
 
-  '@rumdl/cli-linux-arm64@0.2.24':
+  '@rumdl/cli-linux-arm64@0.2.26':
     optional: true
 
-  '@rumdl/cli-linux-x64-musl@0.2.24':
+  '@rumdl/cli-linux-x64-musl@0.2.26':
     optional: true
 
-  '@rumdl/cli-linux-x64@0.2.24':
+  '@rumdl/cli-linux-x64@0.2.26':
     optional: true
 
-  '@rumdl/cli-win32-x64@0.2.24':
+  '@rumdl/cli-win32-x64@0.2.26':
     optional: true
 
   '@sec-ant/readable-stream@0.4.1': {}
@@ -5156,15 +5156,15 @@ snapshots:
       '@rolldown/binding-win32-arm64-msvc': 1.1.3
       '@rolldown/binding-win32-x64-msvc': 1.1.3
 
-  rumdl@0.2.24:
+  rumdl@0.2.26:
     optionalDependencies:
-      '@rumdl/cli-darwin-arm64': 0.2.24
-      '@rumdl/cli-darwin-x64': 0.2.24
-      '@rumdl/cli-linux-arm64': 0.2.24
-      '@rumdl/cli-linux-arm64-musl': 0.2.24
-      '@rumdl/cli-linux-x64': 0.2.24
-      '@rumdl/cli-linux-x64-musl': 0.2.24
-      '@rumdl/cli-win32-x64': 0.2.24
+      '@rumdl/cli-darwin-arm64': 0.2.26
+      '@rumdl/cli-darwin-x64': 0.2.26
+      '@rumdl/cli-linux-arm64': 0.2.26
+      '@rumdl/cli-linux-arm64-musl': 0.2.26
+      '@rumdl/cli-linux-x64': 0.2.26
+      '@rumdl/cli-linux-x64-musl': 0.2.26
+      '@rumdl/cli-win32-x64': 0.2.26
 
   sade@1.8.1:
     dependencies:
