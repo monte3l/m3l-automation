@@ -2,8 +2,7 @@
 
 This is the **single source of truth** for what is implemented in
 `@m3l-automation/m3l-common` versus what the `docs/reference/**` pages specify.
-The library is a documented-but-empty scaffold: the barrels are wired, but every
-submodule is unimplemented.
+The library started as a documented-but-empty scaffold. The barrels are wired; `errors` and `events` are implemented and reviewed (2 of 22 submodules). See the table below for per-submodule status.
 
 > **Maintenance contract (hub):** the main agent updates this file after **each
 > phase** of the `implement-submodule` pipeline. It is the durable, cross-session
