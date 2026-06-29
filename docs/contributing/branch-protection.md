@@ -3,7 +3,8 @@
 The automated gates in this repo (CI checks, the Claude PR review verdict) only
 become _blocking_ once `main` is protected to require them. Workflow files
 cannot configure branch protection themselves — it is a repository setting. This
-page records the intended configuration so it can be reproduced.
+page records the configuration. **The rule described below has been applied** via
+`gh api` as part of ADR-0011.
 
 ## Required configuration for `main`
 
