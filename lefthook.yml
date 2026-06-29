@@ -22,4 +22,4 @@ commit-msg:
 pre-push:
   commands:
     verify:
-      run: pnpm lint && pnpm typecheck && pnpm test:coverage
+      run: pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:coverage
