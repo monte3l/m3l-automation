@@ -1,0 +1,445 @@
+{
+  "metadata": {
+    "skill_name": "write-commit",
+    "skill_path": ".claude/skills/write-commit",
+    "executor_model": "claude-sonnet-4-6",
+    "timestamp": "2026-06-29T00:00:00Z",
+    "evals_run": [
+      "feat-with-body",
+      "chore-subject-only",
+      "ci-subject-only",
+      "feat-breaking",
+      "chore-with-body"
+    ],
+    "runs_per_configuration": 1
+  },
+
+  "runs": [
+    {
+      "eval_id": 1,
+      "eval_name": "feat-with-body",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 6,
+        "failed": 0,
+        "total": 6,
+        "time_seconds": 39.3,
+        "tokens": 23012,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Subject line starts with 'feat:' in lowercase",
+          "passed": true,
+          "evidence": "Subject is 'feat: implement core/errors submodule'"
+        },
+        {
+          "text": "Subject line uses imperative present tense",
+          "passed": true,
+          "evidence": "Verb is 'implement'"
+        },
+        {
+          "text": "Subject line is 70 characters or fewer",
+          "passed": true,
+          "evidence": "38 characters"
+        },
+        {
+          "text": "Body mentions at least one public symbol",
+          "passed": true,
+          "evidence": "M3LError, M3LResult<T,E>, M3LErrorUtils all named"
+        },
+        {
+          "text": "Body includes a semver impact statement",
+          "passed": true,
+          "evidence": "Verbatim standard phrase used"
+        },
+        {
+          "text": "Body includes a Co-Authored-By footer",
+          "passed": true,
+          "evidence": "Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
+        }
+      ]
+    },
+    {
+      "eval_id": 1,
+      "eval_name": "feat-with-body",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.667,
+        "passed": 4,
+        "failed": 2,
+        "total": 6,
+        "time_seconds": 26.2,
+        "tokens": 19920,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Subject line starts with 'feat:' in lowercase",
+          "passed": true,
+          "evidence": "Starts with 'feat:'"
+        },
+        {
+          "text": "Subject line uses imperative present tense",
+          "passed": true,
+          "evidence": "Verb is 'implement'"
+        },
+        {
+          "text": "Subject line is 70 characters or fewer",
+          "passed": false,
+          "evidence": "76 characters — exceeds 70-char commitlint limit"
+        },
+        {
+          "text": "Body mentions at least one public symbol",
+          "passed": true,
+          "evidence": "M3LError and M3LResult named"
+        },
+        {
+          "text": "Body includes a semver impact statement",
+          "passed": true,
+          "evidence": "States exports map unchanged"
+        },
+        {
+          "text": "Body includes a Co-Authored-By footer",
+          "passed": false,
+          "evidence": "No Co-Authored-By footer present"
+        }
+      ]
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "chore-subject-only",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 3,
+        "failed": 0,
+        "total": 3,
+        "time_seconds": 30.5,
+        "tokens": 22568,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Subject line starts with 'chore:' in lowercase",
+          "passed": true,
+          "evidence": "'chore: prettier format workspace file'"
+        },
+        {
+          "text": "Subject line is 70 characters or fewer",
+          "passed": true,
+          "evidence": "37 characters"
+        },
+        {
+          "text": "No body is generated",
+          "passed": true,
+          "evidence": "Subject-only message"
+        }
+      ]
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "chore-subject-only",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 3,
+        "failed": 0,
+        "total": 3,
+        "time_seconds": 12.4,
+        "tokens": 19315,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Subject line starts with 'chore:' in lowercase",
+          "passed": true,
+          "evidence": "'chore: format pnpm-workspace.yaml with prettier'"
+        },
+        {
+          "text": "Subject line is 70 characters or fewer",
+          "passed": true,
+          "evidence": "48 characters"
+        },
+        {
+          "text": "No body is generated",
+          "passed": true,
+          "evidence": "Subject-only message"
+        }
+      ]
+    },
+    {
+      "eval_id": 3,
+      "eval_name": "ci-subject-only",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 3,
+        "failed": 0,
+        "total": 3,
+        "time_seconds": 27.9,
+        "tokens": 22807,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Subject line starts with 'ci:' in lowercase (no scope)",
+          "passed": true,
+          "evidence": "'ci: skip claude-pr-review for dependabot[bot] PRs'"
+        },
+        {
+          "text": "Subject line is 70 characters or fewer",
+          "passed": true,
+          "evidence": "50 characters"
+        },
+        {
+          "text": "No body generated",
+          "passed": true,
+          "evidence": "Subject-only message"
+        }
+      ]
+    },
+    {
+      "eval_id": 3,
+      "eval_name": "ci-subject-only",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 3,
+        "failed": 0,
+        "total": 3,
+        "time_seconds": 20.0,
+        "tokens": 19542,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Subject line starts with 'ci:' in lowercase (no scope)",
+          "passed": true,
+          "evidence": "Identical subject to with-skill run"
+        },
+        {
+          "text": "Subject line is 70 characters or fewer",
+          "passed": true,
+          "evidence": "50 characters"
+        },
+        {
+          "text": "No body generated",
+          "passed": true,
+          "evidence": "Subject-only message"
+        }
+      ]
+    },
+    {
+      "eval_id": 4,
+      "eval_name": "feat-breaking",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 34.5,
+        "tokens": 22942,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Subject line starts with 'feat!:' (breaking change marker present)",
+          "passed": true,
+          "evidence": "'feat!: rename M3LPaths.outputDir to M3LPaths.archiveDir'"
+        },
+        {
+          "text": "Subject line names the renamed symbol",
+          "passed": true,
+          "evidence": "Both outputDir and archiveDir in subject"
+        },
+        {
+          "text": "Body includes migration instructions",
+          "passed": true,
+          "evidence": "Bullet: 'Migration: replace `paths.outputDir` with `paths.archiveDir` everywhere'"
+        },
+        {
+          "text": "Body includes a BREAKING CHANGE note",
+          "passed": true,
+          "evidence": "BREAKING CHANGE: M3LPaths.outputDir removed; use archiveDir instead."
+        },
+        {
+          "text": "Body includes a Co-Authored-By footer",
+          "passed": true,
+          "evidence": "Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
+        }
+      ]
+    },
+    {
+      "eval_id": 4,
+      "eval_name": "feat-breaking",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.8,
+        "passed": 4,
+        "failed": 1,
+        "total": 5,
+        "time_seconds": 32.6,
+        "tokens": 19976,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Subject line starts with 'feat!:' (breaking change marker present)",
+          "passed": true,
+          "evidence": "'feat!: rename M3LPaths.outputDir to archiveDir'"
+        },
+        {
+          "text": "Subject line names the renamed symbol",
+          "passed": true,
+          "evidence": "outputDir in subject"
+        },
+        {
+          "text": "Body includes migration instructions",
+          "passed": true,
+          "evidence": "BREAKING CHANGE footer explains migration path"
+        },
+        {
+          "text": "Body includes a BREAKING CHANGE note",
+          "passed": true,
+          "evidence": "BREAKING CHANGE footer present"
+        },
+        {
+          "text": "Body includes a Co-Authored-By footer",
+          "passed": false,
+          "evidence": "No Co-Authored-By footer present"
+        }
+      ]
+    },
+    {
+      "eval_id": 5,
+      "eval_name": "chore-with-body",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 42.0,
+        "tokens": 22989,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Subject line starts with 'chore:' in lowercase",
+          "passed": true,
+          "evidence": "'chore: bake core/events pipeline lessons into hooks and spoke prompt'"
+        },
+        {
+          "text": "Subject line is 70 characters or fewer",
+          "passed": true,
+          "evidence": "67 characters"
+        },
+        {
+          "text": "A body is present",
+          "passed": true,
+          "evidence": "Body explains core/events friction and the fixes"
+        },
+        {
+          "text": "Body includes a semver impact statement",
+          "passed": true,
+          "evidence": "Verbatim: 'No src/, test, or exports-map changes; zero semver impact.'"
+        },
+        {
+          "text": "Body includes a Co-Authored-By footer",
+          "passed": true,
+          "evidence": "Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
+        }
+      ]
+    },
+    {
+      "eval_id": 5,
+      "eval_name": "chore-with-body",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.6,
+        "passed": 3,
+        "failed": 2,
+        "total": 5,
+        "time_seconds": 37.4,
+        "tokens": 22276,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Subject line starts with 'chore:' in lowercase",
+          "passed": true,
+          "evidence": "Starts with 'chore:'"
+        },
+        {
+          "text": "Subject line is 70 characters or fewer",
+          "passed": false,
+          "evidence": "71 characters — exceeds limit by 1"
+        },
+        {
+          "text": "A body is present",
+          "passed": true,
+          "evidence": "Detailed per-file body present"
+        },
+        {
+          "text": "Body includes a semver impact statement",
+          "passed": true,
+          "evidence": "Opening line communicates zero semver impact"
+        },
+        {
+          "text": "Body includes a Co-Authored-By footer",
+          "passed": false,
+          "evidence": "No Co-Authored-By footer present"
+        }
+      ]
+    }
+  ],
+
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": { "mean": 1.0, "stddev": 0.0, "min": 1.0, "max": 1.0 },
+      "time_seconds": {
+        "mean": 34.84,
+        "stddev": 5.26,
+        "min": 27.9,
+        "max": 42.0
+      },
+      "tokens": { "mean": 22864, "stddev": 164, "min": 22568, "max": 23012 }
+    },
+    "without_skill": {
+      "pass_rate": { "mean": 0.813, "stddev": 0.165, "min": 0.6, "max": 1.0 },
+      "time_seconds": {
+        "mean": 25.72,
+        "stddev": 8.88,
+        "min": 12.4,
+        "max": 37.4
+      },
+      "tokens": { "mean": 20206, "stddev": 1063, "min": 19315, "max": 22276 }
+    },
+    "delta": {
+      "pass_rate": "+0.187",
+      "time_seconds": "+9.12",
+      "tokens": "+2658"
+    }
+  },
+
+  "notes": [
+    "Eval 3 (ci-subject-only): both configurations produced identical output — this eval validates the floor but does not discriminate skill value. Consider replacing with a more distinctive CI scenario.",
+    "The skill's two biggest wins: (1) enforcing the 70-char subject limit — baseline violated it in evals 1 and 5; (2) reliably adding the Co-Authored-By footer — baseline omitted it in evals 1, 4, and 5.",
+    "Evals 2 and 3 (simple chore/ci subject-only) show 100% both ways — the skill overhead is justified only for feat/chore-with-body scenarios.",
+    "Skill adds ~9s average and ~2658 tokens — negligible for the correctness gains on feat and breaking-change commits.",
+    "Overall: 22/22 (100%) with skill vs 17/22 (77%) baseline. Skill meets the ≥80% success criterion."
+  ]
+}

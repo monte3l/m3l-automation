@@ -1,0 +1,35 @@
+{
+  "expectations": [
+    {
+      "text": "Subject line starts with 'feat:' in lowercase",
+      "passed": true,
+      "evidence": "Subject is 'feat: implement core/errors submodule' — starts with 'feat:' lowercase"
+    },
+    {
+      "text": "Subject line uses imperative present tense (e.g. 'implement' or 'add', not 'implemented' or 'added')",
+      "passed": true,
+      "evidence": "Verb is 'implement' — imperative present tense"
+    },
+    {
+      "text": "Subject line is 70 characters or fewer",
+      "passed": true,
+      "evidence": "'feat: implement core/errors submodule' = 38 characters"
+    },
+    {
+      "text": "Body mentions at least one public symbol (M3LError, M3LResult, M3LErrorUtils, or similar)",
+      "passed": true,
+      "evidence": "Body names M3LError, M3LResult<T,E>, and M3LErrorUtils explicitly"
+    },
+    {
+      "text": "Body includes a semver impact statement (e.g. 'exports map unchanged' or 'no semver break')",
+      "passed": true,
+      "evidence": "Body contains verbatim standard phrase: 'three-entry exports map unchanged (no semver break).'"
+    },
+    {
+      "text": "Body includes a Co-Authored-By footer with noreply@anthropic.com",
+      "passed": true,
+      "evidence": "Footer: 'Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>'"
+    }
+  ],
+  "summary": { "passed": 6, "failed": 0, "total": 6, "pass_rate": 1.0 }
+}

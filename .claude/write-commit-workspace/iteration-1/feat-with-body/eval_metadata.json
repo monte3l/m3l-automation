@@ -1,0 +1,21 @@
+{
+  "eval_id": 1,
+  "eval_name": "feat-with-body",
+  "prompt": "Commit my staged changes. I've added the M3LError hierarchy and M3LResult type in packages/m3l-common/src/core/errors/. These surface through the ./core barrel; the three-entry exports map is unchanged.",
+  "assertions": [
+    { "text": "Subject line starts with 'feat:' in lowercase" },
+    {
+      "text": "Subject line uses imperative present tense (e.g. 'implement' or 'add', not 'implemented' or 'added')"
+    },
+    { "text": "Subject line is 70 characters or fewer" },
+    {
+      "text": "Body mentions at least one public symbol (M3LError, M3LResult, M3LErrorUtils, or similar)"
+    },
+    {
+      "text": "Body includes a semver impact statement (e.g. 'exports map unchanged' or 'no semver break')"
+    },
+    {
+      "text": "Body includes a Co-Authored-By footer with noreply@anthropic.com"
+    }
+  ]
+}

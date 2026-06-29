@@ -1,0 +1,12 @@
+{
+  "eval_id": 3,
+  "eval_name": "ci-subject-only",
+  "prompt": "Commit this — I edited .github/workflows/claude-pr-review.yml to add a condition that skips the workflow run when the PR author is dependabot[bot].",
+  "assertions": [
+    {
+      "text": "Subject line starts with 'ci:' in lowercase (no scope like 'ci(workflows):')"
+    },
+    { "text": "Subject line is 70 characters or fewer" },
+    { "text": "No body generated (single-line CI tweak is self-explanatory)" }
+  ]
+}
