@@ -4,13 +4,16 @@
  *
  * Lefthook + CI already gate at commit/push time, but that feedback arrives
  * late. After an edit to a `.ts`/`.mts`/`.cts` file under a package's `src`,
- * `tests` (or a script's `src`), this runs four checks **scoped to that
+ * `tests` (or a script's `src`), this runs five checks **scoped to that
  * package** so the signal is immediate without paying the whole-monorepo cost:
  *
  *   1. prettier --write   (auto-format the edited file)
  *   2. eslint              (lint the edited file; flat config from repo root)
  *   3. <pkg> typecheck     (`tsc -p tsconfig.json` per package)
  *   4. vitest related      (only the tests that import the edited file)
+ *   5. eslint tests/       (only when a src/ file is edited — catches stale
+ *                           eslint-disable directives that went unused after
+ *                           GREEN; skipped silently if tests/ doesn't exist)
  *
  * eslint runs in-loop (not just at the hub's `pnpm lint` gate) so eslint-only
  * failures — needless assertions, unused params, intentional non-`Error`
@@ -122,6 +125,21 @@ if (tc && tc.status !== 0) {
 const vt = run("pnpm", ["exec", "vitest", "related", abs, "--run"]);
 if (vt && vt.status !== 0) {
   failures.push(`vitest related:\n${(vt.stdout || vt.stderr || "").trim()}`);
+}
+
+// 5. When a src/ file is implemented/updated, also lint the package's tests/
+//    directory to surface stale eslint-disable directives that became unused
+//    directives once the implementation exists (RED-phase blocks going stale).
+if (/^packages\/[^/]+\/src\//.test(rel)) {
+  const testsDir = path.join(pkgDir, "tests");
+  if (fs.existsSync(testsDir)) {
+    const testLint = run("pnpm", ["exec", "eslint", testsDir]);
+    if (testLint && testLint.status !== 0) {
+      failures.push(
+        `eslint (tests/ — scanned because a src/ file was edited; fix the file(s) listed below):\n${(testLint.stdout || testLint.stderr || "").trim()}`,
+      );
+    }
+  }
 }
 
 if (failures.length > 0) {

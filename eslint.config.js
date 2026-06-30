@@ -22,6 +22,13 @@ export default tseslint.config(
   importX.flatConfigs.typescript,
   {
     files: ["**/*.ts"],
+    linterOptions: {
+      // Stale eslint-disable directives are always a bug: they either never
+      // suppressed anything or the underlying finding was fixed, leaving
+      // noise that misleads reviewers. Treating them as errors closes the
+      // gap where a pre-existing directive survives undetected across edits.
+      reportUnusedDisableDirectives: "error",
+    },
     languageOptions: {
       parserOptions: {
         projectService: true,
