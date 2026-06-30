@@ -7,20 +7,18 @@
  * same engines CI uses — prettier (format) and rumdl (markdown lint) — scoped
  * to the single edited file, immediately after each Write or Edit.
  *
- * Two separate skip lists are maintained:
+ * Skip lists: a shared BASE_SKIP_PATTERNS covers paths excluded by both
+ * engines. The only asymmetry is docs/plans/ — added only to rumdlSkipPatterns
+ * so plan files are auto-formatted by prettier (preventing pre-push drift) but
+ * exempt from strict markdown linting (freeform reference docs). Adding a new
+ * exclusion to BASE_SKIP_PATTERNS automatically propagates to both engines.
  *
- *   prettierSkipPatterns — files skipped by the formatter. Does NOT include
- *     docs/plans/ so plan files are auto-formatted on write, preventing the
- *     drift that blocks the pre-push `prettier --check .` gate.
- *
- *   rumdlSkipPatterns — files skipped by rumdl (markdown lint). Matches the
- *     `lint:md` exclusions in package.json exactly, including docs/plans/
- *     (freeform reference docs not subject to strict markdown rules):
+ *   BASE_SKIP_PATTERNS (prettier + rumdl):
  *       - CHANGELOG.md
  *       - .github/pull_request_template.md
  *       - docs/adr/template.md
- *       - docs/plans/**
  *       - node_modules/, dist/, .claude/
+ *   rumdlSkipPatterns only: docs/plans/**
  *
  * On failure it exits 2 with a concise stderr advisory — identical contract
  * to post-edit-verify.mjs. The edit is already applied; this is a nudge, not
@@ -57,9 +55,9 @@ const rel = path.relative(projectDir, abs).split(path.sep).join("/");
 // Only Markdown files.
 if (!rel.endsWith(".md")) process.exit(0);
 
-// Paths skipped by prettier. docs/plans/ is intentionally NOT included so
-// plan files are auto-formatted on write (preventing pre-push drift).
-const prettierSkipPatterns = [
+// Shared exclusions for both engines. Any new path added here is automatically
+// skipped by both prettier and rumdl — no need to update two arrays.
+const BASE_SKIP_PATTERNS = [
   /^CHANGELOG\.md$/,
   /^\.github\/pull_request_template\.md$/,
   /^docs\/adr\/template\.md$/,
@@ -69,19 +67,10 @@ const prettierSkipPatterns = [
   /^\.\./,
 ];
 
-// Paths skipped by rumdl. Matches lint:md exclusions in package.json exactly.
-// docs/plans/ is skipped here — plans are freeform reference docs, not subject
-// to strict markdown linting rules.
-const rumdlSkipPatterns = [
-  /^CHANGELOG\.md$/,
-  /^\.github\/pull_request_template\.md$/,
-  /^docs\/adr\/template\.md$/,
-  /^docs\/plans\//,
-  /^node_modules\//,
-  /(^|\/)dist\//,
-  /^\.claude\//,
-  /^\.\./,
-];
+// docs/plans/ is auto-formatted by prettier (prevents pre-push drift) but
+// skipped by rumdl (freeform reference docs, not subject to strict MD rules).
+const prettierSkipPatterns = BASE_SKIP_PATTERNS;
+const rumdlSkipPatterns = [...BASE_SKIP_PATTERNS, /^docs\/plans\//];
 
 function run(cmd, args) {
   const res = spawnSync(cmd, args, {
