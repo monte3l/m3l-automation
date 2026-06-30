@@ -16,8 +16,8 @@
           "lines": "155-186"
         }
       ],
-      "commit": "cf05fc95c51cb51ec259446e3216bb78368268f8",
-      "retrieved": "2026-06-29"
+      "commit": "39229dd88dd8ee9205d1440d9a549def4af126c5",
+      "retrieved": "2026-06-30"
     },
     {
       "heading": "`M3LEventEmitterBase<TEventMap>`",
@@ -33,8 +33,8 @@
           "lines": "11-13"
         }
       ],
-      "commit": "cf05fc95c51cb51ec259446e3216bb78368268f8",
-      "retrieved": "2026-06-29"
+      "commit": "39229dd88dd8ee9205d1440d9a549def4af126c5",
+      "retrieved": "2026-06-30"
     }
   ]
 }
