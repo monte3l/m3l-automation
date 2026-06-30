@@ -16,6 +16,15 @@ paths:
 - **Type-level tests with `expectTypeOf`** where the type IS the contract.
 - **Parameterize** when the same logic is exercised against multiple inputs.
 - **Never tolerate flaky tests** — diagnose and fix; do not mute or retry-mask.
+- **Mock Node built-ins via the async-factory form** that preserves real
+  exports, then `vi.spyOn` individual methods:
+  `vi.mock("fs", async () => { const actual = await vi.importActual<typeof import("fs")>("fs"); return { ...actual }; })`.
+- **TTY-dependent code:** set `process.stdout/stderr/stdin.isTTY` with
+  `Object.defineProperty` in a `beforeAll` block — CI is non-TTY, so the
+  property may be absent entirely, not just `false`.
+- **Local test doubles:** subclassing an abstract export to exercise it (e.g. a
+  `TestEmitter` over the emitter base) is the sanctioned pattern; keep the
+  double in the test file.
 
 ```typescript
 import { expect, test } from "vitest";

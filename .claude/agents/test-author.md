@@ -133,3 +133,5 @@ expect(() =>
 - Don't implement the module and don't review code — hand both back to the hub.
 
 - Do not use real filesystem mutations in tests (`mkdtempSync`, `mkdirSync`, `writeFileSync`, `rmSync`, etc.); this is enforced by ESLint's `no-restricted-syntax` rule. The only sanctioned pattern is `vi.spyOn(fs, method)` or `vi.mock('node:fs')`.
+- Boolean spies return `mockReturnValue(false)`, not `undefined` — the TS type wins over Node's runtime reality.
+- Vitest 4.x `expectTypeOf` precision: `.toBeBigInt()` (not `.toBigInt()`), and `.toMatchTypeOf<T>()` for subtype checks (not `.toEqualTypeOf`). A 2-tuple `test.each` row callback must accept **both** params.

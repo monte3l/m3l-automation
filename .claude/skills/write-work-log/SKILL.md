@@ -152,12 +152,31 @@ For non-submodule tasks, adjust the title:
 
 Omit the "Plan of record" line entirely if no plan file was used for this task.
 
-## Step 4 — Report
+## Step 4 — Promote durable lessons
+
+Scan the log's "Lessons learned" and "What didn't go as planned" sections. For
+any lesson that **generalizes beyond this submodule** (a convention or tactic the
+next task would also need), propose folding it into its durable home in the same
+change set, so the rules track lived experience instead of drifting from it:
+
+- **General conventions** (ESM/error/test/API rules that apply to all code) →
+  `.claude/rules/*.md` (`library-src.md`, `tests.md`, `scripts.md`).
+- **Agent-specific tactics** (how a writer or reviewer spoke should act) →
+  `.claude/agents/*.md` (`test-author.md`, `submodule-implementer.md`,
+  `spec-conformance-reviewer.md`).
+
+Keep additions concise — terse imperative bullets, a code snippet only where the
+exact syntax _is_ the lesson. Skip a lesson that is already captured, or that is
+purely specific to this one submodule. The log stays the durable narrative; the
+rules/prompts are where a recurring lesson must live to actually change behavior.
+
+## Step 5 — Report
 
 After writing, print:
 
 1. The full path of the created file
 2. A one-line summary of what the log captures
+3. Any rule/prompt promotions proposed in Step 4 (or "none")
 
 Do NOT commit the file. Committing is the user's next step via `/write-commit`
 with a `docs:` message. Remind them of this so the handoff is clear.

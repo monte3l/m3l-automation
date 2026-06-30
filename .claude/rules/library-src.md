@@ -15,7 +15,15 @@ paths:
 - **Export each type next to the value it describes.**
 - **Prefer `readonly` / `const`.** Create new objects instead of mutating inputs.
 - **Typed error hierarchy.** Throw subclasses of `M3LError`; never bare strings.
-  Chain underlying failures with the `cause` option.
+  Chain underlying failures with the `cause` option. Subclasses override `code`
+  as a `readonly` **literal** (e.g. `M3LEnvironmentDetectionError`,
+  `M3LPathResolutionError`) so the code narrows at the call site.
+- **Never export error-constructor options interfaces.** Callers _catch_
+  errors, they don't construct them — the options shape is an implementation
+  detail of the constructor, not public API.
+- **Filesystem error handling.** Ignore only `ENOENT` (denylist via a small
+  `Set`) and **re-throw** `EACCES`/`EPERM`; scope any silent-skip to _parse
+  failures only_, never a whole `catch`.
 - **`interface` for shapes callers implement/extend; `type` for unions,
   intersections, mapped/branded types.**
 - **Exhaustive `switch`** over finite sets; handle every case and fail on the
