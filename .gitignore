@@ -21,6 +21,9 @@ data/output/*
 # Skill eval workspaces (generated artefacts from skill-creator runs)
 .claude/skills/*/**-workspace/
 
+# Git worktrees created by `claude --worktree` / isolated spokes (nested checkouts)
+.claude/worktrees/
+
 # Logs and OS cruft
 *.log
 .DS_Store

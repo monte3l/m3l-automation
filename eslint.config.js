@@ -18,6 +18,9 @@ export default tseslint.config(
       ".claude/agents/**",
       ".claude/skills/**",
       ".claude/rules/**",
+      // Nested worktrees are independent checkouts of other branches; linting
+      // them from the main tree reports on (and can't resolve) foreign code.
+      ".claude/worktrees/**",
     ],
   },
   js.configs.recommended,
