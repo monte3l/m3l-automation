@@ -197,6 +197,22 @@ worktree nested under `.claude/worktrees/`; those paths are deliberately exclude
 from the tooling so a main-tree command can never rewrite another branch's files.
 See ADR-0013.
 
+`.worktreeinclude` lists the gitignored local files (`.env`, `.env.local`) that
+`pnpm worktree:setup` copies. It takes **literal paths only** (no globs or
+negation), relative to the repo root; entries must be gitignored. Run
+`pnpm check:worktree` after editing it to catch tracked-file or glob mistakes.
+The native `claude --worktree` flow copies these files automatically but still
+needs `pnpm install` (or `pnpm worktree:setup`) for dependencies.
+
+Troubleshooting:
+
+- A stale worktree that won't remove (uncommitted changes): `pnpm worktree:prune
+--force`.
+- A worktree whose directory you deleted by hand but `git worktree list` still
+  shows: `git worktree prune`.
+- `pnpm format` touched another branch's files: run the command from inside that
+  worktree instead of the main tree.
+
 ## Definition of Done
 
 Before you report a change as done:

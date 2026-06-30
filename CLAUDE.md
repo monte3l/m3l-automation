@@ -213,31 +213,32 @@ services. The only secrets are CI-only release tokens (`NPM_TOKEN`,
 ================================================================
 -->
 
-| Task            | Command                           | When         |
-| --------------- | --------------------------------- | ------------ |
-| Tests           | `pnpm test`                       | pre-commit   |
-| Watch tests     | `pnpm test:watch`                 | iterating    |
-| Single test     | `pnpm vitest run tests/x.test.ts` | iterating    |
-| Lint            | `pnpm lint`                       | pre-commit   |
-| Markdown lint   | `pnpm lint:md`                    | CI           |
-| Format          | `pnpm format`                     | pre-commit   |
-| Type check      | `pnpm typecheck`                  | pre-commit   |
-| Build           | `pnpm build` (turbo + tsc)        | pre-publish  |
-| Unused code     | `pnpm knip`                       | pre-publish  |
-| Export check    | `pnpm check:exports`              | pre-publish  |
-| Format check    | `pnpm format:check`               | CI           |
-| API snapshot    | `pnpm check:api`                  | pre-commit   |
-| Test coverage   | `pnpm test:coverage`              | pre-push     |
-| Barrel sync     | `pnpm check:scaffold`             | pre-publish  |
-| Doc provenance  | `pnpm check:provenance`           | CI           |
-| Doc counts      | `pnpm check:doc-counts`           | CI           |
-| Doc sync        | `pnpm check:doc-sync`             | CI           |
-| Dep hygiene     | `pnpm check:deps`                 | CI           |
-| Test counts     | `pnpm check:test-counts`          | CI           |
-| Gen ref index   | `pnpm gen:index`                  | after ship   |
-| Check ref index | `pnpm check:index`                | CI           |
-| Worktree setup  | `pnpm worktree:setup`             | new worktree |
-| Worktree prune  | `pnpm worktree:prune`             | cleanup      |
+| Task            | Command                           | When          |
+| --------------- | --------------------------------- | ------------- |
+| Tests           | `pnpm test`                       | pre-commit    |
+| Watch tests     | `pnpm test:watch`                 | iterating     |
+| Single test     | `pnpm vitest run tests/x.test.ts` | iterating     |
+| Lint            | `pnpm lint`                       | pre-commit    |
+| Markdown lint   | `pnpm lint:md`                    | CI            |
+| Format          | `pnpm format`                     | pre-commit    |
+| Type check      | `pnpm typecheck`                  | pre-commit    |
+| Build           | `pnpm build` (turbo + tsc)        | pre-publish   |
+| Unused code     | `pnpm knip`                       | pre-publish   |
+| Export check    | `pnpm check:exports`              | pre-publish   |
+| Format check    | `pnpm format:check`               | CI            |
+| API snapshot    | `pnpm check:api`                  | pre-commit    |
+| Test coverage   | `pnpm test:coverage`              | pre-push      |
+| Barrel sync     | `pnpm check:scaffold`             | pre-publish   |
+| Doc provenance  | `pnpm check:provenance`           | CI            |
+| Doc counts      | `pnpm check:doc-counts`           | CI            |
+| Doc sync        | `pnpm check:doc-sync`             | CI            |
+| Dep hygiene     | `pnpm check:deps`                 | CI            |
+| Test counts     | `pnpm check:test-counts`          | CI            |
+| Worktree incl.  | `pnpm check:worktree`             | worktree edit |
+| Gen ref index   | `pnpm gen:index`                  | after ship    |
+| Check ref index | `pnpm check:index`                | CI            |
+| Worktree setup  | `pnpm worktree:setup`             | new worktree  |
+| Worktree prune  | `pnpm worktree:prune`             | cleanup       |
 
 These map to package.json scripts (`test` -> `vitest run`, `typecheck`
 -> `turbo run typecheck`, `build` -> `turbo run build`, etc.). Turbo
@@ -407,12 +408,32 @@ feat/<slug>`, then `cd` in and run `pnpm worktree:setup` (installs deps and
 - **Shared `.git`:** lefthook hooks are shared across worktrees — no per-tree
   install needed. `node_modules`, `dist/`, `coverage/`, and `.turbo/` are
   per-worktree (separate directories), so they do not collide.
+- **Two flows, one mechanism:** the **manual** sibling-dir flow above is for
+  human/non-Claude work; the **native** flow (`claude --worktree <name>`, or a
+  spoke with `isolation: worktree`) creates worktrees under `.claude/worktrees/`
+  and copies `.worktreeinclude` files automatically — but does **not** run
+  `pnpm install`. A `SessionStart` hook (`guard-worktree-ready.mjs`) reminds you
+  to run `pnpm worktree:setup` (or just `pnpm install`) when a worktree is
+  unprovisioned.
 - **Gotcha:** worktrees copy the tracked git tree, **not** gitignored `.claude/`
   content. `claude --worktree` / isolated spokes get the files in
   `.worktreeinclude`; the manual flow relies on `pnpm worktree:setup`.
+- **`.worktreeinclude` format:** literal paths only (no globs/negation — the
+  copier skips those), relative to the repo root; existing files are never
+  clobbered and missing sources are silently skipped. Each entry must be
+  gitignored — `pnpm check:worktree` enforces that.
+- **Settings (`.claude/settings.json`):** `worktree.baseRef: "fresh"` branches
+  new worktrees from `origin/main` (the Claude Code default; set explicitly to
+  record intent); `cleanupPeriodDays: 14` auto-sweeps stale **agent**
+  worktrees only — manual worktrees need an explicit `pnpm worktree:prune`.
 - **Never** run root globs against a nested `.claude/worktrees/` checkout — it is
   excluded from gitignore, ESLint, Prettier, and Vitest precisely so
   `pnpm format`/`lint`/`test` can't reach another branch's files.
+- **Troubleshooting:** a stale worktree that won't remove → `pnpm
+worktree:prune --force` (discards its uncommitted changes); a worktree whose
+  directory you deleted by hand but `git worktree list` still shows → `git
+worktree prune`; "`pnpm format` rewrote another branch's files" → run the
+  scoped command from inside that worktree, not the main tree.
 
 ## Architecture & Decisions
 
@@ -538,6 +559,10 @@ that reviews it" structural, and keeps the hub's context lean.
 **Claude Code hooks** (`.claude/settings.json`) provide runtime enforcement on
 top of the advisory text in this file:
 
+- **SessionStart:** `guard-worktree-ready.mjs` warns (non-blocking) when the
+  session starts inside an unprovisioned linked worktree (missing `node_modules`
+  or uncopied `.worktreeinclude` files), reminding you to run
+  `pnpm worktree:setup`.
 - **PreToolUse (Write/Edit):** `guard-js-extension.mjs` blocks relative imports
   missing `.js`; `guard-no-commonjs.mjs` blocks `require` / `__dirname` /
   `module.exports`; `guard-protected-paths.mjs` guards `dist/`, version fields,
