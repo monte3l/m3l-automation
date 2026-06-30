@@ -38,13 +38,13 @@ Read the conversation context and extract:
     (e.g. `2026-06-30-core-config.md`)
   - General task: `YYYY-MM-DD-<slug>.md`
     (e.g. `2026-06-30-write-work-log-skill.md`)
-- **Target path**: `docs/logs/<filename>.md`
+- **Target path**: `docs/logs/<filename>`
 
 If the identity is genuinely ambiguous (e.g. multiple modules completed in one
 session), ask one focused question: "Which task or module should this work log
 cover?" — then proceed without further interruption.
 
-**Overwrite guard:** Check whether `docs/logs/<filename>.md` already exists
+**Overwrite guard:** Check whether `docs/logs/<filename>` already exists
 before writing. If it does, stop and inform the user — the log is immutable once
 committed. Ask whether they want a different filename or prefer to skip. Never
 overwrite silently.
