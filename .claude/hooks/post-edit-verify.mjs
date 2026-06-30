@@ -4,13 +4,16 @@
  *
  * Lefthook + CI already gate at commit/push time, but that feedback arrives
  * late. After an edit to a `.ts`/`.mts`/`.cts` file under a package's `src`,
- * `tests` (or a script's `src`), this runs four checks **scoped to that
+ * `tests` (or a script's `src`), this runs five checks **scoped to that
  * package** so the signal is immediate without paying the whole-monorepo cost:
  *
  *   1. prettier --write   (auto-format the edited file)
  *   2. eslint              (lint the edited file; flat config from repo root)
  *   3. <pkg> typecheck     (`tsc -p tsconfig.json` per package)
  *   4. vitest related      (only the tests that import the edited file)
+ *   5. eslint tests/       (only when a src/ file is edited — catches stale
+ *                           eslint-disable directives that went unused after
+ *                           GREEN; skipped silently if tests/ doesn't exist)
  *
  * eslint runs in-loop (not just at the hub's `pnpm lint` gate) so eslint-only
  * failures — needless assertions, unused params, intentional non-`Error`
