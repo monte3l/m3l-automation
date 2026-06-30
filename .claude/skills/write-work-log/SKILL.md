@@ -128,7 +128,7 @@ Use this exact template. No YAML frontmatter.
 and what it records (what shipped, what matched the plan, what diverged,
 durable lessons)>
 
-Plan of record: [`docs/plans/<plan-file>.md`](relative-link)
+Plan of record: [`docs/plans/<plan-file>.md`](../plans/<plan-file>.md)
 
 ## Summary
 
