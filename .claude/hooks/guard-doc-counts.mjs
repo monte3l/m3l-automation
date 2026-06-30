@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * PostToolUse advisory (Write|Edit): warn when a reference page is written
- * under docs/reference/ but the prose counts in CLAUDE.md / docs/README.md
- * no longer match the actual file count.
+ * under docs/reference/ or when the root README.md is edited, but the prose
+ * counts in CLAUDE.md / docs/README.md / README.md no longer match the
+ * actual file count.
  *
  * Non-blocking (exits 2 with a reminder) — the same pattern as
  * guard-exports-semver.mjs. The hard gate is bin/check-doc-counts.mjs in CI.
@@ -27,8 +28,10 @@ try {
 
 const filePath = input.tool_input?.file_path ?? "";
 
-// Only trigger on reference page writes/edits.
-if (!/docs\/reference\/(core|aws)\/[^/]+\.md$/.test(filePath)) process.exit(0);
+// Trigger on reference page writes/edits OR edits to the root README.md.
+const isReferencePage = /docs\/reference\/(core|aws)\/[^/]+\.md$/.test(filePath);
+const isRootReadme = /(?:^|\/)README\.md$/.test(filePath) && !/\/docs\//.test(filePath);
+if (!isReferencePage && !isRootReadme) process.exit(0);
 
 const projectDir = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
 
@@ -79,10 +82,25 @@ if (readmePat && parseInt(readmePat[1], 10) !== total) {
   );
 }
 
+const rootReadme = readFile("README.md");
+const rootBadgePat = /modules-\d+%2F(\d+)-/.exec(rootReadme);
+if (rootBadgePat && parseInt(rootBadgePat[1], 10) !== total) {
+  mismatches.push(
+    `README.md badge URL says total=${rootBadgePat[1]} but derived total is ${total}`,
+  );
+}
+const rootProsePat = /\d+ of (\d+) submodules are/.exec(rootReadme);
+if (rootProsePat && parseInt(rootProsePat[1], 10) !== total) {
+  mismatches.push(
+    `README.md prose says total=${rootProsePat[1]} but derived total is ${total}`,
+  );
+}
+
 if (mismatches.length === 0) process.exit(0);
 
+const trigger = isRootReadme ? "README.md" : "docs/reference/";
 process.stderr.write(
-  `Doc-count drift detected after editing docs/reference/. Update prose to match ` +
+  `Doc-count drift detected after editing ${trigger}. Update prose to match ` +
     `derived counts (Core: ${coreCount}, AWS: ${awsCount}, total: ${total}):\n` +
     mismatches.map((m) => `  - ${m}`).join("\n") +
     `\nRun \`node bin/check-doc-counts.mjs\` to verify.\n`,
