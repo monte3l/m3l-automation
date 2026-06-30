@@ -213,29 +213,31 @@ services. The only secrets are CI-only release tokens (`NPM_TOKEN`,
 ================================================================
 -->
 
-| Task            | Command                           | When        |
-| --------------- | --------------------------------- | ----------- |
-| Tests           | `pnpm test`                       | pre-commit  |
-| Watch tests     | `pnpm test:watch`                 | iterating   |
-| Single test     | `pnpm vitest run tests/x.test.ts` | iterating   |
-| Lint            | `pnpm lint`                       | pre-commit  |
-| Markdown lint   | `pnpm lint:md`                    | CI          |
-| Format          | `pnpm format`                     | pre-commit  |
-| Type check      | `pnpm typecheck`                  | pre-commit  |
-| Build           | `pnpm build` (turbo + tsc)        | pre-publish |
-| Unused code     | `pnpm knip`                       | pre-publish |
-| Export check    | `pnpm check:exports`              | pre-publish |
-| Format check    | `pnpm format:check`               | CI          |
-| API snapshot    | `pnpm check:api`                  | pre-commit  |
-| Test coverage   | `pnpm test:coverage`              | pre-push    |
-| Barrel sync     | `pnpm check:scaffold`             | pre-publish |
-| Doc provenance  | `pnpm check:provenance`           | CI          |
-| Doc counts      | `pnpm check:doc-counts`           | CI          |
-| Doc sync        | `pnpm check:doc-sync`             | CI          |
-| Dep hygiene     | `pnpm check:deps`                 | CI          |
-| Test counts     | `pnpm check:test-counts`          | CI          |
-| Gen ref index   | `pnpm gen:index`                  | after ship  |
-| Check ref index | `pnpm check:index`                | CI          |
+| Task            | Command                           | When         |
+| --------------- | --------------------------------- | ------------ |
+| Tests           | `pnpm test`                       | pre-commit   |
+| Watch tests     | `pnpm test:watch`                 | iterating    |
+| Single test     | `pnpm vitest run tests/x.test.ts` | iterating    |
+| Lint            | `pnpm lint`                       | pre-commit   |
+| Markdown lint   | `pnpm lint:md`                    | CI           |
+| Format          | `pnpm format`                     | pre-commit   |
+| Type check      | `pnpm typecheck`                  | pre-commit   |
+| Build           | `pnpm build` (turbo + tsc)        | pre-publish  |
+| Unused code     | `pnpm knip`                       | pre-publish  |
+| Export check    | `pnpm check:exports`              | pre-publish  |
+| Format check    | `pnpm format:check`               | CI           |
+| API snapshot    | `pnpm check:api`                  | pre-commit   |
+| Test coverage   | `pnpm test:coverage`              | pre-push     |
+| Barrel sync     | `pnpm check:scaffold`             | pre-publish  |
+| Doc provenance  | `pnpm check:provenance`           | CI           |
+| Doc counts      | `pnpm check:doc-counts`           | CI           |
+| Doc sync        | `pnpm check:doc-sync`             | CI           |
+| Dep hygiene     | `pnpm check:deps`                 | CI           |
+| Test counts     | `pnpm check:test-counts`          | CI           |
+| Gen ref index   | `pnpm gen:index`                  | after ship   |
+| Check ref index | `pnpm check:index`                | CI           |
+| Worktree setup  | `pnpm worktree:setup`             | new worktree |
+| Worktree prune  | `pnpm worktree:prune`             | cleanup      |
 
 These map to package.json scripts (`test` -> `vitest run`, `typecheck`
 -> `turbo run typecheck`, `build` -> `turbo run build`, etc.). Turbo
@@ -390,6 +392,27 @@ test("paginate respects the limit", () => {
   package.json by hand — semantic-release owns it.
 - Never `git push --force` to a shared branch.
 - Commits should always be small, incremental and, above all, meaningful.
+
+### Git worktrees (task isolation)
+
+Worktrees let you run isolated, parallel sessions (one per branch) sharing one
+`.git`. See ADR-0013 for the decision; the rules that matter day-to-day:
+
+- **Standard flow (sibling dir):** `git worktree add ../m3l-automation-<slug> -b
+feat/<slug>`, then `cd` in and run `pnpm worktree:setup` (installs deps and
+  copies gitignored files like `.env` — a fresh worktree has none). Keep the
+  `feat/<slug>` branch convention.
+- **Cleanup:** `pnpm worktree:prune` (add `--dry-run` to preview) removes merged
+  or stale worktrees; `cleanupPeriodDays` auto-sweeps agent worktrees.
+- **Shared `.git`:** lefthook hooks are shared across worktrees — no per-tree
+  install needed. `node_modules`, `dist/`, `coverage/`, and `.turbo/` are
+  per-worktree (separate directories), so they do not collide.
+- **Gotcha:** worktrees copy the tracked git tree, **not** gitignored `.claude/`
+  content. `claude --worktree` / isolated spokes get the files in
+  `.worktreeinclude`; the manual flow relies on `pnpm worktree:setup`.
+- **Never** run root globs against a nested `.claude/worktrees/` checkout — it is
+  excluded from gitignore, ESLint, Prettier, and Vitest precisely so
+  `pnpm format`/`lint`/`test` can't reach another branch's files.
 
 ## Architecture & Decisions
 
