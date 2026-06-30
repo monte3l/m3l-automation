@@ -1,9 +1,4 @@
-# Files copied into worktrees created by `claude --worktree` and isolated
-# spokes (`isolation: worktree`). Uses .gitignore syntax; only files that
-# match AND are gitignored are copied (tracked files are never duplicated).
-#
-# A worktree is a fresh checkout, so gitignored local files do not exist in it.
-# List the ones a session needs here. NOTE: this file is NOT consulted by manual
-# `git worktree add` — use `pnpm worktree:setup` to provision those.
+# .worktreeinclude
+
 .env
 .env.local
