@@ -520,6 +520,9 @@ function walkUpForWorkspaceMarker(startDir: string): WalkUpResult {
   let steps = 0;
 
   while (steps < MAX_DIRECTORIES_CHECKED) {
+    // Propagate EACCES/EPERM before touching any file inside this directory.
+    assertDirReadable(current);
+
     // Check for pnpm-workspace.yaml
     const pnpmMarker = path.join(current, "pnpm-workspace.yaml");
     if (fs.existsSync(pnpmMarker)) {
@@ -612,8 +615,6 @@ function detectDeploymentMode():
   }
 
   const startDir = process.cwd();
-  assertDirReadable(startDir);
-
   const walkResult = walkUpForWorkspaceMarker(startDir);
 
   // B10: monorepo override — walk result must confirm a workspace root exists
@@ -676,9 +677,7 @@ function runDetection(): M3LExecutionEnvironmentInfo {
     stderrIsTTY: process.stderr.isTTY === true,
     isCiEnvironment: detectIsCiEnvironment(),
     hasLambdaTaskRoot: isNonEmpty(process.env["AWS_LAMBDA_TASK_ROOT"]),
-    hasEcsMetadataUri:
-      isNonEmpty(process.env["ECS_CONTAINER_METADATA_URI_V4"]) ||
-      isNonEmpty(process.env["ECS_CONTAINER_METADATA_URI"]),
+    hasEcsMetadataUri: hasEcsSignal(),
     hasCodeBuildBuildId: isNonEmpty(process.env["CODEBUILD_BUILD_ID"]),
     workspaceMarkerPath: deploymentResult.workspaceMarkerPath,
   };

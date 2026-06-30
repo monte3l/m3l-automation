@@ -385,6 +385,10 @@ describe("detect() — singleton caching (B1)", () => {
 // B2 — detectFresh() clears cache; detect() after detectFresh() returns new result
 // ---------------------------------------------------------------------------
 describe("detectFresh() — cache invalidation (B2)", () => {
+  beforeEach(() => {
+    vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
+  });
+
   test("detectFresh() returns an M3LExecutionEnvironmentInfo object", () => {
     const result = M3LExecutionEnvironment.detectFresh();
     expect(result).toBeDefined();
@@ -805,10 +809,9 @@ describe("detect() — unreadable directory throws M3LEnvironmentDetectionError 
 // ---------------------------------------------------------------------------
 describe("detect() — walk terminates at filesystem root (B9)", () => {
   test("detectFresh() completes without hanging when no marker exists", () => {
-    // Run from / to prove the walk terminates; force STANDALONE via env var
-    // to avoid relying on actual filesystem structure above test dir.
-    vi.spyOn(process, "cwd").mockReturnValue("/");
-    vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
+    // Force STANDALONE via env var to avoid relying on actual filesystem
+    // structure; the standalone override short-circuits before the walk-up.
+    vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
     // Must complete without throwing or infinite-looping
     expect(() => M3LExecutionEnvironment.detectFresh()).not.toThrow();
   });
