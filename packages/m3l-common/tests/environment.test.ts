@@ -316,6 +316,11 @@ describe("M3LExecutionEnvironmentInfo — type-level contract", () => {
 describe("M3LExecutionEnvironmentInfo — discriminated union narrowing", () => {
   test("narrowing on deploymentMode === MONOREPO gives monorepoRoot: string (not string | undefined)", () => {
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "monorepo");
+    vi.spyOn(process, "cwd").mockReturnValue("/fake/packages/my-script");
+    vi.spyOn(fs, "readdirSync").mockReturnValue([]);
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (p) => String(p) === "/fake/pnpm-workspace.yaml",
+    );
     const info = M3LExecutionEnvironment.detectFresh();
     if (info.deploymentMode === M3LDeploymentMode.MONOREPO) {
       expectTypeOf(info.monorepoRoot).toEqualTypeOf<string>();
@@ -431,6 +436,10 @@ describe("detect() — synchronous (B4)", () => {
 // B5 — Environment type classification priority
 // ---------------------------------------------------------------------------
 describe("detect() — environment type priority (B5)", () => {
+  beforeEach(() => {
+    vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
+  });
+
   test("AWS_LAMBDA_TASK_ROOT present → environmentType is AWS_LAMBDA", () => {
     vi.stubEnv("AWS_LAMBDA_TASK_ROOT", "/var/task");
     vi.stubEnv("CI", "");
@@ -513,6 +522,10 @@ describe("detect() — environment type priority (B5)", () => {
 // B6 — Capability flags
 // ---------------------------------------------------------------------------
 describe("detect() — capability flags (B6)", () => {
+  beforeEach(() => {
+    vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
+  });
+
   test("isInteractive is true when environmentType is LOCAL_INTERACTIVE", () => {
     vi.stubEnv("AWS_LAMBDA_TASK_ROOT", "");
     vi.stubEnv("ECS_CONTAINER_METADATA_URI_V4", "");
@@ -700,6 +713,7 @@ describe("detect() — no top-level side effects on import (B7)", () => {
     // detectFresh() is called in beforeEach; here we set an env var and
     // verify the new detectFresh() picks it up — proving detection happens
     // lazily, not at import time.
+    vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
     vi.stubEnv("AWS_LAMBDA_TASK_ROOT", "/var/task");
     vi.stubEnv("CI", "");
     vi.stubEnv("ECS_CONTAINER_METADATA_URI_V4", "");
@@ -856,6 +870,10 @@ describe("detect() — M3L_DEPLOYMENT_MODE env var override (B10)", () => {
 // B11 — detectionDetails records raw signals
 // ---------------------------------------------------------------------------
 describe("detect() — detectionDetails records raw signals (B11)", () => {
+  beforeEach(() => {
+    vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
+  });
+
   test("detectionDetails is present on the info object", () => {
     const info = M3LExecutionEnvironment.detect();
     expect(info.detectionDetails).toBeDefined();
@@ -914,6 +932,10 @@ describe("detect() — detectionDetails records raw signals (B11)", () => {
 // B12 — M3LEnv.detect() and M3LExecutionEnvironment.detect() share the singleton
 // ---------------------------------------------------------------------------
 describe("M3LEnv — shares singleton with M3LExecutionEnvironment (B12)", () => {
+  beforeEach(() => {
+    vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
+  });
+
   test("M3LEnv.detect() returns the same object reference as M3LExecutionEnvironment.detect()", () => {
     const viaClass = M3LExecutionEnvironment.detect();
     const viaAlias = M3LEnv.detect();
@@ -938,6 +960,10 @@ describe("M3LEnv — shares singleton with M3LExecutionEnvironment (B12)", () =>
 // isInteractive() — convenience shortcut
 // ---------------------------------------------------------------------------
 describe("M3LExecutionEnvironment.isInteractive() — convenience shortcut", () => {
+  beforeEach(() => {
+    vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
+  });
+
   test("returns a boolean", () => {
     expect(typeof M3LExecutionEnvironment.isInteractive()).toBe("boolean");
   });

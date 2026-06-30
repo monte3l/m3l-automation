@@ -458,10 +458,9 @@ function resolveCredentialSource(
       return M3LCredentialSource.DEFAULT_CHAIN;
     default: {
       const _exhaustive: never = envType;
-      throw new M3LEnvironmentDetectionError(
-        `Unhandled environment type: ${String(_exhaustive)}`,
-        { code: "ERR_ENVIRONMENT_DETECTION" },
-      );
+      throw new M3LError(`Unhandled environment type: ${String(_exhaustive)}`, {
+        code: "ERR_INTERNAL",
+      });
     }
   }
 }
@@ -511,8 +510,8 @@ function packageJsonHasWorkspaces(pkgJsonPath: string): boolean {
  * Stops as soon as a marker is found, at the filesystem root, or after
  * inspecting {@link MAX_DIRECTORIES_CHECKED} directories to handle pathological cases.
  *
- * Throws {@link M3LEnvironmentDetectionError} when a directory is unreadable
- * (EACCES/EPERM), so the caller can surface permission failures cleanly.
+ * Throws {@link M3LEnvironmentDetectionError} on any non-ENOENT OS error
+ * (e.g. EACCES, EPERM, EIO) so the caller can surface failures cleanly.
  * Malformed `package.json` files are silently skipped (contract OP-7).
  */
 function walkUpForWorkspaceMarker(startDir: string): WalkUpResult {
@@ -520,7 +519,7 @@ function walkUpForWorkspaceMarker(startDir: string): WalkUpResult {
   let steps = 0;
 
   while (steps < MAX_DIRECTORIES_CHECKED) {
-    // Propagate EACCES/EPERM before touching any file inside this directory.
+    // Propagate any unrecoverable OS error before touching files inside.
     assertDirReadable(current);
 
     // Check for pnpm-workspace.yaml
@@ -815,6 +814,9 @@ export class M3LExecutionEnvironment {
    * the purpose is cache invalidation only — each test's own `detectFresh()`
    * call runs with mocks already installed, avoiding real filesystem I/O in
    * the shared hook.
+   *
+   * @internal Not part of the stable public API; may be removed in a future
+   *   major version without a separate deprecation notice.
    *
    * @example
    * ```ts
