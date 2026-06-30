@@ -63,30 +63,29 @@ Determine the GitHub `{owner}/{repo}` from the remote:
 gh repo view --json nameWithOwner --jq '.nameWithOwner'
 ```
 
-Fetch the most recent bot review comment on the PR's issue thread. The review action
-posts as `claude[bot]` (OAuth token) or `github-actions[bot]` (GITHUB_TOKEN) depending
-on the workflow configuration — match either. Use `--paginate` so comments beyond the
+Fetch the most recent bot review comment on the PR's issue thread. The
+`claude-pr-review.yml` workflow authenticates via `CLAUDE_CODE_OAUTH_TOKEN` (OAuth app),
+so the action always posts as `claude[bot]`. Use `--paginate` so comments beyond the
 first page (>30 items) are not silently missed:
 
 ```bash
 gh api repos/{owner}/{repo}/issues/{pr_number}/comments \
   --paginate \
-  --jq '.[] | select(.user.login == "github-actions[bot]" or .user.login == "claude[bot]")'
+  --jq '.[] | select(.user.login == "claude[bot]")'
 ```
 
 This streams one JSON object per line for each matching comment across all pages. Take
 the last one (most recent bot comment).
 
 - If the output is empty, tell the user "No bot review comment found" and stop.
-- If the comment body's **Verdict** section contains the word `PASS` as a whole word
-  (not a substring of "bypass", "surpassed", etc.) and the comment carries no violation
-  bullets under the convention headings, tell the user
-  "The bot review already shows PASS — nothing to fix." and stop.
-  Use a word-boundary match:
+- Check whether the bot's **Verdict** section says PASS by anchoring the grep to the
+  heading so a passing sub-check mentioned elsewhere in the comment body cannot trigger
+  a false early-exit:
   ```bash
-  echo "$body" | grep -qiw 'PASS'
-  # then confirm no violation bullets exist before exiting early
+  echo "$body" | grep -A2 '### Verdict' | grep -qiw 'PASS'
   ```
+  If the Verdict is PASS, tell the user "The bot review already shows PASS — nothing
+  to fix." and stop.
 - Otherwise, proceed with the full comment body.
 
 ### 3 — Parse findings
@@ -106,15 +105,15 @@ see what is about to change.
 
 ### 4 — Implement fixes
 
-Work through findings in this category order (earlier categories are simpler and less
-likely to cause cascading failures):
+Work through findings in this category order. Error handling and Security are adjacent
+because both gate on `pnpm lint` — running them together avoids a duplicate gate pass:
 
 1. TypeScript
 2. ESM imports
 3. Error handling
-4. Testing
-5. Exports map
-6. Security
+4. Security
+5. Testing
+6. Exports map
 
 For each finding, locate the affected file and apply the **minimum correct fix**:
 
@@ -152,7 +151,7 @@ Once all categories are done, run the full suite (matches the Definition of Done
 CLAUDE.md — all four gates):
 
 ```bash
-pnpm lint && pnpm typecheck && pnpm test && pnpm build
+pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build
 ```
 
 If this fails, do not commit or push. Show the failure and stop.
