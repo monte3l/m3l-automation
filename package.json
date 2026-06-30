@@ -35,6 +35,7 @@
     "check:doc-sync": "node bin/check-doc-sync.mjs",
     "check:deps": "node bin/check-deps.mjs",
     "check:test-counts": "node bin/check-test-counts.mjs",
+    "check:worktree": "node bin/check-worktree-include.mjs",
     "gen:index": "node bin/gen-reference-index.mjs",
     "check:index": "node bin/check-reference-index.mjs",
     "worktree:setup": "node bin/worktree-setup.mjs",
