@@ -25,7 +25,7 @@ Plan of record: [`docs/plans/environment-submodule-implementation.md`](../plans/
 | `M3LEnvironmentDetectionDetails` | interface (7 readonly raw-signal fields)                                       |
 | `M3LEnvironmentDetectionError`   | exported error class extending `M3LError`, `code: "ERR_ENVIRONMENT_DETECTION"` |
 
-**Quality gates:** 98 tests (environment module) / 264 total suite — 100%
+**Quality gates:** 105 tests (environment module) / 506 total suite — 100%
 statements, branches, functions, lines. `pnpm typecheck`, `pnpm lint`,
 `pnpm build`, `pnpm check:api` (snapshot unchanged), `pnpm check:provenance`,
 `pnpm check:scaffold`, `pnpm knip`, `pnpm lint:md` — all clean.
