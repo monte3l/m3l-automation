@@ -1,11 +1,3 @@
-/**
- * Tests for core/errors submodule — written tests-first (RED phase).
- * The implementation does NOT exist; all tests are expected to fail because
- * the module `../src/core/errors/index.js` cannot be resolved yet.
- *
- * Contract source: docs/reference/core/errors.md (22 exported symbols).
- */
-
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
 import {

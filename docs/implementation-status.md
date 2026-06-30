@@ -27,11 +27,11 @@ _Reviewed_ = passed `code-reviewer` + `spec-conformance-reviewer` (+ `security-r
 
 | Submodule   | Spec                  | Symbols (≈) | Status | Tests | Reviewed | Notes (runtime deps → dependency gate)                                             |
 | ----------- | --------------------- | ----------- | ------ | ----- | -------- | ---------------------------------------------------------------------------------- |
-| errors      | `core/errors.md`      | 22          | ✅     | ✅    | ✅       | done — 101 tests, ~98% cov; conformant + code-reviewed (must-fixes applied)        |
+| errors      | `core/errors.md`      | 22          | ✅     | ✅    | ✅       | done — 103 tests, ~98% cov; conformant + code-reviewed (must-fixes applied)        |
 | events      | `core/events.md`      | 3           | ✅     | ✅    | ✅       | none — **foundational** (emitter base); 33 tests, 100% cov; reviewed (no must-fix) |
 | security    | `core/security.md`    | 2           | ✅     | ✅    | ✅       | none — 28 tests, 100% cov; reviewed (must-fix applied: @example uses M3LError)     |
-| environment | `core/environment.md` | 8           | ✅     | ✅    | ✅       | none — 98 tests, 100% cov; reviewed (all must-fixes applied)                       |
-| utils       | `core/utils.md`       | 39          | ✅     | ✅    | ✅       | 401 tests (36 symbols; M3LPaths deferred); reviewed (must-fixes applied)           |
+| environment | `core/environment.md` | 8           | ✅     | ✅    | ✅       | none — 105 tests, 100% cov; reviewed (all must-fixes applied)                      |
+| utils       | `core/utils.md`       | 39          | ✅     | ✅    | ✅       | 235 tests (36 symbols; M3LPaths deferred); reviewed (must-fixes applied)           |
 | json        | `core/json.md`        | 5           | ❌     | ❌    | ❌       | none                                                                               |
 | analysis    | `core/analysis.md`    | 4           | ❌     | ❌    | ❌       | none                                                                               |
 | messaging   | `core/messaging.md`   | 10          | ❌     | ❌    | ❌       | none — abstract interfaces only                                                    |

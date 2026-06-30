@@ -1,21 +1,3 @@
-/**
- * Tests for core/events submodule — written tests-first (RED phase).
- * The implementation does NOT exist; all tests are expected to fail because
- * the module `../src/core/events/index.js` cannot be resolved yet.
- *
- * Contract source: docs/reference/core/events.md + docs/plans/events-submodule-implementation.md
- * Exports: M3LEventHandler, M3LEventEmitterBase, M3LEventEmitter (3 symbols).
- *
- * Key behavioral contracts:
- *  - on: set semantics — same handler ref registered twice fires exactly once per emission.
- *  - off: no-op if handler was never registered.
- *  - emit (protected): sync; each handler in its own try/catch; errors silently swallowed;
- *    async handler promises discarded (void); never throws to caller.
- *  - emitAsync (protected): Promise.allSettled — rejecting handler does not stop others;
- *    resolves to undefined, never rejects.
- *  - emit is public on M3LEventEmitter (concrete class).
- */
-
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
 import {

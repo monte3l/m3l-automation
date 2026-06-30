@@ -22,7 +22,7 @@ community/branding files, and a GitHub-Pages docs-site seed under `/docs`.
 Dark-only. Monokai is the literal reference — colors are exact, used the way a
 syntax theme uses them (accents carry meaning, not decoration).
 
-**Color tokens**
+- **Color tokens**
 
 | Token         | Hex       | Role                              |
 | ------------- | --------- | --------------------------------- |
@@ -40,19 +40,19 @@ syntax theme uses them (accents carry meaning, not decoration).
 Accent semantics are reused consistently (e.g. status: `green`=done,
 `orange`=in-progress, `pink`/`muted`=not-started) so color encodes truth.
 
-**Type** — IBM Plex Mono for display, wordmark, code, labels, and data; IBM Plex
-Sans for body prose. Coherent family pairing, terminal-leaning, not the generic
-serif default. (Site loads both as webfonts; SVGs use `ui-monospace, monospace`
-with exact Monokai fills, wordmark text outlined to paths for fidelity.)
+- **Type** — IBM Plex Mono for display, wordmark, code, labels, and data; IBM Plex
+  Sans for body prose. Coherent family pairing, terminal-leaning, not the generic
+  serif default. (Site loads both as webfonts; SVGs use `ui-monospace, monospace`
+  with exact Monokai fills, wordmark text outlined to paths for fidelity.)
 
-**Layout** — single readable column; content sits inside recurring **terminal
-panes** (titlebar showing a path like `~/m3l-common`, hairline border, Monokai
-body). No mac traffic-light dots (embellishment).
+- **Layout** — single readable column; content sits inside recurring **terminal
+  panes** (titlebar showing a path like `~/m3l-common`, hairline border, Monokai
+  body). No mac traffic-light dots (embellishment).
 
-**Signature** — the Monokai-syntax **terminal pane** is the one repeated device:
-the hero is a real terminal frame showing actual `import` + `M3LScript` usage;
-the module map is a `tree`-style listing; status lines use a `›` prompt glyph.
-The code shown is real, not mocked — honesty is the aesthetic.
+- **Signature** — the Monokai-syntax **terminal pane** is the one repeated device:
+  the hero is a real terminal frame showing actual `import` + `M3LScript` usage;
+  the module map is a `tree`-style listing; status lines use a `›` prompt glyph.
+  The code shown is real, not mocked — honesty is the aesthetic.
 
 ## Deliverables
 

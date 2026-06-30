@@ -64,6 +64,19 @@ description mentions a newly shipped submodule, verify its row in the table
 already shows ✅ reviewed/done. If it still shows ❌, 🧪, or 🟢, surface a
 reminder — but do not edit the file unless the user asks.
 
+Also count the total number of ✅ rows across the Core and AWS tables, then
+scan these three files for the "X of 22" or "X of Y" implemented-count prose
+and confirm the number matches:
+
+- `README.md` — badge URL `modules-N%2F22` and the prose callout ("N of 22
+  submodules are implemented")
+- `docs/README.md` — the development-status callout line
+- `CLAUDE.md` — the Agent Operating Model section ("Current state: N of 22
+  submodules are implemented")
+
+If any value is stale, list the file, the current value, and the required
+update. Do not edit unless the user asks.
+
 ### 6 — Markdown lint
 
 ```bash
