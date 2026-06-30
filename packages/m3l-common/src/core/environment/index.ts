@@ -302,7 +302,9 @@ export interface M3LEnvironmentDetectionDetails {
 /**
  * Fields common to both deployment modes.
  *
- * @internal Not re-exported; the public type is {@link M3LExecutionEnvironmentInfo}.
+ * Not re-exported; the public type is {@link M3LExecutionEnvironmentInfo}.
+ *
+ * @internal
  */
 interface M3LExecutionEnvironmentInfoBase {
   /** Detected execution environment type. */
