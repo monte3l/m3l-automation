@@ -1,4 +1,4 @@
-import * as fs from "node:fs";
+import * as fs from "fs";
 
 import {
   afterEach,
@@ -1746,5 +1746,36 @@ describe("M3LPaths — per-kind env-var overrides", () => {
     expect(paths.getInputDir()).toBe(`${FAKE_ROOT}/data/input`);
     expect(paths.getOutputDir()).toBe(`${FAKE_ROOT}/data/output`);
     expect(paths.getCacheDir()).toBe(`${FAKE_ROOT}/data/cache`);
+  });
+
+  describe("relative-path per-kind overrides are rejected", () => {
+    test.each([
+      ["M3L_DATA_DIR", "relative/data"],
+      ["M3L_CONFIG_DIR", "relative/config"],
+      ["M3L_INPUT_DIR", "relative/input"],
+      ["M3L_OUTPUT_DIR", "relative/output"],
+      ["M3L_CACHE_DIR", "relative/cache"],
+    ])(
+      "%s set to a relative path throws M3LPathResolutionError",
+      (name, value) => {
+        vi.stubEnv(name, value);
+        expect(() => new M3LPaths()).toThrow(M3LPathResolutionError);
+      },
+    );
+
+    test("M3LPathResolutionError message names the offending env var", () => {
+      vi.stubEnv("M3L_DATA_DIR", "not/absolute");
+      expect(() => new M3LPaths()).toThrow(
+        'Environment variable M3L_DATA_DIR must be an absolute path, got: "not/absolute"',
+      );
+    });
+
+    test("M3L_BASE_DIR set to a relative path throws M3LPathResolutionError (STANDALONE mode)", () => {
+      // M3L_BASE_DIR is only read in STANDALONE mode; force it via the env override
+      vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
+      vi.stubEnv("M3L_BASE_DIR", "relative/base");
+      M3LExecutionEnvironment.resetForTesting();
+      expect(() => new M3LPaths()).toThrow(M3LPathResolutionError);
+    });
   });
 });

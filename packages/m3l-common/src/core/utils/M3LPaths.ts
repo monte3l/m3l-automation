@@ -152,11 +152,19 @@ export class M3LPathResolutionError extends M3LError {
 
 /**
  * Returns the environment variable value when it is a non-empty string,
- * otherwise returns `undefined`. Used to test per-kind overrides.
+ * otherwise returns `undefined`. Throws {@link M3LPathResolutionError} when
+ * the value is set but is not an absolute path — callers document absolute
+ * paths in their TSDoc and CLAUDE.md §Security requires boundary validation.
  */
 function readEnvOverride(name: string): string | undefined {
   const value = process.env[name];
-  return typeof value === "string" && value !== "" ? value : undefined;
+  if (typeof value !== "string" || value === "") return undefined;
+  if (!path.isAbsolute(value)) {
+    throw new M3LPathResolutionError(
+      `Environment variable ${name} must be an absolute path, got: "${value}"`,
+    );
+  }
+  return value;
 }
 
 /**
