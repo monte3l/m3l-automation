@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Prints a one-line nudge after any "git push" Bash call so the user remembers
 // to open a PR. Non-blocking: always exits 0.
+import process from "node:process";
 import { readFileSync } from "node:fs";
 
 try {

@@ -8,6 +8,7 @@
 //
 // Usage:
 //   node bin/check-doc-counts.mjs   # verify counts (fails on mismatch)
+import process from "node:process";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";

@@ -56,6 +56,9 @@ importers:
       eslint-plugin-tsdoc:
         specifier: 0.5.2
         version: 0.5.2(eslint@10.6.0(jiti@2.7.0))(typescript@6.0.3)
+      globals:
+        specifier: ^17.7.0
+        version: 17.7.0
       knip:
         specifier: 6.23.0
         version: 6.23.0
@@ -1618,6 +1621,10 @@ packages:
   global-directory@5.0.0:
     resolution: {integrity: sha512-1pgFdhK3J2LeM+dVf2Pd424yHx2ou338lC0ErNP2hPx4j8eW1Sp0XqSjNxtk6Tc4Kr5wlWtSvz8cn2yb7/SG/w==}
     engines: {node: '>=20'}
+
+  globals@17.7.0:
+    resolution: {integrity: sha512-Czmyns5dUsq4seFBR/Kdydhmo8y9kC79hiSkPn0YcGtNnYWnrgt0vjrSjx9tspoDGWm2CMarffRuLjM4xUz8xg==}
+    engines: {node: '>=18'}
 
   graceful-fs@4.2.10:
     resolution: {integrity: sha512-9ByhssR2fPVsNZj478qUUbKfmL0+t5BDVyjShtyZZLiK7ZDAArFFfopyOTj0M05wE2tJPisA4iTnnXl2YoPvOA==}
@@ -4414,6 +4421,8 @@ snapshots:
   global-directory@5.0.0:
     dependencies:
       ini: 6.0.0
+
+  globals@17.7.0: {}
 
   graceful-fs@4.2.10: {}
 

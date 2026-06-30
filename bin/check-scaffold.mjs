@@ -5,6 +5,7 @@
 //
 // Usage:
 //   node bin/check-scaffold.mjs   # exits 0 on success, 1 on any mismatch
+import process from "node:process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";

@@ -229,6 +229,9 @@ services. The only secrets are CI-only release tokens (`NPM_TOKEN`,
 | API snapshot  | `pnpm check:api`                  | pre-commit  |
 | Test coverage | `pnpm test:coverage`              | pre-push    |
 | Barrel sync   | `pnpm check:scaffold`             | pre-publish |
+| Doc provenance | `pnpm check:provenance`          | CI          |
+| Doc counts    | `pnpm check:doc-counts`           | CI          |
+| Doc sync      | `pnpm check:doc-sync`             | CI          |
 | Dep hygiene   | `pnpm check:deps`                 | CI          |
 
 These map to package.json scripts (`test` -> `vitest run`, `typecheck`
@@ -525,7 +528,11 @@ top of the advisory text in this file:
   in the spoke loop, not a round later at the hub's `pnpm lint` gate;
   `post-edit-md-verify.mjs` auto-formats most Markdown files (including
   `docs/plans/`; skips CHANGELOG.md, `.github/`, `docs/adr/template.md`,
-  and `.claude/`) and lints non-plan Markdown with rumdl.
+  and `.claude/`) and lints non-plan Markdown with rumdl;
+  `guard-doc-counts.mjs` warns (non-blocking) when a reference page or
+  README.md edit causes the submodule-count prose to drift from the filesystem;
+  `guard-provenance-staleness.mjs` warns (non-blocking) when a source file
+  referenced by a provenance sidecar is modified without updating the sidecar.
 - **Stop:** `remind-sync-docs.mjs` emits an advisory (non-blocking) when
   `docs/implementation-status.md` was changed during the session, reminding to
   run `/sync-docs` before the next commit.
