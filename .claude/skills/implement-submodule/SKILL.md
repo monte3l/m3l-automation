@@ -58,6 +58,7 @@ concrete file paths), and record progress in the durable state file
 - [ ] Step 8 — Final verify: `pnpm build && pnpm test && pnpm lint && pnpm typecheck`;
       generate provenance sidecar (exported symbols only); run `pnpm check:provenance`
 - [ ] Report: new exports, review verdict, deps (if any), state-file transitions
+- [ ] Write work log: `/write-work-log` → `docs/logs/YYYY-MM-DD-<ns>-<module>.md`
 
 **Rule: you (the hub) never edit `src/**` or `tests/**`** — that is what the
 spokes are for. The writer is never the reviewer; keep that separation structural.
