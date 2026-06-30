@@ -1,7 +1,0 @@
-created docs/logs/2026-06-30-core-config.md
-
-Full path: /home/enrico-lionello/workspaces/monte3l/m3l-automation/.claude/worktrees/feat+write-work-log-skill/docs/logs/2026-06-30-core-config.md
-
-The log captures the core/config submodule implementation: 8 public symbols shipped, 47 new tests (211 suite total), 100% V8 coverage on ConfigLoader.ts, all CI gates green, verdicts from 4 review spokes, 2 divergences (ConfigValidationError.details typed as unknown instead of Record<string,string[]>; provenance sidecar misclassified ConfigSchema as type alias), and 4 actionable lessons for future submodules.
-
-Next step: commit the file with `docs: add work log for core/config` via /write-commit.
