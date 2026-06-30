@@ -63,16 +63,25 @@ Determine the GitHub `{owner}/{repo}` from the remote:
 gh repo view --json nameWithOwner --jq '.nameWithOwner'
 ```
 
-Then fetch the most recent `github-actions[bot]` comment on the PR's issue thread:
+Fetch the most recent bot review comment on the PR's issue thread. The review action
+posts as `claude[bot]` (OAuth token) or `github-actions[bot]` (GITHUB_TOKEN) depending
+on the workflow configuration — match either:
 
 ```bash
 gh api repos/{owner}/{repo}/issues/{pr_number}/comments \
-  --jq '[.[] | select(.user.login == "github-actions[bot]")] | last'
+  --jq '[.[] | select(.user.login == "github-actions[bot]" or .user.login == "claude[bot]")] | last'
 ```
 
 - If no such comment exists, tell the user "No bot review comment found" and stop.
-- If the comment body contains `PASS` (case-insensitive) and no violation bullets,
-  tell the user "The bot review already shows PASS — nothing to fix." and stop.
+- If the comment body contains the **Verdict** section with the word `PASS` as a
+  whole word (not a substring of "bypass", "surpassed", etc.), and carries no
+  violation bullets under the convention headings, tell the user
+  "The bot review already shows PASS — nothing to fix." and stop.
+  Check for the verdict using a word-boundary pattern, e.g.:
+  ```bash
+  echo "$body" | grep -qiw 'PASS'
+  # then confirm no violation bullets exist before exiting early
+  ```
 - Otherwise, proceed with the full comment body.
 
 Store the comment's `id` — you will reply to it in step 8.
