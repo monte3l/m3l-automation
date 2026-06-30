@@ -199,6 +199,20 @@ export function isPath(value: string): boolean {
 }
 
 /**
+ * Serializes an object/array value to JSON, embedding the failure reason when
+ * `JSON.stringify` throws (e.g. circular references). Extracted to keep
+ * {@link formatConfigValueDisplay} within the cyclomatic-complexity limit.
+ */
+function jsonOrFallback(value: object): string {
+  try {
+    return JSON.stringify(value);
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    return `[unserializable: ${reason}]`;
+  }
+}
+
+/**
  * Formats a configuration value for human-readable display.
  *
  * - Strings → wrapped in double-quotes: `'"value"'`
@@ -221,20 +235,6 @@ export function isPath(value: string): boolean {
  * formatConfigValueDisplay(true);          // "true"
  * ```
  */
-/**
- * Serializes an object/array value to JSON, embedding the failure reason when
- * `JSON.stringify` throws (e.g. circular references). Extracted to keep
- * {@link formatConfigValueDisplay} within the cyclomatic-complexity limit.
- */
-function jsonOrFallback(value: object): string {
-  try {
-    return JSON.stringify(value);
-  } catch (cause) {
-    const reason = cause instanceof Error ? cause.message : String(cause);
-    return `[unserializable: ${reason}]`;
-  }
-}
-
 export function formatConfigValueDisplay(value: unknown): string {
   if (value === null || value === undefined) return "(none)";
   if (typeof value === "string") return `"${value}"`;
