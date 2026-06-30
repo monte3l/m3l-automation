@@ -2,7 +2,7 @@ name: Claude PR Review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
 
 permissions:
@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   review:
-    if: github.actor != 'dependabot[bot]'
+    if: github.actor != 'dependabot[bot]' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,24 +26,30 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: "--model claude-sonnet-4-6 --allowedTools Bash,Read,Write,Edit"
+          claude_args: "--model claude-sonnet-4-6 --allowedTools Bash,Read --max-turns 25"
+          use_sticky_comment: true
           prompt: |
-            Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }} against the project conventions below. Post your findings as a single PR comment. Only flag real violations that are visible in the diff — do not speculate about code outside it.
+            You are the blocking PR reviewer for this repo. Review ONLY what is visible in
+            the diff; do not speculate about code outside it. Do not modify any files.
 
             ## TypeScript
+
             - No `any` — use `unknown` and narrow with type guards
             - No non-null `!` assertions in `src/`
             - All exported symbols must have TSDoc; primary entry points need an `@example`
 
             ## ESM imports
+
             - Relative imports must carry a `.js` extension (`./foo.js`, not `./foo`)
             - No CommonJS constructs (`require`, `module.exports`, `__dirname`)
 
             ## Error handling
+
             - Only throw instances of `M3LError` subclasses, never bare strings
             - Chain underlying failures with the `cause` option
 
             ## Testing
+
             - Every exported function must have at least one happy-path test and one failure-path test
             - Tests import from `src/` with `.js` extensions
             - No network calls or filesystem access in unit tests (mock collaborators)
@@ -52,17 +58,56 @@ jobs:
             - Tests for error channels may carry `// eslint-disable-next-line only-throw-error` or `// eslint-disable-next-line prefer-promise-reject-errors`; these are acceptable when intentionally verifying that code handles non-Error throws/rejections — do not flag them
 
             ## Exports map
+
             - If the diff touches `src/core/index.ts`, `src/aws/index.ts`, or the `exports` field in `package.json`, run `pnpm check:api` to confirm the snapshot is unchanged
             - An unexpected snapshot diff is a semver event and must be reflected in the PR title (`feat!:` or `BREAKING CHANGE:` footer)
 
             ## Security
+
             - No hardcoded secrets, tokens, or credentials in source or tests
             - Validate all external input at the public API boundary
 
             ## Commit hygiene
+
             - PR title must follow Conventional Commits: `feat:` (minor), `fix:` (patch), `feat!:` or `BREAKING CHANGE:` footer (major), `docs:`/`refactor:`/`test:`/`chore:` (no release)
 
+            ## Output format
+
+            Post a single PR comment in exactly this structure (blank line before and after
+            every heading and every list; no trailing whitespace; no hard tabs; `-` bullets;
+            cite locations as `path/to/file.ts:line`; be concise — do not restate unchanged
+            conventions):
+
+            ```
+            ## Claude PR Review — `<pr title>`
+
+            <1–2 sentence summary of the change and overall assessment.>
+
+            ### Must-fix
+
+            - **`path/to/file.ts:line`** — <violation> (<which rule>).
+
+            _None._ (if no must-fix findings)
+
+            ### Should-fix
+
+            - …
+
+            _None._ (if no should-fix findings)
+
+            ### Nits
+
+            - …
+
+            _None._ (if no nit findings)
+
+            ### Verdict
+
+            - PASS|FAIL — <one-line reason>
+            ```
+
             ## Verdict (REQUIRED — this gate is blocking)
+
             After posting the comment, your FINAL action MUST be to run exactly
             one of these two Bash commands (choose based on your verdict):
 
@@ -72,6 +117,8 @@ jobs:
             Use the Bash tool — do NOT use the Write tool for this step.
             $GITHUB_WORKSPACE is the absolute path to the checked-out repo.
             The job fails the merge gate unless the file contains exactly `PASS`.
+
+            Now review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}. Post a single PR comment in the Output format above, then write the verdict file as instructed.
 
       # Blocking gate (rules 01/04: writer ≠ reviewer). The job fails unless the
       # reviewer explicitly wrote PASS — fail-closed if the review did not run.
