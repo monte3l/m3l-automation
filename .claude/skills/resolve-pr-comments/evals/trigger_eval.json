@@ -1,0 +1,82 @@
+[
+  {
+    "query": "the claude-pr-review bot just posted FAIL on my PR, can you fix all the findings?",
+    "should_trigger": true
+  },
+  {
+    "query": "address the review findings on this branch",
+    "should_trigger": true
+  },
+  {
+    "query": "fix the PR review comments from the bot",
+    "should_trigger": true
+  },
+  {
+    "query": "the review failed, please resolve it",
+    "should_trigger": true
+  },
+  {
+    "query": "clear the blocking findings so CI passes",
+    "should_trigger": true
+  },
+  {
+    "query": "make the claude-pr-review pass",
+    "should_trigger": true
+  },
+  {
+    "query": "fix what the reviewer flagged — there were 3 ESM import issues and a missing TSDoc",
+    "should_trigger": true
+  },
+  {
+    "query": "address PR feedback, the bot flagged some any types and a missing .js extension",
+    "should_trigger": true
+  },
+  {
+    "query": "resolve the bot's review on my feat/config-loader branch",
+    "should_trigger": true
+  },
+  {
+    "query": "the auto-review came back with issues, fix them and push",
+    "should_trigger": true
+  },
+  {
+    "query": "fix the tests — they're failing in CI",
+    "should_trigger": false
+  },
+  {
+    "query": "run CI to see if everything passes",
+    "should_trigger": false
+  },
+  {
+    "query": "open a PR for this branch",
+    "should_trigger": false
+  },
+  {
+    "query": "write a commit message for my staged changes",
+    "should_trigger": false
+  },
+  {
+    "query": "what did the reviewer say about my PR?",
+    "should_trigger": false
+  },
+  {
+    "query": "the lint is failing locally, help me fix it",
+    "should_trigger": false
+  },
+  {
+    "query": "can you review this diff for me before I push?",
+    "should_trigger": false
+  },
+  {
+    "query": "triage the CI failure — the typecheck step failed",
+    "should_trigger": false
+  },
+  {
+    "query": "push my branch and create a pull request",
+    "should_trigger": false
+  },
+  {
+    "query": "the build is broken, find out why and fix it",
+    "should_trigger": false
+  }
+]
