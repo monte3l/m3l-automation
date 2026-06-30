@@ -53,3 +53,4 @@ surface).
 | 0009 | [Dependency-direction guard: import-x/no-restricted-paths vs dependency-cruiser](./0009-dependency-direction-guard.md)          | Proposed |
 | 0010 | [Enforce formatting and Markdown linting in CI, with rumdl as the Markdown linter](./0010-markdown-lint-and-format-ci-gates.md) | Accepted |
 | 0011 | [Release and publishing workflow](./0011-release-and-publishing-workflow.md)                                                    | Accepted |
+| 0012 | [Defer external code-index MCP; use native LSP + generated catalog](./0012-defer-external-code-index-mcp.md)                    | Accepted |
