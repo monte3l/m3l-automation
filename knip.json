@@ -5,6 +5,9 @@
     "@commitlint/config-conventional",
     "@commitlint/types"
   ],
+  "ignoreIssues": {
+    "packages/m3l-common/src/core/environment/index.ts": ["duplicates"]
+  },
   "workspaces": {
     "packages/m3l-common": {
       "entry": "src/index.ts",
