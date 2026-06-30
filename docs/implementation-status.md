@@ -29,7 +29,7 @@ _Reviewed_ = passed `code-reviewer` + `spec-conformance-reviewer` (+ `security-r
 | ----------- | --------------------- | ----------- | ------ | ----- | -------- | ---------------------------------------------------------------------------------- |
 | errors      | `core/errors.md`      | 22          | ✅     | ✅    | ✅       | done — 101 tests, ~98% cov; conformant + code-reviewed (must-fixes applied)        |
 | events      | `core/events.md`      | 3           | ✅     | ✅    | ✅       | none — **foundational** (emitter base); 33 tests, 100% cov; reviewed (no must-fix) |
-| security    | `core/security.md`    | 2           | ❌     | ❌    | ❌       | none — pure fns; good pipeline smoke test                                          |
+| security    | `core/security.md`    | 2           | ✅     | ✅    | ✅       | none — 28 tests, 100% cov; reviewed (must-fix applied: @example uses M3LError)     |
 | environment | `core/environment.md` | 7           | ❌     | ❌    | ❌       | none — drives `M3LPaths`                                                           |
 | utils       | `core/utils.md`       | 39          | ❌     | ❌    | ❌       | none — `M3LPaths`, concurrency, type guards                                        |
 | json        | `core/json.md`        | 5           | ❌     | ❌    | ❌       | none                                                                               |
