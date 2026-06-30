@@ -518,8 +518,9 @@ top of the advisory text in this file:
   become stale directives once the implementation exists.
 - **PostToolUse (Write/Edit):** `guard-exports-semver.mjs` warns when the exports
   map changes without a matching semver commit; `post-edit-verify.mjs`
-  auto-formats, **lints (eslint)** the edited file and the package's `tests/`
-  directory (to catch stale disable directives after GREEN), type-checks, and
+  auto-formats, **lints (eslint)** the edited file and (when a `src/` file is
+  edited) the package's `tests/` directory (to catch stale disable directives
+  after GREEN), type-checks, and
   runs the related tests on the edited package — so eslint-only failures surface
   in the spoke loop, not a round later at the hub's `pnpm lint` gate;
   `post-edit-md-verify.mjs` auto-formats all Markdown files (including
