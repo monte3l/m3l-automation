@@ -1,0 +1,15 @@
+{
+  "expectations": [
+    {
+      "text": "Responds with exactly one clarifying question about which task to document",
+      "passed": false,
+      "evidence": "Agent investigated codebase extensively (17 tool calls: read existing logs, git history, implementation-status.md, SKILL.md, eval metadata) before concluding it lacked context. Did not ask the clarifying question immediately — explored first instead of recognising ambiguity upfront."
+    },
+    {
+      "text": "Does NOT attempt to write any docs/logs/ file before getting clarification",
+      "passed": true,
+      "evidence": "No docs/logs/ file in outputs; response.txt confirms no file written"
+    }
+  ],
+  "summary": { "passed": 1, "failed": 1, "total": 2, "pass_rate": 0.5 }
+}
