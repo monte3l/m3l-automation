@@ -41,6 +41,11 @@ than editing it.
    `test-author` spoke can be dispatched before the gate.** Trust the CLI
    (`pnpm typecheck`/`lint`/`test`) over IDE/LSP diagnostics — they lag and
    misreport against the project `tsconfig`.
+   After reaching green, verify 100% coverage by reading
+   `packages/m3l-common/coverage/coverage-final.json` — **not** the text table
+   printed by `pnpm test:coverage`. The v8 text reporter omits files that are
+   100% on all four metrics, so an absent file in the table is not an uncovered
+   file. Check `coverage-final.json` directly.
 4. Report what you implemented, the exports you added, and the final
    test/typecheck/lint status. If you needed a runtime dependency that wasn't
    already approved/installed, STOP and report it — do not run `pnpm add` or
@@ -54,6 +59,18 @@ than editing it.
   errors. Validate external input at the public boundary.
 - TSDoc + `@example` on every exported symbol; `readonly`/`const` by default;
   exhaustive `switch` over finite sets.
+- **`@example` blocks are normative consumer guidance and must follow project
+  standards even when the spec doc shows a different pattern.** If the spec
+  shows `throw new Error(...)`, the `@example` must still use
+  `throw new M3LError(...)` (or the appropriate subclass) — consumers
+  copy-paste examples, so a wrong example propagates the wrong pattern. When
+  the spec and the project rule conflict, the project rule wins.
+- **Never add a top-level import of a symbol that is only referenced inside a
+  TSDoc `@example`.** TSDoc comment blocks are not compiled code; the import
+  creates an unused-import lint error. Instead, embed the import inside the
+  fenced code block using the **public consumer path**
+  (`@m3l-automation/m3l-common/core`, not a relative `../errors/index.js`).
+  This makes the example self-contained and portable.
 - **Never** add an entry to the `exports` map — surface through the barrel.
 
 ## What good implementation looks like

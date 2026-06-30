@@ -41,20 +41,22 @@ concrete file paths), and record progress in the durable state file
 
 ## Progress checklist (copy-paste at the start of each run)
 
-- [ ] Phase 0 — Dep gate: list any required runtime deps and get user approval
+- [ ] Step 1 — Resolve target; confirm spec page exists
+- [ ] Step 2 — Format and commit plan/docs file (if any) before implementation
+- [ ] Step 3 — Dep gate: list any required runtime deps and get user approval
       (skip for dep-free modules)
-- [ ] Phase 1 — Contract: `spec-conformance-reviewer` → extract exact exports +
+- [ ] Step 4 — Contract: `spec-conformance-reviewer` → extract exact exports +
       behavioral contracts; save the contract text
-- [ ] Phase 2 — RED: `test-author` → writes failing tests; update status file
-      → 🧪
-- [ ] Phase 3 — GREEN: `submodule-implementer` → writes `src/` until tests
-      pass; update status file → 🟢
-- [ ] Phase 4 — Review: `code-reviewer` + `spec-conformance-reviewer` (parallel);
+- [ ] Step 5 — RED: `test-author` → writes failing tests; update status file → 🧪
+- [ ] Step 6 — GREEN: `submodule-implementer` → writes `src/` until tests pass;
+      update status file → 🟢
+- [ ] Step 7 — Review: `code-reviewer` + `spec-conformance-reviewer` (parallel);
       add `security-reviewer` for aws/secrets/logging surface;
       add `type-design-analyzer` whenever the module introduces or changes public types (every Core/AWS module qualifies);
       add `silent-failure-hunter` when the module has error-handling or async paths;
       iterate until clean; update status file → ✅
-- [ ] Final verify: `pnpm build && pnpm test && pnpm lint && pnpm typecheck`
+- [ ] Step 8 — Final verify: `pnpm build && pnpm test && pnpm lint && pnpm typecheck`;
+      generate provenance sidecar (exported symbols only); run `pnpm check:provenance`
 - [ ] Report: new exports, review verdict, deps (if any), state-file transitions
 
 **Rule: you (the hub) never edit `src/**` or `tests/**`** — that is what the
@@ -69,7 +71,15 @@ spokes are for. The writer is never the reviewer; keep that separation structura
    redoing it. When unsure which to pick, prefer the _Suggested implementation
    order_ in the state file (foundational, dep-free modules first).
 
-2. **Dependency gate — pause before adding any runtime dependency.** Several
+2. **Format and commit plan docs before implementation begins.** If a
+   `docs/plans/` file was created for this module, run
+   `pnpm exec prettier --write <path>` on it and commit it before any
+   implementation work starts. Untracked or uncommitted docs files that drift
+   out of prettier compliance block the `pre-push` lefthook. The cost of
+   formatting up front is zero; the cost of a blocked push is an out-of-band
+   commit mid-review.
+
+3. **Dependency gate — pause before adding any runtime dependency.** Several
    submodules imply a runtime dep (e.g. `config` → a YAML parser, `network` →
    `undici`, `importers` → `csv-parse`, `storage` → `better-sqlite3`, `text` →
    `unpdf`/`mammoth`/…, aws → `@aws-sdk/*`). CLAUDE.md makes minimal runtime deps
@@ -78,7 +88,7 @@ spokes are for. The writer is never the reviewer; keep that separation structura
    approval** before anyone runs `pnpm add`. Never hand-edit `pnpm-lock.yaml`.
    Dep-free modules skip this gate.
 
-3. **Phase 1 — Contract.** Dispatch `spec-conformance-reviewer` in _contract
+4. **Phase 1 — Contract.** Dispatch `spec-conformance-reviewer` in _contract
    mode_: have it read the spec page (and the relevant contracts in
    `docs/m3l-common-architecture.md`) and return the exact list of promised
    exports (names + shapes) plus the behavioral contracts (e.g. handler-error
@@ -90,19 +100,23 @@ spokes are for. The writer is never the reviewer; keep that separation structura
    throws on an `Err`). Precision here prevents the tests from over-constraining
    a type and saves a re-work round — especially for weaker routed models.
 
-4. **Phase 2 — RED.** Dispatch `test-author` with the contract and the target
+5. **Phase 2 — RED.** Dispatch `test-author` with the contract and the target
    test path (`packages/m3l-common/tests/<module>.test.ts`). It writes happy +
    failure + `expectTypeOf` tests against the contract and confirms they **fail
    for the right reason** (the symbols don't exist yet). Update the state file:
    that module → 🧪 tests-written.
 
-5. **Phase 3 — GREEN.** Dispatch `submodule-implementer` with the contract and
+6. **Phase 3 — GREEN.** Dispatch `submodule-implementer` with the contract and
    the failing tests. It writes the minimal `src/<ns>/<module>/index.ts`
    (private helpers under `src/internal/`), re-exports from the namespace barrel
    `src/<ns>/index.ts`, and drives `pnpm test` + `pnpm typecheck` to green
    **without** touching the `exports` map. Update the state file: → 🟢 implemented.
+   When dispatching, explicitly state: **`@example` blocks must use project
+   error-handling conventions (`M3LError` or a subclass), even when the spec doc
+   shows bare `new Error()`** — do not assume the implementer resolves a
+   spec-doc / project-rule conflict in the right direction.
 
-6. **Phase 4 — Review (fan out in parallel).** In one message, dispatch
+7. **Phase 4 — Review (fan out in parallel).** In one message, dispatch
    `code-reviewer` and `spec-conformance-reviewer` (now in _conformance mode_),
    plus `security-reviewer` if the surface is security-sensitive (anything under
    `aws`, or touching secrets, credentials, deserialization, or logging),
@@ -112,11 +126,15 @@ spokes are for. The writer is never the reviewer; keep that separation structura
    **Must-fix** items back to `submodule-implementer`, and re-run tests/review
    until clean. Update the state file: → ✅ reviewed/done.
 
-7. **Final verify and report.** Run
+8. **Final verify and report.** Run
    `pnpm -C packages/m3l-common build && pnpm test && pnpm lint && pnpm typecheck`.
    Generate or update the module's provenance sidecar
-   (`docs/reference/<ns>/<name>.provenance.json`) and run `pnpm check:provenance`
-   to confirm it is clean.
+   (`docs/reference/<ns>/<name>.provenance.json`). **Every `symbol` entry must
+   reference a named export of its source file — never a private constant,
+   internal helper, or unexported type.** For sections that describe private
+   implementation details, use the exported function or type that exposes that
+   behavior. Run `pnpm check:provenance`; it rejects any symbol not found in
+   the file's exports.
    Report the new exports, the review verdict, any deps added (with approval),
    and the state-file transitions. Remind the user the commit should be a `feat:`
    (a new submodule surfaced through the barrel is a minor, not a breaking change,
