@@ -234,6 +234,8 @@ services. The only secrets are CI-only release tokens (`NPM_TOKEN`,
 | Doc sync       | `pnpm check:doc-sync`             | CI          |
 | Dep hygiene    | `pnpm check:deps`                 | CI          |
 | Test counts    | `pnpm check:test-counts`          | CI          |
+| Gen ref index  | `pnpm gen:index`                  | after ship  |
+| Check ref index | `pnpm check:index`               | CI          |
 
 These map to package.json scripts (`test` -> `vitest run`, `typecheck`
 -> `turbo run typecheck`, `build` -> `turbo run build`, etc.). Turbo
