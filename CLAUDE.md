@@ -523,8 +523,9 @@ top of the advisory text in this file:
   after GREEN), type-checks, and
   runs the related tests on the edited package — so eslint-only failures surface
   in the spoke loop, not a round later at the hub's `pnpm lint` gate;
-  `post-edit-md-verify.mjs` auto-formats all Markdown files (including
-  `docs/plans/`) and lints non-plan Markdown with rumdl.
+  `post-edit-md-verify.mjs` auto-formats most Markdown files (including
+  `docs/plans/`; skips CHANGELOG.md, `.github/`, `docs/adr/template.md`,
+  and `.claude/`) and lints non-plan Markdown with rumdl.
 - **Stop:** `remind-sync-docs.mjs` emits an advisory (non-blocking) when
   `docs/implementation-status.md` was changed during the session, reminding to
   run `/sync-docs` before the next commit.
