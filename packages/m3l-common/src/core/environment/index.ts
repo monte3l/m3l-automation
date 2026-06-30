@@ -157,7 +157,13 @@ export const M3LCredentialSource = {
   WEB_IDENTITY: "WEB_IDENTITY",
   /** AWS SDK default provider chain — fall through all mechanisms. */
   DEFAULT_CHAIN: "DEFAULT_CHAIN",
-  /** No credentials available or applicable. */
+  /**
+   * No credentials available or applicable.
+   *
+   * This is a **caller-level sentinel** — {@link M3LExecutionEnvironment.detect}
+   * never returns this value. Use it when your own code needs to represent the
+   * absence of a credential source (e.g. a non-AWS execution path).
+   */
   NONE: "NONE",
 } as const;
 
@@ -584,7 +590,7 @@ function assertDirReadable(dir: string): void {
 type MonorepoDetectionResult = {
   readonly deploymentMode: typeof M3LDeploymentMode.MONOREPO;
   readonly monorepoRoot: string;
-  readonly workspaceMarkerPath: string | undefined;
+  readonly workspaceMarkerPath: string;
 };
 
 /** Typed result variant for STANDALONE deployment mode. */
@@ -617,6 +623,20 @@ function detectDeploymentMode():
     };
   }
 
+  // Reject unrecognised override values before the walk-up so a typo (e.g.
+  // "monrepo") surfaces immediately rather than as a misleading filesystem
+  // error if the walk-up throws EACCES or EIO.
+  if (
+    typeof modeOverride === "string" &&
+    modeOverride !== "" &&
+    modeOverride.toLowerCase() !== "monorepo"
+  ) {
+    throw new M3LEnvironmentDetectionError(
+      `Unrecognised M3L_DEPLOYMENT_MODE value: "${modeOverride}". Expected "standalone" or "monorepo".`,
+      { code: "ERR_ENVIRONMENT_DETECTION" },
+    );
+  }
+
   const startDir = process.cwd();
   const walkResult = walkUpForWorkspaceMarker(startDir);
 
@@ -636,15 +656,6 @@ function detectDeploymentMode():
       monorepoRoot: walkResult.root,
       workspaceMarkerPath: walkResult.markerPath,
     };
-  }
-
-  // Reject unrecognised override values so typos (e.g. "monrepo") surface
-  // immediately rather than being silently ignored.
-  if (typeof modeOverride === "string" && modeOverride !== "") {
-    throw new M3LEnvironmentDetectionError(
-      `Unrecognised M3L_DEPLOYMENT_MODE value: "${modeOverride}". Expected "standalone" or "monorepo".`,
-      { code: "ERR_ENVIRONMENT_DETECTION" },
-    );
   }
 
   // Normal walk-up result

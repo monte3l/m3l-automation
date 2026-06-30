@@ -1,7 +1,5 @@
 /**
- * Tests for core/environment submodule — written tests-first (RED phase).
- * The implementation does NOT exist; all tests are expected to fail because
- * the module `../src/core/environment/index.js` cannot be resolved yet.
+ * Tests for core/environment submodule.
  *
  * Contract source: docs/reference/core/environment.md
  * Exports: M3LExecutionEnvironment, M3LEnv, M3LExecutionEnvironmentType,
@@ -896,10 +894,8 @@ describe("detect() — M3L_DEPLOYMENT_MODE env var override (B10)", () => {
     );
   });
 
-  test("M3L_DEPLOYMENT_MODE=<unrecognised> throws M3LEnvironmentDetectionError", () => {
-    vi.spyOn(process, "cwd").mockReturnValue("/fake/isolated");
-    vi.spyOn(fs, "accessSync").mockImplementation(() => {});
-    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+  test("M3L_DEPLOYMENT_MODE=<unrecognised> throws M3LEnvironmentDetectionError before any walk-up", () => {
+    // The guard fires before process.cwd() or any fs call, so no fs mocks needed.
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "invalid");
     expect(() => M3LExecutionEnvironment.detectFresh()).toThrow(
       M3LEnvironmentDetectionError,
