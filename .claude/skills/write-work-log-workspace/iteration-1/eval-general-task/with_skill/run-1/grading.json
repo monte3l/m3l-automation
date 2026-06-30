@@ -1,0 +1,35 @@
+{
+  "expectations": [
+    {
+      "text": "Creates docs/logs/2026-06-30-write-work-log-skill.md (date + slug, no namespace)",
+      "passed": true,
+      "evidence": "File 2026-06-30-write-work-log-skill.md found in outputs"
+    },
+    {
+      "text": "H1 title does NOT use the backtick ns/module submodule format — it uses a general task title",
+      "passed": true,
+      "evidence": "Title is '# Work log — write-work-log-skill (2026-06-30)' — no ns/module backtick format"
+    },
+    {
+      "text": "What didn't go as planned has exactly 2 numbered items",
+      "passed": true,
+      "evidence": "### 1. skill-creator attempted description optimisation... and ### 2. Worktree .claude/skills directory..."
+    },
+    {
+      "text": "Each numbered divergence item contains 'Why it happened:' and 'Fix for future:'",
+      "passed": true,
+      "evidence": "Both items have '**Why it happened:**' and '**Fix for future:**'"
+    },
+    {
+      "text": "Lessons learned has at least 1 bullet with bold keyword",
+      "passed": true,
+      "evidence": "5 lessons learned bullets with bold keywords"
+    },
+    {
+      "text": "File does not contain YAML frontmatter",
+      "passed": true,
+      "evidence": "File begins with H1 heading, no --- block"
+    }
+  ],
+  "summary": { "passed": 6, "failed": 0, "total": 6, "pass_rate": 1.0 }
+}
