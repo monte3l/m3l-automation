@@ -1,0 +1,329 @@
+{
+  "metadata": {
+    "skill_name": "write-work-log",
+    "skill_path": ".claude/skills/write-work-log",
+    "executor_model": "<model-name>",
+    "analyzer_model": "<model-name>",
+    "timestamp": "2026-06-30T07:47:00Z",
+    "evals_run": [1, 2, 3],
+    "runs_per_configuration": 3
+  },
+  "runs": [
+    {
+      "eval_id": 2,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 6,
+        "failed": 0,
+        "total": 6,
+        "time_seconds": 80.7,
+        "tokens": 25193,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Creates docs/logs/2026-06-30-write-work-log-skill.md (date + slug, no namespace)",
+          "passed": true,
+          "evidence": "File 2026-06-30-write-work-log-skill.md found in outputs"
+        },
+        {
+          "text": "H1 title does NOT use the backtick ns/module submodule format \u2014 it uses a general task title",
+          "passed": true,
+          "evidence": "Title is '# Work log \u2014 write-work-log-skill (2026-06-30)' \u2014 no ns/module backtick format"
+        },
+        {
+          "text": "What didn't go as planned has exactly 2 numbered items",
+          "passed": true,
+          "evidence": "### 1. skill-creator attempted description optimisation... and ### 2. Worktree .claude/skills directory..."
+        },
+        {
+          "text": "Each numbered divergence item contains 'Why it happened:' and 'Fix for future:'",
+          "passed": true,
+          "evidence": "Both items have '**Why it happened:**' and '**Fix for future:**'"
+        },
+        {
+          "text": "Lessons learned has at least 1 bullet with bold keyword",
+          "passed": true,
+          "evidence": "5 lessons learned bullets with bold keywords"
+        },
+        {
+          "text": "File does not contain YAML frontmatter",
+          "passed": true,
+          "evidence": "File begins with H1 heading, no --- block"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 2,
+        "failed": 0,
+        "total": 2,
+        "time_seconds": 67.7,
+        "tokens": 28497,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Responds with exactly one clarifying question about which task to document",
+          "passed": true,
+          "evidence": "response.txt: asked 'Which task or module should this work log cover?' \u2014 one focused question, no file write, no codebase investigation"
+        },
+        {
+          "text": "Does NOT attempt to write any docs/logs/ file before getting clarification",
+          "passed": true,
+          "evidence": "No docs/logs/ file in outputs; response.txt confirms no file written"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 8,
+        "failed": 0,
+        "total": 8,
+        "time_seconds": 68.7,
+        "tokens": 26305,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Creates docs/logs/2026-06-30-core-config.md (correct date + namespace + module)",
+          "passed": true,
+          "evidence": "File 2026-06-30-core-config.md found in outputs directory"
+        },
+        {
+          "text": "Summary section includes test count (47/211), coverage %, and at least 3 CI gates",
+          "passed": true,
+          "evidence": "Lines 11-15: '47 tests for this module; full suite is now 211 tests', 100% V8 metrics, 6 CI gates listed"
+        },
+        {
+          "text": "Summary includes a verdict for each of the 4 review spokes",
+          "passed": true,
+          "evidence": "Lines 17-24: table with all 4 spokes (spec-conformance, security, code-reviewer, type-design-analyzer) each with verdict"
+        },
+        {
+          "text": "What didn't go as planned has exactly 2 numbered items",
+          "passed": true,
+          "evidence": "### 1. ConfigValidationError.details... and ### 2. Provenance sidecar listed ConfigSchema..."
+        },
+        {
+          "text": "Each numbered divergence item contains 'Why it happened:' and 'Fix for future:' sub-sections",
+          "passed": true,
+          "evidence": "Both items contain '**Why it happened:**' and '**Fix for future:**' exactly"
+        },
+        {
+          "text": "Lessons learned bullets each start with **bold keyword**",
+          "passed": true,
+          "evidence": "All 4 lesson bullets start with bold text"
+        },
+        {
+          "text": "Plan of record link to docs/plans/core-config-implementation.md is present",
+          "passed": true,
+          "evidence": "Line 5: plan of record link present"
+        },
+        {
+          "text": "File does not contain YAML frontmatter (no '---' block at top)",
+          "passed": true,
+          "evidence": "File begins with H1 heading, no --- block"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 6,
+        "failed": 0,
+        "total": 6,
+        "time_seconds": 83.8,
+        "tokens": 26751,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Creates docs/logs/2026-06-30-write-work-log-skill.md (date + slug, no namespace)",
+          "passed": true,
+          "evidence": "File 2026-06-30-write-work-log-skill.md found in outputs"
+        },
+        {
+          "text": "H1 title does NOT use the backtick ns/module submodule format \u2014 it uses a general task title",
+          "passed": true,
+          "evidence": "Title is '# Work log \u2014 write-work-log-skill (2026-06-30)' \u2014 correct general task format"
+        },
+        {
+          "text": "What didn't go as planned has exactly 2 numbered items",
+          "passed": true,
+          "evidence": "2 numbered divergence items present"
+        },
+        {
+          "text": "Each numbered divergence item contains 'Why it happened:' and 'Fix for future:'",
+          "passed": true,
+          "evidence": "Both items have '**Why it happened:**' and '**Fix for future:**'"
+        },
+        {
+          "text": "Lessons learned has at least 1 bullet with bold keyword",
+          "passed": true,
+          "evidence": "5 lessons learned bullets with bold keywords"
+        },
+        {
+          "text": "File does not contain YAML frontmatter",
+          "passed": true,
+          "evidence": "File begins with H1 heading, no --- block"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.5,
+        "passed": 1,
+        "failed": 1,
+        "total": 2,
+        "time_seconds": 98.9,
+        "tokens": 33780,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Responds with exactly one clarifying question about which task to document",
+          "passed": false,
+          "evidence": "Agent investigated codebase extensively (17 tool calls: read existing logs, git history, implementation-status.md, SKILL.md, eval metadata) before concluding it lacked context. Did not ask the clarifying question immediately \u2014 explored first instead of recognising ambiguity upfront."
+        },
+        {
+          "text": "Does NOT attempt to write any docs/logs/ file before getting clarification",
+          "passed": true,
+          "evidence": "No docs/logs/ file in outputs; response.txt confirms no file written"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 8,
+        "failed": 0,
+        "total": 8,
+        "time_seconds": 142.2,
+        "tokens": 34203,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Creates docs/logs/2026-06-30-core-config.md (correct date + namespace + module)",
+          "passed": true,
+          "evidence": "File 2026-06-30-core-config.md found in outputs directory"
+        },
+        {
+          "text": "Summary section includes test count (47/211), coverage %, and at least 3 CI gates",
+          "passed": true,
+          "evidence": "'47 tests written by test-author (211 across the full suite)', 100% coverage, 6 CI gates listed"
+        },
+        {
+          "text": "Summary includes a verdict for each of the 4 review spokes",
+          "passed": true,
+          "evidence": "4 review spokes listed with verdicts"
+        },
+        {
+          "text": "What didn't go as planned has exactly 2 numbered items",
+          "passed": true,
+          "evidence": "### 1. ConfigValidationError.details... and ### 2. Provenance sidecar listed ConfigSchema..."
+        },
+        {
+          "text": "Each numbered divergence item contains 'Why it happened:' and 'Fix for future:' sub-sections",
+          "passed": true,
+          "evidence": "Both items contain '**Why it happened:**' and '**Fix for future submodules:**'"
+        },
+        {
+          "text": "Lessons learned bullets each start with **bold keyword**",
+          "passed": true,
+          "evidence": "All 5 lesson bullets use bold keywords"
+        },
+        {
+          "text": "Plan of record link to docs/plans/core-config-implementation.md is present",
+          "passed": true,
+          "evidence": "Plan of record link present"
+        },
+        {
+          "text": "File does not contain YAML frontmatter (no '---' block at top)",
+          "passed": true,
+          "evidence": "File begins with H1 heading, no --- block"
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 72.3667,
+        "stddev": 7.2342,
+        "min": 67.7,
+        "max": 80.7
+      },
+      "tokens": {
+        "mean": 26665.0,
+        "stddev": 1681.1615,
+        "min": 25193,
+        "max": 28497
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 0.8333,
+        "stddev": 0.2887,
+        "min": 0.5,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 108.3,
+        "stddev": 30.3135,
+        "min": 83.8,
+        "max": 142.2
+      },
+      "tokens": {
+        "mean": 31578.0,
+        "stddev": 4185.6516,
+        "min": 26751,
+        "max": 34203
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.17",
+      "time_seconds": "-35.9",
+      "tokens": "-4913"
+    }
+  },
+  "notes": []
+}

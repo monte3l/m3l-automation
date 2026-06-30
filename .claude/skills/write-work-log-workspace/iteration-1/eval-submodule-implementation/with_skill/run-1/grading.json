@@ -1,0 +1,45 @@
+{
+  "expectations": [
+    {
+      "text": "Creates docs/logs/2026-06-30-core-config.md (correct date + namespace + module)",
+      "passed": true,
+      "evidence": "File 2026-06-30-core-config.md found in outputs directory"
+    },
+    {
+      "text": "Summary section includes test count (47/211), coverage %, and at least 3 CI gates",
+      "passed": true,
+      "evidence": "Lines 11-15: '47 tests for this module; full suite is now 211 tests', 100% V8 metrics, 6 CI gates listed"
+    },
+    {
+      "text": "Summary includes a verdict for each of the 4 review spokes",
+      "passed": true,
+      "evidence": "Lines 17-24: table with all 4 spokes (spec-conformance, security, code-reviewer, type-design-analyzer) each with verdict"
+    },
+    {
+      "text": "What didn't go as planned has exactly 2 numbered items",
+      "passed": true,
+      "evidence": "### 1. ConfigValidationError.details... and ### 2. Provenance sidecar listed ConfigSchema..."
+    },
+    {
+      "text": "Each numbered divergence item contains 'Why it happened:' and 'Fix for future:' sub-sections",
+      "passed": true,
+      "evidence": "Both items contain '**Why it happened:**' and '**Fix for future:**' exactly"
+    },
+    {
+      "text": "Lessons learned bullets each start with **bold keyword**",
+      "passed": true,
+      "evidence": "All 4 lesson bullets start with bold text"
+    },
+    {
+      "text": "Plan of record link to docs/plans/core-config-implementation.md is present",
+      "passed": true,
+      "evidence": "Line 5: plan of record link present"
+    },
+    {
+      "text": "File does not contain YAML frontmatter (no '---' block at top)",
+      "passed": true,
+      "evidence": "File begins with H1 heading, no --- block"
+    }
+  ],
+  "summary": { "passed": 8, "failed": 0, "total": 8, "pass_rate": 1.0 }
+}

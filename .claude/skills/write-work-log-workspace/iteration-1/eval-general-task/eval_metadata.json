@@ -1,0 +1,43 @@
+{
+  "eval_id": 2,
+  "eval_name": "eval-general-task",
+  "prompt": "document what happened — we just created the write-work-log skill. Today is 2026-06-30. [full context about the audit, plan, worktree, skill-creator, 2 divergences]",
+  "assertions": [
+    {
+      "id": "correct-filename-non-submodule",
+      "text": "Creates docs/logs/2026-06-30-write-work-log-skill.md (date + slug, no namespace)",
+      "passed": null,
+      "evidence": null
+    },
+    {
+      "id": "non-submodule-title",
+      "text": "H1 title does NOT use the backtick ns/module submodule format — it uses a general task title",
+      "passed": null,
+      "evidence": null
+    },
+    {
+      "id": "two-divergences",
+      "text": "What didn't go as planned has exactly 2 numbered items",
+      "passed": null,
+      "evidence": null
+    },
+    {
+      "id": "why-and-fix-present",
+      "text": "Each numbered divergence item contains 'Why it happened:' and 'Fix for future:'",
+      "passed": null,
+      "evidence": null
+    },
+    {
+      "id": "lessons-min-one",
+      "text": "Lessons learned has at least 1 bullet with bold keyword",
+      "passed": null,
+      "evidence": null
+    },
+    {
+      "id": "no-frontmatter",
+      "text": "File does not contain YAML frontmatter",
+      "passed": null,
+      "evidence": null
+    }
+  ]
+}
