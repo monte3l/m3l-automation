@@ -41,9 +41,8 @@ import { Core, AWS } from "@m3l-automation/m3l-common";
  * `Core.M3LScript(...).run(...)` call once `M3LScript` is implemented.
  */
 async function main(): Promise<void> {
-  const namespaces = { core: Core, aws: AWS };
   await Promise.resolve();
-  console.log("example-automation ready", Object.keys(namespaces));
+  console.log("example-automation ready", typeof Core, typeof AWS);
 }
 
 await main();
