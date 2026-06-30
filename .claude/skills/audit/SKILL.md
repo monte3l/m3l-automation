@@ -81,7 +81,7 @@ glance. This becomes the input to the clarifying questions.
 
 ### 4 — Ask focused clarifying questions
 
-Use `AskUserQuestion` to ask **2–4** questions — one per open dimension that
+Use `AskUserQuestion` to ask **5–7** questions — one per open dimension that
 would block planning (scope, priority, sequencing, approach). Skip any question
 whose answer can be inferred from the codebase or the user's invocation.
 

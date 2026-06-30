@@ -2,9 +2,9 @@
 name: ci-triage
 description: >-
   Diagnose a CI failure in this repo using the gh CLI: resolve the failing run,
-  fetch its logs, map the failure to the specific pipeline step, and report the
-  root cause plus the exact local command to reproduce it — stopping at diagnosis
-  without auto-fixing. Use this skill whenever the user says /ci-triage,
+  fetch its logs, map the failure to the specific pipeline step, report the root
+  cause plus the exact local command to reproduce it, and present 3–5 solution
+  options for the user to choose from. Use this skill whenever the user says /ci-triage,
   "investigate the CI failure", "why did CI fail", "what failed in CI", "CI is
   failing", "triage the CI failure", "check the CI logs", "debug the CI run",
   "look at the failing run", or provides a specific run ID or URL (e.g. "run
@@ -15,8 +15,9 @@ description: >-
 ---
 
 Diagnose why a GitHub Actions CI run failed by fetching its logs via `gh` and
-mapping the failure back to the specific pipeline step and root cause. This skill
-ends with a diagnosis — it does not propose or apply fixes.
+mapping the failure back to the specific pipeline step and root cause, then
+present 3–5 solution options for the user to choose from. This skill does not
+apply fixes — it ends with options, not actions.
 
 ## Steps
 
@@ -111,9 +112,10 @@ A "likely flake" is a transient runner issue: network timeout downloading
 dependencies, OOM on a large test run, a GitHub-side runner error, or a retry
 that would probably pass. Everything else is a real failure requiring a code fix.
 
-### 5 — Stop at diagnosis
+### 5 — Present solution options
 
-End after delivering the report. Do not suggest or apply fixes in the same
-response. If the user follows up asking how to fix the issue, answer that
-follow-up directly — but keep it separate from the triage output so the
-diagnosis stays readable on its own.
+After the diagnosis, present 3–5 solution options in a separate
+`## Solution Options` section so the diagnosis stays readable on its own. For
+each option include: a one-line description, the exact command or change
+needed, and the main tradeoff. Do not apply any fix — leave the choice to the
+user.

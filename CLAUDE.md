@@ -295,6 +295,15 @@ export function paginate<T>(items: readonly T[], limit: number): Page<T> {
 }
 ```
 
+## Interaction Style
+
+- **Before planning or implementing:** ask 5–7 clarifying questions to surface
+  constraints, preferences, and edge cases before committing to an approach.
+- **When multiple valid approaches exist:** present 3–5 solutions with a brief
+  rationale and tradeoff for each; do not pick one without user input.
+- Input-collection prompts (e.g. "what is the script name?") are exempt — they
+  are required-parameter asks, not planning clarifications.
+
 ## Error Handling
 
 <!--
