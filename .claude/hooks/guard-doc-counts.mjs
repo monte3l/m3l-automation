@@ -10,7 +10,7 @@
  */
 import process from "node:process";
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 const projectDir = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
 
@@ -30,11 +30,16 @@ try {
 
 const filePath = input.tool_input?.file_path ?? "";
 
+// Normalize to absolute path — Claude Code may deliver relative or absolute paths.
+const absFilePath = isAbsolute(filePath)
+  ? filePath
+  : resolve(projectDir, filePath);
+
 // Trigger on reference page writes/edits OR edits to the root README.md.
 const isReferencePage = /docs\/reference\/(core|aws)\/[^/]+\.md$/.test(
-  filePath,
+  absFilePath,
 );
-const isRootReadme = filePath === join(projectDir, "README.md");
+const isRootReadme = absFilePath === join(projectDir, "README.md");
 if (!isReferencePage && !isRootReadme) process.exit(0);
 
 function countMdFiles(dir) {
