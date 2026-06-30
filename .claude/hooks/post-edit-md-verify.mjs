@@ -7,13 +7,18 @@
  * same engines CI uses — prettier (format) and rumdl (markdown lint) — scoped
  * to the single edited file, immediately after each Write or Edit.
  *
- * Paths skipped here match `lint:md` exclusions in package.json exactly so the
- * hook and CI are consistent:
- *   - CHANGELOG.md
- *   - .github/pull_request_template.md
- *   - docs/adr/template.md
- *   - docs/plans/** (plans are append-only reference docs)
- *   - node_modules/, dist/, .claude/
+ * Skip lists: a shared BASE_SKIP_PATTERNS covers paths excluded by both
+ * engines. The only asymmetry is docs/plans/ — added only to rumdlSkipPatterns
+ * so plan files are auto-formatted by prettier (preventing pre-push drift) but
+ * exempt from strict markdown linting (freeform reference docs). Adding a new
+ * exclusion to BASE_SKIP_PATTERNS automatically propagates to both engines.
+ *
+ *   BASE_SKIP_PATTERNS (prettier + rumdl):
+ *       - CHANGELOG.md
+ *       - .github/pull_request_template.md
+ *       - docs/adr/template.md
+ *       - node_modules/, dist/, .claude/
+ *   rumdlSkipPatterns only: docs/plans/**
  *
  * On failure it exits 2 with a concise stderr advisory — identical contract
  * to post-edit-verify.mjs. The edit is already applied; this is a nudge, not
@@ -50,18 +55,22 @@ const rel = path.relative(projectDir, abs).split(path.sep).join("/");
 // Only Markdown files.
 if (!rel.endsWith(".md")) process.exit(0);
 
-// Skip paths excluded from lint:md in package.json.
-const skipPatterns = [
+// Shared exclusions for both engines. Any new path added here is automatically
+// skipped by both prettier and rumdl — no need to update two arrays.
+const BASE_SKIP_PATTERNS = [
   /^CHANGELOG\.md$/,
   /^\.github\/pull_request_template\.md$/,
   /^docs\/adr\/template\.md$/,
-  /^docs\/plans\//,
   /^node_modules\//,
   /(^|\/)dist\//,
   /^\.claude\//,
   /^\.\./,
 ];
-if (skipPatterns.some((re) => re.test(rel))) process.exit(0);
+
+// docs/plans/ is auto-formatted by prettier (prevents pre-push drift) but
+// skipped by rumdl (freeform reference docs, not subject to strict MD rules).
+const prettierSkipPatterns = [...BASE_SKIP_PATTERNS];
+const rumdlSkipPatterns = [...BASE_SKIP_PATTERNS, /^docs\/plans\//];
 
 function run(cmd, args) {
   const res = spawnSync(cmd, args, {
@@ -75,16 +84,20 @@ function run(cmd, args) {
 
 const failures = [];
 
-// 1. Format the edited file with prettier.
-const fmt = run("pnpm", ["exec", "prettier", "--write", abs]);
-if (fmt && fmt.status !== 0) {
-  failures.push(`prettier:\n${(fmt.stderr || fmt.stdout || "").trim()}`);
+// 1. Format the edited file with prettier (skips only prettierSkipPatterns).
+if (!prettierSkipPatterns.some((re) => re.test(rel))) {
+  const fmt = run("pnpm", ["exec", "prettier", "--write", abs]);
+  if (fmt && fmt.status !== 0) {
+    failures.push(`prettier:\n${(fmt.stderr || fmt.stdout || "").trim()}`);
+  }
 }
 
-// 2. Lint the edited file with rumdl (single-file; matches pnpm lint:md engine).
-const lint = run("pnpm", ["exec", "rumdl", "check", abs]);
-if (lint && lint.status !== 0) {
-  failures.push(`rumdl:\n${(lint.stdout || lint.stderr || "").trim()}`);
+// 2. Lint the edited file with rumdl (skips docs/plans/ and other exclusions).
+if (!rumdlSkipPatterns.some((re) => re.test(rel))) {
+  const lint = run("pnpm", ["exec", "rumdl", "check", abs]);
+  if (lint && lint.status !== 0) {
+    failures.push(`rumdl:\n${(lint.stdout || lint.stderr || "").trim()}`);
+  }
 }
 
 if (failures.length > 0) {
