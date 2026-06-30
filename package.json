@@ -34,6 +34,7 @@
     "check:scaffold": "node bin/check-scaffold.mjs",
     "check:doc-sync": "node bin/check-doc-sync.mjs",
     "check:deps": "node bin/check-deps.mjs",
+    "check:test-counts": "node bin/check-test-counts.mjs",
     "prepare": "lefthook install"
   },
   "devDependencies": {

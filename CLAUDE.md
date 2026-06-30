@@ -233,6 +233,7 @@ services. The only secrets are CI-only release tokens (`NPM_TOKEN`,
 | Doc counts     | `pnpm check:doc-counts`           | CI          |
 | Doc sync       | `pnpm check:doc-sync`             | CI          |
 | Dep hygiene    | `pnpm check:deps`                 | CI          |
+| Test counts    | `pnpm check:test-counts`          | CI          |
 
 These map to package.json scripts (`test` -> `vitest run`, `typecheck`
 -> `turbo run typecheck`, `build` -> `turbo run build`, etc.). Turbo
@@ -532,10 +533,15 @@ top of the advisory text in this file:
   `guard-doc-counts.mjs` warns (non-blocking) when a reference page or
   README.md edit causes the submodule-count prose to drift from the filesystem;
   `guard-provenance-staleness.mjs` warns (non-blocking) when a source file
-  referenced by a provenance sidecar is modified without updating the sidecar.
-- **Stop:** `remind-sync-docs.mjs` emits an advisory (non-blocking) when
-  `docs/implementation-status.md` was changed during the session, reminding to
-  run `/sync-docs` before the next commit.
+  referenced by a provenance sidecar is modified without updating the sidecar;
+  `guard-red-phase-comments.mjs` warns (non-blocking) when a `src/core/` or
+  `src/aws/` file is written and the corresponding test file still carries a
+  stale RED-phase header comment claiming the implementation does not exist.
+- **Stop:** `remind-sync-docs.mjs` emits advisories (non-blocking) when
+  `docs/implementation-status.md` was changed during the session (reminding
+  to run `/sync-docs`) or when test files under `packages/m3l-common/tests/`
+  were modified (reminding to run `pnpm check:test-counts` to verify the
+  recorded counts in `docs/implementation-status.md`).
 
 ## Task Workflow
 
