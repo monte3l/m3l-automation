@@ -498,7 +498,7 @@ that reviews it" structural, and keeps the hub's context lean.
   durable memory the isolated spokes do not share.
 - The `implement-submodule` skill encodes this loop end-to-end; `new-subpath`
   scaffolds a greenfield module and hands off to it.
-- **Current state**: 4 of 22 submodules are implemented (`errors`, `events`, `security`, `environment`). See `docs/implementation-status.md` for the authoritative tracker and suggested build order.
+- **Current state**: 5 of 22 submodules are implemented (`errors`, `events`, `security`, `environment`, `utils`). See `docs/implementation-status.md` for the authoritative tracker and suggested build order.
 - **Lessons learned**: `docs/logs/` holds per-submodule work logs. The
   `core/errors` log (`docs/logs/2026-06-29-core-errors.md`) is the durable
   source for the process lessons baked into the spoke prompts — front-load exact

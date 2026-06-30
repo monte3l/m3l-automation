@@ -418,7 +418,7 @@ function detectIsCiEnvironment(): boolean {
     return true;
   }
   return (
-    isNonEmpty(process.env["GITHUB_ACTIONS"]) ||
+    process.env["GITHUB_ACTIONS"] === "true" ||
     isNonEmpty(process.env["JENKINS_URL"])
   );
 }
@@ -694,7 +694,8 @@ function runDetection(): M3LExecutionEnvironmentInfo {
     detectionDetails,
   };
 
-  return { ...base, ...deploymentResult };
+  const { workspaceMarkerPath: _wmp, ...deploymentFields } = deploymentResult;
+  return { ...base, ...deploymentFields };
 }
 
 // ---------------------------------------------------------------------------
@@ -806,6 +807,27 @@ export class M3LExecutionEnvironment {
    */
   static isInteractive(): boolean {
     return M3LExecutionEnvironment.detect().isInteractive;
+  }
+
+  /**
+   * Clears the cached detection result without running detection.
+   *
+   * Prefer this over {@link detectFresh} in `beforeEach` test hooks where
+   * the purpose is cache invalidation only — each test's own `detectFresh()`
+   * call runs with mocks already installed, avoiding real filesystem I/O in
+   * the shared hook.
+   *
+   * @example
+   * ```ts
+   * import { M3LExecutionEnvironment } from "@m3l-automation/m3l-common/core";
+   *
+   * beforeEach(() => {
+   *   M3LExecutionEnvironment.resetForTesting();
+   * });
+   * ```
+   */
+  static resetForTesting(): void {
+    cached = undefined;
   }
 }
 
