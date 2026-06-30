@@ -82,7 +82,9 @@ beforeAll(() => {
 // Reset singleton before each test so env-var changes take effect.
 // ---------------------------------------------------------------------------
 beforeEach(() => {
-  M3LExecutionEnvironment.detectFresh();
+  // Reset the singleton cache only — each test calls detectFresh() with its
+  // own mocks already in place, avoiding real filesystem I/O in the shared hook.
+  M3LExecutionEnvironment.resetForTesting();
 });
 
 afterEach(() => {
