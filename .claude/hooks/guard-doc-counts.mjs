@@ -12,6 +12,8 @@ import process from "node:process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+const projectDir = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
+
 async function readStdin() {
   const chunks = [];
   for await (const chunk of process.stdin) chunks.push(chunk);
@@ -32,11 +34,8 @@ const filePath = input.tool_input?.file_path ?? "";
 const isReferencePage = /docs\/reference\/(core|aws)\/[^/]+\.md$/.test(
   filePath,
 );
-const isRootReadme =
-  /(?:^|\/)README\.md$/.test(filePath) && !/\/docs\//.test(filePath);
+const isRootReadme = filePath === join(projectDir, "README.md");
 if (!isReferencePage && !isRootReadme) process.exit(0);
-
-const projectDir = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
 
 function countMdFiles(dir) {
   try {
