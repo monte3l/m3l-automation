@@ -559,6 +559,10 @@ top of the advisory text in this file:
   README.md edit causes the submodule-count prose to drift from the filesystem;
   `guard-provenance-staleness.mjs` warns (non-blocking) when a source file
   referenced by a provenance sidecar is modified without updating the sidecar;
+  `guard-index-staleness.mjs` warns (non-blocking) when a provenance sidecar,
+  barrel, implementation-status table, or reference `.md` page is edited without
+  re-running `pnpm gen:index` to refresh `catalog.json` / `symbol-map.json` /
+  `docs/reference/README.md`;
   `guard-red-phase-comments.mjs` warns (non-blocking) when a `src/core/` or
   `src/aws/` file is written and the corresponding test file still carries a
   stale RED-phase header comment claiming the implementation does not exist.
