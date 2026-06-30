@@ -460,9 +460,12 @@ function resolveCredentialSource(
       return M3LCredentialSource.DEFAULT_CHAIN;
     default: {
       const _exhaustive: never = envType;
-      throw new M3LError(`Unhandled environment type: ${String(_exhaustive)}`, {
-        code: "ERR_INTERNAL",
-      });
+      // Unreachable with valid enum input; thrown only if a new enum variant is
+      // added without updating this switch — treated as a detection-layer defect.
+      throw new M3LEnvironmentDetectionError(
+        `Unhandled environment type: ${String(_exhaustive)}`,
+        { code: "ERR_ENVIRONMENT_DETECTION" },
+      );
     }
   }
 }
@@ -633,6 +636,15 @@ function detectDeploymentMode():
       monorepoRoot: walkResult.root,
       workspaceMarkerPath: walkResult.markerPath,
     };
+  }
+
+  // Reject unrecognised override values so typos (e.g. "monrepo") surface
+  // immediately rather than being silently ignored.
+  if (typeof modeOverride === "string" && modeOverride !== "") {
+    throw new M3LEnvironmentDetectionError(
+      `Unrecognised M3L_DEPLOYMENT_MODE value: "${modeOverride}". Expected "standalone" or "monorepo".`,
+      { code: "ERR_ENVIRONMENT_DETECTION" },
+    );
   }
 
   // Normal walk-up result

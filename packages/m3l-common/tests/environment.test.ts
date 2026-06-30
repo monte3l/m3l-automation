@@ -895,6 +895,16 @@ describe("detect() — M3L_DEPLOYMENT_MODE env var override (B10)", () => {
       M3LEnvironmentDetectionError,
     );
   });
+
+  test("M3L_DEPLOYMENT_MODE=<unrecognised> throws M3LEnvironmentDetectionError", () => {
+    vi.spyOn(process, "cwd").mockReturnValue("/fake/isolated");
+    vi.spyOn(fs, "accessSync").mockImplementation(() => {});
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    vi.stubEnv("M3L_DEPLOYMENT_MODE", "invalid");
+    expect(() => M3LExecutionEnvironment.detectFresh()).toThrow(
+      M3LEnvironmentDetectionError,
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
