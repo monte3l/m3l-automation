@@ -249,14 +249,14 @@ and this table in sync.
 
 Six GitHub Actions workflows in `.github/workflows/`:
 
-| Workflow                | Trigger                     | Purpose                                                                                                                                                               |
-| ----------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ci.yml`                | push / PR → main            | 13-step pipeline: secrets → audit → lint → format:check → lint:md → typecheck → check:api → test:coverage (80 % gate) → build → check:exports → check:scaffold → knip |
-| `release.yml`           | `ci.yml` success on main    | semantic-release: npm publish + GitHub release                                                                                                                        |
-| `claude-pr-review.yml`  | PR opened / sync / reopened | **Mandatory blocking gate** — produces PASS/FAIL verdict; merge requires PASS                                                                                         |
-| `claude-assistant.yml`  | @claude in issues / PRs     | On-demand Claude Code assistant                                                                                                                                       |
-| `dependabot.yml`        | Weekly (Mondays)            | Grouped dependency updates (toolchain + release-tooling groups)                                                                                                       |
-| `dependency-review.yml` | PR → main                   | Blocks HIGH/CRITICAL vulnerability advisories                                                                                                                         |
+| Workflow                | Trigger                     | Purpose                                                                                                                                                                              |
+| ----------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ci.yml`                | push / PR → main            | 14-step pipeline: secrets → audit → lint → format:check → lint:md → typecheck → check:api → test:coverage (80 % gate) → build → check:exports → check:scaffold → check:agents → knip |
+| `release.yml`           | `ci.yml` success on main    | semantic-release: npm publish + GitHub release                                                                                                                                       |
+| `claude-pr-review.yml`  | PR opened / sync / reopened | **Mandatory blocking gate** — produces PASS/FAIL verdict; merge requires PASS                                                                                                        |
+| `claude-assistant.yml`  | @claude in issues / PRs     | On-demand Claude Code assistant                                                                                                                                                      |
+| `dependabot.yml`        | Weekly (Mondays)            | Grouped dependency updates (toolchain + release-tooling groups)                                                                                                                      |
+| `dependency-review.yml` | PR → main                   | Blocks HIGH/CRITICAL vulnerability advisories                                                                                                                                        |
 
 ## Code Style
 
@@ -546,10 +546,17 @@ updates the status file, and decides the next step. The hub **does not write
 the right tool grants. This makes "the agent that writes code is never the one
 that reviews it" structural, and keeps the hub's context lean.
 
-- **Spokes**: `Explore` (research), `spec-conformance-reviewer` (contract +
-  doc-vs-code), `test-author` (tests-first / RED), `submodule-implementer`
-  (implementation / GREEN), `code-reviewer`, `security-reviewer`,
-  `type-design-analyzer`, and `silent-failure-hunter` (review).
+- **Spokes**: `Explore` (research — a Claude Code **built-in** agent: Haiku,
+  read-only, no definition file; it skips CLAUDE.md and git status),
+  `spec-conformance-reviewer` (contract + doc-vs-code), `test-author`
+  (tests-first / RED), `submodule-implementer` (implementation / GREEN),
+  `code-reviewer`, `security-reviewer`, `type-design-analyzer`,
+  `silent-failure-hunter`, and `docs-consistency-reviewer` (review).
+- **Spokes are leaf nodes**: only the hub dispatches subagents. No spoke is
+  granted the `Agent` tool (each carries `disallowedTools: Agent`), so the graph
+  stays flat at depth 1 — the hub owns planning, the durable status file, and
+  the review loop. `pnpm check:agents` enforces this and verifies every
+  `subagent_type` reference resolves to a real agent or a known built-in.
 - **TDD**: tests are written from the documented contract and fail first, then
   the implementer makes them pass; review follows.
 - **Live status**: `docs/implementation-status.md` is the source of truth for

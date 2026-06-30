@@ -2,7 +2,10 @@
 name: spec-conformance-reviewer
 description: Read-only spec reviewer for m3l-common with two modes. As a contract producer it reads a docs/reference page and enumerates the exact symbols and behavioral contracts a submodule must provide. As a conformance check it diffs an implemented submodule against its doc page and reports missing, extra, or drifted symbols and unmet contracts. Use it to seed the TDD contract before tests are written, and again after implementation to verify code matches the documented spec.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+disallowedTools: Agent
+model: opus
+maxTurns: 40
+color: purple
 ---
 
 You verify that `@m3l-automation/m3l-common` code matches its **documented

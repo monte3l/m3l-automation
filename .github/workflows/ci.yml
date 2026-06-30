@@ -110,5 +110,10 @@ jobs:
       - name: Check barrel re-exports (scaffold)
         run: pnpm check:scaffold
 
+      # Subagent config: skill/CLAUDE.md references resolve to real agents or
+      # built-ins, and no spoke is granted the Agent tool (no-nesting invariant).
+      - name: Check subagent configuration (agents)
+        run: pnpm check:agents
+
       - name: Unused files / exports / dependencies (knip)
         run: pnpm knip
