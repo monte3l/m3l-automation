@@ -2,7 +2,7 @@
 
 This is the **single source of truth** for what is implemented in
 `@m3l-automation/m3l-common` versus what the `docs/reference/**` pages specify.
-The library started as a documented-but-empty scaffold. The barrels are wired; `errors`, `events`, and `security` are implemented and reviewed (3 of 22 submodules). See the table below for per-submodule status.
+The library started as a documented-but-empty scaffold. The barrels are wired; `errors`, `events`, `security`, and `environment` are implemented and reviewed (4 of 22 submodules). See the table below for per-submodule status.
 
 > **Maintenance contract (hub):** the main agent updates this file after **each
 > phase** of the `implement-submodule` pipeline. It is the durable, cross-session
@@ -30,7 +30,7 @@ _Reviewed_ = passed `code-reviewer` + `spec-conformance-reviewer` (+ `security-r
 | errors      | `core/errors.md`      | 22          | ✅     | ✅    | ✅       | done — 101 tests, ~98% cov; conformant + code-reviewed (must-fixes applied)        |
 | events      | `core/events.md`      | 3           | ✅     | ✅    | ✅       | none — **foundational** (emitter base); 33 tests, 100% cov; reviewed (no must-fix) |
 | security    | `core/security.md`    | 2           | ✅     | ✅    | ✅       | none — 28 tests, 100% cov; reviewed (must-fix applied: @example uses M3LError)     |
-| environment | `core/environment.md` | 7           | ❌     | ❌    | ❌       | none — drives `M3LPaths`                                                           |
+| environment | `core/environment.md` | 8           | ✅     | ✅    | ✅       | none — 98 tests, 100% cov; reviewed (all must-fixes applied)                       |
 | utils       | `core/utils.md`       | 39          | ❌     | ❌    | ❌       | none — `M3LPaths`, concurrency, type guards                                        |
 | json        | `core/json.md`        | 5           | ❌     | ❌    | ❌       | none                                                                               |
 | analysis    | `core/analysis.md`    | 4           | ❌     | ❌    | ❌       | none                                                                               |
