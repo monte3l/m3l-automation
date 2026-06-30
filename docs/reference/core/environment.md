@@ -17,6 +17,7 @@ Exported from `@m3l-automation/m3l-common/core` (the `environment` sub-module):
 - `M3LCredentialSource`
 - `M3LExecutionEnvironmentInfo`
 - `M3LEnvironmentDetectionDetails`
+- `M3LEnvironmentDetectionError`
 
 ## Detection and caching
 
@@ -82,6 +83,10 @@ const refreshed = Core.M3LExecutionEnvironment.detectFresh();
 ```
 
 The property accesses above (`environmentType`) illustrate documented fields; the example is illustrative where the overview does not pin an exact accessor name.
+
+## Error handling
+
+`M3LEnvironmentDetectionError` (extends `M3LError`, `code: "ERR_ENVIRONMENT_DETECTION"`) is thrown when detection encounters an unrecoverable filesystem condition — for example, an `EACCES` or `EPERM` error during the monorepo walk-up. Callers that need to distinguish detection failures from other errors can `catch (e)` and check `e instanceof M3LEnvironmentDetectionError`.
 
 ## Notes and behavior
 

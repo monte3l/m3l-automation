@@ -1,0 +1,135 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/environment.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/environment/index.ts",
+          "symbol": "M3LExecutionEnvironment",
+          "lines": "731-824"
+        },
+        {
+          "file": "packages/m3l-common/src/core/environment/index.ts",
+          "symbol": "M3LEnv",
+          "lines": "824-824"
+        },
+        {
+          "file": "packages/m3l-common/src/core/environment/index.ts",
+          "symbol": "M3LExecutionEnvironmentType",
+          "lines": "48-80"
+        },
+        {
+          "file": "packages/m3l-common/src/core/environment/index.ts",
+          "symbol": "M3LDeploymentMode",
+          "lines": "102-125"
+        },
+        {
+          "file": "packages/m3l-common/src/core/environment/index.ts",
+          "symbol": "M3LCredentialSource",
+          "lines": "147-180"
+        },
+        {
+          "file": "packages/m3l-common/src/core/environment/index.ts",
+          "symbol": "M3LExecutionEnvironmentInfo",
+          "lines": "347-395"
+        },
+        {
+          "file": "packages/m3l-common/src/core/environment/index.ts",
+          "symbol": "M3LEnvironmentDetectionDetails",
+          "lines": "273-296"
+        },
+        {
+          "file": "packages/m3l-common/src/core/environment/index.ts",
+          "symbol": "M3LEnvironmentDetectionError",
+          "lines": "232-252"
+        }
+      ],
+      "commit": "797b9c9729d140d135e126a4ebb0990380240a75",
+      "retrieved": "2026-06-30"
+    },
+    {
+      "heading": "Detection and caching",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/environment/index.ts",
+          "symbol": "M3LExecutionEnvironment",
+          "lines": "752-803"
+        }
+      ],
+      "commit": "797b9c9729d140d135e126a4ebb0990380240a75",
+      "retrieved": "2026-06-30"
+    },
+    {
+      "heading": "Monorepo vs. standalone detection",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/environment/index.ts",
+          "symbol": "M3LDeploymentMode",
+          "lines": "102-125"
+        },
+        {
+          "file": "packages/m3l-common/src/core/environment/index.ts",
+          "symbol": "M3LExecutionEnvironmentInfo",
+          "lines": "347-395"
+        }
+      ],
+      "commit": "797b9c9729d140d135e126a4ebb0990380240a75",
+      "retrieved": "2026-06-30"
+    },
+    {
+      "heading": "Environment types",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/environment/index.ts",
+          "symbol": "M3LExecutionEnvironmentType",
+          "lines": "48-80"
+        }
+      ],
+      "commit": "797b9c9729d140d135e126a4ebb0990380240a75",
+      "retrieved": "2026-06-30"
+    },
+    {
+      "heading": "Credential sources",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/environment/index.ts",
+          "symbol": "M3LCredentialSource",
+          "lines": "147-180"
+        }
+      ],
+      "commit": "797b9c9729d140d135e126a4ebb0990380240a75",
+      "retrieved": "2026-06-30"
+    },
+    {
+      "heading": "Environment info and detection details",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/environment/index.ts",
+          "symbol": "M3LExecutionEnvironmentInfo",
+          "lines": "347-395"
+        },
+        {
+          "file": "packages/m3l-common/src/core/environment/index.ts",
+          "symbol": "M3LEnvironmentDetectionDetails",
+          "lines": "273-296"
+        }
+      ],
+      "commit": "797b9c9729d140d135e126a4ebb0990380240a75",
+      "retrieved": "2026-06-30"
+    },
+    {
+      "heading": "Error handling",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/environment/index.ts",
+          "symbol": "M3LEnvironmentDetectionError",
+          "lines": "232-252"
+        }
+      ],
+      "commit": "797b9c9729d140d135e126a4ebb0990380240a75",
+      "retrieved": "2026-06-30"
+    }
+  ]
+}
