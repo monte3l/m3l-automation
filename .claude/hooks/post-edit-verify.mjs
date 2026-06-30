@@ -136,7 +136,7 @@ if (/^packages\/[^/]+\/src\//.test(rel)) {
     const testLint = run("pnpm", ["exec", "eslint", testsDir]);
     if (testLint && testLint.status !== 0) {
       failures.push(
-        `eslint (tests/ — may be pre-existing, unrelated to this edit):\n${(testLint.stdout || testLint.stderr || "").trim()}`,
+        `eslint (tests/ — scanned because a src/ file was edited; fix the file(s) listed below):\n${(testLint.stdout || testLint.stderr || "").trim()}`,
       );
     }
   }
