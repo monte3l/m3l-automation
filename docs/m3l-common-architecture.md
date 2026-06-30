@@ -8,10 +8,10 @@
 
 `packages/m3l-common/src/index.ts`: the package re-exports exactly two top-level namespace objects:
 
-| Export | Source               | What it contains                                     |
-| ------ | -------------------- | ---------------------------------------------------- |
-| `Core` | `libs/core/index.ts` | Application scaffolding, I/O, logging, UI, utilities |
-| `AWS`  | `libs/aws/index.ts`  | AWS credential management and SDK client providers   |
+| Export | Source                                  | What it contains                                     |
+| ------ | --------------------------------------- | ---------------------------------------------------- |
+| `Core` | `packages/m3l-common/src/core/index.ts` | Application scaffolding, I/O, logging, UI, utilities |
+| `AWS`  | `packages/m3l-common/src/aws/index.ts`  | AWS credential management and SDK client providers   |
 
 `packages/m3l-common/package.json`: the `exports` map exposes three import paths — `.` (both namespaces via `index.ts`), `./core`, and `./aws` — so consumers can either use named namespaces or import sub-modules directly.
 
@@ -22,40 +22,39 @@
 ```text
 packages/m3l-common/src/
 ├── index.ts                 ← package entry: exports Core + AWS
-└── libs/
-    ├── core/                ← 18 sub-modules (application framework + utilities)
-    │   ├── index.ts         ← wildcard re-exports all sub-modules
-    │   ├── script/          ← M3LScript: CLI / Lambda entry-point framework
-    │   ├── config/          ← multi-source configuration
-    │   ├── environment/     ← runtime + deployment-mode detection
-    │   ├── errors/          ← M3LError, M3LResult<T,E>
-    │   ├── events/          ← type-safe event emitter
-    │   ├── logging/         ← M3LLogger + handlers
-    │   ├── prompt/          ← spinners, progress bars, interactive input
-    │   ├── importers/       ← CSV / JSON / text file parsing
-    │   ├── exporters/       ← CSV / JSON / HTML file writing
-    │   ├── files/           ← execution-directory file archival
-    │   ├── json/            ← field path navigation, format detection
-    │   ├── text/            ← multi-format text extraction (PDF, DOCX, etc.)
-    │   ├── storage/         ← SQLite FTS5 full-text search
-    │   ├── utils/           ← M3LPaths, concurrency pool, type guards, string utils
-    │   ├── network/         ← M3LHttpClient (undici)
-    │   ├── polling/         ← M3LPoller, M3LRetryRunner, M3LBackoff, classifiers
-    │   ├── analysis/        ← M3LThresholdEvaluator
-    │   ├── messaging/       ← abstract M3LMessenger interface
-    │   └── security/        ← prototype pollution guard
-    └── aws/                 ← credential management + client providers
-        ├── index.ts
-        ├── authentication/  ← M3LAWSCredentialsManager
-        ├── clients/         ← AWSClientProvider, AWSMultiClientProvider
-        └── models/          ← shared AWS model types
+├── core/                    ← 19 sub-modules (application framework + utilities)
+│   ├── index.ts             ← wildcard re-exports all sub-modules
+│   ├── script/              ← M3LScript: CLI / Lambda entry-point framework
+│   ├── config/              ← multi-source configuration
+│   ├── environment/         ← runtime + deployment-mode detection
+│   ├── errors/              ← M3LError, M3LResult<T,E>
+│   ├── events/              ← type-safe event emitter
+│   ├── logging/             ← M3LLogger + handlers
+│   ├── prompt/              ← spinners, progress bars, interactive input
+│   ├── importers/           ← CSV / JSON / text file parsing
+│   ├── exporters/           ← CSV / JSON / HTML file writing
+│   ├── files/               ← execution-directory file archival
+│   ├── json/                ← field path navigation, format detection
+│   ├── text/                ← multi-format text extraction (PDF, DOCX, etc.)
+│   ├── storage/             ← SQLite FTS5 full-text search
+│   ├── utils/               ← M3LPaths, concurrency pool, type guards, string utils
+│   ├── network/             ← M3LHttpClient (undici)
+│   ├── polling/             ← M3LPoller, M3LRetryRunner, M3LBackoff, classifiers
+│   ├── analysis/            ← M3LThresholdEvaluator
+│   ├── messaging/           ← abstract M3LMessenger interface
+│   └── security/            ← prototype pollution guard
+└── aws/                     ← credential management + client providers
+    ├── index.ts
+    ├── authentication/      ← M3LAWSCredentialsManager
+    ├── clients/             ← AWSClientProvider, AWSMultiClientProvider
+    └── models/              ← shared AWS model types
 ```
 
 ---
 
 ## 2. Module / Package Map
 
-### 2.1 `libs/core`
+### 2.1 `packages/m3l-common/src/core`
 
 #### `script` — CLI / Lambda entry-point framework
 
@@ -355,38 +354,38 @@ All extractors return `{ text: string, pages?: number, truncated: boolean }` —
 
 ---
 
-### 2.2 `libs/aws`
+### 2.2 `packages/m3l-common/src/aws`
 
 #### Credential management — `M3LAWSCredentialsManager`
 
-**Public surface** (`libs/aws/authentication/` and `libs/aws/index.ts`): `M3LAWSCredentialsManager`, `M3LAWSCredentialsManagerOptions`, `M3LAWSCredentialsErrorType`, `M3LAWSCredentialsErrorAnalysis`, `M3LAWSRetryContext`, `M3LAWSLoginResult`.
+**Public surface** (`packages/m3l-common/src/aws/authentication/` and `packages/m3l-common/src/aws/index.ts`): `M3LAWSCredentialsManager`, `M3LAWSCredentialsManagerOptions`, `M3LAWSCredentialsErrorType`, `M3LAWSCredentialsErrorAnalysis`, `M3LAWSRetryContext`, `M3LAWSLoginResult`.
 
-`libs/aws/M3LAWSCredentialsManager.ts`: `M3LAWSCredentialsManager` manages AWS SSO credentials for one or more profiles.
+`packages/m3l-common/src/aws/M3LAWSCredentialsManager.ts`: `M3LAWSCredentialsManager` manages AWS SSO credentials for one or more profiles.
 
-`libs/aws/M3LAWSCredentialsManager.ts`: SSO login is performed by spawning `aws sso login --profile=<name>` as a child process with `stdio: 'inherit'`, allowing the browser-based SSO flow to interact with the user's terminal. Timeout is configurable (default 120 s).
+`packages/m3l-common/src/aws/M3LAWSCredentialsManager.ts`: SSO login is performed by spawning `aws sso login --profile=<name>` as a child process with `stdio: 'inherit'`, allowing the browser-based SSO flow to interact with the user's terminal. Timeout is configurable (default 120 s).
 
-`libs/aws/M3LAWSCredentialsManager.ts`: credential validation uses `@aws-sdk/client-sts` `GetCallerIdentityCommand` — this tests the actual credential resolution path, not just local file presence.
+`packages/m3l-common/src/aws/M3LAWSCredentialsManager.ts`: credential validation uses `@aws-sdk/client-sts` `GetCallerIdentityCommand` — this tests the actual credential resolution path, not just local file presence.
 
-`libs/aws/M3LAWSCredentialsManager.ts`: error analysis detects SSO expiry patterns via regex sets (6 patterns for expired session, additional patterns for invalid session and profile-not-found). `M3LAWSCredentialsErrorType` enum values: `SSO_SESSION_EXPIRED`, `SSO_SESSION_INVALID`, `CREDENTIALS_PROVIDER_FAILED`, `PROFILE_NOT_FOUND`, `UNKNOWN`.
+`packages/m3l-common/src/aws/M3LAWSCredentialsManager.ts`: error analysis detects SSO expiry patterns via regex sets (6 patterns for expired session, additional patterns for invalid session and profile-not-found). `M3LAWSCredentialsErrorType` enum values: `SSO_SESSION_EXPIRED`, `SSO_SESSION_INVALID`, `CREDENTIALS_PROVIDER_FAILED`, `PROFILE_NOT_FOUND`, `UNKNOWN`.
 
-`libs/aws/M3LAWSCredentialsManager.ts`: retry logic wraps an AWS operation: on credential error, if recoverable and retries remain, the manager optionally prompts the user (interactive mode) then re-runs SSO login before retrying.
+`packages/m3l-common/src/aws/M3LAWSCredentialsManager.ts`: retry logic wraps an AWS operation: on credential error, if recoverable and retries remain, the manager optionally prompts the user (interactive mode) then re-runs SSO login before retrying.
 
-`libs/aws/M3LAWSCredentialsManager.ts`: `ensureValidCredentialsMultiple()` validates multiple profiles in parallel (phase 1), separates valid from invalid profiles (phase 2), then executes SSO login _sequentially_ for invalid ones (phase 3) — parallel browser windows would be unusable.
+`packages/m3l-common/src/aws/M3LAWSCredentialsManager.ts`: `ensureValidCredentialsMultiple()` validates multiple profiles in parallel (phase 1), separates valid from invalid profiles (phase 2), then executes SSO login _sequentially_ for invalid ones (phase 3) — parallel browser windows would be unusable.
 
 ---
 
 #### Client providers — `AWSClientProvider`, `AWSMultiClientProvider`
 
-`libs/aws/clients/AWSClientProvider.ts`: `AWSClientProvider` creates and lazily caches on first access AWS SDK clients for a single profile:
+`packages/m3l-common/src/aws/clients/AWSClientProvider.ts`: `AWSClientProvider` creates and lazily caches on first access AWS SDK clients for a single profile:
 
 - Credential resolution: if a profile name is provided, uses `fromIni()` from `@aws-sdk/credential-provider-ini` (SSO-aware); otherwise falls back to the SDK default credential chain.
 - `close()` destroys all cached clients.
 
-`libs/aws/clients/AWSMultiClientProvider.ts`: `AWSMultiClientProvider` manages a map of `AWSClientProvider` instances keyed by profile name. Profiles are deduplicated on construction. `mapParallel<T>(fn)` executes an operation across all profiles in parallel; `mapParallelSettled<T>(fn)` collects per-profile results/errors without throwing.
+`packages/m3l-common/src/aws/clients/AWSMultiClientProvider.ts`: `AWSMultiClientProvider` manages a map of `AWSClientProvider` instances keyed by profile name. Profiles are deduplicated on construction. `mapParallel<T>(fn)` executes an operation across all profiles in parallel; `mapParallelSettled<T>(fn)` collects per-profile results/errors without throwing.
 
-`libs/aws/AWSProvider.ts`: `AWSProvider` is the facade exposed by `M3LScript` via `script.aws`. It lazily instantiates `AWSClientsProvider` (`clients` getter) and `AWSServiceProvider` (`services` getter) from a shared `AWSMultiClientProviderConfig`.
+`packages/m3l-common/src/aws/AWSProvider.ts`: `AWSProvider` is the facade exposed by `M3LScript` via `script.aws`. It lazily instantiates `AWSClientsProvider` (`clients` getter) and `AWSServiceProvider` (`services` getter) from a shared `AWSMultiClientProviderConfig`.
 
-`libs/aws/AWSRegion.ts`: `AWS_REGION` defaults to `'eu-south-1'` (Milan) if unspecified.
+`packages/m3l-common/src/aws/AWSRegion.ts`: `AWS_REGION` defaults to `'eu-south-1'` (Milan) if unspecified.
 
 ---
 
@@ -565,7 +564,7 @@ Standalone layout:
 
 ### External I/O patterns
 
-- **AWS SSO login** — `M3LAWSCredentialsManager` spawns `aws sso login --profile=<name>` with `stdio: 'inherit'` so the browser-based SSO flow appears in the user's terminal — (`libs/aws/M3LAWSCredentialsManager.ts`).
+- **AWS SSO login** — `M3LAWSCredentialsManager` spawns `aws sso login --profile=<name>` with `stdio: 'inherit'` so the browser-based SSO flow appears in the user's terminal — (`packages/m3l-common/src/aws/M3LAWSCredentialsManager.ts`).
 - **Outbound HTTP** — `M3LHttpClient` makes calls via `undici` with optional `ProxyAgent` for local proxy debugging tools — (`network/M3LHttpClient.ts`).
 
 ### Container / Lambda deployment notes
