@@ -77,7 +77,20 @@ and confirm the number matches:
 If any value is stale, list the file, the current value, and the required
 update. Do not edit unless the user asks.
 
-### 6 — Markdown lint
+### 6 — Test count check
+
+```bash
+pnpm check:test-counts
+```
+
+Runs Vitest with the JSON reporter and compares the per-file test counts
+against the "N tests" values recorded in the Notes column of
+`docs/implementation-status.md` (✅ rows only).
+
+If it fails, the output names the submodule, the recorded count, and the
+actual count. Tell the user the exact edit required in the Notes column.
+
+### 7 — Markdown lint
 
 ```bash
 pnpm lint:md
@@ -97,6 +110,7 @@ Output after all steps complete:
 - Doc counts:            ✓ (Core=N, AWS=M, total=N+M) / ✗
 - Provenance (post):     ✓ / ✗
 - Implementation status: up to date / <list rows needing attention>
+- Test counts:           ✓ (N submodules verified) / ✗
 - Markdown lint:         ✓ / ✗
 ```
 
