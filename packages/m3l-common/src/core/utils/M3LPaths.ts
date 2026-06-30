@@ -83,7 +83,7 @@ export const M3LPathEnvironmentVariables = {
  * import type { M3LPathEnvironmentVariables } from "@m3l-automation/m3l-common/core";
  *
  * function isPathVar(v: string): v is M3LPathEnvironmentVariables {
- *   return Object.values({ DATA_DIR: "M3L_DATA_DIR" }).includes(v);
+ *   return (Object.values(M3LPathEnvironmentVariables) as string[]).includes(v);
  * }
  * ```
  */
