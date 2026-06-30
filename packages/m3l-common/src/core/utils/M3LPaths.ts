@@ -161,10 +161,21 @@ function readEnvOverride(name: string): string | undefined {
 
 /**
  * Derives the standalone base directory from `M3L_BASE_DIR` (when set) or
- * `process.cwd()`.
+ * `process.cwd()`. Wraps `process.cwd()` so that an OS-level failure (e.g.
+ * the working directory was deleted mid-run) surfaces as a typed
+ * `M3LPathResolutionError` rather than a raw Node.js `Error`.
  */
 function resolveStandaloneBase(): string {
-  return readEnvOverride(M3LPathEnvironmentVariables.BASE_DIR) ?? process.cwd();
+  const override = readEnvOverride(M3LPathEnvironmentVariables.BASE_DIR);
+  if (override !== undefined) return override;
+  try {
+    return process.cwd();
+  } catch (cause) {
+    throw new M3LPathResolutionError(
+      "Cannot determine standalone base directory: process.cwd() failed (working directory may have been deleted)",
+      { cause },
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -211,7 +222,7 @@ export class M3LPaths {
   private readonly monorepoRoot: string | undefined;
 
   /** Deployment mode snapshotted at construction time. */
-  private readonly deploymentMode: string;
+  private readonly deploymentMode: M3LDeploymentMode;
 
   /** Resolved data directory (override or computed). */
   private readonly dataDir: string;
@@ -399,16 +410,15 @@ export class M3LPaths {
    * ```
    */
   getProjectRoot(): string {
-    if (this.deploymentMode === M3LDeploymentMode.MONOREPO) {
-      // In MONOREPO mode monorepoRoot is always a string — the discriminated
-      // union on M3LExecutionEnvironmentInfo guarantees this. We checked
-      // deploymentMode above, so the assignment in the constructor always set
-      // this.monorepoRoot to a non-undefined string. The explicit check
-      // below keeps the return type narrowed without a non-null assertion.
-      const root = this.monorepoRoot;
-      if (root !== undefined) {
-        return root;
-      }
+    // monorepoRoot is always a non-undefined string in MONOREPO mode — the
+    // M3LExecutionEnvironmentInfo discriminated union guarantees this at
+    // construction time. The explicit undefined check lets TypeScript narrow
+    // the return type without a non-null assertion.
+    if (
+      this.deploymentMode === M3LDeploymentMode.MONOREPO &&
+      this.monorepoRoot !== undefined
+    ) {
+      return this.monorepoRoot;
     }
     throw new M3LPathResolutionError(
       "getProjectRoot() is unavailable in standalone mode: no monorepo workspace marker was found",
