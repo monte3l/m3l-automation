@@ -11,7 +11,6 @@
  * shipped and provenance sidecars + doc counts need reconciling.
  */
 import { execSync } from "node:child_process";
-import { join } from "node:path";
 
 const projectDir = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
 const target = "docs/implementation-status.md";
@@ -37,7 +36,7 @@ const hasRecentCommit = recentCommit.length > 0;
 
 if (hasUncommitted || hasRecentCommit) {
   process.stderr.write(
-    `⚡ /sync-docs reminder: ${join(target)} was changed this session.\n` +
+    `⚡ /sync-docs reminder: ${target} was changed this session.\n` +
       `   Run \`/sync-docs\` to re-stamp provenance sidecars, verify doc counts,\n` +
       `   and lint markdown before committing.\n`,
   );
