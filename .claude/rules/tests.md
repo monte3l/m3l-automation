@@ -16,3 +16,12 @@ paths:
 - **Type-level tests with `expectTypeOf`** where the type IS the contract.
 - **Parameterize** when the same logic is exercised against multiple inputs.
 - **Never tolerate flaky tests** — diagnose and fix; do not mute or retry-mask.
+
+```typescript
+import { expect, test } from "vitest";
+import { paginate } from "../src/index.js";
+
+test("paginate respects the limit", () => {
+  expect(paginate([1, 2, 3, 4, 5], 2).items).toHaveLength(2);
+});
+```

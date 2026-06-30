@@ -12,6 +12,7 @@ paths:
 - **No non-null `!` assertions.** Prove presence via guard, default, or control
   flow.
 - **Named exports only.** No default exports (tree-shakeable, refactor-safe).
+- **Export each type next to the value it describes.**
 - **Prefer `readonly` / `const`.** Create new objects instead of mutating inputs.
 - **Typed error hierarchy.** Throw subclasses of `M3LError`; never bare strings.
   Chain underlying failures with the `cause` option.
@@ -25,3 +26,17 @@ paths:
   no `exports` entry and may change without a major bump.
 - **The `exports` map is the public contract** (`.`, `./core`, `./aws`). Adding,
   removing, or retyping a subpath is a semver event — plan before editing it.
+
+```typescript
+export type UserId = string & { readonly __brand: unique symbol };
+export type Page<T> = { items: readonly T[]; total: number };
+
+export class M3LError extends Error {}
+export class NotFoundError extends M3LError {}
+
+export function load(id: UserId): User {
+  const user = repo.get(id);
+  if (user === undefined) throw new NotFoundError(`user ${String(id)}`);
+  return user;
+}
+```

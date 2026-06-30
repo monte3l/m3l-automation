@@ -213,41 +213,16 @@ services. The only secrets are CI-only release tokens (`NPM_TOKEN`,
 ================================================================
 -->
 
-| Task            | Command                           | When          |
-| --------------- | --------------------------------- | ------------- |
-| Tests           | `pnpm test`                       | pre-commit    |
-| Watch tests     | `pnpm test:watch`                 | iterating     |
-| Single test     | `pnpm vitest run tests/x.test.ts` | iterating     |
-| Lint            | `pnpm lint`                       | pre-commit    |
-| Markdown lint   | `pnpm lint:md`                    | CI            |
-| Format          | `pnpm format`                     | pre-commit    |
-| Type check      | `pnpm typecheck`                  | pre-commit    |
-| Build           | `pnpm build` (turbo + tsc)        | pre-publish   |
-| Unused code     | `pnpm knip`                       | pre-publish   |
-| Export check    | `pnpm check:exports`              | pre-publish   |
-| Format check    | `pnpm format:check`               | CI            |
-| API snapshot    | `pnpm check:api`                  | pre-commit    |
-| Test coverage   | `pnpm test:coverage`              | pre-push      |
-| Barrel sync     | `pnpm check:scaffold`             | pre-publish   |
-| Doc provenance  | `pnpm check:provenance`           | CI            |
-| Doc counts      | `pnpm check:doc-counts`           | CI            |
-| Doc sync        | `pnpm check:doc-sync`             | CI            |
-| Dep hygiene     | `pnpm check:deps`                 | CI            |
-| Test counts     | `pnpm check:test-counts`          | CI            |
-| Worktree incl.  | `pnpm check:worktree`             | worktree edit |
-| Gen ref index   | `pnpm gen:index`                  | after ship    |
-| Check ref index | `pnpm check:index`                | CI            |
-| Worktree setup  | `pnpm worktree:setup`             | new worktree  |
-| Worktree prune  | `pnpm worktree:prune`             | cleanup       |
-
-These map to package.json scripts (`test` -> `vitest run`, `typecheck`
--> `turbo run typecheck`, `build` -> `turbo run build`, etc.). Turbo
-fans tasks out per workspace package and caches them. Keep the scripts
-and this table in sync.
+Run any task with `pnpm <script>`; the full list is in `package.json`
+`scripts` (turbo fans them out per package and caches them). Cadence:
+`test` / `lint` / `format` / `typecheck` / `check:api` pre-commit;
+`test:coverage` pre-push; `build` / `knip` / `check:exports` / `check:scaffold`
+pre-publish; the remaining `check:*` run in CI.
 
 ## CI/CD
 
-Six GitHub Actions workflows in `.github/workflows/`:
+Five GitHub Actions workflows in `.github/workflows/` (plus Dependabot via the
+GitHub-native `.github/dependabot.yml`, which is config, not a workflow):
 
 | Workflow                | Trigger                     | Purpose                                                                                                                                                                              |
 | ----------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -255,10 +230,9 @@ Six GitHub Actions workflows in `.github/workflows/`:
 | `release.yml`           | `ci.yml` success on main    | semantic-release: npm publish + GitHub release                                                                                                                                       |
 | `claude-pr-review.yml`  | PR opened / sync / reopened | **Mandatory blocking gate** — produces PASS/FAIL verdict; merge requires PASS                                                                                                        |
 | `claude-assistant.yml`  | @claude in issues / PRs     | On-demand Claude Code assistant                                                                                                                                                      |
-| `dependabot.yml`        | Weekly (Mondays)            | Grouped dependency updates (toolchain + release-tooling groups)                                                                                                                      |
 | `dependency-review.yml` | PR → main                   | Blocks HIGH/CRITICAL vulnerability advisories                                                                                                                                        |
 
-## Code Style
+## Coding, errors & tests (path-scoped)
 
 <!--
 ================================================================
@@ -276,24 +250,20 @@ Six GitHub Actions workflows in `.github/workflows/`:
 ================================================================
 -->
 
-- Formatting/import order: enforced by Prettier + ESLint — don't
-  hand-format.
-- `strict: true`; no `any` (use `unknown` and narrow); avoid non-null
-  `!` assertions in `src/`.
-- **ESM:** relative imports MUST carry the `.js` extension
-  (`./util.js`); `tsc` does not add it and Node will not resolve
-  without it.
-- Public API fully typed; export types next to the values they
-  describe.
+Detailed code, error-handling, and testing rules live in `.claude/rules/` and
+load only when you touch matching files (so they cost nothing in unrelated
+sessions):
 
-```typescript
-export type UserId = string & { readonly __brand: unique symbol };
-export type Page<T> = { items: readonly T[]; total: number };
-
-export function paginate<T>(items: readonly T[], limit: number): Page<T> {
-  return { items: items.slice(0, limit), total: items.length };
-}
-```
+- `packages/m3l-common/src/**` → `.claude/rules/library-src.md` — ESM `.js`
+  imports, no `any`/`!`, named exports, `readonly`/`const`, the `M3LError`
+  hierarchy (chain with `cause`), TSDoc, `internal/` privacy, the `exports`
+  contract.
+- `**/tests/**`, `*.test.ts` → `.claude/rules/tests.md` — Vitest, a happy +
+  failure path per export, `expectTypeOf` where the type is the contract, the
+  80 % coverage gate.
+- `scripts/**` → `.claude/rules/scripts.md` — consuming the library via
+  `workspace:*` and the `M3LScript` lifecycle.
+- Deeper reference: `.claude/rules/domain-knowledge.md` → `rules/01-06-*.md`.
 
 ## Interaction Style
 
@@ -303,75 +273,6 @@ export function paginate<T>(items: readonly T[], limit: number): Page<T> {
   rationale and tradeoff for each; do not pick one without user input.
 - Input-collection prompts (e.g. "what is the script name?") are exempt — they
   are required-parameter asks, not planning clarifications.
-
-## Error Handling
-
-<!--
-================================================================
- SECTION: Error Handling
- Scope/usage   : How errors are raised, wrapped, and surfaced in
-                 this codebase.
- Status        : Recommended.
- Best practices: State the project's error hierarchy and where
-                 errors cross the public boundary. Specify when to
-                 chain with `cause`.
- Model notes   : All tiers. Sonnet 4.6 / Opus 4.8 / Fable 5 apply
-                 patterns broadly from one example; Haiku 4.5
-                 should be given the exact base class to subclass.
-================================================================
--->
-
-- The library throws typed errors from one hierarchy (`M3LError`
-  base); subclass per failure mode.
-- Never throw bare strings; never swallow errors silently.
-- Chain underlying failures with the `cause` option.
-
-```typescript
-export class M3LError extends Error {}
-export class NotFoundError extends M3LError {}
-
-export function load(id: UserId): User {
-  const user = repo.get(id);
-  if (user === undefined) throw new NotFoundError(`user ${String(id)}`);
-  return user;
-}
-```
-
-## Testing Strategy
-
-<!--
-================================================================
- SECTION: Testing Strategy
- Scope/usage   : What "tested" means here, so Claude writes the
-                 right tests.
- Status        : Recommended.
- Best practices: State the framework, the unit boundary, the
-                 coverage bar, and what to mock vs hit for real.
-                 Detailed how-to belongs in a skill.
- Model notes   : Opus 4.8 and Fable 5 design test suites from a
-                 one-line policy. Haiku 4.5 needs the naming
-                 convention and an example spelled out.
-================================================================
--->
-
-- Vitest; test files are `*.test.ts`, importing from `src/` (with the
-  `.js` extension).
-- Unit tests are pure: no network, no filesystem; mock collaborators.
-- Every exported function needs a happy-path test plus one failure
-  path.
-- Where the type IS the contract, add a type-level test with
-  `expectTypeOf`.
-- Coverage is enforced by V8: `pnpm test:coverage` requires 80 % across
-  lines, functions, branches, and statements.
-
-```typescript
-import { expect, test } from "vitest";
-import { paginate } from "../src/index.js";
-
-test("paginate respects the limit", () => {
-  expect(paginate([1, 2, 3, 4, 5], 2).items).toHaveLength(2);
-});
-```
 
 ## Git Workflow
 
@@ -405,44 +306,20 @@ test("paginate respects the limit", () => {
 
 ### Git worktrees (task isolation)
 
-Worktrees let you run isolated, parallel sessions (one per branch) sharing one
-`.git`. See ADR-0013 for the decision; the rules that matter day-to-day:
+See ADR-0013 for the full rules. Day-to-day:
 
-- **Standard flow (sibling dir):** `git worktree add ../m3l-automation-<slug> -b
-feat/<slug>`, then `cd` in and run `pnpm worktree:setup` (installs deps and
-  copies gitignored files like `.env` — a fresh worktree has none). Keep the
-  `feat/<slug>` branch convention.
-- **Cleanup:** `pnpm worktree:prune` (add `--dry-run` to preview) removes merged
-  or stale worktrees; `cleanupPeriodDays` auto-sweeps agent worktrees.
-- **Shared `.git`:** lefthook hooks are shared across worktrees — no per-tree
-  install needed. `node_modules`, `dist/`, `coverage/`, and `.turbo/` are
-  per-worktree (separate directories), so they do not collide.
-- **Two flows, one mechanism:** the **manual** sibling-dir flow above is for
-  human/non-Claude work; the **native** flow (`claude --worktree <name>`, or a
-  spoke with `isolation: worktree`) creates worktrees under `.claude/worktrees/`
-  and copies `.worktreeinclude` files automatically — but does **not** run
-  `pnpm install`. A `SessionStart` hook (`guard-worktree-ready.mjs`) reminds you
-  to run `pnpm worktree:setup` (or just `pnpm install`) when a worktree is
-  unprovisioned.
-- **Gotcha:** worktrees copy the tracked git tree, **not** gitignored `.claude/`
-  content. `claude --worktree` / isolated spokes get the files in
-  `.worktreeinclude`; the manual flow relies on `pnpm worktree:setup`.
-- **`.worktreeinclude` format:** literal paths only (no globs/negation — the
-  copier skips those), relative to the repo root; existing files are never
-  clobbered and missing sources are silently skipped. Each entry must be
-  gitignored — `pnpm check:worktree` enforces that.
-- **Settings (`.claude/settings.json`):** `worktree.baseRef: "fresh"` branches
-  new worktrees from `origin/main` (the Claude Code default; set explicitly to
-  record intent); `cleanupPeriodDays: 14` auto-sweeps stale **agent**
-  worktrees only — manual worktrees need an explicit `pnpm worktree:prune`.
-- **Never** run root globs against a nested `.claude/worktrees/` checkout — it is
-  excluded from gitignore, ESLint, Prettier, and Vitest precisely so
-  `pnpm format`/`lint`/`test` can't reach another branch's files.
-- **Troubleshooting:** a stale worktree that won't remove → `pnpm
-worktree:prune --force` (discards its uncommitted changes); a worktree whose
-  directory you deleted by hand but `git worktree list` still shows → `git
-worktree prune`; "`pnpm format` rewrote another branch's files" → run the
-  scoped command from inside that worktree, not the main tree.
+- **Manual (sibling dir):** `git worktree add ../m3l-automation-<slug> -b
+feat/<slug>`, then `pnpm worktree:setup` (installs deps + copies gitignored
+  files like `.env` — a fresh worktree has none).
+- **Native:** `claude --worktree <name>` (or a spoke with `isolation: worktree`)
+  creates worktrees under `.claude/worktrees/` and copies `.worktreeinclude`
+  files, but does **not** run `pnpm install` — the `guard-worktree-ready.mjs`
+  SessionStart hook reminds you to.
+- **Cleanup:** `pnpm worktree:prune` (`--dry-run` to preview); agent worktrees
+  auto-sweep after `cleanupPeriodDays`.
+- Never run root `pnpm format`/`lint`/`test` against a nested
+  `.claude/worktrees/` checkout — run the scoped command from inside that
+  worktree instead.
 
 ## Architecture & Decisions
 
@@ -521,8 +398,9 @@ worktree prune`; "`pnpm format` rewrote another branch's files" → run the
 ================================================================
 -->
 
-- TSDoc on every exported symbol; include an `@example` on primary
-  entry points. Comment the _why_, not the _what_.
+- Comment the _why_, not the _what_. The TSDoc rules (every exported symbol,
+  `@example` on primary entry points) live in `.claude/rules/library-src.md`,
+  loaded when editing `src/**`.
 
 ## Agent Operating Model
 
@@ -546,17 +424,12 @@ updates the status file, and decides the next step. The hub **does not write
 the right tool grants. This makes "the agent that writes code is never the one
 that reviews it" structural, and keeps the hub's context lean.
 
-- **Spokes**: `Explore` (research — a Claude Code **built-in** agent: Haiku,
-  read-only, no definition file; it skips CLAUDE.md and git status),
-  `spec-conformance-reviewer` (contract + doc-vs-code), `test-author`
-  (tests-first / RED), `submodule-implementer` (implementation / GREEN),
-  `code-reviewer`, `security-reviewer`, `type-design-analyzer`,
-  `silent-failure-hunter`, and `docs-consistency-reviewer` (review).
-- **Spokes are leaf nodes**: only the hub dispatches subagents. No spoke is
-  granted the `Agent` tool (each carries `disallowedTools: Agent`), so the graph
-  stays flat at depth 1 — the hub owns planning, the durable status file, and
-  the review loop. `pnpm check:agents` enforces this and verifies every
-  `subagent_type` reference resolves to a real agent or a known built-in.
+- **Spokes** are defined in `.claude/agents/*.md` (plus the built-in `Explore`
+  for read-only research): spec-conformance, `test-author` (RED),
+  `submodule-implementer` (GREEN), and the review agents. They are leaf nodes —
+  only the hub dispatches subagents (each carries `disallowedTools: Agent`), so
+  the graph stays flat at depth 1. `pnpm check:agents` enforces this and that
+  every `subagent_type` resolves to a real agent or known built-in.
 - **TDD**: tests are written from the documented contract and fail first, then
   the implementer makes them pass; review follows.
 - **Live status**: `docs/implementation-status.md` is the source of truth for
@@ -564,7 +437,8 @@ that reviews it" structural, and keeps the hub's context lean.
   durable memory the isolated spokes do not share.
 - The `implement-submodule` skill encodes this loop end-to-end; `new-subpath`
   scaffolds a greenfield module and hands off to it.
-- **Current state**: 5 of 22 submodules are implemented (`errors`, `events`, `security`, `environment`, `utils`). See `docs/implementation-status.md` for the authoritative tracker and suggested build order.
+- **Current state**: see `docs/implementation-status.md` for the authoritative
+  built-vs-documented tracker and suggested build order.
 - **Lessons learned**: `docs/logs/` holds per-submodule work logs. The
   `core/errors` log (`docs/logs/2026-06-29-core-errors.md`) is the durable
   source for the process lessons baked into the spoke prompts — front-load exact
@@ -572,46 +446,13 @@ that reviews it" structural, and keeps the hub's context lean.
   coverage from `coverage-final.json` (the v8 text table hides 100% files), and
   trust the CLI over the IDE/LSP.
 
-**Claude Code hooks** (`.claude/settings.json`) provide runtime enforcement on
-top of the advisory text in this file:
-
-- **SessionStart:** `guard-worktree-ready.mjs` warns (non-blocking) when the
-  session starts inside an unprovisioned linked worktree (missing `node_modules`
-  or uncopied `.worktreeinclude` files), reminding you to run
-  `pnpm worktree:setup`.
-- **PreToolUse (Write/Edit):** `guard-js-extension.mjs` blocks relative imports
-  missing `.js`; `guard-no-commonjs.mjs` blocks `require` / `__dirname` /
-  `module.exports`; `guard-protected-paths.mjs` guards `dist/`, version fields,
-  and `node_modules/`; `guard-eslint-disable-red.mjs` **blocks** writes/edits
-  to test files that introduce `eslint-disable` directives for
-  import-resolution or type-inference rules — these are RED-phase noise that
-  become stale directives once the implementation exists.
-- **PostToolUse (Write/Edit):** `guard-exports-semver.mjs` warns when the exports
-  map changes without a matching semver commit; `post-edit-verify.mjs`
-  auto-formats, **lints (eslint)** the edited file and (when a `src/` file is
-  edited) the package's `tests/` directory (to catch stale disable directives
-  after GREEN), type-checks, and
-  runs the related tests on the edited package — so eslint-only failures surface
-  in the spoke loop, not a round later at the hub's `pnpm lint` gate;
-  `post-edit-md-verify.mjs` auto-formats most Markdown files (including
-  `docs/plans/`; skips CHANGELOG.md, `.github/`, `docs/adr/template.md`,
-  and `.claude/`) and lints non-plan Markdown with rumdl;
-  `guard-doc-counts.mjs` warns (non-blocking) when a reference page or
-  README.md edit causes the submodule-count prose to drift from the filesystem;
-  `guard-provenance-staleness.mjs` warns (non-blocking) when a source file
-  referenced by a provenance sidecar is modified without updating the sidecar;
-  `guard-index-staleness.mjs` warns (non-blocking) when a provenance sidecar,
-  barrel, implementation-status table, or reference `.md` page is edited without
-  re-running `pnpm gen:index` to refresh `catalog.json` / `symbol-map.json` /
-  `docs/reference/README.md`;
-  `guard-red-phase-comments.mjs` warns (non-blocking) when a `src/core/` or
-  `src/aws/` file is written and the corresponding test file still carries a
-  stale RED-phase header comment claiming the implementation does not exist.
-- **Stop:** `remind-sync-docs.mjs` emits advisories (non-blocking) when
-  `docs/implementation-status.md` was changed during the session (reminding
-  to run `/sync-docs`) or when test files under `packages/m3l-common/tests/`
-  were modified (reminding to run `pnpm check:test-counts` to verify the
-  recorded counts in `docs/implementation-status.md`).
+**Claude Code hooks** (`.claude/settings.json`, implemented in
+`.claude/hooks/*.mjs` and `bin/`) add deterministic enforcement on top of this
+advisory file: across SessionStart / PreToolUse / PostToolUse / Stop they guard
+ESM `.js` imports, CommonJS, protected paths (`dist/`, `version`), RED-phase test
+noise, exports/semver drift, doc / provenance / index staleness, and worktree
+readiness — a violating edit is blocked or flagged at write time. See that file
+for the per-hook list and triggers.
 
 ## Task Workflow
 
@@ -676,12 +517,20 @@ top of the advisory text in this file:
 ================================================================
 -->
 
-- Never use `any`; use `unknown` and narrow.
-- Never omit the `.js` extension on a relative ESM import.
-- Never use a CommonJS construct (`require`, `module.exports`,
-  `__dirname`) — this package is ESM only.
-- Never hand-edit `version` in package.json or anything in `dist/`
-  (both are tool-owned).
+The deterministic prohibitions — `any`, a missing `.js` extension, CommonJS
+(`require` / `module.exports` / `__dirname`), hand-edits to `version` or `dist/`,
+non-Conventional commits — are enforced by ESLint, the hooks in
+`.claude/settings.json`, commitlint, and CI; a violating edit is blocked at write
+time. The rules with **no** automated guard, so they need conscious care:
+
+- Never throw bare strings or swallow errors silently.
+- Never commit secrets/tokens to source, tests, or fixtures.
+- No top-level side effects — keep modules tree-shakeable.
+- Keep the import graph shallow; don't pull a heavy dependency into the main
+  entry.
+- Never `git push --force` to a shared branch.
+- Surface new Core/AWS exports through the namespace barrel — never as a new
+  `exports` subpath.
 - Never add a dependency without updating the pnpm lockfile.
 
 ## Known Gotchas
@@ -697,10 +546,9 @@ top of the advisory text in this file:
 ================================================================
 -->
 
-- ESM + tsc: a relative import without the `.js` extension type-checks
-  but fails to resolve at runtime in Node.
-- A new public subpath needs BOTH `src/<path>/index.ts` and an
-  `exports` entry, or consumers cannot import it.
+- A new public subpath needs BOTH `src/<path>/index.ts` and an `exports` entry,
+  or consumers cannot import it — but per the layout above, new submodules go
+  through the namespace barrel, not a new subpath.
 
 <!--
 ================================================================
@@ -782,47 +630,5 @@ top of the advisory text in this file:
  A symlink (ln -s AGENTS.md CLAUDE.md) also works when you need
  no Claude-specific additions. On Windows, prefer the @AGENTS.md
  import (symlinks need elevated privileges).
-================================================================
--->
-
-<!--
-================================================================
- MODEL RECOMMENDATION MATRIX (routing guidance, as of 2026-06)
-================================================================
- Capability tiers, strongest to fastest:
-   Fable 5 > Opus 4.8 > Sonnet 4.6 > Haiku 4.5
-
- Fable 5
-   Highest-capability tier. Hardest multi-step agentic work,
-   deep architecture, gnarly cross-cutting refactors, ambiguous
-   specs needing strong synthesis. Infers intent from terse
-   framing. Highest cost/latency — reserve for genuinely hard
-   work.
-
- Opus 4.8
-   Top day-to-day reasoning model. Planning, public-API and
-   architecture review, multi-file refactors. Works from
-   high-level guidance; literal, so state scope explicitly.
-
- Sonnet 4.6
-   Balanced default driver for implementation, reviews, and most
-   coding. Reliable with moderate detail.
-
- Haiku 4.5
-   Fastest / cheapest. Narrow, well-specified tasks, hook
-   scripts, bounded subagents. Needs explicit, concrete,
-   enumerated rules plus an example. THIS is the weakest model
-   routed to.
-
- Sections that matter most, by tier:
-   Fable 5 / Opus 4.8 -> Architecture, Task Workflow, Decisions
-   Sonnet 4.6         -> Commands, Code Style, Testing
-   Haiku 4.5          -> Commands, Layout, Forbidden, Glossary
-
- RULE OF THUMB: write CLAUDE.md for the WEAKEST model you route
- to — Haiku 4.5. Concrete, verifiable instructions that satisfy
- Haiku 4.5 never hurt Sonnet 4.6, Opus 4.8, or Fable 5; vague
- instructions the stronger models tolerate will fail on
- Haiku 4.5.
 ================================================================
 -->
