@@ -15,7 +15,7 @@
  *  - isInteractive(): shortcut for detect().isInteractive.
  *  - M3LEnv === M3LExecutionEnvironment (same singleton).
  *  - Monorepo walk-up: finds pnpm-workspace.yaml or package.json#workspaces.
- *  - Environment type priority: AWS_LAMBDA > AWS_ECS > AWS_CODEBUILD > CI > LOCAL_INTERACTIVE > UNKNOWN.
+ *  - Environment type priority: AWS_LAMBDA > AWS_ECS > AWS_CODEBUILD > AWS_EC2 > CI > LOCAL_INTERACTIVE > UNKNOWN.
  *  - M3LEnvironmentDetectionError extends M3LError, code "ERR_ENVIRONMENT_DETECTION".
  *  - M3L_DEPLOYMENT_MODE env var overrides walk-up result.
  */
@@ -317,7 +317,6 @@ describe("M3LExecutionEnvironmentInfo — discriminated union narrowing", () => 
   test("narrowing on deploymentMode === MONOREPO gives monorepoRoot: string (not string | undefined)", () => {
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "monorepo");
     vi.spyOn(process, "cwd").mockReturnValue("/fake/packages/my-script");
-    vi.spyOn(fs, "readdirSync").mockReturnValue([]);
     vi.spyOn(fs, "existsSync").mockImplementation(
       (p) => String(p) === "/fake/pnpm-workspace.yaml",
     );
@@ -452,6 +451,16 @@ describe("detect() — environment type priority (B5)", () => {
   test("ECS_CONTAINER_METADATA_URI_V4 present → environmentType is AWS_ECS", () => {
     vi.stubEnv("AWS_LAMBDA_TASK_ROOT", "");
     vi.stubEnv("ECS_CONTAINER_METADATA_URI_V4", "http://169.254.170.2/v4/meta");
+    vi.stubEnv("CI", "");
+    vi.stubEnv("CODEBUILD_BUILD_ID", "");
+    const info = M3LExecutionEnvironment.detectFresh();
+    expect(info.environmentType).toBe(M3LExecutionEnvironmentType.AWS_ECS);
+  });
+
+  test("ECS_CONTAINER_METADATA_URI (legacy, non-V4) present → environmentType is AWS_ECS", () => {
+    vi.stubEnv("AWS_LAMBDA_TASK_ROOT", "");
+    vi.stubEnv("ECS_CONTAINER_METADATA_URI_V4", "");
+    vi.stubEnv("ECS_CONTAINER_METADATA_URI", "http://169.254.170.2/meta");
     vi.stubEnv("CI", "");
     vi.stubEnv("CODEBUILD_BUILD_ID", "");
     const info = M3LExecutionEnvironment.detectFresh();
@@ -729,7 +738,6 @@ describe("detect() — no top-level side effects on import (B7)", () => {
 describe("detect() — monorepo walk-up (B3)", () => {
   test("MONOREPO when pnpm-workspace.yaml is found up the tree", () => {
     vi.spyOn(process, "cwd").mockReturnValue("/fake/packages/my-script");
-    vi.spyOn(fs, "readdirSync").mockReturnValue([]);
     vi.spyOn(fs, "existsSync").mockImplementation(
       (p) => String(p) === "/fake/pnpm-workspace.yaml",
     );
@@ -740,7 +748,6 @@ describe("detect() — monorepo walk-up (B3)", () => {
 
   test("monorepoRoot points to the directory containing pnpm-workspace.yaml", () => {
     vi.spyOn(process, "cwd").mockReturnValue("/fake/nested/deep");
-    vi.spyOn(fs, "readdirSync").mockReturnValue([]);
     vi.spyOn(fs, "existsSync").mockImplementation(
       (p) => String(p) === "/fake/pnpm-workspace.yaml",
     );
@@ -752,7 +759,6 @@ describe("detect() — monorepo walk-up (B3)", () => {
 
   test("MONOREPO when package.json with workspaces field is found", () => {
     vi.spyOn(process, "cwd").mockReturnValue("/fake/apps/tool");
-    vi.spyOn(fs, "readdirSync").mockReturnValue([]);
     vi.spyOn(fs, "existsSync").mockImplementation(
       (p) => String(p) === "/fake/package.json",
     );
@@ -768,7 +774,6 @@ describe("detect() — monorepo walk-up (B3)", () => {
     // Walk from a fake isolated dir; existsSync returns false for all paths,
     // so the walk ascends to '/' and terminates naturally → STANDALONE.
     vi.spyOn(process, "cwd").mockReturnValue("/fake/isolated");
-    vi.spyOn(fs, "readdirSync").mockReturnValue([]);
     vi.spyOn(fs, "existsSync").mockReturnValue(false);
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
     const info = M3LExecutionEnvironment.detectFresh();
@@ -786,11 +791,11 @@ describe("detect() — monorepo walk-up (B3)", () => {
 // B8 — Walk-up throws M3LEnvironmentDetectionError on unreadable directory
 // ---------------------------------------------------------------------------
 describe("detect() — unreadable directory throws M3LEnvironmentDetectionError (B8)", () => {
-  test("throws M3LEnvironmentDetectionError when readdirSync throws EACCES", () => {
+  test("throws M3LEnvironmentDetectionError when accessSync throws EACCES", () => {
     const eaccesError = Object.assign(new Error("Permission denied"), {
       code: "EACCES",
     });
-    vi.spyOn(fs, "readdirSync").mockImplementationOnce(() => {
+    vi.spyOn(fs, "accessSync").mockImplementationOnce(() => {
       throw eaccesError;
     });
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
@@ -803,7 +808,7 @@ describe("detect() — unreadable directory throws M3LEnvironmentDetectionError 
     const eaccesError = Object.assign(new Error("Permission denied"), {
       code: "EACCES",
     });
-    vi.spyOn(fs, "readdirSync").mockImplementationOnce(() => {
+    vi.spyOn(fs, "accessSync").mockImplementationOnce(() => {
       throw eaccesError;
     });
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
@@ -815,6 +820,25 @@ describe("detect() — unreadable directory throws M3LEnvironmentDetectionError 
     }
     expect(thrown).toBeInstanceOf(M3LEnvironmentDetectionError);
     expect((thrown as M3LEnvironmentDetectionError).cause).toBe(eaccesError);
+  });
+
+  test("throws M3LEnvironmentDetectionError when readFileSync throws EACCES inside packageJsonHasWorkspaces", () => {
+    // existsSync returns true for package.json so the code tries to read it;
+    // readFileSync then throws EACCES, which should propagate as M3LEnvironmentDetectionError.
+    const eaccesError = Object.assign(new Error("Permission denied"), {
+      code: "EACCES",
+    });
+    vi.spyOn(process, "cwd").mockReturnValue("/fake/project");
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (p) => String(p) === "/fake/project/package.json",
+    );
+    vi.spyOn(fs, "readFileSync").mockImplementationOnce(() => {
+      throw eaccesError;
+    });
+    vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
+    expect(() => M3LExecutionEnvironment.detectFresh()).toThrow(
+      M3LEnvironmentDetectionError,
+    );
   });
 });
 
@@ -845,7 +869,6 @@ describe("detect() — M3L_DEPLOYMENT_MODE env var override (B10)", () => {
 
   test("M3L_DEPLOYMENT_MODE=monorepo forces MONOREPO and walk-up still finds the root", () => {
     vi.spyOn(process, "cwd").mockReturnValue("/fake/scripts");
-    vi.spyOn(fs, "readdirSync").mockReturnValue([]);
     vi.spyOn(fs, "existsSync").mockImplementation(
       (p) => String(p) === "/fake/pnpm-workspace.yaml",
     );
@@ -857,7 +880,6 @@ describe("detect() — M3L_DEPLOYMENT_MODE env var override (B10)", () => {
 
   test("M3L_DEPLOYMENT_MODE=monorepo throws when no workspace marker is found", () => {
     vi.spyOn(process, "cwd").mockReturnValue("/fake/isolated");
-    vi.spyOn(fs, "readdirSync").mockReturnValue([]);
     vi.spyOn(fs, "existsSync").mockReturnValue(false);
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "monorepo");
     expect(() => M3LExecutionEnvironment.detectFresh()).toThrow(
@@ -908,6 +930,36 @@ describe("detect() — detectionDetails records raw signals (B11)", () => {
 
   test("isCiEnvironment is true when CI=true", () => {
     vi.stubEnv("CI", "true");
+    vi.stubEnv("AWS_LAMBDA_TASK_ROOT", "");
+    vi.stubEnv("ECS_CONTAINER_METADATA_URI_V4", "");
+    vi.stubEnv("CODEBUILD_BUILD_ID", "");
+    const info = M3LExecutionEnvironment.detectFresh();
+    expect(info.detectionDetails.isCiEnvironment).toBe(true);
+  });
+
+  test("isCiEnvironment is true when CI=1", () => {
+    vi.stubEnv("CI", "1");
+    vi.stubEnv("AWS_LAMBDA_TASK_ROOT", "");
+    vi.stubEnv("ECS_CONTAINER_METADATA_URI_V4", "");
+    vi.stubEnv("CODEBUILD_BUILD_ID", "");
+    const info = M3LExecutionEnvironment.detectFresh();
+    expect(info.detectionDetails.isCiEnvironment).toBe(true);
+  });
+
+  test("isCiEnvironment is true when GITHUB_ACTIONS=true", () => {
+    vi.stubEnv("CI", "");
+    vi.stubEnv("GITHUB_ACTIONS", "true");
+    vi.stubEnv("AWS_LAMBDA_TASK_ROOT", "");
+    vi.stubEnv("ECS_CONTAINER_METADATA_URI_V4", "");
+    vi.stubEnv("CODEBUILD_BUILD_ID", "");
+    const info = M3LExecutionEnvironment.detectFresh();
+    expect(info.detectionDetails.isCiEnvironment).toBe(true);
+  });
+
+  test("isCiEnvironment is true when JENKINS_URL is non-empty", () => {
+    vi.stubEnv("CI", "");
+    vi.stubEnv("GITHUB_ACTIONS", "");
+    vi.stubEnv("JENKINS_URL", "http://jenkins.example.com");
     vi.stubEnv("AWS_LAMBDA_TASK_ROOT", "");
     vi.stubEnv("ECS_CONTAINER_METADATA_URI_V4", "");
     vi.stubEnv("CODEBUILD_BUILD_ID", "");

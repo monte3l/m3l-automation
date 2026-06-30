@@ -377,7 +377,9 @@ function isNonEmpty(value: string | undefined): boolean {
  * {@link M3LExecutionEnvironmentType} values by inspecting environment
  * variables and TTY state. Priority follows B5 in the contract.
  */
-function classifyEnvironmentType(): M3LExecutionEnvironmentType {
+function classifyEnvironmentType(
+  isCiEnvironment: boolean,
+): M3LExecutionEnvironmentType {
   // Priority 1: AWS Lambda
   if (isNonEmpty(process.env["AWS_LAMBDA_TASK_ROOT"])) {
     return M3LExecutionEnvironmentType.AWS_LAMBDA;
@@ -395,7 +397,7 @@ function classifyEnvironmentType(): M3LExecutionEnvironmentType {
     return M3LExecutionEnvironmentType.AWS_EC2;
   }
   // Priority 5: CI
-  if (detectIsCiEnvironment()) {
+  if (isCiEnvironment) {
     return M3LExecutionEnvironmentType.CI;
   }
   // Priority 6: Local interactive
@@ -551,16 +553,15 @@ function walkUpForWorkspaceMarker(startDir: string): WalkUpResult {
 const IGNORABLE_DIR_ERRORS = new Set(["ENOENT"]);
 
 /**
- * Checks whether the directory exists and is readable by attempting to list
- * its contents. Throws {@link M3LEnvironmentDetectionError} on any OS error
- * except ENOENT (which indicates the cwd was deleted mid-run, a safe-to-ignore
- * transient race). All other errors — EACCES, EPERM, EIO, EMFILE, ENOTDIR,
- * ELOOP, etc. — represent genuine system failures and are surfaced to the
- * caller.
+ * Checks whether the directory exists and is readable. Throws
+ * {@link M3LEnvironmentDetectionError} on any OS error except ENOENT (which
+ * indicates the cwd was deleted mid-run, a safe-to-ignore transient race).
+ * All other errors — EACCES, EPERM, EIO, ENOTDIR, ELOOP, etc. — represent
+ * genuine system failures and are surfaced to the caller.
  */
 function assertDirReadable(dir: string): void {
   try {
-    fs.readdirSync(dir);
+    fs.accessSync(dir, fs.constants.R_OK);
   } catch (cause) {
     const code =
       typeof cause === "object" && cause !== null && "code" in cause
@@ -655,7 +656,8 @@ function detectDeploymentMode():
  * {@link M3LExecutionEnvironmentInfo} object.
  */
 function runDetection(): M3LExecutionEnvironmentInfo {
-  const environmentType = classifyEnvironmentType();
+  const isCiEnvironment = detectIsCiEnvironment();
+  const environmentType = classifyEnvironmentType(isCiEnvironment);
   const credentialSource = resolveCredentialSource(environmentType);
   const isInteractive =
     environmentType === M3LExecutionEnvironmentType.LOCAL_INTERACTIVE;
@@ -674,7 +676,7 @@ function runDetection(): M3LExecutionEnvironmentInfo {
   const detectionDetails: M3LEnvironmentDetectionDetails = {
     stdoutIsTTY: process.stdout.isTTY === true,
     stderrIsTTY: process.stderr.isTTY === true,
-    isCiEnvironment: detectIsCiEnvironment(),
+    isCiEnvironment,
     hasLambdaTaskRoot: isNonEmpty(process.env["AWS_LAMBDA_TASK_ROOT"]),
     hasEcsMetadataUri: hasEcsSignal(),
     hasCodeBuildBuildId: isNonEmpty(process.env["CODEBUILD_BUILD_ID"]),
