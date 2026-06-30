@@ -20,6 +20,7 @@ import * as fs from "fs";
 import * as path from "path";
 
 import { M3LError } from "../errors/index.js";
+import { isNodeError, isNonEmptyString } from "../utils/index.js";
 
 // ---------------------------------------------------------------------------
 // Const-object enums (no runtime enum overhead; full literal inference)
@@ -310,7 +311,7 @@ interface M3LExecutionEnvironmentInfoBase {
   /** `true` when credentials require an explicit `aws sso login`. */
   readonly requiresAwsProfile: boolean;
   /** How AWS credentials are expected to be supplied. */
-  readonly credentialSource: M3LCredentialSource;
+  readonly credentialSource: Exclude<M3LCredentialSource, "NONE">;
   /** Raw signals captured during detection for auditability. */
   readonly detectionDetails: M3LEnvironmentDetectionDetails;
 }
@@ -363,14 +364,6 @@ export type M3LExecutionEnvironmentInfo = M3LExecutionEnvironmentInfoBase &
 const MAX_DIRECTORIES_CHECKED = 50;
 
 /**
- * Returns `true` when the string is non-empty (i.e. the env var was set and
- * not blank).
- */
-function isNonEmpty(value: string | undefined): boolean {
-  return typeof value === "string" && value.length > 0;
-}
-
-/**
  * Classifies the running process into one of the known
  * {@link M3LExecutionEnvironmentType} values by inspecting environment
  * variables and TTY state. Priority follows B5 in the contract.
@@ -379,7 +372,7 @@ function classifyEnvironmentType(
   isCiEnvironment: boolean,
 ): M3LExecutionEnvironmentType {
   // Priority 1: AWS Lambda
-  if (isNonEmpty(process.env["AWS_LAMBDA_TASK_ROOT"])) {
+  if (isNonEmptyString(process.env["AWS_LAMBDA_TASK_ROOT"])) {
     return M3LExecutionEnvironmentType.AWS_LAMBDA;
   }
   // Priority 2: AWS ECS
@@ -387,10 +380,14 @@ function classifyEnvironmentType(
     return M3LExecutionEnvironmentType.AWS_ECS;
   }
   // Priority 3: AWS CodeBuild
-  if (isNonEmpty(process.env["CODEBUILD_BUILD_ID"])) {
+  if (isNonEmptyString(process.env["CODEBUILD_BUILD_ID"])) {
     return M3LExecutionEnvironmentType.AWS_CODEBUILD;
   }
   // Priority 4: AWS EC2
+  // AWS_EXECUTION_ENV contains "EC2" for AWS_ECS_EC2 (ECS on EC2) and
+  // AWS_EC2 (direct EC2 usage). The ECS metadata-URI checks above fire first,
+  // so a value of "AWS_ECS_EC2" only reaches here when running on a bare EC2
+  // instance that is not inside an ECS task.
   if (process.env["AWS_EXECUTION_ENV"]?.includes("EC2") === true) {
     return M3LExecutionEnvironmentType.AWS_EC2;
   }
@@ -419,7 +416,7 @@ function detectIsCiEnvironment(): boolean {
   }
   return (
     process.env["GITHUB_ACTIONS"] === "true" ||
-    isNonEmpty(process.env["JENKINS_URL"])
+    isNonEmptyString(process.env["JENKINS_URL"])
   );
 }
 
@@ -429,8 +426,8 @@ function detectIsCiEnvironment(): boolean {
  */
 function hasEcsSignal(): boolean {
   return (
-    isNonEmpty(process.env["ECS_CONTAINER_METADATA_URI_V4"]) ||
-    isNonEmpty(process.env["ECS_CONTAINER_METADATA_URI"])
+    isNonEmptyString(process.env["ECS_CONTAINER_METADATA_URI_V4"]) ||
+    isNonEmptyString(process.env["ECS_CONTAINER_METADATA_URI"])
   );
 }
 
@@ -440,7 +437,7 @@ function hasEcsSignal(): boolean {
  */
 function resolveCredentialSource(
   envType: M3LExecutionEnvironmentType,
-): M3LCredentialSource {
+): Exclude<M3LCredentialSource, "NONE"> {
   switch (envType) {
     case M3LExecutionEnvironmentType.LOCAL_INTERACTIVE:
       return M3LCredentialSource.SSO_PROFILE;
@@ -485,13 +482,13 @@ function packageJsonHasWorkspaces(pkgJsonPath: string): boolean {
     const raw = fs.readFileSync(pkgJsonPath, "utf8");
     const parsed: unknown = JSON.parse(raw);
     return (
-      typeof parsed === "object" && parsed !== null && "workspaces" in parsed
+      typeof parsed === "object" &&
+      parsed !== null &&
+      Object.hasOwn(parsed, "workspaces")
     );
   } catch (cause) {
     if (
-      typeof cause === "object" &&
-      cause !== null &&
-      "code" in cause &&
+      isNodeError(cause) &&
       (cause.code === "EACCES" || cause.code === "EPERM")
     ) {
       throw new M3LEnvironmentDetectionError(
@@ -564,10 +561,7 @@ function assertDirReadable(dir: string): void {
   try {
     fs.accessSync(dir, fs.constants.R_OK);
   } catch (cause) {
-    const code =
-      typeof cause === "object" && cause !== null && "code" in cause
-        ? cause.code
-        : undefined;
+    const code = isNodeError(cause) ? cause.code : undefined;
     if (!IGNORABLE_DIR_ERRORS.has(String(code))) {
       throw new M3LEnvironmentDetectionError(
         `Cannot read directory during environment detection: ${dir}`,
@@ -692,9 +686,9 @@ function runDetection(): M3LExecutionEnvironmentInfo {
     stdoutIsTTY: process.stdout.isTTY === true,
     stderrIsTTY: process.stderr.isTTY === true,
     isCiEnvironment,
-    hasLambdaTaskRoot: isNonEmpty(process.env["AWS_LAMBDA_TASK_ROOT"]),
+    hasLambdaTaskRoot: isNonEmptyString(process.env["AWS_LAMBDA_TASK_ROOT"]),
     hasEcsMetadataUri: hasEcsSignal(),
-    hasCodeBuildBuildId: isNonEmpty(process.env["CODEBUILD_BUILD_ID"]),
+    hasCodeBuildBuildId: isNonEmptyString(process.env["CODEBUILD_BUILD_ID"]),
     workspaceMarkerPath: deploymentResult.workspaceMarkerPath,
   };
 

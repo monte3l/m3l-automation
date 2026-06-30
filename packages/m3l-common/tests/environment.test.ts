@@ -293,7 +293,7 @@ describe("M3LExecutionEnvironmentInfo — type-level contract", () => {
     >();
   });
 
-  test("credentialSource is typed as M3LCredentialSource value", () => {
+  test("credentialSource is typed as active M3LCredentialSource (NONE excluded)", () => {
     expectTypeOf<
       M3LExecutionEnvironmentInfo["credentialSource"]
     >().toEqualTypeOf<
@@ -303,7 +303,6 @@ describe("M3LExecutionEnvironmentInfo — type-level contract", () => {
       | "INSTANCE_METADATA"
       | "WEB_IDENTITY"
       | "DEFAULT_CHAIN"
-      | "NONE"
     >();
   });
 });
@@ -449,6 +448,7 @@ describe("detect() — environment type priority (B5)", () => {
     vi.stubEnv("CODEBUILD_BUILD_ID", "");
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.environmentType).toBe(M3LExecutionEnvironmentType.AWS_LAMBDA);
+    expect(info.credentialSource).toBe(M3LCredentialSource.WEB_IDENTITY);
   });
 
   test("ECS_CONTAINER_METADATA_URI_V4 present → environmentType is AWS_ECS", () => {
@@ -458,6 +458,7 @@ describe("detect() — environment type priority (B5)", () => {
     vi.stubEnv("CODEBUILD_BUILD_ID", "");
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.environmentType).toBe(M3LExecutionEnvironmentType.AWS_ECS);
+    expect(info.credentialSource).toBe(M3LCredentialSource.CONTAINER);
   });
 
   test("ECS_CONTAINER_METADATA_URI (legacy, non-V4) present → environmentType is AWS_ECS", () => {
@@ -479,6 +480,7 @@ describe("detect() — environment type priority (B5)", () => {
     expect(info.environmentType).toBe(
       M3LExecutionEnvironmentType.AWS_CODEBUILD,
     );
+    expect(info.credentialSource).toBe(M3LCredentialSource.ENVIRONMENT);
   });
 
   test("AWS_EXECUTION_ENV contains EC2 (no Lambda/ECS/CodeBuild) → environmentType is AWS_EC2", () => {
@@ -501,6 +503,7 @@ describe("detect() — environment type priority (B5)", () => {
     vi.spyOn(process.stdout, "isTTY", "get").mockReturnValue(false);
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.environmentType).toBe(M3LExecutionEnvironmentType.CI);
+    expect(info.credentialSource).toBe(M3LCredentialSource.ENVIRONMENT);
   });
 
   test("isTTY=true (no CI/AWS signals) → environmentType is LOCAL_INTERACTIVE", () => {
@@ -515,6 +518,7 @@ describe("detect() — environment type priority (B5)", () => {
     expect(info.environmentType).toBe(
       M3LExecutionEnvironmentType.LOCAL_INTERACTIVE,
     );
+    expect(info.credentialSource).toBe(M3LCredentialSource.SSO_PROFILE);
   });
 
   test("no signals at all → environmentType is UNKNOWN", () => {
@@ -527,6 +531,7 @@ describe("detect() — environment type priority (B5)", () => {
     vi.spyOn(process.stdout, "isTTY", "get").mockReturnValue(false);
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.environmentType).toBe(M3LExecutionEnvironmentType.UNKNOWN);
+    expect(info.credentialSource).toBe(M3LCredentialSource.DEFAULT_CHAIN);
   });
 });
 
@@ -748,6 +753,9 @@ describe("detect() — monorepo walk-up (B3)", () => {
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.deploymentMode).toBe(M3LDeploymentMode.MONOREPO);
+    expect(info.detectionDetails.workspaceMarkerPath).toBe(
+      "/fake/pnpm-workspace.yaml",
+    );
   });
 
   test("monorepoRoot points to the directory containing pnpm-workspace.yaml", () => {
@@ -791,6 +799,7 @@ describe("detect() — monorepo walk-up (B3)", () => {
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.monorepoRoot).toBeUndefined();
+    expect(info.detectionDetails.workspaceMarkerPath).toBeUndefined();
   });
 });
 
@@ -855,12 +864,16 @@ describe("detect() — unreadable directory throws M3LEnvironmentDetectionError 
 // B9 — Walk-up terminates at filesystem root; does not infinite-loop
 // ---------------------------------------------------------------------------
 describe("detect() — walk terminates at filesystem root (B9)", () => {
-  test("detectFresh() completes without hanging when no marker exists", () => {
-    // Force STANDALONE via env var to avoid relying on actual filesystem
-    // structure; the standalone override short-circuits before the walk-up.
-    vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
-    // Must complete without throwing or infinite-looping
-    expect(() => M3LExecutionEnvironment.detectFresh()).not.toThrow();
+  test("walk-up loop reaches '/' and terminates when no marker is found", () => {
+    // Start from a fake deep path; accessSync succeeds and existsSync returns
+    // false everywhere, so the loop ascends to '/' and terminates → STANDALONE.
+    // This exercises the parent === current root-sentinel inside the loop.
+    vi.spyOn(process, "cwd").mockReturnValue("/fake/deeply/nested/project");
+    vi.spyOn(fs, "accessSync").mockImplementation(() => {});
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
+    const info = M3LExecutionEnvironment.detectFresh();
+    expect(info.deploymentMode).toBe(M3LDeploymentMode.STANDALONE);
   });
 });
 
