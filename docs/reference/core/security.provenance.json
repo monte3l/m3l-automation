@@ -1,0 +1,40 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/security.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
+          "symbol": "isDangerousKey",
+          "lines": "46-48"
+        },
+        {
+          "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
+          "symbol": "formatUnsafeKeyLocation",
+          "lines": "73-75"
+        }
+      ],
+      "commit": "e372a2724997902c359d0e388d6c932b0251516e",
+      "retrieved": "2026-06-30"
+    },
+    {
+      "heading": "The prototype-pollution guard",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
+          "symbol": "isDangerousKey",
+          "lines": "46-48"
+        },
+        {
+          "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
+          "symbol": "formatUnsafeKeyLocation",
+          "lines": "73-75"
+        }
+      ],
+      "commit": "e372a2724997902c359d0e388d6c932b0251516e",
+      "retrieved": "2026-06-30"
+    }
+  ]
+}
