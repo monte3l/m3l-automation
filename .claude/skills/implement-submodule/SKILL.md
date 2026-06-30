@@ -39,6 +39,22 @@ concrete file paths), and record progress in the durable state file
 | 3. GREEN (impl) | `submodule-implementer`                                                                                                                                                                                                                            | `src/` only | the contract + the failing tests |
 | 4. Review       | `code-reviewer` + `spec-conformance-reviewer` (+ `security-reviewer`) (+ `type-design-analyzer` whenever the module introduces or changes public types — every Core/AWS module qualifies) (+ `silent-failure-hunter` when error/async paths exist) | nothing     | the diff + the doc path          |
 
+### Running pipelines concurrently (opt-in)
+
+By default a single pipeline runs in the shared working tree — keep it simple.
+When you need **two pipelines at once** (e.g. a Core and an AWS module), isolate
+the writer/reviewer spokes so their edits can't collide: pass
+`isolation: worktree` when dispatching them (or tell them to "use a worktree"),
+which gives each spoke its own checkout branched from `origin/main`. Do **not**
+bake `isolation: worktree` into the agent frontmatter — it stays opt-in so the
+common single-module loop has no worktree churn. See ADR-0013.
+
+The one shared resource that still needs coordination is the durable state file
+`docs/implementation-status.md`: two concurrent pipelines must edit **different
+rows** (partition by namespace/phase) and whichever lands second rebases and
+re-confirms the counts. This mirrors the coordination caveat already recorded in
+`docs/plans/messaging-submodule-implementation.md`.
+
 ## Progress checklist (copy-paste at the start of each run)
 
 - [ ] Step 1 — Resolve target; confirm spec page exists

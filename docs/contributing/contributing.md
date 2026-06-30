@@ -168,6 +168,35 @@ BREAKING CHANGE: M3LError.code is now M3LError.errorCode.
   submodules are complete, set `gh variable set RELEASE_ENABLED --body true` to
   publish the attested `1.0.0` on the next merge. See ADR-0011.
 
+### Worktrees for parallel work
+
+Use a git worktree to work on more than one branch at once without stashing or
+re-cloning. The standard flow keeps the `feat/<slug>` branch convention and puts
+the worktree in a sibling directory (not nested in this checkout):
+
+```bash
+git worktree add ../m3l-automation-<slug> -b feat/<slug>
+cd ../m3l-automation-<slug>
+pnpm worktree:setup        # install deps + copy gitignored files (.env, …)
+```
+
+A fresh worktree is a clean checkout: it has no `node_modules` and none of your
+gitignored local files, which is why `pnpm worktree:setup` exists. The `.git`
+directory (and therefore the lefthook hooks) is shared, so hooks work without a
+re-install; `node_modules`, `dist/`, and `coverage/` are per-worktree.
+
+When you're done, clean up merged or stale worktrees:
+
+```bash
+pnpm worktree:prune --dry-run   # preview
+pnpm worktree:prune             # remove
+```
+
+Do not run repo-wide commands (`pnpm format`, `pnpm lint`, `pnpm test`) against a
+worktree nested under `.claude/worktrees/`; those paths are deliberately excluded
+from the tooling so a main-tree command can never rewrite another branch's files.
+See ADR-0013.
+
 ## Definition of Done
 
 Before you report a change as done:
