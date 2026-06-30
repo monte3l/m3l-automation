@@ -25,27 +25,27 @@ _Reviewed_ = passed `code-reviewer` + `spec-conformance-reviewer` (+ `security-r
 
 ## Core submodules (`docs/reference/core/`)
 
-| Submodule   | Spec                  | Symbols (≈) | Status | Tests | Reviewed | Notes (runtime deps → dependency gate)                                             |
-| ----------- | --------------------- | ----------- | ------ | ----- | -------- | ---------------------------------------------------------------------------------- |
-| errors      | `core/errors.md`      | 22          | ✅     | ✅    | ✅       | done — 101 tests, ~98% cov; conformant + code-reviewed (must-fixes applied)        |
-| events      | `core/events.md`      | 3           | ✅     | ✅    | ✅       | none — **foundational** (emitter base); 33 tests, 100% cov; reviewed (no must-fix) |
-| security    | `core/security.md`    | 2           | ✅     | ✅    | ✅       | none — 28 tests, 100% cov; reviewed (must-fix applied: @example uses M3LError)     |
-| environment | `core/environment.md` | 7           | ❌     | ❌    | ❌       | none — drives `M3LPaths`                                                           |
-| utils       | `core/utils.md`       | 39          | ❌     | ❌    | ❌       | none — `M3LPaths`, concurrency, type guards                                        |
-| json        | `core/json.md`        | 5           | ❌     | ❌    | ❌       | none                                                                               |
-| analysis    | `core/analysis.md`    | 4           | ❌     | ❌    | ❌       | none                                                                               |
-| messaging   | `core/messaging.md`   | 10          | ❌     | ❌    | ❌       | none — abstract interfaces only                                                    |
-| config      | `core/config.md`      | 18          | ❌     | ❌    | ❌       | **YAML parser** (e.g. `yaml`) for YAML provider                                    |
-| logging     | `core/logging.md`     | 11          | ❌     | ❌    | ❌       | none (uses `files`/exporters for file handler)                                     |
-| files       | `core/files.md`       | 8           | ❌     | ❌    | ❌       | none                                                                               |
-| network     | `core/network.md`     | 3+          | ❌     | ❌    | ❌       | **`undici`**                                                                       |
-| polling     | `core/polling.md`     | 13          | ❌     | ❌    | ❌       | none                                                                               |
-| prompt      | `core/prompt.md`      | 5+          | ❌     | ❌    | ❌       | **inquirer + spinner libs** (TTY UI)                                               |
-| importers   | `core/importers.md`   | 13          | ❌     | ❌    | ❌       | **`csv-parse`**                                                                    |
-| exporters   | `core/exporters.md`   | 9           | ❌     | ❌    | ❌       | **`csv-stringify`**                                                                |
-| storage     | `core/storage.md`     | 9           | ❌     | ❌    | ❌       | **`better-sqlite3`** (native)                                                      |
-| text        | `core/text.md`        | 12          | ❌     | ❌    | ❌       | **`unpdf`, `mammoth`, `read-excel-file`, `mailparser`, `cheerio`, `adm-zip`**      |
-| script      | `core/script.md`      | 11          | ❌     | ❌    | ❌       | composes config/env/logging/aws — implement **last**                               |
+| Submodule   | Spec                  | Symbols (≈) | Status | Tests | Reviewed | Notes (runtime deps → dependency gate)                                                        |
+| ----------- | --------------------- | ----------- | ------ | ----- | -------- | --------------------------------------------------------------------------------------------- |
+| errors      | `core/errors.md`      | 22          | ✅     | ✅    | ✅       | done — 101 tests, ~98% cov; conformant + code-reviewed (must-fixes applied)                   |
+| events      | `core/events.md`      | 3           | ✅     | ✅    | ✅       | none — **foundational** (emitter base); 33 tests, 100% cov; reviewed (no must-fix)            |
+| security    | `core/security.md`    | 2           | ✅     | ✅    | ✅       | none — 28 tests, 100% cov; reviewed (must-fix applied: @example uses M3LError)                |
+| environment | `core/environment.md` | 7           | ❌     | ❌    | ❌       | none — drives `M3LPaths`                                                                      |
+| utils       | `core/utils.md`       | 39          | ✅     | ✅    | ✅       | 401 tests (36 symbols; M3LPaths deferred — awaits environment); reviewed (must-fixes applied) |
+| json        | `core/json.md`        | 5           | ❌     | ❌    | ❌       | none                                                                                          |
+| analysis    | `core/analysis.md`    | 4           | ❌     | ❌    | ❌       | none                                                                                          |
+| messaging   | `core/messaging.md`   | 10          | ❌     | ❌    | ❌       | none — abstract interfaces only                                                               |
+| config      | `core/config.md`      | 18          | ❌     | ❌    | ❌       | **YAML parser** (e.g. `yaml`) for YAML provider                                               |
+| logging     | `core/logging.md`     | 11          | ❌     | ❌    | ❌       | none (uses `files`/exporters for file handler)                                                |
+| files       | `core/files.md`       | 8           | ❌     | ❌    | ❌       | none                                                                                          |
+| network     | `core/network.md`     | 3+          | ❌     | ❌    | ❌       | **`undici`**                                                                                  |
+| polling     | `core/polling.md`     | 13          | ❌     | ❌    | ❌       | none                                                                                          |
+| prompt      | `core/prompt.md`      | 5+          | ❌     | ❌    | ❌       | **inquirer + spinner libs** (TTY UI)                                                          |
+| importers   | `core/importers.md`   | 13          | ❌     | ❌    | ❌       | **`csv-parse`**                                                                               |
+| exporters   | `core/exporters.md`   | 9           | ❌     | ❌    | ❌       | **`csv-stringify`**                                                                           |
+| storage     | `core/storage.md`     | 9           | ❌     | ❌    | ❌       | **`better-sqlite3`** (native)                                                                 |
+| text        | `core/text.md`        | 12          | ❌     | ❌    | ❌       | **`unpdf`, `mammoth`, `read-excel-file`, `mailparser`, `cheerio`, `adm-zip`**                 |
+| script      | `core/script.md`      | 11          | ❌     | ❌    | ❌       | composes config/env/logging/aws — implement **last**                                          |
 
 ## AWS submodules (`docs/reference/aws/`)
 
