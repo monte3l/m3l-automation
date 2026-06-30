@@ -361,8 +361,8 @@ export type M3LExecutionEnvironmentInfo = M3LExecutionEnvironmentInfoBase &
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/** Maximum number of directory ascent steps during the monorepo walk-up. */
-const MAX_ASCENT_STEPS = 50;
+/** Maximum number of directories inspected (startDir + ancestors) during the monorepo walk-up. */
+const MAX_DIRECTORIES_CHECKED = 50;
 
 /**
  * Returns `true` when the string is non-empty (i.e. the env var was set and
@@ -509,7 +509,7 @@ function packageJsonHasWorkspaces(pkgJsonPath: string): boolean {
  * - `package.json` with a `workspaces` field — npm/yarn monorepo marker.
  *
  * Stops as soon as a marker is found, at the filesystem root, or after
- * {@link MAX_ASCENT_STEPS} steps to handle pathological cases.
+ * inspecting {@link MAX_DIRECTORIES_CHECKED} directories to handle pathological cases.
  *
  * Throws {@link M3LEnvironmentDetectionError} when a directory is unreadable
  * (EACCES/EPERM), so the caller can surface permission failures cleanly.
@@ -519,7 +519,7 @@ function walkUpForWorkspaceMarker(startDir: string): WalkUpResult {
   let current = startDir;
   let steps = 0;
 
-  while (steps < MAX_ASCENT_STEPS) {
+  while (steps < MAX_DIRECTORIES_CHECKED) {
     // Check for pnpm-workspace.yaml
     const pnpmMarker = path.join(current, "pnpm-workspace.yaml");
     if (fs.existsSync(pnpmMarker)) {
@@ -616,17 +616,21 @@ function detectDeploymentMode():
 
   const walkResult = walkUpForWorkspaceMarker(startDir);
 
-  // B10: monorepo override — use walk result if found, else fall back to cwd
+  // B10: monorepo override — walk result must confirm a workspace root exists
   if (
     typeof modeOverride === "string" &&
     modeOverride.toLowerCase() === "monorepo"
   ) {
-    const root = walkResult.found ? walkResult.root : startDir;
-    const markerPath = walkResult.found ? walkResult.markerPath : undefined;
+    if (!walkResult.found) {
+      throw new M3LEnvironmentDetectionError(
+        "M3L_DEPLOYMENT_MODE=monorepo is set but no workspace marker (pnpm-workspace.yaml or package.json#workspaces) was found during walk-up",
+        { code: "ERR_ENVIRONMENT_DETECTION" },
+      );
+    }
     return {
       deploymentMode: M3LDeploymentMode.MONOREPO,
-      monorepoRoot: root,
-      workspaceMarkerPath: markerPath,
+      monorepoRoot: walkResult.root,
+      workspaceMarkerPath: walkResult.markerPath,
     };
   }
 
