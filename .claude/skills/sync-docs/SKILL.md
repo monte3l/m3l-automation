@@ -42,8 +42,9 @@ node bin/check-doc-counts.mjs
 ```
 
 Derives the canonical count from `docs/reference/core/*.md` and
-`docs/reference/aws/*.md` and asserts the prose in `CLAUDE.md` and
-`docs/README.md` uses the correct numbers.
+`docs/reference/aws/*.md` and asserts the prose in `CLAUDE.md`,
+`docs/README.md`, and `README.md` (root badge + prose) uses the correct
+numbers.
 
 If it fails, the output names the mismatched file and the value that needs
 updating. Tell the user the exact edit required.

@@ -521,6 +521,9 @@ top of the advisory text in this file:
   warns when a test file written during the RED phase contains `eslint-disable`
   directives for import-resolution or type-inference rules that self-resolve once
   the implementation exists.
+- **Stop:** `remind-sync-docs.mjs` emits an advisory (non-blocking) when
+  `docs/implementation-status.md` was changed during the session, reminding to
+  run `/sync-docs` before the next commit.
 
 ## Task Workflow
 
