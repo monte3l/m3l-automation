@@ -16,7 +16,7 @@
           "lines": "191-215"
         }
       ],
-      "commit": "f657729f61b36fbebe1304ef1a5b25be95fe95d7",
+      "commit": "d182e6a1fe33c3e423a35f48a2ce84a0c02f31a2",
       "retrieved": "2026-06-30"
     },
     {
@@ -28,7 +28,7 @@
           "lines": "33-86"
         }
       ],
-      "commit": "f657729f61b36fbebe1304ef1a5b25be95fe95d7",
+      "commit": "d182e6a1fe33c3e423a35f48a2ce84a0c02f31a2",
       "retrieved": "2026-06-30"
     },
     {
@@ -40,7 +40,7 @@
           "lines": "37-71"
         }
       ],
-      "commit": "f657729f61b36fbebe1304ef1a5b25be95fe95d7",
+      "commit": "d182e6a1fe33c3e423a35f48a2ce84a0c02f31a2",
       "retrieved": "2026-06-30"
     },
     {
@@ -82,7 +82,34 @@
           "lines": "265-282"
         }
       ],
-      "commit": "f657729f61b36fbebe1304ef1a5b25be95fe95d7",
+      "commit": "d182e6a1fe33c3e423a35f48a2ce84a0c02f31a2",
+      "retrieved": "2026-06-30"
+    },
+    {
+      "heading": "Path resolution with `M3LPaths`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/utils/M3LPaths.ts",
+          "symbol": "M3LPathType",
+          "lines": "40-40"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/M3LPaths.ts",
+          "symbol": "M3LPathEnvironmentVariables",
+          "lines": "61-91"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/M3LPaths.ts",
+          "symbol": "M3LPathResolutionError",
+          "lines": "132-147"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/M3LPaths.ts",
+          "symbol": "M3LPaths",
+          "lines": "217-427"
+        }
+      ],
+      "commit": "d182e6a1fe33c3e423a35f48a2ce84a0c02f31a2",
       "retrieved": "2026-06-30"
     },
     {
@@ -214,7 +241,7 @@
           "lines": "427-441"
         }
       ],
-      "commit": "f657729f61b36fbebe1304ef1a5b25be95fe95d7",
+      "commit": "d182e6a1fe33c3e423a35f48a2ce84a0c02f31a2",
       "retrieved": "2026-06-30"
     }
   ]
