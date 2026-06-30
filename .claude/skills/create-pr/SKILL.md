@@ -41,28 +41,57 @@ Run the full verification pipeline. Fail fast: stop on the first failure and
 tell the user which gate failed. Do **not** push a branch that fails any gate.
 
 ```bash
-pnpm lint && pnpm typecheck && pnpm test && pnpm build
+pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build
 ```
 
-### 3 — Push the branch
+### 3 — Pre-push review
+
+Check which files changed since main:
+
+```bash
+git diff main...HEAD --name-only
+```
+
+If the diff is empty, skip this step.
+
+If the diff contains **any `src/**` changes** (files under `packages/*/src/` or
+`scripts/*/src/`), fan out in **one message** the following review spokes in
+parallel — this mirrors the Phase 4 fan-out in `implement-submodule` so the
+two pipelines stay consistent:
+
+- **Always:** `code-reviewer` + `spec-conformance-reviewer` (conformance mode)
+- **If public types changed** (`src/core/index.ts` or `src/aws/index.ts` in
+  the diff): also `type-design-analyzer`
+- **If error-handling or async paths changed:** also `silent-failure-hunter`
+- **If `aws/`, secrets, credentials, or logging paths changed:** also
+  `security-reviewer`
+
+If the diff contains **only docs/automation changes** (no `src/**` files),
+dispatch `docs-consistency-reviewer` instead.
+
+After collecting spoke results: if any spoke reports a **Must-fix** finding,
+fix it and loop back through Steps 2–3 before pushing. Do not push with
+outstanding Must-fix findings.
+
+### 4 — Push the branch
 
 ```bash
 git push -u origin HEAD
 ```
 
-### 4 — Gather commits since main
+### 5 — Gather commits since main
 
 ```bash
 git log main...HEAD --oneline
 ```
 
-### 5 — Generate the PR title
+### 6 — Generate the PR title
 
 Pick the most impactful commit (breaking > feat > fix > refactor/docs/chore).
 Format as a Conventional Commit, 70 chars max. The title alone must make the
 purpose of the branch clear to a reviewer skimming a PR list.
 
-### 6 — Generate the PR body
+### 7 — Generate the PR body
 
 Write a body that matches the quality and specificity of the examples below.
 The bullets in **Summary** should name actual symbols, files, or behaviours —
@@ -71,7 +100,7 @@ reflect the _actual files changed_, not a generic template. The **Notes** line
 must state the commit type, the resulting semver bump (or "no release"), and
 any migration instructions for breaking changes.
 
-### 7 — Submit the PR
+### 8 — Submit the PR
 
 ```bash
 gh pr create --title "..." --body "$(cat <<'EOF'

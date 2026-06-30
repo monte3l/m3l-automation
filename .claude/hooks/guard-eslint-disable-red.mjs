@@ -40,6 +40,7 @@
  */
 import process from "node:process";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 async function readStdin() {
   const chunks = [];
@@ -47,43 +48,8 @@ async function readStdin() {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-const raw = await readStdin();
-let input;
-try {
-  input = JSON.parse(raw);
-} catch {
-  process.exit(0);
-}
-
-const filePath = input.tool_input?.file_path ?? "";
-if (typeof filePath !== "string" || filePath.length === 0) process.exit(0);
-
-const projectDir = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
-const abs = path.isAbsolute(filePath)
-  ? filePath
-  : path.resolve(projectDir, filePath);
-const rel = path.relative(projectDir, abs).split(path.sep).join("/");
-
-// Only trigger on test files (packages/m3l-common/tests/**).
-if (!/packages\/m3l-common\/tests\//.test(rel)) process.exit(0);
-if (!rel.endsWith(".test.ts") && !rel.endsWith(".test.mts")) process.exit(0);
-
-// Detect content by field presence (Write → content, Edit → new_string),
-// matching the sibling-hook pattern. This is self-healing: if tool_name is
-// absent or renamed, the relevant field still identifies the intent.
-const ti = input.tool_input ?? {};
-let content;
-if (typeof ti.content === "string" && ti.content.length > 0) {
-  content = ti.content; // Write: full new file
-} else if (typeof ti.new_string === "string" && ti.new_string.length > 0) {
-  content = ti.new_string; // Edit: replacement text being introduced
-} else {
-  process.exit(0);
-}
-
-// Rules that are RED-phase noise: they fire because the module doesn't exist,
-// not because the test is wrong. Suppressing them creates stale directives.
-const RED_PHASE_RULES = [
+/** Rules that are RED-phase noise: they fire because the module doesn't exist. */
+export const RED_PHASE_RULES = [
   "import-x/no-unresolved",
   "@typescript-eslint/no-unsafe-assignment",
   "@typescript-eslint/no-unsafe-call",
@@ -99,7 +65,15 @@ const inlinePattern = /eslint-disable(?:-next-line|-line)\s+([^\n]+)/g;
 // [\s\S]*? spans multiple lines for multi-rule blocks.
 const blockPattern = /\/\*\s*eslint-disable(?!-)([\s\S]*?)\*\//g;
 
-function extractRules(ruleText) {
+/**
+ * Parse rule names out of the text following an eslint-disable directive.
+ * Strips trailing `*\/` (block-comment form), `-- reason` comments, and
+ * splits on commas and newlines.
+ *
+ * @param {string} ruleText
+ * @returns {string[]}
+ */
+export function extractRules(ruleText) {
   return ruleText
     .split(/[,\n]/)
     .map((r) =>
@@ -111,30 +85,79 @@ function extractRules(ruleText) {
     .filter((r) => r.length > 0);
 }
 
-const flagged = [];
+/**
+ * Scan `content` for eslint-disable directives that mention RED_PHASE_RULES.
+ * Returns one sub-array per matching directive with the flagged rule names.
+ * A bare `/* eslint-disable *\/` (no rule list) is treated as flagging all rules.
+ *
+ * @param {string} content
+ * @returns {string[][]}
+ */
+export function findRedPhaseDisables(content) {
+  const flagged = [];
 
-for (const m of content.matchAll(inlinePattern)) {
-  const redRules = extractRules(m[1]).filter((r) =>
-    RED_PHASE_RULES.includes(r),
-  );
-  if (redRules.length > 0) flagged.push(redRules);
+  for (const m of content.matchAll(inlinePattern)) {
+    const redRules = extractRules(m[1]).filter((r) =>
+      RED_PHASE_RULES.includes(r),
+    );
+    if (redRules.length > 0) flagged.push(redRules);
+  }
+
+  for (const m of content.matchAll(blockPattern)) {
+    const rules = extractRules(m[1]);
+    // Bare /* eslint-disable */ with no rule list silences everything for the
+    // rest of the file — treat it as flagging all RED_PHASE_RULES.
+    const redRules =
+      rules.length === 0
+        ? [...RED_PHASE_RULES]
+        : rules.filter((r) => RED_PHASE_RULES.includes(r));
+    if (redRules.length > 0) flagged.push(redRules);
+  }
+
+  return flagged;
 }
 
-for (const m of content.matchAll(blockPattern)) {
-  const rules = extractRules(m[1]);
-  // Bare /* eslint-disable */ with no rule list silences everything for the
-  // rest of the file — treat it as flagging all RED_PHASE_RULES.
-  const redRules =
-    rules.length === 0
-      ? [...RED_PHASE_RULES]
-      : rules.filter((r) => RED_PHASE_RULES.includes(r));
-  if (redRules.length > 0) flagged.push(redRules);
-}
+// Main execution — only run when invoked directly, not when imported for testing.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const raw = await readStdin();
+  let input;
+  try {
+    input = JSON.parse(raw);
+  } catch {
+    process.exit(0);
+  }
 
-if (flagged.length === 0) process.exit(0);
+  const filePath = input.tool_input?.file_path ?? "";
+  if (typeof filePath !== "string" || filePath.length === 0) process.exit(0);
 
-const ruleList = [...new Set(flagged.flat())].join(", ");
-process.stderr.write(`\
+  const projectDir = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
+  const abs = path.isAbsolute(filePath)
+    ? filePath
+    : path.resolve(projectDir, filePath);
+  const rel = path.relative(projectDir, abs).split(path.sep).join("/");
+
+  // Only trigger on test files (packages/m3l-common/tests/**).
+  if (!/packages\/m3l-common\/tests\//.test(rel)) process.exit(0);
+  if (!rel.endsWith(".test.ts") && !rel.endsWith(".test.mts")) process.exit(0);
+
+  // Detect content by field presence (Write → content, Edit → new_string),
+  // matching the sibling-hook pattern. This is self-healing: if tool_name is
+  // absent or renamed, the relevant field still identifies the intent.
+  const ti = input.tool_input ?? {};
+  let content;
+  if (typeof ti.content === "string" && ti.content.length > 0) {
+    content = ti.content; // Write: full new file
+  } else if (typeof ti.new_string === "string" && ti.new_string.length > 0) {
+    content = ti.new_string; // Edit: replacement text being introduced
+  } else {
+    process.exit(0);
+  }
+
+  const flagged = findRedPhaseDisables(content);
+  if (flagged.length === 0) process.exit(0);
+
+  const ruleList = [...new Set(flagged.flat())].join(", ");
+  process.stderr.write(`\
 [guard-eslint-disable-red] Blocked: ${rel} introduces eslint-disable
 directive(s) for import-resolution / type-inference rules: ${ruleList}
 
@@ -148,4 +171,5 @@ If this suppression is for an intentional non-Error throw/reject in an
 error-channel test (only-throw-error / prefer-promise-reject-errors), it
 is correct and not flagged by this hook.
 `);
-process.exit(2);
+  process.exit(2);
+}

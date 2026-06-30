@@ -127,3 +127,5 @@ expect(() =>
 - Do not weaken assertions to make a test pass. If the contract looks wrong, say
   so rather than codifying a bug.
 - Don't implement the module and don't review code — hand both back to the hub.
+
+- Do not use real filesystem mutations in tests (`mkdtempSync`, `mkdirSync`, `writeFileSync`, `rmSync`, etc.); this is enforced by ESLint's `no-restricted-syntax` rule. The only sanctioned pattern is `vi.spyOn(fs, method)` or `vi.mock('node:fs')`.

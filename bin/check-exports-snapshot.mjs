@@ -12,6 +12,7 @@
 // Usage:
 //   node bin/check-exports-snapshot.mjs            # verify (fails on drift)
 //   node bin/check-exports-snapshot.mjs --update   # rewrite the snapshot
+import process from "node:process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";

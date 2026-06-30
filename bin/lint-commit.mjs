@@ -2,6 +2,7 @@
 // Thin wrapper around @commitlint/lint + @commitlint/load that replaces
 // @commitlint/cli without pulling in the git-raw-commits transitive dep.
 // See docs/adr/0008-commitlint-cli-replacement.md.
+import process from "node:process";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import lint from "@commitlint/lint";

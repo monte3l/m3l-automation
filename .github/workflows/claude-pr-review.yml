@@ -4,6 +4,13 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
+    # Skip when every changed file is docs/config-only — no library code to review.
+    # A PR that touches at least one non-excluded file still triggers the full review.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".github/workflows/dependabot.yml"
+      - ".github/dependabot.yml"
 
 permissions:
   contents: read
@@ -21,12 +28,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: "--model claude-sonnet-4-6 --allowedTools Bash,Read --max-turns 25"
+          claude_args: "--model claude-sonnet-4-6 --allowedTools Bash,Read --max-turns 12"
           use_sticky_comment: true
           prompt: |
             You are the blocking PR reviewer for this repo. Review ONLY what is visible in
@@ -70,6 +77,22 @@ jobs:
             ## Commit hygiene
 
             - PR title must follow Conventional Commits: `feat:` (minor), `fix:` (patch), `feat!:` or `BREAKING CHANGE:` footer (major), `docs:`/`refactor:`/`test:`/`chore:` (no release)
+
+            ## Exhaustive-sweep rule (reduces round count)
+
+            When a finding is an instance of a class (e.g. real-fs in a test, an untested
+            documented branch, a regex blind spot, a doc-sync drift), **grep/enumerate every
+            instance in the diff and list them ALL in one comment** — never one per round.
+            A single comment with N findings is far better than N comments each with 1 finding.
+
+            ## Re-review behaviour
+
+            On a re-review (when prior review comments already exist on the PR):
+            - Re-check all Must-fix items from prior rounds and newly changed lines.
+            - Do **NOT** re-raise a non-blocking nit that was already reported in a prior
+              PASS comment — only resurface it if the relevant code changed in this push.
+            - If all prior Must-fix items are resolved and no new Must-fix items exist,
+              the verdict is PASS even if some prior nits remain unaddressed.
 
             ## Output format
 

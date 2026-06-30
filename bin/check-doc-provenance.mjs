@@ -13,6 +13,7 @@
 //   node bin/check-doc-provenance.mjs                   # verify all sidecars
 //   node bin/check-doc-provenance.mjs --update          # re-stamp commit + date to HEAD
 //   node bin/check-doc-provenance.mjs --affected <file> # only sidecars referencing <file>
+import process from "node:process";
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";

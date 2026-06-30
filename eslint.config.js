@@ -4,16 +4,20 @@ import tseslint from "typescript-eslint";
 import { importX } from "eslint-plugin-import-x";
 import { createTypeScriptImportResolver } from "eslint-import-resolver-typescript";
 import tsdoc from "eslint-plugin-tsdoc";
+import globals from "globals";
 
 export default tseslint.config(
   {
-    // Generated / vendored output and standalone tooling are never linted.
+    // Generated / vendored output is never linted.
+    // bin/**  and .claude/hooks/** are intentionally NOT ignored (see block below).
+    // .claude/agents|skills|rules contain only docs; hooks are the only code there.
     ignores: [
       "**/dist/**",
       "**/node_modules/**",
       "**/coverage/**",
-      ".claude/**",
-      "bin/**",
+      ".claude/agents/**",
+      ".claude/skills/**",
+      ".claude/rules/**",
     ],
   },
   js.configs.recommended,
@@ -144,10 +148,70 @@ export default tseslint.config(
     },
   },
   {
+    // Node.js automation scripts (bin/) and Claude Code hooks (.claude/hooks/).
+    // Plain ESM .mjs — no TypeScript project service. Enables the rules that
+    // caught historical PR findings: empty-catch swallowing, variable shadowing,
+    // unused vars, and (via no-undef) missing explicit imports.
+    files: ["bin/**/*.mjs", ".claude/hooks/**/*.mjs"],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      parserOptions: { projectService: false },
+      globals: globals.node,
+    },
+    rules: {
+      // Catch empty catch blocks (silent error swallowing).
+      "no-empty": ["error", { allowEmptyCatch: false }],
+      // Catch variable shadowing (the #20 `raw` parameter shadowing).
+      "no-shadow": "error",
+      // No type info available — defer to the standard rule.
+      "@typescript-eslint/no-unused-vars": "off",
+      "no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+      // devDependencies are expected in bin scripts and hooks.
+      "import-x/no-extraneous-dependencies": "off",
+      // node: protocol imports resolve fine at runtime; skip the resolver check.
+      "import-x/no-unresolved": "off",
+    },
+  },
+  {
     // Tests may use devDependencies and relax a few rules.
+    // The no-restricted-syntax entry bans real filesystem mutations — these make
+    // "unit" tests CI-green only when the live tree happens to match expectations
+    // (the #25 smell: mkdtempSync/writeFileSync against /tmp in pure unit tests).
+    // Read-only methods tests legitimately vi.spyOn (existsSync, readdirSync,
+    // accessSync) are NOT banned. Use vi.spyOn(fs, method) for everything else.
     files: ["**/tests/**/*.ts", "**/*.test.ts"],
     rules: {
       "import-x/no-extraneous-dependencies": "off",
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "CallExpression[callee.type='MemberExpression'][callee.object.name=/^(fs|fsp|fsPromises)$/][callee.property.name=/^(mkdtempSync|mkdirSync|writeFileSync|appendFileSync|rmSync|unlinkSync|rmdirSync|mkdtemp|mkdir|writeFile|appendFile|rm|unlink|rmdir)$/]",
+          message:
+            "Mutating filesystem calls are banned in unit tests. Use vi.spyOn(fs, method) or vi.mock('node:fs') instead.",
+        },
+        {
+          selector:
+            "CallExpression[callee.type='Identifier'][callee.name='fetch']",
+          message:
+            "Bare fetch() in unit tests makes real network calls. Use vi.spyOn or mock the collaborator.",
+        },
+      ],
+    },
+  },
+  {
+    // bin/tests/*.test.ts imports from .mjs scripts that have no TypeScript
+    // declarations — TypeScript infers their exports as `any`. Disable the
+    // no-unsafe-* rules here so tests remain writable without casts throughout.
+    files: ["bin/tests/**/*.test.ts"],
+    rules: {
+      "@typescript-eslint/no-unsafe-call": "off",
+      "@typescript-eslint/no-unsafe-member-access": "off",
+      "@typescript-eslint/no-unsafe-assignment": "off",
+      "@typescript-eslint/no-unsafe-argument": "off",
     },
   },
   {

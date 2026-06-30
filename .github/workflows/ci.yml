@@ -82,6 +82,10 @@ jobs:
       - name: Check doc counts
         run: pnpm check:doc-counts
 
+      # Commands table vs package.json scripts; hooks in settings.json vs CLAUDE.md.
+      - name: Check doc sync
+        run: pnpm check:doc-sync
+
       # Run with coverage so the thresholds in vitest.config.ts actually gate
       # CI (rules 02): `vitest run` alone never evaluates them.
       - name: Test (with coverage gate)
