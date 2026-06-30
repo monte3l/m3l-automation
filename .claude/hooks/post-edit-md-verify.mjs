@@ -69,7 +69,7 @@ const BASE_SKIP_PATTERNS = [
 
 // docs/plans/ is auto-formatted by prettier (prevents pre-push drift) but
 // skipped by rumdl (freeform reference docs, not subject to strict MD rules).
-const prettierSkipPatterns = BASE_SKIP_PATTERNS;
+const prettierSkipPatterns = [...BASE_SKIP_PATTERNS];
 const rumdlSkipPatterns = [...BASE_SKIP_PATTERNS, /^docs\/plans\//];
 
 function run(cmd, args) {
