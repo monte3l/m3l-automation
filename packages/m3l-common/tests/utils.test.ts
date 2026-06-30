@@ -1,13 +1,3 @@
-/**
- * Tests for core/utils submodule — written tests-first (RED phase).
- * The implementation does NOT exist; all tests are expected to fail because
- * the module `../src/core/utils/index.js` cannot be resolved yet.
- *
- * Contract source: docs/reference/core/utils.md
- * Phases covered: A (type guards, 26 symbols), B (serialization & formatting,
- * 10 symbols), C (concurrency, 1 symbol). Phase D (M3LPaths) deferred.
- */
-
 import { describe, expect, expectTypeOf, test } from "vitest";
 
 import { M3LError } from "../src/core/errors/index.js";
