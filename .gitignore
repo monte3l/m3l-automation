@@ -29,3 +29,6 @@ data/output/*
 .env
 .env.*
 !.env.example
+
+# Claude
+.claire/
