@@ -39,17 +39,26 @@ flips to green — but the rest of the discipline below is identical.)
      generic containers, discriminated unions like `M3LResult`).
 4. Keep tests deterministic and isolated: no real network or filesystem; mock
    collaborators (prefer stubs unless verifying interactions); clean up in
-   `afterEach`; name tests by behavior.
+   `afterEach` — but **only** for collaborators your tests actually mock. Do not
+   write `afterEach(() => vi.restoreAllMocks())` or similar teardown code for
+   pure functions with no mocks; dead teardowns clutter the suite and require
+   removal later. Name tests by behavior.
 5. Parameterize with `test.each` when the same logic is exercised over many inputs.
 6. Run `pnpm test` (and `pnpm typecheck`). In tests-first mode, confirm the
    expected red; in backfill mode, iterate to green. Never mute or retry-mask a
    flaky test — diagnose it.
 7. Run `pnpm exec eslint <your test file>` to iterate quickly. Before handing
-   back, run **`pnpm lint` (workspace root, no `-C` flag)** and confirm the
-   file is clean — this matches the hub gate exactly and surfaces type-aware
-   findings that per-file eslint can miss. Clear every finding before handing
-   back. Tests that exercise an **error channel** deliberately throw or
-   reject non-`Error` values to prove normalization; these trip
+   back, run **`pnpm lint` (workspace root, no `-C` flag)** and clear every
+   finding in the test file itself — this matches the hub gate exactly and
+   surfaces type-aware findings that per-file eslint can miss.
+   **One exception:** `import-x/no-unresolved` and `@typescript-eslint/no-unsafe-*`
+   findings caused by the non-existent module are acceptable in the RED state.
+   **Do not suppress them with `eslint-disable`** — they self-resolve once the
+   implementation exists, and a stale disable block requires an extra cleanup
+   spoke after GREEN. Leave those warnings; the test runner doesn't care and
+   the tests fail for the right reason (module absent, not a lint error).
+   Tests that exercise an **error channel** deliberately throw or reject
+   non-`Error` values to prove normalization; these trip
    `@typescript-eslint/only-throw-error` and
    `@typescript-eslint/prefer-promise-reject-errors`. Suppress them **narrowly**
    with a justified `eslint-disable-next-line … -- <why>` comment — never widen
