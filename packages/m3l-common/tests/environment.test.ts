@@ -704,71 +704,55 @@ describe("detect() — no top-level side effects on import (B7)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// B3 — Monorepo walk-up via real temporary directory tree
+// B3 — Monorepo walk-up (mocked filesystem, no real I/O)
 // ---------------------------------------------------------------------------
 describe("detect() — monorepo walk-up (B3)", () => {
   test("MONOREPO when pnpm-workspace.yaml is found up the tree", () => {
-    const root = fs.mkdtempSync("/tmp/m3l-env-test-pnpm-");
-    const subdir = root + "/packages/my-script";
-    fs.mkdirSync(subdir, { recursive: true });
-    fs.writeFileSync(
-      root + "/pnpm-workspace.yaml",
-      "packages:\n  - 'packages/*'\n",
+    vi.spyOn(process, "cwd").mockReturnValue("/fake/packages/my-script");
+    vi.spyOn(fs, "readdirSync").mockReturnValue([]);
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (p) => String(p) === "/fake/pnpm-workspace.yaml",
     );
-    vi.spyOn(process, "cwd").mockReturnValue(subdir);
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.deploymentMode).toBe(M3LDeploymentMode.MONOREPO);
-    // cleanup
-    fs.rmSync(root, { recursive: true, force: true });
   });
 
   test("monorepoRoot points to the directory containing pnpm-workspace.yaml", () => {
-    const root = fs.mkdtempSync("/tmp/m3l-env-test-root-");
-    const subdir = root + "/nested/deep";
-    fs.mkdirSync(subdir, { recursive: true });
-    fs.writeFileSync(
-      root + "/pnpm-workspace.yaml",
-      "packages:\n  - 'nested/*'\n",
+    vi.spyOn(process, "cwd").mockReturnValue("/fake/nested/deep");
+    vi.spyOn(fs, "readdirSync").mockReturnValue([]);
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (p) => String(p) === "/fake/pnpm-workspace.yaml",
     );
-    vi.spyOn(process, "cwd").mockReturnValue(subdir);
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.deploymentMode).toBe(M3LDeploymentMode.MONOREPO);
-    expect(info.monorepoRoot).toBe(root);
-    // cleanup
-    fs.rmSync(root, { recursive: true, force: true });
+    expect(info.monorepoRoot).toBe("/fake");
   });
 
   test("MONOREPO when package.json with workspaces field is found", () => {
-    const root = fs.mkdtempSync("/tmp/m3l-env-test-pkgjson-");
-    const subdir = root + "/apps/tool";
-    fs.mkdirSync(subdir, { recursive: true });
-    fs.writeFileSync(
-      root + "/package.json",
+    vi.spyOn(process, "cwd").mockReturnValue("/fake/apps/tool");
+    vi.spyOn(fs, "readdirSync").mockReturnValue([]);
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (p) => String(p) === "/fake/package.json",
+    );
+    vi.spyOn(fs, "readFileSync").mockReturnValue(
       JSON.stringify({ name: "monorepo-root", workspaces: ["apps/*"] }),
     );
-    vi.spyOn(process, "cwd").mockReturnValue(subdir);
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.deploymentMode).toBe(M3LDeploymentMode.MONOREPO);
-    // cleanup
-    fs.rmSync(root, { recursive: true, force: true });
   });
 
   test("STANDALONE when neither marker is found (walk reaches root)", () => {
-    // Use a temp dir with no workspace markers at any level
-    const isolated = fs.mkdtempSync("/tmp/m3l-env-test-standalone-");
-    vi.spyOn(process, "cwd").mockReturnValue(isolated);
+    // Walk from a fake isolated dir; existsSync returns false for all paths,
+    // so the walk ascends to '/' and terminates naturally → STANDALONE.
+    vi.spyOn(process, "cwd").mockReturnValue("/fake/isolated");
+    vi.spyOn(fs, "readdirSync").mockReturnValue([]);
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
-    // Walk from isolated dir upward; if no marker exists before /, STANDALONE
-    // Note: We cannot guarantee no marker exists above /tmp, but the env var
-    // override makes this test authoritative regardless.
-    vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.deploymentMode).toBe(M3LDeploymentMode.STANDALONE);
-    // cleanup
-    fs.rmSync(isolated, { recursive: true, force: true });
   });
 
   test("monorepoRoot is undefined in STANDALONE mode", () => {
@@ -829,35 +813,37 @@ describe("detect() — walk terminates at filesystem root (B9)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// B10 — M3L_DEPLOYMENT_MODE env var forces override
+// B10 — M3L_DEPLOYMENT_MODE env var forces override (mocked filesystem)
 // ---------------------------------------------------------------------------
 describe("detect() — M3L_DEPLOYMENT_MODE env var override (B10)", () => {
   test("M3L_DEPLOYMENT_MODE=standalone forces STANDALONE even when workspace marker exists on disk", () => {
-    const root = fs.mkdtempSync("/tmp/m3l-env-test-force-standalone-");
-    fs.writeFileSync(root + "/pnpm-workspace.yaml", "packages:\n  - 'pkg/*'\n");
-    vi.spyOn(process, "cwd").mockReturnValue(root);
+    // standalone override short-circuits before walk-up; no fs I/O needed
+    vi.spyOn(process, "cwd").mockReturnValue("/fake/root");
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.deploymentMode).toBe(M3LDeploymentMode.STANDALONE);
-    // cleanup
-    fs.rmSync(root, { recursive: true, force: true });
   });
 
   test("M3L_DEPLOYMENT_MODE=monorepo forces MONOREPO and walk-up still finds the root", () => {
-    const root = fs.mkdtempSync("/tmp/m3l-env-test-force-monorepo-");
-    const subdir = root + "/scripts";
-    fs.mkdirSync(subdir, { recursive: true });
-    fs.writeFileSync(
-      root + "/pnpm-workspace.yaml",
-      "packages:\n  - 'scripts/*'\n",
+    vi.spyOn(process, "cwd").mockReturnValue("/fake/scripts");
+    vi.spyOn(fs, "readdirSync").mockReturnValue([]);
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (p) => String(p) === "/fake/pnpm-workspace.yaml",
     );
-    vi.spyOn(process, "cwd").mockReturnValue(subdir);
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "monorepo");
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.deploymentMode).toBe(M3LDeploymentMode.MONOREPO);
-    expect(info.monorepoRoot).toBe(root);
-    // cleanup
-    fs.rmSync(root, { recursive: true, force: true });
+    expect(info.monorepoRoot).toBe("/fake");
+  });
+
+  test("M3L_DEPLOYMENT_MODE=monorepo throws when no workspace marker is found", () => {
+    vi.spyOn(process, "cwd").mockReturnValue("/fake/isolated");
+    vi.spyOn(fs, "readdirSync").mockReturnValue([]);
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    vi.stubEnv("M3L_DEPLOYMENT_MODE", "monorepo");
+    expect(() => M3LExecutionEnvironment.detectFresh()).toThrow(
+      M3LEnvironmentDetectionError,
+    );
   });
 });
 
