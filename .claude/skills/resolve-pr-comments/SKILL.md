@@ -65,26 +65,29 @@ gh repo view --json nameWithOwner --jq '.nameWithOwner'
 
 Fetch the most recent bot review comment on the PR's issue thread. The review action
 posts as `claude[bot]` (OAuth token) or `github-actions[bot]` (GITHUB_TOKEN) depending
-on the workflow configuration — match either:
+on the workflow configuration — match either. Use `--paginate` so comments beyond the
+first page (>30 items) are not silently missed:
 
 ```bash
 gh api repos/{owner}/{repo}/issues/{pr_number}/comments \
-  --jq '[.[] | select(.user.login == "github-actions[bot]" or .user.login == "claude[bot]")] | last'
+  --paginate \
+  --jq '.[] | select(.user.login == "github-actions[bot]" or .user.login == "claude[bot]")'
 ```
 
-- If no such comment exists, tell the user "No bot review comment found" and stop.
-- If the comment body contains the **Verdict** section with the word `PASS` as a
-  whole word (not a substring of "bypass", "surpassed", etc.), and carries no
-  violation bullets under the convention headings, tell the user
+This streams one JSON object per line for each matching comment across all pages. Take
+the last one (most recent bot comment).
+
+- If the output is empty, tell the user "No bot review comment found" and stop.
+- If the comment body's **Verdict** section contains the word `PASS` as a whole word
+  (not a substring of "bypass", "surpassed", etc.) and the comment carries no violation
+  bullets under the convention headings, tell the user
   "The bot review already shows PASS — nothing to fix." and stop.
-  Check for the verdict using a word-boundary pattern, e.g.:
+  Use a word-boundary match:
   ```bash
   echo "$body" | grep -qiw 'PASS'
   # then confirm no violation bullets exist before exiting early
   ```
 - Otherwise, proceed with the full comment body.
-
-Store the comment's `id` — you will reply to it in step 8.
 
 ### 3 — Parse findings
 
@@ -145,19 +148,28 @@ next category until they resolve it or instruct you to skip.
 
 ### 6 — Final full-gate check
 
-Once all categories are done, run the full suite:
+Once all categories are done, run the full suite (matches the Definition of Done in
+CLAUDE.md — all four gates):
 
 ```bash
-pnpm lint && pnpm typecheck && pnpm test
+pnpm lint && pnpm typecheck && pnpm test && pnpm build
 ```
 
 If this fails, do not commit or push. Show the failure and stop.
 
 ### 7 — Commit and push
 
-Commit using the `write-commit` skill conventions:
+Commit using the `write-commit` skill conventions. Choose the Conventional Commit type
+based on the findings resolved — per CLAUDE.md, only `fix:` triggers a patch release:
 
-- **Subject:** `fix: address claude-pr-review findings` (≤70 chars)
+| Findings resolved                                             | Commit type | Semver impact |
+| ------------------------------------------------------------- | ----------- | ------------- |
+| Actual defects (`any`, missing `.js`, bare throws, bad types) | `fix:`      | patch         |
+| TSDoc / `@example` additions only                             | `docs:`     | no release    |
+| Test coverage gaps only                                       | `test:`     | no release    |
+| Mix of defect + documentation fixes                           | `fix:`      | patch         |
+
+- **Subject:** `{type}: address claude-pr-review findings` (≤70 chars)
 - **Body:** one bullet per finding resolved, e.g.:
   ```
   - replace `any` with `unknown` in src/core/config/index.ts
@@ -177,15 +189,17 @@ Capture the resulting commit SHA:
 git rev-parse --short HEAD
 ```
 
-### 8 — Reply to the bot comment
+### 8 — Post a follow-up comment
 
-Post a follow-up comment to the same thread to close the loop:
+Post a new top-level comment on the PR thread summarising what was fixed. GitHub's
+issue-comments API has no `in_reply_to` concept (unlike pull-request review comments),
+so this creates a sibling comment rather than a nested reply:
 
 ```bash
 gh api repos/{owner}/{repo}/issues/{pr_number}/comments \
   --method POST \
-  --field body="Fixed in {commit_sha}: {one-line summary of what was addressed, e.g. 'resolved 3 TypeScript and 2 ESM findings'}"
+  --field body="Fixed in {commit_sha}: {one-line summary, e.g. 'resolved 3 TypeScript and 2 ESM findings'}"
 ```
 
-Print a confirmation to the user: "Done — replied to the review comment with commit
+Print a confirmation to the user: "Done — posted a follow-up comment with commit
 `{sha}`. The PR will re-trigger CI shortly."
