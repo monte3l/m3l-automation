@@ -38,9 +38,7 @@ if (committedCatalog === null) {
     "✗  docs/reference/catalog.json is missing — run pnpm gen:index.",
   );
   errors++;
-} else if (
-  JSON.stringify(committedCatalog) !== JSON.stringify(catalog)
-) {
+} else if (JSON.stringify(committedCatalog) !== JSON.stringify(catalog)) {
   console.error(
     "✗  docs/reference/catalog.json is out of date — run pnpm gen:index.",
   );
@@ -55,9 +53,7 @@ if (committedSymbolMap === null) {
     "✗  docs/reference/symbol-map.json is missing — run pnpm gen:index.",
   );
   errors++;
-} else if (
-  JSON.stringify(committedSymbolMap) !== JSON.stringify(symbolMap)
-) {
+} else if (JSON.stringify(committedSymbolMap) !== JSON.stringify(symbolMap)) {
   console.error(
     "✗  docs/reference/symbol-map.json is out of date — run pnpm gen:index.",
   );
@@ -71,9 +67,7 @@ try {
   readmeContent = null;
 }
 if (readmeContent === null) {
-  console.error(
-    "✗  docs/reference/README.md is missing — run pnpm gen:index.",
-  );
+  console.error("✗  docs/reference/README.md is missing — run pnpm gen:index.");
   errors++;
 } else {
   const committedBlock = extractBlock(readmeContent);
