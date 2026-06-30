@@ -517,7 +517,10 @@ top of the advisory text in this file:
   map changes without a matching semver commit; `post-edit-verify.mjs`
   auto-formats, **lints (eslint)**, type-checks, and runs the related tests on
   the edited package — so eslint-only failures surface in the spoke loop, not a
-  round later at the hub's `pnpm lint` gate.
+  round later at the hub's `pnpm lint` gate; `guard-eslint-disable-red.mjs`
+  warns when a test file written during the RED phase contains `eslint-disable`
+  directives for import-resolution or type-inference rules that self-resolve once
+  the implementation exists.
 
 ## Task Workflow
 

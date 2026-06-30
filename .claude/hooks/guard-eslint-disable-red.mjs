@@ -75,8 +75,8 @@ const inlinePattern = /eslint-disable(?:-next-line|-line)\s+([^\n]+)/g;
 // [\s\S]*? spans multiple lines for multi-rule blocks.
 const blockPattern = /\/\*\s*eslint-disable(?!-)([\s\S]*?)\*\//g;
 
-function extractRules(raw) {
-  return raw
+function extractRules(ruleText) {
+  return ruleText
     .split(/[,\n]/)
     .map((r) =>
       r
