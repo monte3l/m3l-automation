@@ -29,8 +29,11 @@ try {
 const filePath = input.tool_input?.file_path ?? "";
 
 // Trigger on reference page writes/edits OR edits to the root README.md.
-const isReferencePage = /docs\/reference\/(core|aws)\/[^/]+\.md$/.test(filePath);
-const isRootReadme = /(?:^|\/)README\.md$/.test(filePath) && !/\/docs\//.test(filePath);
+const isReferencePage = /docs\/reference\/(core|aws)\/[^/]+\.md$/.test(
+  filePath,
+);
+const isRootReadme =
+  /(?:^|\/)README\.md$/.test(filePath) && !/\/docs\//.test(filePath);
 if (!isReferencePage && !isRootReadme) process.exit(0);
 
 const projectDir = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
