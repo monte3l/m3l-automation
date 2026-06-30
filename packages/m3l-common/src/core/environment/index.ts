@@ -191,16 +191,6 @@ export type M3LCredentialSource =
  *
  * `code` is always `"ERR_ENVIRONMENT_DETECTION"`. `cause` carries the
  * underlying filesystem or OS error.
- *
- * @example
- * ```ts
- * import { M3LEnvironmentDetectionError } from "@m3l-automation/m3l-common/core";
- *
- * throw new M3LEnvironmentDetectionError("cannot read directory", {
- *   code: "ERR_ENVIRONMENT_DETECTION",
- *   cause: fsError,
- * });
- * ```
  */
 interface M3LEnvironmentDetectionErrorOptions {
   /** Always `"ERR_ENVIRONMENT_DETECTION"`. */

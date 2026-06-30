@@ -370,6 +370,10 @@ describe("M3LEnv — alias type contract", () => {
 // B1 — detect() returns the same object reference on repeated calls (singleton)
 // ---------------------------------------------------------------------------
 describe("detect() — singleton caching (B1)", () => {
+  beforeEach(() => {
+    vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
+  });
+
   test("returns the same object reference on consecutive calls", () => {
     const first = M3LExecutionEnvironment.detect();
     const second = M3LExecutionEnvironment.detect();
