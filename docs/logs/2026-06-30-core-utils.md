@@ -214,3 +214,44 @@ now standard operating procedure whenever a bot workflow may have touched the br
   spec-conformance-reviewer, type-design-analyzer, silent-failure-hunter) and
   consolidating their findings into a single implementer dispatch worked well.
   The nine Must-fix items from four spokes were resolved in one implementer pass.
+
+---
+
+## Phase D close-out — M3LPaths cluster (2026-06-30)
+
+`utils` now ships all 39/39 spec'd symbols. Phase D adds:
+`M3LPaths`, `M3LPathType`, `M3LPathEnvironmentVariables`, `M3LPathResolutionError`.
+
+### Confirmed design decisions
+
+1. **`getOutputDir()` returns the stable base `output/` dir — no auto-timestamping.**
+   Callers build run-archive dirs via `Core.M3LDateTokens.expand(...)`. Keeps
+   `M3LPaths` a pure resolver with no side effects.
+
+2. **`M3LPaths` is pure resolution — no filesystem I/O.**
+   All paths are snapshotted at construction time via `path.join()`. Directory
+   creation belongs to the downstream `files` submodule. Aligns with the
+   no-side-effects / tree-shaking rules.
+
+3. **`getProjectRoot()` throws `M3LPathResolutionError` (code `ERR_PATH_RESOLUTION`)
+   in standalone mode.** There is no monorepo root to return. Callers must guard
+   standalone code paths. The error type is exported to the Public API so callers
+   can discriminate via `instanceof`.
+
+### Audit findings resolved before merge
+
+- `deploymentMode` private field: widened to `string` by the implementer, narrowed
+  back to `M3LDeploymentMode` (the companion union type) after type-design-analyzer
+  flagged it. Compile-time closed-set invariant now enforced.
+- `resolveStandaloneBase()`: `process.cwd()` OS throw wrapped in a try/catch so a
+  deleted-cwd scenario surfaces as `M3LPathResolutionError`, not a bare Node `Error`.
+  Maintains the `M3LError`-only hierarchy contract.
+- `getProjectRoot()` guard: nested double-`if` collapsed to a single combined
+  condition for clarity.
+
+### Contract amendment
+
+`M3L_CACHE_DIR` was absent from the reference doc and plan. The user chose to add
+it for symmetry with the other four per-kind overrides. The reference doc, the
+`M3LPathEnvironmentVariables` const-object, and the implementation were all updated
+before code was written.
