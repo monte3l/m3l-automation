@@ -124,6 +124,21 @@ if (vt && vt.status !== 0) {
   failures.push(`vitest related:\n${(vt.stdout || vt.stderr || "").trim()}`);
 }
 
+// 5. When a src/ file is implemented/updated, also lint the package's tests/
+//    directory to surface stale eslint-disable directives that became unused
+//    directives once the implementation exists (RED-phase blocks going stale).
+if (/^packages\/[^/]+\/src\//.test(rel)) {
+  const testsDir = path.join(pkgDir, "tests");
+  if (fs.existsSync(testsDir)) {
+    const testLint = run("pnpm", ["exec", "eslint", testsDir]);
+    if (testLint && testLint.status !== 0) {
+      failures.push(
+        `eslint (tests/):\n${(testLint.stdout || testLint.stderr || "").trim()}`,
+      );
+    }
+  }
+}
+
 if (failures.length > 0) {
   process.stderr.write(
     `post-edit-verify found issues in \`${rel}\` (package: ` +
