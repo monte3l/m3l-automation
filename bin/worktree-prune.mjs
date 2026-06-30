@@ -20,6 +20,33 @@ function git(argv) {
   return execFileSync("git", argv, { encoding: "utf8" }).trim();
 }
 
+// `git branch --merged main` silently yields an empty set when `main` is
+// absent, which would skip every merged-branch candidate without warning.
+// Fail loudly instead so the operator knows the merged check did not run.
+function branchExists(name) {
+  try {
+    execFileSync(
+      "git",
+      ["rev-parse", "--verify", "--quiet", `refs/heads/${name}`],
+      {
+        stdio: "ignore",
+      },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+if (!branchExists("main")) {
+  console.error(
+    "✗  worktree:prune: no local `main` branch found. This script removes " +
+      "worktrees whose branch is merged into `main`; check out or fetch `main` " +
+      "and re-run.",
+  );
+  process.exit(1);
+}
+
 // Branches merged into main can be cleaned up safely.
 const mergedBranches = new Set(
   git(["branch", "--merged", "main", "--format=%(refname:short)"])
@@ -92,6 +119,16 @@ for (const w of candidates) {
   }
 }
 
-git(["worktree", "prune"]);
+try {
+  git(["worktree", "prune"]);
+} catch (err) {
+  console.error(
+    `✗  worktree:prune: \`git worktree prune\` failed ` +
+      `(${/** @type {Error} */ (err).message}). Stale admin entries may remain; ` +
+      "re-run or inspect `git worktree list`.",
+  );
+  failed++;
+}
+
 console.log(`\n✓  Pruned ${removed} worktree(s); ${failed} skipped.`);
 if (failed > 0) process.exit(1);

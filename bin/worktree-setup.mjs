@@ -13,6 +13,7 @@ import process from "node:process";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, mkdirSync, copyFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { parseWorktreeInclude } from "./lib/worktree-include.mjs";
 
 const worktreeRoot = process.cwd();
 
@@ -44,25 +45,33 @@ if (resolve(mainCheckout) === resolve(worktreeRoot)) {
 }
 
 console.log(`→  Installing dependencies in ${worktreeRoot} ...`);
-run("pnpm", ["install"]);
+try {
+  run("pnpm", ["install"]);
+} catch {
+  console.error(
+    "✗  worktree:setup: `pnpm install` failed (see the error above).\n" +
+      "   Common fixes: run `corepack enable`, check your Node version against\n" +
+      "   `.node-version`, then re-run `pnpm worktree:setup`.",
+  );
+  process.exit(1);
+}
 
 const includeFile = join(worktreeRoot, ".worktreeinclude");
 let copied = 0;
 let skipped = 0;
 
 if (existsSync(includeFile)) {
-  const patterns = readFileSync(includeFile, "utf8")
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0 && !l.startsWith("#"));
+  const { literals, patterns } = parseWorktreeInclude(
+    readFileSync(includeFile, "utf8"),
+  );
 
+  // Literal file paths only; glob/negation patterns are reported, not expanded.
   for (const rel of patterns) {
-    // Literal file paths only; glob/negation patterns are reported, not expanded.
-    if (/[*?![\]]/.test(rel) || rel.startsWith("!")) {
-      console.log(`•  Skipping non-literal pattern (copy manually): ${rel}`);
-      skipped++;
-      continue;
-    }
+    console.log(`•  Skipping non-literal pattern (copy manually): ${rel}`);
+    skipped++;
+  }
+
+  for (const rel of literals) {
     const from = join(mainCheckout, rel);
     const to = join(worktreeRoot, rel);
     if (!existsSync(from)) continue; // nothing to copy from main
@@ -70,8 +79,16 @@ if (existsSync(includeFile)) {
       skipped++;
       continue; // never clobber an existing file in the worktree
     }
-    mkdirSync(dirname(to), { recursive: true });
-    copyFileSync(from, to);
+    try {
+      mkdirSync(dirname(to), { recursive: true });
+      copyFileSync(from, to);
+    } catch (err) {
+      console.error(
+        `✗  worktree:setup: failed to copy ${rel} from the main checkout ` +
+          `(${/** @type {Error} */ (err).message}). Copy it by hand and re-run.`,
+      );
+      process.exit(1);
+    }
     console.log(`✓  Copied ${rel} from main checkout`);
     copied++;
   }
