@@ -68,22 +68,43 @@ const RED_PHASE_RULES = [
   "@typescript-eslint/no-unsafe-argument",
 ];
 
-// Match both eslint-disable-next-line and eslint-disable (block) forms.
-const disablePattern = /eslint-disable(?:-next-line|-line)?\s+([^\n*]+)/g;
+// Inline forms (eslint-disable-next-line / eslint-disable-line): capture to EOL.
+const inlinePattern = /eslint-disable(?:-next-line|-line)\s+([^\n]+)/g;
+// Block forms (/* eslint-disable ... */): capture all rules until */.
+// (?!-) prevents matching inside eslint-disable-next-line / eslint-disable-line.
+// [\s\S]*? spans multiple lines for multi-rule blocks.
+const blockPattern = /\/\*\s*eslint-disable(?!-)([\s\S]*?)\*\//g;
 
-const matches = [...content.matchAll(disablePattern)];
+function extractRules(raw) {
+  return raw
+    .split(/[,\n]/)
+    .map((r) =>
+      r
+        .replace(/\s*\*\/$/, "") // strip trailing */ from block-comment inline form
+        .replace(/\s*--.*$/, "") // strip -- reason comment
+        .trim(),
+    )
+    .filter((r) => r.length > 0);
+}
+
 const flagged = [];
-for (const m of matches) {
-  const rulesInDirective = m[1].split(",").map((r) =>
-    r
-      .trim()
-      .replace(/\s*--.*$/, "")
-      .trim(),
+
+for (const m of content.matchAll(inlinePattern)) {
+  const redRules = extractRules(m[1]).filter((r) =>
+    RED_PHASE_RULES.includes(r),
   );
-  const redRules = rulesInDirective.filter((r) => RED_PHASE_RULES.includes(r));
-  if (redRules.length > 0) {
-    flagged.push(redRules);
-  }
+  if (redRules.length > 0) flagged.push(redRules);
+}
+
+for (const m of content.matchAll(blockPattern)) {
+  const rules = extractRules(m[1]);
+  // Bare /* eslint-disable */ with no rule list silences everything for the
+  // rest of the file — treat it as flagging all RED_PHASE_RULES.
+  const redRules =
+    rules.length === 0
+      ? [...RED_PHASE_RULES]
+      : rules.filter((r) => RED_PHASE_RULES.includes(r));
+  if (redRules.length > 0) flagged.push(redRules);
 }
 
 if (flagged.length === 0) process.exit(0);
