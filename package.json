@@ -37,6 +37,8 @@
     "check:test-counts": "node bin/check-test-counts.mjs",
     "gen:index": "node bin/gen-reference-index.mjs",
     "check:index": "node bin/check-reference-index.mjs",
+    "worktree:setup": "node bin/worktree-setup.mjs",
+    "worktree:prune": "node bin/worktree-prune.mjs",
     "prepare": "lefthook install"
   },
   "devDependencies": {
