@@ -213,26 +213,26 @@ services. The only secrets are CI-only release tokens (`NPM_TOKEN`,
 ================================================================
 -->
 
-| Task          | Command                           | When        |
-| ------------- | --------------------------------- | ----------- |
-| Tests         | `pnpm test`                       | pre-commit  |
-| Watch tests   | `pnpm test:watch`                 | iterating   |
-| Single test   | `pnpm vitest run tests/x.test.ts` | iterating   |
-| Lint          | `pnpm lint`                       | pre-commit  |
-| Markdown lint | `pnpm lint:md`                    | CI          |
-| Format        | `pnpm format`                     | pre-commit  |
-| Type check    | `pnpm typecheck`                  | pre-commit  |
-| Build         | `pnpm build` (turbo + tsc)        | pre-publish |
-| Unused code   | `pnpm knip`                       | pre-publish |
-| Export check  | `pnpm check:exports`              | pre-publish |
-| Format check  | `pnpm format:check`               | CI          |
-| API snapshot  | `pnpm check:api`                  | pre-commit  |
-| Test coverage | `pnpm test:coverage`              | pre-push    |
-| Barrel sync   | `pnpm check:scaffold`             | pre-publish |
-| Doc provenance | `pnpm check:provenance`          | CI          |
-| Doc counts    | `pnpm check:doc-counts`           | CI          |
-| Doc sync      | `pnpm check:doc-sync`             | CI          |
-| Dep hygiene   | `pnpm check:deps`                 | CI          |
+| Task           | Command                           | When        |
+| -------------- | --------------------------------- | ----------- |
+| Tests          | `pnpm test`                       | pre-commit  |
+| Watch tests    | `pnpm test:watch`                 | iterating   |
+| Single test    | `pnpm vitest run tests/x.test.ts` | iterating   |
+| Lint           | `pnpm lint`                       | pre-commit  |
+| Markdown lint  | `pnpm lint:md`                    | CI          |
+| Format         | `pnpm format`                     | pre-commit  |
+| Type check     | `pnpm typecheck`                  | pre-commit  |
+| Build          | `pnpm build` (turbo + tsc)        | pre-publish |
+| Unused code    | `pnpm knip`                       | pre-publish |
+| Export check   | `pnpm check:exports`              | pre-publish |
+| Format check   | `pnpm format:check`               | CI          |
+| API snapshot   | `pnpm check:api`                  | pre-commit  |
+| Test coverage  | `pnpm test:coverage`              | pre-push    |
+| Barrel sync    | `pnpm check:scaffold`             | pre-publish |
+| Doc provenance | `pnpm check:provenance`           | CI          |
+| Doc counts     | `pnpm check:doc-counts`           | CI          |
+| Doc sync       | `pnpm check:doc-sync`             | CI          |
+| Dep hygiene    | `pnpm check:deps`                 | CI          |
 
 These map to package.json scripts (`test` -> `vitest run`, `typecheck`
 -> `turbo run typecheck`, `build` -> `turbo run build`, etc.). Turbo

@@ -44,9 +44,7 @@ function extractSection(content, startMarker) {
   const lines = content.split("\n");
   const startIdx = lines.findIndex((l) => l.includes(startMarker));
   if (startIdx === -1) return null;
-  const end = lines.findIndex(
-    (l, i) => i > startIdx && /^## /.test(l),
-  );
+  const end = lines.findIndex((l, i) => i > startIdx && /^## /.test(l));
   return lines.slice(startIdx, end === -1 ? undefined : end).join("\n");
 }
 
