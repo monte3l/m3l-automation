@@ -160,6 +160,20 @@ describe("M3LError class", () => {
     const json = e.toJSON();
     expect(json.name).toBe("BarError");
   });
+
+  test("constructs without Error.captureStackTrace (non-V8 runtimes)", () => {
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- capturing for restore in finally; reassigned back via Error.captureStackTrace = original, not called standalone
+    const original = Error.captureStackTrace;
+    // @ts-expect-error — exercising the absent-API branch on non-V8 runtimes
+    delete Error.captureStackTrace;
+    try {
+      const e = new M3LError("boom", { code: "X" });
+      expect(e).toBeInstanceOf(M3LError);
+      expect(e.message).toBe("boom");
+    } finally {
+      Error.captureStackTrace = original;
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -454,6 +468,16 @@ describe("fromPromise()", () => {
     await expect(
       fromPromise(Promise.reject(new Error("x"))),
     ).resolves.toBeDefined();
+  });
+
+  test("returns the original M3LError unwrapped when the promise rejects with one", async () => {
+    const original = new M3LError("already typed", { code: "TYPED_ERR" });
+    const r = await fromPromise(Promise.reject(original));
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) {
+      expect(r.error).toBe(original);
+      expect(r.error.code).toBe("TYPED_ERR");
+    }
   });
 });
 
