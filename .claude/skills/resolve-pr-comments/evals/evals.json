@@ -1,0 +1,137 @@
+{
+  "skill_name": "resolve-pr-comments",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "The claude-pr-review bot just posted a FAIL on my PR. It flagged two things: a missing `.js` extension on a relative import in `src/core/config/index.ts` line 3, and a bare `throw 'not found'` string on line 42 of the same file. Fix both.",
+      "expected_output": "The skill fetches the open PR's claude[bot] comment, identifies the two findings (ESM import extension + bare string throw), applies both fixes, runs `pnpm typecheck` and `pnpm lint`, runs the final gate (`pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build`), commits with `fix: address claude-pr-review findings`, pushes, and posts a new top-level comment with the commit SHA.",
+      "files": [],
+      "assertions": [
+        {
+          "text": "Fetches the claude[bot] comment from the PR's issue thread via gh api",
+          "passed": false,
+          "evidence": ""
+        },
+        {
+          "text": "Applies the `.js` extension fix to the import in the specified file",
+          "passed": false,
+          "evidence": ""
+        },
+        {
+          "text": "Replaces the bare throw string with an M3LError subclass throw",
+          "passed": false,
+          "evidence": ""
+        },
+        {
+          "text": "Runs pnpm typecheck after ESM/TypeScript fixes",
+          "passed": false,
+          "evidence": ""
+        },
+        {
+          "text": "Runs pnpm lint after error handling fixes",
+          "passed": false,
+          "evidence": ""
+        },
+        {
+          "text": "Runs the final full gate (pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build) before committing",
+          "passed": false,
+          "evidence": ""
+        },
+        {
+          "text": "Commits with subject starting with `fix: address claude-pr-review findings`",
+          "passed": false,
+          "evidence": ""
+        },
+        {
+          "text": "Posts a new top-level comment on the PR thread with the commit SHA",
+          "passed": false,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I just opened a PR and the claude-pr-review bot reviewed it — it came back PASS. Still, run resolve-pr-comments to confirm there's nothing to do.",
+      "expected_output": "The skill detects the open PR, fetches the bot comment, sees the PASS verdict, prints a message like 'The bot review already shows PASS — nothing to fix.' and exits cleanly without making any changes.",
+      "files": [],
+      "assertions": [
+        {
+          "text": "Fetches the bot comment from the PR",
+          "passed": false,
+          "evidence": ""
+        },
+        {
+          "text": "Recognises the PASS verdict and does NOT attempt any fixes",
+          "passed": false,
+          "evidence": ""
+        },
+        {
+          "text": "Does NOT commit, push, or reply to GitHub",
+          "passed": false,
+          "evidence": ""
+        },
+        {
+          "text": "Prints a clear message explaining that no fixes are needed",
+          "passed": false,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Fix the reviewer's comments on this branch.",
+      "expected_output": "The skill runs `gh pr view` and discovers there is no open PR for the current branch. It prints an error like 'No open PR found for the current branch' and stops without making any changes.",
+      "files": [],
+      "assertions": [
+        {
+          "text": "Attempts to detect an open PR via gh pr view",
+          "passed": false,
+          "evidence": ""
+        },
+        {
+          "text": "Prints a clear error message stating no open PR was found",
+          "passed": false,
+          "evidence": ""
+        },
+        {
+          "text": "Makes no file edits, commits, pushes, or API calls beyond PR detection",
+          "passed": false,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "The bot flagged a missing `.js` extension on an import in `src/core/errors/index.ts`. Fix it. But assume that after you add the extension, `pnpm typecheck` fails with 'Cannot find module ./types' (i.e., the gate fails).",
+      "expected_output": "The skill applies the `.js` extension fix, runs `pnpm typecheck`, sees the failure, stops immediately, prints the exact typecheck error output, and does NOT proceed to commit, push, or reply to GitHub.",
+      "files": [],
+      "assertions": [
+        {
+          "text": "Applies the `.js` extension fix to the import",
+          "passed": false,
+          "evidence": ""
+        },
+        {
+          "text": "Runs pnpm typecheck after the ESM fix",
+          "passed": false,
+          "evidence": ""
+        },
+        {
+          "text": "Detects the typecheck failure and stops processing",
+          "passed": false,
+          "evidence": ""
+        },
+        {
+          "text": "Shows the user the typecheck error output",
+          "passed": false,
+          "evidence": ""
+        },
+        {
+          "text": "Does NOT commit or push after the gate failure",
+          "passed": false,
+          "evidence": ""
+        }
+      ]
+    }
+  ]
+}
