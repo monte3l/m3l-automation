@@ -2,10 +2,12 @@
 name: resolve-pr-comments
 description: >
   This skill resolves automated PR review bot failures end-to-end. When a review bot
-  (especially claude-pr-review) has posted a FAIL verdict with findings — TypeScript
-  errors, missing .js extensions, TSDoc gaps, coverage holes — and the user wants them
-  fixed, committed, and replied to: invoke this skill. It owns the full loop: fetch bot
-  comment → fix each violation → run quality gates → commit → push → reply to bot.
+  (especially claude-pr-review) has posted a FAIL verdict with Must-fix findings —
+  TypeScript errors, missing .js extensions, TSDoc gaps, coverage holes — and the user
+  wants them fixed, committed, and replied to: invoke this skill. It owns the full loop:
+  fetch bot comment → parse Must-fix findings (showing Should-fix / Nits for context but
+  not touching them) → fix each Must-fix violation → run quality gates → commit → push →
+  reply to bot.
 
   Invoke for: "fix what the bot flagged", "address the bot review", "make the
   auto-review pass", "claude-pr-review posted FAIL", "clear blocking findings from the
@@ -83,7 +85,7 @@ into an array and returns the most recent one.
   heading so a passing sub-check mentioned elsewhere in the comment body cannot trigger
   a false early-exit:
   ```bash
-  echo "$body" | grep -A2 '## Verdict' | grep -qiw 'PASS'
+  echo "$body" | grep -A2 '^### Verdict' | grep -qiw 'PASS'
   ```
   If the Verdict is PASS, tell the user "The bot review already shows PASS — nothing
   to fix." and stop.
@@ -91,23 +93,46 @@ into an array and returns the most recent one.
 
 ### 3 — Parse findings
 
-Extract every finding from the comment body. The bot comment groups violations under
-Markdown headings (TypeScript, ESM imports, Error handling, Testing, Exports map,
-Security). Each violation is a bullet (`-`) under its heading.
+The bot groups violations under three severity headings: `### Must-fix`,
+`### Should-fix`, and `### Nits`. Each bullet has this form:
 
-For each bullet:
+```
+- **`path/to/file.ts:line`** — <violation> (<which rule>)
+```
 
-- Note which category it belongs to.
-- Note any file path or line reference mentioned.
-- Write a one-sentence summary of the fix required.
+The rule in parentheses maps to a fix category (TypeScript, ESM imports, Error handling,
+Security, Testing, Exports map). Parse each section separately and tag every bullet with
+its severity tier and its rule/category.
 
-Print a numbered list of all findings to the user before starting fixes, so they can
-see what is about to change.
+Print a three-section preview to the user before starting any edits. Omit a section if
+it has no findings:
+
+```
+## Must-fix (will be fixed)
+1. `src/core/foo.ts:12` — bare throw (Error handling)
+…
+
+## Should-fix (not touched — non-blocking)
+1. `src/core/foo.ts:45` — missing @example (TypeScript)
+…
+
+## Nits (not touched — advisory)
+1. …
+```
+
+After printing the preview, check for the "FAIL with no Must-fix items" anomaly:
+
+- If the verdict is FAIL **and** the Must-fix list is empty, tell the user:
+  "The bot verdict is FAIL but no Must-fix items were found. See Should-fix / Nits
+  above. Investigate whether the bot miscategorised a finding or if a non-blocking
+  item was intended to block." Then **stop**.
+- If the verdict is PASS (confirmed by the check in Step 2), you never reach this point.
 
 ### 4 — Implement fixes
 
-Work through findings in this category order. Error handling and Security are adjacent
-because both gate on `pnpm lint` — running them together avoids a duplicate gate pass:
+Work through **Must-fix findings only**, in this category order. Error handling and
+Security are adjacent because both gate on `pnpm lint` — running them together avoids a
+duplicate gate pass:
 
 1. TypeScript
 2. ESM imports
@@ -116,7 +141,9 @@ because both gate on `pnpm lint` — running them together avoids a duplicate ga
 5. Testing
 6. Exports map
 
-For each finding, locate the affected file and apply the **minimum correct fix**:
+For each Must-fix finding whose rule matches the current category, locate the affected
+file and apply the **minimum correct fix**. Skip any category that has no Must-fix
+findings. Should-fix and Nits are not touched.
 
 | Finding type                               | Correct fix                                                      |
 | ------------------------------------------ | ---------------------------------------------------------------- |
@@ -162,15 +189,15 @@ If this fails, do not commit or push. Show the failure and stop.
 Commit using the `write-commit` skill conventions. Choose the Conventional Commit type
 based on the findings resolved — per CLAUDE.md, only `fix:` triggers a patch release:
 
-| Findings resolved                                             | Commit type | Semver impact |
+| Must-fix findings resolved                                    | Commit type | Semver impact |
 | ------------------------------------------------------------- | ----------- | ------------- |
 | Actual defects (`any`, missing `.js`, bare throws, bad types) | `fix:`      | patch         |
 | TSDoc / `@example` additions only                             | `docs:`     | no release    |
 | Test coverage gaps only                                       | `test:`     | no release    |
 | Mix of defect + documentation fixes                           | `fix:`      | patch         |
 
-- **Subject:** `{type}: address claude-pr-review findings` (≤70 chars)
-- **Body:** one bullet per finding resolved, e.g.:
+- **Subject:** `{type}: resolve claude-pr-review must-fix findings` (≤70 chars)
+- **Body:** one bullet per **Must-fix** finding resolved (do not list Should-fix or Nits):
   ```
   - replace `any` with `unknown` in src/core/config/index.ts
   - add `.js` extension to relative import in src/aws/index.ts
@@ -195,10 +222,25 @@ Post a new top-level comment on the PR thread summarising what was fixed. GitHub
 issue-comments API has no `in_reply_to` concept (unlike pull-request review comments),
 so this creates a sibling comment rather than a nested reply:
 
+The body should itemize every Must-fix finding that was resolved, and list any
+Should-fix / Nits that remain open so the re-reviewer knows what to expect. Omit
+the "Not addressed" section if Should-fix and Nits are both empty.
+
 ```bash
 gh api repos/{owner}/{repo}/issues/{pr_number}/comments \
   --method POST \
-  --field body="Fixed in {commit_sha}: {one-line summary, e.g. 'resolved 3 TypeScript and 2 ESM findings'}"
+  --field body="$(cat <<'EOF'
+Fixed in {commit_sha}:
+
+**Must-fix items resolved:**
+- \`path/to/file.ts:line\` — <one-line description of what was changed>
+- …
+
+**Not addressed (non-blocking):**
+- Should-fix: \`path/to/file.ts:line\` — <violation>
+- Nits: \`path/to/file.ts:line\` — <violation>
+EOF
+)"
 ```
 
 Print a confirmation to the user: "Done — posted a follow-up comment with commit
