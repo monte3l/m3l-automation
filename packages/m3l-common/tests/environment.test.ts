@@ -481,6 +481,8 @@ describe("detect() — environment type priority (B5)", () => {
     vi.stubEnv("ECS_CONTAINER_METADATA_URI_V4", "");
     vi.stubEnv("CODEBUILD_BUILD_ID", "");
     vi.stubEnv("CI", "");
+    vi.stubEnv("GITHUB_ACTIONS", "");
+    vi.stubEnv("JENKINS_URL", "");
     vi.spyOn(process.stdout, "isTTY", "get").mockReturnValue(true);
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.environmentType).toBe(
@@ -493,6 +495,8 @@ describe("detect() — environment type priority (B5)", () => {
     vi.stubEnv("ECS_CONTAINER_METADATA_URI_V4", "");
     vi.stubEnv("CODEBUILD_BUILD_ID", "");
     vi.stubEnv("CI", "");
+    vi.stubEnv("GITHUB_ACTIONS", "");
+    vi.stubEnv("JENKINS_URL", "");
     vi.spyOn(process.stdout, "isTTY", "get").mockReturnValue(false);
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.environmentType).toBe(M3LExecutionEnvironmentType.UNKNOWN);
@@ -508,6 +512,8 @@ describe("detect() — capability flags (B6)", () => {
     vi.stubEnv("ECS_CONTAINER_METADATA_URI_V4", "");
     vi.stubEnv("CODEBUILD_BUILD_ID", "");
     vi.stubEnv("CI", "");
+    vi.stubEnv("GITHUB_ACTIONS", "");
+    vi.stubEnv("JENKINS_URL", "");
     vi.spyOn(process.stdout, "isTTY", "get").mockReturnValue(true);
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.isInteractive).toBe(true);
@@ -583,6 +589,8 @@ describe("detect() — capability flags (B6)", () => {
     vi.stubEnv("ECS_CONTAINER_METADATA_URI_V4", "");
     vi.stubEnv("CODEBUILD_BUILD_ID", "");
     vi.stubEnv("CI", "");
+    vi.stubEnv("GITHUB_ACTIONS", "");
+    vi.stubEnv("JENKINS_URL", "");
     vi.spyOn(process.stdout, "isTTY", "get").mockReturnValue(true);
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.isAWSManaged).toBe(false);
@@ -593,6 +601,8 @@ describe("detect() — capability flags (B6)", () => {
     vi.stubEnv("ECS_CONTAINER_METADATA_URI_V4", "");
     vi.stubEnv("CODEBUILD_BUILD_ID", "");
     vi.stubEnv("CI", "");
+    vi.stubEnv("GITHUB_ACTIONS", "");
+    vi.stubEnv("JENKINS_URL", "");
     vi.spyOn(process.stdout, "isTTY", "get").mockReturnValue(false);
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.isAWSManaged).toBe(false);
@@ -603,6 +613,8 @@ describe("detect() — capability flags (B6)", () => {
     vi.stubEnv("ECS_CONTAINER_METADATA_URI_V4", "");
     vi.stubEnv("CODEBUILD_BUILD_ID", "");
     vi.stubEnv("CI", "");
+    vi.stubEnv("GITHUB_ACTIONS", "");
+    vi.stubEnv("JENKINS_URL", "");
     vi.spyOn(process.stdout, "isTTY", "get").mockReturnValue(true);
     vi.spyOn(process.stdin, "isTTY", "get").mockReturnValue(true);
     const info = M3LExecutionEnvironment.detectFresh();
@@ -614,6 +626,8 @@ describe("detect() — capability flags (B6)", () => {
     vi.stubEnv("ECS_CONTAINER_METADATA_URI_V4", "");
     vi.stubEnv("CODEBUILD_BUILD_ID", "");
     vi.stubEnv("CI", "");
+    vi.stubEnv("GITHUB_ACTIONS", "");
+    vi.stubEnv("JENKINS_URL", "");
     vi.spyOn(process.stdout, "isTTY", "get").mockReturnValue(true);
     vi.spyOn(process.stdin, "isTTY", "get").mockReturnValue(false);
     const info = M3LExecutionEnvironment.detectFresh();
@@ -636,6 +650,8 @@ describe("detect() — capability flags (B6)", () => {
     vi.stubEnv("ECS_CONTAINER_METADATA_URI_V4", "");
     vi.stubEnv("CODEBUILD_BUILD_ID", "");
     vi.stubEnv("CI", "");
+    vi.stubEnv("GITHUB_ACTIONS", "");
+    vi.stubEnv("JENKINS_URL", "");
     vi.spyOn(process.stdout, "isTTY", "get").mockReturnValue(true);
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.canOpenBrowser).toBe(true);
@@ -657,6 +673,8 @@ describe("detect() — capability flags (B6)", () => {
     vi.stubEnv("ECS_CONTAINER_METADATA_URI_V4", "");
     vi.stubEnv("CODEBUILD_BUILD_ID", "");
     vi.stubEnv("CI", "");
+    vi.stubEnv("GITHUB_ACTIONS", "");
+    vi.stubEnv("JENKINS_URL", "");
     vi.spyOn(process.stdout, "isTTY", "get").mockReturnValue(true);
     const info = M3LExecutionEnvironment.detectFresh();
     if (info.credentialSource === M3LCredentialSource.SSO_PROFILE) {
@@ -943,6 +961,8 @@ describe("M3LExecutionEnvironment.isInteractive() — convenience shortcut", () 
     vi.stubEnv("ECS_CONTAINER_METADATA_URI_V4", "");
     vi.stubEnv("CODEBUILD_BUILD_ID", "");
     vi.stubEnv("CI", "");
+    vi.stubEnv("GITHUB_ACTIONS", "");
+    vi.stubEnv("JENKINS_URL", "");
     vi.spyOn(process.stdout, "isTTY", "get").mockReturnValue(true);
     M3LExecutionEnvironment.detectFresh();
     expect(M3LExecutionEnvironment.isInteractive()).toBe(true);
