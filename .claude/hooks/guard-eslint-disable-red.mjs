@@ -18,9 +18,10 @@
  * Blocking (exits 2): the write is rejected before the file is touched,
  * preventing stale directives from landing on disk in the first place.
  *
- * Content source:
- *   Write — tool_input.content  (full new file)
- *   Edit  — tool_input.new_string (replacement text being introduced)
+ * Content source (detected by field presence, not tool_name — matches the
+ * sibling-hook pattern so the guard stays live if tool_name is absent):
+ *   tool_input.content    present → Write (full new file)
+ *   tool_input.new_string present → Edit  (replacement text being introduced)
  */
 import process from "node:process";
 import path from "node:path";
@@ -52,20 +53,18 @@ const rel = path.relative(projectDir, abs).split(path.sep).join("/");
 if (!/packages\/m3l-common\/tests\//.test(rel)) process.exit(0);
 if (!rel.endsWith(".test.ts") && !rel.endsWith(".test.mts")) process.exit(0);
 
-// For Write: inspect the full file content being written.
-// For Edit: inspect only the new_string being introduced (conservative — only
-// flag directives the current edit is actively adding).
-const toolName = input.tool_name ?? "";
+// Detect content by field presence (Write → content, Edit → new_string),
+// matching the sibling-hook pattern. This is self-healing: if tool_name is
+// absent or renamed, the relevant field still identifies the intent.
+const ti = input.tool_input ?? {};
 let content;
-if (toolName === "Write") {
-  content = input.tool_input?.content ?? "";
-} else if (toolName === "Edit") {
-  content = input.tool_input?.new_string ?? "";
+if (typeof ti.content === "string" && ti.content.length > 0) {
+  content = ti.content; // Write: full new file
+} else if (typeof ti.new_string === "string" && ti.new_string.length > 0) {
+  content = ti.new_string; // Edit: replacement text being introduced
 } else {
   process.exit(0);
 }
-
-if (typeof content !== "string" || content.length === 0) process.exit(0);
 
 // Rules that are RED-phase noise: they fire because the module doesn't exist,
 // not because the test is wrong. Suppressing them creates stale directives.
