@@ -136,7 +136,7 @@ if (/^packages\/[^/]+\/src\//.test(rel)) {
     const testLint = run("pnpm", ["exec", "eslint", testsDir]);
     if (testLint && testLint.status !== 0) {
       failures.push(
-        `eslint (tests/):\n${(testLint.stdout || testLint.stderr || "").trim()}`,
+        `eslint (tests/ — may be pre-existing, unrelated to this edit):\n${(testLint.stdout || testLint.stderr || "").trim()}`,
       );
     }
   }
