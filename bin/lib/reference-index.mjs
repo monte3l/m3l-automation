@@ -139,17 +139,68 @@ export function buildIndex() {
   return { catalog, symbolMap };
 }
 
-export function buildReadmeBlock(catalog) {
-  const rows = catalog.map(
-    (e) =>
-      `| ${e.namespace} | [${e.name}](${e.namespace}/${e.name}.md) | ${e.status} | \`${e.importPath}\` |`,
+// Prettier uses display width (not JS string length) when aligning table columns.
+// Wide characters (CJK, emoji) occupy 2 terminal columns but have JS length 1.
+// This helper matches prettier's character-width logic for the values that appear
+// in the generated table (emoji status values in particular).
+function displayWidth(str) {
+  let w = 0;
+  for (const ch of str) {
+    const cp = ch.codePointAt(0);
+    w += isWide(cp) ? 2 : 1;
+  }
+  return w;
+}
+
+function isWide(cp) {
+  // Simplified Unicode East Asian Width = W or F ranges, plus emoji blocks.
+  // Covers the status emoji (❌ U+274C, ✅ U+2705, 🟢 U+1F7E2, 🧪 U+1F9EA, …).
+  return (
+    (cp >= 0x1100 && cp <= 0x115f) ||
+    (cp >= 0x2329 && cp <= 0x232a) ||
+    (cp >= 0x2e80 && cp <= 0x303e) ||
+    (cp >= 0x3040 && cp <= 0xa4cf) ||
+    (cp >= 0xac00 && cp <= 0xd7a3) ||
+    (cp >= 0xf900 && cp <= 0xfaff) ||
+    (cp >= 0xfe10 && cp <= 0xfe1f) ||
+    (cp >= 0xfe30 && cp <= 0xfe4f) ||
+    (cp >= 0xff00 && cp <= 0xff60) ||
+    (cp >= 0xffe0 && cp <= 0xffe6) ||
+    (cp >= 0x2600 && cp <= 0x27bf) || // Misc Symbols + Dingbats (❌ ✅ …)
+    (cp >= 0x1f000 && cp <= 0x1ffff) || // Emoji block (🟢 🧪 …)
+    (cp >= 0x20000 && cp <= 0x2fffd) ||
+    (cp >= 0x30000 && cp <= 0x3fffd)
   );
+}
+
+function padToDisplay(str, width) {
+  const spaces = width - displayWidth(str);
+  return spaces > 0 ? str + " ".repeat(spaces) : str;
+}
+
+export function buildReadmeBlock(catalog) {
+  const header = ["Namespace", "Module", "Status", "Import path"];
+  const dataRows = catalog.map((e) => [
+    e.namespace,
+    `[${e.name}](${e.namespace}/${e.name}.md)`,
+    e.status,
+    `\`${e.importPath}\``,
+  ]);
+  const colWidths = header.map((h, col) =>
+    Math.max(displayWidth(h), ...dataRows.map((r) => displayWidth(r[col]))),
+  );
+  const fmtRow = (cells) =>
+    "| " +
+    cells.map((c, i) => padToDisplay(c, colWidths[i])).join(" | ") +
+    " |";
+  const separator =
+    "| " + colWidths.map((w) => "-".repeat(w)).join(" | ") + " |";
   return [
     BEGIN_MARKER,
     "",
-    "| Namespace | Module | Status | Import path |",
-    "| --------- | ------ | ------ | ----------- |",
-    ...rows,
+    fmtRow(header),
+    separator,
+    ...dataRows.map(fmtRow),
     "",
     END_MARKER,
   ].join("\n");
