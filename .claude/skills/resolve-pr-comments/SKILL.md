@@ -71,18 +71,19 @@ first page (>30 items) are not silently missed:
 ```bash
 gh api repos/{owner}/{repo}/issues/{pr_number}/comments \
   --paginate \
-  --jq '.[] | select(.user.login == "claude[bot]")'
+  --jq '.[] | select(.user.login == "claude[bot]")' \
+  | jq -s 'last'
 ```
 
-This streams one JSON object per line for each matching comment across all pages. Take
-the last one (most recent bot comment).
+`--jq` streams one JSON object per line across all pages; `jq -s 'last'` collects them
+into an array and returns the most recent one.
 
 - If the output is empty, tell the user "No bot review comment found" and stop.
 - Check whether the bot's **Verdict** section says PASS by anchoring the grep to the
   heading so a passing sub-check mentioned elsewhere in the comment body cannot trigger
   a false early-exit:
   ```bash
-  echo "$body" | grep -A2 '### Verdict' | grep -qiw 'PASS'
+  echo "$body" | grep -A2 '## Verdict' | grep -qiw 'PASS'
   ```
   If the Verdict is PASS, tell the user "The bot review already shows PASS — nothing
   to fix." and stop.

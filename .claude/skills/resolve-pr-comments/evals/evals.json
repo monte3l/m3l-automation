@@ -4,11 +4,11 @@
     {
       "id": 1,
       "prompt": "The claude-pr-review bot just posted a FAIL on my PR. It flagged two things: a missing `.js` extension on a relative import in `src/core/config/index.ts` line 3, and a bare `throw 'not found'` string on line 42 of the same file. Fix both.",
-      "expected_output": "The skill fetches the open PR's bot comment, identifies the two findings (ESM import extension + bare string throw), applies both fixes, runs `pnpm typecheck` and `pnpm lint`, runs the final gate (`pnpm lint && pnpm typecheck && pnpm test`), commits with `fix: address claude-pr-review findings`, pushes, and replies to the bot comment with the commit SHA.",
+      "expected_output": "The skill fetches the open PR's claude[bot] comment, identifies the two findings (ESM import extension + bare string throw), applies both fixes, runs `pnpm typecheck` and `pnpm lint`, runs the final gate (`pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build`), commits with `fix: address claude-pr-review findings`, pushes, and posts a new top-level comment with the commit SHA.",
       "files": [],
       "assertions": [
         {
-          "text": "Fetches the github-actions[bot] comment from the PR's issue thread via gh api",
+          "text": "Fetches the claude[bot] comment from the PR's issue thread via gh api",
           "passed": false,
           "evidence": ""
         },
@@ -33,7 +33,7 @@
           "evidence": ""
         },
         {
-          "text": "Runs the final full gate (pnpm lint && pnpm typecheck && pnpm test) before committing",
+          "text": "Runs the final full gate (pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build) before committing",
           "passed": false,
           "evidence": ""
         },
@@ -43,7 +43,7 @@
           "evidence": ""
         },
         {
-          "text": "Posts a reply to the original bot comment with the commit SHA",
+          "text": "Posts a new top-level comment on the PR thread with the commit SHA",
           "passed": false,
           "evidence": ""
         }
