@@ -1,7 +1,24 @@
-import { describe, expect, expectTypeOf, test } from "vitest";
+import * as fs from "fs";
+
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  expectTypeOf,
+  test,
+  vi,
+} from "vitest";
+
+// Make the 'fs' module configurable so vi.spyOn can intercept individual
+// functions when Phase D tests drive M3LExecutionEnvironment.detectFresh().
+vi.mock("fs", async () => {
+  const actual = await vi.importActual<typeof fs>("fs");
+  return { ...actual };
+});
 
 import { M3LError } from "../src/core/errors/index.js";
-
+import { M3LExecutionEnvironment } from "../src/core/environment/index.js";
 import {
   formatBytes,
   formatConfigSourceDisplay,
@@ -34,12 +51,16 @@ import {
   isValidDate,
   M3LConcurrencyPool,
   M3LDateTokens,
+  M3LPathEnvironmentVariables,
+  M3LPathResolutionError,
+  M3LPaths,
   safeJsonStringify,
   smartTruncate,
   truncatePath,
   truncateText,
   valueToString,
 } from "../src/core/utils/index.js";
+import type { M3LPathType } from "../src/core/utils/index.js";
 
 // =============================================================================
 // Phase A — Type guards
@@ -1350,5 +1371,380 @@ describe("M3LConcurrencyPool", () => {
 
   test("throws M3LError when concurrency is not an integer", () => {
     expect(() => new M3LConcurrencyPool(1.5)).toThrow(M3LError);
+  });
+});
+
+// =============================================================================
+// Phase D — M3LPaths cluster
+// =============================================================================
+
+// ---------------------------------------------------------------------------
+// M3LPathType — type-level contract
+// ---------------------------------------------------------------------------
+describe("M3LPathType — type-level contract", () => {
+  test("M3LPathType equals the five directory-kind literals", () => {
+    expectTypeOf<M3LPathType>().toEqualTypeOf<
+      "data" | "config" | "input" | "output" | "cache"
+    >();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LPathEnvironmentVariables — const-object values and type contract
+// ---------------------------------------------------------------------------
+describe("M3LPathEnvironmentVariables — const-object values", () => {
+  test("DATA_DIR is 'M3L_DATA_DIR'", () => {
+    expect(M3LPathEnvironmentVariables.DATA_DIR).toBe("M3L_DATA_DIR");
+  });
+
+  test("CONFIG_DIR is 'M3L_CONFIG_DIR'", () => {
+    expect(M3LPathEnvironmentVariables.CONFIG_DIR).toBe("M3L_CONFIG_DIR");
+  });
+
+  test("INPUT_DIR is 'M3L_INPUT_DIR'", () => {
+    expect(M3LPathEnvironmentVariables.INPUT_DIR).toBe("M3L_INPUT_DIR");
+  });
+
+  test("OUTPUT_DIR is 'M3L_OUTPUT_DIR'", () => {
+    expect(M3LPathEnvironmentVariables.OUTPUT_DIR).toBe("M3L_OUTPUT_DIR");
+  });
+
+  test("CACHE_DIR is 'M3L_CACHE_DIR'", () => {
+    expect(M3LPathEnvironmentVariables.CACHE_DIR).toBe("M3L_CACHE_DIR");
+  });
+
+  test("BASE_DIR is 'M3L_BASE_DIR'", () => {
+    expect(M3LPathEnvironmentVariables.BASE_DIR).toBe("M3L_BASE_DIR");
+  });
+
+  test("DEPLOYMENT_MODE is 'M3L_DEPLOYMENT_MODE'", () => {
+    expect(M3LPathEnvironmentVariables.DEPLOYMENT_MODE).toBe(
+      "M3L_DEPLOYMENT_MODE",
+    );
+  });
+
+  test("M3LPathEnvironmentVariables type is a union of all 7 env-var name strings", () => {
+    expectTypeOf<
+      (typeof M3LPathEnvironmentVariables)[keyof typeof M3LPathEnvironmentVariables]
+    >().toEqualTypeOf<
+      | "M3L_DATA_DIR"
+      | "M3L_CONFIG_DIR"
+      | "M3L_INPUT_DIR"
+      | "M3L_OUTPUT_DIR"
+      | "M3L_CACHE_DIR"
+      | "M3L_BASE_DIR"
+      | "M3L_DEPLOYMENT_MODE"
+    >();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LPathResolutionError
+// ---------------------------------------------------------------------------
+describe("M3LPathResolutionError", () => {
+  test("is an instance of Error", () => {
+    const e = new M3LPathResolutionError("cannot resolve project root");
+    expect(e).toBeInstanceOf(Error);
+  });
+
+  test("is an instance of M3LError", () => {
+    const e = new M3LPathResolutionError("cannot resolve project root");
+    expect(e).toBeInstanceOf(M3LError);
+  });
+
+  test("is an instance of M3LPathResolutionError", () => {
+    const e = new M3LPathResolutionError("cannot resolve project root");
+    expect(e).toBeInstanceOf(M3LPathResolutionError);
+  });
+
+  test("has code 'ERR_PATH_RESOLUTION'", () => {
+    const e = new M3LPathResolutionError("cannot resolve project root");
+    expect(e.code).toBe("ERR_PATH_RESOLUTION");
+  });
+
+  test("code property is typed as the literal 'ERR_PATH_RESOLUTION'", () => {
+    const e = new M3LPathResolutionError("msg");
+    expectTypeOf(e.code).toEqualTypeOf<"ERR_PATH_RESOLUTION">();
+  });
+
+  test("carries the provided message", () => {
+    const msg = "getProjectRoot() is unavailable in standalone mode";
+    const e = new M3LPathResolutionError(msg);
+    expect(e.message).toBe(msg);
+  });
+
+  test("chains a cause when one is provided", () => {
+    const inner = new Error("underlying failure");
+    const e = new M3LPathResolutionError("resolution failed", {
+      cause: inner,
+    });
+    expect(e.cause).toBe(inner);
+  });
+
+  test("cause is undefined when not provided", () => {
+    const e = new M3LPathResolutionError("msg");
+    expect(e.cause).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LPaths — MONOREPO mode
+// ---------------------------------------------------------------------------
+describe("M3LPaths — MONOREPO mode", () => {
+  const FAKE_ROOT = "/fake/monorepo";
+
+  beforeEach(() => {
+    // Drive the walk-up to find a workspace marker at FAKE_ROOT.
+    vi.spyOn(process, "cwd").mockReturnValue(`${FAKE_ROOT}/packages/tool`);
+    vi.spyOn(fs, "accessSync").mockImplementation(() => {});
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (p) => String(p) === `${FAKE_ROOT}/pnpm-workspace.yaml`,
+    );
+    vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
+    // Clear any per-dir override env vars that other tests may have left.
+    vi.stubEnv("M3L_DATA_DIR", "");
+    vi.stubEnv("M3L_CONFIG_DIR", "");
+    vi.stubEnv("M3L_INPUT_DIR", "");
+    vi.stubEnv("M3L_OUTPUT_DIR", "");
+    vi.stubEnv("M3L_CACHE_DIR", "");
+    vi.stubEnv("M3L_BASE_DIR", "");
+    M3LExecutionEnvironment.resetForTesting();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    M3LExecutionEnvironment.resetForTesting();
+  });
+
+  test("getDataDir() returns <monorepoRoot>/data", () => {
+    const paths = new M3LPaths();
+    expect(paths.getDataDir()).toBe(`${FAKE_ROOT}/data`);
+  });
+
+  test("getConfigDir() returns <monorepoRoot>/data/config", () => {
+    const paths = new M3LPaths();
+    expect(paths.getConfigDir()).toBe(`${FAKE_ROOT}/data/config`);
+  });
+
+  test("getInputDir() returns <monorepoRoot>/data/input", () => {
+    const paths = new M3LPaths();
+    expect(paths.getInputDir()).toBe(`${FAKE_ROOT}/data/input`);
+  });
+
+  test("getOutputDir() returns <monorepoRoot>/data/output", () => {
+    const paths = new M3LPaths();
+    expect(paths.getOutputDir()).toBe(`${FAKE_ROOT}/data/output`);
+  });
+
+  test("getCacheDir() returns <monorepoRoot>/data/cache", () => {
+    const paths = new M3LPaths();
+    expect(paths.getCacheDir()).toBe(`${FAKE_ROOT}/data/cache`);
+  });
+
+  test("getProjectRoot() returns monorepoRoot", () => {
+    const paths = new M3LPaths();
+    expect(paths.getProjectRoot()).toBe(FAKE_ROOT);
+  });
+
+  test("all getter return values are absolute paths (start with /)", () => {
+    const paths = new M3LPaths();
+    expect(paths.getDataDir()).toMatch(/^\//);
+    expect(paths.getConfigDir()).toMatch(/^\//);
+    expect(paths.getInputDir()).toMatch(/^\//);
+    expect(paths.getOutputDir()).toMatch(/^\//);
+    expect(paths.getCacheDir()).toMatch(/^\//);
+    expect(paths.getProjectRoot()).toMatch(/^\//);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LPaths — STANDALONE mode
+// ---------------------------------------------------------------------------
+describe("M3LPaths — STANDALONE mode (no M3L_BASE_DIR override)", () => {
+  const FAKE_CWD = "/standalone/workspace";
+
+  beforeEach(() => {
+    vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
+    vi.stubEnv("M3L_BASE_DIR", "");
+    vi.stubEnv("M3L_DATA_DIR", "");
+    vi.stubEnv("M3L_CONFIG_DIR", "");
+    vi.stubEnv("M3L_INPUT_DIR", "");
+    vi.stubEnv("M3L_OUTPUT_DIR", "");
+    vi.stubEnv("M3L_CACHE_DIR", "");
+    vi.spyOn(process, "cwd").mockReturnValue(FAKE_CWD);
+    M3LExecutionEnvironment.resetForTesting();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    M3LExecutionEnvironment.resetForTesting();
+  });
+
+  test("getDataDir() uses cwd as base when M3L_BASE_DIR is absent", () => {
+    const paths = new M3LPaths();
+    expect(paths.getDataDir()).toBe(`${FAKE_CWD}/data`);
+  });
+
+  test("getConfigDir() uses cwd as base", () => {
+    const paths = new M3LPaths();
+    expect(paths.getConfigDir()).toBe(`${FAKE_CWD}/data/config`);
+  });
+
+  test("getInputDir() uses cwd as base", () => {
+    const paths = new M3LPaths();
+    expect(paths.getInputDir()).toBe(`${FAKE_CWD}/data/input`);
+  });
+
+  test("getOutputDir() uses cwd as base", () => {
+    const paths = new M3LPaths();
+    expect(paths.getOutputDir()).toBe(`${FAKE_CWD}/data/output`);
+  });
+
+  test("getCacheDir() uses cwd as base", () => {
+    const paths = new M3LPaths();
+    expect(paths.getCacheDir()).toBe(`${FAKE_CWD}/data/cache`);
+  });
+
+  test("getProjectRoot() throws M3LPathResolutionError in standalone mode", () => {
+    const paths = new M3LPaths();
+    expect(() => paths.getProjectRoot()).toThrow(M3LPathResolutionError);
+  });
+
+  test("getProjectRoot() throws M3LError (base class) in standalone mode", () => {
+    const paths = new M3LPaths();
+    expect(() => paths.getProjectRoot()).toThrow(M3LError);
+  });
+
+  test("thrown M3LPathResolutionError has code 'ERR_PATH_RESOLUTION'", () => {
+    const paths = new M3LPaths();
+    let thrown: unknown;
+    try {
+      paths.getProjectRoot();
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(M3LPathResolutionError);
+    expect((thrown as M3LPathResolutionError).code).toBe("ERR_PATH_RESOLUTION");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LPaths — M3L_BASE_DIR override in STANDALONE mode
+// ---------------------------------------------------------------------------
+describe("M3LPaths — M3L_BASE_DIR override in STANDALONE mode", () => {
+  const OVERRIDE_BASE = "/custom/base/dir";
+
+  beforeEach(() => {
+    vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
+    vi.stubEnv("M3L_BASE_DIR", OVERRIDE_BASE);
+    vi.stubEnv("M3L_DATA_DIR", "");
+    vi.stubEnv("M3L_CONFIG_DIR", "");
+    vi.stubEnv("M3L_INPUT_DIR", "");
+    vi.stubEnv("M3L_OUTPUT_DIR", "");
+    vi.stubEnv("M3L_CACHE_DIR", "");
+    M3LExecutionEnvironment.resetForTesting();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    M3LExecutionEnvironment.resetForTesting();
+  });
+
+  test("M3L_BASE_DIR moves the standalone base anchor for getDataDir()", () => {
+    const paths = new M3LPaths();
+    expect(paths.getDataDir()).toBe(`${OVERRIDE_BASE}/data`);
+  });
+
+  test("M3L_BASE_DIR moves the standalone base anchor for getConfigDir()", () => {
+    const paths = new M3LPaths();
+    expect(paths.getConfigDir()).toBe(`${OVERRIDE_BASE}/data/config`);
+  });
+
+  test("M3L_BASE_DIR moves the standalone base anchor for getInputDir()", () => {
+    const paths = new M3LPaths();
+    expect(paths.getInputDir()).toBe(`${OVERRIDE_BASE}/data/input`);
+  });
+
+  test("M3L_BASE_DIR moves the standalone base anchor for getOutputDir()", () => {
+    const paths = new M3LPaths();
+    expect(paths.getOutputDir()).toBe(`${OVERRIDE_BASE}/data/output`);
+  });
+
+  test("M3L_BASE_DIR moves the standalone base anchor for getCacheDir()", () => {
+    const paths = new M3LPaths();
+    expect(paths.getCacheDir()).toBe(`${OVERRIDE_BASE}/data/cache`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LPaths — per-kind env-var overrides (each M3L_*_DIR wins over computed path)
+// ---------------------------------------------------------------------------
+describe("M3LPaths — per-kind env-var overrides", () => {
+  const FAKE_ROOT = "/fake/monorepo";
+
+  beforeEach(() => {
+    // Use MONOREPO mode so the computed paths are deterministic
+    vi.spyOn(process, "cwd").mockReturnValue(`${FAKE_ROOT}/scripts`);
+    vi.spyOn(fs, "accessSync").mockImplementation(() => {});
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (p) => String(p) === `${FAKE_ROOT}/pnpm-workspace.yaml`,
+    );
+    vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
+    vi.stubEnv("M3L_BASE_DIR", "");
+    vi.stubEnv("M3L_DATA_DIR", "");
+    vi.stubEnv("M3L_CONFIG_DIR", "");
+    vi.stubEnv("M3L_INPUT_DIR", "");
+    vi.stubEnv("M3L_OUTPUT_DIR", "");
+    vi.stubEnv("M3L_CACHE_DIR", "");
+    M3LExecutionEnvironment.resetForTesting();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    M3LExecutionEnvironment.resetForTesting();
+  });
+
+  test("M3L_DATA_DIR override wins over computed data dir", () => {
+    vi.stubEnv("M3L_DATA_DIR", "/override/data");
+    const paths = new M3LPaths();
+    expect(paths.getDataDir()).toBe("/override/data");
+  });
+
+  test("M3L_CONFIG_DIR override wins over computed config dir", () => {
+    vi.stubEnv("M3L_CONFIG_DIR", "/override/config");
+    const paths = new M3LPaths();
+    expect(paths.getConfigDir()).toBe("/override/config");
+  });
+
+  test("M3L_INPUT_DIR override wins over computed input dir", () => {
+    vi.stubEnv("M3L_INPUT_DIR", "/override/input");
+    const paths = new M3LPaths();
+    expect(paths.getInputDir()).toBe("/override/input");
+  });
+
+  test("M3L_OUTPUT_DIR override wins over computed output dir", () => {
+    vi.stubEnv("M3L_OUTPUT_DIR", "/override/output");
+    const paths = new M3LPaths();
+    expect(paths.getOutputDir()).toBe("/override/output");
+  });
+
+  test("M3L_CACHE_DIR override wins over computed cache dir", () => {
+    vi.stubEnv("M3L_CACHE_DIR", "/override/cache");
+    const paths = new M3LPaths();
+    expect(paths.getCacheDir()).toBe("/override/cache");
+  });
+
+  test("a single per-kind override does not affect other getters", () => {
+    vi.stubEnv("M3L_DATA_DIR", "/override/data");
+    const paths = new M3LPaths();
+    // config, input, output, cache still use the computed MONOREPO paths
+    expect(paths.getConfigDir()).toBe(`${FAKE_ROOT}/data/config`);
+    expect(paths.getInputDir()).toBe(`${FAKE_ROOT}/data/input`);
+    expect(paths.getOutputDir()).toBe(`${FAKE_ROOT}/data/output`);
+    expect(paths.getCacheDir()).toBe(`${FAKE_ROOT}/data/cache`);
   });
 });
