@@ -76,6 +76,15 @@ than editing it.
   (`@m3l-automation/m3l-common/core`, not a relative `../errors/index.js`).
   This makes the example self-contained and portable.
 - **Never** add an entry to the `exports` map — surface through the barrel.
+- **TSDoc-orphan anti-pattern:** an extracted private helper must sit _above_
+  the TSDoc block of the export it serves — never between the block and its
+  export, or the doc detaches from the symbol.
+- **knip + convenience aliases:** `const Alias = OriginalClass` trips knip's
+  duplicate-export detector; suppress via `ignoreIssues` in `knip.json`.
+- **Emitter classes:** inside `emitAsync`, wrap handler calls in
+  `Promise.resolve().then(() => handler(payload))` so sync throws become
+  rejected promises; the `void`-handler form already satisfies
+  `no-floating-promises`.
 
 ## What good implementation looks like
 

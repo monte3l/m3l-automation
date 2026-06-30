@@ -33,6 +33,13 @@ Read the spec page for the target module (and any contracts it references in
   pass-through vs. normalizing semantics, and the _exact_ error a function
   throws (e.g. what `unwrap` throws on an `Err`). Surface these explicitly so
   the tests don't over-constrain a type and the implementer doesn't drift.
+- **Numeric boundary guards**: enumerate guards on numeric params (concurrency,
+  depth, byte size, max length) as failure-path contract items up front, so the
+  test-author writes them in the first pass rather than a later spoke.
+- **Discriminated unions**: pre-specify unions that couple fields (e.g.
+  `deploymentMode` ↔ `monorepoRoot`) at contract time, not at review.
+- **Exported error classes** must each be listed in the doc page's "Public API"
+  section — flag any that are thrown/exported but undocumented.
 
 Output it as a checklist so downstream phases can tick items off.
 
