@@ -1,0 +1,362 @@
+{
+  "M3LExecutionEnvironment": {
+    "submodule": "environment",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/environment/index.ts",
+    "lines": "731-824"
+  },
+  "M3LEnv": {
+    "submodule": "environment",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/environment/index.ts",
+    "lines": "824-824"
+  },
+  "M3LExecutionEnvironmentType": {
+    "submodule": "environment",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/environment/index.ts",
+    "lines": "48-80"
+  },
+  "M3LDeploymentMode": {
+    "submodule": "environment",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/environment/index.ts",
+    "lines": "102-125"
+  },
+  "M3LCredentialSource": {
+    "submodule": "environment",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/environment/index.ts",
+    "lines": "147-180"
+  },
+  "M3LExecutionEnvironmentInfo": {
+    "submodule": "environment",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/environment/index.ts",
+    "lines": "347-395"
+  },
+  "M3LEnvironmentDetectionDetails": {
+    "submodule": "environment",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/environment/index.ts",
+    "lines": "273-296"
+  },
+  "M3LEnvironmentDetectionError": {
+    "submodule": "environment",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/environment/index.ts",
+    "lines": "232-252"
+  },
+  "M3LError": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LError.ts",
+    "lines": "59-123"
+  },
+  "M3LResult": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
+    "lines": "59-59"
+  },
+  "getErrorMessage": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LErrorUtils.ts",
+    "lines": "40-48"
+  },
+  "M3LErrorOptions": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LError.ts",
+    "lines": "25-38"
+  },
+  "ok": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
+    "lines": "76-78"
+  },
+  "err": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
+    "lines": "91-93"
+  },
+  "wrapError": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LErrorUtils.ts",
+    "lines": "97-109"
+  },
+  "M3LEventEmitterBase": {
+    "submodule": "events",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/events/M3LEventEmitterBase.ts",
+    "lines": "33-139"
+  },
+  "M3LEventEmitter": {
+    "submodule": "events",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/events/M3LEventEmitterBase.ts",
+    "lines": "155-186"
+  },
+  "M3LEventHandler": {
+    "submodule": "events",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/events/M3LEventEmitterBase.ts",
+    "lines": "11-13"
+  },
+  "isDangerousKey": {
+    "submodule": "security",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
+    "lines": "46-48"
+  },
+  "formatUnsafeKeyLocation": {
+    "submodule": "security",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
+    "lines": "73-75"
+  },
+  "safeJsonStringify": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/safeJsonStringify.ts",
+    "lines": "146-191"
+  },
+  "valueToString": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/safeJsonStringify.ts",
+    "lines": "191-215"
+  },
+  "M3LConcurrencyPool": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/M3LConcurrencyPool.ts",
+    "lines": "33-86"
+  },
+  "M3LDateTokens": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/M3LDateTokens.ts",
+    "lines": "37-71"
+  },
+  "formatBytes": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/formatting.ts",
+    "lines": "40-82"
+  },
+  "smartTruncate": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/formatting.ts",
+    "lines": "83-109"
+  },
+  "truncatePath": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/formatting.ts",
+    "lines": "110-162"
+  },
+  "truncateText": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/formatting.ts",
+    "lines": "163-190"
+  },
+  "isPath": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/formatting.ts",
+    "lines": "191-237"
+  },
+  "formatConfigValueDisplay": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/formatting.ts",
+    "lines": "238-264"
+  },
+  "formatConfigSourceDisplay": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/formatting.ts",
+    "lines": "265-282"
+  },
+  "M3LPathType": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/M3LPaths.ts",
+    "lines": "40-40"
+  },
+  "M3LPathEnvironmentVariables": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/M3LPaths.ts",
+    "lines": "61-91"
+  },
+  "M3LPathResolutionError": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/M3LPaths.ts",
+    "lines": "132-147"
+  },
+  "M3LPaths": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/M3LPaths.ts",
+    "lines": "217-427"
+  },
+  "isNullish": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "22-37"
+  },
+  "isPrimitive": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "38-62"
+  },
+  "isError": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "63-78"
+  },
+  "isNodeError": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "79-97"
+  },
+  "isEnoentError": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "98-116"
+  },
+  "isPlainObject": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "117-135"
+  },
+  "isObject": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "136-150"
+  },
+  "isArray": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "151-166"
+  },
+  "isString": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "167-183"
+  },
+  "isNumber": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "184-198"
+  },
+  "isBoolean": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "199-215"
+  },
+  "isFunction": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "216-231"
+  },
+  "isDate": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "232-247"
+  },
+  "isValidDate": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "248-263"
+  },
+  "isBuffer": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "264-278"
+  },
+  "isMap": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "279-293"
+  },
+  "isSet": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "294-308"
+  },
+  "isRegExp": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "309-323"
+  },
+  "isSymbol": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "324-338"
+  },
+  "isBigInt": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "339-355"
+  },
+  "isPromise": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "356-375"
+  },
+  "isNonEmptyString": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "376-390"
+  },
+  "isNonEmptyArray": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "391-406"
+  },
+  "hasProperty": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "407-426"
+  },
+  "hasMessage": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "427-441"
+  }
+}

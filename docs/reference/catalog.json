@@ -1,0 +1,258 @@
+[
+  {
+    "namespace": "core",
+    "name": "analysis",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/core/analysis.md",
+    "symbols": []
+  },
+  {
+    "namespace": "core",
+    "name": "config",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/core/config.md",
+    "symbols": []
+  },
+  {
+    "namespace": "core",
+    "name": "environment",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/core/environment.md",
+    "symbols": [
+      "M3LExecutionEnvironment",
+      "M3LEnv",
+      "M3LExecutionEnvironmentType",
+      "M3LDeploymentMode",
+      "M3LCredentialSource",
+      "M3LExecutionEnvironmentInfo",
+      "M3LEnvironmentDetectionDetails",
+      "M3LEnvironmentDetectionError"
+    ]
+  },
+  {
+    "namespace": "core",
+    "name": "errors",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/core/errors.md",
+    "symbols": [
+      "M3LError",
+      "M3LResult",
+      "getErrorMessage",
+      "M3LErrorOptions",
+      "ok",
+      "err",
+      "wrapError"
+    ]
+  },
+  {
+    "namespace": "core",
+    "name": "events",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/core/events.md",
+    "symbols": ["M3LEventEmitterBase", "M3LEventEmitter", "M3LEventHandler"]
+  },
+  {
+    "namespace": "core",
+    "name": "exporters",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/core/exporters.md",
+    "symbols": []
+  },
+  {
+    "namespace": "core",
+    "name": "files",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/core/files.md",
+    "symbols": []
+  },
+  {
+    "namespace": "core",
+    "name": "importers",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/core/importers.md",
+    "symbols": []
+  },
+  {
+    "namespace": "core",
+    "name": "json",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/core/json.md",
+    "symbols": []
+  },
+  {
+    "namespace": "core",
+    "name": "logging",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/core/logging.md",
+    "symbols": []
+  },
+  {
+    "namespace": "core",
+    "name": "messaging",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/core/messaging.md",
+    "symbols": []
+  },
+  {
+    "namespace": "core",
+    "name": "network",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/core/network.md",
+    "symbols": []
+  },
+  {
+    "namespace": "core",
+    "name": "polling",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/core/polling.md",
+    "symbols": []
+  },
+  {
+    "namespace": "core",
+    "name": "prompt",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/core/prompt.md",
+    "symbols": []
+  },
+  {
+    "namespace": "core",
+    "name": "script",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/core/script.md",
+    "symbols": []
+  },
+  {
+    "namespace": "core",
+    "name": "security",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/core/security.md",
+    "symbols": ["isDangerousKey", "formatUnsafeKeyLocation"]
+  },
+  {
+    "namespace": "core",
+    "name": "storage",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/core/storage.md",
+    "symbols": []
+  },
+  {
+    "namespace": "core",
+    "name": "text",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/core/text.md",
+    "symbols": []
+  },
+  {
+    "namespace": "core",
+    "name": "utils",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/core/utils.md",
+    "symbols": [
+      "safeJsonStringify",
+      "valueToString",
+      "M3LConcurrencyPool",
+      "M3LDateTokens",
+      "formatBytes",
+      "smartTruncate",
+      "truncatePath",
+      "truncateText",
+      "isPath",
+      "formatConfigValueDisplay",
+      "formatConfigSourceDisplay",
+      "M3LPathType",
+      "M3LPathEnvironmentVariables",
+      "M3LPathResolutionError",
+      "M3LPaths",
+      "isNullish",
+      "isPrimitive",
+      "isError",
+      "isNodeError",
+      "isEnoentError",
+      "isPlainObject",
+      "isObject",
+      "isArray",
+      "isString",
+      "isNumber",
+      "isBoolean",
+      "isFunction",
+      "isDate",
+      "isValidDate",
+      "isBuffer",
+      "isMap",
+      "isSet",
+      "isRegExp",
+      "isSymbol",
+      "isBigInt",
+      "isPromise",
+      "isNonEmptyString",
+      "isNonEmptyArray",
+      "hasProperty",
+      "hasMessage"
+    ]
+  },
+  {
+    "namespace": "aws",
+    "name": "clients",
+    "importPath": "@m3l-automation/m3l-common/aws",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/aws/clients.md",
+    "symbols": []
+  },
+  {
+    "namespace": "aws",
+    "name": "credentials",
+    "importPath": "@m3l-automation/m3l-common/aws",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/aws/credentials.md",
+    "symbols": []
+  },
+  {
+    "namespace": "aws",
+    "name": "models",
+    "importPath": "@m3l-automation/m3l-common/aws",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/aws/models.md",
+    "symbols": []
+  }
+]

@@ -82,6 +82,11 @@ jobs:
       - name: Check doc counts
         run: pnpm check:doc-counts
 
+      # catalog.json, symbol-map.json, and README.md catalog block must match
+      # the current docs/reference/ + provenance sidecar state.
+      - name: Check reference index
+        run: pnpm check:index
+
       # Commands table vs package.json scripts; hooks in settings.json vs CLAUDE.md.
       - name: Check doc sync
         run: pnpm check:doc-sync
