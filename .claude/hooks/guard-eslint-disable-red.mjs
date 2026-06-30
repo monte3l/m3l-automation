@@ -20,8 +20,23 @@
  *
  * Content source (detected by field presence, not tool_name — matches the
  * sibling-hook pattern so the guard stays live if tool_name is absent):
- *   tool_input.content    present → Write (full new file)
+ *   tool_input.content    present → Write (full new file — complete coverage)
  *   tool_input.new_string present → Edit  (replacement text being introduced)
+ *
+ * Known limitation — Edit path: only the incoming `new_string` hunk is
+ * scanned. A directive already present in lines that the current Edit does
+ * not touch is invisible to this hook. This means a directive written before
+ * this hook was installed (or from a session that pre-dates it) can survive
+ * subsequent Edit operations undetected.
+ *
+ * This gap is bounded: the hook blocks all *new* introductions, so only
+ * pre-existing directives are affected. Two mitigations exist at the lint
+ * level: `reportUnusedDisableDirectives: "error"` in eslint.config.js
+ * catches unused directives at any `pnpm lint` run, and step 5 of
+ * post-edit-verify.mjs lints the full tests/ directory whenever a src/ file
+ * is edited — surfacing stale directives once the implementation exists (GREEN).
+ * Between RED and GREEN a pre-existing directive can survive Edit ops; after
+ * GREEN the combination of these two mechanisms will flag it.
  */
 import process from "node:process";
 import path from "node:path";
