@@ -1,0 +1,67 @@
+[
+  {
+    "query": "we just finished implementing core/environment — write a work log",
+    "should_trigger": true
+  },
+  { "query": "/write-work-log", "should_trigger": true },
+  { "query": "document what happened in this session", "should_trigger": true },
+  {
+    "query": "write the work log for the polling submodule we just shipped",
+    "should_trigger": true
+  },
+  { "query": "log the lessons from this task", "should_trigger": true },
+  {
+    "query": "ok we're done with core/config, add a work log",
+    "should_trigger": true
+  },
+  { "query": "document this task", "should_trigger": true },
+  {
+    "query": "create a work log for the CI pipeline fix we just merged",
+    "should_trigger": true
+  },
+  {
+    "query": "ship it — commit and write the work log",
+    "should_trigger": true
+  },
+  {
+    "query": "write me a work log for what we just built",
+    "should_trigger": true
+  },
+  {
+    "query": "can you commit the code we just wrote?",
+    "should_trigger": false
+  },
+  {
+    "query": "what tests should we write for the retry module?",
+    "should_trigger": false
+  },
+  { "query": "run pnpm lint and fix any errors", "should_trigger": false },
+  {
+    "query": "write a commit message for these changes",
+    "should_trigger": false
+  },
+  {
+    "query": "what's the implementation status of the remaining submodules?",
+    "should_trigger": false
+  },
+  {
+    "query": "create a PR for the config submodule branch",
+    "should_trigger": false
+  },
+  {
+    "query": "write a summary of this codebase for a new contributor",
+    "should_trigger": false
+  },
+  {
+    "query": "we finished the audit, now plan how to fix the gaps",
+    "should_trigger": false
+  },
+  {
+    "query": "review the code we just wrote for the config module",
+    "should_trigger": false
+  },
+  {
+    "query": "generate the provenance sidecar for core/text",
+    "should_trigger": false
+  }
+]
