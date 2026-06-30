@@ -524,6 +524,9 @@ top of the advisory text in this file:
   in the spoke loop, not a round later at the hub's `pnpm lint` gate;
   `post-edit-md-verify.mjs` auto-formats all Markdown files (including
   `docs/plans/`) and lints non-plan Markdown with rumdl.
+- **Stop:** `remind-sync-docs.mjs` emits an advisory (non-blocking) when
+  `docs/implementation-status.md` was changed during the session, reminding to
+  run `/sync-docs` before the next commit.
 
 ## Task Workflow
 
