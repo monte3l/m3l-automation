@@ -31,8 +31,9 @@ const filePath = input.tool_input?.file_path ?? "";
 if (typeof filePath !== "string" || filePath.length === 0) process.exit(0);
 
 // Only trigger on library source edits under src/core/ or src/aws/
-const srcMatch =
-  /packages\/m3l-common\/src\/(core|aws)\/([^/]+)\//.exec(filePath);
+const srcMatch = /packages\/m3l-common\/src\/(core|aws)\/([^/]+)\//.exec(
+  filePath,
+);
 if (!srcMatch) process.exit(0);
 
 const namespace = srcMatch[1]; // "core" or "aws"
