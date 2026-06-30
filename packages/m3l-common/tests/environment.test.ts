@@ -317,6 +317,7 @@ describe("M3LExecutionEnvironmentInfo — discriminated union narrowing", () => 
   test("narrowing on deploymentMode === MONOREPO gives monorepoRoot: string (not string | undefined)", () => {
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "monorepo");
     vi.spyOn(process, "cwd").mockReturnValue("/fake/packages/my-script");
+    vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockImplementation(
       (p) => String(p) === "/fake/pnpm-workspace.yaml",
     );
@@ -738,6 +739,7 @@ describe("detect() — no top-level side effects on import (B7)", () => {
 describe("detect() — monorepo walk-up (B3)", () => {
   test("MONOREPO when pnpm-workspace.yaml is found up the tree", () => {
     vi.spyOn(process, "cwd").mockReturnValue("/fake/packages/my-script");
+    vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockImplementation(
       (p) => String(p) === "/fake/pnpm-workspace.yaml",
     );
@@ -748,6 +750,7 @@ describe("detect() — monorepo walk-up (B3)", () => {
 
   test("monorepoRoot points to the directory containing pnpm-workspace.yaml", () => {
     vi.spyOn(process, "cwd").mockReturnValue("/fake/nested/deep");
+    vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockImplementation(
       (p) => String(p) === "/fake/pnpm-workspace.yaml",
     );
@@ -759,6 +762,7 @@ describe("detect() — monorepo walk-up (B3)", () => {
 
   test("MONOREPO when package.json with workspaces field is found", () => {
     vi.spyOn(process, "cwd").mockReturnValue("/fake/apps/tool");
+    vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockImplementation(
       (p) => String(p) === "/fake/package.json",
     );
@@ -771,9 +775,10 @@ describe("detect() — monorepo walk-up (B3)", () => {
   });
 
   test("STANDALONE when neither marker is found (walk reaches root)", () => {
-    // Walk from a fake isolated dir; existsSync returns false for all paths,
-    // so the walk ascends to '/' and terminates naturally → STANDALONE.
+    // Walk from a fake isolated dir; accessSync succeeds and existsSync returns
+    // false for all paths, so the walk ascends to '/' and terminates → STANDALONE.
     vi.spyOn(process, "cwd").mockReturnValue("/fake/isolated");
+    vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockReturnValue(false);
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
     const info = M3LExecutionEnvironment.detectFresh();
@@ -823,12 +828,14 @@ describe("detect() — unreadable directory throws M3LEnvironmentDetectionError 
   });
 
   test("throws M3LEnvironmentDetectionError when readFileSync throws EACCES inside packageJsonHasWorkspaces", () => {
-    // existsSync returns true for package.json so the code tries to read it;
-    // readFileSync then throws EACCES, which should propagate as M3LEnvironmentDetectionError.
+    // accessSync succeeds (directory is readable); existsSync returns true for
+    // package.json so the code tries to read it; readFileSync then throws EACCES,
+    // which should propagate as M3LEnvironmentDetectionError.
     const eaccesError = Object.assign(new Error("Permission denied"), {
       code: "EACCES",
     });
     vi.spyOn(process, "cwd").mockReturnValue("/fake/project");
+    vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockImplementation(
       (p) => String(p) === "/fake/project/package.json",
     );
@@ -869,6 +876,7 @@ describe("detect() — M3L_DEPLOYMENT_MODE env var override (B10)", () => {
 
   test("M3L_DEPLOYMENT_MODE=monorepo forces MONOREPO and walk-up still finds the root", () => {
     vi.spyOn(process, "cwd").mockReturnValue("/fake/scripts");
+    vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockImplementation(
       (p) => String(p) === "/fake/pnpm-workspace.yaml",
     );
@@ -880,6 +888,7 @@ describe("detect() — M3L_DEPLOYMENT_MODE env var override (B10)", () => {
 
   test("M3L_DEPLOYMENT_MODE=monorepo throws when no workspace marker is found", () => {
     vi.spyOn(process, "cwd").mockReturnValue("/fake/isolated");
+    vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockReturnValue(false);
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "monorepo");
     expect(() => M3LExecutionEnvironment.detectFresh()).toThrow(
