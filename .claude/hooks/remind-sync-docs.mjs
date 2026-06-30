@@ -11,6 +11,7 @@
  * shipped and provenance sidecars + doc counts need reconciling.
  */
 import { execSync } from "node:child_process";
+import process from "node:process";
 
 const projectDir = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
 const target = "docs/implementation-status.md";
