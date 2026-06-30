@@ -10,7 +10,7 @@ The `utils` module gathers the cross-cutting helpers that other Core modules dep
 
 Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
 
-- Paths and concurrency: `M3LPaths`, `M3LPathType`, `M3LPathEnvironmentVariables`, `M3LConcurrencyPool`
+- Paths and concurrency: `M3LPaths`, `M3LPathType`, `M3LPathEnvironmentVariables`, `M3LPathResolutionError`, `M3LConcurrencyPool`
 - Serialization and formatting: `safeJsonStringify`, `valueToString`, `M3LDateTokens`, `formatBytes`, `smartTruncate`, `truncatePath`, `truncateText`, `isPath`, `formatConfigValueDisplay`, `formatConfigSourceDisplay`
 - Type guards: `isNullish`, `isPrimitive`, `isError`, `isNodeError`, `isEnoentError`, `isPlainObject`, `isObject`, `isArray`, `isString`, `isNumber`, `isBoolean`, `isFunction`, `isDate`, `isValidDate`, `isBuffer`, `isMap`, `isSet`, `isRegExp`, `isSymbol`, `isBigInt`, `isPromise`, `isNonEmptyString`, `isNonEmptyArray`, `hasProperty`, `hasMessage`
 
@@ -26,6 +26,7 @@ Every directory is overridable through environment variables:
 | `M3L_CONFIG_DIR`      | Config directory                             |
 | `M3L_INPUT_DIR`       | Input directory                              |
 | `M3L_OUTPUT_DIR`      | Output directory                             |
+| `M3L_CACHE_DIR`       | Cache directory                              |
 | `M3L_BASE_DIR`        | Standalone base directory                    |
 | `M3L_DEPLOYMENT_MODE` | Forces `monorepo` or `standalone` resolution |
 
@@ -38,7 +39,7 @@ const inputDir = paths.getInputDir();
 const outputDir = paths.getOutputDir();
 ```
 
-> Note: `getProjectRoot()` throws in standalone mode — there is no monorepo root to return. Guard standalone code paths accordingly, or set `M3L_DEPLOYMENT_MODE=monorepo` only when a real monorepo root exists.
+> Note: `getProjectRoot()` throws `M3LPathResolutionError` (code `"ERR_PATH_RESOLUTION"`) in standalone mode — there is no monorepo root to return. Guard standalone code paths accordingly, or set `M3L_DEPLOYMENT_MODE=monorepo` only when a real monorepo root exists.
 
 ## Safe serialization with `safeJsonStringify`
 
