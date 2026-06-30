@@ -47,6 +47,18 @@ const checks = [
     expected: total,
     label: "total submodule count (development status callout)",
   },
+  {
+    file: "README.md",
+    pattern: /modules-\d+%2F(\d+)-/,
+    expected: total,
+    label: "total submodule count (root README.md badge URL)",
+  },
+  {
+    file: "README.md",
+    pattern: /\d+ of (\d+) submodules are/,
+    expected: total,
+    label: "total submodule count (root README.md prose)",
+  },
 ];
 
 let errors = 0;
