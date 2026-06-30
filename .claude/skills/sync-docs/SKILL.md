@@ -65,11 +65,14 @@ already shows ✅ reviewed/done. If it still shows ❌, 🧪, or 🟢, surface a
 reminder — but do not edit the file unless the user asks.
 
 Also count the total number of ✅ rows across the Core and AWS tables, then
-scan these three files for the "X of 22" or "X of Y" implemented-count prose
+scan these four files for the "X of 22" or "X of Y" implemented-count prose
 and confirm the number matches:
 
 - `README.md` — badge URL `modules-N%2F22` and the prose callout ("N of 22
   submodules are implemented")
+- `packages/m3l-common/README.md` — badge URL `modules-N%2F22` and the prose
+  callout (this is the npm-facing README; it has its own badge and callout
+  that must stay in sync with the root README)
 - `docs/README.md` — the development-status callout line
 - `CLAUDE.md` — the Agent Operating Model section ("Current state: N of 22
   submodules are implemented")
