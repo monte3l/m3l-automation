@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * PostToolUse advisory (Write|Edit): when a test file is written, warn if it
- * contains eslint-disable directives for import-resolution or type-inference
+ * PreToolUse blocking (Write|Edit): reject a test-file write/edit that
+ * introduces eslint-disable directives for import-resolution or type-inference
  * rules that are RED-phase noise.
  *
  * During TDD, the implementation does not exist yet, so ESLint will produce
@@ -15,12 +15,15 @@
  * throw/reject in error-channel tests (only-throw-error / prefer-promise-reject-
  * errors) are correct and are NOT flagged by this hook.
  *
- * Non-blocking (exits 2 with an advisory on stderr) — same contract as the
- * other advisory hooks.
+ * Blocking (exits 2): the write is rejected before the file is touched,
+ * preventing stale directives from landing on disk in the first place.
+ *
+ * Content source:
+ *   Write — tool_input.content  (full new file)
+ *   Edit  — tool_input.new_string (replacement text being introduced)
  */
 import process from "node:process";
 import path from "node:path";
-import { readFileSync } from "node:fs";
 
 async function readStdin() {
   const chunks = [];
@@ -49,13 +52,20 @@ const rel = path.relative(projectDir, abs).split(path.sep).join("/");
 if (!/packages\/m3l-common\/tests\//.test(rel)) process.exit(0);
 if (!rel.endsWith(".test.ts") && !rel.endsWith(".test.mts")) process.exit(0);
 
-// Read the file content to scan for RED-phase disable directives.
+// For Write: inspect the full file content being written.
+// For Edit: inspect only the new_string being introduced (conservative — only
+// flag directives the current edit is actively adding).
+const toolName = input.tool_name ?? "";
 let content;
-try {
-  content = readFileSync(abs, "utf8");
-} catch {
+if (toolName === "Write") {
+  content = input.tool_input?.content ?? "";
+} else if (toolName === "Edit") {
+  content = input.tool_input?.new_string ?? "";
+} else {
   process.exit(0);
 }
+
+if (typeof content !== "string" || content.length === 0) process.exit(0);
 
 // Rules that are RED-phase noise: they fire because the module doesn't exist,
 // not because the test is wrong. Suppressing them creates stale directives.
@@ -111,7 +121,7 @@ if (flagged.length === 0) process.exit(0);
 
 const ruleList = [...new Set(flagged.flat())].join(", ");
 process.stderr.write(`\
-[guard-eslint-disable-red] Advisory: ${rel} contains eslint-disable
+[guard-eslint-disable-red] Blocked: ${rel} introduces eslint-disable
 directive(s) for import-resolution / type-inference rules: ${ruleList}
 
 If this is a RED-phase test (the module doesn't exist yet), remove the
@@ -120,7 +130,7 @@ the tests should fail because the module is absent, not because lint is
 suppressed. These directives become stale once the implementation exists
 and require a cleanup spoke after GREEN.
 
-If this suppress is for an intentional non-Error throw/reject in an
+If this suppression is for an intentional non-Error throw/reject in an
 error-channel test (only-throw-error / prefer-promise-reject-errors), it
 is correct and not flagged by this hook.
 `);

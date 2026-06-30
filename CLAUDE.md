@@ -512,15 +512,18 @@ top of the advisory text in this file:
 - **PreToolUse (Write/Edit):** `guard-js-extension.mjs` blocks relative imports
   missing `.js`; `guard-no-commonjs.mjs` blocks `require` / `__dirname` /
   `module.exports`; `guard-protected-paths.mjs` guards `dist/`, version fields,
-  and `node_modules/`.
+  and `node_modules/`; `guard-eslint-disable-red.mjs` **blocks** writes/edits
+  to test files that introduce `eslint-disable` directives for
+  import-resolution or type-inference rules — these are RED-phase noise that
+  become stale directives once the implementation exists.
 - **PostToolUse (Write/Edit):** `guard-exports-semver.mjs` warns when the exports
   map changes without a matching semver commit; `post-edit-verify.mjs`
-  auto-formats, **lints (eslint)**, type-checks, and runs the related tests on
-  the edited package — so eslint-only failures surface in the spoke loop, not a
-  round later at the hub's `pnpm lint` gate; `guard-eslint-disable-red.mjs`
-  warns when a test file written during the RED phase contains `eslint-disable`
-  directives for import-resolution or type-inference rules that self-resolve once
-  the implementation exists.
+  auto-formats, **lints (eslint)** the edited file and the package's `tests/`
+  directory (to catch stale disable directives after GREEN), type-checks, and
+  runs the related tests on the edited package — so eslint-only failures surface
+  in the spoke loop, not a round later at the hub's `pnpm lint` gate;
+  `post-edit-md-verify.mjs` auto-formats all Markdown files (including
+  `docs/plans/`) and lints non-plan Markdown with rumdl.
 
 ## Task Workflow
 
