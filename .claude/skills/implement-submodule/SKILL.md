@@ -138,7 +138,10 @@ spokes are for. The writer is never the reviewer; keep that separation structura
    Report the new exports, the review verdict, any deps added (with approval),
    and the state-file transitions. Remind the user the commit should be a `feat:`
    (a new submodule surfaced through the barrel is a minor, not a breaking change,
-   because the three-entry `exports` map is unchanged).
+   because the three-entry `exports` map is unchanged). Then invoke
+   `/write-work-log` to write `docs/logs/YYYY-MM-DD-<ns>-<module>.md` while the
+   conversation context is intact — this is the durable record of what shipped,
+   what diverged, and the lessons for the next submodule.
 
 ## What "good" looks like (hand these standards to the spokes)
 
