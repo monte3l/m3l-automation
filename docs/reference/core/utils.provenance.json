@@ -1,0 +1,221 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/utils.md",
+  "sections": [
+    {
+      "heading": "Safe serialization with `safeJsonStringify`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/utils/safeJsonStringify.ts",
+          "symbol": "safeJsonStringify",
+          "lines": "146-191"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/safeJsonStringify.ts",
+          "symbol": "valueToString",
+          "lines": "191-215"
+        }
+      ],
+      "commit": "58789988b9df83271555f81250eb3f6998921030",
+      "retrieved": "2026-06-30"
+    },
+    {
+      "heading": "Bounded concurrency with `M3LConcurrencyPool`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/utils/M3LConcurrencyPool.ts",
+          "symbol": "M3LConcurrencyPool",
+          "lines": "33-86"
+        }
+      ],
+      "commit": "58789988b9df83271555f81250eb3f6998921030",
+      "retrieved": "2026-06-30"
+    },
+    {
+      "heading": "Date tokens with `M3LDateTokens`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/utils/M3LDateTokens.ts",
+          "symbol": "M3LDateTokens",
+          "lines": "37-71"
+        }
+      ],
+      "commit": "58789988b9df83271555f81250eb3f6998921030",
+      "retrieved": "2026-06-30"
+    },
+    {
+      "heading": "Formatting helpers",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/utils/formatting.ts",
+          "symbol": "formatBytes",
+          "lines": "40-82"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/formatting.ts",
+          "symbol": "smartTruncate",
+          "lines": "83-109"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/formatting.ts",
+          "symbol": "truncatePath",
+          "lines": "110-162"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/formatting.ts",
+          "symbol": "truncateText",
+          "lines": "163-190"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/formatting.ts",
+          "symbol": "isPath",
+          "lines": "191-237"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/formatting.ts",
+          "symbol": "formatConfigValueDisplay",
+          "lines": "238-264"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/formatting.ts",
+          "symbol": "formatConfigSourceDisplay",
+          "lines": "265-282"
+        }
+      ],
+      "commit": "58789988b9df83271555f81250eb3f6998921030",
+      "retrieved": "2026-06-30"
+    },
+    {
+      "heading": "Type guards",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isNullish",
+          "lines": "22-37"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isPrimitive",
+          "lines": "38-62"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isError",
+          "lines": "63-78"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isNodeError",
+          "lines": "79-97"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isEnoentError",
+          "lines": "98-116"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isPlainObject",
+          "lines": "117-135"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isObject",
+          "lines": "136-150"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isArray",
+          "lines": "151-166"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isString",
+          "lines": "167-183"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isNumber",
+          "lines": "184-198"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isBoolean",
+          "lines": "199-215"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isFunction",
+          "lines": "216-231"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isDate",
+          "lines": "232-247"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isValidDate",
+          "lines": "248-263"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isBuffer",
+          "lines": "264-278"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isMap",
+          "lines": "279-293"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isSet",
+          "lines": "294-308"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isRegExp",
+          "lines": "309-323"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isSymbol",
+          "lines": "324-338"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isBigInt",
+          "lines": "339-355"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isPromise",
+          "lines": "356-375"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isNonEmptyString",
+          "lines": "376-390"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "isNonEmptyArray",
+          "lines": "391-406"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "hasProperty",
+          "lines": "407-426"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/guards.ts",
+          "symbol": "hasMessage",
+          "lines": "427-441"
+        }
+      ],
+      "commit": "58789988b9df83271555f81250eb3f6998921030",
+      "retrieved": "2026-06-30"
+    }
+  ]
+}
