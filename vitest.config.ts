@@ -3,7 +3,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["**/tests/**/*.test.ts", "**/*.test.ts"],
-    exclude: ["**/dist/**", "**/node_modules/**"],
+    // `.claude/worktrees/**` holds nested checkouts of other branches; running
+    // their tests from the main tree is wrong and pollutes the run.
+    exclude: ["**/dist/**", "**/node_modules/**", "**/.claude/worktrees/**"],
     coverage: {
       provider: "v8",
       include: ["packages/*/src/**/*.ts"],

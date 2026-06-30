@@ -3,3 +3,6 @@ node_modules/
 coverage/
 pnpm-lock.yaml
 *.sarif
+# Nested worktrees are other branches' checkouts; `prettier --write .` from the
+# main tree would rewrite their files in place.
+.claude/worktrees/
