@@ -6,7 +6,7 @@
     "analyzer_model": "<model-name>",
     "timestamp": "2026-06-30T07:47:00Z",
     "evals_run": [1, 2, 3],
-    "runs_per_configuration": 3
+    "runs_per_eval": 1
   },
   "runs": [
     {
@@ -325,5 +325,8 @@
       "tokens": "-4913"
     }
   },
-  "notes": []
+  "notes": [
+    "stddev figures measure cross-scenario variance (3 different prompt difficulties), not within-scenario stochastic reliability (which would require multiple runs of the same eval). Do not interpret ±29% as a repeatability measure.",
+    "eval-general-task (ID 2): the output .md files for both configurations share the same git blob — both agents had access to SKILL.md on disk in the worktree and produced byte-for-byte identical logs. This eval contributes zero discriminating power on log quality. The +17pp delta is driven entirely by eval-minimal-context (ambiguity handling) and eval-submodule-implementation (time/token efficiency)."
+  ]
 }
