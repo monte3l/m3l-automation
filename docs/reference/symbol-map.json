@@ -107,6 +107,56 @@
     "file": "packages/m3l-common/src/core/events/M3LEventEmitterBase.ts",
     "lines": "11-13"
   },
+  "parseFieldPath": {
+    "submodule": "json",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/json/fieldPath.ts"
+  },
+  "navigateFieldPath": {
+    "submodule": "json",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/json/fieldPath.ts"
+  },
+  "M3LJSONFieldExtractor": {
+    "submodule": "json",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/json/M3LJSONFieldExtractor.ts"
+  },
+  "M3LJSONFormatDetector": {
+    "submodule": "json",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/json/M3LJSONFormatDetector.ts"
+  },
+  "M3LJSONFormat": {
+    "submodule": "json",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/json/types.ts"
+  },
+  "M3LJSONDetectionDepth": {
+    "submodule": "json",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/json/types.ts"
+  },
+  "M3LJSONDetectorOptions": {
+    "submodule": "json",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/json/types.ts"
+  },
+  "M3LJSONDetectionResult": {
+    "submodule": "json",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/json/types.ts"
+  },
+  "M3LConfidence": {
+    "submodule": "json",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/json/types.ts"
+  },
+  "M3LJSONFormatDetectionError": {
+    "submodule": "json",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/json/M3LJSONFormatDetectionError.ts"
+  },
   "isDangerousKey": {
     "submodule": "security",
     "namespace": "core",
