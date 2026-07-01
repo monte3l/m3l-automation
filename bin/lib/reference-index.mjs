@@ -206,4 +206,11 @@ export function buildReadmeBlock(catalog) {
   ].join("\n");
 }
 
-export { BEGIN_MARKER, END_MARKER };
+export {
+  BEGIN_MARKER,
+  END_MARKER,
+  NAMESPACES,
+  parseImplementationStatus,
+  barrelWiredModules,
+  provenanceSymbols,
+};
