@@ -127,8 +127,10 @@ export function truncatePath(path: string, maxLength: number): string {
     return path.slice(0, maxLength);
   }
 
-  // Split at the last path separator to find the filename
-  const lastSlash = path.lastIndexOf("/");
+  // Split at the last path separator to find the filename. The input may be
+  // POSIX- or Windows-style regardless of the OS this code runs on (e.g. a
+  // path displayed from a remote system), so check both separators.
+  const lastSlash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   let tail =
     lastSlash !== -1
       ? path.slice(lastSlash + 1)

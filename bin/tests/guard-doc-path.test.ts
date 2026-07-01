@@ -1,24 +1,26 @@
+import * as path from "node:path";
+
 import { describe, expect, test } from "vitest";
 import { resolveFilePath } from "../../.claude/hooks/guard-doc-counts.mjs";
+import { fakeRoot } from "../../packages/m3l-common/tests/helpers/fake-path.js";
 
 describe("resolveFilePath", () => {
-  const projectDir = "/home/user/project";
+  const projectDir = fakeRoot("home", "user", "project");
 
   test("absolute path is returned unchanged", () => {
-    expect(resolveFilePath("/absolute/path/to/file.ts", projectDir)).toBe(
-      "/absolute/path/to/file.ts",
-    );
+    const absPath = fakeRoot("absolute", "path", "to", "file.ts");
+    expect(resolveFilePath(absPath, projectDir)).toBe(absPath);
   });
 
   test("relative path is resolved against projectDir", () => {
     expect(resolveFilePath("src/index.ts", projectDir)).toBe(
-      "/home/user/project/src/index.ts",
+      path.join(projectDir, "src", "index.ts"),
     );
   });
 
   test("dot-relative path is resolved against projectDir", () => {
     expect(resolveFilePath("./docs/README.md", projectDir)).toBe(
-      "/home/user/project/docs/README.md",
+      path.join(projectDir, "docs", "README.md"),
     );
   });
 
@@ -26,7 +28,15 @@ describe("resolveFilePath", () => {
     // Before the fix the hook was receiving absolute Claude Code paths but
     // treating them as relative, producing a double-prefixed path like
     // /project//abs/path/to/file. Absolute paths must pass through unchanged.
-    const absPath = "/tmp/claude/workspace/docs/reference/core/errors.md";
+    const absPath = fakeRoot(
+      "tmp",
+      "claude",
+      "workspace",
+      "docs",
+      "reference",
+      "core",
+      "errors.md",
+    );
     expect(resolveFilePath(absPath, projectDir)).toBe(absPath);
   });
 
