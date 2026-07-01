@@ -19,6 +19,7 @@
  */
 
 import * as fs from "fs";
+import * as path from "node:path";
 import {
   afterEach,
   beforeAll,
@@ -51,6 +52,7 @@ import type {
   M3LEnvironmentDetectionDetails,
   M3LExecutionEnvironmentInfo,
 } from "../src/core/environment/index.js";
+import { fakeRoot } from "./helpers/fake-path.js";
 
 // ---------------------------------------------------------------------------
 // Ensure isTTY properties exist as configurable own-properties before any spy
@@ -313,10 +315,13 @@ describe("M3LExecutionEnvironmentInfo — type-level contract", () => {
 describe("M3LExecutionEnvironmentInfo — discriminated union narrowing", () => {
   test("narrowing on deploymentMode === MONOREPO gives monorepoRoot: string (not string | undefined)", () => {
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "monorepo");
-    vi.spyOn(process, "cwd").mockReturnValue("/fake/packages/my-script");
+    const root = fakeRoot("fake");
+    vi.spyOn(process, "cwd").mockReturnValue(
+      path.join(root, "packages", "my-script"),
+    );
     vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockImplementation(
-      (p) => String(p) === "/fake/pnpm-workspace.yaml",
+      (p) => String(p) === path.join(root, "pnpm-workspace.yaml"),
     );
     const info = M3LExecutionEnvironment.detectFresh();
     if (info.deploymentMode === M3LDeploymentMode.MONOREPO) {
@@ -745,36 +750,41 @@ describe("detect() — no top-level side effects on import (B7)", () => {
 // ---------------------------------------------------------------------------
 describe("detect() — monorepo walk-up (B3)", () => {
   test("MONOREPO when pnpm-workspace.yaml is found up the tree", () => {
-    vi.spyOn(process, "cwd").mockReturnValue("/fake/packages/my-script");
+    const root = fakeRoot("fake");
+    vi.spyOn(process, "cwd").mockReturnValue(
+      path.join(root, "packages", "my-script"),
+    );
     vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockImplementation(
-      (p) => String(p) === "/fake/pnpm-workspace.yaml",
+      (p) => String(p) === path.join(root, "pnpm-workspace.yaml"),
     );
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.deploymentMode).toBe(M3LDeploymentMode.MONOREPO);
     expect(info.detectionDetails.workspaceMarkerPath).toBe(
-      "/fake/pnpm-workspace.yaml",
+      path.join(root, "pnpm-workspace.yaml"),
     );
   });
 
   test("monorepoRoot points to the directory containing pnpm-workspace.yaml", () => {
-    vi.spyOn(process, "cwd").mockReturnValue("/fake/nested/deep");
+    const root = fakeRoot("fake");
+    vi.spyOn(process, "cwd").mockReturnValue(path.join(root, "nested", "deep"));
     vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockImplementation(
-      (p) => String(p) === "/fake/pnpm-workspace.yaml",
+      (p) => String(p) === path.join(root, "pnpm-workspace.yaml"),
     );
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.deploymentMode).toBe(M3LDeploymentMode.MONOREPO);
-    expect(info.monorepoRoot).toBe("/fake");
+    expect(info.monorepoRoot).toBe(root);
   });
 
   test("MONOREPO when package.json with workspaces field is found", () => {
-    vi.spyOn(process, "cwd").mockReturnValue("/fake/apps/tool");
+    const root = fakeRoot("fake");
+    vi.spyOn(process, "cwd").mockReturnValue(path.join(root, "apps", "tool"));
     vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockImplementation(
-      (p) => String(p) === "/fake/package.json",
+      (p) => String(p) === path.join(root, "package.json"),
     );
     vi.spyOn(fs, "readFileSync").mockReturnValue(
       JSON.stringify({ name: "monorepo-root", workspaces: ["apps/*"] }),
@@ -786,8 +796,9 @@ describe("detect() — monorepo walk-up (B3)", () => {
 
   test("STANDALONE when neither marker is found (walk reaches root)", () => {
     // Walk from a fake isolated dir; accessSync succeeds and existsSync returns
-    // false for all paths, so the walk ascends to '/' and terminates → STANDALONE.
-    vi.spyOn(process, "cwd").mockReturnValue("/fake/isolated");
+    // false for all paths, so the walk ascends to the filesystem root and
+    // terminates → STANDALONE.
+    vi.spyOn(process, "cwd").mockReturnValue(fakeRoot("fake", "isolated"));
     vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockReturnValue(false);
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
@@ -845,10 +856,11 @@ describe("detect() — unreadable directory throws M3LEnvironmentDetectionError 
     const eaccesError = Object.assign(new Error("Permission denied"), {
       code: "EACCES",
     });
-    vi.spyOn(process, "cwd").mockReturnValue("/fake/project");
+    const root = fakeRoot("fake", "project");
+    vi.spyOn(process, "cwd").mockReturnValue(root);
     vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockImplementation(
-      (p) => String(p) === "/fake/project/package.json",
+      (p) => String(p) === path.join(root, "package.json"),
     );
     vi.spyOn(fs, "readFileSync").mockImplementationOnce(() => {
       throw eaccesError;
@@ -868,7 +880,9 @@ describe("detect() — walk terminates at filesystem root (B9)", () => {
     // Start from a fake deep path; accessSync succeeds and existsSync returns
     // false everywhere, so the loop ascends to '/' and terminates → STANDALONE.
     // This exercises the parent === current root-sentinel inside the loop.
-    vi.spyOn(process, "cwd").mockReturnValue("/fake/deeply/nested/project");
+    vi.spyOn(process, "cwd").mockReturnValue(
+      fakeRoot("fake", "deeply", "nested", "project"),
+    );
     vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockReturnValue(false);
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
@@ -883,26 +897,27 @@ describe("detect() — walk terminates at filesystem root (B9)", () => {
 describe("detect() — M3L_DEPLOYMENT_MODE env var override (B10)", () => {
   test("M3L_DEPLOYMENT_MODE=standalone forces STANDALONE even when workspace marker exists on disk", () => {
     // standalone override short-circuits before walk-up; no fs I/O needed
-    vi.spyOn(process, "cwd").mockReturnValue("/fake/root");
+    vi.spyOn(process, "cwd").mockReturnValue(fakeRoot("fake", "root"));
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.deploymentMode).toBe(M3LDeploymentMode.STANDALONE);
   });
 
   test("M3L_DEPLOYMENT_MODE=monorepo forces MONOREPO and walk-up still finds the root", () => {
-    vi.spyOn(process, "cwd").mockReturnValue("/fake/scripts");
+    const root = fakeRoot("fake");
+    vi.spyOn(process, "cwd").mockReturnValue(path.join(root, "scripts"));
     vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockImplementation(
-      (p) => String(p) === "/fake/pnpm-workspace.yaml",
+      (p) => String(p) === path.join(root, "pnpm-workspace.yaml"),
     );
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "monorepo");
     const info = M3LExecutionEnvironment.detectFresh();
     expect(info.deploymentMode).toBe(M3LDeploymentMode.MONOREPO);
-    expect(info.monorepoRoot).toBe("/fake");
+    expect(info.monorepoRoot).toBe(root);
   });
 
   test("M3L_DEPLOYMENT_MODE=monorepo throws when no workspace marker is found", () => {
-    vi.spyOn(process, "cwd").mockReturnValue("/fake/isolated");
+    vi.spyOn(process, "cwd").mockReturnValue(fakeRoot("fake", "isolated"));
     vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockReturnValue(false);
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "monorepo");

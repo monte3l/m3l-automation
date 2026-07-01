@@ -1,4 +1,5 @@
 import * as fs from "fs";
+import * as path from "node:path";
 
 import {
   afterEach,
@@ -61,6 +62,7 @@ import {
   valueToString,
 } from "../src/core/utils/index.js";
 import type { M3LPathType } from "../src/core/utils/index.js";
+import { fakeRoot } from "./helpers/fake-path.js";
 
 // =============================================================================
 // Phase A — Type guards
@@ -1156,6 +1158,14 @@ describe("truncatePath()", () => {
   test("throws M3LError when maxLength is 0", () => {
     expect(() => truncatePath("/some/path", 0)).toThrow(M3LError);
   });
+
+  test("preserves the filename tail for a Windows-style backslash path", () => {
+    const p =
+      "C:\\very\\long\\absolute\\path\\that\\exceeds\\the\\limit\\file.txt";
+    const result = truncatePath(p, 20);
+    expect(result.length).toBeLessThanOrEqual(20);
+    expect(result.endsWith("file.txt")).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1192,6 +1202,11 @@ describe("isPath()", () => {
 
   test("returns true for a parent-relative path starting with ../", () => {
     expect(isPath("../foo")).toBe(true);
+  });
+
+  test("returns true for a Windows-style drive path", () => {
+    expect(isPath("C:\\foo\\bar")).toBe(true);
+    expect(isPath("D:/file.txt")).toBe(true);
   });
 
   test("returns false for a plain word string", () => {
@@ -1491,14 +1506,16 @@ describe("M3LPathResolutionError", () => {
 // M3LPaths — MONOREPO mode
 // ---------------------------------------------------------------------------
 describe("M3LPaths — MONOREPO mode", () => {
-  const FAKE_ROOT = "/fake/monorepo";
+  const FAKE_ROOT = fakeRoot("fake", "monorepo");
 
   beforeEach(() => {
     // Drive the walk-up to find a workspace marker at FAKE_ROOT.
-    vi.spyOn(process, "cwd").mockReturnValue(`${FAKE_ROOT}/packages/tool`);
+    vi.spyOn(process, "cwd").mockReturnValue(
+      path.join(FAKE_ROOT, "packages", "tool"),
+    );
     vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockImplementation(
-      (p) => String(p) === `${FAKE_ROOT}/pnpm-workspace.yaml`,
+      (p) => String(p) === path.join(FAKE_ROOT, "pnpm-workspace.yaml"),
     );
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
     // Clear any per-dir override env vars that other tests may have left.
@@ -1519,27 +1536,27 @@ describe("M3LPaths — MONOREPO mode", () => {
 
   test("getDataDir() returns <monorepoRoot>/data", () => {
     const paths = new M3LPaths();
-    expect(paths.getDataDir()).toBe(`${FAKE_ROOT}/data`);
+    expect(paths.getDataDir()).toBe(path.join(FAKE_ROOT, "data"));
   });
 
   test("getConfigDir() returns <monorepoRoot>/data/config", () => {
     const paths = new M3LPaths();
-    expect(paths.getConfigDir()).toBe(`${FAKE_ROOT}/data/config`);
+    expect(paths.getConfigDir()).toBe(path.join(FAKE_ROOT, "data", "config"));
   });
 
   test("getInputDir() returns <monorepoRoot>/data/input", () => {
     const paths = new M3LPaths();
-    expect(paths.getInputDir()).toBe(`${FAKE_ROOT}/data/input`);
+    expect(paths.getInputDir()).toBe(path.join(FAKE_ROOT, "data", "input"));
   });
 
   test("getOutputDir() returns <monorepoRoot>/data/output", () => {
     const paths = new M3LPaths();
-    expect(paths.getOutputDir()).toBe(`${FAKE_ROOT}/data/output`);
+    expect(paths.getOutputDir()).toBe(path.join(FAKE_ROOT, "data", "output"));
   });
 
   test("getCacheDir() returns <monorepoRoot>/data/cache", () => {
     const paths = new M3LPaths();
-    expect(paths.getCacheDir()).toBe(`${FAKE_ROOT}/data/cache`);
+    expect(paths.getCacheDir()).toBe(path.join(FAKE_ROOT, "data", "cache"));
   });
 
   test("getProjectRoot() returns monorepoRoot", () => {
@@ -1547,14 +1564,14 @@ describe("M3LPaths — MONOREPO mode", () => {
     expect(paths.getProjectRoot()).toBe(FAKE_ROOT);
   });
 
-  test("all getter return values are absolute paths (start with /)", () => {
+  test("all getter return values are absolute paths", () => {
     const paths = new M3LPaths();
-    expect(paths.getDataDir()).toMatch(/^\//);
-    expect(paths.getConfigDir()).toMatch(/^\//);
-    expect(paths.getInputDir()).toMatch(/^\//);
-    expect(paths.getOutputDir()).toMatch(/^\//);
-    expect(paths.getCacheDir()).toMatch(/^\//);
-    expect(paths.getProjectRoot()).toMatch(/^\//);
+    expect(path.isAbsolute(paths.getDataDir())).toBe(true);
+    expect(path.isAbsolute(paths.getConfigDir())).toBe(true);
+    expect(path.isAbsolute(paths.getInputDir())).toBe(true);
+    expect(path.isAbsolute(paths.getOutputDir())).toBe(true);
+    expect(path.isAbsolute(paths.getCacheDir())).toBe(true);
+    expect(path.isAbsolute(paths.getProjectRoot())).toBe(true);
   });
 });
 
@@ -1562,7 +1579,7 @@ describe("M3LPaths — MONOREPO mode", () => {
 // M3LPaths — STANDALONE mode
 // ---------------------------------------------------------------------------
 describe("M3LPaths — STANDALONE mode (no M3L_BASE_DIR override)", () => {
-  const FAKE_CWD = "/standalone/workspace";
+  const FAKE_CWD = fakeRoot("standalone", "workspace");
 
   beforeEach(() => {
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
@@ -1584,27 +1601,27 @@ describe("M3LPaths — STANDALONE mode (no M3L_BASE_DIR override)", () => {
 
   test("getDataDir() uses cwd as base when M3L_BASE_DIR is absent", () => {
     const paths = new M3LPaths();
-    expect(paths.getDataDir()).toBe(`${FAKE_CWD}/data`);
+    expect(paths.getDataDir()).toBe(path.join(FAKE_CWD, "data"));
   });
 
   test("getConfigDir() uses cwd as base", () => {
     const paths = new M3LPaths();
-    expect(paths.getConfigDir()).toBe(`${FAKE_CWD}/data/config`);
+    expect(paths.getConfigDir()).toBe(path.join(FAKE_CWD, "data", "config"));
   });
 
   test("getInputDir() uses cwd as base", () => {
     const paths = new M3LPaths();
-    expect(paths.getInputDir()).toBe(`${FAKE_CWD}/data/input`);
+    expect(paths.getInputDir()).toBe(path.join(FAKE_CWD, "data", "input"));
   });
 
   test("getOutputDir() uses cwd as base", () => {
     const paths = new M3LPaths();
-    expect(paths.getOutputDir()).toBe(`${FAKE_CWD}/data/output`);
+    expect(paths.getOutputDir()).toBe(path.join(FAKE_CWD, "data", "output"));
   });
 
   test("getCacheDir() uses cwd as base", () => {
     const paths = new M3LPaths();
-    expect(paths.getCacheDir()).toBe(`${FAKE_CWD}/data/cache`);
+    expect(paths.getCacheDir()).toBe(path.join(FAKE_CWD, "data", "cache"));
   });
 
   test("getProjectRoot() throws M3LPathResolutionError in standalone mode", () => {
@@ -1634,7 +1651,7 @@ describe("M3LPaths — STANDALONE mode (no M3L_BASE_DIR override)", () => {
 // M3LPaths — M3L_BASE_DIR override in STANDALONE mode
 // ---------------------------------------------------------------------------
 describe("M3LPaths — M3L_BASE_DIR override in STANDALONE mode", () => {
-  const OVERRIDE_BASE = "/custom/base/dir";
+  const OVERRIDE_BASE = fakeRoot("custom", "base", "dir");
 
   beforeEach(() => {
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "standalone");
@@ -1655,27 +1672,31 @@ describe("M3LPaths — M3L_BASE_DIR override in STANDALONE mode", () => {
 
   test("M3L_BASE_DIR moves the standalone base anchor for getDataDir()", () => {
     const paths = new M3LPaths();
-    expect(paths.getDataDir()).toBe(`${OVERRIDE_BASE}/data`);
+    expect(paths.getDataDir()).toBe(path.join(OVERRIDE_BASE, "data"));
   });
 
   test("M3L_BASE_DIR moves the standalone base anchor for getConfigDir()", () => {
     const paths = new M3LPaths();
-    expect(paths.getConfigDir()).toBe(`${OVERRIDE_BASE}/data/config`);
+    expect(paths.getConfigDir()).toBe(
+      path.join(OVERRIDE_BASE, "data", "config"),
+    );
   });
 
   test("M3L_BASE_DIR moves the standalone base anchor for getInputDir()", () => {
     const paths = new M3LPaths();
-    expect(paths.getInputDir()).toBe(`${OVERRIDE_BASE}/data/input`);
+    expect(paths.getInputDir()).toBe(path.join(OVERRIDE_BASE, "data", "input"));
   });
 
   test("M3L_BASE_DIR moves the standalone base anchor for getOutputDir()", () => {
     const paths = new M3LPaths();
-    expect(paths.getOutputDir()).toBe(`${OVERRIDE_BASE}/data/output`);
+    expect(paths.getOutputDir()).toBe(
+      path.join(OVERRIDE_BASE, "data", "output"),
+    );
   });
 
   test("M3L_BASE_DIR moves the standalone base anchor for getCacheDir()", () => {
     const paths = new M3LPaths();
-    expect(paths.getCacheDir()).toBe(`${OVERRIDE_BASE}/data/cache`);
+    expect(paths.getCacheDir()).toBe(path.join(OVERRIDE_BASE, "data", "cache"));
   });
 });
 
@@ -1683,14 +1704,14 @@ describe("M3LPaths — M3L_BASE_DIR override in STANDALONE mode", () => {
 // M3LPaths — per-kind env-var overrides (each M3L_*_DIR wins over computed path)
 // ---------------------------------------------------------------------------
 describe("M3LPaths — per-kind env-var overrides", () => {
-  const FAKE_ROOT = "/fake/monorepo";
+  const FAKE_ROOT = fakeRoot("fake", "monorepo");
 
   beforeEach(() => {
     // Use MONOREPO mode so the computed paths are deterministic
-    vi.spyOn(process, "cwd").mockReturnValue(`${FAKE_ROOT}/scripts`);
+    vi.spyOn(process, "cwd").mockReturnValue(path.join(FAKE_ROOT, "scripts"));
     vi.spyOn(fs, "accessSync").mockImplementation(() => {});
     vi.spyOn(fs, "existsSync").mockImplementation(
-      (p) => String(p) === `${FAKE_ROOT}/pnpm-workspace.yaml`,
+      (p) => String(p) === path.join(FAKE_ROOT, "pnpm-workspace.yaml"),
     );
     vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
     vi.stubEnv("M3L_BASE_DIR", "");
@@ -1742,10 +1763,10 @@ describe("M3LPaths — per-kind env-var overrides", () => {
     vi.stubEnv("M3L_DATA_DIR", "/override/data");
     const paths = new M3LPaths();
     // config, input, output, cache still use the computed MONOREPO paths
-    expect(paths.getConfigDir()).toBe(`${FAKE_ROOT}/data/config`);
-    expect(paths.getInputDir()).toBe(`${FAKE_ROOT}/data/input`);
-    expect(paths.getOutputDir()).toBe(`${FAKE_ROOT}/data/output`);
-    expect(paths.getCacheDir()).toBe(`${FAKE_ROOT}/data/cache`);
+    expect(paths.getConfigDir()).toBe(path.join(FAKE_ROOT, "data", "config"));
+    expect(paths.getInputDir()).toBe(path.join(FAKE_ROOT, "data", "input"));
+    expect(paths.getOutputDir()).toBe(path.join(FAKE_ROOT, "data", "output"));
+    expect(paths.getCacheDir()).toBe(path.join(FAKE_ROOT, "data", "cache"));
   });
 
   describe("relative-path per-kind overrides are rejected", () => {
