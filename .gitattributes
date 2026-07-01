@@ -1,0 +1,26 @@
+# Normalize all text files to LF in the working tree and the repository.
+# Without this, Windows checkouts with core.autocrlf=true materialize CRLF,
+# which Prettier (endOfLine: "lf") rejects — failing the pre-push hook and CI
+# locally even though the committed blobs are already LF.
+* text=auto eol=lf
+
+# Source and config are always LF.
+*.ts   text eol=lf
+*.mts  text eol=lf
+*.cts  text eol=lf
+*.js   text eol=lf
+*.mjs  text eol=lf
+*.cjs  text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+
+# Binary assets — never apply text/EOL conversion.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.woff  binary
+*.woff2 binary
