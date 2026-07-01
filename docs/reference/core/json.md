@@ -20,7 +20,11 @@ Exported symbols:
 - `M3LJSONFieldExtractor` — field extraction over parsed paths
 - `M3LJSONFormatDetector` — JSON vs JSONL detection
 - `M3LJSONFormat` — the detected format type (`'json' | 'jsonl' | 'unknown'`)
-- Detection depth / options / result types — the depth-level enum, detector options, and the `{ format, confidence, method, details }` result
+- `M3LJSONDetectionDepth` — the depth-level enum (`'extension' | 'shallow' | 'standard' | 'deep'`)
+- `M3LJSONDetectorOptions` — detector options (selects the inspection `depth`)
+- `M3LJSONDetectionResult` — the `{ format, confidence, method, details }` result
+- `M3LConfidence` — a detection confidence constrained to the range `0`–`1`
+- `M3LJSONFormatDetectionError` — thrown by `detect()` when the file cannot be read
 
 ## Usage
 
@@ -70,7 +74,9 @@ if (result.format === "json") {
 - **Dot-notation field paths** — `parseFieldPath(path)` parses a dot-notation string (for example, `metadata.author`) into path segments; `navigateFieldPath(obj, path)` traverses the nested object and returns the value, or `undefined` when a segment is absent. `M3LJSONFieldExtractor` builds on these to extract fields from parsed records.
 - **Object keys only** — every segment is looked up as an object key. A numeric segment such as `"0"` in `items.0.name` addresses the property named `"0"`, **not** an array index; field paths do not index into arrays.
 - **Prototype-pollution guard** — `navigateFieldPath` and `M3LJSONFieldExtractor` refuse to traverse the dangerous keys `__proto__`, `constructor`, and `prototype`. A dangerous segment resolves to `undefined`, exactly as a missing segment does, so a crafted path can never reach an object's prototype chain.
-- **Detection result** — `M3LJSONFormatDetector.detect(filePath)` returns `{ format, confidence, method, details }`, where `format` is an `M3LJSONFormat` value.
+- **Detection result** — `M3LJSONFormatDetector.detect(filePath)` returns `{ format, confidence, method, details }`, where `format` is an `M3LJSONFormat` value, `confidence` is an `M3LConfidence` (a `number` constrained to `0`–`1`), `method` is the `M3LJSONDetectionDepth` actually used, and `details` reports how much was read (`bytesInspected` is a count of UTF-8 bytes; `linesInspected` a count of lines).
+- **Bounded reads** — each depth reads only as much of the file as it needs: `extension` reads nothing, `shallow` a single byte, `standard` a bounded prefix covering the first lines, and `deep` bounded windows from the start, middle, and end. A large file is never buffered whole to inspect a shallow signal.
+- **Read failures** — if the file cannot be read (missing, unreadable), `detect()` rejects with an `M3LJSONFormatDetectionError` (a subclass of `M3LError`) that chains the underlying filesystem error as its `cause`.
 - **Detection depth levels** — four levels trade speed for accuracy:
 
   | Depth       | What it inspects                                       |

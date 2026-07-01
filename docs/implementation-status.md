@@ -2,7 +2,7 @@
 
 This is the **single source of truth** for what is implemented in
 `@m3l-automation/m3l-common` versus what the `docs/reference/**` pages specify.
-The library started as a documented-but-empty scaffold. The barrels are wired; `errors`, `events`, `security`, `environment`, and `utils` are implemented and reviewed (5 of 22 submodules). See the table below for per-submodule status.
+The library started as a documented-but-empty scaffold. The barrels are wired; `errors`, `events`, `security`, `environment`, `utils`, and `json` are implemented and reviewed (6 of 22 submodules). See the table below for per-submodule status.
 
 > **Maintenance contract (hub):** the main agent updates this file after **each
 > phase** of the `implement-submodule` pipeline. It is the durable, cross-session
@@ -33,7 +33,7 @@ _Planned_ = implementation plan exists in `docs/plans/`.
 | security    | `core/security.md`    | ✅      | 2           | ✅     | ✅    | ✅       | none — 28 tests, 100% cov; reviewed (must-fix applied: @example uses M3LError)               |
 | environment | `core/environment.md` | ✅      | 8           | ✅     | ✅    | ✅       | none — 105 tests, 100% cov; reviewed (all must-fixes applied)                                |
 | utils       | `core/utils.md`       | ✅      | 39          | ✅     | ✅    | ✅       | 278 tests (39/39 symbols; Phase D shipped — M3LPaths cluster); reviewed (must-fixes applied) |
-| json        | `core/json.md`        | ✅      | 5           | ❌     | ❌    | ❌       | none                                                                                         |
+| json        | `core/json.md`        | ✅      | 10          | ✅     | ✅    | ✅       | 10 exports; 59 tests; detector 96.9% (84.2% br), rest 100%; reviewed (must-fixes applied)    |
 | analysis    | `core/analysis.md`    | ✅      | 4           | ❌     | ❌    | ❌       | none                                                                                         |
 | messaging   | `core/messaging.md`   | ✅      | 10          | ❌     | ❌    | ❌       | none — abstract interfaces only                                                              |
 | config      | `core/config.md`      | ✅      | 18          | ❌     | ❌    | ❌       | **YAML parser** (e.g. `yaml`) for YAML provider                                              |

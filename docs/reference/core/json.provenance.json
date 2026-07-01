@@ -1,0 +1,84 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/json.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/json/fieldPath.ts",
+          "symbol": "parseFieldPath"
+        },
+        {
+          "file": "packages/m3l-common/src/core/json/fieldPath.ts",
+          "symbol": "navigateFieldPath"
+        },
+        {
+          "file": "packages/m3l-common/src/core/json/M3LJSONFieldExtractor.ts",
+          "symbol": "M3LJSONFieldExtractor"
+        },
+        {
+          "file": "packages/m3l-common/src/core/json/M3LJSONFormatDetector.ts",
+          "symbol": "M3LJSONFormatDetector"
+        },
+        {
+          "file": "packages/m3l-common/src/core/json/types.ts",
+          "symbol": "M3LJSONFormat"
+        },
+        {
+          "file": "packages/m3l-common/src/core/json/types.ts",
+          "symbol": "M3LJSONDetectionDepth"
+        },
+        {
+          "file": "packages/m3l-common/src/core/json/types.ts",
+          "symbol": "M3LJSONDetectorOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/json/types.ts",
+          "symbol": "M3LJSONDetectionResult"
+        },
+        {
+          "file": "packages/m3l-common/src/core/json/types.ts",
+          "symbol": "M3LConfidence"
+        },
+        {
+          "file": "packages/m3l-common/src/core/json/M3LJSONFormatDetectionError.ts",
+          "symbol": "M3LJSONFormatDetectionError"
+        }
+      ],
+      "commit": "3cfb7e983743aca0fa09430e850795ee506c1856",
+      "retrieved": "2026-07-01"
+    },
+    {
+      "heading": "Notes and behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/json/fieldPath.ts",
+          "symbol": "parseFieldPath"
+        },
+        {
+          "file": "packages/m3l-common/src/core/json/fieldPath.ts",
+          "symbol": "navigateFieldPath"
+        },
+        {
+          "file": "packages/m3l-common/src/core/json/M3LJSONFieldExtractor.ts",
+          "symbol": "M3LJSONFieldExtractor"
+        },
+        {
+          "file": "packages/m3l-common/src/core/json/M3LJSONFormatDetector.ts",
+          "symbol": "M3LJSONFormatDetector"
+        },
+        {
+          "file": "packages/m3l-common/src/core/json/types.ts",
+          "symbol": "M3LConfidence"
+        },
+        {
+          "file": "packages/m3l-common/src/core/json/M3LJSONFormatDetectionError.ts",
+          "symbol": "M3LJSONFormatDetectionError"
+        }
+      ],
+      "commit": "3cfb7e983743aca0fa09430e850795ee506c1856",
+      "retrieved": "2026-07-01"
+    }
+  ]
+}
