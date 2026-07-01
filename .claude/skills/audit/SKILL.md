@@ -72,6 +72,15 @@ Collect all agent reports. For each `GAP` or `INCONSISTENCY` item:
 3. Group surviving items by theme (e.g. "missing CI gate", "doc drift",
    "hook coverage").
 
+**When the audit target is (or cites) a stored `docs/plans/*.md`, treat every
+factual claim in that plan as possibly rotted** — counts, line numbers, file
+lists, and "what already exists" premises drift between authoring and audit.
+Re-validate each against the live repo rather than inheriting it; delegate any
+count reconciliation to `/sync-docs`, which owns the authoritative count-site
+list. The core/json audit found its source plan asserted an
+already-fixed inconsistency and missed two count-bearing files
+(`docs/logs/2026-07-01-core-json.md`, divergence 1).
+
 Write a concise aggregated summary: themes as headings, bullet-listed items
 under each, **preserving the EXISTING / GAP / INCONSISTENCY prefix on every
 item** exactly as the agents used it. Do not rewrite items using prose labels

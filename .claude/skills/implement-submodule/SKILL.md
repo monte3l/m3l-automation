@@ -72,7 +72,9 @@ re-confirms the counts. This mirrors the coordination caveat already recorded in
       add `silent-failure-hunter` when the module has error-handling or async paths;
       iterate until clean; update status file → ✅
 - [ ] Step 8 — Final verify: `pnpm build && pnpm test && pnpm lint && pnpm typecheck`;
-      generate provenance sidecar (exported symbols only); run `pnpm check:provenance`
+      generate provenance sidecar (exported symbols only); run `pnpm check:provenance`,
+      `pnpm gen:index` + `pnpm check:index`, `pnpm check:doc-exports`, and
+      `pnpm check:impl-counts` (after the status file flips to ✅)
 - [ ] Report: new exports, review verdict, deps (if any), state-file transitions
 - [ ] Write work log: `/write-work-log` → `docs/logs/YYYY-MM-DD-<ns>-<module>.md`
 
@@ -88,12 +90,20 @@ spokes are for. The writer is never the reviewer; keep that separation structura
    redoing it. When unsure which to pick, prefer the _Suggested implementation
    order_ in the state file (foundational, dep-free modules first).
 
-2. **Format and commit plan docs before implementation begins.** If a
-   `docs/plans/` file was created for this module, run
-   `pnpm exec prettier --write <path>` on it and commit it before any
-   implementation work starts. Untracked or uncommitted docs files that drift
-   out of prettier compliance block the `pre-push` lefthook. The cost of
-   formatting up front is zero; the cost of a blocked push is an out-of-band
+2. **Re-validate, then format and commit plan docs before implementation
+   begins.** If a `docs/plans/` file was created for this module, **first
+   re-validate every factual claim in it against the live repo** — counts, line
+   numbers, file lists, and "what already exists" premises all rot between
+   authoring and execution. A stored plan is a hypothesis, not ground truth: the
+   core/json plan claimed a doc-count inconsistency that had already been fixed
+   and missed two count-bearing files (see
+   `docs/logs/2026-07-01-core-json.md`, divergence 1). Verify each claim before
+   acting on it, and **delegate any count reconciliation to `/sync-docs`**, which
+   owns the authoritative list of count sites rather than a hand-written edit
+   list. Then run `pnpm exec prettier --write <path>` on the plan and commit it
+   before any implementation work starts. Untracked or uncommitted docs files
+   that drift out of prettier compliance block the `pre-push` lefthook. The cost
+   of formatting up front is zero; the cost of a blocked push is an out-of-band
    commit mid-review.
 
 3. **Dependency gate — pause before adding any runtime dependency.** Several
@@ -133,6 +143,17 @@ spokes are for. The writer is never the reviewer; keep that separation structura
    shows bare `new Error()`** — do not assume the implementer resolves a
    spec-doc / project-rule conflict in the right direction.
 
+   **Verify the writer spoke's state directly — do not trust its final report.**
+   A long implementer run (bounded-I/O rework is token-heavy) can hit its turn
+   limit and return a mid-thought instead of a completion summary; in the
+   core/json run this hid a missing barrel re-export and an internal helper
+   leaking as a public export (`docs/logs/2026-07-01-core-json.md`, divergence
+   5). Before moving to review, confirm the actual state: list the created files,
+   `grep` the namespace barrel for the expected `export * from "./<module>/…"`
+   line, and run `typecheck`/`lint`/`test` yourself. If something concrete is
+   missing, **resume the same spoke via `SendMessage`** with the specific gap
+   rather than trusting the summary or re-dispatching a fresh spoke.
+
 7. **Phase 4 — Review (fan out in parallel).** In one message, dispatch
    `code-reviewer` and `spec-conformance-reviewer` (now in _conformance mode_),
    plus `security-reviewer` if the surface is security-sensitive (anything under
@@ -150,15 +171,29 @@ spokes are for. The writer is never the reviewer; keep that separation structura
    reference a named export of its source file — never a private constant,
    internal helper, or unexported type.** For sections that describe private
    implementation details, use the exported function or type that exposes that
-   behavior. Run `pnpm check:provenance`; it rejects any symbol not found in
-   the file's exports.
-   Report the new exports, the review verdict, any deps added (with approval),
-   and the state-file transitions. Remind the user the commit should be a `feat:`
-   (a new submodule surfaced through the barrel is a minor, not a breaking change,
-   because the three-entry `exports` map is unchanged). Then invoke
-   `/write-work-log` to write `docs/logs/YYYY-MM-DD-<ns>-<module>.md` while the
-   conversation context is intact — this is the durable record of what shipped,
-   what diverged, and the lessons for the next submodule.
+   behavior.
+   **Any public type added beyond the original spec (a new error subclass, a
+   branded type, an extra result shape) must land in the `.md` reference page
+   AND the provenance sidecar in the _same_ change set** — otherwise
+   spec-conformance reads it as undocumented drift and provenance has no heading
+   to map it to (`docs/logs/2026-07-01-core-json.md`, divergence 2).
+   Then run the doc/index gates, all of which are **mandatory** for a new
+   submodule — omitting the reference-index regeneration is a CI failure the
+   core/json plan nearly shipped:
+   - `pnpm check:provenance` — rejects any symbol not found in the file's exports.
+   - `pnpm gen:index` then `pnpm check:index` — regenerate the reference index so
+     the new module flips to _wired_ with its symbol count, then confirm it's
+     clean.
+   - `pnpm check:doc-exports` — fails if any public export is undocumented.
+   - `pnpm check:impl-counts` after the status file flips to ✅ — the implemented
+     "N of 22" numerator must match across every badge / prose / HTML site.
+     Report the new exports, the review verdict, any deps added (with approval),
+     and the state-file transitions. Remind the user the commit should be a `feat:`
+     (a new submodule surfaced through the barrel is a minor, not a breaking change,
+     because the three-entry `exports` map is unchanged). Then invoke
+     `/write-work-log` to write `docs/logs/YYYY-MM-DD-<ns>-<module>.md` while the
+     conversation context is intact — this is the durable record of what shipped,
+     what diverged, and the lessons for the next submodule.
 
 ## What "good" looks like (hand these standards to the spokes)
 

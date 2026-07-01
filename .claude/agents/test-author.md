@@ -133,5 +133,15 @@ expect(() =>
 - Don't implement the module and don't review code — hand both back to the hub.
 
 - Do not use real filesystem mutations in tests (`mkdtempSync`, `mkdirSync`, `writeFileSync`, `rmSync`, etc.); this is enforced by ESLint's `no-restricted-syntax` rule. The only sanctioned pattern is `vi.spyOn(fs, method)` or `vi.mock('node:fs')`.
+- **The mock target must track the implementation's I/O primitive.** If the
+  implementation mocks one primitive (e.g. `fs/promises` `readFile`) and later
+  moves to another (e.g. `open()`/`FileHandle`), your tests must re-mock the
+  **new** primitive — the old mock silently stops intercepting anything.
+  Treat an I/O-primitive change as a **two-spoke** change (implementer +
+  test-author) planned together, not a drop-in. When you mock an acquire-then-use
+  resource, cover the **post-acquire** failure path too — a `read()`/`stat()`
+  that rejects **after** a successful `open()`, and a failing `close()` — not
+  just an `open()` that rejects. Assert the raw failure is surfaced as the
+  documented `M3LError` subclass with its `cause` chained.
 - Boolean spies return `mockReturnValue(false)`, not `undefined` — the TS type wins over Node's runtime reality.
 - Vitest 4.x `expectTypeOf` precision: `.toBeBigInt()` (not `.toBigInt()`), and `.toMatchTypeOf<T>()` for subtype checks (not `.toEqualTypeOf`). A 2-tuple `test.each` row callback must accept **both** params.

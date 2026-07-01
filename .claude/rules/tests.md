@@ -19,6 +19,11 @@ paths:
 - **Mock Node built-ins via the async-factory form** that preserves real
   exports, then `vi.spyOn` individual methods:
   `vi.mock("fs", async () => { const actual = await vi.importActual<typeof import("fs")>("fs"); return { ...actual }; })`.
+- **Keep the mock target in sync with the implementation's I/O primitive.** If
+  the impl moves from `readFile` to `open()`/`FileHandle`, re-mock the new
+  primitive (the old mock intercepts nothing) and cover the **post-acquire**
+  failure path — a `read()`/`stat()` reject after a successful `open()` — not
+  just acquisition.
 - **TTY-dependent code:** set `process.stdout/stderr/stdin.isTTY` with
   `Object.defineProperty` in a `beforeAll` block — CI is non-TTY, so the
   property may be absent entirely, not just `false`.
