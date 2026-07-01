@@ -105,7 +105,15 @@ if (existsSync(claudeMd)) {
       if (/^\s+\S/.test(lines[i])) block += "\n" + lines[i];
       else break;
     }
-    for (const m of block.matchAll(/`([A-Za-z0-9_-]+)`/g)) {
+    // The roster only lives in the bullet's first sentence; later sentences
+    // are free-form prose (e.g. "... every `subagent_type` resolves ...")
+    // that may backtick-quote non-agent words. A sentence boundary is a
+    // `.`/`!`/`?` followed by whitespace and a capital letter — this skips
+    // false breaks like the period in `` `.claude/agents/*.md` ``, which
+    // isn't followed by a space.
+    const rosterEnd = block.search(/[.!?]\s+(?=[A-Z])/);
+    const roster = rosterEnd === -1 ? block : block.slice(0, rosterEnd + 1);
+    for (const m of roster.matchAll(/`([A-Za-z0-9_-]+)`/g)) {
       const name = m[1];
       referenced.add(name);
       if (!known.has(name)) {
