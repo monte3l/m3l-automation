@@ -308,15 +308,27 @@ sessions):
 
 See ADR-0013 for the full rules. Day-to-day:
 
-- **Manual (sibling dir):** `git worktree add ../m3l-automation-<slug> -b
-feat/<slug>`, then `pnpm worktree:setup` (installs deps + copies gitignored
-  files like `.env` — a fresh worktree has none).
+- **Manual (sibling dir):** `pnpm worktree:new <slug>` does it in one step —
+  `git worktree add ../m3l-automation-<slug> -b feat/<slug>` (branched from
+  `origin/main`) then provisions it via `worktree:setup`. The two underlying
+  steps still work by hand: `git worktree add …` then, from **inside** the new
+  worktree, `pnpm worktree:setup` (installs deps + copies the gitignored files
+  listed in `.worktreeinclude` — a fresh worktree has none). Note
+  `worktree:setup` copies **literal** paths only; glob/negation entries (e.g.
+  `.env.*`) are reported, not copied.
 - **Native:** `claude --worktree <name>` (or a spoke with `isolation: worktree`)
   creates worktrees under `.claude/worktrees/` and copies `.worktreeinclude`
   files, but does **not** run `pnpm install` — the `guard-worktree-ready.mjs`
   SessionStart hook reminds you to.
-- **Cleanup:** `pnpm worktree:prune` (`--dry-run` to preview); agent worktrees
-  auto-sweep after `cleanupPeriodDays`.
+- **Cleanup:** `pnpm worktree:remove <slug>` is the symmetric teardown for a
+  manual worktree — `git worktree remove` + `git worktree prune` + delete the
+  branch if it's merged. `pnpm worktree:prune` (`--dry-run` to preview) is a
+  batch sweep that removes worktrees whose branch is **merged into `main`** or
+  that git marks **`prunable`** — it is _not_ location-scoped, so it will **not**
+  reap an unmerged worktree of any kind (that is what `worktree:remove` is for)
+  and it _will_ reap a merged sibling worktree, not only `.claude/worktrees/`
+  ones. Agent worktrees under `.claude/worktrees/` also auto-sweep after
+  `cleanupPeriodDays`. See ADR-0014.
 - Never run root `pnpm format`/`lint`/`test` against a nested
   `.claude/worktrees/` checkout — run the scoped command from inside that
   worktree instead.

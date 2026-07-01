@@ -55,3 +55,4 @@ surface).
 | 0011 | [Release and publishing workflow](./0011-release-and-publishing-workflow.md)                                                    | Accepted |
 | 0012 | [Defer external code-index MCP; use native LSP + generated catalog](./0012-defer-external-code-index-mcp.md)                    | Accepted |
 | 0013 | [Git worktrees for task isolation and parallelization](./0013-git-worktrees-for-task-isolation.md)                              | Accepted |
+| 0014 | [Symmetric worktree tooling and corrected prune semantics](./0014-symmetric-worktree-tooling.md)                                | Accepted |
