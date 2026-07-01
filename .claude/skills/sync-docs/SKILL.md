@@ -42,9 +42,7 @@ node bin/check-doc-counts.mjs
 ```
 
 Derives the canonical count from `docs/reference/core/*.md` and
-`docs/reference/aws/*.md` and asserts the prose in `CLAUDE.md`,
-`docs/README.md`, and `README.md` (root badge + prose) uses the correct
-numbers.
+`docs/reference/aws/*.md` and asserts the prose in docs/README.md`and`README.md` (root badge + prose) using the correct numbers.
 
 If it fails, the output names the mismatched file and the value that needs
 updating. Tell the user the exact edit required.
@@ -74,8 +72,6 @@ and confirm the number matches:
   callout (this is the npm-facing README; it has its own badge and callout
   that must stay in sync with the root README)
 - `docs/README.md` — the development-status callout line
-- `CLAUDE.md` — the Agent Operating Model section ("Current state: N of 22
-  submodules are implemented")
 - `docs/index.html` — the GitHub Pages landing page; check four things:
   1. The status row `<span class="value orange">N / 22 implemented</span>` —
      N must equal the ✅ count.
