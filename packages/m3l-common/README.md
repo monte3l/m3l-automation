@@ -13,12 +13,12 @@
 <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-66D9EF?style=flat-square&labelColor=272822" alt="TypeScript strict"></a>
 <a href="https://github.com/monte3l/m3l-automation/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-A6E22E?style=flat-square&labelColor=272822" alt="Apache-2.0"></a>
 <a href="https://github.com/monte3l/m3l-automation/blob/main/docs/implementation-status.md"><img src="https://img.shields.io/badge/status-pre--release-FD971F?style=flat-square&labelColor=272822" alt="status: pre-release"></a>
-<a href="https://github.com/monte3l/m3l-automation/blob/main/docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-5%2F22-FD971F?style=flat-square&labelColor=272822" alt="modules: 5/22"></a>
+<a href="https://github.com/monte3l/m3l-automation/blob/main/docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-6%2F22-FD971F?style=flat-square&labelColor=272822" alt="modules: 6/22"></a>
 </p>
 
 > **Status: early development — scaffold and specs are complete; implementation is in progress.**
-> Version `0.0.0-development`. All documented APIs are design targets; 5 of 22 submodules are
-> implemented (`errors`, `events`, `security`, `environment`, `utils`).
+> Version `0.0.0-development`. All documented APIs are design targets; 6 of 22 submodules are
+> implemented (`errors`, `events`, `security`, `environment`, `utils`, `json`).
 
 A shared infrastructure library for automation scripts and AWS Lambda handlers. It provides
 enterprise-grade building blocks — application scaffolding, configuration, logging, error
