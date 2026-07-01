@@ -3,10 +3,19 @@
     "namespace": "core",
     "name": "analysis",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/analysis.md",
-    "symbols": []
+    "symbols": [
+      "M3LThresholdEvaluator",
+      "M3LThresholdRule",
+      "M3LThresholdRuleResult",
+      "M3LThresholdEvaluation",
+      "M3LThresholdOperator",
+      "M3LThresholdAggregation",
+      "M3LThresholdSeverity",
+      "M3LThresholdRuleValidationError"
+    ]
   },
   {
     "namespace": "core",
@@ -208,6 +217,7 @@
       "isPath",
       "formatConfigValueDisplay",
       "formatConfigSourceDisplay",
+      "parseLocaleNumber",
       "M3LPathType",
       "M3LPathEnvironmentVariables",
       "M3LPathResolutionError",

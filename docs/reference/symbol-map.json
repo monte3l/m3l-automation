@@ -1,4 +1,44 @@
 {
+  "M3LThresholdEvaluator": {
+    "submodule": "analysis",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts"
+  },
+  "M3LThresholdRule": {
+    "submodule": "analysis",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts"
+  },
+  "M3LThresholdRuleResult": {
+    "submodule": "analysis",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts"
+  },
+  "M3LThresholdEvaluation": {
+    "submodule": "analysis",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts"
+  },
+  "M3LThresholdOperator": {
+    "submodule": "analysis",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts"
+  },
+  "M3LThresholdAggregation": {
+    "submodule": "analysis",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts"
+  },
+  "M3LThresholdSeverity": {
+    "submodule": "analysis",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts"
+  },
+  "M3LThresholdRuleValidationError": {
+    "submodule": "analysis",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/analysis/M3LThresholdRuleValidationError.ts"
+  },
   "M3LExecutionEnvironment": {
     "submodule": "environment",
     "namespace": "core",
@@ -234,6 +274,12 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/utils/formatting.ts",
     "lines": "265-282"
+  },
+  "parseLocaleNumber": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/numbers.ts",
+    "lines": "30-40"
   },
   "M3LPathType": {
     "submodule": "utils",
