@@ -37,6 +37,13 @@ const value = Core.navigateFieldPath(
   "metadata.author",
 );
 // "Ada" — returns undefined if any segment is missing
+
+// Numeric segments are object keys, not array indices:
+Core.navigateFieldPath({ items: { "0": "x" } }, "items.0"); // "x"
+Core.navigateFieldPath({ items: ["x"] }, "items.0"); // undefined
+
+// Dangerous segments never traverse the prototype chain:
+Core.navigateFieldPath({ a: {} }, "a.__proto__"); // undefined
 ```
 
 ### Format detection
@@ -61,6 +68,8 @@ if (result.format === "json") {
 ## Notes and behavior
 
 - **Dot-notation field paths** — `parseFieldPath(path)` parses a dot-notation string (for example, `metadata.author`) into path segments; `navigateFieldPath(obj, path)` traverses the nested object and returns the value, or `undefined` when a segment is absent. `M3LJSONFieldExtractor` builds on these to extract fields from parsed records.
+- **Object keys only** — every segment is looked up as an object key. A numeric segment such as `"0"` in `items.0.name` addresses the property named `"0"`, **not** an array index; field paths do not index into arrays.
+- **Prototype-pollution guard** — `navigateFieldPath` and `M3LJSONFieldExtractor` refuse to traverse the dangerous keys `__proto__`, `constructor`, and `prototype`. A dangerous segment resolves to `undefined`, exactly as a missing segment does, so a crafted path can never reach an object's prototype chain.
 - **Detection result** — `M3LJSONFormatDetector.detect(filePath)` returns `{ format, confidence, method, details }`, where `format` is an `M3LJSONFormat` value.
 - **Detection depth levels** — four levels trade speed for accuracy:
 
