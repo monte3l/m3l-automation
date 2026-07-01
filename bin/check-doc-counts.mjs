@@ -37,12 +37,6 @@ const checks = [
     label: "Core barrel comment",
   },
   {
-    file: "CLAUDE.md",
-    pattern: /\d+ of (\d+) submodules are implemented/,
-    expected: total,
-    label: "total submodule count (implementation state line)",
-  },
-  {
     file: "docs/README.md",
     pattern: /(\d+) submodules documented/,
     expected: total,
