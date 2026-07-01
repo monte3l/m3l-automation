@@ -14,6 +14,12 @@ paths:
   Prefer stubs unless interaction verification is required. Clean up side effects.
 - **Name tests by behavior**, not by the unit under test.
 - **Type-level tests with `expectTypeOf`** where the type IS the contract.
+  `toEqualTypeOf` is strict about `readonly` property modifiers — a type with
+  `readonly` members is _not_ equal to one with mutable members, and the failure
+  surfaces as a cryptic `never[]`/`never` constraint mismatch. When the
+  implementation's interface is (correctly) `readonly`, the expected literal in
+  the assertion must be `readonly` too, or use `toMatchTypeOf`. A type test that
+  fails against a correctly-`readonly` implementation is a test-side defect.
 - **Parameterize** when the same logic is exercised against multiple inputs.
 - **Never tolerate flaky tests** — diagnose and fix; do not mute or retry-mask.
 - **Mock Node built-ins via the async-factory form** that preserves real
