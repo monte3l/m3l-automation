@@ -92,10 +92,21 @@
     "namespace": "core",
     "name": "json",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/json.md",
-    "symbols": []
+    "symbols": [
+      "parseFieldPath",
+      "navigateFieldPath",
+      "M3LJSONFieldExtractor",
+      "M3LJSONFormatDetector",
+      "M3LJSONFormat",
+      "M3LJSONDetectionDepth",
+      "M3LJSONDetectorOptions",
+      "M3LJSONDetectionResult",
+      "M3LConfidence",
+      "M3LJSONFormatDetectionError"
+    ]
   },
   {
     "namespace": "core",
