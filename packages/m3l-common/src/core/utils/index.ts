@@ -12,5 +12,6 @@ export * from "./guards.js";
 export * from "./safeJsonStringify.js";
 export * from "./M3LDateTokens.js";
 export * from "./formatting.js";
+export * from "./numbers.js";
 export * from "./M3LConcurrencyPool.js";
 export * from "./M3LPaths.js";

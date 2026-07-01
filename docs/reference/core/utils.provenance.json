@@ -16,8 +16,8 @@
           "lines": "191-215"
         }
       ],
-      "commit": "aa559c1fba8812103fb28190d9893675e38b42a2",
-      "retrieved": "2026-06-30"
+      "commit": "2bbd3a3ee6b507ff640ccbf0fe2c189bf54b8c6d",
+      "retrieved": "2026-07-01"
     },
     {
       "heading": "Bounded concurrency with `M3LConcurrencyPool`",
@@ -28,8 +28,8 @@
           "lines": "33-86"
         }
       ],
-      "commit": "aa559c1fba8812103fb28190d9893675e38b42a2",
-      "retrieved": "2026-06-30"
+      "commit": "2bbd3a3ee6b507ff640ccbf0fe2c189bf54b8c6d",
+      "retrieved": "2026-07-01"
     },
     {
       "heading": "Date tokens with `M3LDateTokens`",
@@ -40,8 +40,8 @@
           "lines": "37-71"
         }
       ],
-      "commit": "aa559c1fba8812103fb28190d9893675e38b42a2",
-      "retrieved": "2026-06-30"
+      "commit": "2bbd3a3ee6b507ff640ccbf0fe2c189bf54b8c6d",
+      "retrieved": "2026-07-01"
     },
     {
       "heading": "Formatting helpers",
@@ -80,10 +80,15 @@
           "file": "packages/m3l-common/src/core/utils/formatting.ts",
           "symbol": "formatConfigSourceDisplay",
           "lines": "265-282"
+        },
+        {
+          "file": "packages/m3l-common/src/core/utils/numbers.ts",
+          "symbol": "parseLocaleNumber",
+          "lines": "30-40"
         }
       ],
-      "commit": "aa559c1fba8812103fb28190d9893675e38b42a2",
-      "retrieved": "2026-06-30"
+      "commit": "2bbd3a3ee6b507ff640ccbf0fe2c189bf54b8c6d",
+      "retrieved": "2026-07-01"
     },
     {
       "heading": "Path resolution with `M3LPaths`",
@@ -109,8 +114,8 @@
           "lines": "217-427"
         }
       ],
-      "commit": "aa559c1fba8812103fb28190d9893675e38b42a2",
-      "retrieved": "2026-06-30"
+      "commit": "2bbd3a3ee6b507ff640ccbf0fe2c189bf54b8c6d",
+      "retrieved": "2026-07-01"
     },
     {
       "heading": "Type guards",
@@ -241,8 +246,8 @@
           "lines": "427-441"
         }
       ],
-      "commit": "aa559c1fba8812103fb28190d9893675e38b42a2",
-      "retrieved": "2026-06-30"
+      "commit": "2bbd3a3ee6b507ff640ccbf0fe2c189bf54b8c6d",
+      "retrieved": "2026-07-01"
     }
   ]
 }

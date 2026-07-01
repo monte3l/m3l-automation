@@ -12,6 +12,7 @@ Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
 
 - Paths and concurrency: `M3LPaths`, `M3LPathType`, `M3LPathEnvironmentVariables`, `M3LPathResolutionError`, `M3LConcurrencyPool`
 - Serialization and formatting: `safeJsonStringify`, `valueToString`, `M3LDateTokens`, `formatBytes`, `smartTruncate`, `truncatePath`, `truncateText`, `isPath`, `formatConfigValueDisplay`, `formatConfigSourceDisplay`
+- Numeric parsing: `parseLocaleNumber`
 - Type guards: `isNullish`, `isPrimitive`, `isError`, `isNodeError`, `isEnoentError`, `isPlainObject`, `isObject`, `isArray`, `isString`, `isNumber`, `isBoolean`, `isFunction`, `isDate`, `isValidDate`, `isBuffer`, `isMap`, `isSet`, `isRegExp`, `isSymbol`, `isBigInt`, `isPromise`, `isNonEmptyString`, `isNonEmptyArray`, `hasProperty`, `hasMessage`
 
 ## Path resolution with `M3LPaths`
@@ -91,6 +92,7 @@ const expanded = Core.M3LDateTokens.expand("outputs/{YYYY}-{MM}-{DD}");
 
 ## Formatting helpers
 
+- `parseLocaleNumber` parses a numeric string, tolerating a comma decimal separator (`"1,5"` → `1.5`). Only comma-or-dot decimal notation is recognized — there is no thousands grouping, so `"1,000"` parses to `1`, not `1000`. Unparsable input (including the empty string) resolves to `NaN`; it never throws.
 - `formatBytes` renders a byte count as a human-readable size.
 - `smartTruncate`, `truncatePath`, `truncateText` shorten long strings, with `truncatePath` preserving path-significant segments.
 - `isPath` tests whether a string looks like a filesystem path.
