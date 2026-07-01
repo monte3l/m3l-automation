@@ -61,6 +61,14 @@ than editing it.
   `any`** (use `unknown` + narrow); **no non-null `!`**; no CommonJS.
 - Throw subclasses of `M3LError` with `cause`; never bare strings or swallowed
   errors. Validate external input at the public boundary.
+- **Wrap the whole fallible resource lifecycle, not just acquisition.** When
+  using a fallible async resource (e.g. `open()` → `read()`/`stat()` → `close()`),
+  wrap the **entire** use — open **and** the subsequent reads/stats — under one
+  typed-`M3LError` catch; a first-pass rework that wraps only `open()` lets raw
+  Node errors from `read()`/`stat()` leak. Re-throw an already-typed `M3LError`
+  unchanged (don't double-wrap). Make `finally` cleanup best-effort — its own
+  `try/catch` with a rationale — so a failing `close()` cannot shadow the real
+  error.
 - TSDoc + `@example` on every exported symbol; `readonly`/`const` by default;
   exhaustive `switch` over finite sets.
 - **`@example` blocks are normative consumer guidance and must follow project
@@ -137,6 +145,37 @@ function render(category: M3LLogEventCategory): string {
       const _exhaustive: never = category;
       throw new M3LError(`unhandled ${String(_exhaustive)}`);
     }
+  }
+}
+```
+
+**4 — Wrap the whole fallible resource lifecycle; best-effort cleanup:**
+
+```ts
+// bad — wraps only open(); a read()/stat() failure leaks a raw Node error,
+// and a failing close() in finally can shadow the real error
+const handle = await open(path, "r");
+try {
+  const { size } = await handle.stat();
+  await handle.read(buf, 0, size, 0);
+} finally {
+  await handle.close();
+}
+// good — one typed catch over open + read + stat; best-effort close
+let handle: FileHandle | undefined;
+try {
+  handle = await open(path, "r");
+  const { size } = await handle.stat();
+  await handle.read(buf, 0, size, 0);
+} catch (cause) {
+  if (cause instanceof M3LError) throw cause; // already typed — don't re-wrap
+  throw new M3LJSONFormatDetectionError(`failed reading ${path}`, { cause });
+} finally {
+  // best-effort: a failing close() must not mask the primary error
+  try {
+    await handle?.close();
+  } catch {
+    /* ignore — the read outcome above is what matters */
   }
 }
 ```
