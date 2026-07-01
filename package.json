@@ -40,7 +40,9 @@
     "check:worktree": "node bin/check-worktree-include.mjs",
     "gen:index": "node bin/gen-reference-index.mjs",
     "check:index": "node bin/check-reference-index.mjs",
+    "worktree:new": "node bin/worktree-new.mjs",
     "worktree:setup": "node bin/worktree-setup.mjs",
+    "worktree:remove": "node bin/worktree-remove.mjs",
     "worktree:prune": "node bin/worktree-prune.mjs",
     "prepare": "lefthook install"
   },
