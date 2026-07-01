@@ -224,13 +224,13 @@ pre-publish; the remaining `check:*` run in CI.
 Five GitHub Actions workflows in `.github/workflows/` (plus Dependabot via the
 GitHub-native `.github/dependabot.yml`, which is config, not a workflow):
 
-| Workflow                | Trigger                     | Purpose                                                                                                                                                                              |
-| ----------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ci.yml`                | push / PR → main            | 14-step pipeline: secrets → audit → lint → format:check → lint:md → typecheck → check:api → test:coverage (80 % gate) → build → check:exports → check:scaffold → check:agents → knip |
-| `release.yml`           | `ci.yml` success on main    | semantic-release: npm publish + GitHub release                                                                                                                                       |
-| `claude-pr-review.yml`  | PR opened / sync / reopened | **Mandatory blocking gate** — produces PASS/FAIL verdict; merge requires PASS                                                                                                        |
-| `claude-assistant.yml`  | @claude in issues / PRs     | On-demand Claude Code assistant                                                                                                                                                      |
-| `dependency-review.yml` | PR → main                   | Blocks HIGH/CRITICAL vulnerability advisories                                                                                                                                        |
+| Workflow                | Trigger                     | Purpose                                                                                                   |
+| ----------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `ci.yml`                | push / PR → main            | Full quality-gate pipeline — secrets, deps, lint, formatting, types, and tests must all pass before merge |
+| `release.yml`           | `ci.yml` success on main    | semantic-release: npm publish + GitHub release                                                            |
+| `claude-pr-review.yml`  | PR opened / sync / reopened | **Mandatory blocking gate** — produces PASS/FAIL verdict; merge requires PASS                             |
+| `claude-assistant.yml`  | @claude in issues / PRs     | On-demand Claude Code assistant                                                                           |
+| `dependency-review.yml` | PR → main                   | Blocks HIGH/CRITICAL vulnerability advisories                                                             |
 
 ## Coding, errors & tests (path-scoped)
 
