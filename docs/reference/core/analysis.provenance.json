@@ -1,0 +1,60 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/analysis.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts",
+          "symbol": "M3LThresholdEvaluator"
+        },
+        {
+          "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts",
+          "symbol": "M3LThresholdRule"
+        },
+        {
+          "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts",
+          "symbol": "M3LThresholdRuleResult"
+        },
+        {
+          "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts",
+          "symbol": "M3LThresholdEvaluation"
+        },
+        {
+          "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts",
+          "symbol": "M3LThresholdOperator"
+        },
+        {
+          "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts",
+          "symbol": "M3LThresholdAggregation"
+        },
+        {
+          "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts",
+          "symbol": "M3LThresholdSeverity"
+        },
+        {
+          "file": "packages/m3l-common/src/core/analysis/M3LThresholdRuleValidationError.ts",
+          "symbol": "M3LThresholdRuleValidationError"
+        }
+      ],
+      "commit": "2bbd3a3ee6b507ff640ccbf0fe2c189bf54b8c6d",
+      "retrieved": "2026-07-01"
+    },
+    {
+      "heading": "Notes and behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts",
+          "symbol": "M3LThresholdEvaluator"
+        },
+        {
+          "file": "packages/m3l-common/src/core/analysis/M3LThresholdRuleValidationError.ts",
+          "symbol": "M3LThresholdRuleValidationError"
+        }
+      ],
+      "commit": "2bbd3a3ee6b507ff640ccbf0fe2c189bf54b8c6d",
+      "retrieved": "2026-07-01"
+    }
+  ]
+}
