@@ -82,6 +82,11 @@ jobs:
       - name: Check doc counts
         run: pnpm check:doc-counts
 
+      # The implemented-count numerator ("N of 22") must match the ✅ rows in
+      # docs/implementation-status.md across every badge / prose / HTML site.
+      - name: Check implementation count
+        run: pnpm check:impl-counts
+
       # catalog.json, symbol-map.json, and README.md catalog block must match
       # the current docs/reference/ + provenance sidecar state.
       - name: Check reference index
@@ -105,6 +110,12 @@ jobs:
       # barrel is proven to compile before we assert it is complete.
       - name: Check barrel re-exports (scaffold)
         run: pnpm check:scaffold
+
+      # Every public export surfaced through a namespace barrel must be
+      # documented — present in its reference page heading or provenance sidecar.
+      # Deterministic backstop for the spec-conformance / docs-consistency spokes.
+      - name: Check barrel vs docs exports
+        run: pnpm check:doc-exports
 
       # Subagent config: skill/CLAUDE.md references resolve to real agents or
       # built-ins, and no spoke is granted the Agent tool (no-nesting invariant).
