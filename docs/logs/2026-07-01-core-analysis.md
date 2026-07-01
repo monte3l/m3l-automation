@@ -180,6 +180,34 @@ so whichever of the two runs last wins.
 **Fix for future:** Always run `pnpm gen:index` **before** `pnpm format` in the
 doc-reconciliation step (or fold both into `/sync-docs` in that order).
 
+### 7. The whole pipeline ran on `main` — no feature branch, no worktree, no confirmation (addendum)
+
+The entire implementation — every writer/reviewer spoke touching `src/` and
+`tests/`, all the hub's doc edits, and the gate runs — mutated the **`main`**
+working tree directly. A feature branch (`feat/core-analysis`) was only created
+at commit time, no git worktree was used to isolate the work, and the hub never
+paused to confirm the working context before writing to `main`. This is the
+opposite of what CLAUDE.md's Git Workflow and ADR-0013/0014 (task isolation)
+prescribe.
+
+**Why it happened:** The `/audit` and `implement-submodule` skills drive
+straight from an approved plan into execution; neither has a first step that
+checks the current branch or creates an isolation branch/worktree. CLAUDE.md's
+"Branch from `main`: `feat/<slug>`" is an advisory convention with no hard
+guard, so nothing blocked `src/`/test writes while `HEAD` was `main` — unlike
+`dist/` and `version`, which _are_ protected by hooks. Deferring the branch to
+commit time happened to produce a clean history here, but it left `main`'s
+working tree dirty throughout and risked interleaving with any other work on
+`main`.
+
+**Fix for future:** Make branch/worktree isolation the **first** step of the
+pipeline, before any spoke writes code — `git switch -c feat/<slug>` (or
+`pnpm worktree:new <slug>`), and confirm with the user when a session starts on
+`main`. Enforce it deterministically with a `PreToolUse` guard that blocks
+`Write`/`Edit` to `packages/*/src/**`, `scripts/*/src/**`, and `**/tests/**`
+while `HEAD` is `main`, mirroring the existing `dist/`/`version` protections and
+`guard-worktree-ready.mjs`.
+
 ## Lessons learned
 
 - **Re-validate a stored plan against the live repo before executing.** Its
@@ -211,3 +239,10 @@ doc-reconciliation step (or fold both into `/sync-docs` in that order).
 - **`check:api` guards the `exports` map, not the symbol list.** New symbols
   surfaced through a namespace barrel need no exports-snapshot update — only
   adding/removing/retyping one of the three subpaths does.
+- **Start on a feature branch or worktree — never build on `main`.**
+  Branch/worktree isolation must be the pipeline's first step, with confirmation
+  when a session starts on `main`; deferring the branch to commit time leaves
+  `main`'s working tree dirty for the whole run. Convention alone did not prevent
+  a full submodule from being built on `main` — a `PreToolUse` guard blocking
+  `src/**`/`tests/**` edits while `HEAD` is `main` would enforce it
+  deterministically (see divergence 7).
