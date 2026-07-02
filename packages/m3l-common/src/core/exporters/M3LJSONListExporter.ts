@@ -5,16 +5,14 @@
  */
 
 import { M3LError } from "../errors/index.js";
-import { M3LEventEmitterBase } from "../events/index.js";
 
+import { M3LBaseListExporter } from "./internal/baseListExporter.js";
 import { onceErrorEmitter } from "./internal/onceErrorEmitter.js";
-import { M3LWriteStreamLifecycle } from "./internal/writeStreamLifecycle.js";
+import type { M3LWriteStreamLifecycle } from "./internal/writeStreamLifecycle.js";
 
 import type {
   M3LJSONListExporterFormat,
   M3LJSONListExporterOptions,
-  M3LListExporter,
-  M3LListExporterEvents,
   M3LListExporterStreamWriter,
 } from "./types.js";
 
@@ -125,11 +123,7 @@ class M3LJSONStreamWriter<TItem> implements M3LListExporterStreamWriter<TItem> {
  * await exporter.export([{ id: "1" }, { id: "2" }]);
  * ```
  */
-export class M3LJSONListExporter<TItem>
-  extends M3LEventEmitterBase<M3LListExporterEvents>
-  implements M3LListExporter<TItem>
-{
-  readonly #filePath: string;
+export class M3LJSONListExporter<TItem> extends M3LBaseListExporter<TItem> {
   readonly #format: M3LJSONListExporterFormat;
 
   /**
@@ -139,85 +133,49 @@ export class M3LJSONListExporter<TItem>
    *   extension-based inference (`.jsonl` maps to `'jsonl'`, else `'array'`).
    */
   constructor(options: M3LJSONListExporterOptions) {
-    super();
-    this.#filePath = options.filePath;
+    super(options.filePath);
     this.#format = options.format ?? formatFromExtension(options.filePath);
   }
 
   /**
-   * Writes all `items` in a single call, in the configured format.
+   * Serializes `items` as a JSON array or newline-delimited JSON (JSONL),
+   * per the configured format.
    *
-   * @param items - The items to export.
-   * @returns A promise that resolves once the file has been written.
-   * @throws {@link M3LError} chaining the underlying failure; also emitted
-   *   via `export:error`.
-   *
-   * @example
-   * ```typescript
-   * import { M3LError } from "@m3l-automation/m3l-common/core";
-   * import { Core } from "@m3l-automation/m3l-common";
-   *
-   * const exporter = new Core.M3LJSONListExporter<{ id: string }>({
-   *   filePath: "./data/outputs/records.json",
-   * });
-   * try {
-   *   await exporter.export([{ id: "1" }]);
-   * } catch (error) {
-   *   if (error instanceof M3LError) console.error(error.code);
-   * }
-   * ```
+   * @param items - The items to serialize.
+   * @returns The JSON/JSONL file content.
    */
-  async export(items: readonly TItem[]): Promise<void> {
-    this.emit("export:started", { filePath: this.#filePath });
-    try {
-      const lifecycle = new M3LWriteStreamLifecycle(this.#filePath);
-      const content =
-        this.#format === "jsonl"
-          ? items.map((item) => `${JSON.stringify(item)}\n`).join("")
-          : `[${items.map((item) => JSON.stringify(item)).join(",")}]`;
-      await lifecycle.end(content);
-      this.emit("export:completed", { filePath: this.#filePath });
-    } catch (cause) {
-      const error = wrapJSONError(cause, this.#filePath);
-      this.emit("export:error", { error });
-      throw error;
-    }
+  protected renderBatch(items: readonly TItem[]): string {
+    return this.#format === "jsonl"
+      ? items.map((item) => `${JSON.stringify(item)}\n`).join("")
+      : `[${items.map((item) => JSON.stringify(item)).join(",")}]`;
   }
 
   /**
-   * Opens an incremental JSON/JSONL writer.
+   * Wraps a failure as a JSON-list-export {@link M3LError}.
    *
-   * @returns A {@link M3LListExporterStreamWriter} for `TItem`.
-   *
-   * @example
-   * ```typescript
-   * import { Core } from "@m3l-automation/m3l-common";
-   *
-   * const exporter = new Core.M3LJSONListExporter<{ id: string }>({
-   *   filePath: "./data/outputs/records.jsonl",
-   * });
-   * const writer = exporter.exportStream();
-   * await writer.append({ id: "1" });
-   * await writer.close();
-   * ```
+   * @param cause - The caught value.
+   * @returns An {@link M3LError} chaining `cause`.
    */
-  exportStream(): M3LListExporterStreamWriter<TItem> {
-    this.emit("export:started", { filePath: this.#filePath });
-    const lifecycle = new M3LWriteStreamLifecycle(this.#filePath);
-    const writer = new M3LJSONStreamWriter<TItem>(
+  protected wrapError(cause: unknown): M3LError {
+    return wrapJSONError(cause, this.filePath);
+  }
+
+  /**
+   * Builds the incremental JSON/JSONL stream writer.
+   *
+   * @param lifecycle - The opened write-stream lifecycle.
+   * @param onError - Emits `export:error` (guarded to fire at most once).
+   * @returns The JSON stream writer.
+   */
+  protected createStreamWriter(
+    lifecycle: M3LWriteStreamLifecycle,
+    onError: (error: M3LError) => void,
+  ): M3LListExporterStreamWriter<TItem> {
+    return new M3LJSONStreamWriter<TItem>(
       lifecycle,
       this.#format,
-      this.#filePath,
-      (error) => {
-        this.emit("export:error", { error });
-      },
+      this.filePath,
+      onError,
     );
-    return {
-      append: (item) => writer.append(item),
-      close: async () => {
-        await writer.close();
-        this.emit("export:completed", { filePath: this.#filePath });
-      },
-    };
   }
 }
