@@ -534,19 +534,24 @@ for the per-hook list and triggers.
 
 The deterministic prohibitions — `any`, a missing `.js` extension, CommonJS
 (`require` / `module.exports` / `__dirname`), hand-edits to `version` or `dist/`,
-non-Conventional commits — are enforced by ESLint, the hooks in
-`.claude/settings.json`, commitlint, and CI; a violating edit is blocked at write
-time. The rules with **no** automated guard, so they need conscious care:
+non-Conventional commits, committed secrets/tokens (`gitleaks` in CI plus the
+`guard-secret-writes` write-time hook), and adding a dependency without updating
+the lockfile (`pnpm install --frozen-lockfile` in CI) — are enforced by ESLint,
+the hooks in `.claude/settings.json`, commitlint, and CI; a violating edit is
+blocked at write time. The `.js`-extension and CommonJS bans are intentionally
+guarded twice — a fast PreToolUse hook (`guard-js-extension` / `guard-no-commonjs`)
+blocks the write before it lands, and ESLint/CI is the authoritative backstop for
+any non-Claude or `--no-verify` edit; do not remove the hooks as "redundant."
+
+The rules with **no** automated guard, so they need conscious care:
 
 - Never throw bare strings or swallow errors silently.
-- Never commit secrets/tokens to source, tests, or fixtures.
 - No top-level side effects — keep modules tree-shakeable.
 - Keep the import graph shallow; don't pull a heavy dependency into the main
   entry.
 - Never `git push --force` to a shared branch.
 - Surface new Core/AWS exports through the namespace barrel — never as a new
   `exports` subpath.
-- Never add a dependency without updating the pnpm lockfile.
 
 ## Known Gotchas
 

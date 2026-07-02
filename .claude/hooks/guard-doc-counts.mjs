@@ -1,17 +1,22 @@
 #!/usr/bin/env node
 /**
- * PostToolUse advisory (Write|Edit): warn when a reference page is written
- * under docs/reference/ or when the root README.md is edited, but the prose
- * counts in CLAUDE.md / docs/README.md / README.md no longer match the
- * actual file count.
+ * PostToolUse advisory (Write|Edit): after a reference page under
+ * docs/reference/ is written or the root README.md is edited, warn when any doc
+ * count has drifted from the filesystem-derived truth.
  *
- * Non-blocking (exits 2 with a reminder) — the same pattern as
- * guard-exports-semver.mjs. The hard gate is bin/check-doc-counts.mjs in CI.
+ * Non-blocking (exits 2 with a reminder) — same pattern as
+ * guard-provenance-staleness.mjs / guard-index-staleness.mjs. Rather than
+ * re-implement the count regexes (which let the nudge drift from CI), this hook
+ * spawns the authoritative CI engines and surfaces their diagnostics:
+ *   - bin/check-doc-counts.mjs  → denominator (total documented submodules)
+ *   - bin/check-impl-counts.mjs → numerator ("N of 22 implemented")
+ * The hard gates are `pnpm check:doc-counts` / `pnpm check:impl-counts` in CI;
+ * this is only the in-editor early signal, guaranteed consistent with them.
  */
 import process from "node:process";
-import { readdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
 async function readStdin() {
   const chunks = [];
@@ -46,7 +51,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
   const filePath = input.tool_input?.file_path ?? "";
 
-  // Normalize to absolute path — Claude Code may deliver relative or absolute paths.
+  // Normalize to absolute path — Claude Code may deliver relative or absolute.
   const absFilePath = resolveFilePath(filePath, projectDir);
 
   // Trigger on reference page writes/edits OR edits to the root README.md.
@@ -56,74 +61,32 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const isRootReadme = absFilePath === join(projectDir, "README.md");
   if (!isReferencePage && !isRootReadme) process.exit(0);
 
-  function countMdFiles(dir) {
-    try {
-      return readdirSync(join(projectDir, dir)).filter((f) => f.endsWith(".md"))
-        .length;
-    } catch {
-      return 0;
+  // Run the authoritative CI engines; each exits 1 with diagnostics on drift.
+  const engines = [
+    ["bin/check-doc-counts.mjs", "denominator (documented total)"],
+    ["bin/check-impl-counts.mjs", "numerator (implemented count)"],
+  ];
+
+  const failures = [];
+  for (const [script, label] of engines) {
+    const res = spawnSync("node", [join(projectDir, script)], {
+      cwd: projectDir,
+      encoding: "utf8",
+    });
+    if (res.status !== 0) {
+      const detail = (res.stderr || res.stdout || "").trim();
+      failures.push(`${label} — \`${script}\`:\n${detail}`);
     }
   }
 
-  const coreCount = countMdFiles("docs/reference/core");
-  const awsCount = countMdFiles("docs/reference/aws");
-  const total = coreCount + awsCount;
-
-  function readFile(rel) {
-    try {
-      return readFileSync(join(projectDir, rel), "utf8");
-    } catch {
-      return "";
-    }
-  }
-
-  const mismatches = [];
-
-  const claudeMd = readFile("CLAUDE.md");
-  const corePat =
-    /Core namespace barrel \((\d+) submodules surfaced here\)/.exec(claudeMd);
-  if (corePat && parseInt(corePat[1], 10) !== coreCount) {
-    mismatches.push(
-      `CLAUDE.md core barrel comment says ${corePat[1]} but there are ${coreCount} Core reference pages`,
-    );
-  }
-  const implPat = /\d+ of (\d+) submodules are implemented/.exec(claudeMd);
-  if (implPat && parseInt(implPat[1], 10) !== total) {
-    mismatches.push(
-      `CLAUDE.md implementation state says total=${implPat[1]} but derived total is ${total}`,
-    );
-  }
-
-  const readmeMd = readFile("docs/README.md");
-  const readmePat = /(\d+) submodules documented/.exec(readmeMd);
-  if (readmePat && parseInt(readmePat[1], 10) !== total) {
-    mismatches.push(
-      `docs/README.md says ${readmePat[1]} submodules but derived total is ${total}`,
-    );
-  }
-
-  const rootReadme = readFile("README.md");
-  const rootBadgePat = /modules-\d+%2F(\d+)-/.exec(rootReadme);
-  if (rootBadgePat && parseInt(rootBadgePat[1], 10) !== total) {
-    mismatches.push(
-      `README.md badge URL says total=${rootBadgePat[1]} but derived total is ${total}`,
-    );
-  }
-  const rootProsePat = /\d+ of (\d+) submodules are/.exec(rootReadme);
-  if (rootProsePat && parseInt(rootProsePat[1], 10) !== total) {
-    mismatches.push(
-      `README.md prose says total=${rootProsePat[1]} but derived total is ${total}`,
-    );
-  }
-
-  if (mismatches.length === 0) process.exit(0);
+  if (failures.length === 0) process.exit(0);
 
   const trigger = isRootReadme ? "README.md" : "docs/reference/";
   process.stderr.write(
-    `Doc-count drift detected after editing ${trigger}. Update prose to match ` +
-      `derived counts (Core: ${coreCount}, AWS: ${awsCount}, total: ${total}):\n` +
-      mismatches.map((m) => `  - ${m}`).join("\n") +
-      `\nRun \`node bin/check-doc-counts.mjs\` to verify.\n`,
+    `Doc-count drift detected after editing ${trigger}. ` +
+      `Update the prose to match the derived counts:\n\n` +
+      failures.join("\n\n") +
+      `\n`,
   );
   process.exit(2);
 }
