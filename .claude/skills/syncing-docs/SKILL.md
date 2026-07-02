@@ -72,7 +72,7 @@ already shows ✅ reviewed/done. If it still shows ❌, 🧪, or 🟢, surface a
 reminder — but do not edit the file unless the user asks.
 
 Also count the total number of ✅ rows across the Core and AWS tables, then
-scan these five files for the "X of 22" or "X of Y" implemented-count prose
+scan these four files for the "X of 22" or "X of Y" implemented-count prose
 and confirm the number matches:
 
 - `README.md` — badge URL `modules-N%2F22` and the prose callout ("N of 22
@@ -81,17 +81,7 @@ and confirm the number matches:
   callout (this is the npm-facing README; it has its own badge and callout
   that must stay in sync with the root README)
 - `docs/README.md` — the development-status callout line
-- `docs/index.html` — the GitHub Pages landing page; check four things:
-  1. The status row `<span class="value orange">N / 22 implemented</span>` —
-     N must equal the ✅ count.
-  2. Each implemented submodule must carry `class="done"` (rendered as `●`)
-     in the module tree; every not-yet-implemented submodule must carry
-     `class="not-started"` (rendered as `○`).
-  3. The `<span class="value done">` text must list the names of all
-     implemented modules, comma-separated (e.g. `errors, events`).
-  4. The `aria-label="22 submodules"` total on the module-tree `<div>` is
-     structural (the fixed total, not the implemented count) and must remain
-     22 unless new submodules are added to the design.
+- `docs/implementation-status.md` — the intro prose
 
 If any value is stale, list the file, the current value, and the required
 update. Do not edit unless the user asks.

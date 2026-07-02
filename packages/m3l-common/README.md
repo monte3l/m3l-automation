@@ -1,9 +1,9 @@
 <p align="center">
-<img src="https://raw.githubusercontent.com/monte3l/m3l-automation/main/docs/assets/m3l-wordmark.svg" alt="m3l-common" width="260" height="64">
+<img src="https://raw.githubusercontent.com/monte3l/m3l-automation/main/assets/m3l-wordmark.svg" alt="m3l-common" width="260" height="64">
 </p>
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/monte3l/m3l-automation/main/docs/assets/m3l-hero.svg" alt="m3l-common quick-start terminal pane" width="700">
+<img src="https://raw.githubusercontent.com/monte3l/m3l-automation/main/assets/m3l-hero.svg" alt="m3l-common quick-start terminal pane" width="700">
 </p>
 
 <p align="center">
@@ -13,12 +13,12 @@
 <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-66D9EF?style=flat-square&labelColor=272822" alt="TypeScript strict"></a>
 <a href="https://github.com/monte3l/m3l-automation/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-A6E22E?style=flat-square&labelColor=272822" alt="Apache-2.0"></a>
 <a href="https://github.com/monte3l/m3l-automation/blob/main/docs/implementation-status.md"><img src="https://img.shields.io/badge/status-pre--release-FD971F?style=flat-square&labelColor=272822" alt="status: pre-release"></a>
-<a href="https://github.com/monte3l/m3l-automation/blob/main/docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-10%2F22-FD971F?style=flat-square&labelColor=272822" alt="modules: 10/22"></a>
+<a href="https://github.com/monte3l/m3l-automation/blob/main/docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-11%2F22-FD971F?style=flat-square&labelColor=272822" alt="modules: 11/22"></a>
 </p>
 
 > **Status: early development — scaffold and specs are complete; implementation is in progress.**
-> Version `0.0.0-development`. All documented APIs are design targets; 10 of 22 submodules are
-> implemented (`errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `network`).
+> Version `0.0.0-development`. All documented APIs are design targets; 11 of 22 submodules are
+> implemented (`errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`).
 
 A shared infrastructure library for automation scripts and AWS Lambda handlers. It provides
 enterprise-grade building blocks — application scaffolding, configuration, logging, error
@@ -70,7 +70,6 @@ await script.run(async () => {
 ## Links
 
 - [Repository](https://github.com/monte3l/m3l-automation)
-- [Docs site](https://monte3l.github.io/m3l-automation/)
 - [Implementation status](https://github.com/monte3l/m3l-automation/blob/main/docs/implementation-status.md)
 - [Architecture](https://github.com/monte3l/m3l-automation/blob/main/docs/m3l-common-architecture.md)
 - [Getting started](https://github.com/monte3l/m3l-automation/blob/main/docs/getting-started.md)
