@@ -36,6 +36,7 @@
     "check:scaffold": "node bin/check-scaffold.mjs",
     "check:scaffold-seam": "node bin/check-scaffold-seam.mjs",
     "check:agents": "node bin/check-agents.mjs",
+    "check:hooks": "node bin/check-hooks.mjs",
     "check:deps": "node bin/check-deps.mjs",
     "check:test-counts": "node bin/check-test-counts.mjs",
     "check:worktree": "node bin/check-worktree-include.mjs",
