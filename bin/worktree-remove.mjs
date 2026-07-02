@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Symmetric teardown for a manual sibling-directory worktree — the partner of
 // `worktree-new.mjs`. Removes the worktree, prunes stale admin entries, and
-// deletes the branch if it is merged into `main`. This is the immediate teardown
+// deletes the branch if it is safely merged (`git branch -d`, i.e. merged into
+// its upstream/base — not necessarily `main`). This is the immediate teardown
 // `worktree-prune.mjs` does NOT do: prune only reaps worktrees whose branch is
 // already merged (or that git marks prunable), so an in-progress worktree needs
 // this explicit command.

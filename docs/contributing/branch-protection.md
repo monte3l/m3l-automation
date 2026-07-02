@@ -28,6 +28,19 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     `ready_for_review` and on every subsequent push to a ready PR. The
     verdict-file mechanism and fail-closed behavior are unchanged.
 - **Require branches to be up to date before merging.**
+- **Require signed commits.** This is the _authoritative_ layer of the
+  signed-commit policy (ADR-0015): unlike the in-repo `guard-git-push-signed`
+  PreToolUse hook and the `verify-signed-range` lefthook `pre-push` backstop —
+  both bypassable / agent- or local-only — GitHub rejects any unsigned or
+  invalid-signature commit here, on every path (web UI, `--no-verify`, any
+  client). Apply via `gh api`
+  (`PUT /repos/:owner/:repo/branches/main/protection` with
+  `required_signatures`), alongside the checks above.
+  **Release caveat:** enabling this means every commit that lands on `main` must
+  be signed, _including_ the changelog/version commit `@semantic-release/git`
+  creates. Before turning it on, ensure the release bot signs its commits (e.g.
+  a GitHub App identity, whose API-created commits are auto-signed) or the
+  release will be rejected. See ADR-0015 for the full rationale.
 - **Do not allow bypassing the above** (including for administrators) so the
   gate cannot be skipped.
 

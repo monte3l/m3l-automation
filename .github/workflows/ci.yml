@@ -135,6 +135,11 @@ jobs:
       - name: Check subagent configuration (agents)
         run: pnpm check:agents
 
+      # Hook wiring: every .claude/settings.json hook command resolves to a real
+      # .claude/hooks/*.mjs, and no hook file is left unwired.
+      - name: Check hook wiring (hooks)
+        run: pnpm check:hooks
+
       # .worktreeinclude hygiene: no tracked files and no unresolvable literal
       # paths, so worktree:setup provisions a fresh worktree correctly.
       - name: Check worktree include
