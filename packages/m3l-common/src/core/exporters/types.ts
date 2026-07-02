@@ -154,7 +154,16 @@ export interface M3LListExporterEvents {
   readonly "export:started": M3LListExporterStartedPayload;
   /** Fired once writing has finished and the stream has been closed. */
   readonly "export:completed": M3LListExporterCompletedPayload;
-  /** Fired when a write or serialization failure occurs. */
+  /**
+   * Fired when a write or serialization failure occurs.
+   *
+   * @remarks
+   * Emitted at most once per streaming writer instance: after the first
+   * failure surfaces, a later distinct failure on the same writer still
+   * rejects its own `append`/`close` call but is not re-emitted here. Consumers
+   * relying on this event as a complete failure log should treat the rejected
+   * promise, not the event stream, as the authoritative per-call signal.
+   */
   readonly "export:error": M3LListExporterErrorPayload;
 }
 
