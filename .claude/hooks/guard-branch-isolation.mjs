@@ -14,25 +14,47 @@
  *   - scripts/&#42;/src/&#42;&#42;
  *   - &#42;&#42;/tests/&#42;&#42;
  *
- * Anything else (docs, .claude/, bin/, config) is allowed on `main`. A non-repo
- * cwd is not `main`, so it never blocks. A **detached HEAD sitting on the `main`
- * commit** IS treated as `main` — it's the same tree state the guard protects,
- * and a detached-on-`main` write was a real bypass before this was closed.
+ * Anything else (docs, .claude/, bin/, config) is allowed on `main`.
+ *
+ * The branch is resolved against the git working tree that *contains the file*
+ * (via `git -C <file-dir>`), not `process.cwd()`. This means:
+ *   - A session on `main` writing to an absolute path inside a linked worktree on
+ *     `feat/foo` is **allowed** — the worktree's branch is checked, not the session's.
+ *   - A worktree accidentally checked out on `main` is **still blocked**.
+ *   - A non-git directory (no repo ancestor) returns "" → never blocks.
+ *
+ * A **detached HEAD sitting on the `main` commit** IS treated as `main` — it's
+ * the same tree state the guard protects, and a detached-on-`main` write was a
+ * real bypass before this was closed.
  *
  * Blocks by exiting 2 with a message on stderr.
  */
 import process from "node:process";
 import { execFileSync } from "node:child_process";
+import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** Default git runner returning trimmed stdout, or "" on failure. Injectable. */
-function defaultGit(args) {
-  try {
-    return execFileSync("git", args, { encoding: "utf8" }).trim();
-  } catch {
-    return "";
-  }
+/**
+ * Returns a git runner that executes every command with `git -C dir`, binding
+ * the branch resolution to the working tree that contains the file being written.
+ *
+ * @param {string} dir Absolute directory path.
+ * @returns {(args: string[]) => string}
+ */
+export function defaultGitFor(dir) {
+  return function git(args) {
+    try {
+      return execFileSync("git", ["-C", dir, ...args], {
+        encoding: "utf8",
+      }).trim();
+    } catch {
+      return "";
+    }
+  };
 }
+
+/** Default runner bound to process.cwd() — used as fallback / test default. */
+const defaultGit = defaultGitFor(process.cwd());
 
 /** True when `filePath` is a source/test path that needs branch isolation. */
 export function isProtectedPath(filePath) {
@@ -76,9 +98,24 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const filePath = input.tool_input?.file_path ?? "";
   if (!isProtectedPath(filePath)) process.exit(0);
 
-  if (isMainOrDetachedOnMain()) {
+  // Use the file's own git working tree for the branch check. Resolving against
+  // process.cwd() handles both relative and absolute file_path values, so the
+  // check is correct even when file_path points into a different worktree.
+  const fileDir = dirname(resolve(filePath));
+  const git = defaultGitFor(fileDir);
+
+  if (isMainOrDetachedOnMain(git)) {
+    // Detect whether the file lives in a *different* worktree (native or sibling)
+    // so the error message can name it explicitly.
+    const worktreeRoot = git(["rev-parse", "--show-toplevel"]);
+    const inDifferentTree =
+      worktreeRoot !== "" && resolve(worktreeRoot) !== resolve(process.cwd());
+    const location = inDifferentTree
+      ? `the worktree at \`${relative(process.cwd(), worktreeRoot) || worktreeRoot}\``
+      : "HEAD";
+
     process.stderr.write(
-      `Blocked: refusing to write \`${filePath}\` while HEAD is \`main\` ` +
+      `Blocked: refusing to write \`${filePath}\` while ${location} is \`main\` ` +
         `(or detached on the \`main\` commit). The implementation pipeline must ` +
         `run on an isolated branch/worktree — run \`pnpm worktree:new <slug>\` or ` +
         `\`git switch -c feat/<slug>\` first (CLAUDE.md § Git Workflow, ADR-0013/0014).\n`,
