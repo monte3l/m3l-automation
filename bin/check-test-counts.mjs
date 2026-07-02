@@ -71,14 +71,14 @@ try {
   process.exit(1);
 }
 
-// Core/AWS tables have 7 data columns → split by | yields 9 items (2 empty ends).
+// Core/AWS tables have 8 data columns → split by | yields 10 items (2 empty ends).
 // The barrels table has only 3 data columns, so cols.length < 9 — it is skipped.
 //
 // Column layout (0-indexed after split):
-//   [0] ""  [1] Submodule  [2] Spec  [3] Symbols  [4] Status
-//   [5] Tests  [6] Reviewed  [7] Notes  [8] ""
-const STATUS_COL = 4;
-const NOTES_COL = 7;
+//   [0] ""  [1] Submodule  [2] Spec  [3] Planned  [4] Symbols  [5] Status
+//   [6] Tests  [7] Reviewed  [8] Notes  [9] ""
+const STATUS_COL = 5;
+const NOTES_COL = 8;
 
 let errors = 0;
 let checked = 0;
