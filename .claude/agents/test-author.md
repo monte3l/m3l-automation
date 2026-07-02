@@ -66,7 +66,9 @@ flips to green — but the rest of the discipline below is identical.)
 7. Run `pnpm exec eslint <your test file>` to iterate quickly. Before handing
    back, run **`pnpm lint` (workspace root, no `-C` flag)** and clear every
    finding in the test file itself — this matches the hub gate exactly and
-   surfaces type-aware findings that per-file eslint can miss.
+   surfaces type-aware findings that per-file eslint can miss. **Lint clean ≠
+   format clean** — also run `pnpm format:check` (or `prettier --write` your
+   test file); Prettier is a separate CI gate ESLint does not cover.
    **One exception:** `import-x/no-unresolved` and `@typescript-eslint/no-unsafe-*`
    findings caused by the non-existent module are acceptable in the RED state.
    **Do not suppress them with `eslint-disable`** — they self-resolve once the
