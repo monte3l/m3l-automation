@@ -170,10 +170,20 @@
     "namespace": "core",
     "name": "network",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/network.md",
-    "symbols": []
+    "symbols": [
+      "M3LHttpClient",
+      "M3LHttpClientOptions",
+      "M3LHttpFailureReason",
+      "M3LHttpAbortableRequest",
+      "M3LHttpRequestEvent",
+      "M3LHttpResponseEvent",
+      "M3LHttpErrorEvent",
+      "M3LHttpClientEventMap",
+      "M3LHttpClientError"
+    ]
   },
   {
     "namespace": "core",
