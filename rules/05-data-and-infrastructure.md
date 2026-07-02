@@ -339,6 +339,12 @@ Every CI/CD pipeline must at minimum:
 
 ### Flaky Test Management
 
+> **Scope note.** Quarantine is a general large-suite CI practice — a way to keep a
+> big, slow suite shippable while a flake is triaged. It is **not** a licence to
+> mute this library's tests: `@m3l-automation/m3l-common` runs a small, fast,
+> unit-only suite, so a flake is diagnosed and fixed immediately, never parked. See
+> the [Style Guide § Determinism](../docs/contributing/style-guide.md#parameterization--determinism).
+
 - Tests that intermittently fail without code changes must be detected automatically.
 - Detected flaky tests must be quarantined: they must not block the build, but they must be tracked as defects until stabilized.
 - Quarantined tests must have explicit owners and remediation deadlines.

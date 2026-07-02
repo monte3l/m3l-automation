@@ -5,6 +5,10 @@ paths:
 
 # Library source rules (`packages/m3l-common/src/**`)
 
+> Canonical rationale + examples: [`docs/contributing/style-guide.md` §
+> Writing new code](../../docs/contributing/style-guide.md#part-1--writing-new-code).
+> This file is the terse checklist that auto-loads when you edit source.
+
 - **ESM imports carry `.js`.** Every relative import uses the `.js` extension
   (`./foo.js`), even though the file is `.ts`. tsc does not add it; Node will
   not resolve without it. (Also enforced by ESLint + a creation-time hook.)
@@ -39,12 +43,18 @@ paths:
 export type UserId = string & { readonly __brand: unique symbol };
 export type Page<T> = { items: readonly T[]; total: number };
 
-export class M3LError extends Error {}
-export class NotFoundError extends M3LError {}
+// Subclasses inject their own `code` literal and forward an optional `cause`;
+// the base M3LError constructor requires `{ code, cause? }`.
+export class M3LNotFoundError extends M3LError {
+  override readonly code = "NOT_FOUND" as const;
+  constructor(message: string, options: { cause?: unknown } = {}) {
+    super(message, { code: "NOT_FOUND", cause: options.cause });
+  }
+}
 
 export function load(id: UserId): User {
   const user = repo.get(id);
-  if (user === undefined) throw new NotFoundError(`user ${String(id)}`);
+  if (user === undefined) throw new M3LNotFoundError(`user ${String(id)}`);
   return user;
 }
 ```

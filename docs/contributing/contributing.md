@@ -116,23 +116,11 @@ the public contract.
 
 ## Testing Strategy
 
-Tests use Vitest. Test files are named `*.test.ts` and import from
-`src/` using the `.js` extension (the same ESM rule applies).
-
-- Unit tests are pure: no network, no filesystem. Mock collaborators.
-- Every exported function needs a happy-path test **and** at least one
-  failure-path test.
-- Where the type **is** the contract, add a type-level test with
-  `expectTypeOf`.
-
-```typescript
-import { expect, test } from "vitest";
-import { paginate } from "../src/index.js";
-
-test("paginate respects the limit", () => {
-  expect(paginate([1, 2, 3, 4, 5], 2).items).toHaveLength(2);
-});
-```
+Tests use Vitest — pure unit tests (no network, no filesystem; mock
+collaborators), a happy path plus at least one failure path per exported
+function, and `expectTypeOf` where the type is the contract. The full rules,
+mocking conventions, coverage gate, and refactoring discipline live in the
+canonical **[Style Guide § Writing new tests](./style-guide.md#part-2--writing-new-tests)**.
 
 ## Git Workflow
 

@@ -97,11 +97,16 @@ await expect(poller.poll(check)).resolves.toEqual({ status: "done" });
 **2 — Always include the failure path with the right error type:**
 
 ```ts
-// good
-expect(() => load(missingId)).toThrowError(NotFoundError);
-const err = getThrown(() => load(missingId));
-expect(err).toBeInstanceOf(NotFoundError);
-expect((err as NotFoundError).cause).toBe(originalCause);
+// good — assert the subclass, then capture the instance inline to check `cause`
+expect(() => load(missingId)).toThrowError(M3LNotFoundError);
+let thrown: unknown;
+try {
+  load(missingId);
+} catch (error) {
+  thrown = error;
+}
+expect(thrown).toBeInstanceOf(M3LNotFoundError);
+expect((thrown as M3LNotFoundError).cause).toBe(originalCause);
 ```
 
 **3 — `expectTypeOf` where the type is the contract:**
