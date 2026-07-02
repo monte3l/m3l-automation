@@ -293,6 +293,18 @@ describe("M3LLoadingBar", () => {
     );
   });
 
+  test("B5: throws M3LPromptValidationError for a non-finite width (NaN / Infinity)", () => {
+    // NaN <= 0 is false and Infinity <= 0 is false, so a bare `<= 0` guard would
+    // store them: NaN renders an invisible bar, Infinity throws RangeError from
+    // String.prototype.repeat in update(). Both must be rejected at construction.
+    expect(() => new M3LLoadingBar({ width: Number.NaN })).toThrowError(
+      M3LPromptValidationError,
+    );
+    expect(
+      () => new M3LLoadingBar({ width: Number.POSITIVE_INFINITY }),
+    ).toThrowError(M3LPromptValidationError);
+  });
+
   test("B2: plain-mode output contains no ANSI escape sequences", () => {
     const { stream, output } = makeCaptureStream();
     const bar = new M3LLoadingBar({ stream, interactive: false });

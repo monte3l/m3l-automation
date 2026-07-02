@@ -80,13 +80,14 @@ export class M3LLoadingBar {
    * @param options - Optional configuration; all fields have sensible
    *   defaults for a terminal-attached process.
    * @throws {@link M3LPromptValidationError} When `width` is supplied and is
-   *   not a positive number.
+   *   not a positive, finite number (rejects `NaN` and `Infinity`, which would
+   *   otherwise render an invisible bar or throw from `String.prototype.repeat`).
    */
   constructor(options: M3LLoadingBarOptions = {}) {
     const width = options.width ?? DEFAULT_WIDTH;
-    if (width <= 0) {
+    if (!Number.isFinite(width) || width <= 0) {
       throw new M3LPromptValidationError(
-        `loading bar width must be positive, received ${String(width)}`,
+        `loading bar width must be a positive finite number, received ${String(width)}`,
         { context: { width } },
       );
     }
