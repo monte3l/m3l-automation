@@ -2,7 +2,7 @@
 
 This is the **single source of truth** for what is implemented in
 `@m3l-automation/m3l-common` versus what the `docs/reference/**` pages specify.
-The library started as a documented-but-empty scaffold. The barrels are wired; `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, and `config` are implemented and reviewed (9 of 22 submodules). See the table below for per-submodule status.
+The library started as a documented-but-empty scaffold. The barrels are wired; `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, and `prompt` are implemented and reviewed (10 of 22 submodules). See the table below for per-submodule status.
 
 > **Maintenance contract (hub):** the main agent updates this file after **each
 > phase** of the `implementing-submodules` pipeline. It is the durable, cross-session
