@@ -20,8 +20,12 @@
 
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { tmpdir } from "node:os";
+import { mkdtemp, rm } from "node:fs/promises";
 
+import AdmZip from "adm-zip";
 import {
+  afterAll,
   afterEach,
   beforeEach,
   describe,
@@ -117,6 +121,24 @@ describe("type contracts", () => {
     const opts: M3LTextExtractionOptions = { [ZIP_DEPTH_SYMBOL]: 1 };
     expect(typeof ZIP_DEPTH_SYMBOL).toBe("symbol");
     expect(opts[ZIP_DEPTH_SYMBOL]).toBe(1);
+  });
+
+  test("the public size/breadth caps are optional numeric fields on the options", () => {
+    // maxEntries / maxTotalBytes are the two public caps guarding the ZIP
+    // extractor against breadth and size attacks — both optional numbers.
+    expectTypeOf<M3LTextExtractionOptions["maxEntries"]>().toEqualTypeOf<
+      number | undefined
+    >();
+    expectTypeOf<M3LTextExtractionOptions["maxTotalBytes"]>().toEqualTypeOf<
+      number | undefined
+    >();
+    // A legal options literal setting both caps type-checks.
+    const opts: M3LTextExtractionOptions = {
+      maxEntries: 100,
+      maxTotalBytes: 1_000_000,
+    };
+    expect(opts.maxEntries).toBe(100);
+    expect(opts.maxTotalBytes).toBe(1_000_000);
   });
 
   test("every concrete extractor satisfies the M3LTextExtractor interface", () => {
@@ -881,4 +903,158 @@ describe("lazy loading and absent-library behavior", () => {
     expect(cause).not.toBe(thrown);
     expect((cause as Error).message).toMatch(/mock|adm-zip|Cannot find/i);
   });
+});
+
+// ---------------------------------------------------------------------------
+// M3LZipTextExtractor breadth & size caps — maxEntries + maxTotalBytes.
+//
+// These fixtures are built at RUNTIME with adm-zip into a per-suite temp dir
+// (mkdtemp) and torn down in afterAll: a breadth fixture with N sibling text
+// entries, a size fixture pairing a tiny entry with a ~1 MB one, a nested
+// parent wrapping a many-entry child.zip, and a small in-budget zip. Building
+// them in-test keeps the cap logic verifiable without committing large or
+// count-specific binary fixtures.
+// ---------------------------------------------------------------------------
+describe("M3LZipTextExtractor breadth & size caps", () => {
+  let capDir: string;
+  let breadthZip: string;
+  let sizeZip: string;
+  let nestedParentZip: string;
+  let smallZip: string;
+
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterAll(async () => {
+    await rm(capDir, { recursive: true, force: true });
+  });
+
+  // Build every fixture once up-front; each test picks the one it needs.
+  // (An async top-level build keeps the fixtures deterministic and off the
+  // committed tree.)
+  beforeEach(async () => {
+    if (capDir !== undefined) return;
+    capDir = await mkdtemp(path.join(tmpdir(), "m3l-zip-caps-"));
+
+    // Breadth fixture: 5 sibling .txt entries, each with a unique marker.
+    const breadth = new AdmZip();
+    for (let i = 1; i <= 5; i++) {
+      breadth.addFile(
+        `entry-${String(i)}.txt`,
+        Buffer.from(`MARKER-${String(i)}`),
+      );
+    }
+    breadthZip = path.join(capDir, "breadth.zip");
+    breadth.writeZip(breadthZip);
+
+    // Size fixture: a few-byte small.txt + a ~1 MB big.txt.
+    const size = new AdmZip();
+    size.addFile("small.txt", Buffer.from("SMALL-OK"));
+    size.addFile("big.txt", Buffer.alloc(1_000_000, 0x61));
+    sizeZip = path.join(capDir, "size.zip");
+    size.writeZip(sizeZip);
+
+    // Small in-budget fixture: 2 tiny entries, comfortably under any default.
+    const small = new AdmZip();
+    small.addFile("a.txt", Buffer.from("SMALL-A"));
+    small.addFile("b.txt", Buffer.from("SMALL-B"));
+    smallZip = path.join(capDir, "small.zip");
+    small.writeZip(smallZip);
+
+    // Nested fixture: a parent zip wrapping a 5-entry child.zip. With a low
+    // maxEntries the NESTED layer truncates, and that truncation propagates up.
+    const child = new AdmZip();
+    for (let i = 1; i <= 5; i++) {
+      child.addFile(`c-${String(i)}.txt`, Buffer.from(`CHILD-${String(i)}`));
+    }
+    const parent = new AdmZip();
+    parent.addFile("child.zip", child.toBuffer());
+    nestedParentZip = path.join(capDir, "nested-parent.zip");
+    parent.writeZip(nestedParentZip);
+  });
+
+  test("maxEntries trips on direct extract — stops early and marks truncated", async () => {
+    // 5 text entries, cap of 2: only the first 2 are processed, so the 5th
+    // entry's marker never appears and the result is flagged truncated.
+    const ex = new M3LZipTextExtractor();
+    const result = await ex.extract(breadthZip, { maxEntries: 2 });
+    expect(result.truncated).toBe(true);
+    expect(result.text).not.toContain("MARKER-5");
+  });
+
+  test("maxEntries is forwarded through registry.extract() to the extractor", async () => {
+    // Same cap, but driven through the registry — proves the options object is
+    // threaded from registry.extract() into the ZIP extractor unchanged.
+    const registry = new M3LTextExtractorRegistry([]);
+    registry.register(new M3LZipTextExtractor(registry));
+    const result = await registry.extract(MIME.zip, breadthZip, {
+      maxEntries: 2,
+    });
+    expect(result.truncated).toBe(true);
+    expect(result.text).not.toContain("MARKER-5");
+  });
+
+  test("maxEntries not tripped — every entry present and truncated is false", async () => {
+    // No cap: all 5 entries extract and nothing is cut short.
+    const ex = new M3LZipTextExtractor();
+    const result = await ex.extract(breadthZip);
+    expect(result.text).toContain("MARKER-1");
+    expect(result.text).toContain("MARKER-5");
+    expect(result.truncated).toBe(false);
+  });
+
+  test("maxTotalBytes trips — the oversized entry is skipped before decompression", async () => {
+    // Budget of 1000 bytes: small.txt fits and is decoded, but big.txt's
+    // declared ~1 MB size exceeds the remaining budget so it is skipped WITHOUT
+    // being materialized, and the result is truncated.
+    const ex = new M3LZipTextExtractor();
+    const result = await ex.extract(sizeZip, { maxTotalBytes: 1000 });
+    expect(result.truncated).toBe(true);
+    expect(result.text).toContain("SMALL-OK");
+    // The 1 MB payload is a run of "a"s — none of it may leak into the output.
+    expect(result.text).not.toContain("aaaaaaaaaa");
+  });
+
+  test("maxTotalBytes not tripped — both entries present and truncated is false", async () => {
+    // No budget cap: both the small and the ~1 MB entry decode fully.
+    const ex = new M3LZipTextExtractor();
+    const result = await ex.extract(sizeZip);
+    expect(result.text).toContain("SMALL-OK");
+    expect(result.text).toContain("aaaaaaaaaa");
+    expect(result.truncated).toBe(false);
+  });
+
+  test("nested truncation propagates — a capped child layer truncates the parent", async () => {
+    // Parent wraps a 5-entry child.zip. With a registry that can recurse and a
+    // maxEntries of 2, the NESTED extraction truncates, and that flag bubbles
+    // up so the parent result is truncated too.
+    const registry = new M3LTextExtractorRegistry([
+      new M3LPlainTextExtractor(),
+    ]);
+    registry.register(new M3LZipTextExtractor(registry));
+    const result = await registry.extract(MIME.zip, nestedParentZip, {
+      maxEntries: 2,
+    });
+    expect(result.truncated).toBe(true);
+  });
+
+  test.each([
+    ["negative maxEntries", { maxEntries: -5 }],
+    ["NaN maxEntries", { maxEntries: Number.NaN }],
+    ["Infinity maxTotalBytes", { maxTotalBytes: Number.POSITIVE_INFINITY }],
+    ["zero maxTotalBytes", { maxTotalBytes: 0 }],
+  ])(
+    "hostile options (%s) are coerced to a safe default — no throw, in-budget zip fully extracted",
+    async (_label, hostile: M3LTextExtractionOptions) => {
+      // A negative/NaN/Infinity/zero cap fails the clamp's finite-and->=1 test
+      // and falls back to the safe default (validation-boundary lenience), so a
+      // small in-budget archive extracts fully and is never marked truncated.
+      const ex = new M3LZipTextExtractor();
+      const result = await ex.extract(smallZip, hostile);
+      expect(result.text).toContain("SMALL-A");
+      expect(result.text).toContain("SMALL-B");
+      expect(result.truncated).toBe(false);
+    },
+  );
 });
