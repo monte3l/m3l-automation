@@ -229,10 +229,22 @@
     "namespace": "core",
     "name": "storage",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/storage.md",
-    "symbols": []
+    "symbols": [
+      "M3LFtsIndex",
+      "M3LFtsIndexConfig",
+      "M3LFtsIndexDocument",
+      "M3LFtsIndexSearchMode",
+      "M3LFtsIndexSearchOptions",
+      "M3LFtsIndexSearchResult",
+      "M3LFtsIndexStats",
+      "M3LSqliteDatabase",
+      "M3LSqliteStatement",
+      "M3LFtsIndexError",
+      "M3LFtsIndexErrorCode"
+    ]
   },
   {
     "namespace": "core",
