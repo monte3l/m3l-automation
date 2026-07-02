@@ -112,10 +112,24 @@
     "namespace": "core",
     "name": "importers",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/importers.md",
-    "symbols": []
+    "symbols": [
+      "M3LFileImporter",
+      "M3LListImporter",
+      "M3LListImporterEvents",
+      "M3LListImporterResult",
+      "M3LCSVListImporter",
+      "M3LCSVListImporterOptions",
+      "M3LCSVFormatAdapter",
+      "M3LCSVAdapterFactory",
+      "M3LJSONFileImporter",
+      "M3LJSONListImporter",
+      "M3LJSONListImporterOptions",
+      "M3LFileListImporter",
+      "M3LTextFileImporter"
+    ]
   },
   {
     "namespace": "core",
