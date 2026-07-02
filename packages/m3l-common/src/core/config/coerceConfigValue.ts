@@ -107,6 +107,18 @@ function coerceBool(raw: unknown): boolean {
   );
 }
 
+/**
+ * Strips trailing base64 `=` padding using a linear scan. A regex such as
+ * `/=+$/` is polynomial-time on adversarial input (a long run of `=`), and the
+ * base64 string here is uncontrolled config input — the manual scan avoids that
+ * ReDoS while producing the same result.
+ */
+function stripBase64Padding(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === "=") end -= 1;
+  return value.slice(0, end);
+}
+
 /** Coerces `raw` to a Buffer from a base64 string, or passes bytes through. */
 function coerceBuffer(raw: unknown): unknown {
   if (Buffer.isBuffer(raw) || raw instanceof Uint8Array) return raw;
@@ -117,8 +129,8 @@ function coerceBuffer(raw: unknown): unknown {
   // throwing; re-encoding and comparing lengths is the standard round-trip
   // check for whether the input was valid base64.
   const reencoded = decoded.toString("base64");
-  const normalizedInput = str.replace(/=+$/, "");
-  const normalizedReencoded = reencoded.replace(/=+$/, "");
+  const normalizedInput = stripBase64Padding(str);
+  const normalizedReencoded = stripBase64Padding(reencoded);
   if (normalizedInput !== normalizedReencoded) {
     throw coercionFailure(
       M3LConfigParameterType.BUFFER,
