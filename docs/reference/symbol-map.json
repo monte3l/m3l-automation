@@ -354,6 +354,66 @@
     "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
     "lines": "73-75"
   },
+  "M3LTextExtractorRegistry": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/registry.ts"
+  },
+  "M3LPlainTextExtractor": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/plain-text.ts"
+  },
+  "M3LPdfTextExtractor": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/pdf.ts"
+  },
+  "M3LDocxTextExtractor": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/docx.ts"
+  },
+  "M3LXlsxTextExtractor": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/xlsx.ts"
+  },
+  "M3LEmailTextExtractor": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/email.ts"
+  },
+  "M3LZipTextExtractor": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/zip.ts"
+  },
+  "ZIP_DEPTH_SYMBOL": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/contract.ts"
+  },
+  "M3LTextExtractor": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/contract.ts"
+  },
+  "M3LTextExtractionOptions": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/contract.ts"
+  },
+  "M3LTextExtractionResult": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/contract.ts"
+  },
+  "M3LTextExtractionError": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/errors.ts"
+  },
   "safeJsonStringify": {
     "submodule": "utils",
     "namespace": "core",
