@@ -16,6 +16,10 @@ the `workspace:*` dependency and the documented `M3LScript` lifecycle.
 
 ## Steps
 
+0. **Run `/start-work` first.** This scaffold writes `scripts/<name>/src/main.ts`,
+   a guarded path that `guard-branch-isolation.mjs` blocks while `HEAD` is `main`.
+   `/start-work` is the single source of truth for the branch/worktree, PR, and
+   push decisions — it infers and confirms them before any file is written.
 1. Ask for the script name if not given. Slugify to kebab-case → `<name>`.
    Refuse if `scripts/<name>/` already exists.
 2. Create `scripts/<name>/package.json`:
