@@ -35,3 +35,21 @@ updates:
     labels:
       - dependencies
     open-pull-requests-limit: 5
+
+  # GitHub Actions are SHA-pinned (supply-chain hardening, ADR-0015). Pinning
+  # freezes them, so Dependabot must track this ecosystem to keep the pinned
+  # SHAs — and their trailing `# vX` comments — current as upstream releases.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Europe/Rome
+    groups:
+      actions:
+        patterns:
+          - "*"
+    labels:
+      - dependencies
+    open-pull-requests-limit: 5
