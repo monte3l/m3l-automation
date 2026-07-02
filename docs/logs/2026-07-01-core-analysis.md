@@ -236,6 +236,7 @@ while `HEAD` is `main`, mirroring the existing `dist/`/`version` protections and
   `prettier-ignore`.** The reference-index generator emits non-prettier JSON, and
   the impl-count gate can't tolerate a prettier line-wrap in the `docs/index.html`
   names span once it crosses 80 columns.
+  _(gen:index ordering promoted → .claude/skills/sync-docs/SKILL.md)_
 - **`check:api` guards the `exports` map, not the symbol list.** New symbols
   surfaced through a namespace barrel need no exports-snapshot update — only
   adding/removing/retyping one of the three subpaths does.

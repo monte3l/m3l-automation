@@ -85,6 +85,29 @@
           "description": "Does NOT attempt to write any docs/logs/ file before getting clarification"
         }
       ]
+    },
+    {
+      "id": 4,
+      "prompt": "We just finished core/polling for @m3l-automation/m3l-common. Today is 2026-07-02. Write the work log.\n\nContext from the session:\n- 5 public symbols shipped: PollOptions, Poller, poll(), PollTimeoutError, RetryPolicy\n- test-author wrote 38 tests; suite is now 249 tests; 100% coverage on Poller.ts\n- typecheck, lint, build, check:api all green\n- What went as planned: the hub-and-spoke TDD loop ran clean; RED failed for the right reason; GREEN passed on the first dispatch.\n- What didn't go as planned: (1) The doc landing page count span in docs/index.html exceeded prettier's printWidth: 80 after adding 'polling', and `pnpm format` reflowed it into a broken state. Why it happened: the name-list span is a single long line that prettier wraps mid-attribute. Fix for future: wrap over-width count spans in <!-- prettier-ignore -->. I folded this fix into the sync-docs skill this session so it's not lost.\n- Lessons learned includes: the prettier-ignore lesson, which I promoted into .claude/skills/sync-docs/SKILL.md during this session.\n- Plan of record: docs/plans/core-polling-implementation.md",
+      "expected_output": "A docs/logs/2026-07-02-core-polling.md file in the standard format. Because the prettier-ignore lesson was promoted into the sync-docs skill during this session, its Lessons-learned bullet must carry the provenance marker '_(promoted → .claude/skills/sync-docs/SKILL.md)_'. Lessons that were NOT promoted must not carry a marker.",
+      "assertions": [
+        {
+          "id": "correct-filename",
+          "description": "Creates docs/logs/2026-07-02-core-polling.md"
+        },
+        {
+          "id": "promoted-lesson-has-marker",
+          "description": "The prettier-ignore lesson bullet carries a '_(promoted → .claude/skills/sync-docs/SKILL.md)_' provenance marker"
+        },
+        {
+          "id": "marker-only-on-promoted",
+          "description": "Lessons that were not promoted this session do NOT carry a '(promoted → …)' marker"
+        },
+        {
+          "id": "lessons-bold-keywords",
+          "description": "Each Lessons-learned bullet still leads with a **bold keyword** phrase"
+        }
+      ]
     }
   ]
 }
