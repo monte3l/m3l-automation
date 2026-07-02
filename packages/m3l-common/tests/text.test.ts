@@ -1004,6 +1004,19 @@ describe("M3LZipTextExtractor breadth & size caps", () => {
     expect(result.truncated).toBe(false);
   });
 
+  test("maxEntries exactly equal to entry count — all entries present and truncated is false", async () => {
+    // Off-by-one guard: the breadth fixture has EXACTLY 5 entries and the cap
+    // is 5. The extractor checks `processed >= maxEntries` BEFORE incrementing,
+    // so N entries under a cap of N must NOT trip truncation. Every marker must
+    // be present and the result flagged not-truncated.
+    const ex = new M3LZipTextExtractor();
+    const result = await ex.extract(breadthZip, { maxEntries: 5 });
+    expect(result.truncated).toBe(false);
+    for (let i = 1; i <= 5; i++) {
+      expect(result.text).toContain(`MARKER-${String(i)}`);
+    }
+  });
+
   test("maxTotalBytes trips — the oversized entry is skipped before decompression", async () => {
     // Budget of 1000 bytes: small.txt fits and is decoded, but big.txt's
     // declared ~1 MB size exceeds the remaining budget so it is skipped WITHOUT
@@ -1037,6 +1050,12 @@ describe("M3LZipTextExtractor breadth & size caps", () => {
       maxEntries: 2,
     });
     expect(result.truncated).toBe(true);
+    // Tie the flag to observable PARTIAL work: the child did extract its first
+    // in-cap entry (CHILD-1 present) but stopped before the beyond-cap entry
+    // (CHILD-5 absent). Without these, the test would pass even on a spurious
+    // truncation flag disconnected from any actual cut-short extraction.
+    expect(result.text).toContain("CHILD-1");
+    expect(result.text).not.toContain("CHILD-5");
   });
 
   test.each([
