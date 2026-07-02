@@ -111,6 +111,12 @@ jobs:
       - name: Check barrel re-exports (scaffold)
         run: pnpm check:scaffold
 
+      # Scaffold seam: every src/core|aws/<mod>/index.ts must carry its TDD test
+      # file (tests/<mod>.test.ts) and a row in docs/implementation-status.md.
+      # Backstop for the new-submodule scaffolding skill.
+      - name: Check scaffold seam (test + status row)
+        run: pnpm check:scaffold-seam
+
       # Every public export surfaced through a namespace barrel must be
       # documented — present in its reference page heading or provenance sidecar.
       # Deterministic backstop for the spec-conformance / docs-consistency spokes.

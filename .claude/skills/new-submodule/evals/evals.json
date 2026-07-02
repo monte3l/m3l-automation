@@ -1,13 +1,13 @@
 {
-  "skill_name": "new-subpath",
+  "skill_name": "new-submodule",
   "evals": [
     {
       "id": 1,
       "prompt": "Add a new core submodule called 'json' — it should provide utilities for navigating JSON field paths and formatting JSON output.",
-      "expected_output": "Scaffolded packages/m3l-common/src/core/json/index.ts with stub exports throwing M3LNotImplementedError; re-exported from src/core/index.ts; failing placeholder tests at tests/json.test.ts; spec stub at docs/reference/core/json.md; row added to docs/implementation-status.md. No new exports-map entry added.",
+      "expected_output": "Scaffolded packages/m3l-common/src/core/json/index.ts with stub exports throwing a module-specific M3LError subclass; re-exported from src/core/index.ts; failing placeholder tests at tests/json.test.ts; spec stub at docs/reference/core/json.md; row added to docs/implementation-status.md. No new exports-map entry added.",
       "files": [],
       "expectations": [
-        "Creates packages/m3l-common/src/core/json/index.ts with exported stub functions/classes that throw M3LNotImplementedError",
+        "Creates packages/m3l-common/src/core/json/index.ts with exported stub functions/classes that throw a module-specific M3LError subclass (not the nonexistent M3LNotImplementedError)",
         "Re-exports the new module from packages/m3l-common/src/core/index.ts using 'export * from \"./json/index.js\"'",
         "Creates packages/m3l-common/tests/json.test.ts with at least one failing happy-path test",
         "Creates docs/reference/core/json.md as a spec stub",
@@ -33,7 +33,7 @@
     {
       "id": 3,
       "prompt": "Scaffold a new core/polling submodule — but wait, there's already a docs/reference/core/polling.md spec page.",
-      "expected_output": "Skill detects the spec page already exists and stops, telling the user to use implement-submodule directly instead of new-subpath.",
+      "expected_output": "Skill detects the spec page already exists and stops, telling the user to use implement-submodule directly instead of new-submodule.",
       "files": [],
       "expectations": [
         "Skill checks for an existing docs/reference spec page before scaffolding",

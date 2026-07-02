@@ -34,6 +34,7 @@
     "check:doc-exports": "node bin/check-doc-exports.mjs",
     "check:exports": "publint packages/m3l-common && attw --pack packages/m3l-common --profile esm-only",
     "check:scaffold": "node bin/check-scaffold.mjs",
+    "check:scaffold-seam": "node bin/check-scaffold-seam.mjs",
     "check:agents": "node bin/check-agents.mjs",
     "check:deps": "node bin/check-deps.mjs",
     "check:test-counts": "node bin/check-test-counts.mjs",

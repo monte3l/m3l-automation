@@ -9,7 +9,7 @@ description: >-
   importers, storage, text, aws credentials, script). Use it even when the user names
   the module casually ("let's do the retry stuff", "wire up the HTTP client") rather
   than saying "submodule". For a brand-new module that has NO spec page yet, use
-  new-subpath first to scaffold, then this skill to implement.
+  new-submodule first to scaffold, then this skill to implement.
 ---
 
 # implement-submodule
@@ -85,7 +85,7 @@ spokes are for. The writer is never the reviewer; keep that separation structura
 
 1. **Resolve the target.** Read `docs/implementation-status.md`, confirm the
    module and its `docs/reference/<ns>/<module>.md` spec page exist. If there is
-   no spec page, stop and point the user at `new-subpath` (greenfield modules
+   no spec page, stop and point the user at `new-submodule` (greenfield modules
    must be scaffolded and specced first). If the module is already ✅, ask before
    redoing it. When unsure which to pick, prefer the _Suggested implementation
    order_ in the state file (foundational, dep-free modules first).
@@ -270,5 +270,5 @@ vitest` / `pnpm test:coverage` (bare `npx vitest` fails to resolve
   hub owns.
 - Do not add an `exports`-map entry; new submodules surface through the namespace
   barrel (adding a subpath is a semver event — see `.claude/rules/library-src.md`).
-- See also `.claude/skills/new-subpath/SKILL.md` (scaffolding) and
+- See also `.claude/skills/new-submodule/SKILL.md` (scaffolding) and
   `docs/contributing/coding-standards.md`.
