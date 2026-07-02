@@ -532,15 +532,15 @@ Standalone layout:
 
 ### File parsing
 
-| Package                       | Used by                                     |
-| ----------------------------- | ------------------------------------------- |
-| `csv-parse` / `csv-stringify` | `M3LCSVListImporter` / `M3LCSVListExporter` |
-| `yaml`                        | `M3LYAMLConfigProvider`                     |
-| `unpdf`                       | `M3LPdfTextExtractor`                       |
-| `mammoth`                     | `M3LDocxTextExtractor`                      |
-| `read-excel-file`             | `M3LXlsxTextExtractor`                      |
-| `mailparser` + `cheerio`      | `M3LEmailTextExtractor`                     |
-| `adm-zip`                     | `M3LZipTextExtractor`                       |
+| Package                       | Used by                                     | Availability          |
+| ----------------------------- | ------------------------------------------- | --------------------- |
+| `csv-parse` / `csv-stringify` | `M3LCSVListImporter` / `M3LCSVListExporter` | Runtime               |
+| `yaml`                        | `M3LYAMLConfigProvider`                     | Runtime               |
+| `unpdf`                       | `M3LPdfTextExtractor`                       | Optional (peer, lazy) |
+| `mammoth`                     | `M3LDocxTextExtractor`                      | Optional (peer, lazy) |
+| `read-excel-file`             | `M3LXlsxTextExtractor`                      | Optional (peer, lazy) |
+| `mailparser` + `cheerio`      | `M3LEmailTextExtractor`                     | Optional (peer, lazy) |
+| `adm-zip`                     | `M3LZipTextExtractor`                       | Optional (peer, lazy) |
 
 ### Storage
 

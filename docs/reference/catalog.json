@@ -179,10 +179,24 @@
     "namespace": "core",
     "name": "polling",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/polling.md",
-    "symbols": []
+    "symbols": [
+      "M3LPoller",
+      "M3LPollCheckFn",
+      "M3LPollDecision",
+      "M3LRetryRunner",
+      "M3LRetryClassifier",
+      "M3LRetryDecision",
+      "M3LRetryAdvice",
+      "M3LBackoff",
+      "M3LPollingPolicies",
+      "combineClassifiers",
+      "awsThrottlingClassifier",
+      "awsNetworkClassifier",
+      "httpRetryAfterClassifier"
+    ]
   },
   {
     "namespace": "core",
@@ -237,10 +251,23 @@
     "namespace": "core",
     "name": "text",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/text.md",
-    "symbols": []
+    "symbols": [
+      "M3LTextExtractorRegistry",
+      "M3LPlainTextExtractor",
+      "M3LPdfTextExtractor",
+      "M3LDocxTextExtractor",
+      "M3LXlsxTextExtractor",
+      "M3LEmailTextExtractor",
+      "M3LZipTextExtractor",
+      "ZIP_DEPTH_SYMBOL",
+      "M3LTextExtractor",
+      "M3LTextExtractionOptions",
+      "M3LTextExtractionResult",
+      "M3LTextExtractionError"
+    ]
   },
   {
     "namespace": "core",

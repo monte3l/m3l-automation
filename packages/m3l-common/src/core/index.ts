@@ -22,6 +22,8 @@ export * from "./errors/index.js";
 export * from "./events/index.js";
 export * from "./json/index.js";
 export * from "./messaging/index.js";
+export * from "./polling/index.js";
 export * from "./prompt/index.js";
 export * from "./security/index.js";
+export * from "./text/index.js";
 export * from "./utils/index.js";
