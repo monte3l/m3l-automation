@@ -51,6 +51,12 @@ flips to green — but the rest of the discipline below is identical.)
    - **Failure path** — the documented error (assert the right `M3LError`
      subclass, and check `cause` where chained).
    - **Edge / boundary cases** the contract implies.
+   - **Bad-record vs. source-failure** for any streaming/parse/record-emitting
+     export: assert that one bad record (an unparseable row, a throwing
+     validator/transformer/mapper) is **skipped-and-emitted** (e.g. via an error
+     event) while good records still flow — separately from a source-level
+     failure that rejects. The happy path hides whether a single bad record
+     aborts the whole run; cover both batch and streaming access patterns.
    - **`expectTypeOf`** assertions where the type IS the contract (branded types,
      generic containers, discriminated unions like `M3LResult`).
 4. Keep tests deterministic and isolated: no real network or filesystem; mock
