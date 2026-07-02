@@ -1,9 +1,9 @@
 <p align="center">
-<img src="docs/assets/m3l-wordmark.svg" alt="m3l-automation" width="267" height="64">
+<img src="assets/m3l-wordmark.svg" alt="m3l-automation" width="267" height="64">
 </p>
 
 <p align="center">
-<img src="docs/assets/m3l-hero.svg" alt="m3l-automation quick-start terminal pane" width="700">
+<img src="assets/m3l-hero.svg" alt="m3l-automation quick-start terminal pane" width="700">
 </p>
 
 <p align="center">
@@ -13,12 +13,12 @@
 <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-66D9EF?style=flat-square&labelColor=272822" alt="TypeScript strict"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-A6E22E?style=flat-square&labelColor=272822" alt="Apache-2.0"></a>
 <a href="docs/implementation-status.md"><img src="https://img.shields.io/badge/status-pre--release-FD971F?style=flat-square&labelColor=272822" alt="status: pre-release"></a>
-<a href="docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-10%2F22-FD971F?style=flat-square&labelColor=272822" alt="modules: 10/22"></a>
+<a href="docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-11%2F22-FD971F?style=flat-square&labelColor=272822" alt="modules: 11/22"></a>
 </p>
 
 > **Status: early development — scaffold and specs are complete; implementation is in progress.**
-> Version `0.0.0-development`. All documented APIs are design targets; 10 of 22 submodules are
-> implemented (`errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `network`). See [Implementation status](docs/implementation-status.md)
+> Version `0.0.0-development`. All documented APIs are design targets; 11 of 22 submodules are
+> implemented (`errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`). See [Implementation status](docs/implementation-status.md)
 > for the per-module breakdown.
 
 A shared infrastructure library for automation scripts and AWS Lambda handlers. It provides
@@ -90,7 +90,6 @@ import { Core, AWS } from "@m3l-automation/m3l-common";
 - [Implementation status](docs/implementation-status.md) — per-module progress tracker
 - [Architecture overview](docs/m3l-common-architecture.md)
 - [Contributing](.github/CONTRIBUTING.md)
-- [Docs site](https://monte3l.github.io/m3l-automation/)
 
 ## License
 
