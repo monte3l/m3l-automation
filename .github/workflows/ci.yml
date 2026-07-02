@@ -97,6 +97,13 @@ jobs:
       - name: Test (with coverage gate)
         run: pnpm test:coverage
 
+      # Per-file test counts recorded in docs/implementation-status.md must match
+      # the live suite. This derives them by running Vitest a second time — the
+      # duplicate run is deliberate (the coverage gate above cannot emit counts);
+      # do not "optimize" it away by folding it into the step above.
+      - name: Check test counts
+        run: pnpm check:test-counts
+
       - name: Build
         run: pnpm build
 
@@ -127,6 +134,11 @@ jobs:
       # built-ins, and no spoke is granted the Agent tool (no-nesting invariant).
       - name: Check subagent configuration (agents)
         run: pnpm check:agents
+
+      # .worktreeinclude hygiene: no tracked files and no unresolvable literal
+      # paths, so worktree:setup provisions a fresh worktree correctly.
+      - name: Check worktree include
+        run: pnpm check:worktree
 
       - name: Unused files / exports / dependencies (knip)
         run: pnpm knip
