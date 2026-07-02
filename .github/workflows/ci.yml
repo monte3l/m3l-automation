@@ -82,6 +82,11 @@ jobs:
       - name: Check doc counts
         run: pnpm check:doc-counts
 
+      # The CI/CD table in CLAUDE.md must document exactly the workflow files in
+      # .github/workflows/ (count + one row each) — no undocumented or stale rows.
+      - name: Check workflow docs
+        run: pnpm check:workflows-doc
+
       # The implemented-count numerator ("N of 22") must match the ✅ rows in
       # docs/implementation-status.md across every badge / prose / HTML site.
       - name: Check implementation count

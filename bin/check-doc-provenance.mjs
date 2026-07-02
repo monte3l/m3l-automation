@@ -13,6 +13,11 @@
 //   node bin/check-doc-provenance.mjs                   # verify all sidecars
 //   node bin/check-doc-provenance.mjs --update          # re-stamp commit + date to HEAD
 //   node bin/check-doc-provenance.mjs --affected <file> # only sidecars referencing <file>
+//
+// Exit contract: hard errors (bad heading/missing file/removed symbol) always
+// exit 1. In the full-verify path staleness ALSO exits 1 so cross-merge drift
+// fails CI; the --affected path (advisory hook) exits 0 with the warning on
+// stderr so mid-work edits are never blocked. Re-stamp with --update.
 import process from "node:process";
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -200,6 +205,18 @@ if (isUpdate) {
     console.log(`Updated: ${relative(root, sidecarPath)}`);
   }
   process.exit(0);
+}
+
+// Full-verify path (CI): staleness is a hard failure so cross-merge drift
+// surfaces in CI instead of accumulating silently. The advisory --affected
+// path (used by the guard-provenance-staleness PostToolUse hook) keeps exiting
+// 0 with the warning on stderr so mid-work source edits are never blocked.
+if (totalWarnings > 0 && affectedFile === null) {
+  process.stderr.write(
+    `\n✗  ${totalWarnings} provenance staleness warning(s) — re-stamp with ` +
+      `node bin/check-doc-provenance.mjs --update (or run /syncing-docs).\n`,
+  );
+  process.exit(1);
 }
 
 const warnSuffix =
