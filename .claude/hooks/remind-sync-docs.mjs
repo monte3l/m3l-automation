@@ -9,6 +9,11 @@
  * 2. packages/m3l-common/tests/*.test.ts changed → remind to run
  *    `pnpm check:test-counts` to verify the Notes column counts are current.
  *
+ * 3. Untracked `scratch*` / stray `*.test.ts` under packages/** → remind to
+ *    sweep them. A writer spoke that ended abruptly can leave a reproduction
+ *    file behind that trips `pnpm lint` and pollutes the commit
+ *    (docs/logs/2026-07-01-core-analysis.md, divergence 3).
+ *
  * Non-blocking (exits 0 always). Advisories print to stderr so they surface
  * in the Claude Code transcript without blocking the session.
  */
@@ -49,6 +54,23 @@ if (wasModified("packages/m3l-common/tests/")) {
     `⚡ test-counts reminder: test files were modified this session.\n` +
       `   Run \`pnpm check:test-counts\` to verify the counts recorded in\n` +
       `   docs/implementation-status.md still match the actual Vitest output.\n`,
+  );
+}
+
+// 3. Stray debug artifacts — a truncated writer spoke can leave these behind.
+// Match the debug-artifact markers (`scratch`/`repro`), not every untracked
+// test file: a legitimate new `<module>.test.ts` is untracked during RED too.
+const strayDebugFiles = run(`git status --porcelain -- "packages/**"`)
+  .split("\n")
+  .filter((line) => line.startsWith("??")) // untracked only
+  .map((line) => line.slice(3).trim())
+  .filter((path) => /scratch|repro/i.test(path.split("/").pop() ?? ""));
+if (strayDebugFiles.length > 0) {
+  process.stderr.write(
+    `⚡ scratch-sweep reminder: untracked debug file(s) under packages/**:\n` +
+      strayDebugFiles.map((p) => `     ${p}`).join("\n") +
+      `\n   Delete stray \`scratch*\` / repro \`*.test.ts\` files before committing —\n` +
+      `   they trip \`pnpm lint\` and pollute the commit.\n`,
   );
 }
 

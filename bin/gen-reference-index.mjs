@@ -4,6 +4,7 @@
 // Run via: pnpm gen:index
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { format, resolveConfig } from "prettier";
 import {
   BEGIN_MARKER,
   END_MARKER,
@@ -13,6 +14,20 @@ import {
 } from "./lib/reference-index.mjs";
 
 const refDir = join(root, "docs/reference");
+
+// Write JSON the way prettier would, so `pnpm format` before or after
+// `pnpm gen:index` never leaves `format:check` failing (the generator used to
+// emit a non-prettier style — docs/logs/2026-07-01-core-analysis.md,
+// divergence 6). Resolving config by filepath applies the repo's prettier
+// settings and the json parser.
+async function writeJsonFormatted(filePath, data) {
+  const config = await resolveConfig(filePath);
+  const formatted = await format(JSON.stringify(data, null, 2), {
+    ...config,
+    filepath: filePath,
+  });
+  writeFileSync(filePath, formatted, "utf8");
+}
 
 function updateReadme(catalog) {
   const readmePath = join(refDir, "README.md");
@@ -48,16 +63,8 @@ const { catalog, symbolMap } = buildIndex();
 
 mkdirSync(refDir, { recursive: true });
 
-writeFileSync(
-  join(refDir, "catalog.json"),
-  JSON.stringify(catalog, null, 2) + "\n",
-  "utf8",
-);
-writeFileSync(
-  join(refDir, "symbol-map.json"),
-  JSON.stringify(symbolMap, null, 2) + "\n",
-  "utf8",
-);
+await writeJsonFormatted(join(refDir, "catalog.json"), catalog);
+await writeJsonFormatted(join(refDir, "symbol-map.json"), symbolMap);
 updateReadme(catalog);
 
 console.log(

@@ -118,5 +118,11 @@ Call `EnterPlanMode`. Write a structured plan with:
 - Each section: what to build, where it lives, how to verify it.
 - A verification checklist at the end.
 
+When the plan will touch `packages/*/src/**`, `scripts/*/src/**`, or
+`**/tests/**`, make **branch/worktree isolation the first implementation step**
+(`pnpm worktree:new <slug>` or `git switch -c feat/<slug>`) — `guard-branch-isolation.mjs`
+blocks those writes while `HEAD` is `main`, so a plan that omits it stalls on the
+first edit.
+
 The plan must not contain any code edits or file writes — it is a plan only.
 Do not exit plan mode; leave it for the user to approve or redirect.

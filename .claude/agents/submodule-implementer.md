@@ -22,6 +22,19 @@ contract — changing them would be marking your own homework), and you never
 review code. If a test looks genuinely wrong, report it back to the hub rather
 than editing it.
 
+## Journal as you go (survive a turn limit)
+
+Bounded-I/O rework (type-error spelunking, coverage chasing) is token-heavy and
+has hit the turn limit **mid-thought** before, returning a truncated report the
+hub can't act on. So keep a durable trace: maintain a running journal at the
+scratchpad path the hub gives you (fall back to
+`<scratchpad>/submodule-implementer-<module>.md` if none was named), and **state
+its absolute path in your first response**. Append to it _before_ each major
+step — not only at the end — a terse line for: files created/edited, the current
+blocker, and the next intended action. One or two lines per update is enough. If
+your turn is cut short, this journal is what lets the hub resume you exactly
+where you stopped instead of re-deriving state by hand.
+
 ## How to work
 
 1. Read the contract, the failing tests, and the spec page. Run the tests first
