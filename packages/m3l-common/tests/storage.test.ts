@@ -2,11 +2,11 @@
  * Tests for core/storage submodule (RED phase — TDD).
  *
  * Contract source: docs/reference/core/storage.md + hub binding contract.
- * Public surface (10 symbols, all from @m3l-automation/m3l-common/core):
+ * Public surface (11 symbols, all from @m3l-automation/m3l-common/core):
  *   M3LFtsIndex (class), M3LFtsIndexError (class),
  *   M3LFtsIndexConfig, M3LFtsIndexDocument, M3LFtsIndexSearchMode,
  *   M3LFtsIndexSearchOptions, M3LFtsIndexSearchResult, M3LFtsIndexStats,
- *   M3LSqliteDatabase, M3LSqliteStatement (8 types).
+ *   M3LSqliteDatabase, M3LSqliteStatement, M3LFtsIndexErrorCode (9 types).
  *
  * Key behavioral contracts exercised here:
  *  - ALL operations are SYNCHRONOUS (no Promise anywhere; no async/await).
@@ -24,7 +24,8 @@
  *  - getDatabase() returns a usable raw handle (M3LSqliteDatabase).
  *  - Validation failures throw M3LFtsIndexError with a narrowed `code`:
  *    ERR_FTS_INVALID_TOKENIZER, ERR_FTS_INVALID_IDENTIFIER, ERR_FTS_INVALID_LIMIT,
- *    ERR_FTS_INVALID_DOCUMENT, ERR_FTS_UNKNOWN_FILTER_COLUMN.
+ *    ERR_FTS_INVALID_DOCUMENT, ERR_FTS_UNKNOWN_FILTER_COLUMN, ERR_FTS_INVALID_MODE,
+ *    ERR_FTS_CORRUPT_METADATA.
  *  - Prepared-statement cache: same (mode + filter-column) shape reuses.
  *
  * All DBs use dbPath ":memory:" so tests need no filesystem and are isolated.
@@ -38,6 +39,7 @@ import { M3LFtsIndex, M3LFtsIndexError } from "../src/core/storage/index.js";
 import type {
   M3LFtsIndexConfig,
   M3LFtsIndexDocument,
+  M3LFtsIndexErrorCode,
   M3LFtsIndexSearchMode,
   M3LFtsIndexSearchOptions,
   M3LFtsIndexSearchResult,
@@ -87,6 +89,18 @@ describe("public surface", () => {
   test("M3LFtsIndexSearchMode is exactly 'full-text' | 'literal'", () => {
     expectTypeOf<M3LFtsIndexSearchMode>().toEqualTypeOf<
       "full-text" | "literal"
+    >();
+  });
+
+  test("M3LFtsIndexErrorCode is exactly the documented code union", () => {
+    expectTypeOf<M3LFtsIndexErrorCode>().toEqualTypeOf<
+      | "ERR_FTS_INVALID_TOKENIZER"
+      | "ERR_FTS_INVALID_IDENTIFIER"
+      | "ERR_FTS_INVALID_LIMIT"
+      | "ERR_FTS_INVALID_DOCUMENT"
+      | "ERR_FTS_UNKNOWN_FILTER_COLUMN"
+      | "ERR_FTS_INVALID_MODE"
+      | "ERR_FTS_CORRUPT_METADATA"
     >();
   });
 
