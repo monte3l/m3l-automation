@@ -9,7 +9,7 @@ description: >-
   version in m3l-automation. Reach for it even when the user says "why didn't this
   release", "cut a release", "the version bump is wrong", "add a release plugin",
   or "set up the changelog" — anything touching the release pipeline here. Pairs
-  with the release-dry-run skill (which previews the next version). Not for generic
+  with the previewing-releases skill (which previews the next version). Not for generic
   semantic-release questions unrelated to this repo (use the context7-mcp skill).
 ---
 
@@ -18,7 +18,7 @@ description: >-
 Release config lives in [`.releaserc.json`](../../../.releaserc.json); rationale is
 in ADR-0011. Releases run from CI on `main` **after** `ci.yml` passes — never bump
 `version` by hand, semantic-release owns it. To preview without publishing, use the
-`release-dry-run` skill.
+`previewing-releases` skill.
 
 ## When to use
 
@@ -71,7 +71,7 @@ publish → success/fail` lifecycle, so sequence matters:
 
 ## Verify
 
-Use the `release-dry-run` skill (`npx semantic-release --dry-run --no-ci`) to see
+Use the `previewing-releases` skill (`npx semantic-release --dry-run --no-ci`) to see
 the computed next version, type, and notes without publishing. If a push didn't
 release, check the commit types since the last tag; if the version is "wrong",
 check for an unintended `feat`/breaking footer.

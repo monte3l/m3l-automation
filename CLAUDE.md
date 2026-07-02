@@ -455,10 +455,10 @@ that reviews it" structural, and keeps the hub's context lean.
 - **Live status**: `docs/implementation-status.md` is the source of truth for
   what is built vs. documented. The hub updates it after each phase — it is the
   durable memory the isolated spokes do not share.
-- The `implement-submodule` skill encodes this loop end-to-end; `new-submodule`
+- The `implementing-submodules` skill encodes this loop end-to-end; `scaffolding-submodules`
   scaffolds a greenfield module and hands off to it. All 22 bootstrap submodules
-  already have `docs/reference` specs, so `implement-submodule` is the normal entry
-  point; reach for `new-submodule` only to add a genuinely new (beyond-bootstrap)
+  already have `docs/reference` specs, so `implementing-submodules` is the normal entry
+  point; reach for `scaffolding-submodules` only to add a genuinely new (beyond-bootstrap)
   module — it surfaces through the namespace barrel, never a new `exports` subpath.
 - **Current state**: see `docs/implementation-status.md` for the authoritative
   built-vs-documented tracker and suggested build order.

@@ -1,0 +1,113 @@
+{
+  "skill_name": "writing-work-logs",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "We just finished implementing core/config for @m3l-automation/m3l-common. Today is 2026-06-30. Write the work log.\n\nContext from the session:\n- 8 public symbols shipped: ConfigSchema<T>, ConfigValue, ConfigLoader, loadConfig(), validateConfig(), ConfigError, ConfigNotFoundError, ConfigValidationError\n- test-author wrote 47 tests; full suite is now 211 tests\n- 100% statement/branch/function/line coverage on ConfigLoader.ts\n- typecheck, lint, build, check:api, check:scaffold, check:provenance all green\n- 4 review spokes ran: spec-conformance-reviewer (conformant), security-reviewer (secure, flagged one advisory about logging config values), code-reviewer (one must-fix: rename loadSync to loadConfigSync for naming consistency), type-design-analyzer (8/10 on encapsulation, 9/10 on invariant expression)\n- What went as planned: hub-and-spoke TDD loop executed as designed, RED failed for the right reason (Cannot find module), GREEN was clean after one re-dispatch (first GREEN pass had a naming inconsistency flagged by code-reviewer, fixed in one round), conformance check passed on first pass\n- What didn't go as planned: (1) the ConfigValidationError constructor accepted `unknown` for the `details` field but the spec required `Record<string, string[]>` — the implementer defaulted to `unknown` to be safe but the type-design-analyzer flagged it as under-constrained; we had to add a second implementer dispatch to tighten the type. Root cause: the spec wording was ambiguous ('validation details' didn't specify the shape). Fix for future: when the spec mentions a structured error detail field, front-load the expected shape explicitly in the implementer prompt. (2) The provenance sidecar's first draft listed ConfigSchema as a type alias but the validator expected an interface — required one edit. Root cause: the spec used 'type' loosely to mean either. Fix for future: distinguish 'type alias' vs 'interface' explicitly in the contract phase.\n- Plan of record: docs/plans/core-config-implementation.md",
+      "expected_output": "A docs/logs/2026-06-30-core-config.md file following the project's work log format: H1 title, one-paragraph intro, plan-of-record link, then Summary / What went as planned / What didn't go as planned (numbered with Why it happened + Fix for future) / Lessons learned (bolded keyword bullets). Dense summary with exact metrics. No YAML frontmatter.",
+      "assertions": [
+        {
+          "id": "correct-filename",
+          "description": "Creates docs/logs/2026-06-30-core-config.md (correct date + namespace + module)"
+        },
+        {
+          "id": "summary-has-metrics",
+          "description": "Summary section includes test count (47/211), coverage %, and at least 3 CI gates"
+        },
+        {
+          "id": "summary-has-spoke-verdicts",
+          "description": "Summary includes a verdict for each of the 4 review spokes"
+        },
+        {
+          "id": "didnt-go-as-planned-numbered",
+          "description": "What didn't go as planned has exactly 2 numbered items (ConfigValidationError type + provenance sidecar)"
+        },
+        {
+          "id": "why-and-fix-present",
+          "description": "Each numbered divergence item contains 'Why it happened:' and 'Fix for future:' sub-sections"
+        },
+        {
+          "id": "lessons-bold-keywords",
+          "description": "Lessons learned bullets each start with **bold keyword**"
+        },
+        {
+          "id": "plan-link-present",
+          "description": "Plan of record link to docs/plans/core-config-implementation.md is present"
+        },
+        {
+          "id": "no-frontmatter",
+          "description": "File does not contain YAML frontmatter (no '---' block at top)"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "document what happened — we just created the writing-work-logs skill. Today is 2026-06-30.\n\nHere's what happened: We audited the existing skills (9 skills in .claude/skills/), the docs/logs format, the skill-creator interface, and the implementing-submodules pipeline. Found that implementing-submodules Step 8 only says 'Report' (verbal) but never prescribes writing a docs/logs file — inconsistency with CLAUDE.md which calls docs/logs 'the durable source'. Wrote a plan (approved by user), entered a worktree on branch worktree-feat+writing-work-logs-skill, invoked skill-creator with a pre-written spec. skill-creator wrote the SKILL.md, set up 3 test cases, running evals now.\n\nWhat went as planned: The audit phase worked well — 4 Explore agents found all the key gaps in one parallel pass. The plan was approved without changes. The skill-creator accepted the pre-written spec and did not re-interview from scratch (saving time). The SKILL.md draft matched the spec closely on first generation.\n\nWhat didn't go as planned: (1) The skill-creator tried to run description-optimization (run_loop.py) immediately after writing the first draft, before any eval results were available. We redirected it to run evals first. Why it happened: the skill-creator's instructions mention description optimization as a later step but the model jumped ahead. Fix for future: be explicit in the spec that description optimization should happen after eval review, not before. (2) The worktree's .claude/skills directory already had all the existing skills symlinked/copied — the writing-work-logs directory needed to be created explicitly rather than being auto-populated. Why: worktrees copy the git tree, not the .claude directory contents. Fix: always create the skill directory explicitly at the start of a skill-creation session in a worktree.",
+      "expected_output": "A docs/logs/2026-06-30-writing-work-logs-skill.md file with H1 non-submodule title (no ns/module), intro paragraph, no plan-of-record line (or one if inferred), then all 4 sections. Two numbered divergence items. Bold-keyword lessons.",
+      "assertions": [
+        {
+          "id": "correct-filename-non-submodule",
+          "description": "Creates docs/logs/2026-06-30-writing-work-logs-skill.md (date + slug, no namespace)"
+        },
+        {
+          "id": "non-submodule-title",
+          "description": "H1 title does NOT use the 'submodule' title format — it's a general task title"
+        },
+        {
+          "id": "two-divergences",
+          "description": "What didn't go as planned has exactly 2 numbered items"
+        },
+        {
+          "id": "why-and-fix-present",
+          "description": "Each numbered divergence item contains 'Why it happened:' and 'Fix for future:'"
+        },
+        {
+          "id": "lessons-min-one",
+          "description": "Lessons learned has at least 1 bullet with bold keyword"
+        },
+        {
+          "id": "no-frontmatter",
+          "description": "File does not contain YAML frontmatter"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "write a work log",
+      "expected_output": "Since the conversation has no task context, the skill should ask exactly one clarifying question about which task to document — it should NOT attempt to write a log or ask multiple questions.",
+      "assertions": [
+        {
+          "id": "asks-clarifying-question",
+          "description": "Responds with exactly one clarifying question about which task to document, rather than attempting to write an empty or hallucinated log"
+        },
+        {
+          "id": "does-not-write-file",
+          "description": "Does NOT attempt to write any docs/logs/ file before getting clarification"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "We just finished core/polling for @m3l-automation/m3l-common. Today is 2026-07-02. Write the work log.\n\nContext from the session:\n- 5 public symbols shipped: PollOptions, Poller, poll(), PollTimeoutError, RetryPolicy\n- test-author wrote 38 tests; suite is now 249 tests; 100% coverage on Poller.ts\n- typecheck, lint, build, check:api all green\n- What went as planned: the hub-and-spoke TDD loop ran clean; RED failed for the right reason; GREEN passed on the first dispatch.\n- What didn't go as planned: (1) The doc landing page count span in docs/index.html exceeded prettier's printWidth: 80 after adding 'polling', and `pnpm format` reflowed it into a broken state. Why it happened: the name-list span is a single long line that prettier wraps mid-attribute. Fix for future: wrap over-width count spans in <!-- prettier-ignore -->. I folded this fix into the syncing-docs skill this session so it's not lost.\n- Lessons learned includes: the prettier-ignore lesson, which I promoted into .claude/skills/syncing-docs/SKILL.md during this session.\n- Plan of record: docs/plans/core-polling-implementation.md",
+      "expected_output": "A docs/logs/2026-07-02-core-polling.md file in the standard format. Because the prettier-ignore lesson was promoted into the syncing-docs skill during this session, its Lessons-learned bullet must carry the provenance marker '_(promoted → .claude/skills/syncing-docs/SKILL.md)_'. Lessons that were NOT promoted must not carry a marker.",
+      "assertions": [
+        {
+          "id": "correct-filename",
+          "description": "Creates docs/logs/2026-07-02-core-polling.md"
+        },
+        {
+          "id": "promoted-lesson-has-marker",
+          "description": "The prettier-ignore lesson bullet carries a '_(promoted → .claude/skills/syncing-docs/SKILL.md)_' provenance marker"
+        },
+        {
+          "id": "marker-only-on-promoted",
+          "description": "Lessons that were not promoted this session do NOT carry a '(promoted → …)' marker"
+        },
+        {
+          "id": "lessons-bold-keywords",
+          "description": "Each Lessons-learned bullet still leads with a **bold keyword** phrase"
+        }
+      ]
+    }
+  ]
+}

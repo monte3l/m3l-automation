@@ -4,7 +4,7 @@
     {
       "id": 1,
       "prompt": "Promote the recurring lessons from our work logs into the rules. Just show me what you'd change first — don't edit anything yet.",
-      "expected_output": "In propose (default) mode the skill reads every docs/logs/*.md, clusters lessons by meaning, and applies all three filters. It writes no files. Ground truth on the current corpus: 'run gen:index before format' recurs in core/json AND core/analysis and is NOT written down anywhere (the sync-docs skill has no gen:index step), so it is the one surviving promotion candidate, routed to .claude/skills/sync-docs/SKILL.md. By contrast 're-validate stored plans' (already in implement-submodule:93 and audit:78) and 'verify writer-spoke on-disk state' (already in implement-submodule:146) also recur but must be DROPPED by the already-captured filter — not treated as candidates. The report must honestly show its filter counts and must not fabricate candidates.",
+      "expected_output": "In propose (default) mode the skill reads every docs/logs/*.md, clusters lessons by meaning, and applies all three filters. It writes no files. Ground truth on the current corpus: 'run gen:index before format' recurs in core/json AND core/analysis and is NOT written down anywhere (the syncing-docs skill has no gen:index step), so it is the one surviving promotion candidate, routed to .claude/skills/syncing-docs/SKILL.md. By contrast 're-validate stored plans' (already in implementing-submodules:93 and auditing:78) and 'verify writer-spoke on-disk state' (already in implementing-submodules:146) also recur but must be DROPPED by the already-captured filter — not treated as candidates. The report must honestly show its filter counts and must not fabricate candidates.",
       "assertions": [
         {
           "id": "no-file-writes-in-propose-mode",
@@ -12,15 +12,15 @@
         },
         {
           "id": "surfaces-gen-index-candidate",
-          "description": "Report surfaces 'run gen:index before format' as a surviving candidate, cites BOTH core/json and core/analysis as the recurrence, and routes it to the sync-docs skill's SKILL.md"
+          "description": "Report surfaces 'run gen:index before format' as a surviving candidate, cites BOTH core/json and core/analysis as the recurrence, and routes it to the syncing-docs skill's SKILL.md"
         },
         {
           "id": "drops-already-captured-plan-revalidation",
-          "description": "'Re-validate stored plans' is NOT proposed as a candidate; the report notes it is already captured (implement-submodule / audit), i.e. dropped by the already-captured filter, not by the recurrence filter"
+          "description": "'Re-validate stored plans' is NOT proposed as a candidate; the report notes it is already captured (implementing-submodules / auditing), i.e. dropped by the already-captured filter, not by the recurrence filter"
         },
         {
           "id": "drops-already-captured-writer-spoke",
-          "description": "'Verify writer-spoke on-disk state' is NOT proposed; the report notes it is already captured in implement-submodule"
+          "description": "'Verify writer-spoke on-disk state' is NOT proposed; the report notes it is already captured in implementing-submodules"
         },
         {
           "id": "honest-filter-counts",
@@ -35,7 +35,7 @@
     {
       "id": 2,
       "prompt": "/promoting-work-log-lessons --apply — I've reviewed the recurring lessons, go ahead and fold them in and mark the logs.",
-      "expected_output": "In apply mode the skill edits each routed target file to add the terse rule text, AND stamps a `_(promoted → <target>)_` provenance marker onto the originating lesson in every source log it came from. On the current corpus the one surviving candidate is 'run gen:index before format', so it adds that ordering rule to .claude/skills/sync-docs/SKILL.md and stamps the marker in BOTH docs/logs/2026-07-01-core-json.md and docs/logs/2026-07-01-core-analysis.md. It does not commit; it reports the files edited and logs stamped and hands off to /write-commit as a docs: change. It runs the verification (lint:md, and check:agents if agents were edited).",
+      "expected_output": "In apply mode the skill edits each routed target file to add the terse rule text, AND stamps a `_(promoted → <target>)_` provenance marker onto the originating lesson in every source log it came from. On the current corpus the one surviving candidate is 'run gen:index before format', so it adds that ordering rule to .claude/skills/syncing-docs/SKILL.md and stamps the marker in BOTH docs/logs/2026-07-01-core-json.md and docs/logs/2026-07-01-core-analysis.md. It does not commit; it reports the files edited and logs stamped and hands off to /writing-commits as a docs: change. It runs the verification (lint:md, and check:agents if agents were edited).",
       "assertions": [
         {
           "id": "edits-target-files",
@@ -51,7 +51,7 @@
         },
         {
           "id": "does-not-commit",
-          "description": "The skill does NOT run git commit; it hands off to /write-commit and states this is a docs: change touching no src/ or version"
+          "description": "The skill does NOT run git commit; it hands off to /writing-commits and states this is a docs: change touching no src/ or version"
         },
         {
           "id": "runs-verification",

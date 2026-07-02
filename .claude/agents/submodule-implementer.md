@@ -1,6 +1,6 @@
 ---
 name: submodule-implementer
-description: Writer spoke for the implement-submodule pipeline. Given a contract and a set of failing tests, writes the minimal src/** implementation of an m3l-common Core/AWS submodule to make those tests pass, then refactors while green. Use during the GREEN phase of TDD. It writes implementation only — it never writes tests and never reviews code.
+description: Writer spoke for the implementing-submodules pipeline. Given a contract and a set of failing tests, writes the minimal src/** implementation of an m3l-common Core/AWS submodule to make those tests pass, then refactors while green. Use during the GREEN phase of TDD. It writes implementation only — it never writes tests and never reviews code.
 tools: Read, Write, Edit, Grep, Glob, Bash
 disallowedTools: Agent
 model: sonnet

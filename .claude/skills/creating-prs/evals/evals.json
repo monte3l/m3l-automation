@@ -1,0 +1,54 @@
+{
+  "skill_name": "creating-prs",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Open a PR for this branch. I've implemented the core/errors submodule — typed error hierarchy, M3LResult, and tests. Everything passes: lint, typecheck, test, build.",
+      "expected_output": "PR created with a feat: title naming the submodule, a Summary listing the actual exported symbols, a Test plan checklist reflecting the real files changed, and a Notes line stating 'feat: → minor bump'.",
+      "files": [],
+      "expectations": [
+        "Runs 'pnpm lint && pnpm typecheck && pnpm test && pnpm build' before pushing",
+        "Pushes the branch with 'git push -u origin HEAD'",
+        "PR title uses Conventional Commit format and is ≤70 characters",
+        "PR body Summary bullets name actual symbols or files (not vague paraphrases)",
+        "PR body includes a Test plan section with a markdown checklist",
+        "PR body Notes line states the commit type and the semver impact"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Make a PR — I renamed M3LPaths.outputDir to M3LPaths.archiveDir. This is a breaking change; consumers need to update after upgrading.",
+      "expected_output": "PR created with a feat!: title, Summary explaining the rename, a Test plan that includes a typecheck step to catch old usage, and Notes stating 'feat!: → major bump' with migration instructions.",
+      "files": [],
+      "expectations": [
+        "PR title starts with 'feat!:' to signal the breaking change",
+        "PR body Summary names both the old and new property (outputDir → archiveDir)",
+        "PR body Notes includes migration instructions for consumers",
+        "PR body Notes states 'major bump' or equivalent"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Ship this for review — I updated the claude-pr-review.yml workflow to skip Dependabot PRs. Only CI files changed, no library code.",
+      "expected_output": "PR with a ci: title, a compact Summary that names the changed workflow file, a Test plan referencing CI behaviour, and Notes stating 'ci: → no release'.",
+      "files": [],
+      "expectations": [
+        "PR title starts with 'ci:' in lowercase",
+        "PR body Summary references the specific workflow file (.github/workflows/...)",
+        "PR body Notes states no release is triggered (ci: commits don't release)",
+        "Quality gates run before the push"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Get this merged — I'm on the main branch right now.",
+      "expected_output": "Skill stops with a clear error message telling the user they are on main and must branch off first before creating a PR.",
+      "files": [],
+      "expectations": [
+        "Skill detects the current branch is 'main' and stops",
+        "Error message tells the user to create a feature or fix branch first",
+        "No push or PR is created"
+      ]
+    }
+  ]
+}

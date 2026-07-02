@@ -3,7 +3,7 @@
  * Stop hook advisory: emits non-blocking reminders when files edited during
  * the session need a follow-up check:
  *
- * 1. docs/implementation-status.md changed → remind to run /sync-docs
+ * 1. docs/implementation-status.md changed → remind to run /syncing-docs
  *    (re-stamps provenance sidecars, verifies doc counts, lints markdown).
  *
  * 2. packages/m3l-common/tests/*.test.ts changed → remind to run
@@ -39,11 +39,11 @@ function wasModified(pathSpec) {
   return recent.length > 0;
 }
 
-// 1. Implementation-status drift — /sync-docs reconciles all doc metadata.
+// 1. Implementation-status drift — /syncing-docs reconciles all doc metadata.
 if (wasModified("docs/implementation-status.md")) {
   process.stderr.write(
-    `⚡ /sync-docs reminder: docs/implementation-status.md was changed this session.\n` +
-      `   Run \`/sync-docs\` to re-stamp provenance sidecars, verify doc counts,\n` +
+    `⚡ /syncing-docs reminder: docs/implementation-status.md was changed this session.\n` +
+      `   Run \`/syncing-docs\` to re-stamp provenance sidecars, verify doc counts,\n` +
       `   and lint markdown before committing.\n`,
   );
 }
