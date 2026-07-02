@@ -23,3 +23,8 @@ pre-push:
   commands:
     verify:
       run: pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:coverage
+    # Refuse to push unsigned/unverified commits (skipped in CI so release
+    # automation isn't wedged). Bypassable with --no-verify; the unbypassable
+    # layer is branch-protection "Require signed commits".
+    verify-signatures:
+      run: node bin/verify-signed-range.mjs
