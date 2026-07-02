@@ -54,6 +54,7 @@
     "provenance": true
   },
   "dependencies": {
+    "csv-parse": "7.0.0",
     "yaml": "2.9.0"
   }
 }
