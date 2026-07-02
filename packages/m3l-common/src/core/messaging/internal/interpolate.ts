@@ -9,8 +9,17 @@
  * @packageDocumentation
  */
 
-/** Matches a `{{ key }}` token, capturing the (possibly padded) key name. */
-const TOKEN_PATTERN = /\{\{\s*([^{}]*?)\s*\}\}/g;
+/**
+ * Matches a `{{ key }}` token, capturing the (possibly padded) key name.
+ *
+ * The captured group is trimmed in {@link interpolate} rather than in the
+ * pattern itself: wrapping the capture in `\s*` on both sides would overlap
+ * with the lazy `[^{}]*?` (whitespace is also a non-brace character),
+ * producing catastrophic backtracking on unbalanced input such as `{{` +
+ * many spaces + no closing `}}`. A single greedy, non-overlapping
+ * `[^{}]*` keeps the scan linear.
+ */
+const TOKEN_PATTERN = /\{\{([^{}]*)\}\}/g;
 
 /**
  * Renders `template`, replacing each `{{ key }}` token (whitespace around the
@@ -30,7 +39,8 @@ export function interpolate(
   template: string,
   data: Record<string, unknown>,
 ): string {
-  return template.replace(TOKEN_PATTERN, (fullMatch, key: string) => {
+  return template.replace(TOKEN_PATTERN, (fullMatch, rawKey: string) => {
+    const key = rawKey.trim();
     if (!Object.prototype.hasOwnProperty.call(data, key)) return fullMatch;
     return String(data[key]);
   });
