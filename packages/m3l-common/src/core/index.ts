@@ -26,5 +26,6 @@ export * from "./messaging/index.js";
 export * from "./polling/index.js";
 export * from "./prompt/index.js";
 export * from "./security/index.js";
+export * from "./storage/index.js";
 export * from "./text/index.js";
 export * from "./utils/index.js";
