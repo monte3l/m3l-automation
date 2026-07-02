@@ -1,0 +1,45 @@
+{
+  "skill_name": "implementing-submodules",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Implement the core/config submodule. It has a spec at docs/reference/core/config.md and its status in docs/implementation-status.md is 'documented'.",
+      "expected_output": "Hub dispatches spokes in order: spec-conformance-reviewer (contract), test-author (RED tests), submodule-implementer (GREEN impl), code-reviewer + spec-conformance-reviewer (review). Status file updated after each phase. Final verify passes. Hub never edits src/ or tests/ directly.",
+      "files": [],
+      "expectations": [
+        "Hub reads docs/implementation-status.md to confirm the module and spec page exist",
+        "Hub dispatches spec-conformance-reviewer first to extract the contract",
+        "Hub dispatches test-author with the contract text before any implementation",
+        "Hub dispatches submodule-implementer only after the RED tests exist",
+        "Hub dispatches code-reviewer and spec-conformance-reviewer in parallel for review",
+        "Hub updates docs/implementation-status.md after each phase transition",
+        "Hub runs the final verification pipeline (pnpm build && pnpm test && pnpm lint && pnpm typecheck)",
+        "Hub never directly edits src/** or tests/**"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Let's do the retry stuff — implement exponential back-off retries.",
+      "expected_output": "Hub checks docs/implementation-status.md and docs/reference/core/retry.md, confirms the spec exists, and proceeds through the TDD pipeline. If no spec page exists, hub stops and tells the user to run scaffolding-submodules first.",
+      "files": [],
+      "expectations": [
+        "Hub resolves the module name from the casual request ('retry stuff' → core/retry)",
+        "Hub reads docs/implementation-status.md to check the module status",
+        "If a docs/reference spec page exists, hub proceeds through the 4-phase pipeline",
+        "If no spec page exists, hub stops and points the user at scaffolding-submodules"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Implement core/storage — it needs better-sqlite3 as a runtime dependency.",
+      "expected_output": "Hub pauses at the dependency gate, lists 'better-sqlite3' with a one-line rationale, and waits for explicit user approval before allowing pnpm add to run. Hub does not add the dep without approval.",
+      "files": [],
+      "expectations": [
+        "Hub identifies better-sqlite3 as a required runtime dependency",
+        "Hub stops at the dependency gate and lists the dep with a rationale",
+        "Hub waits for explicit user approval before proceeding",
+        "Hub does not instruct any spoke to run 'pnpm add' without approval"
+      ]
+    }
+  ]
+}

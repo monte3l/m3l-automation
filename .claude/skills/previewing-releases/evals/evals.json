@@ -1,0 +1,52 @@
+{
+  "skill_name": "previewing-releases",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "What version will this release? I just merged a feat: commit adding the core/polling submodule to main.",
+      "expected_output": "Skill runs 'npx semantic-release@latest --dry-run --no-ci', reports the next version as a minor bump (0.x.0 → 0.x+1.0), shows the release notes grouped by commit type, and explains that feat: triggers a minor.",
+      "files": [],
+      "expectations": [
+        "Runs 'git fetch' to confirm the branch is up to date",
+        "Runs 'npx semantic-release@latest --dry-run --no-ci'",
+        "Reports a minor version bump (feat: → minor)",
+        "Shows the release notes or a summary of what semantic-release computed",
+        "Does not publish anything (dry-run only)"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Preview the release — I only merged a fix: commit correcting a missing .js extension in the core barrel.",
+      "expected_output": "Skill reports a patch bump (0.x.y → 0.x.y+1) and the release notes showing the fix: commit. Explains that fix: triggers a patch.",
+      "files": [],
+      "expectations": [
+        "Runs the semantic-release dry-run command",
+        "Reports a patch version bump",
+        "Mentions that fix: commits trigger a patch release"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Will this release? I only merged docs: and chore: commits.",
+      "expected_output": "Skill reports 'no release will be published' and explains that docs:, chore:, refactor:, and test: commits do not trigger semantic-release.",
+      "files": [],
+      "expectations": [
+        "Runs the semantic-release dry-run command",
+        "Reports that no release will be published",
+        "Explains which commit types do not trigger a release (docs:, chore:, refactor:, test:)"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Did my commits bump the version correctly? I added a feat!: commit renaming M3LPaths.outputDir to archiveDir.",
+      "expected_output": "Skill reports a major version bump (x.y.z → x+1.0.0) and shows the BREAKING CHANGE note in the release notes. Confirms feat!: triggers a major.",
+      "files": [],
+      "expectations": [
+        "Runs the semantic-release dry-run command",
+        "Reports a major version bump",
+        "Shows or references the BREAKING CHANGE footer in the release notes",
+        "Explains that feat!: or a BREAKING CHANGE footer triggers a major release"
+      ]
+    }
+  ]
+}
