@@ -1,6 +1,6 @@
 ---
 name: sync-docs
-description: Reconciles all doc metadata in the m3l-automation monorepo after a submodule ships or before a release. Re-stamps provenance sidecars to the current git HEAD, verifies doc counts match the filesystem, and runs markdown lint — all in one repeatable pass. Use this skill whenever the user says /sync-docs, "sync docs", "reconcile docs", "update doc provenance", "stamp provenance", "sync doc metadata", or after the implement-submodule pipeline finishes and the hub needs to reconcile doc state.
+description: Reconciles all doc metadata in the m3l-automation monorepo after a submodule ships or before a release. Re-stamps provenance sidecars to the current git HEAD, verifies doc counts and the implemented "N of 22" count match the filesystem, confirms every public export is documented, regenerates the reference index, and runs markdown lint — the single doc-reconciliation authority, all in one repeatable pass. Use this skill whenever the user says /sync-docs, "sync docs", "reconcile docs", "update doc provenance", "stamp provenance", "sync doc metadata", or after the implement-submodule pipeline finishes and the hub needs to reconcile doc state.
 ---
 
 Reconcile all documentation metadata for `@m3l-automation/m3l-common`. This
@@ -35,7 +35,7 @@ node bin/check-doc-provenance.mjs --update
 Updates every sidecar's `commit` to `git HEAD` and `retrieved` to today's
 date. Only run after step 1 passed (even with staleness warnings).
 
-### 3 — Verify doc counts
+### 3 — Verify doc counts and documented exports
 
 ```bash
 node bin/check-doc-counts.mjs
@@ -46,6 +46,15 @@ Derives the canonical count from `docs/reference/core/*.md` and
 
 If it fails, the output names the mismatched file and the value that needs
 updating. Tell the user the exact edit required.
+
+```bash
+pnpm check:doc-exports
+```
+
+Fails if any public export (surfaced through a namespace barrel) is missing from
+its `docs/reference` page. A newly shipped submodule that added exports must have
+them all documented; this is the gate that catches an undocumented symbol before
+it reaches CI. Report the exact undocumented symbols if it fails.
 
 ### 4 — Final provenance check (post-stamp)
 
@@ -86,6 +95,15 @@ and confirm the number matches:
 
 If any value is stale, list the file, the current value, and the required
 update. Do not edit unless the user asks.
+
+```bash
+pnpm check:impl-counts
+```
+
+The deterministic gate behind the manual scan above: it asserts the implemented
+"N of 22" numerator matches across every badge / prose / HTML site. Run it once
+`docs/implementation-status.md` reflects the true ✅ count. If it fails, the
+output names the site and value that drifted.
 
 ### 6 — Test count check
 
@@ -133,8 +151,10 @@ Output after all steps complete:
 - Provenance pre-flight: ✓ / ✗
 - Sidecars re-stamped:   <N sidecars updated to <short SHA>>
 - Doc counts:            ✓ (Core=N, AWS=M, total=N+M) / ✗
+- Documented exports:    ✓ / ✗ (check:doc-exports)
 - Provenance (post):     ✓ / ✗
 - Implementation status: up to date / <list rows needing attention>
+- Implemented count:     ✓ (N of 22) / ✗ (check:impl-counts)
 - Test counts:           ✓ (N submodules verified) / ✗
 - Reference index:       ✓ (gen:index + check:index) / ✗
 - Markdown lint:         ✓ / ✗

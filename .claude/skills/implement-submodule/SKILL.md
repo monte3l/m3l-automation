@@ -52,8 +52,8 @@ common single-module loop has no worktree churn. See ADR-0013.
 The one shared resource that still needs coordination is the durable state file
 `docs/implementation-status.md`: two concurrent pipelines must edit **different
 rows** (partition by namespace/phase) and whichever lands second rebases and
-re-confirms the counts. This mirrors the coordination caveat already recorded in
-`docs/plans/messaging-submodule-implementation.md`.
+re-confirms the counts. This is the concurrent-edit partition rule recorded in
+ADR-0013 (its durable home), not a per-plan caveat.
 
 ## Progress checklist (copy-paste at the start of each run)
 
@@ -73,14 +73,10 @@ re-confirms the counts. This mirrors the coordination caveat already recorded in
       add `silent-failure-hunter` when the module has error-handling or async paths;
       iterate until clean; update status file → ✅
 - [ ] Step 8 — Final verify: `pnpm build && pnpm test && pnpm lint && pnpm typecheck`;
-      generate provenance sidecar (exported symbols only); run `pnpm check:provenance`,
-      `pnpm gen:index` + `pnpm check:index`, `pnpm check:doc-exports`, and
-      `pnpm check:impl-counts` (after the status file flips to ✅)
+      generate provenance sidecar (exported symbols only); then invoke `/sync-docs`
+      (after the status file flips to ✅) for the full doc-reconciliation stack
 - [ ] Report: new exports, review verdict, deps (if any), state-file transitions
 - [ ] Write work log: `/write-work-log` → `docs/logs/YYYY-MM-DD-<ns>-<module>.md`
-
-**Rule: you (the hub) never edit `src/**` or `tests/**`** — that is what the
-spokes are for. The writer is never the reviewer; keep that separation structural.
 
 ## Steps
 
@@ -189,7 +185,7 @@ spokes are for. The writer is never the reviewer; keep that separation structura
    **Must-fix** items back to `submodule-implementer`, and re-run tests/review
    until clean. Update the state file: → ✅ reviewed/done.
 
-8. **Final verify and report.** Run
+8. **Final verify, reconcile docs, and report.** Run
    `pnpm -C packages/m3l-common build && pnpm test && pnpm lint && pnpm typecheck`.
    Generate or update the module's provenance sidecar
    (`docs/reference/<ns>/<name>.provenance.json`). **Every `symbol` entry must
@@ -202,91 +198,40 @@ spokes are for. The writer is never the reviewer; keep that separation structura
    AND the provenance sidecar in the _same_ change set** — otherwise
    spec-conformance reads it as undocumented drift and provenance has no heading
    to map it to (`docs/logs/2026-07-01-core-json.md`, divergence 2).
-   Then run the doc/index gates, all of which are **mandatory** for a new
-   submodule — omitting the reference-index regeneration is a CI failure the
-   core/json plan nearly shipped:
-   - `pnpm check:provenance` — rejects any symbol not found in the file's exports.
-   - `pnpm gen:index` then `pnpm check:index` — regenerate the reference index so
-     the new module flips to _wired_ with its symbol count, then confirm it's
-     clean.
-   - `pnpm check:doc-exports` — fails if any public export is undocumented.
-   - `pnpm check:impl-counts` after the status file flips to ✅ — the implemented
-     "N of 22" numerator must match across every badge / prose / HTML site.
-     Report the new exports, the review verdict, any deps added (with approval),
-     and the state-file transitions. Remind the user the commit should be a `feat:`
-     (a new submodule surfaced through the barrel is a minor, not a breaking change,
-     because the three-entry `exports` map is unchanged). Then invoke
-     `/write-work-log` to write `docs/logs/YYYY-MM-DD-<ns>-<module>.md` while the
-     conversation context is intact — this is the durable record of what shipped,
-     what diverged, and the lessons for the next submodule.
 
-## What "good" looks like (hand these standards to the spokes)
+   Once the status file reflects the true ✅ count, **invoke `/sync-docs`** to run
+   the full doc-reconciliation stack in one pass — provenance re-stamp,
+   `check:doc-counts`, `check:doc-exports`, index regeneration
+   (`gen:index` → `check:index`, in the right order relative to prettier),
+   `check:impl-counts`, `check:test-counts`, and markdown lint. `/sync-docs` is
+   the single authority for these gates; running them by hand here risks the
+   `gen:index`-before-format ordering trap and lets the "N of 22" sites drift.
+   All of them are **mandatory** for a new submodule — omitting the
+   reference-index regeneration is a CI failure the core/json plan nearly shipped.
 
-These few-shot pairs encode the project's hard rules so the spokes produce code
-that survives review the first time. Pass them along when the contrast matters.
+   Then report the new exports, the review verdict, any deps added (with
+   approval), and the state-file transitions. Remind the user the commit should
+   be a `feat:` (a new submodule surfaced through the barrel is a minor, not a
+   breaking change, because the three-entry `exports` map is unchanged). Finally
+   invoke `/write-work-log` to write `docs/logs/YYYY-MM-DD-<ns>-<module>.md` while
+   the conversation context is intact — this is the durable record of what
+   shipped, what diverged, and the lessons for the next submodule.
 
-**1 — ESM relative imports carry `.js` (tsc won't add it; Node won't resolve without it):**
+## What "good" looks like (the spokes already carry these)
 
-```ts
-// bad — type-checks, then fails at runtime in Node
-import { M3LError } from "../errors/index";
-// good
-import { M3LError } from "../errors/index.js";
-```
+The good/bad code contrasts and test-tooling gotchas that used to live here now
+live in the path-scoped rules, which **auto-load into the exact writer spokes**
+that act on them — so you don't need to relay them by hand:
 
-**2 — Typed errors with a cause, never bare strings (one hierarchy, chainable):**
+- `src/**` conventions (ESM `.js` imports, typed errors + `cause`, named
+  exports, CLI-over-IDE authority) → `.claude/rules/library-src.md`, loaded when
+  `submodule-implementer` edits `src/**`.
+- Test discipline (test-first, error-channel `eslint-disable` rationale,
+  eslint-in-loop, reading coverage from `coverage-final.json`) →
+  `.claude/rules/tests.md`, loaded when `test-author` edits `tests/**`.
 
-```ts
-// bad — loses the type and the underlying failure
-throw `config ${name} not found`;
-// good
-throw new M3LConfigNotFoundError(`config ${name} not found`, { cause });
-```
-
-**3 — Named exports only (tree-shakeable, refactor-safe, matches the barrels):**
-
-```ts
-// bad
-export default class M3LPoller {
-  /* … */
-}
-// good
-export class M3LPoller {
-  /* … */
-}
-```
-
-**4 — Test-first, not test-after (the failing test defines the contract):**
-
-```
-bad:  write src/<module>/index.ts, then backfill a test that mirrors it
-good: test-author writes tests from the doc contract → they fail → implementer makes them pass
-```
-
-**5 — Justify intentional `eslint-disable` on error-channel tests:**
-
-```ts
-// A module that tests its error channel will throw/reject non-`Error` values
-// to prove normalization, tripping `only-throw-error` /
-// `prefer-promise-reject-errors`. Disable narrowly, with a `--` rationale —
-// don't let it reach the hub gate or get "fixed" into a real Error.
-// eslint-disable-next-line @typescript-eslint/only-throw-error -- intentional non-Error to verify the unknown channel
-throw "a string";
-```
-
-**Tooling notes to relay to the spokes:**
-
-- `post-edit-verify` now runs **eslint in-loop** (prettier → eslint → typecheck
-  → vitest-related). Spokes should resolve eslint findings themselves, not defer
-  them to the hub's `pnpm lint` gate — that defeats the in-loop signal.
-- Read coverage from `coverage/coverage-final.json`, **not** the `pnpm
-test:coverage` text table: the v8 text reporter hides files that are 100% on
-  every metric, so an "absent" file is not an uncovered file. Use `pnpm exec
-vitest` / `pnpm test:coverage` (bare `npx vitest` fails to resolve
-  `@vitest/coverage-v8` under pnpm).
-- Trust the **CLI gate over the IDE/LSP** in this harness: editor diagnostics
-  lag and misreport against the project `tsconfig`. A passing `pnpm typecheck` /
-  `pnpm lint` is the source of truth.
+You still front-load the module-specific **contract nuances** (Step 4) into the
+hand-offs — those are per-module and no rule can carry them.
 
 ## Boundaries
 
