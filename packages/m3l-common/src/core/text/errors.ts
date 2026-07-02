@@ -17,7 +17,7 @@ import type { M3LErrorOptions } from "../errors/index.js";
  * - `"ERR_TEXT_EXTRACTION_UNSUPPORTED"` — no registered extractor handles the
  *   given MIME type or extension.
  */
-export type M3LTextExtractionErrorCode =
+type M3LTextExtractionErrorCode =
   | "ERR_TEXT_EXTRACTION"
   | "ERR_TEXT_EXTRACTION_MISSING_DEP"
   | "ERR_TEXT_EXTRACTION_UNSUPPORTED";
@@ -27,10 +27,7 @@ export type M3LTextExtractionErrorCode =
  * {@link M3LErrorOptions} but narrows `code` to the closed
  * {@link M3LTextExtractionErrorCode} union.
  */
-export interface M3LTextExtractionErrorOptions extends Omit<
-  M3LErrorOptions,
-  "code"
-> {
+interface M3LTextExtractionErrorOptions extends Omit<M3LErrorOptions, "code"> {
   /** The specific extraction failure code. */
   readonly code: M3LTextExtractionErrorCode;
 }
