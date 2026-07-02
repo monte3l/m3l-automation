@@ -46,7 +46,7 @@ export interface M3LFtsIndexConfig {
   readonly dbPath: string;
   /**
    * The FTS5 virtual-table name. Validated as a bare SQL identifier
-   * (`/^[A-Za-z0-9_]+$/`) before any DDL runs.
+   * (`/^[A-Za-z_][A-Za-z0-9_]*$/`) before any DDL runs.
    */
   readonly table: string;
   /**
