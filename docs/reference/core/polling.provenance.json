@@ -1,0 +1,170 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/polling.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LPoller.ts",
+          "symbol": "M3LPoller"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LPoller.ts",
+          "symbol": "M3LPollCheckFn"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LPoller.ts",
+          "symbol": "M3LPollDecision"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
+          "symbol": "M3LRetryRunner"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
+          "symbol": "M3LRetryClassifier"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
+          "symbol": "M3LRetryDecision"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
+          "symbol": "M3LRetryAdvice"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LBackoff.ts",
+          "symbol": "M3LBackoff"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LPollingPolicies.ts",
+          "symbol": "M3LPollingPolicies"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/classifiers.ts",
+          "symbol": "combineClassifiers"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/classifiers.ts",
+          "symbol": "awsThrottlingClassifier"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/classifiers.ts",
+          "symbol": "awsNetworkClassifier"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/classifiers.ts",
+          "symbol": "httpRetryAfterClassifier"
+        }
+      ],
+      "commit": "710cf6f29c0cd09097c19940e1c9f3161735d743",
+      "retrieved": "2026-07-02"
+    },
+    {
+      "heading": "`M3LPoller` vs. `M3LRetryRunner`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LPoller.ts",
+          "symbol": "M3LPoller"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
+          "symbol": "M3LRetryRunner"
+        }
+      ],
+      "commit": "710cf6f29c0cd09097c19940e1c9f3161735d743",
+      "retrieved": "2026-07-02"
+    },
+    {
+      "heading": "Classifiers",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
+          "symbol": "M3LRetryClassifier"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
+          "symbol": "M3LRetryDecision"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
+          "symbol": "M3LRetryAdvice"
+        }
+      ],
+      "commit": "710cf6f29c0cd09097c19940e1c9f3161735d743",
+      "retrieved": "2026-07-02"
+    },
+    {
+      "heading": "Composing classifiers",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/polling/classifiers.ts",
+          "symbol": "combineClassifiers"
+        }
+      ],
+      "commit": "710cf6f29c0cd09097c19940e1c9f3161735d743",
+      "retrieved": "2026-07-02"
+    },
+    {
+      "heading": "Built-in classifiers",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/polling/classifiers.ts",
+          "symbol": "awsThrottlingClassifier"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/classifiers.ts",
+          "symbol": "awsNetworkClassifier"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/classifiers.ts",
+          "symbol": "httpRetryAfterClassifier"
+        }
+      ],
+      "commit": "710cf6f29c0cd09097c19940e1c9f3161735d743",
+      "retrieved": "2026-07-02"
+    },
+    {
+      "heading": "Backoff strategies",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LBackoff.ts",
+          "symbol": "M3LBackoff"
+        }
+      ],
+      "commit": "710cf6f29c0cd09097c19940e1c9f3161735d743",
+      "retrieved": "2026-07-02"
+    },
+    {
+      "heading": "Pre-baked policies",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LPollingPolicies.ts",
+          "symbol": "M3LPollingPolicies"
+        }
+      ],
+      "commit": "710cf6f29c0cd09097c19940e1c9f3161735d743",
+      "retrieved": "2026-07-02"
+    },
+    {
+      "heading": "Notes and behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LPoller.ts",
+          "symbol": "M3LPoller"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
+          "symbol": "M3LRetryRunner"
+        },
+        {
+          "file": "packages/m3l-common/src/core/polling/M3LBackoff.ts",
+          "symbol": "M3LBackoff"
+        }
+      ],
+      "commit": "710cf6f29c0cd09097c19940e1c9f3161735d743",
+      "retrieved": "2026-07-02"
+    }
+  ]
+}
