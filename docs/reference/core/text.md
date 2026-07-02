@@ -8,7 +8,7 @@ The `text` module extracts plain text from a variety of file formats through a s
 
 The registry and the plain-text extractor depend only on Node's `fs` and are always available. The five library-backed extractors (PDF, DOCX, XLSX, email, ZIP) are **opt-in**: each is a thin wrapper that loads its backing library through a lazy dynamic `import()` on first use, and those libraries are declared as **optional peer dependencies** so the base install stays minimal and the import graph stays tree-shakeable. See [Notes & behavior](#notes--behavior) for the full dependency posture.
 
-The ZIP extractor recurses into archives by re-dispatching their entries through the registry, with a depth cap to resist zip-bomb amplification.
+The ZIP extractor recurses into archives by re-dispatching their entries through the registry, with depth, entry-count, and cumulative-size caps to resist zip-bomb amplification.
 
 ## Public API
 
@@ -106,6 +106,38 @@ Every extractor returns an `M3LTextExtractionResult`:
 }
 ```
 
+### Extraction options
+
+`extract()` accepts an optional `M3LTextExtractionOptions`. Beyond the internal
+`ZIP_DEPTH_SYMBOL` recursion counter (managed by the ZIP extractor itself, never
+set by callers), it carries two public caps that bound `M3LZipTextExtractor`
+against malicious archives:
+
+```typescript
+{
+  maxEntries?: number;     // max ZIP entries processed (default 4096)
+  maxTotalBytes?: number;  // max cumulative decompressed bytes (default 256 MiB)
+}
+```
+
+- **`maxEntries`** — the maximum number of archive entries the ZIP extractor
+  processes. Once the cap is reached the extractor stops iterating and returns
+  `truncated: true`, bounding a _breadth_ attack (an archive declaring millions
+  of entries).
+- **`maxTotalBytes`** — the maximum cumulative **decompressed** byte budget
+  across all processed entries. Each entry's declared uncompressed size is
+  checked against the remaining budget _before_ the entry is decompressed, so a
+  high-inflation "zip bomb" entry is skipped rather than materialized; when the
+  budget would be exceeded the result is marked `truncated: true`. Guards a
+  _size_ attack (the classic 42 KB → 4.5 PB archive that defeats a depth cap
+  through inflation ratio alone).
+
+Both default to safe finite values and may be lowered by the caller. The caps
+are honored only by `M3LZipTextExtractor` (other extractors ignore them) and are
+forwarded to nested archives so every recursion layer enforces the same budget.
+A `truncated: true` result means at least one cap tripped and the extracted text
+is a partial view of the archive.
+
 ## Usage
 
 > The PDF and DOCX examples below use optional extractors, so they require the
@@ -145,7 +177,8 @@ console.log(result.text);
 
 ## Notes & behavior
 
-- **ZIP recursion cap.** `M3LZipTextExtractor` extracts text entries directly and re-dispatches other entries back through the registry. To resist zip-bomb amplification, recursion is capped at a default depth of **2** — the cap counts total archive layers, so the root archive plus **one** level of nested archives are processed and any deeper archive is skipped. The cap bounds recursive re-dispatch (not the initial open of the archive passed to `extract()`), and the current depth is tracked via `ZIP_DEPTH_SYMBOL` on the options object. A caller-supplied `ZIP_DEPTH_SYMBOL` value is clamped to a non-negative integer, so it can only shrink the remaining recursion budget, never bypass the cap. The cap bounds recursion depth only; it does not bound the number of entries or their decompressed size.
+- **ZIP recursion cap.** `M3LZipTextExtractor` extracts text entries directly and re-dispatches other entries back through the registry. To resist zip-bomb amplification, recursion is capped at a default depth of **2** — the cap counts total archive layers, so the root archive plus **one** level of nested archives are processed and any deeper archive is skipped. The cap bounds recursive re-dispatch (not the initial open of the archive passed to `extract()`), and the current depth is tracked via `ZIP_DEPTH_SYMBOL` on the options object. A caller-supplied `ZIP_DEPTH_SYMBOL` value is clamped to a non-negative integer, so it can only shrink the remaining recursion budget, never bypass the cap. The depth cap bounds recursion _depth_; entry count and decompressed size are bounded independently by the `maxEntries` / `maxTotalBytes` options below.
+- **ZIP breadth & size caps.** Depth alone does not stop a wide archive (millions of sibling entries) or a high-ratio bomb (a single entry inflating from kilobytes to petabytes). `M3LZipTextExtractor` therefore also caps the **entry count** (`maxEntries`, default 4096) and the **cumulative decompressed byte budget** (`maxTotalBytes`, default 256 MiB). It stops after `maxEntries` entries, and before decompressing each entry it checks the entry's declared uncompressed size against the remaining byte budget — an entry that would exceed it is skipped without being materialized. When either cap trips, extraction returns the text gathered so far with `truncated: true` (the first extractor to actually produce a non-`false` `truncated`). The caps are forwarded to nested archives so each layer enforces its own budget, and combined with the depth cap they bound the total work of the whole recursion tree. See [Extraction options](#extraction-options).
 - **Uniform results.** All extractors honor the same `{ text, pages?, truncated }` shape, so consuming code does not branch per format.
 - **Errors.** Extraction failures surface as `M3LTextExtractionError` (a subclass of the `errors` hierarchy), always chaining the underlying failure via `cause` — the module never throws a bare string or an unwrapped library exception.
 - **Core vs optional extractors.** `M3LTextExtractorRegistry` and `M3LPlainTextExtractor` depend only on Node's `fs` and are always available with the base install. The five library-backed extractors (`M3LPdfTextExtractor`, `M3LDocxTextExtractor`, `M3LXlsxTextExtractor`, `M3LEmailTextExtractor`, `M3LZipTextExtractor`) are opt-in.

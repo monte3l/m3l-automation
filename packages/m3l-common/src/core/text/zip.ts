@@ -28,6 +28,35 @@ import type {
 const DEFAULT_DEPTH_CAP = 2;
 
 /**
+ * Default cap on the number of archive entries processed before extraction
+ * stops and marks the result truncated. Bounds a **breadth** attack — an
+ * archive declaring millions of sibling entries — independently of the depth
+ * cap. Every iterated entry (directories included) counts toward it.
+ */
+const DEFAULT_MAX_ENTRIES = 4096;
+
+/**
+ * Default cumulative **decompressed** byte budget across processed entries. An
+ * entry whose declared uncompressed size would exceed the remaining budget is
+ * skipped without being materialized, so a high-inflation "zip bomb" cannot be
+ * decompressed. 256 MiB is a generous ceiling for legitimate text archives
+ * while still bounding a size attack.
+ */
+const DEFAULT_MAX_TOTAL_BYTES = 268_435_456; // 256 MiB (256 * 1024 * 1024)
+
+/**
+ * The text contribution and accounting a single entry yields back to
+ * {@link M3LZipTextExtractor.extract}: the decoded `text` (absent when the
+ * entry contributes none), the **actual** decompressed `bytes` charged to the
+ * budget, and whether handling the entry tripped a cap (`truncated`).
+ */
+interface EntryOutcome {
+  readonly text?: string;
+  readonly bytes: number;
+  readonly truncated: boolean;
+}
+
+/**
  * Minimal structural view of the registry the ZIP extractor re-dispatches
  * through — declared locally to avoid a construction-time import cycle with the
  * concrete `M3LTextExtractorRegistry`.
@@ -104,17 +133,22 @@ export class M3LZipTextExtractor implements M3LTextExtractor {
     // non-finite value would otherwise defeat the recursion cap.
     const raw = options?.[ZIP_DEPTH_SYMBOL] ?? 0;
     const depth = Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
+    // maxEntries / maxTotalBytes are caller-settable, so coerce them at the
+    // boundary exactly like the depth clamp above: undefined, non-finite, or
+    // below the minimum falls back to the safe default — hostile input never
+    // throws, it only ever gets a safe cap (validation-boundary lenience).
+    const maxEntries = clampCap(options?.maxEntries, DEFAULT_MAX_ENTRIES);
+    const maxTotalBytes = clampCap(
+      options?.maxTotalBytes,
+      DEFAULT_MAX_TOTAL_BYTES,
+    );
     const { default: AdmZipCtor } = await loadAdmZip();
     try {
       const zip = new AdmZipCtor(filePath);
-      const parts: string[] = [];
-
-      for (const entry of zip.getEntries()) {
-        const part = await this.#handleEntry(entry, depth);
-        if (part !== undefined) parts.push(part);
-      }
-
-      return { text: parts.join("\n"), truncated: false };
+      return await this.#extractEntries(zip.getEntries(), depth, {
+        maxEntries,
+        maxTotalBytes,
+      });
     } catch (cause) {
       if (cause instanceof M3LTextExtractionError) throw cause;
       throw new M3LTextExtractionError(
@@ -125,21 +159,82 @@ export class M3LZipTextExtractor implements M3LTextExtractor {
   }
 
   /**
-   * Resolves a single archive entry to its text contribution, or `undefined`
-   * when the entry yields nothing (a directory, or a nested entry skipped
-   * because no registry is present or the depth cap is reached).
+   * Iterates the archive's entries under both caps, accumulating the decoded
+   * text and the running decompressed-byte total. Stops early once the breadth
+   * cap (`maxEntries`) is reached — every iterated entry counts, directories
+   * included — and marks the result truncated when either cap trips (here or in
+   * a nested archive, whose truncation is propagated up by the entry handler).
+   */
+  async #extractEntries(
+    entries: readonly AdmZip.IZipEntry[],
+    depth: number,
+    caps: { readonly maxEntries: number; readonly maxTotalBytes: number },
+  ): Promise<M3LTextExtractionResult> {
+    const parts: string[] = [];
+    let usedBytes = 0;
+    let processed = 0;
+    let truncated = false;
+
+    for (const entry of entries) {
+      if (processed >= caps.maxEntries) {
+        truncated = true;
+        break;
+      }
+      processed++;
+
+      const outcome = await this.#handleEntry(entry, depth, {
+        remainingBytes: caps.maxTotalBytes - usedBytes,
+        maxEntries: caps.maxEntries,
+        maxTotalBytes: caps.maxTotalBytes,
+      });
+      usedBytes += outcome.bytes;
+      truncated ||= outcome.truncated;
+      if (outcome.text !== undefined) parts.push(outcome.text);
+    }
+
+    return { text: parts.join("\n"), truncated };
+  }
+
+  /**
+   * Resolves a single archive entry to its {@link EntryOutcome}: the decoded
+   * text (absent when the entry yields none — a directory, or a nested entry
+   * skipped because no registry is present or the depth cap is reached), the
+   * actual decompressed bytes charged to the budget, and whether a cap tripped.
    *
    * Directories and `.txt` entries are handled directly; every other entry is
-   * re-dispatched through the registry one level deeper.
+   * re-dispatched through the registry one level deeper. Before any entry is
+   * decompressed its **declared** uncompressed size is checked against the
+   * remaining byte budget; an entry that would overflow it is skipped without
+   * being materialized (a high-inflation bomb never inflates) and truncation is
+   * signalled.
    */
   async #handleEntry(
     entry: AdmZip.IZipEntry,
     depth: number,
-  ): Promise<string | undefined> {
-    if (entry.isDirectory) return undefined;
+    budget: {
+      readonly remainingBytes: number;
+      readonly maxEntries: number;
+      readonly maxTotalBytes: number;
+    },
+  ): Promise<EntryOutcome> {
+    if (entry.isDirectory) return { bytes: 0, truncated: false };
+
+    // Gate on the DECLARED uncompressed size before decompressing, so a
+    // high-ratio entry is skipped rather than materialized. A lying-low
+    // declared size can't overshoot later entries because the budget is
+    // charged the ACTUAL byte length once decompressed (below).
+    const declared = Math.max(0, entry.header.size);
+    if (declared > budget.remainingBytes) {
+      return { bytes: 0, truncated: true };
+    }
 
     if (isTextEntry(entry.entryName)) {
-      return entry.getData().toString("utf8");
+      const data = entry.getData();
+      return {
+        text: data.toString("utf8"),
+        bytes: data.length,
+        truncated: false,
+      };
     }
 
     // Descend into a nested entry only when a registry is present to
@@ -148,16 +243,25 @@ export class M3LZipTextExtractor implements M3LTextExtractor {
     // bound recursive amplification. `DEFAULT_DEPTH_CAP` counts total archive
     // layers including the root, so `depth + 1` is the child's layer index.
     if (this.#registry === undefined || depth + 1 >= DEFAULT_DEPTH_CAP) {
-      return undefined;
+      return { bytes: 0, truncated: false };
     }
 
+    const data = entry.getData();
     const nested = await this.#dispatchEntry(
       this.#registry,
       entry.entryName,
-      entry.getData(),
+      data,
       depth + 1,
+      { maxEntries: budget.maxEntries, maxTotalBytes: budget.maxTotalBytes },
     );
-    return nested?.text;
+    return {
+      // Omit `text` entirely when the nested layer yielded none — under
+      // exactOptionalPropertyTypes an explicit `undefined` is not assignable.
+      ...(nested?.text !== undefined ? { text: nested.text } : {}),
+      bytes: data.length,
+      // A cap tripped inside the child archive propagates up to the parent.
+      truncated: nested?.truncated ?? false,
+    };
   }
 
   /**
@@ -173,13 +277,18 @@ export class M3LZipTextExtractor implements M3LTextExtractor {
     entryName: string,
     data: Buffer,
     depth: number,
+    caps: { readonly maxEntries: number; readonly maxTotalBytes: number },
   ): Promise<M3LTextExtractionResult | undefined> {
     const dir = await mkdtemp(path.join(tmpdir(), "m3l-zip-"));
     const nestedPath = path.join(dir, path.basename(entryName));
     try {
       await writeFile(nestedPath, data);
+      // Forward BOTH caps into the nested layer alongside the depth counter, so
+      // every recursion layer enforces the same breadth and size budget.
       return await registry.extract("", nestedPath, {
         [ZIP_DEPTH_SYMBOL]: depth,
+        maxEntries: caps.maxEntries,
+        maxTotalBytes: caps.maxTotalBytes,
       });
     } catch (cause) {
       // Only "no extractor supports this entry" is a benign skip; a corrupt
@@ -201,6 +310,18 @@ export class M3LZipTextExtractor implements M3LTextExtractor {
       }
     }
   }
+}
+
+/**
+ * Coerces a caller-supplied cap to a safe positive integer. Mirrors the depth
+ * clamp's validation-boundary lenience: `undefined`, a non-finite value, or a
+ * value below the minimum (`1`) falls back to `fallback` rather than throwing,
+ * so hostile input can only ever yield a safe cap.
+ */
+function clampCap(raw: number | undefined, fallback: number): number {
+  return raw !== undefined && Number.isFinite(raw) && raw >= 1
+    ? Math.floor(raw)
+    : fallback;
 }
 
 /** Recognises entry names the ZIP extractor decodes directly as UTF-8 text. */

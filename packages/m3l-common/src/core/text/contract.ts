@@ -20,13 +20,29 @@ export const ZIP_DEPTH_SYMBOL: unique symbol = Symbol("m3l.text.zipDepth");
 /**
  * Options threaded through {@link M3LTextExtractor.extract}.
  *
- * Currently carries only the internal ZIP recursion depth (keyed by
- * {@link ZIP_DEPTH_SYMBOL}); the shape is open for future per-extractor
- * options.
+ * Carries the internal ZIP recursion depth (keyed by {@link ZIP_DEPTH_SYMBOL},
+ * managed by the ZIP extractor, never set by callers) plus two public caps —
+ * `maxEntries` and `maxTotalBytes` — that bound {@link M3LZipTextExtractor}
+ * against malicious archives (breadth and size attacks). The shape is open for
+ * future per-extractor options.
  */
 export type M3LTextExtractionOptions = {
   /** Internal ZIP recursion depth; set and incremented by the ZIP extractor. */
   readonly [ZIP_DEPTH_SYMBOL]?: number;
+  /**
+   * Maximum number of ZIP entries {@link M3LZipTextExtractor} will process
+   * before stopping and marking the result truncated. Bounds a breadth attack
+   * (an archive declaring millions of entries). Defaults to a safe finite value.
+   */
+  readonly maxEntries?: number;
+  /**
+   * Maximum cumulative decompressed byte budget {@link M3LZipTextExtractor} will
+   * materialize across processed entries before stopping and marking the result
+   * truncated. Each entry's declared uncompressed size is checked against the
+   * remaining budget before it is decompressed, so a high-inflation "zip bomb"
+   * entry is skipped rather than materialized. Defaults to a safe finite value.
+   */
+  readonly maxTotalBytes?: number;
 };
 
 /**
