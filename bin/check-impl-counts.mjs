@@ -5,8 +5,8 @@
 //
 // This is the numerator counterpart to check-doc-counts.mjs, which owns the
 // denominator (total documented = 22). The numerator rotted undetected once
-// (see docs/logs/2026-07-01-core-json.md, divergence 1) because two count sites
-// — packages/m3l-common/README.md and docs/index.html — were checked nowhere.
+// (see docs/logs/2026-07-01-core-json.md, divergence 1) because
+// packages/m3l-common/README.md was checked nowhere.
 //
 // Canonical rule: a submodule is implemented when its Status-column emoji in
 // docs/implementation-status.md is ✅. That set drives both the count (N) and
@@ -57,11 +57,6 @@ const numericChecks = [
     pattern: /\((\d+) of 22 submodules\)/,
     label: "implementation-status.md intro prose",
   },
-  {
-    file: "docs/index.html",
-    pattern: /(\d+) \/ 22 implemented/,
-    label: "docs/index.html status-row span",
-  },
 ];
 
 let errors = 0;
@@ -99,49 +94,6 @@ for (const check of numericChecks) {
         `   Context: "...${ctx}..."`,
     );
     errors++;
-  }
-}
-
-// docs/index.html structural checks: the module tree must render exactly N
-// implemented entries (class="done"), and the "done" status span must list the
-// implemented names in order. These catch marker/name drift that a bare numeral
-// would miss.
-const html = read("docs/index.html");
-if (html !== null) {
-  const doneCount = (html.match(/class="done"/g) ?? []).length;
-  if (doneCount !== expected) {
-    console.error(
-      `✗  docs/index.html: ${doneCount} module-tree entries carry class="done" ` +
-        `but derived implemented count is ${expected}. Flip the ${
-          doneCount > expected ? "extra" : "missing"
-        } module(s) between class="done"/class="not-started".`,
-    );
-    errors++;
-  }
-
-  const doneSpan = /<span class="value done"[^>]*>\s*([^<]+?)\s*<\/span/.exec(
-    html,
-  );
-  if (!doneSpan) {
-    console.error(
-      `✗  docs/index.html: could not locate the "done" names span ` +
-        `(<span class="value done" …>).`,
-    );
-    errors++;
-  } else {
-    // Normalize internal whitespace: once the list crosses prettier's
-    // printWidth (80) it wraps to newline + indent, which a `.trim()`-only
-    // compare would reject. Collapsing runs of whitespace decouples this gate
-    // from prettier's line-wrapping (see docs/logs/2026-07-01-core-analysis.md,
-    // divergence 5) so no `<!-- prettier-ignore -->` is needed on the span.
-    const doneNames = doneSpan[1].trim().replace(/\s+/g, " ");
-    if (doneNames !== namesCsv) {
-      console.error(
-        `✗  docs/index.html: "done" names span lists "${doneNames}" ` +
-          `but implemented modules are "${namesCsv}".`,
-      );
-      errors++;
-    }
   }
 }
 

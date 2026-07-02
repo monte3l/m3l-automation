@@ -1,9 +1,9 @@
 <p align="center">
-<img src="https://raw.githubusercontent.com/monte3l/m3l-automation/main/docs/assets/m3l-wordmark.svg" alt="m3l-common" width="260" height="64">
+<img src="https://raw.githubusercontent.com/monte3l/m3l-automation/main/assets/m3l-wordmark.svg" alt="m3l-common" width="260" height="64">
 </p>
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/monte3l/m3l-automation/main/docs/assets/m3l-hero.svg" alt="m3l-common quick-start terminal pane" width="700">
+<img src="https://raw.githubusercontent.com/monte3l/m3l-automation/main/assets/m3l-hero.svg" alt="m3l-common quick-start terminal pane" width="700">
 </p>
 
 <p align="center">
@@ -70,7 +70,6 @@ await script.run(async () => {
 ## Links
 
 - [Repository](https://github.com/monte3l/m3l-automation)
-- [Docs site](https://monte3l.github.io/m3l-automation/)
 - [Implementation status](https://github.com/monte3l/m3l-automation/blob/main/docs/implementation-status.md)
 - [Architecture](https://github.com/monte3l/m3l-automation/blob/main/docs/m3l-common-architecture.md)
 - [Getting started](https://github.com/monte3l/m3l-automation/blob/main/docs/getting-started.md)

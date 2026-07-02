@@ -1,9 +1,9 @@
 <p align="center">
-<img src="docs/assets/m3l-wordmark.svg" alt="m3l-automation" width="267" height="64">
+<img src="assets/m3l-wordmark.svg" alt="m3l-automation" width="267" height="64">
 </p>
 
 <p align="center">
-<img src="docs/assets/m3l-hero.svg" alt="m3l-automation quick-start terminal pane" width="700">
+<img src="assets/m3l-hero.svg" alt="m3l-automation quick-start terminal pane" width="700">
 </p>
 
 <p align="center">
@@ -90,7 +90,6 @@ import { Core, AWS } from "@m3l-automation/m3l-common";
 - [Implementation status](docs/implementation-status.md) — per-module progress tracker
 - [Architecture overview](docs/m3l-common-architecture.md)
 - [Contributing](.github/CONTRIBUTING.md)
-- [Docs site](https://monte3l.github.io/m3l-automation/)
 
 ## License
 
