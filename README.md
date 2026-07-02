@@ -13,12 +13,12 @@
 <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-66D9EF?style=flat-square&labelColor=272822" alt="TypeScript strict"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-A6E22E?style=flat-square&labelColor=272822" alt="Apache-2.0"></a>
 <a href="docs/implementation-status.md"><img src="https://img.shields.io/badge/status-pre--release-FD971F?style=flat-square&labelColor=272822" alt="status: pre-release"></a>
-<a href="docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-11%2F22-FD971F?style=flat-square&labelColor=272822" alt="modules: 11/22"></a>
+<a href="docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-12%2F22-FD971F?style=flat-square&labelColor=272822" alt="modules: 12/22"></a>
 </p>
 
 > **Status: early development — scaffold and specs are complete; implementation is in progress.**
-> Version `0.0.0-development`. All documented APIs are design targets; 11 of 22 submodules are
-> implemented (`errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`). See [Implementation status](docs/implementation-status.md)
+> Version `0.0.0-development`. All documented APIs are design targets; 12 of 22 submodules are
+> implemented (`errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`, `network`). See [Implementation status](docs/implementation-status.md)
 > for the per-module breakdown.
 
 A shared infrastructure library for automation scripts and AWS Lambda handlers. It provides
