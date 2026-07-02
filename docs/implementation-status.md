@@ -5,9 +5,9 @@ This is the **single source of truth** for what is implemented in
 The library started as a documented-but-empty scaffold. The barrels are wired; `errors`, `events`, `security`, `environment`, `utils`, `json`, and `analysis` are implemented and reviewed (7 of 22 submodules). See the table below for per-submodule status.
 
 > **Maintenance contract (hub):** the main agent updates this file after **each
-> phase** of the `implement-submodule` pipeline. It is the durable, cross-session
+> phase** of the `implementing-submodules` pipeline. It is the durable, cross-session
 > memory the isolated spoke subagents do not share. See `CLAUDE.md` → _Agent
-> Operating Model_ and `.claude/skills/implement-submodule/SKILL.md`.
+> Operating Model_ and `.claude/skills/implementing-submodules/SKILL.md`.
 
 **Status legend:** ❌ not-started · 🧪 tests-written (RED) · 🟢 implemented (GREEN) · ✅ reviewed/done
 

@@ -13,12 +13,12 @@ description: >-
   to check the logs against the rules. Use it even when the user only says
   "review the work logs" or "what have we learned that isn't written down yet" —
   this is the skill that turns narrative logs into durable rule/agent edits.
-  Distinct from /audit (which reads live code): this reads the logged history.
+  Distinct from /auditing (which reads live code): this reads the logged history.
 ---
 
 # promoting-work-log-lessons
 
-The `/write-work-log` skill writes a durable narrative after each task, and its
+The `/writing-work-logs` skill writes a durable narrative after each task, and its
 Step 4 asks the author to fold generalizable lessons into the rules **in the
 same change set**. That step is discretionary and single-log: the same agent
 that just wrote one log decides, in the moment, whether a lesson is worth
@@ -125,7 +125,7 @@ Route by _who needs it and when_:
   `spec-conformance-reviewer.md`, `code-reviewer.md`, and the other reviewers.
 - **Process / step-ordering lessons** that belong to a specific workflow → that
   workflow's `.claude/skills/<name>/SKILL.md` (e.g. a "run `gen:index` before
-  `format`" ordering lesson belongs in the `sync-docs` skill's step sequence).
+  `format`" ordering lesson belongs in the `syncing-docs` skill's step sequence).
 - **Cross-cutting project constraints** with no better home → `CLAUDE.md`.
 
 If a lesson could land in two places, prefer the most specific one an agent
@@ -169,12 +169,12 @@ For each approved promotion:
    **<keyword>** … the lesson text. _(promoted → .claude/rules/tests.md)_
    ```
 
-   This is the same marker `/write-work-log`'s Step 4 uses when it promotes a
+   This is the same marker `/writing-work-logs`'s Step 4 uses when it promotes a
    lesson at write time — the two skills share one convention so a log's promotion
    state is always readable from the log itself.
 
 Do **not** commit. Report the files edited and the logs stamped, then hand off to
-`/write-commit` (a `docs:` change — no `src/` or `version` is touched, so this is
+`/writing-commits` (a `docs:` change — no `src/` or `version` is touched, so this is
 not a release event).
 
 **Verify after applying:**
@@ -185,14 +185,14 @@ not a release event).
 - Re-read one edited target to confirm the rule reads naturally in context, not as
   a bolted-on fragment.
 
-## Relationship to /audit and /write-work-log
+## Relationship to /auditing and /writing-work-logs
 
-- **/write-work-log** writes one log and _may_ promote that log's own lessons at
+- **/writing-work-logs** writes one log and _may_ promote that log's own lessons at
   write time. This skill is the periodic cross-log sweep that catches what those
   single-log passes left behind. They share the provenance-marker convention.
-- **/audit** finds gaps by reading _live code_; this skill finds gaps by reading
-  _logged history_. They are complementary — audit surfaces "the code is missing
+- **/auditing** finds gaps by reading _live code_; this skill finds gaps by reading
+  _logged history_. They are complementary — auditing surfaces "the code is missing
   X"; this surfaces "five logs show we keep hitting Y and never wrote it down."
-- Both this skill and `/audit` can edit `.claude/rules` and `.claude/agents`. Do
+- Both this skill and `/auditing` can edit `.claude/rules` and `.claude/agents`. Do
   not run them concurrently in one session — finish one before starting the other
   so their edits don't race on the same file.

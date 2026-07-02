@@ -4,7 +4,7 @@
 
 `@m3l-automation/m3l-common` is a **fully-specified but empty scaffold**. The
 audit (3 Explore agents + direct reads of `docs/implementation-status.md` and
-`.claude/skills/implement-submodule/SKILL.md`) confirms:
+`.claude/skills/implementing-submodules/SKILL.md`) confirms:
 
 - **Infrastructure is complete and correct**: the 3-entry `exports` map
   (`.`, `./core`, `./aws`), the three barrels (`src/index.ts`,
@@ -24,7 +24,7 @@ audit (3 Explore agents + direct reads of `docs/implementation-status.md` and
 `exports` map unchanged.
 
 **This plan does not invent a new process.** It applies the project's existing
-`implement-submodule` hub-and-spoke TDD pipeline across all 21 submodules in the
+`implementing-submodules` hub-and-spoke TDD pipeline across all 21 submodules in the
 documented dependency order. The plan is the orchestration schedule; each
 submodule's contract lives in its `docs/reference` page (authoritative).
 
@@ -37,7 +37,7 @@ before any `pnpm add`, per the skill).
 ## The repeating unit of work (per submodule)
 
 Every submodule is built with the **exact loop from
-`.claude/skills/implement-submodule/SKILL.md`**. The main agent is the **hub**:
+`.claude/skills/implementing-submodules/SKILL.md`**. The main agent is the **hub**:
 it coordinates only and never writes `src/`/tests or reviews code. The one
 bookkeeping write the hub owns is `docs/implementation-status.md`.
 
