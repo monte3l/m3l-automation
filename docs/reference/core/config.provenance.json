@@ -1,0 +1,115 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/config.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfig.ts",
+          "symbol": "M3LConfig"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigReader.ts",
+          "symbol": "M3LConfigReader"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigProvider.ts",
+          "symbol": "M3LConfigProvider"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigParameter.ts",
+          "symbol": "M3LConfigParameter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigParameterType.ts",
+          "symbol": "M3LConfigParameterType"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigSchema.ts",
+          "symbol": "M3LConfigSchema"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LCommandLineConfigProvider.ts",
+          "symbol": "M3LCommandLineConfigProvider"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LJSONConfigProvider.ts",
+          "symbol": "M3LJSONConfigProvider"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LYAMLConfigProvider.ts",
+          "symbol": "M3LYAMLConfigProvider"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LEnvironmentConfigProvider.ts",
+          "symbol": "M3LEnvironmentConfigProvider"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LInMemoryConfigProvider.ts",
+          "symbol": "M3LInMemoryConfigProvider"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LLambdaEventConfigProvider.ts",
+          "symbol": "M3LLambdaEventConfigProvider"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LPresetConfigProvider.ts",
+          "symbol": "M3LPresetConfigProvider"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/coerceConfigValue.ts",
+          "symbol": "coerceConfigValue"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LSecretsSpecifier.ts",
+          "symbol": "M3LSecretsSpecifier"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts",
+          "symbol": "M3LUnknownParameterDetector"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigCoercionError.ts",
+          "symbol": "M3LConfigCoercionError"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigParseError.ts",
+          "symbol": "M3LConfigParseError"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LUnsafeConfigKeyError.ts",
+          "symbol": "M3LUnsafeConfigKeyError"
+        }
+      ],
+      "commit": "a522d110db477c1df3d49a398d583462154707a3",
+      "retrieved": "2026-07-02"
+    },
+    {
+      "heading": "Source tracking",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfig.ts",
+          "symbol": "M3LConfig"
+        }
+      ],
+      "commit": "a522d110db477c1df3d49a398d583462154707a3",
+      "retrieved": "2026-07-02"
+    },
+    {
+      "heading": "Notes and behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/config/M3LSecretsSpecifier.ts",
+          "symbol": "M3LSecretsSpecifier"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts",
+          "symbol": "M3LUnknownParameterDetector"
+        }
+      ],
+      "commit": "a522d110db477c1df3d49a398d583462154707a3",
+      "retrieved": "2026-07-02"
+    }
+  ]
+}

@@ -39,6 +39,101 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/analysis/M3LThresholdRuleValidationError.ts"
   },
+  "M3LConfig": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfig.ts"
+  },
+  "M3LConfigReader": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigReader.ts"
+  },
+  "M3LConfigProvider": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigProvider.ts"
+  },
+  "M3LConfigParameter": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigParameter.ts"
+  },
+  "M3LConfigParameterType": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigParameterType.ts"
+  },
+  "M3LConfigSchema": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigSchema.ts"
+  },
+  "M3LCommandLineConfigProvider": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LCommandLineConfigProvider.ts"
+  },
+  "M3LJSONConfigProvider": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LJSONConfigProvider.ts"
+  },
+  "M3LYAMLConfigProvider": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LYAMLConfigProvider.ts"
+  },
+  "M3LEnvironmentConfigProvider": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LEnvironmentConfigProvider.ts"
+  },
+  "M3LInMemoryConfigProvider": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LInMemoryConfigProvider.ts"
+  },
+  "M3LLambdaEventConfigProvider": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LLambdaEventConfigProvider.ts"
+  },
+  "M3LPresetConfigProvider": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LPresetConfigProvider.ts"
+  },
+  "coerceConfigValue": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/coerceConfigValue.ts"
+  },
+  "M3LSecretsSpecifier": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LSecretsSpecifier.ts"
+  },
+  "M3LUnknownParameterDetector": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts"
+  },
+  "M3LConfigCoercionError": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigCoercionError.ts"
+  },
+  "M3LConfigParseError": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigParseError.ts"
+  },
+  "M3LUnsafeConfigKeyError": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LUnsafeConfigKeyError.ts"
+  },
   "M3LExecutionEnvironment": {
     "submodule": "environment",
     "namespace": "core",

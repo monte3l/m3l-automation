@@ -63,6 +63,12 @@ where you stopped instead of re-deriving state by hand.
    printed by `pnpm test:coverage`. The v8 text reporter omits files that are
    100% on all four metrics, so an absent file in the table is not an uncovered
    file. Check `coverage-final.json` directly.
+   **Raise coverage by adding tests, never by deleting code.** An uncovered
+   branch that implements a documented behavior (e.g. a CLI `--key value` form,
+   a `.env` comment/`export`/quote form) is a **test gap**, not dead code —
+   deleting it to make the per-file gate pass is a silent regression that review
+   will flag as Must-fix. If a documented path lacks a test, report the gap to
+   the hub for a `test-author` spoke; do not strip the behavior.
 4. Report what you implemented, the exports you added, and the final
    test/typecheck/lint status. If you needed a runtime dependency that wasn't
    already approved/installed, STOP and report it — do not run `pnpm add` or
@@ -97,6 +103,11 @@ where you stopped instead of re-deriving state by hand.
   (`@m3l-automation/m3l-common/core`, not a relative `../errors/index.js`).
   This makes the example self-contained and portable.
 - **Never** add an entry to the `exports` map — surface through the barrel.
+- **Drive the build only through pnpm scripts, never bare `tsc`.** A bare `tsc`
+  (no `-b`/outDir) emits `.js` next to the `.ts` sources, polluting `src/` (which
+  is TypeScript-only; compilation targets `dist/`). Use `pnpm typecheck` / `pnpm
+build` / `pnpm test`, and if any `.js` appears under `src/`, delete it
+  immediately (`find packages/m3l-common/src -name '*.js' -delete`).
 - **TSDoc-orphan anti-pattern:** an extracted private helper must sit _above_
   the TSDoc block of the export it serves — never between the block and its
   export, or the doc detaches from the symbol.
