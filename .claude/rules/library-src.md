@@ -30,6 +30,13 @@ paths:
   failures only_, never a whole `catch`.
 - **`interface` for shapes callers implement/extend; `type` for unions,
   intersections, mapped/branded types.**
+- **Constrain a row-shaped generic with `extends object`, not
+  `Record<string, unknown>`.** If an impl treats `TItem` as a record (e.g. an
+  exporter that reads its keys), bound the generic so a primitive instantiation
+  (`Exporter<number>`) fails to compile instead of silently producing empty
+  output. Use `extends object`: `Record<string, unknown>` rejects declared
+  `interface` item types (no implicit index signature), a worse DX regression than
+  the internal cast it removes.
 - **Exhaustive `switch`** over finite sets; handle every case and fail on the
   unexpected.
 - **TSDoc on every exported symbol**, with an `@example` on primary entry points.

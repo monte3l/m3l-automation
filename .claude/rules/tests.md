@@ -65,6 +65,12 @@ throw "a string";
   file — the JSON is the source of truth.
 - Use `pnpm exec vitest` / `pnpm test:coverage`; bare `npx vitest` fails to
   resolve `@vitest/coverage-v8` under pnpm.
+- **Brace void-union handler bodies.** When a handler type is
+  `void | Promise<void>` (e.g. `M3LEventHandler` on the emitter base), an arrow
+  whose body returns a value — `on("evt", () => arr.push(v))` — fails typecheck
+  (TS2322, `number` not assignable). The void-returning-callback leniency applies
+  only to a return type of _exactly_ `void`, not a union containing it. Wrap the
+  body: `() => { arr.push(v); }`.
 
 ```typescript
 import { expect, test } from "vitest";
