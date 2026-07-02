@@ -7,16 +7,14 @@
 import { stringify } from "csv-stringify/sync";
 
 import { M3LError } from "../errors/index.js";
-import { M3LEventEmitterBase } from "../events/index.js";
 
+import { M3LBaseListExporter } from "./internal/baseListExporter.js";
 import { onceErrorEmitter } from "./internal/onceErrorEmitter.js";
-import { M3LWriteStreamLifecycle } from "./internal/writeStreamLifecycle.js";
+import type { M3LWriteStreamLifecycle } from "./internal/writeStreamLifecycle.js";
 
 import type {
   ColumnConflictStrategy,
   M3LCSVListExporterOptions,
-  M3LListExporter,
-  M3LListExporterEvents,
   M3LListExporterStreamWriter,
 } from "./types.js";
 
@@ -137,11 +135,9 @@ function wrapCSVError(cause: unknown, filePath: string): M3LError {
  * await exporter.export([{ id: "1", name: "Ada" }]);
  * ```
  */
-export class M3LCSVListExporter<TItem extends object>
-  extends M3LEventEmitterBase<M3LListExporterEvents>
-  implements M3LListExporter<TItem>
-{
-  readonly #filePath: string;
+export class M3LCSVListExporter<
+  TItem extends object,
+> extends M3LBaseListExporter<TItem> {
   readonly #strategy: ColumnConflictStrategy;
 
   /**
@@ -151,87 +147,51 @@ export class M3LCSVListExporter<TItem extends object>
    *   `'keep-generated'`.
    */
   constructor(options: M3LCSVListExporterOptions) {
-    super();
-    this.#filePath = options.filePath;
+    super(options.filePath);
     this.#strategy = options.conflictStrategy ?? "keep-generated";
   }
 
   /**
-   * Writes all `items` as CSV in a single call.
+   * Serializes `items` as a complete CSV document (header + rows).
    *
-   * @param items - The items to export.
-   * @returns A promise that resolves once the CSV file has been written.
-   * @throws {@link M3LError} chaining the underlying failure; also emitted
-   *   via `export:error`.
-   *
-   * @example
-   * ```typescript
-   * import { M3LError } from "@m3l-automation/m3l-common/core";
-   * import { Core } from "@m3l-automation/m3l-common";
-   *
-   * const exporter = new Core.M3LCSVListExporter<{ id: string }>({
-   *   filePath: "./data/outputs/rows.csv",
-   * });
-   * try {
-   *   await exporter.export([{ id: "1" }]);
-   * } catch (error) {
-   *   if (error instanceof M3LError) console.error(error.code);
-   * }
-   * ```
+   * @param items - The items to serialize.
+   * @returns The CSV file content.
    */
-  async export(items: readonly TItem[]): Promise<void> {
-    this.emit("export:started", { filePath: this.#filePath });
-    try {
-      const rows = items as readonly Record<string, unknown>[];
-      const columns = rows.length > 0 ? Object.keys(rows[0] ?? {}) : [];
-      const resolved = rows.map((row) =>
-        resolveRow(columns, row, this.#strategy),
-      );
-      const lifecycle = new M3LWriteStreamLifecycle(this.#filePath);
-      const content = stringify(resolved, { header: true, columns });
-      await lifecycle.end(content);
-      this.emit("export:completed", { filePath: this.#filePath });
-    } catch (cause) {
-      const error = wrapCSVError(cause, this.#filePath);
-      this.emit("export:error", { error });
-      throw error;
-    }
+  protected renderBatch(items: readonly TItem[]): string {
+    const rows = items as readonly Record<string, unknown>[];
+    const columns = rows.length > 0 ? Object.keys(rows[0] ?? {}) : [];
+    const resolved = rows.map((row) =>
+      resolveRow(columns, row, this.#strategy),
+    );
+    return stringify(resolved, { header: true, columns });
   }
 
   /**
-   * Opens an incremental CSV writer.
+   * Wraps a failure as a CSV-export {@link M3LError}.
    *
-   * @returns A {@link M3LListExporterStreamWriter} for `TItem`.
-   *
-   * @example
-   * ```typescript
-   * import { Core } from "@m3l-automation/m3l-common";
-   *
-   * const exporter = new Core.M3LCSVListExporter<{ id: string }>({
-   *   filePath: "./data/outputs/rows.csv",
-   * });
-   * const writer = exporter.exportStream();
-   * await writer.append({ id: "1" });
-   * await writer.close();
-   * ```
+   * @param cause - The caught value.
+   * @returns An {@link M3LError} chaining `cause`.
    */
-  exportStream(): M3LListExporterStreamWriter<TItem> {
-    this.emit("export:started", { filePath: this.#filePath });
-    const lifecycle = new M3LWriteStreamLifecycle(this.#filePath);
-    const writer = new M3LCSVStreamWriter<TItem>(
+  protected wrapError(cause: unknown): M3LError {
+    return wrapCSVError(cause, this.filePath);
+  }
+
+  /**
+   * Builds the incremental CSV stream writer.
+   *
+   * @param lifecycle - The opened write-stream lifecycle.
+   * @param onError - Emits `export:error` (guarded to fire at most once).
+   * @returns The CSV stream writer.
+   */
+  protected createStreamWriter(
+    lifecycle: M3LWriteStreamLifecycle,
+    onError: (error: M3LError) => void,
+  ): M3LListExporterStreamWriter<TItem> {
+    return new M3LCSVStreamWriter<TItem>(
       lifecycle,
       this.#strategy,
-      this.#filePath,
-      (error) => {
-        this.emit("export:error", { error });
-      },
+      this.filePath,
+      onError,
     );
-    return {
-      append: (item) => writer.append(item),
-      close: async () => {
-        await writer.close();
-        this.emit("export:completed", { filePath: this.#filePath });
-      },
-    };
   }
 }

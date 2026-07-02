@@ -739,6 +739,26 @@ describe("M3LJSONListExporter", () => {
     expect(emittedError).toBeInstanceOf(M3LError);
   });
 
+  test("render-before-open: a synchronous serialization failure emits export:error, rejects, and never opens the write stream", async () => {
+    const createSpy = vi.spyOn(fs, "createWriteStream");
+    // A BigInt value makes JSON.stringify throw synchronously inside the
+    // shared base's renderBatch(), BEFORE it opens the fs.WriteStream — so the
+    // destination file is never created/truncated on this failure path.
+    const exporter = new M3LJSONListExporter<{ id: bigint }>({
+      filePath: "/exports/unserializable.json",
+    });
+    let emittedError: unknown;
+    exporter.on("export:error", (payload: { error: unknown }) => {
+      emittedError = payload.error;
+    });
+
+    await expect(exporter.export([{ id: 1n }])).rejects.toBeInstanceOf(
+      M3LError,
+    );
+    expect(emittedError).toBeInstanceOf(M3LError);
+    expect(createSpy).not.toHaveBeenCalled();
+  });
+
   test("close() rejects with an M3LError when the underlying stream fails to finish", async () => {
     stubWriteStream({ failEnd: true });
     const exporter = new M3LJSONListExporter<Record_>({

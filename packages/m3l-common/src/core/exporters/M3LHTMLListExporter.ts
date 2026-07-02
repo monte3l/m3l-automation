@@ -5,15 +5,13 @@
  */
 
 import { M3LError } from "../errors/index.js";
-import { M3LEventEmitterBase } from "../events/index.js";
 
+import { M3LBaseListExporter } from "./internal/baseListExporter.js";
 import { onceErrorEmitter } from "./internal/onceErrorEmitter.js";
-import { M3LWriteStreamLifecycle } from "./internal/writeStreamLifecycle.js";
+import type { M3LWriteStreamLifecycle } from "./internal/writeStreamLifecycle.js";
 
 import type {
   M3LHTMLListExporterOptions,
-  M3LListExporter,
-  M3LListExporterEvents,
   M3LListExporterStreamWriter,
 } from "./types.js";
 
@@ -195,11 +193,9 @@ class M3LHTMLStreamWriter<
  * await exporter.export([{ id: "1", name: "Ada" }]);
  * ```
  */
-export class M3LHTMLListExporter<TItem extends object>
-  extends M3LEventEmitterBase<M3LListExporterEvents>
-  implements M3LListExporter<TItem>
-{
-  readonly #filePath: string;
+export class M3LHTMLListExporter<
+  TItem extends object,
+> extends M3LBaseListExporter<TItem> {
   readonly #columns: readonly string[] | undefined;
 
   /**
@@ -209,87 +205,52 @@ export class M3LHTMLListExporter<TItem extends object>
    *   which fields are rendered; defaults to every key on the first item.
    */
   constructor(options: M3LHTMLListExporterOptions) {
-    super();
-    this.#filePath = options.filePath;
+    super(options.filePath);
     this.#columns = options.columns;
   }
 
   /**
-   * Renders all `items` as an HTML report in a single call.
+   * Renders `items` as a complete HTML report document.
    *
-   * @param items - The items to export.
-   * @returns A promise that resolves once the HTML file has been written.
-   * @throws {@link M3LError} chaining the underlying failure; also emitted
-   *   via `export:error`.
-   *
-   * @example
-   * ```typescript
-   * import { M3LError } from "@m3l-automation/m3l-common/core";
-   * import { Core } from "@m3l-automation/m3l-common";
-   *
-   * const exporter = new Core.M3LHTMLListExporter<{ id: string }>({
-   *   filePath: "./data/outputs/report.html",
-   * });
-   * try {
-   *   await exporter.export([{ id: "1" }]);
-   * } catch (error) {
-   *   if (error instanceof M3LError) console.error(error.code);
-   * }
-   * ```
+   * @param items - The items to serialize.
+   * @returns The HTML file content.
    */
-  async export(items: readonly TItem[]): Promise<void> {
-    this.emit("export:started", { filePath: this.#filePath });
-    try {
-      const rows = items.map((item) => {
-        const row = item as Record<string, unknown>;
-        return renderRow(row, resolveColumns(row, this.#columns));
-      });
-      const document = renderDocument(rows, items.length);
-      const lifecycle = new M3LWriteStreamLifecycle(this.#filePath);
-      await lifecycle.end(document);
-      this.emit("export:completed", { filePath: this.#filePath });
-    } catch (cause) {
-      const error = wrapHTMLError(cause, this.#filePath);
-      this.emit("export:error", { error });
-      throw error;
-    }
+  protected renderBatch(items: readonly TItem[]): string {
+    const rows = items.map((item) => {
+      const row = item as Record<string, unknown>;
+      return renderRow(row, resolveColumns(row, this.#columns));
+    });
+    return renderDocument(rows, items.length);
   }
 
   /**
-   * Opens an incremental HTML writer. Rows are buffered until `close()`,
-   * since `{{count}}` cannot be resolved until every item has been appended.
+   * Wraps a failure as an HTML-list-export {@link M3LError}.
    *
-   * @returns A {@link M3LListExporterStreamWriter} for `TItem`.
-   *
-   * @example
-   * ```typescript
-   * import { Core } from "@m3l-automation/m3l-common";
-   *
-   * const exporter = new Core.M3LHTMLListExporter<{ id: string }>({
-   *   filePath: "./data/outputs/report.html",
-   * });
-   * const writer = exporter.exportStream();
-   * await writer.append({ id: "1" });
-   * await writer.close();
-   * ```
+   * @param cause - The caught value.
+   * @returns An {@link M3LError} chaining `cause`.
    */
-  exportStream(): M3LListExporterStreamWriter<TItem> {
-    this.emit("export:started", { filePath: this.#filePath });
-    const lifecycle = new M3LWriteStreamLifecycle(this.#filePath);
-    const writer = new M3LHTMLStreamWriter<TItem>(
+  protected wrapError(cause: unknown): M3LError {
+    return wrapHTMLError(cause, this.filePath);
+  }
+
+  /**
+   * Builds the incremental HTML stream writer. Rows are buffered until
+   * `close()`, since `{{count}}` cannot be resolved until every item has been
+   * appended.
+   *
+   * @param lifecycle - The opened write-stream lifecycle.
+   * @param onError - Emits `export:error` (guarded to fire at most once).
+   * @returns The HTML stream writer.
+   */
+  protected createStreamWriter(
+    lifecycle: M3LWriteStreamLifecycle,
+    onError: (error: M3LError) => void,
+  ): M3LListExporterStreamWriter<TItem> {
+    return new M3LHTMLStreamWriter<TItem>(
       lifecycle,
       this.#columns,
-      this.#filePath,
-      (error) => {
-        this.emit("export:error", { error });
-      },
+      this.filePath,
+      onError,
     );
-    return {
-      append: (item) => writer.append(item),
-      close: async () => {
-        await writer.close();
-        this.emit("export:completed", { filePath: this.#filePath });
-      },
-    };
   }
 }
