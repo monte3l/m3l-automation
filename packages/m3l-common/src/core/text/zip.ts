@@ -241,13 +241,18 @@ export class M3LZipTextExtractor implements M3LTextExtractor {
       };
     }
 
-    // Descend into a nested entry only when a registry is present to
-    // re-dispatch through and the child layer would stay under the cap;
-    // otherwise skip it (a no-registry extractor takes direct text only) to
-    // bound recursive amplification. `DEFAULT_DEPTH_CAP` counts total archive
-    // layers including the root, so `depth + 1` is the child's layer index.
-    if (this.#registry === undefined || depth + 1 >= DEFAULT_DEPTH_CAP) {
+    // No registry: this extractor is in text-only mode by design — a nested
+    // archive/document simply contributes no text. Not a truncation.
+    if (this.#registry === undefined) {
       return { bytes: 0, truncated: false };
+    }
+    // Depth cap: a REACHABLE nested archive is dropped to resist zip-bomb
+    // amplification. That is a partial result, so surface it as truncation —
+    // consistent with the breadth (maxEntries) and size (maxTotalBytes) caps.
+    // `DEFAULT_DEPTH_CAP` counts total archive layers including the root, so
+    // `depth + 1` is the child's layer index.
+    if (depth + 1 >= DEFAULT_DEPTH_CAP) {
+      return { bytes: 0, truncated: true };
     }
 
     const data = entry.getData();

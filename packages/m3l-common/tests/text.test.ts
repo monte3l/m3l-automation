@@ -419,6 +419,9 @@ describe("M3LZipTextExtractor (real adm-zip + real fixtures)", () => {
     registry.register(new M3LZipTextExtractor(registry));
     const result = await registry.extract(MIME.zip, fixture("deep-chain.zip"));
     expect(result.text).not.toContain("Buried beyond the cap.");
+    // Dropping the reachable level2.zip at the depth cap is a partial result,
+    // harmonized with the breadth/size caps: it surfaces as truncated.
+    expect(result.truncated).toBe(true);
   });
 
   test("C14 an under-cap depth passed via ZIP_DEPTH_SYMBOL still recurses one level", async () => {
@@ -433,6 +436,9 @@ describe("M3LZipTextExtractor (real adm-zip + real fixtures)", () => {
       [ZIP_DEPTH_SYMBOL]: 1,
     });
     expect(result.text).toContain("Top level text.");
+    // At depth 1 the child.zip sits at the boundary (depth + 1 = 2 >= cap 2)
+    // and is dropped; the dropped reachable archive surfaces as truncated.
+    expect(result.truncated).toBe(true);
   });
 
   test("at the cap, ZIP_DEPTH_SYMBOL prevents further recursion", async () => {
@@ -447,6 +453,8 @@ describe("M3LZipTextExtractor (real adm-zip + real fixtures)", () => {
     });
     expect(result.text).toContain("Top level text.");
     expect(result.text).not.toContain("Deeply nested text.");
+    // The reachable child.zip is dropped at the cap; surfaces as truncated.
+    expect(result.truncated).toBe(true);
   });
 
   test("S1 a hostile large-negative ZIP_DEPTH_SYMBOL is clamped to 0 and cannot deepen recursion past the cap", async () => {
@@ -455,6 +463,8 @@ describe("M3LZipTextExtractor (real adm-zip + real fixtures)", () => {
     // `depth + 1 >= cap` guard (each +1 stayed far below the cap), recursing
     // arbitrarily deep and reaching buried.txt. The clamp coerces it to 0, so
     // extraction behaves exactly like a default depth-0 start and stops at the cap.
+    // The clamp behavior is unchanged; the depth-cap drop of the reachable
+    // level2.zip now surfaces as truncation (harmonized with breadth/size caps).
     const registry = new M3LTextExtractorRegistry([
       new M3LPlainTextExtractor(),
     ]);
@@ -463,7 +473,7 @@ describe("M3LZipTextExtractor (real adm-zip + real fixtures)", () => {
       [ZIP_DEPTH_SYMBOL]: -1_000_000,
     });
     expect(result.text).not.toContain("Buried beyond the cap.");
-    expect(result.truncated).toBe(false);
+    expect(result.truncated).toBe(true);
   });
 
   test.each([
@@ -473,7 +483,9 @@ describe("M3LZipTextExtractor (real adm-zip + real fixtures)", () => {
     "S1 a non-finite ZIP_DEPTH_SYMBOL (%s) is treated as depth 0 — no throw, no over-recursion",
     async (_label, hostileDepth) => {
       // A non-finite value takes the `Number.isFinite(raw)` false branch -> 0.
-      // It must neither throw nor descend past the cap into buried.txt.
+      // It must neither throw nor descend past the cap into buried.txt. The
+      // depth-cap drop of the reachable level2.zip now surfaces as truncation
+      // (harmonized with breadth/size caps); the clamp behavior is unchanged.
       const registry = new M3LTextExtractorRegistry([
         new M3LPlainTextExtractor(),
       ]);
@@ -484,7 +496,7 @@ describe("M3LZipTextExtractor (real adm-zip + real fixtures)", () => {
         { [ZIP_DEPTH_SYMBOL]: hostileDepth },
       );
       expect(result.text).not.toContain("Buried beyond the cap.");
-      expect(result.truncated).toBe(false);
+      expect(result.truncated).toBe(true);
     },
   );
 });
