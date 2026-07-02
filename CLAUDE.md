@@ -304,7 +304,7 @@ files (so they cost nothing in unrelated sessions):
   eslint + prettier on staged files; `pre-push` runs typecheck + tests and
   refuses unsigned/unverified commits (`verify-signed-range`).
 - **Before change-work, run `/start-work`** — the pre-work decision gate that
-  settles location / branch / PR / push and confirms them (ADR-0015). It is the
+  settles location / branch / PR / push and confirms them (ADR-0016). It is the
   Step 0 the change-initiating skills defer to.
 - Branch from `main`: `feat/<slug>`, `fix/<slug>`. The
   `guard-branch-isolation.mjs` hook enforces this for code work — it blocks
@@ -390,7 +390,7 @@ See ADR-0013 for the full rules. Day-to-day:
 - Commits pushed to the remote must be signed (valid `%G?`). Enforced in three
   layers — the `guard-git-push-signed` Bash hook, the `verify-signed-range`
   `pre-push` backstop, and branch-protection "Require signed commits" (the
-  authoritative one). See ADR-0015 and `docs/contributing/branch-protection.md`.
+  authoritative one). See ADR-0016 and `docs/contributing/branch-protection.md`.
 
 ## Performance
 
@@ -463,10 +463,10 @@ that reviews it" structural, and keeps the hub's context lean.
 - **Live status**: `docs/implementation-status.md` is the source of truth for
   what is built vs. documented. The hub updates it after each phase — it is the
   durable memory the isolated spokes do not share.
-- The `implement-submodule` skill encodes this loop end-to-end; `new-submodule`
+- The `implementing-submodules` skill encodes this loop end-to-end; `scaffolding-submodules`
   scaffolds a greenfield module and hands off to it. All 22 bootstrap submodules
-  already have `docs/reference` specs, so `implement-submodule` is the normal entry
-  point; reach for `new-submodule` only to add a genuinely new (beyond-bootstrap)
+  already have `docs/reference` specs, so `implementing-submodules` is the normal entry
+  point; reach for `scaffolding-submodules` only to add a genuinely new (beyond-bootstrap)
   module — it surfaces through the namespace barrel, never a new `exports` subpath.
 - **Current state**: see `docs/implementation-status.md` for the authoritative
   built-vs-documented tracker and suggested build order.

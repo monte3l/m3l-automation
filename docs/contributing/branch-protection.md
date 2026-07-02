@@ -24,12 +24,21 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     review blocks the merge (fail-closed if the review never runs). The reviewer
     runs **read-only** (`--allowedTools Bash,Read`), posts a **single sticky
     comment** per PR (updated on each push rather than re-posted), is capped at
-    `--max-turns 25`, and **does not run on draft PRs** — it fires on
+    `--max-turns 12`, and **does not run on draft PRs** — it fires on
     `ready_for_review` and on every subsequent push to a ready PR. The
     verdict-file mechanism and fail-closed behavior are unchanged.
+  - **CodeQL code scanning** — added as required checks under ADR-0015 so a
+    high-severity SAST finding blocks the merge. CodeQL runs via GitHub **default
+    setup**, whose check runs surface as `Analyze (javascript-typescript)` and
+    `Analyze (actions)` (both on PRs and on `main` pushes) — both are marked
+    required. Confirm the exact check-run names on a live PR before wiring the
+    rule, in case default-setup naming changes:
+    `gh api repos/monte3l/m3l-automation/commits/<pr-head-sha>/check-runs --jq '.check_runs[].name'`.
+  - **Dependency Review** — the job in `.github/workflows/dependency-review.yml`
+    (`fail-on-severity: high`). Required under ADR-0015; it runs on PRs only.
 - **Require branches to be up to date before merging.**
 - **Require signed commits.** This is the _authoritative_ layer of the
-  signed-commit policy (ADR-0015): unlike the in-repo `guard-git-push-signed`
+  signed-commit policy (ADR-0016): unlike the in-repo `guard-git-push-signed`
   PreToolUse hook and the `verify-signed-range` lefthook `pre-push` backstop —
   both bypassable / agent- or local-only — GitHub rejects any unsigned or
   invalid-signature commit here, on every path (web UI, `--no-verify`, any
@@ -40,7 +49,7 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
   be signed, _including_ the changelog/version commit `@semantic-release/git`
   creates. Before turning it on, ensure the release bot signs its commits (e.g.
   a GitHub App identity, whose API-created commits are auto-signed) or the
-  release will be rejected. See ADR-0015 for the full rationale.
+  release will be rejected. See ADR-0016 for the full rationale.
 - **Do not allow bypassing the above** (including for administrators) so the
   gate cannot be skipped.
 

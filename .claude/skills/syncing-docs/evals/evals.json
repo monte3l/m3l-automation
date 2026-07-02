@@ -1,0 +1,23 @@
+{
+  "skill_name": "syncing-docs",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "sync docs",
+      "expected_output": "Runs the full doc-sync sequence (pre-flight provenance check, --update stamp, doc-count check, post-stamp provenance check, implementation-status reminder, markdown lint) and outputs a structured summary report.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "I just finished implementing the core/security submodule and the PR is about to go up. Can you stamp provenance and make sure all the doc counts are right before I open it?",
+      "expected_output": "Runs all syncing-docs steps in order, notes the security submodule context for the implementation-status check, stamps sidecars, verifies counts, and reports each step outcome.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "reconcile docs — we merged two PRs today and I want to make sure the provenance metadata isn't stale",
+      "expected_output": "Identifies this as a syncing-docs task, runs the full sequence starting with pre-flight verification before stamping, and produces the summary report.",
+      "files": []
+    }
+  ]
+}
