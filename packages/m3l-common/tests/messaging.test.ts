@@ -303,6 +303,16 @@ describe("M3LMessenger.sendReport interpolation", () => {
     expect(receipt).toBeDefined();
   });
 
+  test("a malformed token ({{ + many spaces, no closing braces) is returned verbatim without pathological backtracking", async () => {
+    const writer = new RecordingWriter();
+    const messenger = new M3LMessenger({ writer, defaultTarget: target });
+    const evil = "{{" + " ".repeat(50_000); // no closing }} — must not match, must not hang
+
+    await messenger.sendReport(evil, {});
+
+    expect(writer.received[0]?.text).toBe(evil);
+  });
+
   test("a key present with value `undefined` stringifies to the literal 'undefined', unlike a missing key", async () => {
     const writer = new RecordingWriter();
     const messenger = new M3LMessenger({ writer, defaultTarget: target });
