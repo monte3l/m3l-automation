@@ -16,6 +16,7 @@
  */
 
 export * from "./analysis/index.js";
+export * from "./config/index.js";
 export * from "./environment/index.js";
 export * from "./errors/index.js";
 export * from "./events/index.js";

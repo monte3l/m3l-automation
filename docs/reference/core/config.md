@@ -17,9 +17,10 @@ Exported from `@m3l-automation/m3l-common/core` (the `config` sub-module):
 - `M3LConfigParameterType`
 - `M3LConfigSchema`
 - Provider classes: `M3LCommandLineConfigProvider`, `M3LJSONConfigProvider`, `M3LYAMLConfigProvider`, `M3LEnvironmentConfigProvider`, `M3LInMemoryConfigProvider`, `M3LLambdaEventConfigProvider`, `M3LPresetConfigProvider`
-- Parsers
+- `coerceConfigValue` (the value parser: coerces a raw provider value to its declared `M3LConfigParameterType`, throwing on a type mismatch)
 - `M3LSecretsSpecifier`
 - `M3LUnknownParameterDetector`
+- Errors: `M3LConfigCoercionError`, `M3LConfigParseError`, `M3LUnsafeConfigKeyError`
 
 ## Provider priority chain
 

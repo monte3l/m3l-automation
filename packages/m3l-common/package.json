@@ -52,5 +52,8 @@
   "publishConfig": {
     "access": "public",
     "provenance": true
+  },
+  "dependencies": {
+    "yaml": "2.9.0"
   }
 }
