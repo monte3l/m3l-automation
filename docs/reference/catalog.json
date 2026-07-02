@@ -150,10 +150,21 @@
     "namespace": "core",
     "name": "messaging",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/messaging.md",
-    "symbols": []
+    "symbols": [
+      "M3LMessenger",
+      "M3LMessageWriter",
+      "M3LMessageReader",
+      "M3LOutboundMessage",
+      "M3LReceivedMessage",
+      "M3LMessageTarget",
+      "M3LMessageAuthor",
+      "M3LMessageReceipt",
+      "M3LInboundAttachment",
+      "M3LOutboundAttachment"
+    ]
   },
   {
     "namespace": "core",
