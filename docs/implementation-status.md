@@ -2,7 +2,7 @@
 
 This is the **single source of truth** for what is implemented in
 `@m3l-automation/m3l-common` versus what the `docs/reference/**` pages specify.
-The library started as a documented-but-empty scaffold. The barrels are wired; `errors`, `events`, `security`, `environment`, `utils`, `json`, and `analysis` are implemented and reviewed (7 of 22 submodules). See the table below for per-submodule status.
+The library started as a documented-but-empty scaffold. The barrels are wired; `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, and `messaging` are implemented and reviewed (8 of 22 submodules). See the table below for per-submodule status.
 
 > **Maintenance contract (hub):** the main agent updates this file after **each
 > phase** of the `implementing-submodules` pipeline. It is the durable, cross-session
@@ -35,7 +35,7 @@ _Planned_ = implementation plan exists in `docs/plans/`.
 | utils       | `core/utils.md`       | ✅      | 39          | ✅     | ✅    | ✅       | 278 tests (39/39 symbols; Phase D shipped — M3LPaths cluster); reviewed (must-fixes applied)                                                           |
 | json        | `core/json.md`        | ✅      | 10          | ✅     | ✅    | ✅       | 10 exports; 59 tests; detector 96.9% (84.2% br), rest 100%; reviewed (must-fixes applied)                                                              |
 | analysis    | `core/analysis.md`    | ✅      | 8           | ✅     | ✅    | ✅       | done — 66 tests; evaluator ~91% (89.5% br), error class 100%; conformant + reviewed (must-fix: value validation applied). +`parseLocaleNumber` (utils) |
-| messaging   | `core/messaging.md`   | ✅      | 10          | ❌     | ❌    | ❌       | none — abstract interfaces only                                                                                                                        |
+| messaging   | `core/messaging.md`   | ✅      | 10          | ✅     | ✅    | ✅       | done — 36 tests, 100% cov; conformant + reviewed (no must-fix)                                                                                         |
 | config      | `core/config.md`      | ✅      | 18          | ❌     | ❌    | ❌       | **YAML parser** (e.g. `yaml`) for YAML provider                                                                                                        |
 | logging     | `core/logging.md`     | ✅      | 11          | ❌     | ❌    | ❌       | none (uses `files`/exporters for file handler)                                                                                                         |
 | files       | `core/files.md`       | ✅      | 8           | ❌     | ❌    | ❌       | none                                                                                                                                                   |
