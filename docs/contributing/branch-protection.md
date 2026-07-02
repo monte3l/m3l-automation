@@ -24,9 +24,18 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     review blocks the merge (fail-closed if the review never runs). The reviewer
     runs **read-only** (`--allowedTools Bash,Read`), posts a **single sticky
     comment** per PR (updated on each push rather than re-posted), is capped at
-    `--max-turns 25`, and **does not run on draft PRs** — it fires on
+    `--max-turns 12`, and **does not run on draft PRs** — it fires on
     `ready_for_review` and on every subsequent push to a ready PR. The
     verdict-file mechanism and fail-closed behavior are unchanged.
+  - **CodeQL code scanning** — added as required checks under ADR-0015 so a
+    high-severity SAST finding blocks the merge. CodeQL runs via GitHub **default
+    setup**, whose check runs surface as `Analyze (javascript-typescript)` and
+    `Analyze (actions)` (both on PRs and on `main` pushes) — both are marked
+    required. Confirm the exact check-run names on a live PR before wiring the
+    rule, in case default-setup naming changes:
+    `gh api repos/monte3l/m3l-automation/commits/<pr-head-sha>/check-runs --jq '.check_runs[].name'`.
+  - **Dependency Review** — the job in `.github/workflows/dependency-review.yml`
+    (`fail-on-severity: high`). Required under ADR-0015; it runs on PRs only.
 - **Require branches to be up to date before merging.**
 - **Do not allow bypassing the above** (including for administrators) so the
   gate cannot be skipped.
