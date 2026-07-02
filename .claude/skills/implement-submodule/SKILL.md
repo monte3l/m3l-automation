@@ -57,7 +57,7 @@ ADR-0013 (its durable home), not a per-plan caveat.
 
 ## Progress checklist (copy-paste at the start of each run)
 
-- [ ] Step 0 — Isolate: confirm `HEAD` is not `main`; branch/worktree first
+- [ ] Step 0 — Isolate: run `/start-work` (branch/worktree + PR + push, confirmed)
 - [ ] Step 1 — Resolve target; confirm spec page exists
 - [ ] Step 2 — Format and commit plan/docs file (if any) before implementation
 - [ ] Step 3 — Dep gate: list any required runtime deps and get user approval
@@ -80,15 +80,15 @@ ADR-0013 (its durable home), not a per-plan caveat.
 
 ## Steps
 
-0. **Isolate the working context — before any spoke is dispatched.** Run
-   `git rev-parse --abbrev-ref HEAD`. If it reports `main`, **stop and create
-   isolation first**: `pnpm worktree:new <slug>` (preferred) or
-   `git switch -c feat/<slug>`, and confirm the resulting branch/worktree with
-   the user before proceeding. Building on `main` left its working tree dirty for
+0. **Isolate the working context — run `/start-work` before any spoke is
+   dispatched.** `/start-work` is the single source of truth for the
+   branch/worktree, PR, and push decisions: it infers, recommends, and confirms
+   them with the user. This pipeline always writes guarded paths (`src/**`,
+   `tests/**`), so the answer is always "isolate + land via PR" — the gate just
+   makes it explicit up front. Building on `main` left its working tree dirty for
    a whole run once already (`docs/logs/2026-07-01-core-analysis.md`, divergence
-   7). This is enforced deterministically by `guard-branch-isolation.mjs`, which
-   blocks `src/**`/`scripts/*/src/**`/`tests/**` writes while `HEAD` is `main`;
-   this step is the workflow half so the hub branches proactively instead of
+   7), and `guard-branch-isolation.mjs` blocks those writes while `HEAD` is
+   `main`; running the gate first means the hub branches proactively instead of
    discovering the block mid-dispatch.
 
 1. **Resolve the target.** Read `docs/implementation-status.md`, confirm the

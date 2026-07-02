@@ -34,6 +34,13 @@ separation intact here by handing off rather than implementing inline.
 
 ## Steps
 
+0. **Run `/start-work` first.** Scaffolding writes guarded paths
+   (`packages/m3l-common/src/<ns>/<module>/index.ts` and
+   `packages/m3l-common/tests/<module>.test.ts`), which
+   `guard-branch-isolation.mjs` blocks while `HEAD` is `main`. `/start-work` is
+   the single source of truth for the branch/worktree, PR, and push decisions —
+   it infers and confirms them up front so you branch proactively instead of
+   hitting the block mid-scaffold.
 1. Ask for: the namespace (`core` or `aws`) and the module name (kebab-case).
 2. Create `packages/m3l-common/src/<ns>/<module>/index.ts` with a minimal,
    spec-anchored skeleton — exported symbol _signatures_ with TSDoc and `@example`
