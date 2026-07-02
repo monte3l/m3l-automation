@@ -18,6 +18,12 @@ paths:
 - **Named exports only.** No default exports (tree-shakeable, refactor-safe).
 - **Export each type next to the value it describes.**
 - **Prefer `readonly` / `const`.** Create new objects instead of mutating inputs.
+- **Don't pass `undefined` to an optional property.** Under
+  `exactOptionalPropertyTypes`, an optional target field (`default?: number`)
+  rejects an explicit `undefined` (TS2379). When forwarding optional caller
+  options into a strict target (e.g. a third-party adapter config), **omit the
+  key** with a conditional spread — `...(v !== undefined ? { k: v } : {})` —
+  never `{ k: someValue | undefined }`.
 - **Typed error hierarchy.** Throw subclasses of `M3LError`; never bare strings.
   Chain underlying failures with the `cause` option. Subclasses override `code`
   as a `readonly` **literal** (e.g. `M3LEnvironmentDetectionError`,
