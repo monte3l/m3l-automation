@@ -104,6 +104,46 @@ export default tseslint.config(
       // Named exports only — keeps the package tree-shakeable (rules 01/04).
       "import-x/no-default-export": "error",
 
+      // Explicit return/param types on the exported surface (style-guide §
+      // Public-API typing). Inference is allowed inside a function body; only
+      // the module boundary must be spelled out.
+      "@typescript-eslint/explicit-module-boundary-types": "error",
+
+      // Refactoring / immutability: never reassign a parameter or mutate its
+      // properties — create a new value instead (style-guide § Immutability).
+      "no-param-reassign": ["error", { props: true }],
+
+      // Naming conventions (style-guide § Naming). Deliberately conservative:
+      // identifiers we own are constrained, but property-like names are left
+      // unchecked because they mirror external shapes (JSON fields, env keys
+      // such as M3L_DEPLOYMENT_MODE) the compiler cannot rename.
+      "@typescript-eslint/naming-convention": [
+        "error",
+        {
+          selector: "default",
+          format: ["camelCase"],
+          leadingUnderscore: "allow",
+        },
+        {
+          selector: "variable",
+          format: ["camelCase", "UPPER_CASE", "PascalCase"],
+          leadingUnderscore: "allow",
+        },
+        {
+          selector: "parameter",
+          format: ["camelCase"],
+          leadingUnderscore: "allow",
+        },
+        { selector: "typeLike", format: ["PascalCase"] },
+        { selector: "enumMember", format: ["PascalCase", "UPPER_CASE"] },
+        { selector: "import", format: ["camelCase", "PascalCase"] },
+        // External-facing shapes: do not constrain property names.
+        {
+          selector: ["objectLiteralProperty", "typeProperty"],
+          format: null,
+        },
+      ],
+
       // Keep units small and shallow (rules 01: "small enough to describe in
       // one sentence", limited nesting, reduced complexity).
       complexity: ["error", 10],
