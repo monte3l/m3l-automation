@@ -197,6 +197,56 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/json/M3LJSONFormatDetectionError.ts"
   },
+  "M3LMessenger": {
+    "submodule": "messaging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/messaging/M3LMessenger.ts"
+  },
+  "M3LMessageWriter": {
+    "submodule": "messaging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/messaging/types.ts"
+  },
+  "M3LMessageReader": {
+    "submodule": "messaging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/messaging/types.ts"
+  },
+  "M3LOutboundMessage": {
+    "submodule": "messaging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/messaging/types.ts"
+  },
+  "M3LReceivedMessage": {
+    "submodule": "messaging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/messaging/types.ts"
+  },
+  "M3LMessageTarget": {
+    "submodule": "messaging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/messaging/types.ts"
+  },
+  "M3LMessageAuthor": {
+    "submodule": "messaging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/messaging/types.ts"
+  },
+  "M3LMessageReceipt": {
+    "submodule": "messaging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/messaging/types.ts"
+  },
+  "M3LInboundAttachment": {
+    "submodule": "messaging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/messaging/types.ts"
+  },
+  "M3LOutboundAttachment": {
+    "submodule": "messaging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/messaging/types.ts"
+  },
   "isDangerousKey": {
     "submodule": "security",
     "namespace": "core",
