@@ -342,6 +342,66 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/messaging/types.ts"
   },
+  "M3LPrompt": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts"
+  },
+  "M3LPromptOptions": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts"
+  },
+  "M3LMultiSpinner": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts"
+  },
+  "M3LMultiSpinnerOptions": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts"
+  },
+  "M3LLoadingBar": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts"
+  },
+  "M3LLoadingBarOptions": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts"
+  },
+  "M3LPromptValidationError": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LPromptValidationError.ts"
+  },
+  "M3LPromptAdapter": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/types.ts"
+  },
+  "M3LChoice": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/types.ts"
+  },
+  "M3LChoices": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/types.ts"
+  },
+  "M3LNumberPromptOptions": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/types.ts"
+  },
+  "M3LSuggestFn": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/types.ts"
+  },
   "isDangerousKey": {
     "submodule": "security",
     "namespace": "core",
