@@ -202,10 +202,23 @@
     "namespace": "core",
     "name": "prompt",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/prompt.md",
-    "symbols": []
+    "symbols": [
+      "M3LPrompt",
+      "M3LPromptOptions",
+      "M3LMultiSpinner",
+      "M3LMultiSpinnerOptions",
+      "M3LLoadingBar",
+      "M3LLoadingBarOptions",
+      "M3LPromptValidationError",
+      "M3LPromptAdapter",
+      "M3LChoice",
+      "M3LChoices",
+      "M3LNumberPromptOptions",
+      "M3LSuggestFn"
+    ]
   },
   {
     "namespace": "core",
