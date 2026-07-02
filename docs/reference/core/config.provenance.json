@@ -82,7 +82,7 @@
           "symbol": "M3LUnsafeConfigKeyError"
         }
       ],
-      "commit": "d0c16578759dd5cf91c5098ba2fbbc4593248c5a",
+      "commit": "a522d110db477c1df3d49a398d583462154707a3",
       "retrieved": "2026-07-02"
     },
     {
@@ -93,7 +93,7 @@
           "symbol": "M3LConfig"
         }
       ],
-      "commit": "d0c16578759dd5cf91c5098ba2fbbc4593248c5a",
+      "commit": "a522d110db477c1df3d49a398d583462154707a3",
       "retrieved": "2026-07-02"
     },
     {
@@ -108,7 +108,7 @@
           "symbol": "M3LUnknownParameterDetector"
         }
       ],
-      "commit": "d0c16578759dd5cf91c5098ba2fbbc4593248c5a",
+      "commit": "a522d110db477c1df3d49a398d583462154707a3",
       "retrieved": "2026-07-02"
     }
   ]
