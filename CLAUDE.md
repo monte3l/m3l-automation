@@ -250,9 +250,10 @@ GitHub-native `.github/dependabot.yml`, which is config, not a workflow):
 ================================================================
 -->
 
-Detailed code, error-handling, and testing rules live in `.claude/rules/` and
-load only when you touch matching files (so they cost nothing in unrelated
-sessions):
+The canonical code/test/refactoring **Style Guide** is
+`docs/contributing/style-guide.md` (each rule tagged `[enforced]` vs `[advisory]`).
+Its terse extracts live in `.claude/rules/` and load only when you touch matching
+files (so they cost nothing in unrelated sessions):
 
 - `packages/m3l-common/src/**` → `.claude/rules/library-src.md` — ESM `.js`
   imports, no `any`/`!`, named exports, `readonly`/`const`, the `M3LError`
@@ -261,6 +262,9 @@ sessions):
 - `**/tests/**`, `*.test.ts` → `.claude/rules/tests.md` — Vitest, a happy +
   failure path per export, `expectTypeOf` where the type is the contract, the
   80 % coverage gate.
+- source/scripts/tests → `.claude/rules/refactoring.md` — behavior-preserving
+  changes: test-safety-net first, small isolated `refactor:` commits, the
+  Boy-Scout rule, and the semver hazard of touching the public surface.
 - `scripts/**` → `.claude/rules/scripts.md` — consuming the library via
   `workspace:*` and the `M3LScript` lifecycle.
 - Deeper reference: `.claude/rules/domain-knowledge.md` → `rules/01-06-*.md`.
@@ -414,8 +418,9 @@ See ADR-0013 for the full rules. Day-to-day:
 -->
 
 - Comment the _why_, not the _what_. The TSDoc rules (every exported symbol,
-  `@example` on primary entry points) live in `.claude/rules/library-src.md`,
-  loaded when editing `src/**`.
+  `@example` on primary entry points) live in the
+  [Style Guide](docs/contributing/style-guide.md#tsdoc) and its
+  `.claude/rules/library-src.md` extract, loaded when editing `src/**`.
 
 ## Agent Operating Model
 

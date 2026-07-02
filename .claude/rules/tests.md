@@ -6,6 +6,10 @@ paths:
 
 # Testing rules (`tests/**`, `*.test.ts`)
 
+> Canonical rationale + examples: [`docs/contributing/style-guide.md` §
+> Writing new tests](../../docs/contributing/style-guide.md#part-2--writing-new-tests).
+> This file is the terse checklist that auto-loads when you edit a test.
+
 - **Vitest**, files named `*.test.ts`, importing from `src/` with the `.js`
   extension (`../src/index.js`).
 - **Every exported function gets a happy-path test plus one failure path.**

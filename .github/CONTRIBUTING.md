@@ -26,6 +26,7 @@ mandatory blocking gate. PRs require a PASS verdict to merge.
 **No hand-bumping versions** — `semantic-release` owns `version` in
 `package.json`; never edit it manually.
 
-See [`docs/contributing/coding-standards.md`](../docs/contributing/coding-standards.md)
-for style rules, and [`docs/adr/README.md`](../docs/adr/README.md) for the
-architecture decision log.
+See the [`Style Guide`](../docs/contributing/style-guide.md) for how to write and
+refactor code and tests (code, tests, and refactoring, each rule tagged
+`[enforced]` vs `[advisory]`), and [`docs/adr/README.md`](../docs/adr/README.md)
+for the architecture decision log.

@@ -1,5 +1,14 @@
 # Testing
 
+> **Applicability note.** This document describes general testing theory, including
+> the full unit/integration/E2E pyramid. **`@m3l-automation/m3l-common` is a
+> unit-only suite by design** — a pure ESM utilities library has no real
+> integration points, so the integration and end-to-end layers below are
+> _aspirational_ and intentionally absent. For how tests are actually written and
+> changed here — deterministic, isolated, I/O mocked at the primitive — see the
+> canonical **[Style Guide § Writing new tests](../docs/contributing/style-guide.md#part-2--writing-new-tests)**,
+> which is the operational source of truth.
+
 ## Overview
 
 The test suite is a layered safety net that gives the development team confidence to change, refactor, and ship software. It is organized as a pyramid of three complementary layers — unit tests at the base, integration tests in the middle, and end-to-end tests at the top — each serving a distinct purpose that no other layer can substitute. Tests must be treated as production code: named precisely, maintained continuously, parameterized to eliminate repetition, and grown deliberately alongside the codebase. When practiced as Test-Driven Development, the act of writing tests first also functions as a design discipline that shapes APIs and exposes structural weaknesses before any implementation decision is committed.

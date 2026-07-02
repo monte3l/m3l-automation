@@ -23,4 +23,6 @@ paths:
 - **Lambda:** expose via `createLambdaHandler<TEvent, TResult>()`; set
   `M3L_DEPLOYMENT_MODE=standalone` and `M3L_BASE_DIR=/tmp`. Do not register
   signal handlers (the platform owns the process lifecycle).
-- **ESM `.js` extensions, named exports, no `any`** apply here too.
+- **ESM `.js` extensions, named exports, no `any`** apply here too — see
+  [`docs/contributing/style-guide.md`](../../docs/contributing/style-guide.md) for
+  the full code, test, and refactoring rules that also govern `scripts/`.

@@ -1,5 +1,12 @@
 # Code Quality & Standards
 
+> **Concrete, project-specific rules live in the [Style Guide](../docs/contributing/style-guide.md).**
+> This document is the deeper, language-agnostic _why_ — the quality hierarchy,
+> anti-patterns, the four-part review checklist, and the refactoring discipline.
+> When the two overlap, the Style Guide is the operational source of truth (and
+> marks each rule `[enforced]` vs `[advisory]`); read it first for how to write and
+> change code in this repo.
+
 ## Overview
 
 This domain defines the complete baseline for producing, evaluating, and maintaining high-quality code across every stage of the development lifecycle. It covers the quality hierarchy that governs how correctness, readability, maintainability, and performance relate to one another; the universal coding standards that every line of code must satisfy; the anti-patterns and red flags that mandate remediation before merge; the systematic four-part checklist that governs code review; the discipline of incremental, validated refactoring; and the four levels of documentation that every project must maintain. Taken together, these rules ensure that code is correct, understandable, safe to change, and legible to future developers — the ultimate measure of engineering quality.
