@@ -162,3 +162,15 @@ expect(() =>
   documented `M3LError` subclass with its `cause` chained.
 - Boolean spies return `mockReturnValue(false)`, not `undefined` — the TS type wins over Node's runtime reality.
 - Vitest 4.x `expectTypeOf` precision: `.toBeBigInt()` (not `.toBigInt()`), and `.toMatchTypeOf<T>()` for subtype checks (not `.toEqualTypeOf`). A 2-tuple `test.each` row callback must accept **both** params.
+- **RED type-assertions and type-probes go stale at GREEN.** A cast you add so a
+  test compiles against a not-yet-existing type (`{ id: "x" } as M3LFoo`) becomes
+  a `@typescript-eslint/no-unnecessary-type-assertion` error the moment the real
+  type resolves — prefer a plain annotation (`const x: M3LFoo = { … }`) over an
+  `as` cast in RED. A fake collaborator's hand-written iterator can trip
+  `noUncheckedIndexedAccess` (`arr[i]` is `T | undefined`) only after GREEN — guard
+  the value (`const v = arr[i]; if (v !== undefined) …`), never `!`. And
+  `expectTypeOf<Klass>().constructorParameters` needs the **constructor type**:
+  write `expectTypeOf<typeof Klass>()`, not `expectTypeOf<Klass>()` (the instance
+  type has no constructor to introspect, and the mismatch shows as a cryptic
+  `never` constraint). Re-run `tsc -b` + `eslint` on the test file once GREEN lands
+  to catch all three before the hub has to route them back.
