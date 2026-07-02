@@ -36,6 +36,31 @@ paths:
 - **Local test doubles:** subclassing an abstract export to exercise it (e.g. a
   `TestEmitter` over the emitter base) is the sanctioned pattern; keep the
   double in the test file.
+- **Test-first, not test-after.** The failing test defines the contract: write
+  tests from the doc contract, watch them fail for the right reason (the symbol
+  doesn't exist yet), then let the implementation make them pass — don't backfill
+  a test that just mirrors an implementation you already wrote.
+- **Justify intentional `eslint-disable` on the error channel.** A module that
+  tests its error channel throws/rejects non-`Error` values to prove
+  normalization, which trips `only-throw-error` / `prefer-promise-reject-errors`.
+  Disable narrowly with a `--` rationale so it isn't "fixed" into a real `Error`:
+
+```ts
+// eslint-disable-next-line @typescript-eslint/only-throw-error -- intentional non-Error to verify the unknown channel
+throw "a string";
+```
+
+### Test-tooling gotchas
+
+- **eslint runs in-loop** (`post-edit-verify`: prettier → eslint → typecheck →
+  vitest). Resolve eslint findings as you write — don't defer them to a later
+  `pnpm lint` pass; that defeats the in-loop signal.
+- **Read coverage from `coverage/coverage-final.json`, not the
+  `pnpm test:coverage` text table.** The v8 text reporter omits files that are
+  100% on all four metrics, so an "absent" file in the table is not an uncovered
+  file — the JSON is the source of truth.
+- Use `pnpm exec vitest` / `pnpm test:coverage`; bare `npx vitest` fails to
+  resolve `@vitest/coverage-v8` under pnpm.
 
 ```typescript
 import { expect, test } from "vitest";

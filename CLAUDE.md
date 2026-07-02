@@ -298,7 +298,10 @@ sessions):
   Enforced by `lefthook` `commit-msg` -> `bin/lint-commit.mjs` (`@commitlint/lint` core, no CLI).
 - Git hooks run via **lefthook** (`lefthook.yml`): `pre-commit` runs
   eslint + prettier on staged files; `pre-push` runs typecheck + tests.
-- Branch from `main`: `feat/<slug>`, `fix/<slug>`.
+- Branch from `main`: `feat/<slug>`, `fix/<slug>`. The
+  `guard-branch-isolation.mjs` hook enforces this for code work — it blocks
+  `packages/*/src/**`, `scripts/*/src/**`, and `**/tests/**` writes while `HEAD`
+  is `main`, so branch before implementing.
 - Releases are automated from `main`; **never** bump `version` in
   package.json by hand — semantic-release owns it.
 - Never `git push --force` to a shared branch.

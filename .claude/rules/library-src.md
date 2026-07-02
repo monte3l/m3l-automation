@@ -48,3 +48,44 @@ export function load(id: UserId): User {
   return user;
 }
 ```
+
+## Good vs. bad (the contrasts reviewers reject on)
+
+The rules above state the "what"; these bad/good pairs show the failure mode so
+you don't have to rediscover it under review.
+
+**ESM relative imports carry `.js`** (tsc won't add it; Node won't resolve without it):
+
+```ts
+// bad — type-checks, then fails at runtime in Node
+import { M3LError } from "../errors/index";
+// good
+import { M3LError } from "../errors/index.js";
+```
+
+**Typed errors with a cause, never bare strings** (one hierarchy, chainable):
+
+```ts
+// bad — loses the type and the underlying failure
+throw `config ${name} not found`;
+// good
+throw new M3LConfigNotFoundError(`config ${name} not found`, { cause });
+```
+
+**Named exports only** (tree-shakeable, refactor-safe, matches the barrels):
+
+```ts
+// bad
+export default class M3LPoller {
+  /* … */
+}
+// good
+export class M3LPoller {
+  /* … */
+}
+```
+
+**Trust the CLI gate over the IDE/LSP.** Editor diagnostics lag and misreport
+against the project `tsconfig` in this harness. A passing `pnpm typecheck` /
+`pnpm lint` is the source of truth — don't chase a red squiggle the CLI says is
+clean.
