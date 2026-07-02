@@ -21,6 +21,9 @@ export default tseslint.config(
       // Nested worktrees are independent checkouts of other branches; linting
       // them from the main tree reports on (and can't resolve) foreign code.
       ".claude/worktrees/**",
+      // Local session buffers written by the remember plugin; gitignored and
+      // outside every tsconfig, so type-checked linting can't resolve them.
+      ".remember/**",
     ],
   },
   js.configs.recommended,

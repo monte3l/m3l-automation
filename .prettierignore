@@ -6,3 +6,7 @@ pnpm-lock.yaml
 # Nested worktrees are other branches' checkouts; `prettier --write .` from the
 # main tree would rewrite their files in place.
 .claude/worktrees/
+
+# Local session buffers written by the remember plugin; gitignored and not ours
+# to format, but `prettier --check .` would otherwise fail the pre-push gate.
+.remember/
