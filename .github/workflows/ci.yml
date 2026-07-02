@@ -120,7 +120,7 @@ jobs:
 
       # Scaffold seam: every src/core|aws/<mod>/index.ts must carry its TDD test
       # file (tests/<mod>.test.ts) and a row in docs/implementation-status.md.
-      # Backstop for the new-submodule scaffolding skill.
+      # Backstop for the scaffolding-submodules scaffolding skill.
       - name: Check scaffold seam (test + status row)
         run: pnpm check:scaffold-seam
 

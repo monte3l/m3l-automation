@@ -101,7 +101,7 @@ function documentedMatcher(namespace, name) {
     has(symbol) {
       const base = baseName(symbol);
       if (documentedSymbols.has(base)) return true;
-      const escaped = base.replace(/[$]/g, "\\$&");
+      const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       return new RegExp(`\\b${escaped}\\b`).test(mdText);
     },
   };
