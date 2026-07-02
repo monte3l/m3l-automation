@@ -128,12 +128,20 @@ if (html !== null) {
         `(<span class="value done" …>).`,
     );
     errors++;
-  } else if (doneSpan[1].trim() !== namesCsv) {
-    console.error(
-      `✗  docs/index.html: "done" names span lists "${doneSpan[1].trim()}" ` +
-        `but implemented modules are "${namesCsv}".`,
-    );
-    errors++;
+  } else {
+    // Normalize internal whitespace: once the list crosses prettier's
+    // printWidth (80) it wraps to newline + indent, which a `.trim()`-only
+    // compare would reject. Collapsing runs of whitespace decouples this gate
+    // from prettier's line-wrapping (see docs/logs/2026-07-01-core-analysis.md,
+    // divergence 5) so no `<!-- prettier-ignore -->` is needed on the span.
+    const doneNames = doneSpan[1].trim().replace(/\s+/g, " ");
+    if (doneNames !== namesCsv) {
+      console.error(
+        `✗  docs/index.html: "done" names span lists "${doneNames}" ` +
+          `but implemented modules are "${namesCsv}".`,
+      );
+      errors++;
+    }
   }
 }
 

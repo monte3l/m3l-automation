@@ -57,6 +57,7 @@ re-confirms the counts. This mirrors the coordination caveat already recorded in
 
 ## Progress checklist (copy-paste at the start of each run)
 
+- [ ] Step 0 — Isolate: confirm `HEAD` is not `main`; branch/worktree first
 - [ ] Step 1 — Resolve target; confirm spec page exists
 - [ ] Step 2 — Format and commit plan/docs file (if any) before implementation
 - [ ] Step 3 — Dep gate: list any required runtime deps and get user approval
@@ -82,6 +83,17 @@ re-confirms the counts. This mirrors the coordination caveat already recorded in
 spokes are for. The writer is never the reviewer; keep that separation structural.
 
 ## Steps
+
+0. **Isolate the working context — before any spoke is dispatched.** Run
+   `git rev-parse --abbrev-ref HEAD`. If it reports `main`, **stop and create
+   isolation first**: `pnpm worktree:new <slug>` (preferred) or
+   `git switch -c feat/<slug>`, and confirm the resulting branch/worktree with
+   the user before proceeding. Building on `main` left its working tree dirty for
+   a whole run once already (`docs/logs/2026-07-01-core-analysis.md`, divergence
+   7). This is enforced deterministically by `guard-branch-isolation.mjs`, which
+   blocks `src/**`/`scripts/*/src/**`/`tests/**` writes while `HEAD` is `main`;
+   this step is the workflow half so the hub branches proactively instead of
+   discovering the block mid-dispatch.
 
 1. **Resolve the target.** Read `docs/implementation-status.md`, confirm the
    module and its `docs/reference/<ns>/<module>.md` spec page exist. If there is
@@ -141,18 +153,31 @@ spokes are for. The writer is never the reviewer; keep that separation structura
    When dispatching, explicitly state: **`@example` blocks must use project
    error-handling conventions (`M3LError` or a subclass), even when the spec doc
    shows bare `new Error()`** — do not assume the implementer resolves a
-   spec-doc / project-rule conflict in the right direction.
+   spec-doc / project-rule conflict in the right direction. Also **hand the spoke
+   a journal path** (e.g. `<scratchpad>/submodule-implementer-<module>.md`) and
+   ask it to append progress there before each major step — this is the durable
+   trace you read if its turn is cut short.
 
    **Verify the writer spoke's state directly — do not trust its final report.**
    A long implementer run (bounded-I/O rework is token-heavy) can hit its turn
    limit and return a mid-thought instead of a completion summary; in the
    core/json run this hid a missing barrel re-export and an internal helper
    leaking as a public export (`docs/logs/2026-07-01-core-json.md`, divergence
-   5). Before moving to review, confirm the actual state: list the created files,
-   `grep` the namespace barrel for the expected `export * from "./<module>/…"`
-   line, and run `typecheck`/`lint`/`test` yourself. If something concrete is
-   missing, **resume the same spoke via `SendMessage`** with the specific gap
-   rather than trusting the summary or re-dispatching a fresh spoke.
+   5). If the return looks truncated, **read the spoke's journal file first** to
+   locate exactly where it stopped and what it intended next, then confirm the
+   actual state: list the created files, `grep` the namespace barrel for the
+   expected `export * from "./<module>/…"` line, and run `typecheck`/`lint`/`test`
+   yourself. If something concrete is missing, **resume the same spoke via
+   `SendMessage`** with the specific gap (point it back at its journal) rather
+   than trusting the summary or re-dispatching a fresh spoke.
+
+   **Sweep for stray debug artifacts before review.** A writer spoke that ended
+   abruptly can leave a reproduction file behind — the core/analysis run left
+   `packages/m3l-common/scratch.repro.test.ts`, which tripped `pnpm lint` and
+   would have polluted the commit (`docs/logs/2026-07-01-core-analysis.md`,
+   divergence 3). Run `git status --porcelain -- 'packages/**'` and delete any
+   untracked `scratch*` / stray `*.test.ts` debug files before the review
+   fan-out. (The `Stop` hook also flags these, but sweep proactively here.)
 
 7. **Phase 4 — Review (fan out in parallel).** In one message, dispatch
    `code-reviewer` and `spec-conformance-reviewer` (now in _conformance mode_),
