@@ -1,0 +1,178 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/exporters.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "M3LListExporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "M3LListExporterStreamWriter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "M3LListExporterEvents"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "M3LListExporterStartedPayload"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "M3LListExporterCompletedPayload"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "M3LListExporterErrorPayload"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "ColumnConflictStrategy"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/M3LCSVListExporter.ts",
+          "symbol": "M3LCSVListExporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "M3LCSVListExporterOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/M3LJSONListExporter.ts",
+          "symbol": "M3LJSONListExporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "M3LJSONListExporterOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "M3LJSONListExporterFormat"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/M3LHTMLListExporter.ts",
+          "symbol": "M3LHTMLListExporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "M3LHTMLListExporterOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/M3LFileExporter.ts",
+          "symbol": "M3LFileExporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/M3LFileExporter.ts",
+          "symbol": "M3LFileExporterOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/M3LJSONFileExporter.ts",
+          "symbol": "M3LJSONFileExporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/M3LJSONFileExporter.ts",
+          "symbol": "M3LJSONFileExporterOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/M3LBinaryFileExporter.ts",
+          "symbol": "M3LBinaryFileExporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/M3LBinaryFileExporter.ts",
+          "symbol": "M3LBinaryFileExporterOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/M3LFileListExporter.ts",
+          "symbol": "M3LFileListExporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/M3LFileListExporter.ts",
+          "symbol": "M3LFileListExporterOptions"
+        }
+      ],
+      "commit": "f4ba35c53e161426fd18b00c79a1f4097193f225",
+      "retrieved": "2026-07-02"
+    },
+    {
+      "heading": "The `M3LListExporter<TItem>` contract",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "M3LListExporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "M3LListExporterStreamWriter"
+        }
+      ],
+      "commit": "f4ba35c53e161426fd18b00c79a1f4097193f225",
+      "retrieved": "2026-07-02"
+    },
+    {
+      "heading": "Event map",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "M3LListExporterEvents"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "M3LListExporterStartedPayload"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "M3LListExporterCompletedPayload"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "M3LListExporterErrorPayload"
+        }
+      ],
+      "commit": "f4ba35c53e161426fd18b00c79a1f4097193f225",
+      "retrieved": "2026-07-02"
+    },
+    {
+      "heading": "Notes and behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/exporters/M3LCSVListExporter.ts",
+          "symbol": "M3LCSVListExporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "ColumnConflictStrategy"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/M3LJSONListExporter.ts",
+          "symbol": "M3LJSONListExporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/types.ts",
+          "symbol": "M3LJSONListExporterFormat"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/M3LHTMLListExporter.ts",
+          "symbol": "M3LHTMLListExporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/M3LBinaryFileExporter.ts",
+          "symbol": "M3LBinaryFileExporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/M3LFileExporter.ts",
+          "symbol": "M3LFileExporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/exporters/M3LFileListExporter.ts",
+          "symbol": "M3LFileListExporter"
+        }
+      ],
+      "commit": "f4ba35c53e161426fd18b00c79a1f4097193f225",
+      "retrieved": "2026-07-02"
+    }
+  ]
+}

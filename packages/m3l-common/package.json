@@ -54,6 +54,7 @@
     "provenance": true
   },
   "dependencies": {
+    "csv-stringify": "^6.8.0",
     "yaml": "2.9.0"
   }
 }
