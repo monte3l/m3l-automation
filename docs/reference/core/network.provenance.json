@@ -1,0 +1,68 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/network.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
+          "symbol": "M3LHttpClient"
+        },
+        {
+          "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
+          "symbol": "M3LHttpClientOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
+          "symbol": "M3LHttpFailureReason"
+        },
+        {
+          "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
+          "symbol": "M3LHttpAbortableRequest"
+        },
+        {
+          "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
+          "symbol": "M3LHttpRequestEvent"
+        },
+        {
+          "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
+          "symbol": "M3LHttpResponseEvent"
+        },
+        {
+          "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
+          "symbol": "M3LHttpErrorEvent"
+        },
+        {
+          "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
+          "symbol": "M3LHttpClientEventMap"
+        },
+        {
+          "file": "packages/m3l-common/src/core/network/M3LHttpClientError.ts",
+          "symbol": "M3LHttpClientError"
+        }
+      ],
+      "commit": "a7364d1274f1b6a61d6c271276ddc47908b60538",
+      "retrieved": "2026-07-02"
+    },
+    {
+      "heading": "Notes & behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
+          "symbol": "M3LHttpClient"
+        },
+        {
+          "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
+          "symbol": "M3LHttpFailureReason"
+        },
+        {
+          "file": "packages/m3l-common/src/core/network/M3LHttpClientError.ts",
+          "symbol": "M3LHttpClientError"
+        }
+      ],
+      "commit": "a7364d1274f1b6a61d6c271276ddc47908b60538",
+      "retrieved": "2026-07-02"
+    }
+  ]
+}

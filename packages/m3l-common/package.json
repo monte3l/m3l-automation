@@ -54,6 +54,7 @@
     "provenance": true
   },
   "dependencies": {
+    "undici": "8.5.0",
     "yaml": "2.9.0"
   }
 }
