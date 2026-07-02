@@ -21,10 +21,30 @@
     "namespace": "core",
     "name": "config",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/config.md",
-    "symbols": []
+    "symbols": [
+      "M3LConfig",
+      "M3LConfigReader",
+      "M3LConfigProvider",
+      "M3LConfigParameter",
+      "M3LConfigParameterType",
+      "M3LConfigSchema",
+      "M3LCommandLineConfigProvider",
+      "M3LJSONConfigProvider",
+      "M3LYAMLConfigProvider",
+      "M3LEnvironmentConfigProvider",
+      "M3LInMemoryConfigProvider",
+      "M3LLambdaEventConfigProvider",
+      "M3LPresetConfigProvider",
+      "coerceConfigValue",
+      "M3LSecretsSpecifier",
+      "M3LUnknownParameterDetector",
+      "M3LConfigCoercionError",
+      "M3LConfigParseError",
+      "M3LUnsafeConfigKeyError"
+    ]
   },
   {
     "namespace": "core",
