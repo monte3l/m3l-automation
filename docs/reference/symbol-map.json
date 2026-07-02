@@ -419,6 +419,61 @@
     "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
     "lines": "73-75"
   },
+  "M3LFtsIndex": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/M3LFtsIndex.ts"
+  },
+  "M3LFtsIndexConfig": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/types.ts"
+  },
+  "M3LFtsIndexDocument": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/types.ts"
+  },
+  "M3LFtsIndexSearchMode": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/types.ts"
+  },
+  "M3LFtsIndexSearchOptions": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/types.ts"
+  },
+  "M3LFtsIndexSearchResult": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/types.ts"
+  },
+  "M3LFtsIndexStats": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/types.ts"
+  },
+  "M3LSqliteDatabase": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/types.ts"
+  },
+  "M3LSqliteStatement": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/types.ts"
+  },
+  "M3LFtsIndexError": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/M3LFtsIndexError.ts"
+  },
+  "M3LFtsIndexErrorCode": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/M3LFtsIndexError.ts"
+  },
   "M3LTextExtractorRegistry": {
     "submodule": "text",
     "namespace": "core",
