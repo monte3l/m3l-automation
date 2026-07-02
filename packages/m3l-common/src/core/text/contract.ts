@@ -32,7 +32,11 @@ export type M3LTextExtractionOptions = {
   /**
    * Maximum number of ZIP entries {@link M3LZipTextExtractor} will process
    * before stopping and marking the result truncated. Bounds a breadth attack
-   * (an archive declaring millions of entries). Defaults to a safe finite value.
+   * (an archive declaring millions of entries). Must be a finite integer `>= 1`;
+   * a non-finite, fractional (floored), zero, negative, or omitted value is
+   * silently clamped to a safe finite default rather than rejected
+   * (validation-boundary lenience — {@link M3LZipTextExtractor} never throws on
+   * a hostile options value).
    */
   readonly maxEntries?: number;
   /**
@@ -40,7 +44,11 @@ export type M3LTextExtractionOptions = {
    * materialize across processed entries before stopping and marking the result
    * truncated. Each entry's declared uncompressed size is checked against the
    * remaining budget before it is decompressed, so a high-inflation "zip bomb"
-   * entry is skipped rather than materialized. Defaults to a safe finite value.
+   * entry is skipped rather than materialized. Must be a finite integer `>= 1`;
+   * a non-finite, fractional (floored), zero, negative, or omitted value is
+   * silently clamped to a safe finite default rather than rejected
+   * (validation-boundary lenience — {@link M3LZipTextExtractor} never throws on
+   * a hostile options value).
    */
   readonly maxTotalBytes?: number;
 };

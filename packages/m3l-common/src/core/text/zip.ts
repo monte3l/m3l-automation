@@ -223,6 +223,10 @@ export class M3LZipTextExtractor implements M3LTextExtractor {
     // high-ratio entry is skipped rather than materialized. A lying-low
     // declared size can't overshoot later entries because the budget is
     // charged the ACTUAL byte length once decompressed (below).
+    // Clamp to 0: a corrupt or hostile central-directory header could report a
+    // negative `header.size`. Without the `Math.max(0, …)` a negative
+    // `declared` makes the `declared > remainingBytes` gate below false, which
+    // would wrongly ADMIT the entry and bypass the size budget entirely.
     const declared = Math.max(0, entry.header.size);
     if (declared > budget.remainingBytes) {
       return { bytes: 0, truncated: true };
