@@ -100,7 +100,22 @@ against the "N tests" values recorded in the Notes column of
 If it fails, the output names the submodule, the recorded count, and the
 actual count. Tell the user the exact edit required in the Notes column.
 
-### 7 — Markdown lint
+### 7 — Regenerate the reference index
+
+```bash
+pnpm gen:index && pnpm check:index
+```
+
+`gen:index` rewrites `docs/reference/catalog.json` from the barrels; `check:index`
+verifies it is current. This step is easy to omit and CI's `check:index` will
+fail if it drifts, so treat it as mandatory whenever symbols changed.
+
+Run it **before** any `pnpm format`/prettier pass: `gen:index` emits
+non-prettier-formatted JSON, so if `format` runs first, `format:check` then fails
+on the regenerated `catalog.json`. Whichever runs last wins, and the generator
+must win — regenerate here, format after.
+
+### 8 — Markdown lint
 
 ```bash
 pnpm lint:md
@@ -121,6 +136,7 @@ Output after all steps complete:
 - Provenance (post):     ✓ / ✗
 - Implementation status: up to date / <list rows needing attention>
 - Test counts:           ✓ (N submodules verified) / ✗
+- Reference index:       ✓ (gen:index + check:index) / ✗
 - Markdown lint:         ✓ / ✗
 ```
 

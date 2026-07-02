@@ -31,8 +31,9 @@ Read the conversation context and extract:
 - **Task name and namespace**: the module, feature, or task just completed
   (e.g. `core/config`, `aws/ssocredentials`, or a freeform slug like
   `write-work-log-skill` for non-submodule work)
-- **Date**: today's date in `YYYY-MM-DD` format — read it from the environment,
-  do not guess
+- **Date**: today's date in `YYYY-MM-DD` format — do not guess. Read it from the
+  `currentDate` field in the session's system-reminder context; if that is
+  unavailable, run `date +%Y-%m-%d`
 - **Target filename**:
   - Submodule task: `YYYY-MM-DD-<ns>-<module>.md`
     (e.g. `2026-06-30-core-config.md`)
@@ -110,12 +111,24 @@ non-obvious insights from the "What went as planned" section.
 
 Each bullet:
 
-- Leads with a **bold keyword phrase** (2–6 words) capturing the lesson topic
-- Follows with one or two sentences of specific, actionable guidance
+- Leads with a keyword phrase (2–6 words) capturing the lesson topic, wrapped in
+  `**bold**` Markdown syntax (e.g. `- **Front-load the shape** — …`). The bold
+  is not decoration: a future reader — and the `/promoting-work-log-lessons`
+  skill — scans these keyword phrases to cluster recurring lessons, so make the
+  phrase the searchable name of the lesson.
+- Follows with one or two sentences of specific, actionable guidance.
 
 Write at least one lesson even when everything went smoothly — a smooth run
 confirms prior lessons still hold, or identifies a workflow element worth
 repeating explicitly.
+
+**Provenance marker:** if you fold a lesson into a durable rule in this same
+change set (see Step 4), append `_(promoted → <path>)_` to that lesson's bullet,
+naming the file you added it to — e.g.
+`- **Run gen:index before format** — … _(promoted → .claude/skills/sync-docs/SKILL.md)_`.
+This marker records that the lesson has left the log and now lives where it
+changes behavior; `/promoting-work-log-lessons` reads it to avoid re-proposing an
+already-promoted lesson. Leave the marker off any lesson you did not promote.
 
 ## Step 3 — Write the file
 
@@ -166,9 +179,22 @@ change set, so the rules track lived experience instead of drifting from it:
   `spec-conformance-reviewer.md`).
 
 Keep additions concise — terse imperative bullets, a code snippet only where the
-exact syntax _is_ the lesson. Skip a lesson that is already captured, or that is
-purely specific to this one submodule. The log stays the durable narrative; the
-rules/prompts are where a recurring lesson must live to actually change behavior.
+exact syntax _is_ the lesson. Skip a lesson that is purely specific to this one
+submodule, or that is **already captured** — before proposing a promotion, grep
+the likely target for the lesson's keyword to check it isn't already written
+down, e.g. `grep -rin "gen:index" .claude/rules .claude/agents .claude/skills`.
+The log stays the durable narrative; the rules/prompts are where a recurring
+lesson must live to actually change behavior.
+
+When you do promote a lesson here, stamp its bullet with the
+`_(promoted → <path>)_` marker described under _Lessons learned_ above, so the
+log records where the lesson now lives.
+
+Promoting at write time is best-effort and single-log — you only see this one
+task. The periodic `/promoting-work-log-lessons` sweep is the backstop that
+catches lessons which only reveal themselves as durable once they recur across
+several logs, so it is fine to leave a borderline "maybe generalizes" lesson
+unpromoted here rather than force it.
 
 ## Step 5 — Report
 

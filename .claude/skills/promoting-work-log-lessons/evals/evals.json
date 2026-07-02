@@ -1,0 +1,86 @@
+{
+  "skill_name": "promoting-work-log-lessons",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Promote the recurring lessons from our work logs into the rules. Just show me what you'd change first — don't edit anything yet.",
+      "expected_output": "In propose (default) mode the skill reads every docs/logs/*.md, clusters lessons by meaning, and applies all three filters. It writes no files. Ground truth on the current corpus: 'run gen:index before format' recurs in core/json AND core/analysis and is NOT written down anywhere (the sync-docs skill has no gen:index step), so it is the one surviving promotion candidate, routed to .claude/skills/sync-docs/SKILL.md. By contrast 're-validate stored plans' (already in implement-submodule:93 and audit:78) and 'verify writer-spoke on-disk state' (already in implement-submodule:146) also recur but must be DROPPED by the already-captured filter — not treated as candidates. The report must honestly show its filter counts and must not fabricate candidates.",
+      "assertions": [
+        {
+          "id": "no-file-writes-in-propose-mode",
+          "description": "The skill writes/edits NO files — no changes to .claude/rules, .claude/agents, .claude/skills, docs/logs, or CLAUDE.md in default propose mode"
+        },
+        {
+          "id": "surfaces-gen-index-candidate",
+          "description": "Report surfaces 'run gen:index before format' as a surviving candidate, cites BOTH core/json and core/analysis as the recurrence, and routes it to the sync-docs skill's SKILL.md"
+        },
+        {
+          "id": "drops-already-captured-plan-revalidation",
+          "description": "'Re-validate stored plans' is NOT proposed as a candidate; the report notes it is already captured (implement-submodule / audit), i.e. dropped by the already-captured filter, not by the recurrence filter"
+        },
+        {
+          "id": "drops-already-captured-writer-spoke",
+          "description": "'Verify writer-spoke on-disk state' is NOT proposed; the report notes it is already captured in implement-submodule"
+        },
+        {
+          "id": "honest-filter-counts",
+          "description": "The report states how many themes were extracted, how many recurred across ≥2 logs, and how many were dropped as already-captured vs already-promoted — without inventing candidates"
+        },
+        {
+          "id": "filters-single-log-lessons",
+          "description": "Single-log lessons (e.g. git pull --rebase before push, or the feature-branch guard) are NOT proposed, because the recurrence filter requires ≥2 logs"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "/promoting-work-log-lessons --apply — I've reviewed the recurring lessons, go ahead and fold them in and mark the logs.",
+      "expected_output": "In apply mode the skill edits each routed target file to add the terse rule text, AND stamps a `_(promoted → <target>)_` provenance marker onto the originating lesson in every source log it came from. On the current corpus the one surviving candidate is 'run gen:index before format', so it adds that ordering rule to .claude/skills/sync-docs/SKILL.md and stamps the marker in BOTH docs/logs/2026-07-01-core-json.md and docs/logs/2026-07-01-core-analysis.md. It does not commit; it reports the files edited and logs stamped and hands off to /write-commit as a docs: change. It runs the verification (lint:md, and check:agents if agents were edited).",
+      "assertions": [
+        {
+          "id": "edits-target-files",
+          "description": "At least one durable target file (.claude/rules/*.md, .claude/agents/*.md, or a skill SKILL.md) is edited to add the promoted rule text"
+        },
+        {
+          "id": "stamps-provenance-marker",
+          "description": "Each promoted lesson gets a '_(promoted → <path>)_' marker appended in its source docs/logs/*.md file(s)"
+        },
+        {
+          "id": "marker-in-all-source-logs",
+          "description": "A lesson that recurred in two logs is stamped in BOTH source logs, not just one"
+        },
+        {
+          "id": "does-not-commit",
+          "description": "The skill does NOT run git commit; it hands off to /write-commit and states this is a docs: change touching no src/ or version"
+        },
+        {
+          "id": "runs-verification",
+          "description": "The skill runs pnpm lint:md (and pnpm check:agents if any agent file was edited) after applying"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Do another pass over the work logs and promote anything new that keeps coming up.",
+      "expected_output": "On a re-run, the skill must skip lessons already carrying a `_(promoted → …)_` provenance marker and lessons whose keyword already appears in the target rules (found via grep), rather than re-proposing them. If everything recurring has already been promoted, it should report that nothing new survived the filters rather than inventing candidates or re-listing promoted lessons.",
+      "assertions": [
+        {
+          "id": "skips-already-promoted",
+          "description": "Lessons already stamped with a '_(promoted → …)_' marker are excluded from the candidate list"
+        },
+        {
+          "id": "greps-for-already-captured",
+          "description": "The skill greps .claude/rules / .claude/agents / .claude/skills for a lesson's keyword and drops it if already written down"
+        },
+        {
+          "id": "reports-empty-honestly",
+          "description": "If nothing new survives the filters, the skill says so plainly instead of re-listing already-promoted lessons or fabricating new ones"
+        },
+        {
+          "id": "no-writes-without-apply",
+          "description": "Without --apply or explicit approval, the re-run writes no files"
+        }
+      ]
+    }
+  ]
+}
