@@ -51,7 +51,10 @@ parallel-agent ambitions warrant first-class support. Concretely:
   `.claude/**`.)
 - **Standard human flow:** manual `git worktree add ../m3l-automation-<slug> -b
 feat/<slug>` (sibling directory, keeping the `feat/<slug>` branch convention and
-  PR/release expectations), provisioned by `pnpm worktree:setup`.
+  PR/release expectations), provisioned by `pnpm worktree:setup`. _(Superseded by
+  ADR-0014: the two steps are now the single `pnpm worktree:new <slug>`, which
+  branches from `origin/main` then runs `worktree:setup`. The two-command form
+  still works.)_
 - **Lifecycle:** `pnpm worktree:prune` removes merged/stale worktrees;
   `cleanupPeriodDays` lets agent/background worktrees auto-sweep.
 - **`worktree.baseRef = "fresh"`:** new worktrees branch from `origin/main`.

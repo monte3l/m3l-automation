@@ -302,11 +302,15 @@ files (so they cost nothing in unrelated sessions):
   types (`docs:`, `refactor:`, `test:`, `chore:`) do not release.
   Enforced by `lefthook` `commit-msg` -> `bin/lint-commit.mjs` (`@commitlint/lint` core, no CLI).
 - Git hooks run via **lefthook** (`lefthook.yml`): `pre-commit` runs
-  eslint + prettier on staged files; `pre-push` runs typecheck + tests.
+  eslint + prettier on staged files; `pre-push` runs typecheck + tests and
+  refuses unsigned/unverified commits (`verify-signed-range`).
+- **Before change-work, run `/start-work`** — the pre-work decision gate that
+  settles location / branch / PR / push and confirms them (ADR-0016). It is the
+  Step 0 the change-initiating skills defer to.
 - Branch from `main`: `feat/<slug>`, `fix/<slug>`. The
   `guard-branch-isolation.mjs` hook enforces this for code work — it blocks
   `packages/*/src/**`, `scripts/*/src/**`, and `**/tests/**` writes while `HEAD`
-  is `main`, so branch before implementing.
+  is `main` (or a detached HEAD on the `main` commit), so branch before implementing.
 - Releases are automated from `main`; **never** bump `version` in
   package.json by hand — semantic-release owns it.
 - Never `git push --force` to a shared branch.
@@ -384,6 +388,10 @@ See ADR-0013 for the full rules. Day-to-day:
 - `NPM_TOKEN` / `GITHUB_TOKEN` exist only in CI env — never in source,
   tests, or fixtures.
 - Validate all external input at the public API boundary before use.
+- Commits pushed to the remote must be signed (valid `%G?`). Enforced in three
+  layers — the `guard-git-push-signed` Bash hook, the `verify-signed-range`
+  `pre-push` backstop, and branch-protection "Require signed commits" (the
+  authoritative one). See ADR-0016 and `docs/contributing/branch-protection.md`.
 
 ## Performance
 
@@ -472,11 +480,14 @@ that reviews it" structural, and keeps the hub's context lean.
 
 **Claude Code hooks** (`.claude/settings.json`, implemented in
 `.claude/hooks/*.mjs` and `bin/`) add deterministic enforcement on top of this
-advisory file: across SessionStart / PreToolUse / PostToolUse / Stop they guard
-ESM `.js` imports, CommonJS, protected paths (`dist/`, `version`), RED-phase test
-noise, exports/semver drift, doc / provenance / index staleness, and worktree
-readiness — a violating edit is blocked or flagged at write time. See that file
-for the per-hook list and triggers.
+advisory file: across UserPromptSubmit / SessionStart / PreToolUse / PostToolUse /
+Stop they inject the pre-work decision gate (branch/PR/push), guard ESM `.js`
+imports, CommonJS, protected paths (`dist/`, `version`), branch isolation
+(`src/`/`tests/` writes off `main`, incl. a detached HEAD on `main`), unsigned
+`git push` (Bash matcher), RED-phase test noise, exports/semver drift, doc /
+provenance / index staleness, and worktree readiness — a violating edit or push is
+blocked or flagged at write time. `check:hooks` validates the wiring. See that
+file for the per-hook list and triggers.
 
 ## Task Workflow
 
@@ -544,10 +555,12 @@ for the per-hook list and triggers.
 The deterministic prohibitions — `any`, a missing `.js` extension, CommonJS
 (`require` / `module.exports` / `__dirname`), hand-edits to `version` or `dist/`,
 non-Conventional commits, committed secrets/tokens (`gitleaks` in CI plus the
-`guard-secret-writes` write-time hook), and adding a dependency without updating
-the lockfile (`pnpm install --frozen-lockfile` in CI) — are enforced by ESLint,
-the hooks in `.claude/settings.json`, commitlint, and CI; a violating edit is
-blocked at write time. The `.js`-extension and CommonJS bans are intentionally
+`guard-secret-writes` write-time hook), pushing an unsigned/invalid-signature
+commit (`guard-git-push-signed` + `verify-signed-range` pre-push + branch-protection
+"Require signed commits"), and adding a dependency without updating the lockfile
+(`pnpm install --frozen-lockfile` in CI) — are enforced by ESLint, the hooks in
+`.claude/settings.json`, commitlint, and CI; a violating edit is blocked at write
+time. The `.js`-extension and CommonJS bans are intentionally
 guarded twice — a fast PreToolUse hook (`guard-js-extension` / `guard-no-commonjs`)
 blocks the write before it lands, and ESLint/CI is the authoritative backstop for
 any non-Claude or `--no-verify` edit; do not remove the hooks as "redundant."
