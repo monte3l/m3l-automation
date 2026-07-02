@@ -54,6 +54,7 @@
     "provenance": true
   },
   "dependencies": {
+    "@inquirer/prompts": "8.5.2",
     "yaml": "2.9.0"
   }
 }

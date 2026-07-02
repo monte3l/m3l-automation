@@ -15,6 +15,20 @@ Public surface (`prompt/index.ts`):
 - `M3LPrompt` — the unified facade.
 - `M3LMultiSpinner`, `M3LMultiSpinnerOptions` — concurrent and single spinner control.
 - `M3LLoadingBar`, `M3LLoadingBarOptions` — a progress bar.
+- `M3LPromptValidationError` — thrown for out-of-range `number` input, an invalid
+  loading-bar `width`, or a contradictory `number` range (`min > max`); an
+  `M3LError` subclass (`code: "ERR_PROMPT_VALIDATION"`). A rejected `password`
+  value is never carried in the error `context`.
+- `M3LPromptOptions`, `M3LPromptAdapter` — the constructor options bag and the
+  injected prompt-adapter port. The adapter defaults to a thin pass-through over
+  `@inquirer/prompts`; injecting a custom adapter is what makes prompt behavior
+  mockable without a TTY.
+- `M3LChoice`, `M3LChoices` — the choice shape for `select` / `multiselect` /
+  `autocomplete`. A bare `string[]` is the zero-friction default; a richer
+  `{ name?, value, description?, disabled? }` object form is also accepted.
+- `M3LNumberPromptOptions` — `{ min?, max?, default? }` for `number`.
+- `M3LSuggestFn` — the `autocomplete` suggest function,
+  `(term: string | undefined) => M3LChoices<Value> | Promise<M3LChoices<Value>>`.
 
 ### `M3LPrompt`
 
