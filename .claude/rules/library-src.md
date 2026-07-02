@@ -25,6 +25,10 @@ paths:
 - **Never export error-constructor options interfaces.** Callers _catch_
   errors, they don't construct them — the options shape is an implementation
   detail of the constructor, not public API.
+- **Discriminate a swallow by `code`, not class.** When one `M3LError` subclass
+  carries several `code`s, a `catch (e) { if (e instanceof X) skip }` drops the
+  very failures the codes distinguish (a corrupt input vs. a merely-unsupported
+  one). Narrow the skip to the specific benign `code` and **re-throw** the rest.
 - **Filesystem error handling.** Ignore only `ENOENT` (denylist via a small
   `Set`) and **re-throw** `EACCES`/`EPERM`; scope any silent-skip to _parse
   failures only_, never a whole `catch`.

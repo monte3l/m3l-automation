@@ -1,0 +1,6 @@
+From: alice@example.com
+To: bob@example.com
+Subject: HTML Email
+Content-Type: text/html; charset=utf-8
+
+<html><body><p>Hello <b>HTML</b> body.</p></body></html>
