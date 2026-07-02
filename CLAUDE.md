@@ -221,16 +221,17 @@ pre-publish; the remaining `check:*` run in CI.
 
 ## CI/CD
 
-Five GitHub Actions workflows in `.github/workflows/` (plus Dependabot via the
+Six GitHub Actions workflows in `.github/workflows/` (plus Dependabot via the
 GitHub-native `.github/dependabot.yml`, which is config, not a workflow):
 
-| Workflow                | Trigger                     | Purpose                                                                                                   |
-| ----------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `ci.yml`                | push / PR → main            | Full quality-gate pipeline — secrets, deps, lint, formatting, types, and tests must all pass before merge |
-| `release.yml`           | `ci.yml` success on main    | semantic-release: npm publish + GitHub release                                                            |
-| `claude-pr-review.yml`  | PR opened / sync / reopened | **Mandatory blocking gate** — produces PASS/FAIL verdict; merge requires PASS                             |
-| `claude-assistant.yml`  | @claude in issues / PRs     | On-demand Claude Code assistant                                                                           |
-| `dependency-review.yml` | PR → main                   | Blocks HIGH/CRITICAL vulnerability advisories                                                             |
+| Workflow                | Trigger                             | Purpose                                                                                                   |
+| ----------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `ci.yml`                | push / PR → main                    | Full quality-gate pipeline — secrets, deps, lint, formatting, types, and tests must all pass before merge |
+| `release.yml`           | `ci.yml` success on main            | semantic-release: npm publish + GitHub release                                                            |
+| `claude-pr-review.yml`  | PR opened / sync / reopened / ready | **Mandatory blocking gate** — produces PASS/FAIL verdict; merge requires PASS                             |
+| `claude-assistant.yml`  | @claude in issues / PRs             | On-demand Claude Code assistant                                                                           |
+| `dependency-review.yml` | PR → main                           | Blocks HIGH/CRITICAL vulnerability advisories                                                             |
+| `scorecard.yml`         | push → main / weekly cron           | OpenSSF Scorecard supply-chain posture scoring (ADR-0015); uploads SARIF to the Security tab              |
 
 ## Coding, errors & tests (path-scoped)
 
