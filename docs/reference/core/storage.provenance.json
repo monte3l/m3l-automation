@@ -50,7 +50,7 @@
           "symbol": "M3LFtsIndexErrorCode"
         }
       ],
-      "commit": "a029eed2b7bba9e2a3edeba7c8e8e210e4089c52",
+      "commit": "d06e252c181cc2c8c6aca10a6f0ab454486346ca",
       "retrieved": "2026-07-02"
     },
     {
@@ -73,7 +73,7 @@
           "symbol": "M3LFtsIndexSearchResult"
         }
       ],
-      "commit": "a029eed2b7bba9e2a3edeba7c8e8e210e4089c52",
+      "commit": "d06e252c181cc2c8c6aca10a6f0ab454486346ca",
       "retrieved": "2026-07-02"
     }
   ]
