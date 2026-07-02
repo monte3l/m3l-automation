@@ -352,6 +352,22 @@ describe("literal search", () => {
 
     expect(hits[0]?.snippet.length).toBeGreaterThan(0);
   });
+
+  test("treats LIKE metacharacters (% and _) as literal characters", () => {
+    const index = makeIndex();
+    index.upsert({ id: "with-percent", content: "discount is 50% off today" });
+    index.upsert({ id: "no-percent", content: "plain text with no wildcard" });
+    index.upsert({ id: "with-underscore", content: "file_name.txt saved" });
+    index.upsert({ id: "no-underscore", content: "file name has a space" });
+
+    // `%` must match only the document literally containing `%`, not every doc.
+    const percentHits = index.search("%", { mode: "literal" });
+    expect(percentHits.map((h) => h.id)).toEqual(["with-percent"]);
+
+    // `_` must match a literal underscore, not "any single character".
+    const underscoreHits = index.search("_", { mode: "literal" });
+    expect(underscoreHits.map((h) => h.id)).toEqual(["with-underscore"]);
+  });
 });
 
 // =============================================================================
@@ -415,6 +431,15 @@ describe("delete and deleteMany", () => {
       .get(id) as CountRow;
     return row.n;
   }
+
+  test("delete of a missing id is a no-op and does not throw", () => {
+    const index = makeIndex();
+    index.upsert({ id: "present", content: "still here" });
+
+    expect(() => index.delete("nonexistent")).not.toThrow();
+    // The present document is untouched.
+    expect(index.stats().documentCount).toBe(1);
+  });
 
   test("delete removes the document from BOTH <table> and <table>_meta", () => {
     const index = makeIndex();

@@ -527,6 +527,18 @@ export class M3LFtsIndex {
     return terms.map((term) => `"${term.replaceAll('"', '""')}"`).join(" OR ");
   }
 
+  /**
+   * Escapes SQL `LIKE` metacharacters (`\`, `%`, `_`) so a literal query is
+   * matched as an exact substring rather than a wildcard pattern. Paired with
+   * an `ESCAPE '\'` clause on the `LIKE` expression.
+   */
+  #escapeLikePattern(value: string): string {
+    return value
+      .replaceAll("\\", "\\\\")
+      .replaceAll("%", "\\%")
+      .replaceAll("_", "\\_");
+  }
+
   /** Case-insensitive literal substring search (query bound as a parameter). */
   #searchLiteral(
     query: string,
@@ -537,10 +549,17 @@ export class M3LFtsIndex {
     const filterClause = this.#buildFilterClause(filterColumns);
     const statement = this.#prepare(
       `SELECT id, content FROM ${this.#table} ` +
-        `WHERE content LIKE '%' || @__query__ || '%' COLLATE NOCASE` +
+        `WHERE content LIKE '%' || @__query__ || '%' ESCAPE '\\' COLLATE NOCASE` +
         `${filterClause} LIMIT @__limit__`,
     );
-    const params = this.#buildParams(query, filters, filterColumns, limit);
+    // Bind the escaped pattern so `%`/`_` in the query match literally; keep the
+    // original `query` for the snippet window below.
+    const params = this.#buildParams(
+      this.#escapeLikePattern(query),
+      filters,
+      filterColumns,
+      limit,
+    );
     const rows = statement.all(params) as ReadonlyArray<{
       readonly id: string;
       readonly content: string;
