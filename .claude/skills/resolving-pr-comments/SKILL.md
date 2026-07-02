@@ -204,9 +204,13 @@ based on the findings resolved — per CLAUDE.md, only `fix:` triggers a patch r
   - add TSDoc + @example to `loadConfig`
   ```
 
-Then push:
+Then sync and push. The `claude-pr-review` bot can push to the branch (e.g. an
+auto-fix commit), so the local branch may be behind its own remote — rebase onto
+it first to avoid a rejected non-fast-forward push (lesson from
+`docs/logs/2026-06-30-core-utils.md`). Never use `--force`:
 
 ```bash
+git pull --rebase origin "$(git rev-parse --abbrev-ref HEAD)"
 git push
 ```
 

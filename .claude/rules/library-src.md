@@ -31,9 +31,19 @@ paths:
 - **Never export error-constructor options interfaces.** Callers _catch_
   errors, they don't construct them — the options shape is an implementation
   detail of the constructor, not public API.
+- **Discriminate a swallow by `code`, not class.** When one `M3LError` subclass
+  carries several `code`s, a `catch (e) { if (e instanceof X) skip }` drops the
+  very failures the codes distinguish (a corrupt input vs. a merely-unsupported
+  one). Narrow the skip to the specific benign `code` and **re-throw** the rest.
 - **Filesystem error handling.** Ignore only `ENOENT` (denylist via a small
   `Set`) and **re-throw** `EACCES`/`EPERM`; scope any silent-skip to _parse
   failures only_, never a whole `catch`.
+- **Fail loud on caller/config errors; stay lenient only on external data.**
+  Validate caller- and config-supplied input at the public boundary and throw an
+  `M3LError` subclass on violation — never silently coerce or skip it. Reserve
+  tolerant handling (skip / default / warn) for _external_ data you don't control
+  (file contents, network payloads). Don't blur the two: a malformed caller
+  argument is a bug to surface, malformed external data is a condition to absorb.
 - **`interface` for shapes callers implement/extend; `type` for unions,
   intersections, mapped/branded types.**
 - **Exhaustive `switch`** over finite sets; handle every case and fail on the
