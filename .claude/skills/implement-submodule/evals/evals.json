@@ -20,13 +20,13 @@
     {
       "id": 2,
       "prompt": "Let's do the retry stuff — implement exponential back-off retries.",
-      "expected_output": "Hub checks docs/implementation-status.md and docs/reference/core/retry.md, confirms the spec exists, and proceeds through the TDD pipeline. If no spec page exists, hub stops and tells the user to run new-subpath first.",
+      "expected_output": "Hub checks docs/implementation-status.md and docs/reference/core/retry.md, confirms the spec exists, and proceeds through the TDD pipeline. If no spec page exists, hub stops and tells the user to run new-submodule first.",
       "files": [],
       "expectations": [
         "Hub resolves the module name from the casual request ('retry stuff' → core/retry)",
         "Hub reads docs/implementation-status.md to check the module status",
         "If a docs/reference spec page exists, hub proceeds through the 4-phase pipeline",
-        "If no spec page exists, hub stops and points the user at new-subpath"
+        "If no spec page exists, hub stops and points the user at new-submodule"
       ]
     },
     {

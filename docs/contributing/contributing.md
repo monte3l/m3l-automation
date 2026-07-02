@@ -53,17 +53,21 @@ runs `tsc`. If you add or rename a script, keep this table in sync.
 
 ```text
 src/
-  index.ts        # main entry / public barrel
-  <subpath>/
-    index.ts      # subpath entry, mapped in package.json "exports"
+  index.ts        # main entry / public barrel (re-exports Core + AWS)
+  core/index.ts   # Core namespace barrel — new core submodules re-export here
+  aws/index.ts    # AWS namespace barrel — new aws submodules re-export here
+  <ns>/<module>/
+    index.ts      # a submodule, surfaced through its namespace barrel
   internal/       # NOT exported; no "exports" entry; may change freely
 dist/             # tsc output (ESM .js + .d.ts) — generated, never edit
 tests/            # *.test.ts (Vitest)
 ```
 
-Each public subpath needs its own `src/<path>/index.ts` **and** a
-matching entry in the `package.json` `exports` map, or consumers cannot
-import it.
+The `exports` map exposes exactly three entries — `.`, `./core`, and
+`./aws`. A new Core/AWS submodule is surfaced by re-exporting it from the
+namespace barrel (`src/core/index.ts` or `src/aws/index.ts`), **not** by
+adding a new `exports` entry. Adding, removing, or retyping one of the
+three entries is a semver event (see ADR-0004).
 
 ## ESM and the `.js` Extension Rule
 

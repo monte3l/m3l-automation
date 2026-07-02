@@ -1,5 +1,5 @@
 ---
-name: new-subpath
+name: new-submodule
 description: >-
   Scaffold a brand-new Core or AWS submodule inside packages/m3l-common — the one that
   has NO docs/reference page or src directory yet. Creates the module folder, a failing
@@ -10,15 +10,18 @@ description: >-
   implement-submodule directly.
 ---
 
-# new-subpath
+# new-submodule
 
 Scaffold a new submodule under the library's `core` or `aws` namespace. This is
-the _greenfield_ entry point: it creates the seams (folder, failing test, barrel
-re-export, doc stub) and updates the status tracker, then hands the actual
-implementation to `implement-submodule`. The package `exports` map stays at three
-entries (`.`, `./core`, `./aws`) — new submodules are surfaced through the
-namespace barrel, never a new subpath entry (that would be a semver event; see
-`docs/contributing/contributing.md`).
+the _greenfield_ entry point for a **net-new** module — one beyond the bootstrap
+catalog that has no `docs/reference` page and no `src/` directory yet. It creates
+the seams (folder, failing test, barrel re-export, doc stub) and updates the
+status tracker, then hands the actual implementation to `implement-submodule`.
+The package `exports` map stays at three entries (`.`, `./core`, `./aws`) — new
+submodules are surfaced through the namespace barrel, **never** a new subpath
+entry (that would be a semver event; see `docs/contributing/contributing.md`).
+The skill's name is about adding a new module, not a new `exports` subpath — the
+two are deliberately kept separate.
 
 ## Role boundaries (hub-and-spoke)
 
@@ -34,7 +37,10 @@ separation intact here by handing off rather than implementing inline.
 1. Ask for: the namespace (`core` or `aws`) and the module name (kebab-case).
 2. Create `packages/m3l-common/src/<ns>/<module>/index.ts` with a minimal,
    spec-anchored skeleton — exported symbol _signatures_ with TSDoc and `@example`
-   but throwing `M3LNotImplementedError` (or similar) bodies. Named exports only;
+   but placeholder bodies that throw a **module-specific `M3LError` subclass**.
+   There is no generic `M3LNotImplementedError` in this repo — every module defines
+   its own error (e.g. `M3LPathResolutionError`, `M3LJSONFormatDetectionError`), so
+   define one for the new module and throw it from the stubs. Named exports only;
    relative imports carry the `.js` extension.
 3. Re-export the module from `packages/m3l-common/src/<ns>/index.ts`
    (`export * from "./<module>/index.js";`).
@@ -64,11 +70,16 @@ export * from "./retry/index.js";
 **2 — Placeholder bodies fail loudly, signatures are real:**
 
 ```ts
-// good — the type contract is honest; the body is unmistakably unfinished
+// good — the body throws THIS module's own M3LError subclass (see example 3);
+//        there is no generic M3LNotImplementedError in this repo
 export function navigateFieldPath(obj: unknown, path: string): unknown {
-  throw new M3LNotImplementedError(
-    "navigateFieldPath: see docs/reference/core/json.md",
+  throw new M3LJSONFormatError(
+    "navigateFieldPath: not yet implemented — see docs/reference/core/json.md",
   );
+}
+// bad — M3LNotImplementedError does not exist; this import will not resolve
+export function navigateFieldPath(): unknown {
+  throw new M3LNotImplementedError("navigateFieldPath");
 }
 // bad — returning a fake value hides that it's unimplemented and may pass tests
 export function navigateFieldPath(): unknown {
@@ -76,10 +87,10 @@ export function navigateFieldPath(): unknown {
 }
 ```
 
-**3 — Errors subclass the one hierarchy:**
+**3 — Errors subclass the one hierarchy (define the module's own error):**
 
 ```ts
-// good
+// good — the placeholder above throws this
 export class M3LJSONFormatError extends M3LError {}
 // bad
 export class M3LJSONFormatError extends Error {} // breaks the typed hierarchy + toJSON()
