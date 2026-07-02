@@ -1,0 +1,101 @@
+{
+  "skill_name": "triaging-ci",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "why did CI fail? I pushed a commit 10 minutes ago and the run is showing red",
+      "expected_output": "Skill resolves latest failed run on current branch via gh CLI, fetches log-failed output, identifies the failing step by name, reports structured diagnosis with local reproduce command.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "gh_cli_used",
+          "description": "gh CLI commands were used to interact with GitHub (not MCP or web browsing)"
+        },
+        {
+          "name": "run_resolved",
+          "description": "Skill attempted to resolve a run via gh run list on the current branch (or correctly reported no failed run)"
+        },
+        {
+          "name": "log_fetched",
+          "description": "gh run view --log-failed (or --log fallback) was called, OR skill cleanly stopped because no failed run was found"
+        },
+        {
+          "name": "step_identified",
+          "description": "Output names a specific CI pipeline step (e.g. 'Lint', 'Test coverage') OR cleanly reports no failed run exists"
+        },
+        {
+          "name": "structured_report_format",
+          "description": "Output uses the skill's structured fields: Failed step / Root cause / Reproduce locally / Error excerpt / Assessment (or a clean no-failure message)"
+        },
+        {
+          "name": "no_fix_proposed",
+          "description": "Skill ended at diagnosis; no fix was applied or auto-proposed in the response"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "investigate the CI failure for run #42 on this repo",
+      "expected_output": "Skill uses run ID 42 directly, fetches its logs via gh run view, maps to pipeline step, produces structured diagnosis.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "gh_cli_used",
+          "description": "gh CLI commands were used to interact with GitHub"
+        },
+        {
+          "name": "run_resolved",
+          "description": "Run ID 42 was used directly (not via gh run list)"
+        },
+        {
+          "name": "log_fetched",
+          "description": "gh run view 42 --log-failed (or --log) was called, OR skill reported run 42 was not a failure"
+        },
+        {
+          "name": "step_identified",
+          "description": "Output names a specific CI pipeline step OR reports run 42 was not a failure / does not exist"
+        },
+        {
+          "name": "structured_report_format",
+          "description": "Output uses the skill's structured report fields or an appropriate no-failure message"
+        },
+        {
+          "name": "no_fix_proposed",
+          "description": "Skill ended at diagnosis; no fix was applied or proposed"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "the build is broken, can you check the CI logs and tell me what's going on",
+      "expected_output": "Skill resolves latest failed run, fetches logs, identifies step and root cause, gives exact local reproduce command, stops at diagnosis.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "gh_cli_used",
+          "description": "gh CLI commands were used to interact with GitHub"
+        },
+        {
+          "name": "run_resolved",
+          "description": "Skill resolved the latest failed run via gh run list OR correctly reported no failed run"
+        },
+        {
+          "name": "log_fetched",
+          "description": "gh run view --log-failed (or --log) was called, OR clean stop on no failed run"
+        },
+        {
+          "name": "step_identified",
+          "description": "Output names a specific CI pipeline step OR cleanly reports no failed run"
+        },
+        {
+          "name": "structured_report_format",
+          "description": "Output uses the skill's structured report fields or a clean no-failure message"
+        },
+        {
+          "name": "no_fix_proposed",
+          "description": "Skill ended at diagnosis without applying or proposing a fix"
+        }
+      ]
+    }
+  ]
+}

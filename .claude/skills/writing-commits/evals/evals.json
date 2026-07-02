@@ -1,0 +1,67 @@
+{
+  "skill_name": "writing-commits",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Commit my staged changes. I've added the M3LError hierarchy and M3LResult type in packages/m3l-common/src/core/errors/. These surface through the ./core barrel; the three-entry exports map is unchanged.",
+      "expected_output": "A git commit with: subject starting with 'feat:' in lowercase imperative tense ≤70 chars; body mentioning the public symbols (M3LError, M3LResult); a semver impact statement noting the exports map is unchanged; a Co-Authored-By footer.",
+      "files": [],
+      "expectations": [
+        "Subject line starts with 'feat:' in lowercase",
+        "Subject line uses imperative present tense (e.g. 'implement' or 'add', not 'implemented' or 'added')",
+        "Subject line is 70 characters or fewer",
+        "Body mentions at least one public symbol (M3LError, M3LResult, M3LErrorUtils, or similar)",
+        "Body includes a semver impact statement (e.g. 'exports map unchanged' or 'no semver break')",
+        "Body includes a Co-Authored-By footer with noreply@anthropic.com"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Commit the staged change — I just ran prettier on pnpm-workspace.yaml, nothing else changed.",
+      "expected_output": "A subject-only commit: 'chore: prettier format workspace file' or similar — no body, since this is a mechanical formatting run.",
+      "files": [],
+      "expectations": [
+        "Subject line starts with 'chore:' in lowercase",
+        "Subject line is 70 characters or fewer",
+        "No body is generated (mechanical formatting change needs no explanation)"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Commit this — I edited .github/workflows/claude-pr-review.yml to add a condition that skips the workflow run when the PR author is dependabot[bot].",
+      "expected_output": "A subject-only commit: 'ci: do not review dependabot PRs' or similar — no scope, no body.",
+      "files": [],
+      "expectations": [
+        "Subject line starts with 'ci:' in lowercase (no scope like 'ci(workflows):')",
+        "Subject line is 70 characters or fewer",
+        "No body generated (single-line CI tweak is self-explanatory)"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Commit my staged changes. I renamed M3LPaths.outputDir to M3LPaths.archiveDir everywhere — internal call-sites and the public type. This is a breaking change for any consumer using the old property name.",
+      "expected_output": "A feat! commit with: 'feat!:' subject naming the renamed symbol; body explaining the reason + which call-sites changed; migration instructions; BREAKING CHANGE footer; Co-Authored-By footer.",
+      "files": [],
+      "expectations": [
+        "Subject line starts with 'feat!:' (breaking change marker present)",
+        "Subject line names the renamed symbol (outputDir or archiveDir)",
+        "Body includes migration instructions (what consumers must change)",
+        "Body includes a BREAKING CHANGE note (footer or prose)",
+        "Body includes a Co-Authored-By footer with noreply@anthropic.com"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Commit this. I updated the post-edit-verify hook so it now runs eslint in the loop (after prettier, before typecheck). I also edited the implementing-submodules spoke prompt to front-load contract nuances. No src/, test, or exports-map changes.",
+      "expected_output": "A chore commit with a body: subject names what changed; body explains why (what problem this solves); semver impact statement; Co-Authored-By footer.",
+      "files": [],
+      "expectations": [
+        "Subject line starts with 'chore:' in lowercase",
+        "Subject line is 70 characters or fewer",
+        "A body is present (this chore has a non-obvious why)",
+        "Body includes a semver impact statement ('no semver impact', 'zero semver impact', or equivalent)",
+        "Body includes a Co-Authored-By footer with noreply@anthropic.com"
+      ]
+    }
+  ]
+}

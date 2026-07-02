@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Verifies the scaffolding seam laid down by the `new-submodule` skill stays
+// Verifies the scaffolding seam laid down by the `scaffolding-submodules` skill stays
 // intact: every submodule directory under src/core/ and src/aws/ that contains
 // an index.ts must have BOTH
 //   (a) a matching test file at packages/m3l-common/tests/<module>.test.ts, and
