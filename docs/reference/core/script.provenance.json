@@ -1,0 +1,154 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/script.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScript.ts",
+          "symbol": "M3LScript"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
+          "symbol": "M3LScriptOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
+          "symbol": "M3LScriptMetadata"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
+          "symbol": "M3LScriptLifecycleHooks"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
+          "symbol": "M3LScriptHookContext"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScriptConfigLoader.ts",
+          "symbol": "M3LScriptConfigLoader"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScriptPresetLoader.ts",
+          "symbol": "M3LScriptPresetLoader"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/M3LPresetUnknownKeysError.ts",
+          "symbol": "M3LPresetUnknownKeysError"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/process-guards.ts",
+          "symbol": "installProcessGuards"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/process-guards.ts",
+          "symbol": "serializeError"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/process-guards.ts",
+          "symbol": "setProcessGuardRequestId"
+        }
+      ],
+      "commit": "5ff949d1d782e38b5aae0215b58e2558766d50ee",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Execution flow",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScript.ts",
+          "symbol": "M3LScript"
+        }
+      ],
+      "commit": "5ff949d1d782e38b5aae0215b58e2558766d50ee",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Lifecycle hooks",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
+          "symbol": "M3LScriptLifecycleHooks"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
+          "symbol": "M3LScriptHookContext"
+        }
+      ],
+      "commit": "5ff949d1d782e38b5aae0215b58e2558766d50ee",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Signal handling",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScript.ts",
+          "symbol": "M3LScript"
+        }
+      ],
+      "commit": "5ff949d1d782e38b5aae0215b58e2558766d50ee",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Process guards",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/script/process-guards.ts",
+          "symbol": "installProcessGuards"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/process-guards.ts",
+          "symbol": "serializeError"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/process-guards.ts",
+          "symbol": "setProcessGuardRequestId"
+        }
+      ],
+      "commit": "5ff949d1d782e38b5aae0215b58e2558766d50ee",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Preset loader",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScriptPresetLoader.ts",
+          "symbol": "M3LScriptPresetLoader"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/M3LPresetUnknownKeysError.ts",
+          "symbol": "M3LPresetUnknownKeysError"
+        }
+      ],
+      "commit": "5ff949d1d782e38b5aae0215b58e2558766d50ee",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Usage examples",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScript.ts",
+          "symbol": "M3LScript"
+        }
+      ],
+      "commit": "5ff949d1d782e38b5aae0215b58e2558766d50ee",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Notes and behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScript.ts",
+          "symbol": "M3LScript"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScriptPresetLoader.ts",
+          "symbol": "M3LScriptPresetLoader"
+        }
+      ],
+      "commit": "5ff949d1d782e38b5aae0215b58e2558766d50ee",
+      "retrieved": "2026-07-03"
+    }
+  ]
+}
