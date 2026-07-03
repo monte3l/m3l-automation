@@ -2,7 +2,7 @@
 
 This is the **single source of truth** for what is implemented in
 `@m3l-automation/m3l-common` versus what the `docs/reference/**` pages specify.
-The library started as a documented-but-empty scaffold. The barrels are wired; `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`, `prompt`, `exporters`, `storage`, `network`, `importers`, `files`, `logging`, `aws/models`, and `script` are implemented and reviewed (20 of 22 submodules). See the table below for per-submodule status.
+The library started as a documented-but-empty scaffold. The barrels are wired; `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`, `prompt`, `exporters`, `storage`, `network`, `importers`, `files`, `logging`, `aws/models`, `script`, and `aws/credentials` are implemented and reviewed (21 of 22 submodules). See the table below for per-submodule status.
 
 > **Maintenance contract (hub):** the main agent updates this file after **each
 > phase** of the `implementing-submodules` pipeline. It is the durable, cross-session
@@ -50,11 +50,11 @@ _Planned_ = implementation plan exists in `docs/plans/`.
 
 ## AWS submodules (`docs/reference/aws/`)
 
-| Submodule   | Spec                 | Planned | Symbols (≈) | Status | Tests | Reviewed | Notes (runtime deps → dependency gate)                                                                                                                      |
-| ----------- | -------------------- | ------- | ----------- | ------ | ----- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| models      | `aws/models.md`      | ✅      | 5           | ✅     | ✅    | ✅       | done — 5 types (const-object+union+3 interfaces); 29 tests; 4-spoke review clean (code+conformance+type-design+security), no must-fix; dep-free, no runtime |
-| credentials | `aws/credentials.md` | ✅      | 6           | ❌     | ❌    | ❌       | **`@aws-sdk/client-sts`, `@aws-sdk/credential-providers`**                                                                                                  |
-| clients     | `aws/clients.md`     | ✅      | 4           | ❌     | ❌    | ❌       | **`@aws-sdk/*` service clients** (lazy)                                                                                                                     |
+| Submodule   | Spec                 | Planned | Symbols (≈) | Status | Tests | Reviewed | Notes (runtime deps → dependency gate)                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------- | -------------------- | ------- | ----------- | ------ | ----- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| models      | `aws/models.md`      | ✅      | 5           | ✅     | ✅    | ✅       | done — 5 types (const-object+union+3 interfaces); 34 tests; 4-spoke review clean (code+conformance+type-design+security), no must-fix; dep-free. Options extended (region/maxRetries/prompt) + login result (exitCode/timedOut) for credentials                                                                                                                                                                  |
+| credentials | `aws/credentials.md` | ✅      | 2           | ✅     | ✅    | ✅       | done — 2 exports (`M3LAWSCredentialsManager` + `M3LAWSCredentialsError`); 41 tests, cov ≥80%/file (95% stmts, 84.8% br); 5-spoke review clean, 3 must-fixes applied (spawn `"error"` handling, `timedOut` timer-flag, duplicate-profile settlement) + readonly return. **`@aws-sdk/client-sts` + `@aws-sdk/credential-providers` optional peers, lazy + memoized**; `core/prompt` reused for interactive confirm |
+| clients     | `aws/clients.md`     | ✅      | 4           | ❌     | ❌    | ❌       | **`@aws-sdk/*` service clients** (lazy)                                                                                                                                                                                                                                                                                                                                                                          |
 
 ## Suggested implementation order
 

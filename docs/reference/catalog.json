@@ -427,10 +427,10 @@
     "namespace": "aws",
     "name": "credentials",
     "importPath": "@m3l-automation/m3l-common/aws",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/aws/credentials.md",
-    "symbols": []
+    "symbols": ["M3LAWSCredentialsManager", "M3LAWSCredentialsError"]
   },
   {
     "namespace": "aws",
