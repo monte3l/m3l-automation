@@ -6,8 +6,8 @@ description: >
   TypeScript errors, missing .js extensions, TSDoc gaps, coverage holes — and the user
   wants them fixed, committed, and replied to: invoke this skill. It owns the full loop:
   fetch bot comment → parse Must-fix findings (showing Should-fix / Nits for context but
-  not touching them) → fix each Must-fix violation → run quality gates → commit → push →
-  reply to bot.
+  not touching them) → fix each Must-fix violation → run quality gates → reconcile docs
+  (/syncing-docs) → commit → push → reply to bot.
 
   Invoke for: "fix what the bot flagged", "address the bot review", "make the
   auto-review pass", "claude-pr-review posted FAIL", "clear blocking findings from the
@@ -184,7 +184,27 @@ pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build
 
 If this fails, do not commit or push. Show the failure and stop.
 
-### 7 — Commit and push
+### 7 — Reconcile docs
+
+With the gates green, reconcile doc metadata **before** committing. Invoke the
+`/syncing-docs` skill — it re-stamps provenance sidecars to the current HEAD,
+regenerates `docs/reference/catalog.json`, and reconciles the "N of 22" counts.
+It only mutates working-tree files; it never commits.
+
+`/syncing-docs` runs `pnpm lint:md`, which can fail — surface a `lint:md`
+failure like any other gate (stop and report) rather than committing past it.
+
+If it produced working-tree changes, stage them so the Step 8 commit captures
+them (the reconciled sidecars + `catalog.json` are easy to miss with a narrow
+`git add`):
+
+```bash
+git add -A
+```
+
+If it produced no changes, continue.
+
+### 8 — Commit and push
 
 Commit using the `writing-commits` skill conventions. Choose the Conventional Commit type
 based on the findings resolved — per CLAUDE.md, only `fix:` triggers a patch release:
@@ -214,13 +234,17 @@ git pull --rebase origin "$(git rev-parse --abbrev-ref HEAD)"
 git push
 ```
 
+If the `git pull --rebase` stops on conflicts, do not force past it — hand off
+to the `/resolving-merge-conflicts` skill (it auto-resolves derived-artifact
+conflicts and hands back any real `src/`/test logic), then finish the push.
+
 Capture the resulting commit SHA:
 
 ```bash
 git rev-parse --short HEAD
 ```
 
-### 8 — Post a follow-up comment
+### 9 — Post a follow-up comment
 
 Post a new top-level comment on the PR thread summarising what was fixed. GitHub's
 issue-comments API has no `in_reply_to` concept (unlike pull-request review comments),
