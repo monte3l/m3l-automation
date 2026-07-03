@@ -18,25 +18,17 @@ This manager is invoked automatically by `M3LScript.run()` (only when an `aws.pr
 Exported from `@m3l-automation/m3l-common/aws` (and re-exported under the `AWS` namespace):
 
 - `M3LAWSCredentialsManager` — the manager class.
-- `M3LAWSCredentialsManagerOptions` — construction options.
-- `M3LAWSCredentialsErrorType` — enum of classified credential error categories.
-- `M3LAWSCredentialsErrorAnalysis` — result of analyzing a credential error.
-- `M3LAWSRetryContext` — context describing a retry attempt.
-- `M3LAWSLoginResult` — result of an SSO login attempt.
 
-### `M3LAWSCredentialsErrorType`
+The manager's construction options and the credential model types it produces
+and consumes — `M3LAWSCredentialsManagerOptions`, `M3LAWSCredentialsErrorType`,
+`M3LAWSCredentialsErrorAnalysis`, `M3LAWSRetryContext`, and `M3LAWSLoginResult` —
+are the shared AWS vocabulary; their exact names and fields are defined in
+[AWS models](./models.md).
 
-The error categories produced by error analysis:
-
-| Value                         | Meaning                                                           |
-| ----------------------------- | ----------------------------------------------------------------- |
-| `SSO_SESSION_EXPIRED`         | The SSO session has expired; recoverable by re-running SSO login. |
-| `SSO_SESSION_INVALID`         | The SSO session is present but invalid.                           |
-| `CREDENTIALS_PROVIDER_FAILED` | The credential provider chain failed to resolve credentials.      |
-| `PROFILE_NOT_FOUND`           | The named profile does not exist.                                 |
-| `UNKNOWN`                     | The error could not be classified.                                |
-
-Error analysis detects these patterns via regex sets (multiple patterns for an expired session, plus additional patterns for invalid sessions and profile-not-found).
+Error analysis classifies failures into the `M3LAWSCredentialsErrorType`
+categories (defined in [AWS models](./models.md)) by matching error messages
+against regex sets — multiple patterns for an expired session, plus additional
+patterns for invalid sessions and profile-not-found.
 
 ## Usage
 
