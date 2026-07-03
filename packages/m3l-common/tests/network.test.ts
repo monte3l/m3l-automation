@@ -387,6 +387,24 @@ describe("M3LHttpClient.getAbortable", () => {
     expect(thrown).toBeInstanceOf(M3LHttpClientError);
     expect((thrown as M3LHttpClientError).context.reason).toBe("abort");
   });
+
+  test("resolves the promise with the parsed body when not aborted (happy path)", async () => {
+    const user = { id: "42", name: "Ada" };
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 200,
+        contentType: "application/json",
+        body: user,
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    const { promise } = client.getAbortable<{ id: string; name: string }>(
+      "/users/42",
+    );
+
+    await expect(promise).resolves.toEqual(user);
+  });
 });
 
 // ---------------------------------------------------------------------------
