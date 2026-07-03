@@ -17,10 +17,12 @@ import { M3LAWSCredentialsErrorType } from "../models/index.js";
 
 import { M3LAWSCredentialsError } from "./error.js";
 
-// Compile-time-only imports: erased at build time, so the base install never
-// takes a runtime dependency on either optional-peer AWS SDK package. Runtime
-// access always goes through the lazy `loadClientSts()` / `loadCredentialProviders()`
-// loaders below.
+// Type-only imports: erased at build time. `@aws-sdk/client-sts` and
+// `@aws-sdk/credential-providers` are required (hard) dependencies whose
+// runtime values are loaded lazily via the `loadClientSts()` /
+// `loadCredentialProviders()` loaders below, to keep the AWS SDK's
+// module-eval cost off the cold-start path of a manager that is constructed
+// but never used (see ADR-0017).
 import type * as ClientSts from "@aws-sdk/client-sts";
 import type * as CredentialProviders from "@aws-sdk/credential-providers";
 
@@ -124,7 +126,7 @@ export class M3LAWSCredentialsManager {
   private readonly interactive: boolean;
   private readonly injectedPrompt: M3LPrompt | undefined;
 
-  // Memoized lazy-import promises: each optional-peer SDK module is
+  // Memoized lazy-import promises: each SDK module is
   // `import()`-ed at most once per manager instance. The `??=` assignment in
   // the loader methods below is synchronous, so when `ensureValidCredentialsMultiple`
   // maps N profiles through `validateProfile` in the same microtask, only the
@@ -137,8 +139,8 @@ export class M3LAWSCredentialsManager {
   /**
    * Creates a new `M3LAWSCredentialsManager`.
    *
-   * Construction performs no I/O and no lazy import — the optional AWS SDK
-   * peers (`@aws-sdk/client-sts`, `@aws-sdk/credential-providers`) are only
+   * Construction performs no I/O and no lazy import — the AWS SDK packages
+   * (`@aws-sdk/client-sts`, `@aws-sdk/credential-providers`) are only
    * loaded when a method that needs them is actually invoked.
    *
    * @param options - Optional configuration. `loginTimeoutMs` defaults to
@@ -184,8 +186,8 @@ export class M3LAWSCredentialsManager {
       await this.validateProfile(resolvedProfile);
       return undefined;
     } catch (error) {
-      // An already-typed M3LAWSCredentialsError (e.g. a missing optional-peer
-      // SDK) is re-thrown unchanged — re-wrapping would replace its
+      // An already-typed M3LAWSCredentialsError (e.g. an SDK module load
+      // failure) is re-thrown unchanged — re-wrapping would replace its
       // actionable message (naming the missing package) with a generic one.
       if (error instanceof M3LAWSCredentialsError) throw error;
 
@@ -254,8 +256,8 @@ export class M3LAWSCredentialsManager {
       const error: unknown =
         settlement.status === "rejected" ? settlement.reason : undefined;
 
-      // An already-typed M3LAWSCredentialsError (e.g. a missing
-      // optional-peer SDK) is re-thrown unchanged — re-wrapping would
+      // An already-typed M3LAWSCredentialsError (e.g. an SDK module load
+      // failure) is re-thrown unchanged — re-wrapping would
       // replace its actionable message with a generic one.
       if (error instanceof M3LAWSCredentialsError) throw error;
 
@@ -315,8 +317,8 @@ export class M3LAWSCredentialsManager {
         // triggers).
         return await operation();
       } catch (error) {
-        // An already-typed M3LAWSCredentialsError (e.g. a missing
-        // optional-peer SDK surfaced by the relogin path) is re-thrown
+        // An already-typed M3LAWSCredentialsError (e.g. an SDK module load
+        // failure surfaced by the relogin path) is re-thrown
         // unchanged rather than re-wrapped.
         if (error instanceof M3LAWSCredentialsError) throw error;
 
@@ -476,7 +478,7 @@ export class M3LAWSCredentialsManager {
   }
 
   /**
-   * Lazily loads `@aws-sdk/client-sts`, wrapping an absent optional peer as
+   * Lazily loads `@aws-sdk/client-sts`, wrapping a load failure as
    * a typed error naming the missing package. Memoized per instance: the
    * first call issues the `import()` and caches the resulting promise (a
    * rejection included); every subsequent or concurrent call reuses it, so
@@ -486,7 +488,7 @@ export class M3LAWSCredentialsManager {
     this.clientStsModule ??= import("@aws-sdk/client-sts").catch(
       (cause: unknown) => {
         throw new M3LAWSCredentialsError(
-          "could not load the optional peer dependency '@aws-sdk/client-sts'; ensure it is installed",
+          "could not load the AWS SDK package '@aws-sdk/client-sts'",
           { type: M3LAWSCredentialsErrorType.UNKNOWN, cause },
         );
       },
@@ -495,8 +497,8 @@ export class M3LAWSCredentialsManager {
   }
 
   /**
-   * Lazily loads `@aws-sdk/credential-providers`, wrapping an absent
-   * optional peer as a typed error naming the missing package. Memoized per
+   * Lazily loads `@aws-sdk/credential-providers`, wrapping a load
+   * failure as a typed error naming the missing package. Memoized per
    * instance: the first call issues the `import()` and caches the resulting
    * promise (a rejection included); every subsequent or concurrent call
    * reuses it, so only one dynamic import of the module is ever in flight
@@ -506,7 +508,7 @@ export class M3LAWSCredentialsManager {
     this.credentialProvidersModule ??=
       import("@aws-sdk/credential-providers").catch((cause: unknown) => {
         throw new M3LAWSCredentialsError(
-          "could not load the optional peer dependency '@aws-sdk/credential-providers'; ensure it is installed",
+          "could not load the AWS SDK package '@aws-sdk/credential-providers'",
           { type: M3LAWSCredentialsErrorType.UNKNOWN, cause },
         );
       });

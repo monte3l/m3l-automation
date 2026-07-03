@@ -40,8 +40,9 @@ interface M3LAWSCredentialsErrorOptions {
 /**
  * Thrown by {@link M3LAWSCredentialsManager} when a credential failure
  * cannot be recovered by re-authenticating, when an interactive re-login
- * confirmation is declined, or when a required optional-peer AWS SDK package
- * (`@aws-sdk/client-sts`, `@aws-sdk/credential-providers`) is not installed.
+ * confirmation is declined, or when a required AWS SDK package
+ * (`@aws-sdk/client-sts`, `@aws-sdk/credential-providers`) could not be
+ * loaded (e.g. a corrupt install).
  *
  * `context.type` carries the classified {@link M3LAWSCredentialsErrorType}
  * and `context.profile` carries the affected profile name, when known; the

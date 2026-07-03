@@ -61,6 +61,19 @@ paths:
   no `exports` entry and may change without a major bump.
 - **The `exports` map is the public contract** (`.`, `./core`, `./aws`). Adding,
   removing, or retyping a subpath is a semver event — plan before editing it.
+- **Dependency loading & declaration** (full rationale: ADR-0017). Classify a new
+  external dependency by _required vs optional_, not by size:
+  - **Required** (the library needs it for its purpose) → hard `dependencies`,
+    **exact-pinned** (no `^`/`~`). Static `import` by default; a lazy
+    `await import()` is allowed for cold-start reasons (a guaranteed-present dep
+    loaded lazily is still required — don't relabel it "optional").
+  - **Optional** (a feature only some consumers use; the library degrades without
+    it) → `peerDependencies` **and** `peerDependenciesMeta.optional`,
+    **caret-ranged**, and it **must** be lazy `await import()`-ed wrapped so an
+    absent package throws a typed `M3LError` subclass with an `ERR_*_MISSING_DEP`
+    code naming the package — never a raw `ERR_MODULE_NOT_FOUND`. The `core/text`
+    extractors are the reference; `aws/clients` (required, hard, sync getters) is
+    the documented first-class exception. `[enforced]` by `pnpm check:deps`.
 
 ```typescript
 export type UserId = string & { readonly __brand: unique symbol };
