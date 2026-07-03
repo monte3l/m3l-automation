@@ -20,8 +20,9 @@
  */
 import process from "node:process";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -90,6 +91,67 @@ export function findMajorBumps(entries) {
       !isNaN(currentMajor) && !isNaN(latestMajor) && latestMajor > currentMajor
     );
   });
+}
+
+/**
+ * Semver exact-version matcher: `MAJOR.MINOR.PATCH` with optional prerelease
+ * and build metadata, and nothing else — no range operators (`^`/`~`/`>`/`<`),
+ * no wildcards (`*`/`x`), no dist-tags. ADR-0017 requires every `dependencies`
+ * entry to be exact-pinned.
+ */
+const EXACT_VERSION =
+  /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
+/**
+ * Returns the `dependencies` entries whose version specifier is not an exact
+ * pin. Enforces the ADR-0017 rule that required runtime dependencies are
+ * exact-pinned (ranges belong to `peerDependencies`, which the consumer
+ * resolves). Pure — operates on a parsed `package.json` object.
+ *
+ * @param {{ dependencies?: Record<string, string> }} pkg
+ * @returns {{ name: string, range: string }[]}
+ */
+export function findRangedDependencies(pkg) {
+  const deps = pkg.dependencies ?? {};
+  return Object.entries(deps)
+    .filter(([, range]) => !EXACT_VERSION.test(range))
+    .map(([name, range]) => ({ name, range }));
+}
+
+/**
+ * Returns optional-peer declaration inconsistencies. ADR-0017 requires every
+ * optional dependency to appear in BOTH `peerDependencies` and
+ * `peerDependenciesMeta` with `optional: true`. Reports a peer that is missing
+ * its `optional: true` meta, and an orphaned meta entry with no matching peer.
+ * Pure — operates on a parsed `package.json` object.
+ *
+ * @param {{ peerDependencies?: Record<string, string>, peerDependenciesMeta?: Record<string, { optional?: boolean }> }} pkg
+ * @returns {{ name: string, issue: string }[]}
+ */
+export function findPeerMetaInconsistencies(pkg) {
+  const peers = pkg.peerDependencies ?? {};
+  const meta = pkg.peerDependenciesMeta ?? {};
+  const issues = [];
+
+  for (const name of Object.keys(peers)) {
+    if (meta[name]?.optional !== true) {
+      issues.push({
+        name,
+        issue:
+          "in peerDependencies but not marked optional in peerDependenciesMeta",
+      });
+    }
+  }
+  for (const name of Object.keys(meta)) {
+    if (!(name in peers)) {
+      issues.push({
+        name,
+        issue:
+          "in peerDependenciesMeta but has no matching peerDependencies entry",
+      });
+    }
+  }
+  return issues;
 }
 
 // Main execution — only run when invoked directly, not when imported for testing.
@@ -186,6 +248,40 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         .slice(0, 20)
         .map((l) => `  ${l.trim()}`)
         .join("\n")}`,
+    );
+  }
+
+  // ── 4. Dependency-declaration conformance (ADR-0017) ─────────────────────────
+
+  // The published library is the only package this rule governs — the workspace
+  // root and the automation scripts legitimately use ranges and workspace:*.
+  const libPkgPath = join(root, "packages", "m3l-common", "package.json");
+  let libPkg = {};
+  try {
+    libPkg = JSON.parse(readFileSync(libPkgPath, "utf8"));
+  } catch (err) {
+    process.stderr.write(
+      `check:deps: warning — could not read/parse ${libPkgPath}; skipping declaration-conformance checks. (${/** @type {Error} */ (err).message})\n`,
+    );
+  }
+
+  const rangedDeps = findRangedDependencies(libPkg);
+  if (rangedDeps.length > 0) {
+    const rows = rangedDeps
+      .map((e) => `  ${e.name.padEnd(50)} ${e.range}`)
+      .join("\n");
+    sections.push(
+      `NON-EXACT RUNTIME DEPENDENCIES (${rangedDeps.length}) — ADR-0017 requires exact pins in \`dependencies\`:\n${rows}`,
+    );
+  }
+
+  const peerIssues = findPeerMetaInconsistencies(libPkg);
+  if (peerIssues.length > 0) {
+    const rows = peerIssues
+      .map((e) => `  ${e.name.padEnd(40)} ${e.issue}`)
+      .join("\n");
+    sections.push(
+      `OPTIONAL-PEER DECLARATION ISSUES (${peerIssues.length}) — ADR-0017 requires every optional peer in both peerDependencies and peerDependenciesMeta.optional:\n${rows}`,
     );
   }
 
