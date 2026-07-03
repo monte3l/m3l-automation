@@ -232,7 +232,7 @@ describe("M3LHttpClient — defaultHeaders", () => {
 // ---------------------------------------------------------------------------
 describe("M3LHttpClient — non-2xx responses", () => {
   test.each([404, 500])(
-    "a %d response rejects with M3LHttpClientError carrying reason 'status'",
+    "a %d response rejects with M3LHttpClientError carrying typed reason 'status' and typed status",
     async (status) => {
       mockFetch.mockResolvedValue(
         makeResponse({
@@ -259,9 +259,13 @@ describe("M3LHttpClient — non-2xx responses", () => {
       const httpError = thrown as M3LHttpClientError;
       expect(httpError.code).toBe("ERR_HTTP_REQUEST");
       expect(httpError.name).toBe("M3LHttpClientError");
+      // Typed own fields, NOT via context — the whole point of C1.
+      expect(httpError.reason).toBe("status");
+      expect(httpError.status).toBe(status);
+      // context still carries the request url per the documented contract,
+      // but must NOT be the source of truth for reason/status any more.
       expect(httpError.context).toMatchObject({
-        reason: "status",
-        status,
+        url: "https://api.example.com/broken",
       });
     },
   );
@@ -285,7 +289,8 @@ describe("M3LHttpClient — network failure", () => {
 
     expect(thrown).toBeInstanceOf(M3LHttpClientError);
     const httpError = thrown as M3LHttpClientError;
-    expect(httpError.context.reason).toBe("network");
+    expect(httpError.reason).toBe("network");
+    expect(httpError.status).toBeUndefined();
     expect(httpError.cause).toBe(networkFailure);
   });
 });
@@ -316,7 +321,7 @@ describe("M3LHttpClient — request timeout", () => {
     await vi.advanceTimersByTimeAsync(30_000);
     await catchPromise;
 
-    expect((thrown as M3LHttpClientError).context.reason).toBe("timeout");
+    expect((thrown as M3LHttpClientError).reason).toBe("timeout");
   });
 
   test("a shorter timeout override fires before the default 30000ms", async () => {
@@ -336,7 +341,7 @@ describe("M3LHttpClient — request timeout", () => {
     await pending;
 
     expect(thrown).toBeInstanceOf(M3LHttpClientError);
-    expect((thrown as M3LHttpClientError).context.reason).toBe("timeout");
+    expect((thrown as M3LHttpClientError).reason).toBe("timeout");
   });
 
   test("the timed-out promise rejects and never hangs or resolves", async () => {
@@ -385,7 +390,7 @@ describe("M3LHttpClient.getAbortable", () => {
     await settlement;
 
     expect(thrown).toBeInstanceOf(M3LHttpClientError);
-    expect((thrown as M3LHttpClientError).context.reason).toBe("abort");
+    expect((thrown as M3LHttpClientError).reason).toBe("abort");
   });
 
   test("resolves the promise with the parsed body when not aborted (happy path)", async () => {
@@ -706,5 +711,37 @@ describe("M3LHttpClient — type-level contract", () => {
     expectTypeOf<
       M3LHttpClientError["code"]
     >().toEqualTypeOf<"ERR_HTTP_REQUEST">();
+  });
+
+  test("M3LHttpClientError.reason is a typed, always-present M3LHttpFailureReason — not unknown", () => {
+    // toEqualTypeOf is strict identity: it only passes if `reason` is exactly
+    // the four-member literal union, which by construction excludes `unknown`
+    // (an `unknown`-typed field would fail this exact-equality check).
+    expectTypeOf<
+      M3LHttpClientError["reason"]
+    >().toEqualTypeOf<M3LHttpFailureReason>();
+  });
+
+  test("M3LHttpClientError.status is an optional typed number, present only for the 'status' reason", () => {
+    expectTypeOf<M3LHttpClientError["status"]>().toEqualTypeOf<
+      number | undefined
+    >();
+  });
+
+  test("switch (error.reason) narrows exhaustively over the four documented failure modes with no default needed", () => {
+    const classify = (error: M3LHttpClientError): string => {
+      switch (error.reason) {
+        case "status":
+          return "status";
+        case "network":
+          return "network";
+        case "timeout":
+          return "timeout";
+        case "abort":
+          return "abort";
+      }
+    };
+    expectTypeOf(classify).parameter(0).toEqualTypeOf<M3LHttpClientError>();
+    expectTypeOf(classify).returns.toEqualTypeOf<string>();
   });
 });

@@ -34,6 +34,15 @@ Exported symbols:
 
 ### The `M3LListExporter<TItem>` contract
 
+`TItem` is bound `TItem extends object` across the shared contracts
+(`M3LListExporter`, `M3LListExporterStreamWriter`) and every concrete exporter
+that implements them (`M3LCSVListExporter`, `M3LHTMLListExporter`,
+`M3LJSONListExporter`). Row-shaped exporters read `TItem`'s keys, so a primitive
+instantiation (`M3LListExporter<number>`) is a bug that would silently produce
+empty rows — the bound rejects it at compile time instead. The standalone
+whole-file `M3LFileListExporter` is not part of this contract (it `JSON`-serializes
+the array wholesale and never reads keys), so it leaves `TItem` unbounded.
+
 All list exporters extend `M3LEventEmitterBase` and define two modes:
 
 - `export(items)` — **batch**: writes all items in one call.

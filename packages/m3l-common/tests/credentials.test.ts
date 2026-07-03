@@ -255,9 +255,8 @@ describe("ensureValidCredentials", () => {
     const result = await manager.ensureValidCredentials();
     expect(result).toMatchObject({
       profile: "my-profile",
-      success: true,
+      outcome: "success",
       exitCode: 0,
-      timedOut: false,
     });
     expect((result as M3LAWSLoginResult).durationMs).toBeGreaterThanOrEqual(0);
     expect(h.spawn).toHaveBeenCalledWith(
@@ -337,7 +336,7 @@ describe("ensureValidCredentialsMultiple", () => {
       "profile-b",
     ]);
     expect(results).toHaveLength(2);
-    expect(results.every((entry) => entry.success)).toBe(true);
+    expect(results.every((entry) => entry.outcome === "success")).toBe(true);
     expect(h.spawn).toHaveBeenCalledTimes(2);
   });
 
@@ -570,7 +569,7 @@ describe("SSO login process seam", () => {
     );
   });
 
-  test("a REAL timeout (our timer fires) is killed and resolves success:false, exitCode:null, timedOut:true", async () => {
+  test("a REAL timeout (our timer fires) is killed and resolves outcome:'timedOut', exitCode:null", async () => {
     vi.useFakeTimers();
     h.stsSend.mockRejectedValue(
       new Error("Token has expired and refresh failed"),
@@ -592,14 +591,13 @@ describe("SSO login process seam", () => {
 
     const result = await pending;
     expect(result).toMatchObject({
-      success: false,
+      outcome: "timedOut",
       exitCode: null,
-      timedOut: true,
     });
     expect(child.killed).toBe(true);
   });
 
-  test("an EXTERNAL signal-kill (not our timeout) resolves timedOut:false — regression for the timedOutByUs flag", async () => {
+  test("an EXTERNAL signal-kill (not our timeout) resolves outcome:'failed', exitCode:null — regression for the timedOutByUs flag", async () => {
     // Simulates a user Ctrl-C or the parent process forwarding a signal via
     // `stdio: "inherit"` — the child exits with a null code and a signal,
     // exactly like our own timeout-driven kill, but OUR timer never fires.
@@ -625,9 +623,8 @@ describe("SSO login process seam", () => {
 
     const result = await pending;
     expect(result).toMatchObject({
-      success: false,
+      outcome: "failed",
       exitCode: null,
-      timedOut: false,
     });
   });
 

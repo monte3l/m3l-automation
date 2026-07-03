@@ -75,22 +75,31 @@ describe("M3LAWSCredentialsErrorType", () => {
 });
 
 // =============================================================================
-// M3LAWSCredentialsErrorAnalysis — interface
+// M3LAWSCredentialsErrorAnalysis — discriminated union on `recoverable`
 // =============================================================================
 describe("M3LAWSCredentialsErrorAnalysis", () => {
-  test("a value literal with all fields satisfies the interface", () => {
+  test("a recoverable=true value literal with a recoverable-arm type satisfies the union", () => {
     const analysis: M3LAWSCredentialsErrorAnalysis = {
-      type: M3LAWSCredentialsErrorType.SSO_SESSION_EXPIRED,
       recoverable: true,
+      type: M3LAWSCredentialsErrorType.SSO_SESSION_EXPIRED,
     };
     expect(analysis.type).toBe("SSO_SESSION_EXPIRED");
     expect(analysis.recoverable).toBe(true);
   });
 
+  test("a recoverable=false value literal with an unrecoverable-arm type satisfies the union", () => {
+    const analysis: M3LAWSCredentialsErrorAnalysis = {
+      recoverable: false,
+      type: M3LAWSCredentialsErrorType.PROFILE_NOT_FOUND,
+    };
+    expect(analysis.type).toBe("PROFILE_NOT_FOUND");
+    expect(analysis.recoverable).toBe(false);
+  });
+
   test("cause accepts a non-Error value (string) — the channel is not over-constrained to Error", () => {
     const analysis: M3LAWSCredentialsErrorAnalysis = {
-      type: M3LAWSCredentialsErrorType.UNKNOWN,
       recoverable: false,
+      type: M3LAWSCredentialsErrorType.UNKNOWN,
       cause: "raw string cause",
     };
     expect(analysis.cause).toBe("raw string cause");
@@ -99,51 +108,88 @@ describe("M3LAWSCredentialsErrorAnalysis", () => {
   test("cause accepts a plain object value", () => {
     const causeObject = { code: "ETIMEDOUT" };
     const analysis: M3LAWSCredentialsErrorAnalysis = {
+      recoverable: true,
       type: M3LAWSCredentialsErrorType.CREDENTIALS_PROVIDER_FAILED,
-      recoverable: false,
       cause: causeObject,
     };
     expect(analysis.cause).toBe(causeObject);
   });
 
+  test("narrows `type` to the unrecoverable arm inside a `recoverable === false` guard", () => {
+    const analysis: M3LAWSCredentialsErrorAnalysis = {
+      recoverable: false,
+      type: M3LAWSCredentialsErrorType.UNKNOWN,
+    };
+    if (analysis.recoverable === false) {
+      expectTypeOf(analysis.type).toEqualTypeOf<
+        "PROFILE_NOT_FOUND" | "UNKNOWN"
+      >();
+    } else {
+      expect.unreachable("recoverable literal false must narrow this branch");
+    }
+  });
+
   describe("type-level contract", () => {
-    test("type field is the M3LAWSCredentialsErrorType union, not string", () => {
-      expectTypeOf<M3LAWSCredentialsErrorAnalysis>()
-        .toHaveProperty("type")
-        .toEqualTypeOf<M3LAWSCredentialsErrorType>();
-    });
-
-    test("type field rejects an arbitrary out-of-union string", () => {
+    test("a recoverable=true arm with a recoverable category is assignable", () => {
       expectTypeOf<{
-        type: "totally-made-up";
-        recoverable: boolean;
-      }>().not.toMatchTypeOf<M3LAWSCredentialsErrorAnalysis>();
-    });
-
-    test("recoverable field is boolean", () => {
-      expectTypeOf<M3LAWSCredentialsErrorAnalysis>()
-        .toHaveProperty("recoverable")
-        .toEqualTypeOf<boolean>();
-    });
-
-    test("cause field is optional unknown, not required Error", () => {
-      expectTypeOf<M3LAWSCredentialsErrorAnalysis>()
-        .toHaveProperty("cause")
-        .toEqualTypeOf<unknown>();
-
-      // Optional: omitting `cause` entirely must still satisfy the interface.
-      expectTypeOf<{
-        type: M3LAWSCredentialsErrorType;
-        recoverable: boolean;
+        readonly recoverable: true;
+        readonly type: "SSO_SESSION_EXPIRED";
       }>().toMatchTypeOf<M3LAWSCredentialsErrorAnalysis>();
     });
 
-    test("type and recoverable are required — omitting either is rejected", () => {
+    test("a recoverable=false arm with an unrecoverable category is assignable", () => {
       expectTypeOf<{
-        recoverable: boolean;
+        readonly recoverable: false;
+        readonly type: "PROFILE_NOT_FOUND";
+      }>().toMatchTypeOf<M3LAWSCredentialsErrorAnalysis>();
+    });
+
+    test("rejects recoverable=true paired with an unrecoverable-only category", () => {
+      // @ts-expect-error -- "PROFILE_NOT_FOUND" only belongs to the recoverable:false arm
+      const impossible: M3LAWSCredentialsErrorAnalysis = {
+        recoverable: true,
+        type: "PROFILE_NOT_FOUND",
+      };
+      expect(impossible).toBeDefined();
+    });
+
+    test("rejects recoverable=false paired with a recoverable-only category", () => {
+      // @ts-expect-error -- "SSO_SESSION_EXPIRED" only belongs to the recoverable:true arm
+      const impossible: M3LAWSCredentialsErrorAnalysis = {
+        recoverable: false,
+        type: "SSO_SESSION_EXPIRED",
+      };
+      expect(impossible).toBeDefined();
+    });
+
+    test("type field rejects an arbitrary out-of-union string in either arm", () => {
+      expectTypeOf<{
+        readonly recoverable: true;
+        readonly type: "totally-made-up";
       }>().not.toMatchTypeOf<M3LAWSCredentialsErrorAnalysis>();
       expectTypeOf<{
-        type: M3LAWSCredentialsErrorType;
+        readonly recoverable: false;
+        readonly type: "totally-made-up";
+      }>().not.toMatchTypeOf<M3LAWSCredentialsErrorAnalysis>();
+    });
+
+    test("cause is optional unknown in both arms — omitting it still satisfies the union", () => {
+      expectTypeOf<{
+        readonly recoverable: true;
+        readonly type: "SSO_SESSION_EXPIRED";
+      }>().toMatchTypeOf<M3LAWSCredentialsErrorAnalysis>();
+      expectTypeOf<{
+        readonly recoverable: false;
+        readonly type: "UNKNOWN";
+      }>().toMatchTypeOf<M3LAWSCredentialsErrorAnalysis>();
+    });
+
+    test("recoverable and type are both required — omitting either is rejected", () => {
+      expectTypeOf<{
+        readonly recoverable: true;
+      }>().not.toMatchTypeOf<M3LAWSCredentialsErrorAnalysis>();
+      expectTypeOf<{
+        readonly type: "SSO_SESSION_EXPIRED";
       }>().not.toMatchTypeOf<M3LAWSCredentialsErrorAnalysis>();
     });
   });
@@ -202,77 +248,175 @@ describe("M3LAWSRetryContext", () => {
 });
 
 // =============================================================================
-// M3LAWSLoginResult — interface
+// M3LAWSLoginResult — discriminated union on `outcome`
 // =============================================================================
 describe("M3LAWSLoginResult", () => {
-  test("a value literal with all required fields satisfies the interface", () => {
+  test("a success-arm value literal satisfies the union", () => {
     const result: M3LAWSLoginResult = {
-      profile: "default",
-      success: true,
-      durationMs: 1500,
+      outcome: "success",
       exitCode: 0,
-      timedOut: false,
+      profile: "default",
+      durationMs: 1500,
     };
-    expect(result.profile).toBe("default");
-    expect(result.success).toBe(true);
-    expect(result.durationMs).toBe(1500);
+    expect(result.outcome).toBe("success");
     expect(result.exitCode).toBe(0);
-    expect(result.timedOut).toBe(false);
+    expect(result.profile).toBe("default");
+    expect(result.durationMs).toBe(1500);
+  });
+
+  test("a failed-arm value literal with a non-zero exit code satisfies the union", () => {
+    const result: M3LAWSLoginResult = {
+      outcome: "failed",
+      exitCode: 1,
+      profile: "default",
+      durationMs: 2000,
+    };
+    expect(result.outcome).toBe("failed");
+    expect(result.exitCode).toBe(1);
+  });
+
+  test("a timedOut-arm value literal with a null exit code satisfies the union", () => {
+    const result: M3LAWSLoginResult = {
+      outcome: "timedOut",
+      exitCode: null,
+      profile: "default",
+      durationMs: 120_000,
+    };
+    expect(result.outcome).toBe("timedOut");
+    expect(result.exitCode).toBeNull();
+  });
+
+  test("a `switch` over `outcome` is exhaustive — every arm handled, no fallthrough default", () => {
+    function describeOutcome(result: M3LAWSLoginResult): string {
+      switch (result.outcome) {
+        case "success":
+          return `success in ${String(result.durationMs)}ms`;
+        case "failed":
+          return `failed with exit code ${String(result.exitCode)}`;
+        case "timedOut":
+          return `timed out after ${String(result.durationMs)}ms`;
+        default: {
+          const unreachable: never = result;
+          throw new Error(`unhandled outcome: ${JSON.stringify(unreachable)}`);
+        }
+      }
+    }
+
+    expect(
+      describeOutcome({
+        outcome: "success",
+        exitCode: 0,
+        profile: "p",
+        durationMs: 1,
+      }),
+    ).toContain("success");
+    expect(
+      describeOutcome({
+        outcome: "failed",
+        exitCode: 1,
+        profile: "p",
+        durationMs: 1,
+      }),
+    ).toContain("failed");
+    expect(
+      describeOutcome({
+        outcome: "timedOut",
+        exitCode: null,
+        profile: "p",
+        durationMs: 1,
+      }),
+    ).toContain("timed out");
   });
 
   describe("type-level contract", () => {
-    test("profile is string, success is boolean, durationMs is number", () => {
-      expectTypeOf<M3LAWSLoginResult>()
-        .toHaveProperty("profile")
-        .toEqualTypeOf<string>();
-      expectTypeOf<M3LAWSLoginResult>()
-        .toHaveProperty("success")
-        .toEqualTypeOf<boolean>();
-      expectTypeOf<M3LAWSLoginResult>()
-        .toHaveProperty("durationMs")
-        .toEqualTypeOf<number>();
+    test("profile and durationMs are shared across every arm", () => {
+      expectTypeOf<M3LAWSLoginResult>().toHaveProperty("profile");
+      expectTypeOf<M3LAWSLoginResult>().toHaveProperty("durationMs");
     });
 
-    test("profile, success, durationMs are required — omitting any one is rejected", () => {
+    test("outcome, exitCode, profile, durationMs are required — omitting any one is rejected", () => {
       expectTypeOf<{
-        success: boolean;
-        durationMs: number;
+        readonly exitCode: 0;
+        readonly profile: string;
+        readonly durationMs: number;
       }>().not.toMatchTypeOf<M3LAWSLoginResult>();
       expectTypeOf<{
-        profile: string;
-        durationMs: number;
+        readonly outcome: "success";
+        readonly profile: string;
+        readonly durationMs: number;
       }>().not.toMatchTypeOf<M3LAWSLoginResult>();
       expectTypeOf<{
-        profile: string;
-        success: boolean;
+        readonly outcome: "success";
+        readonly exitCode: 0;
+        readonly durationMs: number;
       }>().not.toMatchTypeOf<M3LAWSLoginResult>();
-    });
-
-    test("exitCode is required number | null (nullable, not optional)", () => {
-      expectTypeOf<M3LAWSLoginResult>()
-        .toHaveProperty("exitCode")
-        .toEqualTypeOf<number | null>();
-
-      // Required: omitting `exitCode` entirely is rejected.
       expectTypeOf<{
-        profile: string;
-        success: boolean;
-        durationMs: number;
-        timedOut: boolean;
+        readonly outcome: "success";
+        readonly exitCode: 0;
+        readonly profile: string;
       }>().not.toMatchTypeOf<M3LAWSLoginResult>();
     });
 
-    test("timedOut is required boolean", () => {
-      expectTypeOf<M3LAWSLoginResult>()
-        .toHaveProperty("timedOut")
-        .toEqualTypeOf<boolean>();
+    test("rejects outcome:'success' paired with a non-zero exitCode", () => {
+      // @ts-expect-error -- only exitCode: 0 belongs to the "success" arm
+      const impossible: M3LAWSLoginResult = {
+        outcome: "success",
+        exitCode: 1,
+        profile: "default",
+        durationMs: 1500,
+      };
+      expect(impossible).toBeDefined();
+    });
 
-      // Required: omitting `timedOut` entirely is rejected.
+    test("rejects outcome:'timedOut' paired with a non-null exitCode", () => {
+      // @ts-expect-error -- only exitCode: null belongs to the "timedOut" arm
+      const impossible: M3LAWSLoginResult = {
+        outcome: "timedOut",
+        exitCode: 0,
+        profile: "default",
+        durationMs: 120_000,
+      };
+      expect(impossible).toBeDefined();
+    });
+
+    test("a failed-arm value literal with a non-zero exitCode satisfies the union", () => {
+      const result: M3LAWSLoginResult = {
+        outcome: "failed",
+        exitCode: 3,
+        profile: "default",
+        durationMs: 2000,
+      };
+      expect(result.outcome).toBe("failed");
+      expect(result.exitCode).toBe(3);
+    });
+
+    test("a failed-arm value literal with a null exitCode (external signal kill) satisfies the union", () => {
+      const result: M3LAWSLoginResult = {
+        outcome: "failed",
+        exitCode: null,
+        profile: "default",
+        durationMs: 2000,
+      };
+      expect(result.outcome).toBe("failed");
+      expect(result.exitCode).toBeNull();
+    });
+
+    test("rejects an object still carrying the old flat `success`/`timedOut` booleans", () => {
       expectTypeOf<{
-        profile: string;
-        success: boolean;
-        durationMs: number;
-        exitCode: number | null;
+        readonly profile: string;
+        readonly success: boolean;
+        readonly durationMs: number;
+        readonly exitCode: number | null;
+        readonly timedOut: boolean;
+      }>().not.toMatchTypeOf<M3LAWSLoginResult>();
+    });
+
+    test("rejects an out-of-union `outcome` string literal", () => {
+      expectTypeOf<{
+        readonly outcome: "cancelled";
+        readonly exitCode: 0;
+        readonly profile: string;
+        readonly durationMs: number;
       }>().not.toMatchTypeOf<M3LAWSLoginResult>();
     });
   });

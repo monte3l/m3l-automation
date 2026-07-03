@@ -11,6 +11,7 @@ import { fetch, ProxyAgent } from "undici";
 
 import { M3LEventEmitterBase } from "../events/index.js";
 import { M3LHttpClientError } from "./M3LHttpClientError.js";
+import type { M3LHttpFailureReason } from "./M3LHttpClientError.js";
 
 /** Matches a `Content-Type` header value that should be parsed as JSON. */
 const JSON_CONTENT_TYPE_PATTERN = /[/+]json\b/i;
@@ -98,12 +99,6 @@ export interface M3LHttpClientEventMap {
   readonly response: M3LHttpResponseEvent;
   readonly error: M3LHttpErrorEvent;
 }
-
-/**
- * Discriminates why a request ultimately failed. Carried on
- * `M3LHttpClientError.context.reason`.
- */
-export type M3LHttpFailureReason = "status" | "network" | "timeout" | "abort";
 
 /**
  * The result of {@link M3LHttpClient.getAbortable}: an in-flight promise plus
@@ -206,7 +201,7 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
    *   when configured.
    * @returns An object containing the in-flight `promise` and an `abort()`
    *   handle. Calling `abort()` rejects `promise` with
-   *   {@link M3LHttpClientError} carrying `context.reason === "abort"`.
+   *   {@link M3LHttpClientError} carrying `error.reason === "abort"`.
    */
   getAbortable<T>(path: string): M3LHttpAbortableRequest<T> {
     return this.#request<T>(path);
@@ -294,11 +289,9 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
         throw new M3LHttpClientError(
           `request to ${url} failed with status ${String(status)}`,
           {
-            context: {
-              reason: "status" satisfies M3LHttpFailureReason,
-              url,
-              status,
-            },
+            reason: "status",
+            status,
+            context: { url },
           },
         );
       }
@@ -355,7 +348,8 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
     return new M3LHttpClientError(
       `${method} ${url} failed: ${resolvedReason}`,
       {
-        context: { reason: resolvedReason, url },
+        reason: resolvedReason,
+        context: { url },
         cause,
       },
     );

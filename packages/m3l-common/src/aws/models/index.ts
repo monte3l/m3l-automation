@@ -54,6 +54,13 @@ export type M3LAWSCredentialsErrorType =
  * The result of classifying a credential failure, letting callers decide
  * whether a failure is recoverable by re-authenticating.
  *
+ * Modelled as a **discriminated union** on `recoverable` so the flag can
+ * never disagree with `type`: the `recoverable: true` arm carries only the
+ * categories re-authentication can fix, and the `recoverable: false` arm
+ * carries only the rest. Narrowing on `recoverable` narrows `type` and vice
+ * versa — the impossible pairing (e.g. `PROFILE_NOT_FOUND` with
+ * `recoverable: true`) does not type-check.
+ *
  * @example
  * ```ts
  * import {
@@ -62,22 +69,39 @@ export type M3LAWSCredentialsErrorType =
  * } from "@m3l-automation/m3l-common/aws";
  *
  * const analysis: M3LAWSCredentialsErrorAnalysis = {
- *   type: M3LAWSCredentialsErrorType.SSO_SESSION_EXPIRED,
  *   recoverable: true,
+ *   type: M3LAWSCredentialsErrorType.SSO_SESSION_EXPIRED,
  * };
  * ```
  */
-export interface M3LAWSCredentialsErrorAnalysis {
-  /** The classified error category. */
-  readonly type: M3LAWSCredentialsErrorType;
-  /** Whether re-running SSO login can recover the failure. */
-  readonly recoverable: boolean;
-  /**
-   * The underlying error that was analyzed. Typed `unknown` (not `Error`)
-   * because the analyzed cause may originate from any thrown value.
-   */
-  readonly cause?: unknown;
-}
+export type M3LAWSCredentialsErrorAnalysis =
+  | {
+      /** Whether re-running SSO login can recover the failure. */
+      readonly recoverable: true;
+      /** The classified error category, narrowed to the recoverable ones. */
+      readonly type:
+        | "SSO_SESSION_EXPIRED"
+        | "SSO_SESSION_INVALID"
+        | "CREDENTIALS_PROVIDER_FAILED";
+      /**
+       * The underlying error that was analyzed. Typed `unknown` (not
+       * `Error`) because the analyzed cause may originate from any thrown
+       * value.
+       */
+      readonly cause?: unknown;
+    }
+  | {
+      /** Whether re-running SSO login can recover the failure. */
+      readonly recoverable: false;
+      /** The classified error category, narrowed to the unrecoverable ones. */
+      readonly type: "PROFILE_NOT_FOUND" | "UNKNOWN";
+      /**
+       * The underlying error that was analyzed. Typed `unknown` (not
+       * `Error`) because the analyzed cause may originate from any thrown
+       * value.
+       */
+      readonly cause?: unknown;
+    };
 
 /**
  * Describes the current attempt when the credentials manager retries an
@@ -110,36 +134,64 @@ export interface M3LAWSRetryContext {
 }
 
 /**
- * The outcome of a single SSO login attempt.
+ * The outcome of a single SSO login attempt, modelled as a **discriminated
+ * union** on `outcome` so contradictory states (a "successful" login that
+ * also timed out, a "failed" login with exit code `0`) are unrepresentable.
+ * Every arm carries `profile` and `durationMs`; the arms differ on `outcome`
+ * and `exitCode` — `"success"` is the only arm with `exitCode: 0`, and
+ * `"timedOut"` is the only arm with `exitCode: null` (the process was killed
+ * for exceeding `loginTimeoutMs`).
  *
  * @example
  * ```ts
  * import type { M3LAWSLoginResult } from "@m3l-automation/m3l-common/aws";
  *
  * const result: M3LAWSLoginResult = {
- *   profile: "default",
- *   success: true,
- *   durationMs: 1500,
+ *   outcome: "success",
  *   exitCode: 0,
- *   timedOut: false,
+ *   profile: "default",
+ *   durationMs: 1500,
  * };
  * ```
  */
-export interface M3LAWSLoginResult {
-  /** The profile the SSO login targeted. */
-  readonly profile: string;
-  /** Whether the login completed successfully. */
-  readonly success: boolean;
-  /** The wall-clock duration of the login attempt, in milliseconds. */
-  readonly durationMs: number;
-  /**
-   * The child process exit code; `null` when the process was killed (for
-   * example, after exceeding `loginTimeoutMs`).
-   */
-  readonly exitCode: number | null;
-  /** Whether the login was killed for exceeding `loginTimeoutMs`. */
-  readonly timedOut: boolean;
-}
+export type M3LAWSLoginResult =
+  | {
+      /** The discriminant tag for the login outcome. */
+      readonly outcome: "success";
+      /** The child process exit code; always `0` on the success arm. */
+      readonly exitCode: 0;
+      /** The profile the SSO login targeted. */
+      readonly profile: string;
+      /** The wall-clock duration of the login attempt, in milliseconds. */
+      readonly durationMs: number;
+    }
+  | {
+      /** The discriminant tag for the login outcome. */
+      readonly outcome: "failed";
+      /**
+       * The child process's non-zero exit code, or `null` when the process
+       * was killed by an external signal (not our own `loginTimeoutMs`
+       * timer, which is the distinct `"timedOut"` arm below).
+       */
+      readonly exitCode: number | null;
+      /** The profile the SSO login targeted. */
+      readonly profile: string;
+      /** The wall-clock duration of the login attempt, in milliseconds. */
+      readonly durationMs: number;
+    }
+  | {
+      /** The discriminant tag for the login outcome. */
+      readonly outcome: "timedOut";
+      /**
+       * Always `null` — the process was killed for exceeding
+       * `loginTimeoutMs` rather than exiting on its own.
+       */
+      readonly exitCode: null;
+      /** The profile the SSO login targeted. */
+      readonly profile: string;
+      /** The wall-clock duration of the login attempt, in milliseconds. */
+      readonly durationMs: number;
+    };
 
 /**
  * Construction options for `M3LAWSCredentialsManager`. All fields are

@@ -299,16 +299,86 @@ describe("type contracts", () => {
     new M3LHTMLListExporter<string>({ filePath: "x.html" });
   });
 
-  test("M3LJSONListExporter<TItem> and M3LFileListExporter<TItem> remain unconstrained (a primitive item type is still accepted)", () => {
-    expect(
-      () => new M3LJSONListExporter<number>({ filePath: "x.json" }),
-    ).not.toThrow();
-    expect(
-      () => new M3LFileListExporter<number>({ filePath: "x.json" }),
-    ).not.toThrow();
-    expectTypeOf<M3LJSONListExporter<number>>().toMatchTypeOf<
-      M3LListExporter<number>
+  test("M3LJSONListExporter<TItem extends object> rejects a primitive item type and accepts an object/interface item type", () => {
+    // Positive: an object literal and a named interface both compile.
+    const jsonWithObjectLiteral: M3LJSONListExporter<{ id: string }> =
+      new M3LJSONListExporter<{ id: string }>({ filePath: "x.json" });
+    expectTypeOf(jsonWithObjectLiteral).toMatchTypeOf<
+      M3LJSONListExporter<{ id: string }>
     >();
+
+    interface Row {
+      id: string;
+    }
+    const jsonWithInterface: M3LJSONListExporter<Row> =
+      new M3LJSONListExporter<Row>({ filePath: "x.json" });
+    expectTypeOf(jsonWithInterface).toMatchTypeOf<M3LJSONListExporter<Row>>();
+
+    // Negative: a primitive TItem must be rejected at the type level.
+    // @ts-expect-error - M3LJSONListExporter requires TItem extends object, not a primitive `number`
+    new M3LJSONListExporter<number>({ filePath: "x.json" });
+  });
+
+  test("M3LFileListExporter<TItem> accepts an object/interface item type", () => {
+    // Positive: an object literal and a named interface both compile.
+    const fileListWithObjectLiteral: M3LFileListExporter<{ id: string }> =
+      new M3LFileListExporter<{ id: string }>({ filePath: "x.json" });
+    expectTypeOf(fileListWithObjectLiteral).toMatchTypeOf<
+      M3LFileListExporter<{ id: string }>
+    >();
+
+    interface Row {
+      id: string;
+    }
+    const fileListWithInterface: M3LFileListExporter<Row> =
+      new M3LFileListExporter<Row>({ filePath: "x.json" });
+    expectTypeOf(fileListWithInterface).toMatchTypeOf<
+      M3LFileListExporter<Row>
+    >();
+  });
+
+  test("M3LListExporter<TItem extends object> rejects a primitive type argument and accepts an object/interface type argument", () => {
+    // Positive: an object literal type and a named interface both instantiate cleanly.
+    type _OkObjectLiteral = M3LListExporter<{ id: number }>;
+    const okObjectLiteral: _OkObjectLiteral | undefined = undefined;
+    expectTypeOf(okObjectLiteral).toMatchTypeOf<
+      M3LListExporter<{ id: number }> | undefined
+    >();
+
+    interface Row {
+      id: number;
+    }
+    type _OkInterface = M3LListExporter<Row>;
+    const okInterface: _OkInterface | undefined = undefined;
+    expectTypeOf(okInterface).toMatchTypeOf<M3LListExporter<Row> | undefined>();
+
+    // Negative: a primitive TItem must be rejected at the type level.
+    // @ts-expect-error - M3LListExporter requires TItem extends object, not a primitive `number`
+    const badTypeArgument: M3LListExporter<number> | undefined = undefined;
+    void badTypeArgument;
+  });
+
+  test("M3LListExporterStreamWriter<TItem extends object> rejects a primitive type argument and accepts an object/interface type argument", () => {
+    // Positive: an object literal type and a named interface both instantiate cleanly.
+    type _OkObjectLiteral = M3LListExporterStreamWriter<{ id: number }>;
+    const okObjectLiteral: _OkObjectLiteral | undefined = undefined;
+    expectTypeOf(okObjectLiteral).toMatchTypeOf<
+      M3LListExporterStreamWriter<{ id: number }> | undefined
+    >();
+
+    interface Row {
+      id: number;
+    }
+    type _OkInterface = M3LListExporterStreamWriter<Row>;
+    const okInterface: _OkInterface | undefined = undefined;
+    expectTypeOf(okInterface).toMatchTypeOf<
+      M3LListExporterStreamWriter<Row> | undefined
+    >();
+
+    // Negative: a primitive TItem must be rejected at the type level.
+    // @ts-expect-error - M3LListExporterStreamWriter requires TItem extends object, not a primitive `string`
+    type _Bad = M3LListExporterStreamWriter<string>;
+    void ({} as _Bad);
   });
 
   test("M3LCSVListExporterOptions requires filePath: string", () => {

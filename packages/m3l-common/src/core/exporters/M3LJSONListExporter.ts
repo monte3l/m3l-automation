@@ -50,7 +50,9 @@ function wrapJSONError(cause: unknown, filePath: string): M3LError {
  *
  * @typeParam TItem - The shape of each appended item.
  */
-class M3LJSONStreamWriter<TItem> implements M3LListExporterStreamWriter<TItem> {
+class M3LJSONStreamWriter<
+  TItem extends object,
+> implements M3LListExporterStreamWriter<TItem> {
   readonly #lifecycle: M3LWriteStreamLifecycle;
   readonly #format: M3LJSONListExporterFormat;
   readonly #filePath: string;
@@ -123,7 +125,9 @@ class M3LJSONStreamWriter<TItem> implements M3LListExporterStreamWriter<TItem> {
  * await exporter.export([{ id: "1" }, { id: "2" }]);
  * ```
  */
-export class M3LJSONListExporter<TItem> extends M3LBaseListExporter<TItem> {
+export class M3LJSONListExporter<
+  TItem extends object,
+> extends M3LBaseListExporter<TItem> {
   readonly #format: M3LJSONListExporterFormat;
 
   /**
