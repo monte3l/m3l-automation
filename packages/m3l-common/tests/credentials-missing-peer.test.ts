@@ -1,22 +1,23 @@
 /**
- * Tests for aws/credentials submodule — missing optional AWS SDK peer (C7).
+ * Tests for aws/credentials submodule — AWS SDK package load failure (C7).
  *
- * Contract source: docs/reference/aws/credentials.md ("AWS SDK is an
- * optional peer... if they are missing, the manager throws
+ * Contract source: docs/reference/aws/credentials.md ("the AWS SDK packages
+ * are loaded lazily; if that load fails, the manager throws
  * M3LAWSCredentialsError with an actionable message and the import failure
  * chained via `cause`").
  *
  * Split out from `tests/credentials.test.ts`: that file uses a top-level
  * `vi.mock` (hoisted above every import) to make `@aws-sdk/client-sts` /
  * `@aws-sdk/credential-providers` appear PRESENT for the whole file — which
- * is exactly what these tests must NOT do, since they simulate the peer
- * being ABSENT by making the dynamic `import()` reject. This file instead
- * uses `vi.doMock` (registered at call time, not hoisted) + `vi.resetModules()`
- * + a dynamic re-import of the module under test, mirroring the lazy-loading
- * section of `tests/text.test.ts`. This is safe here specifically because
- * each test below triggers at most one dynamic import of the mocked
- * specifier (no concurrent first-time imports of the same specifier), which
- * is the scenario that made `vi.doMock` unreliable in the sibling file.
+ * is exactly what these tests must NOT do, since they simulate the lazily
+ * loaded AWS SDK package failing to load by making the dynamic `import()`
+ * reject. This file instead uses `vi.doMock` (registered at call time, not
+ * hoisted) + `vi.resetModules()` + a dynamic re-import of the module under
+ * test, mirroring the lazy-loading section of `tests/text.test.ts`. This is
+ * safe here specifically because each test below triggers at most one
+ * dynamic import of the mocked specifier (no concurrent first-time imports
+ * of the same specifier), which is the scenario that made `vi.doMock`
+ * unreliable in the sibling file.
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -31,7 +32,7 @@ afterEach(() => {
   vi.resetModules();
 });
 
-describe("missing optional AWS SDK peer", () => {
+describe("AWS SDK package load failure", () => {
   test("absent @aws-sdk/client-sts surfaces as M3LAWSCredentialsError naming the package, cause chained, context.type UNKNOWN", async () => {
     const moduleNotFound = Object.assign(
       new Error("Cannot find package '@aws-sdk/client-sts'"),
