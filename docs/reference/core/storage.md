@@ -23,6 +23,8 @@ Exported from `@m3l-automation/m3l-common/core` (`storage` subpath):
 | `M3LFtsIndexStats`         | type  | Index statistics.                                              |
 | `M3LSqliteDatabase`        | type  | Type of the raw database handle from `getDatabase()`.          |
 | `M3LSqliteStatement`       | type  | Type of a prepared statement.                                  |
+| `M3LFtsIndexError`         | class | Thrown when caller config or search input fails validation.    |
+| `M3LFtsIndexErrorCode`     | type  | Machine-readable code union carried by `M3LFtsIndexError`.     |
 
 ### Schema
 
@@ -38,6 +40,10 @@ Exported from `@m3l-automation/m3l-common/core` (`storage` subpath):
 - `upsertMany(documents)` — add or update many documents; wrapped in a single transaction.
 - `delete(id)` — remove one document by id.
 - `deleteMany(ids)` — remove many documents by id.
+
+### Lifecycle
+
+- `close()` — close the underlying SQLite handle. Call it when a file-backed index is no longer needed so the native handle and file lock are released; long-lived automation processes that open many indexes should close each one.
 
 ### Search modes
 
@@ -103,6 +109,7 @@ const row = db.prepare("SELECT COUNT(*) AS n FROM documents").get();
 
 - **Synchronous.** `better-sqlite3` is synchronous; index operations do not return promises.
 - **Tokenizer validation.** The tokenizer string is validated before use to prevent SQLite injection.
+- **Typed validation errors.** Caller-supplied configuration and search input that fails validation at the public boundary throws an `M3LFtsIndexError` (a typed `M3LError` subclass) carrying a machine-readable `M3LFtsIndexErrorCode` — e.g. an invalid tokenizer, a non-identifier table name or metadata column, a non-positive `limit`, an empty document `id`, a filter on an undeclared column, or an unsupported search `mode`. A corrupt persisted-metadata row surfaces the same way, with the underlying parse error chained as `cause`. Raw SQLite/engine errors (a bad `dbPath`, disk failure, corruption, or a mid-batch constraint failure inside `upsertMany`) are **not** wrapped — they propagate unchanged so callers can react to them directly.
 - **Batch in transactions.** `upsertMany` runs inside a transaction for atomicity and throughput.
 - **Scale.** Designed for in-process search over thousands to low-millions of documents; for larger or distributed workloads, use a dedicated search service.
 - **`getDatabase()`** returns the raw `better-sqlite3` handle (`M3LSqliteDatabase`) for queries the typed API does not express; prepared statements have type `M3LSqliteStatement`.

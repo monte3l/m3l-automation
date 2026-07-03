@@ -16,8 +16,8 @@
           "lines": "191-215"
         }
       ],
-      "commit": "cca5653eca9d0ce5bc848fc5c8067f4b767ebf7a",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Bounded concurrency with `M3LConcurrencyPool`",
@@ -28,8 +28,8 @@
           "lines": "33-86"
         }
       ],
-      "commit": "cca5653eca9d0ce5bc848fc5c8067f4b767ebf7a",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Date tokens with `M3LDateTokens`",
@@ -40,8 +40,8 @@
           "lines": "37-71"
         }
       ],
-      "commit": "cca5653eca9d0ce5bc848fc5c8067f4b767ebf7a",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Formatting helpers",
@@ -87,8 +87,8 @@
           "lines": "30-40"
         }
       ],
-      "commit": "cca5653eca9d0ce5bc848fc5c8067f4b767ebf7a",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Path resolution with `M3LPaths`",
@@ -114,8 +114,8 @@
           "lines": "217-427"
         }
       ],
-      "commit": "cca5653eca9d0ce5bc848fc5c8067f4b767ebf7a",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Type guards",
@@ -246,8 +246,8 @@
           "lines": "427-441"
         }
       ],
-      "commit": "cca5653eca9d0ce5bc848fc5c8067f4b767ebf7a",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     }
   ]
 }

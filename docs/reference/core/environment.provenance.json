@@ -46,8 +46,8 @@
           "lines": "232-252"
         }
       ],
-      "commit": "cca5653eca9d0ce5bc848fc5c8067f4b767ebf7a",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Detection and caching",
@@ -58,8 +58,8 @@
           "lines": "752-803"
         }
       ],
-      "commit": "cca5653eca9d0ce5bc848fc5c8067f4b767ebf7a",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Monorepo vs. standalone detection",
@@ -75,8 +75,8 @@
           "lines": "347-395"
         }
       ],
-      "commit": "cca5653eca9d0ce5bc848fc5c8067f4b767ebf7a",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Environment types",
@@ -87,8 +87,8 @@
           "lines": "48-80"
         }
       ],
-      "commit": "cca5653eca9d0ce5bc848fc5c8067f4b767ebf7a",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Credential sources",
@@ -99,8 +99,8 @@
           "lines": "147-180"
         }
       ],
-      "commit": "cca5653eca9d0ce5bc848fc5c8067f4b767ebf7a",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Environment info and detection details",
@@ -116,8 +116,8 @@
           "lines": "273-296"
         }
       ],
-      "commit": "cca5653eca9d0ce5bc848fc5c8067f4b767ebf7a",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Error handling",
@@ -128,8 +128,8 @@
           "lines": "232-252"
         }
       ],
-      "commit": "cca5653eca9d0ce5bc848fc5c8067f4b767ebf7a",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     }
   ]
 }

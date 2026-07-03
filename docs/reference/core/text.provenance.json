@@ -54,8 +54,8 @@
           "symbol": "M3LTextExtractionError"
         }
       ],
-      "commit": "d1084e54ee63e489d1d1c62a58599b04737f4542",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Notes & behavior",
@@ -77,8 +77,8 @@
           "symbol": "M3LTextExtractionError"
         }
       ],
-      "commit": "d1084e54ee63e489d1d1c62a58599b04737f4542",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     }
   ]
 }

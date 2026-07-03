@@ -58,8 +58,8 @@
           "symbol": "httpRetryAfterClassifier"
         }
       ],
-      "commit": "f6b530320ba3547a05ec9cdf8d51d49cf5751c80",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "`M3LPoller` vs. `M3LRetryRunner`",
@@ -73,8 +73,8 @@
           "symbol": "M3LRetryRunner"
         }
       ],
-      "commit": "f6b530320ba3547a05ec9cdf8d51d49cf5751c80",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Classifiers",
@@ -92,8 +92,8 @@
           "symbol": "M3LRetryAdvice"
         }
       ],
-      "commit": "f6b530320ba3547a05ec9cdf8d51d49cf5751c80",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Composing classifiers",
@@ -103,8 +103,8 @@
           "symbol": "combineClassifiers"
         }
       ],
-      "commit": "f6b530320ba3547a05ec9cdf8d51d49cf5751c80",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Built-in classifiers",
@@ -122,8 +122,8 @@
           "symbol": "httpRetryAfterClassifier"
         }
       ],
-      "commit": "f6b530320ba3547a05ec9cdf8d51d49cf5751c80",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Backoff strategies",
@@ -133,8 +133,8 @@
           "symbol": "M3LBackoff"
         }
       ],
-      "commit": "f6b530320ba3547a05ec9cdf8d51d49cf5751c80",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Pre-baked policies",
@@ -144,8 +144,8 @@
           "symbol": "M3LPollingPolicies"
         }
       ],
-      "commit": "f6b530320ba3547a05ec9cdf8d51d49cf5751c80",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Notes and behavior",
@@ -163,8 +163,8 @@
           "symbol": "M3LBackoff"
         }
       ],
-      "commit": "f6b530320ba3547a05ec9cdf8d51d49cf5751c80",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     }
   ]
 }

@@ -1,0 +1,149 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/prompt.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
+          "symbol": "M3LPrompt"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
+          "symbol": "M3LPromptOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts",
+          "symbol": "M3LMultiSpinner"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts",
+          "symbol": "M3LMultiSpinnerOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts",
+          "symbol": "M3LLoadingBar"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts",
+          "symbol": "M3LLoadingBarOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LPromptValidationError.ts",
+          "symbol": "M3LPromptValidationError"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/types.ts",
+          "symbol": "M3LPromptAdapter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/types.ts",
+          "symbol": "M3LChoice"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/types.ts",
+          "symbol": "M3LChoices"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/types.ts",
+          "symbol": "M3LNumberPromptOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/types.ts",
+          "symbol": "M3LSuggestFn"
+        }
+      ],
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "`M3LPrompt`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
+          "symbol": "M3LPrompt"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
+          "symbol": "M3LPromptOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/types.ts",
+          "symbol": "M3LPromptAdapter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/types.ts",
+          "symbol": "M3LChoice"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/types.ts",
+          "symbol": "M3LChoices"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/types.ts",
+          "symbol": "M3LNumberPromptOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/types.ts",
+          "symbol": "M3LSuggestFn"
+        }
+      ],
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "`M3LMultiSpinner`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts",
+          "symbol": "M3LMultiSpinner"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts",
+          "symbol": "M3LMultiSpinnerOptions"
+        }
+      ],
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "`M3LLoadingBar`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts",
+          "symbol": "M3LLoadingBar"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts",
+          "symbol": "M3LLoadingBarOptions"
+        }
+      ],
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Notes and behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
+          "symbol": "M3LPrompt"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts",
+          "symbol": "M3LMultiSpinner"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts",
+          "symbol": "M3LLoadingBar"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LPromptValidationError.ts",
+          "symbol": "M3LPromptValidationError"
+        }
+      ],
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
+    }
+  ]
+}
