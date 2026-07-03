@@ -27,8 +27,11 @@ namespace):
 - `M3LAWSLoginResult` — the result of an SSO login attempt.
 - `M3LAWSCredentialsManagerOptions` — construction options for the credentials manager.
 
-All five are pure domain types with no `@aws-sdk` dependency;
-`models` stays dependency-free.
+All five are pure domain types with no `@aws-sdk` runtime dependency;
+`models` stays free of the AWS SDK. The only cross-module reference is a
+**type-only** import of [`M3LPrompt`](../core/prompt.md) (from `core/prompt`) used
+to type the optional `prompt` field — compile-time only, so `models` still
+tree-shakes cleanly and pulls in no extra runtime code.
 
 ### `M3LAWSCredentialsErrorType`
 
@@ -70,21 +73,26 @@ after re-authentication.
 
 The outcome of a single SSO login attempt.
 
-| Field        | Type      | Description                                   |
-| ------------ | --------- | --------------------------------------------- |
-| `profile`    | `string`  | The profile the SSO login targeted.           |
-| `success`    | `boolean` | Whether the login completed successfully.     |
-| `durationMs` | `number`  | The wall-clock duration of the login attempt. |
+| Field        | Type             | Description                                                      |
+| ------------ | ---------------- | ---------------------------------------------------------------- |
+| `profile`    | `string`         | The profile the SSO login targeted.                              |
+| `success`    | `boolean`        | Whether the login completed successfully.                        |
+| `durationMs` | `number`         | The wall-clock duration of the login attempt.                    |
+| `exitCode`   | `number \| null` | The child process exit code; `null` when the process was killed. |
+| `timedOut`   | `boolean`        | Whether the login was killed for exceeding `loginTimeoutMs`.     |
 
 ### `M3LAWSCredentialsManagerOptions`
 
 Construction options for `M3LAWSCredentialsManager` (see [AWS credentials](./credentials.md)).
 
-| Field            | Type                 | Description                                                      |
-| ---------------- | -------------------- | ---------------------------------------------------------------- |
-| `profile`        | `string` (optional)  | The default profile to validate and, if needed, re-authenticate. |
-| `loginTimeoutMs` | `number` (optional)  | SSO login timeout in milliseconds; defaults to `120000` (120 s). |
-| `interactive`    | `boolean` (optional) | Whether to prompt the user before re-running SSO login.          |
+| Field            | Type                   | Description                                                                        |
+| ---------------- | ---------------------- | ---------------------------------------------------------------------------------- |
+| `profile`        | `string` (optional)    | The default profile to validate and, if needed, re-authenticate.                   |
+| `region`         | `string` (optional)    | AWS region for the STS validation client; defaults to the SDK's resolution.        |
+| `loginTimeoutMs` | `number` (optional)    | SSO login timeout in milliseconds; defaults to `120000` (120 s).                   |
+| `maxRetries`     | `number` (optional)    | Max relogin retry attempts for a recoverable failure; defaults to `1`.             |
+| `interactive`    | `boolean` (optional)   | Whether to prompt the user before re-running SSO login.                            |
+| `prompt`         | `M3LPrompt` (optional) | Prompt used to confirm re-login in interactive mode; a default is used if omitted. |
 
 ## Notes and behavior
 
@@ -92,8 +100,10 @@ Construction options for `M3LAWSCredentialsManager` (see [AWS credentials](./cre
   client providers; they are not a standalone runtime feature.
 - `M3LAWSCredentialsErrorType` is the only symbol with a runtime value (the
   frozen `const` object); the remaining four are compile-time-only shapes.
-- Field shapes are intentionally minimal; they may be extended (with matching
-  updates here) as the credentials manager and client providers are implemented.
+- The `prompt` option is typed as [`M3LPrompt`](../core/prompt.md) via a
+  type-only import; `models` carries no runtime dependency on `core/prompt`.
+- Field shapes may be extended (with matching updates here) as the credentials
+  manager and client providers are implemented.
 
 ## See also
 
