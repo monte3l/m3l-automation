@@ -50,7 +50,7 @@
           "symbol": "setProcessGuardRequestId"
         }
       ],
-      "commit": "abc043bf954e1b6d7b58f58e90d21cfdc7213ac9",
+      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
       "retrieved": "2026-07-03"
     },
     {
@@ -61,7 +61,7 @@
           "symbol": "M3LScript"
         }
       ],
-      "commit": "abc043bf954e1b6d7b58f58e90d21cfdc7213ac9",
+      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
       "retrieved": "2026-07-03"
     },
     {
@@ -76,7 +76,7 @@
           "symbol": "M3LScriptHookContext"
         }
       ],
-      "commit": "abc043bf954e1b6d7b58f58e90d21cfdc7213ac9",
+      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
       "retrieved": "2026-07-03"
     },
     {
@@ -87,7 +87,7 @@
           "symbol": "M3LScript"
         }
       ],
-      "commit": "abc043bf954e1b6d7b58f58e90d21cfdc7213ac9",
+      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
       "retrieved": "2026-07-03"
     },
     {
@@ -106,7 +106,7 @@
           "symbol": "setProcessGuardRequestId"
         }
       ],
-      "commit": "abc043bf954e1b6d7b58f58e90d21cfdc7213ac9",
+      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
       "retrieved": "2026-07-03"
     },
     {
@@ -121,7 +121,7 @@
           "symbol": "M3LPresetUnknownKeysError"
         }
       ],
-      "commit": "abc043bf954e1b6d7b58f58e90d21cfdc7213ac9",
+      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
       "retrieved": "2026-07-03"
     },
     {
@@ -132,7 +132,7 @@
           "symbol": "M3LScript"
         }
       ],
-      "commit": "abc043bf954e1b6d7b58f58e90d21cfdc7213ac9",
+      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
       "retrieved": "2026-07-03"
     },
     {
@@ -147,7 +147,7 @@
           "symbol": "M3LScriptPresetLoader"
         }
       ],
-      "commit": "abc043bf954e1b6d7b58f58e90d21cfdc7213ac9",
+      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
       "retrieved": "2026-07-03"
     }
   ]
