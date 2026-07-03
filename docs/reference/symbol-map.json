@@ -352,6 +352,71 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/exporters/M3LFileListExporter.ts"
   },
+  "M3LFileImporter": {
+    "submodule": "importers",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/importers/M3LFileImporter.ts"
+  },
+  "M3LListImporter": {
+    "submodule": "importers",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/importers/M3LListImporter.ts"
+  },
+  "M3LListImporterEvents": {
+    "submodule": "importers",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/importers/M3LListImporter.ts"
+  },
+  "M3LListImporterResult": {
+    "submodule": "importers",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/importers/M3LListImporter.ts"
+  },
+  "M3LCSVListImporter": {
+    "submodule": "importers",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/importers/M3LCSVListImporter.ts"
+  },
+  "M3LCSVListImporterOptions": {
+    "submodule": "importers",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/importers/M3LCSVListImporter.ts"
+  },
+  "M3LCSVFormatAdapter": {
+    "submodule": "importers",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/importers/M3LCSVFormatAdapter.ts"
+  },
+  "M3LCSVAdapterFactory": {
+    "submodule": "importers",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/importers/M3LCSVAdapterFactory.ts"
+  },
+  "M3LJSONFileImporter": {
+    "submodule": "importers",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/importers/M3LJSONFileImporter.ts"
+  },
+  "M3LJSONListImporter": {
+    "submodule": "importers",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/importers/M3LJSONListImporter.ts"
+  },
+  "M3LJSONListImporterOptions": {
+    "submodule": "importers",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/importers/M3LJSONListImporter.ts"
+  },
+  "M3LFileListImporter": {
+    "submodule": "importers",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/importers/M3LFileListImporter.ts"
+  },
+  "M3LTextFileImporter": {
+    "submodule": "importers",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/importers/M3LTextFileImporter.ts"
+  },
   "parseFieldPath": {
     "submodule": "json",
     "namespace": "core",
