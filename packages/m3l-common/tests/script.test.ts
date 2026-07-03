@@ -8,16 +8,18 @@
  *   serializeError, setProcessGuardRequestId (11 symbols).
  *
  * Key behavioral contracts:
- *  - M3LScript wires config, logging, prompts, AWS credential management
- *    (via an internal seam only) from a single M3LScriptOptions.
+ *  - M3LScript wires config, logging, prompts, and AWS client provisioning
+ *    from a single M3LScriptOptions.
  *  - run(mainFn) drives a 9-stage pipeline: env detect -> onBeforeInit/
  *    onAfterInit -> config load -> onBeforeConfigLoad/onAfterConfigLoad ->
- *    AWS credential seam (only when an aws.profile param is declared) ->
+ *    AWS provisioning seam (only when an aws.profile param is declared) ->
  *    onBeforeRun -> mainFn -> onAfterRun/onCleanup -> file archival.
  *  - onError fires when any stage throws.
  *  - createLambdaHandler<TEvent, TResult, TContext = unknown> wraps the same
  *    pipeline; resets initialized/configLoaded + clears config store per
- *    invocation; does not reset SDK clients (not directly observable here).
+ *    invocation; does NOT reset the provisioned `aws` facade — it is
+ *    constructed once per `M3LScript` instance and reused across warm
+ *    invocations.
  *  - Signal handlers (SIGTERM/SIGINT/SIGQUIT) install only in non-AWS
  *    environments; a second signal forces process.exit(1).
  *  - installProcessGuards() is an idempotent process-global singleton
@@ -28,10 +30,12 @@
  *    M3LPresetUnknownKeysError (an M3LError subclass).
  *
  * Assumptions documented where the contract is spec-silent (see individual
- * comments): `M3LScript` has NO public `aws` facade at this stage (the AWS
- * submodules do not exist yet in this worktree) — the credential seam is
- * exercised only indirectly via `instanceof M3LError`, never by importing an
- * AWS symbol. `M3LScriptOptions`'s exact config-schema field key is
+ * comments): `M3LScript` exposes a public `get aws(): AWSProvider | undefined`
+ * getter. It is `undefined` until stage 5 of `run()` provisions it — which
+ * only happens when the config schema declares an `aws.profile` parameter —
+ * and, once provisioned, is memoized for the instance's lifetime (not cleared
+ * by `resetForInvocation`, so warm `createLambdaHandler` invocations reuse the
+ * same `AWSProvider`). `M3LScriptOptions`'s exact config-schema field key is
  * spec-silent; we assume a `config: { params: readonly M3LConfigParameter[] }`
  * shape mirroring the config module's own `M3LConfigSchema` constructor
  * argument, and keep every assertion behavior-based rather than shape-based
@@ -73,6 +77,9 @@ vi.mock("node:fs/promises", async () => {
   return { ...actual };
 });
 
+import { S3Client } from "@aws-sdk/client-s3";
+
+import { AWSClientProvider, AWSProvider } from "../src/aws/index.js";
 import { M3LError } from "../src/core/errors/index.js";
 import {
   M3LConfigParameter,
@@ -273,11 +280,9 @@ describe("M3LScript — construction", () => {
     expect(script.prompt).toBe(fakePrompt);
   });
 
-  test("does NOT expose an aws facade on the instance", () => {
+  test("exposes an `aws` getter that is undefined before provisioning (construction only, no aws.profile declared)", () => {
     const script = new M3LScript({ metadata });
-    expect(
-      (script as unknown as Record<string, unknown>)["aws"],
-    ).toBeUndefined();
+    expect(script.aws).toBeUndefined();
   });
 
   test("getConfiguration() is asynchronous (returns a thenable)", () => {
@@ -653,48 +658,112 @@ describe("M3LScript.run() — stage order", () => {
 });
 
 // =============================================================================
-// M3LScript — AWS credential seam (stage 5)
+// M3LScript — AWS provisioning seam (stage 5)
 // =============================================================================
-describe("M3LScript.run() — AWS credential seam", () => {
+describe("M3LScript.run() — AWS provisioning seam", () => {
   beforeEach(() => {
     stubNonAwsEnvironment();
   });
 
-  test("no aws.profile param declared -> strict no-op: run completes and mainFn executes", async () => {
+  /** An `aws.profile` param with a resolvable value, so stage 3 actually stores it (no provider/env/CLI mocking needed). */
+  function makeAwsProfileParam(): M3LConfigParameter<string> {
+    return new M3LConfigParameter<string>({
+      name: "aws.profile",
+      type: M3LConfigParameterType.STRING,
+      defaultValue: "test-profile",
+    });
+  }
+
+  test("no aws.profile param declared -> strict no-op: run completes, mainFn executes, and script.aws stays undefined", async () => {
     const script = new M3LScript({ metadata });
     const mainFn = vi.fn();
 
     await expect(script.run(mainFn)).resolves.toBeUndefined();
     expect(mainFn).toHaveBeenCalledTimes(1);
+    expect(script.aws).toBeUndefined();
   });
 
-  test("an aws.profile param IS declared -> run() rejects with an M3LError (AWS not available)", async () => {
-    const awsProfileParam = new M3LConfigParameter<string>({
-      name: "aws.profile",
-      type: M3LConfigParameterType.STRING,
-    });
-
+  test("an aws.profile param IS declared -> run() resolves and provisions script.aws as an AWSProvider whose clients.s3 is an S3Client", async () => {
     // Config schema field key is spec-silent; `config.params` is our
     // documented assumption (see file header comment).
     const options: M3LScriptOptions = {
       metadata,
-      config: { params: [awsProfileParam] },
+      config: { params: [makeAwsProfileParam()] },
     };
     const script = new M3LScript(options);
     const mainFn = vi.fn();
 
-    let thrown: unknown;
-    try {
-      await script.run(mainFn);
-    } catch (error) {
-      thrown = error;
-    }
+    await expect(script.run(mainFn)).resolves.toBeUndefined();
 
-    expect(thrown).toBeInstanceOf(M3LError);
-    // The seam error class is internal/unexported by contract — we can only
-    // assert the supertype and that mainFn never got a chance to run because
-    // the AWS check (stage 5) precedes stage 6/7.
-    expect(mainFn).not.toHaveBeenCalled();
+    expect(mainFn).toHaveBeenCalledTimes(1);
+    expect(script.aws).toBeInstanceOf(AWSProvider);
+    expect(script.aws?.clients).toBeInstanceOf(AWSClientProvider);
+    expect(script.aws?.clients.s3).toBeInstanceOf(S3Client);
+  });
+
+  test("an aws.profile param is declared but resolves to no value -> run() resolves and still provisions script.aws as an AWSProvider", async () => {
+    // No `defaultValue`/`asyncFallback` on this param, and no env var/CLI arg
+    // supplies "aws.profile" — so `config.get("aws.profile")` resolves to
+    // `undefined`, driving the FALSE side of `hasProfile ? { profile } : {}`
+    // (M3LScript.ts:360): the param is merely DECLARED, so provisioning still
+    // proceeds, just without a `profile` in the AWSProvider options — the
+    // provider falls back to the SDK's default credential chain.
+    const unresolvedProfileParam = new M3LConfigParameter<string>({
+      name: "aws.profile",
+      type: M3LConfigParameterType.STRING,
+    });
+    const options: M3LScriptOptions = {
+      metadata,
+      config: { params: [unresolvedProfileParam] },
+    };
+    const script = new M3LScript(options);
+    const mainFn = vi.fn();
+
+    await expect(script.run(mainFn)).resolves.toBeUndefined();
+
+    expect(mainFn).toHaveBeenCalledTimes(1);
+    expect(script.aws).toBeInstanceOf(AWSProvider);
+    expect(script.aws?.clients).toBeInstanceOf(AWSClientProvider);
+    expect(script.aws?.clients.s3).toBeInstanceOf(S3Client);
+  });
+
+  test("the aws.region config value flows into provisioning: script.aws.clients.s3's resolved region matches it", async () => {
+    const awsRegionParam = new M3LConfigParameter<string>({
+      name: "aws.region",
+      type: M3LConfigParameterType.STRING,
+      defaultValue: "eu-south-1",
+    });
+    const options: M3LScriptOptions = {
+      metadata,
+      config: { params: [makeAwsProfileParam(), awsRegionParam] },
+    };
+    const script = new M3LScript(options);
+
+    await script.run(() => {});
+
+    const region = await script.aws?.clients.s3.config.region();
+    expect(region).toBe("eu-south-1");
+  });
+
+  test("the provisioned AWSProvider is memoized: two warm createLambdaHandler invocations expose the SAME script.aws instance", async () => {
+    stubAwsLambdaEnvironment();
+    const options: M3LScriptOptions = {
+      metadata,
+      config: { params: [makeAwsProfileParam()] },
+    };
+    const script = new M3LScript(options);
+    const handler = script.createLambdaHandler(() => Promise.resolve());
+
+    await handler({}, {});
+    const firstAws = script.aws;
+    expect(firstAws).toBeInstanceOf(AWSProvider);
+
+    await handler({}, {});
+    const secondAws = script.aws;
+
+    // resetForInvocation clears initialized/configLoaded/config but must NOT
+    // clear the provisioned AWSProvider — a warm Lambda invocation reuses it.
+    expect(secondAws).toBe(firstAws);
   });
 });
 

@@ -26,7 +26,7 @@ Exported from `@m3l-automation/m3l-common/core` (the `script` sub-module):
 
 ## Execution flow
 
-`run(mainFunction)` is the primary CLI entry point. It orchestrates initialization, config load, AWS credential check, the user function, and cleanup, returning a `Promise<void>`. The stages are:
+`run(mainFunction)` is the primary CLI entry point. It orchestrates initialization, config load, AWS provisioning, the user function, and cleanup, returning a `Promise<void>`. The stages are:
 
 ```text
 M3LScript.run(mainFn)
@@ -34,7 +34,7 @@ M3LScript.run(mainFn)
   2. hooks: onBeforeInit → onAfterInit
   3. config load (M3LScriptConfigLoader)     ← walks provider chain; resolves asyncFallbacks
   4. hooks: onBeforeConfigLoad → onAfterConfigLoad
-  5. AWS credential check                    ← only if an aws.profile param is defined
+  5. AWS provisioning                         ← only if an aws.profile param is defined
   6. hooks: onBeforeRun
   7. mainFn()                                ← user code
   8. hooks: onAfterRun → onCleanup
@@ -111,7 +111,7 @@ export const handler = script.createLambdaHandler<MyEvent, MyResult>(
 ## Notes and behavior
 
 - `M3LScript` is not subclassed. Pass options (metadata, config schema, hooks, logging options) and call `run`.
-- Step 5 (AWS credential check) runs only when an `aws.profile` parameter is defined.
+- Step 5 (AWS provisioning) runs only when the config schema declares an `aws.profile` parameter. When it does, the resolved profile (and optional region) is used to construct an [`AWSProvider`](../aws/clients.md), assigned to `script.aws` for use in `mainFn` and later hooks. When no `aws.profile` parameter is declared, `script.aws` is unset and no AWS SDK client is constructed.
 - Per-invocation Lambda reset clears `initialized`, `configLoaded`, and the config store; it does not tear down client providers.
 - Signal handlers exist only outside AWS environments.
 

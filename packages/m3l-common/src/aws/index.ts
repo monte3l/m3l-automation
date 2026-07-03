@@ -10,3 +10,4 @@
 
 export * from "./models/index.js";
 export * from "./credentials/index.js";
+export * from "./clients/index.js";

@@ -54,6 +54,21 @@
     "provenance": true
   },
   "dependencies": {
+    "@aws-sdk/client-api-gateway": "3.1079.0",
+    "@aws-sdk/client-cloudformation": "3.1079.0",
+    "@aws-sdk/client-cloudwatch": "3.1079.0",
+    "@aws-sdk/client-codepipeline": "3.1079.0",
+    "@aws-sdk/client-dynamodb": "3.1079.0",
+    "@aws-sdk/client-ec2": "3.1079.0",
+    "@aws-sdk/client-ecs": "3.1079.0",
+    "@aws-sdk/client-eks": "3.1079.0",
+    "@aws-sdk/client-eventbridge": "3.1079.0",
+    "@aws-sdk/client-lambda": "3.1079.0",
+    "@aws-sdk/client-s3": "3.1079.0",
+    "@aws-sdk/client-sqs": "3.1079.0",
+    "@aws-sdk/client-ssm": "3.1079.0",
+    "@aws-sdk/client-sts": "3.1079.0",
+    "@aws-sdk/credential-provider-ini": "3.972.60",
     "@inquirer/prompts": "8.5.2",
     "better-sqlite3": "^12.11.1",
     "csv-parse": "7.0.0",
@@ -63,7 +78,6 @@
     "yaml": "2.9.0"
   },
   "devDependencies": {
-    "@aws-sdk/client-sts": "^3.1078.0",
     "@aws-sdk/credential-providers": "^3.1078.0",
     "@types/adm-zip": "^0.5.8",
     "@types/better-sqlite3": "^7.6.13",
@@ -76,7 +90,6 @@
     "unpdf": "^1.6.2"
   },
   "peerDependencies": {
-    "@aws-sdk/client-sts": "^3.1078.0",
     "@aws-sdk/credential-providers": "^3.1078.0",
     "adm-zip": "^0.5.18",
     "cheerio": "^1.2.0",
@@ -86,9 +99,6 @@
     "unpdf": "^1.6.2"
   },
   "peerDependenciesMeta": {
-    "@aws-sdk/client-sts": {
-      "optional": true
-    },
     "@aws-sdk/credential-providers": {
       "optional": true
     },
