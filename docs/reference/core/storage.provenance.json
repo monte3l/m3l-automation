@@ -50,8 +50,8 @@
           "symbol": "M3LFtsIndexErrorCode"
         }
       ],
-      "commit": "d06e252c181cc2c8c6aca10a6f0ab454486346ca",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Notes & behavior",
@@ -73,8 +73,8 @@
           "symbol": "M3LFtsIndexSearchResult"
         }
       ],
-      "commit": "d06e252c181cc2c8c6aca10a6f0ab454486346ca",
-      "retrieved": "2026-07-02"
+      "commit": "99a6f82321ca97feb9b3d4c922c7b1168dc8b40c",
+      "retrieved": "2026-07-03"
     }
   ]
 }
