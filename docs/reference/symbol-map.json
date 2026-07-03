@@ -635,7 +635,7 @@
   "M3LHttpFailureReason": {
     "submodule": "network",
     "namespace": "core",
-    "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts"
+    "file": "packages/m3l-common/src/core/network/M3LHttpClientError.ts"
   },
   "M3LHttpAbortableRequest": {
     "submodule": "network",
