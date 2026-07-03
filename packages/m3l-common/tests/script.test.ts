@@ -201,9 +201,25 @@ function stubAwsLambdaEnvironment(): void {
 // process. Tests that need to inspect registration (the "signal handling"
 // and "installProcessGuards" describe blocks) re-spy locally with their own
 // recording `mockImplementation`, which cleanly overrides this default.
+//
+// Also guard against real filesystem writes from stage 9 (file archival):
+// EVERY `script.run()`/Lambda-handler invocation in this file reaches
+// `M3LScript.archiveFiles()`, which — with no `M3L_INPUT_DIR`/`M3L_CONFIG_DIR`
+// override — resolves against this real monorepo's `data/input`/`data/config`
+// (which contain real, tracked `.gitkeep` files), and unconditionally calls
+// `M3LFileCopier.finalizeRegisteredFiles()`. An unmocked `mkdir`/`copyFile`
+// therefore either writes real files into this repo's `data/output/` (found
+// exactly this way while investigating a CI-only failure) or, worse, fails
+// with EACCES on CI where the writable/fakeRoot-relative path differs from a
+// developer machine. Mocking both here, once, for the whole file closes that
+// class of Windows-vs-Linux-masked real-write bug everywhere, not just in
+// the dedicated archival describe block (which additionally re-mocks these
+// locally for its own tests as extra, harmless belt-and-braces).
 beforeEach(() => {
   vi.spyOn(process, "on").mockImplementation(() => process);
   vi.spyOn(process, "once").mockImplementation(() => process);
+  vi.spyOn(fsPromises, "mkdir").mockResolvedValue(undefined);
+  vi.spyOn(fsPromises, "copyFile").mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -693,6 +709,18 @@ describe("M3LScript.run() — stage 9 file archival (getLastArchiveReport)", () 
 
   beforeEach(() => {
     stubNonAwsEnvironment();
+    // Every test in this block resolves the output directory to a
+    // `fakeRoot()`-based path. Unconditionally mocking the fs WRITE
+    // primitives here (rather than per-test) means no archival test — now or
+    // added later — can ever perform a real filesystem write: on Linux,
+    // `fakeRoot("fake", ...)` resolves under "/", so an unmocked `mkdir`
+    // fails with EACCES at the real filesystem root; on Windows the same
+    // path is drive-rooted and silently succeeds, creating a stray real
+    // directory and masking the failure that only surfaces in CI. Each
+    // test's own `readdirSync`/`stat` mocks (or lack thereof) still encode
+    // that test's specific input scenario.
+    vi.spyOn(fsPromises, "mkdir").mockResolvedValue(undefined);
+    vi.spyOn(fsPromises, "copyFile").mockResolvedValue(undefined);
   });
 
   test("getLastArchiveReport() is undefined before run() has completed at least once", () => {
@@ -744,8 +772,8 @@ describe("M3LScript.run() — stage 9 file archival (getLastArchiveReport)", () 
         Object.assign(new Error("ENOENT"), { code: "ENOENT" }),
       );
     });
-    vi.spyOn(fsPromises, "mkdir").mockResolvedValue(undefined);
-    vi.spyOn(fsPromises, "copyFile").mockResolvedValue(undefined);
+    // `mkdir`/`copyFile` are mocked once for the whole describe block (see
+    // the outer `beforeEach`); no per-test override needed here.
 
     const script = new M3LScript({ metadata });
     await script.run(() => {});
@@ -822,8 +850,8 @@ describe("M3LScript.run() — stage 9 file archival (getLastArchiveReport)", () 
         Object.assign(new Error("ENOENT"), { code: "ENOENT" }),
       );
     });
-    vi.spyOn(fsPromises, "mkdir").mockResolvedValue(undefined);
-    vi.spyOn(fsPromises, "copyFile").mockResolvedValue(undefined);
+    // `mkdir`/`copyFile` are mocked once for the whole describe block (see
+    // the outer `beforeEach`); no per-test override needed here.
 
     // ONE M3LScript, ONE createLambdaHandler — the warm-start scenario the
     // bug depended on (a single instance reused across invocations).
