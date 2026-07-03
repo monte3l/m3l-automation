@@ -58,8 +58,8 @@
           "symbol": "M3LTextFileImporter"
         }
       ],
-      "commit": "642af15b560d5f267aa1231fc547c7a45f3eef6e",
-      "retrieved": "2026-07-02"
+      "commit": "4440cc257958435dc26a30907cfbec8526071861",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Notes and behavior",
@@ -85,8 +85,8 @@
           "symbol": "M3LListImporterEvents"
         }
       ],
-      "commit": "642af15b560d5f267aa1231fc547c7a45f3eef6e",
-      "retrieved": "2026-07-02"
+      "commit": "4440cc257958435dc26a30907cfbec8526071861",
+      "retrieved": "2026-07-03"
     }
   ]
 }
