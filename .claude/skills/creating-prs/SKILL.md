@@ -70,6 +70,21 @@ git rebase origin/main
   manually (`git rebase origin/main`, fix, `git rebase --continue`), then re-run
   this skill. Stop here.
 
+  **Exception — derived-artifact conflicts resolve by regeneration, not
+  hand-merge.** On a long-running branch, parallel submodules landing on `main`
+  routinely conflict on _generated or metadata_ files: `pnpm-lock.yaml`, the
+  `dependencies` block in `package.json`, the `N of 22` count prose (READMEs +
+  `implementation-status.md`), and the reference index
+  (`catalog.json`/`symbol-map.json`). These are safe for the hub to resolve
+  because none is hand-authored logic: take `main`'s version, then regenerate —
+  union the `dependencies` and re-run `pnpm install` for the lockfile; take
+  `main`'s doc-count files, flip your module's status row to ✅, and let
+  `pnpm gen:index` + `pnpm check:impl-counts` derive the authoritative count;
+  re-stamp your module's provenance to the _live_ (post-rebase) feature commit,
+  since the pre-rebase ref is gone. Land the reconciliation as a separate
+  `docs:` commit (the repo's "reconcile counts and index after rebasing onto
+  main" pattern). Still hand back on any conflict in real `src/`/test logic.
+
 - **Signing:** pushes are signature-gated, so rebased commits must stay signed.
   If the user's `commit.gpgsign` is unset, use the same recovery pattern
   `verify-signed-range` documents:
