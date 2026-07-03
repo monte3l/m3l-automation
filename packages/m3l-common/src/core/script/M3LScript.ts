@@ -13,7 +13,7 @@ import type { M3LFileCopyReport } from "../files/index.js";
 import { M3LFileCopier, getDefaultSubdirForPathType } from "../files/index.js";
 import { M3LConsoleLoggerHandler, M3LLogger } from "../logging/index.js";
 import { M3LPrompt } from "../prompt/index.js";
-import { M3LPaths } from "../utils/index.js";
+import { M3LPaths, isEnoentError } from "../utils/index.js";
 
 import { M3LAWSProvisioningError } from "../../internal/script/M3LAWSProvisioningError.js";
 import { logBestEffortDiagnostic } from "../../internal/script/diagnostics.js";
@@ -59,19 +59,22 @@ async function runHook(
 /**
  * Returns the absolute paths of every regular file directly inside `dir`
  * (non-recursive; subdirectories are skipped). Returns an empty array when
- * `dir` does not exist — a script with no input or config files is a normal,
- * not exceptional, case.
+ * `dir` does not exist (`ENOENT`) — a script with no input or config files is
+ * a normal, not exceptional, case. Any other filesystem error (e.g. `EACCES`
+ * / `EPERM` from a genuine permissions fault) is re-thrown: a directory that
+ * exists but cannot be read must surface loudly, not masquerade as an empty
+ * archive report.
  */
 function listRegularFiles(dir: string): readonly string[] {
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    // Missing/unreadable directory: nothing to archive from here. A genuine
-    // permissions problem will resurface loudly if the caller later tries to
-    // read the same directory for another purpose; silently skipping
-    // archival of a directory that does not exist is not itself an error.
-    return [];
+  } catch (error) {
+    // Tolerate only a missing dir; re-throw every other errno.
+    if (isEnoentError(error)) {
+      return [];
+    }
+    throw error;
   }
   return entries
     .filter((entry) => entry.isFile())
