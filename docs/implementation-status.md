@@ -2,7 +2,7 @@
 
 This is the **single source of truth** for what is implemented in
 `@m3l-automation/m3l-common` versus what the `docs/reference/**` pages specify.
-The library started as a documented-but-empty scaffold. The barrels are wired; `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`, `prompt`, `exporters`, `storage`, `network`, `importers`, `files`, and `logging` are implemented and reviewed (18 of 22 submodules). See the table below for per-submodule status.
+The library started as a documented-but-empty scaffold. The barrels are wired; `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`, `prompt`, `exporters`, `storage`, `network`, `importers`, `files`, `logging`, and `aws/models` are implemented and reviewed (19 of 22 submodules). See the table below for per-submodule status.
 
 > **Maintenance contract (hub):** the main agent updates this file after **each
 > phase** of the `implementing-submodules` pipeline. It is the durable, cross-session
@@ -50,11 +50,11 @@ _Planned_ = implementation plan exists in `docs/plans/`.
 
 ## AWS submodules (`docs/reference/aws/`)
 
-| Submodule   | Spec                 | Planned | Symbols (≈) | Status | Tests | Reviewed | Notes (runtime deps → dependency gate)                     |
-| ----------- | -------------------- | ------- | ----------- | ------ | ----- | -------- | ---------------------------------------------------------- |
-| models      | `aws/models.md`      | ❌      | —           | ❌     | ❌    | ❌       | shared types only (no runtime)                             |
-| credentials | `aws/credentials.md` | ❌      | 6           | ❌     | ❌    | ❌       | **`@aws-sdk/client-sts`, `@aws-sdk/credential-providers`** |
-| clients     | `aws/clients.md`     | ❌      | 4           | ❌     | ❌    | ❌       | **`@aws-sdk/*` service clients** (lazy)                    |
+| Submodule   | Spec                 | Planned | Symbols (≈) | Status | Tests | Reviewed | Notes (runtime deps → dependency gate)                                                                                                                      |
+| ----------- | -------------------- | ------- | ----------- | ------ | ----- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| models      | `aws/models.md`      | ❌      | 5           | ✅     | ✅    | ✅       | done — 5 types (const-object+union+3 interfaces); 29 tests; 4-spoke review clean (code+conformance+type-design+security), no must-fix; dep-free, no runtime |
+| credentials | `aws/credentials.md` | ❌      | 6           | ❌     | ❌    | ❌       | **`@aws-sdk/client-sts`, `@aws-sdk/credential-providers`**                                                                                                  |
+| clients     | `aws/clients.md`     | ❌      | 4           | ❌     | ❌    | ❌       | **`@aws-sdk/*` service clients** (lazy)                                                                                                                     |
 
 ## Suggested implementation order
 
