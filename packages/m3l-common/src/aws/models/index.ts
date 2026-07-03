@@ -5,10 +5,16 @@
  * This is a dependency-free, types-only vocabulary layer: no `@aws-sdk/*`
  * import, no runtime logic beyond the one `const` object below, and no
  * top-level side effects. The credentials manager and client providers build
- * on these shapes instead of redeclaring them.
+ * on these shapes instead of redeclaring them. The only cross-module
+ * reference is a **type-only** import of {@link M3LPrompt} from
+ * `core/prompt`, used to type the optional `prompt` field — compile-time
+ * only, so this module still carries no runtime dependency and tree-shakes
+ * cleanly.
  *
  * @packageDocumentation
  */
+
+import type { M3LPrompt } from "../../core/prompt/index.js";
 
 /**
  * The error categories produced by credential error analysis. Implemented as
@@ -114,6 +120,8 @@ export interface M3LAWSRetryContext {
  *   profile: "default",
  *   success: true,
  *   durationMs: 1500,
+ *   exitCode: 0,
+ *   timedOut: false,
  * };
  * ```
  */
@@ -124,6 +132,13 @@ export interface M3LAWSLoginResult {
   readonly success: boolean;
   /** The wall-clock duration of the login attempt, in milliseconds. */
   readonly durationMs: number;
+  /**
+   * The child process exit code; `null` when the process was killed (for
+   * example, after exceeding `loginTimeoutMs`).
+   */
+  readonly exitCode: number | null;
+  /** Whether the login was killed for exceeding `loginTimeoutMs`. */
+  readonly timedOut: boolean;
 }
 
 /**
@@ -145,8 +160,23 @@ export interface M3LAWSLoginResult {
 export interface M3LAWSCredentialsManagerOptions {
   /** The default profile to validate and, if needed, re-authenticate. */
   readonly profile?: string;
+  /**
+   * AWS region for the STS validation client. Defaults to the AWS SDK's own
+   * region resolution when omitted.
+   */
+  readonly region?: string;
   /** SSO login timeout in milliseconds. */
   readonly loginTimeoutMs?: number;
+  /**
+   * Max relogin retry attempts for a recoverable credential failure.
+   * Defaults to `1`, applied by the credentials manager rather than here.
+   */
+  readonly maxRetries?: number;
   /** Whether to prompt the user before re-running SSO login. */
   readonly interactive?: boolean;
+  /**
+   * Prompt used to confirm re-login in interactive mode. A default prompt
+   * is used if omitted.
+   */
+  readonly prompt?: M3LPrompt;
 }
