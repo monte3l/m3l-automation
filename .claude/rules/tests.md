@@ -17,6 +17,14 @@ paths:
 - **Deterministic and isolated:** no network, no filesystem; mock collaborators.
   Prefer stubs unless interaction verification is required. Clean up side effects.
 - **Name tests by behavior**, not by the unit under test.
+- **Assert the named behavior, not a proxy.** A test titled "suggests the
+  near-miss key" must assert the suggestion actually appears in the output — not
+  `message.length > 0`, and not merely that the call "doesn't throw". A proxy
+  assertion leaves the named path unexercised behind green coverage (a
+  "did-you-mean" test built with an empty schema returned early and left the whole
+  Damerau-Levenshtein helper at ~10%, asserting nothing). If a behavioral stage's
+  only test is "doesn't throw", it is a coverage gap — read
+  `coverage/coverage-final.json` to catch a named-but-unexercised path.
 - **Type-level tests with `expectTypeOf`** where the type IS the contract.
   `toEqualTypeOf` is strict about `readonly` property modifiers — a type with
   `readonly` members is _not_ equal to one with mutable members, and the failure

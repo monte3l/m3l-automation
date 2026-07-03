@@ -294,10 +294,22 @@
     "namespace": "core",
     "name": "script",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/script.md",
-    "symbols": []
+    "symbols": [
+      "M3LScript",
+      "M3LScriptOptions",
+      "M3LScriptMetadata",
+      "M3LScriptLifecycleHooks",
+      "M3LScriptHookContext",
+      "M3LScriptConfigLoader",
+      "M3LScriptPresetLoader",
+      "M3LPresetUnknownKeysError",
+      "installProcessGuards",
+      "serializeError",
+      "setProcessGuardRequestId"
+    ]
   },
   {
     "namespace": "core",
