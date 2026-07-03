@@ -47,7 +47,7 @@ export type ColumnConflictStrategy = "keep-generated" | "keep-original";
  * }
  * ```
  */
-export interface M3LListExporterStreamWriter<TItem> {
+export interface M3LListExporterStreamWriter<TItem extends object> {
   /**
    * Writes a single item to the underlying output.
    *
@@ -84,7 +84,7 @@ export interface M3LListExporterStreamWriter<TItem> {
  * }
  * ```
  */
-export interface M3LListExporter<TItem> {
+export interface M3LListExporter<TItem extends object> {
   /**
    * Writes all `items` to the configured output in a single call.
    *

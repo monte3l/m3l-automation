@@ -50,13 +50,35 @@ convention in place of a TypeScript `enum`).
 ### `M3LAWSCredentialsErrorAnalysis`
 
 The result of classifying a credential failure, letting callers decide whether a
-failure is recoverable by re-authenticating.
+failure is recoverable by re-authenticating. A **discriminated union** on
+`recoverable` so the flag can never disagree with `type` — the recoverable arm
+carries only the recoverable categories, the unrecoverable arm only the rest:
 
-| Field         | Type                         | Description                                           |
-| ------------- | ---------------------------- | ----------------------------------------------------- |
-| `type`        | `M3LAWSCredentialsErrorType` | The classified error category.                        |
-| `recoverable` | `boolean`                    | Whether re-running SSO login can recover the failure. |
-| `cause`       | `unknown` (optional)         | The underlying error that was analyzed.               |
+```ts
+type M3LAWSCredentialsErrorAnalysis =
+  | {
+      readonly recoverable: true;
+      readonly type:
+        | "SSO_SESSION_EXPIRED"
+        | "SSO_SESSION_INVALID"
+        | "CREDENTIALS_PROVIDER_FAILED";
+      readonly cause?: unknown;
+    }
+  | {
+      readonly recoverable: false;
+      readonly type: "PROFILE_NOT_FOUND" | "UNKNOWN";
+      readonly cause?: unknown;
+    };
+```
+
+Narrowing on `recoverable` narrows `type` and vice versa; the impossible pairing
+(e.g. `{ type: "PROFILE_NOT_FOUND", recoverable: true }`) does not type-check.
+
+| Field         | Type                                        | Description                                           |
+| ------------- | ------------------------------------------- | ----------------------------------------------------- |
+| `recoverable` | `boolean` (the discriminant)                | Whether re-running SSO login can recover the failure. |
+| `type`        | `M3LAWSCredentialsErrorType` (arm-narrowed) | The classified error category.                        |
+| `cause`       | `unknown` (optional)                        | The underlying error that was analyzed.               |
 
 ### `M3LAWSRetryContext`
 
@@ -71,15 +93,48 @@ after re-authentication.
 
 ### `M3LAWSLoginResult`
 
-The outcome of a single SSO login attempt.
+The outcome of a single SSO login attempt, modelled as a **discriminated union**
+on an `outcome` tag so contradictory states (a "successful" login that also
+timed out, a "failed" login with exit code `0`) are unrepresentable. Every arm
+carries `profile` and `durationMs`; the arms differ on `outcome` and `exitCode`:
 
-| Field        | Type             | Description                                                      |
-| ------------ | ---------------- | ---------------------------------------------------------------- |
-| `profile`    | `string`         | The profile the SSO login targeted.                              |
-| `success`    | `boolean`        | Whether the login completed successfully.                        |
-| `durationMs` | `number`         | The wall-clock duration of the login attempt.                    |
-| `exitCode`   | `number \| null` | The child process exit code; `null` when the process was killed. |
-| `timedOut`   | `boolean`        | Whether the login was killed for exceeding `loginTimeoutMs`.     |
+```ts
+type M3LAWSLoginResult =
+  | {
+      readonly outcome: "success";
+      readonly exitCode: 0;
+      readonly profile: string;
+      readonly durationMs: number;
+    }
+  | {
+      readonly outcome: "failed";
+      readonly exitCode: number | null;
+      readonly profile: string;
+      readonly durationMs: number;
+    }
+  | {
+      readonly outcome: "timedOut";
+      readonly exitCode: null;
+      readonly profile: string;
+      readonly durationMs: number;
+    };
+```
+
+`switch (result.outcome)` is exhaustive. `"success"` is the only arm with
+`exitCode: 0`. `"timedOut"` means **we** killed the process for exceeding
+`loginTimeoutMs` (`exitCode: null`). `"failed"` covers every other unsuccessful
+outcome — a non-zero exit code, or a process killed by an **external** signal
+(e.g. `SIGINT`) that was _not_ our timeout, whose `exitCode` is `null`; hence
+`"failed"` carries `number | null`. The contradiction this union removes is a
+`success`/`timedOut` pair that disagrees — not the `null` exit code itself,
+which two distinct kill paths legitimately share.
+
+| Field        | Type                                  | Description                                                                                                          |
+| ------------ | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `outcome`    | `"success" \| "failed" \| "timedOut"` | The discriminant tag for the login outcome.                                                                          |
+| `profile`    | `string`                              | The profile the SSO login targeted.                                                                                  |
+| `durationMs` | `number`                              | The wall-clock duration of the login attempt.                                                                        |
+| `exitCode`   | `0` \| `number \| null` (per arm)     | `0` on success; `null` for our timeout kill; `number \| null` for a failure (non-zero exit or external-signal kill). |
 
 ### `M3LAWSCredentialsManagerOptions`
 
