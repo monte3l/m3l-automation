@@ -57,6 +57,7 @@
     "@inquirer/prompts": "8.5.2",
     "better-sqlite3": "^12.11.1",
     "csv-stringify": "^6.8.0",
+    "undici": "8.5.0",
     "yaml": "2.9.0"
   },
   "devDependencies": {

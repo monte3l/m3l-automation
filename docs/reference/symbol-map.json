@@ -452,6 +452,51 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/messaging/types.ts"
   },
+  "M3LHttpClient": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts"
+  },
+  "M3LHttpClientOptions": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts"
+  },
+  "M3LHttpFailureReason": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts"
+  },
+  "M3LHttpAbortableRequest": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts"
+  },
+  "M3LHttpRequestEvent": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts"
+  },
+  "M3LHttpResponseEvent": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts"
+  },
+  "M3LHttpErrorEvent": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts"
+  },
+  "M3LHttpClientEventMap": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts"
+  },
+  "M3LHttpClientError": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClientError.ts"
+  },
   "M3LPoller": {
     "submodule": "polling",
     "namespace": "core",
