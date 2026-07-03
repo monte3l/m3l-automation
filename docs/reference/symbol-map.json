@@ -352,6 +352,51 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/exporters/M3LFileListExporter.ts"
   },
+  "M3LFileCopier": {
+    "submodule": "files",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts"
+  },
+  "M3L_FILE_COPIER_DEFAULTS": {
+    "submodule": "files",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts"
+  },
+  "getDefaultSubdirForPathType": {
+    "submodule": "files",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/files/getDefaultSubdirForPathType.ts"
+  },
+  "M3LFileCopierOptions": {
+    "submodule": "files",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts"
+  },
+  "M3LFileCopyResult": {
+    "submodule": "files",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts"
+  },
+  "M3LFileCopySkipReason": {
+    "submodule": "files",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts"
+  },
+  "M3LFileCopyReport": {
+    "submodule": "files",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts"
+  },
+  "M3LFileCopyReportSummary": {
+    "submodule": "files",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts"
+  },
+  "M3LFileCopyError": {
+    "submodule": "files",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/files/M3LFileCopyError.ts"
+  },
   "M3LFileImporter": {
     "submodule": "importers",
     "namespace": "core",
