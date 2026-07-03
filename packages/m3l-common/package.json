@@ -69,16 +69,16 @@
     "@aws-sdk/client-ssm": "3.1079.0",
     "@aws-sdk/client-sts": "3.1079.0",
     "@aws-sdk/credential-provider-ini": "3.972.60",
+    "@aws-sdk/credential-providers": "3.1078.0",
     "@inquirer/prompts": "8.5.2",
-    "better-sqlite3": "^12.11.1",
+    "better-sqlite3": "12.11.1",
     "csv-parse": "7.0.0",
-    "csv-stringify": "^6.8.0",
-    "string-width": "^8.2.1",
+    "csv-stringify": "6.8.0",
+    "string-width": "8.2.1",
     "undici": "8.5.0",
     "yaml": "2.9.0"
   },
   "devDependencies": {
-    "@aws-sdk/credential-providers": "^3.1078.0",
     "@types/adm-zip": "^0.5.8",
     "@types/better-sqlite3": "^7.6.13",
     "@types/mailparser": "^3.4.6",
@@ -90,7 +90,6 @@
     "unpdf": "^1.6.2"
   },
   "peerDependencies": {
-    "@aws-sdk/credential-providers": "^3.1078.0",
     "adm-zip": "^0.5.18",
     "cheerio": "^1.2.0",
     "mailparser": "^3.9.12",
@@ -99,9 +98,6 @@
     "unpdf": "^1.6.2"
   },
   "peerDependenciesMeta": {
-    "@aws-sdk/credential-providers": {
-      "optional": true
-    },
     "adm-zip": {
       "optional": true
     },
