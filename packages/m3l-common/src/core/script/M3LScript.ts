@@ -15,8 +15,8 @@ import { M3LConsoleLoggerHandler, M3LLogger } from "../logging/index.js";
 import { M3LPrompt } from "../prompt/index.js";
 import { M3LPaths } from "../utils/index.js";
 
+import { M3LAWSProvisioningError } from "../../internal/script/M3LAWSProvisioningError.js";
 import { logBestEffortDiagnostic } from "../../internal/script/diagnostics.js";
-import { M3LAWSUnavailableError } from "../../internal/script/M3LAWSUnavailableError.js";
 import { registerShutdownSignals } from "../../internal/script/signalHandlers.js";
 
 import { M3LScriptConfigLoader } from "./M3LScriptConfigLoader.js";
@@ -27,8 +27,22 @@ import type {
   M3LScriptOptions,
 } from "./M3LScriptOptions.js";
 
-/** The config parameter name that gates the AWS credential seam (stage 5). */
+// Type-only import: erased at compile time, so importing the type here does
+// NOT create a static core -> aws module cycle and non-AWS scripts stay
+// tree-shakeable. The runtime value is loaded dynamically, see
+// `provisionAws` below.
+import type { AWSProvider } from "../../aws/clients/index.js";
+
+/** The config parameter name that gates the AWS provisioning seam (stage 5). */
 const AWS_PROFILE_PARAM_NAME = "aws.profile";
+
+/**
+ * The config parameter name carrying the optional AWS region override. Never
+ * independently gates provisioning: only `aws.profile` being declared
+ * triggers stage 5; `aws.region` is consulted only once provisioning is
+ * already underway.
+ */
+const AWS_REGION_PARAM_NAME = "aws.region";
 
 /**
  * Invokes `hook` (if defined) with `ctx`, awaiting the result. A `hook` left
@@ -106,12 +120,45 @@ export class M3LScript {
   private config = new M3LConfig();
   /** The most recently produced stage-9 archive report, if `run` has completed at least once. */
   private lastArchiveReport: M3LFileCopyReport | undefined;
+  /**
+   * The provisioned AWS facade, or `undefined` before stage 5 has provisioned
+   * it (or when the config schema never declares `aws.profile`). NOT reset by
+   * `resetForInvocation` — see {@link M3LScript.provisionAws}.
+   */
+  private awsProvider: AWSProvider | undefined;
 
   /** The logger facade wired for this script instance. */
   readonly logger: M3LLogger;
 
   /** The interactive-prompt facade wired for this script instance. */
   readonly prompt: M3LPrompt;
+
+  /**
+   * The AWS client facade provisioned by stage 5 of {@link M3LScript.run}, or
+   * `undefined` if it has not been provisioned yet.
+   *
+   * Provisioning only happens when the config schema declares an
+   * `aws.profile` parameter; scripts that never declare it keep this
+   * `undefined` for their entire lifetime. Once provisioned, the same
+   * instance is reused for every subsequent call on this `M3LScript` —
+   * including warm `createLambdaHandler` invocations — since AWS SDK clients
+   * are safe (and preferable) to keep alive across invocations.
+   *
+   * @returns The provisioned {@link AWSProvider}, or `undefined`.
+   *
+   * @example
+   * ```ts
+   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   *
+   * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
+   * await script.run(async () => {
+   *   const s3 = script.aws?.clients.s3;
+   * });
+   * ```
+   */
+  get aws(): AWSProvider | undefined {
+    return this.awsProvider;
+  }
 
   /**
    * Creates a new `M3LScript`.
@@ -176,9 +223,11 @@ export class M3LScript {
    * 3. Configuration load (walks the provider chain; resolves
    *    `asyncFallback`s).
    * 4. `onBeforeConfigLoad` / `onAfterConfigLoad` hooks.
-   * 5. The AWS credential seam — a no-op unless the config schema declares
-   *    an `aws.profile` parameter, in which case this stage throws (AWS
-   *    credential management is not yet implemented).
+   * 5. AWS client provisioning — a no-op unless the config schema declares
+   *    an `aws.profile` parameter, in which case this stage provisions
+   *    {@link M3LScript.aws} from the resolved `aws.profile`/`aws.region`
+   *    config values (memoized: a warm `script.aws` from a prior invocation
+   *    is reused rather than rebuilt).
    * 6. `onBeforeRun` hook.
    * 7. `mainFn()`.
    * 8. `onAfterRun` / `onCleanup` hooks.
@@ -222,9 +271,9 @@ export class M3LScript {
    *
    * Each invocation resets the `initialized`/`configLoaded` flags and clears
    * the config store, so configuration is re-resolved fresh on every
-   * invocation; SDK client state (not yet present in this package) is
-   * intentionally left untouched across invocations so warm starts keep
-   * reusing existing connections.
+   * invocation; the provisioned {@link M3LScript.aws} facade (and the AWS SDK
+   * clients it lazily constructs) is intentionally left untouched across
+   * invocations so warm starts keep reusing existing connections.
    *
    * @typeParam TEvent - The Lambda event payload type.
    * @typeParam TResult - The value `mainFn` resolves to and the handler
@@ -289,19 +338,52 @@ export class M3LScript {
   }
 
   /**
-   * Stage 5: the AWS credential seam. A strict no-op unless the config
-   * schema declares an `aws.profile` parameter, in which case it throws
-   * {@link M3LAWSUnavailableError} — AWS credential management is not yet
-   * implemented in this package.
+   * Stage 5: AWS client provisioning. A strict no-op unless the config
+   * schema declares an `aws.profile` parameter. When it does, this
+   * memoizes: a warm `script.aws` (already provisioned on a prior `run`/
+   * Lambda invocation) is reused as-is, so the underlying AWS SDK clients
+   * survive across invocations instead of being rebuilt on every call.
+   *
+   * On first provisioning, resolves `aws.profile`/`aws.region` from the
+   * loaded config (each used only when it resolves to a non-empty string)
+   * and constructs the {@link AWSProvider} facade. The facade module is
+   * imported dynamically — not statically at the top of this file — so that
+   * scripts which never declare `aws.profile` never pull the `aws`
+   * namespace into their bundle, and so `core` has no static import-time
+   * dependency on `aws` (avoiding a core-and-aws module cycle).
+   *
+   * A failure of either the dynamic import or the `AWSProvider` constructor
+   * is wrapped in an internal `M3LAWSProvisioningError`
+   * (`code === "ERR_AWS_PROVISIONING"`), chaining the original failure as
+   * `cause`, rather than propagating a raw untyped error.
    */
-  private checkAwsCredentialSeam(): void {
-    if (this.schema?.has(AWS_PROFILE_PARAM_NAME) === true) {
-      throw new M3LAWSUnavailableError(
-        "AWS credential management is not yet available: the script declares " +
-          `an "${AWS_PROFILE_PARAM_NAME}" config parameter, but this package ` +
-          "does not yet implement AWS credential resolution.",
+  private async provisionAws(): Promise<void> {
+    if (this.schema?.has(AWS_PROFILE_PARAM_NAME) !== true) return;
+    if (this.awsProvider !== undefined) return;
+
+    // `aws.profile` resolving to an empty/missing value is still a valid
+    // config: provisioning still occurs and the AWSProvider defers to the
+    // SDK's default credential chain, rather than this seam duplicating
+    // credential validation.
+    const profile = this.config.get(AWS_PROFILE_PARAM_NAME);
+    const region = this.config.get(AWS_REGION_PARAM_NAME);
+    const hasProfile = typeof profile === "string" && profile.length > 0;
+    const hasRegion = typeof region === "string" && region.length > 0;
+
+    let provider: AWSProvider;
+    try {
+      const { AWSProvider } = await import("../../aws/clients/index.js");
+      provider = new AWSProvider({
+        ...(hasProfile ? { profile } : {}),
+        ...(hasRegion ? { region } : {}),
+      });
+    } catch (cause) {
+      throw new M3LAWSProvisioningError(
+        "failed to provision the AWS client facade",
+        { cause },
       );
     }
+    this.awsProvider = provider;
   }
 
   /**
@@ -371,8 +453,8 @@ export class M3LScript {
     await this.loadConfig();
     await runHook(this.hooks.onAfterConfigLoad, this.hookContext());
 
-    // Stage 5: AWS credential seam.
-    this.checkAwsCredentialSeam();
+    // Stage 5: AWS client provisioning.
+    await this.provisionAws();
 
     // Stage 6 + 7: onBeforeRun, mainFn.
     await runHook(this.hooks.onBeforeRun, this.hookContext());
