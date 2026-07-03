@@ -224,7 +224,7 @@ export class M3LHTMLListExporter<
   }
 
   /**
-   * Wraps a failure as an HTML-list-export {@link M3LError}.
+   * Wraps an HTML-list-export failure as an {@link M3LError}.
    *
    * @param cause - The caught value.
    * @returns An {@link M3LError} chaining `cause`.

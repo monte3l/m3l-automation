@@ -112,7 +112,10 @@ Once confirmed:
 - **New branch in place:** `git switch -c feat/<slug>` (or `fix/<slug>`).
 - **Staying put:** verify `HEAD` is neither `main` nor detached-on-`main` before
   handing back; if it is, loop back to step 4 rather than proceeding into a write
-  that the guard will reject.
+  that the guard will reject. When **resuming an existing feature branch** that
+  may have fallen behind, resync it with `origin/main` before working (or defer
+  to the resync step in `creating-prs`) so the branch does not drift from the
+  base over multiple sessions.
 
 ### 6 — Hand back
 
