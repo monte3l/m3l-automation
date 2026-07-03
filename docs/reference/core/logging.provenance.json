@@ -1,0 +1,167 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/logging.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LLogger.ts",
+          "symbol": "M3LLogger"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LLogEvent.ts",
+          "symbol": "M3LLogEvent"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LLogEventCategory.ts",
+          "symbol": "M3LLogEventCategory"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LConsoleLoggerHandler.ts",
+          "symbol": "M3LConsoleLoggerHandler"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LFileLoggerHandler.ts",
+          "symbol": "M3LFileLoggerHandler"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LFileLoggerHandler.ts",
+          "symbol": "M3LFileLoggerHandlerOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LJsonLoggerHandler.ts",
+          "symbol": "M3LJsonLoggerHandler"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LTableFormatter.ts",
+          "symbol": "M3LTableFormatter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LTableFormatter.ts",
+          "symbol": "M3LTableOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LTableFormatter.ts",
+          "symbol": "M3LTableColumn"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/redact.ts",
+          "symbol": "redactSensitiveLogText"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/redact.ts",
+          "symbol": "redactSensitiveLogValue"
+        }
+      ],
+      "commit": "f1815c29f630636a7e7576f90b024606c0cdb43f",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "`M3LLogger` methods",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LLogger.ts",
+          "symbol": "M3LLogger"
+        }
+      ],
+      "commit": "f1815c29f630636a7e7576f90b024606c0cdb43f",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "`M3LLogEventCategory`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LLogEventCategory.ts",
+          "symbol": "M3LLogEventCategory"
+        }
+      ],
+      "commit": "f1815c29f630636a7e7576f90b024606c0cdb43f",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Composing handlers",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LLogger.ts",
+          "symbol": "M3LLogger"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LConsoleLoggerHandler.ts",
+          "symbol": "M3LConsoleLoggerHandler"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LFileLoggerHandler.ts",
+          "symbol": "M3LFileLoggerHandler"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LJsonLoggerHandler.ts",
+          "symbol": "M3LJsonLoggerHandler"
+        }
+      ],
+      "commit": "f1815c29f630636a7e7576f90b024606c0cdb43f",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Rendering a table",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LTableFormatter.ts",
+          "symbol": "M3LTableFormatter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LTableFormatter.ts",
+          "symbol": "M3LTableOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LTableFormatter.ts",
+          "symbol": "M3LTableColumn"
+        }
+      ],
+      "commit": "f1815c29f630636a7e7576f90b024606c0cdb43f",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Redacting sensitive data",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/logging/redact.ts",
+          "symbol": "redactSensitiveLogText"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/redact.ts",
+          "symbol": "redactSensitiveLogValue"
+        }
+      ],
+      "commit": "f1815c29f630636a7e7576f90b024606c0cdb43f",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Notes and behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LLogger.ts",
+          "symbol": "M3LLogger"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LConsoleLoggerHandler.ts",
+          "symbol": "M3LConsoleLoggerHandler"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LFileLoggerHandler.ts",
+          "symbol": "M3LFileLoggerHandler"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LJsonLoggerHandler.ts",
+          "symbol": "M3LJsonLoggerHandler"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LTableFormatter.ts",
+          "symbol": "M3LTableFormatter"
+        }
+      ],
+      "commit": "f1815c29f630636a7e7576f90b024606c0cdb43f",
+      "retrieved": "2026-07-03"
+    }
+  ]
+}
