@@ -16,14 +16,23 @@ const UNKNOWN_PRESET_KEYS_CODE = "ERR_PRESET_UNKNOWN_KEYS";
  * suggestion (Damerau-Levenshtein distance), if any declared name exists to
  * compare against.
  *
+ * This shape is reachable structurally as the element type of
+ * {@link M3LPresetUnknownKeysError.suggestions}; it is not a separately
+ * importable named export, so read it off a caught error rather than
+ * importing the type directly.
+ *
  * @example
  * ```ts
- * import type { M3LPresetUnknownKeySuggestion } from "@m3l-automation/m3l-common/core";
+ * import { M3LPresetUnknownKeysError } from "@m3l-automation/m3l-common/core";
  *
- * const suggestion: M3LPresetUnknownKeySuggestion = {
- *   key: "regoin",
- *   suggestion: "region",
- * };
+ * try {
+ *   // loader.load(...)
+ * } catch (e) {
+ *   if (e instanceof M3LPresetUnknownKeysError) {
+ *     const [first] = e.suggestions; // { key, suggestion } entries
+ *     console.error(first?.key, first?.suggestion);
+ *   }
+ * }
  * ```
  */
 export interface M3LPresetUnknownKeySuggestion {
