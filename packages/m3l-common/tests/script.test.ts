@@ -858,6 +858,60 @@ describe("M3LScript.run() — stage 9 file archival (getLastArchiveReport)", () 
     expect(report?.results.every((result) => !result.skipped)).toBe(true);
   });
 
+  test.each([
+    ["EACCES", "EACCES: permission denied"],
+    ["EPERM", "EPERM: operation not permitted"],
+  ])(
+    "a %s reading the input directory surfaces the fault instead of silently producing a zero-file archive report",
+    async (code, message) => {
+      const root = fakeRoot("fake", `archive-${code.toLowerCase()}`);
+      const inputDir = `${root}/data/input`;
+      const configDir = `${root}/data/config`;
+      const outputDir = `${root}/data/output`;
+
+      vi.stubEnv("M3L_INPUT_DIR", inputDir);
+      vi.stubEnv("M3L_CONFIG_DIR", configDir);
+      vi.stubEnv("M3L_OUTPUT_DIR", outputDir);
+
+      // Unlike the ENOENT-tolerant case below, a directory that EXISTS but
+      // cannot be read (a real permissions fault, e.g. in a locked-down
+      // container/CI user) must not be swallowed as "nothing to archive" —
+      // that would hide a genuine fault behind a successful, truncated
+      // report. Unlike the sibling `readdirSync` mocks in this file, this
+      // implementation never returns (always throws), so a zero-arg arrow is
+      // itself a valid substitute for every overload of the real
+      // `readdirSync` — no `as unknown` narrowing needed here.
+      vi.spyOn(nodeFs, "readdirSync").mockImplementation(() => {
+        throw Object.assign(new Error(message), { code });
+      });
+
+      const script = new M3LScript({ metadata });
+
+      let thrown: unknown;
+      try {
+        await script.run(() => {});
+      } catch (error) {
+        thrown = error;
+      }
+
+      // Behavioral assertion: the permission fault must actually be
+      // reachable from what `run()` throws, not merely "run() didn't
+      // resolve". Accept either a raw re-thrown errno or an M3LError that
+      // chained it via `cause` — either way the "code" must surface.
+      expect(thrown).toBeDefined();
+      const thrownWithCause = thrown as {
+        code?: unknown;
+        cause?: { code?: unknown };
+      };
+      const surfacedCode = thrownWithCause.code ?? thrownWithCause.cause?.code;
+      expect(surfacedCode).toBe(code);
+
+      // The zero-file report the current (buggy) implementation would have
+      // produced must NOT exist — run() must not have completed successfully.
+      expect(script.getLastArchiveReport()).toBeUndefined();
+    },
+  );
+
   test("an empty input/config directory still produces a (zero-file) archive report, not undefined", async () => {
     const root = fakeRoot("fake", "archive-empty");
     vi.stubEnv("M3L_INPUT_DIR", `${root}/data/input`);
