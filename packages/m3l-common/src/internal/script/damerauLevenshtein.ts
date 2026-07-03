@@ -9,45 +9,33 @@
  */
 
 /**
- * A bounds-checked accessor over the dynamic-programming table used by
+ * A flat, in-bounds accessor over the dynamic-programming table used by
  * {@link damerauLevenshteinDistance}. Every index this module ever reads or
- * writes is within `[0, lenA] x [0, lenB]` by loop construction, but
- * `noUncheckedIndexedAccess` cannot see that invariant — this wrapper proves
- * it once, in one place, instead of scattering non-null assertions through
- * the algorithm.
+ * writes is within `[0, lenA] x [0, lenB]` by loop construction, so the
+ * accessor never needs a bounds check — it exists only to centralize the
+ * row-major index math and to satisfy `noUncheckedIndexedAccess` without
+ * scattering non-null assertions through the algorithm.
  */
 class DistanceTable {
-  private readonly rows: number[][];
+  private readonly cols: number;
+  private readonly cells: number[];
 
   constructor(rowCount: number, colCount: number) {
-    this.rows = Array.from({ length: rowCount }, () =>
-      new Array<number>(colCount).fill(0),
-    );
+    this.cols = colCount;
+    this.cells = new Array<number>(rowCount * colCount).fill(0);
   }
 
-  /** Reads the value at `(i, j)`; throws if either index is out of bounds. */
+  /** Reads the value at `(i, j)`. */
   get(i: number, j: number): number {
-    const row = this.rows[i];
-    if (row === undefined) {
-      throw new RangeError(`row index ${String(i)} is out of bounds`);
-    }
-    const value = row[j];
-    if (value === undefined) {
-      throw new RangeError(`column index ${String(j)} is out of bounds`);
-    }
-    return value;
+    // The index is always in-bounds by loop construction; the `?? 0` fallback
+    // is unreachable and present only to satisfy `noUncheckedIndexedAccess`
+    // without a non-null assertion (and without introducing a throw).
+    return this.cells[i * this.cols + j] ?? 0;
   }
 
-  /** Writes `value` at `(i, j)`; throws if either index is out of bounds. */
+  /** Writes `value` at `(i, j)`. */
   set(i: number, j: number, value: number): void {
-    const row = this.rows[i];
-    if (row === undefined) {
-      throw new RangeError(`row index ${String(i)} is out of bounds`);
-    }
-    if (j < 0 || j >= row.length) {
-      throw new RangeError(`column index ${String(j)} is out of bounds`);
-    }
-    row[j] = value;
+    this.cells[i * this.cols + j] = value;
   }
 }
 
