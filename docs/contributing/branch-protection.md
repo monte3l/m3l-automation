@@ -35,7 +35,10 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     tracked via a `claude-review-sha` marker in the sticky comment; any
     reviewable change re-triggers a full review. This does not weaken the
     fail-closed gate. The verdict-file mechanism and fail-closed behavior are
-    unchanged.
+    unchanged. A separate, non-blocking step logs run metrics (turns used
+    against the cap, wall/API duration, cost, prompt-cache read/write tokens,
+    and diff size) to the run's step summary and annotations — purely for
+    tuning the turn cap over time, with no effect on the verdict.
   - **CodeQL code scanning** — added as required checks under ADR-0015 so a
     high-severity SAST finding blocks the merge. CodeQL runs via GitHub **default
     setup**, whose check runs surface as `Analyze (javascript-typescript)` and
