@@ -1220,6 +1220,16 @@
     "file": "packages/m3l-common/src/core/utils/guards.ts",
     "lines": "427-441"
   },
+  "M3LAWSCredentialsManager": {
+    "submodule": "credentials",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/credentials/manager.ts"
+  },
+  "M3LAWSCredentialsError": {
+    "submodule": "credentials",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/credentials/error.ts"
+  },
   "M3LAWSCredentialsErrorType": {
     "submodule": "models",
     "namespace": "aws",
