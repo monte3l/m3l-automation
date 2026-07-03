@@ -126,10 +126,20 @@
     "namespace": "core",
     "name": "files",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/files.md",
-    "symbols": []
+    "symbols": [
+      "M3LFileCopier",
+      "M3L_FILE_COPIER_DEFAULTS",
+      "getDefaultSubdirForPathType",
+      "M3LFileCopierOptions",
+      "M3LFileCopyResult",
+      "M3LFileCopySkipReason",
+      "M3LFileCopyReport",
+      "M3LFileCopyReportSummary",
+      "M3LFileCopyError"
+    ]
   },
   {
     "namespace": "core",

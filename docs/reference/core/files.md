@@ -20,9 +20,10 @@ Exported symbols:
 - `getDefaultSubdirForPathType` — maps a path type to its default subdirectory
 - `M3LFileCopierOptions`
 - `M3LFileCopyResult` — a single file's outcome
-- `M3LFileCopySkipReason` — why a file was skipped (e.g. `'size-too-large'`)
+- `M3LFileCopySkipReason` — why a file was skipped: `'size-too-large'`, `'already-exists'`, `'source-unreadable'`, or `'declined-by-prompt'`
 - `M3LFileCopyReport` — the full report returned by `finalizeRegisteredFiles()`
 - `M3LFileCopyReportSummary` — the aggregate portion of the report
+- `M3LFileCopyError` — thrown on a batch-fatal copy failure or invalid copier options (chains the underlying cause)
 
 ### Methods
 
@@ -69,6 +70,8 @@ copier.registerFile("./data/inputs/source.csv", { subdir });
 
 - **Report shape** — `finalizeRegisteredFiles()` returns an `M3LFileCopyReport` containing per-file `M3LFileCopyResult` entries (size, destination, timestamp, and skip status) plus an `M3LFileCopyReportSummary` aggregate.
 - **Size-based skip** — files exceeding the configured size limit are skipped with the `M3LFileCopySkipReason` value `'size-too-large'`.
+- **Per-file skips vs. batch-fatal errors** — recoverable per-file conditions are recorded as a skipped `M3LFileCopyResult` (reasons `'size-too-large'`, `'already-exists'`, `'source-unreadable'`, `'declined-by-prompt'`) so one bad file never aborts the batch. Genuine infrastructural failures (creating the output tree, writing a file that passed all checks, or writing the manifest) and invalid copier options throw an `M3LFileCopyError` chaining the underlying `cause`.
+- **Destination containment** — a `subdir` hint (from `registerFile`) or a `manifestFileName` that is absolute or contains a `..` segment is rejected with `M3LFileCopyError`, so every write stays inside the resolved output directory.
 - **Overwrite control** — whether existing destination files are overwritten is configurable via `M3LFileCopierOptions`.
 - **Manifest JSON** — an optional manifest JSON describing the copied files can be generated, controlled through `M3LFileCopierOptions`.
 - **Large-file prompt thresholds** — interactive prompt thresholds for large files are configurable, so a run can ask the user before archiving an unusually large file.
