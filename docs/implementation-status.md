@@ -52,9 +52,9 @@ _Planned_ = implementation plan exists in `docs/plans/`.
 
 | Submodule   | Spec                 | Planned | Symbols (≈) | Status | Tests | Reviewed | Notes (runtime deps → dependency gate)                                                                                                                      |
 | ----------- | -------------------- | ------- | ----------- | ------ | ----- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| models      | `aws/models.md`      | ❌      | 5           | ✅     | ✅    | ✅       | done — 5 types (const-object+union+3 interfaces); 29 tests; 4-spoke review clean (code+conformance+type-design+security), no must-fix; dep-free, no runtime |
-| credentials | `aws/credentials.md` | ❌      | 6           | ❌     | ❌    | ❌       | **`@aws-sdk/client-sts`, `@aws-sdk/credential-providers`**                                                                                                  |
-| clients     | `aws/clients.md`     | ❌      | 4           | ❌     | ❌    | ❌       | **`@aws-sdk/*` service clients** (lazy)                                                                                                                     |
+| models      | `aws/models.md`      | ✅      | 5           | ✅     | ✅    | ✅       | done — 5 types (const-object+union+3 interfaces); 29 tests; 4-spoke review clean (code+conformance+type-design+security), no must-fix; dep-free, no runtime |
+| credentials | `aws/credentials.md` | ✅      | 6           | ❌     | ❌    | ❌       | **`@aws-sdk/client-sts`, `@aws-sdk/credential-providers`**                                                                                                  |
+| clients     | `aws/clients.md`     | ✅      | 4           | ❌     | ❌    | ❌       | **`@aws-sdk/*` service clients** (lazy)                                                                                                                     |
 
 ## Suggested implementation order
 
