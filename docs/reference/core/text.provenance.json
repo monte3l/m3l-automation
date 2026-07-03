@@ -1,0 +1,84 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/text.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/text/registry.ts",
+          "symbol": "M3LTextExtractorRegistry"
+        },
+        {
+          "file": "packages/m3l-common/src/core/text/plain-text.ts",
+          "symbol": "M3LPlainTextExtractor"
+        },
+        {
+          "file": "packages/m3l-common/src/core/text/pdf.ts",
+          "symbol": "M3LPdfTextExtractor"
+        },
+        {
+          "file": "packages/m3l-common/src/core/text/docx.ts",
+          "symbol": "M3LDocxTextExtractor"
+        },
+        {
+          "file": "packages/m3l-common/src/core/text/xlsx.ts",
+          "symbol": "M3LXlsxTextExtractor"
+        },
+        {
+          "file": "packages/m3l-common/src/core/text/email.ts",
+          "symbol": "M3LEmailTextExtractor"
+        },
+        {
+          "file": "packages/m3l-common/src/core/text/zip.ts",
+          "symbol": "M3LZipTextExtractor"
+        },
+        {
+          "file": "packages/m3l-common/src/core/text/contract.ts",
+          "symbol": "ZIP_DEPTH_SYMBOL"
+        },
+        {
+          "file": "packages/m3l-common/src/core/text/contract.ts",
+          "symbol": "M3LTextExtractor"
+        },
+        {
+          "file": "packages/m3l-common/src/core/text/contract.ts",
+          "symbol": "M3LTextExtractionOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/text/contract.ts",
+          "symbol": "M3LTextExtractionResult"
+        },
+        {
+          "file": "packages/m3l-common/src/core/text/errors.ts",
+          "symbol": "M3LTextExtractionError"
+        }
+      ],
+      "commit": "6714a2a5e167196c8ba0dcf53ab4d463bd45fc4c",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Notes & behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/text/zip.ts",
+          "symbol": "M3LZipTextExtractor"
+        },
+        {
+          "file": "packages/m3l-common/src/core/text/contract.ts",
+          "symbol": "ZIP_DEPTH_SYMBOL"
+        },
+        {
+          "file": "packages/m3l-common/src/core/text/contract.ts",
+          "symbol": "M3LTextExtractionResult"
+        },
+        {
+          "file": "packages/m3l-common/src/core/text/errors.ts",
+          "symbol": "M3LTextExtractionError"
+        }
+      ],
+      "commit": "6714a2a5e167196c8ba0dcf53ab4d463bd45fc4c",
+      "retrieved": "2026-07-03"
+    }
+  ]
+}

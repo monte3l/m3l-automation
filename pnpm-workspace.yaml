@@ -9,6 +9,7 @@ overrides:
 allowBuilds:
   unrs-resolver: false
   lefthook: true
+  better-sqlite3: true
 minimumReleaseAgeExclude:
   - eslint@10.6.0
   - knip@6.24.0

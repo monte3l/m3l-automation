@@ -242,6 +242,116 @@
     "file": "packages/m3l-common/src/core/events/M3LEventEmitterBase.ts",
     "lines": "11-13"
   },
+  "M3LListExporter": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/types.ts"
+  },
+  "M3LListExporterStreamWriter": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/types.ts"
+  },
+  "M3LListExporterEvents": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/types.ts"
+  },
+  "M3LListExporterStartedPayload": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/types.ts"
+  },
+  "M3LListExporterCompletedPayload": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/types.ts"
+  },
+  "M3LListExporterErrorPayload": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/types.ts"
+  },
+  "ColumnConflictStrategy": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/types.ts"
+  },
+  "M3LCSVListExporter": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/M3LCSVListExporter.ts"
+  },
+  "M3LCSVListExporterOptions": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/types.ts"
+  },
+  "M3LJSONListExporter": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/M3LJSONListExporter.ts"
+  },
+  "M3LJSONListExporterOptions": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/types.ts"
+  },
+  "M3LJSONListExporterFormat": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/types.ts"
+  },
+  "M3LHTMLListExporter": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/M3LHTMLListExporter.ts"
+  },
+  "M3LHTMLListExporterOptions": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/types.ts"
+  },
+  "M3LFileExporter": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/M3LFileExporter.ts"
+  },
+  "M3LFileExporterOptions": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/M3LFileExporter.ts"
+  },
+  "M3LJSONFileExporter": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/M3LJSONFileExporter.ts"
+  },
+  "M3LJSONFileExporterOptions": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/M3LJSONFileExporter.ts"
+  },
+  "M3LBinaryFileExporter": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/M3LBinaryFileExporter.ts"
+  },
+  "M3LBinaryFileExporterOptions": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/M3LBinaryFileExporter.ts"
+  },
+  "M3LFileListExporter": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/M3LFileListExporter.ts"
+  },
+  "M3LFileListExporterOptions": {
+    "submodule": "exporters",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/exporters/M3LFileListExporter.ts"
+  },
   "M3LFileImporter": {
     "submodule": "importers",
     "namespace": "core",
@@ -407,6 +517,176 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/messaging/types.ts"
   },
+  "M3LHttpClient": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts"
+  },
+  "M3LHttpClientOptions": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts"
+  },
+  "M3LHttpFailureReason": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts"
+  },
+  "M3LHttpAbortableRequest": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts"
+  },
+  "M3LHttpRequestEvent": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts"
+  },
+  "M3LHttpResponseEvent": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts"
+  },
+  "M3LHttpErrorEvent": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts"
+  },
+  "M3LHttpClientEventMap": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts"
+  },
+  "M3LHttpClientError": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClientError.ts"
+  },
+  "M3LPoller": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/M3LPoller.ts"
+  },
+  "M3LPollCheckFn": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/M3LPoller.ts"
+  },
+  "M3LPollDecision": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/M3LPoller.ts"
+  },
+  "M3LRetryRunner": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts"
+  },
+  "M3LRetryClassifier": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts"
+  },
+  "M3LRetryDecision": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts"
+  },
+  "M3LRetryAdvice": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts"
+  },
+  "M3LBackoff": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/M3LBackoff.ts"
+  },
+  "M3LPollingPolicies": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/M3LPollingPolicies.ts"
+  },
+  "combineClassifiers": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/classifiers.ts"
+  },
+  "awsThrottlingClassifier": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/classifiers.ts"
+  },
+  "awsNetworkClassifier": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/classifiers.ts"
+  },
+  "httpRetryAfterClassifier": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/classifiers.ts"
+  },
+  "M3LPrompt": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts"
+  },
+  "M3LPromptOptions": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts"
+  },
+  "M3LMultiSpinner": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts"
+  },
+  "M3LMultiSpinnerOptions": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts"
+  },
+  "M3LLoadingBar": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts"
+  },
+  "M3LLoadingBarOptions": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts"
+  },
+  "M3LPromptValidationError": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LPromptValidationError.ts"
+  },
+  "M3LPromptAdapter": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/types.ts"
+  },
+  "M3LChoice": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/types.ts"
+  },
+  "M3LChoices": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/types.ts"
+  },
+  "M3LNumberPromptOptions": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/types.ts"
+  },
+  "M3LSuggestFn": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/types.ts"
+  },
   "isDangerousKey": {
     "submodule": "security",
     "namespace": "core",
@@ -418,6 +698,121 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
     "lines": "73-75"
+  },
+  "M3LFtsIndex": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/M3LFtsIndex.ts"
+  },
+  "M3LFtsIndexConfig": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/types.ts"
+  },
+  "M3LFtsIndexDocument": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/types.ts"
+  },
+  "M3LFtsIndexSearchMode": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/types.ts"
+  },
+  "M3LFtsIndexSearchOptions": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/types.ts"
+  },
+  "M3LFtsIndexSearchResult": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/types.ts"
+  },
+  "M3LFtsIndexStats": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/types.ts"
+  },
+  "M3LSqliteDatabase": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/types.ts"
+  },
+  "M3LSqliteStatement": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/types.ts"
+  },
+  "M3LFtsIndexError": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/M3LFtsIndexError.ts"
+  },
+  "M3LFtsIndexErrorCode": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/M3LFtsIndexError.ts"
+  },
+  "M3LTextExtractorRegistry": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/registry.ts"
+  },
+  "M3LPlainTextExtractor": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/plain-text.ts"
+  },
+  "M3LPdfTextExtractor": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/pdf.ts"
+  },
+  "M3LDocxTextExtractor": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/docx.ts"
+  },
+  "M3LXlsxTextExtractor": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/xlsx.ts"
+  },
+  "M3LEmailTextExtractor": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/email.ts"
+  },
+  "M3LZipTextExtractor": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/zip.ts"
+  },
+  "ZIP_DEPTH_SYMBOL": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/contract.ts"
+  },
+  "M3LTextExtractor": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/contract.ts"
+  },
+  "M3LTextExtractionOptions": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/contract.ts"
+  },
+  "M3LTextExtractionResult": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/contract.ts"
+  },
+  "M3LTextExtractionError": {
+    "submodule": "text",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/text/errors.ts"
   },
   "safeJsonStringify": {
     "submodule": "utils",

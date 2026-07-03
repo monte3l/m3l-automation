@@ -94,10 +94,33 @@
     "namespace": "core",
     "name": "exporters",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/exporters.md",
-    "symbols": []
+    "symbols": [
+      "M3LListExporter",
+      "M3LListExporterStreamWriter",
+      "M3LListExporterEvents",
+      "M3LListExporterStartedPayload",
+      "M3LListExporterCompletedPayload",
+      "M3LListExporterErrorPayload",
+      "ColumnConflictStrategy",
+      "M3LCSVListExporter",
+      "M3LCSVListExporterOptions",
+      "M3LJSONListExporter",
+      "M3LJSONListExporterOptions",
+      "M3LJSONListExporterFormat",
+      "M3LHTMLListExporter",
+      "M3LHTMLListExporterOptions",
+      "M3LFileExporter",
+      "M3LFileExporterOptions",
+      "M3LJSONFileExporter",
+      "M3LJSONFileExporterOptions",
+      "M3LBinaryFileExporter",
+      "M3LBinaryFileExporterOptions",
+      "M3LFileListExporter",
+      "M3LFileListExporterOptions"
+    ]
   },
   {
     "namespace": "core",
@@ -184,28 +207,65 @@
     "namespace": "core",
     "name": "network",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/network.md",
-    "symbols": []
+    "symbols": [
+      "M3LHttpClient",
+      "M3LHttpClientOptions",
+      "M3LHttpFailureReason",
+      "M3LHttpAbortableRequest",
+      "M3LHttpRequestEvent",
+      "M3LHttpResponseEvent",
+      "M3LHttpErrorEvent",
+      "M3LHttpClientEventMap",
+      "M3LHttpClientError"
+    ]
   },
   {
     "namespace": "core",
     "name": "polling",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/polling.md",
-    "symbols": []
+    "symbols": [
+      "M3LPoller",
+      "M3LPollCheckFn",
+      "M3LPollDecision",
+      "M3LRetryRunner",
+      "M3LRetryClassifier",
+      "M3LRetryDecision",
+      "M3LRetryAdvice",
+      "M3LBackoff",
+      "M3LPollingPolicies",
+      "combineClassifiers",
+      "awsThrottlingClassifier",
+      "awsNetworkClassifier",
+      "httpRetryAfterClassifier"
+    ]
   },
   {
     "namespace": "core",
     "name": "prompt",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/prompt.md",
-    "symbols": []
+    "symbols": [
+      "M3LPrompt",
+      "M3LPromptOptions",
+      "M3LMultiSpinner",
+      "M3LMultiSpinnerOptions",
+      "M3LLoadingBar",
+      "M3LLoadingBarOptions",
+      "M3LPromptValidationError",
+      "M3LPromptAdapter",
+      "M3LChoice",
+      "M3LChoices",
+      "M3LNumberPromptOptions",
+      "M3LSuggestFn"
+    ]
   },
   {
     "namespace": "core",
@@ -229,19 +289,44 @@
     "namespace": "core",
     "name": "storage",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/storage.md",
-    "symbols": []
+    "symbols": [
+      "M3LFtsIndex",
+      "M3LFtsIndexConfig",
+      "M3LFtsIndexDocument",
+      "M3LFtsIndexSearchMode",
+      "M3LFtsIndexSearchOptions",
+      "M3LFtsIndexSearchResult",
+      "M3LFtsIndexStats",
+      "M3LSqliteDatabase",
+      "M3LSqliteStatement",
+      "M3LFtsIndexError",
+      "M3LFtsIndexErrorCode"
+    ]
   },
   {
     "namespace": "core",
     "name": "text",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/text.md",
-    "symbols": []
+    "symbols": [
+      "M3LTextExtractorRegistry",
+      "M3LPlainTextExtractor",
+      "M3LPdfTextExtractor",
+      "M3LDocxTextExtractor",
+      "M3LXlsxTextExtractor",
+      "M3LEmailTextExtractor",
+      "M3LZipTextExtractor",
+      "ZIP_DEPTH_SYMBOL",
+      "M3LTextExtractor",
+      "M3LTextExtractionOptions",
+      "M3LTextExtractionResult",
+      "M3LTextExtractionError"
+    ]
   },
   {
     "namespace": "core",
