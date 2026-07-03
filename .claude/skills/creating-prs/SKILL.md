@@ -66,9 +66,11 @@ git rebase origin/main
   git rebase --abort
   ```
 
-  Tell the user which files conflict, that they must resolve the rebase
-  manually (`git rebase origin/main`, fix, `git rebase --continue`), then re-run
-  this skill. Stop here.
+  Tell the user which files conflict and hand off to the
+  `/resolving-merge-conflicts` skill (it auto-resolves the derived-artifact
+  conflicts below and hands back any real `src/`/test logic), then re-run this
+  skill. If they prefer to resolve by hand: `git rebase origin/main`, fix,
+  `git rebase --continue`. Stop here.
 
   **Exception — derived-artifact conflicts resolve by regeneration, not
   hand-merge.** On a long-running branch, parallel submodules landing on `main`
@@ -102,7 +104,29 @@ tell the user which gate failed. Do **not** push a branch that fails any gate.
 pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build
 ```
 
-### 4 — Pre-push review
+### 4 — Reconcile docs
+
+Bring doc metadata in line with the commits before they go up for review.
+Invoke the `/syncing-docs` skill — it re-stamps provenance sidecars to the
+current HEAD, regenerates `docs/reference/catalog.json`, and reconciles the
+"N of 22" counts. It only mutates working-tree files; it never commits.
+
+`/syncing-docs` runs `pnpm lint:md`, which can fail — surface a `lint:md`
+failure like any other gate (fail fast, hand back) rather than pushing past it.
+
+If `/syncing-docs` produced working-tree changes, commit them as a standalone
+reconciliation commit **before** the push, so the change is in the commit
+history the PR is generated from (Steps 8–10) — this skill otherwise never
+creates commits:
+
+```bash
+git add -A
+git commit -S -m "docs: reconcile doc metadata"
+```
+
+If it produced no changes, there is nothing to commit — continue.
+
+### 5 — Pre-push review
 
 Check which files changed since main:
 
@@ -128,10 +152,10 @@ If the diff contains **only docs/automation changes** (no `src/**` files),
 dispatch `docs-consistency-reviewer` instead.
 
 After collecting spoke results: if any spoke reports a **Must-fix** finding,
-fix it and loop back through Steps 3–4 before pushing. Do not push with
+fix it and loop back through Steps 3–5 before pushing. Do not push with
 outstanding Must-fix findings.
 
-### 5 — Pre-existing code-scanning check
+### 6 — Pre-existing code-scanning check
 
 CodeQL runs via GitHub "default setup" and its `Analyze (...)` check-runs are
 required to merge (see `docs/contributing/branch-protection.md`). Before
@@ -146,14 +170,14 @@ gh api repos/{owner}/{repo}/code-scanning/alerts \
         | "\(.rule.id) \(.most_recent_instance.location.path)"'
 ```
 
-Cross-reference the paths against the changed set from Step 4
+Cross-reference the paths against the changed set from Step 5
 (`git diff main...HEAD --name-only`). If any alert path matches, list the
 matches and tell the user to triage them with the `triaging-scan-alerts` skill
 before merge. This is informational — alerts for **newly pushed** code only
 appear after the post-push scan, so `triaging-scan-alerts` is the follow-up once
 the PR is open.
 
-### 6 — Push the branch
+### 7 — Push the branch
 
 ```bash
 git push -u origin HEAD
@@ -168,19 +192,19 @@ own feature branch** but never on a shared branch (per CLAUDE.md, "never
 git push --force-with-lease
 ```
 
-### 7 — Gather commits since main
+### 8 — Gather commits since main
 
 ```bash
 git log main...HEAD --oneline
 ```
 
-### 8 — Generate the PR title
+### 9 — Generate the PR title
 
 Pick the most impactful commit (breaking > feat > fix > refactor/docs/chore).
 Format as a Conventional Commit, 70 chars max. The title alone must make the
 purpose of the branch clear to a reviewer skimming a PR list.
 
-### 9 — Generate the PR body
+### 10 — Generate the PR body
 
 Write a body that matches the quality and specificity of the examples below.
 The bullets in **Summary** should name actual symbols, files, or behaviours —
@@ -189,7 +213,7 @@ reflect the _actual files changed_, not a generic template. The **Notes** line
 must state the commit type, the resulting semver bump (or "no release"), and
 any migration instructions for breaking changes.
 
-### 10 — Submit the PR
+### 11 — Submit the PR
 
 ```bash
 gh pr create --title "..." --body "$(cat <<'EOF'
@@ -201,7 +225,7 @@ EOF
 Pass `--draft` if the branch name starts with `wip/` or if the user explicitly
 asked for a draft PR.
 
-### 11 — Confirm mergeability
+### 12 — Confirm mergeability
 
 After the PR exists, ask GitHub whether it merges cleanly:
 

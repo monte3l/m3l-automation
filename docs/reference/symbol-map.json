@@ -792,6 +792,61 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/prompt/types.ts"
   },
+  "M3LScript": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/M3LScript.ts"
+  },
+  "M3LScriptOptions": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts"
+  },
+  "M3LScriptMetadata": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts"
+  },
+  "M3LScriptLifecycleHooks": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts"
+  },
+  "M3LScriptHookContext": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts"
+  },
+  "M3LScriptConfigLoader": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/M3LScriptConfigLoader.ts"
+  },
+  "M3LScriptPresetLoader": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/M3LScriptPresetLoader.ts"
+  },
+  "M3LPresetUnknownKeysError": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/M3LPresetUnknownKeysError.ts"
+  },
+  "installProcessGuards": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/process-guards.ts"
+  },
+  "serializeError": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/process-guards.ts"
+  },
+  "setProcessGuardRequestId": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/process-guards.ts"
+  },
   "isDangerousKey": {
     "submodule": "security",
     "namespace": "core",
@@ -1164,5 +1219,30 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/utils/guards.ts",
     "lines": "427-441"
+  },
+  "M3LAWSCredentialsErrorType": {
+    "submodule": "models",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/models/index.ts"
+  },
+  "M3LAWSCredentialsErrorAnalysis": {
+    "submodule": "models",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/models/index.ts"
+  },
+  "M3LAWSRetryContext": {
+    "submodule": "models",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/models/index.ts"
+  },
+  "M3LAWSLoginResult": {
+    "submodule": "models",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/models/index.ts"
+  },
+  "M3LAWSCredentialsManagerOptions": {
+    "submodule": "models",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/models/index.ts"
   }
 }
