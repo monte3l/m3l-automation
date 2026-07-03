@@ -20,6 +20,7 @@ export * from "./config/index.js";
 export * from "./environment/index.js";
 export * from "./errors/index.js";
 export * from "./events/index.js";
+export * from "./exporters/index.js";
 export * from "./json/index.js";
 export * from "./messaging/index.js";
 export * from "./polling/index.js";
