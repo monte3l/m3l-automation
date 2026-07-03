@@ -188,10 +188,23 @@
     "namespace": "core",
     "name": "logging",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/logging.md",
-    "symbols": []
+    "symbols": [
+      "M3LLogger",
+      "M3LLogEvent",
+      "M3LLogEventCategory",
+      "M3LConsoleLoggerHandler",
+      "M3LFileLoggerHandler",
+      "M3LFileLoggerHandlerOptions",
+      "M3LJsonLoggerHandler",
+      "M3LTableFormatter",
+      "M3LTableOptions",
+      "M3LTableColumn",
+      "redactSensitiveLogText",
+      "redactSensitiveLogValue"
+    ]
   },
   {
     "namespace": "core",
