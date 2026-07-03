@@ -25,6 +25,7 @@ import type {
   M3LAWSLoginResult,
   M3LAWSRetryContext,
 } from "../src/aws/models/index.js";
+import type { M3LPrompt } from "../src/core/prompt/index.js";
 
 // =============================================================================
 // M3LAWSCredentialsErrorType — const object + derived union
@@ -209,10 +210,14 @@ describe("M3LAWSLoginResult", () => {
       profile: "default",
       success: true,
       durationMs: 1500,
+      exitCode: 0,
+      timedOut: false,
     };
     expect(result.profile).toBe("default");
     expect(result.success).toBe(true);
     expect(result.durationMs).toBe(1500);
+    expect(result.exitCode).toBe(0);
+    expect(result.timedOut).toBe(false);
   });
 
   describe("type-level contract", () => {
@@ -228,7 +233,7 @@ describe("M3LAWSLoginResult", () => {
         .toEqualTypeOf<number>();
     });
 
-    test("all three fields are required — omitting any one is rejected", () => {
+    test("profile, success, durationMs are required — omitting any one is rejected", () => {
       expectTypeOf<{
         success: boolean;
         durationMs: number;
@@ -240,6 +245,34 @@ describe("M3LAWSLoginResult", () => {
       expectTypeOf<{
         profile: string;
         success: boolean;
+      }>().not.toMatchTypeOf<M3LAWSLoginResult>();
+    });
+
+    test("exitCode is required number | null (nullable, not optional)", () => {
+      expectTypeOf<M3LAWSLoginResult>()
+        .toHaveProperty("exitCode")
+        .toEqualTypeOf<number | null>();
+
+      // Required: omitting `exitCode` entirely is rejected.
+      expectTypeOf<{
+        profile: string;
+        success: boolean;
+        durationMs: number;
+        timedOut: boolean;
+      }>().not.toMatchTypeOf<M3LAWSLoginResult>();
+    });
+
+    test("timedOut is required boolean", () => {
+      expectTypeOf<M3LAWSLoginResult>()
+        .toHaveProperty("timedOut")
+        .toEqualTypeOf<boolean>();
+
+      // Required: omitting `timedOut` entirely is rejected.
+      expectTypeOf<{
+        profile: string;
+        success: boolean;
+        durationMs: number;
+        exitCode: number | null;
       }>().not.toMatchTypeOf<M3LAWSLoginResult>();
     });
   });
@@ -289,6 +322,31 @@ describe("M3LAWSCredentialsManagerOptions", () => {
       expectTypeOf<M3LAWSCredentialsManagerOptions>()
         .toHaveProperty("interactive")
         .toEqualTypeOf<boolean | undefined>();
+    });
+
+    test("region is optional string", () => {
+      expectTypeOf<M3LAWSCredentialsManagerOptions>()
+        .toHaveProperty("region")
+        .toEqualTypeOf<string | undefined>();
+
+      // Optional: omitting `region` entirely must still satisfy the interface.
+      expectTypeOf<{
+        profile?: string;
+        loginTimeoutMs?: number;
+        interactive?: boolean;
+      }>().toMatchTypeOf<M3LAWSCredentialsManagerOptions>();
+    });
+
+    test("maxRetries is optional number", () => {
+      expectTypeOf<M3LAWSCredentialsManagerOptions>()
+        .toHaveProperty("maxRetries")
+        .toEqualTypeOf<number | undefined>();
+    });
+
+    test("prompt is optional M3LPrompt — the type-only cross-module import", () => {
+      expectTypeOf<M3LAWSCredentialsManagerOptions>()
+        .toHaveProperty("prompt")
+        .toEqualTypeOf<M3LPrompt | undefined>();
     });
   });
 });
