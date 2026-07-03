@@ -46,7 +46,7 @@
           "symbol": "M3LOutboundAttachment"
         }
       ],
-      "commit": "24946735fe6ae35566cf788ac65a08f74bccff88",
+      "commit": "59fcbd75bbe0a0f05d73b0ae9792ba8fc94fa22e",
       "retrieved": "2026-07-03"
     },
     {
@@ -73,7 +73,7 @@
           "symbol": "M3LMessageReceipt"
         }
       ],
-      "commit": "24946735fe6ae35566cf788ac65a08f74bccff88",
+      "commit": "59fcbd75bbe0a0f05d73b0ae9792ba8fc94fa22e",
       "retrieved": "2026-07-03"
     },
     {
@@ -84,7 +84,7 @@
           "symbol": "M3LMessenger"
         }
       ],
-      "commit": "24946735fe6ae35566cf788ac65a08f74bccff88",
+      "commit": "59fcbd75bbe0a0f05d73b0ae9792ba8fc94fa22e",
       "retrieved": "2026-07-03"
     },
     {
@@ -99,7 +99,7 @@
           "symbol": "M3LMessageReader"
         }
       ],
-      "commit": "24946735fe6ae35566cf788ac65a08f74bccff88",
+      "commit": "59fcbd75bbe0a0f05d73b0ae9792ba8fc94fa22e",
       "retrieved": "2026-07-03"
     }
   ]

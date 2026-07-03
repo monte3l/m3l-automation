@@ -424,9 +424,15 @@
     "namespace": "aws",
     "name": "models",
     "importPath": "@m3l-automation/m3l-common/aws",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/aws/models.md",
-    "symbols": []
+    "symbols": [
+      "M3LAWSCredentialsErrorType",
+      "M3LAWSCredentialsErrorAnalysis",
+      "M3LAWSRetryContext",
+      "M3LAWSLoginResult",
+      "M3LAWSCredentialsManagerOptions"
+    ]
   }
 ]

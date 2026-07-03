@@ -155,6 +155,14 @@ expect(() =>
 - Test observable behavior, not implementation details or private paths.
 - Do not weaken assertions to make a test pass. If the contract looks wrong, say
   so rather than codifying a bug.
+- **Don't _strengthen_ beyond the contract either.** Asserting an invariant the
+  spec never stated forces the implementer to add code to satisfy it, dragging
+  the implementation off the house style. For a const-object "enum replacement"
+  (the repo idiom: a bare `as const` object + same-named derived union, e.g.
+  `M3LConfigParameterType`, `M3LLogEventCategory`), assert the members and an
+  `Object.keys` drift guard — but **not** `Object.isFrozen`: bare `as const` is
+  compile-time only and does not runtime-freeze. Runtime freezing is a
+  project-wide convention decision for the hub, not a per-module test invention.
 - Don't implement the module and don't review code — hand both back to the hub.
 
 - Do not use real filesystem mutations in tests (`mkdtempSync`, `mkdirSync`, `writeFileSync`, `rmSync`, etc.); this is enforced by ESLint's `no-restricted-syntax` rule. The only sanctioned pattern is `vi.spyOn(fs, method)` or `vi.mock('node:fs')`.

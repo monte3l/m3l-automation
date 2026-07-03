@@ -1,0 +1,99 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "aws/models.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "M3LAWSCredentialsErrorType"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "M3LAWSCredentialsErrorAnalysis"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "M3LAWSRetryContext"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "M3LAWSLoginResult"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "M3LAWSCredentialsManagerOptions"
+        }
+      ],
+      "commit": "59fcbd75bbe0a0f05d73b0ae9792ba8fc94fa22e",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "`M3LAWSCredentialsErrorType`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "M3LAWSCredentialsErrorType"
+        }
+      ],
+      "commit": "59fcbd75bbe0a0f05d73b0ae9792ba8fc94fa22e",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "`M3LAWSCredentialsErrorAnalysis`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "M3LAWSCredentialsErrorAnalysis"
+        }
+      ],
+      "commit": "59fcbd75bbe0a0f05d73b0ae9792ba8fc94fa22e",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "`M3LAWSRetryContext`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "M3LAWSRetryContext"
+        }
+      ],
+      "commit": "59fcbd75bbe0a0f05d73b0ae9792ba8fc94fa22e",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "`M3LAWSLoginResult`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "M3LAWSLoginResult"
+        }
+      ],
+      "commit": "59fcbd75bbe0a0f05d73b0ae9792ba8fc94fa22e",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "`M3LAWSCredentialsManagerOptions`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "M3LAWSCredentialsManagerOptions"
+        }
+      ],
+      "commit": "59fcbd75bbe0a0f05d73b0ae9792ba8fc94fa22e",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Notes and behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "M3LAWSCredentialsErrorType"
+        }
+      ],
+      "commit": "59fcbd75bbe0a0f05d73b0ae9792ba8fc94fa22e",
+      "retrieved": "2026-07-03"
+    }
+  ]
+}
