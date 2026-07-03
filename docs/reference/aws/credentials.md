@@ -18,12 +18,37 @@ This manager is invoked automatically by `M3LScript.run()` (only when an `aws.pr
 Exported from `@m3l-automation/m3l-common/aws` (and re-exported under the `AWS` namespace):
 
 - `M3LAWSCredentialsManager` — the manager class.
+- `M3LAWSCredentialsError` — the typed error the manager throws for an
+  unrecoverable credential failure (or when a required optional-peer SDK is not
+  installed).
 
 The manager's construction options and the credential model types it produces
 and consumes — `M3LAWSCredentialsManagerOptions`, `M3LAWSCredentialsErrorType`,
 `M3LAWSCredentialsErrorAnalysis`, `M3LAWSRetryContext`, and `M3LAWSLoginResult` —
 are the shared AWS vocabulary; their exact names and fields are defined in
 [AWS models](./models.md).
+
+### `M3LAWSCredentialsManager` methods
+
+- `ensureValidCredentials(profile?)` — validate one profile via STS
+  `GetCallerIdentityCommand`; on a recoverable failure, re-run SSO login (after
+  an interactive confirm when enabled) and retry.
+- `ensureValidCredentialsMultiple(profiles)` — validate many profiles in three
+  phases (parallel validate → partition valid/invalid → **sequential** SSO login
+  for the invalid ones).
+- `retryWithRelogin<T>(operation, profile?)` — wrap an arbitrary AWS operation;
+  on a recoverable credential error, re-run SSO login and retry while attempts
+  remain (`M3LAWSRetryContext`).
+- `analyzeError(error)` — classify an arbitrary failure into a
+  `M3LAWSCredentialsErrorAnalysis` without acting on it.
+
+### `M3LAWSCredentialsError`
+
+Thrown when a credential failure cannot be recovered by re-authenticating, or
+when a required optional-peer AWS SDK package is not installed. It is a subclass
+of [`M3LError`](../core/errors.md) with the `code` `"ERR_AWS_CREDENTIALS"`,
+carries the classified `M3LAWSCredentialsErrorType` and the affected `profile` in
+its `context`, and chains the underlying SDK or spawn failure via `cause`.
 
 Error analysis classifies failures into the `M3LAWSCredentialsErrorType`
 categories (defined in [AWS models](./models.md)) by matching error messages
@@ -66,6 +91,8 @@ SSO login is run sequentially for invalid profiles because parallel browser wind
 - **Retry-with-relogin**: when an AWS operation fails with a credential error, the manager checks whether the error is recoverable and whether retries remain. If so, it optionally prompts the user (in interactive mode), re-runs SSO login, and then retries the operation. The `M3LAWSRetryContext` describes the current attempt.
 - **`ensureValidCredentialsMultiple()`** runs in three phases: parallel validation, separation of valid/invalid profiles, and sequential SSO login for the invalid ones.
 - **Error classification** is exposed through `M3LAWSCredentialsErrorAnalysis` (using `M3LAWSCredentialsErrorType`), letting callers reason about whether a failure can be recovered by re-authenticating.
+- **AWS SDK is an optional peer.** The manager loads `@aws-sdk/client-sts` and `@aws-sdk/credential-providers` lazily (`await import(...)`) only when a method needs them, so the library's base install stays lean and tree-shakeable. Consumers that use the credentials manager must have those packages installed; if they are missing, the manager throws `M3LAWSCredentialsError` with an actionable message and the import failure chained via `cause`.
+- **Interactive confirmation** uses [`M3LPrompt`](../core/prompt.md) (from `core/prompt`), loaded lazily. Pass a `prompt` in the options to inject your own; otherwise a default `M3LPrompt` is constructed on demand.
 
 ## See also
 
