@@ -418,10 +418,16 @@
     "namespace": "aws",
     "name": "clients",
     "importPath": "@m3l-automation/m3l-common/aws",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/aws/clients.md",
-    "symbols": []
+    "symbols": [
+      "AWSClientProvider",
+      "AWSMultiClientProvider",
+      "AWSProvider",
+      "AWS_REGION",
+      "M3LAWSClientError"
+    ]
   },
   {
     "namespace": "aws",

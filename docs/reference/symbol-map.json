@@ -1220,6 +1220,31 @@
     "file": "packages/m3l-common/src/core/utils/guards.ts",
     "lines": "427-441"
   },
+  "AWSClientProvider": {
+    "submodule": "clients",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/clients/provider.ts"
+  },
+  "AWSMultiClientProvider": {
+    "submodule": "clients",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/clients/multi-provider.ts"
+  },
+  "AWSProvider": {
+    "submodule": "clients",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/clients/aws-provider.ts"
+  },
+  "AWS_REGION": {
+    "submodule": "clients",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/clients/region.ts"
+  },
+  "M3LAWSClientError": {
+    "submodule": "clients",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/clients/error.ts"
+  },
   "M3LAWSCredentialsManager": {
     "submodule": "credentials",
     "namespace": "aws",

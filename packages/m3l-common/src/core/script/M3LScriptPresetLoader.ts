@@ -46,8 +46,8 @@ const PRESET_TOO_DEEP_CODE = "ERR_PRESET_TOO_DEEP";
  *
  * Not exported from the `script` barrel: callers observe this failure only
  * as an {@link M3LError} (optionally narrowed by `code === "ERR_PRESET_LOAD"`),
- * matching the module's convention of keeping the internal seam error
- * (`M3LAWSUnavailableError`) equally unexported.
+ * matching this file's convention of keeping preset-internal errors (see also
+ * `M3LPresetTooDeepError` below) unexported.
  *
  * @example
  * ```ts

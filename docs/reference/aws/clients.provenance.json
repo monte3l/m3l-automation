@@ -1,0 +1,88 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "aws/clients.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/clients/provider.ts",
+          "symbol": "AWSClientProvider"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/clients/multi-provider.ts",
+          "symbol": "AWSMultiClientProvider"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/clients/aws-provider.ts",
+          "symbol": "AWSProvider"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/clients/region.ts",
+          "symbol": "AWS_REGION"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/clients/error.ts",
+          "symbol": "M3LAWSClientError"
+        }
+      ],
+      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "`AWSClientProvider`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/clients/provider.ts",
+          "symbol": "AWSClientProvider"
+        }
+      ],
+      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "`AWSMultiClientProvider`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/clients/multi-provider.ts",
+          "symbol": "AWSMultiClientProvider"
+        }
+      ],
+      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "`AWSProvider`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/clients/aws-provider.ts",
+          "symbol": "AWSProvider"
+        }
+      ],
+      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "`M3LAWSClientError`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/clients/error.ts",
+          "symbol": "M3LAWSClientError"
+        }
+      ],
+      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Notes and behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/clients/provider.ts",
+          "symbol": "AWSClientProvider"
+        }
+      ],
+      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
+      "retrieved": "2026-07-03"
+    }
+  ]
+}
