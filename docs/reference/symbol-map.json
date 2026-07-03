@@ -512,6 +512,66 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/json/M3LJSONFormatDetectionError.ts"
   },
+  "M3LLogger": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/M3LLogger.ts"
+  },
+  "M3LLogEvent": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/M3LLogEvent.ts"
+  },
+  "M3LLogEventCategory": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/M3LLogEventCategory.ts"
+  },
+  "M3LConsoleLoggerHandler": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/M3LConsoleLoggerHandler.ts"
+  },
+  "M3LFileLoggerHandler": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/M3LFileLoggerHandler.ts"
+  },
+  "M3LFileLoggerHandlerOptions": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/M3LFileLoggerHandler.ts"
+  },
+  "M3LJsonLoggerHandler": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/M3LJsonLoggerHandler.ts"
+  },
+  "M3LTableFormatter": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/M3LTableFormatter.ts"
+  },
+  "M3LTableOptions": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/M3LTableFormatter.ts"
+  },
+  "M3LTableColumn": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/M3LTableFormatter.ts"
+  },
+  "redactSensitiveLogText": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/redact.ts"
+  },
+  "redactSensitiveLogValue": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/redact.ts"
+  },
   "M3LMessenger": {
     "submodule": "messaging",
     "namespace": "core",

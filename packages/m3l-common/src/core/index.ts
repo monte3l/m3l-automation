@@ -24,6 +24,7 @@ export * from "./exporters/index.js";
 export * from "./files/index.js";
 export * from "./importers/index.js";
 export * from "./json/index.js";
+export * from "./logging/index.js";
 export * from "./messaging/index.js";
 export * from "./network/index.js";
 export * from "./polling/index.js";

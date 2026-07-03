@@ -1,0 +1,1385 @@
+/**
+ * Tests for core/logging submodule.
+ *
+ * Contract source: docs/reference/core/logging.md
+ * Exports under test: M3LLogEventCategory, M3LLogEvent, M3LLogger,
+ *   M3LConsoleLoggerHandler, M3LFileLoggerHandler, M3LJsonLoggerHandler,
+ *   M3LTableFormatter, M3LTableOptions, M3LTableColumn,
+ *   redactSensitiveLogText, redactSensitiveLogValue (11 surfaced symbols).
+ *
+ * Key behavioral contracts:
+ *  - M3LLogger fans each message method out to every handler in the ordered
+ *    constructor array, in array order; a throwing handler does not block the
+ *    rest (handler error isolation).
+ *  - Each message method emits exactly one M3LLogEvent whose category matches
+ *    the method name; newline() emits a spacer event (TEXT, empty message).
+ *  - Table methods (table/simpleTable/keyValueTable) emit a single TEXT event
+ *    whose message is the pre-rendered table string.
+ *  - M3LConsoleLoggerHandler: error/fatal -> stderr, everything else ->
+ *    stdout; ANSI is suppressed when the target stream is non-TTY.
+ *  - M3LFileLoggerHandler: delegates to M3LFileListExporter, overwriting the
+ *    whole file with the accumulated event list on every write; reset() is a
+ *    documented no-op (does not clear the accumulated history).
+ *  - M3LJsonLoggerHandler: one JSON line per event; scalar fields under
+ *    `data` are promoted to the top level; spacer (newline()) events are
+ *    dropped entirely (no stdout write).
+ *  - M3LTableFormatter: per-column alignment, ANSI-aware width via
+ *    string-width, three border styles (full / border-less / compact),
+ *    default border is "full".
+ *  - redactSensitiveLogText/redactSensitiveLogValue: non-destructive,
+ *    case-insensitive sensitive-key redaction; redactSensitiveLogValue
+ *    recurses into nested objects/arrays; net-new, does not import from
+ *    `security` (DangerousKeys is an unrelated prototype-pollution guard).
+ */
+
+import { randomUUID } from "node:crypto";
+import { readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import * as path from "node:path";
+
+import {
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  expectTypeOf,
+  test,
+  vi,
+} from "vitest";
+
+import { M3LError } from "../src/core/errors/index.js";
+import { M3LFileListExporter } from "../src/core/exporters/index.js";
+import type {
+  M3LLogEvent,
+  M3LTableColumn,
+  M3LTableOptions,
+} from "../src/core/logging/index.js";
+import {
+  M3LConsoleLoggerHandler,
+  M3LFileLoggerHandler,
+  M3LJsonLoggerHandler,
+  M3LLogEventCategory,
+  M3LLogger,
+  M3LTableFormatter,
+  redactSensitiveLogText,
+  redactSensitiveLogValue,
+} from "../src/core/logging/index.js";
+
+// ---------------------------------------------------------------------------
+// Ensure isTTY properties exist as configurable own-properties before any spy
+// tries to intercept them. In non-TTY environments (CI) these properties are
+// absent on the stream objects, which causes assignment/spy setup to throw.
+// ---------------------------------------------------------------------------
+beforeAll(() => {
+  for (const stream of [process.stdout, process.stderr]) {
+    if (!Object.prototype.hasOwnProperty.call(stream, "isTTY")) {
+      Object.defineProperty(stream, "isTTY", {
+        value: false,
+        configurable: true,
+        writable: true,
+      });
+    }
+  }
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+// ---------------------------------------------------------------------------
+// Test doubles — a fake handler implementing the internal M3LLoggerHandler
+// shape structurally (handle + reset). The interface itself is internal and
+// not imported here. Mocks are given explicit function-type parameters (the
+// vitest 4 typed-mock form) so they carry the concrete `(event: M3LLogEvent)
+// => void` / `() => void` signatures instead of the bare `vi.fn()` inferred
+// `Mock<Procedure | Constructable>`, which is not structurally assignable to
+// `M3LLoggerHandler` under strict mode.
+// ---------------------------------------------------------------------------
+interface FakeHandler {
+  handle: ReturnType<typeof vi.fn<(event: M3LLogEvent) => void>>;
+  reset: ReturnType<typeof vi.fn<() => void>>;
+}
+
+function makeFakeHandler(): FakeHandler {
+  return {
+    handle: vi.fn<(event: M3LLogEvent) => void>(),
+    reset: vi.fn<() => void>(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// M3LLogEventCategory — enum shape
+// ---------------------------------------------------------------------------
+describe("M3LLogEventCategory", () => {
+  test("has the nine documented members with lowercase-name string values", () => {
+    expect(M3LLogEventCategory.TEXT).toBe("text");
+    expect(M3LLogEventCategory.STEP).toBe("step");
+    expect(M3LLogEventCategory.SUCCESS).toBe("success");
+    expect(M3LLogEventCategory.ERROR).toBe("error");
+    expect(M3LLogEventCategory.FATAL).toBe("fatal");
+    expect(M3LLogEventCategory.WARNING).toBe("warning");
+    expect(M3LLogEventCategory.HEADER).toBe("header");
+    expect(M3LLogEventCategory.INFO).toBe("info");
+    expect(M3LLogEventCategory.SECTION).toBe("section");
+  });
+
+  test("exposes exactly the nine documented member keys", () => {
+    expect(Object.keys(M3LLogEventCategory).sort()).toEqual(
+      [
+        "TEXT",
+        "STEP",
+        "SUCCESS",
+        "ERROR",
+        "FATAL",
+        "WARNING",
+        "HEADER",
+        "INFO",
+        "SECTION",
+      ].sort(),
+    );
+  });
+
+  test("type-level: each member's runtime value has its documented lowercase string-literal type", () => {
+    // M3LLogEventCategory is a `const` object (not a TS enum), so each
+    // member is a plain string VALUE — expectTypeOf runs against the value
+    // expression itself, not a namespaced member type.
+    expectTypeOf(M3LLogEventCategory.TEXT).toEqualTypeOf<"text">();
+    expectTypeOf(M3LLogEventCategory.STEP).toEqualTypeOf<"step">();
+    expectTypeOf(M3LLogEventCategory.SUCCESS).toEqualTypeOf<"success">();
+    expectTypeOf(M3LLogEventCategory.ERROR).toEqualTypeOf<"error">();
+    expectTypeOf(M3LLogEventCategory.FATAL).toEqualTypeOf<"fatal">();
+    expectTypeOf(M3LLogEventCategory.WARNING).toEqualTypeOf<"warning">();
+    expectTypeOf(M3LLogEventCategory.HEADER).toEqualTypeOf<"header">();
+    expectTypeOf(M3LLogEventCategory.INFO).toEqualTypeOf<"info">();
+    expectTypeOf(M3LLogEventCategory.SECTION).toEqualTypeOf<"section">();
+  });
+
+  test("type-level: the M3LLogEventCategory TYPE is the 9-member string literal union", () => {
+    expectTypeOf<M3LLogEventCategory>().toEqualTypeOf<
+      | "text"
+      | "step"
+      | "success"
+      | "error"
+      | "fatal"
+      | "warning"
+      | "header"
+      | "info"
+      | "section"
+    >();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LLogEvent — type-level shape
+// ---------------------------------------------------------------------------
+describe("M3LLogEvent type", () => {
+  test("has the documented readonly fields", () => {
+    expectTypeOf<M3LLogEvent>().toMatchTypeOf<{
+      readonly category: M3LLogEventCategory;
+      readonly message: string;
+      readonly data?: Record<string, unknown>;
+      readonly indent?: number;
+      readonly timestamp?: Date;
+    }>();
+  });
+
+  test("category and message are required; data, indent, timestamp are optional", () => {
+    const event: M3LLogEvent = {
+      category: M3LLogEventCategory.TEXT,
+      message: "hello",
+    };
+    expect(event.category).toBe(M3LLogEventCategory.TEXT);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LLogger — fan-out and category mapping
+// ---------------------------------------------------------------------------
+describe("M3LLogger — fan-out", () => {
+  const methodToCategory: ReadonlyArray<
+    readonly [
+      (
+        | "text"
+        | "step"
+        | "info"
+        | "success"
+        | "warning"
+        | "error"
+        | "fatal"
+        | "section"
+        | "header"
+      ),
+      M3LLogEventCategory,
+    ]
+  > = [
+    ["text", M3LLogEventCategory.TEXT],
+    ["step", M3LLogEventCategory.STEP],
+    ["info", M3LLogEventCategory.INFO],
+    ["success", M3LLogEventCategory.SUCCESS],
+    ["warning", M3LLogEventCategory.WARNING],
+    ["error", M3LLogEventCategory.ERROR],
+    ["fatal", M3LLogEventCategory.FATAL],
+    ["section", M3LLogEventCategory.SECTION],
+    ["header", M3LLogEventCategory.HEADER],
+  ];
+
+  test.each(methodToCategory)(
+    "%s(message, data) emits exactly one event with the matching category, message, data, and a stamped ISO timestamp",
+    (method, category) => {
+      const handler = makeFakeHandler();
+      const logger = new M3LLogger([handler]);
+
+      logger[method]("hello world", { rows: 3 });
+
+      expect(handler.handle).toHaveBeenCalledTimes(1);
+      const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+      expect(event.category).toBe(category);
+      expect(event.message).toBe("hello world");
+      expect(event.data).toEqual({ rows: 3 });
+      // M3LLogger stamps `timestamp: new Date()` on every emitted event.
+      expect(event.timestamp).toBeInstanceOf(Date);
+      expect(event.timestamp?.toISOString()).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    },
+  );
+
+  test("calls every handler, in constructor array order, for a single message method call", () => {
+    const callLog: string[] = [];
+    const first: FakeHandler = {
+      handle: vi.fn<(event: M3LLogEvent) => void>(() => {
+        callLog.push("first");
+      }),
+      reset: vi.fn<() => void>(),
+    };
+    const second: FakeHandler = {
+      handle: vi.fn<(event: M3LLogEvent) => void>(() => {
+        callLog.push("second");
+      }),
+      reset: vi.fn<() => void>(),
+    };
+    const logger = new M3LLogger([first, second]);
+
+    logger.info("ping");
+
+    expect(callLog).toEqual(["first", "second"]);
+    expect(first.handle).toHaveBeenCalledTimes(1);
+    expect(second.handle).toHaveBeenCalledTimes(1);
+  });
+
+  test("handler invocation order is verifiable via invocationCallOrder", () => {
+    const first = makeFakeHandler();
+    const second = makeFakeHandler();
+    const logger = new M3LLogger([first, second]);
+
+    logger.step("step one");
+
+    expect(first.handle.mock.invocationCallOrder[0]).toBeLessThan(
+      second.handle.mock.invocationCallOrder[0] as number,
+    );
+  });
+
+  test("a message call with no data omits the data field (or passes undefined)", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    logger.warning("no data here");
+
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.data).toBeUndefined();
+  });
+
+  test("newline() emits one spacer event with an empty message and TEXT category", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    logger.newline();
+
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.category).toBe(M3LLogEventCategory.TEXT);
+    expect(event.message).toBe("");
+    expect(event.timestamp?.toISOString()).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  test("handler error isolation: a throwing handler[0] does not block handler[1] from receiving the event", () => {
+    const throwing: FakeHandler = {
+      handle: vi.fn<(event: M3LLogEvent) => void>(() => {
+        throw new Error("handler blew up");
+      }),
+      reset: vi.fn<() => void>(),
+    };
+    const survivor = makeFakeHandler();
+    const logger = new M3LLogger([throwing, survivor]);
+
+    expect(() => logger.error("boom")).not.toThrow();
+
+    expect(throwing.handle).toHaveBeenCalledTimes(1);
+    expect(survivor.handle).toHaveBeenCalledTimes(1);
+    const event = survivor.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.category).toBe(M3LLogEventCategory.ERROR);
+    expect(event.message).toBe("boom");
+  });
+
+  test("an empty handler array is accepted and message calls do not throw", () => {
+    const logger = new M3LLogger([]);
+    expect(() => logger.info("nobody is listening")).not.toThrow();
+  });
+
+  test("handler error isolation: a handler throwing a non-Error value is stringified in the stderr diagnostic without crashing dispatch", () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const throwing: FakeHandler = {
+      handle: vi.fn<(event: M3LLogEvent) => void>(() => {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- intentional non-Error throw to exercise the String(cause) branch of the diagnostic
+        throw "raw string failure";
+      }),
+      reset: vi.fn<() => void>(),
+    };
+    const logger = new M3LLogger([throwing]);
+
+    expect(() => logger.error("boom")).not.toThrow();
+
+    const written = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("");
+    expect(written).toContain("raw string failure");
+  });
+
+  test("handler error isolation: a thrown Error with no stack falls back to its message in the stderr diagnostic", () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const throwing: FakeHandler = {
+      handle: vi.fn<(event: M3LLogEvent) => void>(() => {
+        const error = new Error("stackless failure");
+        // `Error.stack` is `stack?: string` — under exactOptionalPropertyTypes
+        // a direct `error.stack = undefined` assignment fails to typecheck
+        // (TS2412). Redefine the property instead, which still produces a
+        // genuinely stackless Error and keeps `cause instanceof Error` true,
+        // exercising the `cause.stack ?? cause.message` fallback.
+        Object.defineProperty(error, "stack", {
+          value: undefined,
+          configurable: true,
+        });
+        throw error;
+      }),
+      reset: vi.fn<() => void>(),
+    };
+    const logger = new M3LLogger([throwing]);
+
+    expect(() => logger.error("boom")).not.toThrow();
+
+    const written = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("");
+    expect(written).toContain("stackless failure");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LLogger — table methods
+// ---------------------------------------------------------------------------
+describe("M3LLogger — table methods", () => {
+  const rows = [
+    { profile: "prod", rows: 1200 },
+    { profile: "staging", rows: 42 },
+  ];
+
+  test("table() emits a single TEXT-category event whose message is the pre-rendered table string", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    logger.table(rows);
+
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.category).toBe(M3LLogEventCategory.TEXT);
+    expect(typeof event.message).toBe("string");
+    expect(event.message).toContain("prod");
+    expect(event.message.includes("\n")).toBe(true);
+    expect(event.timestamp?.toISOString()).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  test("simpleTable() emits a single TEXT-category event with a rendered table string", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    logger.simpleTable(rows);
+
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.category).toBe(M3LLogEventCategory.TEXT);
+    expect(event.message).toContain("staging");
+  });
+
+  test("keyValueTable() emits a single TEXT-category event rendering the record", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    logger.keyValueTable({ region: "eu-south-1", mode: "standalone" });
+
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.category).toBe(M3LLogEventCategory.TEXT);
+    expect(event.message).toContain("region");
+    expect(event.message).toContain("eu-south-1");
+  });
+
+  test("table() accepts M3LTableOptions and does not throw", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    expect(() => logger.table(rows, { border: "compact" })).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LConsoleLoggerHandler
+// ---------------------------------------------------------------------------
+describe("M3LConsoleLoggerHandler", () => {
+  test("constructs with no required arguments", () => {
+    expect(() => new M3LConsoleLoggerHandler()).not.toThrow();
+  });
+
+  test("error category writes to stderr, not stdout", () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const handler = new M3LConsoleLoggerHandler();
+
+    handler.handle({ category: M3LLogEventCategory.ERROR, message: "oops" });
+
+    expect(stderrSpy).toHaveBeenCalled();
+    expect(stdoutSpy).not.toHaveBeenCalled();
+  });
+
+  test("fatal category writes to stderr, not stdout", () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const handler = new M3LConsoleLoggerHandler();
+
+    handler.handle({ category: M3LLogEventCategory.FATAL, message: "dead" });
+
+    expect(stderrSpy).toHaveBeenCalled();
+    expect(stdoutSpy).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    M3LLogEventCategory.TEXT,
+    M3LLogEventCategory.STEP,
+    M3LLogEventCategory.SUCCESS,
+    M3LLogEventCategory.WARNING,
+    M3LLogEventCategory.HEADER,
+    M3LLogEventCategory.INFO,
+    M3LLogEventCategory.SECTION,
+  ])("%s category writes to stdout, not stderr", (category) => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const handler = new M3LConsoleLoggerHandler();
+
+    handler.handle({ category, message: "hi" });
+
+    expect(stdoutSpy).toHaveBeenCalled();
+    expect(stderrSpy).not.toHaveBeenCalled();
+  });
+
+  test("non-TTY stdout: the written string carries no ANSI escape sequence", () => {
+    Object.defineProperty(process.stdout, "isTTY", {
+      value: false,
+      configurable: true,
+    });
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const handler = new M3LConsoleLoggerHandler();
+
+    handler.handle({ category: M3LLogEventCategory.SUCCESS, message: "ok" });
+
+    const written = stdoutSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("");
+    // eslint-disable-next-line no-control-regex -- asserting the ABSENCE of an ANSI escape sequence in non-TTY output
+    expect(/\x1b\[/.test(written)).toBe(false);
+    expect(written).toContain("ok");
+  });
+
+  test("non-TTY stderr: the written string carries no ANSI escape sequence", () => {
+    Object.defineProperty(process.stderr, "isTTY", {
+      value: false,
+      configurable: true,
+    });
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const handler = new M3LConsoleLoggerHandler();
+
+    handler.handle({ category: M3LLogEventCategory.ERROR, message: "bad" });
+
+    const written = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("");
+    // eslint-disable-next-line no-control-regex -- asserting the ABSENCE of an ANSI escape sequence in non-TTY output
+    expect(/\x1b\[/.test(written)).toBe(false);
+    expect(written).toContain("bad");
+  });
+
+  test("TTY stdout: the written output still contains the message text", () => {
+    Object.defineProperty(process.stdout, "isTTY", {
+      value: true,
+      configurable: true,
+    });
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const handler = new M3LConsoleLoggerHandler();
+
+    handler.handle({
+      category: M3LLogEventCategory.SUCCESS,
+      message: "tty ok",
+    });
+
+    const written = stdoutSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("");
+    expect(written).toContain("tty ok");
+  });
+
+  test("reset() does not throw", () => {
+    const handler = new M3LConsoleLoggerHandler();
+    expect(() => {
+      handler.reset();
+    }).not.toThrow();
+  });
+
+  test.each([-3, 1.5])(
+    "regression: an out-of-range indent value (%s) does not throw and still writes the message, clamped to indent 0",
+    (indent) => {
+      const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+      const handler = new M3LConsoleLoggerHandler();
+
+      expect(() => {
+        handler.handle({
+          category: M3LLogEventCategory.INFO,
+          message: "x",
+          indent,
+        });
+      }).not.toThrow();
+
+      expect(stdoutSpy).toHaveBeenCalled();
+      const written = stdoutSpy.mock.calls
+        .map(([chunk]) => String(chunk))
+        .join("");
+      expect(written).toContain("x");
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// M3LFileLoggerHandler — real temp file, drained via vi.waitFor
+// ---------------------------------------------------------------------------
+describe("M3LFileLoggerHandler", () => {
+  let tempFileCounter = 0;
+  const tempFiles: string[] = [];
+
+  function nextTempFilePath(): string {
+    tempFileCounter += 1;
+    const filePath = path.join(
+      tmpdir(),
+      `m3l-logging-test-${tempFileCounter}-${randomUUID()}.json`,
+    );
+    tempFiles.push(filePath);
+    return filePath;
+  }
+
+  afterEach(async () => {
+    while (tempFiles.length > 0) {
+      const filePath = tempFiles.pop();
+      if (filePath === undefined) continue;
+      await rm(filePath, { force: true });
+    }
+  });
+
+  test("constructs with { filePath }", () => {
+    const filePath = nextTempFilePath();
+    expect(() => new M3LFileLoggerHandler({ filePath })).not.toThrow();
+  });
+
+  test("after emitting N events, the file eventually contains a JSON array of N events in emit order", async () => {
+    const filePath = nextTempFilePath();
+    const handler = new M3LFileLoggerHandler({ filePath });
+
+    handler.handle({ category: M3LLogEventCategory.INFO, message: "first" });
+    handler.handle({
+      category: M3LLogEventCategory.SUCCESS,
+      message: "second",
+    });
+    handler.handle({ category: M3LLogEventCategory.ERROR, message: "third" });
+
+    await vi.waitFor(async () => {
+      const raw = await readFile(filePath, "utf8");
+      const parsed = JSON.parse(raw) as unknown[];
+      expect(parsed).toHaveLength(3);
+    });
+
+    const raw = await readFile(filePath, "utf8");
+    const parsed = JSON.parse(raw) as M3LLogEvent[];
+    expect(parsed.map((event) => event.message)).toEqual([
+      "first",
+      "second",
+      "third",
+    ]);
+  });
+
+  test("reset() is a no-op: earlier events remain in the file after reset() and a further emit", async () => {
+    const filePath = nextTempFilePath();
+    const handler = new M3LFileLoggerHandler({ filePath });
+
+    handler.handle({
+      category: M3LLogEventCategory.INFO,
+      message: "before-reset",
+    });
+    await vi.waitFor(async () => {
+      const raw = await readFile(filePath, "utf8");
+      const parsed = JSON.parse(raw) as unknown[];
+      expect(parsed).toHaveLength(1);
+    });
+
+    handler.reset();
+
+    handler.handle({
+      category: M3LLogEventCategory.INFO,
+      message: "after-reset",
+    });
+    await vi.waitFor(async () => {
+      const raw = await readFile(filePath, "utf8");
+      const parsed = JSON.parse(raw) as unknown[];
+      expect(parsed).toHaveLength(2);
+    });
+
+    const raw = await readFile(filePath, "utf8");
+    const parsed = JSON.parse(raw) as M3LLogEvent[];
+    expect(parsed.map((event) => event.message)).toEqual([
+      "before-reset",
+      "after-reset",
+    ]);
+  });
+
+  test("a write failure against an unwritable path reports a diagnostic to stderr carrying the exporter's error code, never the event's own message/data", async () => {
+    const filePath = path.join(
+      tmpdir(),
+      `m3l-logging-test-nonexistent-dir-${randomUUID()}`,
+      "log.json",
+    );
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const handler = new M3LFileLoggerHandler({ filePath });
+
+    handler.handle({
+      category: M3LLogEventCategory.ERROR,
+      message: "SECRET_MESSAGE_MUST_NOT_LEAK",
+      data: { SECRET_DATA_MUST_NOT_LEAK: true },
+    });
+
+    await vi.waitFor(() => {
+      expect(stderrSpy).toHaveBeenCalled();
+    });
+
+    const written = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("");
+    expect(written).toContain("ERR_FILE_LIST_EXPORT");
+    expect(written).not.toContain("SECRET_MESSAGE_MUST_NOT_LEAK");
+    expect(written).not.toContain("SECRET_DATA_MUST_NOT_LEAK");
+  });
+
+  test("a non-M3LError export failure is stringified in the stderr diagnostic (the exporter's own error-normalization branch)", async () => {
+    // M3LFileListExporter.export() always normalizes its failures to an
+    // M3LError, so the handler's `String(cause)` fallback for a raw,
+    // non-M3LError cause can only be exercised by stubbing the collaborator's
+    // public export() method directly.
+    const exportSpy = vi
+      .spyOn(M3LFileListExporter.prototype, "export")
+      .mockRejectedValue(new Error("raw export failure"));
+    const filePath = nextTempFilePath();
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const handler = new M3LFileLoggerHandler({ filePath });
+
+    handler.handle({ category: M3LLogEventCategory.INFO, message: "x" });
+
+    await vi.waitFor(() => {
+      expect(stderrSpy).toHaveBeenCalled();
+    });
+
+    const written = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("");
+    expect(written).toContain("raw export failure");
+    exportSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LJsonLoggerHandler
+// ---------------------------------------------------------------------------
+describe("M3LJsonLoggerHandler", () => {
+  test("constructs with no required arguments", () => {
+    expect(() => new M3LJsonLoggerHandler()).not.toThrow();
+  });
+
+  test("emits exactly one newline-terminated line of valid JSON per event", () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const handler = new M3LJsonLoggerHandler();
+
+    handler.handle({ category: M3LLogEventCategory.INFO, message: "hi" });
+
+    expect(stdoutSpy).toHaveBeenCalledTimes(1);
+    const written = String(stdoutSpy.mock.calls[0]?.[0]);
+    expect(written.endsWith("\n")).toBe(true);
+    const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
+    expect(parsed.category).toBe(M3LLogEventCategory.INFO);
+    expect(parsed.message).toBe("hi");
+  });
+
+  test("promotes scalar fields from data to the top level of the JSON payload", () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const handler = new M3LJsonLoggerHandler();
+
+    handler.handle({
+      category: M3LLogEventCategory.SUCCESS,
+      message: "imported",
+      data: { rows: 1200 },
+    });
+
+    const written = String(stdoutSpy.mock.calls[0]?.[0]);
+    const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
+    expect(parsed.rows).toBe(1200);
+  });
+
+  test.each([
+    ["string", "eu-south-1"],
+    ["number", 7],
+    ["boolean", true],
+    ["null", null],
+  ])(
+    "promotes a scalar %s data field to the top level unchanged",
+    (_kind, value) => {
+      const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+      const handler = new M3LJsonLoggerHandler();
+
+      handler.handle({
+        category: M3LLogEventCategory.INFO,
+        message: "scalar",
+        data: { field: value },
+      });
+
+      const written = String(stdoutSpy.mock.calls[0]?.[0]);
+      const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
+      expect(parsed.field).toEqual(value);
+    },
+  );
+
+  test("drops spacer (newline) events entirely — no stdout write occurs", () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const handler = new M3LJsonLoggerHandler();
+
+    handler.handle({ category: M3LLogEventCategory.TEXT, message: "" });
+
+    expect(stdoutSpy).not.toHaveBeenCalled();
+  });
+
+  test("an event with indent set carries a top-level indent field in the JSON payload", () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const handler = new M3LJsonLoggerHandler();
+
+    handler.handle({
+      category: M3LLogEventCategory.INFO,
+      message: "nested step",
+      indent: 2,
+    });
+
+    const written = String(stdoutSpy.mock.calls[0]?.[0]);
+    const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
+    expect(parsed.indent).toBe(2);
+  });
+
+  test("an event with timestamp set carries the ISO string at the top level of the JSON payload", () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const handler = new M3LJsonLoggerHandler();
+    const timestamp = new Date("2020-01-01T00:00:00.000Z");
+
+    handler.handle({
+      category: M3LLogEventCategory.INFO,
+      message: "timestamped",
+      timestamp,
+    });
+
+    const written = String(stdoutSpy.mock.calls[0]?.[0]);
+    const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
+    expect(parsed.timestamp).toBe("2020-01-01T00:00:00.000Z");
+  });
+
+  test("a non-scalar data field stays nested under a top-level data object alongside promoted scalars", () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const handler = new M3LJsonLoggerHandler();
+
+    handler.handle({
+      category: M3LLogEventCategory.SUCCESS,
+      message: "imported",
+      data: { rows: 1200, meta: { a: 1 } },
+    });
+
+    const written = String(stdoutSpy.mock.calls[0]?.[0]);
+    const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
+    expect(parsed.rows).toBe(1200);
+    expect(parsed.data).toEqual({ meta: { a: 1 } });
+  });
+
+  test("reset() does not throw", () => {
+    const handler = new M3LJsonLoggerHandler();
+    expect(() => {
+      handler.reset();
+    }).not.toThrow();
+  });
+
+  test("regression (M1): a data field colliding with a reserved envelope key does not clobber the envelope", () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const handler = new M3LJsonLoggerHandler();
+
+    handler.handle({
+      category: M3LLogEventCategory.SUCCESS,
+      message: "ok",
+      data: { category: "SPOOFED", message: "pwned", rows: 1200 },
+    });
+
+    const written = String(stdoutSpy.mock.calls[0]?.[0]);
+    const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
+    expect(parsed.category).toBe(M3LLogEventCategory.SUCCESS);
+    expect(parsed.message).toBe("ok");
+    // The colliding keys are routed under the nested `data` object instead
+    // of promoted, while the non-colliding scalar `rows` is still promoted.
+    expect(parsed.rows).toBe(1200);
+    expect(parsed.data).toEqual({ category: "SPOOFED", message: "pwned" });
+  });
+
+  test("regression (M2): a __proto__ key in data never reaches the global Object.prototype and is not emitted", () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const handler = new M3LJsonLoggerHandler();
+    const data = JSON.parse('{"__proto__":{"polluted":true},"ok":1}') as Record<
+      string,
+      unknown
+    >;
+
+    handler.handle({
+      category: M3LLogEventCategory.INFO,
+      message: "x",
+      data,
+    });
+
+    const probe = {} as Record<string, unknown>;
+    expect(probe.polluted).toBeUndefined();
+    const written = String(stdoutSpy.mock.calls[0]?.[0]);
+    const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
+    expect(parsed.ok).toBe(1);
+    expect(Object.prototype.hasOwnProperty.call(parsed, "__proto__")).toBe(
+      false,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LTableFormatter
+// ---------------------------------------------------------------------------
+describe("M3LTableFormatter", () => {
+  test("constructs with no required arguments", () => {
+    expect(() => new M3LTableFormatter()).not.toThrow();
+  });
+
+  test("right-aligned numeric column pads shorter values on the left", () => {
+    const formatter = new M3LTableFormatter();
+    const columns: readonly M3LTableColumn[] = [
+      { key: "rows", align: "right" },
+    ];
+
+    const output = formatter.format([{ rows: 1 }, { rows: 1200 }], {
+      columns,
+      border: "border-less",
+    });
+    const lines = output.split("\n").filter((line) => line.trim().length > 0);
+    // The short value's row line must contain leading padding before the
+    // digit so that it right-aligns against the widest value ("1200").
+    const shortValueLine = lines.find((line) => /(?<!\d)1(?!\d)/.test(line));
+    expect(shortValueLine).toBeDefined();
+    expect(shortValueLine?.trimEnd()).not.toBe(shortValueLine?.trim());
+  });
+
+  test("ANSI-aware width: a colored cell and a plain cell of equal visible width produce equal column layout", () => {
+    const formatter = new M3LTableFormatter();
+    const columns: readonly M3LTableColumn[] = [{ key: "label" }];
+    const colored = "[31mABC[39m";
+
+    const coloredOutput = formatter.format(
+      [{ label: colored }, { label: "wide-plain-label" }],
+      { columns, border: "border-less" },
+    );
+    const plainOutput = formatter.format(
+      [{ label: "ABC" }, { label: "wide-plain-label" }],
+      { columns, border: "border-less" },
+    );
+
+    const coloredLines = coloredOutput
+      .split("\n")
+      .filter((line) => line.trim().length > 0);
+    const plainLines = plainOutput
+      .split("\n")
+      .filter((line) => line.trim().length > 0);
+    expect(coloredLines).toHaveLength(plainLines.length);
+    // The overall column width (line length after stripping the colored
+    // cell's own ANSI codes) must match the plain-text layout, proving the
+    // formatter measured visible width, not raw string length.
+    const coloredLineLengths = coloredLines.map(
+      // eslint-disable-next-line no-control-regex -- stripping ANSI escapes to compare visible column widths
+      (line) => line.replace(/\x1b\[[0-9;]*m/g, "").length,
+    );
+    const plainLineLengths = plainLines.map((line) => line.length);
+    expect(coloredLineLengths).toEqual(plainLineLengths);
+  });
+
+  test("border: 'full' output contains the documented box-drawing characters", () => {
+    const formatter = new M3LTableFormatter();
+
+    const output = formatter.format([{ id: "1" }], { border: "full" });
+
+    for (const char of ["┌", "─", "│", "└", "┐", "┘"]) {
+      expect(output).toContain(char);
+    }
+  });
+
+  test("border: 'border-less' output does not contain the full-border box characters", () => {
+    const formatter = new M3LTableFormatter();
+
+    const output = formatter.format([{ id: "1" }], { border: "border-less" });
+
+    expect(output).not.toContain("┌");
+    expect(output).not.toContain("│");
+  });
+
+  test("border: 'compact' output has no border characters at all", () => {
+    const formatter = new M3LTableFormatter();
+
+    const output = formatter.format([{ id: "1" }], { border: "compact" });
+
+    for (const char of ["┌", "─", "│", "├", "┤", "└", "┐", "┘"]) {
+      expect(output).not.toContain(char);
+    }
+  });
+
+  test("omitting border defaults to 'full' rendering", () => {
+    const formatter = new M3LTableFormatter();
+
+    const withoutOption = formatter.format([{ id: "1" }]);
+    const withFullOption = formatter.format([{ id: "1" }], { border: "full" });
+
+    expect(withoutOption).toContain("┌");
+    expect(withoutOption).toBe(withFullOption);
+  });
+
+  test("column header overrides the raw key in the rendered output", () => {
+    const formatter = new M3LTableFormatter();
+    const columns: readonly M3LTableColumn[] = [
+      { key: "rows", header: "Row Count" },
+    ];
+
+    const output = formatter.format([{ rows: 5 }], { columns });
+
+    expect(output).toContain("Row Count");
+  });
+
+  test("center alignment pads a short cell with whitespace on both sides", () => {
+    const formatter = new M3LTableFormatter();
+    const columns: readonly M3LTableColumn[] = [
+      { key: "a", header: "HEADER", align: "center" },
+    ];
+
+    const output = formatter.format([{ a: "x" }], {
+      columns,
+      border: "border-less",
+    });
+
+    const lines = output.split("\n");
+    const cellLine = lines.find((line) => line.includes("x"));
+    expect(cellLine).toBeDefined();
+    const line = cellLine ?? "";
+    const leadingSpaces = line.length - line.trimStart().length;
+    const trailingSpaces = line.length - line.trimEnd().length;
+    // A centered short cell inside a header-driven wider column ("HEADER" is
+    // wider than "x") has non-zero padding on BOTH sides — left/right
+    // alignment would produce zero padding on one side instead.
+    expect(leadingSpaces).toBeGreaterThan(0);
+    expect(trailingSpaces).toBeGreaterThan(0);
+  });
+
+  test("a missing declared column key renders an empty cell, not '[object Object]' and without throwing", () => {
+    const formatter = new M3LTableFormatter();
+    const columns: readonly M3LTableColumn[] = [{ key: "missing" }];
+
+    let output = "";
+    expect(() => {
+      output = formatter.format([{ present: "x" }], { columns });
+    }).not.toThrow();
+    expect(output).not.toContain("[object Object]");
+  });
+
+  test("a null cell value renders as an empty cell, not '[object Object]'", () => {
+    const formatter = new M3LTableFormatter();
+
+    const output = formatter.format([{ a: null }]);
+
+    expect(output).not.toContain("[object Object]");
+    expect(output).not.toContain("null");
+  });
+
+  test("a boolean cell value renders as 'true' / 'false' text", () => {
+    const formatter = new M3LTableFormatter();
+
+    const output = formatter.format([{ ok: true }, { ok: false }]);
+
+    expect(output).toContain("true");
+    expect(output).toContain("false");
+  });
+
+  test("an object cell value renders as JSON.stringify output, not '[object Object]'", () => {
+    const formatter = new M3LTableFormatter();
+
+    const output = formatter.format([{ meta: { n: 1 } }]);
+
+    expect(output).toContain(JSON.stringify({ n: 1 }));
+    expect(output).not.toContain("[object Object]");
+  });
+
+  test("empty rows with no declared columns renders a string without throwing", () => {
+    const formatter = new M3LTableFormatter();
+
+    let output = "";
+    expect(() => {
+      output = formatter.format([]);
+    }).not.toThrow();
+    expect(typeof output).toBe("string");
+  });
+
+  test("an invalid border value throws an M3LError with code ERR_LOG_TABLE_BORDER", () => {
+    const formatter = new M3LTableFormatter();
+    const invalidBorder = "nope" as unknown as NonNullable<
+      M3LTableOptions["border"]
+    >;
+
+    let thrown: unknown;
+    try {
+      formatter.format([{ a: 1 }], { border: invalidBorder });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_LOG_TABLE_BORDER");
+  });
+
+  test("an invalid align value throws an M3LError with code ERR_LOG_TABLE_ALIGN", () => {
+    const formatter = new M3LTableFormatter();
+    const invalidAlign = "nope" as unknown as NonNullable<
+      M3LTableColumn["align"]
+    >;
+    const columns: readonly M3LTableColumn[] = [
+      { key: "a", align: invalidAlign },
+    ];
+
+    let thrown: unknown;
+    try {
+      formatter.format([{ a: 1 }], { columns });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_LOG_TABLE_ALIGN");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LTableOptions / M3LTableColumn — type-level contract
+// ---------------------------------------------------------------------------
+describe("M3LTableOptions / M3LTableColumn types", () => {
+  test("M3LTableOptions['border'] is the documented union or undefined", () => {
+    expectTypeOf<M3LTableOptions["border"]>().toEqualTypeOf<
+      "full" | "border-less" | "compact" | undefined
+    >();
+  });
+
+  test("M3LTableOptions['columns'] is a readonly array of M3LTableColumn or undefined", () => {
+    expectTypeOf<M3LTableOptions["columns"]>().toEqualTypeOf<
+      readonly M3LTableColumn[] | undefined
+    >();
+  });
+
+  test("M3LTableColumn['align'] is the documented union or undefined", () => {
+    expectTypeOf<M3LTableColumn["align"]>().toEqualTypeOf<
+      "left" | "right" | "center" | undefined
+    >();
+  });
+
+  test("M3LTableColumn['key'] is required and typed string", () => {
+    expectTypeOf<M3LTableColumn>()
+      .toHaveProperty("key")
+      .toEqualTypeOf<string>();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// redactSensitiveLogText
+// ---------------------------------------------------------------------------
+describe("redactSensitiveLogText", () => {
+  test("redacts a key=value sensitive pair while leaving non-sensitive pairs intact", () => {
+    const result = redactSensitiveLogText("token=abc123 user=alice");
+
+    expect(result).toContain("[REDACTED]");
+    expect(result).not.toContain("abc123");
+    expect(result).toContain("user=alice");
+  });
+
+  test("redacts a 'key: value' sensitive pair", () => {
+    const result = redactSensitiveLogText(
+      "password: hunter2, region: eu-west-1",
+    );
+
+    expect(result).toContain("[REDACTED]");
+    expect(result).not.toContain("hunter2");
+    expect(result).toContain("region: eu-west-1");
+  });
+
+  test("redacts a 'key=\"value\"' sensitive pair", () => {
+    const result = redactSensitiveLogText(
+      'secret="topvalue" region="eu-west-1"',
+    );
+
+    expect(result).toContain("[REDACTED]");
+    expect(result).not.toContain("topvalue");
+    expect(result).toContain('region="eu-west-1"');
+  });
+
+  test.each([
+    "token",
+    "apiKey",
+    "api_key",
+    "password",
+    "passwd",
+    "pwd",
+    "secret",
+    "authorization",
+    "auth",
+    "accessKey",
+    "secretKey",
+    "sessionToken",
+    "credential",
+    "credentials",
+    "privateKey",
+  ])("redacts the sensitive key '%s' case-insensitively", (key) => {
+    const upper = key.toUpperCase();
+    const result = redactSensitiveLogText(`${upper}=leaked-value`);
+
+    expect(result).toContain("[REDACTED]");
+    expect(result).not.toContain("leaked-value");
+  });
+
+  test.each(["user", "region", "rows"])(
+    "leaves the non-sensitive key '%s' intact",
+    (key) => {
+      const result = redactSensitiveLogText(`${key}=some-value`);
+
+      expect(result).toContain(`${key}=some-value`);
+    },
+  );
+
+  test("a string with no sensitive key is returned unchanged", () => {
+    const input = "region=eu-south-1 rows=1200";
+    expect(redactSensitiveLogText(input)).toBe(input);
+  });
+
+  test("type-level: param and return are both string", () => {
+    expectTypeOf(redactSensitiveLogText).parameter(0).toBeString();
+    expectTypeOf(redactSensitiveLogText).returns.toBeString();
+  });
+
+  test("regression (S1): token=value redacts the value only, leaving an adjacent unrelated pair intact", () => {
+    const result = redactSensitiveLogText("token=abc123 user=alice");
+
+    expect(result).toContain("[REDACTED]");
+    expect(result).not.toContain("abc123");
+    expect(result).toContain("user=alice");
+  });
+
+  test("regression (S1): an Authorization: Bearer <token> header masks the token, not just the scheme word", () => {
+    const result = redactSensitiveLogText("Authorization: Bearer abc123");
+
+    expect(result).not.toContain("abc123");
+    expect(result).toContain("[REDACTED]");
+  });
+
+  test.each(["X-Api-Key: secret", "api-key=secret"])(
+    "regression (S1): a hyphenated key form '%s' masks the value",
+    (text) => {
+      const result = redactSensitiveLogText(text);
+
+      expect(result).not.toContain("secret");
+      expect(result).toContain("[REDACTED]");
+    },
+  );
+
+  test("regression (S1): a JSON-embedded sensitive pair is masked while a sibling pair is preserved", () => {
+    const result = redactSensitiveLogText('{"token":"abc","user":"alice"}');
+
+    expect(result).not.toContain("abc");
+    expect(result).toContain("alice");
+  });
+
+  test("regression (S1): 'author' is not a false-positive match for the sensitive key 'auth'", () => {
+    const input = "author=alice";
+    expect(redactSensitiveLogText(input)).toBe(input);
+  });
+
+  test("regression (N1): a sensitive key=value embedded as a URL query parameter is redacted, leaving the non-secret prefix intact", () => {
+    const result = redactSensitiveLogText("url=https://x.com/?token=secret");
+
+    expect(result).not.toContain("secret");
+    expect(result).toContain("[REDACTED]");
+    expect(result).toContain("url=https://x.com/");
+  });
+
+  test("regression (N1): a sensitive key=value embedded in a Cookie header value is redacted, leaving a sibling directive intact", () => {
+    const result = redactSensitiveLogText("Cookie: token=abc; path=/");
+
+    expect(result).not.toContain("abc");
+    expect(result).toContain("[REDACTED]");
+    expect(result).toContain("path=/");
+  });
+
+  test("regression (N1): a sensitive query-string parameter deep inside a URL is redacted, leaving a sibling non-secret parameter intact", () => {
+    const result = redactSensitiveLogText(
+      "https://api.example.com/v1?apiKey=XYZ&user=bob",
+    );
+
+    expect(result).not.toContain("XYZ");
+    expect(result).toContain("user=bob");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// redactSensitiveLogValue
+// ---------------------------------------------------------------------------
+describe("redactSensitiveLogValue", () => {
+  test("redacts a sensitive top-level key's value and preserves the key", () => {
+    const input = { apiKey: "secret" };
+
+    const result = redactSensitiveLogValue(input) as Record<string, unknown>;
+
+    expect(result.apiKey).toBe("[REDACTED]");
+  });
+
+  test("returns a new object — the original input is not mutated", () => {
+    const input = { apiKey: "secret" };
+
+    redactSensitiveLogValue(input);
+
+    expect(input.apiKey).toBe("secret");
+  });
+
+  test.each([
+    "token",
+    "apiKey",
+    "api_key",
+    "password",
+    "passwd",
+    "pwd",
+    "secret",
+    "authorization",
+    "auth",
+    "accessKey",
+    "secretKey",
+    "sessionToken",
+    "credential",
+    "credentials",
+    "privateKey",
+  ])(
+    "redacts the sensitive key '%s' (case-insensitive) in an object value",
+    (key) => {
+      const input: Record<string, unknown> = { [key.toUpperCase()]: "leaked" };
+
+      const result = redactSensitiveLogValue(input) as Record<string, unknown>;
+
+      expect(result[key.toUpperCase()]).toBe("[REDACTED]");
+    },
+  );
+
+  test.each(["user", "region", "rows"])(
+    "leaves the non-sensitive key '%s' untouched",
+    (key) => {
+      const input: Record<string, unknown> = { [key]: "kept-value" };
+
+      const result = redactSensitiveLogValue(input) as Record<string, unknown>;
+
+      expect(result[key]).toBe("kept-value");
+    },
+  );
+
+  test("recurses into nested objects, redacting sensitive keys at any depth non-destructively", () => {
+    const input = {
+      outer: { password: "p" },
+      list: [{ token: "t" }],
+    };
+
+    const result = redactSensitiveLogValue(input) as {
+      outer: { password: string };
+      list: { token: string }[];
+    };
+
+    expect(result.outer.password).toBe("[REDACTED]");
+    expect(result.list[0]?.token).toBe("[REDACTED]");
+    expect(input.outer.password).toBe("p");
+    expect(input.list[0]?.token).toBe("t");
+  });
+
+  test("a non-sensitive leaf within a nested structure is left untouched", () => {
+    const input = { outer: { region: "eu-south-1" } };
+
+    const result = redactSensitiveLogValue(input) as {
+      outer: { region: string };
+    };
+
+    expect(result.outer.region).toBe("eu-south-1");
+  });
+
+  test("a bare non-sensitive scalar string passes through unchanged", () => {
+    expect(redactSensitiveLogValue("just a plain string")).toBe(
+      "just a plain string",
+    );
+  });
+
+  test("a bare number scalar passes through unchanged", () => {
+    expect(redactSensitiveLogValue(42)).toBe(42);
+  });
+
+  test("a bare string containing an embedded 'token=xyz' pattern is redacted via the text path", () => {
+    const result = redactSensitiveLogValue(
+      "prefix token=xyz123 suffix",
+    ) as string;
+
+    expect(result).toContain("[REDACTED]");
+    expect(result).not.toContain("xyz123");
+  });
+
+  test("type-level: param and return are both unknown", () => {
+    expectTypeOf(redactSensitiveLogValue).parameter(0).toBeUnknown();
+    expectTypeOf(redactSensitiveLogValue).returns.toBeUnknown();
+  });
+
+  test("regression (M3): a __proto__ key never pollutes the global Object.prototype and the sensitive sibling is still redacted", () => {
+    const input = JSON.parse(
+      '{"__proto__":{"polluted":true},"apiKey":"secret"}',
+    ) as Record<string, unknown>;
+
+    const out = redactSensitiveLogValue(input) as Record<string, unknown>;
+
+    const probe = {} as Record<string, unknown>;
+    expect(probe.polluted).toBeUndefined();
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+    expect(out.apiKey).toBe("[REDACTED]");
+    // Non-destructive: the original input's apiKey is untouched.
+    expect(input.apiKey).toBe("secret");
+  });
+});
