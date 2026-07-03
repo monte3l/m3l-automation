@@ -20,16 +20,17 @@ import { Core } from "@m3l-automation/m3l-common";
 
 Exported symbols:
 
-- `M3LFileExporter`
 - `M3LListExporter` — the `M3LListExporter<TItem>` contract
-- Stream writer types — the `M3LListExporterStreamWriter<TItem>` returned by `exportStream()`
-- Event types — the `export:*` event map
-- `M3LCSVListExporter` (plus its option and event types)
-- `M3LJSONListExporter` (plus its option and event types)
-- `M3LJSONFileExporter`
-- `M3LHTMLListExporter` (plus its option and event types)
-- `M3LBinaryFileExporter`
-- `M3LFileListExporter`
+- `M3LListExporterStreamWriter` — the `M3LListExporterStreamWriter<TItem>` returned by `exportStream()`
+- `M3LListExporterEvents` — the `export:*` event map shared by every list exporter, plus its payload types `M3LListExporterStartedPayload`, `M3LListExporterCompletedPayload`, and `M3LListExporterErrorPayload`
+- `ColumnConflictStrategy` — `'keep-generated' | 'keep-original'`, used by `M3LCSVListExporter`
+- `M3LCSVListExporter` (plus `M3LCSVListExporterOptions`)
+- `M3LJSONListExporter` (plus `M3LJSONListExporterOptions` and `M3LJSONListExporterFormat`, the `'array' | 'jsonl'` union backing `options.format`)
+- `M3LHTMLListExporter` (plus `M3LHTMLListExporterOptions`)
+- `M3LFileExporter` (plus `M3LFileExporterOptions`)
+- `M3LJSONFileExporter` (plus `M3LJSONFileExporterOptions`)
+- `M3LBinaryFileExporter` (plus `M3LBinaryFileExporterOptions`)
+- `M3LFileListExporter` (plus `M3LFileListExporterOptions`)
 
 ### The `M3LListExporter<TItem>` contract
 

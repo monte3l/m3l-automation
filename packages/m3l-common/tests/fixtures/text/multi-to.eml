@@ -1,0 +1,7 @@
+From: alice@example.com
+To: bob@example.com
+To: carol@example.com
+Subject: Multi Recipient Lines
+Content-Type: text/plain; charset=utf-8
+
+Body for multiple recipient lines.

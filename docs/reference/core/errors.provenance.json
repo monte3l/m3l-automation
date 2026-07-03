@@ -21,8 +21,8 @@
           "lines": "40-48"
         }
       ],
-      "commit": "1b260a15b9fefaa6ea30b46b6714fb17ccd4c3f8",
-      "retrieved": "2026-07-02"
+      "commit": "6714a2a5e167196c8ba0dcf53ab4d463bd45fc4c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "`M3LError`",
@@ -38,8 +38,8 @@
           "lines": "25-38"
         }
       ],
-      "commit": "1b260a15b9fefaa6ea30b46b6714fb17ccd4c3f8",
-      "retrieved": "2026-07-02"
+      "commit": "6714a2a5e167196c8ba0dcf53ab4d463bd45fc4c",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "`M3LResult<T, E>`",
@@ -70,8 +70,8 @@
           "lines": "97-109"
         }
       ],
-      "commit": "1b260a15b9fefaa6ea30b46b6714fb17ccd4c3f8",
-      "retrieved": "2026-07-02"
+      "commit": "6714a2a5e167196c8ba0dcf53ab4d463bd45fc4c",
+      "retrieved": "2026-07-03"
     }
   ]
 }

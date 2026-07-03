@@ -1,0 +1,6 @@
+From: alice@example.com
+To: bob@example.com
+Subject: Test Email Subject
+Content-Type: text/plain; charset=utf-8
+
+This is the plain text body of the email.

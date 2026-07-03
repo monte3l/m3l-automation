@@ -18,6 +18,12 @@ paths:
 - **Named exports only.** No default exports (tree-shakeable, refactor-safe).
 - **Export each type next to the value it describes.**
 - **Prefer `readonly` / `const`.** Create new objects instead of mutating inputs.
+- **Don't pass `undefined` to an optional property.** Under
+  `exactOptionalPropertyTypes`, an optional target field (`default?: number`)
+  rejects an explicit `undefined` (TS2379). When forwarding optional caller
+  options into a strict target (e.g. a third-party adapter config), **omit the
+  key** with a conditional spread — `...(v !== undefined ? { k: v } : {})` —
+  never `{ k: someValue | undefined }`.
 - **Typed error hierarchy.** Throw subclasses of `M3LError`; never bare strings.
   Chain underlying failures with the `cause` option. Subclasses override `code`
   as a `readonly` **literal** (e.g. `M3LEnvironmentDetectionError`,
@@ -25,11 +31,28 @@ paths:
 - **Never export error-constructor options interfaces.** Callers _catch_
   errors, they don't construct them — the options shape is an implementation
   detail of the constructor, not public API.
+- **Discriminate a swallow by `code`, not class.** When one `M3LError` subclass
+  carries several `code`s, a `catch (e) { if (e instanceof X) skip }` drops the
+  very failures the codes distinguish (a corrupt input vs. a merely-unsupported
+  one). Narrow the skip to the specific benign `code` and **re-throw** the rest.
 - **Filesystem error handling.** Ignore only `ENOENT` (denylist via a small
   `Set`) and **re-throw** `EACCES`/`EPERM`; scope any silent-skip to _parse
   failures only_, never a whole `catch`.
+- **Fail loud on caller/config errors; stay lenient only on external data.**
+  Validate caller- and config-supplied input at the public boundary and throw an
+  `M3LError` subclass on violation — never silently coerce or skip it. Reserve
+  tolerant handling (skip / default / warn) for _external_ data you don't control
+  (file contents, network payloads). Don't blur the two: a malformed caller
+  argument is a bug to surface, malformed external data is a condition to absorb.
 - **`interface` for shapes callers implement/extend; `type` for unions,
   intersections, mapped/branded types.**
+- **Constrain a row-shaped generic with `extends object`, not
+  `Record<string, unknown>`.** If an impl treats `TItem` as a record (e.g. an
+  exporter that reads its keys), bound the generic so a primitive instantiation
+  (`Exporter<number>`) fails to compile instead of silently producing empty
+  output. Use `extends object`: `Record<string, unknown>` rejects declared
+  `interface` item types (no implicit index signature), a worse DX regression than
+  the internal cast it removes.
 - **Exhaustive `switch`** over finite sets; handle every case and fail on the
   unexpected.
 - **TSDoc on every exported symbol**, with an `@example` on primary entry points.
