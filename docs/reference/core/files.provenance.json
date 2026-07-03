@@ -1,0 +1,90 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/files.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
+          "symbol": "M3LFileCopier"
+        },
+        {
+          "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
+          "symbol": "M3L_FILE_COPIER_DEFAULTS"
+        },
+        {
+          "file": "packages/m3l-common/src/core/files/getDefaultSubdirForPathType.ts",
+          "symbol": "getDefaultSubdirForPathType"
+        },
+        {
+          "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
+          "symbol": "M3LFileCopierOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
+          "symbol": "M3LFileCopyResult"
+        },
+        {
+          "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
+          "symbol": "M3LFileCopySkipReason"
+        },
+        {
+          "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
+          "symbol": "M3LFileCopyReport"
+        },
+        {
+          "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
+          "symbol": "M3LFileCopyReportSummary"
+        },
+        {
+          "file": "packages/m3l-common/src/core/files/M3LFileCopyError.ts",
+          "symbol": "M3LFileCopyError"
+        }
+      ],
+      "commit": "bebf9a52c86f4d0395689903f8e727a2230325f8",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Methods",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
+          "symbol": "M3LFileCopier"
+        }
+      ],
+      "commit": "bebf9a52c86f4d0395689903f8e727a2230325f8",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Default subdirectory for a path type",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/files/getDefaultSubdirForPathType.ts",
+          "symbol": "getDefaultSubdirForPathType"
+        }
+      ],
+      "commit": "bebf9a52c86f4d0395689903f8e727a2230325f8",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Notes and behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
+          "symbol": "M3LFileCopier"
+        },
+        {
+          "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
+          "symbol": "M3L_FILE_COPIER_DEFAULTS"
+        },
+        {
+          "file": "packages/m3l-common/src/core/files/M3LFileCopyError.ts",
+          "symbol": "M3LFileCopyError"
+        }
+      ],
+      "commit": "bebf9a52c86f4d0395689903f8e727a2230325f8",
+      "retrieved": "2026-07-03"
+    }
+  ]
+}
