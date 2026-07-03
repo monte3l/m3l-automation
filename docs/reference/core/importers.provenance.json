@@ -58,7 +58,7 @@
           "symbol": "M3LTextFileImporter"
         }
       ],
-      "commit": "24946735fe6ae35566cf788ac65a08f74bccff88",
+      "commit": "497334d5fc7334389423259723baa79ec2b3fad1",
       "retrieved": "2026-07-03"
     },
     {
@@ -85,7 +85,7 @@
           "symbol": "M3LListImporterEvents"
         }
       ],
-      "commit": "24946735fe6ae35566cf788ac65a08f74bccff88",
+      "commit": "497334d5fc7334389423259723baa79ec2b3fad1",
       "retrieved": "2026-07-03"
     }
   ]
