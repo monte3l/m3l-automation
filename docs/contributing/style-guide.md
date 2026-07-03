@@ -62,6 +62,11 @@ if (first === undefined) throw new M3LValidationError("empty input");
   the `guard-no-commonjs.mjs` hook)
 - **No top-level side effects** — modules must be import-safe so consumers
   tree-shake cleanly. **[advisory]**
+- **Declare & load dependencies per [ADR-0017](../adr/0017-dependency-loading-standard.md)** —
+  required deps go in exact-pinned `dependencies`; optional deps go in
+  caret-ranged `peerDependencies` + `peerDependenciesMeta.optional` and must be
+  lazy-loaded behind a typed `ERR_*_MISSING_DEP` error. **[enforced]**
+  (`pnpm check:deps`)
 
 ### Exports
 
