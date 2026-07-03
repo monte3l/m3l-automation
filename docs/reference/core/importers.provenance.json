@@ -1,0 +1,92 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/importers.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/importers/M3LFileImporter.ts",
+          "symbol": "M3LFileImporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/importers/M3LListImporter.ts",
+          "symbol": "M3LListImporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/importers/M3LListImporter.ts",
+          "symbol": "M3LListImporterEvents"
+        },
+        {
+          "file": "packages/m3l-common/src/core/importers/M3LListImporter.ts",
+          "symbol": "M3LListImporterResult"
+        },
+        {
+          "file": "packages/m3l-common/src/core/importers/M3LCSVListImporter.ts",
+          "symbol": "M3LCSVListImporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/importers/M3LCSVListImporter.ts",
+          "symbol": "M3LCSVListImporterOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/importers/M3LCSVFormatAdapter.ts",
+          "symbol": "M3LCSVFormatAdapter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/importers/M3LCSVAdapterFactory.ts",
+          "symbol": "M3LCSVAdapterFactory"
+        },
+        {
+          "file": "packages/m3l-common/src/core/importers/M3LJSONFileImporter.ts",
+          "symbol": "M3LJSONFileImporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/importers/M3LJSONListImporter.ts",
+          "symbol": "M3LJSONListImporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/importers/M3LJSONListImporter.ts",
+          "symbol": "M3LJSONListImporterOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/importers/M3LFileListImporter.ts",
+          "symbol": "M3LFileListImporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/importers/M3LTextFileImporter.ts",
+          "symbol": "M3LTextFileImporter"
+        }
+      ],
+      "commit": "4440cc257958435dc26a30907cfbec8526071861",
+      "retrieved": "2026-07-03"
+    },
+    {
+      "heading": "Notes and behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/importers/M3LCSVListImporter.ts",
+          "symbol": "M3LCSVListImporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/importers/M3LCSVFormatAdapter.ts",
+          "symbol": "M3LCSVFormatAdapter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/importers/M3LCSVAdapterFactory.ts",
+          "symbol": "M3LCSVAdapterFactory"
+        },
+        {
+          "file": "packages/m3l-common/src/core/importers/M3LJSONListImporter.ts",
+          "symbol": "M3LJSONListImporter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/importers/M3LListImporter.ts",
+          "symbol": "M3LListImporterEvents"
+        }
+      ],
+      "commit": "4440cc257958435dc26a30907cfbec8526071861",
+      "retrieved": "2026-07-03"
+    }
+  ]
+}
