@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignore": [".claude/**", "commitlint.config.js"],
+  "ignore": [".claude/**", ".remember/**", "commitlint.config.js"],
   "ignoreDependencies": [
     "@commitlint/config-conventional",
     "@commitlint/types"
