@@ -24,11 +24,23 @@ paths:
   implementation's interface is (correctly) `readonly`, the expected literal in
   the assertion must be `readonly` too, or use `toMatchTypeOf`. A type test that
   fails against a correctly-`readonly` implementation is a test-side defect.
+- **A type-only `expectTypeOf` test still executes its expression at runtime.**
+  If the asserted expression invokes a fallible async method, resolve the mock to
+  a valid value first (e.g. `adapter.number.mockResolvedValue(5)`) — otherwise a
+  rejecting, un-awaited promise surfaces as an unhandled rejection ("1 error")
+  even though the type assertion itself passes. A resolved un-awaited promise is
+  fine; a rejecting one is not.
 - **Parameterize** when the same logic is exercised against multiple inputs.
 - **Never tolerate flaky tests** — diagnose and fix; do not mute or retry-mask.
 - **Mock Node built-ins via the async-factory form** that preserves real
   exports, then `vi.spyOn` individual methods:
   `vi.mock("fs", async () => { const actual = await vi.importActual<typeof import("fs")>("fs"); return { ...actual }; })`.
+- **Mock a port with generic methods by inference, not `extends`.** A structural
+  port whose methods are generic (`select<Value>(...)`) can't be mocked via
+  `interface Mock extends Port { select: ReturnType<typeof vi.fn> }` — a
+  non-generic `Mock` is an invalid override of a generic signature (TS2430). Let
+  the factory return the inferred object of `vi.fn()`s; it keeps the `.mock*` API
+  usable and stays structurally assignable to the port at the injection site.
 - **Keep the mock target in sync with the implementation's I/O primitive.** If
   the impl moves from `readFile` to `open()`/`FileHandle`, re-mock the new
   primitive (the old mock intercepts nothing) and cover the **post-acquire**
@@ -65,6 +77,12 @@ throw "a string";
   file — the JSON is the source of truth.
 - Use `pnpm exec vitest` / `pnpm test:coverage`; bare `npx vitest` fails to
   resolve `@vitest/coverage-v8` under pnpm.
+- **Brace void-union handler bodies.** When a handler type is
+  `void | Promise<void>` (e.g. `M3LEventHandler` on the emitter base), an arrow
+  whose body returns a value — `on("evt", () => arr.push(v))` — fails typecheck
+  (TS2322, `number` not assignable). The void-returning-callback leniency applies
+  only to a return type of _exactly_ `void`, not a union containing it. Wrap the
+  body: `() => { arr.push(v); }`.
 
 ```typescript
 import { expect, test } from "vitest";

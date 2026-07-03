@@ -94,10 +94,33 @@
     "namespace": "core",
     "name": "exporters",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/exporters.md",
-    "symbols": []
+    "symbols": [
+      "M3LListExporter",
+      "M3LListExporterStreamWriter",
+      "M3LListExporterEvents",
+      "M3LListExporterStartedPayload",
+      "M3LListExporterCompletedPayload",
+      "M3LListExporterErrorPayload",
+      "ColumnConflictStrategy",
+      "M3LCSVListExporter",
+      "M3LCSVListExporterOptions",
+      "M3LJSONListExporter",
+      "M3LJSONListExporterOptions",
+      "M3LJSONListExporterFormat",
+      "M3LHTMLListExporter",
+      "M3LHTMLListExporterOptions",
+      "M3LFileExporter",
+      "M3LFileExporterOptions",
+      "M3LJSONFileExporter",
+      "M3LJSONFileExporterOptions",
+      "M3LBinaryFileExporter",
+      "M3LBinaryFileExporterOptions",
+      "M3LFileListExporter",
+      "M3LFileListExporterOptions"
+    ]
   },
   {
     "namespace": "core",
@@ -212,10 +235,23 @@
     "namespace": "core",
     "name": "prompt",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/prompt.md",
-    "symbols": []
+    "symbols": [
+      "M3LPrompt",
+      "M3LPromptOptions",
+      "M3LMultiSpinner",
+      "M3LMultiSpinnerOptions",
+      "M3LLoadingBar",
+      "M3LLoadingBarOptions",
+      "M3LPromptValidationError",
+      "M3LPromptAdapter",
+      "M3LChoice",
+      "M3LChoices",
+      "M3LNumberPromptOptions",
+      "M3LSuggestFn"
+    ]
   },
   {
     "namespace": "core",
@@ -239,10 +275,22 @@
     "namespace": "core",
     "name": "storage",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "❌",
-    "wired": false,
+    "status": "✅",
+    "wired": true,
     "docPath": "docs/reference/core/storage.md",
-    "symbols": []
+    "symbols": [
+      "M3LFtsIndex",
+      "M3LFtsIndexConfig",
+      "M3LFtsIndexDocument",
+      "M3LFtsIndexSearchMode",
+      "M3LFtsIndexSearchOptions",
+      "M3LFtsIndexSearchResult",
+      "M3LFtsIndexStats",
+      "M3LSqliteDatabase",
+      "M3LSqliteStatement",
+      "M3LFtsIndexError",
+      "M3LFtsIndexErrorCode"
+    ]
   },
   {
     "namespace": "core",

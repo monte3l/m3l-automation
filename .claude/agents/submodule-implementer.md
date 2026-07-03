@@ -47,7 +47,10 @@ where you stopped instead of re-deriving state by hand.
    **separate final step** — **`pnpm lint` (workspace root, no `-C` flag)** to
    green. Running lint at workspace root covers `tests/` as well as `src/` and
    matches the hub's gate exactly. Refactor for clarity once green; keep running
-   all three.
+   all three. **Lint clean ≠ format clean** — also run `pnpm format:check`
+   before reporting done (or `prettier --write` your own files); Prettier is a
+   separate CI gate ESLint does not cover, and an unformatted file blocks the
+   `pre-push` hook and CI even when `pnpm lint` is green.
    Clear eslint findings in `src/` yourself rather than leaving them for the hub
    gate — most (needless assertions, unused params/type-params) are real fixes,
    not suppressions. Reach for a narrow `eslint-disable-next-line … -- <why>`
