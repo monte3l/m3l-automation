@@ -30,10 +30,87 @@ jobs:
         with:
           fetch-depth: 1
 
+      # Skip a full re-review when the prior verdict was PASS and nothing
+      # reviewable has changed since. The job still runs (so the required
+      # `review` check always reports); only the Claude step below is gated.
+      # Fail-safe: any ambiguity defaults to should_review=true so the gate is
+      # never silently weakened. See docs/contributing/branch-protection.md.
+      - name: Check prior review verdict
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # This ignore set MUST mirror the top-level `paths-ignore` trigger.
+          is_ignored() {
+            case "$1" in
+              *.md) return 0 ;;
+              docs/*) return 0 ;;
+              .github/workflows/dependabot.yml) return 0 ;;
+              .github/dependabot.yml) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+
+          review() {
+            echo "should_review=true" >> "$GITHUB_OUTPUT"
+            echo "$1"
+          }
+
+          # --slurp so the jq filter runs once over all pages (a bare
+          # --paginate --jq applies `last` per page and can concatenate bodies).
+          body="$(gh api "repos/$REPO/issues/$PR/comments" --paginate --slurp \
+            --jq 'add | [.[] | select(.user.login == "claude[bot]")] | last // {} | .body // ""' \
+            2>/dev/null || true)"
+
+          if [ -z "$body" ]; then
+            review "No prior claude[bot] comment — running review."
+            exit 0
+          fi
+
+          if ! printf '%s' "$body" | grep -A2 '^### Verdict' | grep -qiw 'PASS'; then
+            review "Prior verdict was not PASS — running review."
+            exit 0
+          fi
+
+          reviewed_sha="$(printf '%s' "$body" \
+            | sed -n 's/.*<!-- claude-review-sha: \([0-9a-f]*\) -->.*/\1/p' | head -n1)"
+          if [ -z "$reviewed_sha" ]; then
+            review "Prior comment has no reviewed-sha marker — running review."
+            exit 0
+          fi
+
+          files="$(gh api "repos/$REPO/compare/$reviewed_sha...$HEAD_SHA" \
+            --jq '.files[].filename' 2>/dev/null || echo "__ERROR__")"
+          if [ "$files" = "__ERROR__" ]; then
+            review "Compare API failed — running review."
+            exit 0
+          fi
+          if [ -z "$files" ]; then
+            review "No compare data — running review."
+            exit 0
+          fi
+
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            if ! is_ignored "$f"; then
+              review "Reviewable file changed since PASS ($f) — running review."
+              exit 0
+            fi
+          done <<< "$files"
+
+          echo "should_review=false" >> "$GITHUB_OUTPUT"
+          echo "Prior verdict PASS and only ignored files changed since $reviewed_sha — skipping review."
+
       - uses: anthropics/claude-code-action@6c0083bb7289c31716797a039b6367b3079cc46e # v1
+        if: steps.guard.outputs.should_review == 'true'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: "--model claude-sonnet-4-6 --allowedTools Bash,Read --max-turns 15"
+          claude_args: "--model claude-sonnet-4-6 --allowedTools Bash,Read --max-turns 20"
           use_sticky_comment: true
           prompt: |
             You are the blocking PR reviewer for this repo. Review ONLY what is visible in
@@ -127,7 +204,14 @@ jobs:
             ### Verdict
 
             - PASS|FAIL — <one-line reason>
+
+            <!-- claude-review-sha: ${{ github.event.pull_request.head.sha }} -->
             ```
+
+            The trailing `claude-review-sha` HTML comment is REQUIRED and must be
+            the last line of the comment, copied verbatim (the SHA is already
+            substituted). It lets a later run detect what commit this verdict
+            reviewed and skip a redundant re-review.
 
             ## Verdict (REQUIRED — this gate is blocking)
 
@@ -142,6 +226,12 @@ jobs:
             The job fails the merge gate unless the file contains exactly `PASS`.
 
             Now review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}. Post a single PR comment in the Output format above, then write the verdict file as instructed.
+
+      # When the review was skipped (prior PASS still valid), carry that PASS
+      # forward so the enforce step below keeps the required check green.
+      - name: Carry prior PASS verdict (review skipped)
+        if: steps.guard.outputs.should_review != 'true'
+        run: printf 'PASS' > "$GITHUB_WORKSPACE/.claude-review-verdict"
 
       # Blocking gate (rules 01/04: writer ≠ reviewer). The job fails unless the
       # reviewer explicitly wrote PASS — fail-closed if the review did not run.

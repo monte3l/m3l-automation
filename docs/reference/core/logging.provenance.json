@@ -54,7 +54,7 @@
           "symbol": "redactSensitiveLogValue"
         }
       ],
-      "commit": "f1815c29f630636a7e7576f90b024606c0cdb43f",
+      "commit": "5ff949d1d782e38b5aae0215b58e2558766d50ee",
       "retrieved": "2026-07-03"
     },
     {
@@ -65,7 +65,7 @@
           "symbol": "M3LLogger"
         }
       ],
-      "commit": "f1815c29f630636a7e7576f90b024606c0cdb43f",
+      "commit": "5ff949d1d782e38b5aae0215b58e2558766d50ee",
       "retrieved": "2026-07-03"
     },
     {
@@ -76,7 +76,7 @@
           "symbol": "M3LLogEventCategory"
         }
       ],
-      "commit": "f1815c29f630636a7e7576f90b024606c0cdb43f",
+      "commit": "5ff949d1d782e38b5aae0215b58e2558766d50ee",
       "retrieved": "2026-07-03"
     },
     {
@@ -99,7 +99,7 @@
           "symbol": "M3LJsonLoggerHandler"
         }
       ],
-      "commit": "f1815c29f630636a7e7576f90b024606c0cdb43f",
+      "commit": "5ff949d1d782e38b5aae0215b58e2558766d50ee",
       "retrieved": "2026-07-03"
     },
     {
@@ -118,7 +118,7 @@
           "symbol": "M3LTableColumn"
         }
       ],
-      "commit": "f1815c29f630636a7e7576f90b024606c0cdb43f",
+      "commit": "5ff949d1d782e38b5aae0215b58e2558766d50ee",
       "retrieved": "2026-07-03"
     },
     {
@@ -133,7 +133,7 @@
           "symbol": "redactSensitiveLogValue"
         }
       ],
-      "commit": "f1815c29f630636a7e7576f90b024606c0cdb43f",
+      "commit": "5ff949d1d782e38b5aae0215b58e2558766d50ee",
       "retrieved": "2026-07-03"
     },
     {
@@ -160,7 +160,7 @@
           "symbol": "M3LTableFormatter"
         }
       ],
-      "commit": "f1815c29f630636a7e7576f90b024606c0cdb43f",
+      "commit": "5ff949d1d782e38b5aae0215b58e2558766d50ee",
       "retrieved": "2026-07-03"
     }
   ]
