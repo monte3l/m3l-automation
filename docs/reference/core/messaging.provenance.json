@@ -46,8 +46,8 @@
           "symbol": "M3LOutboundAttachment"
         }
       ],
-      "commit": "f4ba35c53e161426fd18b00c79a1f4097193f225",
-      "retrieved": "2026-07-02"
+      "commit": "ffbf7dfa7017114adbe0df7948fddb15cbb25ef9",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Writer and reader interfaces",
@@ -73,8 +73,8 @@
           "symbol": "M3LMessageReceipt"
         }
       ],
-      "commit": "f4ba35c53e161426fd18b00c79a1f4097193f225",
-      "retrieved": "2026-07-02"
+      "commit": "ffbf7dfa7017114adbe0df7948fddb15cbb25ef9",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "The `M3LMessenger` facade",
@@ -84,8 +84,8 @@
           "symbol": "M3LMessenger"
         }
       ],
-      "commit": "f4ba35c53e161426fd18b00c79a1f4097193f225",
-      "retrieved": "2026-07-02"
+      "commit": "ffbf7dfa7017114adbe0df7948fddb15cbb25ef9",
+      "retrieved": "2026-07-03"
     },
     {
       "heading": "Notes and behavior",
@@ -99,8 +99,8 @@
           "symbol": "M3LMessageReader"
         }
       ],
-      "commit": "f4ba35c53e161426fd18b00c79a1f4097193f225",
-      "retrieved": "2026-07-02"
+      "commit": "ffbf7dfa7017114adbe0df7948fddb15cbb25ef9",
+      "retrieved": "2026-07-03"
     }
   ]
 }

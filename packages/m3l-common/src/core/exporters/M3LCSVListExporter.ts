@@ -167,7 +167,7 @@ export class M3LCSVListExporter<
   }
 
   /**
-   * Wraps a failure as a CSV-export {@link M3LError}.
+   * Wraps a CSV-export failure as an {@link M3LError}.
    *
    * @param cause - The caught value.
    * @returns An {@link M3LError} chaining `cause`.

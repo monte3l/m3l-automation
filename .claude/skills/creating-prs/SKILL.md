@@ -35,7 +35,50 @@ git branch --show-current
 If the branch is `main`, stop:
 `You are on main. Branch off main first (e.g. feat/<slug> or fix/<slug>).`
 
-### 2 — Quality gates
+### 2 — Resync with `origin/main`
+
+Rebase the branch onto the latest `main` **before** the quality gates, so the
+gates run against the state that will actually be reviewed and merged. This is
+what keeps a stale branch from opening a PR that CI or a required check would
+reject.
+
+Detect staleness first:
+
+```bash
+git fetch origin main
+git rev-list --count HEAD..origin/main
+```
+
+If the count is `0`, the branch is already up to date — print
+`branch is up to date with main` and skip to Step 3.
+
+Otherwise rebase onto the fetched `main`:
+
+```bash
+git rebase origin/main
+```
+
+- **On conflict:** capture the conflicted files, abort, and **hand back** —
+  never auto-resolve:
+
+  ```bash
+  git diff --name-only --diff-filter=U   # capture the conflicted paths first
+  git rebase --abort
+  ```
+
+  Tell the user which files conflict, that they must resolve the rebase
+  manually (`git rebase origin/main`, fix, `git rebase --continue`), then re-run
+  this skill. Stop here.
+
+- **Signing:** pushes are signature-gated, so rebased commits must stay signed.
+  If the user's `commit.gpgsign` is unset, use the same recovery pattern
+  `verify-signed-range` documents:
+
+  ```bash
+  git rebase --exec 'git commit --amend --no-edit -S' origin/main
+  ```
+
+### 3 — Quality gates
 
 Run the full verification pipeline. Fail fast: stop on the first failure and
 tell the user which gate failed. Do **not** push a branch that fails any gate.
@@ -44,7 +87,7 @@ tell the user which gate failed. Do **not** push a branch that fails any gate.
 pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build
 ```
 
-### 3 — Pre-push review
+### 4 — Pre-push review
 
 Check which files changed since main:
 
@@ -70,28 +113,59 @@ If the diff contains **only docs/automation changes** (no `src/**` files),
 dispatch `docs-consistency-reviewer` instead.
 
 After collecting spoke results: if any spoke reports a **Must-fix** finding,
-fix it and loop back through Steps 2–3 before pushing. Do not push with
+fix it and loop back through Steps 3–4 before pushing. Do not push with
 outstanding Must-fix findings.
 
-### 4 — Push the branch
+### 5 — Pre-existing code-scanning check
+
+CodeQL runs via GitHub "default setup" and its `Analyze (...)` check-runs are
+required to merge (see `docs/contributing/branch-protection.md`). Before
+pushing, surface any **open error-severity CodeQL alert that already touches a
+file this branch changes** — so you learn about a blocker now, not after the PR
+is open.
+
+```bash
+gh api repos/{owner}/{repo}/code-scanning/alerts \
+  -f state=open -f tool_name=CodeQL \
+  --jq '.[] | select(.rule.severity=="error")
+        | "\(.rule.id) \(.most_recent_instance.location.path)"'
+```
+
+Cross-reference the paths against the changed set from Step 4
+(`git diff main...HEAD --name-only`). If any alert path matches, list the
+matches and tell the user to triage them with the `triaging-scan-alerts` skill
+before merge. This is informational — alerts for **newly pushed** code only
+appear after the post-push scan, so `triaging-scan-alerts` is the follow-up once
+the PR is open.
+
+### 6 — Push the branch
 
 ```bash
 git push -u origin HEAD
 ```
 
-### 5 — Gather commits since main
+If the push is rejected as non-fast-forward (the branch was rebased in Step 2
+after a previous push), re-push with lease protection — this is safe on **your
+own feature branch** but never on a shared branch (per CLAUDE.md, "never
+`git push --force` to a shared branch"):
+
+```bash
+git push --force-with-lease
+```
+
+### 7 — Gather commits since main
 
 ```bash
 git log main...HEAD --oneline
 ```
 
-### 6 — Generate the PR title
+### 8 — Generate the PR title
 
 Pick the most impactful commit (breaking > feat > fix > refactor/docs/chore).
 Format as a Conventional Commit, 70 chars max. The title alone must make the
 purpose of the branch clear to a reviewer skimming a PR list.
 
-### 7 — Generate the PR body
+### 9 — Generate the PR body
 
 Write a body that matches the quality and specificity of the examples below.
 The bullets in **Summary** should name actual symbols, files, or behaviours —
@@ -100,7 +174,7 @@ reflect the _actual files changed_, not a generic template. The **Notes** line
 must state the commit type, the resulting semver bump (or "no release"), and
 any migration instructions for breaking changes.
 
-### 8 — Submit the PR
+### 10 — Submit the PR
 
 ```bash
 gh pr create --title "..." --body "$(cat <<'EOF'
@@ -111,6 +185,18 @@ EOF
 
 Pass `--draft` if the branch name starts with `wip/` or if the user explicitly
 asked for a draft PR.
+
+### 11 — Confirm mergeability
+
+After the PR exists, ask GitHub whether it merges cleanly:
+
+```bash
+gh pr view --json mergeable,mergeStateStatus
+```
+
+A clean Step 2 rebase should make this `MERGEABLE`. If `mergeable` is
+`CONFLICTING`, tell the user the branch conflicts with the base and hand back so
+they can rebase — do not attempt to resolve it here.
 
 ---
 

@@ -151,7 +151,7 @@ export class M3LJSONListExporter<TItem> extends M3LBaseListExporter<TItem> {
   }
 
   /**
-   * Wraps a failure as a JSON-list-export {@link M3LError}.
+   * Wraps a JSON-list-export failure as an {@link M3LError}.
    *
    * @param cause - The caught value.
    * @returns An {@link M3LError} chaining `cause`.
