@@ -34,7 +34,7 @@
  * built, so every dynamic `import()` inside the implementation — concurrent
  * or not — resolves to the same mocked module instance.
  *
- * The "missing optional peer" scenarios (C7) genuinely need the dynamic
+ * The "SDK-load-failure" scenarios (C7) genuinely need the dynamic
  * `import()` to REJECT — which the top-level "present" mocks here cannot
  * simulate — so those live in the sibling
  * `tests/credentials-missing-peer.test.ts`, which uses `vi.doMock` +
