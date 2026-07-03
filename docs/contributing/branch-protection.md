@@ -24,9 +24,15 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     review blocks the merge (fail-closed if the review never runs). The reviewer
     runs **read-only** (`--allowedTools Bash,Read`), posts a **single sticky
     comment** per PR (updated on each push rather than re-posted), is capped at
-    `--max-turns 12`, and **does not run on draft PRs** — it fires on
-    `ready_for_review` and on every subsequent push to a ready PR. The
-    verdict-file mechanism and fail-closed behavior are unchanged.
+    `--max-turns 20`, and **does not run on draft PRs** — it fires on
+    `ready_for_review` and on every subsequent push to a ready PR. As an
+    optimization, a push is **skipped** (the prior PASS is carried forward so
+    the check stays green) when the latest verdict was PASS and only
+    `paths-ignore` files (docs/config) changed since the reviewed commit,
+    tracked via a `claude-review-sha` marker in the sticky comment; any
+    reviewable change re-triggers a full review. This does not weaken the
+    fail-closed gate. The verdict-file mechanism and fail-closed behavior are
+    unchanged.
   - **CodeQL code scanning** — added as required checks under ADR-0015 so a
     high-severity SAST finding blocks the merge. CodeQL runs via GitHub **default
     setup**, whose check runs surface as `Analyze (javascript-typescript)` and
