@@ -106,11 +106,32 @@ jobs:
           echo "should_review=false" >> "$GITHUB_OUTPUT"
           echo "Prior verdict PASS and only ignored files changed since $reviewed_sha — skipping review."
 
+      # Pre-compute the diff once and hand it to Claude so the reviewer reads a
+      # single patch file instead of burning turns rediscovering the diff via
+      # `gh pr diff` / `git diff` (the main turn-count driver). `gh pr diff` is
+      # API-based, so it works on the `fetch-depth: 1` shallow checkout without
+      # deepening the clone. Non-fatal: on any gh failure the files are removed
+      # and the review prompt falls back to fetching the diff itself.
+      - name: Pre-compute PR diff for review
+        if: steps.guard.outputs.should_review == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh pr diff "$PR" -R "$REPO" --patch \
+            > "$GITHUB_WORKSPACE/.claude-pr-diff.patch" \
+            || rm -f "$GITHUB_WORKSPACE/.claude-pr-diff.patch"
+          gh pr diff "$PR" -R "$REPO" --name-only \
+            > "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt" \
+            || rm -f "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt"
+
       - uses: anthropics/claude-code-action@6c0083bb7289c31716797a039b6367b3079cc46e # v1
         if: steps.guard.outputs.should_review == 'true'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: "--model claude-sonnet-4-6 --allowedTools Bash,Read --max-turns 20"
+          claude_args: "--model claude-sonnet-5 --allowedTools Bash,Read --max-turns 15"
           use_sticky_comment: true
           prompt: |
             You are the blocking PR reviewer for this repo. Review ONLY what is visible in
@@ -161,6 +182,7 @@ jobs:
             documented branch, a regex blind spot, a doc-sync drift), **grep/enumerate every
             instance in the diff and list them ALL in one comment** — never one per round.
             A single comment with N findings is far better than N comments each with 1 finding.
+            Resolve the entire class in this one round; do not defer instances to a later review.
 
             ## Re-review behaviour
 
@@ -177,6 +199,11 @@ jobs:
             every heading and every list; no trailing whitespace; no hard tabs; `-` bullets;
             cite locations as `path/to/file.ts:line`; be concise — do not restate unchanged
             conventions):
+
+            Cap each section at its 10 most severe findings, most-severe first. If a
+            class of issue recurs, collapse it into ONE bullet listing every instance
+            (per the exhaustive-sweep rule) rather than spilling past the cap. A small
+            comment also keeps later re-reviews cheap.
 
             ```
             ## Claude PR Review — `<pr title>`
@@ -213,6 +240,16 @@ jobs:
             substituted). It lets a later run detect what commit this verdict
             reviewed and skip a redundant re-review.
 
+            ## Turn budget (bounded review)
+
+            You have a hard turn limit. Work efficiently — the diff is already
+            provided, so a typical review needs only a few reads. If you approach
+            the limit, STOP exploring and immediately (a) post the review comment
+            with the findings you have and (b) write the verdict file. NEVER consume
+            the whole budget without posting a comment and writing
+            `.claude-review-verdict`: a bounded, slightly-incomplete review that
+            posts a verdict is far better than an exhausted run that posts nothing.
+
             ## Verdict (REQUIRED — this gate is blocking)
 
             After posting the comment, your FINAL action MUST be to run exactly
@@ -224,6 +261,19 @@ jobs:
             Use the Bash tool — do NOT use the Write tool for this step.
             $GITHUB_WORKSPACE is the absolute path to the checked-out repo.
             The job fails the merge gate unless the file contains exactly `PASS`.
+
+            ## What to review
+
+            The full unified diff for this PR is at
+            `$GITHUB_WORKSPACE/.claude-pr-diff.patch` and the changed-file list at
+            `$GITHUB_WORKSPACE/.claude-pr-changed-files.txt`. **Read the patch file
+            first** and review only those hunks. Open a full source file with `Read`
+            ONLY when a hunk lacks the surrounding context you need — do NOT run
+            `gh pr diff` or `git diff` to rediscover the diff; it is already provided.
+            If the patch is very large, read it in chunks with `Read` offset/limit.
+            Fallback: only if the patch file is missing (the pre-compute step failed),
+            fetch it yourself with
+            `gh pr diff ${{ github.event.pull_request.number }} -R ${{ github.repository }}`.
 
             Now review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}. Post a single PR comment in the Output format above, then write the verdict file as instructed.
 
