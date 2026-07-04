@@ -158,6 +158,9 @@ class M3LHTMLStreamWriter<
   // satisfy the M3LListExporterStreamWriter contract, and any downstream
   // write failure surfaces on close() instead.
   append(item: TItem): Promise<void> {
+    // `TItem extends object` bounds the type but doesn't add an index
+    // signature; the cast is still required to pass `item` into the
+    // `Record<string, unknown>`-typed row helpers below.
     const row = item as Record<string, unknown>;
     const columns = resolveColumns(row, this.#columns);
     this.#rows.push(renderRow(row, columns));
@@ -217,6 +220,7 @@ export class M3LHTMLListExporter<
    */
   protected renderBatch(items: readonly TItem[]): string {
     const rows = items.map((item) => {
+      // See the cast rationale in M3LHTMLStreamWriter.append above.
       const row = item as Record<string, unknown>;
       return renderRow(row, resolveColumns(row, this.#columns));
     });

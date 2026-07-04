@@ -31,7 +31,7 @@ import type {
  *
  * @typeParam TItem - The shape of each exported item.
  */
-export abstract class M3LBaseListExporter<TItem>
+export abstract class M3LBaseListExporter<TItem extends object>
   extends M3LEventEmitterBase<M3LListExporterEvents>
   implements M3LListExporter<TItem>
 {
