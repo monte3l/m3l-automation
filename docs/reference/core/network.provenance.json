@@ -14,7 +14,7 @@
           "symbol": "M3LHttpClientOptions"
         },
         {
-          "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
+          "file": "packages/m3l-common/src/core/network/M3LHttpClientError.ts",
           "symbol": "M3LHttpFailureReason"
         },
         {
@@ -42,7 +42,7 @@
           "symbol": "M3LHttpClientError"
         }
       ],
-      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
+      "commit": "4573e79fe54063156bc05177648be496951b010f",
       "retrieved": "2026-07-03"
     },
     {
@@ -53,7 +53,7 @@
           "symbol": "M3LHttpClient"
         },
         {
-          "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
+          "file": "packages/m3l-common/src/core/network/M3LHttpClientError.ts",
           "symbol": "M3LHttpFailureReason"
         },
         {
@@ -61,7 +61,7 @@
           "symbol": "M3LHttpClientError"
         }
       ],
-      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
+      "commit": "4573e79fe54063156bc05177648be496951b010f",
       "retrieved": "2026-07-03"
     }
   ]

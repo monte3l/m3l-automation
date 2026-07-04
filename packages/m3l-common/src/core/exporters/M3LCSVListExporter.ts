@@ -75,6 +75,9 @@ class M3LCSVStreamWriter<
 
   async append(item: TItem): Promise<void> {
     try {
+      // `TItem extends object` bounds the type but doesn't add an index
+      // signature; the cast is still required to pass `item` into the
+      // `Record<string, unknown>`-typed row helpers below.
       const row = item as Record<string, unknown>;
       this.#columns ??= Object.keys(row);
       const resolved = resolveRow(this.#columns, row, this.#strategy);
@@ -158,6 +161,8 @@ export class M3LCSVListExporter<
    * @returns The CSV file content.
    */
   protected renderBatch(items: readonly TItem[]): string {
+    // See the cast rationale in M3LCSVStreamWriter.append above: `object`
+    // lacks the index signature `resolveRow` requires.
     const rows = items as readonly Record<string, unknown>[];
     const columns = rows.length > 0 ? Object.keys(rows[0] ?? {}) : [];
     const resolved = rows.map((row) =>

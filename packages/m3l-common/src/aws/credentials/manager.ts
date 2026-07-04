@@ -53,19 +53,26 @@ const CREDENTIALS_PROVIDER_FAILED_PATTERNS: readonly RegExp[] = [
 ];
 
 /**
- * Whether re-running SSO login can recover a failure of the given category.
- * `PROFILE_NOT_FOUND` and `UNKNOWN` are not recoverable by re-authenticating
- * — the former needs a config fix, the latter is an unclassified failure.
+ * Builds the {@link M3LAWSCredentialsErrorAnalysis} union arm matching the
+ * classified error category. `PROFILE_NOT_FOUND` and `UNKNOWN` are not
+ * recoverable by re-authenticating — the former needs a config fix, the
+ * latter is an unclassified failure — every other category is.
  */
-function isRecoverable(type: M3LAWSCredentialsErrorType): boolean {
+function buildAnalysis(
+  type: M3LAWSCredentialsErrorType,
+  cause: unknown,
+): M3LAWSCredentialsErrorAnalysis {
   switch (type) {
     case M3LAWSCredentialsErrorType.SSO_SESSION_EXPIRED:
     case M3LAWSCredentialsErrorType.SSO_SESSION_INVALID:
     case M3LAWSCredentialsErrorType.CREDENTIALS_PROVIDER_FAILED:
-      return true;
+      return { recoverable: true, type, cause };
     case M3LAWSCredentialsErrorType.PROFILE_NOT_FOUND:
     case M3LAWSCredentialsErrorType.UNKNOWN:
-      return false;
+      return { recoverable: false, type, cause };
+    /* istanbul ignore next -- unreachable: every M3LAWSCredentialsErrorType
+       member is handled above; this arm exists only to fail loud if a new
+       member is ever added without a matching case. */
     default: {
       const exhaustive: never = type;
       throw new M3LAWSCredentialsError(
@@ -173,7 +180,7 @@ export class M3LAWSCredentialsManager {
    * const manager = new M3LAWSCredentialsManager({ profile: "my-profile" });
    * const result = await manager.ensureValidCredentials();
    * if (result) {
-   *   console.log(`re-authenticated: ${String(result.success)}`);
+   *   console.log(`re-authenticated: ${result.outcome === "success"}`);
    * }
    * ```
    */
@@ -370,7 +377,7 @@ export class M3LAWSCredentialsManager {
   analyzeError(error: unknown): M3LAWSCredentialsErrorAnalysis {
     const message = extractMessage(error);
     const type = classifyMessage(message);
-    return { type, recoverable: isRecoverable(type), cause: error };
+    return buildAnalysis(type, error);
   }
 
   /**
@@ -445,13 +452,35 @@ export class M3LAWSCredentialsManager {
         settled = true;
         clearTimeout(timer);
 
-        resolve({
-          profile: resolvedProfile,
-          success: exitCode === 0,
-          durationMs: Date.now() - startedAt,
-          exitCode,
-          timedOut: timedOutByUs,
-        });
+        const durationMs = Date.now() - startedAt;
+        if (timedOutByUs) {
+          resolve({
+            outcome: "timedOut",
+            exitCode: null,
+            profile: resolvedProfile,
+            durationMs,
+          });
+        } else if (exitCode === 0) {
+          resolve({
+            outcome: "success",
+            exitCode: 0,
+            profile: resolvedProfile,
+            durationMs,
+          });
+        } else {
+          // `exitCode` is `null` here when the process was killed by a
+          // signal we did not send (an external Ctrl-C, a forwarded
+          // SIGTERM via `stdio: "inherit"`, etc.) rather than exiting on
+          // its own with a non-zero code — pass it through as-is instead
+          // of coercing to `0`, which would misrepresent an external kill
+          // as a normal zero-exit success-adjacent code.
+          resolve({
+            outcome: "failed",
+            exitCode,
+            profile: resolvedProfile,
+            durationMs,
+          });
+        }
       });
     });
   }
