@@ -1,5 +1,12 @@
 # Plan: Align m3l-common with its documented spec (implement all 21 submodules)
 
+> **Historical — build-phase plan.** This document captured the initial bootstrap
+> strategy from 2026-06-28, when `src/` was an empty scaffold. As of 2026-07-05 all
+> **22 submodules are implemented and reviewed** — see
+> [Implementation status](implementation-status.md). The present-tense "empty
+> scaffold" framing and the "21 submodules" count below describe that starting
+> state, not the current one; the file is retained for process history.
+
 ## Context
 
 `@m3l-automation/m3l-common` is a **fully-specified but empty scaffold**. The

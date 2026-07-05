@@ -2,7 +2,7 @@
 
 This is the **single source of truth** for what is implemented in
 `@m3l-automation/m3l-common` versus what the `docs/reference/**` pages specify.
-The library started as a documented-but-empty scaffold. The barrels are wired; `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`, `prompt`, `exporters`, `storage`, `network`, `importers`, `files`, `logging`, `aws/models`, `script`, `aws/credentials`, and `aws/clients` are implemented and reviewed (22 of 22 submodules). See the table below for per-submodule status.
+The barrels are wired; `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`, `prompt`, `exporters`, `storage`, `network`, `importers`, `files`, `logging`, `aws/models`, `script`, `aws/credentials`, and `aws/clients` are implemented and reviewed (22 of 22 submodules). See the table below for per-submodule status.
 
 > **Maintenance contract (hub):** the main agent updates this file after **each
 > phase** of the `implementing-submodules` pipeline. It is the durable, cross-session
@@ -17,12 +17,12 @@ _Planned_ = implementation plan exists in `docs/plans/`.
 
 ## Barrels & infrastructure
 
-| Item                                   | Status | Notes                                             |
-| -------------------------------------- | ------ | ------------------------------------------------- |
-| `src/index.ts` (re-exports Core + AWS) | ✅     | wired; namespaces empty                           |
-| `src/core/index.ts`                    | ✅     | `export {}` placeholder; submodules surfaced here |
-| `src/aws/index.ts`                     | ✅     | `export {}` placeholder; submodules surfaced here |
-| `exports` map (`.`, `./core`, `./aws`) | ✅     | the public contract — do not extend (semver)      |
+| Item                                   | Status | Notes                                        |
+| -------------------------------------- | ------ | -------------------------------------------- |
+| `src/index.ts` (re-exports Core + AWS) | ✅     | wired; re-exports the Core + AWS namespaces  |
+| `src/core/index.ts`                    | ✅     | wired; all 19 Core submodules surfaced here  |
+| `src/aws/index.ts`                     | ✅     | wired; all 3 AWS submodules surfaced here    |
+| `exports` map (`.`, `./core`, `./aws`) | ✅     | the public contract — do not extend (semver) |
 
 ## Core submodules (`docs/reference/core/`)
 

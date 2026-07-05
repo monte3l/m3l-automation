@@ -5,10 +5,6 @@ paths:
 
 # Automation script rules (`scripts/**`)
 
-> **Forward guidance:** the `M3LScript` API below is not consumable yet —
-> `core/script` is `❌ not-started` (see `docs/implementation-status.md`). These
-> rules describe the target shape so scripts written now anticipate it.
-
 - **Consume the library via `workspace:*`**
   (`"@m3l-automation/m3l-common": "workspace:*"`), not a published version.
 - **Construct `Core.M3LScript` once with `M3LScriptOptions`; never subclass it.**
