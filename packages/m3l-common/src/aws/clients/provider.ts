@@ -21,6 +21,8 @@ import { SSMClient } from "@aws-sdk/client-ssm";
 import { STSClient } from "@aws-sdk/client-sts";
 import { fromIni } from "@aws-sdk/credential-provider-ini";
 
+import type { M3LAWSProfile, M3LAWSRegion } from "../models/index.js";
+
 import { M3LAWSClientError } from "./error.js";
 import { AWS_REGION } from "./region.js";
 
@@ -33,16 +35,16 @@ import { AWS_REGION } from "./region.js";
  */
 export interface AWSClientProviderOptions {
   /**
-   * Named AWS profile. When set to a non-empty string, credentials resolve
-   * via `fromIni({ profile })`. When omitted or an empty string, the SDK
-   * default credential chain is used instead.
+   * Named AWS profile. When set, credentials resolve via
+   * `fromIni({ profile })`. When omitted, the SDK default credential chain
+   * is used instead.
    */
-  readonly profile?: string;
+  readonly profile?: M3LAWSProfile;
   /**
    * Region passed to every client this provider constructs. Overrides
    * {@link AWS_REGION} when supplied.
    */
-  readonly region?: string;
+  readonly region?: M3LAWSRegion;
 }
 
 /** Union of every service name this provider caches a client for. */
@@ -89,9 +91,14 @@ interface BaseClientConfig {
  *
  * @example
  * ```ts
- * import { AWSClientProvider } from "@m3l-automation/m3l-common/aws";
+ * import {
+ *   AWSClientProvider,
+ *   parseAWSProfile,
+ * } from "@m3l-automation/m3l-common/aws";
  *
- * const provider = new AWSClientProvider({ profile: "my-profile" });
+ * const provider = new AWSClientProvider({
+ *   profile: parseAWSProfile("my-profile"),
+ * });
  *
  * // Each client is created lazily on first access and cached thereafter.
  * const s3 = provider.s3;
@@ -102,8 +109,8 @@ interface BaseClientConfig {
  * ```
  */
 export class AWSClientProvider {
-  private readonly profile: string | undefined;
-  private readonly region: string;
+  private readonly profile: M3LAWSProfile | undefined;
+  private readonly region: M3LAWSRegion;
   private readonly cache = new Map<AWSServiceName, DestroyableClient>();
 
   /**
@@ -114,7 +121,7 @@ export class AWSClientProvider {
    *
    * @param options - Optional configuration. `region` defaults to
    *   {@link AWS_REGION}; `profile` defaults to the SDK default credential
-   *   chain when omitted or an empty string.
+   *   chain when omitted.
    */
   constructor(options: AWSClientProviderOptions = {}) {
     this.profile = options.profile;
@@ -284,17 +291,16 @@ export class AWSClientProvider {
 
   /**
    * Resolves the shared client config: `region` always, `credentials` only
-   * when a non-empty `profile` was supplied (via `fromIni`). Uses a
-   * conditional spread so an empty/undefined profile never passes a
-   * `credentials: undefined` key under `exactOptionalPropertyTypes` — it
-   * omits the key entirely, letting the SDK default credential chain apply.
+   * when a `profile` was supplied (via `fromIni`). Uses a conditional spread
+   * so an undefined profile never passes a `credentials: undefined` key under
+   * `exactOptionalPropertyTypes` — it omits the key entirely, letting the SDK
+   * default credential chain apply.
    */
   private resolveConfig(): BaseClientConfig {
     const { profile } = this;
     return {
       region: this.region,
-      ...(profile !== undefined &&
-        profile !== "" && { credentials: fromIni({ profile }) }),
+      ...(profile !== undefined && { credentials: fromIni({ profile }) }),
     };
   }
 }

@@ -91,7 +91,11 @@ import {
   M3LAWSCredentialsError,
   M3LAWSCredentialsManager,
 } from "../src/aws/credentials/index.js";
-import { M3LAWSCredentialsErrorType } from "../src/aws/models/index.js";
+import {
+  M3LAWSCredentialsErrorType,
+  parseAWSProfile,
+  parseAWSRegion,
+} from "../src/aws/models/index.js";
 import type { M3LAWSLoginResult } from "../src/aws/models/index.js";
 
 // ---------------------------------------------------------------------------
@@ -217,8 +221,8 @@ describe("M3LAWSCredentialsManager construction", () => {
     expect(
       () =>
         new M3LAWSCredentialsManager({
-          profile: "default",
-          region: "eu-south-1",
+          profile: parseAWSProfile("default"),
+          region: parseAWSRegion("eu-south-1"),
           loginTimeoutMs: 5000,
           maxRetries: 2,
           interactive: false,
@@ -235,7 +239,9 @@ describe("ensureValidCredentials", () => {
   test("already-valid profile resolves to undefined (no login runs)", async () => {
     h.stsSend.mockResolvedValue({ Account: "123456789012" });
 
-    const manager = new M3LAWSCredentialsManager({ profile: "default" });
+    const manager = new M3LAWSCredentialsManager({
+      profile: parseAWSProfile("default"),
+    });
 
     await expect(manager.ensureValidCredentials()).resolves.toBeUndefined();
     expect(h.spawn).not.toHaveBeenCalled();
@@ -248,7 +254,7 @@ describe("ensureValidCredentials", () => {
     configureSpawn(0, null);
 
     const manager = new M3LAWSCredentialsManager({
-      profile: "my-profile",
+      profile: parseAWSProfile("my-profile"),
       interactive: false,
     });
 
@@ -270,7 +276,7 @@ describe("ensureValidCredentials", () => {
     h.stsSend.mockRejectedValue(new Error("Profile my-profile not found"));
 
     const manager = new M3LAWSCredentialsManager({
-      profile: "my-profile",
+      profile: parseAWSProfile("my-profile"),
       interactive: false,
     });
 
@@ -292,7 +298,7 @@ describe("ensureValidCredentials", () => {
     );
 
     const manager = new M3LAWSCredentialsManager({
-      profile: "my-profile",
+      profile: parseAWSProfile("my-profile"),
       interactive: true,
       prompt: makePrompt(false),
     });
@@ -318,7 +324,10 @@ describe("ensureValidCredentialsMultiple", () => {
     const manager = new M3LAWSCredentialsManager({ interactive: false });
 
     await expect(
-      manager.ensureValidCredentialsMultiple(["profile-a", "profile-b"]),
+      manager.ensureValidCredentialsMultiple([
+        parseAWSProfile("profile-a"),
+        parseAWSProfile("profile-b"),
+      ]),
     ).resolves.toEqual([]);
     expect(h.spawn).not.toHaveBeenCalled();
   });
@@ -332,8 +341,8 @@ describe("ensureValidCredentialsMultiple", () => {
     const manager = new M3LAWSCredentialsManager({ interactive: false });
 
     const results = await manager.ensureValidCredentialsMultiple([
-      "profile-a",
-      "profile-b",
+      parseAWSProfile("profile-a"),
+      parseAWSProfile("profile-b"),
     ]);
     expect(results).toHaveLength(2);
     expect(results.every((entry) => entry.outcome === "success")).toBe(true);
@@ -354,9 +363,9 @@ describe("ensureValidCredentialsMultiple", () => {
     const manager = new M3LAWSCredentialsManager({ interactive: false });
 
     await manager.ensureValidCredentialsMultiple([
-      "profile-a",
-      "profile-b",
-      "profile-c",
+      parseAWSProfile("profile-a"),
+      parseAWSProfile("profile-b"),
+      parseAWSProfile("profile-c"),
     ]);
 
     // If validation ran sequentially, maxConcurrent would never exceed 1.
@@ -380,8 +389,8 @@ describe("ensureValidCredentialsMultiple", () => {
     const manager = new M3LAWSCredentialsManager({ interactive: false });
 
     const pending = manager.ensureValidCredentialsMultiple([
-      "profile-a",
-      "profile-b",
+      parseAWSProfile("profile-a"),
+      parseAWSProfile("profile-b"),
     ]);
 
     // Only the first login should have spawned so far.
@@ -410,7 +419,10 @@ describe("ensureValidCredentialsMultiple", () => {
 
     let thrown: unknown;
     try {
-      await manager.ensureValidCredentialsMultiple(["profile-a", "profile-b"]);
+      await manager.ensureValidCredentialsMultiple([
+        parseAWSProfile("profile-a"),
+        parseAWSProfile("profile-b"),
+      ]);
     } catch (error) {
       thrown = error;
     }
@@ -442,7 +454,10 @@ describe("ensureValidCredentialsMultiple", () => {
 
     let thrown: unknown;
     try {
-      await manager.ensureValidCredentialsMultiple(["dup", "dup"]);
+      await manager.ensureValidCredentialsMultiple([
+        parseAWSProfile("dup"),
+        parseAWSProfile("dup"),
+      ]);
     } catch (error) {
       thrown = error;
     }
@@ -479,7 +494,7 @@ describe("retryWithRelogin", () => {
       .mockResolvedValueOnce("recovered");
 
     await expect(
-      manager.retryWithRelogin(operation, "my-profile"),
+      manager.retryWithRelogin(operation, parseAWSProfile("my-profile")),
     ).resolves.toBe("recovered");
     expect(operation).toHaveBeenCalledTimes(2);
     expect(h.spawn).toHaveBeenCalledTimes(1);
@@ -515,7 +530,7 @@ describe("retryWithRelogin", () => {
 
     let thrown: unknown;
     try {
-      await manager.retryWithRelogin(operation, "my-profile");
+      await manager.retryWithRelogin(operation, parseAWSProfile("my-profile"));
     } catch (error) {
       thrown = error;
     }
@@ -537,7 +552,7 @@ describe("retryWithRelogin", () => {
 
     let thrown: unknown;
     try {
-      await manager.retryWithRelogin(operation, "my-profile");
+      await manager.retryWithRelogin(operation, parseAWSProfile("my-profile"));
     } catch (error) {
       thrown = error;
     }
@@ -556,7 +571,7 @@ describe("SSO login process seam", () => {
     configureSpawn(0, null);
 
     const manager = new M3LAWSCredentialsManager({
-      profile: "my-profile",
+      profile: parseAWSProfile("my-profile"),
       interactive: false,
     });
 
@@ -581,7 +596,7 @@ describe("SSO login process seam", () => {
     h.spawn.mockImplementation(() => child);
 
     const manager = new M3LAWSCredentialsManager({
-      profile: "my-profile",
+      profile: parseAWSProfile("my-profile"),
       interactive: false,
       loginTimeoutMs: 1000,
     });
@@ -610,7 +625,7 @@ describe("SSO login process seam", () => {
     h.spawn.mockImplementation(() => child);
 
     const manager = new M3LAWSCredentialsManager({
-      profile: "my-profile",
+      profile: parseAWSProfile("my-profile"),
       interactive: false,
       loginTimeoutMs: 60_000,
     });
@@ -638,7 +653,7 @@ describe("SSO login process seam", () => {
     configureSpawnError(spawnError);
 
     const manager = new M3LAWSCredentialsManager({
-      profile: "my-profile",
+      profile: parseAWSProfile("my-profile"),
       interactive: false,
     });
 
@@ -665,7 +680,7 @@ describe("SSO login process seam", () => {
     configureSpawnError(spawnError);
 
     const manager = new M3LAWSCredentialsManager({
-      profile: "my-profile",
+      profile: parseAWSProfile("my-profile"),
       interactive: true,
       prompt: makePrompt(true),
     });
@@ -809,5 +824,53 @@ describe("M3LAWSCredentialsManager — type-level contract", () => {
     expectTypeOf<
       M3LAWSCredentialsManager["analyzeError"]
     >().returns.not.toEqualTypeOf<Promise<unknown>>();
+  });
+});
+
+// =============================================================================
+// Branded identity at public entry points
+// =============================================================================
+describe("branded identity at public entry points", () => {
+  test("`new M3LAWSCredentialsManager({ profile: <bare string> })` fails typecheck", () => {
+    // @ts-expect-error -- profile must be constructed via parseAWSProfile, not a bare string
+    const manager = new M3LAWSCredentialsManager({ profile: "x" });
+    expect(manager).toBeDefined();
+  });
+
+  test("`new M3LAWSCredentialsManager({ profile: parseAWSProfile(...) })` compiles", () => {
+    expect(
+      () => new M3LAWSCredentialsManager({ profile: parseAWSProfile("x") }),
+    ).not.toThrow();
+  });
+
+  test("`new M3LAWSCredentialsManager({ region: <bare string> })` fails typecheck", () => {
+    // @ts-expect-error -- region must be constructed via parseAWSRegion, not a bare string
+    const manager = new M3LAWSCredentialsManager({ region: "x" });
+    expect(manager).toBeDefined();
+  });
+
+  test("`new M3LAWSCredentialsManager({ region: parseAWSRegion(...) })` compiles", () => {
+    expect(
+      () =>
+        new M3LAWSCredentialsManager({ region: parseAWSRegion("us-east-1") }),
+    ).not.toThrow();
+  });
+
+  test("`ensureValidCredentials(<bare string>)` fails typecheck", () => {
+    const manager = new M3LAWSCredentialsManager();
+    // @ts-expect-error -- profile must be constructed via parseAWSProfile, not a bare string
+    void manager.ensureValidCredentials("x");
+  });
+
+  test("`ensureValidCredentialsMultiple([<bare strings>])` fails typecheck", () => {
+    const manager = new M3LAWSCredentialsManager();
+    // @ts-expect-error -- profiles entries must be constructed via parseAWSProfile, not bare strings
+    void manager.ensureValidCredentialsMultiple(["x"]);
+  });
+
+  test("`retryWithRelogin(op, <bare string>)` fails typecheck", () => {
+    const manager = new M3LAWSCredentialsManager();
+    // @ts-expect-error -- profile must be constructed via parseAWSProfile, not a bare string
+    void manager.retryWithRelogin(() => Promise.resolve(undefined), "x");
   });
 });

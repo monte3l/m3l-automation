@@ -21,7 +21,7 @@ Exported from `@m3l-automation/m3l-common/aws` (and re-exported under the `AWS` 
 - `AWSClientProvider` — single-profile, lazily-cached SDK client provider.
 - `AWSMultiClientProvider` — multi-profile provider with parallel-map helpers.
 - `AWSProvider` — facade exposed via `script.aws`.
-- `AWS_REGION` — default region constant; defaults to `'eu-south-1'` (Milan) when unspecified.
+- `AWS_REGION` — default region constant, a pre-validated [`M3LAWSRegion`](./models.md); `'eu-south-1'` (Milan) when unspecified.
 - `M3LAWSClientError` — typed error (`code: "ERR_AWS_CLIENT"`) thrown when SDK client construction or credential resolution fails.
 
 ### `AWSClientProvider`
@@ -30,10 +30,10 @@ For a single profile, `AWSClientProvider` creates and lazily caches AWS SDK v3 c
 
 **Constructor** — `new AWSClientProvider(options?)`, where `options` is:
 
-| Option    | Type     | Default      | Meaning                                                                                                                              |
-| --------- | -------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `profile` | `string` | _(none)_     | Named AWS profile; when set, credentials resolve via `fromIni({ profile })`. When omitted, the SDK default credential chain is used. |
-| `region`  | `string` | `AWS_REGION` | Region passed to every client this provider constructs. Overrides the `AWS_REGION` default.                                          |
+| Option    | Type                           | Default      | Meaning                                                                                                                              |
+| --------- | ------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `profile` | [`M3LAWSProfile`](./models.md) | _(none)_     | Named AWS profile; when set, credentials resolve via `fromIni({ profile })`. When omitted, the SDK default credential chain is used. |
+| `region`  | [`M3LAWSRegion`](./models.md)  | `AWS_REGION` | Region passed to every client this provider constructs. Overrides the `AWS_REGION` default.                                          |
 
 **Service-client getters** — each is synchronous, constructs its client on first access, and caches it for the provider's lifetime:
 
@@ -65,7 +65,7 @@ When SDK client construction or credential resolution fails, the getter throws `
 
 Manages a map of `AWSClientProvider` instances keyed by profile name.
 
-**Constructor** — `new AWSMultiClientProvider({ profiles })`, where `profiles` is a list of profile names. Names are **deduplicated** on construction, and one `AWSClientProvider` is created per distinct profile.
+**Constructor** — `new AWSMultiClientProvider({ profiles })`, where `profiles` is a `readonly M3LAWSProfile[]` (each built via [`parseAWSProfile`](./models.md)). Names are **deduplicated** on construction, and one `AWSClientProvider` is created per distinct profile.
 
 - `mapParallel<T>(fn)` — runs `fn(provider)` across all profiles in parallel and resolves to the array of results, **rejecting if any operation throws**.
 - `mapParallelSettled<T>(fn)` — runs `fn(provider)` across all profiles and collects per-profile results and errors **without throwing**.
@@ -87,7 +87,9 @@ Subclass of `M3LError` with `code: "ERR_AWS_CLIENT"`. Thrown when an SDK client 
 ```typescript
 import { AWS } from "@m3l-automation/m3l-common";
 
-const provider = new AWS.AWSClientProvider({ profile: "my-profile" });
+const provider = new AWS.AWSClientProvider({
+  profile: AWS.parseAWSProfile("my-profile"),
+});
 
 // Each client is created lazily on first access and cached thereafter.
 const s3 = provider.s3;
@@ -104,8 +106,8 @@ import { AWS } from "@m3l-automation/m3l-common";
 
 // Without `region`, clients default to AWS_REGION ('eu-south-1').
 const provider = new AWS.AWSClientProvider({
-  profile: "my-profile",
-  region: "us-east-1",
+  profile: AWS.parseAWSProfile("my-profile"),
+  region: AWS.parseAWSRegion("us-east-1"),
 });
 ```
 
@@ -115,7 +117,10 @@ const provider = new AWS.AWSClientProvider({
 import { AWS } from "@m3l-automation/m3l-common";
 
 const multi = new AWS.AWSMultiClientProvider({
-  profiles: ["profile-a", "profile-b"],
+  profiles: [
+    AWS.parseAWSProfile("profile-a"),
+    AWS.parseAWSProfile("profile-b"),
+  ],
 });
 
 // Parallel across profiles; rejects if any throws.

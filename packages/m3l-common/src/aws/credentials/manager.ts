@@ -12,8 +12,13 @@ import type {
   M3LAWSCredentialsErrorAnalysis,
   M3LAWSCredentialsManagerOptions,
   M3LAWSLoginResult,
+  M3LAWSProfile,
+  M3LAWSRegion,
 } from "../models/index.js";
-import { M3LAWSCredentialsErrorType } from "../models/index.js";
+import {
+  M3LAWSCredentialsErrorType,
+  parseAWSProfile,
+} from "../models/index.js";
 
 import { M3LAWSCredentialsError } from "./error.js";
 
@@ -119,15 +124,20 @@ function classifyMessage(message: string): M3LAWSCredentialsErrorType {
  *
  * @example
  * ```ts
- * import { M3LAWSCredentialsManager } from "@m3l-automation/m3l-common/aws";
+ * import {
+ *   M3LAWSCredentialsManager,
+ *   parseAWSProfile,
+ * } from "@m3l-automation/m3l-common/aws";
  *
- * const manager = new M3LAWSCredentialsManager({ profile: "my-profile" });
+ * const manager = new M3LAWSCredentialsManager({
+ *   profile: parseAWSProfile("my-profile"),
+ * });
  * await manager.ensureValidCredentials();
  * ```
  */
 export class M3LAWSCredentialsManager {
-  private readonly profile: string | undefined;
-  private readonly region: string | undefined;
+  private readonly profile: M3LAWSProfile | undefined;
+  private readonly region: M3LAWSRegion | undefined;
   private readonly loginTimeoutMs: number;
   private readonly maxRetries: number;
   private readonly interactive: boolean;
@@ -175,9 +185,14 @@ export class M3LAWSCredentialsManager {
    *   or when an interactive re-login confirmation is declined.
    * @example
    * ```ts
-   * import { M3LAWSCredentialsManager } from "@m3l-automation/m3l-common/aws";
+   * import {
+   *   M3LAWSCredentialsManager,
+   *   parseAWSProfile,
+   * } from "@m3l-automation/m3l-common/aws";
    *
-   * const manager = new M3LAWSCredentialsManager({ profile: "my-profile" });
+   * const manager = new M3LAWSCredentialsManager({
+   *   profile: parseAWSProfile("my-profile"),
+   * });
    * const result = await manager.ensureValidCredentials();
    * if (result) {
    *   console.log(`re-authenticated: ${result.outcome === "success"}`);
@@ -185,7 +200,7 @@ export class M3LAWSCredentialsManager {
    * ```
    */
   async ensureValidCredentials(
-    profile?: string,
+    profile?: M3LAWSProfile,
   ): Promise<M3LAWSLoginResult | undefined> {
     const resolvedProfile = profile ?? this.profile;
 
@@ -223,14 +238,20 @@ export class M3LAWSCredentialsManager {
    *   profile encountered during the sequential login phase.
    * @example
    * ```ts
-   * import { M3LAWSCredentialsManager } from "@m3l-automation/m3l-common/aws";
+   * import {
+   *   M3LAWSCredentialsManager,
+   *   parseAWSProfile,
+   * } from "@m3l-automation/m3l-common/aws";
    *
    * const manager = new M3LAWSCredentialsManager();
-   * await manager.ensureValidCredentialsMultiple(["profile-a", "profile-b"]);
+   * await manager.ensureValidCredentialsMultiple([
+   *   parseAWSProfile("profile-a"),
+   *   parseAWSProfile("profile-b"),
+   * ]);
    * ```
    */
   async ensureValidCredentialsMultiple(
-    profiles: readonly string[],
+    profiles: readonly M3LAWSProfile[],
   ): Promise<readonly M3LAWSLoginResult[]> {
     // Phase 1: validate all profiles in parallel.
     const settlements = await Promise.allSettled(
@@ -244,7 +265,7 @@ export class M3LAWSCredentialsManager {
     // later occurrence's failure to an earlier one's — carrying the pair
     // through avoids that entirely.
     const invalidEntries: {
-      profile: string;
+      profile: M3LAWSProfile;
       settlement: PromiseSettledResult<void>;
     }[] = [];
     for (const [index, settlement] of settlements.entries()) {
@@ -300,9 +321,14 @@ export class M3LAWSCredentialsManager {
    *   are exhausted.
    * @example
    * ```ts
-   * import { M3LAWSCredentialsManager } from "@m3l-automation/m3l-common/aws";
+   * import {
+   *   M3LAWSCredentialsManager,
+   *   parseAWSProfile,
+   * } from "@m3l-automation/m3l-common/aws";
    *
-   * const manager = new M3LAWSCredentialsManager({ profile: "my-profile" });
+   * const manager = new M3LAWSCredentialsManager({
+   *   profile: parseAWSProfile("my-profile"),
+   * });
    * const identity = await manager.retryWithRelogin(async () => {
    *   // ... call an AWS SDK operation that may reject with an expired
    *   // credential error ...
@@ -312,7 +338,7 @@ export class M3LAWSCredentialsManager {
    */
   async retryWithRelogin<T>(
     operation: () => Promise<T>,
-    profile?: string,
+    profile?: M3LAWSProfile,
   ): Promise<T> {
     const resolvedProfile = profile ?? this.profile;
     const maxAttempts = this.maxRetries + 1;
@@ -385,7 +411,9 @@ export class M3LAWSCredentialsManager {
    * against STS `GetCallerIdentityCommand`. Rejects with the raw SDK error
    * on failure — callers classify it via {@link analyzeError}.
    */
-  private async validateProfile(profile: string | undefined): Promise<void> {
+  private async validateProfile(
+    profile: M3LAWSProfile | undefined,
+  ): Promise<void> {
     const { STSClient, GetCallerIdentityCommand } = await this.loadClientSts();
     const { fromSSO } = await this.loadCredentialProviders();
 
@@ -408,9 +436,9 @@ export class M3LAWSCredentialsManager {
    *   `"exit"`.
    */
   private async runSsoLogin(
-    profile: string | undefined,
+    profile: M3LAWSProfile | undefined,
   ): Promise<M3LAWSLoginResult> {
-    const resolvedProfile = profile ?? "default";
+    const resolvedProfile = profile ?? parseAWSProfile("default");
     const startedAt = Date.now();
 
     return new Promise<M3LAWSLoginResult>((resolve, reject) => {
