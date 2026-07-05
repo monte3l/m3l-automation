@@ -79,7 +79,11 @@ vi.mock("node:fs/promises", async () => {
 
 import { S3Client } from "@aws-sdk/client-s3";
 
-import { AWSClientProvider, AWSProvider } from "../src/aws/index.js";
+import {
+  AWSClientProvider,
+  AWSProvider,
+  M3LAWSIdentityError,
+} from "../src/aws/index.js";
 import { M3LError } from "../src/core/errors/index.js";
 import {
   M3LConfigParameter,
@@ -824,6 +828,83 @@ describe("M3LScript.run() — AWS provisioning seam", () => {
 
     const region = await script.aws?.clients.s3.config.region();
     expect(region).toBe("eu-south-1");
+  });
+
+  test("a malformed configured aws.region value fails loud: run() rejects with the SAME M3LAWSIdentityError (code ERR_AWS_INVALID_REGION), not swallowed or wrapped", async () => {
+    const malformedRegionParam = new M3LConfigParameter<string>({
+      name: "aws.region",
+      type: M3LConfigParameterType.STRING,
+      defaultValue: "not a region",
+    });
+    const options: M3LScriptOptions = {
+      metadata,
+      config: { params: [makeAwsProfileParam(), malformedRegionParam] },
+    };
+    const script = new M3LScript(options);
+    const mainFn = vi.fn();
+
+    let thrown: unknown;
+    try {
+      await script.run(mainFn);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LAWSIdentityError);
+    expect((thrown as M3LAWSIdentityError).code).toBe("ERR_AWS_INVALID_REGION");
+    // Fails loud: mainFn never ran, and the pipeline never reached stage 5's
+    // successful provisioning of `script.aws`.
+    expect(mainFn).not.toHaveBeenCalled();
+    expect(script.aws).toBeUndefined();
+  });
+
+  test("a malformed configured aws.profile value fails loud: run() rejects with the SAME M3LAWSIdentityError (code ERR_AWS_INVALID_PROFILE), not swallowed or wrapped", async () => {
+    const malformedProfileParam = new M3LConfigParameter<string>({
+      name: "aws.profile",
+      type: M3LConfigParameterType.STRING,
+      defaultValue: "has whitespace",
+    });
+    const options: M3LScriptOptions = {
+      metadata,
+      config: { params: [malformedProfileParam] },
+    };
+    const script = new M3LScript(options);
+    const mainFn = vi.fn();
+
+    let thrown: unknown;
+    try {
+      await script.run(mainFn);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LAWSIdentityError);
+    expect((thrown as M3LAWSIdentityError).code).toBe(
+      "ERR_AWS_INVALID_PROFILE",
+    );
+    expect(mainFn).not.toHaveBeenCalled();
+    expect(script.aws).toBeUndefined();
+  });
+
+  test("a valid configured aws.region and aws.profile still provision fine — the fail-loud path is specific to malformed input", async () => {
+    const validRegionParam = new M3LConfigParameter<string>({
+      name: "aws.region",
+      type: M3LConfigParameterType.STRING,
+      defaultValue: "us-east-1",
+    });
+    const options: M3LScriptOptions = {
+      metadata,
+      config: { params: [makeAwsProfileParam(), validRegionParam] },
+    };
+    const script = new M3LScript(options);
+    const mainFn = vi.fn();
+
+    await expect(script.run(mainFn)).resolves.toBeUndefined();
+
+    expect(mainFn).toHaveBeenCalledTimes(1);
+    expect(script.aws).toBeInstanceOf(AWSProvider);
+    const region = await script.aws?.clients.s3.config.region();
+    expect(region).toBe("us-east-1");
   });
 
   test("the provisioned AWSProvider is memoized: two warm createLambdaHandler invocations expose the SAME script.aws instance", async () => {

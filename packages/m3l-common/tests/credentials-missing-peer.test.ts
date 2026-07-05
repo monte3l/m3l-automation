@@ -48,7 +48,14 @@ describe("AWS SDK package load failure", () => {
     // errors module, so instanceof must use M3LError from that SAME graph.
     const { M3LError: GraphM3LError } =
       await import("../src/core/errors/index.js");
-    const manager = new mod.M3LAWSCredentialsManager({ profile: "default" });
+    // Likewise `parseAWSProfile` must come from the SAME dynamic graph so the
+    // branded `M3LAWSProfile` it returns is structurally compatible with what
+    // this graph's `M3LAWSCredentialsManager` expects.
+    const { parseAWSProfile: graphParseAWSProfile } =
+      await import("../src/aws/models/index.js");
+    const manager = new mod.M3LAWSCredentialsManager({
+      profile: graphParseAWSProfile("default"),
+    });
 
     let thrown: unknown;
     try {
@@ -86,7 +93,11 @@ describe("AWS SDK package load failure", () => {
     });
 
     const mod = await import("../src/aws/credentials/index.js");
-    const manager = new mod.M3LAWSCredentialsManager({ profile: "default" });
+    const { parseAWSProfile: graphParseAWSProfile } =
+      await import("../src/aws/models/index.js");
+    const manager = new mod.M3LAWSCredentialsManager({
+      profile: graphParseAWSProfile("default"),
+    });
 
     let thrown: unknown;
     try {
