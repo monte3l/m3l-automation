@@ -12,13 +12,12 @@
 <a href="https://nodejs.org/api/esm.html"><img src="https://img.shields.io/badge/esm-only-66D9EF?style=flat-square&labelColor=272822" alt="ESM only"></a>
 <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-66D9EF?style=flat-square&labelColor=272822" alt="TypeScript strict"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-A6E22E?style=flat-square&labelColor=272822" alt="Apache-2.0"></a>
-<a href="docs/implementation-status.md"><img src="https://img.shields.io/badge/status-pre--release-FD971F?style=flat-square&labelColor=272822" alt="status: pre-release"></a>
-<a href="docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-22%2F22-FD971F?style=flat-square&labelColor=272822" alt="modules: 22/22"></a>
+<a href="docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-22%2F22-A6E22E?style=flat-square&labelColor=272822" alt="modules: 22/22"></a>
 </p>
 
-> **Status: early development — scaffold and specs are complete; implementation is in progress.**
-> Version `0.0.0-development`. All documented APIs are design targets; 22 of 22 submodules are
-> implemented (`errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`, `prompt`, `exporters`, `storage`, `network`, `importers`, `files`, `logging`, `aws/models`, `script`, `aws/credentials`, `aws/clients`). See [Implementation status](docs/implementation-status.md)
+> **All 22 of 22 submodules are implemented and reviewed.** The package is unpublished
+> (version `0.0.0-development`); semantic-release cuts `1.0.0` on the first published
+> release. Implemented submodules: `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`, `prompt`, `exporters`, `storage`, `network`, `importers`, `files`, `logging`, `aws/models`, `script`, `aws/credentials`, `aws/clients`. See [Implementation status](docs/implementation-status.md)
 > for the per-module breakdown.
 
 A shared infrastructure library for automation scripts and AWS Lambda handlers. It provides
@@ -26,9 +25,9 @@ enterprise-grade building blocks — application scaffolding, configuration, log
 handling, file import/export, polling/retry resilience, and AWS credential and client management
 — so consumer scripts stay free of boilerplate.
 
-## Features (target API — not yet implemented)
+## Features
 
-The following capabilities describe the target design. Progress is tracked in
+Per-module detail and coverage are tracked in
 [docs/implementation-status.md](docs/implementation-status.md).
 
 - **Application framework** — `Core.M3LScript` is a single entry point for CLI scripts and Lambda handlers, wiring together environment detection, configuration loading, logging, interactive prompts, graceful shutdown, process fault guards, and file archival.
@@ -52,13 +51,11 @@ pnpm add @m3l-automation/m3l-common
 
 ## Quick start
 
-> This example shows the intended usage once `M3LScript` is implemented.
-
 ```typescript
 import { Core } from "@m3l-automation/m3l-common";
 
 const script = new Core.M3LScript({
-  metadata: { name: "hello-script", description: "Minimal example" },
+  metadata: { name: "hello-script", version: "1.0.0" },
 });
 
 await script.run(async () => {

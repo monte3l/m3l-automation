@@ -50,7 +50,7 @@ surface).
 | 0006 | [Apache 2.0 license adoption](./0006-license-choice.md)                                                                         | Accepted |
 | 0007 | [Automated dependency monitoring and security gating](./0007-dependency-management-strategy.md)                                 | Accepted |
 | 0008 | [Replace @commitlint/cli with a thin wrapper around @commitlint/lint](./0008-commitlint-cli-replacement.md)                     | Accepted |
-| 0009 | [Dependency-direction guard: import-x/no-restricted-paths vs dependency-cruiser](./0009-dependency-direction-guard.md)          | Proposed |
+| 0009 | [Dependency-direction guard: import-x/no-restricted-paths vs dependency-cruiser](./0009-dependency-direction-guard.md)          | Accepted |
 | 0010 | [Enforce formatting and Markdown linting in CI, with rumdl as the Markdown linter](./0010-markdown-lint-and-format-ci-gates.md) | Accepted |
 | 0011 | [Release and publishing workflow](./0011-release-and-publishing-workflow.md)                                                    | Accepted |
 | 0012 | [Defer external code-index MCP; use native LSP + generated catalog](./0012-defer-external-code-index-mcp.md)                    | Accepted |
@@ -59,3 +59,4 @@ surface).
 | 0015 | [Code-scanning tooling evaluation and supply-chain hardening](./0015-code-scanning-tooling-evaluation.md)                       | Accepted |
 | 0016 | [Signed-commit enforcement and the pre-work decision gate](./0016-signed-commits-and-decision-gate.md)                          | Accepted |
 | 0017 | [Dependency loading, declaration, and pinning standard](./0017-dependency-loading-standard.md)                                  | Accepted |
+| 0018 | [Ratify a single shared `M3LScriptOptions` bag for CLI and Lambda](./0018-shared-script-options-bag.md)                         | Accepted |

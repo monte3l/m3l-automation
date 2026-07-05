@@ -12,20 +12,19 @@
 <a href="https://nodejs.org/api/esm.html"><img src="https://img.shields.io/badge/esm-only-66D9EF?style=flat-square&labelColor=272822" alt="ESM only"></a>
 <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-66D9EF?style=flat-square&labelColor=272822" alt="TypeScript strict"></a>
 <a href="https://github.com/monte3l/m3l-automation/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-A6E22E?style=flat-square&labelColor=272822" alt="Apache-2.0"></a>
-<a href="https://github.com/monte3l/m3l-automation/blob/main/docs/implementation-status.md"><img src="https://img.shields.io/badge/status-pre--release-FD971F?style=flat-square&labelColor=272822" alt="status: pre-release"></a>
-<a href="https://github.com/monte3l/m3l-automation/blob/main/docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-22%2F22-FD971F?style=flat-square&labelColor=272822" alt="modules: 22/22"></a>
+<a href="https://github.com/monte3l/m3l-automation/blob/main/docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-22%2F22-A6E22E?style=flat-square&labelColor=272822" alt="modules: 22/22"></a>
 </p>
 
-> **Status: early development — scaffold and specs are complete; implementation is in progress.**
-> Version `0.0.0-development`. All documented APIs are design targets; 22 of 22 submodules are
-> implemented (`errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`, `prompt`, `exporters`, `storage`, `network`, `importers`, `files`, `logging`, `aws/models`, `script`, `aws/credentials`, `aws/clients`).
+> **All 22 of 22 submodules are implemented and reviewed.** The package is unpublished
+> (version `0.0.0-development`); semantic-release cuts `1.0.0` on the first published release.
+> Implemented submodules: `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`, `prompt`, `exporters`, `storage`, `network`, `importers`, `files`, `logging`, `aws/models`, `script`, `aws/credentials`, `aws/clients`.
 
 A shared infrastructure library for automation scripts and AWS Lambda handlers. It provides
 enterprise-grade building blocks — application scaffolding, configuration, logging, error
 handling, file import/export, polling/retry resilience, and AWS credential and client management
 — so consumer scripts stay free of boilerplate.
 
-All APIs below are design targets. See the
+See the
 [implementation status](https://github.com/monte3l/m3l-automation/blob/main/docs/implementation-status.md)
 for the per-module breakdown.
 
@@ -42,13 +41,11 @@ pnpm add @m3l-automation/m3l-common
 
 ## Quick start
 
-> This example shows the intended usage once `M3LScript` is implemented.
-
 ```typescript
 import { Core } from "@m3l-automation/m3l-common";
 
 const script = new Core.M3LScript({
-  metadata: { name: "hello-script", description: "Minimal example" },
+  metadata: { name: "hello-script", version: "1.0.0" },
 });
 
 await script.run(async () => {

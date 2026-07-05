@@ -1,7 +1,7 @@
 # 0009. Dependency-direction guard: import-x/no-restricted-paths vs dependency-cruiser
 
-- **Status:** Proposed
-- **Date:** 2026-06-28
+- **Status:** Accepted
+- **Date:** 2026-06-28 (accepted 2026-07-05)
 - **Deciders:** m3l-automation maintainers
 
 ## Context and problem statement
@@ -15,9 +15,9 @@ non-deterministic.
 
 Today the only deterministically-guarded boundary is `internal/` privacy,
 enforced by an `import-x/no-restricted-paths` zone on the three public barrels
-(see `eslint.config.js` and [ADR-0004](./0004-exports-map-contract.md)). That is
-sufficient _now_ only because `src/` is still an empty scaffold (three barrels +
-an empty `internal/`) — there is no inter-submodule layering to protect yet.
+(see `eslint.config.js` and [ADR-0004](./0004-exports-map-contract.md)). That was
+sufficient at proposal time only because `src/` was then an empty scaffold (three
+barrels + an empty `internal/`) — there was no inter-submodule layering to protect yet.
 
 This ADR records the decision to add a broader dependency-direction guard, and
 which tool to use, **so it is not relitigated** when submodules start landing.
@@ -51,17 +51,19 @@ which tool to use, **so it is not relitigated** when submodules start landing.
 
 ## Decision
 
-**Proposed (deferred).** When Core submodules establish a layering worth
-enforcing, start with **option 1 (`import-x/no-restricted-paths`)** because it
+**Accepted.** Adopt **option 1 (`import-x/no-restricted-paths`)** because it
 adds zero dependencies, runs in the existing lint gate, and matches the pattern
 already in use. **Escalate to option 2 (`dependency-cruiser`)** only if the
 layering outgrows path-based zones (e.g. cycle/orphan detection or
 many-to-many edge constraints become necessary).
 
-**Trigger to revisit:** the first time two or more implemented Core submodules
-import one another, or a documented layer ordering exists in
-`docs/m3l-common-architecture.md`. The natural seam is the `implement-submodule`
-pipeline producing real inter-module imports.
+**The revisit trigger has fired.** All 22 submodules are implemented and
+cross-import one another (e.g. `core/logging`'s file handler delegates to
+`core/exporters`; `core/script` orchestrates env/config/logging/aws), so the
+"no layering to protect yet" premise no longer holds. Wiring the
+`import-x/no-restricted-paths` zones is dev-time repo tooling with no effect on
+the published `exports` map or runtime behavior, so it is **non-blocking for
+1.0.0** and may land post-release.
 
 ## Consequences
 
