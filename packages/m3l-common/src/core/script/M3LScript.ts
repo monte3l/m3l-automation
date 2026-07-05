@@ -27,11 +27,12 @@ import type {
   M3LScriptOptions,
 } from "./M3LScriptOptions.js";
 
-// Type-only import: erased at compile time, so importing the type here does
-// NOT create a static core -> aws module cycle and non-AWS scripts stay
-// tree-shakeable. The runtime value is loaded dynamically, see
-// `provisionAws` below.
+// Type-only imports: erased at compile time, so importing the types here
+// does NOT create a static core -> aws module cycle and non-AWS scripts stay
+// tree-shakeable. The runtime values are loaded dynamically, see
+// `provisionAws` / `resolveAwsIdentity` below.
 import type { AWSProvider } from "../../aws/clients/index.js";
+import type { M3LAWSProfile, M3LAWSRegion } from "../../aws/models/index.js";
 
 /** The config parameter name that gates the AWS provisioning seam (stage 5). */
 const AWS_PROFILE_PARAM_NAME = "aws.profile";
@@ -341,21 +342,57 @@ export class M3LScript {
   }
 
   /**
+   * Resolves and validates the configured `aws.profile`/`aws.region` values
+   * into their branded `M3LAWSProfile`/`M3LAWSRegion` types, each used only
+   * when it resolves to a non-empty string. Split out of {@link provisionAws}
+   * so a malformed value's `M3LAWSIdentityError` propagates BEFORE that
+   * method's provisioning try/catch begins, and to keep `provisionAws`
+   * itself under the method-complexity budget.
+   *
+   * The `aws/models` module is imported dynamically — not statically at the
+   * top of this file — so that scripts which never declare `aws.profile`
+   * never pull the `aws` namespace into their bundle, and so `core` has no
+   * static import-time dependency on `aws` (avoiding a core-and-aws module
+   * cycle).
+   */
+  private async resolveAwsIdentity(): Promise<{
+    readonly profile: M3LAWSProfile | undefined;
+    readonly region: M3LAWSRegion | undefined;
+  }> {
+    const profile = this.config.get(AWS_PROFILE_PARAM_NAME);
+    const region = this.config.get(AWS_REGION_PARAM_NAME);
+    const hasProfile = typeof profile === "string" && profile.length > 0;
+    const hasRegion = typeof region === "string" && region.length > 0;
+
+    const { parseAWSProfile, parseAWSRegion } =
+      await import("../../aws/models/index.js");
+    return {
+      profile: hasProfile ? parseAWSProfile(profile) : undefined,
+      region: hasRegion ? parseAWSRegion(region) : undefined,
+    };
+  }
+
+  /**
    * Stage 5: AWS client provisioning. A strict no-op unless the config
    * schema declares an `aws.profile` parameter. When it does, this
    * memoizes: a warm `script.aws` (already provisioned on a prior `run`/
    * Lambda invocation) is reused as-is, so the underlying AWS SDK clients
    * survive across invocations instead of being rebuilt on every call.
    *
-   * On first provisioning, resolves `aws.profile`/`aws.region` from the
-   * loaded config (each used only when it resolves to a non-empty string)
-   * and constructs the {@link AWSProvider} facade. The facade module is
-   * imported dynamically — not statically at the top of this file — so that
-   * scripts which never declare `aws.profile` never pull the `aws`
-   * namespace into their bundle, and so `core` has no static import-time
-   * dependency on `aws` (avoiding a core-and-aws module cycle).
+   * On first provisioning, resolves and validates `aws.profile`/`aws.region`
+   * via {@link resolveAwsIdentity} and constructs the {@link AWSProvider}
+   * facade. The facade module is imported dynamically — not statically at
+   * the top of this file — so that scripts which never declare
+   * `aws.profile` never pull the `aws` namespace into their bundle, and so
+   * `core` has no static import-time dependency on `aws` (avoiding a
+   * core-and-aws module cycle).
    *
-   * A failure of either the dynamic import or the `AWSProvider` constructor
+   * A malformed configured `aws.profile`/`aws.region` value fails loud as an
+   * `M3LAWSIdentityError` — it propagates unchanged rather than being folded
+   * into the generic provisioning failure below, so callers can narrow on
+   * its `code` (`ERR_AWS_INVALID_PROFILE` / `ERR_AWS_INVALID_REGION`) to tell
+   * a configuration mistake apart from an AWS SDK facade failure. Any other
+   * failure — the dynamic import itself or the `AWSProvider` constructor —
    * is wrapped in an internal `M3LAWSProvisioningError`
    * (`code === "ERR_AWS_PROVISIONING"`), chaining the original failure as
    * `cause`, rather than propagating a raw untyped error.
@@ -367,18 +404,17 @@ export class M3LScript {
     // `aws.profile` resolving to an empty/missing value is still a valid
     // config: provisioning still occurs and the AWSProvider defers to the
     // SDK's default credential chain, rather than this seam duplicating
-    // credential validation.
-    const profile = this.config.get(AWS_PROFILE_PARAM_NAME);
-    const region = this.config.get(AWS_REGION_PARAM_NAME);
-    const hasProfile = typeof profile === "string" && profile.length > 0;
-    const hasRegion = typeof region === "string" && region.length > 0;
+    // credential validation. Resolved and validated BEFORE the try/catch
+    // below, so a malformed value's `M3LAWSIdentityError` propagates
+    // unchanged instead of being folded into `M3LAWSProvisioningError`.
+    const { profile, region } = await this.resolveAwsIdentity();
 
     let provider: AWSProvider;
     try {
       const { AWSProvider } = await import("../../aws/clients/index.js");
       provider = new AWSProvider({
-        ...(hasProfile ? { profile } : {}),
-        ...(hasRegion ? { region } : {}),
+        ...(profile !== undefined ? { profile } : {}),
+        ...(region !== undefined ? { region } : {}),
       });
     } catch (cause) {
       throw new M3LAWSProvisioningError(

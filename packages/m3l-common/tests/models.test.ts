@@ -3,29 +3,294 @@
  *
  * Contract source: docs/reference/aws/models.md.
  *
- * Exports under test: M3LAWSCredentialsErrorType,
+ * Exports under test: M3LAWSRegion, M3LAWSProfile, parseAWSRegion,
+ *   parseAWSProfile, isAWSRegion, isAWSProfile, M3LAWSIdentityError,
+ *   M3LAWSIdentityErrorCode, M3LAWSCredentialsErrorType,
  *   M3LAWSCredentialsErrorAnalysis, M3LAWSRetryContext, M3LAWSLoginResult,
- *   M3LAWSCredentialsManagerOptions (5 symbols).
+ *   M3LAWSCredentialsManagerOptions (13 symbols).
  *
- * `aws/models` is a dependency-free, types-only shared-vocabulary layer: no
- * functions, no thrown errors. `M3LAWSCredentialsErrorType` is the only
- * export with a runtime value (a `const` object, the project's
- * enum-replacement convention); the other four are compile-time-only
- * interface shapes, verified entirely with `expectTypeOf`. The "failure
- * path" for this module is the negative type assertion: an out-of-union
- * string or a malformed shape must be rejected at the type level.
+ * `aws/models` is a dependency-free, types-only shared-vocabulary layer, plus
+ * the small runtime identity brands (`parseAWSRegion`/`parseAWSProfile`, the
+ * `is*` guards, and `M3LAWSIdentityError`). `M3LAWSCredentialsErrorType` is a
+ * runtime `const` object (the project's enum-replacement convention); the
+ * credential-analysis/retry/login/options symbols are compile-time-only
+ * interface shapes, verified entirely with `expectTypeOf`. The "failure path"
+ * for the pure-type symbols is the negative type assertion: an out-of-union
+ * string or a malformed shape must be rejected at the type level. The
+ * identity brands additionally have a real runtime failure path
+ * (`M3LAWSIdentityError`) exercised below.
  */
 
 import { describe, expect, expectTypeOf, test } from "vitest";
 
-import { M3LAWSCredentialsErrorType } from "../src/aws/models/index.js";
+import { M3LError } from "../src/core/errors/index.js";
+import {
+  isAWSProfile,
+  isAWSRegion,
+  M3LAWSCredentialsErrorType,
+  M3LAWSIdentityError,
+  parseAWSProfile,
+  parseAWSRegion,
+} from "../src/aws/models/index.js";
 import type {
   M3LAWSCredentialsErrorAnalysis,
   M3LAWSCredentialsManagerOptions,
+  M3LAWSIdentityErrorCode,
   M3LAWSLoginResult,
+  M3LAWSProfile,
+  M3LAWSRegion,
   M3LAWSRetryContext,
 } from "../src/aws/models/index.js";
 import type { M3LPrompt } from "../src/core/prompt/index.js";
+
+// =============================================================================
+// AWS identity brands — M3LAWSRegion / M3LAWSProfile
+// =============================================================================
+
+/** Documented-valid AWS region strings. */
+const VALID_REGIONS = ["eu-south-1", "us-east-1", "us-gov-east-1"] as const;
+
+/** Documented-invalid AWS region strings. */
+const INVALID_REGIONS = [
+  "",
+  " eu-south-1 ",
+  "EU-SOUTH-1",
+  "eu-south",
+  "-south-1",
+  "my-profile",
+] as const;
+
+/** Documented-valid AWS profile strings. */
+const VALID_PROFILES = ["my-profile", "profile-a", "default"] as const;
+
+/** Documented-invalid AWS profile strings. */
+const INVALID_PROFILES = [
+  "",
+  " my-profile ",
+  "my-profile\t",
+  "my profile",
+  "a\nb",
+] as const;
+
+describe("parseAWSRegion", () => {
+  test.each(VALID_REGIONS)(
+    "accepts and brands the valid region %j",
+    (value) => {
+      expect(parseAWSRegion(value)).toBe(value);
+    },
+  );
+
+  test.each(INVALID_REGIONS)(
+    "throws M3LAWSIdentityError with code ERR_AWS_INVALID_REGION for %j",
+    (value) => {
+      let thrown: unknown;
+      try {
+        parseAWSRegion(value);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect(thrown).toBeInstanceOf(M3LAWSIdentityError);
+      expect((thrown as M3LAWSIdentityError).code).toBe(
+        "ERR_AWS_INVALID_REGION",
+      );
+    },
+  );
+
+  test("does not carry a `cause` — an invalid region string has no underlying failure to chain", () => {
+    let thrown: unknown;
+    try {
+      parseAWSRegion("not-a-region!!!");
+    } catch (error) {
+      thrown = error;
+    }
+    expect((thrown as M3LAWSIdentityError).cause).toBeUndefined();
+  });
+});
+
+describe("isAWSRegion", () => {
+  test.each(VALID_REGIONS)("returns true for the valid region %j", (value) => {
+    expect(isAWSRegion(value)).toBe(true);
+  });
+
+  test.each(INVALID_REGIONS)(
+    "returns false for the invalid region %j",
+    (value) => {
+      expect(isAWSRegion(value)).toBe(false);
+    },
+  );
+});
+
+describe("parseAWSRegion / isAWSRegion equivalence", () => {
+  test.each(VALID_REGIONS)(
+    "a valid region BOTH passes the guard and parses without throwing: %j",
+    (value) => {
+      expect(isAWSRegion(value)).toBe(true);
+      expect(() => parseAWSRegion(value)).not.toThrow();
+    },
+  );
+
+  test.each(INVALID_REGIONS)(
+    "an invalid region BOTH fails the guard and throws on parse: %j",
+    (value) => {
+      expect(isAWSRegion(value)).toBe(false);
+      expect(() => parseAWSRegion(value)).toThrow(M3LAWSIdentityError);
+    },
+  );
+});
+
+describe("parseAWSProfile", () => {
+  test.each(VALID_PROFILES)(
+    "accepts and brands the valid profile %j",
+    (value) => {
+      expect(parseAWSProfile(value)).toBe(value);
+    },
+  );
+
+  test.each(INVALID_PROFILES)(
+    "throws M3LAWSIdentityError with code ERR_AWS_INVALID_PROFILE for %j",
+    (value) => {
+      let thrown: unknown;
+      try {
+        parseAWSProfile(value);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect(thrown).toBeInstanceOf(M3LAWSIdentityError);
+      expect((thrown as M3LAWSIdentityError).code).toBe(
+        "ERR_AWS_INVALID_PROFILE",
+      );
+    },
+  );
+
+  test("does not carry a `cause` — an invalid profile string has no underlying failure to chain", () => {
+    let thrown: unknown;
+    try {
+      parseAWSProfile("");
+    } catch (error) {
+      thrown = error;
+    }
+    expect((thrown as M3LAWSIdentityError).cause).toBeUndefined();
+  });
+});
+
+describe("isAWSProfile", () => {
+  test.each(VALID_PROFILES)(
+    "returns true for the valid profile %j",
+    (value) => {
+      expect(isAWSProfile(value)).toBe(true);
+    },
+  );
+
+  test.each(INVALID_PROFILES)(
+    "returns false for the invalid profile %j",
+    (value) => {
+      expect(isAWSProfile(value)).toBe(false);
+    },
+  );
+});
+
+describe("parseAWSProfile / isAWSProfile equivalence", () => {
+  test.each(VALID_PROFILES)(
+    "a valid profile BOTH passes the guard and parses without throwing: %j",
+    (value) => {
+      expect(isAWSProfile(value)).toBe(true);
+      expect(() => parseAWSProfile(value)).not.toThrow();
+    },
+  );
+
+  test.each(INVALID_PROFILES)(
+    "an invalid profile BOTH fails the guard and throws on parse: %j",
+    (value) => {
+      expect(isAWSProfile(value)).toBe(false);
+      expect(() => parseAWSProfile(value)).toThrow(M3LAWSIdentityError);
+    },
+  );
+});
+
+describe("M3LAWSIdentityError", () => {
+  test("is an instance of both M3LError and Error", () => {
+    let thrown: unknown;
+    try {
+      parseAWSRegion("");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect(thrown).toBeInstanceOf(Error);
+  });
+
+  describe("type-level contract", () => {
+    test("M3LAWSIdentityErrorCode is exactly the two documented literals", () => {
+      expectTypeOf<M3LAWSIdentityErrorCode>().toEqualTypeOf<
+        "ERR_AWS_INVALID_REGION" | "ERR_AWS_INVALID_PROFILE"
+      >();
+    });
+
+    test("code narrows to M3LAWSIdentityErrorCode, not a plain string", () => {
+      expectTypeOf<
+        M3LAWSIdentityError["code"]
+      >().toEqualTypeOf<M3LAWSIdentityErrorCode>();
+      expectTypeOf<string>().not.toMatchTypeOf<M3LAWSIdentityErrorCode>();
+    });
+  });
+});
+
+describe("M3LAWSRegion / M3LAWSProfile — type-level contract", () => {
+  test("parseAWSRegion returns M3LAWSRegion, not a bare string", () => {
+    expectTypeOf(parseAWSRegion).returns.toEqualTypeOf<M3LAWSRegion>();
+    expectTypeOf(parseAWSRegion).returns.not.toEqualTypeOf<string>();
+  });
+
+  test("parseAWSProfile returns M3LAWSProfile, not a bare string", () => {
+    expectTypeOf(parseAWSProfile).returns.toEqualTypeOf<M3LAWSProfile>();
+    expectTypeOf(parseAWSProfile).returns.not.toEqualTypeOf<string>();
+  });
+
+  test("M3LAWSRegion is NOT assignable from a bare string", () => {
+    expectTypeOf<string>().not.toMatchTypeOf<M3LAWSRegion>();
+  });
+
+  test("M3LAWSProfile is NOT assignable from a bare string", () => {
+    expectTypeOf<string>().not.toMatchTypeOf<M3LAWSProfile>();
+  });
+
+  test("M3LAWSRegion is NOT assignable to M3LAWSProfile", () => {
+    expectTypeOf<M3LAWSRegion>().not.toMatchTypeOf<M3LAWSProfile>();
+  });
+
+  test("M3LAWSProfile is NOT assignable to M3LAWSRegion", () => {
+    expectTypeOf<M3LAWSProfile>().not.toMatchTypeOf<M3LAWSRegion>();
+  });
+
+  test("both brands ARE assignable to string", () => {
+    expectTypeOf<M3LAWSRegion>().toMatchTypeOf<string>();
+    expectTypeOf<M3LAWSProfile>().toMatchTypeOf<string>();
+  });
+
+  test("isAWSRegion narrows a string parameter to M3LAWSRegion", () => {
+    function useRegion(value: string): M3LAWSRegion | undefined {
+      if (isAWSRegion(value)) {
+        expectTypeOf(value).toEqualTypeOf<M3LAWSRegion>();
+        return value;
+      }
+      return undefined;
+    }
+    expect(useRegion("eu-south-1")).toBe("eu-south-1");
+  });
+
+  test("isAWSProfile narrows a string parameter to M3LAWSProfile", () => {
+    function useProfile(value: string): M3LAWSProfile | undefined {
+      if (isAWSProfile(value)) {
+        expectTypeOf(value).toEqualTypeOf<M3LAWSProfile>();
+        return value;
+      }
+      return undefined;
+    }
+    expect(useProfile("my-profile")).toBe("my-profile");
+  });
+});
 
 // =============================================================================
 // M3LAWSCredentialsErrorType — const object + derived union
@@ -255,7 +520,7 @@ describe("M3LAWSLoginResult", () => {
     const result: M3LAWSLoginResult = {
       outcome: "success",
       exitCode: 0,
-      profile: "default",
+      profile: parseAWSProfile("default"),
       durationMs: 1500,
     };
     expect(result.outcome).toBe("success");
@@ -268,7 +533,7 @@ describe("M3LAWSLoginResult", () => {
     const result: M3LAWSLoginResult = {
       outcome: "failed",
       exitCode: 1,
-      profile: "default",
+      profile: parseAWSProfile("default"),
       durationMs: 2000,
     };
     expect(result.outcome).toBe("failed");
@@ -279,7 +544,7 @@ describe("M3LAWSLoginResult", () => {
     const result: M3LAWSLoginResult = {
       outcome: "timedOut",
       exitCode: null,
-      profile: "default",
+      profile: parseAWSProfile("default"),
       durationMs: 120_000,
     };
     expect(result.outcome).toBe("timedOut");
@@ -306,7 +571,7 @@ describe("M3LAWSLoginResult", () => {
       describeOutcome({
         outcome: "success",
         exitCode: 0,
-        profile: "p",
+        profile: parseAWSProfile("p"),
         durationMs: 1,
       }),
     ).toContain("success");
@@ -314,7 +579,7 @@ describe("M3LAWSLoginResult", () => {
       describeOutcome({
         outcome: "failed",
         exitCode: 1,
-        profile: "p",
+        profile: parseAWSProfile("p"),
         durationMs: 1,
       }),
     ).toContain("failed");
@@ -322,7 +587,7 @@ describe("M3LAWSLoginResult", () => {
       describeOutcome({
         outcome: "timedOut",
         exitCode: null,
-        profile: "p",
+        profile: parseAWSProfile("p"),
         durationMs: 1,
       }),
     ).toContain("timed out");
@@ -362,7 +627,7 @@ describe("M3LAWSLoginResult", () => {
       const impossible: M3LAWSLoginResult = {
         outcome: "success",
         exitCode: 1,
-        profile: "default",
+        profile: parseAWSProfile("default"),
         durationMs: 1500,
       };
       expect(impossible).toBeDefined();
@@ -373,7 +638,7 @@ describe("M3LAWSLoginResult", () => {
       const impossible: M3LAWSLoginResult = {
         outcome: "timedOut",
         exitCode: 0,
-        profile: "default",
+        profile: parseAWSProfile("default"),
         durationMs: 120_000,
       };
       expect(impossible).toBeDefined();
@@ -383,7 +648,7 @@ describe("M3LAWSLoginResult", () => {
       const result: M3LAWSLoginResult = {
         outcome: "failed",
         exitCode: 3,
-        profile: "default",
+        profile: parseAWSProfile("default"),
         durationMs: 2000,
       };
       expect(result.outcome).toBe("failed");
@@ -394,7 +659,7 @@ describe("M3LAWSLoginResult", () => {
       const result: M3LAWSLoginResult = {
         outcome: "failed",
         exitCode: null,
-        profile: "default",
+        profile: parseAWSProfile("default"),
         durationMs: 2000,
       };
       expect(result.outcome).toBe("failed");
@@ -433,7 +698,7 @@ describe("M3LAWSCredentialsManagerOptions", () => {
 
   test("a fully-populated object literal satisfies the interface", () => {
     const options: M3LAWSCredentialsManagerOptions = {
-      profile: "default",
+      profile: parseAWSProfile("default"),
       loginTimeoutMs: 60000,
       interactive: false,
     };
@@ -443,7 +708,9 @@ describe("M3LAWSCredentialsManagerOptions", () => {
   });
 
   test("a partial object literal (only one field) satisfies the interface", () => {
-    const options: M3LAWSCredentialsManagerOptions = { profile: "sandbox" };
+    const options: M3LAWSCredentialsManagerOptions = {
+      profile: parseAWSProfile("sandbox"),
+    };
     expect(options.profile).toBe("sandbox");
     expect(options.loginTimeoutMs).toBeUndefined();
     expect(options.interactive).toBeUndefined();
@@ -456,10 +723,10 @@ describe("M3LAWSCredentialsManagerOptions", () => {
       >().toMatchTypeOf<M3LAWSCredentialsManagerOptions>();
     });
 
-    test("profile is optional string, loginTimeoutMs is optional number, interactive is optional boolean", () => {
+    test("profile is optional M3LAWSProfile, loginTimeoutMs is optional number, interactive is optional boolean", () => {
       expectTypeOf<M3LAWSCredentialsManagerOptions>()
         .toHaveProperty("profile")
-        .toEqualTypeOf<string | undefined>();
+        .toEqualTypeOf<M3LAWSProfile | undefined>();
       expectTypeOf<M3LAWSCredentialsManagerOptions>()
         .toHaveProperty("loginTimeoutMs")
         .toEqualTypeOf<number | undefined>();
@@ -468,14 +735,14 @@ describe("M3LAWSCredentialsManagerOptions", () => {
         .toEqualTypeOf<boolean | undefined>();
     });
 
-    test("region is optional string", () => {
+    test("region is optional M3LAWSRegion", () => {
       expectTypeOf<M3LAWSCredentialsManagerOptions>()
         .toHaveProperty("region")
-        .toEqualTypeOf<string | undefined>();
+        .toEqualTypeOf<M3LAWSRegion | undefined>();
 
       // Optional: omitting `region` entirely must still satisfy the interface.
       expectTypeOf<{
-        profile?: string;
+        profile?: M3LAWSProfile;
         loginTimeoutMs?: number;
         interactive?: boolean;
       }>().toMatchTypeOf<M3LAWSCredentialsManagerOptions>();

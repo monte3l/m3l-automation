@@ -25,18 +25,20 @@ Exported from `@m3l-automation/m3l-common/aws` (and re-exported under the `AWS` 
 The manager's construction options and the credential model types it produces
 and consumes — `M3LAWSCredentialsManagerOptions`, `M3LAWSCredentialsErrorType`,
 `M3LAWSCredentialsErrorAnalysis`, `M3LAWSRetryContext`, and `M3LAWSLoginResult` —
-are the shared AWS vocabulary; their exact names and fields are defined in
-[AWS models](./models.md).
+plus the branded identity types `M3LAWSRegion` / `M3LAWSProfile` and their
+`parseAWSRegion`/`parseAWSProfile` constructors and `isAWSRegion`/`isAWSProfile`
+guards — are the shared AWS vocabulary; their exact names and fields are defined
+in [AWS models](./models.md).
 
 ### `M3LAWSCredentialsManager` methods
 
-- `ensureValidCredentials(profile?)` — validate one profile via STS
+- `ensureValidCredentials(profile?: M3LAWSProfile)` — validate one profile via STS
   `GetCallerIdentityCommand`; on a recoverable failure, re-run SSO login (after
   an interactive confirm when enabled) and retry.
-- `ensureValidCredentialsMultiple(profiles)` — validate many profiles in three
-  phases (parallel validate → partition valid/invalid → **sequential** SSO login
-  for the invalid ones).
-- `retryWithRelogin<T>(operation, profile?)` — wrap an arbitrary AWS operation;
+- `ensureValidCredentialsMultiple(profiles: readonly M3LAWSProfile[])` — validate
+  many profiles in three phases (parallel validate → partition valid/invalid →
+  **sequential** SSO login for the invalid ones).
+- `retryWithRelogin<T>(operation, profile?: M3LAWSProfile)` — wrap an arbitrary AWS operation;
   on a recoverable credential error, re-run SSO login and retry while attempts
   remain (`M3LAWSRetryContext`).
 - `analyzeError(error)` — classify an arbitrary failure into a
@@ -62,7 +64,9 @@ patterns for invalid sessions and profile-not-found.
 ```typescript
 import { AWS } from "@m3l-automation/m3l-common";
 
-const manager = new AWS.M3LAWSCredentialsManager({ profile: "my-profile" });
+const manager = new AWS.M3LAWSCredentialsManager({
+  profile: AWS.parseAWSProfile("my-profile"),
+});
 
 // Validates via STS GetCallerIdentity; if the SSO session is expired and
 // recoverable, re-runs `aws sso login --profile=my-profile` before retrying.
@@ -79,7 +83,10 @@ const manager = new AWS.M3LAWSCredentialsManager();
 // Phase 1: validate all profiles in parallel.
 // Phase 2: separate valid from invalid profiles.
 // Phase 3: run SSO login *sequentially* for the invalid ones.
-await manager.ensureValidCredentialsMultiple(["profile-a", "profile-b"]);
+await manager.ensureValidCredentialsMultiple([
+  AWS.parseAWSProfile("profile-a"),
+  AWS.parseAWSProfile("profile-b"),
+]);
 ```
 
 SSO login is run sequentially for invalid profiles because parallel browser windows would be unusable.

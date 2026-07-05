@@ -115,6 +115,8 @@ import {
   AWSProvider,
   M3LAWSClientError,
 } from "../src/aws/clients/index.js";
+import { parseAWSProfile, parseAWSRegion } from "../src/aws/models/index.js";
+import type { M3LAWSProfile, M3LAWSRegion } from "../src/aws/models/index.js";
 import type { S3Client } from "@aws-sdk/client-s3";
 
 // ---------------------------------------------------------------------------
@@ -165,8 +167,8 @@ describe("AWS_REGION", () => {
     expect(AWS_REGION).toBe("eu-south-1");
   });
 
-  test("type-level: narrows to the literal, not widened to string", () => {
-    expectTypeOf(AWS_REGION).toEqualTypeOf<"eu-south-1">();
+  test("type-level: is the branded M3LAWSRegion, not a bare string", () => {
+    expectTypeOf(AWS_REGION).toEqualTypeOf<M3LAWSRegion>();
   });
 });
 
@@ -181,7 +183,10 @@ describe("AWSClientProvider construction", () => {
   test("constructs with a full options bag — no throw", () => {
     expect(
       () =>
-        new AWSClientProvider({ profile: "my-profile", region: "us-east-1" }),
+        new AWSClientProvider({
+          profile: parseAWSProfile("my-profile"),
+          region: parseAWSRegion("us-east-1"),
+        }),
     ).not.toThrow();
   });
 });
@@ -218,7 +223,9 @@ describe.each(GETTER_MATRIX)(
     });
 
     test("receives the overridden region when `region` option is set", () => {
-      const provider = new AWSClientProvider({ region: "us-east-1" });
+      const provider = new AWSClientProvider({
+        region: parseAWSRegion("us-east-1"),
+      });
 
       void provider[getterName];
 
@@ -228,7 +235,9 @@ describe.each(GETTER_MATRIX)(
     });
 
     test("receives resolved credentials when a non-empty profile is set", () => {
-      const provider = new AWSClientProvider({ profile: "my-profile" });
+      const provider = new AWSClientProvider({
+        profile: parseAWSProfile("my-profile"),
+      });
 
       void provider[getterName];
 
@@ -248,8 +257,10 @@ describe.each(GETTER_MATRIX)(
       expect(config).not.toHaveProperty("credentials");
     });
 
-    test("does NOT pass a `credentials` key when profile is an empty string", () => {
-      const provider = new AWSClientProvider({ profile: "" });
+    test("falls back to the SDK default credential chain — an options bag with a region but no `profile` key does NOT pass `credentials`", () => {
+      const provider = new AWSClientProvider({
+        region: parseAWSRegion("us-east-1"),
+      });
 
       void provider[getterName];
 
@@ -380,7 +391,9 @@ describe("AWSClientProvider error wrapping", () => {
       throw original;
     });
 
-    const provider = new AWSClientProvider({ profile: "my-profile" });
+    const provider = new AWSClientProvider({
+      profile: parseAWSProfile("my-profile"),
+    });
 
     let thrown: unknown;
     try {
@@ -412,7 +425,11 @@ describe("AWSClientProvider error wrapping", () => {
 describe("AWSMultiClientProvider construction", () => {
   test("deduplicates profile names — one AWSClientProvider per distinct profile", async () => {
     const multi = new AWSMultiClientProvider({
-      profiles: ["a", "a", "b"],
+      profiles: [
+        parseAWSProfile("a"),
+        parseAWSProfile("a"),
+        parseAWSProfile("b"),
+      ],
     });
 
     const results = await multi.mapParallel((provider) => provider);
@@ -438,7 +455,7 @@ describe("AWSMultiClientProvider construction", () => {
 describe("AWSMultiClientProvider.mapParallel", () => {
   test("resolves to the array of results across all distinct profiles", async () => {
     const multi = new AWSMultiClientProvider({
-      profiles: ["profile-a", "profile-b"],
+      profiles: [parseAWSProfile("profile-a"), parseAWSProfile("profile-b")],
     });
 
     const results = await multi.mapParallel((provider) => {
@@ -451,7 +468,7 @@ describe("AWSMultiClientProvider.mapParallel", () => {
 
   test("rejects if any operation throws synchronously", async () => {
     const multi = new AWSMultiClientProvider({
-      profiles: ["profile-a", "profile-b"],
+      profiles: [parseAWSProfile("profile-a"), parseAWSProfile("profile-b")],
     });
 
     await expect(
@@ -466,7 +483,7 @@ describe("AWSMultiClientProvider.mapParallel", () => {
 
   test("rejects if any operation's returned promise rejects", async () => {
     const multi = new AWSMultiClientProvider({
-      profiles: ["profile-a", "profile-b"],
+      profiles: [parseAWSProfile("profile-a"), parseAWSProfile("profile-b")],
     });
     let calls = 0;
 
@@ -487,15 +504,15 @@ describe("AWSMultiClientProvider.mapParallel", () => {
 describe("AWSMultiClientProvider.mapParallelSettled", () => {
   test("collects ok results keyed by profile on success", async () => {
     const multi = new AWSMultiClientProvider({
-      profiles: ["profile-a", "profile-b"],
+      profiles: [parseAWSProfile("profile-a"), parseAWSProfile("profile-b")],
     });
 
     const settled = await multi.mapParallelSettled((provider) => provider.s3);
 
     expect(settled).toHaveLength(2);
     const byProfile = new Map(settled.map((entry) => [entry.profile, entry]));
-    const a = byProfile.get("profile-a");
-    const b = byProfile.get("profile-b");
+    const a = byProfile.get(parseAWSProfile("profile-a"));
+    const b = byProfile.get(parseAWSProfile("profile-b"));
     expect(a).toBeDefined();
     expect(b).toBeDefined();
     if (a !== undefined) {
@@ -508,7 +525,7 @@ describe("AWSMultiClientProvider.mapParallelSettled", () => {
 
   test("never throws — every entry is err(cause) when every fn throws", async () => {
     const multi = new AWSMultiClientProvider({
-      profiles: ["profile-a", "profile-b"],
+      profiles: [parseAWSProfile("profile-a"), parseAWSProfile("profile-b")],
     });
 
     const settled = await multi.mapParallelSettled(() => {
@@ -526,7 +543,11 @@ describe("AWSMultiClientProvider.mapParallelSettled", () => {
 
   test("mixed outcomes — correctly attributes ok/err per profile (dedup makes positional indexing ambiguous)", async () => {
     const multi = new AWSMultiClientProvider({
-      profiles: ["profile-a", "profile-a", "profile-b"],
+      profiles: [
+        parseAWSProfile("profile-a"),
+        parseAWSProfile("profile-a"),
+        parseAWSProfile("profile-b"),
+      ],
     });
 
     const settled = await multi.mapParallelSettled((provider, ...rest) => {
@@ -557,12 +578,18 @@ describe("AWSProvider", () => {
 
   test("constructs with a full options bag — no throw", () => {
     expect(
-      () => new AWSProvider({ profile: "my-profile", region: "us-east-1" }),
+      () =>
+        new AWSProvider({
+          profile: parseAWSProfile("my-profile"),
+          region: parseAWSRegion("us-east-1"),
+        }),
     ).not.toThrow();
   });
 
   test("`clients` getter returns an AWSClientProvider instance", () => {
-    const provider = new AWSProvider({ profile: "my-profile" });
+    const provider = new AWSProvider({
+      profile: parseAWSProfile("my-profile"),
+    });
 
     expect(provider.clients).toBeInstanceOf(AWSClientProvider);
   });
@@ -577,7 +604,7 @@ describe("AWSProvider", () => {
   });
 
   test("does not construct an AWSClientProvider (and thus no SDK client) until `clients` is first accessed", () => {
-    new AWSProvider({ profile: "my-profile" });
+    new AWSProvider({ profile: parseAWSProfile("my-profile") });
 
     expect(h.fromIni).not.toHaveBeenCalled();
     expect(h.s3Ctor).not.toHaveBeenCalled();
@@ -672,18 +699,49 @@ describe("type-level contracts", () => {
     expectTypeOf(provider.s3).toEqualTypeOf<S3Client>();
   });
 
-  test("mapParallelSettled resolves to a readonly array of { profile, result }", () => {
-    expectTypeOf<
-      AWSMultiClientProvider["mapParallelSettled"]
-    >().returns.resolves.toEqualTypeOf<
+  test("mapParallelSettled resolves to a readonly array of { profile, result }", async () => {
+    const multi = new AWSMultiClientProvider({ profiles: [] });
+
+    const settled = await multi.mapParallelSettled((provider) => provider);
+
+    expectTypeOf(settled).toEqualTypeOf<
       readonly {
-        readonly profile: string;
-        readonly result: M3LResult<unknown, unknown>;
+        readonly profile: M3LAWSProfile;
+        readonly result: M3LResult<AWSClientProvider, unknown>;
       }[]
     >();
   });
 
   test("AWSProvider has no `services` property in its type", () => {
     expectTypeOf<AWSProvider>().not.toHaveProperty("services");
+  });
+});
+
+// =============================================================================
+// Type-level contracts — branded identity at the public constructor boundary
+// =============================================================================
+describe("branded identity at public entry points", () => {
+  test("`new AWSClientProvider({ profile: <bare string> })` fails typecheck", () => {
+    // @ts-expect-error -- profile must be constructed via parseAWSProfile, not a bare string
+    const provider = new AWSClientProvider({ profile: "x" });
+    expect(provider).toBeDefined();
+  });
+
+  test("`new AWSClientProvider({ profile: parseAWSProfile(...) })` compiles", () => {
+    expect(
+      () => new AWSClientProvider({ profile: parseAWSProfile("x") }),
+    ).not.toThrow();
+  });
+
+  test("`new AWSMultiClientProvider({ profiles: [<bare strings>] })` fails typecheck", () => {
+    // @ts-expect-error -- profiles entries must be constructed via parseAWSProfile, not bare strings
+    const multi = new AWSMultiClientProvider({ profiles: ["x"] });
+    expect(multi).toBeDefined();
+  });
+
+  test("`new AWSMultiClientProvider({ profiles: [parseAWSProfile(...)] })` compiles", () => {
+    expect(
+      () => new AWSMultiClientProvider({ profiles: [parseAWSProfile("x")] }),
+    ).not.toThrow();
   });
 });

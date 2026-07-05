@@ -7,13 +7,14 @@
 
 import type { M3LResult } from "../../core/errors/index.js";
 import { err, ok } from "../../core/errors/index.js";
+import type { M3LAWSProfile } from "../models/index.js";
 
 import { AWSClientProvider } from "./provider.js";
 
 /** Constructor options for {@link AWSMultiClientProvider}. Not exported. */
 interface AWSMultiClientProviderOptions {
   /** Profile names to manage; deduplicated on construction. */
-  readonly profiles: readonly string[];
+  readonly profiles: readonly M3LAWSProfile[];
 }
 
 /**
@@ -23,7 +24,7 @@ interface AWSMultiClientProviderOptions {
  */
 interface AWSMultiClientSettledEntry<T> {
   /** The profile name this outcome belongs to. */
-  readonly profile: string;
+  readonly profile: M3LAWSProfile;
   /** `ok(value)` on success, `err(cause)` on failure — never throws. */
   readonly result: M3LResult<T, unknown>;
 }
@@ -38,10 +39,13 @@ interface AWSMultiClientSettledEntry<T> {
  *
  * @example
  * ```ts
- * import { AWSMultiClientProvider } from "@m3l-automation/m3l-common/aws";
+ * import {
+ *   AWSMultiClientProvider,
+ *   parseAWSProfile,
+ * } from "@m3l-automation/m3l-common/aws";
  *
  * const multi = new AWSMultiClientProvider({
- *   profiles: ["profile-a", "profile-b"],
+ *   profiles: [parseAWSProfile("profile-a"), parseAWSProfile("profile-b")],
  * });
  *
  * // Parallel across profiles; rejects if any throws.
@@ -52,7 +56,7 @@ interface AWSMultiClientSettledEntry<T> {
  * ```
  */
 export class AWSMultiClientProvider {
-  private readonly providers: ReadonlyMap<string, AWSClientProvider>;
+  private readonly providers: ReadonlyMap<M3LAWSProfile, AWSClientProvider>;
 
   /**
    * Creates a new `AWSMultiClientProvider`.
@@ -62,7 +66,7 @@ export class AWSMultiClientProvider {
    *   first-seen order.
    */
   constructor(options: AWSMultiClientProviderOptions) {
-    const providers = new Map<string, AWSClientProvider>();
+    const providers = new Map<M3LAWSProfile, AWSClientProvider>();
     for (const profile of options.profiles) {
       if (!providers.has(profile)) {
         providers.set(profile, new AWSClientProvider({ profile }));
@@ -82,9 +86,14 @@ export class AWSMultiClientProvider {
    *
    * @example
    * ```ts
-   * import { AWSMultiClientProvider } from "@m3l-automation/m3l-common/aws";
+   * import {
+   *   AWSMultiClientProvider,
+   *   parseAWSProfile,
+   * } from "@m3l-automation/m3l-common/aws";
    *
-   * const multi = new AWSMultiClientProvider({ profiles: ["a", "b"] });
+   * const multi = new AWSMultiClientProvider({
+   *   profiles: [parseAWSProfile("a"), parseAWSProfile("b")],
+   * });
    * const clients = await multi.mapParallel((p) => p.s3);
    * ```
    */
@@ -108,9 +117,14 @@ export class AWSMultiClientProvider {
    *
    * @example
    * ```ts
-   * import { AWSMultiClientProvider } from "@m3l-automation/m3l-common/aws";
+   * import {
+   *   AWSMultiClientProvider,
+   *   parseAWSProfile,
+   * } from "@m3l-automation/m3l-common/aws";
    *
-   * const multi = new AWSMultiClientProvider({ profiles: ["a", "b"] });
+   * const multi = new AWSMultiClientProvider({
+   *   profiles: [parseAWSProfile("a"), parseAWSProfile("b")],
+   * });
    * const settled = await multi.mapParallelSettled((p) => p.s3);
    * for (const { profile, result } of settled) {
    *   if (result.ok) console.log(profile, "ok");
