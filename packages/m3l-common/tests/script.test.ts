@@ -126,6 +126,7 @@ import type {
 // mirroring the existing precedent of `tests/prompt.test.ts` importing
 // `../src/internal/prompt/*` directly for the same reason (internal helper
 // coverage the public API cannot reach).
+import { logBestEffortDiagnostic } from "../src/internal/script/diagnostics.js";
 import { registerShutdownSignals } from "../src/internal/script/signalHandlers.js";
 import { fakeRoot } from "./helpers/fake-path.js";
 
@@ -503,11 +504,12 @@ describe("M3LScript.run() — stage order", () => {
     expect(written).toContain("onCleanup failure");
   });
 
-  test("internal/script/diagnostics: a diagnostic for an error WITH context (M3LError) redacts and includes the context field (the serialized.context !== undefined branch)", async () => {
-    // Every other onError/onCleanup-failure test in this file throws a plain
-    // `Error`, whose `serializeError` output has no `context` field — so
-    // `logBestEffortDiagnostic`'s conditional-spread only ever exercised its
-    // `false` side. An M3LError carries `context`, exercising the `true` side.
+  test("internal/script/diagnostics: an M3LError thrown from onCleanup surfaces a best-effort diagnostic carrying its redacted context (integration through M3LScript.run)", async () => {
+    // End-to-end lifecycle coverage: M3LScript.run() -> a throwing onCleanup
+    // -> the process/cleanup diagnostic -> logBestEffortDiagnostic, asserting
+    // the emitted stderr diagnostic carries the M3LError's context field.
+    // This complements the direct-call unit tests below that exercise
+    // logBestEffortDiagnostic's message/stack redaction in isolation.
     const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     const originalError = new Error("original failure");
     const cleanupFailureWithContext = new M3LError("cleanup failed", {
@@ -539,6 +541,85 @@ describe("M3LScript.run() — stage order", () => {
       .join("\n");
     expect(written).toContain("onCleanup failure");
     expect(written).toContain("attempt");
+  });
+
+  test("internal/script/diagnostics: logBestEffortDiagnostic redacts a secret carried in serialized.message, not just serialized.context", () => {
+    // MF-2: the current implementation only redacts `serialized.context`
+    // before spreading the rest of `serialized` verbatim, so a secret riding
+    // `message` (e.g. interpolated into an error string) reaches stderr raw.
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const serialized: ReturnType<typeof serializeError> = {
+      message: "connect failed token=SUPERSECRET_ABC123",
+    };
+
+    logBestEffortDiagnostic("test", serialized);
+
+    const written = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("\n");
+    expect(written).toContain("[REDACTED]");
+    expect(written).not.toContain("SUPERSECRET_ABC123");
+  });
+
+  test("internal/script/diagnostics: logBestEffortDiagnostic redacts a secret carried in serialized.stack", () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const serialized: ReturnType<typeof serializeError> = {
+      message: "connect failed",
+      stack: "Error: connect failed\n    at password=hunter2xyz (file.ts:1:1)",
+    };
+
+    logBestEffortDiagnostic("test", serialized);
+
+    const written = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("\n");
+    expect(written).toContain("[REDACTED]");
+    expect(written).not.toContain("hunter2xyz");
+  });
+
+  test("internal/script/diagnostics: logBestEffortDiagnostic masks a Bearer-scheme credential carried in serialized.message", () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const serialized: ReturnType<typeof serializeError> = {
+      message: "upstream rejected Authorization: Bearer eyJhbGSECRET",
+    };
+
+    logBestEffortDiagnostic("test", serialized);
+
+    const written = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("\n");
+    expect(written).toContain("[REDACTED]");
+    expect(written).not.toContain("eyJhbGSECRET");
+  });
+
+  test("internal/script/diagnostics: logBestEffortDiagnostic still redacts a sensitive serialized.context key while leaving a non-sensitive context field intact", () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const serialized: ReturnType<typeof serializeError> = {
+      message: "cleanup failed",
+      context: { attempt: 3, apiKey: "topsecretvalue" },
+    };
+
+    logBestEffortDiagnostic("test", serialized);
+
+    const written = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("\n");
+    expect(written).toContain("[REDACTED]");
+    expect(written).not.toContain("topsecretvalue");
+    expect(written).toContain("attempt");
+  });
+
+  test("internal/script/diagnostics: logBestEffortDiagnostic never throws even when process.stderr.write throws", () => {
+    vi.spyOn(process.stderr, "write").mockImplementationOnce(() => {
+      throw new Error("stderr is broken");
+    });
+    const serialized: ReturnType<typeof serializeError> = {
+      message: "boom",
+    };
+
+    expect(() => {
+      logBestEffortDiagnostic("test", serialized);
+    }).not.toThrow();
   });
 
   test("internal/script/diagnostics: a failing stderr write itself is swallowed (the last-resort catch branch)", async () => {
