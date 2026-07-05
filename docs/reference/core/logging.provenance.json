@@ -54,8 +54,8 @@
           "symbol": "redactSensitiveLogValue"
         }
       ],
-      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
-      "retrieved": "2026-07-03"
+      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
+      "retrieved": "2026-07-05"
     },
     {
       "heading": "`M3LLogger` methods",
@@ -65,8 +65,8 @@
           "symbol": "M3LLogger"
         }
       ],
-      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
-      "retrieved": "2026-07-03"
+      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
+      "retrieved": "2026-07-05"
     },
     {
       "heading": "`M3LLogEventCategory`",
@@ -76,8 +76,8 @@
           "symbol": "M3LLogEventCategory"
         }
       ],
-      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
-      "retrieved": "2026-07-03"
+      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
+      "retrieved": "2026-07-05"
     },
     {
       "heading": "Composing handlers",
@@ -99,8 +99,8 @@
           "symbol": "M3LJsonLoggerHandler"
         }
       ],
-      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
-      "retrieved": "2026-07-03"
+      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
+      "retrieved": "2026-07-05"
     },
     {
       "heading": "Rendering a table",
@@ -118,8 +118,8 @@
           "symbol": "M3LTableColumn"
         }
       ],
-      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
-      "retrieved": "2026-07-03"
+      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
+      "retrieved": "2026-07-05"
     },
     {
       "heading": "Redacting sensitive data",
@@ -133,8 +133,8 @@
           "symbol": "redactSensitiveLogValue"
         }
       ],
-      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
-      "retrieved": "2026-07-03"
+      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
+      "retrieved": "2026-07-05"
     },
     {
       "heading": "Notes and behavior",
@@ -160,8 +160,8 @@
           "symbol": "M3LTableFormatter"
         }
       ],
-      "commit": "b40458bb7565b71de26976570afab5ed80baad85",
-      "retrieved": "2026-07-03"
+      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
+      "retrieved": "2026-07-05"
     }
   ]
 }
