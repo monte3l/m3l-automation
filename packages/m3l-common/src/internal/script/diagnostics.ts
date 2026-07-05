@@ -12,14 +12,23 @@
 import { redactSensitiveLogValue } from "../../core/logging/index.js";
 
 /**
- * The minimal shape {@link logBestEffortDiagnostic} needs from an
- * already-serialized error — structurally compatible with
- * `core/script/process-guards`'s `serializeError` return type, without this
- * module importing that file back (which would form an import cycle, since
- * `process-guards.ts` is this helper's own caller).
+ * The shape {@link logBestEffortDiagnostic} needs from an already-serialized
+ * error — structurally compatible with `core/script/process-guards`'s
+ * `serializeError` return type, without this module importing that file back
+ * (which would form an import cycle, since `process-guards.ts` is this
+ * helper's own caller). Every field is redacted generically by
+ * {@link logBestEffortDiagnostic} (see below), so this interface exists only
+ * to describe the shape it accepts, not to single out which fields get
+ * redacted.
  */
 interface SerializedErrorLike {
+  readonly message: string;
+  readonly code?: string;
+  readonly name?: string;
+  readonly stack?: string;
   readonly context?: Record<string, unknown>;
+  /** The request/correlation id attached to guard-caught diagnostics under Lambda. */
+  readonly requestId?: string;
 }
 
 /**
@@ -29,11 +38,16 @@ interface SerializedErrorLike {
  * process-global fault guard, or best-effort cleanup after the primary error
  * is already being thrown).
  *
- * `serialized.context` is passed through {@link redactSensitiveLogValue}
- * before being written, so a config value or secret carried in an
- * `M3LError`'s `context` bag is never leaked to stderr verbatim. Never
- * throws — a failure writing the diagnostic itself is silently discarded,
- * since there is nothing further this helper can safely do about it.
+ * The **entire** serialized record — `message`, `stack`, `name`, `code`, and
+ * `context` — is passed through {@link redactSensitiveLogValue} before being
+ * written, not just the `context` bag: a secret can just as easily ride an
+ * interpolated `message` string or a `stack` frame as it can a structured
+ * context value, and all of them are masked in one recursive pass. As with
+ * any use of {@link redactSensitiveLogValue}, this is a best-effort,
+ * heuristic redaction over string leaves (see that function's own remarks),
+ * not a guarantee that every possible secret shape is caught. Never throws —
+ * a failure writing the diagnostic itself is silently discarded, since there
+ * is nothing further this helper can safely do about it.
  *
  * @param label - A short label identifying the failure site (e.g.
  *   `"unhandledRejection"`, `"onCleanup"`).
@@ -45,12 +59,7 @@ export function logBestEffortDiagnostic(
   serialized: SerializedErrorLike,
 ): void {
   try {
-    const redacted = {
-      ...serialized,
-      ...(serialized.context !== undefined && {
-        context: redactSensitiveLogValue(serialized.context),
-      }),
-    };
+    const redacted = redactSensitiveLogValue(serialized);
     process.stderr.write(`m3l-script: ${label}: ${JSON.stringify(redacted)}\n`);
   } catch {
     // Last-resort: if even the diagnostic write fails, there is nothing
