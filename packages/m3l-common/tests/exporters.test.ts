@@ -485,6 +485,7 @@ describe("M3LCSVListExporter", () => {
   });
 
   test("export:error handler isolation — a throwing handler does not block a second handler", async () => {
+    vi.spyOn(process.stderr, "write").mockReturnValue(true);
     stubWriteStreamOpenFailure();
     const exporter = new M3LCSVListExporter<Row>({
       filePath: "/nonexistent-dir/users.csv",
