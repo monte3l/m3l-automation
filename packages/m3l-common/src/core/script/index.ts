@@ -3,13 +3,17 @@
  * configuration, logging, prompts, and process guards for automation
  * scripts and Lambda handlers.
  *
- * Re-exports exactly the eleven public symbols documented in
+ * Re-exports exactly the thirteen public symbols documented in
  * `docs/reference/core/script.md`. No logic lives here; this file is a
  * barrel only.
  *
  * @packageDocumentation
  */
 
+export {
+  AWS_PROFILE_PARAM_NAME,
+  AWS_REGION_PARAM_NAME,
+} from "./aws-param-names.js";
 export { M3LScript } from "./M3LScript.js";
 export type {
   M3LScriptHookContext,

@@ -5,12 +5,13 @@
  * for this change set — see scratchpad/config-contract.md, settled Q1–Q21).
  *
  * Exports under test: M3LConfig, M3LConfigReader, M3LConfigProvider,
- *   M3LConfigParameter, M3LConfigParameterType, M3LConfigSchema,
- *   M3LCommandLineConfigProvider, M3LJSONConfigProvider, M3LYAMLConfigProvider,
- *   M3LEnvironmentConfigProvider, M3LInMemoryConfigProvider,
- *   M3LLambdaEventConfigProvider, M3LPresetConfigProvider, coerceConfigValue,
- *   M3LSecretsSpecifier, M3LUnknownParameterDetector, M3LConfigCoercionError,
- *   M3LConfigParseError, M3LUnsafeConfigKeyError (19 symbols).
+ *   M3LConfigParameter, M3LConfigParameterType, M3LCoercedValue,
+ *   M3LConfigSchema, M3LCommandLineConfigProvider, M3LJSONConfigProvider,
+ *   M3LYAMLConfigProvider, M3LEnvironmentConfigProvider,
+ *   M3LInMemoryConfigProvider, M3LLambdaEventConfigProvider,
+ *   M3LPresetConfigProvider, coerceConfigValue, M3LSecretsSpecifier,
+ *   M3LUnknownParameterDetector, M3LConfigCoercionError, M3LConfigParseError,
+ *   M3LUnsafeConfigKeyError (20 symbols).
  *
  * Key behavioral contracts:
  *  - Providers are SYNCHRONOUS: getRawValue(key) returns unknown, undefined
@@ -22,7 +23,13 @@
  *    (coerced) -> defaultValue (pass-through) -> asyncFallback (pass-through)
  *    -> undefined, short-circuiting strictly.
  *  - coerceConfigValue is the sole public parser; per-type coercion failures
- *    throw M3LConfigCoercionError.
+ *    throw M3LConfigCoercionError. It is generic over the target
+ *    M3LConfigParameterType member, returning M3LCoercedValue<T> (not
+ *    unknown) — runtime coercion behavior is unchanged, only the static type.
+ *  - M3LConfigParameter is TYPE-DRIVEN: defaultValue, asyncFallback's
+ *    resolved value, and getValueAsync()'s resolution are all
+ *    M3LCoercedValue<declared type>, inferred from the `type` field rather
+ *    than a caller-supplied generic.
  *  - File providers (JSON/YAML) tolerate a missing file (ENOENT, all
  *    undefined) but throw M3LConfigParseError on malformed content.
  *  - Any provider touching parsed/external input screens keys with
@@ -69,6 +76,7 @@ import {
   M3LUnsafeConfigKeyError,
   M3LYAMLConfigProvider,
 } from "../src/core/config/index.js";
+import type { M3LCoercedValue } from "../src/core/config/index.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -119,6 +127,56 @@ describe("M3LConfigParameterType", () => {
         | "BUFFER"
       >();
     });
+  });
+});
+
+// =============================================================================
+// M3LCoercedValue<T> — conditional type mapping each M3LConfigParameterType
+// member to its coerced result type.
+// =============================================================================
+describe("M3LCoercedValue<T>", () => {
+  test("STRING maps to string", () => {
+    expectTypeOf<M3LCoercedValue<"STRING">>().toEqualTypeOf<string>();
+  });
+
+  test("INT maps to number", () => {
+    expectTypeOf<M3LCoercedValue<"INT">>().toEqualTypeOf<number>();
+  });
+
+  test("DOUBLE maps to number", () => {
+    expectTypeOf<M3LCoercedValue<"DOUBLE">>().toEqualTypeOf<number>();
+  });
+
+  test("BOOL maps to boolean", () => {
+    expectTypeOf<M3LCoercedValue<"BOOL">>().toEqualTypeOf<boolean>();
+  });
+
+  test("STRING_ARRAY maps to readonly string[]", () => {
+    expectTypeOf<M3LCoercedValue<"STRING_ARRAY">>().toEqualTypeOf<
+      readonly string[]
+    >();
+  });
+
+  test("INT_ARRAY maps to readonly number[]", () => {
+    expectTypeOf<M3LCoercedValue<"INT_ARRAY">>().toEqualTypeOf<
+      readonly number[]
+    >();
+  });
+
+  test("DOUBLE_ARRAY maps to readonly number[]", () => {
+    expectTypeOf<M3LCoercedValue<"DOUBLE_ARRAY">>().toEqualTypeOf<
+      readonly number[]
+    >();
+  });
+
+  test("BUFFER maps to Buffer", () => {
+    expectTypeOf<M3LCoercedValue<"BUFFER">>().toEqualTypeOf<Buffer>();
+  });
+
+  test("is keyed by the M3LConfigParameterType union, not a wider string", () => {
+    expectTypeOf<M3LCoercedValue<M3LConfigParameterType>>().toMatchTypeOf<
+      string | number | boolean | readonly string[] | readonly number[] | Buffer
+    >();
   });
 });
 
@@ -282,7 +340,7 @@ describe("M3LCommandLineConfigProvider", () => {
   test("a bare-boolean raw value coerces through a BOOL parameter to true", async () => {
     const provider = new M3LCommandLineConfigProvider(["--verbose"]);
     const reader = new M3LConfigReader([provider]);
-    const parameter = new M3LConfigParameter<boolean>({
+    const parameter = new M3LConfigParameter({
       name: "verbose",
       type: M3LConfigParameterType.BOOL,
     });
@@ -751,7 +809,7 @@ describe("coerceConfigValue()", () => {
       const result = coerceConfigValue(
         "a,b,c",
         M3LConfigParameterType.STRING_ARRAY,
-      ) as readonly string[];
+      );
       expect(result[0]).toBe("a");
       expect(result[1]).toBe("b");
       expect(result[2]).toBe("c");
@@ -759,10 +817,7 @@ describe("coerceConfigValue()", () => {
     });
 
     test("coerces an empty string to an empty array, not an array containing one empty string", () => {
-      const result = coerceConfigValue(
-        "",
-        M3LConfigParameterType.STRING_ARRAY,
-      ) as readonly string[];
+      const result = coerceConfigValue("", M3LConfigParameterType.STRING_ARRAY);
       expect(result).toEqual([]);
       expect(result).toHaveLength(0);
     });
@@ -773,7 +828,7 @@ describe("coerceConfigValue()", () => {
       const result = coerceConfigValue(
         "1,2,3",
         M3LConfigParameterType.INT_ARRAY,
-      ) as readonly number[];
+      );
       expect(result[0]).toBe(1);
       expect(result[1]).toBe(2);
       expect(result[2]).toBe(3);
@@ -791,7 +846,7 @@ describe("coerceConfigValue()", () => {
       const result = coerceConfigValue(
         "1.5,2.5",
         M3LConfigParameterType.DOUBLE_ARRAY,
-      ) as readonly number[];
+      );
       expect(result[0]).toBe(1.5);
       expect(result[1]).toBe(2.5);
     });
@@ -809,10 +864,7 @@ describe("coerceConfigValue()", () => {
   describe("BUFFER", () => {
     test("coerces a valid base64 string to a Buffer", () => {
       const encoded = Buffer.from("hello world", "utf8").toString("base64");
-      const result = coerceConfigValue(
-        encoded,
-        M3LConfigParameterType.BUFFER,
-      ) as Buffer;
+      const result = coerceConfigValue(encoded, M3LConfigParameterType.BUFFER);
       expect(Buffer.isBuffer(result)).toBe(true);
       expect(result.toString("utf8")).toBe("hello world");
     });
@@ -828,11 +880,11 @@ describe("coerceConfigValue()", () => {
       expect(coerceConfigValue(buf, M3LConfigParameterType.BUFFER)).toBe(buf);
     });
 
-    test("passes a Uint8Array through unchanged", () => {
+    test("wraps a bare Uint8Array passthrough into a real Buffer with the same bytes", () => {
       const bytes = new Uint8Array([1, 2, 3]);
-      expect(coerceConfigValue(bytes, M3LConfigParameterType.BUFFER)).toBe(
-        bytes,
-      );
+      const result = coerceConfigValue(bytes, M3LConfigParameterType.BUFFER);
+      expect(Buffer.isBuffer(result)).toBe(true);
+      expect(Array.from(result)).toEqual([1, 2, 3]);
     });
   });
 
@@ -864,12 +916,59 @@ describe("coerceConfigValue()", () => {
   });
 
   describe("type-level contract", () => {
-    test("accepts (unknown, M3LConfigParameterType) and returns unknown", () => {
+    test("accepts (unknown, T) and is generic on T, returning M3LCoercedValue<T> rather than unknown", () => {
       expectTypeOf(coerceConfigValue).parameter(0).toBeUnknown();
       expectTypeOf(coerceConfigValue)
         .parameter(1)
         .toEqualTypeOf<M3LConfigParameterType>();
-      expectTypeOf(coerceConfigValue).returns.toBeUnknown();
+    });
+
+    test("STRING narrows the return type to string", () => {
+      expectTypeOf(
+        coerceConfigValue("x", M3LConfigParameterType.STRING),
+      ).toEqualTypeOf<string>();
+    });
+
+    test("INT narrows the return type to number", () => {
+      expectTypeOf(
+        coerceConfigValue("1", M3LConfigParameterType.INT),
+      ).toEqualTypeOf<number>();
+    });
+
+    test("DOUBLE narrows the return type to number", () => {
+      expectTypeOf(
+        coerceConfigValue("1.5", M3LConfigParameterType.DOUBLE),
+      ).toEqualTypeOf<number>();
+    });
+
+    test("BOOL narrows the return type to boolean", () => {
+      expectTypeOf(
+        coerceConfigValue("true", M3LConfigParameterType.BOOL),
+      ).toEqualTypeOf<boolean>();
+    });
+
+    test("STRING_ARRAY narrows the return type to readonly string[]", () => {
+      expectTypeOf(
+        coerceConfigValue("a,b", M3LConfigParameterType.STRING_ARRAY),
+      ).toEqualTypeOf<readonly string[]>();
+    });
+
+    test("INT_ARRAY narrows the return type to readonly number[]", () => {
+      expectTypeOf(
+        coerceConfigValue("1,2", M3LConfigParameterType.INT_ARRAY),
+      ).toEqualTypeOf<readonly number[]>();
+    });
+
+    test("DOUBLE_ARRAY narrows the return type to readonly number[]", () => {
+      expectTypeOf(
+        coerceConfigValue("1.5,2.5", M3LConfigParameterType.DOUBLE_ARRAY),
+      ).toEqualTypeOf<readonly number[]>();
+    });
+
+    test("BUFFER narrows the return type to Buffer", () => {
+      expectTypeOf(
+        coerceConfigValue(Buffer.from("x"), M3LConfigParameterType.BUFFER),
+      ).toEqualTypeOf<Buffer>();
     });
   });
 });
@@ -882,7 +981,7 @@ describe("M3LConfigParameter", () => {
     const reader = new M3LConfigReader([
       new M3LInMemoryConfigProvider({ port: "8080" }),
     ]);
-    const parameter = new M3LConfigParameter<number>({
+    const parameter = new M3LConfigParameter({
       name: "port",
       type: M3LConfigParameterType.INT,
       defaultValue: 1,
@@ -895,7 +994,7 @@ describe("M3LConfigParameter", () => {
     const reader = new M3LConfigReader([
       new M3LInMemoryConfigProvider({ "alias-name": "Ada" }),
     ]);
-    const parameter = new M3LConfigParameter<string>({
+    const parameter = new M3LConfigParameter({
       name: "canonical.name",
       type: M3LConfigParameterType.STRING,
       aliases: ["alias-name"],
@@ -907,7 +1006,7 @@ describe("M3LConfigParameter", () => {
   test("falls back to defaultValue, unmodified (not re-coerced), when the provider has no value", async () => {
     const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
     const defaultValue = "not-a-number-but-typed-as-int" as unknown as number;
-    const parameter = new M3LConfigParameter<number>({
+    const parameter = new M3LConfigParameter({
       name: "port",
       type: M3LConfigParameterType.INT,
       defaultValue,
@@ -918,9 +1017,12 @@ describe("M3LConfigParameter", () => {
 
   test("falls back to asyncFallback, unmodified (not re-coerced), when provider and defaultValue are both absent", async () => {
     const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
-    const fallbackValue = { notCoerced: true };
+    // Injects a value that does not actually match `M3LCoercedValue<"STRING">`
+    // (string) to prove the resolved value flows through UNCOERCED — the
+    // type-lying cast is deliberate; runtime never re-parses it.
+    const fallbackValue = { notCoerced: true } as unknown as string;
     const asyncFallback = vi.fn(() => Promise.resolve(fallbackValue));
-    const parameter = new M3LConfigParameter<typeof fallbackValue>({
+    const parameter = new M3LConfigParameter({
       name: "widget",
       type: M3LConfigParameterType.STRING,
       asyncFallback,
@@ -932,7 +1034,7 @@ describe("M3LConfigParameter", () => {
 
   test("returns undefined when provider, defaultValue, and asyncFallback are all absent", async () => {
     const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
-    const parameter = new M3LConfigParameter<string>({
+    const parameter = new M3LConfigParameter({
       name: "missing",
       type: M3LConfigParameterType.STRING,
     });
@@ -945,7 +1047,7 @@ describe("M3LConfigParameter", () => {
       new M3LInMemoryConfigProvider({ port: "8080" }),
     ]);
     const asyncFallback = vi.fn(() => Promise.resolve(0));
-    const parameter = new M3LConfigParameter<number>({
+    const parameter = new M3LConfigParameter({
       name: "port",
       type: M3LConfigParameterType.INT,
       asyncFallback,
@@ -958,7 +1060,7 @@ describe("M3LConfigParameter", () => {
   test("does NOT call asyncFallback when defaultValue is present and the provider has no value", async () => {
     const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
     const asyncFallback = vi.fn(() => Promise.resolve(0));
-    const parameter = new M3LConfigParameter<number>({
+    const parameter = new M3LConfigParameter({
       name: "port",
       type: M3LConfigParameterType.INT,
       defaultValue: 3000,
@@ -973,7 +1075,7 @@ describe("M3LConfigParameter", () => {
     const reader = new M3LConfigReader([
       new M3LInMemoryConfigProvider({ port: "not-a-number" }),
     ]);
-    const parameter = new M3LConfigParameter<number>({
+    const parameter = new M3LConfigParameter({
       name: "port",
       type: M3LConfigParameterType.INT,
     });
@@ -983,17 +1085,54 @@ describe("M3LConfigParameter", () => {
     );
   });
 
+  // The class is no longer caller-generic on an arbitrary value T: its value
+  // type is DERIVED from the declared `type` field via M3LCoercedValue<T>.
   describe("type-level contract", () => {
-    test("getValueAsync returns Promise<T | undefined> for the caller-supplied generic", () => {
-      expectTypeOf<
-        M3LConfigParameter<number>["getValueAsync"]
-      >().returns.toEqualTypeOf<Promise<number | undefined>>();
+    test("an INT-typed parameter's getValueAsync resolves Promise<number | undefined>", async () => {
+      const intParameter = new M3LConfigParameter({
+        name: "port",
+        type: M3LConfigParameterType.INT,
+        defaultValue: 1,
+      });
+      const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
+
+      expectTypeOf(intParameter.getValueAsync(reader)).toEqualTypeOf<
+        Promise<number | undefined>
+      >();
+      await intParameter.getValueAsync(reader);
     });
 
-    test("is caller-generic: a different T produces a different return type", () => {
-      expectTypeOf<
-        M3LConfigParameter<string>["getValueAsync"]
-      >().returns.toEqualTypeOf<Promise<string | undefined>>();
+    test("a STRING_ARRAY-typed parameter's getValueAsync resolves Promise<readonly string[] | undefined>", async () => {
+      const stringArrayParameter = new M3LConfigParameter({
+        name: "tags",
+        type: M3LConfigParameterType.STRING_ARRAY,
+      });
+      const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
+
+      expectTypeOf(stringArrayParameter.getValueAsync(reader)).toEqualTypeOf<
+        Promise<readonly string[] | undefined>
+      >();
+      await stringArrayParameter.getValueAsync(reader);
+    });
+
+    test("declaring defaultValue with a type disagreeing with the declared type is a compile error", () => {
+      new M3LConfigParameter({
+        name: "port",
+        type: M3LConfigParameterType.INT,
+        // @ts-expect-error -- defaultValue must be `number` for an INT param, not a string
+        defaultValue: "3000",
+      });
+    });
+
+    test("declaring defaultValue matching the declared type compiles (positive control)", () => {
+      expect(
+        () =>
+          new M3LConfigParameter({
+            name: "port",
+            type: M3LConfigParameterType.INT,
+            defaultValue: 3000,
+          }),
+      ).not.toThrow();
     });
   });
 });

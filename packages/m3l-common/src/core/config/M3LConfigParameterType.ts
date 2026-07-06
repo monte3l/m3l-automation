@@ -41,3 +41,39 @@ export const M3LConfigParameterType = {
  */
 export type M3LConfigParameterType =
   (typeof M3LConfigParameterType)[keyof typeof M3LConfigParameterType];
+
+/**
+ * Maps a {@link M3LConfigParameterType} member to the static type its
+ * coerced value carries. Used to type both {@link coerceConfigValue}'s return
+ * value and {@link M3LConfigParameter}'s resolved value, so the declared
+ * `type` field drives the value type rather than an independent caller
+ * generic.
+ *
+ * @typeParam T - The declared coercion target type.
+ *
+ * @example
+ * ```ts
+ * import type { M3LCoercedValue } from "@m3l-automation/m3l-common/core";
+ *
+ * type Port = M3LCoercedValue<"INT">; // number
+ * type Tags = M3LCoercedValue<"STRING_ARRAY">; // readonly string[]
+ * ```
+ */
+export type M3LCoercedValue<T extends M3LConfigParameterType> =
+  T extends "STRING"
+    ? string
+    : T extends "INT"
+      ? number
+      : T extends "DOUBLE"
+        ? number
+        : T extends "BOOL"
+          ? boolean
+          : T extends "STRING_ARRAY"
+            ? readonly string[]
+            : T extends "INT_ARRAY"
+              ? readonly number[]
+              : T extends "DOUBLE_ARRAY"
+                ? readonly number[]
+                : T extends "BUFFER"
+                  ? Buffer
+                  : never;

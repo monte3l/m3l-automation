@@ -23,6 +23,7 @@ Exported from `@m3l-automation/m3l-common/core` (the `script` sub-module):
 - `installProcessGuards`
 - `serializeError`
 - `setProcessGuardRequestId`
+- `AWS_PROFILE_PARAM_NAME` / `AWS_REGION_PARAM_NAME` — the canonical config parameter names (`"aws.profile"` / `"aws.region"`) the AWS-provisioning seam looks up
 
 ## Execution flow
 
@@ -112,6 +113,7 @@ export const handler = script.createLambdaHandler<MyEvent, MyResult>(
 
 - `M3LScript` is not subclassed. Pass options (metadata, config schema, hooks, logging options) and call `run`.
 - Step 5 (AWS provisioning) runs only when the config schema declares an `aws.profile` parameter. When it does, the resolved profile (and optional region) is used to construct an [`AWSProvider`](../aws/clients.md), assigned to `script.aws` for use in `mainFn` and later hooks. When no `aws.profile` parameter is declared, `script.aws` is unset and no AWS SDK client is constructed.
+- The provisioning seam looks up its values under the exported constants `AWS_PROFILE_PARAM_NAME` (`"aws.profile"`) and `AWS_REGION_PARAM_NAME` (`"aws.region"`). Declare the parameter with the constant — `new M3LConfigParameter({ name: AWS_PROFILE_PARAM_NAME, type: M3LConfigParameterType.STRING })` — rather than a hand-typed `"aws.profile"` string, so a typo is a compile error instead of a silent no-op (the provisioning stage simply never fires for a mis-named parameter). The resolved values are validated through `parseAWSProfile`/`parseAWSRegion`, so a malformed configured value fails loud with `M3LAWSIdentityError`.
 - Per-invocation Lambda reset clears `initialized`, `configLoaded`, and the config store; it does not tear down client providers.
 - Signal handlers exist only outside AWS environments.
 

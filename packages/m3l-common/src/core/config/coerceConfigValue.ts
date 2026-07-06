@@ -6,6 +6,7 @@
  */
 
 import { M3LConfigCoercionError } from "./M3LConfigCoercionError.js";
+import type { M3LCoercedValue } from "./M3LConfigParameterType.js";
 import { M3LConfigParameterType } from "./M3LConfigParameterType.js";
 
 /** Case-insensitive truthy string tokens accepted by the BOOL coercer. */
@@ -119,9 +120,16 @@ function stripBase64Padding(value: string): string {
   return value.slice(0, end);
 }
 
-/** Coerces `raw` to a Buffer from a base64 string, or passes bytes through. */
-function coerceBuffer(raw: unknown): unknown {
-  if (Buffer.isBuffer(raw) || raw instanceof Uint8Array) return raw;
+/**
+ * Coerces `raw` to a `Buffer`, either from a base64 string or by normalizing
+ * an already-binary passthrough. A `Buffer` is returned unchanged; a bare
+ * `Uint8Array` (not already a `Buffer`) is wrapped via `Buffer.from` — same
+ * bytes, but a real `Buffer` instance, matching this coercer's declared
+ * return type.
+ */
+function coerceBuffer(raw: unknown): Buffer {
+  if (Buffer.isBuffer(raw)) return raw;
+  if (raw instanceof Uint8Array) return Buffer.from(raw);
 
   const str = coerceString(raw);
   const decoded = Buffer.from(str, "base64");
@@ -158,10 +166,13 @@ function splitCsv(raw: unknown): readonly string[] {
  * input parsers (argv, dotenv) are internal implementation details of their
  * respective providers.
  *
+ * @typeParam T - The declared target type, narrowing the return type via
+ *   {@link M3LCoercedValue}.
  * @param raw - The raw value to coerce (typically a string from a provider).
  * @param type - The declared target type.
- * @returns The coerced value: `string`, `number`, `boolean`, `Buffer`, or a
- *   `readonly` array of `string`/`number` for the `*_ARRAY` types.
+ * @returns The coerced value, typed as `M3LCoercedValue<T>`: `string`,
+ *   `number`, `boolean`, `Buffer`, or a `readonly` array of `string`/`number`
+ *   for the `*_ARRAY` types.
  * @throws {@link M3LConfigCoercionError} When `raw` cannot be coerced to
  *   `type`. The error message and `context` never embed the raw value
  *   verbatim (config values often carry secrets) — only its runtime type and,
@@ -177,27 +188,37 @@ function splitCsv(raw: unknown): readonly string[] {
  * const port = coerceConfigValue("8080", M3LConfigParameterType.INT); // 8080
  * ```
  */
-export function coerceConfigValue(
+export function coerceConfigValue<T extends M3LConfigParameterType>(
   raw: unknown,
-  type: M3LConfigParameterType,
-): unknown {
+  type: T,
+): M3LCoercedValue<T> {
+  let result:
+    string | number | boolean | readonly string[] | readonly number[] | Buffer;
   switch (type) {
     case M3LConfigParameterType.STRING:
-      return coerceString(raw);
+      result = coerceString(raw);
+      break;
     case M3LConfigParameterType.INT:
-      return coerceInt(raw);
+      result = coerceInt(raw);
+      break;
     case M3LConfigParameterType.DOUBLE:
-      return coerceDouble(raw);
+      result = coerceDouble(raw);
+      break;
     case M3LConfigParameterType.BOOL:
-      return coerceBool(raw);
+      result = coerceBool(raw);
+      break;
     case M3LConfigParameterType.BUFFER:
-      return coerceBuffer(raw);
+      result = coerceBuffer(raw);
+      break;
     case M3LConfigParameterType.STRING_ARRAY:
-      return splitCsv(raw);
+      result = splitCsv(raw);
+      break;
     case M3LConfigParameterType.INT_ARRAY:
-      return splitCsv(raw).map((segment) => coerceInt(segment));
+      result = splitCsv(raw).map((segment) => coerceInt(segment));
+      break;
     case M3LConfigParameterType.DOUBLE_ARRAY:
-      return splitCsv(raw).map((segment) => coerceDouble(segment));
+      result = splitCsv(raw).map((segment) => coerceDouble(segment));
+      break;
     default: {
       const _exhaustive: never = type;
       throw new M3LConfigCoercionError(
@@ -205,4 +226,9 @@ export function coerceConfigValue(
       );
     }
   }
+  // safe: the switch above exhaustively produces the runtime value matching
+  // `type`, but TS cannot correlate a runtime `switch` on `type` with the
+  // conditional-type branch of `M3LCoercedValue<T>` — this is the single
+  // sanctioned cast at the return boundary.
+  return result as M3LCoercedValue<T>;
 }
