@@ -5,6 +5,10 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# LICENSE copied into the package at publish time by its `prepack` script
+# (single source of truth stays at the repo root). Generated, never committed.
+packages/m3l-common/LICENSE
+
 # Turborepo local cache / logs
 .turbo/
 
