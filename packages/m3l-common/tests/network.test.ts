@@ -5,9 +5,9 @@
  * behavioral contract for this change set (error codes/reasons, event
  * payload shapes, timeout/abort mechanics via undici).
  *
- * Exports under test: M3LHttpClient, M3LHttpClientError,
- *   M3LHttpClientOptions, M3LHttpRequestEvent, M3LHttpResponseEvent,
- *   M3LHttpErrorEvent, M3LHttpClientEventMap.
+ * Exports under test: M3LHttpClient, M3LHttpClientError, M3LHttpFailure,
+ *   M3LHttpFailureReason, M3LHttpClientOptions, M3LHttpRequestEvent,
+ *   M3LHttpResponseEvent, M3LHttpErrorEvent, M3LHttpClientEventMap.
  *
  * The implementation wraps `undici`'s `fetch` and `ProxyAgent`. Both are
  * mocked at the module level so these tests never touch a real socket. The
@@ -43,6 +43,7 @@ import type {
   M3LHttpClientEventMap,
   M3LHttpClientOptions,
   M3LHttpErrorEvent,
+  M3LHttpFailure,
   M3LHttpFailureReason,
   M3LHttpRequestEvent,
   M3LHttpResponseEvent,
@@ -232,7 +233,7 @@ describe("M3LHttpClient — defaultHeaders", () => {
 // ---------------------------------------------------------------------------
 describe("M3LHttpClient — non-2xx responses", () => {
   test.each([404, 500])(
-    "a %d response rejects with M3LHttpClientError carrying typed reason 'status' and typed status",
+    "a %d response rejects with M3LHttpClientError carrying typed reason 'status' and a failure.status payload",
     async (status) => {
       mockFetch.mockResolvedValue(
         makeResponse({
@@ -261,7 +262,12 @@ describe("M3LHttpClient — non-2xx responses", () => {
       expect(httpError.name).toBe("M3LHttpClientError");
       // Typed own fields, NOT via context — the whole point of C1.
       expect(httpError.reason).toBe("status");
-      expect(httpError.status).toBe(status);
+      // The response status lives only on the "status" arm of the
+      // discriminated failure payload — narrow before reading it.
+      expect(httpError.failure.reason).toBe("status");
+      if (httpError.failure.reason === "status") {
+        expect(httpError.failure.status).toBe(status);
+      }
       // context still carries the request url per the documented contract,
       // but must NOT be the source of truth for reason/status any more.
       expect(httpError.context).toMatchObject({
@@ -290,7 +296,11 @@ describe("M3LHttpClient — network failure", () => {
     expect(thrown).toBeInstanceOf(M3LHttpClientError);
     const httpError = thrown as M3LHttpClientError;
     expect(httpError.reason).toBe("network");
-    expect(httpError.status).toBeUndefined();
+    // The "network" arm of the discriminated failure payload carries no
+    // status field at all — an illegal "network with a status" state is
+    // unrepresentable, not merely undefined.
+    expect(httpError.failure.reason).toBe("network");
+    expect("status" in httpError.failure).toBe(false);
     expect(httpError.cause).toBe(networkFailure);
   });
 });
@@ -722,10 +732,43 @@ describe("M3LHttpClient — type-level contract", () => {
     >().toEqualTypeOf<M3LHttpFailureReason>();
   });
 
-  test("M3LHttpClientError.status is an optional typed number, present only for the 'status' reason", () => {
-    expectTypeOf<M3LHttpClientError["status"]>().toEqualTypeOf<
-      number | undefined
+  test("M3LHttpFailure is the exact discriminated union — 'status' carries a status code, the other three arms carry none", () => {
+    expectTypeOf<M3LHttpFailure>().toEqualTypeOf<
+      | { readonly reason: "status"; readonly status: number }
+      | { readonly reason: "network" | "timeout" | "abort" }
     >();
+  });
+
+  test("M3LHttpClientError.failure is typed as the exact M3LHttpFailure union", () => {
+    expectTypeOf<
+      M3LHttpClientError["failure"]
+    >().toEqualTypeOf<M3LHttpFailure>();
+  });
+
+  test("accessing .status on the base M3LHttpFailure union is a compile error until narrowed", () => {
+    // The base union must not expose `status` unconditionally, or an illegal
+    // "timeout with a status" state becomes representable.
+    expectTypeOf<M3LHttpFailure>().not.toHaveProperty("status");
+
+    const assertNarrowing = (failure: M3LHttpFailure): void => {
+      if (failure.reason === "status") {
+        expectTypeOf(failure.status).toBeNumber();
+      }
+    };
+    expectTypeOf(assertNarrowing).parameter(0).toEqualTypeOf<M3LHttpFailure>();
+  });
+
+  test("accessing .status on error.failure is a compile error until failure.reason === 'status' narrows it", () => {
+    expectTypeOf<M3LHttpClientError["failure"]>().not.toHaveProperty("status");
+
+    const assertNarrowing = (error: M3LHttpClientError): void => {
+      if (error.failure.reason === "status") {
+        expectTypeOf(error.failure.status).toBeNumber();
+      }
+    };
+    expectTypeOf(assertNarrowing)
+      .parameter(0)
+      .toEqualTypeOf<M3LHttpClientError>();
   });
 
   test("switch (error.reason) narrows exhaustively over the four documented failure modes with no default needed", () => {
@@ -733,6 +776,23 @@ describe("M3LHttpClient — type-level contract", () => {
       switch (error.reason) {
         case "status":
           return "status";
+        case "network":
+          return "network";
+        case "timeout":
+          return "timeout";
+        case "abort":
+          return "abort";
+      }
+    };
+    expectTypeOf(classify).parameter(0).toEqualTypeOf<M3LHttpClientError>();
+    expectTypeOf(classify).returns.toEqualTypeOf<string>();
+  });
+
+  test("switch (error.failure.reason) narrows exhaustively over the discriminated failure payload with no default needed", () => {
+    const classify = (error: M3LHttpClientError): string => {
+      switch (error.failure.reason) {
+        case "status":
+          return `status:${String(error.failure.status)}`;
         case "network":
           return "network";
         case "timeout":
