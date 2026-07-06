@@ -142,7 +142,7 @@ what the library's `M3LExecutionEnvironment` detects to switch into MONOREPO
 mode (so `M3LPaths` anchors `data/` at the workspace root).
 
 ```text
-pnpm-workspace.yaml     # packages/* + scripts/* (also triggers MONOREPO mode)
+pnpm-workspace.yaml     # packages/* (also triggers MONOREPO mode)
 tsconfig.base.json      # shared strict/ESM/Node24 compiler options
 packages/
   m3l-common/           # the published library (@m3l-automation/m3l-common)
@@ -153,8 +153,6 @@ packages/
       internal/         # NOT exported; no "exports" entry; may change freely
     dist/               # tsc output (ESM .js + .d.ts) — generated, never edit
     tests/              # *.test.ts (Vitest)
-scripts/                # automations consuming the library via workspace:*
-  <name>/src/main.ts    # built on Core.M3LScript
 data/{config,input,output}/   # M3LPaths dirs (output/ holds run archives)
 ```
 
@@ -263,11 +261,9 @@ files (so they cost nothing in unrelated sessions):
 - `**/tests/**`, `*.test.ts` → `.claude/rules/tests.md` — Vitest, a happy +
   failure path per export, `expectTypeOf` where the type is the contract, the
   80 % coverage gate.
-- source/scripts/tests → `.claude/rules/refactoring.md` — behavior-preserving
+- source/tests → `.claude/rules/refactoring.md` — behavior-preserving
   changes: test-safety-net first, small isolated `refactor:` commits, the
   Boy-Scout rule, and the semver hazard of touching the public surface.
-- `scripts/**` → `.claude/rules/scripts.md` — consuming the library via
-  `workspace:*` and the `M3LScript` lifecycle.
 - Deeper reference: `.claude/rules/domain-knowledge.md` → `rules/01-06-*.md`.
 
 ## Interaction Style
@@ -309,7 +305,7 @@ files (so they cost nothing in unrelated sessions):
   Step 0 the change-initiating skills defer to.
 - Branch from `main`: `feat/<slug>`, `fix/<slug>`. The
   `guard-branch-isolation.mjs` hook enforces this for code work — it blocks
-  `packages/*/src/**`, `scripts/*/src/**`, and `**/tests/**` writes while `HEAD`
+  `packages/*/src/**` and `**/tests/**` writes while `HEAD`
   is `main` (or a detached HEAD on the `main` commit), so branch before implementing.
 - Releases are automated from `main`; **never** bump `version` in
   package.json by hand — semantic-release owns it.

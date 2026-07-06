@@ -22,9 +22,9 @@
  *
  * On any failure it exits 2 with a concise stderr summary, which Claude Code
  * surfaces back to the model as advisory feedback. The edit has already been
- * applied — this is a nudge, not a hard gate. Build/typecheck of a `scripts/*`
- * package depends on a freshly built `m3l-common` `dist/`; a stale build will
- * surface here as a rebuild nudge, which is intentional.
+ * applied — this is a nudge, not a hard gate. A typecheck that depends on a
+ * freshly built `m3l-common` `dist/` will, when the build is stale, surface
+ * here as a rebuild nudge, which is intentional.
  */
 import process from "node:process";
 import path from "node:path";
@@ -66,10 +66,8 @@ if (
   process.exit(0);
 }
 
-// Scope: library src/tests, or a script's src.
-const inScope =
-  /^packages\/[^/]+\/(src|tests)\//.test(rel) ||
-  /^scripts\/[^/]+\/src\//.test(rel);
+// Scope: library src/tests.
+const inScope = /^packages\/[^/]+\/(src|tests)\//.test(rel);
 if (!inScope) process.exit(0);
 
 // Walk up to the nearest package.json = the owning package root.
