@@ -136,8 +136,8 @@ git diff main...HEAD --name-only
 
 If the diff is empty, skip this step.
 
-If the diff contains **any `src/**` changes** (files under `packages/*/src/` or
-`scripts/*/src/`), fan out in **one message** the following review spokes in
+If the diff contains **any `src/**` changes** (files under `packages/*/src/`),
+fan out in **one message** the following review spokes in
 parallel — this mirrors the Phase 4 fan-out in `implementing-submodules` so the
 two pipelines stay consistent:
 

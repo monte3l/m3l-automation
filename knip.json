@@ -12,10 +12,6 @@
     "packages/m3l-common": {
       "entry": "src/index.ts",
       "project": "src/**/*.ts"
-    },
-    "scripts/*": {
-      "entry": "src/main.ts",
-      "project": "src/**/*.ts"
     }
   }
 }
