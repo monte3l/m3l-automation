@@ -15,7 +15,8 @@ A set of `M3LErrorUtils` helper functions normalize `unknown` thrown values (as 
 
 Public surface (`errors/index.ts`):
 
-- Types and classes: `M3LError`, `M3LErrorOptions`, `M3LResult`, `M3LResultOk`, `M3LResultErr`
+- Types and classes: `M3LError`, `M3LErrorCode`, `M3LErrorOptions`, `M3LResult`, `M3LResultOk`, `M3LResultErr`
+- `M3L_ERROR_CODES` — the runtime `as const` tuple of every built-in error code (the source of truth `M3LErrorCode` derives from)
 - `M3LErrorUtils` functions: `getErrorMessage`, `toError`, `wrapError`, `getErrorStack`, `hasErrorName`, `errorMessageContains`
 - Result operators: `ok`, `err`, `isOk`, `isErr`, `unwrap`, `unwrapOr`, `map`, `mapErr`, `andThen`, `fromPromise`, `tryCatch`
 
@@ -29,6 +30,35 @@ Public surface (`errors/index.ts`):
 - `toJSON()` — serializes all fields, including the `stack`.
 
 Subclass `M3LError` per failure mode rather than throwing bare strings.
+
+### `M3L_ERROR_CODES` / `M3LErrorCode`
+
+`M3LError.code` is typed `string` because a caller may construct an `M3LError`
+with any code they choose. `M3L_ERROR_CODES` is an `as const` tuple listing
+every **built-in** code the library itself emits — each `M3LError` subclass's
+literal `code`, plus the codes attached by bare `M3LError` constructions and the
+error utilities (e.g. `PROMISE_REJECTED`/`WRAPPED_ERROR`/`RESULT_UNWRAP_ON_ERR`).
+`M3LErrorCode` is the derived union `(typeof M3L_ERROR_CODES)[number]`. Together
+they give a consumer that catches a library error a named vocabulary to narrow
+on (with autocomplete and typo-protection) plus a runtime list to validate an
+unknown string against:
+
+```ts
+import type { M3LErrorCode } from "@m3l-automation/m3l-common/core";
+
+function isRetryable(code: M3LErrorCode): boolean {
+  // `code === "ERR_TYPO"` here is a compile error — only real codes are members.
+  return code === "ERR_POLL_EXHAUSTED" || code === "ERR_HTTP_REQUEST";
+}
+```
+
+`M3LErrorCode` does **not** narrow `M3LError.code` itself (that stays `string`
+for caller-supplied codes); it is additive vocabulary for the library's own
+codes, surfaced through the `core` barrel. A **source-scan completeness test**
+asserts `M3L_ERROR_CODES` equals the set of codes actually emitted across
+`src/` — so a newly introduced built-in code that is not added here fails the
+test, guarding the vocabulary against drift regardless of how the code is
+emitted (subclass field or bare `M3LError`).
 
 ### `M3LResult<T, E>`
 
