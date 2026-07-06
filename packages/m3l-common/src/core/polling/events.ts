@@ -36,6 +36,10 @@ export interface M3LPollAttemptPayload {
  * Payload carried by the `poll:wait` event, fired after the backoff delay for
  * a `continue` decision has been computed and before it is slept.
  *
+ * Fired only for a **non-final** `continue` — i.e. when another attempt will
+ * follow. The final attempt of an exhausting poll never sleeps and never
+ * emits `poll:wait`.
+ *
  * @example
  * ```typescript
  * import type { M3LPollWaitPayload } from "@m3l-automation/m3l-common/core";
@@ -102,7 +106,11 @@ export interface M3LPollExhaustedPayload {
 export interface M3LPollerEventMap {
   /** Fired once per attempt, before the check function runs. */
   readonly "poll:attempt": M3LPollAttemptPayload;
-  /** Fired after a `continue` decision's backoff delay is computed, before it is slept. */
+  /**
+   * Fired after a `continue` decision's backoff delay is computed, before it
+   * is slept — only for a non-final `continue`; the final attempt never
+   * sleeps and never emits this event.
+   */
   readonly "poll:wait": M3LPollWaitPayload;
   /** Fired when a check resolves with a terminal `success` decision. */
   readonly "poll:success": M3LPollSuccessPayload;
