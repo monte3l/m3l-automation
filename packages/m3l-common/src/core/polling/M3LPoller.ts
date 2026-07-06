@@ -12,6 +12,9 @@ import {
   M3LPollFailureError,
 } from "../../internal/polling/errors.js";
 import type { M3LBackoffStrategy } from "../../internal/polling/strategy.js";
+import { M3LEventEmitterBase } from "../events/index.js";
+
+import type { M3LPollerEventMap } from "./events.js";
 
 /**
  * The outcome of a single poll check.
@@ -51,6 +54,10 @@ const DEFAULT_POLL_MAX_ATTEMPTS = 30;
  * Attempt and backoff state live inside each {@link M3LPoller.poll} call frame,
  * never on the instance, so concurrent polls on one instance are isolated.
  *
+ * Extends {@link M3LEventEmitterBase} to surface opt-in `poll:*` telemetry
+ * events (see {@link M3LPollerEventMap}); subscribing never alters the
+ * resolved value or thrown error of `poll()`.
+ *
  * @example
  * ```ts
  * import { Core } from "@m3l-automation/m3l-common/core";
@@ -68,7 +75,7 @@ const DEFAULT_POLL_MAX_ATTEMPTS = 30;
  * });
  * ```
  */
-export class M3LPoller {
+export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
   readonly #backoff: M3LBackoffStrategy;
   readonly #maxAttempts: number;
 
@@ -77,6 +84,7 @@ export class M3LPoller {
    * @throws When `maxAttempts` is provided but is not a finite positive integer.
    */
   constructor(options: M3LPollerOptions) {
+    super();
     const maxAttempts = options.maxAttempts ?? DEFAULT_POLL_MAX_ATTEMPTS;
     assertPositiveInteger(maxAttempts, "maxAttempts");
     this.#backoff = options.backoff;
@@ -98,10 +106,15 @@ export class M3LPoller {
     let prevDelay: number | undefined;
 
     for (let attempt = 0; attempt < this.#maxAttempts; attempt++) {
+      this.emit("poll:attempt", {
+        attempt: attempt + 1,
+        maxAttempts: this.#maxAttempts,
+      });
       const decision = await check();
 
       switch (decision.type) {
         case "success":
+          this.emit("poll:success", { attempt: attempt + 1 });
           return decision.value;
         case "failure":
           throw new M3LPollFailureError(
@@ -110,6 +123,7 @@ export class M3LPoller {
         case "continue": {
           const nextDelay = this.#backoff.nextDelay(attempt, prevDelay);
           prevDelay = nextDelay;
+          this.emit("poll:wait", { attempt: attempt + 1, delayMs: nextDelay });
           await delay(nextDelay);
           break;
         }
@@ -122,6 +136,7 @@ export class M3LPoller {
       }
     }
 
+    this.emit("poll:exhausted", { attempts: this.#maxAttempts });
     throw new M3LPollExhaustedError(
       `poll exhausted after ${String(this.#maxAttempts)} attempts while still 'continue'`,
       { attempts: this.#maxAttempts },
