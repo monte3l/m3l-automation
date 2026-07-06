@@ -463,6 +463,117 @@ describe("M3LPrompt.text", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Optional-`default`/`required` spread branches — the true-arm forwards the
+// key; omitting `options` (or the field) must NOT forward a `default`/
+// `required` key at all (under exactOptionalPropertyTypes, forwarding an
+// explicit `undefined` is a distinct, rejected shape from omitting the key).
+// ---------------------------------------------------------------------------
+describe("M3LPrompt optional default/required forwarding", () => {
+  test("number() forwards options.default to the adapter when provided", async () => {
+    const adapter = makeMockAdapter();
+    adapter.number.mockResolvedValue(5);
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.number("Retries?", { min: 0, max: 10, default: 5 });
+    expect(adapter.number).toHaveBeenCalledWith(
+      expect.objectContaining({ default: 5 }),
+    );
+  });
+
+  test("number() omits the default key entirely when not provided", async () => {
+    const adapter = makeMockAdapter();
+    adapter.number.mockResolvedValue(5);
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.number("Retries?", { min: 0, max: 10 });
+    const [config] = adapter.number.mock.calls[0] as [Record<string, unknown>];
+    expect(config).not.toHaveProperty("default");
+  });
+
+  test("confirm() forwards options.default to the adapter when provided", async () => {
+    const adapter = makeMockAdapter();
+    adapter.confirm.mockResolvedValue(true);
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.confirm("Continue?", { default: true });
+    expect(adapter.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ default: true }),
+    );
+  });
+
+  test("confirm() omits the default key entirely when no options are passed", async () => {
+    const adapter = makeMockAdapter();
+    adapter.confirm.mockResolvedValue(true);
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.confirm("Continue?");
+    const [config] = adapter.confirm.mock.calls[0] as [Record<string, unknown>];
+    expect(config).not.toHaveProperty("default");
+  });
+
+  test("select() forwards options.default to the adapter when provided", async () => {
+    const adapter = makeMockAdapter();
+    adapter.select.mockResolvedValue("eu-south-1");
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.select("Region?", ["eu-south-1", "us-east-1"], {
+      default: "eu-south-1",
+    });
+    expect(adapter.select).toHaveBeenCalledWith(
+      expect.objectContaining({ default: "eu-south-1" }),
+    );
+  });
+
+  test("select() omits the default key entirely when no options are passed", async () => {
+    const adapter = makeMockAdapter();
+    adapter.select.mockResolvedValue("eu-south-1");
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.select("Region?", ["eu-south-1", "us-east-1"]);
+    const [config] = adapter.select.mock.calls[0] as [Record<string, unknown>];
+    expect(config).not.toHaveProperty("default");
+  });
+
+  test("multiselect() forwards options.required to the adapter when provided", async () => {
+    const adapter = makeMockAdapter();
+    adapter.checkbox.mockResolvedValue(["dev"]);
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.multiselect("Targets?", ["dev", "staging"], {
+      required: true,
+    });
+    expect(adapter.checkbox).toHaveBeenCalledWith(
+      expect.objectContaining({ required: true }),
+    );
+  });
+
+  test("multiselect() omits the required key entirely when no options are passed", async () => {
+    const adapter = makeMockAdapter();
+    adapter.checkbox.mockResolvedValue(["dev"]);
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.multiselect("Targets?", ["dev", "staging"]);
+    const [config] = adapter.checkbox.mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+    expect(config).not.toHaveProperty("required");
+  });
+
+  test("autocomplete() forwards options.default to the adapter when provided", async () => {
+    const adapter = makeMockAdapter();
+    adapter.search.mockResolvedValue("eu-south-1");
+    const suggest: M3LSuggestFn<string> = () => ["eu-south-1"];
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.autocomplete("Region?", suggest, { default: "eu-south-1" });
+    expect(adapter.search).toHaveBeenCalledWith(
+      expect.objectContaining({ default: "eu-south-1" }),
+    );
+  });
+
+  test("autocomplete() omits the default key entirely when no options are passed", async () => {
+    const adapter = makeMockAdapter();
+    adapter.search.mockResolvedValue("eu-south-1");
+    const suggest: M3LSuggestFn<string> = () => ["eu-south-1"];
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.autocomplete("Region?", suggest);
+    const [config] = adapter.search.mock.calls[0] as [Record<string, unknown>];
+    expect(config).not.toHaveProperty("default");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // M3LPrompt.password — B6 secret-leak guard
 // ---------------------------------------------------------------------------
 describe("M3LPrompt.password", () => {
