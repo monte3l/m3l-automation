@@ -1,5 +1,6 @@
 /**
- * Tests for core/text submodule (RED phase — implementation does not exist yet).
+ * Tests for the shipped core/text submodule, including characterization tests
+ * for the extractor-registration extension point.
  *
  * Contract source: docs/reference/core/text.md + the frozen type/registry
  * contract supplied for this change set.
@@ -148,6 +149,39 @@ describe("type contracts", () => {
     expectTypeOf<M3LXlsxTextExtractor>().toExtend<M3LTextExtractor>();
     expectTypeOf<M3LEmailTextExtractor>().toExtend<M3LTextExtractor>();
     expectTypeOf<M3LZipTextExtractor>().toExtend<M3LTextExtractor>();
+  });
+
+  test("a minimal object literal satisfies M3LTextExtractor with an arity-1 extract", () => {
+    // The options parameter is optional — a single-argument `extract(filePath)`
+    // still satisfies the interface. This literal proves both the minimal shape
+    // AND the arity-1 call form in one assertion.
+    const min = {
+      mimeTypes: ["text/html"],
+      extensions: [".html"],
+      extract(_filePath: string): Promise<M3LTextExtractionResult> {
+        return Promise.resolve({ text: "", truncated: false });
+      },
+    } satisfies M3LTextExtractor;
+    expectTypeOf(min).toExtend<M3LTextExtractor>();
+  });
+
+  test("M3LTextExtractionResult tolerates an omitted pages field but rejects an explicit undefined", () => {
+    // `{ text, truncated }` alone satisfies the result shape — pages is optional.
+    const noPages: M3LTextExtractionResult = {
+      text: "",
+      truncated: false,
+    };
+    expect(noPages.pages).toBeUndefined();
+
+    // exactOptionalPropertyTypes rejects explicitly setting `pages: undefined`
+    // rather than omitting the key.
+    // @ts-expect-error -- exactOptionalPropertyTypes forbids `pages: undefined`; omit the key instead.
+    const rejected: M3LTextExtractionResult = {
+      text: "",
+      truncated: false,
+      pages: undefined,
+    };
+    expect(rejected).toBeDefined();
   });
 });
 
@@ -305,6 +339,195 @@ describe("M3LTextExtractorRegistry dispatch", () => {
     const message = (thrown as M3LTextExtractionError).message;
     expect(message).toContain("application/x-unknown");
     expect(message).toContain(".weird");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Extension point — the registration/authoring seam documented in
+// docs/reference/core/text.md § "Extending the registry". These are
+// characterization tests: they assert behavior the registry already
+// implements (precedence levers, extension lowercasing, MIME/extension
+// short-circuit, and the "registry never wraps extractor errors" contract).
+// ---------------------------------------------------------------------------
+describe("M3LTextExtractorRegistry extension point", () => {
+  test("constructor array replaces the default set with no implicit PlainText fallback", async () => {
+    const doesNotClaimTxt: M3LTextExtractor = {
+      mimeTypes: ["text/html"],
+      extensions: [".html"],
+      extract: vi.fn().mockResolvedValue({
+        text: "unused",
+        truncated: false,
+      } satisfies M3LTextExtractionResult),
+    };
+    const registry = new M3LTextExtractorRegistry([doesNotClaimTxt]);
+
+    let thrown: unknown;
+    try {
+      await registry.extract(MIME.txt, fixture("sample.txt"));
+    } catch (error) {
+      thrown = error;
+    }
+    // Proves no default M3LPlainTextExtractor was silently added alongside the
+    // explicit array.
+    expect(thrown).toBeInstanceOf(M3LTextExtractionError);
+  });
+
+  test("register() appends at LOWEST precedence — the earlier constructor entry still wins", async () => {
+    const sharedMime = "application/x-custom";
+    const a: M3LTextExtractor = {
+      mimeTypes: [sharedMime],
+      extensions: [],
+      extract: vi.fn().mockResolvedValue({
+        text: "A",
+        truncated: false,
+      } satisfies M3LTextExtractionResult),
+    };
+    const b: M3LTextExtractor = {
+      mimeTypes: [sharedMime],
+      extensions: [],
+      extract: vi.fn().mockResolvedValue({
+        text: "B",
+        truncated: false,
+      } satisfies M3LTextExtractionResult),
+    };
+
+    const registry = new M3LTextExtractorRegistry([a]);
+    registry.register(b);
+    const result = await registry.extract(sharedMime, "/tmp/whatever");
+    expect(result.text).toBe("A");
+  });
+
+  test("register() ordering is reversible — order, not identity, decides precedence", async () => {
+    const sharedMime = "application/x-custom";
+    const a: M3LTextExtractor = {
+      mimeTypes: [sharedMime],
+      extensions: [],
+      extract: vi.fn().mockResolvedValue({
+        text: "A",
+        truncated: false,
+      } satisfies M3LTextExtractionResult),
+    };
+    const b: M3LTextExtractor = {
+      mimeTypes: [sharedMime],
+      extensions: [],
+      extract: vi.fn().mockResolvedValue({
+        text: "B",
+        truncated: false,
+      } satisfies M3LTextExtractionResult),
+    };
+
+    // Reverse of the previous test: [B] first, then register(A) — B must win.
+    const registry = new M3LTextExtractorRegistry([b]);
+    registry.register(a);
+    const result = await registry.extract(sharedMime, "/tmp/whatever");
+    expect(result.text).toBe("B");
+  });
+
+  test("extension fallback lowercases the file's extension before matching", async () => {
+    const fooExtractor: M3LTextExtractor = {
+      mimeTypes: [],
+      extensions: [".foo"],
+      extract: vi.fn().mockResolvedValue({
+        text: "FOO-MATCHED",
+        truncated: false,
+      } satisfies M3LTextExtractionResult),
+    };
+    const registry = new M3LTextExtractorRegistry([fooExtractor]);
+    // Upper-case file extension "X.FOO" must still match the lower-case
+    // declared ".foo" via the registry's own lowercasing.
+    const result = await registry.extract(
+      "application/octet-stream",
+      "/tmp/X.FOO",
+    );
+    expect(result.text).toBe("FOO-MATCHED");
+  });
+
+  test("an upper-case declared extension never matches — the registry does not case-fold the extractor's own list", async () => {
+    const upperFooExtractor: M3LTextExtractor = {
+      mimeTypes: [],
+      extensions: [".FOO"],
+      extract: vi.fn().mockResolvedValue({
+        text: "unused",
+        truncated: false,
+      } satisfies M3LTextExtractionResult),
+    };
+    const registry = new M3LTextExtractorRegistry([upperFooExtractor]);
+
+    let thrown: unknown;
+    try {
+      await registry.extract("application/octet-stream", "/tmp/x.foo");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LTextExtractionError);
+  });
+
+  test("MIME-phase match short-circuits the extension-phase match for the same call", async () => {
+    const sharedMime = "application/x-shared";
+    const byMime: M3LTextExtractor = {
+      mimeTypes: [sharedMime],
+      extensions: [],
+      extract: vi.fn().mockResolvedValue({
+        text: "BY-MIME",
+        truncated: false,
+      } satisfies M3LTextExtractionResult),
+    };
+    const byExtension: M3LTextExtractor = {
+      mimeTypes: [],
+      extensions: [".shared"],
+      extract: vi.fn().mockResolvedValue({
+        text: "BY-EXTENSION",
+        truncated: false,
+      } satisfies M3LTextExtractionResult),
+    };
+    // Registration order deliberately favors the extension extractor — the
+    // MIME phase must still win because it runs first, regardless of order.
+    const registry = new M3LTextExtractorRegistry([byExtension, byMime]);
+    const result = await registry.extract(sharedMime, "/tmp/file.shared");
+    expect(result.text).toBe("BY-MIME");
+  });
+
+  test("the registry propagates a custom extractor's M3LTextExtractionError unchanged (same instance)", async () => {
+    const cause = new Error("underlying parse failure");
+    const original = new M3LTextExtractionError("boom", {
+      code: "ERR_TEXT_EXTRACTION",
+      cause,
+    });
+    const failing: M3LTextExtractor = {
+      mimeTypes: ["application/x-failing"],
+      extensions: [],
+      extract: vi.fn().mockRejectedValue(original),
+    };
+    const registry = new M3LTextExtractorRegistry([failing]);
+
+    await expect(
+      registry.extract("application/x-failing", "/tmp/whatever"),
+    ).rejects.toBe(original);
+    expect(original.code).toBe("ERR_TEXT_EXTRACTION");
+    expect(original.cause).toBe(cause);
+  });
+
+  test("corollary — a bare Error from a custom extractor is NOT wrapped into M3LTextExtractionError", async () => {
+    // Documents current behavior: the registry does not normalize a custom
+    // extractor's rejection. Asserting the registry wraps it would codify a
+    // behavior the contract explicitly disclaims — the extractor itself is
+    // responsible for surfacing a typed error.
+    const bare = new Error("boom");
+    const failing: M3LTextExtractor = {
+      mimeTypes: ["application/x-failing-bare"],
+      extensions: [],
+      extract: vi.fn().mockRejectedValue(bare),
+    };
+    const registry = new M3LTextExtractorRegistry([failing]);
+
+    let thrown: unknown;
+    try {
+      await registry.extract("application/x-failing-bare", "/tmp/whatever");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBe(bare);
+    expect(thrown).not.toBeInstanceOf(M3LTextExtractionError);
   });
 });
 
