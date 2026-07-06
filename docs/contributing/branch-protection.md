@@ -58,10 +58,15 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
   (`PUT /repos/:owner/:repo/branches/main/protection` with
   `required_signatures`), alongside the checks above.
   **Release caveat:** enabling this means every commit that lands on `main` must
-  be signed, _including_ the changelog/version commit `@semantic-release/git`
-  creates. Before turning it on, ensure the release bot signs its commits (e.g.
-  a GitHub App identity, whose API-created commits are auto-signed) or the
-  release will be rejected. See ADR-0016 for the full rationale.
+  be signed, _including_ the changelog commit the release creates. This is
+  handled by the **Monte3L Release Bot** GitHub App: `release.yml` mints an
+  installation token (`actions/create-github-app-token`) and runs
+  semantic-release under it, and `.releaserc.json` uses
+  `@semantic-release-extras/verified-git-commit` (instead of
+  `@semantic-release/git`) so the changelog commit is created over the GitHub
+  API — which GitHub auto-signs (Verified). The App is also added to this
+  branch's push `restrictions` allowlist so it is authorized to push that
+  commit. See ADR-0016 for the full rationale.
 - **Do not allow bypassing the above** (including for administrators) so the
   gate cannot be skipped.
 

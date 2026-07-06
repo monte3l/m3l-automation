@@ -47,7 +47,12 @@ A governance audit of the worktree/commit/push workflow surfaced two gaps:
    bypassable with `--no-verify` — deliberately, because layer 3 is the hard gate.
 3. GitHub branch protection **"Require signed commits"** — authoritative and
    unbypassable, catches every path. Documented in `branch-protection.md` with the
-   release-automation caveat (the `@semantic-release/git` commit must be signed).
+   release-automation caveat (the release commit must be signed). Resolved by
+   running semantic-release under a **Monte3L Release Bot** GitHub App token and
+   using `@semantic-release-extras/verified-git-commit` — which creates the
+   changelog commit over the GitHub API, so GitHub auto-signs it (Verified) and
+   the App, being in the `main` push-restrictions allowlist, is authorized to
+   push it. See `release.yml` and `.releaserc.json`.
 
 The shared verification logic lives in `bin/lib/signed-range.mjs` (unit-tested),
 so the hook and the pre-push script agree on what "signed" means — mirroring how
