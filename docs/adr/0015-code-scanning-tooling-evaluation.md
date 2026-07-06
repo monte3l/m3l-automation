@@ -4,6 +4,12 @@
 - **Date:** 2026-07-02
 - **Deciders:** Enrico Lionello
 
+> **Update (2026-07-06).** The SBOM/provenance attestation described below lived
+> in `release.yml`, which was removed with release automation
+> ([ADR-0020](./0020-drop-release-automation.md)). The package is no longer
+> published, so SBOM-at-release and npm provenance no longer apply. Everything
+> else in this ADR (CodeQL, Scorecard, SHA-pinned Actions, Dependabot) stands.
+
 ## Context and problem statement
 
 GitHub surfaces a "code quality" / code-scanning feature and a marketplace of 70+
@@ -92,5 +98,5 @@ We **reject** the marketplace platforms as redundant here:
 - Related: [ADR-0007](./0007-dependency-management-strategy.md) (automated dependency
   monitoring and security gating — this ADR extends it),
   [ADR-0011](./0011-release-and-publishing-workflow.md) (release + provenance).
-- Related: `.github/workflows/scorecard.yml`, `.github/workflows/release.yml`,
-  `.github/dependabot.yml`, `docs/contributing/branch-protection.md`.
+- Related: `.github/workflows/scorecard.yml`, `.github/dependabot.yml`,
+  `docs/contributing/branch-protection.md`.

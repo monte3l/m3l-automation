@@ -26,10 +26,8 @@ updates:
           - knip
           - publint
           - "@arethetypeswrong/*"
-      release-tooling:
+      commit-tooling:
         patterns:
-          - semantic-release
-          - "@semantic-release/*"
           - commitlint
           - "@commitlint/*"
     labels:

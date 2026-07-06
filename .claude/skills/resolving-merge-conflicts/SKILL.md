@@ -34,10 +34,9 @@ missing `.js` extension, CommonJS) that a PreToolUse hook would then block.
 - Never resolve conflicts while `HEAD` is `main` (or detached on the `main`
   commit) — `guard-branch-isolation` blocks the `src/`/`tests/` edits, and `main`
   is only updated via merged PRs. Abort and hand back instead.
-- Never hand-merge `pnpm-lock.yaml`, the `version` field of `package.json`,
-  generated `dist/`, `docs/reference/catalog.json`, provenance sidecars, or
-  `CHANGELOG.md` — regenerate them or let their owner (semantic-release, the
-  generators, `/syncing-docs`) produce them.
+- Never hand-merge `pnpm-lock.yaml`, generated `dist/`,
+  `docs/reference/catalog.json`, or provenance sidecars — regenerate them or let
+  their owner (the generators, `/syncing-docs`) produce them.
 - Never auto-pick ours/theirs for a `src/**` / `tests/**` logic conflict. Hand it
   back.
 - Pushed commits must be signed — preserve signing across the resolution.
@@ -98,11 +97,10 @@ Split the conflicted paths from Step 1 into **derived-artifact** vs **logic**.
 
 **Never hand-resolve — abort if these are the only way forward:**
 
-- `package.json` `version` — semantic-release owns it; it is a guard-protected
-  path. If it conflicts, take `main`'s value verbatim (never invent a version);
-  semantic-release recomputes it on release.
+- `package.json` `version` — hand-managed (the package is internal, not
+  published). If it conflicts, take `main`'s value verbatim (never invent a
+  version); reconcile it intentionally later, not mid-conflict.
 - `dist/` — generated output; regenerate with `pnpm build`, never hand-merge.
-- `CHANGELOG.md` — owned by semantic-release.
 
 **Logic — hand back (`src/**`, `tests/**`, or any real hand-authored code):**
 

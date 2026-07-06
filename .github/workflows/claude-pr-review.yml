@@ -166,7 +166,7 @@ jobs:
             ## Exports map
 
             - If the diff touches `src/core/index.ts`, `src/aws/index.ts`, or the `exports` field in `package.json`, run `pnpm check:api` to confirm the snapshot is unchanged
-            - An unexpected snapshot diff is a semver event and must be reflected in the PR title (`feat!:` or `BREAKING CHANGE:` footer)
+            - An unexpected snapshot diff changes the public API and must be reflected in the PR title (`feat!:` or `BREAKING CHANGE:` footer)
 
             ## Security
 
@@ -175,7 +175,7 @@ jobs:
 
             ## Commit hygiene
 
-            - PR title must follow Conventional Commits: `feat:` (minor), `fix:` (patch), `feat!:` or `BREAKING CHANGE:` footer (major), `docs:`/`refactor:`/`test:`/`chore:` (no release)
+            - PR title must follow Conventional Commits: `feat:`, `fix:`, `feat!:` or `BREAKING CHANGE:` footer for breaking changes, `docs:`/`refactor:`/`test:`/`chore:` for the rest
 
             ## Exhaustive-sweep rule (reduces round count)
 

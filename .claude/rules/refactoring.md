@@ -19,7 +19,7 @@ It is not feature, performance, or behavior work — those are separate commits.
 - **State the goal.** Name the problem you are removing (duplication, complexity,
   naming, weak types). No identified problem → no refactor.
 - **Small isolated steps**, each one focused operation, **committed individually**
-  with a `refactor:` commit (does not release). Rerun the full suite after each
+  with a `refactor:` commit. Rerun the full suite after each
   step; a failure is a regression — revert before continuing.
 - **Opportunistic / Boy-Scout:** leave touched code better than you found it, and
   do a preparatory refactor first when it makes the change you came to do simpler —

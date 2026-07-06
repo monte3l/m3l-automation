@@ -207,14 +207,14 @@ If it produced no changes, continue.
 ### 8 — Commit and push
 
 Commit using the `writing-commits` skill conventions. Choose the Conventional Commit type
-based on the findings resolved — per CLAUDE.md, only `fix:` triggers a patch release:
+based on the findings resolved:
 
-| Must-fix findings resolved                                    | Commit type | Semver impact |
-| ------------------------------------------------------------- | ----------- | ------------- |
-| Actual defects (`any`, missing `.js`, bare throws, bad types) | `fix:`      | patch         |
-| TSDoc / `@example` additions only                             | `docs:`     | no release    |
-| Test coverage gaps only                                       | `test:`     | no release    |
-| Mix of defect + documentation fixes                           | `fix:`      | patch         |
+| Must-fix findings resolved                                    | Commit type |
+| ------------------------------------------------------------- | ----------- |
+| Actual defects (`any`, missing `.js`, bare throws, bad types) | `fix:`      |
+| TSDoc / `@example` additions only                             | `docs:`     |
+| Test coverage gaps only                                       | `test:`     |
+| Mix of defect + documentation fixes                           | `fix:`      |
 
 - **Subject:** `{type}: resolve claude-pr-review must-fix findings` (≤70 chars)
 - **Body:** one bullet per **Must-fix** finding resolved (do not list Should-fix or Nits):

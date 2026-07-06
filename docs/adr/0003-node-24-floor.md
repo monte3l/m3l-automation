@@ -23,7 +23,7 @@
 
 ## Decision
 
-We chose **Node 24 LTS** as the runtime floor because it is the active LTS release and ships with every native feature the library and scripts rely on unconditionally — most critically `node --env-file-if-exists`, which eliminates the need for a dotenv dependency. Node 18 and 20 were rejected because they require dotenv as a polyfill, contradicting our non-negotiable "minimal runtime dependencies" constraint. The floor is pinned in `.node-version` (for local version managers like fnm/nvm/mise), declared in `engines.node: ">=24"` across all package.json files, and enforced by `engine-strict=true` in `.npmrc`. Both CI workflows (`ci.yml` and `release.yml`) are locked to `node-version: 24`.
+We chose **Node 24 LTS** as the runtime floor because it is the active LTS release and ships with every native feature the library and scripts rely on unconditionally — most critically `node --env-file-if-exists`, which eliminates the need for a dotenv dependency. Node 18 and 20 were rejected because they require dotenv as a polyfill, contradicting our non-negotiable "minimal runtime dependencies" constraint. The floor is pinned in `.node-version` (for local version managers like fnm/nvm/mise), declared in `engines.node: ">=24"` across all package.json files, and enforced by `engine-strict=true` in `.npmrc`. The `ci.yml` workflow is locked to `node-version: 24`.
 
 ## Consequences
 
@@ -33,5 +33,5 @@ We chose **Node 24 LTS** as the runtime floor because it is the active LTS relea
 
 ## Links
 
-- Related: `.node-version`, `.npmrc` (`engine-strict=true`), root `package.json` (`engines`), `packages/m3l-common/package.json` (`engines`), `.github/workflows/ci.yml`, `.github/workflows/release.yml`.
+- Related: `.node-version`, `.npmrc` (`engine-strict=true`), root `package.json` (`engines`), `packages/m3l-common/package.json` (`engines`), `.github/workflows/ci.yml`.
 - Related: ADR 0001 (toolchain choices), ADR 0002 (ESM-only output — also requires Node 22+ for consumers, but Node 24 is the producer floor).

@@ -15,8 +15,8 @@
 <a href="https://github.com/monte3l/m3l-automation/blob/main/docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-22%2F22-A6E22E?style=flat-square&labelColor=272822" alt="modules: 22/22"></a>
 </p>
 
-> **All 22 of 22 submodules are implemented and reviewed.** The package is unpublished
-> (version `0.0.0-development`); semantic-release cuts `1.0.0` on the first published release.
+> **All 22 of 22 submodules are implemented and reviewed.** The package is
+> internal and not published to npm; `version` in `package.json` is hand-managed.
 > Implemented submodules: `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`, `prompt`, `exporters`, `storage`, `network`, `importers`, `files`, `logging`, `aws/models`, `script`, `aws/credentials`, `aws/clients`.
 
 A shared infrastructure library for automation scripts and AWS Lambda handlers. It provides
