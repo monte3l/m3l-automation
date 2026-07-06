@@ -34,14 +34,20 @@ publish → success/fail` lifecycle, so sequence matters:
    decides the release type from commits.
 2. **`@semantic-release/release-notes-generator`** (`preset: conventionalcommits`)
    — builds the notes from the same commits.
-3. **`@semantic-release/changelog`** — writes/updates `CHANGELOG.md`.
+3. **`@semantic-release/changelog`** (`changelogTitle: "# Changelog"`) —
+   writes/updates `CHANGELOG.md`, keeping the title line at the top.
 4. **`@semantic-release/npm`** (`pkgRoot: packages/m3l-common`) — publishes the
    library package (not the private workspace root).
 5. **`@semantic-release/github`** — creates the GitHub release.
-6. **`@semantic-release/git`** — commits the release assets back:
-   `assets: ["CHANGELOG.md", "packages/m3l-common/package.json"]` with message
-   `chore(release): ${nextRelease.version} [skip ci]`. It runs **last** so it
-   captures the changelog + bumped manifest produced by the earlier plugins.
+6. **`@semantic-release-extras/verified-git-commit`** — commits the changelog
+   back: `assets: ["CHANGELOG.md"]`. It replaces `@semantic-release/git` so the
+   commit is created over the GitHub API and is therefore **auto-signed
+   (Verified)** — required because `main` enforces "Require signed commits"
+   (ADR-0016). It runs under the Monte3L Release Bot App token minted in
+   `release.yml`. Caveats: it commits **one file per commit** (so we commit only
+   `CHANGELOG.md`; the manifest `version` stays the `0.0.0-development` sentinel
+   and is tag-derived) and can only **update a tracked file**, so `CHANGELOG.md`
+   is seeded in the repo.
 
 `branches: ["main"]` — only `main` releases. A plugin is either a bare string
 (default options) or a `["name", { …options }]` tuple.

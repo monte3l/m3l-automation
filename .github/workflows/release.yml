@@ -28,6 +28,19 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # Mint a short-lived installation token for the Monte3L Release Bot GitHub
+      # App. semantic-release runs under this token so (1) the changelog commit
+      # made via the GitHub API by @semantic-release-extras/verified-git-commit
+      # is auto-signed → satisfies branch protection "Require signed commits",
+      # and (2) the push is authorized — the App is in the `main` push
+      # restrictions allowlist. See ADR-0016 and docs/contributing/branch-protection.md.
+      - name: Mint release-bot token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -64,9 +77,11 @@ jobs:
       # semantic-release owns the version; tokens come from the CI vault only.
       # RELEASE_ENABLED repo variable gates the publish: unset → dry-run only.
       # Set it with: gh variable set RELEASE_ENABLED --body true
+      # GITHUB_TOKEN is the release-bot App token (not the default job token) so
+      # the API-created changelog commit is signed and the push is authorized.
       - name: Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
         run: |
