@@ -732,6 +732,61 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/polling/classifiers.ts"
   },
+  "M3LPollerEventMap": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/events.ts"
+  },
+  "M3LPollAttemptPayload": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/events.ts"
+  },
+  "M3LPollWaitPayload": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/events.ts"
+  },
+  "M3LPollSuccessPayload": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/events.ts"
+  },
+  "M3LPollExhaustedPayload": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/events.ts"
+  },
+  "M3LRetryEventMap": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/events.ts"
+  },
+  "M3LRetryAttemptPayload": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/events.ts"
+  },
+  "M3LRetryScheduledPayload": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/events.ts"
+  },
+  "M3LRetrySuccessPayload": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/events.ts"
+  },
+  "M3LRetryFatalPayload": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/events.ts"
+  },
+  "M3LRetryExhaustedPayload": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/events.ts"
+  },
   "M3LPrompt": {
     "submodule": "prompt",
     "namespace": "core",

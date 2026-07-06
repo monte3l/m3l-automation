@@ -12,8 +12,10 @@ import {
   assertPositiveInteger,
 } from "../../internal/polling/guards.js";
 import type { M3LBackoffStrategy } from "../../internal/polling/strategy.js";
+import { M3LEventEmitterBase } from "../events/index.js";
 
 import { M3LBackoff } from "./M3LBackoff.js";
+import type { M3LRetryEventMap } from "./events.js";
 
 /**
  * The verdict a {@link M3LRetryClassifier} reaches for a thrown error.
@@ -100,6 +102,10 @@ function toAdvice(result: M3LRetryDecision | M3LRetryAdvice): M3LRetryAdvice {
  * Attempt and backoff state live inside each {@link M3LRetryRunner.run} call
  * frame, never on the instance, so concurrent runs on one instance are isolated.
  *
+ * Extends {@link M3LEventEmitterBase} to surface opt-in `retry:*` telemetry
+ * events (see {@link M3LRetryEventMap}); subscribing never alters the
+ * resolved value or thrown error of `run()`.
+ *
  * @example
  * ```ts
  * import { Core } from "@m3l-automation/m3l-common/core";
@@ -113,7 +119,7 @@ function toAdvice(result: M3LRetryDecision | M3LRetryAdvice): M3LRetryAdvice {
  * const data = await runner.run(async () => callThrottledApi());
  * ```
  */
-export class M3LRetryRunner {
+export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
   readonly #classifier: M3LRetryClassifier;
   readonly #backoff: M3LBackoffStrategy;
   readonly #unknownDecision: M3LUnknownDecision;
@@ -125,6 +131,7 @@ export class M3LRetryRunner {
    * @throws When `maxAttempts` is provided but is not a finite positive integer.
    */
   constructor(options: M3LRetryRunnerOptions) {
+    super();
     const maxAttempts = options.maxAttempts ?? DEFAULT_RETRY_MAX_ATTEMPTS;
     assertPositiveInteger(maxAttempts, "maxAttempts");
     this.#classifier = options.classifier;
@@ -149,30 +156,71 @@ export class M3LRetryRunner {
     const lastAttempt = this.#maxAttempts - 1;
 
     for (let attempt = 0; ; attempt++) {
+      this.emit("retry:attempt", {
+        attempt: attempt + 1,
+        maxAttempts: this.#maxAttempts,
+      });
       try {
-        return await op();
+        const result = await op();
+        this.emit("retry:success", { attempt: attempt + 1 });
+        return result;
       } catch (error) {
         const advice = toAdvice(this.#classifier(error));
+        // Raw verdict, captured before unknownDecision resolution: every
+        // retry:* payload reports what the classifier actually said, not
+        // what this runner instance happens to resolve "unknown" to.
+        const classification = advice.decision;
         const decision =
           advice.decision === "unknown"
             ? this.#unknownDecision
             : advice.decision;
 
-        // Fatal (or unknown resolved to fatal) — or the last attempt exhausted
-        // while retriable — propagates the original error unchanged.
-        if (decision === "fatal" || attempt >= lastAttempt) throw error;
+        // Fatal (or unknown resolved to fatal) propagates the original error
+        // unchanged — checked first so an unknown-resolved-to-fatal verdict on
+        // the last attempt reports as retry:fatal, not retry:exhausted.
+        if (decision === "fatal") {
+          // Narrowing `as`, not `any`: reaching this branch means
+          // `advice.decision` was either raw "fatal" or "unknown" resolved to
+          // "fatal" — a raw "retriable" verdict always resolves `decision` to
+          // "retriable" and never enters this branch, so "retriable" is
+          // provably excluded from `classification` here.
+          const fatalClassification = classification as "fatal" | "unknown";
+          this.emit("retry:fatal", {
+            attempt: attempt + 1,
+            classification: fatalClassification,
+          });
+          throw error;
+        }
+        // Retriable, but the last attempt is exhausted — propagates unchanged.
+        if (attempt >= lastAttempt) {
+          this.emit("retry:exhausted", { attempts: this.#maxAttempts });
+          throw error;
+        }
 
         // A server-driven delayMs (only expressible on a `retriable` advice)
         // overrides the configured backoff for THIS attempt only, so it must
         // not seed the jittered backoff progression: leave prevDelay untouched.
+        let delayValue: number;
         if (advice.decision === "retriable" && advice.delayMs !== undefined) {
           assertPositive(advice.delayMs, "advice.delayMs");
-          await delay(advice.delayMs);
+          delayValue = advice.delayMs;
         } else {
-          const waitMs = this.#backoff.nextDelay(attempt, prevDelay);
-          prevDelay = waitMs;
-          await delay(waitMs);
+          delayValue = this.#backoff.nextDelay(attempt, prevDelay);
+          prevDelay = delayValue;
         }
+        // Narrowing `as`, not `any`: reaching this point means `decision` was
+        // resolved to something other than "fatal" (handled/thrown above), so
+        // the raw `classification` here is provably "retriable" or "unknown" —
+        // a raw "fatal" verdict always resolves `decision` to "fatal" and
+        // throws before this line is reached.
+        const scheduledClassification = classification as
+          "retriable" | "unknown";
+        this.emit("retry:scheduled", {
+          attempt: attempt + 1,
+          delayMs: delayValue,
+          classification: scheduledClassification,
+        });
+        await delay(delayValue);
       }
     }
   }
