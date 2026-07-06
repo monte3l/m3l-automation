@@ -41,6 +41,28 @@ export abstract class M3LEventEmitterBase<TEventMap extends object> {
   >();
 
   /**
+   * Writes a best-effort diagnostic to `process.stderr` describing a handler
+   * failure, naming the event and the error detail — never the payload,
+   * which may carry caller-supplied secrets. Mirrors the precedent in
+   * `core/logging`'s `M3LLogger.dispatch`, but additionally guards the write
+   * itself: this module has no logging channel of its own to fall back on,
+   * so a failing `process.stderr.write` must not escape and defeat the
+   * "emit/emitAsync never throw" guarantee.
+   */
+  #reportHandlerFailure(event: keyof TEventMap & string, cause: unknown): void {
+    const detail =
+      cause instanceof Error ? (cause.stack ?? cause.message) : String(cause);
+    try {
+      process.stderr.write(
+        `m3l-events: handler threw while handling a "${event}" event: ${detail}\n`,
+      );
+    } catch {
+      // Last-resort: if even the diagnostic write fails, there is nothing
+      // further this method can safely do — emit/emitAsync must not throw.
+    }
+  }
+
+  /**
    * Register a handler for the given event.
    *
    * Set semantics: registering the same handler reference a second time for
@@ -84,9 +106,12 @@ export abstract class M3LEventEmitterBase<TEventMap extends object> {
    * registration order.
    *
    * Each handler runs in its own `try/catch` so a throwing handler does not
-   * prevent subsequent handlers from running. Errors are silently swallowed —
-   * the library never logs by default. Async handlers' returned Promises are
-   * discarded via `void`; sync emit does not await them.
+   * prevent subsequent handlers from running. A failure is not silently
+   * discarded: it is written to `process.stderr` as a best-effort diagnostic
+   * naming the event and the error detail — the event payload is never
+   * included, since it may carry caller-supplied secrets. `emit` itself never
+   * throws, even if the diagnostic write fails. Async handlers' returned
+   * Promises are discarded via `void`; sync emit does not await them.
    *
    * @typeParam TEvent - An event name present in the event map.
    * @param event - The event name to emit.
@@ -102,9 +127,10 @@ export abstract class M3LEventEmitterBase<TEventMap extends object> {
       try {
         // intentional: sync emit discards async-handler promises
         void handler(payload);
-      } catch {
-        // Isolated: one failing handler must not stop others.
-        // The library never logs by default; errors are swallowed here.
+      } catch (cause) {
+        // Isolated: one failing handler must not stop others. The failure is
+        // not silently swallowed — report it as a best-effort diagnostic.
+        this.#reportHandlerFailure(event, cause);
       }
     }
   }
@@ -114,8 +140,12 @@ export abstract class M3LEventEmitterBase<TEventMap extends object> {
    * `Promise.allSettled`.
    *
    * A rejecting handler does not short-circuit the others — all handlers run
-   * to completion (or rejection) before the returned Promise resolves. The
-   * returned Promise always resolves to `undefined`; it never rejects.
+   * to completion (or rejection) before the returned Promise resolves. Each
+   * rejection is not silently discarded: it is written to `process.stderr` as
+   * a best-effort diagnostic naming the event and the rejection reason — the
+   * event payload is never included, since it may carry caller-supplied
+   * secrets. The returned Promise always resolves to `undefined`; it never
+   * rejects.
    *
    * @typeParam TEvent - An event name present in the event map.
    * @param event - The event name to emit.
@@ -132,9 +162,14 @@ export abstract class M3LEventEmitterBase<TEventMap extends object> {
     // a rejecting handler does not short-circuit the others.
     // Wrap each call in Promise.resolve() so that synchronous throws are
     // also captured as rejected promises rather than propagating out of .map().
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       [...set].map((handler) => Promise.resolve().then(() => handler(payload))),
     );
+    for (const result of results) {
+      if (result.status === "rejected") {
+        this.#reportHandlerFailure(event, result.reason);
+      }
+    }
   }
 }
 
