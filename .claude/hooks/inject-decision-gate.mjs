@@ -76,7 +76,7 @@ export function buildContext(branch) {
     "  • Branch — `feat/<slug>` or `fix/<slug>` off `main` (never `main`" +
       (onMain ? ", and you appear to be on/at `main` now" : "") +
       ").",
-    "  • PR — any `src/`/`tests/`/`scripts/*/src` change lands via PR, never a direct commit to `main`.",
+    "  • PR — any `src/`/`tests/` change lands via PR, never a direct commit to `main`.",
     "  • Push — `origin <branch>`, not `origin main`.",
     "guard-branch-isolation.mjs will block src/test writes on `main`, so branch first.",
   ].join("\n");
