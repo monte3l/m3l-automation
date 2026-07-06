@@ -11,17 +11,18 @@ The `network` module provides `M3LHttpClient`, an event-emitting HTTP client wra
 Exported from `@m3l-automation/m3l-common/core` (surfaced through the `Core`
 namespace barrel):
 
-| Symbol                    | Kind  | Purpose                                                                           |
-| ------------------------- | ----- | --------------------------------------------------------------------------------- |
-| `M3LHttpClient`           | class | Event-emitting HTTP client over `undici` (GET-only).                              |
-| `M3LHttpClientOptions`    | type  | Constructor configuration.                                                        |
-| `M3LHttpClientError`      | class | Typed error thrown for every request failure (code `ERR_HTTP_REQUEST`).           |
-| `M3LHttpFailureReason`    | type  | The failure discriminator exposed as the typed `M3LHttpClientError.reason` field. |
-| `M3LHttpAbortableRequest` | type  | Return shape of `getAbortable()` — `{ readonly promise, readonly abort() }`.      |
-| `M3LHttpRequestEvent`     | type  | Payload of the `request` event (`{ method, url, headers }`).                      |
-| `M3LHttpResponseEvent`    | type  | Payload of the `response` event (`{ method, url, status, ok, durationMs }`).      |
-| `M3LHttpErrorEvent`       | type  | Payload of the `error` event (`{ method, url, error }`).                          |
-| `M3LHttpClientEventMap`   | type  | Maps each event name to its payload type.                                         |
+| Symbol                    | Kind  | Purpose                                                                                                                                                               |
+| ------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `M3LHttpClient`           | class | Event-emitting HTTP client over `undici` (GET-only).                                                                                                                  |
+| `M3LHttpClientOptions`    | type  | Constructor configuration.                                                                                                                                            |
+| `M3LHttpClientError`      | class | Typed error thrown for every request failure (code `ERR_HTTP_REQUEST`).                                                                                               |
+| `M3LHttpFailureReason`    | type  | The failure discriminator (`"status" \| "network" \| "timeout" \| "abort"`), exposed as `M3LHttpClientError.reason` and used as the discriminant of `M3LHttpFailure`. |
+| `M3LHttpFailure`          | type  | Discriminated failure payload on `M3LHttpClientError.failure`; the `status` code is present **only** on the `"status"` arm.                                           |
+| `M3LHttpAbortableRequest` | type  | Return shape of `getAbortable()` — `{ readonly promise, readonly abort() }`.                                                                                          |
+| `M3LHttpRequestEvent`     | type  | Payload of the `request` event (`{ method, url, headers }`).                                                                                                          |
+| `M3LHttpResponseEvent`    | type  | Payload of the `response` event (`{ method, url, status, ok, durationMs }`).                                                                                          |
+| `M3LHttpErrorEvent`       | type  | Payload of the `error` event (`{ method, url, error }`).                                                                                                              |
+| `M3LHttpClientEventMap`   | type  | Maps each event name to its payload type.                                                                                                                             |
 
 ### Configuration (`M3LHttpClientOptions`)
 
@@ -85,6 +86,10 @@ try {
 } catch (error) {
   if (error instanceof Core.M3LHttpClientError) {
     console.error(`request failed: ${error.message}`);
+    // `status` is reachable only on the "status" arm.
+    if (error.failure.reason === "status") {
+      console.error(`HTTP ${error.failure.status}`);
+    }
   }
 }
 ```
@@ -106,7 +111,7 @@ const client = new Core.M3LHttpClient({
 - **GET-only.** The client issues `GET` requests; `get()` and `getAbortable()` take a single `path` argument.
 - **Automatic JSON parsing.** Responses whose `Content-Type` matches `/[/+]json\b/i` are parsed as JSON automatically. A 2xx response with any other content type resolves to the raw response text (returned as the caller-asserted `T`). The generic `T` on `get<T>()`/`getAbortable<T>()` is **caller-asserted and not validated at runtime**.
 - **Non-2xx → error.** Any non-2xx response throws `M3LHttpClientError`.
-- **One error type, discriminated by reason.** Every failure — non-2xx status, underlying network failure, timeout, or manual abort — surfaces as a single `M3LHttpClientError` with `code === "ERR_HTTP_REQUEST"`. The specific failure mode is exposed as the typed, always-present `reason` field (an `M3LHttpFailureReason`: `"status" | "network" | "timeout" | "abort"`); the non-2xx case additionally sets the typed optional `status` field. A caller catches `M3LHttpClientError` and branches on `error.reason` with no cast — `switch (error.reason)` is exhaustive. The request `url` is also carried on `context`. Timeout and abort chain the underlying `AbortError` as `cause`.
+- **One error type, with a discriminated failure payload.** Every failure — non-2xx status, underlying network failure, timeout, or manual abort — surfaces as a single `M3LHttpClientError` with `code === "ERR_HTTP_REQUEST"`. The specific mode is exposed two ways: the always-present convenience field `reason` (an `M3LHttpFailureReason`), and the discriminated `failure` payload (an `M3LHttpFailure`) where the response `status` code lives **only** on the `"status"` arm — so `error.failure.status` is reachable only after `error.failure.reason === "status"` narrows it, and an illegal state such as a `"timeout"` failure carrying a `status` is unrepresentable. `reason` is derived from `failure` (`error.reason === error.failure.reason` always). The former flat optional `status` field is gone. A caller catches `M3LHttpClientError` and branches on `error.reason` or `error.failure.reason` with no cast — both `switch`es are exhaustive. The request `url` is carried on `context`; timeout and abort chain the underlying `AbortError` as `cause`.
 - **Timeout.** The default 30-second timeout is enforced through `AbortController`; override it with the `timeout` option. A timed-out request always rejects (`reason: "timeout"`) — it never hangs or silently resolves.
 - **Cancellable requests.** `getAbortable()` returns an `M3LHttpAbortableRequest` (`{ readonly promise, readonly abort() }`); calling `abort()` rejects `promise` with `reason: "abort"`.
 - **Observable.** Because the client extends the event emitter base, requests can be traced via typed events; one failing handler does not disrupt the others.
