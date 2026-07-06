@@ -607,6 +607,28 @@ describe("M3LEmailTextExtractor (real mailparser + cheerio + real fixture)", () 
     expect(result.text).not.toContain("<p>");
     expect(result.text).not.toContain("<body>");
   });
+
+  test("wraps a missing-file read failure as M3LTextExtractionError chaining the fs cause", async () => {
+    // Both peer deps ARE installed, so this exercises the inner try/catch
+    // around readFile/simpleParser (not the lazy-loader-missing-dep paths
+    // covered separately below) — the readFile ENOENT is caught and wrapped.
+    const ex = new M3LEmailTextExtractor();
+    let thrown: unknown;
+    try {
+      await ex.extract(fixture("does-not-exist.eml"));
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LTextExtractionError);
+    expect((thrown as M3LTextExtractionError).message).toContain(
+      "does-not-exist.eml",
+    );
+    const cause = (thrown as M3LTextExtractionError).cause;
+    expect(cause).toBeInstanceOf(Error);
+    expect((cause as NodeJS.ErrnoException).code).toBe("ENOENT");
+    // The raw fs failure is chained, not the wrapper itself.
+    expect(cause).not.toBe(thrown);
+  });
 });
 
 // ---------------------------------------------------------------------------
