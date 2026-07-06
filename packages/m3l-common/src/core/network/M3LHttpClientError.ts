@@ -15,21 +15,30 @@ import { M3LError } from "../errors/index.js";
 export type M3LHttpFailureReason = "status" | "network" | "timeout" | "abort";
 
 /**
+ * Discriminated failure payload for {@link M3LHttpClientError}. The
+ * `"status"` arm carries the response `status` code; the other three arms
+ * (`"network"`, `"timeout"`, `"abort"`) carry no `status` field at all, so an
+ * illegal "timeout with a status" state is unrepresentable rather than merely
+ * left `undefined`.
+ */
+export type M3LHttpFailure =
+  | { readonly reason: "status"; readonly status: number }
+  | { readonly reason: "network" | "timeout" | "abort" };
+
+/**
  * Constructor options for {@link M3LHttpClientError}.
  *
  * `cause` and `context` are optional; the error code is always
  * `"ERR_HTTP_REQUEST"` and is set automatically — callers must not supply it.
- * `reason` is required and `status` is only meaningful for the `"status"`
- * reason.
+ * `failure` is required and carries the discriminated payload (`status` is
+ * only present on its `"status"` arm).
  */
 interface M3LHttpClientErrorOptions {
-  /** Discriminates the specific failure mode this error represents. */
-  readonly reason: M3LHttpFailureReason;
-  /** The response status code, present only when `reason` is `"status"`. */
-  readonly status?: number;
+  /** The discriminated failure payload this error represents. */
+  readonly failure: M3LHttpFailure;
   /**
    * Structured detail identifying the failed request, e.g. `url`. Does not
-   * carry `reason`/`status` — those are typed own fields on the error.
+   * carry `reason`/`status` — those live on `failure`.
    */
   readonly context?: Record<string, unknown>;
   /** The underlying cause, if this failure wraps another error. */
@@ -56,7 +65,10 @@ interface M3LHttpClientErrorOptions {
  * } catch (error) {
  *   if (error instanceof M3LHttpClientError) {
  *     // error.reason is "status" | "network" | "timeout" | "abort"
- *     // error.status is only set when error.reason === "status"
+ *     if (error.failure.reason === "status") {
+ *       // error.failure.status is only present on this arm
+ *       console.error(error.failure.status);
+ *     }
  *   }
  *   throw error;
  * }
@@ -67,17 +79,18 @@ export class M3LHttpClientError extends M3LError {
   override readonly code: "ERR_HTTP_REQUEST";
   /** Discriminates why the request failed. Always present. */
   readonly reason: M3LHttpFailureReason;
-  /** The response status code. Only present when `reason` is `"status"`. */
-  readonly status?: number;
+  /** The discriminated failure payload. Narrow on `reason` to read `status`. */
+  readonly failure: M3LHttpFailure;
 
   /**
    * Creates a new `M3LHttpClientError`.
    *
    * @param message - Human-readable description of the request failure.
-   * @param options - Options bag; `reason` is required, `status` applies only
-   *   to the `"status"` reason, `context` carries the failed request's URL,
-   *   and `cause` carries an underlying error if applicable. The error code
-   *   is always `"ERR_HTTP_REQUEST"` — it cannot be overridden.
+   * @param options - Options bag; `failure` is required and carries the
+   *   discriminated payload (`status` applies only to its `"status"` arm),
+   *   `context` carries the failed request's URL, and `cause` carries an
+   *   underlying error if applicable. The error code is always
+   *   `"ERR_HTTP_REQUEST"` — it cannot be overridden.
    */
   constructor(message: string, options: M3LHttpClientErrorOptions) {
     super(message, {
@@ -86,9 +99,7 @@ export class M3LHttpClientError extends M3LError {
       ...(options.cause !== undefined && { cause: options.cause }),
     });
     this.code = "ERR_HTTP_REQUEST";
-    this.reason = options.reason;
-    if (options.status !== undefined) {
-      this.status = options.status;
-    }
+    this.failure = options.failure;
+    this.reason = options.failure.reason;
   }
 }
