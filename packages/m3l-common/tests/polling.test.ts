@@ -864,7 +864,7 @@ describe("core/polling", () => {
         ]);
       });
 
-      test("exhausting at maxAttempts:2 emits the final poll:wait before poll:exhausted", async () => {
+      test("exhausting at maxAttempts:2 skips the final poll:wait — only one backoff before poll:exhausted", async () => {
         const poller = new M3LPoller({
           backoff: M3LBackoff.constant(10),
           maxAttempts: 2,
@@ -879,15 +879,70 @@ describe("core/polling", () => {
           thrown = error;
         }
 
+        // The last attempt (attempt 2) is the one that exhausts the bound, so
+        // it must give up immediately — no `poll:wait` is emitted for it, and
+        // only ONE backoff interval (attempt 1's) is ever slept.
         expect(events).toEqual([
           { name: "poll:attempt", payload: { attempt: 1, maxAttempts: 2 } },
           { name: "poll:wait", payload: { attempt: 1, delayMs: 10 } },
           { name: "poll:attempt", payload: { attempt: 2, maxAttempts: 2 } },
-          { name: "poll:wait", payload: { attempt: 2, delayMs: 10 } },
           { name: "poll:exhausted", payload: { attempts: 2 } },
+        ]);
+        expect(
+          events.filter((event) => event.name === "poll:wait"),
+        ).toHaveLength(1);
+        expect(thrown).toBeInstanceOf(M3LError);
+        expect((thrown as M3LError).code).toBe("ERR_POLL_EXHAUSTED");
+      });
+
+      test("exhausting at maxAttempts:1 never emits poll:wait — the sole attempt is already the last", async () => {
+        // Boundary: the smallest legal bound. There is no "earlier" attempt to
+        // back off from, so poll:wait must never fire at all.
+        const poller = new M3LPoller({
+          backoff: M3LBackoff.constant(10),
+          maxAttempts: 1,
+        });
+        const events = recordPollerEvents(poller);
+        const check: M3LPollCheckFn<number> = () => ({ type: "continue" });
+
+        let thrown: unknown;
+        try {
+          await settleWithTimers(poller.poll(check));
+        } catch (error) {
+          thrown = error;
+        }
+
+        expect(events).toEqual([
+          { name: "poll:attempt", payload: { attempt: 1, maxAttempts: 1 } },
+          { name: "poll:exhausted", payload: { attempts: 1 } },
         ]);
         expect(thrown).toBeInstanceOf(M3LError);
         expect((thrown as M3LError).code).toBe("ERR_POLL_EXHAUSTED");
+      });
+
+      test("an exhausting poll sleeps exactly maxAttempts - 1 backoff intervals, never one per attempt", async () => {
+        // Behavioral proof beyond the event sequence: the underlying delay
+        // primitive (`setTimeout`) must be scheduled one fewer time than the
+        // number of attempts, because the final attempt gives up immediately
+        // instead of backing off.
+        const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+        const maxAttempts = 4;
+        const poller = new M3LPoller({
+          backoff: M3LBackoff.constant(10),
+          maxAttempts,
+        });
+        const check: M3LPollCheckFn<number> = () => ({ type: "continue" });
+
+        let thrown: unknown;
+        try {
+          await settleWithTimers(poller.poll(check));
+        } catch (error) {
+          thrown = error;
+        }
+
+        expect(thrown).toBeInstanceOf(M3LError);
+        expect((thrown as M3LError).code).toBe("ERR_POLL_EXHAUSTED");
+        expect(setTimeoutSpy.mock.calls).toHaveLength(maxAttempts - 1);
       });
     });
 

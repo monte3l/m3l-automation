@@ -121,10 +121,15 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
             "poll check returned a terminal failure decision",
           );
         case "continue": {
-          const nextDelay = this.#backoff.nextDelay(attempt, prevDelay);
-          prevDelay = nextDelay;
-          this.emit("poll:wait", { attempt: attempt + 1, delayMs: nextDelay });
-          await delay(nextDelay);
+          if (attempt < this.#maxAttempts - 1) {
+            const nextDelay = this.#backoff.nextDelay(attempt, prevDelay);
+            prevDelay = nextDelay;
+            this.emit("poll:wait", {
+              attempt: attempt + 1,
+              delayMs: nextDelay,
+            });
+            await delay(nextDelay);
+          }
           break;
         }
         default: {
