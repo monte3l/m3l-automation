@@ -1,3 +1,7 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
 import {
@@ -10,6 +14,7 @@ import {
   hasErrorName,
   isErr,
   isOk,
+  M3L_ERROR_CODES,
   map,
   mapErr,
   M3LError,
@@ -20,13 +25,33 @@ import {
   unwrapOr,
   wrapError,
 } from "../src/core/errors/index.js";
+import type { M3LThresholdRuleValidationError } from "../src/core/analysis/M3LThresholdRuleValidationError.js";
+import type {
+  M3LConfigCoercionError,
+  M3LConfigParseError,
+  M3LUnsafeConfigKeyError,
+} from "../src/core/config/index.js";
+import type { M3LEnvironmentDetectionError } from "../src/core/environment/index.js";
+import type { M3LFileCopyError } from "../src/core/files/index.js";
+import type { M3LJSONFormatDetectionError } from "../src/core/json/index.js";
+import type { M3LHttpClientError } from "../src/core/network/index.js";
+import type { M3LPollExhaustedError } from "../src/internal/polling/errors.js";
+import type { M3LPromptValidationError } from "../src/core/prompt/index.js";
+import type { M3LPresetUnknownKeysError } from "../src/core/script/index.js";
+import type { M3LAWSProvisioningError } from "../src/internal/script/M3LAWSProvisioningError.js";
+import type { M3LFtsIndexError } from "../src/core/storage/index.js";
+import type { M3LTextExtractionError } from "../src/core/text/index.js";
 
 import type {
+  M3LErrorCode,
   M3LErrorOptions,
   M3LResult,
   M3LResultErr,
   M3LResultOk,
 } from "../src/core/errors/index.js";
+import type { M3LAWSClientError } from "../src/aws/clients/error.js";
+import type { M3LAWSCredentialsError } from "../src/aws/credentials/error.js";
+import type { M3LAWSIdentityError } from "../src/aws/models/index.js";
 
 // ---------------------------------------------------------------------------
 // M3LErrorOptions — interface shape (type-level only)
@@ -741,6 +766,194 @@ describe("errorMessageContains()", () => {
   test("never throws regardless of input", () => {
     expect(() => errorMessageContains(null, "x")).not.toThrow();
     expect(() => errorMessageContains(undefined, "x")).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LErrorCode — the built-in error-code union (SF-9 / WS-9)
+// ---------------------------------------------------------------------------
+describe("M3LErrorCode type", () => {
+  test("is exactly the union of every built-in code the library emits", () => {
+    // Tracks the M3L_ERROR_CODES const automatically — no hand-duplicated
+    // literal union to fall out of sync when a code is added or removed.
+    expectTypeOf<M3LErrorCode>().toEqualTypeOf<
+      (typeof M3L_ERROR_CODES)[number]
+    >();
+  });
+
+  test("does not accept an unrelated typo as a member", () => {
+    expectTypeOf<"ERR_TYPO">().not.toMatchTypeOf<M3LErrorCode>();
+  });
+
+  test("is a finite union, not the general string type", () => {
+    expectTypeOf<string>().not.toMatchTypeOf<M3LErrorCode>();
+  });
+
+  // -------------------------------------------------------------------------
+  // Drift/completeness guard — every exported M3LError subclass that pins a
+  // literal `code` must be assignable to M3LErrorCode. This fails the moment
+  // a subclass's code is added without adding it to the union.
+  // -------------------------------------------------------------------------
+  test("every exported M3LError subclass's code is a member of M3LErrorCode", () => {
+    expectTypeOf<
+      M3LThresholdRuleValidationError["code"]
+    >().toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<
+      M3LConfigCoercionError["code"]
+    >().toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<M3LConfigParseError["code"]>().toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<
+      M3LUnsafeConfigKeyError["code"]
+    >().toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<
+      M3LEnvironmentDetectionError["code"]
+    >().toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<M3LFileCopyError["code"]>().toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<
+      M3LJSONFormatDetectionError["code"]
+    >().toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<M3LHttpClientError["code"]>().toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<M3LPollExhaustedError["code"]>().toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<
+      M3LPromptValidationError["code"]
+    >().toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<
+      M3LPresetUnknownKeysError["code"]
+    >().toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<
+      M3LAWSProvisioningError["code"]
+    >().toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<M3LFtsIndexError["code"]>().toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<
+      M3LTextExtractionError["code"]
+    >().toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<M3LAWSClientError["code"]>().toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<
+      M3LAWSCredentialsError["code"]
+    >().toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<M3LAWSIdentityError["code"]>().toMatchTypeOf<M3LErrorCode>();
+  });
+
+  test("does not narrow M3LError.code itself, which stays string", () => {
+    expectTypeOf<M3LError["code"]>().toEqualTypeOf<string>();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Source-scan completeness guard — enumerates every literal error code
+// actually emitted under `src/**/*.ts` and asserts it is EXACTLY the set in
+// `M3L_ERROR_CODES`. Unlike the per-subclass drift guard above (which only
+// checks the subclasses this file happens to import), this test walks the
+// whole source tree, so a new code emitted anywhere — by any of the
+// emission styles the codebase uses (`code: "X"`, `code = "X"`, or a
+// `const FOO_CODE = "X"` referenced via `code: FOO_CODE`) — fails here the
+// moment it is added without also updating `M3L_ERROR_CODES`, and a stale
+// tuple member with no matching emission fails too.
+// ---------------------------------------------------------------------------
+describe("M3L_ERROR_CODES source-scan completeness", () => {
+  function findSrcDir(): string {
+    const testDir = dirname(fileURLToPath(import.meta.url));
+    return join(testDir, "..", "src");
+  }
+
+  function listTsFiles(dir: string): string[] {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    const files: string[] = [];
+    for (const entry of entries) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        files.push(...listTsFiles(full));
+      } else if (
+        entry.isFile() &&
+        entry.name.endsWith(".ts") &&
+        !entry.name.endsWith(".d.ts")
+      ) {
+        files.push(full);
+      }
+    }
+    return files;
+  }
+
+  function isCommentLine(line: string): boolean {
+    const trimmed = line.trimStart();
+    return trimmed.startsWith("*") || trimmed.startsWith("//");
+  }
+
+  const CODE_COLON_RE = /\bcode\s*:\s*"([A-Z0-9_]+)"/g;
+  // Assignment only (`code = "X"` / `this.code = "X"`) — the negative
+  // lookbehind/lookahead excludes `==`/`===` comparisons like
+  // `cause.code === "ENOENT"`, which check an *external* Node errno rather
+  // than emitting one of this library's own codes.
+  const CODE_ASSIGN_RE = /\bcode\s*(?<!=)=(?!=)\s*"([A-Z0-9_]+)"/g;
+  const CONST_RE = /\bconst\s+(\w+)\s*=\s*"([A-Z0-9_]+)"/g;
+
+  /**
+   * A `code:`-shaped literal is a *type-position* value guard rather than a
+   * value this library emits, e.g. `v is NodeJS.ErrnoException & { code:
+   * "ENOENT" }` — the `NodeJS.ErrnoException` intersection is Node's own
+   * errno shape, checked by a type predicate, never constructed by this
+   * library. This is the only such shape in the source tree today; a new
+   * one would need the same exclusion.
+   */
+  function isExternalErrnoTypeGuardLine(line: string): boolean {
+    return line.includes("NodeJS.ErrnoException");
+  }
+
+  function scanEmittedCodes(srcDir: string): Set<string> {
+    const colonCandidates = new Set<string>();
+    const assigned = new Set<string>();
+    const constCandidates = new Set<string>();
+
+    for (const file of listTsFiles(srcDir)) {
+      const content = readFileSync(file, "utf8");
+      for (const rawLine of content.split("\n")) {
+        if (isCommentLine(rawLine)) continue;
+
+        if (!isExternalErrnoTypeGuardLine(rawLine)) {
+          for (const match of rawLine.matchAll(CODE_COLON_RE)) {
+            const code = match[1];
+            if (code !== undefined) colonCandidates.add(code);
+          }
+        }
+        for (const match of rawLine.matchAll(CODE_ASSIGN_RE)) {
+          const code = match[1];
+          if (code !== undefined) assigned.add(code);
+        }
+        for (const match of rawLine.matchAll(CONST_RE)) {
+          const constName = match[1];
+          const value = match[2];
+          if (constName === undefined || value === undefined) continue;
+          const nameLooksLikeCode = /code/i.test(constName);
+          const valueLooksLikeCode =
+            value.startsWith("ERR_") || value.startsWith("M3L_");
+          if (nameLooksLikeCode || valueLooksLikeCode) {
+            constCandidates.add(value);
+          }
+        }
+      }
+    }
+
+    const codes = new Set<string>();
+    for (const code of colonCandidates) codes.add(code);
+    for (const code of assigned) codes.add(code);
+    for (const code of constCandidates) codes.add(code);
+    return codes;
+  }
+
+  test("every emitted code in src/**/*.ts is exactly M3L_ERROR_CODES (no drift either direction)", () => {
+    const srcDir = findSrcDir();
+    const scanned = scanEmittedCodes(srcDir);
+    const declared = new Set<string>(M3L_ERROR_CODES);
+
+    const missingFromTuple = [...scanned].filter((code) => !declared.has(code));
+    const staleInTuple = [...declared].filter((code) => !scanned.has(code));
+
+    expect(
+      { missingFromTuple, staleInTuple },
+      `Symmetric difference between src-emitted codes and M3L_ERROR_CODES.\n` +
+        `In src but not in M3L_ERROR_CODES: ${JSON.stringify(missingFromTuple)}\n` +
+        `In M3L_ERROR_CODES but not emitted in src: ${JSON.stringify(staleInTuple)}`,
+    ).toEqual({ missingFromTuple: [], staleInTuple: [] });
   });
 });
 
