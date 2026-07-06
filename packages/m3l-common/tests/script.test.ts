@@ -5,7 +5,8 @@
  * Exports under test: M3LScript, M3LScriptOptions, M3LScriptMetadata,
  *   M3LScriptLifecycleHooks, M3LScriptHookContext, M3LScriptConfigLoader,
  *   M3LScriptPresetLoader, M3LPresetUnknownKeysError, installProcessGuards,
- *   serializeError, setProcessGuardRequestId (11 symbols).
+ *   serializeError, setProcessGuardRequestId, AWS_PROFILE_PARAM_NAME,
+ *   AWS_REGION_PARAM_NAME (13 symbols).
  *
  * Key behavioral contracts:
  *  - M3LScript wires config, logging, prompts, and AWS client provisioning
@@ -107,6 +108,8 @@ import { M3LPrompt } from "../src/core/prompt/index.js";
 // the whole file failing to resolve is the expected, correct RED signal.
 // -----------------------------------------------------------------------
 import {
+  AWS_PROFILE_PARAM_NAME,
+  AWS_REGION_PARAM_NAME,
   installProcessGuards,
   M3LPresetUnknownKeysError,
   M3LScript,
@@ -751,9 +754,9 @@ describe("M3LScript.run() — AWS provisioning seam", () => {
   });
 
   /** An `aws.profile` param with a resolvable value, so stage 3 actually stores it (no provider/env/CLI mocking needed). */
-  function makeAwsProfileParam(): M3LConfigParameter<string> {
-    return new M3LConfigParameter<string>({
-      name: "aws.profile",
+  function makeAwsProfileParam(): M3LConfigParameter {
+    return new M3LConfigParameter({
+      name: AWS_PROFILE_PARAM_NAME,
       type: M3LConfigParameterType.STRING,
       defaultValue: "test-profile",
     });
@@ -793,8 +796,8 @@ describe("M3LScript.run() — AWS provisioning seam", () => {
     // (M3LScript.ts:360): the param is merely DECLARED, so provisioning still
     // proceeds, just without a `profile` in the AWSProvider options — the
     // provider falls back to the SDK's default credential chain.
-    const unresolvedProfileParam = new M3LConfigParameter<string>({
-      name: "aws.profile",
+    const unresolvedProfileParam = new M3LConfigParameter({
+      name: AWS_PROFILE_PARAM_NAME,
       type: M3LConfigParameterType.STRING,
     });
     const options: M3LScriptOptions = {
@@ -813,8 +816,8 @@ describe("M3LScript.run() — AWS provisioning seam", () => {
   });
 
   test("the aws.region config value flows into provisioning: script.aws.clients.s3's resolved region matches it", async () => {
-    const awsRegionParam = new M3LConfigParameter<string>({
-      name: "aws.region",
+    const awsRegionParam = new M3LConfigParameter({
+      name: AWS_REGION_PARAM_NAME,
       type: M3LConfigParameterType.STRING,
       defaultValue: "eu-south-1",
     });
@@ -831,8 +834,8 @@ describe("M3LScript.run() — AWS provisioning seam", () => {
   });
 
   test("a malformed configured aws.region value fails loud: run() rejects with the SAME M3LAWSIdentityError (code ERR_AWS_INVALID_REGION), not swallowed or wrapped", async () => {
-    const malformedRegionParam = new M3LConfigParameter<string>({
-      name: "aws.region",
+    const malformedRegionParam = new M3LConfigParameter({
+      name: AWS_REGION_PARAM_NAME,
       type: M3LConfigParameterType.STRING,
       defaultValue: "not a region",
     });
@@ -859,8 +862,8 @@ describe("M3LScript.run() — AWS provisioning seam", () => {
   });
 
   test("a malformed configured aws.profile value fails loud: run() rejects with the SAME M3LAWSIdentityError (code ERR_AWS_INVALID_PROFILE), not swallowed or wrapped", async () => {
-    const malformedProfileParam = new M3LConfigParameter<string>({
-      name: "aws.profile",
+    const malformedProfileParam = new M3LConfigParameter({
+      name: AWS_PROFILE_PARAM_NAME,
       type: M3LConfigParameterType.STRING,
       defaultValue: "has whitespace",
     });
@@ -887,8 +890,8 @@ describe("M3LScript.run() — AWS provisioning seam", () => {
   });
 
   test("a valid configured aws.region and aws.profile still provision fine — the fail-loud path is specific to malformed input", async () => {
-    const validRegionParam = new M3LConfigParameter<string>({
-      name: "aws.region",
+    const validRegionParam = new M3LConfigParameter({
+      name: AWS_REGION_PARAM_NAME,
       type: M3LConfigParameterType.STRING,
       defaultValue: "us-east-1",
     });
@@ -926,6 +929,30 @@ describe("M3LScript.run() — AWS provisioning seam", () => {
     // resetForInvocation clears initialized/configLoaded/config but must NOT
     // clear the provisioned AWSProvider — a warm Lambda invocation reuses it.
     expect(secondAws).toBe(firstAws);
+  });
+});
+
+// =============================================================================
+// AWS_PROFILE_PARAM_NAME / AWS_REGION_PARAM_NAME — canonical config parameter
+// names the AWS-provisioning seam looks up (SF-8)
+// =============================================================================
+describe("AWS_PROFILE_PARAM_NAME / AWS_REGION_PARAM_NAME", () => {
+  test("AWS_PROFILE_PARAM_NAME is the literal string 'aws.profile'", () => {
+    expect(AWS_PROFILE_PARAM_NAME).toBe("aws.profile");
+  });
+
+  test("AWS_REGION_PARAM_NAME is the literal string 'aws.region'", () => {
+    expect(AWS_REGION_PARAM_NAME).toBe("aws.region");
+  });
+
+  describe("type-level contract", () => {
+    test("AWS_PROFILE_PARAM_NAME is typed as the narrow literal, not widened to string", () => {
+      expectTypeOf(AWS_PROFILE_PARAM_NAME).toEqualTypeOf<"aws.profile">();
+    });
+
+    test("AWS_REGION_PARAM_NAME is typed as the narrow literal, not widened to string", () => {
+      expectTypeOf(AWS_REGION_PARAM_NAME).toEqualTypeOf<"aws.region">();
+    });
   });
 });
 
@@ -1450,7 +1477,7 @@ describe("M3LScriptConfigLoader", () => {
     // (or a single `aws.profile` param never given a value), so that branch
     // was never taken.
     const loader = new M3LScriptConfigLoader();
-    const region = new M3LConfigParameter<string>({
+    const region = new M3LConfigParameter({
       name: "region",
       type: M3LConfigParameterType.STRING,
       defaultValue: "eu-south-1",
@@ -1467,7 +1494,7 @@ describe("M3LScriptConfigLoader", () => {
     // provider value, no defaultValue, and no asyncFallback resolves to
     // undefined and is skipped (not stored).
     const loader = new M3LScriptConfigLoader();
-    const unset = new M3LConfigParameter<string>({
+    const unset = new M3LConfigParameter({
       name: "totallyUnset",
       type: M3LConfigParameterType.STRING,
     });

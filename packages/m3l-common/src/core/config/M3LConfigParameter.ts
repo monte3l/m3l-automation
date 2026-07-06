@@ -6,29 +6,32 @@
  */
 
 import { coerceConfigValue } from "./coerceConfigValue.js";
-import type { M3LConfigParameterType } from "./M3LConfigParameterType.js";
+import type {
+  M3LCoercedValue,
+  M3LConfigParameterType,
+} from "./M3LConfigParameterType.js";
 import type { M3LConfigReader } from "./M3LConfigReader.js";
 
 /**
  * Constructor options for {@link M3LConfigParameter}.
  */
-interface M3LConfigParameterOptions<T> {
+interface M3LConfigParameterOptions<TType extends M3LConfigParameterType> {
   /** The canonical parameter name (its primary lookup key). */
   readonly name: string;
   /** The declared coercion target type. */
-  readonly type: M3LConfigParameterType;
+  readonly type: TType;
   /** Alternate lookup keys tried alongside `name`. */
   readonly aliases?: readonly string[];
   /**
    * Fallback value used when no provider supplies a value. Returned as-is —
    * it is never passed through {@link coerceConfigValue}.
    */
-  readonly defaultValue?: T;
+  readonly defaultValue?: M3LCoercedValue<TType>;
   /**
    * Async fallback invoked when no provider value and no `defaultValue` are
    * available. Its result is returned as-is — it is never coerced.
    */
-  readonly asyncFallback?: () => Promise<T>;
+  readonly asyncFallback?: () => Promise<M3LCoercedValue<TType>>;
 }
 
 /**
@@ -43,9 +46,11 @@ interface M3LConfigParameterOptions<T> {
  * 3. `asyncFallback()`, if defined — its resolved value returned unmodified.
  * 4. `undefined`.
  *
- * @typeParam T - The caller-supplied value type. Coercion is a runtime
- *   concern driven by `type`; this generic is not itself type-checked against
- *   `type`.
+ * @typeParam TType - The declared coercion target type. The resolved value
+ *   type ({@link M3LCoercedValue}`<TType>`) is DERIVED from `type` — there is
+ *   no independent caller generic, so `defaultValue`/`asyncFallback` are
+ *   type-checked against the declared `type` (e.g. an `INT` parameter's
+ *   `defaultValue` must be a `number`, not a string).
  *
  * @example
  * ```ts
@@ -57,7 +62,7 @@ interface M3LConfigParameterOptions<T> {
  * } from "@m3l-automation/m3l-common/core";
  *
  * const reader = new M3LConfigReader([new M3LEnvironmentConfigProvider()]);
- * const port = new M3LConfigParameter<number>({
+ * const port = new M3LConfigParameter({
  *   name: "PORT",
  *   type: M3LConfigParameterType.INT,
  *   defaultValue: 3000,
@@ -65,19 +70,22 @@ interface M3LConfigParameterOptions<T> {
  * const value = await port.getValueAsync(reader); // number | undefined
  * ```
  */
-export class M3LConfigParameter<T = unknown> {
+export class M3LConfigParameter<
+  TType extends M3LConfigParameterType = M3LConfigParameterType,
+> {
   private readonly name: string;
-  private readonly type: M3LConfigParameterType;
+  private readonly type: TType;
   private readonly aliases: readonly string[];
-  private readonly defaultValue: T | undefined;
-  private readonly asyncFallback: (() => Promise<T>) | undefined;
+  private readonly defaultValue: M3LCoercedValue<TType> | undefined;
+  private readonly asyncFallback:
+    (() => Promise<M3LCoercedValue<TType>>) | undefined;
 
   /**
    * Creates a new `M3LConfigParameter`.
    *
    * @param options - The parameter declaration.
    */
-  constructor(options: M3LConfigParameterOptions<T>) {
+  constructor(options: M3LConfigParameterOptions<TType>) {
     this.name = options.name;
     this.type = options.type;
     this.aliases = options.aliases ?? [];
@@ -104,10 +112,12 @@ export class M3LConfigParameter<T = unknown> {
    * @throws {@link M3LConfigCoercionError} When a provider-supplied raw value
    *   cannot be coerced to the declared `type`.
    */
-  async getValueAsync(reader: M3LConfigReader): Promise<T | undefined> {
+  async getValueAsync(
+    reader: M3LConfigReader,
+  ): Promise<M3LCoercedValue<TType> | undefined> {
     const raw = reader.getRawValueForKeys([this.name, ...this.aliases]);
     if (raw !== undefined) {
-      return coerceConfigValue(raw, this.type) as T;
+      return coerceConfigValue(raw, this.type);
     }
 
     if (this.defaultValue !== undefined) {

@@ -15,9 +15,10 @@ Exported from `@m3l-automation/m3l-common/core` (the `config` sub-module):
 - `M3LConfigProvider`
 - `M3LConfigParameter`
 - `M3LConfigParameterType`
+- `M3LCoercedValue` (type-level map from a `M3LConfigParameterType` member to its coerced result type)
 - `M3LConfigSchema`
 - Provider classes: `M3LCommandLineConfigProvider`, `M3LJSONConfigProvider`, `M3LYAMLConfigProvider`, `M3LEnvironmentConfigProvider`, `M3LInMemoryConfigProvider`, `M3LLambdaEventConfigProvider`, `M3LPresetConfigProvider`
-- `coerceConfigValue` (the value parser: coerces a raw provider value to its declared `M3LConfigParameterType`, throwing on a type mismatch)
+- `coerceConfigValue` (the value parser: coerces a raw provider value to its declared `M3LConfigParameterType`, throwing on a type mismatch; generic over the target type so its return is `M3LCoercedValue<T>`, not `unknown`)
 - `M3LSecretsSpecifier`
 - `M3LUnknownParameterDetector`
 - Errors: `M3LConfigCoercionError`, `M3LConfigParseError`, `M3LUnsafeConfigKeyError`
@@ -64,16 +65,30 @@ Because step 8 may perform asynchronous I/O, value resolution is async.
 
 ## Parameter types
 
-`M3LConfigParameterType` includes:
+`M3LConfigParameterType` declares the coercion target. Each member maps to a
+specific coerced result type, expressed by the `M3LCoercedValue<T>` conditional
+type. `coerceConfigValue` and `M3LConfigParameter` are both typed by this map,
+so a `defaultValue` (or the resolved value) whose type disagrees with the
+declared `type` is a **compile error** — the parameter's value type is inferred
+from its `type`, not declared independently:
 
-- `STRING`
-- `INT`
-- `DOUBLE`
-- `BOOL`
-- `STRING_ARRAY`
-- `INT_ARRAY`
-- `DOUBLE_ARRAY`
-- `BUFFER`
+| `M3LConfigParameterType` member | `M3LCoercedValue<T>` (coerced result) |
+| ------------------------------- | ------------------------------------- |
+| `STRING`                        | `string`                              |
+| `INT`                           | `number`                              |
+| `DOUBLE`                        | `number`                              |
+| `BOOL`                          | `boolean`                             |
+| `STRING_ARRAY`                  | `readonly string[]`                   |
+| `INT_ARRAY`                     | `readonly number[]`                   |
+| `DOUBLE_ARRAY`                  | `readonly number[]`                   |
+| `BUFFER`                        | `Buffer`                              |
+
+`coerceConfigValue(raw, type)` returns `M3LCoercedValue<typeof type>`;
+`new M3LConfigParameter({ type, defaultValue })` requires `defaultValue` (and
+`asyncFallback`'s resolved value) to be `M3LCoercedValue<typeof type>`, and
+`getValueAsync()` resolves to `M3LCoercedValue<typeof type> | undefined`. For
+example, `new M3LConfigParameter({ type: M3LConfigParameterType.INT, defaultValue: "3000" })`
+does not compile — `defaultValue` must be a `number`.
 
 ## `asyncFallback`
 
