@@ -11,7 +11,6 @@ import { fetch, ProxyAgent } from "undici";
 
 import { M3LEventEmitterBase } from "../events/index.js";
 import { M3LHttpClientError } from "./M3LHttpClientError.js";
-import type { M3LHttpFailureReason } from "./M3LHttpClientError.js";
 
 /** Matches a `Content-Type` header value that should be parsed as JSON. */
 const JSON_CONTENT_TYPE_PATTERN = /[/+]json\b/i;
@@ -289,8 +288,7 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
         throw new M3LHttpClientError(
           `request to ${url} failed with status ${String(status)}`,
           {
-            reason: "status",
-            status,
+            failure: { reason: "status", status },
             context: { url },
           },
         );
@@ -344,11 +342,11 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
       return cause;
     }
 
-    const resolvedReason: M3LHttpFailureReason = reason ?? "network";
+    const resolvedReason: "network" | "timeout" | "abort" = reason ?? "network";
     return new M3LHttpClientError(
       `${method} ${url} failed: ${resolvedReason}`,
       {
-        reason: resolvedReason,
+        failure: { reason: resolvedReason },
         context: { url },
         cause,
       },
