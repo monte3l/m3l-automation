@@ -395,6 +395,55 @@ describe("core/polling", () => {
       expect(thrown).toBeInstanceOf(M3LError);
       expect((thrown as M3LError).code).toBeTruthy();
     });
+
+    test("maxAttempts:1 exhausts on the very first 'continue' without ever backing off", async () => {
+      // Boundary: the smallest legal bound. The single attempt must still run
+      // (the check IS invoked once) but any 'continue' decision exhausts
+      // immediately — there is no second attempt to wait for.
+      const poller = new M3LPoller({
+        backoff: M3LBackoff.constant(10),
+        maxAttempts: 1,
+      });
+      let calls = 0;
+      const check: M3LPollCheckFn<number> = () => {
+        calls += 1;
+        return { type: "continue" };
+      };
+
+      let thrown: unknown;
+      try {
+        await settleWithTimers(poller.poll(check));
+      } catch (error) {
+        thrown = error;
+      }
+      expect(calls).toBe(1);
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_POLL_EXHAUSTED");
+      expect((thrown as M3LError).message).toContain("1 attempts");
+      expect((thrown as M3LError).context).toEqual({ attempts: 1 });
+    });
+
+    test("an unrecognized decision.type at runtime is rejected by the exhaustiveness guard, not silently accepted", async () => {
+      // TypeScript's M3LPollDecision union cannot express this at the type
+      // level, so the invalid decision is smuggled in via an
+      // unknown-mediated cast on the whole check fn (matching the repo's
+      // established pattern for exercising a runtime exhaustiveness guard —
+      // see json.test.ts's "ERR_JSON_DETECT_DEPTH" bogus-depth case).
+      const poller = new M3LPoller({ backoff: M3LBackoff.constant(10) });
+      const bogusCheck = (() => ({
+        type: "retry-later",
+      })) as unknown as M3LPollCheckFn<number>;
+
+      let thrown: unknown;
+      try {
+        await settleWithTimers(poller.poll(bogusCheck));
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_POLL_FAILURE");
+      expect((thrown as M3LError).message).toContain("unhandled poll decision");
+    });
   });
 
   describe("M3LRetryRunner", () => {
