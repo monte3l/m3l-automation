@@ -59,13 +59,17 @@ describe("M3LScript.run() — AWS provisioning seam failure", () => {
       M3LAWSClientError: class M3LAWSClientError extends Error {},
     }));
 
-    const [{ M3LScript }, { M3LError }, environmentMod, configMod] =
-      await Promise.all([
-        import("../src/core/script/index.js"),
-        import("../src/core/errors/index.js"),
-        import("../src/core/environment/index.js"),
-        import("../src/core/config/index.js"),
-      ]);
+    const [
+      { M3LScript, AWS_PROFILE_PARAM_NAME },
+      { M3LError },
+      environmentMod,
+      configMod,
+    ] = await Promise.all([
+      import("../src/core/script/index.js"),
+      import("../src/core/errors/index.js"),
+      import("../src/core/environment/index.js"),
+      import("../src/core/config/index.js"),
+    ]);
 
     const {
       M3LExecutionEnvironment,
@@ -102,8 +106,8 @@ describe("M3LScript.run() — AWS provisioning seam failure", () => {
       environmentInfo,
     );
 
-    const awsProfileParam = new M3LConfigParameter<string>({
-      name: "aws.profile",
+    const awsProfileParam = new M3LConfigParameter({
+      name: AWS_PROFILE_PARAM_NAME,
       type: M3LConfigParameterType.STRING,
       defaultValue: "test-profile",
     });

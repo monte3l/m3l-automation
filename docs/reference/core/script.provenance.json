@@ -50,8 +50,8 @@
           "symbol": "setProcessGuardRequestId"
         }
       ],
-      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
-      "retrieved": "2026-07-05"
+      "commit": "11beda47df50e04679900b2f7108f6e3454c293c",
+      "retrieved": "2026-07-06"
     },
     {
       "heading": "Execution flow",
@@ -61,8 +61,8 @@
           "symbol": "M3LScript"
         }
       ],
-      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
-      "retrieved": "2026-07-05"
+      "commit": "11beda47df50e04679900b2f7108f6e3454c293c",
+      "retrieved": "2026-07-06"
     },
     {
       "heading": "Lifecycle hooks",
@@ -76,8 +76,8 @@
           "symbol": "M3LScriptHookContext"
         }
       ],
-      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
-      "retrieved": "2026-07-05"
+      "commit": "11beda47df50e04679900b2f7108f6e3454c293c",
+      "retrieved": "2026-07-06"
     },
     {
       "heading": "Signal handling",
@@ -87,8 +87,8 @@
           "symbol": "M3LScript"
         }
       ],
-      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
-      "retrieved": "2026-07-05"
+      "commit": "11beda47df50e04679900b2f7108f6e3454c293c",
+      "retrieved": "2026-07-06"
     },
     {
       "heading": "Process guards",
@@ -106,8 +106,8 @@
           "symbol": "setProcessGuardRequestId"
         }
       ],
-      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
-      "retrieved": "2026-07-05"
+      "commit": "11beda47df50e04679900b2f7108f6e3454c293c",
+      "retrieved": "2026-07-06"
     },
     {
       "heading": "Preset loader",
@@ -121,8 +121,8 @@
           "symbol": "M3LPresetUnknownKeysError"
         }
       ],
-      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
-      "retrieved": "2026-07-05"
+      "commit": "11beda47df50e04679900b2f7108f6e3454c293c",
+      "retrieved": "2026-07-06"
     },
     {
       "heading": "Usage examples",
@@ -132,8 +132,8 @@
           "symbol": "M3LScript"
         }
       ],
-      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
-      "retrieved": "2026-07-05"
+      "commit": "11beda47df50e04679900b2f7108f6e3454c293c",
+      "retrieved": "2026-07-06"
     },
     {
       "heading": "Notes and behavior",
@@ -147,8 +147,8 @@
           "symbol": "M3LScriptPresetLoader"
         }
       ],
-      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
-      "retrieved": "2026-07-05"
+      "commit": "11beda47df50e04679900b2f7108f6e3454c293c",
+      "retrieved": "2026-07-06"
     }
   ]
 }

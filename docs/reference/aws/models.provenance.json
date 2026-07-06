@@ -26,8 +26,8 @@
           "symbol": "M3LAWSCredentialsManagerOptions"
         }
       ],
-      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
-      "retrieved": "2026-07-05"
+      "commit": "11beda47df50e04679900b2f7108f6e3454c293c",
+      "retrieved": "2026-07-06"
     },
     {
       "heading": "`M3LAWSCredentialsErrorType`",
@@ -37,8 +37,8 @@
           "symbol": "M3LAWSCredentialsErrorType"
         }
       ],
-      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
-      "retrieved": "2026-07-05"
+      "commit": "11beda47df50e04679900b2f7108f6e3454c293c",
+      "retrieved": "2026-07-06"
     },
     {
       "heading": "`M3LAWSCredentialsErrorAnalysis`",
@@ -48,8 +48,8 @@
           "symbol": "M3LAWSCredentialsErrorAnalysis"
         }
       ],
-      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
-      "retrieved": "2026-07-05"
+      "commit": "11beda47df50e04679900b2f7108f6e3454c293c",
+      "retrieved": "2026-07-06"
     },
     {
       "heading": "`M3LAWSRetryContext`",
@@ -59,8 +59,8 @@
           "symbol": "M3LAWSRetryContext"
         }
       ],
-      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
-      "retrieved": "2026-07-05"
+      "commit": "11beda47df50e04679900b2f7108f6e3454c293c",
+      "retrieved": "2026-07-06"
     },
     {
       "heading": "`M3LAWSLoginResult`",
@@ -70,8 +70,8 @@
           "symbol": "M3LAWSLoginResult"
         }
       ],
-      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
-      "retrieved": "2026-07-05"
+      "commit": "11beda47df50e04679900b2f7108f6e3454c293c",
+      "retrieved": "2026-07-06"
     },
     {
       "heading": "`M3LAWSCredentialsManagerOptions`",
@@ -81,8 +81,8 @@
           "symbol": "M3LAWSCredentialsManagerOptions"
         }
       ],
-      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
-      "retrieved": "2026-07-05"
+      "commit": "11beda47df50e04679900b2f7108f6e3454c293c",
+      "retrieved": "2026-07-06"
     },
     {
       "heading": "Notes and behavior",
@@ -92,8 +92,8 @@
           "symbol": "M3LAWSCredentialsErrorType"
         }
       ],
-      "commit": "b2a7d397faa1fc47be4a17b7039b37a8206de388",
-      "retrieved": "2026-07-05"
+      "commit": "11beda47df50e04679900b2f7108f6e3454c293c",
+      "retrieved": "2026-07-06"
     }
   ]
 }
