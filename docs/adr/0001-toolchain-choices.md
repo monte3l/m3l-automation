@@ -4,6 +4,11 @@
 - **Date:** 2026-06-27
 - **Deciders:** Enrico Lionello
 
+> Note: the `scripts/` example-automation workspace this ADR references was later
+> removed — see [ADR-0019](./0019-remove-scripts-workspace.md), which supersedes
+> the scripts/-workspace aspect of this decision. The toolchain choices themselves
+> stand.
+
 ## Context and problem statement
 
 The monorepo needs a dev/CI toolchain that upholds the project's

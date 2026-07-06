@@ -10,7 +10,7 @@ description: >-
   scripts: the user says "implement", "build", "add", "fix", "edit", "refactor",
   "scaffold", "write the code for", or otherwise starts real work — even when
   they don't name a branch or say "starting-work". It is the mandatory Step 0 that
-  implementing-submodules, scaffolding-submodules, scaffolding-scripts, and auditing all run first, so
+  implementing-submodules, scaffolding-submodules, and auditing all run first, so
   isolation is decided up front instead of discovered when guard-branch-isolation
   blocks a write mid-run. Skip it only for pure research, reads, or questions.
 ---
@@ -28,8 +28,8 @@ cheap to change.
 
 ## Why a gate at all
 
-`guard-branch-isolation.mjs` hard-blocks writes to `packages/*/src/**`,
-`scripts/*/src/**`, and `**/tests/**` while `HEAD` is `main`. That's a
+`guard-branch-isolation.mjs` hard-blocks writes to `packages/*/src/**`
+and `**/tests/**` while `HEAD` is `main`. That's a
 backstop, not a plan: if you discover it when a write is rejected, you're
 already mid-task with a dirty tree. Building on `main` left the working tree
 dirty for a whole run once (`docs/logs/2026-07-01-core-analysis.md`,
@@ -66,7 +66,7 @@ git status --porcelain               # is the tree already dirty?
 ### 2 — Infer the change scope
 
 From the task in front of you, work out **which paths will be edited** and
-whether any are _guarded_ — under `packages/*/src/**`, `scripts/*/src/**`, or
+whether any are _guarded_ — under `packages/*/src/**` or
 any `tests/` tree. This drives the PR decision and whether isolation is even
 required. A docs-only or `.claude/`-only change touches no guarded path, so the
 guard won't fire and a PR may be optional; a change under `src/` or `tests/`
@@ -126,7 +126,7 @@ context recorded. The enforcement backdrop (why this matters) lives in
 
 ## Notes for callers
 
-`implementing-submodules`, `scaffolding-submodules`, `scaffolding-scripts`, and `auditing` should run this
+`implementing-submodules`, `scaffolding-submodules`, and `auditing` should run this
 as their first step instead of re-deriving isolation inline — it's the single
 source of truth for the decision. When one of them calls it, the "infer scope"
 step is easy: the caller already knows it will write `src/`/`tests/`, so the PR

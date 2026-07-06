@@ -6,9 +6,8 @@ import {
 } from "../../.claude/hooks/guard-branch-isolation.mjs";
 
 describe("isProtectedPath", () => {
-  test("protects package and script src trees and any tests dir", () => {
+  test("protects the package src tree and any tests dir", () => {
     expect(isProtectedPath("packages/m3l-common/src/core/foo.ts")).toBe(true);
-    expect(isProtectedPath("scripts/my-job/src/main.ts")).toBe(true);
     expect(isProtectedPath("packages/m3l-common/tests/foo.test.ts")).toBe(true);
     expect(isProtectedPath("bin/tests/x.test.ts")).toBe(true);
   });

@@ -11,7 +11,6 @@
  *
  * Scope (blocked while on `main`):
  *   - packages/&#42;/src/&#42;&#42;
- *   - scripts/&#42;/src/&#42;&#42;
  *   - &#42;&#42;/tests/&#42;&#42;
  *
  * Anything else (docs, .claude/, bin/, config) is allowed on `main`.
@@ -60,7 +59,6 @@ const defaultGit = defaultGitFor(process.cwd());
 export function isProtectedPath(filePath) {
   return (
     /(^|\/)packages\/[^/]+\/src\//.test(filePath) ||
-    /(^|\/)scripts\/[^/]+\/src\//.test(filePath) ||
     /(^|\/)tests\//.test(filePath)
   );
 }

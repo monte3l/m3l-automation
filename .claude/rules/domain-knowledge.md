@@ -1,7 +1,6 @@
 ---
 paths:
   - "packages/**/*.ts"
-  - "scripts/**/*.ts"
   - "**/*.test.ts"
 ---
 
@@ -11,7 +10,7 @@ The canonical code, test, and refactoring **style guide** is
 [`docs/contributing/style-guide.md`](../../docs/contributing/style-guide.md) — read
 it first for how to write and change code/tests, with each rule tagged
 `[enforced]` vs `[advisory]`. The path-scoped `.claude/rules/*` files
-(`library-src.md`, `tests.md`, `refactoring.md`, `scripts.md`) are its
+(`library-src.md`, `tests.md`, `refactoring.md`) are its
 auto-loading extracts.
 
 The repo root holds six in-depth standards docs under `rules/`. They are the
