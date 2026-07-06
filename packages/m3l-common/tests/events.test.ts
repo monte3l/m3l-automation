@@ -174,6 +174,7 @@ describe("M3LEventEmitterBase — on / off", () => {
 // ---------------------------------------------------------------------------
 describe("M3LEventEmitterBase — emit error isolation", () => {
   test("a throwing handler does not prevent subsequent handlers from running", () => {
+    vi.spyOn(process.stderr, "write").mockReturnValue(true);
     const emitter = new TestEmitter();
     const log: string[] = [];
 
@@ -191,6 +192,7 @@ describe("M3LEventEmitterBase — emit error isolation", () => {
   });
 
   test("emit swallows errors from multiple failing handlers, still calls remaining", () => {
+    vi.spyOn(process.stderr, "write").mockReturnValue(true);
     const emitter = new TestEmitter();
     const log: string[] = [];
 
@@ -264,6 +266,7 @@ describe("M3LEventEmitterBase — emitAsync", () => {
   });
 
   test("a rejecting async handler does not prevent other handlers from running", async () => {
+    vi.spyOn(process.stderr, "write").mockReturnValue(true);
     const emitter = new TestEmitter();
     const log: string[] = [];
 
@@ -278,6 +281,7 @@ describe("M3LEventEmitterBase — emitAsync", () => {
   });
 
   test("emitAsync resolves even when all handlers reject", async () => {
+    vi.spyOn(process.stderr, "write").mockReturnValue(true);
     const emitter = new TestEmitter();
 
     emitter.on("tick", () => Promise.reject(new Error("all fail 1")));
@@ -296,6 +300,7 @@ describe("M3LEventEmitterBase — emitAsync", () => {
   });
 
   test("a sync-throwing handler inside emitAsync does not prevent others from running", async () => {
+    vi.spyOn(process.stderr, "write").mockReturnValue(true);
     const emitter = new TestEmitter();
     const log: string[] = [];
 
@@ -340,6 +345,7 @@ describe("M3LEventEmitter — concrete emitter with public emit", () => {
   });
 
   test("M3LEventEmitter inherits on/off/handler-isolation from the base", () => {
+    vi.spyOn(process.stderr, "write").mockReturnValue(true);
     const emitter = new M3LEventEmitter<TestEvents>();
     const log: string[] = [];
 
@@ -414,6 +420,144 @@ describe("M3LEventEmitterBase compile-time enforcement", () => {
     const emitter = new TestEmitter();
     // @ts-expect-error — handler receives { id: number } but 'ping' payload is { id: string }
     emitter.on("ping", (_p: { id: number }) => {});
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LEventEmitterBase — best-effort stderr diagnostics on handler failure
+// (WS-7 / SF-1: a throwing/rejecting handler must leave a trace instead of
+// vanishing silently, without ever leaking the event payload.)
+// ---------------------------------------------------------------------------
+describe("M3LEventEmitterBase — handler-failure diagnostics", () => {
+  test("emit: a throwing handler surfaces a stderr diagnostic naming the event and error, without throwing", () => {
+    const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const emitter = new TestEmitter();
+    const log: string[] = [];
+
+    emitter.on("tick", () => {
+      throw new Error("boom");
+    });
+    emitter.on("tick", () => {
+      log.push("ran");
+    });
+
+    expect(() => emitter.fire("tick", 1)).not.toThrow();
+
+    // The good handler still ran despite the first handler throwing.
+    expect(log).toEqual(["ran"]);
+
+    // A diagnostic was written to stderr naming the event and the error detail.
+    const diagnostics = writeSpy.mock.calls
+      .map((call) => call[0])
+      .filter(
+        (chunk): chunk is string =>
+          typeof chunk === "string" && chunk.includes("tick"),
+      );
+    expect(diagnostics.length).toBeGreaterThan(0);
+    expect(diagnostics.some((chunk) => chunk.includes("boom"))).toBe(true);
+  });
+
+  test("emit: the stderr diagnostic never contains the event payload (only event name + error detail)", () => {
+    const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const emitter = new TestEmitter();
+    const secret = "sk-super-secret-token-value";
+
+    emitter.on("ping", () => {
+      // The thrown error's message intentionally does not contain the payload.
+      throw new Error("handler failed");
+    });
+
+    expect(() => emitter.fire("ping", { id: secret })).not.toThrow();
+
+    const allWrites = writeSpy.mock.calls
+      .map((call) => call[0])
+      .filter((chunk): chunk is string => typeof chunk === "string")
+      .join("\n");
+
+    expect(allWrites).not.toContain(secret);
+    expect(allWrites).toContain("ping");
+    expect(allWrites).toContain("handler failed");
+  });
+
+  test("emitAsync: a rejecting handler surfaces a stderr diagnostic naming the event and rejection reason, and emitAsync still resolves", async () => {
+    const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const emitter = new TestEmitter();
+    const log: string[] = [];
+
+    emitter.on("tick", () => Promise.reject(new Error("async boom")));
+    emitter.on("tick", async () => {
+      await Promise.resolve();
+      log.push("ran");
+    });
+
+    await expect(emitter.fireAsync("tick", 1)).resolves.toBeUndefined();
+
+    expect(log).toEqual(["ran"]);
+
+    const diagnostics = writeSpy.mock.calls
+      .map((call) => call[0])
+      .filter(
+        (chunk): chunk is string =>
+          typeof chunk === "string" && chunk.includes("tick"),
+      );
+    expect(diagnostics.length).toBeGreaterThan(0);
+    expect(diagnostics.some((chunk) => chunk.includes("async boom"))).toBe(
+      true,
+    );
+  });
+
+  test("emit: never throws even if process.stderr.write itself throws", () => {
+    vi.spyOn(process.stderr, "write").mockImplementationOnce(() => {
+      throw new Error("stderr unavailable");
+    });
+    const emitter = new TestEmitter();
+
+    emitter.on("ping", () => {
+      throw new Error("handler boom");
+    });
+
+    expect(() => emitter.fire("ping", { id: "resilient" })).not.toThrow();
+  });
+
+  test("emit: a handler throwing a non-Error value surfaces its String() conversion in the stderr diagnostic", () => {
+    const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const emitter = new TestEmitter();
+
+    emitter.on("tick", () => {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- intentional non-Error to exercise the String(cause) diagnostic branch
+      throw "plain string boom";
+    });
+
+    expect(() => emitter.fire("tick", 1)).not.toThrow();
+
+    const allWrites = writeSpy.mock.calls
+      .map((call) => call[0])
+      .filter((chunk): chunk is string => typeof chunk === "string")
+      .join("\n");
+
+    expect(allWrites).toContain("tick");
+    expect(allWrites).toContain("plain string boom");
+  });
+
+  test("emit: a thrown Error without a .stack falls back to its .message in the stderr diagnostic", () => {
+    const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const emitter = new TestEmitter();
+
+    emitter.on("ping", () => {
+      const error = new Error("no stack here");
+      delete error.stack;
+      throw error;
+    });
+
+    expect(() => emitter.fire("ping", { id: "no-stack" })).not.toThrow();
+
+    const allWrites = writeSpy.mock.calls
+      .map((call) => call[0])
+      .filter((chunk): chunk is string => typeof chunk === "string")
+      .join("\n");
+
+    expect(allWrites).toContain("ping");
+    expect(allWrites).toContain("no stack here");
   });
 });
 

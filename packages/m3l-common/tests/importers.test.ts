@@ -697,6 +697,7 @@ describe("M3LCSVListImporter", () => {
     });
 
     test("handler isolation — a throwing import:item handler does not prevent a second handler from running", async () => {
+      vi.spyOn(process.stderr, "write").mockReturnValue(true);
       const importer = new Core.M3LCSVListImporter<UserRow>({});
       const secondHandlerLog: number[] = [];
 
