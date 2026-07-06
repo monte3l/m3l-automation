@@ -132,7 +132,7 @@ jobs:
         if: steps.guard.outputs.should_review == 'true'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: "--model claude-sonnet-5 --allowedTools Bash,Read --max-turns 40"
+          claude_args: "--model claude-sonnet-5 --allowedTools Bash,Read --max-turns 100"
           use_sticky_comment: true
           prompt: |
             You are the blocking PR reviewer for this repo. Review ONLY what is visible in
@@ -326,7 +326,7 @@ jobs:
             echo ""
             echo "| Metric | Value |"
             echo "| --- | --- |"
-            echo "| Turns | ${num_turns} / 40 |"
+            echo "| Turns | ${num_turns} / 100 |"
             echo "| Duration (wall / API) | ${duration_ms}ms / ${duration_api_ms}ms |"
             echo "| Cost | \$${cost_usd} |"
             echo "| Tokens (in / out) | ${input_tokens} / ${output_tokens} |"
@@ -335,10 +335,10 @@ jobs:
             echo "| Diff size | ${changed_files} files, ${patch_lines} patch lines |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          if echo "$num_turns" | grep -qE '^[0-9]+$' && [ "$num_turns" -ge 38 ]; then
-            echo "::warning title=Claude PR Review::Used ${num_turns}/40 turns — at/near the cap, review may have been cut short"
+          if echo "$num_turns" | grep -qE '^[0-9]+$' && [ "$num_turns" -ge 98 ]; then
+            echo "::warning title=Claude PR Review::Used ${num_turns}/100 turns — at/near the cap, review may have been cut short"
           else
-            echo "::notice title=Claude PR Review::Used ${num_turns}/40 turns (\$${cost_usd}, ${duration_ms}ms)"
+            echo "::notice title=Claude PR Review::Used ${num_turns}/100 turns (\$${cost_usd}, ${duration_ms}ms)"
           fi
 
       # When the review was skipped (prior PASS still valid), carry that PASS
