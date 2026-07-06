@@ -2,7 +2,8 @@
 
 > **Provenance** — Source: Context7 `/websites/semantic-release_gitbook_io` (repo
 > uses `semantic-release@25.0.5`, `@semantic-release/changelog@6.0.3`,
-> `@semantic-release/git@10.0.1`). Snapshot: 2026-07-02. The GitBook docs are a
+> `@semantic-release-extras/verified-git-commit@1.0.11`). Snapshot: 2026-07-02.
+> The GitBook docs are a
 > living reference, not version-pinned; verify against v25 release notes for any
 > behavioral edge case. Refresh: re-run `/skill-creator` / `ctx7 skills generate`
 > on a major bump.
@@ -24,14 +25,21 @@ Distilled current facts for editing this repo's `.releaserc.json`.
   `verifyConditions → analyzeCommits → verifyRelease → generateNotes →
 prepare → publish → addChannel → success → fail`.
 - The default/typical chain: `commit-analyzer` → `release-notes-generator` →
-  `changelog` → `npm` → `github` → `git`. Keep `git` last so it commits assets
-  produced upstream.
+  `changelog` → `npm` → `github` → `git`, with the asset-committing plugin last
+  so it commits assets produced upstream. **This repo substitutes
+  `@semantic-release-extras/verified-git-commit` for `@semantic-release/git`** in
+  that last slot (see below) — `main` requires signed commits (ADR-0016).
 - `@semantic-release/npm` — publishes to npm; honors `pkgRoot` (subdir to publish)
   and `package.json` `publishConfig.access`.
 - `@semantic-release/changelog` — creates/updates a changelog file (`CHANGELOG.md`
-  by default; `file` option to override).
+  by default; `file` option to override); `changelogTitle` pins a title line.
 - `@semantic-release/git` — commits release assets back to the repo; `assets` and a
-  `message` template (`${nextRelease.version}`, `${nextRelease.notes}`).
+  `message` template (`${nextRelease.version}`, `${nextRelease.notes}`). **Not
+  used here** because its local commit is unsigned.
+- `@semantic-release-extras/verified-git-commit` — the repo's replacement for
+  `git`: commits `assets` over the GitHub API so GitHub auto-signs them
+  (Verified). Caveats: **one file per commit**, and it can only **update a
+  tracked file** (so `CHANGELOG.md` is seeded in the repo). No `message` option.
 - `@semantic-release/github` — GitHub release + optional `assets` to attach.
 
 ## Branches
