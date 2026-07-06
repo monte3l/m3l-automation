@@ -64,7 +64,14 @@ export class M3LTextExtractorRegistry {
   }
 
   /**
-   * Appends an extractor. Registration order is the precedence order.
+   * Appends an extractor. Registration order is the precedence order, and
+   * `register()` always **appends** — so a later `register()` call has
+   * **lower** precedence than every extractor already registered (including
+   * the default {@link M3LPlainTextExtractor} added by the no-arg
+   * constructor). To override a built-in for a given format, don't rely on
+   * `register()` to reorder anything; instead place your extractor _before_
+   * it via the constructor array form
+   * (`new M3LTextExtractorRegistry([yours, ...builtins])`).
    *
    * @param extractor - The extractor to register.
    */

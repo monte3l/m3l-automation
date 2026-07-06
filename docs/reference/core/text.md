@@ -175,6 +175,110 @@ const result = await registry.extract(
 console.log(result.text);
 ```
 
+## Extending the registry
+
+The registry is an open extension point: any object that satisfies the
+`M3LTextExtractor` contract can be registered, so a consumer can teach the
+registry a format the built-in extractors do not cover — an in-house export
+format, an HTML variant, a bespoke log layout — without changing the library.
+
+### Implementing `M3LTextExtractor`
+
+An extractor is a plain object (or class instance) with three members:
+
+| Member       | Requirement                                                                                                                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `mimeTypes`  | `readonly string[]` of MIME types this extractor claims, matched **exactly** (e.g. `"text/html"`).                                                                                                           |
+| `extensions` | `readonly string[]` of **dot-prefixed, lowercase** extensions (e.g. `".html"`). The registry lowercases the file's extension before the fallback match, so an upper-case entry here would never match.       |
+| `extract`    | `(filePath, options?) => Promise<M3LTextExtractionResult>`. Receives the already-matched path — the registry has decided this extractor handles the file, so `extract()` never re-checks the MIME/extension. |
+
+`extract()` must resolve a complete `M3LTextExtractionResult`:
+
+- **`text`** (required) — the extracted text; return `""` for an empty source,
+  never `undefined`.
+- **`truncated`** (required) — `true` only when the extractor deliberately cut
+  the result short (a size or entry cap it enforces); `false` for a complete
+  extraction.
+- **`pages`** (optional) — set only when the format exposes a page count; omit
+  it otherwise (do not set `undefined`).
+
+### Precedence
+
+Extractors are consulted in **registration order** and the **first match wins**
+(MIME first, then extension — see [Registry dispatch](#registry-dispatch)). Two
+levers set that order:
+
+- **Constructor array** — `new M3LTextExtractorRegistry([a, b, c])` registers
+  exactly `a, b, c` in that order and adds **no** default `M3LPlainTextExtractor`.
+  Place your extractor ahead of (or instead of) the defaults to give it
+  precedence for a format.
+- **`register(extractor)`** — appends, so a later `register()` call has **lower**
+  precedence than everything already registered. To override a built-in for a
+  format, put your extractor _before_ it via the constructor array rather than
+  appending after it.
+
+### Error contract
+
+The registry does **not** wrap the errors an extractor throws — it propagates
+the extractor's rejection unchanged. An extractor is therefore responsible for
+surfacing its own failures as `M3LTextExtractionError`, chaining the underlying
+cause, exactly as the built-in extractors do:
+
+- Wrap any read or parse failure in
+  `new M3LTextExtractionError(message, { code: "ERR_TEXT_EXTRACTION", cause })`.
+- If the extractor lazy-loads an optional backing library, catch the failing
+  `import()` and re-throw as `M3LTextExtractionError` with
+  `code: "ERR_TEXT_EXTRACTION_MISSING_DEP"` naming the package — never let a raw
+  `ERR_MODULE_NOT_FOUND` escape.
+
+A custom extractor that lets a bare `Error` (or string) escape breaks the
+module's guarantee that every failure is a typed, cause-chained
+`M3LTextExtractionError`.
+
+### Example — a custom HTML-table extractor
+
+```typescript
+import { readFile } from "node:fs/promises";
+import {
+  M3LTextExtractorRegistry,
+  M3LPlainTextExtractor,
+  M3LTextExtractionError,
+  type M3LTextExtractor,
+  type M3LTextExtractionResult,
+} from "@m3l-automation/m3l-common/core";
+
+/** Extracts the visible cell text from the tables in an .html file. */
+const htmlTableExtractor: M3LTextExtractor = {
+  mimeTypes: ["text/html"],
+  extensions: [".html", ".htm"],
+  async extract(filePath): Promise<M3LTextExtractionResult> {
+    let html: string;
+    try {
+      html = await readFile(filePath, "utf8");
+    } catch (cause) {
+      // Wrap our own failure — the registry will not do this for us.
+      throw new M3LTextExtractionError(
+        `failed to read HTML file '${filePath}'`,
+        { code: "ERR_TEXT_EXTRACTION", cause },
+      );
+    }
+    const cells = [...html.matchAll(/<t[dh][^>]*>(.*?)<\/t[dh]>/gis)].map(
+      (match) => (match[1] ?? "").replace(/<[^>]+>/g, "").trim(),
+    );
+    return { text: cells.join("\t"), truncated: false };
+  },
+};
+
+// Register it ahead of the default so text/html routes to our extractor,
+// while plain text still works via the extension fallback.
+const registry = new M3LTextExtractorRegistry([
+  htmlTableExtractor,
+  new M3LPlainTextExtractor(),
+]);
+
+const { text } = await registry.extract("text/html", "./report.html");
+```
+
 ## Notes & behavior
 
 - **ZIP recursion cap.** `M3LZipTextExtractor` extracts text entries directly and re-dispatches other entries back through the registry. To resist zip-bomb amplification, recursion is capped at a default depth of **2** — the cap counts total archive layers, so the root archive plus **one** level of nested archives are processed and any deeper archive is skipped — and, like the breadth and size caps, dropping a reachable deeper archive surfaces as `truncated: true`. The cap bounds recursive re-dispatch (not the initial open of the archive passed to `extract()`), and the current depth is tracked via `ZIP_DEPTH_SYMBOL` on the options object. A caller-supplied `ZIP_DEPTH_SYMBOL` value is clamped to a non-negative integer, so it can only shrink the remaining recursion budget, never bypass the cap. The depth cap bounds recursion _depth_; entry count and decompressed size are bounded independently by the `maxEntries` / `maxTotalBytes` options below.
