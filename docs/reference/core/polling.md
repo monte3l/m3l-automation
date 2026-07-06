@@ -97,12 +97,12 @@ matching the `attempts` count carried in the exhaustion error context.
 
 ### `M3LPoller` events (`M3LPollerEventMap`)
 
-| Event            | Emitted when                                                        | Payload                   |
-| ---------------- | ------------------------------------------------------------------- | ------------------------- |
-| `poll:attempt`   | Before each `check()` call                                          | `M3LPollAttemptPayload`   |
-| `poll:wait`      | After a `continue` decision, before sleeping the next backoff delay | `M3LPollWaitPayload`      |
-| `poll:success`   | The `check()` returns a `success` decision                          | `M3LPollSuccessPayload`   |
-| `poll:exhausted` | All `maxAttempts` are used without a `success`                      | `M3LPollExhaustedPayload` |
+| Event            | Emitted when                                                             | Payload                   |
+| ---------------- | ------------------------------------------------------------------------ | ------------------------- |
+| `poll:attempt`   | Before each `check()` call                                               | `M3LPollAttemptPayload`   |
+| `poll:wait`      | After a non-final `continue` decision, before sleeping the backoff delay | `M3LPollWaitPayload`      |
+| `poll:success`   | The `check()` returns a `success` decision                               | `M3LPollSuccessPayload`   |
+| `poll:exhausted` | All `maxAttempts` are used without a `success`                           | `M3LPollExhaustedPayload` |
 
 ```typescript
 interface M3LPollAttemptPayload {
@@ -125,11 +125,11 @@ interface M3LPollExhaustedPayload {
 > event — it surfaces through the thrown error, keeping the event surface to the
 > poll/wait/success/exhausted lifecycle.
 >
-> On an exhausting poll the **final** attempt still emits `poll:wait` (with
-> `attempt` = `maxAttempts`) immediately before `poll:exhausted`: the poller
-> sleeps one last backoff after the last `continue` before giving up, and the
-> event reports that sleep faithfully. Consumers should treat a `poll:wait` as
-> "a backoff is being slept," not "another attempt is guaranteed to follow."
+> `poll:wait` fires only when another attempt will actually follow: on an
+> exhausting poll the **final** `continue` does **not** sleep a backoff, so no
+> `poll:wait` precedes `poll:exhausted`. The poller gives up immediately rather
+> than wasting one last backoff interval before throwing `M3LPollExhaustedError`.
+> So every `poll:wait` is reliably followed by another `poll:attempt`.
 
 ### `M3LRetryRunner` events (`M3LRetryEventMap`)
 
