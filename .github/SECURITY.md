@@ -2,15 +2,12 @@
 
 ## Supported versions
 
-Only the latest release on the `main` branch is supported. This project follows
-strict semver; breaking changes are reserved for major releases.
+Only the latest state of the `main` branch is supported. This package is
+internal and not published to npm.
 
-| Version                       | Supported                                 |
-| ----------------------------- | ----------------------------------------- |
-| `0.0.0-development` (current) | pre-release — no stability guarantees yet |
-
-Once the first stable release ships, this table will reflect the supported
-release range.
+| Version          | Supported               |
+| ---------------- | ----------------------- |
+| `main` (current) | latest commit on `main` |
 
 ## Reporting a vulnerability
 
@@ -28,8 +25,8 @@ disclosure timeline.
 - **Dependency review** — the `dependency-review` workflow runs on every PR to
   `main` and blocks merges that introduce HIGH or CRITICAL vulnerability
   advisories.
-- **Dependabot** — grouped weekly updates cover both the toolchain and
-  release-tooling dependency groups.
+- **Dependabot** — grouped weekly updates cover the toolchain and
+  commit-tooling dependency groups.
 
-Tokens (`NPM_TOKEN`, `GITHUB_TOKEN`) exist only in the CI environment and are
-never committed to source.
+CI's only credential is the auto-provided `GITHUB_TOKEN`; tokens of any kind
+are never committed to source.

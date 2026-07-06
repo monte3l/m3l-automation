@@ -12,9 +12,8 @@
  * `origin/main`), never already-published history, so a repo with older unsigned
  * commits isn't retroactively blocked from pushing new signed work.
  *
- * Skipped when `CI` is set: release automation (semantic-release) may create and
- * push its own commits, and CI has its own controls; this local dev backstop
- * must not wedge the release job.
+ * Skipped when `CI` is set: CI checkouts don't push to `main` through this
+ * local dev backstop, and CI has its own controls.
  */
 import process from "node:process";
 import { outgoingCommits, unsignedCommits } from "./lib/signed-range.mjs";

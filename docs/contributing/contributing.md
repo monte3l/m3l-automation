@@ -5,9 +5,9 @@ fixing bugs, and changing the public API. If you are _consuming_ the
 package, this is not the document you want.
 
 `@m3l-automation/m3l-common` is a TypeScript 6.x library, **ESM-only**,
-targeting **Node.js 24 LTS+**, managed with `pnpm`, built with `tsc`,
-tested with `vitest`, and released with `semantic-release`. The public
-contract is the `exports` map; treat changes to it with care.
+targeting **Node.js 24 LTS+**, managed with `pnpm`, built with `tsc`, and
+tested with `vitest`. It is an internal package, not published to npm. The
+public contract is the `exports` map; treat changes to it with care.
 
 ## Environment Setup
 
@@ -26,9 +26,8 @@ frozen lockfile so the build fails if `pnpm-lock.yaml` is out of sync:
 pnpm install --frozen-lockfile
 ```
 
-The lockfile is authoritative — never edit it by hand. The only secrets
-in this project are CI-only release tokens (`NPM_TOKEN`,
-`GITHUB_TOKEN`); they load from the CI vault and must never appear in
+The lockfile is authoritative — never edit it by hand. CI's only credential
+is the auto-provided `GITHUB_TOKEN`; tokens of any kind must never appear in
 source, tests, or fixtures.
 
 ## Commands
@@ -91,8 +90,8 @@ This is the most common contributor mistake: a missing extension passes
 - Never omit the `.js` extension on a relative ESM import.
 - Never use a CommonJS construct (`require`, `module.exports`,
   `__dirname`); this package is ESM only.
-- Never hand-edit the `version` field in `package.json` or anything in
-  `dist/` — both are tool-owned.
+- Never hand-edit anything in `dist/` — it is tsc-generated output. (`version`
+  in `package.json` is hand-managed; change it deliberately, see ADR-0020.)
 - Never add a dependency without updating the `pnpm` lockfile, and keep
   runtime dependencies minimal so the package tree-shakes cleanly.
 
@@ -124,19 +123,19 @@ canonical **[Style Guide § Writing new tests](./style-guide.md#part-2--writing-
 
 ## Git Workflow
 
-### Conventional Commits drive the release
+### Conventional Commits
 
-`semantic-release` reads your commit messages to compute the next
-version. The commit type determines the semver bump:
+Use [Conventional Commits](https://www.conventionalcommits.org/) for readable,
+consistent history (enforced by the `commit-msg` hook). The type describes the
+change:
 
-| Commit                                  | Bump  |
-| --------------------------------------- | ----- |
-| `feat:`                                 | minor |
-| `fix:`                                  | patch |
-| `feat!:` or a `BREAKING CHANGE:` footer | major |
+| Commit                                  | Meaning           |
+| --------------------------------------- | ----------------- |
+| `feat:`                                 | a new feature     |
+| `fix:`                                  | a bug fix         |
+| `feat!:` or a `BREAKING CHANGE:` footer | a breaking change |
 
-Types like `docs:`, `refactor:`, `test:`, and `chore:` do **not**
-trigger a release.
+Use `docs:`, `refactor:`, `test:`, and `chore:` for everything else.
 
 ```text
 feat(config): add YAML config provider
@@ -148,17 +147,12 @@ feat!(errors): rename M3LError.code to M3LError.errorCode
 BREAKING CHANGE: M3LError.code is now M3LError.errorCode.
 ```
 
-### Branches and releases
+### Branches and versioning
 
 - Branch from `main`: `feat/<slug>` or `fix/<slug>`.
-- Releases are automated from `main`. **Never** bump the `version`
-  field in `package.json` by hand — `semantic-release` owns it.
+- The package is internal and not published to npm; `version` in
+  `package.json` is hand-managed (see ADR-0020).
 - Never `git push --force` to a shared branch.
-- **Release gate:** the `release.yml` workflow runs `semantic-release --dry-run`
-  on every merge to `main` while the `RELEASE_ENABLED` repository variable is
-  unset. This validates the full plugin chain without publishing. When all
-  submodules are complete, set `gh variable set RELEASE_ENABLED --body true` to
-  publish the attested `1.0.0` on the next merge. See ADR-0011.
 
 ### Worktrees for parallel work
 

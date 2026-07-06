@@ -22,8 +22,8 @@ reviewer who wasn't in the room.
 ## Checklist (copy-paste before drafting)
 
 - [ ] Read `git diff --staged` — understand every changed file
-- [ ] Pick the type from the table in Step 2 (when in doubt, `chore:` does not
-      release; `feat:` does)
+- [ ] Pick the type from the table in Step 2 (when in doubt, `chore:` for
+      tooling; `feat:` for a new public symbol)
 - [ ] Draft a subject ≤ 70 chars, imperative, lowercase after `type:`
 - [ ] Decide body: needed for `feat:` / `fix:` / non-obvious `chore:`; omit for
       mechanical chores
@@ -44,15 +44,15 @@ of truth; the log prevents duplicate subjects when multiple commits are planned.
 
 ## Step 2 — Select the commit type
 
-| Type        | Use when                                                | Triggers a release? |
-| ----------- | ------------------------------------------------------- | ------------------- |
-| `feat:`     | A new public symbol or behaviour reaches consumers      | Yes — minor         |
-| `fix:`      | A bug in a public symbol or behaviour is corrected      | Yes — patch         |
-| `docs:`     | Documentation only: work logs, ADRs, plans, READMEs     | No                  |
-| `chore:`    | Tooling, config, hooks, CLAUDE.md, lockfile, formatting | No                  |
-| `ci:`       | GitHub Actions workflows only                           | No                  |
-| `refactor:` | Internal restructuring with no public-API change        | No                  |
-| `feat!:`    | Breaking change to an exported symbol                   | Yes — major         |
+| Type        | Use when                                                | Public-API impact |
+| ----------- | ------------------------------------------------------- | ----------------- |
+| `feat:`     | A new public symbol or behaviour reaches consumers      | Additive          |
+| `fix:`      | A bug in a public symbol or behaviour is corrected      | Behavioural       |
+| `docs:`     | Documentation only: work logs, ADRs, plans, READMEs     | None              |
+| `chore:`    | Tooling, config, hooks, CLAUDE.md, lockfile, formatting | None              |
+| `ci:`       | GitHub Actions workflows only                           | None              |
+| `refactor:` | Internal restructuring with no public-API change        | None              |
+| `feat!:`    | Breaking change to an exported symbol                   | Breaking          |
 
 **Scope rule**: `chore(deps-dev):` is the only scope used in this repo (for
 Dependabot / dependency bumps). Do not invent other scopes.
@@ -235,7 +235,7 @@ feat: rename outputDir to archiveDir in M3LPaths
 Renamed the property for clarity.
 ```
 
-_Missing `!` so semantic-release won't cut a major. No migration instructions._
+_Missing `!` so the breaking change isn't flagged in history. No migration instructions._
 
 ✅ Good:
 

@@ -210,8 +210,8 @@ Write a body that matches the quality and specificity of the examples below.
 The bullets in **Summary** should name actual symbols, files, or behaviours —
 not vague paraphrases of the commit message. The **Test plan** checklist should
 reflect the _actual files changed_, not a generic template. The **Notes** line
-must state the commit type, the resulting semver bump (or "no release"), and
-any migration instructions for breaking changes.
+must state the commit type, the public-API impact (additive / behavioural /
+breaking / none), and any migration instructions for breaking changes.
 
 ### 11 — Submit the PR
 
@@ -288,7 +288,7 @@ specificity — never vaguer.
 `fix:` commit → patch bump. Regression introduced in the barrel scaffolding.
 ```
 
-### Example 3 — internal refactor, no release
+### Example 3 — internal refactor, no public-API change
 
 **Title:** `refactor: extract shared delay logic into internal/timing.ts`
 
@@ -306,7 +306,7 @@ specificity — never vaguer.
 
 ## Notes
 
-`refactor:` commit → no release. `internal/` may change freely per ADR-004.
+`refactor:` commit → no public-API change. `internal/` may change freely per ADR-004.
 ```
 
 ### Example 4 — breaking change, major bump

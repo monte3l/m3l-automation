@@ -18,7 +18,7 @@ audit (3 Explore agents + direct reads of `docs/implementation-status.md` and
   `src/core/index.ts`, `src/aws/index.ts` — all `export {}` placeholders),
   `src/internal/.gitkeep`, `data/{config,input,output}`, the example consumer
   `scripts/example-automation/`, the toolchain (turbo, vitest, eslint, lefthook,
-  knip, publint/attw, semantic-release), and all enforcement hooks.
+  knip, publint/attw), and all enforcement hooks.
 - **Zero runtime code exists**: all **18 Core + 3 AWS = 21 submodules** are
   `❌ not-started` in `docs/implementation-status.md`. Only `tests/index.test.ts`
   (2 infrastructure-level tests) exists.

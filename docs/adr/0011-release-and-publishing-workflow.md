@@ -1,8 +1,14 @@
 # 0011. Release and publishing workflow
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0020](0020-drop-release-automation.md)
 - **Date:** 2026-06-29
 - **Deciders:** Enrico Lionello
+
+> **Superseded (2026-07-06).** Release automation was retired entirely and the
+> package is now internal/never-published. The decision below is retained as a
+> historical record; see [ADR-0020](0020-drop-release-automation.md) for the
+> current state. `.releaserc.json`, `release.yml`, semantic-release, and the
+> `RELEASE_ENABLED` gate no longer exist.
 
 ## Context and problem statement
 

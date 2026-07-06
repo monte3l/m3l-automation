@@ -13,10 +13,10 @@
    ./CLAUDE.local.md.
 
  PROJECT SHAPE (drives every section below)
-   Published npm library · TypeScript (strict) · ESM only ·
-   built with tsc (no bundler) · pnpm · Node.js 24 LTS floor ·
-   Vitest · ESLint + Prettier · semantic-release · public API
-   exposed via package.json subpath exports.
+   Internal library (not published to npm) · TypeScript (strict) ·
+   ESM only · built with tsc (no bundler) · pnpm · Node.js 24 LTS
+   floor · Vitest · ESLint + Prettier · public API exposed via
+   package.json subpath exports.
 
  HOW THIS TEMPLATE WORKS
    Every section is wrapped in an HTML comment that documents:
@@ -111,9 +111,10 @@ a major release, strict semver, no any in the public API, Node 24+ only
 - Test: `vitest`
 - Lint/format: `eslint` (flat config) + `prettier`
 - Git hooks: `lefthook` (`lefthook.yml`; replaces husky + lint-staged)
-- Dep/publish hygiene: `knip` (unused files/exports/deps),
+- Dep/exports hygiene: `knip` (unused files/exports/deps),
   `publint` + `@arethetypeswrong/cli` (exports-map / ESM / types resolution)
-- Release: `semantic-release` (Conventional Commits drive the version)
+- Versioning: manual — `version` in package.json is hand-managed; the package
+  is internal and not published to npm (see ADR-0020)
 
 See @package.json for the full dependency set, scripts, and the
 `exports` map.
@@ -188,8 +189,10 @@ Node is pinned in `.node-version` (24); use a manager that reads it
 (fnm/nvm/mise) plus `corepack enable` for pnpm. Git hooks install
 automatically via the `prepare` script (`lefthook install`).
 In CI, use `pnpm install --frozen-lockfile`. A pure library needs no
-services. The only secrets are CI-only release tokens (`NPM_TOKEN`,
-`GITHUB_TOKEN`); never commit them — they load from the CI vault.
+services and no publish credentials. CI uses only the auto-provided
+`GITHUB_TOKEN`; never commit any secret — the `guard-secret-writes` hook and
+`gitleaks` scan defensively block token literals (`NPM_TOKEN`, `GITHUB_TOKEN`,
+AWS keys) at write time and in CI.
 
 ## Commands
 
@@ -219,13 +222,12 @@ pre-publish; the remaining `check:*` run in CI.
 
 ## CI/CD
 
-Six GitHub Actions workflows in `.github/workflows/` (plus Dependabot via the
+Five GitHub Actions workflows in `.github/workflows/` (plus Dependabot via the
 GitHub-native `.github/dependabot.yml`, which is config, not a workflow):
 
 | Workflow                | Trigger                             | Purpose                                                                                                                                                      |
 | ----------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `ci.yml`                | push / PR → main                    | Full quality-gate pipeline — secrets, deps, lint, formatting, types, and tests must all pass before merge                                                    |
-| `release.yml`           | `ci.yml` success on main            | semantic-release: npm publish + GitHub release                                                                                                               |
 | `claude-pr-review.yml`  | PR opened / sync / reopened / ready | **Mandatory blocking gate** — produces PASS/FAIL verdict; merge requires PASS; skips re-review when a prior PASS still applies (no reviewable files changed) |
 | `claude-assistant.yml`  | @claude in issues / PRs             | On-demand Claude Code assistant                                                                                                                              |
 | `dependency-review.yml` | PR → main                           | Blocks HIGH/CRITICAL vulnerability advisories                                                                                                                |
@@ -282,8 +284,8 @@ files (so they cost nothing in unrelated sessions):
  SECTION: Git Workflow & Commit Conventions
  Scope/usage   : Branching, commit message format, PR
                  expectations.
- Status        : Mandatory here — semantic-release PARSES commit
-                 messages to compute the next version.
+ Status        : Mandatory here — a named commit convention keeps
+                 history readable and machine-scannable.
  Best practices: State the commit convention and the hard rules.
                  Enforce with a commit-msg hook (bin/lint-commit.mjs) or
                  branch protection, not prose alone.
@@ -293,10 +295,11 @@ files (so they cost nothing in unrelated sessions):
 ================================================================
 -->
 
-- **Conventional Commits (required):** `feat:` -> minor, `fix:` ->
-  patch, `feat!:` or a `BREAKING CHANGE:` footer -> major. Other
-  types (`docs:`, `refactor:`, `test:`, `chore:`) do not release.
-  Enforced by `lefthook` `commit-msg` -> `bin/lint-commit.mjs` (`@commitlint/lint` core, no CLI).
+- **Conventional Commits (required):** use the standard types (`feat:`,
+  `fix:`, `docs:`, `refactor:`, `test:`, `chore:`; `feat!:` or a
+  `BREAKING CHANGE:` footer for breaking changes) for readable, consistent
+  history. Enforced by `lefthook` `commit-msg` -> `bin/lint-commit.mjs`
+  (`@commitlint/lint` core, no CLI).
 - Git hooks run via **lefthook** (`lefthook.yml`): `pre-commit` runs
   eslint + prettier on staged files; `pre-push` runs typecheck + tests and
   refuses unsigned/unverified commits (`verify-signed-range`).
@@ -307,8 +310,8 @@ files (so they cost nothing in unrelated sessions):
   `guard-branch-isolation.mjs` hook enforces this for code work — it blocks
   `packages/*/src/**` and `**/tests/**` writes while `HEAD`
   is `main` (or a detached HEAD on the `main` commit), so branch before implementing.
-- Releases are automated from `main`; **never** bump `version` in
-  package.json by hand — semantic-release owns it.
+- The package is internal and not published; `version` in package.json is
+  hand-managed (see ADR-0020).
 - Never `git push --force` to a shared branch.
 - Commits should always be small, incremental and, above all, meaningful.
 
@@ -381,8 +384,9 @@ See ADR-0013 for the full rules. Day-to-day:
 
 - The library does not log by default; never log secrets, tokens, or
   caller data.
-- `NPM_TOKEN` / `GITHUB_TOKEN` exist only in CI env — never in source,
-  tests, or fixtures.
+- CI's only credential is the auto-provided `GITHUB_TOKEN`; tokens of any kind
+  (`NPM_TOKEN`, `GITHUB_TOKEN`, AWS keys) must never land in source, tests, or
+  fixtures.
 - Validate all external input at the public API boundary before use.
 - Commits pushed to the remote must be signed (valid `%G?`). Enforced in three
   layers — the `guard-git-push-signed` Bash hook, the `verify-signed-range`
@@ -478,7 +482,7 @@ that reviews it" structural, and keeps the hub's context lean.
 `.claude/hooks/*.mjs` and `bin/`) add deterministic enforcement on top of this
 advisory file: across UserPromptSubmit / SessionStart / PreToolUse / PostToolUse /
 Stop they inject the pre-work decision gate (branch/PR/push), guard ESM `.js`
-imports, CommonJS, protected paths (`dist/`, `version`), branch isolation
+imports, CommonJS, protected paths (`dist/`), branch isolation
 (`src/`/`tests/` writes off `main`, incl. a detached HEAD on `main`), unsigned
 `git push` (Bash matcher), RED-phase test noise, exports/semver drift, doc /
 provenance / index staleness, and worktree readiness — a violating edit or push is
@@ -549,7 +553,7 @@ file for the per-hook list and triggers.
 -->
 
 The deterministic prohibitions — `any`, a missing `.js` extension, CommonJS
-(`require` / `module.exports` / `__dirname`), hand-edits to `version` or `dist/`,
+(`require` / `module.exports` / `__dirname`), hand-edits to `dist/`,
 non-Conventional commits, committed secrets/tokens (`gitleaks` in CI plus the
 `guard-secret-writes` write-time hook), pushing an unsigned/invalid-signature
 commit (`guard-git-push-signed` + `verify-signed-range` pre-push + branch-protection
@@ -606,7 +610,7 @@ The rules with **no** automated guard, so they need conscious care:
  .claude/skills/<name>/
    SKILL.md + optional scripts/assets. Load ON DEMAND when
    relevant to the prompt. Put multi-step procedures here
-   (release dry-run, codemod, adding a subpath export). Keep
+   (codemod, adding a subpath export, syncing docs). Keep
    SKILL.md < ~500 lines; split long reference into siblings.
 
  .claude/agents/<name>.md
@@ -646,7 +650,7 @@ The rules with **no** automated guard, so they need conscious care:
 
  Examples (uncomment and adapt):
    See @README.md for the project overview.
-   Release process: @docs/releasing.md
+   Contributing guide: @docs/contributing/contributing.md
    Personal prefs across worktrees: @~/.claude/my-notes.md
 ================================================================
 -->
