@@ -265,7 +265,18 @@
       "combineClassifiers",
       "awsThrottlingClassifier",
       "awsNetworkClassifier",
-      "httpRetryAfterClassifier"
+      "httpRetryAfterClassifier",
+      "M3LPollerEventMap",
+      "M3LPollAttemptPayload",
+      "M3LPollWaitPayload",
+      "M3LPollSuccessPayload",
+      "M3LPollExhaustedPayload",
+      "M3LRetryEventMap",
+      "M3LRetryAttemptPayload",
+      "M3LRetryScheduledPayload",
+      "M3LRetrySuccessPayload",
+      "M3LRetryFatalPayload",
+      "M3LRetryExhaustedPayload"
     ]
   },
   {
