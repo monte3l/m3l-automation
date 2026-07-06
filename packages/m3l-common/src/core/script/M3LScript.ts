@@ -19,6 +19,10 @@ import { M3LAWSProvisioningError } from "../../internal/script/M3LAWSProvisionin
 import { logBestEffortDiagnostic } from "../../internal/script/diagnostics.js";
 import { registerShutdownSignals } from "../../internal/script/signalHandlers.js";
 
+import {
+  AWS_PROFILE_PARAM_NAME,
+  AWS_REGION_PARAM_NAME,
+} from "./aws-param-names.js";
 import { M3LScriptConfigLoader } from "./M3LScriptConfigLoader.js";
 import { serializeError } from "./process-guards.js";
 import type {
@@ -33,17 +37,6 @@ import type {
 // `provisionAws` / `resolveAwsIdentity` below.
 import type { AWSProvider } from "../../aws/clients/index.js";
 import type { M3LAWSProfile, M3LAWSRegion } from "../../aws/models/index.js";
-
-/** The config parameter name that gates the AWS provisioning seam (stage 5). */
-const AWS_PROFILE_PARAM_NAME = "aws.profile";
-
-/**
- * The config parameter name carrying the optional AWS region override. Never
- * independently gates provisioning: only `aws.profile` being declared
- * triggers stage 5; `aws.region` is consulted only once provisioning is
- * already underway.
- */
-const AWS_REGION_PARAM_NAME = "aws.region";
 
 /**
  * Invokes `hook` (if defined) with `ctx`, awaiting the result. A `hook` left
