@@ -143,8 +143,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.error(
       `✗  The public exports map changed in a BREAKING way (${breaking.join(", ")})\n` +
         `   but no commit in this PR carries a breaking marker. Add a\n` +
-        `   \`BREAKING CHANGE:\` footer (or a \`feat!:\` subject) so the semver\n` +
-        `   impact is explicit. See CLAUDE.md "Architecture & Decisions".`,
+        `   \`BREAKING CHANGE:\` footer to a commit in this PR so the semver impact\n` +
+        `   is explicit (this repo's commitlint rejects the \`feat!:\` bang — use the\n` +
+        `   footer). See CLAUDE.md "Architecture & Decisions".`,
     );
     process.exit(1);
   } catch (error) {
