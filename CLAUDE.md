@@ -227,7 +227,7 @@ file.
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
 | `pre-commit` (lefthook)    | `eslint --fix`, `prettier --write`                                                                                                                                                          | staged files only         |
 | `commit-msg` (lefthook)    | `lint-commit`                                                                                                                                                                               | the commit message        |
-| `pre-push` (lefthook)      | `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test:coverage`, `verify-signed-range`                                                                                             | whole repo                |
+| `pre-push` (lefthook)      | `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test:coverage`, `pnpm build`, `pnpm check:exports`, `verify-signed-range`                                                         | whole repo                |
 | CI `verify` job (`ci.yml`) | everything the pre-push row runs, **plus** every `check:*` script, `pnpm build`, `pnpm knip`, `pnpm lint:md`, `gitleaks`, and `pnpm audit` — see the `verify` job for the full ordered list | whole repo, authoritative |
 
 There is **no pre-publish hook** — the package is internal and unpublished
