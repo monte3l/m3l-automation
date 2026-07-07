@@ -18,6 +18,7 @@ import { M3LUnsafeConfigKeyError } from "../config/index.js";
 import { M3LError } from "../errors/index.js";
 import { isDangerousKey } from "../security/index.js";
 
+import { M3LPresetCycleError } from "./M3LPresetCycleError.js";
 import { M3LPresetUnknownKeysError } from "./M3LPresetUnknownKeysError.js";
 import type { M3LPresetUnknownKeySuggestion } from "./M3LPresetUnknownKeysError.js";
 
@@ -30,6 +31,16 @@ import type { M3LPresetUnknownKeySuggestion } from "./M3LPresetUnknownKeysError.
  * contract (callers only observe the resulting throw).
  */
 const MAX_PRESET_STRUCTURE_DEPTH = 64;
+
+/**
+ * Maximum allowed length of an `extends` inheritance chain. A chain longer
+ * than this is treated as a cycle for safety (a runaway or pathological
+ * chain is indistinguishable in effect from an actual cycle).
+ *
+ * Not exported — an implementation constant, not part of the public
+ * contract (callers only observe the resulting throw).
+ */
+const MAX_PRESET_EXTENDS_DEPTH = 16;
 
 /** File extensions recognized as YAML by {@link M3LScriptPresetLoader.load}. */
 const YAML_EXTENSIONS = new Set([".yaml", ".yml"]);
@@ -185,6 +196,19 @@ function buildUnknownKeysMessage(
  * Damerau-Levenshtein "did you mean" suggestions) for any key the schema
  * does not declare.
  *
+ * A preset may also declare a top-level `extends: <path>` to inherit from a
+ * base preset, resolved relative to the extending file's directory (see
+ * docs/reference/core/script.md, "Preset inheritance"). The base and derived
+ * presets are combined with a **shallow** merge: each derived top-level key
+ * wholly replaces the base's key of the same name (arrays/objects are
+ * replaced as a unit, never deep-merged). A chain is resolved deepest base
+ * first, so folding proceeds from the root base outward and the nearest
+ * (most derived) override always wins. The `extends` key itself is stripped
+ * before validation, and the nesting-depth and unknown-key checks run once,
+ * against the fully merged result. A cycle in the `extends` graph, or a
+ * chain deeper than {@link MAX_PRESET_EXTENDS_DEPTH}, throws
+ * {@link M3LPresetCycleError}.
+ *
  * @example
  * ```ts
  * import { M3LScriptPresetLoader } from "@m3l-automation/m3l-common/core";
@@ -208,22 +232,45 @@ export class M3LScriptPresetLoader {
   }
 
   /**
-   * Reads, parses, and validates the preset file at `filePath`.
+   * Reads and parses the preset file at `absPath`, resolving and merging any
+   * `extends` base first (deepest base wins the fold order — see
+   * {@link M3LScriptPresetLoader}'s class-level TSDoc for the full shallow-merge
+   * contract). Only the "must be a plain mapping" structural guard runs here,
+   * per file in the chain; the nesting-depth, dangerous-key, and unknown-key
+   * guards run exactly once, in {@link load}, against the fully merged
+   * result.
    *
-   * @param filePath - Path to the YAML or JSON preset file.
-   * @returns The parsed preset as a plain record.
-   * @throws {@link M3LPresetLoadError} When the file cannot be read (e.g.
-   *   `ENOENT`, `EACCES`) or parsed, or its top-level structure is not a
-   *   plain object.
-   * @throws {@link M3LPresetTooDeepError} When the parsed structure nests
-   *   deeper than {@link MAX_PRESET_STRUCTURE_DEPTH}.
-   * @throws {@link M3LUnsafeConfigKeyError} When a top-level key is a
-   *   prototype-pollution vector (`__proto__`, `constructor`, `prototype`).
-   * @throws {@link M3LPresetUnknownKeysError} When a top-level key is not
-   *   declared in the constructor-supplied schema.
+   * @param absPath - Absolute path to the preset file to resolve.
+   * @param seen - The absolute paths already visited in this chain, in visit
+   *   order; used to detect a cycle and to cap the chain length.
+   * @returns The parsed (and, if applicable, merged) preset record, with any
+   *   `extends` key stripped.
+   * @throws {@link M3LPresetLoadError} When the file cannot be read or
+   *   parsed, its top-level structure is not a plain object, or its
+   *   `extends` value is present but not a string.
+   * @throws {@link M3LPresetCycleError} When `absPath` revisits a path
+   *   already in `seen`, or the chain exceeds
+   *   {@link MAX_PRESET_EXTENDS_DEPTH}.
    */
-  load(filePath: string): Record<string, unknown> {
-    const parsed = parsePresetFile(filePath);
+  #resolveWithExtends(
+    absPath: string,
+    seen: Set<string>,
+  ): Record<string, unknown> {
+    if (seen.has(absPath)) {
+      throw new M3LPresetCycleError(
+        `Cycle detected in preset "extends" chain at: ${absPath}`,
+        [...seen, absPath],
+      );
+    }
+    if (seen.size >= MAX_PRESET_EXTENDS_DEPTH) {
+      throw new M3LPresetCycleError(
+        `Preset "extends" chain exceeds the maximum depth of ${String(MAX_PRESET_EXTENDS_DEPTH)} at: ${absPath}`,
+        [...seen, absPath],
+      );
+    }
+    seen.add(absPath);
+
+    const parsed = parsePresetFile(absPath);
 
     if (
       typeof parsed !== "object" ||
@@ -231,18 +278,62 @@ export class M3LScriptPresetLoader {
       Array.isArray(parsed)
     ) {
       throw new M3LPresetLoadError(
-        `Expected a mapping at the top level of preset file: ${filePath}`,
+        `Expected a mapping at the top level of preset file: ${absPath}`,
       );
     }
 
-    if (!isWithinMaxDepth(parsed, MAX_PRESET_STRUCTURE_DEPTH)) {
+    const derived = parsed as Record<string, unknown>;
+    const extendsValue = derived["extends"];
+
+    if (extendsValue === undefined) {
+      return derived;
+    }
+    if (typeof extendsValue !== "string") {
+      throw new M3LPresetLoadError(
+        `Expected "extends" to be a string path in preset file: ${absPath}`,
+      );
+    }
+
+    const basePath = path.resolve(path.dirname(absPath), extendsValue);
+    const base = this.#resolveWithExtends(basePath, seen);
+
+    const { extends: _drop, ...rest } = derived;
+    return { ...base, ...rest };
+  }
+
+  /**
+   * Reads, parses, resolves any `extends` inheritance, and validates the
+   * preset file at `filePath`.
+   *
+   * @param filePath - Path to the YAML or JSON preset file.
+   * @returns The parsed (and merged, if the file or any of its bases declare
+   *   `extends`) preset as a plain record, with `extends` stripped at every
+   *   level.
+   * @throws {@link M3LPresetLoadError} When the file (or a base it extends)
+   *   cannot be read (e.g. `ENOENT`, `EACCES`) or parsed, its top-level
+   *   structure is not a plain object, or its `extends` value is present but
+   *   not a string.
+   * @throws {@link M3LPresetCycleError} When the `extends` graph cycles back
+   *   to a file already in the chain, or the chain exceeds
+   *   {@link MAX_PRESET_EXTENDS_DEPTH}.
+   * @throws {@link M3LPresetTooDeepError} When the merged structure nests
+   *   deeper than {@link MAX_PRESET_STRUCTURE_DEPTH}.
+   * @throws {@link M3LUnsafeConfigKeyError} When a top-level key of the
+   *   merged result is a prototype-pollution vector (`__proto__`,
+   *   `constructor`, `prototype`).
+   * @throws {@link M3LPresetUnknownKeysError} When a top-level key of the
+   *   merged result is not declared in the constructor-supplied schema.
+   */
+  load(filePath: string): Record<string, unknown> {
+    const merged = this.#resolveWithExtends(path.resolve(filePath), new Set());
+
+    if (!isWithinMaxDepth(merged, MAX_PRESET_STRUCTURE_DEPTH)) {
       throw new M3LPresetTooDeepError(
         `Preset file exceeds the maximum nesting depth of ${String(MAX_PRESET_STRUCTURE_DEPTH)}: ${filePath}`,
       );
     }
 
-    const preset = parsed as Record<string, unknown>;
-    for (const key of Object.keys(preset)) {
+    for (const key of Object.keys(merged)) {
       if (isDangerousKey(key)) {
         throw new M3LUnsafeConfigKeyError(
           `Refusing to read unsafe preset key: "${key}"`,
@@ -260,8 +351,8 @@ export class M3LScriptPresetLoader {
     // (this loader validates one level deep, matching
     // M3LUnknownParameterDetector's flat-key contract elsewhere in the
     // config module).
-    const unknownKeys = Object.keys(preset).filter((key) => {
-      const value = preset[key];
+    const unknownKeys = Object.keys(merged).filter((key) => {
+      const value = merged[key];
       const isNestedContainer = typeof value === "object" && value !== null;
       return !isNestedContainer && !declared.has(key);
     });
@@ -275,6 +366,6 @@ export class M3LScriptPresetLoader {
       );
     }
 
-    return preset;
+    return merged;
   }
 }

@@ -277,10 +277,12 @@ mismatched validator type fails with `// @ts-expect-error`.
 
 ## WS-F — preset inheritance — `feat/preset-inheritance`
 
-**Depends on:** Phase 0 decision 1 (merge semantics). Plan assumes the
-recommended **shallow merge** (derived top-level key wholly replaces base
-key; arrays replace) — adjust here if the decision differs before
-dispatching spokes.
+**Depends on:** Phase 0 decision 1 (merge semantics). **Settled (2026-07-07):
+shallow merge** — derived top-level key wholly replaces base key; arrays
+replace; no deep merge. Chosen because presets are consumed as flat,
+first-wins-replace config maps (the reader never traverses nested values), so
+deep merge would create false granularity and accidental coupling. Implemented
+in `feat/preset-inheritance`.
 
 **Current seam** (verified): `M3LScriptPresetLoader.load(filePath)` returns
 `Record<string, unknown>` from a YAML/JSON file
@@ -324,8 +326,16 @@ error paths (fs failures must chain `cause`, never vanish).
 
 ## WS-G — ESLint dependency zones — `chore/eslint-dependency-zones`
 
-**Depends on:** Phase 0 decision 2 (layering rules). Tooling only — no
-runtime or public-API effect (ADR-0009 execution).
+**Depends on:** Phase 0 decision 2 (layering rules). **Settled (2026-07-07):
+real-graph key zones** — three `import-x/no-restricted-paths` zones encoding the
+actual graph: (1) `aws/**` may import only `{core/errors, core/prompt}` —
+correcting the sketch below, which claimed "only core/errors": `aws/credentials`
+imports `M3LPrompt` (value, for the SSO prompt) and `aws/models` uses it
+type-only; both are leaf modules and the graph stays acyclic; (2) nothing but
+`core/script` may import `core/script`; (3) `internal/` sealing (already
+present). Baseline is zero violations; WS-G stays tooling-only (no src refactor
+of the aws→prompt edge). Tooling only — no runtime or public-API effect
+(ADR-0009 execution).
 
 **Design constraints discovered up front:**
 

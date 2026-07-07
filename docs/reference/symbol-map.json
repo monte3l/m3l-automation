@@ -922,6 +922,11 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/script/process-guards.ts"
   },
+  "M3LPresetCycleError": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/M3LPresetCycleError.ts"
+  },
   "isDangerousKey": {
     "submodule": "security",
     "namespace": "core",

@@ -3,7 +3,7 @@
  * configuration, logging, prompts, and process guards for automation
  * scripts and Lambda handlers.
  *
- * Re-exports exactly the thirteen public symbols documented in
+ * Re-exports exactly the fourteen public symbols documented in
  * `docs/reference/core/script.md`. No logic lives here; this file is a
  * barrel only.
  *
@@ -24,6 +24,7 @@ export type {
 export { M3LScriptConfigLoader } from "./M3LScriptConfigLoader.js";
 export { M3LScriptPresetLoader } from "./M3LScriptPresetLoader.js";
 export { M3LPresetUnknownKeysError } from "./M3LPresetUnknownKeysError.js";
+export { M3LPresetCycleError } from "./M3LPresetCycleError.js";
 export {
   installProcessGuards,
   serializeError,
