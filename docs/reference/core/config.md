@@ -21,7 +21,9 @@ Exported from `@m3l-automation/m3l-common/core` (the `config` sub-module):
 - `coerceConfigValue` (the value parser: coerces a raw provider value to its declared `M3LConfigParameterType`, throwing on a type mismatch; generic over the target type so its return is `M3LCoercedValue<T>`, not `unknown`)
 - `M3LSecretsSpecifier`
 - `M3LUnknownParameterDetector`
-- Errors: `M3LConfigCoercionError`, `M3LConfigParseError`, `M3LUnsafeConfigKeyError`
+- `M3LConfigValidator` (type: a `(value) => true | string` schema-time validator)
+- `M3LConfigValidators` (stock validators: `range`, `regex`, `oneOf`)
+- Errors: `M3LConfigCoercionError`, `M3LConfigParseError`, `M3LUnsafeConfigKeyError`, `M3LConfigValidationError`
 
 ## Provider priority chain
 
@@ -89,6 +91,112 @@ from its `type`, not declared independently:
 `getValueAsync()` resolves to `M3LCoercedValue<typeof type> | undefined`. For
 example, `new M3LConfigParameter({ type: M3LConfigParameterType.INT, defaultValue: "3000" })`
 does not compile — `defaultValue` must be a `number`.
+
+## Schema-time validation
+
+A parameter may declare an optional `validate` function that rejects a coerced
+value failing an application constraint — a port out of range, a string that
+must match a pattern, a value that must be one of a fixed set.
+
+```typescript
+export type M3LConfigValidator<T> = (value: T) => true | string;
+```
+
+- **`true`** is the only passing result — the value is accepted.
+- **Any string** is the human-readable failure reason; resolution throws
+  `M3LConfigValidationError` carrying that reason. (A string result — not a
+  boolean — means a truthy non-`true` value can never be mistaken for "valid".)
+
+The validator is attached through `M3LConfigParameterOptions`:
+
+```typescript
+readonly validate?: M3LConfigValidator<M3LCoercedValue<TType>>;
+```
+
+Its input type follows the parameter's declared `type` through
+`M3LCoercedValue<TType>`, so a validator on an `INT` parameter receives a
+`number`, one on a `STRING_ARRAY` receives `readonly string[]`, and a validator
+typed for the wrong shape is a **compile error**.
+
+### When it runs
+
+Validation runs on the **coerced** value (never the raw provider string), at
+three points:
+
+1. **Eagerly in the constructor** — a declared `defaultValue` is validated when
+   the parameter is constructed. A default that violates its own validator is a
+   programming error, so it fails fast at declaration, not lazily at resolution.
+2. **After provider coercion** — a value supplied by a provider is coerced, then
+   validated, before `getValueAsync()` returns it.
+3. **After `asyncFallback`** — a value produced by the async fallback is
+   validated before it is returned.
+
+A failing validation at any point throws `M3LConfigValidationError`
+(`code: "ERR_CONFIG_VALIDATION"`).
+
+### `M3LConfigValidationError`
+
+Thrown when a coerced value (provider, default, or fallback) fails its
+validator. Its `context` carries `{ parameter, reason }` and a redaction-safe
+`valueType` (the `typeof` the value) — **never the value itself**, so a
+validation failure is safe to log for any parameter, secret or not. Catch it to
+distinguish a validation failure from a coercion failure
+(`M3LConfigCoercionError`), which is a caller-actionable difference (the value
+parsed to the right type but broke a constraint).
+
+### Stock validators (`M3LConfigValidators`)
+
+```typescript
+export const M3LConfigValidators: {
+  range(min: number, max: number): M3LConfigValidator<number>;
+  regex(pattern: RegExp): M3LConfigValidator<string>;
+  oneOf<T>(allowed: readonly T[]): M3LConfigValidator<T>;
+};
+```
+
+| Helper            | Passes when                     | Failure reason describes                      |
+| ----------------- | ------------------------------- | --------------------------------------------- |
+| `range(min, max)` | `min <= value <= max`           | the bound, e.g. `must be between 1 and 65535` |
+| `regex(pattern)`  | `pattern.test(value)` is `true` | the pattern                                   |
+| `oneOf(allowed)`  | `allowed` includes `value`      | the allowed set                               |
+
+Each stock validator's failure reason describes the **constraint**, never the
+received value — so a stock validator applied to a secret parameter cannot leak
+the value through the reason.
+
+> **Secret values.** A validator receives the real coerced value (it must, to
+> validate it). The error `context` never carries the value, but a **custom**
+> validator's returned reason string is author-controlled — do not embed the
+> value in the reason for a secret parameter (e.g. a `secretNames` entry), or it
+> will surface in the thrown error's message. The stock validators above are
+> already safe.
+
+### Example
+
+```typescript
+import {
+  M3LConfigParameter,
+  M3LConfigParameterType,
+  M3LConfigValidators,
+  M3LConfigValidationError,
+} from "@m3l-automation/m3l-common/core";
+
+const port = new M3LConfigParameter({
+  name: "PORT",
+  type: M3LConfigParameterType.INT,
+  defaultValue: 3000,
+  validate: M3LConfigValidators.range(1, 65535),
+});
+
+try {
+  const value = await port.getValueAsync(reader);
+} catch (error) {
+  if (error instanceof M3LConfigValidationError) {
+    console.error(error.context.parameter, error.context.reason);
+  }
+  throw error;
+}
+```
 
 ## `asyncFallback`
 
