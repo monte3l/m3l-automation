@@ -203,7 +203,8 @@
       "M3LTableOptions",
       "M3LTableColumn",
       "redactSensitiveLogText",
-      "redactSensitiveLogValue"
+      "redactSensitiveLogValue",
+      "M3LLoggerOptions"
     ]
   },
   {
