@@ -500,14 +500,14 @@ Monorepo layout:
 ```text
 m3l-automation/
   data/{workload-name}/
-    configs/ · inputs/ · outputs/{timestamp}/ · cache/
+    config/ · input/ · output/{timestamp}/ · cache/
 ```
 
 Standalone layout:
 
 ```text
-{baseDir}/
-  configs/ · data/inputs/ · data/outputs/{timestamp}/
+{baseDir}/data/
+  config/ · input/ · output/{timestamp}/ · cache/
 ```
 
 ### 4.11 Text extractor registry
