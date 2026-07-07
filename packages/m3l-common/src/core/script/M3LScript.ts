@@ -5,6 +5,7 @@
  * @packageDocumentation
  */
 
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 
 import { M3LConfig, M3LConfigSchema } from "../config/index.js";
@@ -24,7 +25,7 @@ import {
   AWS_REGION_PARAM_NAME,
 } from "./aws-param-names.js";
 import { M3LScriptConfigLoader } from "./M3LScriptConfigLoader.js";
-import { serializeError } from "./process-guards.js";
+import { serializeError, setProcessGuardRequestId } from "./process-guards.js";
 import type {
   M3LScriptHookContext,
   M3LScriptLifecycleHooks,
@@ -48,6 +49,22 @@ async function runHook(
 ): Promise<void> {
   if (hook === undefined) return;
   await hook(ctx);
+}
+
+/**
+ * Defensively narrows an unknown Lambda `context` value to extract
+ * `awsRequestId` when present as a string, without an unchecked cast. Used by
+ * {@link M3LScript.createLambdaHandler}'s per-invocation correlation id
+ * resolution — `TContext` defaults to `unknown`, so the property cannot be
+ * accessed directly.
+ */
+function extractAwsRequestId(context: unknown): string | undefined {
+  if (typeof context !== "object" || context === null) return undefined;
+  if (!("awsRequestId" in context)) return undefined;
+  const candidate = (context as Record<string, unknown>).awsRequestId;
+  return typeof candidate === "string" && candidate.length > 0
+    ? candidate
+    : undefined;
 }
 
 /**
@@ -124,6 +141,21 @@ export class M3LScript {
    */
   private awsProvider: AWSProvider | undefined;
 
+  /**
+   * The caller-supplied `options.correlationId`, used verbatim for every run
+   * and every Lambda invocation when present. `undefined` means "generate (or
+   * prefer the platform request id for) each run/invocation".
+   */
+  private readonly configuredCorrelationId: string | undefined;
+
+  /**
+   * The current run's/invocation's resolved correlation id. Resolved before
+   * the first hook fires (see {@link M3LScript.resolveCorrelationId}) and
+   * stable for the remainder of that run; re-resolved on the next `run()`
+   * call or Lambda invocation.
+   */
+  private currentCorrelationId: string | undefined;
+
   /** The logger facade wired for this script instance. */
   readonly logger: M3LLogger;
 
@@ -176,6 +208,7 @@ export class M3LScript {
         ? new M3LConfigSchema(options.config.params)
         : undefined;
 
+    this.configuredCorrelationId = options.correlationId;
     this.logger =
       options.logger ?? new M3LLogger([new M3LConsoleLoggerHandler()]);
     this.prompt = options.prompt ?? new M3LPrompt();
@@ -253,8 +286,22 @@ export class M3LScript {
    *   to run.
    */
   async run(mainFn: () => void | Promise<void>): Promise<void> {
+    await this.runWithErrorHandling(mainFn);
+  }
+
+  /**
+   * Shared error/cleanup wrapper around {@link M3LScript.runPipeline} used by
+   * both {@link M3LScript.run} and {@link M3LScript.createLambdaHandler} — the
+   * latter additionally threads a preferred correlation id (the platform
+   * request id) through to {@link M3LScript.resolveCorrelationId} without
+   * widening `run`'s own public signature.
+   */
+  private async runWithErrorHandling(
+    mainFn: () => void | Promise<void>,
+    preferredCorrelationId?: string,
+  ): Promise<void> {
     try {
-      await this.runPipeline(mainFn);
+      await this.runPipeline(mainFn, preferredCorrelationId);
     } catch (cause) {
       await this.runOnErrorBestEffort(cause);
       await this.runCleanup("onError");
@@ -304,9 +351,16 @@ export class M3LScript {
     return async (event: TEvent, context: TContext): Promise<TResult> => {
       this.resetForInvocation();
       let result: TResult | undefined;
-      await this.run(async () => {
+      // Per-invocation correlation id resolution
+      // (docs/reference/core/script.md#correlation-ids): an explicit
+      // `options.correlationId` always wins (handled inside
+      // `resolveCorrelationId`); otherwise prefer the platform request id
+      // over generating a fresh UUID, so logs line up with the Lambda
+      // request in CloudWatch.
+      const preferredCorrelationId = extractAwsRequestId(context);
+      await this.runWithErrorHandling(async () => {
         result = await mainFn(event, context);
-      });
+      }, preferredCorrelationId);
       // `run` either throws (never reaching here) or resolves after mainFn
       // has assigned `result` — the assertion the type system cannot itself
       // express is that `run`'s success path guarantees `mainFn` completed.
@@ -321,9 +375,51 @@ export class M3LScript {
     this.config = new M3LConfig();
   }
 
-  /** Builds the hook context carrying the live config store. */
+  /**
+   * Resolves and caches the current run's/invocation's correlation id —
+   * called once, at the very top of {@link M3LScript.runPipeline} (before
+   * stage 1), so `currentCorrelationId` is guaranteed set before any stage
+   * can throw. Resolution precedence: `options.correlationId` (verbatim,
+   * when non-empty), then `preferredId` (the platform request id, e.g.
+   * Lambda's `context.awsRequestId`, when the caller supplied one via
+   * {@link M3LScript.createLambdaHandler}), then a freshly generated
+   * `crypto.randomUUID()`. A blank (empty-string) configured id or preferred
+   * id is treated as absent — mirroring `extractAwsRequestId`'s own
+   * `length > 0` guard — so the resolved id is always a non-empty string.
+   *
+   * Also aligns {@link setProcessGuardRequestId} to the same id.
+   *
+   * @param preferredId - An optional platform-supplied id (e.g.
+   *   `context.awsRequestId`) to prefer over generating a new one, when no
+   *   explicit `options.correlationId` was configured.
+   */
+  private resolveCorrelationId(preferredId?: string): string {
+    const configured =
+      this.configuredCorrelationId !== undefined &&
+      this.configuredCorrelationId.length > 0
+        ? this.configuredCorrelationId
+        : undefined;
+    const preferred =
+      preferredId !== undefined && preferredId.length > 0
+        ? preferredId
+        : undefined;
+    const resolved = configured ?? preferred ?? randomUUID();
+    this.currentCorrelationId = resolved;
+    setProcessGuardRequestId(resolved);
+    return resolved;
+  }
+
+  /** Builds the hook context carrying the live config store and resolved correlation id. */
   private hookContext(): M3LScriptHookContext {
-    return { config: this.config };
+    // `currentCorrelationId` is resolved at the very top of `runPipeline`,
+    // before stage 1, so by the time any hook fires (including `onError` from
+    // the earliest possible stage failure) it is already guaranteed set —
+    // this fallback exists purely as a defensive guard against a future stage
+    // being reordered ahead of that resolution.
+    return {
+      config: this.config,
+      correlationId: this.currentCorrelationId ?? this.resolveCorrelationId(),
+    };
   }
 
   /** Stage 3: loads configuration via {@link M3LScriptConfigLoader}. */
@@ -467,7 +563,17 @@ export class M3LScript {
   }
 
   /** Runs stages 1-9, without any error/cleanup handling (that lives in `run`). */
-  private async runPipeline(mainFn: () => void | Promise<void>): Promise<void> {
+  private async runPipeline(
+    mainFn: () => void | Promise<void>,
+    preferredCorrelationId?: string,
+  ): Promise<void> {
+    // Resolve the run's correlation id before ANY stage runs — including
+    // stage 1 (environment detection) below — so `ctx.correlationId` is a
+    // stable, non-empty string on every hook this run invokes, even
+    // `onError` from the earliest possible stage failure (see the script
+    // module's Correlation IDs reference).
+    this.resolveCorrelationId(preferredCorrelationId);
+
     // Stage 1: environment detection. The result itself is not needed here
     // (M3LPaths and the signal-handler gate already captured it at
     // construction) — this call exists so stage 1 is independently

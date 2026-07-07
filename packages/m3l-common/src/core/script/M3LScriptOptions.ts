@@ -79,6 +79,14 @@ type M3LReadonlyConfig = Pick<M3LConfig, "get" | "has" | "sourceOf">;
 export interface M3LScriptHookContext {
   /** A read-only view of the resolved configuration store for the current run/invocation. */
   readonly config: M3LReadonlyConfig;
+  /**
+   * The run's resolved correlation id — always a non-empty string by the
+   * time the first hook fires. Either the verbatim
+   * {@link M3LScriptOptions.correlationId} supplied by the caller, or a
+   * generated `crypto.randomUUID()` when omitted — see the script module's
+   * Correlation IDs reference for the full resolution precedence.
+   */
+  readonly correlationId: string;
 }
 
 /** The signature shared by every {@link M3LScriptLifecycleHooks} hook except `onError`. */
@@ -184,4 +192,14 @@ export interface M3LScriptOptions {
    * without a real TTY.
    */
   readonly prompt?: M3LPrompt;
+  /**
+   * An optional per-run correlation id used verbatim for the whole run when
+   * supplied (a blank string is treated as omitted). When omitted,
+   * {@link M3LScript.run} generates one via `crypto.randomUUID()`;
+   * {@link M3LScript.createLambdaHandler} resolves a fresh id per invocation
+   * (preferring `context.awsRequestId` over a generated id) unless this
+   * option is set, in which case it wins over both — see the script module's
+   * Correlation IDs reference for the full resolution precedence.
+   */
+  readonly correlationId?: string;
 }
