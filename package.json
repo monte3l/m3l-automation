@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Monorepo root for @m3l-automation/m3l-common.",
+  "description": "Monorepo root for @m3l-automation/m3l-common and the automation scripts that consume it.",
   "author": "Enrico Lionello",
   "keywords": [
     "automation",

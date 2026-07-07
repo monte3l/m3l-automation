@@ -63,3 +63,4 @@ surface).
 | 0019 | [Remove the `scripts/` example-automation workspace](./0019-remove-scripts-workspace.md)                                        | Accepted               |
 | 0020 | [Drop release automation](./0020-drop-release-automation.md)                                                                    | Accepted               |
 | 0021 | [Post-1.0.0 direction: deepen the library first, then build consumers](./0021-post-1.0-deepen-first-strategy.md)                | Proposed               |
+| 0022 | [Re-introduce the `scripts/` workspace for real consumers](./0022-reintroduce-scripts-workspace.md)                             | Proposed               |

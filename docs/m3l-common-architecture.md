@@ -453,7 +453,7 @@ Both importers and exporters expose a batch API (`import()` / `export()`) and a 
 
 ### 4.1 `M3LScript` — lifecycle framework
 
-`M3LScript` is the single entry point for consumer automation scripts and Lambda handlers. It is not subclassed; consumer code passes a `M3LScriptOptions` object (metadata, config schema, hooks, logging options) and calls `run(async () => { ... })`.
+`M3LScript` is the single entry point for all scripts and Lambda handlers in the monorepo. It is not subclassed; consumer code passes a `M3LScriptOptions` object (metadata, config schema, hooks, logging options) and calls `run(async () => { ... })`.
 
 The framework handles: environment detection, config loading with provider chain, AWS credential validation, ANSI-aware logging to up to three simultaneous sinks, interactive prompts or TTY-free equivalents, graceful signal shutdown, process fault guards, and file archival — all without any boilerplate in consumer code.
 
@@ -499,7 +499,7 @@ Monorepo layout:
 
 ```text
 m3l-automation/
-  data/{workload-name}/
+  data/{script-name}/
     config/ · input/ · output/{timestamp}/ · cache/
 ```
 
