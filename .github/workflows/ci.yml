@@ -73,6 +73,13 @@ jobs:
       - name: Check public API snapshot
         run: pnpm check:api
 
+      # check:api forces the snapshot to be updated; this forces a BREAKING change
+      # to it to be LABELED breaking (a `BREAKING CHANGE:` footer / `!` subject) in
+      # the PR commit range. PR-only — it needs the base and head commits.
+      - name: Check exports semver labeling
+        if: github.event_name == 'pull_request'
+        run: node bin/check-exports-semver.mjs --base ${{ github.event.pull_request.base.sha }} --head ${{ github.event.pull_request.head.sha }}
+
       # Doc-provenance sidecars anchor reference-page headings to source symbols
       # at a git commit. Fail if a heading or symbol is missing; warn on staleness.
       - name: Check doc provenance
