@@ -194,6 +194,70 @@ export default tseslint.config(
     },
   },
   {
+    // ADR-0009 dependency-direction zones (deepen-first WS-G). The module
+    // layering, from leaf outward:
+    //   leaf:  core/errors, core/events, core/security, core/prompt (no core deps)
+    //   mid:   core/utils -> analysis/config/json/exporters/network/polling/...
+    //          -> core/{logging, importers, files}
+    //   root:  core/script (composition root; imports many core modules; nothing
+    //          imports it)
+    //   aws/**: a separate island depending only on core/errors + core/prompt
+    // These path-based zones encode the real, acyclic graph. `no-restricted-paths`
+    // is NOT type-aware, so core/script's type-only imports from aws/ and its
+    // lazy `await import()` AWS-provisioning seam are intentionally left
+    // unrestricted here — they are compile-erased / runtime-only and create no
+    // static core -> aws cycle. The public barrels (core/index.ts, aws/index.ts)
+    // are excluded because they legitimately re-export every submodule (including
+    // core/script); the internal/-sealing block above owns the barrels.
+    //
+    // Zone A: aws/** may import only core/errors and core/prompt.
+    files: ["packages/m3l-common/src/aws/**/*.ts"],
+    ignores: ["packages/m3l-common/src/aws/index.ts"],
+    rules: {
+      "import-x/no-restricted-paths": [
+        "error",
+        {
+          zones: [
+            {
+              target: "./packages/m3l-common/src/aws",
+              from: "./packages/m3l-common/src/core",
+              // `except` paths are relative to `from` (core).
+              except: ["errors", "prompt"],
+              message:
+                "aws/* may import only core/errors and core/prompt — no other core module (ADR-0009 layering).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Zone B: core/script is the composition root — no OTHER core module may
+    // import it. Scoped to core/** but excluding core/script itself (its own
+    // intra-module imports are legitimate) and the core barrel (which re-exports
+    // it). See the ADR-0009 layering comment above.
+    files: ["packages/m3l-common/src/core/**/*.ts"],
+    ignores: [
+      "packages/m3l-common/src/core/script/**",
+      "packages/m3l-common/src/core/index.ts",
+    ],
+    rules: {
+      "import-x/no-restricted-paths": [
+        "error",
+        {
+          zones: [
+            {
+              target: "./packages/m3l-common/src/core",
+              from: "./packages/m3l-common/src/core/script",
+              message:
+                "core/script is the composition root; no other core module may import it (ADR-0009 layering).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Node.js automation scripts (bin/) and Claude Code hooks (.claude/hooks/).
     // Plain ESM .mjs — no TypeScript project service. Enables the rules that
     // caught historical PR findings: empty-catch swallowing, variable shadowing,
