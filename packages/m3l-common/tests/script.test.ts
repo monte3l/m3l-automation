@@ -44,6 +44,7 @@
  */
 
 import * as fs from "fs";
+import * as nodeCrypto from "node:crypto";
 import * as nodeFs from "node:fs";
 import * as fsPromises from "node:fs/promises";
 import {
@@ -75,6 +76,15 @@ vi.mock("node:fs", async () => {
 // mkdir/copyFile/stat -- mocked so archival tests never touch real disk.
 vi.mock("node:fs/promises", async () => {
   const actual = await vi.importActual<typeof fsPromises>("node:fs/promises");
+  return { ...actual };
+});
+// WS-D: the generated-correlation-id path (docs/reference/core/script.md#correlation-ids)
+// calls `crypto.randomUUID()` when `options.correlationId` is omitted. Mocked
+// with the same configurable-namespace pattern as the fs mocks above so
+// individual tests can `vi.spyOn(nodeCrypto, "randomUUID")` and control the
+// generated id deterministically.
+vi.mock("node:crypto", async () => {
+  const actual = await vi.importActual<typeof nodeCrypto>("node:crypto");
   return { ...actual };
 });
 
@@ -1455,6 +1465,401 @@ describe("M3LScriptHookContext", () => {
 
     expect(capturedContext).toBeDefined();
     expect(capturedContext?.config).toBeDefined();
+  });
+
+  // WS-D (docs/reference/core/script.md#correlation-ids): `correlationId` is
+  // "always resolved by the first hook" — a REQUIRED `string`, never
+  // `string | undefined`, unlike `M3LScriptOptions.correlationId` (optional
+  // on input; see the `M3LScriptOptions — type-level contract` block below).
+  test("type-level: correlationId is a required string, not string | undefined", () => {
+    expectTypeOf<M3LScriptHookContext>().toHaveProperty("correlationId");
+    expectTypeOf<
+      M3LScriptHookContext["correlationId"]
+    >().toEqualTypeOf<string>();
+  });
+});
+
+// =============================================================================
+// M3LScriptOptions — type-level contract (WS-D correlation IDs)
+// =============================================================================
+describe("M3LScriptOptions — type-level contract", () => {
+  test("correlationId is optional (string | undefined)", () => {
+    expectTypeOf<M3LScriptOptions["correlationId"]>().toEqualTypeOf<
+      string | undefined
+    >();
+  });
+
+  test("an options object omitting correlationId is still valid", () => {
+    const options: M3LScriptOptions = { metadata };
+    expect(options.correlationId).toBeUndefined();
+  });
+});
+
+// =============================================================================
+// M3LScript — Correlation IDs (WS-D)
+//
+// Contract: docs/reference/core/script.md#correlation-ids. `run()` resolves
+// one correlation id per run — the supplied `options.correlationId` verbatim,
+// or a generated `crypto.randomUUID()` when omitted — BEFORE the first hook
+// fires, so every M3LScriptHookContext.correlationId is a stable, non-empty
+// string for the whole run. `createLambdaHandler()` resolves the id fresh
+// PER INVOCATION, preferring `context.awsRequestId` over a generated UUID;
+// an explicit `options.correlationId` still wins over both.
+// =============================================================================
+describe("M3LScript — Correlation IDs", () => {
+  const GENERATED_UUID: `${string}-${string}-${string}-${string}-${string}` =
+    "11111111-1111-4111-8111-111111111111";
+
+  beforeEach(() => {
+    stubNonAwsEnvironment();
+    vi.spyOn(nodeCrypto, "randomUUID").mockReturnValue(GENERATED_UUID);
+  });
+
+  test("B6: a supplied correlationId is used verbatim on every hook's ctx.correlationId", async () => {
+    const seen: string[] = [];
+    const script = new M3LScript({
+      metadata,
+      correlationId: "X",
+      hooks: {
+        onBeforeInit: (ctx) => {
+          seen.push(ctx.correlationId);
+        },
+        onAfterConfigLoad: (ctx) => {
+          seen.push(ctx.correlationId);
+        },
+        onCleanup: (ctx) => {
+          seen.push(ctx.correlationId);
+        },
+      },
+    });
+
+    await script.run(() => {});
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((id) => id === "X")).toBe(true);
+  });
+
+  test("B7: an omitted correlationId is generated via crypto.randomUUID() and resolved before the EARLIEST hook fires", async () => {
+    let earliestId: string | undefined;
+    const script = new M3LScript({
+      metadata,
+      hooks: {
+        onBeforeInit: (ctx) => {
+          // onBeforeInit is documented as the very first lifecycle hook, so
+          // this is the earliest possible observation point for the
+          // resolved id.
+          earliestId ??= ctx.correlationId;
+        },
+      },
+    });
+
+    await script.run(() => {});
+
+    expect(earliestId).toBeDefined();
+    expect(earliestId).toBe(GENERATED_UUID);
+    expect((earliestId as string).length).toBeGreaterThan(0);
+  });
+
+  test("FIX-1: an empty-string options.correlationId is treated as absent, not used verbatim — falls through to a generated id", async () => {
+    // Regression for a `??`-passthrough bug: `resolveCorrelationId` currently
+    // does `configuredCorrelationId ?? preferredId ?? randomUUID()`, and `??`
+    // only short-circuits on `null`/`undefined` — an empty string survives
+    // it and is used as-is, so `ctx.correlationId` would resolve to `""`,
+    // violating the documented "always a non-empty string" guarantee. The
+    // fix mirrors `extractAwsRequestId`'s own `length > 0` guard and falls
+    // through to a generated UUID when the configured id is blank.
+    let earliestId: string | undefined;
+    const script = new M3LScript({
+      metadata,
+      correlationId: "",
+      hooks: {
+        onBeforeInit: (ctx) => {
+          earliestId ??= ctx.correlationId;
+        },
+      },
+    });
+
+    await script.run(() => {});
+
+    expect(earliestId).toBeDefined();
+    expect(earliestId).not.toBe("");
+    expect((earliestId as string).length).toBeGreaterThan(0);
+    expect(earliestId).toBe(GENERATED_UUID);
+  });
+
+  test("B8: the resolved correlationId is stable across every hook in one run", async () => {
+    const seen: string[] = [];
+    const script = new M3LScript({
+      metadata,
+      correlationId: "X",
+      hooks: {
+        onBeforeInit: (ctx) => {
+          seen.push(ctx.correlationId);
+        },
+        onAfterConfigLoad: (ctx) => {
+          seen.push(ctx.correlationId);
+        },
+        onCleanup: (ctx) => {
+          seen.push(ctx.correlationId);
+        },
+      },
+    });
+
+    await script.run(() => {});
+
+    expect(seen).toHaveLength(3);
+    // Asserting the CONCRETE value (not just "all equal") prevents this test
+    // from false-passing when correlationId resolves to `undefined` on
+    // every hook (three equal `undefined`s would otherwise still satisfy a
+    // bare "same value" check).
+    expect(seen).toEqual(["X", "X", "X"]);
+  });
+
+  test("B9: createLambdaHandler() resolves a distinct generated id per invocation when correlationId is omitted", async () => {
+    stubAwsLambdaEnvironment();
+    const firstUuid: `${string}-${string}-${string}-${string}-${string}` =
+      "22222222-2222-4222-8222-222222222221";
+    const secondUuid: `${string}-${string}-${string}-${string}-${string}` =
+      "22222222-2222-4222-8222-222222222222";
+    const randomUUIDSpy = vi.spyOn(nodeCrypto, "randomUUID");
+    randomUUIDSpy
+      .mockReturnValueOnce(firstUuid)
+      .mockReturnValueOnce(secondUuid);
+    const seen: string[] = [];
+    const script = new M3LScript({
+      metadata,
+      hooks: {
+        onBeforeInit: (ctx) => {
+          seen.push(ctx.correlationId);
+        },
+      },
+    });
+    const handler = script.createLambdaHandler(() => Promise.resolve());
+
+    await handler({}, {});
+    await handler({}, {});
+
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).not.toBe(seen[1]);
+  });
+
+  test("B10: createLambdaHandler() prefers context.awsRequestId over a generated id", async () => {
+    stubAwsLambdaEnvironment();
+    let captured: string | undefined;
+    const script = new M3LScript({
+      metadata,
+      hooks: {
+        onBeforeInit: (ctx) => {
+          captured ??= ctx.correlationId;
+        },
+      },
+    });
+    const handler = script.createLambdaHandler<
+      Record<string, never>,
+      void,
+      { awsRequestId: string }
+    >(() => Promise.resolve());
+
+    await handler({}, { awsRequestId: "req-123" });
+
+    expect(captured).toBe("req-123");
+  });
+
+  test("B11: an explicit options.correlationId still wins over context.awsRequestId under Lambda", async () => {
+    stubAwsLambdaEnvironment();
+    let captured: string | undefined;
+    const script = new M3LScript({
+      metadata,
+      correlationId: "X",
+      hooks: {
+        onBeforeInit: (ctx) => {
+          captured ??= ctx.correlationId;
+        },
+      },
+    });
+    const handler = script.createLambdaHandler<
+      Record<string, never>,
+      void,
+      { awsRequestId: string }
+    >(() => Promise.resolve());
+
+    await handler({}, { awsRequestId: "req-123" });
+
+    expect(captured).toBe("X");
+  });
+
+  test("B12: a supplied correlationId stays fixed across two Lambda invocations", async () => {
+    stubAwsLambdaEnvironment();
+    const seen: string[] = [];
+    const script = new M3LScript({
+      metadata,
+      correlationId: "X",
+      hooks: {
+        onBeforeInit: (ctx) => {
+          seen.push(ctx.correlationId);
+        },
+      },
+    });
+    const handler = script.createLambdaHandler(() => Promise.resolve());
+
+    await handler({}, {});
+    await handler({}, {});
+
+    expect(seen).toEqual(["X", "X"]);
+  });
+
+  test("C14: the onError hook's ctx.correlationId equals the run's resolved id on a forced stage failure", async () => {
+    let errorCtxId: string | undefined;
+    const script = new M3LScript({
+      metadata,
+      correlationId: "X",
+      hooks: {
+        onError: (ctx) => {
+          errorCtxId = ctx.correlationId;
+        },
+      },
+    });
+
+    await expect(
+      script.run(() => {
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow();
+
+    expect(errorCtxId).toBe("X");
+  });
+
+  test("FIX-2: an early-stage failure under Lambda still surfaces the platform awsRequestId on onError, not a freshly generated id", async () => {
+    // Regression for the id-resolved-too-late bug: `resolveCorrelationId` is
+    // currently invoked partway through `runPipeline` — AFTER stage 1
+    // (`M3LExecutionEnvironment.detect()`) — so `hookContext()`'s fallback
+    // (`this.currentCorrelationId ?? this.resolveCorrelationId()`) resolves
+    // with NO `preferredId` when an earlier stage throws before that point is
+    // reached, generating a random UUID instead of preferring the Lambda
+    // `context.awsRequestId`. The fix resolves the id at the very top of the
+    // pipeline, before stage 1, so it is already set (and consistent) by the
+    // time `onError` fires no matter which stage fails.
+    //
+    // `stubAwsLambdaEnvironment()` first lets construction (which also calls
+    // `M3LExecutionEnvironment.detect()`) succeed normally; the spy is then
+    // overridden with `mockImplementationOnce` so only the pipeline's OWN
+    // stage-1 call — the earliest mockable-to-throw seam in this file's
+    // existing patterns — throws.
+    stubAwsLambdaEnvironment();
+    let errorCtxId: string | undefined;
+    const script = new M3LScript({
+      metadata,
+      hooks: {
+        onError: (ctx) => {
+          errorCtxId = ctx.correlationId;
+        },
+      },
+    });
+    vi.spyOn(M3LExecutionEnvironment, "detect").mockImplementationOnce(() => {
+      throw new Error("stage 1 (environment detection) failed");
+    });
+
+    const handler = script.createLambdaHandler<
+      Record<string, never>,
+      void,
+      { awsRequestId: string }
+    >(() => Promise.resolve());
+
+    await expect(handler({}, { awsRequestId: "req-early" })).rejects.toThrow();
+
+    expect(errorCtxId).toBe("req-early");
+  });
+
+  test("C15: the best-effort stderr diagnostic on a failing run carries the correlation id string, post-redaction", async () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const script = new M3LScript({
+      metadata,
+      correlationId: "trace-id-9000",
+      hooks: {
+        onCleanup: () => {
+          // Forces the best-effort stderr diagnostic path already exercised
+          // elsewhere in this file (see "a throwing onCleanup does not mask
+          // the original error").
+          throw new Error("cleanup itself blew up");
+        },
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      await script.run(() => {
+        throw new Error("original failure");
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeDefined();
+    const written = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("\n");
+    // Deliberately NOT pinning a specific JSON key: the field name (e.g.
+    // `requestId` reuse vs. a new `correlationId`) is an implementer choice.
+    expect(written).toContain("trace-id-9000");
+  });
+
+  test("C16: the re-thrown stage error's context does not gain a correlationId key (no mutation of the readonly context)", async () => {
+    const originalContext = { attempt: 3 };
+    const originalError = new M3LError("stage failed", {
+      code: "ERR_TEST_STAGE",
+      context: originalContext,
+    });
+    const script = new M3LScript({ metadata, correlationId: "X" });
+
+    let thrown: unknown;
+    try {
+      await script.run(() => {
+        throw originalError;
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(originalError);
+    const context = (thrown as M3LError).context as
+      Record<string, unknown> | undefined;
+    expect(context).toBeDefined();
+    expect(Object.prototype.hasOwnProperty.call(context, "correlationId")).toBe(
+      false,
+    );
+  });
+
+  test("D18: a failing run's diagnostic line carries the correlation id while a secret in the same failure is redacted", async () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const script = new M3LScript({
+      metadata,
+      correlationId: "trace-id-secret-test",
+      hooks: {
+        onCleanup: () => {
+          throw new M3LError("cleanup failed", {
+            code: "ERR_TEST_CLEANUP",
+            context: { apiKey: "topsecretvalue" },
+          });
+        },
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      await script.run(() => {
+        throw new Error("original failure");
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeDefined();
+    const written = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("\n");
+    expect(written).toContain("trace-id-secret-test");
+    expect(written).toContain("[REDACTED]");
+    expect(written).not.toContain("topsecretvalue");
   });
 });
 
