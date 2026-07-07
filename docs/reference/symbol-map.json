@@ -572,6 +572,11 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/logging/redact.ts"
   },
+  "M3LLoggerOptions": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/M3LLogger.ts"
+  },
   "M3LMessenger": {
     "submodule": "messaging",
     "namespace": "core",

@@ -52,10 +52,14 @@
         {
           "file": "packages/m3l-common/src/core/logging/redact.ts",
           "symbol": "redactSensitiveLogValue"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LLogger.ts",
+          "symbol": "M3LLoggerOptions"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
+      "retrieved": "2026-07-07"
     },
     {
       "heading": "`M3LLogger` methods",
@@ -65,8 +69,8 @@
           "symbol": "M3LLogger"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
+      "retrieved": "2026-07-07"
     },
     {
       "heading": "`M3LLogEventCategory`",
@@ -76,8 +80,27 @@
           "symbol": "M3LLogEventCategory"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
+      "retrieved": "2026-07-07"
+    },
+    {
+      "heading": "Correlation IDs",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LLogger.ts",
+          "symbol": "M3LLoggerOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LLogEvent.ts",
+          "symbol": "M3LLogEvent"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/M3LJsonLoggerHandler.ts",
+          "symbol": "M3LJsonLoggerHandler"
+        }
+      ],
+      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
+      "retrieved": "2026-07-07"
     },
     {
       "heading": "Composing handlers",
@@ -99,8 +122,8 @@
           "symbol": "M3LJsonLoggerHandler"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
+      "retrieved": "2026-07-07"
     },
     {
       "heading": "Rendering a table",
@@ -118,8 +141,8 @@
           "symbol": "M3LTableColumn"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
+      "retrieved": "2026-07-07"
     },
     {
       "heading": "Redacting sensitive data",
@@ -133,8 +156,8 @@
           "symbol": "redactSensitiveLogValue"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
+      "retrieved": "2026-07-07"
     },
     {
       "heading": "Notes and behavior",
@@ -160,8 +183,8 @@
           "symbol": "M3LTableFormatter"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
+      "retrieved": "2026-07-07"
     }
   ]
 }

@@ -57,7 +57,9 @@ The eight hooks declared on `M3LScriptLifecycleHooks` are, in execution order:
 - `onError`
 - `onCleanup`
 
-Each hook receives a `M3LScriptHookContext` carrying the live config store, so a hook can read resolved configuration during any stage.
+Each hook receives a `M3LScriptHookContext` carrying the live config store and
+the run's `correlationId` (see [Correlation IDs](#correlation-ids)), so a hook
+can read resolved configuration and the trace id during any stage.
 
 ## Signal handling
 
@@ -66,6 +68,46 @@ Signal handlers for `SIGTERM`, `SIGINT`, and `SIGQUIT` are registered only in no
 ## Process guards
 
 `installProcessGuards()` is a process-global singleton that installs `unhandledRejection`, `uncaughtException`, `warning`, and `beforeExit` handlers. In Lambda, call `setProcessGuardRequestId(requestId)` to attribute guard-caught errors to the current invocation. `serializeError` produces a serializable representation of an error for these guard paths.
+
+## Correlation IDs
+
+`M3LScript` threads one optional **correlation id** through a run so hooks, logs,
+and failure diagnostics can all be tied back to the same execution.
+
+```typescript
+interface M3LScriptOptions {
+  // ...existing fields
+  readonly correlationId?: string; // optional; generated per run when omitted
+}
+
+interface M3LScriptHookContext {
+  readonly config: M3LReadonlyConfig;
+  readonly correlationId: string; // always resolved by the first hook
+}
+```
+
+- **Resolution.** When `options.correlationId` is supplied it is used verbatim
+  for the run. When omitted, `run()` generates one per process run via
+  `crypto.randomUUID()`. The id is resolved before the first hook fires, so
+  `ctx.correlationId` on `M3LScriptHookContext` is always a non-empty string.
+- **Lambda.** `createLambdaHandler()` resolves an id **per invocation**,
+  preferring the platform request id when the runtime context exposes one
+  (`context.awsRequestId`) over a generated UUID — so a run's logs line up with
+  the Lambda request in CloudWatch. An explicit `options.correlationId` still
+  wins if provided. This aligns with `setProcessGuardRequestId()`, which
+  attributes guard-caught faults to the same invocation.
+- **Logs.** Correlated logging is opt-in: `M3LScript` does not emit log lines of
+  its own, so it stamps no logger for you. To tie your log lines to the run,
+  construct a logger with the id — `new M3LLogger(handlers, { correlationId })` —
+  seeding it from `ctx.correlationId` (available in the first hook) or from the
+  `correlationId` you passed in `M3LScriptOptions`. Every event such a logger
+  emits carries the id, and `M3LJsonLoggerHandler` includes it in the JSON line
+  (see [`logging` → Correlation IDs](./logging.md#correlation-ids)).
+- **Failure traceability.** On a stage failure the id is observable two ways
+  without mutating the thrown error (whose `context` is `readonly`): the
+  `onError` hook receives it via `ctx.correlationId`, and the best-effort stderr
+  diagnostics line carries it **after** redaction, so a failed run is traceable
+  to its id. A correlation id is not a secret and is never redacted.
 
 ## Preset loader
 

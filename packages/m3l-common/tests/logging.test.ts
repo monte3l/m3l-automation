@@ -3,9 +3,16 @@
  *
  * Contract source: docs/reference/core/logging.md
  * Exports under test: M3LLogEventCategory, M3LLogEvent, M3LLogger,
- *   M3LConsoleLoggerHandler, M3LFileLoggerHandler, M3LJsonLoggerHandler,
- *   M3LTableFormatter, M3LTableOptions, M3LTableColumn,
- *   redactSensitiveLogText, redactSensitiveLogValue (11 surfaced symbols).
+ *   M3LLoggerOptions, M3LConsoleLoggerHandler, M3LFileLoggerHandler,
+ *   M3LJsonLoggerHandler, M3LTableFormatter, M3LTableOptions, M3LTableColumn,
+ *   redactSensitiveLogText, redactSensitiveLogValue (12 surfaced symbols).
+ *
+ * WS-D (Correlation IDs, docs/reference/core/logging.md#correlation-ids):
+ *   `M3LLoggerOptions` is a NET-NEW export (`{ readonly correlationId?:
+ *   string }`) not yet implemented — every test referencing it is RED until
+ *   the symbol exists. `M3LLogEvent.correlationId` is likewise unimplemented.
+ *   The constructor widens additively: `new M3LLogger(handlers)` must keep
+ *   type-checking alongside the new 2-arg form.
  *
  * Key behavioral contracts:
  *  - M3LLogger fans each message method out to every handler in the ordered
@@ -51,6 +58,7 @@ import { M3LError } from "../src/core/errors/index.js";
 import { M3LFileListExporter } from "../src/core/exporters/index.js";
 import type {
   M3LLogEvent,
+  M3LLoggerOptions,
   M3LTableColumn,
   M3LTableOptions,
 } from "../src/core/logging/index.js";
@@ -190,6 +198,66 @@ describe("M3LLogEvent type", () => {
     };
     expect(event.category).toBe(M3LLogEventCategory.TEXT);
   });
+
+  // WS-D: `correlationId` is a per-run trace id, documented as optional on
+  // every M3LLogEvent (docs/reference/core/logging.md#correlation-ids).
+  test("type-level: correlationId is string | undefined", () => {
+    expectTypeOf<M3LLogEvent>().toHaveProperty("correlationId");
+    expectTypeOf<M3LLogEvent["correlationId"]>().toEqualTypeOf<
+      string | undefined
+    >();
+  });
+
+  test("an event omitting correlationId is still a valid M3LLogEvent", () => {
+    const event: M3LLogEvent = {
+      category: M3LLogEventCategory.TEXT,
+      message: "no id",
+    };
+    expect(event.correlationId).toBeUndefined();
+  });
+
+  test("an event carrying correlationId preserves it as a plain string field", () => {
+    const event: M3LLogEvent = {
+      category: M3LLogEventCategory.TEXT,
+      message: "with id",
+      correlationId: "abc-123",
+    };
+    expect(event.correlationId).toBe("abc-123");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LLoggerOptions — construction widening (WS-D correlation IDs)
+// ---------------------------------------------------------------------------
+describe("M3LLoggerOptions — type-level contract", () => {
+  test("M3LLoggerOptions equals { readonly correlationId?: string }", () => {
+    expectTypeOf<M3LLoggerOptions>().toEqualTypeOf<{
+      readonly correlationId?: string;
+    }>();
+  });
+
+  test("the constructor widens additively: its second parameter accepts M3LLoggerOptions", () => {
+    // `M3LLoggerHandler` (the first parameter's element type) is an internal,
+    // non-barrel-exported interface (see the FakeHandler comment above), so
+    // the constructor's SECOND parameter is asserted directly rather than
+    // the whole parameter tuple. The parameter is OPTIONAL (see the
+    // one-arg-still-constructs runtime test below), so `M3LLoggerOptions`
+    // must be a valid value for it — asserted via `toMatchTypeOf` rather than
+    // `toEqualTypeOf` against a `| undefined` union, which is redundant while
+    // the not-yet-implemented `M3LLoggerOptions` is an error/`any` type in RED.
+    expectTypeOf(M3LLogger).constructorParameters.toHaveProperty("1");
+    const options: M3LLoggerOptions = { correlationId: "x" };
+    expectTypeOf(options).toMatchTypeOf<
+      ConstructorParameters<typeof M3LLogger>[1]
+    >();
+  });
+
+  test("both the one-arg and two-arg constructor calls actually construct without throwing", () => {
+    expect(() => new M3LLogger([])).not.toThrow();
+    expect(
+      () => new M3LLogger([], { correlationId: "ctor-widen-check" }),
+    ).not.toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -285,6 +353,41 @@ describe("M3LLogger — fan-out", () => {
 
     const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
     expect(event.data).toBeUndefined();
+  });
+
+  // WS-D: a logger constructed WITH a correlationId stamps it onto every
+  // event it dispatches to every handler (docs/reference/core/logging.md#correlation-ids).
+  test("a logger constructed with a correlationId stamps it onto every dispatched event", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler], { correlationId: "run-abc" });
+
+    logger.info("hello");
+
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.correlationId).toBe("run-abc");
+  });
+
+  test("a logger constructed WITHOUT a correlationId leaves the field undefined on every dispatched event", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    logger.info("hello");
+
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.correlationId).toBeUndefined();
+  });
+
+  test("the stamped correlationId is identical across multiple message calls from the same logger instance", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler], { correlationId: "run-stable" });
+
+    logger.step("first");
+    logger.success("second");
+
+    const firstEvent = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    const secondEvent = handler.handle.mock.calls[1]?.[0] as M3LLogEvent;
+    expect(firstEvent.correlationId).toBe("run-stable");
+    expect(secondEvent.correlationId).toBe("run-stable");
   });
 
   test("newline() emits one spacer event with an empty message and TEXT category", () => {
@@ -820,6 +923,36 @@ describe("M3LJsonLoggerHandler", () => {
     const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
     expect(parsed.rows).toBe(1200);
     expect(parsed.data).toEqual({ meta: { a: 1 } });
+  });
+
+  // WS-D: a logger constructed with a correlationId stamps it onto every
+  // M3LLogEvent, and M3LJsonLoggerHandler includes it as a top-level key in
+  // the emitted JSON line (docs/reference/core/logging.md#correlation-ids).
+  test("a logger constructed with a correlationId produces a JSON line carrying it at the top level", () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const logger = new M3LLogger([new M3LJsonLoggerHandler()], {
+      correlationId: "abc",
+    });
+
+    logger.info("hello");
+
+    const written = String(stdoutSpy.mock.calls[0]?.[0]);
+    const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
+    expect(parsed.correlationId).toBe("abc");
+  });
+
+  // exactOptionalPropertyTypes note: this must drive the implementer toward a
+  // conditional spread (never `correlationId: undefined`), so the key is
+  // TRULY absent — assert with `.not.toHaveProperty`, not `.toBeUndefined()`.
+  test("a logger constructed WITHOUT a correlationId emits a JSON line with NO correlationId key at all", () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const logger = new M3LLogger([new M3LJsonLoggerHandler()]);
+
+    logger.info("hello");
+
+    const written = String(stdoutSpy.mock.calls[0]?.[0]);
+    const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
+    expect(parsed).not.toHaveProperty("correlationId");
   });
 
   test("reset() does not throw", () => {
@@ -1381,5 +1514,22 @@ describe("redactSensitiveLogValue", () => {
     expect(out.apiKey).toBe("[REDACTED]");
     // Non-destructive: the original input's apiKey is untouched.
     expect(input.apiKey).toBe("secret");
+  });
+
+  // WS-D: `correlationId` is documented as a tracing value, never a secret —
+  // the key matches no sensitive-key pattern, so it survives redaction
+  // untouched (docs/reference/core/logging.md#correlation-ids). Both
+  // assertions live in ONE payload to prove non-interference: the id must
+  // survive AND a genuine secret in the same object must still be redacted.
+  test("correlationId survives redaction untouched while a sibling secret in the same payload is still redacted", () => {
+    const input = { correlationId: "abc-123", token: "s3cr3t" };
+
+    const result = redactSensitiveLogValue(input) as {
+      correlationId: string;
+      token: string;
+    };
+
+    expect(result.correlationId).toBe("abc-123");
+    expect(result.token).toBe("[REDACTED]");
   });
 });
