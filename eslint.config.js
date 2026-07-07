@@ -169,6 +169,24 @@ export default tseslint.config(
     },
   },
   {
+    // Scripts must never read `process.env` directly — configuration flows
+    // through `M3LConfigParameter` and is read from the resolved config
+    // (scripts.md / ADR-0022). This is the mechanically-checkable half of that
+    // rule; the composition-root / injected-deps guidance stays advisory.
+    files: ["scripts/*/src/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "MemberExpression[object.name='process'][property.name='env']",
+          message:
+            "Scripts must not read process.env directly — declare config via M3LConfigParameter and read it from the resolved config (scripts.md).",
+        },
+      ],
+    },
+  },
+  {
     // `internal/` is private and MUST NOT be re-exported through a public
     // barrel (rules 04 / ADR 0004 — the exports map stays at three entries).
     // Forbid the public entry points from importing it at all.
