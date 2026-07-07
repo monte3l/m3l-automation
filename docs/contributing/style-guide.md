@@ -72,7 +72,7 @@ if (first === undefined) throw new M3LValidationError("empty input");
 
 - **Named exports only; no default exports** in shipped source. Named exports keep
   the surface explicit, tree-shakeable, and refactor-safe. **[enforced]**
-  (`import-x/no-default-export`, scoped to `packages/*/src/**`;
+  (`import-x/no-default-export`, scoped to `packages/*/src/**` + `scripts/*/src/**`;
   tests and config files legitimately use default exports.)
 - **Export each type next to the value it describes**, so a consumer importing a
   function also finds its types. **[advisory]**

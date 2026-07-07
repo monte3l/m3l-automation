@@ -106,11 +106,11 @@ const outputDir = paths.getOutputDir();
 ### Monorepo layout
 
 Inside the monorepo, directories hang off the discovered root, scoped per
-workload:
+script:
 
 ```text
 m3l-automation/
-  data/{workload-name}/
+  data/{script-name}/
     config/ · input/ · output/{timestamp}/ · cache/
 ```
 
