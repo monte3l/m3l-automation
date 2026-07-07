@@ -43,7 +43,10 @@
       "M3LUnknownParameterDetector",
       "M3LConfigCoercionError",
       "M3LConfigParseError",
-      "M3LUnsafeConfigKeyError"
+      "M3LUnsafeConfigKeyError",
+      "M3LConfigValidator",
+      "M3LConfigValidators",
+      "M3LConfigValidationError"
     ]
   },
   {
