@@ -48,9 +48,13 @@
         {
           "file": "packages/m3l-common/src/core/script/process-guards.ts",
           "symbol": "setProcessGuardRequestId"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/M3LPresetCycleError.ts",
+          "symbol": "M3LPresetCycleError"
         }
       ],
-      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
+      "commit": "aac01b33125cbc6115190e89fc2b4fe90c6666ab",
       "retrieved": "2026-07-07"
     },
     {
@@ -61,7 +65,7 @@
           "symbol": "M3LScript"
         }
       ],
-      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
+      "commit": "aac01b33125cbc6115190e89fc2b4fe90c6666ab",
       "retrieved": "2026-07-07"
     },
     {
@@ -76,7 +80,7 @@
           "symbol": "M3LScriptHookContext"
         }
       ],
-      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
+      "commit": "aac01b33125cbc6115190e89fc2b4fe90c6666ab",
       "retrieved": "2026-07-07"
     },
     {
@@ -87,7 +91,7 @@
           "symbol": "M3LScript"
         }
       ],
-      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
+      "commit": "aac01b33125cbc6115190e89fc2b4fe90c6666ab",
       "retrieved": "2026-07-07"
     },
     {
@@ -106,7 +110,7 @@
           "symbol": "setProcessGuardRequestId"
         }
       ],
-      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
+      "commit": "aac01b33125cbc6115190e89fc2b4fe90c6666ab",
       "retrieved": "2026-07-07"
     },
     {
@@ -125,7 +129,7 @@
           "symbol": "M3LScript"
         }
       ],
-      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
+      "commit": "aac01b33125cbc6115190e89fc2b4fe90c6666ab",
       "retrieved": "2026-07-07"
     },
     {
@@ -138,9 +142,13 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LPresetUnknownKeysError.ts",
           "symbol": "M3LPresetUnknownKeysError"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/M3LPresetCycleError.ts",
+          "symbol": "M3LPresetCycleError"
         }
       ],
-      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
+      "commit": "aac01b33125cbc6115190e89fc2b4fe90c6666ab",
       "retrieved": "2026-07-07"
     },
     {
@@ -151,7 +159,7 @@
           "symbol": "M3LScript"
         }
       ],
-      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
+      "commit": "aac01b33125cbc6115190e89fc2b4fe90c6666ab",
       "retrieved": "2026-07-07"
     },
     {
@@ -166,7 +174,7 @@
           "symbol": "M3LScriptPresetLoader"
         }
       ],
-      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
+      "commit": "aac01b33125cbc6115190e89fc2b4fe90c6666ab",
       "retrieved": "2026-07-07"
     }
   ]

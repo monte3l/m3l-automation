@@ -323,7 +323,8 @@
       "M3LPresetUnknownKeysError",
       "installProcessGuards",
       "serializeError",
-      "setProcessGuardRequestId"
+      "setProcessGuardRequestId",
+      "M3LPresetCycleError"
     ]
   },
   {

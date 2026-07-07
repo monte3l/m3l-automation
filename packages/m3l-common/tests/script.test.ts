@@ -4,9 +4,9 @@
  * Contract source: docs/reference/core/script.md
  * Exports under test: M3LScript, M3LScriptOptions, M3LScriptMetadata,
  *   M3LScriptLifecycleHooks, M3LScriptHookContext, M3LScriptConfigLoader,
- *   M3LScriptPresetLoader, M3LPresetUnknownKeysError, installProcessGuards,
- *   serializeError, setProcessGuardRequestId, AWS_PROFILE_PARAM_NAME,
- *   AWS_REGION_PARAM_NAME (13 symbols).
+ *   M3LScriptPresetLoader, M3LPresetUnknownKeysError, M3LPresetCycleError,
+ *   installProcessGuards, serializeError, setProcessGuardRequestId,
+ *   AWS_PROFILE_PARAM_NAME, AWS_REGION_PARAM_NAME (14 symbols).
  *
  * Key behavioral contracts:
  *  - M3LScript wires config, logging, prompts, and AWS client provisioning
@@ -29,6 +29,15 @@
  *  - M3LScriptPresetLoader enforces max nesting depth 64 and gives
  *    Damerau-Levenshtein "did you mean" suggestions for unknown keys, via
  *    M3LPresetUnknownKeysError (an M3LError subclass).
+ *  - WS-F: a preset may declare a top-level `extends: <path>` resolved
+ *    relative to the extending FILE's directory (not CWD). Base + derived are
+ *    SHALLOW-merged (derived top-level keys wholly replace the base's; a
+ *    nested object/array is replaced as a unit, never deep-merged); `extends`
+ *    chains (deepest base first, nearest override wins) and is stripped from
+ *    the result. A cycle or a chain deeper than MAX_PRESET_EXTENDS_DEPTH (16)
+ *    throws M3LPresetCycleError (code ERR_PRESET_CYCLE) whose
+ *    context.chain/`chain` getter is the ordered resolved-path cycle.
+ *    Unknown-key/depth validation runs on the fully merged record.
  *
  * Assumptions documented where the contract is spec-silent (see individual
  * comments): `M3LScript` exposes a public `get aws(): AWSProvider | undefined`
@@ -47,6 +56,9 @@ import * as fs from "fs";
 import * as nodeCrypto from "node:crypto";
 import * as nodeFs from "node:fs";
 import * as fsPromises from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import * as nodePath from "node:path";
 import {
   afterEach,
   beforeEach,
@@ -121,6 +133,7 @@ import {
   AWS_PROFILE_PARAM_NAME,
   AWS_REGION_PARAM_NAME,
   installProcessGuards,
+  M3LPresetCycleError,
   M3LPresetUnknownKeysError,
   M3LScript,
   M3LScriptConfigLoader,
@@ -2183,6 +2196,403 @@ describe("M3LScriptPresetLoader", () => {
 
     expect(thrown).toBeInstanceOf(M3LUnsafeConfigKeyError);
     expect(thrown).toBeInstanceOf(M3LError);
+  });
+});
+
+// =============================================================================
+// M3LScriptPresetLoader — extends inheritance (WS-F)
+//
+// Contract: docs/reference/core/script.md § "Preset inheritance (`extends`)".
+// The loader does REAL fs.readFileSync and resolves `extends` relative to
+// `path.dirname` of the extending file, so these tests use REAL fixture files
+// under a real, writable temp directory tree (mocking fs would defeat
+// path-relative resolution). Every fixture-writing test gets a fresh temp dir
+// in `beforeEach` and it is removed in `afterEach` — no fixture ever touches
+// this repo's own tree.
+// =============================================================================
+describe("M3LScriptPresetLoader — extends inheritance", () => {
+  let dir: string;
+
+  // Shared schema declaring every top-level key any merge fixture in this
+  // block uses (region, retries, tags, timeout, nested). The loader is
+  // strict by default (an omitted/empty schema flags every merged key as
+  // unknown per the documented contract), so any test whose fixtures merge
+  // into one of these keys must construct the loader with this schema.
+  // Deliberately does NOT declare "bogus" — the unknown-keys test below
+  // still needs that key to be rejected.
+  const extendsMergeSchema = new M3LConfigSchema([
+    new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    }),
+    new M3LConfigParameter({
+      name: "retries",
+      type: M3LConfigParameterType.INT,
+    }),
+    new M3LConfigParameter({
+      name: "tags",
+      type: M3LConfigParameterType.STRING_ARRAY,
+    }),
+    new M3LConfigParameter({
+      name: "timeout",
+      type: M3LConfigParameterType.INT,
+    }),
+    new M3LConfigParameter({
+      name: "nested",
+      type: M3LConfigParameterType.STRING,
+    }),
+  ]);
+
+  beforeEach(async () => {
+    // The file-wide `beforeEach` (above, guarding stage-9 archival tests)
+    // stubs `fsPromises.mkdir` to a no-op `mockResolvedValue(undefined)` for
+    // every test in this file — and, because "fs"/"node:fs"/"node:fs/promises"
+    // are mocked once at module scope, that same stub is shared by the named
+    // `mkdir` import used below. This block writes REAL fixture files (a
+    // subdirectory fixture needs a REAL `mkdir`), so restore the genuine
+    // implementation here, scoped to this describe block only.
+    const actualFsPromises =
+      await vi.importActual<typeof fsPromises>("node:fs/promises");
+    vi.spyOn(fsPromises, "mkdir").mockImplementation(actualFsPromises.mkdir);
+    dir = await mkdtemp(nodePath.join(tmpdir(), "m3l-preset-"));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  /** Writes `content` (already-serialized YAML/JSON text) to `relativePath` under the temp dir, creating parent directories as needed. */
+  async function writeFixture(
+    relativePath: string,
+    content: string,
+  ): Promise<string> {
+    const fullPath = nodePath.join(dir, relativePath);
+    await mkdir(nodePath.dirname(fullPath), { recursive: true });
+    await writeFile(fullPath, content, "utf8");
+    return fullPath;
+  }
+
+  test("2-level extends: derived overrides scalars, inherits region, REPLACES (not merges) the tags array, and strips `extends`", async () => {
+    await writeFixture(
+      "base.yaml",
+      ["region: eu-south-1", "retries: 3", "tags:", "  - baseline", ""].join(
+        "\n",
+      ),
+    );
+    const prodPath = await writeFixture(
+      "prod.yaml",
+      ["extends: ./base.yaml", "retries: 5", "tags:", "  - prod", ""].join(
+        "\n",
+      ),
+    );
+
+    const loader = new M3LScriptPresetLoader({ schema: extendsMergeSchema });
+    const result = loader.load(prodPath);
+
+    expect(result).toEqual({
+      region: "eu-south-1",
+      retries: 5,
+      tags: ["prod"],
+    });
+    expect("extends" in result).toBe(false);
+  });
+
+  test("3-level chain shallow-merges: nested.b is dropped (never deep-merged) and the nearest override wins fold order", async () => {
+    await writeFixture(
+      "grandparent.yaml",
+      [
+        "region: eu-south-1",
+        "retries: 1",
+        "timeout: 30",
+        "nested:",
+        "  a: 1",
+        "  b: 2",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      "parent.yaml",
+      [
+        "extends: ./grandparent.yaml",
+        "retries: 2",
+        "nested:",
+        "  a: 9",
+        "",
+      ].join("\n"),
+    );
+    const childPath = await writeFixture(
+      "child.yaml",
+      ["extends: ./parent.yaml", "timeout: 99", ""].join("\n"),
+    );
+
+    const loader = new M3LScriptPresetLoader({ schema: extendsMergeSchema });
+    const result = loader.load(childPath);
+
+    expect(result).toEqual({
+      region: "eu-south-1",
+      retries: 2,
+      timeout: 99,
+      nested: { a: 9 },
+    });
+  });
+
+  test("`extends` is stripped from the returned record after any inheriting load", async () => {
+    await writeFixture("base.yaml", "region: eu-south-1\n");
+    const derivedPath = await writeFixture(
+      "derived.yaml",
+      "extends: ./base.yaml\nretries: 1\n",
+    );
+
+    const loader = new M3LScriptPresetLoader({ schema: extendsMergeSchema });
+    const result = loader.load(derivedPath);
+
+    expect("extends" in result).toBe(false);
+  });
+
+  test("a direct cycle (A extends ./A) throws M3LPresetCycleError whose chain starts and ends at A's resolved path", async () => {
+    const aPath = await writeFixture("a.yaml", "extends: ./a.yaml\n");
+
+    const loader = new M3LScriptPresetLoader();
+    let thrown: unknown;
+    try {
+      loader.load(aPath);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LPresetCycleError);
+    const error = thrown as M3LPresetCycleError;
+    expect(error.code).toBe("ERR_PRESET_CYCLE");
+    expect(error.chain).toBe(error.context.chain);
+    expect(Array.isArray(error.chain)).toBe(true);
+    expect(error.chain.length).toBeGreaterThan(0);
+    const resolvedA = nodePath.resolve(aPath);
+    expect(error.chain[0]).toBe(resolvedA);
+    expect(error.chain[error.chain.length - 1]).toBe(resolvedA);
+  });
+
+  test("a transitive cycle (A extends B extends A) throws M3LPresetCycleError with an ordered chain including both resolved paths", async () => {
+    const aPath = await writeFixture("a.yaml", "extends: ./b.yaml\n");
+    const bPath = await writeFixture("b.yaml", "extends: ./a.yaml\n");
+
+    const loader = new M3LScriptPresetLoader();
+    let thrown: unknown;
+    try {
+      loader.load(aPath);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LPresetCycleError);
+    const error = thrown as M3LPresetCycleError;
+    expect(error.code).toBe("ERR_PRESET_CYCLE");
+    const resolvedA = nodePath.resolve(aPath);
+    const resolvedB = nodePath.resolve(bPath);
+    expect(error.chain.length).toBeGreaterThanOrEqual(3);
+    expect(error.chain).toContain(resolvedA);
+    expect(error.chain).toContain(resolvedB);
+  });
+
+  test("an extends chain longer than MAX_PRESET_EXTENDS_DEPTH (16) throws M3LPresetCycleError (ERR_PRESET_CYCLE) even with no repeated file", async () => {
+    // Build a 17-file non-repeating chain: file00 extends file01 extends ...
+    // extends file17 (the terminal file, no further `extends`). Loading
+    // file00 requires resolving 17 `extends` hops, one more than the
+    // documented cap of 16 — a runaway/pathological chain is treated as a
+    // cycle for safety per the contract.
+    const depth = 17;
+    for (let i = depth; i >= 0; i--) {
+      const name = `file${String(i).padStart(2, "0")}.yaml`;
+      const isTerminal = i === depth;
+      const content = isTerminal
+        ? "region: eu-south-1\n"
+        : `extends: ./file${String(i + 1).padStart(2, "0")}.yaml\n`;
+      await writeFixture(name, content);
+    }
+
+    const loader = new M3LScriptPresetLoader();
+    const topPath = nodePath.join(dir, "file00.yaml");
+
+    let thrown: unknown;
+    try {
+      loader.load(topPath);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LPresetCycleError);
+    expect((thrown as M3LPresetCycleError).code).toBe("ERR_PRESET_CYCLE");
+  });
+
+  test("`extends` resolves relative to the extending FILE's directory, not the process CWD", async () => {
+    await writeFixture("base.yaml", "region: eu-south-1\nretries: 3\n");
+    const subPath = await writeFixture(
+      "sub/derived.yaml",
+      "extends: ../base.yaml\nretries: 7\n",
+    );
+
+    // Sanity check the negative: a base.yaml resolved relative to the
+    // process CWD would not exist under CWD's "base.yaml" (this test's temp
+    // dir is never the CWD), so a correct dir-relative resolution is the
+    // only way this load can succeed at all.
+    expect(nodePath.resolve(process.cwd(), "base.yaml")).not.toBe(
+      nodePath.resolve(dir, "base.yaml"),
+    );
+
+    const loader = new M3LScriptPresetLoader({ schema: extendsMergeSchema });
+    const result = loader.load(subPath);
+
+    expect(result).toEqual({ region: "eu-south-1", retries: 7 });
+  });
+
+  test("unknown-key validation runs on the MERGED result: a base key absent from the schema still throws, and a declared base key the derived omits is inherited without error", async () => {
+    const schema = new M3LConfigSchema([
+      new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+      }),
+      new M3LConfigParameter({
+        name: "retries",
+        type: M3LConfigParameterType.INT,
+      }),
+    ]);
+
+    // Positive: base declares only `region` (declared), derived overrides
+    // `retries` (also declared) — merged result has no unknown keys.
+    await writeFixture("ok-base.yaml", "region: eu-south-1\n");
+    const okDerivedPath = await writeFixture(
+      "ok-derived.yaml",
+      "extends: ./ok-base.yaml\nretries: 5\n",
+    );
+    const okLoader = new M3LScriptPresetLoader({ schema });
+    expect(okLoader.load(okDerivedPath)).toEqual({
+      region: "eu-south-1",
+      retries: 5,
+    });
+
+    // Negative: base carries an undeclared key ("bogus") the derived never
+    // mentions — validation still catches it because it runs on the merged
+    // record, not just the derived file's own keys.
+    await writeFixture("bad-base.yaml", "region: eu-south-1\nbogus: true\n");
+    const badDerivedPath = await writeFixture(
+      "bad-derived.yaml",
+      "extends: ./bad-base.yaml\nretries: 5\n",
+    );
+    const badLoader = new M3LScriptPresetLoader({ schema });
+    expect(() => badLoader.load(badDerivedPath)).toThrow(
+      M3LPresetUnknownKeysError,
+    );
+  });
+
+  test("a YAML base extended by a JSON derived preset merges successfully across formats", async () => {
+    await writeFixture("base.yaml", "region: eu-south-1\nretries: 3\n");
+    const childPath = await writeFixture(
+      "child.json",
+      JSON.stringify({ extends: "./base.yaml", retries: 9 }),
+    );
+
+    const loader = new M3LScriptPresetLoader({ schema: extendsMergeSchema });
+    const result = loader.load(childPath);
+
+    expect(result).toEqual({ region: "eu-south-1", retries: 9 });
+  });
+
+  test("a missing extends target propagates the loader's load error (ERR_PRESET_LOAD) with the underlying fs error chained as cause", async () => {
+    const derivedPath = await writeFixture(
+      "derived.yaml",
+      "extends: ./does-not-exist.yaml\nretries: 1\n",
+    );
+
+    const loader = new M3LScriptPresetLoader();
+    let thrown: unknown;
+    try {
+      loader.load(derivedPath);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_PRESET_LOAD");
+    expect((thrown as M3LError).cause).toBeDefined();
+  });
+
+  test("a malformed-YAML extends base surfaces ERR_PRESET_LOAD with a chained cause", async () => {
+    await writeFixture("malformed.yaml", "region: [unterminated\n");
+    const derivedPath = await writeFixture(
+      "derived.yaml",
+      "extends: ./malformed.yaml\nretries: 1\n",
+    );
+
+    const loader = new M3LScriptPresetLoader();
+    let thrown: unknown;
+    try {
+      loader.load(derivedPath);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_PRESET_LOAD");
+    expect((thrown as M3LError).cause).toBeDefined();
+  });
+
+  test("a non-string extends value throws ERR_PRESET_LOAD, not silently coerced", async () => {
+    const derivedPath = await writeFixture(
+      "bad-extends.yaml",
+      "extends: 42\nretries: 1\n",
+    );
+
+    const loader = new M3LScriptPresetLoader({ schema: extendsMergeSchema });
+    let thrown: unknown;
+    try {
+      loader.load(derivedPath);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_PRESET_LOAD");
+  });
+
+  test("a base file whose top-level is a list (not a mapping) throws ERR_PRESET_LOAD", async () => {
+    await writeFixture("list-base.yaml", "- a\n- b\n");
+    const derivedPath = await writeFixture(
+      "uses-list-base.yaml",
+      "extends: ./list-base.yaml\nretries: 1\n",
+    );
+
+    const loader = new M3LScriptPresetLoader({ schema: extendsMergeSchema });
+    let thrown: unknown;
+    try {
+      loader.load(derivedPath);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_PRESET_LOAD");
+  });
+
+  test("REGRESSION: a plain preset with no `extends` still loads and validates exactly as before", async () => {
+    const schema = new M3LConfigSchema([
+      new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+      }),
+    ]);
+    const plainPath = await writeFixture("plain.yaml", "region: eu-south-1\n");
+
+    const loader = new M3LScriptPresetLoader({ schema });
+    const result = loader.load(plainPath);
+
+    expect(result).toEqual({ region: "eu-south-1" });
+  });
+
+  describe("type-level contract", () => {
+    test("M3LPresetCycleError.chain is a readonly string[]", () => {
+      expectTypeOf<M3LPresetCycleError["chain"]>().toEqualTypeOf<
+        readonly string[]
+      >();
+    });
   });
 });
 
