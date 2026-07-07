@@ -145,6 +145,12 @@ jobs:
       - name: Check hook wiring (hooks)
         run: pnpm check:hooks
 
+      # ADR-0009 dependency zones: the import-x/no-restricted-paths layering
+      # zones (internal sealing, aws island, core/script root) are still present
+      # and shaped in eslint.config.js — a deleted zone would pass lint silently.
+      - name: Check dependency-direction zones (zones)
+        run: pnpm check:zones
+
       # .worktreeinclude hygiene: no tracked files and no unresolvable literal
       # paths, so worktree:setup provisions a fresh worktree correctly.
       - name: Check worktree include
