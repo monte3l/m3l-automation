@@ -105,7 +105,9 @@ export function parseArgs(argv) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { base, head } = parseArgs(process.argv.slice(2));
   if (!base || !head) {
-    console.error("✗  Usage: check-exports-semver.mjs --base <sha> --head <sha>");
+    console.error(
+      "✗  Usage: check-exports-semver.mjs --base <sha> --head <sha>",
+    );
     process.exit(1);
   }
   try {
