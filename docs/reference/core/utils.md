@@ -81,7 +81,7 @@ await pool.runEach(itemIds, async (id) => {
 
 ## Date tokens with `M3LDateTokens`
 
-`M3LDateTokens` expands date tokens such as `{YYYY}`, `{MM}`, and `{DD}` inside path templates, producing time-stamped output directories. It is the mechanism behind the `outputs/{timestamp}/` layout used by `M3LPaths`.
+`M3LDateTokens` expands date tokens such as `{YYYY}`, `{MM}`, and `{DD}` inside path templates, producing time-stamped output directories. It is the mechanism behind the `output/{timestamp}/` layout used by `M3LPaths`.
 
 ```typescript
 import { Core } from "@m3l-automation/m3l-common";
