@@ -102,6 +102,39 @@ export function parseArgs(argv) {
   return { base: at("--base"), head: at("--head") };
 }
 
+/**
+ * Read the committed exports snapshot at a base revision, distinguishing a
+ * genuinely-absent snapshot (the file did not exist at `base` — a new-file PR, so
+ * every head key is additive) from any other failure. A bad/unknown base ref or a
+ * git error is re-thrown so the caller fails loudly: swallowing it would treat the
+ * change as all-additive and silently disable the breaking-change gate.
+ *
+ * @param {string} base  A base commit-ish.
+ * @returns {string | null}  The snapshot file contents, or null if absent at base.
+ */
+function readBaseSnapshot(base) {
+  const spec = `${base}:${snapshotRel}`;
+  // A bad/unknown base ref throws here (never mistaken for "snapshot absent").
+  execFileSync(
+    "git",
+    ["rev-parse", "--verify", "--quiet", `${base}^{commit}`],
+    {
+      cwd: root,
+      stdio: "ignore",
+    },
+  );
+  // The base ref is valid, so a cat-file miss means the path is absent at base.
+  try {
+    execFileSync("git", ["cat-file", "-e", spec], {
+      cwd: root,
+      stdio: "ignore",
+    });
+  } catch {
+    return null;
+  }
+  return execFileSync("git", ["show", spec], { cwd: root, encoding: "utf8" });
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { base, head } = parseArgs(process.argv.slice(2));
   if (!base || !head) {
@@ -112,18 +145,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
   try {
     const headMap = JSON.parse(readFileSync(join(root, snapshotRel), "utf8"));
-    let baseMap = null;
-    try {
-      baseMap = JSON.parse(
-        execFileSync("git", ["show", `${base}:${snapshotRel}`], {
-          cwd: root,
-          encoding: "utf8",
-        }),
-      );
-    } catch {
-      // Snapshot did not exist at the base commit — treat as all-additive.
-      baseMap = null;
-    }
+    // Distinguish "snapshot absent at base" (all-additive) from any other failure.
+    // A bad base ref or a malformed base snapshot must fail LOUDLY — parsing sits
+    // outside readBaseSnapshot so a corrupt base snapshot throws here rather than
+    // silently disabling the gate.
+    const baseSnapshot = readBaseSnapshot(base);
+    const baseMap = baseSnapshot === null ? null : JSON.parse(baseSnapshot);
     const { breaking } = classifyExportsDelta(baseMap, headMap);
     if (breaking.length === 0) {
       console.log("✓  No breaking exports-map delta in this PR.");
@@ -144,8 +171,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       `✗  The public exports map changed in a BREAKING way (${breaking.join(", ")})\n` +
         `   but no commit in this PR carries a breaking marker. Add a\n` +
         `   \`BREAKING CHANGE:\` footer to a commit in this PR so the semver impact\n` +
-        `   is explicit (this repo's commitlint rejects the \`feat!:\` bang — use the\n` +
-        `   footer). See CLAUDE.md "Architecture & Decisions".`,
+        `   is explicit. See CLAUDE.md "Architecture & Decisions".`,
     );
     process.exit(1);
   } catch (error) {
