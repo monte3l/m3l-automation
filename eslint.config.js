@@ -93,7 +93,7 @@ export default tseslint.config(
     // Source-only design rules (rules 01, 03). Scoped to shipped source so the
     // checks never trip on tests, config (vitest.config.ts uses a default
     // export), or tooling.
-    files: ["packages/*/src/**/*.ts"],
+    files: ["packages/*/src/**/*.ts", "scripts/*/src/**/*.ts"],
     plugins: { tsdoc },
     rules: {
       // TSDoc must be well-formed on shipped source (rules 01: documentation).
