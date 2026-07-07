@@ -35,7 +35,7 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
 // The lefthook stages the CLAUDE.md table is expected to document, keyed by the
 // stage name that appears (in backticks) in the table's first column.
-export const TRACKED_STAGES = ["pre-commit", "commit-msg", "pre-push"];
+const TRACKED_STAGES = ["pre-commit", "commit-msg", "pre-push"];
 
 /**
  * Normalise one check reference to a stable token: strip a leading `pnpm`/
