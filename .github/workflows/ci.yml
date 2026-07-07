@@ -87,6 +87,11 @@ jobs:
       - name: Check workflow docs
         run: pnpm check:workflows-doc
 
+      # The Commands cadence table in CLAUDE.md must match lefthook.yml — each
+      # lefthook stage's checks documented exactly, so the cadence can't drift.
+      - name: Check cadence docs
+        run: pnpm check:cadence
+
       # The implemented-count numerator ("N of 22") must match the ✅ rows in
       # docs/implementation-status.md across every badge / prose / HTML site.
       - name: Check implementation count
