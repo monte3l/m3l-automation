@@ -20,6 +20,7 @@ Exported from `@m3l-automation/m3l-common/core` (the `script` sub-module):
 - `M3LScriptConfigLoader`
 - `M3LScriptPresetLoader`
 - `M3LPresetUnknownKeysError`
+- `M3LPresetCycleError`
 - `installProcessGuards`
 - `serializeError`
 - `setProcessGuardRequestId`
@@ -112,6 +113,57 @@ interface M3LScriptHookContext {
 ## Preset loader
 
 `M3LScriptPresetLoader` loads named parameter presets from YAML or JSON files. It enforces a maximum nesting depth of 64 (`MAX_PRESET_STRUCTURE_DEPTH`) and uses Damerau-Levenshtein distance to suggest corrections for unknown keys. When a preset contains keys that are not recognized, it throws `M3LPresetUnknownKeysError`.
+
+### Preset inheritance (`extends`)
+
+A preset may inherit from another by declaring an optional top-level
+`extends: <path>` key. The base preset is loaded first and the extending preset
+is layered over it, so a family of presets can share a common baseline and
+override only what differs.
+
+- **Path resolution.** `extends` is a path to the base preset, resolved
+  **relative to the directory of the extending file** (not the process CWD).
+  The same YAML/JSON extension dispatch as a direct `load()` applies, so a YAML
+  preset may extend a JSON base and vice versa.
+- **Shallow merge.** The base and derived records are combined by a **shallow**
+  merge: a top-level key present in the derived preset **wholly replaces** the
+  base's key (a nested object or array is replaced as a unit, never
+  deep-merged), and a key present only in the base is inherited. Like config
+  value resolution — where a higher-priority provider wins wholesale rather than
+  merging into a lower one — `extends` never silently splices a base's nested
+  value into a derived structure. The `extends` key itself is **stripped** from
+  the returned record.
+- **Chains.** `extends` may chain (a derived preset extends a base that itself
+  extends another). Each level is resolved and merged in turn, deepest base
+  first, so the nearest override wins.
+- **Cycle & depth safety.** A cycle in the `extends` chain (a preset that,
+  directly or transitively, extends itself) throws `M3LPresetCycleError`
+  (`code: "ERR_PRESET_CYCLE"`), whose `context.chain` is the ordered list of
+  resolved file paths that form the cycle. An `extends` chain longer than
+  `MAX_PRESET_EXTENDS_DEPTH` (**16**) also throws `M3LPresetCycleError` (a
+  runaway or pathological chain is treated as a cycle for safety).
+- **Validation runs on the merged result.** The unknown-key check and the
+  structure-depth guard run on the **fully merged** record — so a base may
+  legitimately carry keys the derived file omits — and `extends` is exempt from
+  unknown-key checking at every level of the chain.
+
+```yaml
+# base.yaml
+region: eu-south-1
+retries: 3
+tags:
+  - baseline
+
+# prod.yaml
+extends: ./base.yaml
+retries: 5
+tags:
+  - prod
+```
+
+Loading `prod.yaml` yields `{ region: "eu-south-1", retries: 5, tags: ["prod"] }`
+— `region` is inherited, `retries` is overridden, and `tags` is **replaced**
+wholesale (not concatenated), with `extends` stripped.
 
 ## Usage examples
 
