@@ -13,6 +13,15 @@
  *   M3LUnknownParameterDetector, M3LConfigCoercionError, M3LConfigParseError,
  *   M3LUnsafeConfigKeyError (20 symbols).
  *
+ * WS-E addition (schema-time validation, docs/reference/core/config.md
+ * "Schema-time validation" — RED until implemented): M3LConfigValidator
+ *   (type), M3LConfigValidators (stock range/regex/oneOf), the
+ *   M3LConfigParameter `validate?` option, and M3LConfigValidationError
+ *   (code: ERR_CONFIG_VALIDATION). Validation runs on the COERCED value at
+ *   three points — eagerly on a declared defaultValue (constructor), after
+ *   provider coercion, and after asyncFallback — and its context never
+ *   carries the value itself (redaction-safe by construction).
+ *
  * Key behavioral contracts:
  *  - Providers are SYNCHRONOUS: getRawValue(key) returns unknown, undefined
  *    when absent. File parsing happens at construction.
@@ -66,6 +75,8 @@ import {
   M3LConfigProvider,
   M3LConfigReader,
   M3LConfigSchema,
+  M3LConfigValidationError,
+  M3LConfigValidators,
   M3LEnvironmentConfigProvider,
   M3LInMemoryConfigProvider,
   M3LJSONConfigProvider,
@@ -76,7 +87,10 @@ import {
   M3LUnsafeConfigKeyError,
   M3LYAMLConfigProvider,
 } from "../src/core/config/index.js";
-import type { M3LCoercedValue } from "../src/core/config/index.js";
+import type {
+  M3LCoercedValue,
+  M3LConfigValidator,
+} from "../src/core/config/index.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -1544,4 +1558,382 @@ describe("prototype-pollution guard across dangerous-key entry points", () => {
       expect(({} as Record<string, unknown>).polluted).toBeUndefined();
     },
   );
+});
+
+// =============================================================================
+// M3LConfigValidators — stock validators (constraint-only failure reasons)
+// =============================================================================
+describe("M3LConfigValidators", () => {
+  describe("range(min, max)", () => {
+    const inRange = M3LConfigValidators.range(1, 65535);
+
+    test.each([
+      [1, true],
+      [65535, true],
+    ] as const)(
+      "accepts the inclusive boundary %j -> %j",
+      (value, expected) => {
+        expect(inRange(value)).toBe(expected);
+      },
+    );
+
+    test.each([0, 70000])(
+      "rejects %j with a string reason describing the bounds but not the value",
+      (value) => {
+        const result = inRange(value);
+        expect(typeof result).toBe("string");
+        const reason = result as string;
+        expect(reason).toContain("1");
+        expect(reason).toContain("65535");
+        expect(reason).not.toContain(String(value));
+      },
+    );
+  });
+
+  describe("regex(pattern)", () => {
+    const lettersOnly = M3LConfigValidators.regex(/^[a-z]+$/);
+
+    test("accepts a matching string", () => {
+      expect(lettersOnly("hello")).toBe(true);
+    });
+
+    test("rejects a non-matching string with a reason containing the pattern but not the input", () => {
+      const result = lettersOnly("HELLO123");
+      expect(typeof result).toBe("string");
+      const reason = result as string;
+      expect(reason).toContain("^[a-z]+$");
+      expect(reason).not.toContain("HELLO123");
+    });
+  });
+
+  describe("oneOf(allowed)", () => {
+    const environment = M3LConfigValidators.oneOf(["dev", "prod"] as const);
+
+    test("accepts a member of the allowed set", () => {
+      expect(environment("dev")).toBe(true);
+    });
+
+    test("rejects a non-member with a reason listing the allowed set but not the rejected value", () => {
+      // The validator's declared input type is the allowed union; a runtime
+      // caller (e.g. a value coerced from an untyped provider) can still pass
+      // a value outside it, which is exactly the case under test.
+      const result = environment("staging" as "dev" | "prod");
+      expect(typeof result).toBe("string");
+      const reason = result as string;
+      expect(reason).toContain("dev");
+      expect(reason).toContain("prod");
+      expect(reason).not.toContain("staging");
+    });
+  });
+
+  describe("type-level contract", () => {
+    test("M3LConfigValidator<T> is (value: T) => true | string", () => {
+      expectTypeOf<M3LConfigValidator<number>>().toEqualTypeOf<
+        (value: number) => true | string
+      >();
+    });
+
+    test("range returns M3LConfigValidator<number>", () => {
+      expectTypeOf(M3LConfigValidators.range).returns.toEqualTypeOf<
+        M3LConfigValidator<number>
+      >();
+    });
+
+    test("regex returns M3LConfigValidator<string>", () => {
+      expectTypeOf(M3LConfigValidators.regex).returns.toEqualTypeOf<
+        M3LConfigValidator<string>
+      >();
+    });
+
+    test("oneOf infers T from the allowed array: oneOf(['a','b'] as const) is M3LConfigValidator<'a'|'b'>", () => {
+      const allowed = ["a", "b"] as const;
+      expectTypeOf(M3LConfigValidators.oneOf(allowed)).toEqualTypeOf<
+        M3LConfigValidator<"a" | "b">
+      >();
+    });
+
+    test("a validator typed for the wrong parameter shape is a compile error on an INT parameter", () => {
+      new M3LConfigParameter({
+        name: "port",
+        type: M3LConfigParameterType.INT,
+        // no defaultValue: the constructor eagerly validates a supplied
+        // defaultValue, and this test only asserts the compile-time mismatch
+        // of `validate`, not a runtime validation outcome.
+        // @ts-expect-error -- regex() is M3LConfigValidator<string>, not assignable to an INT parameter's number-typed validate
+        validate: M3LConfigValidators.regex(/x/),
+      });
+    });
+
+    test("a range() validator (M3LConfigValidator<number>) compiles on an INT parameter", () => {
+      expect(
+        () =>
+          new M3LConfigParameter({
+            name: "port",
+            type: M3LConfigParameterType.INT,
+            defaultValue: 3000,
+            validate: M3LConfigValidators.range(1, 65535),
+          }),
+      ).not.toThrow();
+    });
+
+    test("a boolean-returning function is NOT assignable to M3LConfigValidator<number> (return must be true | string)", () => {
+      const booleanValidator = (value: number): boolean => value > 0;
+      new M3LConfigParameter({
+        name: "port",
+        type: M3LConfigParameterType.INT,
+        defaultValue: 3000,
+        // @ts-expect-error -- a boolean-returning predicate is not M3LConfigValidator<number>; return must be `true | string`
+        validate: booleanValidator,
+      });
+    });
+  });
+});
+
+// =============================================================================
+// M3LConfigParameter `validate` option — the three validation points
+// =============================================================================
+describe("M3LConfigParameter schema-time validation", () => {
+  test("throws M3LConfigValidationError eagerly in the constructor for an out-of-range defaultValue", () => {
+    expect(
+      () =>
+        new M3LConfigParameter({
+          name: "port",
+          type: M3LConfigParameterType.INT,
+          defaultValue: 70000,
+          validate: M3LConfigValidators.range(1, 65535),
+        }),
+    ).toThrow(M3LConfigValidationError);
+  });
+
+  test("does NOT throw at construction for a defaultValue that passes its validator", () => {
+    expect(
+      () =>
+        new M3LConfigParameter({
+          name: "port",
+          type: M3LConfigParameterType.INT,
+          defaultValue: 3000,
+          validate: M3LConfigValidators.range(1, 65535),
+        }),
+    ).not.toThrow();
+  });
+
+  test("rejects with M3LConfigValidationError when a coerced provider value fails validation", async () => {
+    const reader = new M3LConfigReader([
+      new M3LInMemoryConfigProvider({ port: "70000" }),
+    ]);
+    const parameter = new M3LConfigParameter({
+      name: "port",
+      type: M3LConfigParameterType.INT,
+      validate: M3LConfigValidators.range(1, 65535),
+    });
+
+    await expect(parameter.getValueAsync(reader)).rejects.toBeInstanceOf(
+      M3LConfigValidationError,
+    );
+  });
+
+  test("resolves normally when a coerced provider value passes validation", async () => {
+    const reader = new M3LConfigReader([
+      new M3LInMemoryConfigProvider({ port: "3000" }),
+    ]);
+    const parameter = new M3LConfigParameter({
+      name: "port",
+      type: M3LConfigParameterType.INT,
+      validate: M3LConfigValidators.range(1, 65535),
+    });
+
+    await expect(parameter.getValueAsync(reader)).resolves.toBe(3000);
+  });
+
+  test("rejects with M3LConfigValidationError when the asyncFallback result fails validation", async () => {
+    const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
+    const parameter = new M3LConfigParameter({
+      name: "port",
+      type: M3LConfigParameterType.INT,
+      asyncFallback: () => Promise.resolve(70000),
+      validate: M3LConfigValidators.range(1, 65535),
+    });
+
+    await expect(parameter.getValueAsync(reader)).rejects.toBeInstanceOf(
+      M3LConfigValidationError,
+    );
+  });
+
+  test("resolves normally when the asyncFallback result passes validation", async () => {
+    const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
+    const parameter = new M3LConfigParameter({
+      name: "port",
+      type: M3LConfigParameterType.INT,
+      asyncFallback: () => Promise.resolve(3000),
+      validate: M3LConfigValidators.range(1, 65535),
+    });
+
+    await expect(parameter.getValueAsync(reader)).resolves.toBe(3000);
+  });
+
+  test("regression guard: a parameter with no validate resolves exactly as before (unchanged)", async () => {
+    const reader = new M3LConfigReader([
+      new M3LInMemoryConfigProvider({ port: "70000" }),
+    ]);
+    const parameter = new M3LConfigParameter({
+      name: "port",
+      type: M3LConfigParameterType.INT,
+    });
+
+    await expect(parameter.getValueAsync(reader)).resolves.toBe(70000);
+  });
+});
+
+// =============================================================================
+// M3LConfigValidationError
+// =============================================================================
+describe("M3LConfigValidationError", () => {
+  test("is an instance of M3LError with code ERR_CONFIG_VALIDATION", () => {
+    let thrown: unknown;
+    try {
+      new M3LConfigParameter({
+        name: "port",
+        type: M3LConfigParameterType.INT,
+        defaultValue: 70000,
+        validate: M3LConfigValidators.range(1, 65535),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect(thrown).toBeInstanceOf(M3LConfigValidationError);
+    expect((thrown as M3LConfigValidationError).code).toBe(
+      "ERR_CONFIG_VALIDATION",
+    );
+  });
+
+  test("context carries { parameter, reason, valueType } matching the failed validation", () => {
+    let thrown: unknown;
+    try {
+      new M3LConfigParameter({
+        name: "port",
+        type: M3LConfigParameterType.INT,
+        defaultValue: 70000,
+        validate: M3LConfigValidators.range(1, 65535),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConfigValidationError);
+    const validationError = thrown as M3LConfigValidationError;
+    expect(validationError.context.parameter).toBe("port");
+    expect(typeof validationError.context.reason).toBe("string");
+    expect(validationError.context.reason as string).toContain("65535");
+    expect(validationError.context.valueType).toBe("number");
+  });
+
+  test("a custom validator's failure reason surfaces via context.reason", () => {
+    const validate: M3LConfigValidator<number> = (value) =>
+      value % 2 === 0 ? true : "must be an even number";
+
+    let thrown: unknown;
+    try {
+      new M3LConfigParameter({
+        name: "evenPort",
+        type: M3LConfigParameterType.INT,
+        defaultValue: 3001,
+        validate,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConfigValidationError);
+    const validationError = thrown as M3LConfigValidationError;
+    expect(validationError.context.reason).toBe("must be an even number");
+  });
+
+  describe("type-level contract", () => {
+    test("code narrows to the literal 'ERR_CONFIG_VALIDATION'", () => {
+      expectTypeOf<
+        M3LConfigValidationError["code"]
+      >().toEqualTypeOf<"ERR_CONFIG_VALIDATION">();
+    });
+  });
+});
+
+// =============================================================================
+// Security — the resolved value never leaks through a validation failure
+// =============================================================================
+describe("M3LConfigValidationError redaction safety", () => {
+  test("a non-echoing custom validator's failure never leaks the sentinel value in message or serialized context", () => {
+    const SENTINEL = "SENTINEL_LEAK_9137";
+    // A well-behaved custom validator: the reason is a constant string that
+    // never embeds the received value.
+    const validate: M3LConfigValidator<string> = () =>
+      "must satisfy the application-defined constraint";
+
+    let thrown: unknown;
+    try {
+      new M3LConfigParameter({
+        name: "apiToken",
+        type: M3LConfigParameterType.STRING,
+        defaultValue: SENTINEL,
+        validate,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConfigValidationError);
+    const validationError = thrown as M3LConfigValidationError;
+    expect(validationError.message).not.toContain(SENTINEL);
+    expect(JSON.stringify(validationError.context)).not.toContain(SENTINEL);
+    expect(validationError.context).not.toHaveProperty("value");
+  });
+
+  test("a secret parameter's value never appears in the thrown validation error", () => {
+    const specifier = new M3LSecretsSpecifier(["dbPassword"]);
+    expect(specifier.isSecret("dbPassword")).toBe(true);
+
+    const SECRET_VALUE = "SENTINEL_SECRET_4471";
+    const validate: M3LConfigValidator<string> = () =>
+      "must satisfy the application-defined constraint";
+
+    let thrown: unknown;
+    try {
+      new M3LConfigParameter({
+        name: "dbPassword",
+        type: M3LConfigParameterType.STRING,
+        defaultValue: SECRET_VALUE,
+        validate,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConfigValidationError);
+    const validationError = thrown as M3LConfigValidationError;
+    expect(validationError.message).not.toContain(SECRET_VALUE);
+    expect(JSON.stringify(validationError.context)).not.toContain(SECRET_VALUE);
+  });
+
+  test("context carries only parameter, reason, and valueType — no value or valueLength key", () => {
+    let thrown: unknown;
+    try {
+      new M3LConfigParameter({
+        name: "port",
+        type: M3LConfigParameterType.INT,
+        defaultValue: 70000,
+        validate: M3LConfigValidators.range(1, 65535),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConfigValidationError);
+    const validationError = thrown as M3LConfigValidationError;
+    expect(validationError.context).not.toHaveProperty("value");
+    expect(validationError.context).not.toHaveProperty("valueLength");
+    expect(Object.keys(validationError.context).sort()).toEqual(
+      ["parameter", "reason", "valueType"].sort(),
+    );
+  });
 });
