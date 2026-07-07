@@ -1,6 +1,6 @@
 {
   "name": "@m3l-automation/m3l-common",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "Utilities library with enterprise-grade abstractions for automation scripts: configuration, logging, error handling, import/export, polling/retry, and AWS integration.",
   "license": "Apache-2.0",
