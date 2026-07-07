@@ -1850,6 +1850,24 @@ describe("M3LConfigValidationError", () => {
     expect(validationError.context.reason).toBe("must be an even number");
   });
 
+  test("chains an underlying cause when provided", () => {
+    const cause = new Error("root");
+    const error = new M3LConfigValidationError("bad value", { cause });
+
+    expect(error).toBeInstanceOf(M3LError);
+    expect(error).toBeInstanceOf(M3LConfigValidationError);
+    expect(error.code).toBe("ERR_CONFIG_VALIDATION");
+    expect(error.cause).toBe(cause);
+  });
+
+  test("constructs with no options at all: code is set and context defaults to empty", () => {
+    const error = new M3LConfigValidationError("bad value");
+
+    expect(error.code).toBe("ERR_CONFIG_VALIDATION");
+    expect(error.context).toEqual({});
+    expect(error.cause).toBeUndefined();
+  });
+
   describe("type-level contract", () => {
     test("code narrows to the literal 'ERR_CONFIG_VALIDATION'", () => {
       expectTypeOf<
