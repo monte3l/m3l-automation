@@ -19,6 +19,8 @@ export * from "./M3LConfigParseError.js";
 export * from "./M3LConfigProvider.js";
 export * from "./M3LConfigReader.js";
 export * from "./M3LConfigSchema.js";
+export * from "./M3LConfigValidationError.js";
+export * from "./M3LConfigValidator.js";
 export * from "./M3LEnvironmentConfigProvider.js";
 export * from "./M3LInMemoryConfigProvider.js";
 export * from "./M3LJSONConfigProvider.js";
