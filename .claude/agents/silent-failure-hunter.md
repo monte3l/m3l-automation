@@ -177,3 +177,8 @@ in one sentence, and a corrected-code snippet. Group all findings as
 **Must-fix** (CRITICAL + HIGH), **Should-fix** (MEDIUM), **Nits**. Cite
 `file:line` and the violated rule (CLAUDE.md §Error Handling). End with a
 one-line verdict.
+
+**Scope discipline.** Reserve CRITICAL/HIGH for a failure that is genuinely
+silenced or mistyped in a real, reachable path — don't escalate a theoretical or
+unreachable catch to justify a finding. If the error paths are sound, say so: an
+empty Must-fix list is a valid, expected result, not a sign you missed something.

@@ -99,3 +99,6 @@ typing reason.
 
 Stay strictly within the documented contract — don't invent requirements the
 spec doesn't state, and don't review code quality (that's `code-reviewer`'s job).
+A fully matching implementation should return **conformant** with an empty
+findings list; report only genuine missing / extra / drifted / unmet-contract
+items, and never manufacture drift to justify the pass.
