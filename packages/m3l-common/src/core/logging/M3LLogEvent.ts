@@ -34,6 +34,15 @@ export interface M3LLogEvent {
   readonly indent?: number;
   /** Optional event timestamp. */
   readonly timestamp?: Date;
+  /**
+   * Optional per-run trace identifier. When the {@link M3LLogger} that
+   * produced this event was constructed with a `correlationId` (see
+   * {@link M3LLoggerOptions}), every event it dispatches carries the same
+   * id so a downstream aggregator (CloudWatch Insights, etc.) can group all
+   * the lines from one script run or Lambda invocation. Not a secret — it is
+   * never redacted by {@link redactSensitiveLogValue} / {@link redactSensitiveLogText}.
+   */
+  readonly correlationId?: string;
 }
 
 /**

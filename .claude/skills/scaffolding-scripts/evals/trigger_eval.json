@@ -1,0 +1,46 @@
+[
+  {
+    "query": "scaffold a new automation script called report-generator under scripts/",
+    "should_trigger": true
+  },
+  {
+    "query": "set up a new export script that reads records and writes a batch file — nothing exists for it yet",
+    "should_trigger": true
+  },
+  {
+    "query": "add a new consumer script that syncs S3 objects into DynamoDB, it needs an aws profile",
+    "should_trigger": true
+  },
+  {
+    "query": "I want a brand-new CLI automation under scripts/ to archive old runs — greenfield, no directory yet",
+    "should_trigger": true
+  },
+  {
+    "query": "create a script that polls an SQS queue and processes messages, from scratch",
+    "should_trigger": true
+  },
+  {
+    "query": "add a brand-new scheduler module to the library — there's no spec or src for it yet",
+    "should_trigger": false
+  },
+  {
+    "query": "scaffold a new aws module for DynamoDB operations in packages/m3l-common",
+    "should_trigger": false
+  },
+  {
+    "query": "implement the core/polling submodule — it already has a spec at docs/reference/core/polling.md",
+    "should_trigger": false
+  },
+  {
+    "query": "the s3-export script already exists — add the batching logic to its steps/ modules",
+    "should_trigger": false
+  },
+  {
+    "query": "create a PR for the report-generator script I just scaffolded",
+    "should_trigger": false
+  },
+  {
+    "query": "commit the scaffolding I just did for the export script",
+    "should_trigger": false
+  }
+]

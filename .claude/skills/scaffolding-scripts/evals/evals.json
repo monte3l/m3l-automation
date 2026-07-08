@@ -1,0 +1,57 @@
+{
+  "skill_name": "scaffolding-scripts",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Set up a new automation script called 's3-export' — it reads records, batches them, and writes an export file. It needs AWS access via a profile.",
+      "expected_output": "Ran /starting-work first; scaffolded scripts/s3-export/ with package.json (@m3l-automation/s3-export, workspace:* dep), tsconfig.json extending tsconfig.base.json, and a modular src/ skeleton: thin main.ts composition root, config.ts declaring M3LConfigParameter set (including an AWS_PROFILE_PARAM_NAME parameter) with M3LConfigValidators, hooks.ts, and a steps/run-export.ts starter taking injected deps. Added the root tsconfig.json reference, ran pnpm install + pnpm build + the smoke run, then handed off implementation.",
+      "files": [],
+      "expectations": [
+        "Runs /starting-work before writing any scripts/*/src path",
+        "Creates scripts/s3-export/package.json naming @m3l-automation/s3-export with a workspace:* dependency on @m3l-automation/m3l-common",
+        "Creates scripts/s3-export/tsconfig.json extending ../../tsconfig.base.json with a reference to packages/m3l-common/tsconfig.build.json",
+        "main.ts is a thin composition root that constructs Core.M3LScript and calls script.run — no business logic",
+        "Business logic lives in a steps/ module that takes its dependencies as parameters (not module-level state, not process.env)",
+        "config.ts declares parameters with M3LConfigParameter and uses M3LConfigValidators, including an AWS_PROFILE_PARAM_NAME parameter because the script touches AWS",
+        "Relative imports carry the .js extension and all exports are named (no default export, no any)",
+        "Adds the scripts/s3-export project reference to the root tsconfig.json",
+        "Hands off the real logic to implementation rather than writing it inline"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Add a report-generator automation under scripts/ — CLI only, no AWS. It should take a batchSize config parameter.",
+      "expected_output": "Scaffolded scripts/report-generator/ in the modular layout with a batchSize M3LConfigParameter validated by M3LConfigValidators.range, no AWS profile parameter, root tsconfig reference added, built and smoke-run, implementation handed off.",
+      "files": [],
+      "expectations": [
+        "Creates scripts/report-generator/ with package.json, tsconfig.json, and a modular src/ skeleton (main.ts + config.ts + steps/)",
+        "config.ts declares a batchSize parameter with a schema-time validator",
+        "Does NOT add an AWS profile parameter since the script is CLI-only with no AWS",
+        "main.ts stays a composition root with logic in steps/ modules",
+        "Adds the root tsconfig.json project reference for the new package"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Scaffold a new script called s3-export — the batching logic and AWS wiring.",
+      "expected_output": "Skill detects scripts/s3-export/ already exists and stops, telling the user to implement/edit the existing script directly rather than re-scaffolding it.",
+      "files": [],
+      "expectations": [
+        "Skill checks whether scripts/s3-export/ already exists before scaffolding",
+        "Skill stops and redirects to implementing/editing the existing script when the directory already exists",
+        "No files are created or overwritten"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Scaffold a new module for the library — a 'cache' capability. Nothing exists for it yet.",
+      "expected_output": "Skill recognizes this is a library module, not a consumer script, and redirects the user to scaffolding-submodules (which scaffolds a new Core/AWS submodule under packages/m3l-common) instead of creating anything under scripts/.",
+      "files": [],
+      "expectations": [
+        "Skill distinguishes a library module from a consumer script",
+        "Skill redirects to scaffolding-submodules for a new library module",
+        "Does NOT create anything under scripts/"
+      ]
+    }
+  ]
+}

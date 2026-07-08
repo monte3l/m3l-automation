@@ -118,7 +118,7 @@ Call `EnterPlanMode`. Write a structured plan with:
 - Each section: what to build, where it lives, how to verify it.
 - A verification checklist at the end.
 
-When the plan will touch `packages/*/src/**` or
+When the plan will touch `packages/*/src/**`, `scripts/*/src/**`, or
 `**/tests/**`, make **running `/starting-work` the first implementation step** — it
 is the single source of truth for the branch/worktree, PR, and push decisions and
 confirms them with the user. This matters because `guard-branch-isolation.mjs`

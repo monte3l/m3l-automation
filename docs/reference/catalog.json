@@ -43,7 +43,10 @@
       "M3LUnknownParameterDetector",
       "M3LConfigCoercionError",
       "M3LConfigParseError",
-      "M3LUnsafeConfigKeyError"
+      "M3LUnsafeConfigKeyError",
+      "M3LConfigValidator",
+      "M3LConfigValidators",
+      "M3LConfigValidationError"
     ]
   },
   {
@@ -203,7 +206,8 @@
       "M3LTableOptions",
       "M3LTableColumn",
       "redactSensitiveLogText",
-      "redactSensitiveLogValue"
+      "redactSensitiveLogValue",
+      "M3LLoggerOptions"
     ]
   },
   {
@@ -265,7 +269,18 @@
       "combineClassifiers",
       "awsThrottlingClassifier",
       "awsNetworkClassifier",
-      "httpRetryAfterClassifier"
+      "httpRetryAfterClassifier",
+      "M3LPollerEventMap",
+      "M3LPollAttemptPayload",
+      "M3LPollWaitPayload",
+      "M3LPollSuccessPayload",
+      "M3LPollExhaustedPayload",
+      "M3LRetryEventMap",
+      "M3LRetryAttemptPayload",
+      "M3LRetryScheduledPayload",
+      "M3LRetrySuccessPayload",
+      "M3LRetryFatalPayload",
+      "M3LRetryExhaustedPayload"
     ]
   },
   {
@@ -308,7 +323,8 @@
       "M3LPresetUnknownKeysError",
       "installProcessGuards",
       "serializeError",
-      "setProcessGuardRequestId"
+      "setProcessGuardRequestId",
+      "M3LPresetCycleError"
     ]
   },
   {

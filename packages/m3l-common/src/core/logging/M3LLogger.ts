@@ -11,6 +11,29 @@ import { M3LTableFormatter } from "./M3LTableFormatter.js";
 import type { M3LTableOptions } from "./M3LTableFormatter.js";
 
 /**
+ * Optional construction options for {@link M3LLogger}.
+ *
+ * @example
+ * ```ts
+ * import { M3LLogger } from "@m3l-automation/m3l-common/core";
+ * import type { M3LLoggerOptions } from "@m3l-automation/m3l-common/core";
+ *
+ * const options: M3LLoggerOptions = { correlationId: "run-1234" };
+ * const logger = new M3LLogger([], options);
+ * ```
+ */
+export interface M3LLoggerOptions {
+  /**
+   * A per-run trace identifier stamped onto every {@link M3LLogEvent} this
+   * logger dispatches. Lets a downstream aggregator (CloudWatch Insights, a
+   * log collector) group all the lines emitted during one script run or
+   * Lambda invocation. Not a secret — redaction helpers pass it through
+   * untouched.
+   */
+  readonly correlationId?: string;
+}
+
+/**
  * Fans structured {@link M3LLogEvent} messages out to an ordered array of
  * handlers — console, file, JSON, or any custom sink implementing the
  * internal handler port. Every message method produces exactly one event
@@ -34,15 +57,22 @@ import type { M3LTableOptions } from "./M3LTableFormatter.js";
 export class M3LLogger {
   readonly #handlers: readonly M3LLoggerHandler[];
   readonly #formatter = new M3LTableFormatter();
+  readonly #correlationId: string | undefined;
 
   /**
    * Creates a logger over the given ordered handler array.
    *
    * @param handlers - The handlers to fan events out to, in call order. An
    *   empty array is accepted; message methods then become no-ops.
+   * @param options - Optional construction options. When `correlationId` is
+   *   supplied, it is stamped onto every event this logger dispatches.
    */
-  constructor(handlers: readonly M3LLoggerHandler[]) {
+  constructor(
+    handlers: readonly M3LLoggerHandler[],
+    options?: M3LLoggerOptions,
+  ) {
     this.#handlers = handlers;
+    this.#correlationId = options?.correlationId;
   }
 
   /** Emits a `TEXT` event. */
@@ -152,8 +182,14 @@ export class M3LLogger {
     const timestamp = new Date();
     const event: M3LLogEvent =
       data === undefined
-        ? { category, message, timestamp }
-        : { category, message, data, timestamp };
+        ? { category, message, timestamp, ...this.correlationIdField() }
+        : {
+            category,
+            message,
+            data,
+            timestamp,
+            ...this.correlationIdField(),
+          };
     this.dispatch(event);
   }
 
@@ -167,7 +203,19 @@ export class M3LLogger {
       category: M3LLogEventCategory.TEXT,
       message: rendered,
       timestamp: new Date(),
+      ...this.correlationIdField(),
     });
+  }
+
+  /**
+   * Returns `{ correlationId }` when this logger was constructed with one,
+   * or an empty object otherwise — a conditional spread so the field is
+   * genuinely absent (not `undefined`) under `exactOptionalPropertyTypes`.
+   */
+  private correlationIdField(): { readonly correlationId?: string } {
+    return this.#correlationId !== undefined
+      ? { correlationId: this.#correlationId }
+      : {};
   }
 
   /**
