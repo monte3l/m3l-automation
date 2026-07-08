@@ -41,6 +41,12 @@ deserialization, not network perimeter.
 Group findings as **Must-fix**, **Should-fix**, **Nits**, each citing `file:line`
 and the rule. End with a one-line verdict.
 
+**Scope discipline.** Reserve **Must-fix** for a concrete, demonstrable path by
+which a secret, credential, or unvalidated input causes harm — not a theoretical
+hardening nice-to-have. A sound surface should yield few or no Must-fix items;
+put defense-in-depth suggestions in **Nits** as explicitly optional, and don't
+invent risks to justify the review.
+
 ## What findings look like
 
 **1 — Secret reaches a log sink (must-fix):**
@@ -75,3 +81,29 @@ await sts.send(new GetCallerIdentityCommand({}));
 
 Don't flag general code-quality issues (that's `code-reviewer`) — stay on the
 security surface.
+
+## Refute mode (high-risk surface only)
+
+The hub may dispatch you a **second time**, in _refute mode_, after a first-pass
+security review has already come back clean — but only for the highest-risk,
+hardest-to-reverse surface (anything under `aws/**`, or code that redacts secrets
+or resolves credentials). This is the adversarial "have a fresh model try to
+refute the result" check; the goal is to break the clean verdict, not confirm it.
+
+In this mode, invert your default: **assume the surface is unsafe and try to
+prove it.** Construct the concrete path by which
+
+- a declared secret reaches a log sink un-redacted (a code path that bypasses
+  `redactSensitiveLogValue` / `redactSensitiveLogText`, an error message or
+  `toJSON()` that embeds the raw value, a thrown `M3LError` whose `cause` carries
+  it), or
+- a credential check reports valid without a real STS `GetCallerIdentity`
+  resolution (a fallback that trusts profile-file presence, a cached/short-circuit
+  path, a swallowed STS error treated as success), or
+- external input reaches object construction without the `isDangerousKey` guard.
+
+**Default to a finding when uncertain** — the burden is on the code to prove it is
+safe, not on you to prove it is broken. If after a genuine attempt you cannot
+construct any such path, report **refutation failed → confirmed safe** with the
+specific attempts you made and why each is blocked. The hub confirms the surface
+only when refutation fails.

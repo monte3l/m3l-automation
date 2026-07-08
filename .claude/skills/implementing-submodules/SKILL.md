@@ -67,10 +67,9 @@ ADR-0013 (its durable home), not a per-plan caveat.
 - [ ] Step 5 — RED: `test-author` → writes failing tests; update status file → 🧪
 - [ ] Step 6 — GREEN: `submodule-implementer` → writes `src/` until tests pass;
       update status file → 🟢
-- [ ] Step 7 — Review: `code-reviewer` + `spec-conformance-reviewer` (parallel);
-      add `security-reviewer` for aws/secrets/logging surface;
-      add `type-design-analyzer` whenever the module introduces or changes public types (every Core/AWS module qualifies);
-      add `silent-failure-hunter` when the module has error-handling or async paths;
+- [ ] Step 7 — Review: select every applicable reviewer first, then dispatch the
+      whole set in **one message** so they run in parallel (Phase 4) —
+      `code-reviewer` + `spec-conformance-reviewer` (always); + `security-reviewer` for the aws/secrets/logging surface; + `type-design-analyzer` whenever the module introduces or changes public types (every Core/AWS module qualifies); + `silent-failure-hunter` when the module has error-handling or async paths;
       iterate until clean; update status file → ✅
 - [ ] Step 8 — Final verify: `pnpm build && pnpm test && pnpm lint && pnpm typecheck`;
       generate provenance sidecar (exported symbols only); then invoke `/syncing-docs`
@@ -183,7 +182,19 @@ ADR-0013 (its durable home), not a per-plan caveat.
    types (every Core/AWS module qualifies), and `silent-failure-hunter` whenever
    the module has error-handling or async paths. Collect their findings, send
    **Must-fix** items back to `submodule-implementer`, and re-run tests/review
-   until clean. Update the state file: → ✅ reviewed/done.
+   until clean.
+
+   **Adversarial refute pass (high-risk surface only).** When the diff touches
+   `aws/**` or code that redacts secrets or resolves credentials, and the
+   first-pass `security-reviewer` came back clean, dispatch a **second**
+   `security-reviewer` in _refute mode_ (see its agent definition): it assumes the
+   surface is unsafe and tries to construct a concrete leak/bypass, defaulting to a
+   finding when uncertain. Confirm the surface only when refutation **fails**; if
+   it succeeds, route the finding back to `submodule-implementer` like any
+   Must-fix. Skip this pass entirely for non-security surfaces — it is deliberately
+   not run on every module, to avoid the over-review cost.
+
+   Update the state file: → ✅ reviewed/done.
 
 8. **Final verify, reconcile docs, and report.** Run
    `pnpm -C packages/m3l-common build && pnpm test && pnpm lint && pnpm typecheck`.
