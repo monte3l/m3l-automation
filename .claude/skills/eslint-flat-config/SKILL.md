@@ -42,7 +42,7 @@ deliberate:
    resolver, and enforces the project's rules (`.js` extension via
    `import-x/extensions`, `no-explicit-any`, `no-floating-promises`, the CommonJS
    ban, `import-x/no-unresolved` ignoring `^@m3l-automation/`, etc.).
-4. **`packages/*/src/**` (shipped source only)** — stricter
+4. **`packages/*/src/**`, `scripts/*/src/**` (shipped source only)** — stricter
    design rules that must not trip tests or config: `tsdoc/syntax`,
    `import-x/no-default-export`, `complexity`, `max-depth`,
    `no-magic-numbers`.

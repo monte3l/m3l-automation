@@ -32,3 +32,17 @@ export {
   combineClassifiers,
   httpRetryAfterClassifier,
 } from "./classifiers.js";
+
+export type {
+  M3LPollAttemptPayload,
+  M3LPollerEventMap,
+  M3LPollExhaustedPayload,
+  M3LPollSuccessPayload,
+  M3LPollWaitPayload,
+  M3LRetryAttemptPayload,
+  M3LRetryEventMap,
+  M3LRetryExhaustedPayload,
+  M3LRetryFatalPayload,
+  M3LRetryScheduledPayload,
+  M3LRetrySuccessPayload,
+} from "./events.js";

@@ -140,7 +140,7 @@ M3L_BASE_DIR=/tmp
 Set these as environment variables on the function. `M3L_DEPLOYMENT_MODE`
 forces standalone path resolution (rather than walking the filesystem looking
 for monorepo markers that do not exist in the deployment package), and
-`M3L_BASE_DIR=/tmp` ensures the configs/inputs/outputs directories resolve
+`M3L_BASE_DIR=/tmp` ensures the config/input/output directories resolve
 under the writable `/tmp` mount. See the
 [environments and paths guide](./environments-and-paths.md) for the full set of
 `M3L_*` overrides and how standalone path layout works.

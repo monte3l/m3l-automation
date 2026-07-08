@@ -93,7 +93,7 @@ export default tseslint.config(
     // Source-only design rules (rules 01, 03). Scoped to shipped source so the
     // checks never trip on tests, config (vitest.config.ts uses a default
     // export), or tooling.
-    files: ["packages/*/src/**/*.ts"],
+    files: ["packages/*/src/**/*.ts", "scripts/*/src/**/*.ts"],
     plugins: { tsdoc },
     rules: {
       // TSDoc must be well-formed on shipped source (rules 01: documentation).
@@ -169,6 +169,24 @@ export default tseslint.config(
     },
   },
   {
+    // Scripts must never read `process.env` directly — configuration flows
+    // through `M3LConfigParameter` and is read from the resolved config
+    // (scripts.md / ADR-0022). This is the mechanically-checkable half of that
+    // rule; the composition-root / injected-deps guidance stays advisory.
+    files: ["scripts/*/src/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "MemberExpression[object.name='process'][property.name='env']",
+          message:
+            "Scripts must not read process.env directly — declare config via M3LConfigParameter and read it from the resolved config (scripts.md).",
+        },
+      ],
+    },
+  },
+  {
     // `internal/` is private and MUST NOT be re-exported through a public
     // barrel (rules 04 / ADR 0004 — the exports map stays at three entries).
     // Forbid the public entry points from importing it at all.
@@ -187,6 +205,70 @@ export default tseslint.config(
               from: "./packages/m3l-common/src/internal",
               message:
                 "internal/ is private; never re-export it through a public barrel (ADR 0004).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // ADR-0009 dependency-direction zones (deepen-first WS-G). The module
+    // layering, from leaf outward:
+    //   leaf:  core/errors, core/events, core/security, core/prompt (no core deps)
+    //   mid:   core/utils -> analysis/config/json/exporters/network/polling/...
+    //          -> core/{logging, importers, files}
+    //   root:  core/script (composition root; imports many core modules; nothing
+    //          imports it)
+    //   aws/**: a separate island depending only on core/errors + core/prompt
+    // These path-based zones encode the real, acyclic graph. `no-restricted-paths`
+    // is NOT type-aware, so core/script's type-only imports from aws/ and its
+    // lazy `await import()` AWS-provisioning seam are intentionally left
+    // unrestricted here — they are compile-erased / runtime-only and create no
+    // static core -> aws cycle. The public barrels (core/index.ts, aws/index.ts)
+    // are excluded because they legitimately re-export every submodule (including
+    // core/script); the internal/-sealing block above owns the barrels.
+    //
+    // Zone A: aws/** may import only core/errors and core/prompt.
+    files: ["packages/m3l-common/src/aws/**/*.ts"],
+    ignores: ["packages/m3l-common/src/aws/index.ts"],
+    rules: {
+      "import-x/no-restricted-paths": [
+        "error",
+        {
+          zones: [
+            {
+              target: "./packages/m3l-common/src/aws",
+              from: "./packages/m3l-common/src/core",
+              // `except` paths are relative to `from` (core).
+              except: ["errors", "prompt"],
+              message:
+                "aws/* may import only core/errors and core/prompt — no other core module (ADR-0009 layering).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Zone B: core/script is the composition root — no OTHER core module may
+    // import it. Scoped to core/** but excluding core/script itself (its own
+    // intra-module imports are legitimate) and the core barrel (which re-exports
+    // it). See the ADR-0009 layering comment above.
+    files: ["packages/m3l-common/src/core/**/*.ts"],
+    ignores: [
+      "packages/m3l-common/src/core/script/**",
+      "packages/m3l-common/src/core/index.ts",
+    ],
+    rules: {
+      "import-x/no-restricted-paths": [
+        "error",
+        {
+          zones: [
+            {
+              target: "./packages/m3l-common/src/core",
+              from: "./packages/m3l-common/src/core/script",
+              message:
+                "core/script is the composition root; no other core module may import it (ADR-0009 layering).",
             },
           ],
         },

@@ -20,6 +20,7 @@ Exported from `@m3l-automation/m3l-common/core` (the `script` sub-module):
 - `M3LScriptConfigLoader`
 - `M3LScriptPresetLoader`
 - `M3LPresetUnknownKeysError`
+- `M3LPresetCycleError`
 - `installProcessGuards`
 - `serializeError`
 - `setProcessGuardRequestId`
@@ -57,7 +58,9 @@ The eight hooks declared on `M3LScriptLifecycleHooks` are, in execution order:
 - `onError`
 - `onCleanup`
 
-Each hook receives a `M3LScriptHookContext` carrying the live config store, so a hook can read resolved configuration during any stage.
+Each hook receives a `M3LScriptHookContext` carrying the live config store and
+the run's `correlationId` (see [Correlation IDs](#correlation-ids)), so a hook
+can read resolved configuration and the trace id during any stage.
 
 ## Signal handling
 
@@ -67,9 +70,100 @@ Signal handlers for `SIGTERM`, `SIGINT`, and `SIGQUIT` are registered only in no
 
 `installProcessGuards()` is a process-global singleton that installs `unhandledRejection`, `uncaughtException`, `warning`, and `beforeExit` handlers. In Lambda, call `setProcessGuardRequestId(requestId)` to attribute guard-caught errors to the current invocation. `serializeError` produces a serializable representation of an error for these guard paths.
 
+## Correlation IDs
+
+`M3LScript` threads one optional **correlation id** through a run so hooks, logs,
+and failure diagnostics can all be tied back to the same execution.
+
+```typescript
+interface M3LScriptOptions {
+  // ...existing fields
+  readonly correlationId?: string; // optional; generated per run when omitted
+}
+
+interface M3LScriptHookContext {
+  readonly config: M3LReadonlyConfig;
+  readonly correlationId: string; // always resolved by the first hook
+}
+```
+
+- **Resolution.** When `options.correlationId` is supplied it is used verbatim
+  for the run. When omitted, `run()` generates one per process run via
+  `crypto.randomUUID()`. The id is resolved before the first hook fires, so
+  `ctx.correlationId` on `M3LScriptHookContext` is always a non-empty string.
+- **Lambda.** `createLambdaHandler()` resolves an id **per invocation**,
+  preferring the platform request id when the runtime context exposes one
+  (`context.awsRequestId`) over a generated UUID — so a run's logs line up with
+  the Lambda request in CloudWatch. An explicit `options.correlationId` still
+  wins if provided. This aligns with `setProcessGuardRequestId()`, which
+  attributes guard-caught faults to the same invocation.
+- **Logs.** Correlated logging is opt-in: `M3LScript` does not emit log lines of
+  its own, so it stamps no logger for you. To tie your log lines to the run,
+  construct a logger with the id — `new M3LLogger(handlers, { correlationId })` —
+  seeding it from `ctx.correlationId` (available in the first hook) or from the
+  `correlationId` you passed in `M3LScriptOptions`. Every event such a logger
+  emits carries the id, and `M3LJsonLoggerHandler` includes it in the JSON line
+  (see [`logging` → Correlation IDs](./logging.md#correlation-ids)).
+- **Failure traceability.** On a stage failure the id is observable two ways
+  without mutating the thrown error (whose `context` is `readonly`): the
+  `onError` hook receives it via `ctx.correlationId`, and the best-effort stderr
+  diagnostics line carries it **after** redaction, so a failed run is traceable
+  to its id. A correlation id is not a secret and is never redacted.
+
 ## Preset loader
 
 `M3LScriptPresetLoader` loads named parameter presets from YAML or JSON files. It enforces a maximum nesting depth of 64 (`MAX_PRESET_STRUCTURE_DEPTH`) and uses Damerau-Levenshtein distance to suggest corrections for unknown keys. When a preset contains keys that are not recognized, it throws `M3LPresetUnknownKeysError`.
+
+### Preset inheritance (`extends`)
+
+A preset may inherit from another by declaring an optional top-level
+`extends: <path>` key. The base preset is loaded first and the extending preset
+is layered over it, so a family of presets can share a common baseline and
+override only what differs.
+
+- **Path resolution.** `extends` is a path to the base preset, resolved
+  **relative to the directory of the extending file** (not the process CWD).
+  The same YAML/JSON extension dispatch as a direct `load()` applies, so a YAML
+  preset may extend a JSON base and vice versa.
+- **Shallow merge.** The base and derived records are combined by a **shallow**
+  merge: a top-level key present in the derived preset **wholly replaces** the
+  base's key (a nested object or array is replaced as a unit, never
+  deep-merged), and a key present only in the base is inherited. Like config
+  value resolution — where a higher-priority provider wins wholesale rather than
+  merging into a lower one — `extends` never silently splices a base's nested
+  value into a derived structure. The `extends` key itself is **stripped** from
+  the returned record.
+- **Chains.** `extends` may chain (a derived preset extends a base that itself
+  extends another). Each level is resolved and merged in turn, deepest base
+  first, so the nearest override wins.
+- **Cycle & depth safety.** A cycle in the `extends` chain (a preset that,
+  directly or transitively, extends itself) throws `M3LPresetCycleError`
+  (`code: "ERR_PRESET_CYCLE"`), whose `context.chain` is the ordered list of
+  resolved file paths that form the cycle. An `extends` chain longer than
+  `MAX_PRESET_EXTENDS_DEPTH` (**16**) also throws `M3LPresetCycleError` (a
+  runaway or pathological chain is treated as a cycle for safety).
+- **Validation runs on the merged result.** The unknown-key check and the
+  structure-depth guard run on the **fully merged** record — so a base may
+  legitimately carry keys the derived file omits — and `extends` is exempt from
+  unknown-key checking at every level of the chain.
+
+```yaml
+# base.yaml
+region: eu-south-1
+retries: 3
+tags:
+  - baseline
+
+# prod.yaml
+extends: ./base.yaml
+retries: 5
+tags:
+  - prod
+```
+
+Loading `prod.yaml` yields `{ region: "eu-south-1", retries: 5, tags: ["prod"] }`
+— `region` is inherited, `retries` is overridden, and `tags` is **replaced**
+wholesale (not concatenated), with `extends` stripped.
 
 ## Usage examples
 

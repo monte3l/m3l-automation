@@ -1,11 +1,12 @@
 ---
 paths:
   - "packages/m3l-common/src/**"
+  - "scripts/**"
   - "**/tests/**"
   - "**/*.test.ts"
 ---
 
-# Refactoring rules (source & tests)
+# Refactoring rules (source, scripts & tests)
 
 > Canonical rationale: [`docs/contributing/style-guide.md` § Refactoring existing
 > code & tests](../../docs/contributing/style-guide.md#part-3--refactoring-existing-code--tests).

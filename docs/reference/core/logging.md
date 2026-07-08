@@ -13,7 +13,8 @@ Three built-in handlers cover the common sinks, and a table formatter renders al
 Public surface (`logging/index.ts`):
 
 - `M3LLogger` — the logger facade over an ordered handler array.
-- `M3LLogEvent` — the per-message event object.
+- `M3LLoggerOptions` — optional logger construction options (currently `correlationId`).
+- `M3LLogEvent` — the per-message event object (carries an optional `correlationId`).
 - `M3LLogEventCategory` — the event category enum (nine categories).
 - `M3LConsoleLoggerHandler`, `M3LFileLoggerHandler`, `M3LJsonLoggerHandler` — the three built-in handlers.
 - `M3LTableFormatter`, `M3LTableOptions`, `M3LTableColumn` — table rendering.
@@ -29,6 +30,38 @@ Public surface (`logging/index.ts`):
 ### `M3LLogEventCategory`
 
 Nine categories: `TEXT`, `STEP`, `SUCCESS`, `ERROR`, `FATAL`, `WARNING`, `HEADER`, `INFO`, `SECTION`.
+
+### Correlation IDs
+
+Every `M3LLogEvent` carries an optional `correlationId?: string` — a per-run
+trace identifier that lets a downstream system (CloudWatch Insights, a log
+aggregator) group all the lines emitted during one script run or Lambda
+invocation.
+
+```typescript
+interface M3LLoggerOptions {
+  readonly correlationId?: string;
+}
+
+// A logger constructed with a correlationId stamps it onto every event it emits.
+new M3LLogger(handlers: readonly M3LLoggerHandler[], options?: M3LLoggerOptions);
+```
+
+- The constructor widens additively — `new M3LLogger(handlers)` keeps working
+  unchanged; `new M3LLogger(handlers, { correlationId })` stamps the id onto the
+  `correlationId` field of every event the logger dispatches.
+- The `M3LJsonLoggerHandler` includes `correlationId` in the emitted JSON line
+  when present; handlers that ignore the field keep working.
+- `M3LScript` resolves one correlation id per run and exposes it on the hook
+  context (`ctx.correlationId`, see
+  [`script` → Correlation IDs](./script.md#correlation-ids)). It emits no log
+  lines itself; to correlate your own logs, construct a logger with that id via
+  the constructor option above (or seed it from `M3LScriptOptions.correlationId`,
+  which you know up front).
+- **Not redacted.** A correlation id is a tracing value, not a secret: the key
+  `correlationId` matches no sensitive-key pattern, so
+  `redactSensitiveLogValue` / `redactSensitiveLogText` pass it through
+  untouched. It never displaces or short-circuits redaction of other fields.
 
 ## Usage examples
 

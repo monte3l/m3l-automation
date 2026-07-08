@@ -13,11 +13,13 @@
  *      foreign / non-HTTP error → "unknown"; when the error carries
  *      retryAfterMs → { decision: "retriable", delayMs: retryAfterMs }.
  *
- * Exports under test (13): M3LPoller, M3LRetryRunner, M3LBackoff,
- *   M3LPollingPolicies (classes); M3LPollCheckFn, M3LPollDecision,
+ * Exports under test (13 VALUE exports): M3LPoller, M3LRetryRunner,
+ *   M3LBackoff, M3LPollingPolicies (classes); M3LPollCheckFn, M3LPollDecision,
  *   M3LRetryClassifier, M3LRetryDecision, M3LRetryAdvice (types);
  *   combineClassifiers (fn); awsThrottlingClassifier, awsNetworkClassifier,
- *   httpRetryAfterClassifier (consts).
+ *   httpRetryAfterClassifier (consts). The module also surfaces type-only
+ *   telemetry exports (the poller/retry event maps and their 11 payload
+ *   types) — these are excluded from the 13-value count above.
  *
  * Latitude honoured (implementer decides internal shape):
  *   - M3LPollCheckFn tolerates async OR sync checks.
@@ -50,11 +52,22 @@ import {
   M3LRetryRunner,
 } from "../src/core/polling/index.js";
 import type {
+  M3LPollAttemptPayload,
   M3LPollCheckFn,
   M3LPollDecision,
+  M3LPollerEventMap,
+  M3LPollExhaustedPayload,
+  M3LPollSuccessPayload,
+  M3LPollWaitPayload,
   M3LRetryAdvice,
+  M3LRetryAttemptPayload,
   M3LRetryClassifier,
   M3LRetryDecision,
+  M3LRetryEventMap,
+  M3LRetryExhaustedPayload,
+  M3LRetryFatalPayload,
+  M3LRetryScheduledPayload,
+  M3LRetrySuccessPayload,
 } from "../src/core/polling/index.js";
 
 /**
@@ -395,6 +408,55 @@ describe("core/polling", () => {
       expect(thrown).toBeInstanceOf(M3LError);
       expect((thrown as M3LError).code).toBeTruthy();
     });
+
+    test("maxAttempts:1 exhausts on the very first 'continue' without ever backing off", async () => {
+      // Boundary: the smallest legal bound. The single attempt must still run
+      // (the check IS invoked once) but any 'continue' decision exhausts
+      // immediately — there is no second attempt to wait for.
+      const poller = new M3LPoller({
+        backoff: M3LBackoff.constant(10),
+        maxAttempts: 1,
+      });
+      let calls = 0;
+      const check: M3LPollCheckFn<number> = () => {
+        calls += 1;
+        return { type: "continue" };
+      };
+
+      let thrown: unknown;
+      try {
+        await settleWithTimers(poller.poll(check));
+      } catch (error) {
+        thrown = error;
+      }
+      expect(calls).toBe(1);
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_POLL_EXHAUSTED");
+      expect((thrown as M3LError).message).toContain("1 attempts");
+      expect((thrown as M3LError).context).toEqual({ attempts: 1 });
+    });
+
+    test("an unrecognized decision.type at runtime is rejected by the exhaustiveness guard, not silently accepted", async () => {
+      // TypeScript's M3LPollDecision union cannot express this at the type
+      // level, so the invalid decision is smuggled in via an
+      // unknown-mediated cast on the whole check fn (matching the repo's
+      // established pattern for exercising a runtime exhaustiveness guard —
+      // see json.test.ts's "ERR_JSON_DETECT_DEPTH" bogus-depth case).
+      const poller = new M3LPoller({ backoff: M3LBackoff.constant(10) });
+      const bogusCheck = (() => ({
+        type: "retry-later",
+      })) as unknown as M3LPollCheckFn<number>;
+
+      let thrown: unknown;
+      try {
+        await settleWithTimers(poller.poll(bogusCheck));
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_POLL_FAILURE");
+      expect((thrown as M3LError).message).toContain("unhandled poll decision");
+    });
   });
 
   describe("M3LRetryRunner", () => {
@@ -707,6 +769,629 @@ describe("core/polling", () => {
       expect(options).toBeTypeOf("object");
       expect(options).not.toBeNull();
       expect(Object.keys(options).length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("telemetry events", () => {
+    /**
+     * Collects every event a handler observes, in emission order, as a small
+     * discriminated record so a single `toEqual` assertion pins both the event
+     * name and its exact payload shape (no proxy/length-only assertions).
+     */
+    interface RecordedEvent<TName extends string, TPayload> {
+      readonly name: TName;
+      readonly payload: TPayload;
+    }
+
+    type RecordedPollEvent =
+      | RecordedEvent<"poll:attempt", M3LPollAttemptPayload>
+      | RecordedEvent<"poll:wait", M3LPollWaitPayload>
+      | RecordedEvent<"poll:success", M3LPollSuccessPayload>
+      | RecordedEvent<"poll:exhausted", M3LPollExhaustedPayload>;
+
+    type RecordedRetryEvent =
+      | RecordedEvent<"retry:attempt", M3LRetryAttemptPayload>
+      | RecordedEvent<"retry:scheduled", M3LRetryScheduledPayload>
+      | RecordedEvent<"retry:success", M3LRetrySuccessPayload>
+      | RecordedEvent<"retry:fatal", M3LRetryFatalPayload>
+      | RecordedEvent<"retry:exhausted", M3LRetryExhaustedPayload>;
+
+    /** Subscribe to every poller event and collect them into an ordered array. */
+    function recordPollerEvents(poller: M3LPoller): RecordedPollEvent[] {
+      const events: RecordedPollEvent[] = [];
+      poller.on("poll:attempt", (payload) => {
+        events.push({ name: "poll:attempt", payload });
+      });
+      poller.on("poll:wait", (payload) => {
+        events.push({ name: "poll:wait", payload });
+      });
+      poller.on("poll:success", (payload) => {
+        events.push({ name: "poll:success", payload });
+      });
+      poller.on("poll:exhausted", (payload) => {
+        events.push({ name: "poll:exhausted", payload });
+      });
+      return events;
+    }
+
+    /** Subscribe to every retry-runner event and collect them into an ordered array. */
+    function recordRetryEvents(runner: M3LRetryRunner): RecordedRetryEvent[] {
+      const events: RecordedRetryEvent[] = [];
+      runner.on("retry:attempt", (payload) => {
+        events.push({ name: "retry:attempt", payload });
+      });
+      runner.on("retry:scheduled", (payload) => {
+        events.push({ name: "retry:scheduled", payload });
+      });
+      runner.on("retry:success", (payload) => {
+        events.push({ name: "retry:success", payload });
+      });
+      runner.on("retry:fatal", (payload) => {
+        events.push({ name: "retry:fatal", payload });
+      });
+      runner.on("retry:exhausted", (payload) => {
+        events.push({ name: "retry:exhausted", payload });
+      });
+      return events;
+    }
+
+    describe("M3LPoller event ordering", () => {
+      test("succeeding on attempt 3 emits attempt/wait pairs then a single success", async () => {
+        const poller = new M3LPoller({
+          backoff: M3LBackoff.constant(10),
+          maxAttempts: 5,
+        });
+        const events = recordPollerEvents(poller);
+
+        let calls = 0;
+        const check: M3LPollCheckFn<string> = () => {
+          calls += 1;
+          if (calls < 3) return { type: "continue" };
+          return { type: "success", value: "done" };
+        };
+
+        await expect(settleWithTimers(poller.poll(check))).resolves.toBe(
+          "done",
+        );
+
+        expect(events).toEqual([
+          { name: "poll:attempt", payload: { attempt: 1, maxAttempts: 5 } },
+          { name: "poll:wait", payload: { attempt: 1, delayMs: 10 } },
+          { name: "poll:attempt", payload: { attempt: 2, maxAttempts: 5 } },
+          { name: "poll:wait", payload: { attempt: 2, delayMs: 10 } },
+          { name: "poll:attempt", payload: { attempt: 3, maxAttempts: 5 } },
+          { name: "poll:success", payload: { attempt: 3 } },
+        ]);
+      });
+
+      test("exhausting at maxAttempts:2 skips the final poll:wait — only one backoff before poll:exhausted", async () => {
+        const poller = new M3LPoller({
+          backoff: M3LBackoff.constant(10),
+          maxAttempts: 2,
+        });
+        const events = recordPollerEvents(poller);
+        const check: M3LPollCheckFn<number> = () => ({ type: "continue" });
+
+        let thrown: unknown;
+        try {
+          await settleWithTimers(poller.poll(check));
+        } catch (error) {
+          thrown = error;
+        }
+
+        // The last attempt (attempt 2) is the one that exhausts the bound, so
+        // it must give up immediately — no `poll:wait` is emitted for it, and
+        // only ONE backoff interval (attempt 1's) is ever slept.
+        expect(events).toEqual([
+          { name: "poll:attempt", payload: { attempt: 1, maxAttempts: 2 } },
+          { name: "poll:wait", payload: { attempt: 1, delayMs: 10 } },
+          { name: "poll:attempt", payload: { attempt: 2, maxAttempts: 2 } },
+          { name: "poll:exhausted", payload: { attempts: 2 } },
+        ]);
+        expect(
+          events.filter((event) => event.name === "poll:wait"),
+        ).toHaveLength(1);
+        expect(thrown).toBeInstanceOf(M3LError);
+        expect((thrown as M3LError).code).toBe("ERR_POLL_EXHAUSTED");
+      });
+
+      test("exhausting at maxAttempts:1 never emits poll:wait — the sole attempt is already the last", async () => {
+        // Boundary: the smallest legal bound. There is no "earlier" attempt to
+        // back off from, so poll:wait must never fire at all.
+        const poller = new M3LPoller({
+          backoff: M3LBackoff.constant(10),
+          maxAttempts: 1,
+        });
+        const events = recordPollerEvents(poller);
+        const check: M3LPollCheckFn<number> = () => ({ type: "continue" });
+
+        let thrown: unknown;
+        try {
+          await settleWithTimers(poller.poll(check));
+        } catch (error) {
+          thrown = error;
+        }
+
+        expect(events).toEqual([
+          { name: "poll:attempt", payload: { attempt: 1, maxAttempts: 1 } },
+          { name: "poll:exhausted", payload: { attempts: 1 } },
+        ]);
+        expect(thrown).toBeInstanceOf(M3LError);
+        expect((thrown as M3LError).code).toBe("ERR_POLL_EXHAUSTED");
+      });
+
+      test("an exhausting poll sleeps exactly maxAttempts - 1 backoff intervals, never one per attempt", async () => {
+        // Behavioral proof beyond the event sequence: the underlying delay
+        // primitive (`setTimeout`) must be scheduled one fewer time than the
+        // number of attempts, because the final attempt gives up immediately
+        // instead of backing off.
+        const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+        const maxAttempts = 4;
+        const poller = new M3LPoller({
+          backoff: M3LBackoff.constant(10),
+          maxAttempts,
+        });
+        const check: M3LPollCheckFn<number> = () => ({ type: "continue" });
+
+        let thrown: unknown;
+        try {
+          await settleWithTimers(poller.poll(check));
+        } catch (error) {
+          thrown = error;
+        }
+
+        expect(thrown).toBeInstanceOf(M3LError);
+        expect((thrown as M3LError).code).toBe("ERR_POLL_EXHAUSTED");
+        expect(setTimeoutSpy.mock.calls).toHaveLength(maxAttempts - 1);
+      });
+    });
+
+    describe("M3LRetryRunner event ordering", () => {
+      test("succeeding on attempt 3 emits attempt/scheduled pairs then a final attempt and retry:success", async () => {
+        const classifier: M3LRetryClassifier = () => "retriable";
+        const runner = new M3LRetryRunner({
+          classifier,
+          backoff: M3LBackoff.constant(10),
+          maxAttempts: 5,
+        });
+        const events = recordRetryEvents(runner);
+
+        let attempts = 0;
+        const op = (): Promise<string> => {
+          attempts += 1;
+          if (attempts < 3) return Promise.reject(new Error("transient"));
+          return Promise.resolve("ok");
+        };
+
+        await expect(settleWithTimers(runner.run(op))).resolves.toBe("ok");
+
+        expect(events).toEqual([
+          { name: "retry:attempt", payload: { attempt: 1, maxAttempts: 5 } },
+          {
+            name: "retry:scheduled",
+            payload: { attempt: 1, delayMs: 10, classification: "retriable" },
+          },
+          { name: "retry:attempt", payload: { attempt: 2, maxAttempts: 5 } },
+          {
+            name: "retry:scheduled",
+            payload: { attempt: 2, delayMs: 10, classification: "retriable" },
+          },
+          { name: "retry:attempt", payload: { attempt: 3, maxAttempts: 5 } },
+          { name: "retry:success", payload: { attempt: 3 } },
+        ]);
+      });
+
+      test("a fatal classification on attempt 2 emits retry:fatal and rejects with the original error", async () => {
+        const classifier: M3LRetryClassifier = (err) =>
+          err instanceof Error && err.message === "fatal-now"
+            ? "fatal"
+            : "retriable";
+        const runner = new M3LRetryRunner({
+          classifier,
+          backoff: M3LBackoff.constant(10),
+          maxAttempts: 5,
+        });
+        const events = recordRetryEvents(runner);
+
+        let attempts = 0;
+        const original = new Error("fatal-now");
+        const op = (): Promise<never> => {
+          attempts += 1;
+          if (attempts === 1) return Promise.reject(new Error("transient"));
+          return Promise.reject(original);
+        };
+
+        await expect(settleWithTimers(runner.run(op))).rejects.toBe(original);
+
+        expect(events).toEqual([
+          { name: "retry:attempt", payload: { attempt: 1, maxAttempts: 5 } },
+          {
+            name: "retry:scheduled",
+            payload: { attempt: 1, delayMs: 10, classification: "retriable" },
+          },
+          { name: "retry:attempt", payload: { attempt: 2, maxAttempts: 5 } },
+          {
+            name: "retry:fatal",
+            payload: { attempt: 2, classification: "fatal" },
+          },
+        ]);
+      });
+
+      test("exhausting at maxAttempts:2 emits retry:exhausted on the final attempt, not retry:scheduled", async () => {
+        const classifier: M3LRetryClassifier = () => "retriable";
+        const runner = new M3LRetryRunner({
+          classifier,
+          backoff: M3LBackoff.constant(10),
+          maxAttempts: 2,
+        });
+        const events = recordRetryEvents(runner);
+
+        const original = new Error("always fails");
+        const op = (): Promise<never> => Promise.reject(original);
+
+        await expect(settleWithTimers(runner.run(op))).rejects.toBe(original);
+
+        expect(events).toEqual([
+          { name: "retry:attempt", payload: { attempt: 1, maxAttempts: 2 } },
+          {
+            name: "retry:scheduled",
+            payload: { attempt: 1, delayMs: 10, classification: "retriable" },
+          },
+          { name: "retry:attempt", payload: { attempt: 2, maxAttempts: 2 } },
+          { name: "retry:exhausted", payload: { attempts: 2 } },
+        ]);
+      });
+
+      test("a server-driven advice.delayMs override is emitted verbatim on retry:scheduled and does not perturb the following attempt's backoff delay", async () => {
+        // Attempt 1 fails with a server-driven override (999ms), distinct from
+        // the configured backoff (constant 10ms). Attempt 2 fails with a plain
+        // retriable decision, so its retry:scheduled must report the normal
+        // backoff delay (10ms), unaffected by the prior one-off override.
+        const serverDelayMs = 999;
+        let call = 0;
+        const classifier: M3LRetryClassifier = () => {
+          call += 1;
+          if (call === 1) {
+            return { decision: "retriable", delayMs: serverDelayMs };
+          }
+          return "retriable";
+        };
+        const runner = new M3LRetryRunner({
+          classifier,
+          backoff: M3LBackoff.constant(10),
+          maxAttempts: 5,
+        });
+        const events = recordRetryEvents(runner);
+
+        let attempts = 0;
+        const op = (): Promise<string> => {
+          attempts += 1;
+          if (attempts < 3) return Promise.reject(new Error("transient"));
+          return Promise.resolve("ok");
+        };
+
+        await expect(settleWithTimers(runner.run(op))).resolves.toBe("ok");
+
+        const scheduledEvents = events.filter(
+          (event) => event.name === "retry:scheduled",
+        );
+        expect(scheduledEvents).toEqual([
+          {
+            name: "retry:scheduled",
+            payload: {
+              attempt: 1,
+              delayMs: serverDelayMs,
+              classification: "retriable",
+            },
+          },
+          {
+            name: "retry:scheduled",
+            payload: { attempt: 2, delayMs: 10, classification: "retriable" },
+          },
+        ]);
+      });
+
+      test.each([
+        [
+          "retriable" as const,
+          "retry:scheduled" as const,
+          "retry:fatal" as const,
+        ],
+      ])(
+        "classification carries the raw 'unknown' advice, not the resolved unknownDecision (%s)",
+        async (unknownDecision, expectedEvent, unexpectedEvent) => {
+          const classifier: M3LRetryClassifier = () => "unknown";
+          const runner = new M3LRetryRunner({
+            classifier,
+            backoff: M3LBackoff.constant(10),
+            unknownDecision,
+            maxAttempts: 5,
+          });
+          const events = recordRetryEvents(runner);
+
+          let attempts = 0;
+          const op = (): Promise<string> => {
+            attempts += 1;
+            if (attempts < 2) return Promise.reject(new Error("x"));
+            return Promise.resolve("recovered");
+          };
+
+          await expect(settleWithTimers(runner.run(op))).resolves.toBe(
+            "recovered",
+          );
+
+          const scheduled = events.find(
+            (event) => event.name === expectedEvent,
+          );
+          expect(scheduled).toBeDefined();
+          expect(scheduled?.payload).toMatchObject({
+            classification: "unknown",
+          });
+          expect(events.some((event) => event.name === unexpectedEvent)).toBe(
+            false,
+          );
+        },
+      );
+
+      test("classification carries raw 'unknown' resolved to fatal on retry:fatal", async () => {
+        const classifier: M3LRetryClassifier = () => "unknown";
+        const runner = new M3LRetryRunner({
+          classifier,
+          backoff: M3LBackoff.constant(10),
+          unknownDecision: "fatal",
+          maxAttempts: 5,
+        });
+        const events = recordRetryEvents(runner);
+        const original = new Error("unclassified");
+
+        await expect(
+          settleWithTimers(runner.run(() => Promise.reject(original))),
+        ).rejects.toBe(original);
+
+        expect(events).toEqual([
+          { name: "retry:attempt", payload: { attempt: 1, maxAttempts: 5 } },
+          {
+            name: "retry:fatal",
+            payload: { attempt: 1, classification: "unknown" },
+          },
+        ]);
+      });
+    });
+
+    describe("outcome invariance — a throwing handler never changes the resolved value or error", () => {
+      test("a poll:success handler that throws does not change the resolved value", async () => {
+        const poller = new M3LPoller({ backoff: M3LBackoff.constant(10) });
+        poller.on("poll:success", () => {
+          throw new Error("handler boom");
+        });
+        const check: M3LPollCheckFn<string> = () => ({
+          type: "success",
+          value: "unaffected",
+        });
+
+        await expect(settleWithTimers(poller.poll(check))).resolves.toBe(
+          "unaffected",
+        );
+      });
+
+      test("a poll:exhausted handler that throws does not change the rejection", async () => {
+        const poller = new M3LPoller({
+          backoff: M3LBackoff.constant(10),
+          maxAttempts: 1,
+        });
+        poller.on("poll:exhausted", () => {
+          throw new Error("handler boom");
+        });
+        const check: M3LPollCheckFn<number> = () => ({ type: "continue" });
+
+        let thrown: unknown;
+        try {
+          await settleWithTimers(poller.poll(check));
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown).toBeInstanceOf(M3LError);
+        expect((thrown as M3LError).code).toBe("ERR_POLL_EXHAUSTED");
+      });
+
+      test("a retry:fatal handler that throws does not change the identity of the rejected error", async () => {
+        const classifier: M3LRetryClassifier = () => "fatal";
+        const runner = new M3LRetryRunner({
+          classifier,
+          backoff: M3LBackoff.constant(10),
+        });
+        runner.on("retry:fatal", () => {
+          throw new Error("handler boom");
+        });
+        const original = new Error("nope");
+
+        await expect(
+          settleWithTimers(runner.run(() => Promise.reject(original))),
+        ).rejects.toBe(original);
+      });
+    });
+
+    describe("off() unsubscribes a handler", () => {
+      test("a handler removed via off no longer receives events", async () => {
+        const poller = new M3LPoller({
+          backoff: M3LBackoff.constant(10),
+          maxAttempts: 5,
+        });
+        const received: M3LPollAttemptPayload[] = [];
+        const handler = (payload: M3LPollAttemptPayload): void => {
+          received.push(payload);
+        };
+        poller.on("poll:attempt", handler);
+
+        let calls = 0;
+        const check: M3LPollCheckFn<string> = () => {
+          calls += 1;
+          if (calls === 1) {
+            // Unsubscribe after observing the first attempt, before the second
+            // attempt fires.
+            poller.off("poll:attempt", handler);
+          }
+          if (calls < 2) return { type: "continue" };
+          return { type: "success", value: "done" };
+        };
+
+        await expect(settleWithTimers(poller.poll(check))).resolves.toBe(
+          "done",
+        );
+
+        expect(received).toEqual([{ attempt: 1, maxAttempts: 5 }]);
+      });
+    });
+
+    describe("type-level contract — event maps and payloads", () => {
+      test("M3LPollAttemptPayload is the exact readonly shape", () => {
+        expectTypeOf<M3LPollAttemptPayload>().toEqualTypeOf<{
+          readonly attempt: number;
+          readonly maxAttempts: number;
+        }>();
+      });
+
+      test("M3LPollWaitPayload is the exact readonly shape", () => {
+        expectTypeOf<M3LPollWaitPayload>().toEqualTypeOf<{
+          readonly attempt: number;
+          readonly delayMs: number;
+        }>();
+      });
+
+      test("M3LPollSuccessPayload is the exact readonly shape (no error/message field)", () => {
+        expectTypeOf<M3LPollSuccessPayload>().toEqualTypeOf<{
+          readonly attempt: number;
+        }>();
+      });
+
+      test("M3LPollExhaustedPayload is the exact readonly shape (no error/message field)", () => {
+        expectTypeOf<M3LPollExhaustedPayload>().toEqualTypeOf<{
+          readonly attempts: number;
+        }>();
+      });
+
+      test("M3LRetryAttemptPayload is the exact readonly shape", () => {
+        expectTypeOf<M3LRetryAttemptPayload>().toEqualTypeOf<{
+          readonly attempt: number;
+          readonly maxAttempts: number;
+        }>();
+      });
+
+      test("M3LRetryScheduledPayload is the exact readonly shape (no error/message field)", () => {
+        expectTypeOf<M3LRetryScheduledPayload>().toEqualTypeOf<{
+          readonly attempt: number;
+          readonly delayMs: number;
+          readonly classification: "retriable" | "unknown";
+        }>();
+      });
+
+      test("M3LRetrySuccessPayload is the exact readonly shape (no error/message field)", () => {
+        expectTypeOf<M3LRetrySuccessPayload>().toEqualTypeOf<{
+          readonly attempt: number;
+        }>();
+      });
+
+      test("M3LRetryFatalPayload is the exact readonly shape (no error/message field)", () => {
+        expectTypeOf<M3LRetryFatalPayload>().toEqualTypeOf<{
+          readonly attempt: number;
+          readonly classification: "fatal" | "unknown";
+        }>();
+      });
+
+      test("M3LRetryExhaustedPayload is the exact readonly shape (no error/message field)", () => {
+        expectTypeOf<M3LRetryExhaustedPayload>().toEqualTypeOf<{
+          readonly attempts: number;
+        }>();
+      });
+
+      test("M3LPollerEventMap wires each key to its documented payload", () => {
+        expectTypeOf<
+          M3LPollerEventMap["poll:attempt"]
+        >().toEqualTypeOf<M3LPollAttemptPayload>();
+        expectTypeOf<
+          M3LPollerEventMap["poll:wait"]
+        >().toEqualTypeOf<M3LPollWaitPayload>();
+        expectTypeOf<
+          M3LPollerEventMap["poll:success"]
+        >().toEqualTypeOf<M3LPollSuccessPayload>();
+        expectTypeOf<
+          M3LPollerEventMap["poll:exhausted"]
+        >().toEqualTypeOf<M3LPollExhaustedPayload>();
+      });
+
+      test("M3LRetryEventMap wires each key to its documented payload", () => {
+        expectTypeOf<
+          M3LRetryEventMap["retry:attempt"]
+        >().toEqualTypeOf<M3LRetryAttemptPayload>();
+        expectTypeOf<
+          M3LRetryEventMap["retry:scheduled"]
+        >().toEqualTypeOf<M3LRetryScheduledPayload>();
+        expectTypeOf<
+          M3LRetryEventMap["retry:success"]
+        >().toEqualTypeOf<M3LRetrySuccessPayload>();
+        expectTypeOf<
+          M3LRetryEventMap["retry:fatal"]
+        >().toEqualTypeOf<M3LRetryFatalPayload>();
+        expectTypeOf<
+          M3LRetryEventMap["retry:exhausted"]
+        >().toEqualTypeOf<M3LRetryExhaustedPayload>();
+      });
+
+      test("classification is narrowed per payload — never the full M3LRetryDecision", () => {
+        expectTypeOf<
+          M3LRetryScheduledPayload["classification"]
+        >().toEqualTypeOf<"retriable" | "unknown">();
+        expectTypeOf<M3LRetryFatalPayload["classification"]>().toEqualTypeOf<
+          "fatal" | "unknown"
+        >();
+      });
+
+      test("on() infers the handler payload type per event key", () => {
+        const runner = new M3LRetryRunner({
+          classifier: awsThrottlingClassifier,
+          backoff: M3LBackoff.constant(10),
+        });
+        runner.on("retry:scheduled", (payload) => {
+          expectTypeOf(payload).toEqualTypeOf<M3LRetryScheduledPayload>();
+        });
+        runner.on("retry:success", (payload) => {
+          expectTypeOf(payload).toEqualTypeOf<M3LRetrySuccessPayload>();
+        });
+
+        const poller = new M3LPoller({ backoff: M3LBackoff.constant(10) });
+        poller.on("poll:wait", (payload) => {
+          expectTypeOf(payload).toEqualTypeOf<M3LPollWaitPayload>();
+        });
+      });
+
+      test("emit is not part of the public surface", () => {
+        const poller = new M3LPoller({ backoff: M3LBackoff.constant(10) });
+        // @ts-expect-error emit is protected on M3LEventEmitterBase
+        poller.emit("poll:success", { attempt: 1 });
+
+        const runner = new M3LRetryRunner({
+          classifier: awsThrottlingClassifier,
+          backoff: M3LBackoff.constant(10),
+        });
+        // @ts-expect-error emit is protected on M3LEventEmitterBase
+        runner.emit("retry:attempt", { attempt: 1, maxAttempts: 1 });
+      });
+
+      test("on() rejects an unknown event key", () => {
+        const poller = new M3LPoller({ backoff: M3LBackoff.constant(10) });
+        // @ts-expect-error "poll:bogus" is not a key of M3LPollerEventMap
+        poller.on("poll:bogus", () => {
+          /* noop */
+        });
+      });
+
+      test("on() rejects a cross-map event key (retry event on a poller)", () => {
+        const poller = new M3LPoller({ backoff: M3LBackoff.constant(10) });
+        // @ts-expect-error "retry:attempt" belongs to M3LRetryEventMap, not M3LPollerEventMap
+        poller.on("retry:attempt", () => {
+          /* noop */
+        });
+      });
     });
   });
 });

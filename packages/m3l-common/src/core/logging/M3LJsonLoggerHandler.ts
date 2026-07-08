@@ -33,9 +33,10 @@ const RESERVED_ENVELOPE_KEYS: ReadonlySet<string> = new Set([
   "indent",
   "timestamp",
   "data",
+  "correlationId",
 ]);
 
-/** Builds the authoritative envelope fields (`category`/`message`/`indent`/`timestamp`) for `event`. */
+/** Builds the authoritative envelope fields (`category`/`message`/`indent`/`timestamp`/`correlationId`) for `event`. */
 function buildEnvelope(event: M3LLogEvent): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     category: event.category,
@@ -44,6 +45,9 @@ function buildEnvelope(event: M3LLogEvent): Record<string, unknown> {
   if (event.indent !== undefined) payload.indent = event.indent;
   if (event.timestamp !== undefined) {
     payload.timestamp = event.timestamp.toISOString();
+  }
+  if (event.correlationId !== undefined) {
+    payload.correlationId = event.correlationId;
   }
   return payload;
 }

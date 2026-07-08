@@ -106,12 +106,12 @@ const outputDir = paths.getOutputDir();
 ### Monorepo layout
 
 Inside the monorepo, directories hang off the discovered root, scoped per
-workload:
+script:
 
 ```text
 m3l-automation/
-  data/{workload-name}/
-    configs/ · inputs/ · outputs/{timestamp}/ · cache/
+  data/{script-name}/
+    config/ · input/ · output/{timestamp}/ · cache/
 ```
 
 ### Standalone layout
@@ -120,8 +120,8 @@ In a standalone deployment (a container, a Lambda, etc.) everything hangs
 off a single base directory:
 
 ```text
-{baseDir}/
-  configs/ · data/inputs/ · data/outputs/{timestamp}/
+{baseDir}/data/
+  config/ · input/ · output/{timestamp}/ · cache/
 ```
 
 > Note: `getProjectRoot()` throws in standalone mode — there is no
@@ -146,7 +146,7 @@ overrides take precedence over auto-detection and are documented by the
 ## Date-token output directories
 
 Output paths use date tokens to produce time-stamped directories, which
-is the mechanism behind the `outputs/{timestamp}/` layout above.
+is the mechanism behind the `output/{timestamp}/` layout above.
 `Core.M3LDateTokens` expands tokens such as `{YYYY}`, `{MM}`, and `{DD}`
 inside a path template:
 

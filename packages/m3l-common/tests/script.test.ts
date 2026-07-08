@@ -4,9 +4,9 @@
  * Contract source: docs/reference/core/script.md
  * Exports under test: M3LScript, M3LScriptOptions, M3LScriptMetadata,
  *   M3LScriptLifecycleHooks, M3LScriptHookContext, M3LScriptConfigLoader,
- *   M3LScriptPresetLoader, M3LPresetUnknownKeysError, installProcessGuards,
- *   serializeError, setProcessGuardRequestId, AWS_PROFILE_PARAM_NAME,
- *   AWS_REGION_PARAM_NAME (13 symbols).
+ *   M3LScriptPresetLoader, M3LPresetUnknownKeysError, M3LPresetCycleError,
+ *   installProcessGuards, serializeError, setProcessGuardRequestId,
+ *   AWS_PROFILE_PARAM_NAME, AWS_REGION_PARAM_NAME (14 symbols).
  *
  * Key behavioral contracts:
  *  - M3LScript wires config, logging, prompts, and AWS client provisioning
@@ -29,6 +29,15 @@
  *  - M3LScriptPresetLoader enforces max nesting depth 64 and gives
  *    Damerau-Levenshtein "did you mean" suggestions for unknown keys, via
  *    M3LPresetUnknownKeysError (an M3LError subclass).
+ *  - WS-F: a preset may declare a top-level `extends: <path>` resolved
+ *    relative to the extending FILE's directory (not CWD). Base + derived are
+ *    SHALLOW-merged (derived top-level keys wholly replace the base's; a
+ *    nested object/array is replaced as a unit, never deep-merged); `extends`
+ *    chains (deepest base first, nearest override wins) and is stripped from
+ *    the result. A cycle or a chain deeper than MAX_PRESET_EXTENDS_DEPTH (16)
+ *    throws M3LPresetCycleError (code ERR_PRESET_CYCLE) whose
+ *    context.chain/`chain` getter is the ordered resolved-path cycle.
+ *    Unknown-key/depth validation runs on the fully merged record.
  *
  * Assumptions documented where the contract is spec-silent (see individual
  * comments): `M3LScript` exposes a public `get aws(): AWSProvider | undefined`
@@ -44,8 +53,12 @@
  */
 
 import * as fs from "fs";
+import * as nodeCrypto from "node:crypto";
 import * as nodeFs from "node:fs";
 import * as fsPromises from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import * as nodePath from "node:path";
 import {
   afterEach,
   beforeEach,
@@ -75,6 +88,15 @@ vi.mock("node:fs", async () => {
 // mkdir/copyFile/stat -- mocked so archival tests never touch real disk.
 vi.mock("node:fs/promises", async () => {
   const actual = await vi.importActual<typeof fsPromises>("node:fs/promises");
+  return { ...actual };
+});
+// WS-D: the generated-correlation-id path (docs/reference/core/script.md#correlation-ids)
+// calls `crypto.randomUUID()` when `options.correlationId` is omitted. Mocked
+// with the same configurable-namespace pattern as the fs mocks above so
+// individual tests can `vi.spyOn(nodeCrypto, "randomUUID")` and control the
+// generated id deterministically.
+vi.mock("node:crypto", async () => {
+  const actual = await vi.importActual<typeof nodeCrypto>("node:crypto");
   return { ...actual };
 });
 
@@ -111,6 +133,7 @@ import {
   AWS_PROFILE_PARAM_NAME,
   AWS_REGION_PARAM_NAME,
   installProcessGuards,
+  M3LPresetCycleError,
   M3LPresetUnknownKeysError,
   M3LScript,
   M3LScriptConfigLoader,
@@ -1456,6 +1479,401 @@ describe("M3LScriptHookContext", () => {
     expect(capturedContext).toBeDefined();
     expect(capturedContext?.config).toBeDefined();
   });
+
+  // WS-D (docs/reference/core/script.md#correlation-ids): `correlationId` is
+  // "always resolved by the first hook" — a REQUIRED `string`, never
+  // `string | undefined`, unlike `M3LScriptOptions.correlationId` (optional
+  // on input; see the `M3LScriptOptions — type-level contract` block below).
+  test("type-level: correlationId is a required string, not string | undefined", () => {
+    expectTypeOf<M3LScriptHookContext>().toHaveProperty("correlationId");
+    expectTypeOf<
+      M3LScriptHookContext["correlationId"]
+    >().toEqualTypeOf<string>();
+  });
+});
+
+// =============================================================================
+// M3LScriptOptions — type-level contract (WS-D correlation IDs)
+// =============================================================================
+describe("M3LScriptOptions — type-level contract", () => {
+  test("correlationId is optional (string | undefined)", () => {
+    expectTypeOf<M3LScriptOptions["correlationId"]>().toEqualTypeOf<
+      string | undefined
+    >();
+  });
+
+  test("an options object omitting correlationId is still valid", () => {
+    const options: M3LScriptOptions = { metadata };
+    expect(options.correlationId).toBeUndefined();
+  });
+});
+
+// =============================================================================
+// M3LScript — Correlation IDs (WS-D)
+//
+// Contract: docs/reference/core/script.md#correlation-ids. `run()` resolves
+// one correlation id per run — the supplied `options.correlationId` verbatim,
+// or a generated `crypto.randomUUID()` when omitted — BEFORE the first hook
+// fires, so every M3LScriptHookContext.correlationId is a stable, non-empty
+// string for the whole run. `createLambdaHandler()` resolves the id fresh
+// PER INVOCATION, preferring `context.awsRequestId` over a generated UUID;
+// an explicit `options.correlationId` still wins over both.
+// =============================================================================
+describe("M3LScript — Correlation IDs", () => {
+  const GENERATED_UUID: `${string}-${string}-${string}-${string}-${string}` =
+    "11111111-1111-4111-8111-111111111111";
+
+  beforeEach(() => {
+    stubNonAwsEnvironment();
+    vi.spyOn(nodeCrypto, "randomUUID").mockReturnValue(GENERATED_UUID);
+  });
+
+  test("B6: a supplied correlationId is used verbatim on every hook's ctx.correlationId", async () => {
+    const seen: string[] = [];
+    const script = new M3LScript({
+      metadata,
+      correlationId: "X",
+      hooks: {
+        onBeforeInit: (ctx) => {
+          seen.push(ctx.correlationId);
+        },
+        onAfterConfigLoad: (ctx) => {
+          seen.push(ctx.correlationId);
+        },
+        onCleanup: (ctx) => {
+          seen.push(ctx.correlationId);
+        },
+      },
+    });
+
+    await script.run(() => {});
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((id) => id === "X")).toBe(true);
+  });
+
+  test("B7: an omitted correlationId is generated via crypto.randomUUID() and resolved before the EARLIEST hook fires", async () => {
+    let earliestId: string | undefined;
+    const script = new M3LScript({
+      metadata,
+      hooks: {
+        onBeforeInit: (ctx) => {
+          // onBeforeInit is documented as the very first lifecycle hook, so
+          // this is the earliest possible observation point for the
+          // resolved id.
+          earliestId ??= ctx.correlationId;
+        },
+      },
+    });
+
+    await script.run(() => {});
+
+    expect(earliestId).toBeDefined();
+    expect(earliestId).toBe(GENERATED_UUID);
+    expect((earliestId as string).length).toBeGreaterThan(0);
+  });
+
+  test("FIX-1: an empty-string options.correlationId is treated as absent, not used verbatim — falls through to a generated id", async () => {
+    // Regression for a `??`-passthrough bug: `resolveCorrelationId` currently
+    // does `configuredCorrelationId ?? preferredId ?? randomUUID()`, and `??`
+    // only short-circuits on `null`/`undefined` — an empty string survives
+    // it and is used as-is, so `ctx.correlationId` would resolve to `""`,
+    // violating the documented "always a non-empty string" guarantee. The
+    // fix mirrors `extractAwsRequestId`'s own `length > 0` guard and falls
+    // through to a generated UUID when the configured id is blank.
+    let earliestId: string | undefined;
+    const script = new M3LScript({
+      metadata,
+      correlationId: "",
+      hooks: {
+        onBeforeInit: (ctx) => {
+          earliestId ??= ctx.correlationId;
+        },
+      },
+    });
+
+    await script.run(() => {});
+
+    expect(earliestId).toBeDefined();
+    expect(earliestId).not.toBe("");
+    expect((earliestId as string).length).toBeGreaterThan(0);
+    expect(earliestId).toBe(GENERATED_UUID);
+  });
+
+  test("B8: the resolved correlationId is stable across every hook in one run", async () => {
+    const seen: string[] = [];
+    const script = new M3LScript({
+      metadata,
+      correlationId: "X",
+      hooks: {
+        onBeforeInit: (ctx) => {
+          seen.push(ctx.correlationId);
+        },
+        onAfterConfigLoad: (ctx) => {
+          seen.push(ctx.correlationId);
+        },
+        onCleanup: (ctx) => {
+          seen.push(ctx.correlationId);
+        },
+      },
+    });
+
+    await script.run(() => {});
+
+    expect(seen).toHaveLength(3);
+    // Asserting the CONCRETE value (not just "all equal") prevents this test
+    // from false-passing when correlationId resolves to `undefined` on
+    // every hook (three equal `undefined`s would otherwise still satisfy a
+    // bare "same value" check).
+    expect(seen).toEqual(["X", "X", "X"]);
+  });
+
+  test("B9: createLambdaHandler() resolves a distinct generated id per invocation when correlationId is omitted", async () => {
+    stubAwsLambdaEnvironment();
+    const firstUuid: `${string}-${string}-${string}-${string}-${string}` =
+      "22222222-2222-4222-8222-222222222221";
+    const secondUuid: `${string}-${string}-${string}-${string}-${string}` =
+      "22222222-2222-4222-8222-222222222222";
+    const randomUUIDSpy = vi.spyOn(nodeCrypto, "randomUUID");
+    randomUUIDSpy
+      .mockReturnValueOnce(firstUuid)
+      .mockReturnValueOnce(secondUuid);
+    const seen: string[] = [];
+    const script = new M3LScript({
+      metadata,
+      hooks: {
+        onBeforeInit: (ctx) => {
+          seen.push(ctx.correlationId);
+        },
+      },
+    });
+    const handler = script.createLambdaHandler(() => Promise.resolve());
+
+    await handler({}, {});
+    await handler({}, {});
+
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).not.toBe(seen[1]);
+  });
+
+  test("B10: createLambdaHandler() prefers context.awsRequestId over a generated id", async () => {
+    stubAwsLambdaEnvironment();
+    let captured: string | undefined;
+    const script = new M3LScript({
+      metadata,
+      hooks: {
+        onBeforeInit: (ctx) => {
+          captured ??= ctx.correlationId;
+        },
+      },
+    });
+    const handler = script.createLambdaHandler<
+      Record<string, never>,
+      void,
+      { awsRequestId: string }
+    >(() => Promise.resolve());
+
+    await handler({}, { awsRequestId: "req-123" });
+
+    expect(captured).toBe("req-123");
+  });
+
+  test("B11: an explicit options.correlationId still wins over context.awsRequestId under Lambda", async () => {
+    stubAwsLambdaEnvironment();
+    let captured: string | undefined;
+    const script = new M3LScript({
+      metadata,
+      correlationId: "X",
+      hooks: {
+        onBeforeInit: (ctx) => {
+          captured ??= ctx.correlationId;
+        },
+      },
+    });
+    const handler = script.createLambdaHandler<
+      Record<string, never>,
+      void,
+      { awsRequestId: string }
+    >(() => Promise.resolve());
+
+    await handler({}, { awsRequestId: "req-123" });
+
+    expect(captured).toBe("X");
+  });
+
+  test("B12: a supplied correlationId stays fixed across two Lambda invocations", async () => {
+    stubAwsLambdaEnvironment();
+    const seen: string[] = [];
+    const script = new M3LScript({
+      metadata,
+      correlationId: "X",
+      hooks: {
+        onBeforeInit: (ctx) => {
+          seen.push(ctx.correlationId);
+        },
+      },
+    });
+    const handler = script.createLambdaHandler(() => Promise.resolve());
+
+    await handler({}, {});
+    await handler({}, {});
+
+    expect(seen).toEqual(["X", "X"]);
+  });
+
+  test("C14: the onError hook's ctx.correlationId equals the run's resolved id on a forced stage failure", async () => {
+    let errorCtxId: string | undefined;
+    const script = new M3LScript({
+      metadata,
+      correlationId: "X",
+      hooks: {
+        onError: (ctx) => {
+          errorCtxId = ctx.correlationId;
+        },
+      },
+    });
+
+    await expect(
+      script.run(() => {
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow();
+
+    expect(errorCtxId).toBe("X");
+  });
+
+  test("FIX-2: an early-stage failure under Lambda still surfaces the platform awsRequestId on onError, not a freshly generated id", async () => {
+    // Regression for the id-resolved-too-late bug: `resolveCorrelationId` is
+    // currently invoked partway through `runPipeline` — AFTER stage 1
+    // (`M3LExecutionEnvironment.detect()`) — so `hookContext()`'s fallback
+    // (`this.currentCorrelationId ?? this.resolveCorrelationId()`) resolves
+    // with NO `preferredId` when an earlier stage throws before that point is
+    // reached, generating a random UUID instead of preferring the Lambda
+    // `context.awsRequestId`. The fix resolves the id at the very top of the
+    // pipeline, before stage 1, so it is already set (and consistent) by the
+    // time `onError` fires no matter which stage fails.
+    //
+    // `stubAwsLambdaEnvironment()` first lets construction (which also calls
+    // `M3LExecutionEnvironment.detect()`) succeed normally; the spy is then
+    // overridden with `mockImplementationOnce` so only the pipeline's OWN
+    // stage-1 call — the earliest mockable-to-throw seam in this file's
+    // existing patterns — throws.
+    stubAwsLambdaEnvironment();
+    let errorCtxId: string | undefined;
+    const script = new M3LScript({
+      metadata,
+      hooks: {
+        onError: (ctx) => {
+          errorCtxId = ctx.correlationId;
+        },
+      },
+    });
+    vi.spyOn(M3LExecutionEnvironment, "detect").mockImplementationOnce(() => {
+      throw new Error("stage 1 (environment detection) failed");
+    });
+
+    const handler = script.createLambdaHandler<
+      Record<string, never>,
+      void,
+      { awsRequestId: string }
+    >(() => Promise.resolve());
+
+    await expect(handler({}, { awsRequestId: "req-early" })).rejects.toThrow();
+
+    expect(errorCtxId).toBe("req-early");
+  });
+
+  test("C15: the best-effort stderr diagnostic on a failing run carries the correlation id string, post-redaction", async () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const script = new M3LScript({
+      metadata,
+      correlationId: "trace-id-9000",
+      hooks: {
+        onCleanup: () => {
+          // Forces the best-effort stderr diagnostic path already exercised
+          // elsewhere in this file (see "a throwing onCleanup does not mask
+          // the original error").
+          throw new Error("cleanup itself blew up");
+        },
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      await script.run(() => {
+        throw new Error("original failure");
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeDefined();
+    const written = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("\n");
+    // Deliberately NOT pinning a specific JSON key: the field name (e.g.
+    // `requestId` reuse vs. a new `correlationId`) is an implementer choice.
+    expect(written).toContain("trace-id-9000");
+  });
+
+  test("C16: the re-thrown stage error's context does not gain a correlationId key (no mutation of the readonly context)", async () => {
+    const originalContext = { attempt: 3 };
+    const originalError = new M3LError("stage failed", {
+      code: "ERR_TEST_STAGE",
+      context: originalContext,
+    });
+    const script = new M3LScript({ metadata, correlationId: "X" });
+
+    let thrown: unknown;
+    try {
+      await script.run(() => {
+        throw originalError;
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(originalError);
+    const context = (thrown as M3LError).context as
+      Record<string, unknown> | undefined;
+    expect(context).toBeDefined();
+    expect(Object.prototype.hasOwnProperty.call(context, "correlationId")).toBe(
+      false,
+    );
+  });
+
+  test("D18: a failing run's diagnostic line carries the correlation id while a secret in the same failure is redacted", async () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const script = new M3LScript({
+      metadata,
+      correlationId: "trace-id-secret-test",
+      hooks: {
+        onCleanup: () => {
+          throw new M3LError("cleanup failed", {
+            code: "ERR_TEST_CLEANUP",
+            context: { apiKey: "topsecretvalue" },
+          });
+        },
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      await script.run(() => {
+        throw new Error("original failure");
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeDefined();
+    const written = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("\n");
+    expect(written).toContain("trace-id-secret-test");
+    expect(written).toContain("[REDACTED]");
+    expect(written).not.toContain("topsecretvalue");
+  });
 });
 
 // =============================================================================
@@ -1778,6 +2196,403 @@ describe("M3LScriptPresetLoader", () => {
 
     expect(thrown).toBeInstanceOf(M3LUnsafeConfigKeyError);
     expect(thrown).toBeInstanceOf(M3LError);
+  });
+});
+
+// =============================================================================
+// M3LScriptPresetLoader — extends inheritance (WS-F)
+//
+// Contract: docs/reference/core/script.md § "Preset inheritance (`extends`)".
+// The loader does REAL fs.readFileSync and resolves `extends` relative to
+// `path.dirname` of the extending file, so these tests use REAL fixture files
+// under a real, writable temp directory tree (mocking fs would defeat
+// path-relative resolution). Every fixture-writing test gets a fresh temp dir
+// in `beforeEach` and it is removed in `afterEach` — no fixture ever touches
+// this repo's own tree.
+// =============================================================================
+describe("M3LScriptPresetLoader — extends inheritance", () => {
+  let dir: string;
+
+  // Shared schema declaring every top-level key any merge fixture in this
+  // block uses (region, retries, tags, timeout, nested). The loader is
+  // strict by default (an omitted/empty schema flags every merged key as
+  // unknown per the documented contract), so any test whose fixtures merge
+  // into one of these keys must construct the loader with this schema.
+  // Deliberately does NOT declare "bogus" — the unknown-keys test below
+  // still needs that key to be rejected.
+  const extendsMergeSchema = new M3LConfigSchema([
+    new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    }),
+    new M3LConfigParameter({
+      name: "retries",
+      type: M3LConfigParameterType.INT,
+    }),
+    new M3LConfigParameter({
+      name: "tags",
+      type: M3LConfigParameterType.STRING_ARRAY,
+    }),
+    new M3LConfigParameter({
+      name: "timeout",
+      type: M3LConfigParameterType.INT,
+    }),
+    new M3LConfigParameter({
+      name: "nested",
+      type: M3LConfigParameterType.STRING,
+    }),
+  ]);
+
+  beforeEach(async () => {
+    // The file-wide `beforeEach` (above, guarding stage-9 archival tests)
+    // stubs `fsPromises.mkdir` to a no-op `mockResolvedValue(undefined)` for
+    // every test in this file — and, because "fs"/"node:fs"/"node:fs/promises"
+    // are mocked once at module scope, that same stub is shared by the named
+    // `mkdir` import used below. This block writes REAL fixture files (a
+    // subdirectory fixture needs a REAL `mkdir`), so restore the genuine
+    // implementation here, scoped to this describe block only.
+    const actualFsPromises =
+      await vi.importActual<typeof fsPromises>("node:fs/promises");
+    vi.spyOn(fsPromises, "mkdir").mockImplementation(actualFsPromises.mkdir);
+    dir = await mkdtemp(nodePath.join(tmpdir(), "m3l-preset-"));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  /** Writes `content` (already-serialized YAML/JSON text) to `relativePath` under the temp dir, creating parent directories as needed. */
+  async function writeFixture(
+    relativePath: string,
+    content: string,
+  ): Promise<string> {
+    const fullPath = nodePath.join(dir, relativePath);
+    await mkdir(nodePath.dirname(fullPath), { recursive: true });
+    await writeFile(fullPath, content, "utf8");
+    return fullPath;
+  }
+
+  test("2-level extends: derived overrides scalars, inherits region, REPLACES (not merges) the tags array, and strips `extends`", async () => {
+    await writeFixture(
+      "base.yaml",
+      ["region: eu-south-1", "retries: 3", "tags:", "  - baseline", ""].join(
+        "\n",
+      ),
+    );
+    const prodPath = await writeFixture(
+      "prod.yaml",
+      ["extends: ./base.yaml", "retries: 5", "tags:", "  - prod", ""].join(
+        "\n",
+      ),
+    );
+
+    const loader = new M3LScriptPresetLoader({ schema: extendsMergeSchema });
+    const result = loader.load(prodPath);
+
+    expect(result).toEqual({
+      region: "eu-south-1",
+      retries: 5,
+      tags: ["prod"],
+    });
+    expect("extends" in result).toBe(false);
+  });
+
+  test("3-level chain shallow-merges: nested.b is dropped (never deep-merged) and the nearest override wins fold order", async () => {
+    await writeFixture(
+      "grandparent.yaml",
+      [
+        "region: eu-south-1",
+        "retries: 1",
+        "timeout: 30",
+        "nested:",
+        "  a: 1",
+        "  b: 2",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      "parent.yaml",
+      [
+        "extends: ./grandparent.yaml",
+        "retries: 2",
+        "nested:",
+        "  a: 9",
+        "",
+      ].join("\n"),
+    );
+    const childPath = await writeFixture(
+      "child.yaml",
+      ["extends: ./parent.yaml", "timeout: 99", ""].join("\n"),
+    );
+
+    const loader = new M3LScriptPresetLoader({ schema: extendsMergeSchema });
+    const result = loader.load(childPath);
+
+    expect(result).toEqual({
+      region: "eu-south-1",
+      retries: 2,
+      timeout: 99,
+      nested: { a: 9 },
+    });
+  });
+
+  test("`extends` is stripped from the returned record after any inheriting load", async () => {
+    await writeFixture("base.yaml", "region: eu-south-1\n");
+    const derivedPath = await writeFixture(
+      "derived.yaml",
+      "extends: ./base.yaml\nretries: 1\n",
+    );
+
+    const loader = new M3LScriptPresetLoader({ schema: extendsMergeSchema });
+    const result = loader.load(derivedPath);
+
+    expect("extends" in result).toBe(false);
+  });
+
+  test("a direct cycle (A extends ./A) throws M3LPresetCycleError whose chain starts and ends at A's resolved path", async () => {
+    const aPath = await writeFixture("a.yaml", "extends: ./a.yaml\n");
+
+    const loader = new M3LScriptPresetLoader();
+    let thrown: unknown;
+    try {
+      loader.load(aPath);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LPresetCycleError);
+    const error = thrown as M3LPresetCycleError;
+    expect(error.code).toBe("ERR_PRESET_CYCLE");
+    expect(error.chain).toBe(error.context.chain);
+    expect(Array.isArray(error.chain)).toBe(true);
+    expect(error.chain.length).toBeGreaterThan(0);
+    const resolvedA = nodePath.resolve(aPath);
+    expect(error.chain[0]).toBe(resolvedA);
+    expect(error.chain[error.chain.length - 1]).toBe(resolvedA);
+  });
+
+  test("a transitive cycle (A extends B extends A) throws M3LPresetCycleError with an ordered chain including both resolved paths", async () => {
+    const aPath = await writeFixture("a.yaml", "extends: ./b.yaml\n");
+    const bPath = await writeFixture("b.yaml", "extends: ./a.yaml\n");
+
+    const loader = new M3LScriptPresetLoader();
+    let thrown: unknown;
+    try {
+      loader.load(aPath);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LPresetCycleError);
+    const error = thrown as M3LPresetCycleError;
+    expect(error.code).toBe("ERR_PRESET_CYCLE");
+    const resolvedA = nodePath.resolve(aPath);
+    const resolvedB = nodePath.resolve(bPath);
+    expect(error.chain.length).toBeGreaterThanOrEqual(3);
+    expect(error.chain).toContain(resolvedA);
+    expect(error.chain).toContain(resolvedB);
+  });
+
+  test("an extends chain longer than MAX_PRESET_EXTENDS_DEPTH (16) throws M3LPresetCycleError (ERR_PRESET_CYCLE) even with no repeated file", async () => {
+    // Build a 17-file non-repeating chain: file00 extends file01 extends ...
+    // extends file17 (the terminal file, no further `extends`). Loading
+    // file00 requires resolving 17 `extends` hops, one more than the
+    // documented cap of 16 — a runaway/pathological chain is treated as a
+    // cycle for safety per the contract.
+    const depth = 17;
+    for (let i = depth; i >= 0; i--) {
+      const name = `file${String(i).padStart(2, "0")}.yaml`;
+      const isTerminal = i === depth;
+      const content = isTerminal
+        ? "region: eu-south-1\n"
+        : `extends: ./file${String(i + 1).padStart(2, "0")}.yaml\n`;
+      await writeFixture(name, content);
+    }
+
+    const loader = new M3LScriptPresetLoader();
+    const topPath = nodePath.join(dir, "file00.yaml");
+
+    let thrown: unknown;
+    try {
+      loader.load(topPath);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LPresetCycleError);
+    expect((thrown as M3LPresetCycleError).code).toBe("ERR_PRESET_CYCLE");
+  });
+
+  test("`extends` resolves relative to the extending FILE's directory, not the process CWD", async () => {
+    await writeFixture("base.yaml", "region: eu-south-1\nretries: 3\n");
+    const subPath = await writeFixture(
+      "sub/derived.yaml",
+      "extends: ../base.yaml\nretries: 7\n",
+    );
+
+    // Sanity check the negative: a base.yaml resolved relative to the
+    // process CWD would not exist under CWD's "base.yaml" (this test's temp
+    // dir is never the CWD), so a correct dir-relative resolution is the
+    // only way this load can succeed at all.
+    expect(nodePath.resolve(process.cwd(), "base.yaml")).not.toBe(
+      nodePath.resolve(dir, "base.yaml"),
+    );
+
+    const loader = new M3LScriptPresetLoader({ schema: extendsMergeSchema });
+    const result = loader.load(subPath);
+
+    expect(result).toEqual({ region: "eu-south-1", retries: 7 });
+  });
+
+  test("unknown-key validation runs on the MERGED result: a base key absent from the schema still throws, and a declared base key the derived omits is inherited without error", async () => {
+    const schema = new M3LConfigSchema([
+      new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+      }),
+      new M3LConfigParameter({
+        name: "retries",
+        type: M3LConfigParameterType.INT,
+      }),
+    ]);
+
+    // Positive: base declares only `region` (declared), derived overrides
+    // `retries` (also declared) — merged result has no unknown keys.
+    await writeFixture("ok-base.yaml", "region: eu-south-1\n");
+    const okDerivedPath = await writeFixture(
+      "ok-derived.yaml",
+      "extends: ./ok-base.yaml\nretries: 5\n",
+    );
+    const okLoader = new M3LScriptPresetLoader({ schema });
+    expect(okLoader.load(okDerivedPath)).toEqual({
+      region: "eu-south-1",
+      retries: 5,
+    });
+
+    // Negative: base carries an undeclared key ("bogus") the derived never
+    // mentions — validation still catches it because it runs on the merged
+    // record, not just the derived file's own keys.
+    await writeFixture("bad-base.yaml", "region: eu-south-1\nbogus: true\n");
+    const badDerivedPath = await writeFixture(
+      "bad-derived.yaml",
+      "extends: ./bad-base.yaml\nretries: 5\n",
+    );
+    const badLoader = new M3LScriptPresetLoader({ schema });
+    expect(() => badLoader.load(badDerivedPath)).toThrow(
+      M3LPresetUnknownKeysError,
+    );
+  });
+
+  test("a YAML base extended by a JSON derived preset merges successfully across formats", async () => {
+    await writeFixture("base.yaml", "region: eu-south-1\nretries: 3\n");
+    const childPath = await writeFixture(
+      "child.json",
+      JSON.stringify({ extends: "./base.yaml", retries: 9 }),
+    );
+
+    const loader = new M3LScriptPresetLoader({ schema: extendsMergeSchema });
+    const result = loader.load(childPath);
+
+    expect(result).toEqual({ region: "eu-south-1", retries: 9 });
+  });
+
+  test("a missing extends target propagates the loader's load error (ERR_PRESET_LOAD) with the underlying fs error chained as cause", async () => {
+    const derivedPath = await writeFixture(
+      "derived.yaml",
+      "extends: ./does-not-exist.yaml\nretries: 1\n",
+    );
+
+    const loader = new M3LScriptPresetLoader();
+    let thrown: unknown;
+    try {
+      loader.load(derivedPath);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_PRESET_LOAD");
+    expect((thrown as M3LError).cause).toBeDefined();
+  });
+
+  test("a malformed-YAML extends base surfaces ERR_PRESET_LOAD with a chained cause", async () => {
+    await writeFixture("malformed.yaml", "region: [unterminated\n");
+    const derivedPath = await writeFixture(
+      "derived.yaml",
+      "extends: ./malformed.yaml\nretries: 1\n",
+    );
+
+    const loader = new M3LScriptPresetLoader();
+    let thrown: unknown;
+    try {
+      loader.load(derivedPath);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_PRESET_LOAD");
+    expect((thrown as M3LError).cause).toBeDefined();
+  });
+
+  test("a non-string extends value throws ERR_PRESET_LOAD, not silently coerced", async () => {
+    const derivedPath = await writeFixture(
+      "bad-extends.yaml",
+      "extends: 42\nretries: 1\n",
+    );
+
+    const loader = new M3LScriptPresetLoader({ schema: extendsMergeSchema });
+    let thrown: unknown;
+    try {
+      loader.load(derivedPath);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_PRESET_LOAD");
+  });
+
+  test("a base file whose top-level is a list (not a mapping) throws ERR_PRESET_LOAD", async () => {
+    await writeFixture("list-base.yaml", "- a\n- b\n");
+    const derivedPath = await writeFixture(
+      "uses-list-base.yaml",
+      "extends: ./list-base.yaml\nretries: 1\n",
+    );
+
+    const loader = new M3LScriptPresetLoader({ schema: extendsMergeSchema });
+    let thrown: unknown;
+    try {
+      loader.load(derivedPath);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_PRESET_LOAD");
+  });
+
+  test("REGRESSION: a plain preset with no `extends` still loads and validates exactly as before", async () => {
+    const schema = new M3LConfigSchema([
+      new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+      }),
+    ]);
+    const plainPath = await writeFixture("plain.yaml", "region: eu-south-1\n");
+
+    const loader = new M3LScriptPresetLoader({ schema });
+    const result = loader.load(plainPath);
+
+    expect(result).toEqual({ region: "eu-south-1" });
+  });
+
+  describe("type-level contract", () => {
+    test("M3LPresetCycleError.chain is a readonly string[]", () => {
+      expectTypeOf<M3LPresetCycleError["chain"]>().toEqualTypeOf<
+        readonly string[]
+      >();
+    });
   });
 });
 

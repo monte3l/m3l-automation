@@ -48,10 +48,14 @@
         {
           "file": "packages/m3l-common/src/core/script/process-guards.ts",
           "symbol": "setProcessGuardRequestId"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/M3LPresetCycleError.ts",
+          "symbol": "M3LPresetCycleError"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "aac01b33125cbc6115190e89fc2b4fe90c6666ab",
+      "retrieved": "2026-07-07"
     },
     {
       "heading": "Execution flow",
@@ -61,8 +65,8 @@
           "symbol": "M3LScript"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "aac01b33125cbc6115190e89fc2b4fe90c6666ab",
+      "retrieved": "2026-07-07"
     },
     {
       "heading": "Lifecycle hooks",
@@ -76,8 +80,8 @@
           "symbol": "M3LScriptHookContext"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "aac01b33125cbc6115190e89fc2b4fe90c6666ab",
+      "retrieved": "2026-07-07"
     },
     {
       "heading": "Signal handling",
@@ -87,8 +91,8 @@
           "symbol": "M3LScript"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "aac01b33125cbc6115190e89fc2b4fe90c6666ab",
+      "retrieved": "2026-07-07"
     },
     {
       "heading": "Process guards",
@@ -106,8 +110,27 @@
           "symbol": "setProcessGuardRequestId"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "aac01b33125cbc6115190e89fc2b4fe90c6666ab",
+      "retrieved": "2026-07-07"
+    },
+    {
+      "heading": "Correlation IDs",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
+          "symbol": "M3LScriptOptions"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
+          "symbol": "M3LScriptHookContext"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/M3LScript.ts",
+          "symbol": "M3LScript"
+        }
+      ],
+      "commit": "aac01b33125cbc6115190e89fc2b4fe90c6666ab",
+      "retrieved": "2026-07-07"
     },
     {
       "heading": "Preset loader",
@@ -119,10 +142,14 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LPresetUnknownKeysError.ts",
           "symbol": "M3LPresetUnknownKeysError"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/M3LPresetCycleError.ts",
+          "symbol": "M3LPresetCycleError"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "aac01b33125cbc6115190e89fc2b4fe90c6666ab",
+      "retrieved": "2026-07-07"
     },
     {
       "heading": "Usage examples",
@@ -132,8 +159,8 @@
           "symbol": "M3LScript"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "aac01b33125cbc6115190e89fc2b4fe90c6666ab",
+      "retrieved": "2026-07-07"
     },
     {
       "heading": "Notes and behavior",
@@ -147,8 +174,8 @@
           "symbol": "M3LScriptPresetLoader"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "aac01b33125cbc6115190e89fc2b4fe90c6666ab",
+      "retrieved": "2026-07-07"
     }
   ]
 }

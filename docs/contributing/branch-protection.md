@@ -24,11 +24,11 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     review blocks the merge (fail-closed if the review never runs). The reviewer
     runs **read-only** (`--allowedTools Bash,Read`), posts a **single sticky
     comment** per PR (updated on each push rather than re-posted), is capped at
-    `--max-turns 15`, and **does not run on draft PRs** — it fires on
+    `--max-turns 100`, and **does not run on draft PRs** — it fires on
     `ready_for_review` and on every subsequent push to a ready PR. The workflow
     pre-computes the PR diff (`.claude-pr-diff.patch`) and hands it to the
     reviewer, so it reviews the supplied patch instead of spending turns fetching
-    it — which is why the turn cap can stay low. As an
+    it — a typical review uses only a few of those turns. As an
     optimization, a push is **skipped** (the prior PASS is carried forward so
     the check stays green) when the latest verdict was PASS and only
     `paths-ignore` files (docs/config) changed since the reviewed commit,
