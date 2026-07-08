@@ -129,7 +129,7 @@ jobs:
             > "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt" \
             || rm -f "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt"
 
-      - uses: anthropics/claude-code-action@6c0083bb7289c31716797a039b6367b3079cc46e # v1
+      - uses: anthropics/claude-code-action@558b1d6cab4085c7753fe402c10bef0fbb92ac7a # v1
         id: claude-review
         if: steps.guard.outputs.should_review == 'true'
         with:
