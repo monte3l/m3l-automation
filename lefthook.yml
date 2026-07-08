@@ -21,8 +21,11 @@ commit-msg:
 
 pre-push:
   commands:
+    # build + check:exports catch a broken compile or a broken exports map (publint
+    # / attw) locally instead of first in CI. build is turbo-cached so the marginal
+    # cost is small, and check:exports packs dist/ which build has just produced.
     verify:
-      run: pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:coverage
+      run: pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build && pnpm check:exports
     # Refuse to push unsigned/unverified commits (skipped in CI so release
     # automation isn't wedged). Bypassable with --no-verify; the unbypassable
     # layer is branch-protection "Require signed commits".

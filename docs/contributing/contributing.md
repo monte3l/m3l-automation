@@ -35,18 +35,24 @@ source, tests, or fixtures.
 These map directly to the `package.json` scripts. Use them as your
 inner loop and pre-commit gate.
 
-| Task        | Command                           | When        |
-| ----------- | --------------------------------- | ----------- |
-| Tests       | `pnpm test`                       | pre-commit  |
-| Watch tests | `pnpm test:watch`                 | iterating   |
-| Single test | `pnpm vitest run tests/x.test.ts` | iterating   |
-| Lint        | `pnpm lint`                       | pre-commit  |
-| Format      | `pnpm format`                     | pre-commit  |
-| Type check  | `pnpm typecheck`                  | pre-commit  |
-| Build       | `pnpm build`                      | pre-publish |
+| Task        | Command                           |
+| ----------- | --------------------------------- |
+| Tests       | `pnpm test`                       |
+| Watch tests | `pnpm test:watch`                 |
+| Single test | `pnpm vitest run tests/x.test.ts` |
+| Lint        | `pnpm lint`                       |
+| Format      | `pnpm format`                     |
+| Type check  | `pnpm typecheck`                  |
+| Build       | `pnpm build`                      |
 
 `test` runs `vitest run`, `typecheck` runs `tsc --noEmit`, and `build`
 runs `tsc`. If you add or rename a script, keep this table in sync.
+
+For **which check runs at which stage** (pre-commit / pre-push / CI), see the
+cadence table under "## Commands" in `CLAUDE.md` — it is the single source of
+truth, machine-verified against `lefthook.yml` by `pnpm check:cadence`. This
+file deliberately does not repeat the per-stage mapping, to avoid the drift that
+an unguarded second copy would invite.
 
 ## Repository Layout
 

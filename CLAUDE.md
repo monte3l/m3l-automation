@@ -217,10 +217,21 @@ AWS keys) at write time and in CI.
 -->
 
 Run any task with `pnpm <script>`; the full list is in `package.json`
-`scripts` (turbo fans them out per package and caches them). Cadence:
-`test` / `lint` / `format` / `typecheck` / `check:api` pre-commit;
-`test:coverage` pre-push; `build` / `knip` / `check:exports` / `check:scaffold`
-pre-publish; the remaining `check:*` run in CI.
+`scripts` (turbo fans them out per package and caches them). The safety-net
+cadence — which check runs at which stage — is the table below. It is the source
+of truth for the git-hook stages and is machine-verified against `lefthook.yml`
+by `pnpm check:cadence`, so keep the three lefthook rows in sync with the hook
+file.
+
+| Stage                      | Checks run                                                                                                                                                                                  | Scope                     |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| `pre-commit` (lefthook)    | `eslint --fix`, `prettier --write`                                                                                                                                                          | staged files only         |
+| `commit-msg` (lefthook)    | `lint-commit`                                                                                                                                                                               | the commit message        |
+| `pre-push` (lefthook)      | `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test:coverage`, `pnpm build`, `pnpm check:exports`, `verify-signed-range`                                                         | whole repo                |
+| CI `verify` job (`ci.yml`) | everything the pre-push row runs, **plus** every `check:*` script, `pnpm build`, `pnpm knip`, `pnpm lint:md`, `gitleaks`, and `pnpm audit` — see the `verify` job for the full ordered list | whole repo, authoritative |
+
+There is **no pre-publish hook** — the package is internal and unpublished
+(ADR-0020), so every gate beyond the bypassable pre-push subset runs only in CI.
 
 ## CI/CD
 
@@ -305,8 +316,10 @@ files (so they cost nothing in unrelated sessions):
   history. Enforced by `lefthook` `commit-msg` -> `bin/lint-commit.mjs`
   (`@commitlint/lint` core, no CLI).
 - Git hooks run via **lefthook** (`lefthook.yml`): `pre-commit` runs
-  eslint + prettier on staged files; `pre-push` runs typecheck + tests and
-  refuses unsigned/unverified commits (`verify-signed-range`).
+  eslint + prettier on staged files; `pre-push` runs `format:check` + `lint` +
+  `typecheck` + `test:coverage` and refuses unsigned/unverified commits
+  (`verify-signed-range`). See the cadence table under "## Commands" for the
+  authoritative per-stage list.
 - **Before change-work, run `/start-work`** — the pre-work decision gate that
   settles location / branch / PR / push and confirms them (ADR-0016). It is the
   Step 0 the change-initiating skills defer to.
@@ -571,7 +584,9 @@ any non-Claude or `--no-verify` edit; do not remove the hooks as "redundant."
 
 The rules with **no** automated guard, so they need conscious care:
 
-- Never throw bare strings or swallow errors silently.
+- Never swallow errors silently. (Throwing a bare string is separately caught by
+  ESLint `@typescript-eslint/only-throw-error`; the silent-swallow half is the one
+  with no automated guard.)
 - No top-level side effects — keep modules tree-shakeable.
 - Keep the import graph shallow; don't pull a heavy dependency into the main
   entry.
