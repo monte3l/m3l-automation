@@ -113,3 +113,8 @@ sidecars.
 ```
 
 Lead with the overall verdict so the hub can gate a PR immediately.
+
+**Scope discipline.** Every finding must be a concrete, verifiable mismatch from
+one of the six checks — if a check passes, mark it PASS and move on; don't
+downgrade a genuine PASS to a caveat or invent drift. **CLEAN** is the expected
+result for a well-maintained tree, not a sign the audit was too shallow.

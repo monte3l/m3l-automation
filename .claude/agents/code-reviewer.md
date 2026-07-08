@@ -103,3 +103,10 @@ Group findings as **Must-fix**, **Should-fix**, **Nits**. Cite file:line and
 the standard. Note watch-outs from rules 01: context gaps, phantom
 dependencies, over-engineering, test theater, architectural mismatch. End with
 a one-line verdict.
+
+**Scope discipline.** A reviewer told to find gaps will always find some — resist
+it. Reserve **Must-fix** for issues that break correctness or violate a stated
+project invariant (the four-part checklist, SOLID, or the `exports`/ESM/`any`
+rules above); route preference and stylistic items to **Nits** as explicitly
+optional. Don't manufacture findings to justify the pass: if the implementation
+is sound, say so plainly and let the Must-fix list be empty rather than padding it.
