@@ -158,3 +158,10 @@ function makeUserId(raw: string): UserId {
 Rate each changed export with the four dimension scores. Group all type findings
 as **Must-fix**, **Should-fix**, **Nits**. Cite `file:line` and the violated
 rule. End with a one-line verdict.
+
+**Scope discipline.** The dimension scores are the review; reserve **Must-fix**
+for a type that actually admits an illegal state or erases a caller guarantee
+(an `any`, a non-null `!`, an unearned `as Brand` cast). Don't push every sub-10
+score into Must-fix — a 7/10 dimension with a defensible tradeoff is a **Nit**,
+not a defect — and don't demand invariants stricter than the documented contract
+needs.
