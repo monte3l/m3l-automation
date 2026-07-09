@@ -153,6 +153,21 @@ feat!(errors): rename M3LError.code to M3LError.errorCode
 BREAKING CHANGE: M3LError.code is now M3LError.errorCode.
 ```
 
+### AI co-authorship trailer
+
+When Claude authored or substantially assisted a commit, credit the **exact
+model that ran** with a trailer:
+
+```text
+Co-Authored-By: <model name> <noreply@anthropic.com>
+```
+
+The sanctioned model names live in `bin/lib/claude-models.mjs`
+(`CANONICAL_CLAUDE_MODELS`); the `commit-msg` hook rejects a Claude trailer
+whose name isn't on that list. The trailer is optional (it records provenance,
+not legal authorship) — but when present it must be canonical, so the per-model
+commit counts in the README stay queryable from history.
+
 ### Branches and versioning
 
 - Branch from `main`: `feat/<slug>` or `fix/<slug>`.

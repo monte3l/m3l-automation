@@ -315,6 +315,11 @@ files (so they cost nothing in unrelated sessions):
   `BREAKING CHANGE:` footer for breaking changes) for readable, consistent
   history. Enforced by `lefthook` `commit-msg` -> `bin/lint-commit.mjs`
   (`@commitlint/lint` core, no CLI).
+- **AI co-authorship trailer:** when Claude authored/assisted a commit, add
+  `Co-Authored-By: <model> <noreply@anthropic.com>` with the **exact model from
+  the environment** — never copied from a template. Canonical names live in
+  `bin/lib/claude-models.mjs`; the same `commit-msg` hook rejects non-canonical
+  Claude trailers. See `docs/contributing/contributing.md`.
 - Git hooks run via **lefthook** (`lefthook.yml`): `pre-commit` runs
   eslint + prettier on staged files; `pre-push` runs `format:check` + `lint` +
   `typecheck` + `test:coverage` and refuses unsigned/unverified commits

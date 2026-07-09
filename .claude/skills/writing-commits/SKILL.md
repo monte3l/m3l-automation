@@ -103,7 +103,7 @@ When a body is warranted, follow this shape:
 
 <semver impact line — one of the standard phrases below>
 
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Co-Authored-By: <exact model name from your environment> <noreply@anthropic.com>
 ```
 
 **Reuse these semver impact phrases verbatim:**
@@ -114,8 +114,12 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 - `"[N] public symbols, [N] tests, ~[N]% coverage."`
 
 **Co-Authored-By footer**: include whenever Claude authored or substantially
-assisted the commit. Use the exact model name from the environment
-(e.g., `Claude Sonnet 4.6`, `Claude Opus 4.8`).
+assisted the commit. Use the exact model name from the environment (e.g.,
+`Claude Fable 5`, `Claude Opus 4.8`) — never copy a model name from an example
+or template. The canonical allowlist lives in `bin/lib/claude-models.mjs`, and
+the `commit-msg` hook (`bin/lint-commit.mjs`) rejects any Claude trailer whose
+name isn't on it. The trailer is a provenance marker, not a legal authorship
+claim.
 
 **Breaking changes** (`feat!:`): end the body with a `BREAKING CHANGE:` line
 naming the removed/renamed symbol and describing the migration path.
@@ -167,7 +171,7 @@ M3LEventEmitter<TEventMap> to the Core namespace barrel.
 Surfaced through the ./core barrel; three-entry exports map unchanged
 (no semver break).
 
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
 ```
 
 ---
@@ -249,5 +253,5 @@ output/ holds run archives, not raw output; the old name was misleading.
 
 BREAKING CHANGE: M3LPaths.outputDir removed; use archiveDir instead.
 
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 ```
