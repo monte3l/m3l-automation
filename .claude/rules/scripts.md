@@ -19,11 +19,19 @@ paths:
   module, and reviewers reject logic in `main.ts`.
 - **Logic lives in named-export modules** that take their dependencies (config
   values, logger, paths, aws provider) as parameters: `config.ts` (the declared
-  `M3LConfigParameter` set), `hooks.ts` (lifecycle hooks), and `steps/<step>.ts`
-  (one module per concern). Injected deps keep each step unit-testable without
-  running the lifecycle. The `scripts/*/src/**` ESLint design rules (complexity
-  ≤ 10, max-depth ≤ 3, max-lines-per-function ≤ 60, named exports, no default
-  export) structurally enforce this.
+  `M3LConfigParameter` set), `hooks.ts` (lifecycle hooks — always present), and
+  `steps/<step>.ts` (one module per concern, flat — no nesting). Injected deps
+  keep each step unit-testable without running the lifecycle. Enforcement is
+  split: `pnpm check:script-scaffold` machine-verifies the **layout** (required
+  files, package contract, smoke test, docs — from the shared manifest
+  `bin/lib/script-scaffold.mjs`), and the `scripts/*/src/**` ESLint design
+  rules (complexity ≤ 10, max-depth ≤ 3, max-lines-per-function ≤ 60, named
+  exports, no default export) cap **module size and shape**; the
+  composition-root purity of `main.ts` itself remains reviewer-checked.
+- **Scaffold with the generator, never by hand:** `pnpm scaffold:script <name>`
+  emits the whole shape from `templates/script/`; to evolve the shape, change
+  the templates + manifest together — a hand-added or hand-dropped file fails
+  `check:script-scaffold` in CI.
 
 ## Library usage
 

@@ -145,4 +145,11 @@ const batchSize = Number(process.env.BATCH_SIZE);
   rename `main.ts`): the shape belongs to `templates/script/` +
   `bin/lib/script-scaffold.mjs`, and `check:script-scaffold` enforces it in CI.
   To evolve the shape, change the templates + manifest together in their own PR.
+- **Every template/manifest change must pass the E2E dry run before merge:**
+  scaffold a throwaway script, run the full gate set (install, build, smoke
+  run, `pnpm test`, `lint`, `typecheck`, `check:script-scaffold`, `gen:index`,
+  `knip`), then delete it back to vacuous-green. Prose templates rot silently —
+  the 2026-07-09 pipeline build found five template defects (API shape,
+  lint-rule, and visibility errors) that only instantiation caught
+  (`docs/logs/2026-07-09-script-pipeline.md`).
 - See `.claude/rules/scripts.md` and ADR-0022 for the full fleet conventions.

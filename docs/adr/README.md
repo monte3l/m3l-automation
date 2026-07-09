@@ -60,7 +60,7 @@ surface).
 | 0016 | [Signed-commit enforcement and the pre-work decision gate](./0016-signed-commits-and-decision-gate.md)                          | Accepted               |
 | 0017 | [Dependency loading, declaration, and pinning standard](./0017-dependency-loading-standard.md)                                  | Accepted               |
 | 0018 | [Ratify a single shared `M3LScriptOptions` bag for CLI and Lambda](./0018-shared-script-options-bag.md)                         | Accepted               |
-| 0019 | [Remove the `scripts/` example-automation workspace](./0019-remove-scripts-workspace.md)                                        | Accepted               |
+| 0019 | [Remove the `scripts/` example-automation workspace](./0019-remove-scripts-workspace.md)                                        | Superseded by ADR-0022 |
 | 0020 | [Drop release automation](./0020-drop-release-automation.md)                                                                    | Accepted               |
 | 0021 | [Post-1.0.0 direction: deepen the library first, then build consumers](./0021-post-1.0-deepen-first-strategy.md)                | Proposed               |
-| 0022 | [Re-introduce the `scripts/` workspace for real consumers](./0022-reintroduce-scripts-workspace.md)                             | Proposed               |
+| 0022 | [Re-introduce the `scripts/` workspace for real consumers](./0022-reintroduce-scripts-workspace.md)                             | Accepted               |
