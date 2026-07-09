@@ -8,6 +8,11 @@ import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import lint from "@commitlint/lint";
 import load from "@commitlint/load";
+import {
+  CANONICAL_CLAUDE_MODELS,
+  CO_AUTHOR_EMAIL,
+  parseCoAuthor,
+} from "./lib/claude-models.mjs";
 
 /**
  * Build the options object for `@commitlint/lint` from a loaded config.
@@ -44,6 +49,45 @@ export async function lintMessages(messages) {
   return Promise.all(
     messages.map((msg) => lint(msg.trim(), config.rules, opts)),
   );
+}
+
+/**
+ * Validate the Claude co-author trailers of a full commit message.
+ *
+ * Any `Co-Authored-By:` trailer naming Claude must be exactly
+ * `<canonical model> <noreply@anthropic.com>` with the model in
+ * `CANONICAL_CLAUDE_MODELS` — this is what keeps model attribution in
+ * history queryable (drifted names like "(1M context)" variants split the
+ * counts). Non-Claude co-authors pass through untouched, and the trailer
+ * itself stays optional: there is no deterministic signal that Claude
+ * authored a commit, so only malformed claims are rejected.
+ *
+ * @param {string} message - the full commit message, headers + body
+ * @returns {string[]} one error line per offending trailer; empty when valid
+ */
+export function validateClaudeTrailers(message) {
+  const errors = [];
+  for (const line of message.split("\n")) {
+    const trailer = line.match(/^Co-Authored-By:\s*(.*)$/i);
+    if (trailer === null) continue;
+    const value = trailer[1];
+    if (!/\bClaude\b/.test(value)) continue;
+    const parsed = parseCoAuthor(value);
+    if (
+      parsed !== null &&
+      parsed.email === CO_AUTHOR_EMAIL &&
+      CANONICAL_CLAUDE_MODELS.includes(parsed.name)
+    ) {
+      continue;
+    }
+    errors.push(
+      `non-canonical Claude co-author "${value.trim()}" — use ` +
+        `"<model> <${CO_AUTHOR_EMAIL}>" with one of: ` +
+        CANONICAL_CLAUDE_MODELS.join(", ") +
+        " (see bin/lib/claude-models.mjs)",
+    );
+  }
+  return errors;
 }
 
 /**
@@ -86,6 +130,21 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
 
   const results = await lintMessages(messages);
-  const ok = messages.every((msg, i) => report(msg, results[i]));
+  let ok = messages.every((msg, i) => report(msg, results[i]));
+
+  // Trailer validation runs only in --edit mode: range mode lints subjects
+  // only, and historical commits predating the allowlist must not start
+  // failing retroactively.
+  if (editIdx !== -1) {
+    for (const msg of messages) {
+      const trailerErrors = validateClaudeTrailers(msg);
+      if (trailerErrors.length > 0) {
+        console.error(`✗  ${msg.split("\n")[0].trim()}`);
+        trailerErrors.forEach((e) => console.error(`   ${e}`));
+        ok = false;
+      }
+    }
+  }
+
   if (!ok) process.exit(1);
 }

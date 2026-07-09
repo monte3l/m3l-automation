@@ -89,6 +89,13 @@ Derive a concrete default for all four from steps 1–2:
   `docs/contributing/branch-protection.md`). For docs/config-only changes, note
   that a PR is optional but still recommended.
 - **Push target** — `origin <the recommended branch>`. Never `origin main`.
+- **Model tier (advisory only)** — name the recommended model + effort for this
+  task category from the matrix in `docs/contributing/model-selection.md`
+  (e.g. "matrix row 2: Opus 4.8 at `xhigh` for a single-sitting implementation").
+  State it alongside the four decisions in your summary; do **not** add it to
+  the Step-4 confirmation questions — the hub model is user-selected via
+  `/model`, so this is a recommendation the user may act on, not a decision to
+  confirm.
 
 ### 4 — Confirm with the user (blocking)
 
