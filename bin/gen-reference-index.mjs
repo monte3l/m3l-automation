@@ -8,8 +8,12 @@ import { format, resolveConfig } from "prettier";
 import {
   BEGIN_MARKER,
   END_MARKER,
+  SCRIPTS_BEGIN_MARKER,
+  SCRIPTS_END_MARKER,
   buildIndex,
   buildReadmeBlock,
+  buildScriptsCatalog,
+  buildScriptsReadmeBlock,
   root,
 } from "./lib/reference-index.mjs";
 
@@ -29,22 +33,25 @@ async function writeJsonFormatted(filePath, data) {
   writeFileSync(filePath, formatted, "utf8");
 }
 
-function updateReadme(catalog) {
+function replaceBlock(content, beginMarker, endMarker, block, heading) {
+  const start = content.indexOf(beginMarker);
+  const end = content.indexOf(endMarker);
+  if (start !== -1 && end !== -1) {
+    return (
+      content.slice(0, start) + block + content.slice(end + endMarker.length)
+    );
+  }
+  const lead = heading ? `\n\n${heading}\n\n` : "\n\n";
+  return content.trimEnd() + lead + block + "\n";
+}
+
+function updateReadme(catalog, scriptsCatalog) {
   const readmePath = join(refDir, "README.md");
   const block = buildReadmeBlock(catalog);
+  const scriptsBlock = buildScriptsReadmeBlock(scriptsCatalog);
   let content;
   try {
     content = readFileSync(readmePath, "utf8");
-    const start = content.indexOf(BEGIN_MARKER);
-    const end = content.indexOf(END_MARKER);
-    if (start !== -1 && end !== -1) {
-      content =
-        content.slice(0, start) +
-        block +
-        content.slice(end + END_MARKER.length);
-    } else {
-      content = content.trimEnd() + "\n\n" + block + "\n";
-    }
   } catch {
     content = [
       "# Reference index",
@@ -56,17 +63,26 @@ function updateReadme(catalog) {
       "",
     ].join("\n");
   }
+  content = replaceBlock(content, BEGIN_MARKER, END_MARKER, block);
+  content = replaceBlock(
+    content,
+    SCRIPTS_BEGIN_MARKER,
+    SCRIPTS_END_MARKER,
+    scriptsBlock,
+    "## Consumer scripts",
+  );
   writeFileSync(readmePath, content, "utf8");
 }
 
 const { catalog, symbolMap } = buildIndex();
+const scriptsCatalog = buildScriptsCatalog();
 
 mkdirSync(refDir, { recursive: true });
 
 await writeJsonFormatted(join(refDir, "catalog.json"), catalog);
 await writeJsonFormatted(join(refDir, "symbol-map.json"), symbolMap);
-updateReadme(catalog);
+updateReadme(catalog, scriptsCatalog);
 
 console.log(
-  `✓  Reference index generated: ${catalog.length} modules, ${Object.keys(symbolMap).length} symbols.`,
+  `✓  Reference index generated: ${catalog.length} modules, ${Object.keys(symbolMap).length} symbols, ${scriptsCatalog.length} consumer script(s).`,
 );

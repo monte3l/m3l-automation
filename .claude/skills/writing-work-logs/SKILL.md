@@ -175,7 +175,7 @@ change set, so the rules track lived experience instead of drifting from it:
 - **General conventions** (ESM/error/test/API rules that apply to all code) →
   `.claude/rules/*.md` (`library-src.md`, `tests.md`, `scripts.md`).
 - **Agent-specific tactics** (how a writer or reviewer spoke should act) →
-  `.claude/agents/*.md` (`test-author.md`, `submodule-implementer.md`,
+  `.claude/agents/*.md` (`test-author.md`, `code-implementer.md`,
   `spec-conformance-reviewer.md`).
 
 Keep additions concise — terse imperative bullets, a code snippet only where the

@@ -1,0 +1,39 @@
+# __SCRIPT_NAME__
+
+__PURPOSE__
+
+> **This page is the script's contract** — configuration schema, steps, and
+> inputs/outputs. How to *run* it lives in the colocated
+> [`scripts/__SCRIPT_NAME__/README.md`](../../../scripts/__SCRIPT_NAME__/README.md).
+
+## Purpose and scope
+
+<!-- What the automation does, for whom, and what is explicitly out of scope. -->
+
+## Configuration schema
+
+Declared in `src/config.ts` (`configParameters`); config is the script's only
+input seam.
+
+| Parameter   | Type  | Default | Validation         | Description                  |
+| ----------- | ----- | ------- | ------------------ | ---------------------------- |
+| `batchSize` | `INT` | `100`   | `range(1, 10_000)` | Items processed per batch    |
+
+## Steps
+
+One row per `src/steps/` module; each step takes injected dependencies and is
+unit-testable without the lifecycle.
+
+| Step                        | Responsibility |
+| --------------------------- | -------------- |
+| `run-__SCRIPT_NAME__` | <!-- what it does --> |
+
+## Inputs and outputs
+
+<!-- What the script reads from M3L_INPUT_DIR / config, and what it writes to
+M3L_OUTPUT_DIR. -->
+
+## See also
+
+- [`core/script`](../core/script.md) — the `M3LScript` lifecycle the script runs on
+- [ADR-0022](../../adr/0022-reintroduce-scripts-workspace.md) — fleet conventions

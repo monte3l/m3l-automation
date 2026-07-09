@@ -121,7 +121,7 @@ Route by _who needs it and when_:
   library or script code) → `.claude/rules/`:
   `library-src.md`, `tests.md`, `scripts.md`, or `domain-knowledge.md`.
 - **Agent/spoke tactics** (how a specific writer or reviewer spoke should act) →
-  `.claude/agents/`: e.g. `test-author.md`, `submodule-implementer.md`,
+  `.claude/agents/`: e.g. `test-author.md`, `code-implementer.md`,
   `spec-conformance-reviewer.md`, `code-reviewer.md`, and the other reviewers.
 - **Process / step-ordering lessons** that belong to a specific workflow → that
   workflow's `.claude/skills/<name>/SKILL.md` (e.g. a "run `gen:index` before

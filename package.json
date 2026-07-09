@@ -35,6 +35,8 @@
     "check:exports": "publint packages/m3l-common && attw --pack packages/m3l-common --profile esm-only",
     "check:scaffold": "node bin/check-scaffold.mjs",
     "check:scaffold-seam": "node bin/check-scaffold-seam.mjs",
+    "check:script-scaffold": "node bin/check-script-scaffold.mjs",
+    "scaffold:script": "node bin/scaffold-script.mjs",
     "check:agents": "node bin/check-agents.mjs",
     "check:hooks": "node bin/check-hooks.mjs",
     "check:zones": "node bin/check-eslint-zones.mjs",
