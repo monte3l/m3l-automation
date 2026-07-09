@@ -141,6 +141,13 @@ jobs:
       - name: Check scaffold seam (test + status row)
         run: pnpm check:scaffold-seam
 
+      # Consumer-script scaffold: every scripts/<name> package must match the
+      # ADR-0022 shape (modular src/, package contract, root tsconfig ref,
+      # smoke test, README + contract page) defined in the shared manifest.
+      # Deterministic backstop for the scaffolding-scripts skill.
+      - name: Check script scaffold conformance
+        run: pnpm check:script-scaffold
+
       # Every public export surfaced through a namespace barrel must be
       # documented — present in its reference page heading or provenance sidecar.
       # Deterministic backstop for the spec-conformance / docs-consistency spokes.

@@ -1,0 +1,18 @@
+import { Core } from "@m3l-automation/m3l-common";
+
+import { configParameters } from "./config.js";
+import { hooks } from "./hooks.js";
+import { run__SCRIPT_NAME_PASCAL__ } from "./steps/run-__SCRIPT_NAME__.js";
+
+// Composition root ONLY (ADR-0022): construct the script, wire config/hooks,
+// and run the step. Any conditional, loop, or I/O beyond wiring belongs in a
+// steps/ module — reviewers reject business logic here.
+const script = new Core.M3LScript({
+  metadata: { name: "__SCRIPT_NAME__", version: "0.0.0" },
+  config: { params: configParameters },
+  hooks,
+});
+
+await script.run(async (ctx) => {
+  await run__SCRIPT_NAME_PASCAL__({ correlationId: ctx.correlationId });
+});

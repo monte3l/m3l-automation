@@ -1,0 +1,24 @@
+import { Core } from "@m3l-automation/m3l-common";
+
+const BATCH_SIZE_MIN = 1;
+const BATCH_SIZE_MAX = 10_000;
+const BATCH_SIZE_DEFAULT = 100;
+
+/**
+ * The declared configuration schema for `__SCRIPT_NAME__` — the script's only
+ * input seam. Never read `process.env` directly (the scripts ESLint zone bans
+ * it); declare a parameter here instead so resolution, coercion, validation,
+ * and redaction all flow through the library.
+ *
+ * Declare an AWS profile parameter with `Core.AWS_PROFILE_PARAM_NAME` when the
+ * script touches AWS — that name is what enables the `script.aws`
+ * dynamic-provisioning seam.
+ */
+export const configParameters: readonly Core.M3LConfigParameter[] = [
+  new Core.M3LConfigParameter({
+    name: "batchSize",
+    type: Core.M3LConfigParameterType.INT,
+    defaultValue: BATCH_SIZE_DEFAULT,
+    validate: Core.M3LConfigValidators.range(BATCH_SIZE_MIN, BATCH_SIZE_MAX),
+  }),
+];
