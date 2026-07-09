@@ -481,6 +481,10 @@ that reviews it" structural, and keeps the hub's context lean.
   only the hub dispatches subagents (each carries `disallowedTools: Agent`), so
   the graph stays flat at depth 1. `pnpm check:agents` enforces this and that
   every `subagent_type` resolves to a real agent or known built-in.
+- **Model tiering**: which Claude model runs which task category is documented
+  in `docs/contributing/model-selection.md`; `pnpm check:agents` also enforces
+  its MODEL-MATRIX block against agent `model:` frontmatter and workflow
+  `--model` pins.
 - **TDD**: tests are written from the documented contract and fail first, then
   the implementer makes them pass; review follows.
 - **Live status**: `docs/implementation-status.md` is the source of truth for

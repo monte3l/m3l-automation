@@ -7,6 +7,10 @@
 //      (spokes are leaf nodes — only the hub dispatches subagents). A spoke
 //      that omits `tools:` would inherit all tools, including `Agent`, so that
 //      is rejected too.
+//   3. The model-selection matrix holds: every agent's `model:` frontmatter
+//      and every `--model` pin in .github/workflows/*.yml matches the
+//      MODEL-MATRIX block in docs/contributing/model-selection.md, so the
+//      documented tiering and the executing config cannot drift apart.
 // It also warns (non-blocking) about agents that are defined but never
 // referenced anywhere.
 //
@@ -57,7 +61,7 @@ function walk(dir, predicate) {
 }
 
 // --- 1. Catalogue the defined spokes and their tool grants ----------------
-const defined = new Map(); // name -> { tools: string[] | null, file }
+const defined = new Map(); // name -> { tools: string[] | null, model, file }
 for (const file of walk(agentsDir, (n) => n.endsWith(".md"))) {
   const fm = frontmatter(file);
   if (fm === null || fm.name === undefined) continue;
@@ -65,7 +69,7 @@ for (const file of walk(agentsDir, (n) => n.endsWith(".md"))) {
     fm.tools === undefined
       ? null // no allowlist => inherits ALL tools (including Agent)
       : fm.tools.split(",").map((t) => t.trim());
-  defined.set(fm.name, { tools, file });
+  defined.set(fm.name, { tools, model: fm.model, file });
 }
 
 const known = new Set([...defined.keys(), ...BUILTINS]);
@@ -160,7 +164,106 @@ for (const [name, { tools, file }] of defined) {
   }
 }
 
-// --- 5. Warn (non-blocking) on defined-but-unreferenced agents -------------
+// --- 5. Model-selection matrix (docs/contributing/model-selection.md) ------
+// The matrix's MODEL-MATRIX block is the single source of truth for which
+// model each spoke and workflow runs on; frontmatter and workflow pins must
+// match it exactly (see the "Enforcement" section of that doc).
+const matrixDoc = join(root, "docs/contributing/model-selection.md");
+const workflowsDir = join(root, ".github/workflows");
+const matrixAgents = new Map(); // agent name -> model alias
+const matrixWorkflows = new Map(); // workflow file -> pinned model
+if (!existsSync(matrixDoc)) {
+  console.error(
+    "✗  docs/contributing/model-selection.md is missing — the model matrix " +
+      "is required (see its Enforcement section).",
+  );
+  errors++;
+} else {
+  const doc = readFileSync(matrixDoc, "utf8");
+  const block = doc.match(
+    /<!-- BEGIN MODEL-MATRIX -->([\s\S]*?)<!-- END MODEL-MATRIX -->/,
+  );
+  if (block === null) {
+    console.error(
+      "✗  docs/contributing/model-selection.md lacks the MODEL-MATRIX block.",
+    );
+    errors++;
+  } else {
+    const rowRe =
+      /^\|\s*(agent|workflow)\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|/gm;
+    let row;
+    while ((row = rowRe.exec(block[1])) !== null) {
+      const [, surface, name, model] = row;
+      if (surface === "agent") matrixAgents.set(name, model);
+      else matrixWorkflows.set(name, model);
+    }
+
+    // 5a. Agent frontmatter <-> matrix, both directions.
+    for (const [name, { model, file }] of defined) {
+      const expected = matrixAgents.get(name);
+      if (expected === undefined) {
+        console.error(
+          `✗  ${file.slice(root.length + 1)} (${name}) has no row in the ` +
+            `MODEL-MATRIX block of docs/contributing/model-selection.md.`,
+        );
+        errors++;
+      } else if (model !== expected) {
+        console.error(
+          `✗  ${file.slice(root.length + 1)} (${name}) declares "model: ${model}" ` +
+            `but docs/contributing/model-selection.md pins "${expected}".`,
+        );
+        errors++;
+      }
+    }
+    for (const name of matrixAgents.keys()) {
+      if (!defined.has(name)) {
+        console.error(
+          `✗  MODEL-MATRIX row names agent "${name}" which has no ` +
+            `.claude/agents/ definition.`,
+        );
+        errors++;
+      }
+    }
+
+    // 5b. Workflow --model pins <-> matrix, both directions.
+    const pinRe = /--model[= ]([\w.@:-]+)/g;
+    const pinned = new Map(); // workflow file -> Set of pinned models
+    for (const file of walk(workflowsDir, (n) => n.endsWith(".yml"))) {
+      const name = file.slice(workflowsDir.length + 1);
+      const content = readFileSync(file, "utf8");
+      let pin;
+      while ((pin = pinRe.exec(content)) !== null) {
+        if (!pinned.has(name)) pinned.set(name, new Set());
+        pinned.get(name).add(pin[1]);
+        const expected = matrixWorkflows.get(name);
+        if (expected === undefined) {
+          console.error(
+            `✗  .github/workflows/${name} pins "--model ${pin[1]}" but has no ` +
+              `row in the MODEL-MATRIX block of docs/contributing/model-selection.md.`,
+          );
+          errors++;
+        } else if (pin[1] !== expected) {
+          console.error(
+            `✗  .github/workflows/${name} pins "--model ${pin[1]}" but ` +
+              `docs/contributing/model-selection.md pins "${expected}".`,
+          );
+          errors++;
+        }
+      }
+    }
+    for (const [name, model] of matrixWorkflows) {
+      if (!pinned.has(name)) {
+        console.error(
+          `✗  MODEL-MATRIX row pins workflow "${name}" to "${model}" but that ` +
+            `workflow has no --model pin (or does not exist).`,
+        );
+        errors++;
+      }
+    }
+  }
+}
+
+// --- 6. Warn (non-blocking) on defined-but-unreferenced agents -------------
 for (const name of defined.keys()) {
   if (!referenced.has(name)) {
     console.warn(
@@ -176,5 +279,7 @@ if (errors > 0) {
 }
 
 console.log(
-  `✓  ${defined.size} spokes valid: references resolve and none grant "Agent".`,
+  `✓  ${defined.size} spokes valid: references resolve, none grant "Agent", ` +
+    `and the model matrix (${matrixAgents.size} agents, ${matrixWorkflows.size} ` +
+    `workflows) is in sync.`,
 );

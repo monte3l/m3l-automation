@@ -74,7 +74,10 @@ always needs isolation and a PR.
 
 ### 3 — Recommend each decision
 
-Derive a concrete default for all four from steps 1–2:
+Derive a concrete default for all four from steps 1–2. Alongside them, surface
+(advisory, not a confirmed decision — the hub model is user-selected via
+`/model`) the recommended model tier for this task category from the matrix in
+`docs/contributing/model-selection.md`:
 
 - **Location** — default to the **shared checkout**. Recommend a linked worktree
   (`pnpm worktree:new <slug>`) only when the user signalled concurrent/parallel
