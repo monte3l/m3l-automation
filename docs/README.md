@@ -87,3 +87,4 @@ Utilities
 
 - [Contributing](contributing/contributing.md) — setup, commands, testing, and commit conventions
 - [Coding standards](contributing/coding-standards.md) — TypeScript style and conventions
+- [Model selection](contributing/model-selection.md) — which Claude model runs which task category, and how it is enforced

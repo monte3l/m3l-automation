@@ -15,6 +15,15 @@
 <a href="docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-22%2F22-A6E22E?style=flat-square&labelColor=272822" alt="modules: 22/22"></a>
 </p>
 
+<p align="center">
+<!-- BEGIN COMMIT-STATS-BADGES -->
+<a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Fable%205-16%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Fable 5: 16 commits"></a>
+<a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Opus%204.8-203%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Opus 4.8: 203 commits"></a>
+<a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Sonnet%205-6%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Sonnet 5: 6 commits"></a>
+<a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Sonnet%204.6-106%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Sonnet 4.6: 106 commits"></a>
+<!-- END COMMIT-STATS-BADGES -->
+</p>
+
 > **All 22 of 22 submodules are implemented and reviewed.** The package is
 > internal and not published to npm; `version` in `package.json` is hand-managed.
 > Implemented submodules: `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`, `prompt`, `exporters`, `storage`, `network`, `importers`, `files`, `logging`, `aws/models`, `script`, `aws/credentials`, `aws/clients`. See [Implementation status](docs/implementation-status.md)
@@ -87,6 +96,40 @@ import { Core, AWS } from "@m3l-automation/m3l-common";
 - [Implementation status](docs/implementation-status.md) — per-module progress tracker
 - [Architecture overview](docs/m3l-common-architecture.md)
 - [Contributing](.github/CONTRIBUTING.md)
+
+## Co-developed with Claude
+
+This library is co-developed by a human maintainer and Claude (via
+[Claude Code](https://code.claude.com)). Stating that plainly is the point:
+[Anthropic's usage policy](https://www.anthropic.com/news/usage-policy-update)
+treats AI disclosure and human-in-the-loop oversight as first-class safeguards,
+and this section is both.
+
+**A human is accountable for everything that ships.** The maintainer decides
+_what_ gets built — specs, ADRs, priorities, and merges — and reviews, tests,
+and signs off on every change. Claude drafts _how_: implementation under a
+hub-and-spoke TDD pipeline in which the agent that writes code is structurally
+never the agent that reviews it (see
+[CLAUDE.md § Agent Operating Model](CLAUDE.md)).
+
+**Review is real, not nominal.** Every PR must pass the full CI quality gates
+(types, lint, tests with per-file coverage thresholds, exports checks, secret
+scanning) plus a mandatory blocking AI review gate, and all commits pushed to
+the remote are signed. Claude's output is fallible — the work logs under
+[docs/logs/](docs/logs/) record issues that review caught — which is exactly why
+the gates exist: per Anthropic's own guidance, AI output should not be relied
+upon without independent verification.
+
+**What the badges above count.** Each
+`Co-Authored-By: <model name> <noreply@anthropic.com>` git trailer records
+which Claude model assisted a commit. It is a _provenance marker_, not a legal
+authorship or copyright claim (using an AI tool does not make it a legal
+co-author). The sanctioned model names live in
+[bin/lib/claude-models.mjs](bin/lib/claude-models.mjs), the `commit-msg` hook
+rejects non-canonical names, and
+[bin/gen-commit-stats.mjs](bin/gen-commit-stats.mjs) derives the badge counts
+from those trailers. Which model handles which kind of task is documented in
+[docs/contributing/model-selection.md](docs/contributing/model-selection.md).
 
 ## License
 

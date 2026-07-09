@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { buildOpts, lintMessages } from "../../bin/lint-commit.mjs";
+import {
+  buildOpts,
+  lintMessages,
+  validateClaudeTrailers,
+} from "../../bin/lint-commit.mjs";
 
 describe("buildOpts", () => {
   test("forwards the preset's parserOpts (so the ! marker parses)", () => {
@@ -56,5 +60,82 @@ describe("lintMessages (real repo commitlint config)", () => {
       "fix(x): ok",
     ]);
     expect(results.map((r) => r.valid)).toEqual([true, false, true]);
+  });
+});
+
+describe("validateClaudeTrailers", () => {
+  const msg = (trailer: string): string =>
+    `feat(core): add a helper\n\nBody text.\n\n${trailer}`;
+
+  test("accepts every canonical model trailer", () => {
+    for (const name of [
+      "Claude Fable 5",
+      "Claude Opus 4.8",
+      "Claude Sonnet 5",
+    ]) {
+      expect(
+        validateClaudeTrailers(
+          msg(`Co-Authored-By: ${name} <noreply@anthropic.com>`),
+        ),
+      ).toEqual([]);
+    }
+  });
+
+  test("rejects the historical (1M context) variant", () => {
+    const errors = validateClaudeTrailers(
+      msg(
+        "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+      ),
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("Claude Opus 4.8 (1M context)");
+    expect(errors[0]).toContain("Claude Fable 5");
+  });
+
+  test("rejects an unknown model name", () => {
+    expect(
+      validateClaudeTrailers(
+        msg("Co-Authored-By: Claude Sonnet 9000 <noreply@anthropic.com>"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  test("rejects a canonical name with the wrong email", () => {
+    expect(
+      validateClaudeTrailers(
+        msg("Co-Authored-By: Claude Opus 4.8 <claude@example.com>"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  test("accepts a message with no trailer at all", () => {
+    expect(validateClaudeTrailers("fix(x): plain message")).toEqual([]);
+  });
+
+  test("ignores non-Claude co-authors", () => {
+    expect(
+      validateClaudeTrailers(
+        msg("Co-Authored-By: Jane Doe <jane@example.com>"),
+      ),
+    ).toEqual([]);
+  });
+
+  test("reports each offending trailer in a multi-trailer message", () => {
+    const errors = validateClaudeTrailers(
+      msg(
+        "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n" +
+          "Co-Authored-By: Claude Bogus <noreply@anthropic.com>",
+      ),
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("Claude Bogus");
+  });
+
+  test("matches the trailer key case-insensitively", () => {
+    expect(
+      validateClaudeTrailers(
+        msg("co-authored-by: Claude Bogus <noreply@anthropic.com>"),
+      ),
+    ).toHaveLength(1);
   });
 });
