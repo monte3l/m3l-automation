@@ -28,7 +28,7 @@ two are deliberately kept separate.
 
 This skill runs in the **hub** (main agent) and only lays down scaffolding +
 tracker rows. It does **not** implement the module or review code — that happens
-in the spoke subagents (`test-author`, `submodule-implementer`, `code-reviewer`,
+in the spoke subagents (`test-author`, `code-implementer`, `code-reviewer`,
 `spec-conformance-reviewer`) orchestrated by `implementing-submodules`. The agent
 that writes the implementation is never the one that reviews it; keep that
 separation intact here by handing off rather than implementing inline.

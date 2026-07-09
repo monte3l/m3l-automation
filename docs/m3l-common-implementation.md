@@ -58,7 +58,7 @@ bookkeeping write the hub owns is `docs/implementation-status.md`.
 4. **Phase 2 — RED** → dispatch `test-author` with the contract + target test
    path `packages/m3l-common/tests/<module>.test.ts`. Tests must fail for the
    right reason (symbols absent). → mark module `🧪` in status file.
-5. **Phase 3 — GREEN** → dispatch `submodule-implementer` with the contract +
+5. **Phase 3 — GREEN** → dispatch `code-implementer` with the contract +
    failing tests. Writes `src/<ns>/<module>/index.ts` (private helpers under
    `src/internal/`), re-exports from `src/<ns>/index.ts`, drives `pnpm test` +
    `pnpm typecheck` green **without touching the `exports` map**. → mark `🟢`.
