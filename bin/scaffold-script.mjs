@@ -16,7 +16,13 @@
 //   pnpm scaffold:script <name> [--purpose "<one-line purpose>"]
 //   node bin/scaffold-script.mjs data-sync --purpose "Sync S3 exports to Dynamo"
 import process from "node:process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { format, resolveConfig } from "prettier";
@@ -26,6 +32,7 @@ import {
   SCRIPT_NAME_RE,
   TEMPLATE_DIR,
   docPagePath,
+  purposeErrors,
   rootTsconfigRef,
   scriptTokens,
   substituteTokens,
@@ -57,8 +64,8 @@ if (!SCRIPT_NAME_RE.test(name)) {
     `Script name "${name}" must be kebab-case ([a-z0-9] segments separated by "-").`,
   );
 }
-if (!purpose) {
-  fail("--purpose was given without a value.");
+for (const problem of purposeErrors(purpose)) {
+  fail(problem);
 }
 
 const packageDir = join(root, "scripts", name);
@@ -87,13 +94,25 @@ async function emit(templateRel, absoluteTarget) {
   writeFileSync(absoluteTarget, formatted);
 }
 
-for (const { template, target } of PACKAGE_TEMPLATE_FILES) {
-  const resolvedTarget = substituteTokens(target, tokens);
-  await emit(template, join(packageDir, resolvedTarget));
-  console.log(`✓  scripts/${name}/${resolvedTarget}`);
+// Atomic emission: neither target existed (guarded above), so on ANY failure
+// remove everything this run created — a half-scaffolded scripts/<name>/
+// would otherwise permanently trip the duplicate-guard on retry.
+try {
+  for (const { template, target } of PACKAGE_TEMPLATE_FILES) {
+    const resolvedTarget = substituteTokens(target, tokens);
+    await emit(template, join(packageDir, resolvedTarget));
+    console.log(`✓  scripts/${name}/${resolvedTarget}`);
+  }
+  await emit(DOC_PAGE_TEMPLATE, docPage);
+  console.log(`✓  ${docPagePath(name)}`);
+} catch (cause) {
+  rmSync(packageDir, { recursive: true, force: true });
+  rmSync(docPage, { force: true });
+  console.error(
+    `✗  Scaffold failed and was rolled back (scripts/${name}/ removed): ${cause}`,
+  );
+  process.exit(1);
 }
-await emit(DOC_PAGE_TEMPLATE, docPage);
-console.log(`✓  ${docPagePath(name)}`);
 
 // --- Wire the root tsconfig project reference (sorted, idempotent) -----------
 const rootTsconfigPath = join(root, "tsconfig.json");
