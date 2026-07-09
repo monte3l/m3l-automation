@@ -160,7 +160,7 @@ export async function runExport(deps: {
 ```ts
 // good — importing config.ts already exercises eager default validation;
 // assert the declared shape (unique names, M3LConfigParameter instances)
-const names = configParameters.map((parameter) => parameter.name);
+const names = configParameters.map((parameter) => parameter.getName());
 expect(new Set(names).size).toBe(names.length);
 // bad — resolving values through a reader re-tests the library's config
 // pipeline (already covered in packages/m3l-common) instead of this script

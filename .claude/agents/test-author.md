@@ -181,7 +181,7 @@ expect(written).toHaveLength(1);
 ```ts
 // good — importing config.ts already exercises eager default validation;
 // assert the declared shape (unique names, M3LConfigParameter instances)
-const names = configParameters.map((parameter) => parameter.name);
+const names = configParameters.map((parameter) => parameter.getName());
 expect(new Set(names).size).toBe(names.length);
 // bad — resolving values through a reader turns the smoke test into an
 // integration test of the library's config pipeline (already tested there)

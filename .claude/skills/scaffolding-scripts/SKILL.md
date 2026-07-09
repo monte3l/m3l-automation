@@ -105,9 +105,12 @@ that separation by handing off rather than implementing inline.
 
 ```ts
 // good — main.ts only wires + runs; runExport takes its deps as parameters
-await script.run(async (ctx) =>
-  runExport({ correlationId: ctx.correlationId, outputDir, batchSize }),
-);
+// (run's main function takes no arguments — reach the library through the
+// script instance and inject what the step needs)
+await script.run(async () => {
+  const config = await script.getConfiguration();
+  await runExport({ logger: script.logger, config });
+});
 // bad — business logic inlined into main.ts (a loop, I/O, branching)
 await script.run(async () => {
   for (const row of await readAll()) await writeOne(row); // reviewers reject this

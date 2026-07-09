@@ -14,7 +14,7 @@ describe("__SCRIPT_NAME__ config declaration", () => {
   });
 
   it("declares every parameter via M3LConfigParameter with a unique name", () => {
-    const names = configParameters.map((parameter) => parameter.name);
+    const names = configParameters.map((parameter) => parameter.getName());
     expect(new Set(names).size).toBe(names.length);
     for (const parameter of configParameters) {
       expect(parameter).toBeInstanceOf(Core.M3LConfigParameter);
