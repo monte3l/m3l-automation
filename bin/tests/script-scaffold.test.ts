@@ -30,12 +30,14 @@ vi.mock("node:fs", async () => {
 
 import {
   PACKAGE_TEMPLATE_FILES,
+  PURPOSE_MAX_LENGTH,
   REQUIRED_EXACT_FILES,
   REQUIRED_GLOBS,
   SCRIPT_NAME_RE,
   docPagePath,
   packageManifestErrors,
   pascalCase,
+  purposeErrors,
   rootTsconfigRef,
   scriptPackageDirs,
   scriptTokens,
@@ -259,6 +261,71 @@ describe("packageManifestErrors", () => {
       '"scripts.build" must be declared',
       '"scripts.typecheck" must be declared',
       '"scripts.start" must be declared',
+    ]);
+  });
+});
+
+describe("purposeErrors", () => {
+  test("returns no errors for a valid one-line purpose", () => {
+    expect(purposeErrors("Sync S3 exports to Dynamo")).toEqual([]);
+  });
+
+  test.each([
+    ["an empty string", ""],
+    ["a whitespace-only string", "   "],
+    ["undefined", undefined],
+    ["null", null],
+    ["a number", 42],
+  ])("flags %s as not a non-empty string", (_label, value) => {
+    expect(purposeErrors(value)).toEqual([
+      "purpose must be a non-empty string",
+    ]);
+  });
+
+  test("flags a purpose longer than PURPOSE_MAX_LENGTH characters", () => {
+    const purpose = "a".repeat(PURPOSE_MAX_LENGTH + 1);
+    expect(purposeErrors(purpose)).toEqual([
+      `purpose must be at most ${PURPOSE_MAX_LENGTH} characters (got ${purpose.length})`,
+    ]);
+  });
+
+  test("accepts a purpose exactly at PURPOSE_MAX_LENGTH characters", () => {
+    const purpose = "a".repeat(PURPOSE_MAX_LENGTH);
+    expect(purposeErrors(purpose)).toEqual([]);
+  });
+
+  test.each([
+    ["a newline", "line one\nline two"],
+    ["a tab", "purpose\twith a tab"],
+    ["a null byte", "purpose here"],
+    ["a DEL control character", "purposehere"],
+  ])("rejects a purpose containing %s", (_label, purpose) => {
+    expect(purposeErrors(purpose)).toEqual([
+      "purpose must not contain newlines or control characters",
+    ]);
+  });
+
+  test.each([
+    ['"', "it terminates the package.json description string"],
+    ["\\", "it escapes inside the package.json description string"],
+    ["*", "it can terminate the doc comment the purpose is emitted into"],
+    ["/", "it can terminate the doc comment the purpose is emitted into"],
+  ])(
+    "rejects a purpose containing the banned character %j, naming it in the error",
+    (char, why) => {
+      const purpose = `Sync things ${char} more things`;
+      expect(purposeErrors(purpose)).toEqual([
+        `purpose must not contain ${JSON.stringify(char)} — ${why}`,
+      ]);
+    },
+  );
+
+  test("collects one error per violated rule when several are wrong at once", () => {
+    const purpose = `${"a".repeat(PURPOSE_MAX_LENGTH + 1)}"/`;
+    expect(purposeErrors(purpose)).toEqual([
+      `purpose must be at most ${PURPOSE_MAX_LENGTH} characters (got ${purpose.length})`,
+      `purpose must not contain ${JSON.stringify('"')} — it terminates the package.json description string`,
+      `purpose must not contain ${JSON.stringify("/")} — it can terminate the doc comment the purpose is emitted into`,
     ]);
   });
 });

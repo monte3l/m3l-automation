@@ -9,6 +9,49 @@ import { join } from "node:path";
 /** Kebab-case script names only: `data-sync`, `report-builder`, `probe`. */
 export const SCRIPT_NAME_RE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 
+/** Longest purpose accepted — one terse sentence, not a paragraph. */
+export const PURPOSE_MAX_LENGTH = 200;
+
+/**
+ * Validate a --purpose value before substitution. The purpose is injected
+ * verbatim into a JSON string (package.json "description"), TS doc comments,
+ * and markdown — so characters that terminate or escape those contexts are
+ * rejected up front rather than escaped per-context: a double quote or
+ * backslash breaks the JSON string, and star/slash can form the two-char
+ * comment terminator, which would end the doc comment early and let a
+ * "purpose" inject live code into the emitted module (this very comment
+ * cannot spell the sequence out — that is the bug).
+ * Returns human-readable problem strings (empty array = valid).
+ */
+export function purposeErrors(purpose) {
+  const problems = [];
+  if (typeof purpose !== "string" || purpose.trim() === "") {
+    return ["purpose must be a non-empty string"];
+  }
+  if (purpose.length > PURPOSE_MAX_LENGTH) {
+    problems.push(
+      `purpose must be at most ${PURPOSE_MAX_LENGTH} characters (got ${purpose.length})`,
+    );
+  }
+  // eslint-disable-next-line no-control-regex -- rejecting control chars is the point
+  if (/[\u0000-\u001f\u007f]/u.test(purpose)) {
+    problems.push("purpose must not contain newlines or control characters");
+  }
+  for (const [char, why] of [
+    ['"', "it terminates the package.json description string"],
+    ["\\", "it escapes inside the package.json description string"],
+    ["*", "it can terminate the doc comment the purpose is emitted into"],
+    ["/", "it can terminate the doc comment the purpose is emitted into"],
+  ]) {
+    if (purpose.includes(char)) {
+      problems.push(
+        `purpose must not contain ${JSON.stringify(char)} — ${why}`,
+      );
+    }
+  }
+  return problems;
+}
+
 /** Directory (repo-relative) holding the *.tmpl sources. */
 export const TEMPLATE_DIR = "templates/script";
 
@@ -90,6 +133,12 @@ export const REQUIRED_EXACT_FILES = [
  * Directory/suffix pairs of which at least one match must exist:
  * business logic lives in steps modules, and ADR-0022 §8 mandates at least a
  * config-declaration smoke test.
+ *
+ * The scan is deliberately SHALLOW (one level): flat `src/steps/` and
+ * `tests/` directories are part of the ratified fleet shape — the ESLint
+ * design rules already cap module size, so growth means more flat step
+ * modules, not nesting. A conformant file one level deeper does not count;
+ * to allow nesting, change this manifest (and the ADR) — not the checker.
  */
 export const REQUIRED_GLOBS = [
   { dir: "src/steps", suffix: ".ts", what: "a steps/ module" },
