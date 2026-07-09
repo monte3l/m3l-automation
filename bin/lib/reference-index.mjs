@@ -5,6 +5,11 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import {
+  SCRIPT_DOCS_DIR,
+  docPagePath,
+  scriptPackageDirs,
+} from "./script-scaffold.mjs";
 
 export const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -16,6 +21,8 @@ const IMPORT_PATH = {
 
 const BEGIN_MARKER = "<!-- BEGIN GENERATED CATALOG -->";
 const END_MARKER = "<!-- END GENERATED CATALOG -->";
+const SCRIPTS_BEGIN_MARKER = "<!-- BEGIN GENERATED SCRIPTS CATALOG -->";
+const SCRIPTS_END_MARKER = "<!-- END GENERATED SCRIPTS CATALOG -->";
 
 function barrelWiredModules(namespace) {
   const barrelPath = join(
@@ -206,9 +213,67 @@ export function buildReadmeBlock(catalog) {
   ].join("\n");
 }
 
+/**
+ * The consumer-scripts catalog: the union of contract pages under
+ * docs/reference/scripts/ and script packages under scripts/, sorted by name.
+ * A conformant script has both (check-script-scaffold enforces it); the index
+ * still renders one-sided entries so drift is visible here too.
+ */
+export function buildScriptsCatalog() {
+  const packages = new Set(scriptPackageDirs(root));
+  const pages = new Set();
+  try {
+    for (const file of readdirSync(join(root, SCRIPT_DOCS_DIR))) {
+      if (file.endsWith(".md") && file !== "README.md") {
+        pages.add(file.slice(0, -3));
+      }
+    }
+  } catch {
+    // No scripts docs dir yet — the catalog below may still list packages.
+  }
+  return [...new Set([...packages, ...pages])].sort().map((name) => ({
+    name,
+    docPath: docPagePath(name),
+    docExists: pages.has(name),
+    packageExists: packages.has(name),
+  }));
+}
+
+export function buildScriptsReadmeBlock(scriptsCatalog) {
+  const lines = [SCRIPTS_BEGIN_MARKER, ""];
+  if (scriptsCatalog.length === 0) {
+    lines.push(
+      "_No consumer scripts yet — scaffold one with `pnpm scaffold:script <name>`._",
+    );
+  } else {
+    const header = ["Script", "Contract page", "Package"];
+    const dataRows = scriptsCatalog.map((e) => [
+      e.name,
+      e.docExists ? `[${e.name}.md](scripts/${e.name}.md)` : "❌ missing",
+      e.packageExists ? `\`scripts/${e.name}/\`` : "❌ missing",
+    ]);
+    const colWidths = header.map((h, col) =>
+      Math.max(displayWidth(h), ...dataRows.map((r) => displayWidth(r[col]))),
+    );
+    const fmtRow = (cells) =>
+      "| " +
+      cells.map((c, i) => padToDisplay(c, colWidths[i])).join(" | ") +
+      " |";
+    lines.push(
+      fmtRow(header),
+      "| " + colWidths.map((w) => "-".repeat(w)).join(" | ") + " |",
+      ...dataRows.map(fmtRow),
+    );
+  }
+  lines.push("", SCRIPTS_END_MARKER);
+  return lines.join("\n");
+}
+
 export {
   BEGIN_MARKER,
   END_MARKER,
+  SCRIPTS_BEGIN_MARKER,
+  SCRIPTS_END_MARKER,
   NAMESPACES,
   parseImplementationStatus,
   barrelWiredModules,
