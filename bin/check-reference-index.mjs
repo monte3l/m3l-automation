@@ -9,8 +9,12 @@ import { join } from "node:path";
 import {
   BEGIN_MARKER,
   END_MARKER,
+  SCRIPTS_BEGIN_MARKER,
+  SCRIPTS_END_MARKER,
   buildIndex,
   buildReadmeBlock,
+  buildScriptsCatalog,
+  buildScriptsReadmeBlock,
   root,
 } from "./lib/reference-index.mjs";
 
@@ -22,14 +26,15 @@ function readJson(path) {
   }
 }
 
-function extractBlock(content) {
-  const start = content.indexOf(BEGIN_MARKER);
-  const end = content.indexOf(END_MARKER);
-  if (start === -1 || end === -1) return null;
-  return content.slice(start, end + END_MARKER.length);
+function extractBlock(content, begin = BEGIN_MARKER, end = END_MARKER) {
+  const start = content.indexOf(begin);
+  const stop = content.indexOf(end);
+  if (start === -1 || stop === -1) return null;
+  return content.slice(start, stop + end.length);
 }
 
 const { catalog, symbolMap } = buildIndex();
+const scriptsCatalog = buildScriptsCatalog();
 let errors = 0;
 
 const committedCatalog = readJson(join(root, "docs/reference/catalog.json"));
@@ -79,6 +84,25 @@ if (readmeContent === null) {
   } else if (committedBlock !== buildReadmeBlock(catalog)) {
     console.error(
       "✗  docs/reference/README.md catalog block is out of date — run pnpm gen:index.",
+    );
+    errors++;
+  }
+
+  const committedScriptsBlock = extractBlock(
+    readmeContent,
+    SCRIPTS_BEGIN_MARKER,
+    SCRIPTS_END_MARKER,
+  );
+  if (committedScriptsBlock === null) {
+    console.error(
+      "✗  docs/reference/README.md is missing the GENERATED SCRIPTS CATALOG markers — run pnpm gen:index.",
+    );
+    errors++;
+  } else if (
+    committedScriptsBlock !== buildScriptsReadmeBlock(scriptsCatalog)
+  ) {
+    console.error(
+      "✗  docs/reference/README.md scripts catalog block is out of date — run pnpm gen:index.",
     );
     errors++;
   }

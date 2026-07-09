@@ -1,0 +1,18 @@
+import type { Core } from "@m3l-automation/m3l-common";
+
+/**
+ * Starter step for `__SCRIPT_NAME__`: __PURPOSE__
+ *
+ * Business logic lives here — never in `main.ts`. Every dependency (config
+ * values, logger, paths, the `script.aws` provider) is injected as a
+ * parameter so the step stays unit-testable without running the lifecycle.
+ */
+export function run__SCRIPT_NAME_PASCAL__(deps: {
+  readonly logger: Core.M3LLogger;
+}): Promise<void> {
+  // Implementation is handed off to the implementing-scripts pipeline.
+  // (Sync body returning a resolved promise: `require-await` rejects an async
+  // function with no await — flip to `async` once the real logic awaits.)
+  deps.logger.step("__SCRIPT_NAME__ starter step — implementation pending");
+  return Promise.resolve();
+}

@@ -4,13 +4,13 @@
     {
       "id": 1,
       "prompt": "Implement the core/config submodule. It has a spec at docs/reference/core/config.md and its status in docs/implementation-status.md is 'documented'.",
-      "expected_output": "Hub dispatches spokes in order: spec-conformance-reviewer (contract), test-author (RED tests), submodule-implementer (GREEN impl), code-reviewer + spec-conformance-reviewer (review). Status file updated after each phase. Final verify passes. Hub never edits src/ or tests/ directly.",
+      "expected_output": "Hub dispatches spokes in order: spec-conformance-reviewer (contract), test-author (RED tests), code-implementer (GREEN impl), code-reviewer + spec-conformance-reviewer (review). Status file updated after each phase. Final verify passes. Hub never edits src/ or tests/ directly.",
       "files": [],
       "expectations": [
         "Hub reads docs/implementation-status.md to confirm the module and spec page exist",
         "Hub dispatches spec-conformance-reviewer first to extract the contract",
         "Hub dispatches test-author with the contract text before any implementation",
-        "Hub dispatches submodule-implementer only after the RED tests exist",
+        "Hub dispatches code-implementer only after the RED tests exist",
         "Hub dispatches code-reviewer and spec-conformance-reviewer in parallel for review",
         "Hub updates docs/implementation-status.md after each phase transition",
         "Hub runs the final verification pipeline (pnpm build && pnpm test && pnpm lint && pnpm typecheck)",

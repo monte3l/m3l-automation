@@ -36,7 +36,7 @@ concrete file paths), and record progress in the durable state file
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | -------------------------------- |
 | 1. Contract     | `spec-conformance-reviewer`                                                                                                                                                                                                                        | nothing     | the doc path                     |
 | 2. RED (tests)  | `test-author`                                                                                                                                                                                                                                      | tests only  | the contract + target paths      |
-| 3. GREEN (impl) | `submodule-implementer`                                                                                                                                                                                                                            | `src/` only | the contract + the failing tests |
+| 3. GREEN (impl) | `code-implementer`                                                                                                                                                                                                                                 | `src/` only | the contract + the failing tests |
 | 4. Review       | `code-reviewer` + `spec-conformance-reviewer` (+ `security-reviewer`) (+ `type-design-analyzer` whenever the module introduces or changes public types — every Core/AWS module qualifies) (+ `silent-failure-hunter` when error/async paths exist) | nothing     | the diff + the doc path          |
 
 ### Running pipelines concurrently (opt-in)
@@ -65,7 +65,7 @@ ADR-0013 (its durable home), not a per-plan caveat.
 - [ ] Step 4 — Contract: `spec-conformance-reviewer` → extract exact exports +
       behavioral contracts; save the contract text
 - [ ] Step 5 — RED: `test-author` → writes failing tests; update status file → 🧪
-- [ ] Step 6 — GREEN: `submodule-implementer` → writes `src/` until tests pass;
+- [ ] Step 6 — GREEN: `code-implementer` → writes `src/` until tests pass;
       update status file → 🟢
 - [ ] Step 7 — Review: select every applicable reviewer first, then dispatch the
       whole set in **one message** so they run in parallel (Phase 4) —
@@ -140,7 +140,7 @@ ADR-0013 (its durable home), not a per-plan caveat.
    for the right reason** (the symbols don't exist yet). Update the state file:
    that module → 🧪 tests-written.
 
-6. **Phase 3 — GREEN.** Dispatch `submodule-implementer` with the contract and
+6. **Phase 3 — GREEN.** Dispatch `code-implementer` with the contract and
    the failing tests. It writes the minimal `src/<ns>/<module>/index.ts`
    (private helpers under `src/internal/`), re-exports from the namespace barrel
    `src/<ns>/index.ts`, and drives `pnpm test` + `pnpm typecheck` to green
@@ -149,7 +149,7 @@ ADR-0013 (its durable home), not a per-plan caveat.
    error-handling conventions (`M3LError` or a subclass), even when the spec doc
    shows bare `new Error()`** — do not assume the implementer resolves a
    spec-doc / project-rule conflict in the right direction. Also **hand the spoke
-   a journal path** (e.g. `<scratchpad>/submodule-implementer-<module>.md`) and
+   a journal path** (e.g. `<scratchpad>/code-implementer-<module>.md`) and
    ask it to append progress there before each major step — this is the durable
    trace you read if its turn is cut short.
 
@@ -181,7 +181,7 @@ ADR-0013 (its durable home), not a per-plan caveat.
    plus `type-design-analyzer` whenever the module introduces or changes public
    types (every Core/AWS module qualifies), and `silent-failure-hunter` whenever
    the module has error-handling or async paths. Collect their findings, send
-   **Must-fix** items back to `submodule-implementer`, and re-run tests/review
+   **Must-fix** items back to `code-implementer`, and re-run tests/review
    until clean.
 
    **Adversarial refute pass (high-risk surface only).** When the diff touches
@@ -190,7 +190,7 @@ ADR-0013 (its durable home), not a per-plan caveat.
    `security-reviewer` in _refute mode_ (see its agent definition): it assumes the
    surface is unsafe and tries to construct a concrete leak/bypass, defaulting to a
    finding when uncertain. Confirm the surface only when refutation **fails**; if
-   it succeeds, route the finding back to `submodule-implementer` like any
+   it succeeds, route the finding back to `code-implementer` like any
    Must-fix. Skip this pass entirely for non-security surfaces — it is deliberately
    not run on every module, to avoid the over-review cost.
 
@@ -236,7 +236,7 @@ that act on them — so you don't need to relay them by hand:
 
 - `src/**` conventions (ESM `.js` imports, typed errors + `cause`, named
   exports, CLI-over-IDE authority) → `.claude/rules/library-src.md`, loaded when
-  `submodule-implementer` edits `src/**`.
+  `code-implementer` edits `src/**`.
 - Test discipline (test-first, error-channel `eslint-disable` rationale,
   eslint-in-loop, reading coverage from `coverage-final.json`) →
   `.claude/rules/tests.md`, loaded when `test-author` edits `tests/**`.
