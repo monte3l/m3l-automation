@@ -65,9 +65,13 @@ const script = new Core.M3LScript({
 ### 2.1 Metadata
 
 `metadata` is an `M3LScriptMetadata` object identifying the script — most
-importantly its `name` and `version`. The name participates in path resolution
-(input/output/config directories are derived per script), so keep it stable and
-descriptive.
+importantly its `name` and `version`. Keep the name stable and descriptive: it
+appears in logs and archives. Note that `M3LPaths` anchors one **flat**
+`data/{config,input,output}` root shared by every script — there is **no**
+per-script path derivation from the name. To isolate a script's I/O, point the
+`M3L_CONFIG_DIR` / `M3L_INPUT_DIR` / `M3L_OUTPUT_DIR` env overrides (in its
+gitignored `.env`) at a per-script subtree such as `data/<script-name>/…`
+(ADR-0022).
 
 ### 2.2 Configuration schema
 
