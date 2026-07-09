@@ -1,8 +1,14 @@
 # 0019. Remove the `scripts/` example-automation workspace
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0022](0022-reintroduce-scripts-workspace.md)
 - **Date:** 2026-07-06
 - **Deciders:** m3l-automation maintainers
+
+> **Superseded (2026-07-09).** The `scripts/*` workspace returns for **real**
+> consumers under the fleet conventions and deterministic scaffold pipeline
+> ratified in [ADR-0022](0022-reintroduce-scripts-workspace.md). This ADR's
+> anti-hollow reasoning — never carry surface for a package that ships
+> nothing — lives on as ADR-0022's per-package knip gate.
 
 ## Context and problem statement
 
@@ -55,6 +61,8 @@ live in their own repositories. `M3LScript` remains a public export of
 ## Links
 
 - Supersedes / superseded by: supersedes the `scripts/`-workspace aspect of
-  [ADR-0001](./0001-toolchain-choices.md).
+  [ADR-0001](./0001-toolchain-choices.md); superseded by
+  [ADR-0022](./0022-reintroduce-scripts-workspace.md) (restores the workspace
+  for real consumers).
 - Related: `pnpm-workspace.yaml`, `tsconfig.json`, `knip.json`,
   `eslint.config.js`, `.claude/hooks/guard-branch-isolation.mjs`.

@@ -1,7 +1,7 @@
 # 0022. Re-introduce the `scripts/` workspace for real consumers
 
-- **Status:** Proposed
-- **Date:** 2026-07-07
+- **Status:** Accepted
+- **Date:** 2026-07-07 (amended and accepted 2026-07-09)
 - **Deciders:** Enrico Lionello (maintainer)
 
 ## Context and problem statement
@@ -77,11 +77,12 @@ corrected three assumptions carried in the roadmap drafts:
 ## Decision
 
 We chose **option 3 — re-introduce the `scripts/*` workspace for real
-consumers**, ratifying the following fleet conventions. This is _related to_
-ADR-0019 (it inverts the workspace-removal mechanics for **real** consumers),
-not a supersession: ADR-0019's reasoning — do not carry surface for a package
-that ships nothing — still stands and is precisely what the anti-hollow gate
-below enforces.
+consumers**, ratifying the following fleet conventions. This **supersedes
+ADR-0019**: that decision removed the workspace, and this one restores it, so
+the operative ruling on `scripts/*` now lives here. ADR-0019's underlying
+reasoning — do not carry surface for a package that ships nothing — is not
+discarded but inherited: it is precisely what the anti-hollow gate below
+enforces, package by package instead of workspace-wide.
 
 ### Fleet conventions (ratified)
 
@@ -92,7 +93,7 @@ fixed source shape:
 scripts/<name>/src/
   main.ts        # composition root ONLY: construct M3LScript + run()
   config.ts      # the declared M3LConfigParameter set (named export)
-  hooks.ts       # lifecycle hooks (omit if trivial)
+  hooks.ts       # lifecycle hooks (always present, even when empty — see §9)
   steps/         # business logic, one module per step/concern
     <step>.ts    # pure named exports taking injected deps
 ```
@@ -137,11 +138,39 @@ output}`. This is the only isolation the library supports and is the fleet's
    `aws.profile` dynamic-provisioning seam, not hand-constructed SDK clients.
 8. **Testing policy.** Scripts are **exempt from the 80% coverage gate**
    (`vitest.config.ts` already scopes coverage to `packages/*/src`), but each
-   script **must ship at least a config-declaration smoke test**. Unit tests
-   for `steps/` modules are encouraged (the injected-deps layout makes them
-   mockable without the lifecycle) but not mandatory. Vitest discovers any
-   `scripts/**/tests/**` via the existing `include`; those files sit outside
-   the coverage gate.
+   script **must ship at least a config-declaration smoke test** — the
+   scaffold generator emits it, and `pnpm check:script-scaffold` fails CI when
+   it is missing (§9). Unit tests for `steps/` modules are encouraged (the
+   injected-deps layout makes them mockable without the lifecycle) but not
+   mandatory. Vitest discovers any `scripts/**/tests/**` via the existing
+   `include`; those files sit outside the coverage gate.
+9. **Deterministic production pipeline (amendment, 2026-07-09).** The scaffold
+   shape is not prose: it is defined once in the shared manifest
+   `bin/lib/script-scaffold.mjs`, emitted by the generator
+   `pnpm scaffold:script <name>` from the template sources under
+   `templates/script/`, and enforced in CI by `pnpm check:script-scaffold` —
+   generator and checker consume the same manifest, so the emitted and
+   verified shapes cannot drift. The ratified specifics:
+   - **Uniform shape, no optional files:** `hooks.ts` is always present (an
+     empty `M3LScriptLifecycleHooks` object is valid), and `src/steps/` and
+     `tests/` are **flat** — the conformance scan is deliberately one level
+     deep; growth means more flat step modules (the ESLint design rules
+     already cap module size), not nesting.
+   - **Two documentation artifacts with disjoint responsibilities**, both
+     scaffolded and both required: `scripts/<name>/README.md` covers how to
+     _run_ the script (invocation, `.env`, `M3L_*_DIR` overrides), and
+     `docs/reference/scripts/<name>.md` is the _contract_ (purpose, config
+     schema, steps, inputs/outputs). Every script is indexed in the generated
+     consumer-scripts catalog in `docs/reference/README.md`
+     (`pnpm gen:index` / `pnpm check:index`).
+   - **Tooling/build tsconfig split** mirroring the library, so `tests/` are
+     type-checked; the root `tsconfig.json` references
+     `scripts/<name>/tsconfig.build.json` (inserted by the generator).
+   - **Pipeline skills:** `scaffolding-scripts` (greenfield entry, runs the
+     generator) hands off to `implementing-scripts` (the script-scale TDD
+     loop reusing the shared spokes). Evolving the shape means changing the
+     templates + manifest together in their own PR — never hand-editing a
+     scaffolded package's structure.
 
 ### Restoration scope (mechanics)
 
@@ -179,9 +208,10 @@ diffs live in `docs/plans/2026-07-06-consumer-fleet-implementation-plan.md`.
 
 ## Links
 
-- Supersedes / superseded by: none. **Related to**
-  [ADR-0019](./0019-remove-scripts-workspace.md) (inverts its workspace-removal
-  mechanics for real consumers; its hollow-example reasoning stands).
+- Supersedes / superseded by: **supersedes
+  [ADR-0019](./0019-remove-scripts-workspace.md)** (restores the workspace it
+  removed, for real consumers; its hollow-example reasoning is inherited by the
+  per-package anti-hollow gate above).
 - Authority / sequencing: [ADR-0021](./0021-post-1.0-deepen-first-strategy.md)
   (post-1.0 direction — the consumer fleet as the immediate next iteration),
   `docs/plans/2026-07-06-consumer-fleet-roadmap.md` (Phase F0–F4),
