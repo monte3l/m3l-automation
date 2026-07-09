@@ -139,7 +139,18 @@ non-prettier-formatted JSON, so if `format` runs first, `format:check` then fail
 on the regenerated `catalog.json`. Whichever runs last wins, and the generator
 must win — regenerate here, format after.
 
-### 9 — Markdown lint
+### 9 — Refresh the AI co-authorship badges
+
+```bash
+pnpm gen:commit-stats
+```
+
+Rewrites the per-model commit-count badges in the root `README.md` from git
+trailer history (`bin/gen-commit-stats.mjs`). Deliberately **not** a CI gate —
+counts change on every commit, so this reconciliation pass is their freshness
+cadence. Idempotent; safe to run unconditionally.
+
+### 10 — Markdown lint
 
 ```bash
 pnpm lint:md
@@ -164,6 +175,7 @@ Output after all steps complete:
 - Test counts:           ✓ (N submodules verified) / ✗
 - Script docs:           ✓ (N script(s) conformant / none) / ✗ (check:script-scaffold)
 - Reference index:       ✓ (gen:index + check:index) / ✗
+- Commit-stats badges:   ✓ (gen:commit-stats) / ✗
 - Markdown lint:         ✓ / ✗
 ```
 

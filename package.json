@@ -46,6 +46,7 @@
     "check:cadence": "node bin/check-cadence-doc.mjs",
     "check:worktree": "node bin/check-worktree-include.mjs",
     "gen:index": "node bin/gen-reference-index.mjs",
+    "gen:commit-stats": "node bin/gen-commit-stats.mjs",
     "check:index": "node bin/check-reference-index.mjs",
     "worktree:new": "node bin/worktree-new.mjs",
     "worktree:setup": "node bin/worktree-setup.mjs",
