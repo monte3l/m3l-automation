@@ -1,8 +1,10 @@
 #!/usr/bin/env node
-// Regenerates the per-model AI co-authorship badges in the root README from
-// git history. Counts every `Co-Authored-By: … <noreply@anthropic.com>`
-// trailer, folds historical aliases (bin/lib/claude-models.mjs) into their
-// canonical model, and rewrites the marker-delimited badge block.
+// Regenerates the AI co-authorship badges in the root README from git
+// history: a leading aggregate ratio badge ("AI co-authored: N of T commits")
+// plus one badge per model. Counts every `Co-Authored-By: …
+// <noreply@anthropic.com>` trailer, folds historical aliases
+// (bin/lib/claude-models.mjs) into their canonical model, and rewrites the
+// marker-delimited badge block.
 //
 // Deliberately NOT a CI gate: the counts change on every commit, so a
 // fail-on-drift check would fail every PR. Freshness rides the /syncing-docs
@@ -32,6 +34,8 @@ export const END_MARKER = "<!-- END COMMIT-STATS-BADGES -->";
 /** Style shared with the hand-written badges above the block. */
 const BADGE_STYLE = "style=flat-square&labelColor=272822";
 const BADGE_COLOR = "A6E22E";
+/** The aggregate ratio badge gets the accent color to stand apart from the per-model rows. */
+const AGGREGATE_COLOR = "66D9EF";
 
 /**
  * Count commits per canonical Claude model from the repo's trailer history.
@@ -59,20 +63,46 @@ export function countCommitsByModel() {
   return counts;
 }
 
+/**
+ * Count all commits reachable from HEAD — the same total GitHub's commit
+ * counter reports for the branch, so the aggregate badge's denominator ties
+ * the co-authored counts to the number a reader sees on the repo page.
+ *
+ * @returns {number}
+ */
+export function countTotalCommits() {
+  return Number(
+    execFileSync("git", ["rev-list", "--count", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+    }).trim(),
+  );
+}
+
 /** Escape a shields.io static-badge path segment (dashes double, spaces encode). */
 function badgeSegment(text) {
   return String(text).replace(/-/g, "--").replace(/ /g, "%20");
 }
 
 /**
- * Build the marker-delimited badge block, one badge per model that has
- * commits, in allowlist (capability-tier) order.
+ * Build the marker-delimited badge block: a leading aggregate ratio badge
+ * ("AI co-authored: N of T commits"), then one badge per model that has
+ * commits, in allowlist (capability-tier) order. Both numbers come from the
+ * same git snapshot, so the block is internally consistent — merge, bot, and
+ * direct human commits carry no trailer, which is why the per-model sum is
+ * deliberately below the total.
  *
  * @param {Map<string, number>} counts
+ * @param {number} total - all commits reachable from HEAD
  * @returns {string}
  */
-export function buildBadgeBlock(counts) {
-  const lines = [BEGIN_MARKER];
+export function buildBadgeBlock(counts, total) {
+  const sum = [...counts.values()].reduce((a, b) => a + b, 0);
+  const aggregateUrl = `https://img.shields.io/badge/${badgeSegment("AI co-authored")}-${badgeSegment(`${sum} of ${total} commits`)}-${AGGREGATE_COLOR}?${BADGE_STYLE}`;
+  const lines = [
+    BEGIN_MARKER,
+    `<a href="#co-developed-with-claude"><img src="${aggregateUrl}" alt="AI co-authored: ${sum} of ${total} commits"></a>`,
+  ];
   for (const model of CANONICAL_CLAUDE_MODELS) {
     const count = counts.get(model);
     if (count === undefined) continue;
@@ -107,15 +137,16 @@ export function replaceBadgeBlock(content, block) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const counts = countCommitsByModel();
+  const total = countTotalCommits();
   const content = readFileSync(readmePath, "utf8");
-  const next = replaceBadgeBlock(content, buildBadgeBlock(counts));
+  const next = replaceBadgeBlock(content, buildBadgeBlock(counts, total));
   if (next === content) {
     console.log("✓  commit-stats badges already current");
   } else {
     writeFileSync(readmePath, next);
-    const total = [...counts.values()].reduce((a, b) => a + b, 0);
+    const sum = [...counts.values()].reduce((a, b) => a + b, 0);
     console.log(
-      `✓  commit-stats badges regenerated (${total} co-authored commits across ${counts.size} models)`,
+      `✓  commit-stats badges regenerated (${sum} of ${total} commits co-authored, across ${counts.size} models)`,
     );
   }
 }

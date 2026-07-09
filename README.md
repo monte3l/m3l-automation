@@ -17,7 +17,8 @@
 
 <p align="center">
 <!-- BEGIN COMMIT-STATS-BADGES -->
-<a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Fable%205-16%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Fable 5: 16 commits"></a>
+<a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/AI%20co--authored-332%20of%20516%20commits-66D9EF?style=flat-square&labelColor=272822" alt="AI co-authored: 332 of 516 commits"></a>
+<a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Fable%205-17%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Fable 5: 17 commits"></a>
 <a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Opus%204.8-203%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Opus 4.8: 203 commits"></a>
 <a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Sonnet%205-6%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Sonnet 5: 6 commits"></a>
 <a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Sonnet%204.6-106%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Sonnet 4.6: 106 commits"></a>
@@ -128,7 +129,10 @@ co-author). The sanctioned model names live in
 [bin/lib/claude-models.mjs](bin/lib/claude-models.mjs), the `commit-msg` hook
 rejects non-canonical names, and
 [bin/gen-commit-stats.mjs](bin/gen-commit-stats.mjs) derives the badge counts
-from those trailers. Which model handles which kind of task is documented in
+from those trailers. Merge commits, bot commits (Dependabot, release bot), and
+direct human commits carry no trailer, so the per-model badges deliberately sum
+to less than the repository's total commit count — the aggregate badge shows
+the ratio as of the last refresh. Which model handles which kind of task is documented in
 [docs/contributing/model-selection.md](docs/contributing/model-selection.md).
 
 ## License
