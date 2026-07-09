@@ -1,6 +1,6 @@
 ---
 name: syncing-docs
-description: Reconciles all doc metadata in the m3l-automation monorepo after a submodule ships or before a release. Re-stamps provenance sidecars to the current git HEAD, verifies doc counts and the implemented "N of 22" count match the filesystem, confirms every public export is documented, regenerates the reference index, and runs markdown lint — the single doc-reconciliation authority, all in one repeatable pass. Use this skill whenever the user says /syncing-docs, "sync docs", "reconcile docs", "update doc provenance", "stamp provenance", "sync doc metadata", or after the implementing-submodules pipeline finishes and the hub needs to reconcile doc state.
+description: Reconciles all doc metadata in the m3l-automation monorepo after a submodule or consumer script ships or before a release. Re-stamps provenance sidecars to the current git HEAD, verifies doc counts and the implemented "N of 22" count match the filesystem, confirms every public export is documented, verifies script scaffold/doc conformance (check:script-scaffold), regenerates the reference index (library catalog + consumer-scripts catalog), and runs markdown lint — the single doc-reconciliation authority, all in one repeatable pass. Use this skill whenever the user says /syncing-docs, "sync docs", "reconcile docs", "update doc provenance", "stamp provenance", "sync doc metadata", or after the implementing-submodules or implementing-scripts pipeline finishes and the hub needs to reconcile doc state.
 ---
 
 Reconcile all documentation metadata for `@m3l-automation/m3l-common`. This
@@ -108,22 +108,38 @@ against the "N tests" values recorded in the Notes column of
 If it fails, the output names the submodule, the recorded count, and the
 actual count. Tell the user the exact edit required in the Notes column.
 
-### 7 — Regenerate the reference index
+### 7 — Consumer-script docs check
+
+```bash
+pnpm check:script-scaffold
+```
+
+Verifies every `scripts/<name>/` package against the ADR-0022 shape, including
+its two documentation artifacts: the colocated `README.md` (how to run) and the
+contract page `docs/reference/scripts/<name>.md` — plus the reverse direction
+(no orphan contract page without a package). Passes vacuously when no scripts
+exist. If a script's config schema changed, also eyeball that the contract
+page's schema table still matches `src/config.ts` — that content sync is not
+machine-checked.
+
+### 8 — Regenerate the reference index
 
 ```bash
 pnpm gen:index && pnpm check:index
 ```
 
-`gen:index` rewrites `docs/reference/catalog.json` from the barrels; `check:index`
-verifies it is current. This step is easy to omit and CI's `check:index` will
-fail if it drifts, so treat it as mandatory whenever symbols changed.
+`gen:index` rewrites `docs/reference/catalog.json` from the barrels **and** the
+consumer-scripts catalog block in `docs/reference/README.md` from
+`docs/reference/scripts/` + `scripts/`; `check:index` verifies both are
+current. This step is easy to omit and CI's `check:index` will fail if it
+drifts, so treat it as mandatory whenever symbols or scripts changed.
 
 Run it **before** any `pnpm format`/prettier pass: `gen:index` emits
 non-prettier-formatted JSON, so if `format` runs first, `format:check` then fails
 on the regenerated `catalog.json`. Whichever runs last wins, and the generator
 must win — regenerate here, format after.
 
-### 8 — Markdown lint
+### 9 — Markdown lint
 
 ```bash
 pnpm lint:md
@@ -146,6 +162,7 @@ Output after all steps complete:
 - Implementation status: up to date / <list rows needing attention>
 - Implemented count:     ✓ (N of 22) / ✗ (check:impl-counts)
 - Test counts:           ✓ (N submodules verified) / ✗
+- Script docs:           ✓ (N script(s) conformant / none) / ✗ (check:script-scaffold)
 - Reference index:       ✓ (gen:index + check:index) / ✗
 - Markdown lint:         ✓ / ✗
 ```

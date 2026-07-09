@@ -472,7 +472,7 @@ that reviews it" structural, and keeps the hub's context lean.
 
 - **Spokes** are defined in `.claude/agents/*.md` (plus the built-in `Explore`
   for read-only research): spec-conformance, `test-author` (RED),
-  `submodule-implementer` (GREEN), and the review agents. They are leaf nodes —
+  `code-implementer` (GREEN), and the review agents. They are leaf nodes —
   only the hub dispatches subagents (each carries `disallowedTools: Agent`), so
   the graph stays flat at depth 1. `pnpm check:agents` enforces this and that
   every `subagent_type` resolves to a real agent or known built-in.
@@ -486,6 +486,12 @@ that reviews it" structural, and keeps the hub's context lean.
   already have `docs/reference` specs, so `implementing-submodules` is the normal entry
   point; reach for `scaffolding-submodules` only to add a genuinely new (beyond-bootstrap)
   module — it surfaces through the namespace barrel, never a new `exports` subpath.
+- **Consumer scripts have the same split**: `scaffolding-scripts` runs the
+  deterministic generator (`pnpm scaffold:script`, templates in
+  `templates/script/`, CI backstop `pnpm check:script-scaffold`) for a
+  greenfield `scripts/<name>/` package, then hands off to `implementing-scripts`
+  — the script-scale TDD loop reusing the same spokes (no coverage/exports
+  gates; `check:script-scaffold` + knip are the backstops).
 - **Current state**: see `docs/implementation-status.md` for the authoritative
   built-vs-documented tracker and suggested build order.
 - **Lessons learned**: `docs/logs/` holds per-submodule work logs. The

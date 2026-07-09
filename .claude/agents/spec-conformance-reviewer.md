@@ -19,7 +19,7 @@ You operate in one of two modes; the hub tells you which.
 
 Read the spec page for the target module (and any contracts it references in
 `docs/m3l-common-architecture.md`). Produce a precise, structured contract the
-`test-author` and `submodule-implementer` spokes can build against:
+`test-author` and `code-implementer` spokes can build against:
 
 - **Exports**: every promised symbol with its kind (class / function / type /
   enum / const) and signature/shape as documented.
