@@ -1,0 +1,27 @@
+import { Core } from "@m3l-automation/m3l-common";
+
+import { configParameters } from "./config.js";
+import { hooks } from "./hooks.js";
+import { runJsonEtl } from "./steps/run-json-etl.js";
+
+// Composition root ONLY (ADR-0022): construct the script, wire config/hooks,
+// and run the step. Any conditional, loop, or I/O beyond wiring belongs in a
+// steps/ module — reviewers reject business logic here.
+//
+// `run`'s main function takes no arguments; reach the library through the
+// script instance (`script.logger`, `await script.getConfiguration()`,
+// `script.aws`) and inject what each step needs as parameters.
+const script = new Core.M3LScript({
+  metadata: { name: "json-etl", version: "0.0.0" },
+  config: { params: configParameters },
+  hooks,
+});
+
+await script.run(async () => {
+  // Resolve the declared config (CLI + preset + env + defaults) and inject
+  // what the step needs as a single options object — never reach for
+  // `process.env` or a global. Add `script.aws` / `M3LPaths` dirs here too
+  // when the step needs them.
+  const config = await script.getConfiguration();
+  await runJsonEtl({ logger: script.logger, config });
+});
