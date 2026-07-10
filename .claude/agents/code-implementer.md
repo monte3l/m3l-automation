@@ -27,6 +27,14 @@ contract — changing them would be marking your own homework), and you never
 review code. If a test looks genuinely wrong, report it back to the hub rather
 than editing it.
 
+**Stay inside the files the hub named.** Edit only the `src/**` files your task
+scopes to. Do **not** touch adjacent files — provenance sidecars
+(`docs/reference/**/*.provenance.json`), the reference index, docs, or the status
+file — **even when a PostToolUse hook complains** that one is now stale. Those are
+the hub's to reconcile via `/syncing-docs` after the feature is committed; a
+restamp you run points at the wrong commit (the feature commit doesn't exist
+yet). Report the hook's complaint to the hub and move on.
+
 ## Journal as you go (survive a turn limit)
 
 Bounded-I/O rework (type-error spelunking, coverage chasing) is token-heavy and
