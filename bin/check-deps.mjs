@@ -6,7 +6,8 @@
  * vulnerability advisories. This script covers the remaining un-gated
  * dimensions:
  *
- *   1. Outdated major versions — a dependency is behind its latest major.
+ *   1. Outdated major versions — a dependency is behind its latest major
+ *      (majors deliberately deferred in MAJOR_HOLDS are surfaced, not failed).
  *   2. Deprecated packages — npm marks the installed version as deprecated.
  *   3. Peer-dependency mismatches — pnpm reports unmet peers on install.
  *
@@ -94,6 +95,53 @@ export function findMajorBumps(entries) {
 }
 
 /**
+ * Deliberately-deferred major upgrades. A package listed here has a newer major
+ * available that the project cannot adopt yet for a documented ecosystem or
+ * toolchain reason, so `check:deps` must not block every unrelated PR on it.
+ * Each hold names the specific major being deferred and why. A major *newer*
+ * than the held one re-surfaces as an active violation (see {@link partitionHolds}),
+ * so a hold can never silently mask a further major. Remove the entry once the
+ * blocker clears and the upgrade lands.
+ *
+ * @type {Record<string, { major: number, reason: string }>}
+ */
+export const MAJOR_HOLDS = {
+  typescript: {
+    major: 7,
+    reason:
+      "TS 7 deferred — typescript-eslint (latest, 8.63.0) peer-caps typescript at " +
+      "<6.1.0, so the type-aware lint toolchain cannot run on TS 7 yet. Revisit " +
+      "when typescript-eslint ships TS 7 support and upgrade as its own PR.",
+  },
+};
+
+/**
+ * Splits detected major bumps into deliberately-held and active violations. A
+ * bump is held only when its package appears in `holds` AND the available major
+ * **equals** the specific held major — a hold defers exactly the one major it
+ * names. Any other major (older or newer than the held one) falls through to
+ * `active`, forcing a fresh decision rather than being silently masked. Pure.
+ *
+ * @param {{ name: string, current: string, latest: string }[]} majorBumps
+ * @param {Record<string, { major: number, reason: string }>} [holds]
+ * @returns {{ held: { name: string, current: string, latest: string, reason: string }[], active: { name: string, current: string, latest: string }[] }}
+ */
+export function partitionHolds(majorBumps, holds = MAJOR_HOLDS) {
+  const held = [];
+  const active = [];
+  for (const e of majorBumps) {
+    const hold = holds[e.name];
+    const latestMajor = parseInt((e.latest || "0").split(".")[0], 10);
+    if (hold && !isNaN(latestMajor) && latestMajor === hold.major) {
+      held.push({ ...e, reason: hold.reason });
+    } else {
+      active.push(e);
+    }
+  }
+  return { held, active };
+}
+
+/**
  * Semver exact-version matcher: `MAJOR.MINOR.PATCH` with optional prerelease
  * and build metadata, and nothing else — no range operators (`^`/`~`/`>`/`<`),
  * no wildcards (`*`/`x`), no dist-tags. ADR-0017 requires every `dependencies`
@@ -172,14 +220,28 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     outdatedEntries = [];
   }
 
-  const majorBumps = findMajorBumps(outdatedEntries);
+  const { held, active } = partitionHolds(findMajorBumps(outdatedEntries));
 
-  if (majorBumps.length > 0) {
-    const rows = majorBumps
+  // Deliberately-deferred majors are surfaced but do not fail the gate — they
+  // are un-adoptable today for a documented reason (see MAJOR_HOLDS).
+  if (held.length > 0) {
+    const rows = held
+      .map(
+        (e) =>
+          `  ${e.name.padEnd(50)} ${e.current} → ${e.latest}\n      hold: ${e.reason}`,
+      )
+      .join("\n");
+    process.stdout.write(
+      `check:deps — ${held.length} major update(s) on deliberate hold (not blocking):\n${rows}\n\n`,
+    );
+  }
+
+  if (active.length > 0) {
+    const rows = active
       .map((e) => `  ${e.name.padEnd(50)} ${e.current} → ${e.latest}`)
       .join("\n");
     sections.push(
-      `MAJOR VERSION UPDATES AVAILABLE (${majorBumps.length}):\n${rows}`,
+      `MAJOR VERSION UPDATES AVAILABLE (${active.length}):\n${rows}`,
     );
   }
 
@@ -298,7 +360,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
 
   console.log(
-    "✓  check:deps — no major bumps, deprecated packages, or peer issues found.",
+    "✓  check:deps — no blocking major bumps, deprecated packages, or peer issues found.",
   );
   process.exit(0);
 }
