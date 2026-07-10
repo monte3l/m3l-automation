@@ -4,16 +4,19 @@
  * @packageDocumentation
  */
 
-import { navigateFieldPath } from "./fieldPath.js";
+import { extractAll, navigateFieldPath } from "./fieldPath.js";
 
 /**
- * Extracts a single field from arbitrary records using a dot-notation field
- * path fixed at construction time.
+ * Extracts field values from arbitrary records using a dot-notation field
+ * path fixed at construction time — a single value via {@link extract}, or
+ * every wildcard-expanded match via {@link extractAll}.
  *
- * A thin wrapper over {@link navigateFieldPath}: it inherits the same
- * semantics, including the object-keys-only rule for numeric segments, the
- * prototype-pollution guard, and returning `undefined` (never throwing) when
- * a segment is missing or the record shape does not match.
+ * A thin wrapper over the standalone {@link navigateFieldPath} and
+ * {@link extractAll}: it inherits the same semantics, including array
+ * indexing and object-key lookup for numeric segments, `*` wildcard
+ * expansion (multi-value only), the prototype-pollution guard, and returning
+ * `undefined` / `[]` (never throwing) when a segment is missing or the
+ * record shape does not match.
  *
  * @example
  * ```typescript
@@ -48,10 +51,30 @@ export class M3LJSONFieldExtractor {
    * ```typescript
    * import { M3LJSONFieldExtractor } from "@m3l-automation/m3l-common/core";
    * const extractor = new M3LJSONFieldExtractor("items.0");
-   * extractor.extract({ items: ["x"] }); // undefined — arrays are not indexed
+   * extractor.extract({ items: ["x"] }); // "x" — a digit segment indexes into the array
    * ```
    */
   extract(record: unknown): unknown {
     return navigateFieldPath(record, this.fieldPath);
+  }
+
+  /**
+   * Extracts every value matching the configured field path from `record`,
+   * expanding `*` wildcards, in document order.
+   *
+   * @param record - The value to extract from. Typed `unknown` because
+   *   callers pass arbitrary parsed data (e.g. JSON records).
+   * @returns Every matching value, in document order. Empty when nothing
+   *   matches.
+   *
+   * @example
+   * ```typescript
+   * import { M3LJSONFieldExtractor } from "@m3l-automation/m3l-common/core";
+   * const extractor = new M3LJSONFieldExtractor("items.*.id");
+   * extractor.extractAll({ items: [{ id: 1 }, { id: 2 }] }); // [1, 2]
+   * ```
+   */
+  extractAll(record: unknown): readonly unknown[] {
+    return extractAll(record, this.fieldPath);
   }
 }
