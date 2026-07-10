@@ -1,9 +1,11 @@
 import { describe, expect, test } from "vitest";
 import {
+  MAJOR_HOLDS,
   findMajorBumps,
   findPeerMetaInconsistencies,
   findRangedDependencies,
   parseOutdated,
+  partitionHolds,
 } from "../../bin/check-deps.mjs";
 
 describe("parseOutdated", () => {
@@ -97,6 +99,72 @@ describe("findMajorBumps", () => {
   test("missing version strings fall back gracefully", () => {
     const entries = [{ name: "broken", current: "", latest: "" }];
     expect(findMajorBumps(entries)).toEqual([]);
+  });
+});
+
+describe("partitionHolds", () => {
+  const holds = {
+    "held-pkg": { major: 7, reason: "deferred for a documented reason" },
+  };
+
+  test("a package on hold at the available major is held, not active", () => {
+    const bumps = [{ name: "held-pkg", current: "6.0.3", latest: "7.0.2" }];
+    const { held, active } = partitionHolds(bumps, holds);
+    expect(active).toEqual([]);
+    expect(held).toEqual([
+      {
+        name: "held-pkg",
+        current: "6.0.3",
+        latest: "7.0.2",
+        reason: "deferred for a documented reason",
+      },
+    ]);
+  });
+
+  test("a package not on hold stays active", () => {
+    const bumps = [{ name: "other-pkg", current: "1.0.0", latest: "2.0.0" }];
+    const { held, active } = partitionHolds(bumps, holds);
+    expect(held).toEqual([]);
+    expect(active).toEqual(bumps);
+  });
+
+  test("a major newer than the held one re-surfaces as active", () => {
+    const bumps = [{ name: "held-pkg", current: "6.0.3", latest: "8.0.0" }];
+    const { held, active } = partitionHolds(bumps, holds);
+    expect(held).toEqual([]);
+    expect(active).toEqual(bumps);
+  });
+
+  test("a major older than the held one is not swallowed by the hold", () => {
+    // A hold defers exactly the major it names: an intermediate, adoptable
+    // major below the held one must stay active, never be masked by the hold.
+    const bumps = [{ name: "held-pkg", current: "4.0.0", latest: "5.0.0" }];
+    const { held, active } = partitionHolds(bumps, holds);
+    expect(held).toEqual([]);
+    expect(active).toEqual(bumps);
+  });
+
+  test("empty input yields empty partitions", () => {
+    expect(partitionHolds([], holds)).toEqual({ held: [], active: [] });
+  });
+
+  test("mixed list splits into held and active", () => {
+    const bumps = [
+      { name: "held-pkg", current: "6.0.3", latest: "7.0.2" },
+      { name: "other-pkg", current: "1.0.0", latest: "2.0.0" },
+    ];
+    const { held, active } = partitionHolds(bumps, holds);
+    expect(held.map((e) => e.name)).toEqual(["held-pkg"]);
+    expect(active.map((e) => e.name)).toEqual(["other-pkg"]);
+  });
+});
+
+describe("MAJOR_HOLDS", () => {
+  test("typescript is deferred at major 7 with a documented reason", () => {
+    // This deferral exists because typescript-eslint has no TS 7 support yet.
+    // When that changes and TS 7 is adopted, remove the hold AND this test.
+    expect(MAJOR_HOLDS.typescript?.major).toBe(7);
+    expect(MAJOR_HOLDS.typescript?.reason).toMatch(/typescript-eslint/);
   });
 });
 
