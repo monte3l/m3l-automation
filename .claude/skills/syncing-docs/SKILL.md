@@ -128,11 +128,23 @@ machine-checked.
 pnpm gen:index && pnpm check:index
 ```
 
-`gen:index` rewrites `docs/reference/catalog.json` from the barrels **and** the
-consumer-scripts catalog block in `docs/reference/README.md` from
-`docs/reference/scripts/` + `scripts/`; `check:index` verifies both are
-current. This step is easy to omit and CI's `check:index` will fail if it
-drifts, so treat it as mandatory whenever symbols or scripts changed.
+`gen:index` rewrites `docs/reference/catalog.json` (and `symbol-map.json`) from
+each module's **provenance sidecar** `sections[].sources[]` — **not** the source
+barrel — **and** the consumer-scripts catalog block in
+`docs/reference/README.md` from `docs/reference/scripts/` + `scripts/`;
+`check:index` verifies both are current. This step is easy to omit and CI's
+`check:index` will fail if it drifts, so treat it as mandatory whenever symbols
+or scripts changed.
+
+**A new export must be in the sidecar `sources[]`, not just the barrel.** Because
+the index derives from the sidecars, a scoped restamp (step 2,
+`--update --affected …`) refreshes `commit`/`retrieved` timestamps but never
+**adds** the new symbol — you must hand-add it to `sources[]` (in every relevant
+section) in the same change set. The tell that you forgot: `gen:index` produces
+**no diff** right after you added a public export, and `check:index` passes
+_vacuously_ (generated == committed, both missing the symbol) even though
+`check:doc-exports` — which walks the barrel — is green. If a just-added export
+yields a no-op `gen:index`, its sidecar `sources[]` is the missing link.
 
 Run it **before** any `pnpm format`/prettier pass: `gen:index` emits
 non-prettier-formatted JSON, so if `format` runs first, `format:check` then fails
