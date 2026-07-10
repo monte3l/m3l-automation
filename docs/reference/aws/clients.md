@@ -37,27 +37,49 @@ For a single profile, `AWSClientProvider` creates and lazily caches AWS SDK v3 c
 
 **Service-client getters** — each is synchronous, constructs its client on first access, and caches it for the provider's lifetime:
 
-| Getter           | SDK client class       | Package                          |
-| ---------------- | ---------------------- | -------------------------------- |
-| `s3`             | `S3Client`             | `@aws-sdk/client-s3`             |
-| `dynamoDB`       | `DynamoDBClient`       | `@aws-sdk/client-dynamodb`       |
-| `sts`            | `STSClient`            | `@aws-sdk/client-sts`            |
-| `eventBridge`    | `EventBridgeClient`    | `@aws-sdk/client-eventbridge`    |
-| `lambda`         | `LambdaClient`         | `@aws-sdk/client-lambda`         |
-| `ec2`            | `EC2Client`            | `@aws-sdk/client-ec2`            |
-| `ecs`            | `ECSClient`            | `@aws-sdk/client-ecs`            |
-| `cloudFormation` | `CloudFormationClient` | `@aws-sdk/client-cloudformation` |
-| `codePipeline`   | `CodePipelineClient`   | `@aws-sdk/client-codepipeline`   |
-| `apiGateway`     | `APIGatewayClient`     | `@aws-sdk/client-api-gateway`    |
-| `eks`            | `EKSClient`            | `@aws-sdk/client-eks`            |
-| `cloudWatch`     | `CloudWatchClient`     | `@aws-sdk/client-cloudwatch`     |
-| `ssm`            | `SSMClient`            | `@aws-sdk/client-ssm`            |
-| `sqs`            | `SQSClient`            | `@aws-sdk/client-sqs`            |
+| Getter             | SDK client class         | Package                           |
+| ------------------ | ------------------------ | --------------------------------- |
+| `s3`               | `S3Client`               | `@aws-sdk/client-s3`              |
+| `dynamoDB`         | `DynamoDBClient`         | `@aws-sdk/client-dynamodb`        |
+| `dynamoDBDocument` | `DynamoDBDocumentClient` | `@aws-sdk/lib-dynamodb`           |
+| `sts`              | `STSClient`              | `@aws-sdk/client-sts`             |
+| `eventBridge`      | `EventBridgeClient`      | `@aws-sdk/client-eventbridge`     |
+| `lambda`           | `LambdaClient`           | `@aws-sdk/client-lambda`          |
+| `ec2`              | `EC2Client`              | `@aws-sdk/client-ec2`             |
+| `ecs`              | `ECSClient`              | `@aws-sdk/client-ecs`             |
+| `cloudFormation`   | `CloudFormationClient`   | `@aws-sdk/client-cloudformation`  |
+| `codePipeline`     | `CodePipelineClient`     | `@aws-sdk/client-codepipeline`    |
+| `apiGateway`       | `APIGatewayClient`       | `@aws-sdk/client-api-gateway`     |
+| `eks`              | `EKSClient`              | `@aws-sdk/client-eks`             |
+| `cloudWatch`       | `CloudWatchClient`       | `@aws-sdk/client-cloudwatch`      |
+| `cloudWatchLogs`   | `CloudWatchLogsClient`   | `@aws-sdk/client-cloudwatch-logs` |
+| `athena`           | `AthenaClient`           | `@aws-sdk/client-athena`          |
+| `ssm`              | `SSMClient`              | `@aws-sdk/client-ssm`             |
+| `sqs`              | `SQSClient`              | `@aws-sdk/client-sqs`             |
+
+Most getters construct a fresh SDK client from the resolved region and
+credentials. Two behave specially:
+
+- **`dynamoDBDocument`** returns a `DynamoDBDocumentClient` (from
+  `@aws-sdk/lib-dynamodb`) built via `DynamoDBDocumentClient.from(this.dynamoDB)`
+  so callers work with plain JavaScript objects instead of raw `AttributeValue`
+  shapes. It is **not** constructed from a fresh config — it wraps this
+  provider's underlying `dynamoDB` client and **shares its connection
+  lifecycle**. First access lazily constructs and caches the underlying
+  `dynamoDB` client too; `close()` destroys that underlying `dynamoDB` client,
+  and the document wrapper is **not** destroyed independently (doing so would
+  double-destroy the shared connection). Its cached reference is cleared with
+  the rest.
+- **`cloudWatchLogs`** and **`athena`** provide the clients for the polling
+  flows already shipped in `core/polling`: `cloudWatchLogs` drives the Logs
+  Insights `StartQuery`/`GetQueryResults` cycle that
+  `M3LPollingPolicies.cloudWatchLogsQuery()` polls, and `athena` pairs with
+  `M3LPollingPolicies.athenaQuery()` for Athena query execution.
 
 Other members:
 
 - Credential resolution — uses `fromIni({ profile })` for a named profile, otherwise the SDK default credential chain.
-- `close()` — calls `.destroy()` on every cached client and clears the cache. It is best-effort: a throwing `.destroy()` does not abort the sweep — the remaining clients are still destroyed and the cache is always cleared. If any `.destroy()` threw, `close()` then throws a single `M3LAWSClientError` (`code: "ERR_AWS_CLIENT"`) whose `cause` collects the per-service failures.
+- `close()` — calls `.destroy()` on every cached client and clears the cache (the `dynamoDBDocument` wrapper shares the `dynamoDB` client's lifecycle and is not destroyed separately). It is best-effort: a throwing `.destroy()` does not abort the sweep — the remaining clients are still destroyed and the cache is always cleared. If any `.destroy()` threw, `close()` then throws a single `M3LAWSClientError` (`code: "ERR_AWS_CLIENT"`) whose `cause` collects the per-service failures.
 
 When SDK client construction or credential resolution fails, the getter throws `M3LAWSClientError` with the underlying SDK error chained via `cause`.
 
