@@ -487,6 +487,11 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/json/fieldPath.ts"
   },
+  "extractAll": {
+    "submodule": "json",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/json/fieldPath.ts"
+  },
   "M3LJSONFieldExtractor": {
     "submodule": "json",
     "namespace": "core",

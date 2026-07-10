@@ -2,19 +2,28 @@
  * Tests for core/json submodule.
  *
  * Contract source: docs/reference/core/json.md
- * Exports: parseFieldPath, navigateFieldPath, M3LJSONFieldExtractor,
- *   M3LJSONFormatDetector, M3LJSONFormatDetectionError, M3LJSONFormat,
- *   M3LJSONDetectionDepth, M3LJSONDetectorOptions, M3LJSONDetectionResult,
- *   M3LConfidence (10 symbols).
+ * Exports: parseFieldPath, navigateFieldPath, extractAll,
+ *   M3LJSONFieldExtractor, M3LJSONFormatDetector, M3LJSONFormatDetectionError,
+ *   M3LJSONFormat, M3LJSONDetectionDepth, M3LJSONDetectorOptions,
+ *   M3LJSONDetectionResult, M3LConfidence (11 symbols).
  *
  * Key behavioral contracts:
  *  - parseFieldPath: pure, never throws; splits on '.', drops empty segments;
  *    numeric segments stay strings.
  *  - navigateFieldPath: never throws; undefined is in-band for "missing" and
- *    for a dangerous segment; numeric segments address object keys, never
- *    array indices; intermediate primitive/null blocks traversal.
- *  - M3LJSONFieldExtractor: thin wrapper over navigateFieldPath with a fixed
+ *    for a dangerous segment; single-valued; a numeric segment indexes an
+ *    array when the current value is an array, and stays an object-key
+ *    lookup on a plain object; does NOT expand `*` wildcards; intermediate
+ *    primitive/null blocks traversal.
+ *  - extractAll: never throws; multi-valued (`readonly unknown[]`); expands
+ *    `*` over array elements / own enumerable object values in document
+ *    order; a plain (wildcard-free) path yields 0 or 1 element.
+ *  - M3LJSONFieldExtractor: thin wrapper over navigateFieldPath (`extract`,
+ *    single-value) and extractAll (`extractAll`, multi-value) with a fixed
  *    field path baked in at construction.
+ *  - Prototype-pollution guard: navigateFieldPath, extractAll, and
+ *    M3LJSONFieldExtractor never traverse `__proto__` / `constructor` /
+ *    `prototype`, and wildcards never expand onto those keys.
  *  - M3LJSONFormatDetector.detect(): async; opens the file via bounded
  *    `FileHandle` reads (never loads the whole file); resolves a
  *    { format, confidence, method, details } result; rejects with
@@ -47,6 +56,7 @@ vi.mock("node:fs/promises", async () => {
 
 import { M3LError } from "../src/core/errors/index.js";
 import {
+  extractAll,
   M3LJSONFieldExtractor,
   M3LJSONFormatDetectionError,
   M3LJSONFormatDetector,
@@ -158,8 +168,57 @@ describe("navigateFieldPath()", () => {
       expect(navigateFieldPath({ items: { "0": "x" } }, "items.0")).toBe("x");
     });
 
-    test("an array is NOT indexed by a numeric segment", () => {
-      expect(navigateFieldPath({ items: ["x"] }, "items.0")).toBeUndefined();
+    test("an array IS indexed by a numeric segment", () => {
+      expect(navigateFieldPath({ items: ["x"] }, "items.0")).toBe("x");
+    });
+  });
+
+  describe("array indexing", () => {
+    test("indexes into an array with a digit-only segment", () => {
+      expect(navigateFieldPath({ items: ["x", "y"] }, "items.1")).toBe("y");
+    });
+
+    test("an out-of-range index resolves to undefined", () => {
+      expect(navigateFieldPath({ items: ["x"] }, "items.5")).toBeUndefined();
+    });
+
+    test("a non-digit segment against an array resolves to undefined", () => {
+      expect(navigateFieldPath({ items: ["x"] }, "items.name")).toBeUndefined();
+    });
+
+    test("a negative-number segment against an array resolves to undefined", () => {
+      expect(navigateFieldPath({ items: ["x"] }, "items.-1")).toBeUndefined();
+    });
+
+    test("a negative-number-shaped literal key on an object is a normal key lookup", () => {
+      expect(navigateFieldPath({ items: { "-1": "x" } }, "items.-1")).toBe("x");
+    });
+
+    test("chains through nested array-of-object-of-array paths", () => {
+      expect(
+        navigateFieldPath({ rows: [{ cells: ["a", "b"] }] }, "rows.0.cells.1"),
+      ).toBe("b");
+    });
+
+    test("a leading-zero digit segment is normalized as an array index", () => {
+      expect(
+        navigateFieldPath(
+          { items: ["a", "b", "c", "d", "e", "f", "g", "h"] },
+          "items.007",
+        ),
+      ).toBe("h");
+    });
+  });
+
+  describe("wildcard segments are not expanded", () => {
+    test("a `*` segment against an array resolves to undefined (no expansion)", () => {
+      expect(
+        navigateFieldPath({ items: [{ id: 1 }] }, "items.*.id"),
+      ).toBeUndefined();
+    });
+
+    test("a literal '*' object key is reachable as a normal single value", () => {
+      expect(navigateFieldPath({ "*": 7 }, "*")).toBe(7);
     });
   });
 
@@ -199,9 +258,9 @@ describe("M3LJSONFieldExtractor", () => {
     expect(extractor.extract({ a: {} })).toBeUndefined();
   });
 
-  test("extract() returns undefined for an array-index-shaped path (object keys only)", () => {
+  test("extract() returns the array element for an array-index-shaped path", () => {
     const extractor = new M3LJSONFieldExtractor("items.0");
-    expect(extractor.extract({ items: ["x"] })).toBeUndefined();
+    expect(extractor.extract({ items: ["x"] })).toBe("x");
   });
 
   test("extract() never throws for a non-object record", () => {
@@ -216,6 +275,183 @@ describe("M3LJSONFieldExtractor", () => {
         .parameter(0)
         .toBeUnknown();
       expectTypeOf<M3LJSONFieldExtractor["extract"]>().returns.toBeUnknown();
+    });
+  });
+
+  describe("extractAll()", () => {
+    test("returns every wildcard match over an array in document order", () => {
+      const extractor = new M3LJSONFieldExtractor("items.*.id");
+      expect(extractor.extractAll({ items: [{ id: 1 }, { id: 2 }] })).toEqual([
+        1, 2,
+      ]);
+    });
+
+    test("returns exactly one element for a resolved wildcard-free path", () => {
+      const extractor = new M3LJSONFieldExtractor("metadata.author");
+      expect(extractor.extractAll({ metadata: { author: "Ada" } })).toEqual([
+        "Ada",
+      ]);
+    });
+
+    test("returns an empty array for an unresolved wildcard-free path", () => {
+      const extractor = new M3LJSONFieldExtractor("metadata.author");
+      expect(extractor.extractAll({ metadata: {} })).toEqual([]);
+    });
+
+    test("inherits the prototype-pollution guard from extractAll()", () => {
+      const extractor = new M3LJSONFieldExtractor("a.__proto__");
+      expect(extractor.extractAll({ a: {} })).toEqual([]);
+    });
+
+    test("never throws for a non-object record", () => {
+      const extractor = new M3LJSONFieldExtractor("a.b");
+      expect(() => extractor.extractAll(null)).not.toThrow();
+      expect(() => extractor.extractAll("not an object")).not.toThrow();
+    });
+
+    describe("type-level contract", () => {
+      test("extractAll takes unknown and returns readonly unknown[]", () => {
+        expectTypeOf<M3LJSONFieldExtractor["extractAll"]>()
+          .parameter(0)
+          .toBeUnknown();
+        expectTypeOf<
+          M3LJSONFieldExtractor["extractAll"]
+        >().returns.toEqualTypeOf<readonly unknown[]>();
+      });
+    });
+  });
+});
+
+// =============================================================================
+// extractAll
+// =============================================================================
+describe("extractAll()", () => {
+  describe("array indexing", () => {
+    test("indexes into an array with a digit-only segment", () => {
+      expect(extractAll({ items: ["x", "y"] }, "items.1")).toEqual(["y"]);
+    });
+
+    test("an out-of-range index yields no match", () => {
+      expect(extractAll({ items: ["x"] }, "items.5")).toEqual([]);
+    });
+
+    test("a leading-zero digit segment is normalized as an array index", () => {
+      expect(
+        extractAll(
+          { items: ["a", "b", "c", "d", "e", "f", "g", "h"] },
+          "items.007",
+        ),
+      ).toEqual(["h"]);
+    });
+  });
+
+  describe("wildcard expansion", () => {
+    test("expands `*` over an array, in index order", () => {
+      expect(
+        extractAll({ items: [{ id: 1 }, { id: 2 }] }, "items.*.id"),
+      ).toEqual([1, 2]);
+    });
+
+    test("expands `*` over a plain object's own enumerable values, in insertion order", () => {
+      expect(extractAll({ a: { v: 1 }, b: { v: 2 } }, "*.v")).toEqual([1, 2]);
+    });
+
+    test("a trailing `*` over an array yields every element", () => {
+      expect(extractAll({ a: [1, 2, 3] }, "a.*")).toEqual([1, 2, 3]);
+    });
+
+    test("a trailing `*` over an object yields every own value", () => {
+      expect(extractAll({ o: { x: 1, y: 2 } }, "o.*")).toEqual([1, 2]);
+    });
+
+    test("a `*` over a primitive drops silently, without throwing", () => {
+      expect(extractAll({ a: 1 }, "a.*")).toEqual([]);
+    });
+
+    test("a `*` over null drops silently, without throwing", () => {
+      expect(extractAll({ a: null }, "a.*")).toEqual([]);
+    });
+
+    test("nested chained wildcards preserve document order", () => {
+      expect(
+        extractAll(
+          { groups: [{ items: [1, 2] }, { items: [3] }] },
+          "groups.*.items.*",
+        ),
+      ).toEqual([1, 2, 3]);
+    });
+  });
+
+  describe("cardinality", () => {
+    test("a resolved wildcard-free path yields exactly one element", () => {
+      expect(
+        extractAll({ metadata: { author: "Ada" } }, "metadata.author"),
+      ).toEqual(["Ada"]);
+    });
+
+    test("an unresolved wildcard-free path yields an empty array", () => {
+      expect(extractAll({ metadata: {} }, "metadata.author")).toEqual([]);
+    });
+
+    test("a present nullish value on a resolved path is included", () => {
+      expect(extractAll({ a: { b: null } }, "a.b")).toEqual([null]);
+    });
+
+    test("an empty path returns the whole record as one element", () => {
+      expect(extractAll({ x: 1 }, "")).toEqual([{ x: 1 }]);
+    });
+  });
+
+  describe("schema tolerance — never throws", () => {
+    test("never throws for a non-object record", () => {
+      expect(() => extractAll(null, "a.b")).not.toThrow();
+      expect(() => extractAll(undefined, "a.b")).not.toThrow();
+      expect(() => extractAll("string", "a.b")).not.toThrow();
+      expect(() => extractAll(42, "a.b")).not.toThrow();
+    });
+
+    test("never throws for an empty path against a primitive record", () => {
+      expect(() => extractAll(42, "")).not.toThrow();
+    });
+
+    test("a shape mismatch yields fewer/no results rather than throwing", () => {
+      expect(() => extractAll({ a: 1 }, "a.b.c")).not.toThrow();
+      expect(extractAll({ a: 1 }, "a.b.c")).toEqual([]);
+    });
+  });
+
+  describe("prototype-pollution guard", () => {
+    test.each(["__proto__", "constructor", "prototype"])(
+      "a trailing dangerous segment %j yields no match",
+      (dangerousKey) => {
+        expect(extractAll({ a: {} }, `a.${dangerousKey}`)).toEqual([]);
+      },
+    );
+
+    test("a dangerous key mid-path short-circuits to no match", () => {
+      expect(
+        extractAll({ a: { __proto__: { b: "leak" } } }, "a.__proto__.b"),
+      ).toEqual([]);
+    });
+
+    test("a `*` expansion over an empty object yields no matches", () => {
+      expect(extractAll({}, "*")).toEqual([]);
+    });
+
+    test("a `*` expansion over a plain object never surfaces inherited members like 'toString'", () => {
+      const results = extractAll({ a: 1, b: 2 }, "*");
+      expect(
+        results.some((value: unknown) => typeof value === "function"),
+      ).toBe(false);
+      expect(results).toEqual([1, 2]);
+    });
+  });
+
+  describe("type-level contract", () => {
+    test("accepts (unknown, string) and returns readonly unknown[]", () => {
+      expectTypeOf(extractAll).parameter(0).toBeUnknown();
+      expectTypeOf(extractAll).parameter(1).toBeString();
+      expectTypeOf(extractAll).returns.toEqualTypeOf<readonly unknown[]>();
     });
   });
 });

@@ -14,6 +14,10 @@
           "symbol": "navigateFieldPath"
         },
         {
+          "file": "packages/m3l-common/src/core/json/fieldPath.ts",
+          "symbol": "extractAll"
+        },
+        {
           "file": "packages/m3l-common/src/core/json/M3LJSONFieldExtractor.ts",
           "symbol": "M3LJSONFieldExtractor"
         },
@@ -46,8 +50,8 @@
           "symbol": "M3LJSONFormatDetectionError"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "356ffb5c88d8f2b3e14492126e840ade5c702848",
+      "retrieved": "2026-07-10"
     },
     {
       "heading": "Notes and behavior",
@@ -59,6 +63,10 @@
         {
           "file": "packages/m3l-common/src/core/json/fieldPath.ts",
           "symbol": "navigateFieldPath"
+        },
+        {
+          "file": "packages/m3l-common/src/core/json/fieldPath.ts",
+          "symbol": "extractAll"
         },
         {
           "file": "packages/m3l-common/src/core/json/M3LJSONFieldExtractor.ts",
@@ -77,8 +85,8 @@
           "symbol": "M3LJSONFormatDetectionError"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "356ffb5c88d8f2b3e14492126e840ade5c702848",
+      "retrieved": "2026-07-10"
     }
   ]
 }
