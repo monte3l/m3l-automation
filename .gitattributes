@@ -24,3 +24,6 @@
 *.ico  binary
 *.woff  binary
 *.woff2 binary
+
+# GitHub flags template files as Go Template — override to TypeScript
+templates/**/*.tmpl linguist-language=TypeScript
