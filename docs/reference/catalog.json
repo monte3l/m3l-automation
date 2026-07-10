@@ -177,6 +177,7 @@
     "symbols": [
       "parseFieldPath",
       "navigateFieldPath",
+      "extractAll",
       "M3LJSONFieldExtractor",
       "M3LJSONFormatDetector",
       "M3LJSONFormat",

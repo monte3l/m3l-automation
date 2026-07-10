@@ -68,7 +68,8 @@
  *     M3LJSONDetectionDepth` (default `"standard"`); dispatch reuses
  *     `M3LJSONFormatDetector`; `fieldPath` extraction reuses
  *     `M3LJSONFieldExtractor` / `navigateFieldPath` semantics (missing
- *     segment -> undefined, arrays not indexed).
+ *     segment -> undefined; a digit-only segment indexes into an array,
+ *     and stays an object-key lookup on a plain object).
  *
  * REVIEW-FIX LOCK-INS (added after the implementer's fix pass):
  * 11. A throwing `rowValidator`/`rowTransformer` (CSV) is a bad-RECORD skip,
@@ -881,14 +882,25 @@ describe("M3LJSONListImporter", () => {
       expect(result.items).toEqual([undefined, undefined]);
     });
 
-    test("a fieldPath segment is never treated as an array index", async () => {
+    test("a digit fieldPath segment indexes into an array", async () => {
       const arrayContent = JSON.stringify([{ items: ["x", "y"] }]);
-      const importer = new Core.M3LJSONListImporter<unknown>({
+      const firstIndexImporter = new Core.M3LJSONListImporter<unknown>({
         fieldPath: "items.0",
       });
-      const result = await importer.import(Buffer.from(arrayContent, "utf8"));
+      const firstResult = await firstIndexImporter.import(
+        Buffer.from(arrayContent, "utf8"),
+      );
 
-      expect(result.items).toEqual([undefined]);
+      expect(firstResult.items).toEqual(["x"]);
+
+      const secondIndexImporter = new Core.M3LJSONListImporter<unknown>({
+        fieldPath: "items.1",
+      });
+      const secondResult = await secondIndexImporter.import(
+        Buffer.from(arrayContent, "utf8"),
+      );
+
+      expect(secondResult.items).toEqual(["y"]);
     });
 
     describe("fieldPath branch also screens dangerous own-keys (A)", () => {
