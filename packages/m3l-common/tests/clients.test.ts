@@ -56,6 +56,10 @@ const h = vi.hoisted(() => {
     cloudWatchCtor: vi.fn(),
     ssmCtor: vi.fn(),
     sqsCtor: vi.fn(),
+    cloudWatchLogsCtor: vi.fn(),
+    athenaCtor: vi.fn(),
+    docFrom: vi.fn(),
+    docDestroy: vi.fn(),
     makeClientClass,
   };
 });
@@ -105,6 +109,19 @@ vi.mock("@aws-sdk/client-sqs", () => ({
 vi.mock("@aws-sdk/credential-provider-ini", () => ({
   fromIni: h.fromIni,
 }));
+vi.mock("@aws-sdk/client-cloudwatch-logs", () => ({
+  CloudWatchLogsClient: h.makeClientClass(h.cloudWatchLogsCtor),
+}));
+vi.mock("@aws-sdk/client-athena", () => ({
+  AthenaClient: h.makeClientClass(h.athenaCtor),
+}));
+vi.mock("@aws-sdk/lib-dynamodb", () => ({
+  // DynamoDBDocumentClient.from(rawClient) returns a wrapper with its OWN
+  // destroy spy, so a test can assert the wrapper is NOT destroyed by close().
+  DynamoDBDocumentClient: {
+    from: h.docFrom,
+  },
+}));
 
 import { M3LError, isErr, isOk } from "../src/core/errors/index.js";
 import type { M3LResult } from "../src/core/errors/index.js";
@@ -118,6 +135,9 @@ import {
 import { parseAWSProfile, parseAWSRegion } from "../src/aws/models/index.js";
 import type { M3LAWSProfile, M3LAWSRegion } from "../src/aws/models/index.js";
 import type { S3Client } from "@aws-sdk/client-s3";
+import type { CloudWatchLogsClient } from "@aws-sdk/client-cloudwatch-logs";
+import type { AthenaClient } from "@aws-sdk/client-athena";
+import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -146,6 +166,8 @@ const GETTER_MATRIX = [
   ["cloudWatch", h.cloudWatchCtor] as const,
   ["ssm", h.ssmCtor] as const,
   ["sqs", h.sqsCtor] as const,
+  ["cloudWatchLogs", h.cloudWatchLogsCtor] as const,
+  ["athena", h.athenaCtor] as const,
 ] satisfies readonly (readonly [
   keyof AWSClientProvider,
   ReturnType<typeof vi.fn>,
@@ -154,6 +176,11 @@ const GETTER_MATRIX = [
 beforeEach(() => {
   h.destroy.mockReset();
   h.fromIni.mockReset().mockReturnValue(SENTINEL_CREDENTIALS);
+  h.docFrom.mockReset().mockImplementation((client: unknown) => ({
+    destroy: h.docDestroy,
+    __wrapped: client,
+  }));
+  h.docDestroy.mockReset();
   for (const [, ctorSpy] of GETTER_MATRIX) {
     ctorSpy.mockReset();
   }
@@ -270,6 +297,130 @@ describe.each(GETTER_MATRIX)(
     });
   },
 );
+
+// =============================================================================
+// AWSClientProvider — dynamoDBDocument (shares the dynamoDB client lifecycle)
+// =============================================================================
+describe("AWSClientProvider getter: dynamoDBDocument", () => {
+  test("constructs its wrapper and the underlying dynamoDB client on first access", () => {
+    const provider = new AWSClientProvider();
+
+    void provider.dynamoDBDocument;
+
+    expect(h.docFrom).toHaveBeenCalledTimes(1);
+    expect(h.dynamoDBCtor).toHaveBeenCalledTimes(1);
+  });
+
+  test("wraps this provider's underlying raw dynamoDB client instance", () => {
+    const provider = new AWSClientProvider();
+
+    void provider.dynamoDBDocument;
+
+    expect(h.docFrom.mock.calls[0]?.[0]).toBe(provider.dynamoDB);
+  });
+
+  test("caches the wrapper — repeat access returns the SAME instance", () => {
+    const provider = new AWSClientProvider();
+
+    const first = provider.dynamoDBDocument;
+    const second = provider.dynamoDBDocument;
+
+    expect(second).toBe(first);
+    expect(h.docFrom).toHaveBeenCalledTimes(1);
+  });
+
+  test("close() destroys the shared underlying dynamoDB client exactly once and does NOT destroy the document wrapper independently", () => {
+    const provider = new AWSClientProvider();
+
+    void provider.dynamoDBDocument;
+    provider.close();
+
+    expect(h.destroy).toHaveBeenCalledTimes(1);
+    expect(h.docDestroy).not.toHaveBeenCalled();
+  });
+
+  test("accessing both dynamoDB and dynamoDBDocument still results in exactly one destroy on close (one cache entry for the shared client)", () => {
+    const provider = new AWSClientProvider();
+
+    void provider.dynamoDB;
+    void provider.dynamoDBDocument;
+    provider.close();
+
+    expect(h.destroy).toHaveBeenCalledTimes(1);
+    expect(h.docDestroy).not.toHaveBeenCalled();
+  });
+
+  test("after close(), a fresh access rebuilds both the wrapper and the underlying client", () => {
+    const provider = new AWSClientProvider();
+
+    void provider.dynamoDBDocument;
+    provider.close();
+    void provider.dynamoDBDocument;
+
+    expect(h.docFrom).toHaveBeenCalledTimes(2);
+    expect(h.dynamoDBCtor).toHaveBeenCalledTimes(2);
+  });
+
+  test("wraps an underlying dynamoDB construction failure in M3LAWSClientError with the original error as `cause`", () => {
+    const original = new Error("boom from DynamoDB constructor");
+    h.dynamoDBCtor.mockImplementation(() => {
+      throw original;
+    });
+    const provider = new AWSClientProvider();
+
+    let thrown: unknown;
+    try {
+      void provider.dynamoDBDocument;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LAWSClientError);
+    expect((thrown as M3LAWSClientError).code).toBe("ERR_AWS_CLIENT");
+    expect((thrown as M3LAWSClientError).cause).toBe(original);
+  });
+
+  test("wraps a `fromIni` failure (when a profile is set) in M3LAWSClientError with the original error as `cause`", () => {
+    const original = new Error("boom from fromIni");
+    h.fromIni.mockImplementation(() => {
+      throw original;
+    });
+    const provider = new AWSClientProvider({
+      profile: parseAWSProfile("my-profile"),
+    });
+
+    let thrown: unknown;
+    try {
+      void provider.dynamoDBDocument;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LAWSClientError);
+    expect((thrown as M3LAWSClientError).code).toBe("ERR_AWS_CLIENT");
+    expect((thrown as M3LAWSClientError).cause).toBe(original);
+  });
+
+  test("wraps a `DynamoDBDocumentClient.from` failure in M3LAWSClientError with the original error as `cause`, distinct from the pass-through dynamoDB failure", () => {
+    const original = new Error("boom from DynamoDBDocumentClient.from");
+    h.docFrom.mockImplementation(() => {
+      throw original;
+    });
+    const provider = new AWSClientProvider();
+
+    let thrown: unknown;
+    try {
+      void provider.dynamoDBDocument;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LAWSClientError);
+    expect((thrown as M3LAWSClientError).code).toBe("ERR_AWS_CLIENT");
+    expect((thrown as M3LAWSClientError).cause).toBe(original);
+    expect((thrown as M3LAWSClientError).message).toContain("dynamoDBDocument");
+  });
+});
 
 // =============================================================================
 // AWSClientProvider — close()
@@ -697,6 +848,22 @@ describe("type-level contracts", () => {
     const provider = new AWSClientProvider();
 
     expectTypeOf(provider.s3).toEqualTypeOf<S3Client>();
+  });
+
+  test("provider.cloudWatchLogs is typed CloudWatchLogsClient", () => {
+    expectTypeOf<
+      AWSClientProvider["cloudWatchLogs"]
+    >().toEqualTypeOf<CloudWatchLogsClient>();
+  });
+
+  test("provider.athena is typed AthenaClient", () => {
+    expectTypeOf<AWSClientProvider["athena"]>().toEqualTypeOf<AthenaClient>();
+  });
+
+  test("provider.dynamoDBDocument is typed DynamoDBDocumentClient", () => {
+    expectTypeOf<
+      AWSClientProvider["dynamoDBDocument"]
+    >().toEqualTypeOf<DynamoDBDocumentClient>();
   });
 
   test("mapParallelSettled resolves to a readonly array of { profile, result }", async () => {

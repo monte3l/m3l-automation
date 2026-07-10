@@ -6,8 +6,10 @@
  */
 
 import { APIGatewayClient } from "@aws-sdk/client-api-gateway";
+import { AthenaClient } from "@aws-sdk/client-athena";
 import { CloudFormationClient } from "@aws-sdk/client-cloudformation";
 import { CloudWatchClient } from "@aws-sdk/client-cloudwatch";
+import { CloudWatchLogsClient } from "@aws-sdk/client-cloudwatch-logs";
 import { CodePipelineClient } from "@aws-sdk/client-codepipeline";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { EC2Client } from "@aws-sdk/client-ec2";
@@ -20,6 +22,7 @@ import { SQSClient } from "@aws-sdk/client-sqs";
 import { SSMClient } from "@aws-sdk/client-ssm";
 import { STSClient } from "@aws-sdk/client-sts";
 import { fromIni } from "@aws-sdk/credential-provider-ini";
+import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 
 import type { M3LAWSProfile, M3LAWSRegion } from "../models/index.js";
 
@@ -61,6 +64,8 @@ type AWSServiceName =
   | "apiGateway"
   | "eks"
   | "cloudWatch"
+  | "cloudWatchLogs"
+  | "athena"
   | "ssm"
   | "sqs";
 
@@ -112,6 +117,10 @@ export class AWSClientProvider {
   private readonly profile: M3LAWSProfile | undefined;
   private readonly region: M3LAWSRegion;
   private readonly cache = new Map<AWSServiceName, DestroyableClient>();
+  // Invariant: when set, `dynamoDB` is already in `cache` (the getter reads
+  // `this.dynamoDB` before memoizing this wrapper) — close() must clear both
+  // together, or a future per-service eviction can leave a stale wrapper here.
+  private dynamoDBDocumentClient: DynamoDBDocumentClient | undefined;
 
   /**
    * Creates a new `AWSClientProvider`.
@@ -216,6 +225,43 @@ export class AWSClientProvider {
     return this.getOrConstruct("sqs", (config) => new SQSClient(config));
   }
 
+  /** The `CloudWatchLogsClient` for this provider's profile, constructed on first access. */
+  get cloudWatchLogs(): CloudWatchLogsClient {
+    return this.getOrConstruct(
+      "cloudWatchLogs",
+      (config) => new CloudWatchLogsClient(config),
+    );
+  }
+
+  /** The `AthenaClient` for this provider's profile, constructed on first access. */
+  get athena(): AthenaClient {
+    return this.getOrConstruct("athena", (config) => new AthenaClient(config));
+  }
+
+  /**
+   * The `DynamoDBDocumentClient` wrapping this provider's `dynamoDB` client,
+   * constructed on first access. Lets callers work with plain JS objects
+   * instead of raw AttributeValue shapes. Shares the underlying `dynamoDB`
+   * client's connection lifecycle: it is torn down when `close()` destroys
+   * that client, never destroyed independently.
+   */
+  get dynamoDBDocument(): DynamoDBDocumentClient {
+    const cached = this.dynamoDBDocumentClient;
+    if (cached !== undefined) return cached;
+
+    const base = this.dynamoDB; // may throw a typed M3LAWSClientError — let it propagate
+    try {
+      const doc = DynamoDBDocumentClient.from(base);
+      this.dynamoDBDocumentClient = doc;
+      return doc;
+    } catch (cause) {
+      throw new M3LAWSClientError(
+        "failed to construct AWS SDK document client for service 'dynamoDBDocument'",
+        { cause },
+      );
+    }
+  }
+
   /**
    * Destroys every currently-cached client and clears the cache, so a later
    * getter access constructs a fresh instance. Services that were never
@@ -251,6 +297,7 @@ export class AWSClientProvider {
     }
 
     this.cache.clear();
+    this.dynamoDBDocumentClient = undefined; // shares dynamoDB's lifecycle; not destroyed separately
 
     if (failures.length > 0) {
       const services = failures.map((failure) => failure.service).join(", ");
