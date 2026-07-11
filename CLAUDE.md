@@ -233,6 +233,13 @@ file.
 There is **no pre-publish hook** — the package is internal and unpublished
 (ADR-0020), so every gate beyond the bypassable pre-push subset runs only in CI.
 
+The `pre-push` checks run **in parallel** (`lefthook.yml` `parallel: true`), but
+the stage still takes minutes — its wall-clock is the slowest lane, usually
+`test:coverage` or `lint`. `git push` blocks on it, so **budget for it**: run the
+push in the background or with a longer timeout rather than letting a foreground
+tool-timeout kill it mid-hook. Don't reach for `--no-verify` to skip the wait —
+CI re-runs everything and the hook is the local safety net.
+
 ## CI/CD
 
 Five GitHub Actions workflows in `.github/workflows/` (plus Dependabot via the

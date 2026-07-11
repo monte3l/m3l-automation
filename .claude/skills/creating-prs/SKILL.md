@@ -183,6 +183,18 @@ the PR is open.
 git push -u origin HEAD
 ```
 
+**Budget for the pre-push hook — it runs a multi-minute verify.** This push
+triggers the `pre-push` lefthook, which runs `format:check` + `lint` +
+`typecheck` + `test:coverage` + `build`/`check:exports` + signature check **in
+parallel**; wall-clock is roughly the slowest lane (usually `test:coverage` or
+`lint`), often 2–4 min. A fixed foreground tool-timeout will kill the `git push`
+mid-hook — the ref never transmits, and a later retry just pays the cost again.
+So **run the push in the background or raise the command timeout**; do not lower
+your guard by reaching for `--no-verify` to dodge the wall-clock — the hook is the
+local safety net and CI re-runs everything regardless. (Warming turbo with
+`pnpm build` first only speeds `build`/`typecheck`, not the `test:coverage`/`lint`
+dominators, so it won't save the push.)
+
 If the push is rejected as non-fast-forward (the branch was rebased in Step 2
 after a previous push), re-push with lease protection — this is safe on **your
 own feature branch** but never on a shared branch (per CLAUDE.md, "never
