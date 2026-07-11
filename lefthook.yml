@@ -19,15 +19,33 @@ commit-msg:
     commitlint:
       run: node bin/lint-commit.mjs --edit {1}
 
+# Same whole-repo verify the old single-chain hook ran, split into independent
+# commands so lefthook runs them CONCURRENTLY (`parallel: true`). Wall-clock drops
+# from the sum of the steps to roughly the slowest lane — the fix for the multi-
+# minute serial run that was overrunning push timeouts. The token SET is unchanged,
+# so `check:cadence` (which compares tokens, not structure) stays green with no
+# CLAUDE.md edit. Tradeoffs of parallelising: a cheap failure (e.g. format:check)
+# no longer short-circuits before the expensive test run, and vitest+eslint+tsc now
+# run at once (more CPU/RAM). Worth it — the all-pass push is the case that timed out.
 pre-push:
+  parallel: true
   commands:
-    # build + check:exports catch a broken compile or a broken exports map (publint
-    # / attw) locally instead of first in CI. build is turbo-cached so the marginal
-    # cost is small, and check:exports packs dist/ which build has just produced.
-    verify:
-      run: pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build && pnpm check:exports
+    format:
+      run: pnpm format:check
+    lint:
+      run: pnpm lint
+    typecheck:
+      run: pnpm typecheck
+    test:
+      run: pnpm test:coverage
+    # build + check:exports catch a broken compile or exports map (publint / attw)
+    # locally instead of first in CI. Kept in ONE command so build's dist/ output
+    # precedes the pack — the single hard ordering dependency (lefthook has no
+    # per-command DAG). build is turbo-cached, so its marginal cost is small.
+    build-exports:
+      run: pnpm build && pnpm check:exports
     # Refuse to push unsigned/unverified commits (skipped in CI so release
     # automation isn't wedged). Bypassable with --no-verify; the unbypassable
-    # layer is branch-protection "Require signed commits".
+    # layer is branch-protection "Require signed commits" (ADR-0016).
     verify-signatures:
       run: node bin/verify-signed-range.mjs
