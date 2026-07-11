@@ -13,6 +13,7 @@ export * from "./coerceConfigValue.js";
 export * from "./M3LCommandLineConfigProvider.js";
 export * from "./M3LConfig.js";
 export * from "./M3LConfigCoercionError.js";
+export * from "./M3LConfigMissingError.js";
 export * from "./M3LConfigParameter.js";
 export * from "./M3LConfigParameterType.js";
 export * from "./M3LConfigParseError.js";

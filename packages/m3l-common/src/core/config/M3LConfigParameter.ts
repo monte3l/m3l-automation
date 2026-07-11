@@ -1,11 +1,12 @@
 /**
  * `core/config/M3LConfigParameter` — a declared configuration parameter and
- * its 8-level resolution chain.
+ * its 4-branch resolution chain.
  *
  * @packageDocumentation
  */
 
 import { coerceConfigValue } from "./coerceConfigValue.js";
+import { M3LConfigMissingError } from "./M3LConfigMissingError.js";
 import { M3LConfigValidationError } from "./M3LConfigValidationError.js";
 import type {
   M3LCoercedValue,
@@ -41,6 +42,14 @@ interface M3LConfigParameterOptions<TType extends M3LConfigParameterType> {
    * resolves). A failing validation throws {@link M3LConfigValidationError}.
    */
   readonly validate?: M3LConfigValidator<M3LCoercedValue<TType>>;
+  /**
+   * When `true`, {@link M3LConfigParameter.getValueAsync} throws
+   * {@link M3LConfigMissingError} instead of resolving to `undefined` at the
+   * true fall-through — i.e. only after a provider value, `defaultValue`,
+   * and `asyncFallback` have all been tried and none supplied a value.
+   * Defaults to `false`.
+   */
+  readonly required?: boolean;
 }
 
 /**
@@ -48,12 +57,13 @@ interface M3LConfigParameterOptions<TType extends M3LConfigParameterType> {
  * optional aliases, and an optional default/fallback chain.
  *
  * Resolution order (`getValueAsync`), short-circuiting strictly at the first
- * satisfied level:
+ * satisfied branch:
  * 1. A provider-supplied raw value (via the reader, tried under `name` then
  *    each alias) — coerced via {@link coerceConfigValue}.
  * 2. `defaultValue`, if defined — returned unmodified.
  * 3. `asyncFallback()`, if defined — its resolved value returned unmodified.
- * 4. `undefined`.
+ * 4. The true fall-through: `undefined`, unless `required` is `true`, in
+ *    which case {@link M3LConfigMissingError} is thrown instead.
  *
  * @typeParam TType - The declared coercion target type. The resolved value
  *   type ({@link M3LCoercedValue}`<TType>`) is DERIVED from `type` — there is
@@ -90,6 +100,7 @@ export class M3LConfigParameter<
     (() => Promise<M3LCoercedValue<TType>>) | undefined;
   private readonly validate:
     M3LConfigValidator<M3LCoercedValue<TType>> | undefined;
+  private readonly required: boolean;
 
   /**
    * Creates a new `M3LConfigParameter`.
@@ -106,6 +117,7 @@ export class M3LConfigParameter<
     this.defaultValue = options.defaultValue;
     this.asyncFallback = options.asyncFallback;
     this.validate = options.validate;
+    this.required = options.required ?? false;
 
     if (this.defaultValue !== undefined) {
       this.runValidation(this.defaultValue);
@@ -149,16 +161,20 @@ export class M3LConfigParameter<
   }
 
   /**
-   * Resolves this parameter's value against `reader` through the 8-level
+   * Resolves this parameter's value against `reader` through the 4-branch
    * chain described in the class documentation.
    *
    * @param reader - The composed config reader to consult first.
-   * @returns The resolved value, or `undefined` if no level supplies one.
+   * @returns The resolved value, or `undefined` if no branch supplies one
+   *   and `required` is not `true`.
    * @throws {@link M3LConfigCoercionError} When a provider-supplied raw value
    *   cannot be coerced to the declared `type`.
    * @throws {@link M3LConfigValidationError} When a declared `validate`
    *   rejects the coerced provider value or the resolved `asyncFallback`
    *   value.
+   * @throws {@link M3LConfigMissingError} When `required` is `true` and the
+   *   true fall-through is reached — no provider value, `defaultValue`, or
+   *   `asyncFallback` supplied one.
    */
   async getValueAsync(
     reader: M3LConfigReader,
@@ -178,6 +194,13 @@ export class M3LConfigParameter<
       const resolved = await this.asyncFallback();
       this.runValidation(resolved);
       return resolved;
+    }
+
+    if (this.required) {
+      throw new M3LConfigMissingError(
+        `configuration parameter '${this.name}' is required but no value was supplied`,
+        { parameter: this.name },
+      );
     }
 
     return undefined;
