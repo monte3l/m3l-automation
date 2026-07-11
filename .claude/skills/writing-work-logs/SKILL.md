@@ -201,8 +201,12 @@ promotion).** A lesson changes _how we work_ (→ rules/agents); a **friction
 item** is a concrete _pending library change_ the log surfaced (a missing API, a
 deferred capability, a "this fought back"). File each into
 `docs/plans/IMPLEMENTATION.md` — an id, title, priority, the source log, and the
-consumer call-site (which opens its ADR-0021 D4 gate) — and reflect a P0 item up
-into `docs/ROADMAP.md`. This is the F4 "graduate friction into issues"
+consumer call-site — and reflect a P0 item up into `docs/ROADMAP.md`. Most
+friction is an additive (semver-minor) library change; record the call-site so
+the work is grounded in a real consumer. Only a friction item that lands as one
+of the P2 _gated modules_ opens its ADR-0021 D4 gate by demonstrating that
+call-site (F8 is the one such item so far) — don't attribute a D4 gate to
+ordinary additive friction. This is the F4 "graduate friction into issues"
 mechanism: the log narrates it once, the tracker makes it actionable and
 prioritized so it isn't lost in prose. (Cross-file a genuine external issue with
 `spawn_task` for the highest-priority items, as with F8.)

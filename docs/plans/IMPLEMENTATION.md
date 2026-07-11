@@ -12,7 +12,7 @@ library is in [`../implementation-status.md`](../implementation-status.md).
 
 ## Library friction (F-series)
 
-Surfaced by W1 `json-etl` — see the work log
+Surfaced by W1 `json-etl` (landed #99) — see the work log
 `docs/logs/2026-07-11-scripts-json-etl.md` §"Library friction (the F4 backlog)".
 These are additive (semver-minor) library changes unless tagged otherwise; each
 follows spec-first via `docs/reference/core/*.md`.

@@ -35,13 +35,18 @@ by `/writing-work-logs`; recurring lessons graduate into the rules/agents via
 
 ## Consumer-fleet program (ADR-0021 Phase 5 / ADR-0022)
 
-| Date       | Unit                                                                   | Log                                                |
-| ---------- | ---------------------------------------------------------------------- | -------------------------------------------------- |
-| 2026-07-09 | Script production pipeline (generator + gates)                         | [script-pipeline](./2026-07-09-script-pipeline.md) |
-| 2026-07-10 | W0-L1 — `core/json` extraction extension (`extractAll`)                | [core-json](./2026-07-10-core-json.md)             |
-| 2026-07-11 | W0-L2 — `aws/clients` getters (cloudWatchLogs/dynamoDBDocument/athena) | [aws-clients](./2026-07-11-aws-clients.md)         |
+| Date       | Unit                                                                   | Log                                                  |
+| ---------- | ---------------------------------------------------------------------- | ---------------------------------------------------- |
+| 2026-07-09 | Script production pipeline (generator + gates)                         | [script-pipeline](./2026-07-09-script-pipeline.md)   |
+| 2026-07-10 | W0-L1 — `core/json` extraction extension (`extractAll`)                | [core-json](./2026-07-10-core-json.md)               |
+| 2026-07-11 | W0-L2 — `aws/clients` getters (cloudWatchLogs/dynamoDBDocument/athena) | [aws-clients](./2026-07-11-aws-clients.md)           |
+| 2026-07-11 | W1 — `json-etl` (first end-to-end consumer script)                     | [scripts-json-etl](./2026-07-11-scripts-json-etl.md) |
 
-> W1 `json-etl` (the first consumer script) has its log
-> `2026-07-11-scripts-json-etl.md` on PR #99; it joins this index when that PR
-> merges. Its 8 library-friction items (F1–F8) are already tracked in
+> W1 `json-etl`'s 8 library-friction items (F1–F8) are tracked in
 > [`../plans/IMPLEMENTATION.md`](../plans/IMPLEMENTATION.md#library-friction-f-series).
+
+## Workflow / infra
+
+| Date       | Change                                              | Log                                                                |
+| ---------- | --------------------------------------------------- | ------------------------------------------------------------------ |
+| 2026-07-11 | Parallelize the pre-push verify (fix push timeouts) | [prepush-parallelization](./2026-07-11-prepush-parallelization.md) |
