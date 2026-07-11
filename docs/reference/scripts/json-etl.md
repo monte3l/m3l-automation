@@ -39,13 +39,18 @@ env/.env > preset > default.
 | `sort`       | `STRING`       | _(unset)_ | `regex ^[^:]+:(asc\|desc)$`                    | `name:asc` or `name:desc` over an extracted field. The **only** buffering operation — fails config validation without `limit`. |
 | `multiValue` | `STRING`       | `join`    | `oneOf(join, explode)`                         | How a multi-match (wildcard) extraction path collapses: `join` into one field, or `explode` into one record per match.         |
 
-`sort` requiring `limit` is enforced at **run start** (an `onAfterConfigLoad`
-hook / a guard at the top of `run-json-etl`), because the library's validators
-are strictly per-parameter — there is no cross-parameter validator. The check
-runs before any record is read, so a preset that asks to sort an unbounded
-stream fails up front, not mid-stream. Required parameters (`input`, `fields`,
-`output`) are likewise checked for presence at run start, since
-`M3LConfigParameter` does not itself enforce required-ness.
+Required parameters (`input`, `fields`, `output`) are declared `required: true`
+with `Core.M3LConfigValidators.nonEmpty`, so presence and non-emptiness are
+enforced by the library at **config-load time** — a missing value throws
+`M3LConfigMissingError`, an empty one `M3LConfigValidationError`, before the run
+body executes.
+
+`sort` requiring `limit`, and `sort`'s name being one of the `fields` output
+columns, are **cross-parameter** constraints the per-parameter validators cannot
+express, so they remain guards at **run start** (top of `run-json-etl`). The
+check runs before any record is read, so a preset that asks to sort an unbounded
+stream fails up front, not mid-stream. (A first-class cross-parameter validation
+seam is tracked as F1b in the backlog.)
 
 ## Steps
 

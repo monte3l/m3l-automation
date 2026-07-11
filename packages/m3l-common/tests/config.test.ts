@@ -22,6 +22,15 @@
  *   provider coercion, and after asyncFallback — and its context never
  *   carries the value itself (redaction-safe by construction).
  *
+ * F1/F2 addition (additive, semver-minor — RED until implemented):
+ *   M3LConfigValidators.nonEmpty (a validator VALUE, not a factory) and
+ *   .minLength(min) (a factory), both M3LConfigValidator<{ readonly length:
+ *   number }>; M3LConfigParameter's `required?: boolean` constructor option;
+ *   and M3LConfigMissingError (code: ERR_CONFIG_MISSING), thrown by
+ *   getValueAsync when `required` is true and no provider/defaultValue/
+ *   asyncFallback supplies a value. Its context carries only
+ *   `{ parameter }` — there is no value to redact.
+ *
  * Key behavioral contracts:
  *  - Providers are SYNCHRONOUS: getRawValue(key) returns unknown, undefined
  *    when absent. File parsing happens at construction.
@@ -69,6 +78,7 @@ import {
   M3LCommandLineConfigProvider,
   M3LConfig,
   M3LConfigCoercionError,
+  M3LConfigMissingError,
   M3LConfigParameter,
   M3LConfigParameterType,
   M3LConfigParseError,
@@ -1626,6 +1636,84 @@ describe("M3LConfigValidators", () => {
     });
   });
 
+  describe("nonEmpty", () => {
+    // nonEmpty is a validator VALUE (not a factory) — called directly.
+    test("passes (returns true) for a non-empty string", () => {
+      expect(M3LConfigValidators.nonEmpty("hello")).toBe(true);
+    });
+
+    test("passes (returns true) for a non-empty array", () => {
+      expect(M3LConfigValidators.nonEmpty(["a", "b"])).toBe(true);
+    });
+
+    // nonEmpty can only fail when value.length === 0, so the received value
+    // itself never carries redactable content — unlike range/regex/oneOf,
+    // there is nothing to assert "the reason does not contain the value"
+    // against (String("") === String([]) === "", which every string
+    // trivially contains). The reason still must name the constraint.
+    test("rejects an empty string with a reason naming the 'empty' constraint", () => {
+      const result = M3LConfigValidators.nonEmpty("");
+      expect(typeof result).toBe("string");
+      expect(result as string).toContain("empty");
+    });
+
+    test("rejects an empty array with a reason naming the 'empty' constraint", () => {
+      const result = M3LConfigValidators.nonEmpty([]);
+      expect(typeof result).toBe("string");
+      expect(result as string).toContain("empty");
+    });
+  });
+
+  describe("minLength(min)", () => {
+    // The factory is invoked inside each test body (not at describe-body
+    // top level, unlike range()/regex() above) so that its current absence
+    // fails only these individual tests rather than aborting collection of
+    // the whole file.
+    test.each([
+      ["abc", true],
+      ["abcd", true],
+    ] as const)("accepts %j (length >= min) -> %j", (value, expected) => {
+      const atLeastThree = M3LConfigValidators.minLength(3);
+      expect(atLeastThree(value)).toBe(expected);
+    });
+
+    test("accepts an array whose length meets the minimum", () => {
+      const atLeastThree = M3LConfigValidators.minLength(3);
+      expect(atLeastThree(["a", "b", "c"])).toBe(true);
+    });
+
+    test.each(["a", "ab"])(
+      "rejects %j (too short) with a reason naming the bound but not the value",
+      (value) => {
+        const atLeastThree = M3LConfigValidators.minLength(3);
+        const result = atLeastThree(value);
+        expect(typeof result).toBe("string");
+        const reason = result as string;
+        expect(reason).toContain("3");
+        expect(reason).not.toContain(String(value));
+      },
+    );
+
+    // "" stringifies to the empty string, which every string trivially
+    // contains — excluded from the "not contain the value" assertion above
+    // for the same reason as nonEmpty's empty-value case.
+    test("rejects an empty string with a reason naming the bound", () => {
+      const atLeastThree = M3LConfigValidators.minLength(3);
+      const result = atLeastThree("");
+      expect(typeof result).toBe("string");
+      expect(result as string).toContain("3");
+    });
+
+    test("rejects a too-short array with a reason naming the bound but not the value", () => {
+      const atLeastThree = M3LConfigValidators.minLength(3);
+      const result = atLeastThree(["a", "b"]);
+      expect(typeof result).toBe("string");
+      const reason = result as string;
+      expect(reason).toContain("3");
+      expect(reason).not.toContain("a,b");
+    });
+  });
+
   describe("type-level contract", () => {
     test("M3LConfigValidator<T> is (value: T) => true | string", () => {
       expectTypeOf<M3LConfigValidator<number>>().toEqualTypeOf<
@@ -1661,6 +1749,86 @@ describe("M3LConfigValidators", () => {
         // of `validate`, not a runtime validation outcome.
         // @ts-expect-error -- regex() is M3LConfigValidator<string>, not assignable to an INT parameter's number-typed validate
         validate: M3LConfigValidators.regex(/x/),
+      });
+    });
+
+    test("nonEmpty is M3LConfigValidator<{ readonly length: number }>, not a factory", () => {
+      expectTypeOf(M3LConfigValidators.nonEmpty).toEqualTypeOf<
+        M3LConfigValidator<{ readonly length: number }>
+      >();
+    });
+
+    test("minLength returns M3LConfigValidator<{ readonly length: number }>", () => {
+      expectTypeOf(M3LConfigValidators.minLength).returns.toEqualTypeOf<
+        M3LConfigValidator<{ readonly length: number }>
+      >();
+    });
+
+    test("nonEmpty compiles as `validate` on a STRING parameter (positive control)", () => {
+      expect(
+        () =>
+          new M3LConfigParameter({
+            name: "name",
+            type: M3LConfigParameterType.STRING,
+            defaultValue: "Ada",
+            validate: M3LConfigValidators.nonEmpty,
+          }),
+      ).not.toThrow();
+    });
+
+    test("nonEmpty compiles as `validate` on a STRING_ARRAY parameter (positive control)", () => {
+      expect(
+        () =>
+          new M3LConfigParameter({
+            name: "tags",
+            type: M3LConfigParameterType.STRING_ARRAY,
+            defaultValue: ["a"],
+            validate: M3LConfigValidators.nonEmpty,
+          }),
+      ).not.toThrow();
+    });
+
+    test("minLength(1) compiles as `validate` on a STRING parameter (positive control)", () => {
+      expect(
+        () =>
+          new M3LConfigParameter({
+            name: "name",
+            type: M3LConfigParameterType.STRING,
+            defaultValue: "Ada",
+            validate: M3LConfigValidators.minLength(1),
+          }),
+      ).not.toThrow();
+    });
+
+    test("minLength(1) compiles as `validate` on a STRING_ARRAY parameter (positive control)", () => {
+      expect(
+        () =>
+          new M3LConfigParameter({
+            name: "tags",
+            type: M3LConfigParameterType.STRING_ARRAY,
+            defaultValue: ["a"],
+            validate: M3LConfigValidators.minLength(1),
+          }),
+      ).not.toThrow();
+    });
+
+    test("nonEmpty on an INT parameter is a compile error (number has no length)", () => {
+      new M3LConfigParameter({
+        name: "port",
+        type: M3LConfigParameterType.INT,
+        defaultValue: 3000,
+        // @ts-expect-error -- nonEmpty is M3LConfigValidator<{ readonly length: number }>; number has no `length`, not assignable to an INT parameter's validate
+        validate: M3LConfigValidators.nonEmpty,
+      });
+    });
+
+    test("minLength(1) on an INT parameter is a compile error (number has no length)", () => {
+      new M3LConfigParameter({
+        name: "port",
+        type: M3LConfigParameterType.INT,
+        defaultValue: 3000,
+        // @ts-expect-error -- minLength(1) is M3LConfigValidator<{ readonly length: number }>; number has no `length`, not assignable to an INT parameter's validate
+        validate: M3LConfigValidators.minLength(1),
       });
     });
 
@@ -1785,6 +1953,92 @@ describe("M3LConfigParameter schema-time validation", () => {
 });
 
 // =============================================================================
+// M3LConfigParameter `required` option — F1 (fail-fast on a missing value)
+// =============================================================================
+describe("M3LConfigParameter `required` option", () => {
+  test("rejects with M3LConfigMissingError when required and no provider, defaultValue, or asyncFallback supplies a value", async () => {
+    const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
+    const parameter = new M3LConfigParameter({
+      name: "apiKey",
+      type: M3LConfigParameterType.STRING,
+      required: true,
+    });
+
+    await expect(parameter.getValueAsync(reader)).rejects.toBeInstanceOf(
+      M3LConfigMissingError,
+    );
+  });
+
+  test("resolves normally to the coerced value when required and a provider supplies a value", async () => {
+    const reader = new M3LConfigReader([
+      new M3LInMemoryConfigProvider({ apiKey: "secret-value" }),
+    ]);
+    const parameter = new M3LConfigParameter({
+      name: "apiKey",
+      type: M3LConfigParameterType.STRING,
+      required: true,
+    });
+
+    await expect(parameter.getValueAsync(reader)).resolves.toBe("secret-value");
+  });
+
+  test("resolves to defaultValue when required is true and a defaultValue is declared (the guard never fires)", async () => {
+    const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
+    const parameter = new M3LConfigParameter({
+      name: "apiKey",
+      type: M3LConfigParameterType.STRING,
+      required: true,
+      defaultValue: "fallback-value",
+    });
+
+    await expect(parameter.getValueAsync(reader)).resolves.toBe(
+      "fallback-value",
+    );
+  });
+
+  test("regression guard: required left unset with nothing supplying a value still resolves to undefined", async () => {
+    const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
+    const parameter = new M3LConfigParameter({
+      name: "apiKey",
+      type: M3LConfigParameterType.STRING,
+    });
+
+    await expect(parameter.getValueAsync(reader)).resolves.toBeUndefined();
+  });
+
+  test("regression guard: explicit required: false with nothing supplying a value resolves to undefined", async () => {
+    const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
+    const parameter = new M3LConfigParameter({
+      name: "apiKey",
+      type: M3LConfigParameterType.STRING,
+      required: false,
+    });
+
+    await expect(parameter.getValueAsync(reader)).resolves.toBeUndefined();
+  });
+
+  describe("type-level contract", () => {
+    test("required is an optional boolean constructor option (positive control)", () => {
+      expect(
+        () =>
+          new M3LConfigParameter({
+            name: "apiKey",
+            type: M3LConfigParameterType.STRING,
+            required: true,
+          }),
+      ).not.toThrow();
+      expect(
+        () =>
+          new M3LConfigParameter({
+            name: "apiKey",
+            type: M3LConfigParameterType.STRING,
+          }),
+      ).not.toThrow();
+    });
+  });
+});
+
+// =============================================================================
 // M3LConfigValidationError
 // =============================================================================
 describe("M3LConfigValidationError", () => {
@@ -1873,6 +2127,81 @@ describe("M3LConfigValidationError", () => {
       expectTypeOf<
         M3LConfigValidationError["code"]
       >().toEqualTypeOf<"ERR_CONFIG_VALIDATION">();
+    });
+  });
+});
+
+// =============================================================================
+// M3LConfigMissingError
+// =============================================================================
+describe("M3LConfigMissingError", () => {
+  test("is an instance of M3LError with code ERR_CONFIG_MISSING", async () => {
+    const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
+    const parameter = new M3LConfigParameter({
+      name: "apiKey",
+      type: M3LConfigParameterType.STRING,
+      required: true,
+    });
+
+    let thrown: unknown;
+    try {
+      await parameter.getValueAsync(reader);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect(thrown).toBeInstanceOf(M3LConfigMissingError);
+    expect((thrown as M3LConfigMissingError).code).toBe("ERR_CONFIG_MISSING");
+  });
+
+  // There is no resolved value at all when a required parameter is missing,
+  // so context has nothing to redact beyond naming the parameter — asserting
+  // the exact shape doubles as both the contract check and the redaction
+  // check (no stray `value` key can sneak in).
+  test("context carries exactly { parameter } — no value to leak", async () => {
+    const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
+    const parameter = new M3LConfigParameter({
+      name: "dbPassword",
+      type: M3LConfigParameterType.STRING,
+      required: true,
+    });
+
+    let thrown: unknown;
+    try {
+      await parameter.getValueAsync(reader);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConfigMissingError);
+    const missingError = thrown as M3LConfigMissingError;
+    expect(missingError.context).toEqual({ parameter: "dbPassword" });
+  });
+
+  test("chains an underlying cause when provided", () => {
+    const cause = new Error("root");
+    const error = new M3LConfigMissingError("missing value", { cause });
+
+    expect(error).toBeInstanceOf(M3LError);
+    expect(error).toBeInstanceOf(M3LConfigMissingError);
+    expect(error.code).toBe("ERR_CONFIG_MISSING");
+    expect(error.cause).toBe(cause);
+  });
+
+  test("constructs with no options at all: code is set and context defaults to empty", () => {
+    const error = new M3LConfigMissingError("missing value");
+
+    expect(error.code).toBe("ERR_CONFIG_MISSING");
+    expect(error.context).toEqual({});
+    expect(error.cause).toBeUndefined();
+  });
+
+  describe("type-level contract", () => {
+    test("code narrows to the literal 'ERR_CONFIG_MISSING'", () => {
+      expectTypeOf<
+        M3LConfigMissingError["code"]
+      >().toEqualTypeOf<"ERR_CONFIG_MISSING">();
     });
   });
 });

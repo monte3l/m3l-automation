@@ -27,15 +27,19 @@ function isStringArray(value: readonly unknown[]): value is string[] {
 }
 
 /**
- * Reads a required non-empty string parameter from `config`.
+ * Reads a string parameter from `config` (`input`/`output`). Presence and
+ * non-emptiness are enforced by the declared `M3LConfigParameter`
+ * (`required: true` + `Core.M3LConfigValidators.nonEmpty`) before `config` is
+ * ever built, so the only thing left to check here is the coerced type.
  *
- * @throws {@link Core.M3LError} When `name` is missing, empty, or not a
- *   string — a bad caller/config input, checked before any file is read.
+ * @throws {@link Core.M3LError} When `name`'s stored value is not a string —
+ *   a defensive check, since a config built through the declared schema
+ *   never reaches this branch.
  */
-function requireString(config: Core.M3LConfig, name: string): string {
+function readRequiredString(config: Core.M3LConfig, name: string): string {
   const value: unknown = config.get(name);
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Core.M3LError(`'${name}' is required`, {
+  if (typeof value !== "string") {
+    throw new Core.M3LError(`'${name}' must be a string`, {
       code: "ERR_JSON_ETL_CONFIG",
       context: { name },
     });
@@ -44,20 +48,20 @@ function requireString(config: Core.M3LConfig, name: string): string {
 }
 
 /**
- * Reads a required non-empty string-array parameter from `config`.
+ * Reads the `fields` string-array parameter from `config`. Presence and
+ * non-emptiness are enforced by the declared `M3LConfigParameter`
+ * (`required: true` + `Core.M3LConfigValidators.nonEmpty`) before `config` is
+ * ever built, so the only thing left to check here is the coerced type.
  *
- * @throws {@link Core.M3LError} When `name` is missing, empty, or not a
- *   string array — checked before any file is read.
+ * @throws {@link Core.M3LError} When `fields`'s stored value is not a string
+ *   array — a defensive check, since a config built through the declared
+ *   schema never reaches this branch.
  */
-function requireStringArray(
-  config: Core.M3LConfig,
-  name: string,
-): readonly string[] {
-  const value: unknown = config.get(name);
-  if (!Array.isArray(value) || value.length === 0 || !isStringArray(value)) {
-    throw new Core.M3LError(`'${name}' is required`, {
+function readFields(config: Core.M3LConfig): readonly string[] {
+  const value: unknown = config.get("fields");
+  if (!Array.isArray(value) || !isStringArray(value)) {
+    throw new Core.M3LError("'fields' must be a string array", {
       code: "ERR_JSON_ETL_CONFIG",
-      context: { name },
     });
   }
   return value;
@@ -134,19 +138,21 @@ function readSort(
 
 /**
  * Resolves and guard-checks every declared parameter this run needs,
- * throwing before any record is read: required `input`/`fields`/`output`
- * must be present, `sort` requires `limit`, and `sort`'s name must be one of
- * the output columns declared by `fields` (a typo'd sort name would
- * otherwise silently no-op the sort instead of failing fast).
+ * throwing before any record is read. `input`/`fields`/`output` presence and
+ * non-emptiness are already enforced by the declared config schema
+ * (`M3LConfigParameter({ required: true, validate: nonEmpty })`) before this
+ * function ever runs; what remains here is the `sort`-requires-`limit`
+ * constraint and `sort`'s name having to be one of the output columns
+ * declared by `fields` (a typo'd sort name would otherwise silently no-op
+ * the sort instead of failing fast).
  *
- * @throws {@link Core.M3LError} On any missing/invalid required parameter, an
- *   unbounded `sort` (set without `limit`), or a `sort` name outside the
- *   declared `fields` output columns.
+ * @throws {@link Core.M3LError} On an unbounded `sort` (set without `limit`)
+ *   or a `sort` name outside the declared `fields` output columns.
  */
 function resolveSettings(config: Core.M3LConfig): RunSettings {
-  const input = requireString(config, "input");
-  const fields = requireStringArray(config, "fields");
-  const output = requireString(config, "output");
+  const input = readRequiredString(config, "input");
+  const fields = readFields(config);
+  const output = readRequiredString(config, "output");
   const sort = readSort(config);
   const limit = readLimit(config);
 
@@ -290,17 +296,19 @@ function buildImportedRecords(
 /**
  * Composes the `json-etl` pipeline end to end — the only module that knows
  * the stage order: import -\> extract -\> filter -\> (sort -\> limit) -\> export.
- * Required parameters and the `sort`-requires-`limit` constraint are
- * guard-checked before any record is read.
+ * `input`/`fields`/`output` presence and non-emptiness are enforced by the
+ * declared config schema before `config` reaches this function; the
+ * `sort`-requires-`limit` constraint is guard-checked here, before any
+ * record is read.
  *
  * @param deps - The resolved config, `M3LPaths`, logger, and the per-run
  *   correlation id to log against.
  * @returns The run summary: records read (successfully imported, excluding
  *   skips), written (actually exported), and skipped (malformed/unparseable
  *   input records).
- * @throws {@link Core.M3LError} When a required parameter is missing, `sort`
- *   is set without `limit`, the input cannot be parsed as a whole-document
- *   JSON array, or the output cannot be written.
+ * @throws {@link Core.M3LError} When a required parameter's stored value has
+ *   the wrong type, `sort` is set without `limit`, the input cannot be
+ *   parsed as a whole-document JSON array, or the output cannot be written.
  *
  * @example
  * ```typescript

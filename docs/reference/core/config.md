@@ -22,8 +22,8 @@ Exported from `@m3l-automation/m3l-common/core` (the `config` sub-module):
 - `M3LSecretsSpecifier`
 - `M3LUnknownParameterDetector`
 - `M3LConfigValidator` (type: a `(value) => true | string` schema-time validator)
-- `M3LConfigValidators` (stock validators: `range`, `regex`, `oneOf`)
-- Errors: `M3LConfigCoercionError`, `M3LConfigParseError`, `M3LUnsafeConfigKeyError`, `M3LConfigValidationError`
+- `M3LConfigValidators` (stock validators: `range`, `regex`, `oneOf`, `nonEmpty`, `minLength`)
+- Errors: `M3LConfigCoercionError`, `M3LConfigParseError`, `M3LUnsafeConfigKeyError`, `M3LConfigValidationError`, `M3LConfigMissingError`
 
 ## Provider priority chain
 
@@ -64,6 +64,11 @@ Combined with the provider chain above, this yields the full 8-level resolution 
 ```
 
 Because step 8 may perform asynchronous I/O, value resolution is async.
+
+When a parameter declares `required: true`, reaching the end of this chain with
+no value supplied (no provider value, no `defaultValue`, no `asyncFallback`)
+throws `M3LConfigMissingError` (`code: "ERR_CONFIG_MISSING"`) instead of
+resolving to `undefined`. See [Required parameters](#required-parameters).
 
 ## Parameter types
 
@@ -144,6 +149,37 @@ distinguish a validation failure from a coercion failure
 (`M3LConfigCoercionError`), which is a caller-actionable difference (the value
 parsed to the right type but broke a constraint).
 
+### Required parameters
+
+A parameter may declare `required: true`. When set, `getValueAsync()` throws
+`M3LConfigMissingError` at the true fall-through of the [resolution
+order](#resolution-order) — i.e. only after a provider value, `defaultValue`,
+and `asyncFallback` have all been tried and none supplied a value — instead of
+returning `undefined`. A `required` parameter that also declares a
+`defaultValue` never throws (the default always supplies a value). Required-ness
+is a presence guard; it composes with `validate` (e.g. `nonEmpty`), which
+constrains a value that _is_ present.
+
+```typescript
+const input = new M3LConfigParameter({
+  name: "input",
+  type: M3LConfigParameterType.STRING,
+  required: true,
+  validate: M3LConfigValidators.nonEmpty,
+});
+// getValueAsync(reader) throws M3LConfigMissingError if nothing supplies "input"
+```
+
+### `M3LConfigMissingError`
+
+Thrown by `getValueAsync()` when a parameter declared `required: true` resolves
+through its whole chain without a value. `code` is `"ERR_CONFIG_MISSING"` and
+`context` carries `{ parameter }` (the parameter name) — there is no resolved
+value to include, so nothing is leaked. Catch it to distinguish a _missing_
+required value from a _validation_ failure (`M3LConfigValidationError`, a value
+that was present but broke a constraint) or a _coercion_ failure
+(`M3LConfigCoercionError`).
+
 ### Stock validators (`M3LConfigValidators`)
 
 ```typescript
@@ -151,6 +187,8 @@ export const M3LConfigValidators: {
   range(min: number, max: number): M3LConfigValidator<number>;
   regex(pattern: RegExp): M3LConfigValidator<string>;
   oneOf<T>(allowed: readonly T[]): M3LConfigValidator<T>;
+  nonEmpty: M3LConfigValidator<{ readonly length: number }>;
+  minLength(min: number): M3LConfigValidator<{ readonly length: number }>;
 };
 ```
 
@@ -159,6 +197,15 @@ export const M3LConfigValidators: {
 | `range(min, max)` | `min <= value <= max`           | the bound, e.g. `must be between 1 and 65535` |
 | `regex(pattern)`  | `pattern.test(value)` is `true` | the pattern                                   |
 | `oneOf(allowed)`  | `allowed` includes `value`      | the allowed set                               |
+| `nonEmpty`        | `value.length !== 0`            | `must not be empty`                           |
+| `minLength(min)`  | `value.length >= min`           | the bound, e.g. `must be minimum 3 in length` |
+
+`nonEmpty` and `minLength` are typed against the structural shape
+`{ readonly length: number }`, so they apply to any parameter whose coerced
+type has a `length` — `STRING`, the `*_ARRAY` types, and `BUFFER` — and are a
+**compile error** on a `number`/`boolean` parameter (no `length`). Unlike the
+other four, `nonEmpty` is a validator **value**, used directly without a call
+(`validate: M3LConfigValidators.nonEmpty`); `minLength(min)` is a factory.
 
 Each stock validator's failure reason describes the **constraint**, never the
 received value — so a stock validator applied to a secret parameter cannot leak
