@@ -15,7 +15,7 @@ meaning under Lambda: the platform owns a non-interactive process with no TTY.
 So the type today can represent an illegal state — a Lambda configuration that
 carries an interactive prompt.
 
-The pre-1.0.0 audit (`docs/plans/2026-07-05-pre-1.0.0-release-audit.md`, SF-10)
+The pre-1.0.0 audit (`docs/plans/archive/2026-07-05-pre-1.0.0-release-audit.md`, SF-10)
 flagged this as public-type debt: reshaping the options surface after 1.0.0 is a
 breaking change, so the decision must be made — or consciously ratified — before
 the freeze.
@@ -66,6 +66,6 @@ docs-only workstream.
 
 ## Links
 
-- Related: `docs/plans/2026-07-05-pre-1.0.0-release-audit.md` (SF-10),
+- Related: `docs/plans/archive/2026-07-05-pre-1.0.0-release-audit.md` (SF-10),
   `packages/m3l-common/src/core/script/M3LScriptOptions.ts`,
   `docs/reference/core/script.md`, rule `03-design-principles-and-patterns.md`.

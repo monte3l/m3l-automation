@@ -7,7 +7,7 @@ docs reconciliation → PR). It records what shipped, what matched the plan, the
 divergences (a rotted source plan, repeated spoke truncation, two rounds of real
 must-fixes including one the first fix introduced), and the durable lessons.
 
-Plan of record: [`docs/plans/script-submodule-implementation.md`](../plans/script-submodule-implementation.md)
+Plan of record: [`docs/plans/script-submodule-implementation.md`](../plans/archive/script-submodule-implementation.md)
 
 ## Summary
 

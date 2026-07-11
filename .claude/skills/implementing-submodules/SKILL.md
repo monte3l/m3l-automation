@@ -226,7 +226,12 @@ ADR-0013 (its durable home), not a per-plan caveat.
    breaking change, because the three-entry `exports` map is unchanged). Finally
    invoke `/writing-work-logs` to write `docs/logs/YYYY-MM-DD-<ns>-<module>.md` while
    the conversation context is intact — this is the durable record of what
-   shipped, what diverged, and the lessons for the next submodule.
+   shipped, what diverged, and the lessons for the next submodule. If this
+   submodule/change was a tracked backlog item (a friction F-item, a gated D4
+   module), also flip its status in `docs/plans/IMPLEMENTATION.md` /
+   `docs/ROADMAP.md` and `git mv` any dated plan it completes into
+   `docs/plans/archive/` — the living pending-work trackers (`CLAUDE.md` →
+   _Live status_).
 
 ## What "good" looks like (the spokes already carry these)
 

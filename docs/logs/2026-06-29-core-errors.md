@@ -5,7 +5,7 @@ Implementation of the first library submodule, `@m3l-automation/m3l-common`
 records what shipped, what matched the plan, what diverged and why, and the
 durable lessons for the remaining 20 submodules.
 
-Plan of record: [`docs/plans/errors-submodule-implementation.md`](../plans/errors-submodule-implementation.md).
+Plan of record: [`docs/plans/errors-submodule-implementation.md`](../plans/archive/errors-submodule-implementation.md).
 
 ## Summary
 
