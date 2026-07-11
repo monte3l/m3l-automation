@@ -202,4 +202,23 @@ export interface M3LScriptOptions {
    * Correlation IDs reference for the full resolution precedence.
    */
   readonly correlationId?: string;
+  /**
+   * An optional path to a YAML/JSON preset file. When supplied,
+   * {@link M3LScript} loads it (validated against the declared `config.params`)
+   * and inserts its values into configuration resolution at precedence level
+   * 6 — below CLI/env, above static `defaultValue`s. When omitted, no preset
+   * provider is added and no preset file is read (no behavior change).
+   *
+   * The preset is validated against the schema declared via `config`, so it
+   * is meant to be supplied alongside a declared `config`. If `preset` is
+   * supplied without `config`, there is no schema to validate against —
+   * every top-level key in the preset file is then treated as unknown, and
+   * `M3LScriptPresetLoader` throws `M3LPresetUnknownKeysError`.
+   *
+   * An empty string is treated as **present**, not absent, and will fail at
+   * load time with an `M3LError` coded `"ERR_PRESET_LOAD"` (an empty path
+   * cannot be read as a preset file). Omit the field entirely — do not pass
+   * `""` — to mean "no preset."
+   */
+  readonly preset?: string;
 }
