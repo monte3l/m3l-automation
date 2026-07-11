@@ -7,50 +7,60 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/storage/M3LFtsIndex.ts",
-          "symbol": "M3LFtsIndex"
+          "symbol": "M3LFtsIndex",
+          "blob": "016385aca03a9c73196b709cad5b0c5570ff0b5b"
         },
         {
           "file": "packages/m3l-common/src/core/storage/types.ts",
-          "symbol": "M3LFtsIndexConfig"
+          "symbol": "M3LFtsIndexConfig",
+          "blob": "9eaf0f4e25ca6dfa81909b11aa383f1ca073f991"
         },
         {
           "file": "packages/m3l-common/src/core/storage/types.ts",
-          "symbol": "M3LFtsIndexDocument"
+          "symbol": "M3LFtsIndexDocument",
+          "blob": "9eaf0f4e25ca6dfa81909b11aa383f1ca073f991"
         },
         {
           "file": "packages/m3l-common/src/core/storage/types.ts",
-          "symbol": "M3LFtsIndexSearchMode"
+          "symbol": "M3LFtsIndexSearchMode",
+          "blob": "9eaf0f4e25ca6dfa81909b11aa383f1ca073f991"
         },
         {
           "file": "packages/m3l-common/src/core/storage/types.ts",
-          "symbol": "M3LFtsIndexSearchOptions"
+          "symbol": "M3LFtsIndexSearchOptions",
+          "blob": "9eaf0f4e25ca6dfa81909b11aa383f1ca073f991"
         },
         {
           "file": "packages/m3l-common/src/core/storage/types.ts",
-          "symbol": "M3LFtsIndexSearchResult"
+          "symbol": "M3LFtsIndexSearchResult",
+          "blob": "9eaf0f4e25ca6dfa81909b11aa383f1ca073f991"
         },
         {
           "file": "packages/m3l-common/src/core/storage/types.ts",
-          "symbol": "M3LFtsIndexStats"
+          "symbol": "M3LFtsIndexStats",
+          "blob": "9eaf0f4e25ca6dfa81909b11aa383f1ca073f991"
         },
         {
           "file": "packages/m3l-common/src/core/storage/types.ts",
-          "symbol": "M3LSqliteDatabase"
+          "symbol": "M3LSqliteDatabase",
+          "blob": "9eaf0f4e25ca6dfa81909b11aa383f1ca073f991"
         },
         {
           "file": "packages/m3l-common/src/core/storage/types.ts",
-          "symbol": "M3LSqliteStatement"
+          "symbol": "M3LSqliteStatement",
+          "blob": "9eaf0f4e25ca6dfa81909b11aa383f1ca073f991"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LFtsIndexError.ts",
-          "symbol": "M3LFtsIndexError"
+          "symbol": "M3LFtsIndexError",
+          "blob": "69e762bc80a96b8bd96facb0b0c443108f39cb04"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LFtsIndexError.ts",
-          "symbol": "M3LFtsIndexErrorCode"
+          "symbol": "M3LFtsIndexErrorCode",
+          "blob": "69e762bc80a96b8bd96facb0b0c443108f39cb04"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -58,22 +68,25 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/storage/M3LFtsIndex.ts",
-          "symbol": "M3LFtsIndex"
+          "symbol": "M3LFtsIndex",
+          "blob": "016385aca03a9c73196b709cad5b0c5570ff0b5b"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LFtsIndexError.ts",
-          "symbol": "M3LFtsIndexError"
+          "symbol": "M3LFtsIndexError",
+          "blob": "69e762bc80a96b8bd96facb0b0c443108f39cb04"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LFtsIndexError.ts",
-          "symbol": "M3LFtsIndexErrorCode"
+          "symbol": "M3LFtsIndexErrorCode",
+          "blob": "69e762bc80a96b8bd96facb0b0c443108f39cb04"
         },
         {
           "file": "packages/m3l-common/src/core/storage/types.ts",
-          "symbol": "M3LFtsIndexSearchResult"
+          "symbol": "M3LFtsIndexSearchResult",
+          "blob": "9eaf0f4e25ca6dfa81909b11aa383f1ca073f991"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     }
   ]

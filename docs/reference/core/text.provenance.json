@@ -7,54 +7,65 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/text/registry.ts",
-          "symbol": "M3LTextExtractorRegistry"
+          "symbol": "M3LTextExtractorRegistry",
+          "blob": "40df4bbf8453c14fc4ffd87ed9e484458753f9f5"
         },
         {
           "file": "packages/m3l-common/src/core/text/plain-text.ts",
-          "symbol": "M3LPlainTextExtractor"
+          "symbol": "M3LPlainTextExtractor",
+          "blob": "34c53d5bb5c7798f11a598044da347ceb708e025"
         },
         {
           "file": "packages/m3l-common/src/core/text/pdf.ts",
-          "symbol": "M3LPdfTextExtractor"
+          "symbol": "M3LPdfTextExtractor",
+          "blob": "9f7f650645d5b56b8400b4e0e85fabbe724986bc"
         },
         {
           "file": "packages/m3l-common/src/core/text/docx.ts",
-          "symbol": "M3LDocxTextExtractor"
+          "symbol": "M3LDocxTextExtractor",
+          "blob": "f6e841a51c74e9b6a6746ea618790f3edca96f5a"
         },
         {
           "file": "packages/m3l-common/src/core/text/xlsx.ts",
-          "symbol": "M3LXlsxTextExtractor"
+          "symbol": "M3LXlsxTextExtractor",
+          "blob": "3e5304b8438b848c08d92d38b97d021d3596a047"
         },
         {
           "file": "packages/m3l-common/src/core/text/email.ts",
-          "symbol": "M3LEmailTextExtractor"
+          "symbol": "M3LEmailTextExtractor",
+          "blob": "28ea8509e491e43539c839fe408a1a5a3f393266"
         },
         {
           "file": "packages/m3l-common/src/core/text/zip.ts",
-          "symbol": "M3LZipTextExtractor"
+          "symbol": "M3LZipTextExtractor",
+          "blob": "61a77bcb667bc6ecdbbf650833495a7ed10b730b"
         },
         {
           "file": "packages/m3l-common/src/core/text/contract.ts",
-          "symbol": "ZIP_DEPTH_SYMBOL"
+          "symbol": "ZIP_DEPTH_SYMBOL",
+          "blob": "1675a84fa6add8780d7d43e4fe7d5c0c6a566645"
         },
         {
           "file": "packages/m3l-common/src/core/text/contract.ts",
-          "symbol": "M3LTextExtractor"
+          "symbol": "M3LTextExtractor",
+          "blob": "1675a84fa6add8780d7d43e4fe7d5c0c6a566645"
         },
         {
           "file": "packages/m3l-common/src/core/text/contract.ts",
-          "symbol": "M3LTextExtractionOptions"
+          "symbol": "M3LTextExtractionOptions",
+          "blob": "1675a84fa6add8780d7d43e4fe7d5c0c6a566645"
         },
         {
           "file": "packages/m3l-common/src/core/text/contract.ts",
-          "symbol": "M3LTextExtractionResult"
+          "symbol": "M3LTextExtractionResult",
+          "blob": "1675a84fa6add8780d7d43e4fe7d5c0c6a566645"
         },
         {
           "file": "packages/m3l-common/src/core/text/errors.ts",
-          "symbol": "M3LTextExtractionError"
+          "symbol": "M3LTextExtractionError",
+          "blob": "7086faf0a69ccf564e2bfb5f0c5a6328e8deb6e6"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -62,22 +73,25 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/text/zip.ts",
-          "symbol": "M3LZipTextExtractor"
+          "symbol": "M3LZipTextExtractor",
+          "blob": "61a77bcb667bc6ecdbbf650833495a7ed10b730b"
         },
         {
           "file": "packages/m3l-common/src/core/text/contract.ts",
-          "symbol": "ZIP_DEPTH_SYMBOL"
+          "symbol": "ZIP_DEPTH_SYMBOL",
+          "blob": "1675a84fa6add8780d7d43e4fe7d5c0c6a566645"
         },
         {
           "file": "packages/m3l-common/src/core/text/contract.ts",
-          "symbol": "M3LTextExtractionResult"
+          "symbol": "M3LTextExtractionResult",
+          "blob": "1675a84fa6add8780d7d43e4fe7d5c0c6a566645"
         },
         {
           "file": "packages/m3l-common/src/core/text/errors.ts",
-          "symbol": "M3LTextExtractionError"
+          "symbol": "M3LTextExtractionError",
+          "blob": "7086faf0a69ccf564e2bfb5f0c5a6328e8deb6e6"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     }
   ]

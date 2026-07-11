@@ -7,54 +7,65 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
-          "symbol": "M3LPrompt"
+          "symbol": "M3LPrompt",
+          "blob": "30d7c494eaec85baddf4fbeba501143ef7432f0b"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
-          "symbol": "M3LPromptOptions"
+          "symbol": "M3LPromptOptions",
+          "blob": "30d7c494eaec85baddf4fbeba501143ef7432f0b"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts",
-          "symbol": "M3LMultiSpinner"
+          "symbol": "M3LMultiSpinner",
+          "blob": "48e6712cfa6f2b9b59ac559a433d434f530b69a1"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts",
-          "symbol": "M3LMultiSpinnerOptions"
+          "symbol": "M3LMultiSpinnerOptions",
+          "blob": "48e6712cfa6f2b9b59ac559a433d434f530b69a1"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts",
-          "symbol": "M3LLoadingBar"
+          "symbol": "M3LLoadingBar",
+          "blob": "b573e5203a8b08271afc46ffd3e0ff4362363da9"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts",
-          "symbol": "M3LLoadingBarOptions"
+          "symbol": "M3LLoadingBarOptions",
+          "blob": "b573e5203a8b08271afc46ffd3e0ff4362363da9"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPromptValidationError.ts",
-          "symbol": "M3LPromptValidationError"
+          "symbol": "M3LPromptValidationError",
+          "blob": "ebb893f958f0362cea2dccc5dd315a1ecc4c7683"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
-          "symbol": "M3LPromptAdapter"
+          "symbol": "M3LPromptAdapter",
+          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
-          "symbol": "M3LChoice"
+          "symbol": "M3LChoice",
+          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
-          "symbol": "M3LChoices"
+          "symbol": "M3LChoices",
+          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
-          "symbol": "M3LNumberPromptOptions"
+          "symbol": "M3LNumberPromptOptions",
+          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
-          "symbol": "M3LSuggestFn"
+          "symbol": "M3LSuggestFn",
+          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -62,34 +73,40 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
-          "symbol": "M3LPrompt"
+          "symbol": "M3LPrompt",
+          "blob": "30d7c494eaec85baddf4fbeba501143ef7432f0b"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
-          "symbol": "M3LPromptOptions"
+          "symbol": "M3LPromptOptions",
+          "blob": "30d7c494eaec85baddf4fbeba501143ef7432f0b"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
-          "symbol": "M3LPromptAdapter"
+          "symbol": "M3LPromptAdapter",
+          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
-          "symbol": "M3LChoice"
+          "symbol": "M3LChoice",
+          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
-          "symbol": "M3LChoices"
+          "symbol": "M3LChoices",
+          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
-          "symbol": "M3LNumberPromptOptions"
+          "symbol": "M3LNumberPromptOptions",
+          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
-          "symbol": "M3LSuggestFn"
+          "symbol": "M3LSuggestFn",
+          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -97,14 +114,15 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts",
-          "symbol": "M3LMultiSpinner"
+          "symbol": "M3LMultiSpinner",
+          "blob": "48e6712cfa6f2b9b59ac559a433d434f530b69a1"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts",
-          "symbol": "M3LMultiSpinnerOptions"
+          "symbol": "M3LMultiSpinnerOptions",
+          "blob": "48e6712cfa6f2b9b59ac559a433d434f530b69a1"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -112,14 +130,15 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts",
-          "symbol": "M3LLoadingBar"
+          "symbol": "M3LLoadingBar",
+          "blob": "b573e5203a8b08271afc46ffd3e0ff4362363da9"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts",
-          "symbol": "M3LLoadingBarOptions"
+          "symbol": "M3LLoadingBarOptions",
+          "blob": "b573e5203a8b08271afc46ffd3e0ff4362363da9"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -127,22 +146,25 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
-          "symbol": "M3LPrompt"
+          "symbol": "M3LPrompt",
+          "blob": "30d7c494eaec85baddf4fbeba501143ef7432f0b"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts",
-          "symbol": "M3LMultiSpinner"
+          "symbol": "M3LMultiSpinner",
+          "blob": "48e6712cfa6f2b9b59ac559a433d434f530b69a1"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts",
-          "symbol": "M3LLoadingBar"
+          "symbol": "M3LLoadingBar",
+          "blob": "b573e5203a8b08271afc46ffd3e0ff4362363da9"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPromptValidationError.ts",
-          "symbol": "M3LPromptValidationError"
+          "symbol": "M3LPromptValidationError",
+          "blob": "ebb893f958f0362cea2dccc5dd315a1ecc4c7683"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     }
   ]

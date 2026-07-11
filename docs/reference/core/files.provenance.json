@@ -7,42 +7,50 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
-          "symbol": "M3LFileCopier"
+          "symbol": "M3LFileCopier",
+          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
-          "symbol": "M3L_FILE_COPIER_DEFAULTS"
+          "symbol": "M3L_FILE_COPIER_DEFAULTS",
+          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
         },
         {
           "file": "packages/m3l-common/src/core/files/getDefaultSubdirForPathType.ts",
-          "symbol": "getDefaultSubdirForPathType"
+          "symbol": "getDefaultSubdirForPathType",
+          "blob": "623edb16f2f9b3d2c2c331f50306a1b2fc32fb87"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
-          "symbol": "M3LFileCopierOptions"
+          "symbol": "M3LFileCopierOptions",
+          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
-          "symbol": "M3LFileCopyResult"
+          "symbol": "M3LFileCopyResult",
+          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
-          "symbol": "M3LFileCopySkipReason"
+          "symbol": "M3LFileCopySkipReason",
+          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
-          "symbol": "M3LFileCopyReport"
+          "symbol": "M3LFileCopyReport",
+          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
-          "symbol": "M3LFileCopyReportSummary"
+          "symbol": "M3LFileCopyReportSummary",
+          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopyError.ts",
-          "symbol": "M3LFileCopyError"
+          "symbol": "M3LFileCopyError",
+          "blob": "8603d0a905add5662c50ce2d670ba95673e64898"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -50,10 +58,10 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
-          "symbol": "M3LFileCopier"
+          "symbol": "M3LFileCopier",
+          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -61,10 +69,10 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/files/getDefaultSubdirForPathType.ts",
-          "symbol": "getDefaultSubdirForPathType"
+          "symbol": "getDefaultSubdirForPathType",
+          "blob": "623edb16f2f9b3d2c2c331f50306a1b2fc32fb87"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -72,18 +80,20 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
-          "symbol": "M3LFileCopier"
+          "symbol": "M3LFileCopier",
+          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
-          "symbol": "M3L_FILE_COPIER_DEFAULTS"
+          "symbol": "M3L_FILE_COPIER_DEFAULTS",
+          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopyError.ts",
-          "symbol": "M3LFileCopyError"
+          "symbol": "M3LFileCopyError",
+          "blob": "8603d0a905add5662c50ce2d670ba95673e64898"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     }
   ]
