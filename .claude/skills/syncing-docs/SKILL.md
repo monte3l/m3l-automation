@@ -1,6 +1,6 @@
 ---
 name: syncing-docs
-description: Reconciles all doc metadata in the m3l-automation monorepo after a submodule or consumer script ships or before a release. Re-stamps provenance sidecars to the current git HEAD, verifies doc counts and the implemented "N of 22" count match the filesystem, confirms every public export is documented, verifies script scaffold/doc conformance (check:script-scaffold), regenerates the reference index (library catalog + consumer-scripts catalog), and runs markdown lint — the single doc-reconciliation authority, all in one repeatable pass. Use this skill whenever the user says /syncing-docs, "sync docs", "reconcile docs", "update doc provenance", "stamp provenance", "sync doc metadata", or after the implementing-submodules or implementing-scripts pipeline finishes and the hub needs to reconcile doc state.
+description: Reconciles all doc metadata in the m3l-automation monorepo after a submodule or consumer script ships or before a release. Re-stamps provenance sidecars to the current git HEAD, regenerates every "N of 22" doc-count site and the implemented-list block via gen:counts and verifies them, confirms every public export is documented, verifies script scaffold/doc conformance (check:script-scaffold), regenerates the reference index (library catalog + consumer-scripts catalog), and runs markdown lint — the single doc-reconciliation authority, all in one repeatable pass. Use this skill whenever the user says /syncing-docs, "sync docs", "reconcile docs", "update doc provenance", "stamp provenance", "sync doc metadata", or after the implementing-submodules or implementing-scripts pipeline finishes and the hub needs to reconcile doc state.
 ---
 
 Reconcile all documentation metadata for `@m3l-automation/m3l-common`. This
@@ -43,17 +43,29 @@ Scoping with `--affected <path/to/changed-source-file>` still works and is a
 useful optimization when you already know which sidecars are in play (fewer
 sidecars to re-verify), but it is no longer required for correctness.
 
-### 3 — Verify doc counts and documented exports
+### 3 — Regenerate and verify doc counts
+
+```bash
+pnpm gen:counts
+```
+
+Regenerates every "N of 22" badge/prose site (both the denominator — total
+documented — and the numerator — implemented count) plus the generated
+implemented-list block in `docs/implementation-status.md`, all from the
+filesystem-derived counts. Idempotent — a clean tree produces no diff. Site
+inventory lives in `bin/lib/count-sites.mjs`, shared with the two checkers
+below so they can never disagree with the generator about what a site should
+say.
 
 ```bash
 node bin/check-doc-counts.mjs
 ```
 
-Derives the canonical count from `docs/reference/core/*.md` and
-`docs/reference/aws/*.md` and asserts the prose in docs/README.md`and`README.md` (root badge + prose) using the correct numbers.
-
-If it fails, the output names the mismatched file and the value that needs
-updating. Tell the user the exact edit required.
+Verifies the denominator: derives the canonical count from
+`docs/reference/core/*.md` and `docs/reference/aws/*.md` and asserts the
+prose in `docs/README.md`/`README.md` (root badge + prose) uses the correct
+numbers. Should always pass immediately after `gen:counts`; a failure here
+means a site isn't in `bin/lib/count-sites.mjs`'s inventory yet.
 
 ```bash
 pnpm check:doc-exports
@@ -79,29 +91,20 @@ description mentions a newly shipped submodule, verify its row in the table
 already shows ✅ reviewed/done. If it still shows ❌, 🧪, or 🟢, surface a
 reminder — but do not edit the file unless the user asks.
 
-Also count the total number of ✅ rows across the Core and AWS tables, then
-scan these four files for the "X of 22" or "X of Y" implemented-count prose
-and confirm the number matches:
-
-- `README.md` — badge URL `modules-N%2F22` and the prose callout ("N of 22
-  submodules are implemented")
-- `packages/m3l-common/README.md` — badge URL `modules-N%2F22` and the prose
-  callout (this is the npm-facing README; it has its own badge and callout
-  that must stay in sync with the root README)
-- `docs/README.md` — the development-status callout line
-- `docs/implementation-status.md` — the intro prose
-
-If any value is stale, list the file, the current value, and the required
-update. Do not edit unless the user asks.
-
 ```bash
 pnpm check:impl-counts
 ```
 
-The deterministic gate behind the manual scan above: it asserts the implemented
-"N of 22" numerator matches across every badge / prose / HTML site. Run it once
-`docs/implementation-status.md` reflects the true ✅ count. If it fails, the
-output names the site and value that drifted.
+Verifies the numerator: asserts the implemented "N of 22" count matches
+across every badge/prose site listed in `bin/lib/count-sites.mjs` (`README.md`,
+`packages/m3l-common/README.md`, `docs/README.md`,
+`docs/implementation-status.md`), **and** byte-verifies the generated
+implemented-list block (the `<!-- BEGIN/END GENERATED IMPLEMENTED-LIST -->`
+sentence near the top of `docs/implementation-status.md`) against a fresh
+render — so a hand edit inside the markers is caught too. Should already pass
+after step 3's `pnpm gen:counts`; if it doesn't, the Status column in
+`docs/implementation-status.md` disagrees with what step 3 derived — fix the
+✅ row, then re-run `gen:counts`.
 
 ### 6 — Test count check
 
@@ -159,18 +162,14 @@ non-prettier-formatted JSON, so if `format` runs first, `format:check` then fail
 on the regenerated `catalog.json`. Whichever runs last wins, and the generator
 must win — regenerate here, format after.
 
-### 9 — Refresh the AI co-authorship badges
+**Not part of this pass:** `pnpm gen:commit-stats` (the AI co-authorship
+badges) is deliberately **main-only** (ADR-0024) — running it on a feature
+branch bakes that branch's own commits into the badge count, producing
+README churn that conflicts with every other open branch on rebase. Run it
+post-merge on `main`, or during release grooming; never as part of this
+branch-time reconciliation.
 
-```bash
-pnpm gen:commit-stats
-```
-
-Rewrites the per-model commit-count badges in the root `README.md` from git
-trailer history (`bin/gen-commit-stats.mjs`). Deliberately **not** a CI gate —
-counts change on every commit, so this reconciliation pass is their freshness
-cadence. Idempotent; safe to run unconditionally.
-
-### 10 — Markdown lint
+### 9 — Markdown lint
 
 ```bash
 pnpm lint:md
@@ -187,6 +186,7 @@ Output after all steps complete:
 
 - Provenance pre-flight: ✓ / ✗
 - Sidecars re-stamped:   <N sidecars updated to <short SHA>>
+- Doc counts regen:      ✓ (gen:counts — N site(s) updated / already current)
 - Doc counts:            ✓ (Core=N, AWS=M, total=N+M) / ✗
 - Documented exports:    ✓ / ✗ (check:doc-exports)
 - Provenance (post):     ✓ / ✗
@@ -195,8 +195,9 @@ Output after all steps complete:
 - Test counts:           ✓ (N submodules verified) / ✗
 - Script docs:           ✓ (N script(s) conformant / none) / ✗ (check:script-scaffold)
 - Reference index:       ✓ (gen:index + check:index) / ✗
-- Commit-stats badges:   ✓ (gen:commit-stats) / ✗
 - Markdown lint:         ✓ / ✗
+
+Commit-stats badges are main-only (not part of this pass) — see step 8's note.
 ```
 
 Replace ✓ with ✗ and include the tool's error output for any failed step.

@@ -497,15 +497,19 @@ that reviews it" structural, and keeps the hub's context lean.
 - **Live status**: three living trackers, updated by the hub as work lands (they
   are the durable memory the isolated spokes do not share). `docs/implementation-status.md`
   is the source of truth for what library work is **built** vs. documented (the
-  count-enforced 22/22 ledger). `docs/ROADMAP.md` (coarse, unblock-first) and
-  `docs/plans/IMPLEMENTATION.md` (detailed per-item backlog) track **pending**
-  program work — the consumer-fleet waves, the library-friction F-series, and the
-  gated D4/D5 modules. When a unit lands: flip its status in the relevant
-  tracker, `git mv` any dated plan it completes into `docs/plans/archive/`, and a
-  new friction item from a work log is filed into `IMPLEMENTATION.md` (not left
-  narrative-only). Completed plans live in `docs/plans/archive/` (frozen,
-  excluded from `lint:md`); `docs/plans/README.md` and `docs/logs/README.md`
-  index them.
+  count-enforced 22/22 ledger — `pnpm gen:counts` regenerates every "N of 22"
+  badge/prose site and the implemented-list block from the ✅ rows;
+  `check:doc-counts`/`check:impl-counts` verify them). `docs/ROADMAP.md`
+  (coarse, unblock-first) and `docs/plans/IMPLEMENTATION.md` (detailed
+  per-item backlog) track **pending** program work — the consumer-fleet
+  waves, the library-friction F-series, and the gated D4/D5 modules, each as
+  one table row per item (row-locality, ADR-0024) so status changes don't
+  conflict across parallel branches. When a unit lands: flip its status in
+  the relevant tracker, `git mv` any dated plan it completes into
+  `docs/plans/archive/`, and a new friction item from a work log is filed
+  into `IMPLEMENTATION.md` (not left narrative-only). Completed plans live in
+  `docs/plans/archive/` (frozen, excluded from `lint:md`);
+  `docs/plans/README.md` and `docs/logs/README.md` index them.
 - The `implementing-submodules` skill encodes this loop end-to-end; `scaffolding-submodules`
   scaffolds a greenfield module and hands off to it. All 22 bootstrap submodules
   already have `docs/reference` specs, so `implementing-submodules` is the normal entry
