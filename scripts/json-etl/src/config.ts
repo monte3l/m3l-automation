@@ -3,36 +3,29 @@ import { Core } from "@m3l-automation/m3l-common";
 const LIMIT_MIN = 1;
 const LIMIT_MAX = Number.MAX_SAFE_INTEGER;
 
-/** Validates a non-empty string (`input`/`output`). */
-function nonEmptyString(value: string): true | string {
-  return value.length > 0 ? true : "must not be empty";
-}
-
-/** Validates a non-empty string array (`fields`). */
-function nonEmptyStringArray(value: readonly string[]): true | string {
-  return value.length > 0 ? true : "must not be empty";
-}
-
 /**
  * The declared configuration schema for `json-etl` — the script's only
  * input seam. Never read `process.env` directly (the scripts ESLint zone bans
  * it); every input the pipeline needs is declared here so resolution,
  * coercion, validation, and redaction all flow through the library.
  *
- * `input`, `fields`, and `output` are required — `M3LConfigParameter` has no
- * built-in required-ness, so presence is enforced separately at run start
- * (see `steps/run-json-etl.ts`), not by this declaration.
+ * `input`, `fields`, and `output` are `required: true` with
+ * `Core.M3LConfigValidators.nonEmpty` — a missing value throws
+ * `M3LConfigMissingError` and an empty one throws `M3LConfigValidationError`,
+ * both at config-load time, before `steps/run-json-etl.ts` ever runs.
  */
 export const configParameters: readonly Core.M3LConfigParameter[] = [
   new Core.M3LConfigParameter({
     name: "input",
     type: Core.M3LConfigParameterType.STRING,
-    validate: nonEmptyString,
+    required: true,
+    validate: Core.M3LConfigValidators.nonEmpty,
   }),
   new Core.M3LConfigParameter({
     name: "fields",
     type: Core.M3LConfigParameterType.STRING_ARRAY,
-    validate: nonEmptyStringArray,
+    required: true,
+    validate: Core.M3LConfigValidators.nonEmpty,
   }),
   new Core.M3LConfigParameter({
     name: "filters",
@@ -48,7 +41,8 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
   new Core.M3LConfigParameter({
     name: "output",
     type: Core.M3LConfigParameterType.STRING,
-    validate: nonEmptyString,
+    required: true,
+    validate: Core.M3LConfigValidators.nonEmpty,
   }),
   new Core.M3LConfigParameter({
     name: "limit",

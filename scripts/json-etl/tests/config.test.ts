@@ -90,6 +90,24 @@ describe("json-etl config declaration", () => {
       );
       await expect(resolveWith(parameter, "id=id")).resolves.toEqual(["id=id"]);
     });
+
+    it.each(["input", "fields", "output"] as const)(
+      "'%s' rejects a MISSING value (no provider, no default) with M3LConfigMissingError",
+      async (name) => {
+        const parameter = paramNamed(name);
+        let thrown: unknown;
+        try {
+          await resolveDefault(parameter);
+        } catch (error) {
+          thrown = error;
+        }
+
+        expect(thrown).toBeInstanceOf(Core.M3LConfigMissingError);
+        expect((thrown as Core.M3LConfigMissingError).code).toBe(
+          "ERR_CONFIG_MISSING",
+        );
+      },
+    );
   });
 
   describe("'filters' — defaults to an empty list", () => {
