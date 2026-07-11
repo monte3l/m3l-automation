@@ -1,4 +1,7 @@
 {
   "files": [],
-  "references": [{ "path": "./packages/m3l-common/tsconfig.build.json" }]
+  "references": [
+    { "path": "./packages/m3l-common/tsconfig.build.json" },
+    { "path": "./scripts/json-etl/tsconfig.build.json" }
+  ]
 }
