@@ -96,4 +96,37 @@ export const M3LConfigValidators = {
     <T>(allowed: readonly T[]): M3LConfigValidator<T> =>
     (value) =>
       allowed.includes(value) ? true : `must be one of: ${allowed.join(", ")}`,
+
+  /**
+   * A validator (not a factory — used directly, with no call) that rejects
+   * an empty value (`length === 0`) and accepts any other.
+   *
+   * Typed against the structural shape `{ readonly length: number }`, a
+   * supertype of `string`, the `*_ARRAY` coerced types, and `BUFFER`: via
+   * parameter contravariance this makes `nonEmpty` assignable wherever a
+   * `M3LConfigValidator` for any of those is expected, while a
+   * `number`/`boolean` parameter (no `length`) rejects it at compile time.
+   * The `=== 0` test (rather than `> 0`) means a value that somehow arrives
+   * without a `length` — reachable only past a suppressed compile-time
+   * mismatch — passes rather than throwing.
+   */
+  nonEmpty: ((value: { readonly length: number }) =>
+    value.length === 0 ? "must not be empty" : true) as M3LConfigValidator<{
+    readonly length: number;
+  }>,
+
+  /**
+   * Builds a validator that rejects a value shorter than `min`.
+   *
+   * @param min - The inclusive minimum length.
+   * @returns A validator whose failure reason names the bound, never the
+   *   received value. Typed against `{ readonly length: number }` for the
+   *   same reason as {@link nonEmpty} — it applies equally to `string`, the
+   *   `*_ARRAY` types, and `BUFFER`, and fails on `< min` for the same
+   *   no-`length`-passes reason.
+   */
+  minLength:
+    (min: number): M3LConfigValidator<{ readonly length: number }> =>
+    (value) =>
+      value.length < min ? `must be minimum ${min} in length` : true,
 } as const;
