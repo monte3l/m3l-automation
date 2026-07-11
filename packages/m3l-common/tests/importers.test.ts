@@ -140,6 +140,7 @@ import type {
   M3LCSVListImporterOptions,
   M3LFileImporter,
   M3LFileListImporter,
+  M3LImportStreamSummary,
   M3LJSONListImporterOptions,
   M3LListImporter,
   M3LListImporterEvents,
@@ -395,6 +396,42 @@ describe("M3LCSVListImporter", () => {
       };
 
       await expect(consume()).rejects.toBeInstanceOf(Core.M3LError);
+    });
+
+    test("the generator's return value reports processed/skipped/durationMs counts, good rows still yielded (F6)", async () => {
+      const malformedContent = [
+        CSV_HEADER,
+        "1,Ada",
+        "not,a,valid,row,shape",
+        "2,Grace",
+      ].join("\n");
+
+      const importer = new Core.M3LCSVListImporter<UserRow>({
+        rowValidator: (row) =>
+          typeof row["id"] === "string" && typeof row["name"] === "string",
+      });
+
+      const stream = importer.importStream(
+        Buffer.from(malformedContent, "utf8"),
+      );
+      const yielded: UserRow[] = [];
+      let step = await stream.next();
+      while (step.done === false) {
+        yielded.push(step.value);
+        step = await stream.next();
+      }
+      if (step.done !== true) {
+        throw new Error("importStream did not complete");
+      }
+      const summary: M3LImportStreamSummary = step.value;
+
+      expect(yielded).toEqual([
+        { id: "1", name: "Ada" },
+        { id: "2", name: "Grace" },
+      ]);
+      expect(summary.skipped).toBe(1);
+      expect(summary.processed).toBe(yielded.length + summary.skipped);
+      expect(typeof summary.durationMs).toBe("number");
     });
   });
 
@@ -856,6 +893,39 @@ describe("M3LJSONListImporter", () => {
         { id: 1, name: "Ada", metadata: { author: "Lovelace" } },
         { id: 2, name: "Grace", metadata: { author: "Hopper" } },
       ]);
+    });
+
+    test("the generator's return value reports processed/skipped/durationMs counts, good lines still yielded (F6)", async () => {
+      const withBadLine = [
+        JSON.stringify({ id: 1, name: "Ada" }),
+        "{ not valid json",
+        JSON.stringify({ id: 2, name: "Grace" }),
+      ].join("\n");
+
+      const importer = new Core.M3LJSONListImporter<{
+        readonly id: number;
+        readonly name: string;
+      }>({});
+
+      const stream = importer.importStream(Buffer.from(withBadLine, "utf8"));
+      const yielded: { readonly id: number; readonly name: string }[] = [];
+      let step = await stream.next();
+      while (step.done === false) {
+        yielded.push(step.value);
+        step = await stream.next();
+      }
+      if (step.done !== true) {
+        throw new Error("importStream did not complete");
+      }
+      const summary: M3LImportStreamSummary = step.value;
+
+      expect(yielded).toEqual([
+        { id: 1, name: "Ada" },
+        { id: 2, name: "Grace" },
+      ]);
+      expect(summary.skipped).toBe(1);
+      expect(summary.processed).toBe(yielded.length + summary.skipped);
+      expect(typeof summary.durationMs).toBe("number");
     });
   });
 
@@ -1365,10 +1435,25 @@ describe("M3LListImporter<TItem> generic contract", () => {
     >().returns.toEqualTypeOf<Promise<M3LListImporterResult<{ id: number }>>>();
   });
 
-  test("importStream() returns AsyncGenerator<TItem>", () => {
+  test("importStream() returns AsyncGenerator<TItem, M3LImportStreamSummary, void> (F6)", () => {
     expectTypeOf<
       M3LListImporter<{ id: number }>["importStream"]
-    >().returns.toMatchTypeOf<AsyncGenerator<{ id: number }>>();
+    >().returns.toEqualTypeOf<
+      AsyncGenerator<{ id: number }, M3LImportStreamSummary, void>
+    >();
+  });
+});
+
+// =============================================================================
+// Type-level contract — M3LImportStreamSummary (F6)
+// =============================================================================
+describe("M3LImportStreamSummary type-level contract (F6)", () => {
+  test("has readonly processed, skipped, and durationMs number fields", () => {
+    expectTypeOf<M3LImportStreamSummary>().toEqualTypeOf<{
+      readonly processed: number;
+      readonly skipped: number;
+      readonly durationMs: number;
+    }>();
   });
 });
 

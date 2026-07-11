@@ -22,6 +22,10 @@
           "symbol": "M3LListImporterResult"
         },
         {
+          "file": "packages/m3l-common/src/core/importers/M3LListImporter.ts",
+          "symbol": "M3LImportStreamSummary"
+        },
+        {
           "file": "packages/m3l-common/src/core/importers/M3LCSVListImporter.ts",
           "symbol": "M3LCSVListImporter"
         },
@@ -58,8 +62,8 @@
           "symbol": "M3LTextFileImporter"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "eb29ff525b6f3a7aaf46cafb3e091874d3d84a73",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Notes and behavior",
@@ -85,8 +89,8 @@
           "symbol": "M3LListImporterEvents"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "eb29ff525b6f3a7aaf46cafb3e091874d3d84a73",
+      "retrieved": "2026-07-11"
     }
   ]
 }
