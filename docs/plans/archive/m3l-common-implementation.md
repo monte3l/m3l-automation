@@ -3,13 +3,13 @@
 > **Historical — build-phase plan.** This document captured the initial bootstrap
 > strategy from 2026-06-28, when `src/` was an empty scaffold. As of 2026-07-05 all
 > **22 submodules are implemented and reviewed** — see
-> [Implementation status](implementation-status.md). The present-tense "empty
+> [Implementation status](../../implementation-status.md). The present-tense "empty
 > scaffold" framing and the "21 submodules" count below describe that starting
 > state, not the current one; the file is retained for process history. The
 > `scripts/example-automation` consumer referenced below was later removed as a
-> hollow demo ([ADR-0019](adr/0019-remove-scripts-workspace.md)) and the
+> hollow demo ([ADR-0019](../../adr/0019-remove-scripts-workspace.md)) and the
 > `scripts/*` workspace re-established for real consumers with a deterministic
-> scaffold pipeline ([ADR-0022](adr/0022-reintroduce-scripts-workspace.md)) —
+> scaffold pipeline ([ADR-0022](../../adr/0022-reintroduce-scripts-workspace.md)) —
 > that pipeline, not this file's example, is the current consumer story.
 
 ## Context
