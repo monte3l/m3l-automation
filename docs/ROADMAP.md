@@ -22,7 +22,9 @@ _Maintenance_ at the bottom. Completed dated plans live under
   getters #97; template chore #98). **W1 `json-etl` done** (#99).
   **W2–W5 pending.**
 - **Library friction (P0)** — **F4/F5 done** (paths seam: `script.paths` +
-  `M3LPaths.resolveInput/resolveOutput`); **F8, F1, F2, F6 pending.**
+  `M3LPaths.resolveInput/resolveOutput`), **F1/F2 done** (config `required`
+  flag + `M3LConfigMissingError` and `nonEmpty`/`minLength` validators);
+  **F8, F6 pending.**
 
 ## Priority 0 — Library hardening (do before more scripts)
 
@@ -33,14 +35,18 @@ call-sites in [`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#library-friction-f
 | Item   | What                                                                                            | Why now                                                                                                            |
 | ------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | **F8** | `M3LScript` preset seam — presets can't drive a run's config (config loader wires only CLI+env) | HIGH — breaks the §1.4 "presets + CLI overrides" design every fleet script assumes. Filed as task `task_ccda9320`. |
-| **F1** | Cross-parameter / `required` config validation                                                  | `sort⇒limit` and required-presence are hand-rolled run-start guards.                                               |
-| **F2** | `nonEmpty`/`minLength` config validators                                                        | Hand-written inline validators today.                                                                              |
 | **F6** | Importer surfaces its skip count                                                                | Only reachable via the `import:error` event.                                                                       |
 
 > **Landed** (paths seam): **F4** `M3LScript.paths` getter and **F5**
 > `M3LPaths.resolveInput/resolveOutput(name)` (join + traversal-contain) shipped;
 > `json-etl` now consumes both (its hand-built `new M3LPaths()` and local
-> `resolveContainedPath` are gone). Remaining P0: F8, F1, F2, F6.
+> `resolveContainedPath` are gone).
+>
+> **Landed** (config validators): **F1** `required: true` on
+> `M3LConfigParameter` (throws `M3LConfigMissingError`) and **F2**
+> `nonEmpty`/`minLength` on `M3LConfigValidators`; `json-etl` now declares
+> `required` + `nonEmpty` instead of hand-rolled guards. The cross-parameter
+> half of F1 is deferred as **F1b** (Priority 2). Remaining P0: F8, F6.
 
 ## Priority 1 — Consumer fleet
 
@@ -59,18 +65,19 @@ clients; W4 last (each has a dependency decision); W5 is the standing F4 loop.
 
 Deliberately unscheduled until their gate opens (ADR-0021 D4/D5 intake).
 
-| Item                                                            | Unblock condition                                                                                                                    |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **D4** SSM config provider                                      | a 2nd script hand-rolling SSM config fetch (no new deps)                                                                             |
-| **D4** SES messaging transport                                  | a script needing notifications (new optional `@aws-sdk/client-sesv2` peer)                                                           |
-| **D4** Lambda-invoke wrapper                                    | a script invoking Lambdas (no new deps)                                                                                              |
-| **D4** Slack/webhook transport                                  | first schedule the `M3LHttpClient` POST enhancement                                                                                  |
-| **D5** platform extraction                                      | a second repo adopting the workflow                                                                                                  |
-| **F3** `run(mainFn)` receives a `ctx`                           | 2.0 evidence only (breaking — collect, don't act)                                                                                    |
-| **F7 / `onUnknownFormat`** tolerant per-record array import     | a consumer needing per-record tolerance on irregular non-JSONL input                                                                 |
-| `@aws-sdk/client-scheduler` getter                              | `eventbridge-schedules` needing flexible (one-off/timezone) schedules                                                                |
-| **TypeScript 6→7 toolchain upgrade** (deliberate hold)          | TS7 verified across the toolchain (typescript-eslint, vitest, `tsc -b`) + a toolchain-upgrade decision (`check:deps` notice, PR #95) |
-| **External code-index MCP** (ADR-0012, re-affirmed by ADR-0023) | W2–W4 fleet landed + observed spoke grep friction the catalog/symbol-map can't answer                                                |
+| Item                                                            | Unblock condition                                                                                                                                        |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D4** SSM config provider                                      | a 2nd script hand-rolling SSM config fetch (no new deps)                                                                                                 |
+| **D4** SES messaging transport                                  | a script needing notifications (new optional `@aws-sdk/client-sesv2` peer)                                                                               |
+| **D4** Lambda-invoke wrapper                                    | a script invoking Lambdas (no new deps)                                                                                                                  |
+| **D4** Slack/webhook transport                                  | first schedule the `M3LHttpClient` POST enhancement                                                                                                      |
+| **D5** platform extraction                                      | a second repo adopting the workflow                                                                                                                      |
+| **F1b** cross-parameter validation seam                         | a 2nd script hand-rolling a cross-field guard (`json-etl`'s `sort⇒limit` / `sort ∈ fields` is the 1st); needs an `M3LConfig`/`M3LConfigSchema`-level API |
+| **F3** `run(mainFn)` receives a `ctx`                           | 2.0 evidence only (breaking — collect, don't act)                                                                                                        |
+| **F7 / `onUnknownFormat`** tolerant per-record array import     | a consumer needing per-record tolerance on irregular non-JSONL input                                                                                     |
+| `@aws-sdk/client-scheduler` getter                              | `eventbridge-schedules` needing flexible (one-off/timezone) schedules                                                                                    |
+| **TypeScript 6→7 toolchain upgrade** (deliberate hold)          | TS7 verified across the toolchain (typescript-eslint, vitest, `tsc -b`) + a toolchain-upgrade decision (`check:deps` notice, PR #95)                     |
+| **External code-index MCP** (ADR-0012, re-affirmed by ADR-0023) | W2–W4 fleet landed + observed spoke grep friction the catalog/symbol-map can't answer                                                                    |
 
 ## Maintenance
 
