@@ -15,7 +15,35 @@ pnpm --filter @m3l-automation/json-etl start
 ```
 
 `start` runs `node --env-file-if-exists=.env dist/main.js`, so a local
-`scripts/json-etl/.env` is loaded automatically when present.
+`scripts/json-etl/.env` is loaded automatically when present. Pass the
+per-run configuration on the command line (or via a preset — see below):
+
+```bash
+# Extract three fields, drop archived records, sort by id, write ordered CSV.
+# (STRING_ARRAY params like --fields / --filters are comma-separated.)
+node dist/main.js \
+  --input records.ndjson \
+  --fields "id=id,name=metadata.name,status=status" \
+  --filters "status ne archived" \
+  --sort id:asc --limit 1000 \
+  --format csv --output report.csv
+```
+
+Reads `records.ndjson` from `M3L_INPUT_DIR`, writes `report.csv` to
+`M3L_OUTPUT_DIR`. Malformed JSONL lines are skipped, counted, and logged (a
+malformed whole-document JSON array instead aborts the run). See the
+[contract page](../../docs/reference/scripts/json-etl.md) for the full config
+schema and semantics.
+
+### Presets
+
+`data/config/presets/report.yaml` and `report-active.yaml` (the latter
+`extends: report.yaml`) are example preset files showing the parameter bundle
+and the library's `extends` inheritance. Load one directly with
+`Core.M3LScriptPresetLoader`. Note: `M3LScript`'s config loader currently wires
+only the CLI and environment providers, so a named preset cannot yet drive a
+run's config end-to-end — pass parameters on the command line as shown above.
+The missing preset seam is recorded as library friction in the work log.
 
 ## Environment (`.env`)
 
