@@ -12,9 +12,12 @@ We use a lightweight [MADR](https://adr.github.io/madr/)-style format. Start fro
 - One decision per file, named `NNNN-short-title.md` (zero-padded sequence),
   e.g. `0001-esm-only-output.md`.
 - Status is one of: `Proposed`, `Accepted`, `Rejected`, `Deprecated`,
-  `Superseded by ADR-NNNN`.
+  `Superseded by ADR-NNNN`, `Re-affirmed by ADR-NNNN`.
 - ADRs are immutable once `Accepted`. To change a decision, add a new ADR that
-  supersedes the old one and update the old one's status.
+  supersedes the old one and update the old one's status. To _revisit_ a still-
+  in-force decision on new grounds without changing it, add a new ADR and mark
+  the old one `Re-affirmed by ADR-NNNN` — it remains accepted; the annotation
+  just points to the newer rationale (e.g. ADR-0012 → ADR-0023).
 - Decisions with semver impact (e.g. changes to the `exports` map) should be
   backed by an ADR.
 
@@ -40,27 +43,28 @@ surface).
 
 ## Index
 
-| ADR  | Title                                                                                                                           | Status                 |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| 0001 | [Development toolchain choices](./0001-toolchain-choices.md)                                                                    | Accepted               |
-| 0002 | [ESM-only output](./0002-esm-only-output.md)                                                                                    | Accepted               |
-| 0003 | [Node 24 as the minimum runtime floor](./0003-node-24-floor.md)                                                                 | Accepted               |
-| 0004 | [Three-entry exports map as the public contract](./0004-exports-map-contract.md)                                                | Accepted               |
-| 0005 | [M3LError and M3LResult as the error model](./0005-error-hierarchy.md)                                                          | Accepted               |
-| 0006 | [Apache 2.0 license adoption](./0006-license-choice.md)                                                                         | Accepted               |
-| 0007 | [Automated dependency monitoring and security gating](./0007-dependency-management-strategy.md)                                 | Accepted               |
-| 0008 | [Replace @commitlint/cli with a thin wrapper around @commitlint/lint](./0008-commitlint-cli-replacement.md)                     | Accepted               |
-| 0009 | [Dependency-direction guard: import-x/no-restricted-paths vs dependency-cruiser](./0009-dependency-direction-guard.md)          | Accepted               |
-| 0010 | [Enforce formatting and Markdown linting in CI, with rumdl as the Markdown linter](./0010-markdown-lint-and-format-ci-gates.md) | Accepted               |
-| 0011 | [Release and publishing workflow](./0011-release-and-publishing-workflow.md)                                                    | Superseded by ADR-0020 |
-| 0012 | [Defer external code-index MCP; use native LSP + generated catalog](./0012-defer-external-code-index-mcp.md)                    | Accepted               |
-| 0013 | [Git worktrees for task isolation and parallelization](./0013-git-worktrees-for-task-isolation.md)                              | Accepted               |
-| 0014 | [Symmetric worktree tooling and corrected prune semantics](./0014-symmetric-worktree-tooling.md)                                | Accepted               |
-| 0015 | [Code-scanning tooling evaluation and supply-chain hardening](./0015-code-scanning-tooling-evaluation.md)                       | Accepted               |
-| 0016 | [Signed-commit enforcement and the pre-work decision gate](./0016-signed-commits-and-decision-gate.md)                          | Accepted               |
-| 0017 | [Dependency loading, declaration, and pinning standard](./0017-dependency-loading-standard.md)                                  | Accepted               |
-| 0018 | [Ratify a single shared `M3LScriptOptions` bag for CLI and Lambda](./0018-shared-script-options-bag.md)                         | Accepted               |
-| 0019 | [Remove the `scripts/` example-automation workspace](./0019-remove-scripts-workspace.md)                                        | Superseded by ADR-0022 |
-| 0020 | [Drop release automation](./0020-drop-release-automation.md)                                                                    | Accepted               |
-| 0021 | [Post-1.0.0 direction: deepen the library first, then build consumers](./0021-post-1.0-deepen-first-strategy.md)                | Accepted               |
-| 0022 | [Re-introduce the `scripts/` workspace for real consumers](./0022-reintroduce-scripts-workspace.md)                             | Accepted               |
+| ADR  | Title                                                                                                                           | Status                  |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| 0001 | [Development toolchain choices](./0001-toolchain-choices.md)                                                                    | Accepted                |
+| 0002 | [ESM-only output](./0002-esm-only-output.md)                                                                                    | Accepted                |
+| 0003 | [Node 24 as the minimum runtime floor](./0003-node-24-floor.md)                                                                 | Accepted                |
+| 0004 | [Three-entry exports map as the public contract](./0004-exports-map-contract.md)                                                | Accepted                |
+| 0005 | [M3LError and M3LResult as the error model](./0005-error-hierarchy.md)                                                          | Accepted                |
+| 0006 | [Apache 2.0 license adoption](./0006-license-choice.md)                                                                         | Accepted                |
+| 0007 | [Automated dependency monitoring and security gating](./0007-dependency-management-strategy.md)                                 | Accepted                |
+| 0008 | [Replace @commitlint/cli with a thin wrapper around @commitlint/lint](./0008-commitlint-cli-replacement.md)                     | Accepted                |
+| 0009 | [Dependency-direction guard: import-x/no-restricted-paths vs dependency-cruiser](./0009-dependency-direction-guard.md)          | Accepted                |
+| 0010 | [Enforce formatting and Markdown linting in CI, with rumdl as the Markdown linter](./0010-markdown-lint-and-format-ci-gates.md) | Accepted                |
+| 0011 | [Release and publishing workflow](./0011-release-and-publishing-workflow.md)                                                    | Superseded by ADR-0020  |
+| 0012 | [Defer external code-index MCP; use native LSP + generated catalog](./0012-defer-external-code-index-mcp.md)                    | Re-affirmed by ADR-0023 |
+| 0013 | [Git worktrees for task isolation and parallelization](./0013-git-worktrees-for-task-isolation.md)                              | Accepted                |
+| 0014 | [Symmetric worktree tooling and corrected prune semantics](./0014-symmetric-worktree-tooling.md)                                | Accepted                |
+| 0015 | [Code-scanning tooling evaluation and supply-chain hardening](./0015-code-scanning-tooling-evaluation.md)                       | Accepted                |
+| 0016 | [Signed-commit enforcement and the pre-work decision gate](./0016-signed-commits-and-decision-gate.md)                          | Accepted                |
+| 0017 | [Dependency loading, declaration, and pinning standard](./0017-dependency-loading-standard.md)                                  | Accepted                |
+| 0018 | [Ratify a single shared `M3LScriptOptions` bag for CLI and Lambda](./0018-shared-script-options-bag.md)                         | Accepted                |
+| 0019 | [Remove the `scripts/` example-automation workspace](./0019-remove-scripts-workspace.md)                                        | Superseded by ADR-0022  |
+| 0020 | [Drop release automation](./0020-drop-release-automation.md)                                                                    | Accepted                |
+| 0021 | [Post-1.0.0 direction: deepen the library first, then build consumers](./0021-post-1.0-deepen-first-strategy.md)                | Accepted                |
+| 0022 | [Re-introduce the `scripts/` workspace for real consumers](./0022-reintroduce-scripts-workspace.md)                             | Accepted                |
+| 0023 | [Re-affirm the external code-index MCP deferral on new grounds](./0023-reaffirm-code-index-mcp-deferral.md)                     | Accepted                |

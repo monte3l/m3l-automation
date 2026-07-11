@@ -168,6 +168,16 @@ the "done" names span crosses ~80 columns, wrap it in `<!-- prettier-ignore -->`
 to keep it single-line. Longer term, `check-impl-counts.mjs` could normalize
 internal whitespace in the span capture so the two tools stop fighting.
 
+> **Correction (2026-07-11, deferred-decisions audit).** The "longer term"
+> normalization above is now **obsolete, not pending** — the mechanism it
+> targeted was removed. `docs/index.html` and its "done" names-span check no
+> longer exist; `bin/check-impl-counts.mjs` validates only the six _numeric_
+> count sites (root + npm README badge/prose, `docs/README.md`,
+> `docs/implementation-status.md`) and derives the implemented-name list via
+> `implemented.join(", ")` purely for its own log message, with no HTML span
+> compared against any file. There is no prettier-vs-gate whitespace fight left
+> to fix, so this item is retired rather than carried forward.
+
 ### 6. Generated `catalog.json` and prettier fight over ordering
 
 `pnpm gen:index` rewrites `docs/reference/catalog.json` in a non-prettier style,
