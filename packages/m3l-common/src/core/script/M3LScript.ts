@@ -124,7 +124,7 @@ export class M3LScript {
   private readonly hooks: M3LScriptLifecycleHooks;
   private readonly schema: M3LConfigSchema | undefined;
   private readonly configLoader = new M3LScriptConfigLoader();
-  private readonly paths = new M3LPaths();
+  readonly #paths = new M3LPaths();
 
   /** Reset per Lambda invocation; `true` once stage 1 has run at least once. */
   private initialized = false;
@@ -187,6 +187,32 @@ export class M3LScript {
    */
   get aws(): AWSProvider | undefined {
     return this.awsProvider;
+  }
+
+  /**
+   * The script's own {@link M3LPaths} instance, resolved once at
+   * construction time and reused for every stage of this script's lifetime
+   * (including {@link M3LScript.archiveFiles}'s use of
+   * {@link M3LPaths.getInputDir} / {@link M3LPaths.getConfigDir}).
+   *
+   * Exposed so `mainFn`/hooks can resolve the canonical `data/` tree —
+   * including {@link M3LPaths.resolveInput} / {@link M3LPaths.resolveOutput}
+   * — without constructing a second, independent `new M3LPaths()`.
+   *
+   * @returns This script's {@link M3LPaths} instance.
+   *
+   * @example
+   * ```ts
+   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   *
+   * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
+   * await script.run(async () => {
+   *   const src = script.paths.resolveInput("records.jsonl");
+   * });
+   * ```
+   */
+  get paths(): M3LPaths {
+    return this.#paths;
   }
 
   /**
@@ -539,12 +565,12 @@ export class M3LScript {
    */
   private async archiveFiles(): Promise<void> {
     const fileCopier = new M3LFileCopier();
-    for (const sourcePath of listRegularFiles(this.paths.getInputDir())) {
+    for (const sourcePath of listRegularFiles(this.#paths.getInputDir())) {
       fileCopier.registerFile(sourcePath, {
         subdir: getDefaultSubdirForPathType("input"),
       });
     }
-    for (const sourcePath of listRegularFiles(this.paths.getConfigDir())) {
+    for (const sourcePath of listRegularFiles(this.#paths.getConfigDir())) {
       fileCopier.registerFile(sourcePath, {
         subdir: getDefaultSubdirForPathType("config"),
       });
