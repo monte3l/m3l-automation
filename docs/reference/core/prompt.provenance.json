@@ -54,8 +54,8 @@
           "symbol": "M3LSuggestFn"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "`M3LPrompt`",
@@ -89,8 +89,8 @@
           "symbol": "M3LSuggestFn"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "`M3LMultiSpinner`",
@@ -104,8 +104,8 @@
           "symbol": "M3LMultiSpinnerOptions"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "`M3LLoadingBar`",
@@ -119,8 +119,8 @@
           "symbol": "M3LLoadingBarOptions"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Notes and behavior",
@@ -142,8 +142,8 @@
           "symbol": "M3LPromptValidationError"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
+      "retrieved": "2026-07-11"
     }
   ]
 }

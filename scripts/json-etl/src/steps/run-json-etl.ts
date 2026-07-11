@@ -1,5 +1,3 @@
-import { join, resolve, sep } from "node:path";
-
 import { Core } from "@m3l-automation/m3l-common";
 
 import { exportResults } from "./export-results.js";
@@ -249,35 +247,6 @@ async function* applySortAndLimit(
   }
 }
 
-/**
- * Joins `relative` onto `baseDir` and asserts the resolved path stays within
- * `baseDir` — guarding against a config value (e.g. `input: "../../etc/passwd"`)
- * escaping `M3L_INPUT_DIR`/`M3L_OUTPUT_DIR` via `..` segments or an absolute
- * path. Checked before any file is read or written.
- *
- * @param baseDir - The directory `relative` must resolve inside of.
- * @param relative - The config-supplied path, relative to `baseDir`.
- * @param kind - Which parameter this path came from, for the error context.
- * @returns The resolved, contained absolute path.
- * @throws {@link Core.M3LError} When the resolved path is `baseDir` itself or
- *   falls outside it.
- */
-function resolveContainedPath(
-  baseDir: string,
-  relative: string,
-  kind: "input" | "output",
-): string {
-  const base = resolve(baseDir);
-  const candidate = resolve(join(base, relative));
-  if (candidate !== base && !candidate.startsWith(base + sep)) {
-    throw new Core.M3LError(`'${kind}' path escapes its base directory`, {
-      code: "ERR_JSON_ETL_PATH",
-      context: { kind, relative, baseDir: base },
-    });
-  }
-  return candidate;
-}
-
 /** Wraps `source`, invoking `onItem` once per yielded value before re-yielding it. */
 async function* countingGenerator<T>(
   source: AsyncIterable<T>,
@@ -358,16 +327,8 @@ export async function runJsonEtl(deps: {
 }): Promise<{ read: number; written: number; skipped: number }> {
   const settings = resolveSettings(deps.config);
 
-  const inputPath = resolveContainedPath(
-    deps.paths.getInputDir(),
-    settings.input,
-    "input",
-  );
-  const outputPath = resolveContainedPath(
-    deps.paths.getOutputDir(),
-    settings.output,
-    "output",
-  );
+  const inputPath = deps.paths.resolveInput(settings.input);
+  const outputPath = deps.paths.resolveOutput(settings.output);
 
   let read = 0;
   let skipped = 0;

@@ -42,8 +42,8 @@
           "symbol": "M3LHttpClientError"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Notes & behavior",
@@ -61,8 +61,8 @@
           "symbol": "M3LHttpClientError"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
+      "retrieved": "2026-07-11"
     }
   ]
 }

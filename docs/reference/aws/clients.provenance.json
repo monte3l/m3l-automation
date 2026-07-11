@@ -26,8 +26,8 @@
           "symbol": "M3LAWSClientError"
         }
       ],
-      "commit": "87046ff4bfebc5fb7b62231bed7855bfc1c27a30",
-      "retrieved": "2026-07-10"
+      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "`AWSClientProvider`",
@@ -37,8 +37,8 @@
           "symbol": "AWSClientProvider"
         }
       ],
-      "commit": "87046ff4bfebc5fb7b62231bed7855bfc1c27a30",
-      "retrieved": "2026-07-10"
+      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "`AWSMultiClientProvider`",
@@ -48,8 +48,8 @@
           "symbol": "AWSMultiClientProvider"
         }
       ],
-      "commit": "87046ff4bfebc5fb7b62231bed7855bfc1c27a30",
-      "retrieved": "2026-07-10"
+      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "`AWSProvider`",
@@ -59,8 +59,8 @@
           "symbol": "AWSProvider"
         }
       ],
-      "commit": "87046ff4bfebc5fb7b62231bed7855bfc1c27a30",
-      "retrieved": "2026-07-10"
+      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "`M3LAWSClientError`",
@@ -70,8 +70,8 @@
           "symbol": "M3LAWSClientError"
         }
       ],
-      "commit": "87046ff4bfebc5fb7b62231bed7855bfc1c27a30",
-      "retrieved": "2026-07-10"
+      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Notes and behavior",
@@ -81,8 +81,8 @@
           "symbol": "AWSClientProvider"
         }
       ],
-      "commit": "87046ff4bfebc5fb7b62231bed7855bfc1c27a30",
-      "retrieved": "2026-07-10"
+      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
+      "retrieved": "2026-07-11"
     }
   ]
 }

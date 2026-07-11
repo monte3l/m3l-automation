@@ -264,8 +264,10 @@ describe("runJsonEtl", () => {
     } catch (error) {
       thrown = error;
     }
-    expect(thrown).toBeInstanceOf(Core.M3LError);
-    expect((thrown as Core.M3LError).code).toBe("ERR_JSON_ETL_PATH");
+    expect(thrown).toBeInstanceOf(Core.M3LPathResolutionError);
+    expect((thrown as Core.M3LPathResolutionError).code).toBe(
+      "ERR_PATH_RESOLUTION",
+    );
     expect(fsp.readFile).not.toHaveBeenCalled();
     expect(fsp.open).not.toHaveBeenCalled();
   });
@@ -285,8 +287,10 @@ describe("runJsonEtl", () => {
     } catch (error) {
       thrown = error;
     }
-    expect(thrown).toBeInstanceOf(Core.M3LError);
-    expect((thrown as Core.M3LError).code).toBe("ERR_JSON_ETL_PATH");
+    expect(thrown).toBeInstanceOf(Core.M3LPathResolutionError);
+    expect((thrown as Core.M3LPathResolutionError).code).toBe(
+      "ERR_PATH_RESOLUTION",
+    );
     expect(fsp.readFile).not.toHaveBeenCalled();
     expect(fsp.open).not.toHaveBeenCalled();
   });
