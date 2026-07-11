@@ -40,6 +40,21 @@ const inputDir = paths.getInputDir();
 const outputDir = paths.getOutputDir();
 ```
 
+### Resolving a name under the input/output directory
+
+`resolveInput(name)` and `resolveOutput(name)` join a caller-supplied `name` onto the input or output directory **and contain it** — a `name` that is absolute or contains a `..` segment (checked after normalization, so both `../x` and `a/../../x` are rejected) throws `M3LPathResolutionError` (code `"ERR_PATH_RESOLUTION"`) rather than escaping the directory. This is the same containment rule `M3LFileCopier` applies to its `subdir` hint (see [files](./files.md)); use it instead of hand-joining a name onto `getInputDir()` / `getOutputDir()`.
+
+```typescript
+import { Core } from "@m3l-automation/m3l-common";
+
+const paths = new Core.M3LPaths();
+
+const source = paths.resolveInput("records.jsonl"); // <input>/records.jsonl
+const result = paths.resolveOutput("run/report.json"); // <output>/run/report.json
+
+paths.resolveInput("../secrets.env"); // throws M3LPathResolutionError
+```
+
 > Note: `getProjectRoot()` throws `M3LPathResolutionError` (code `"ERR_PATH_RESOLUTION"`) in standalone mode — there is no monorepo root to return. Guard standalone code paths accordingly, or set `M3L_DEPLOYMENT_MODE=monorepo` only when a real monorepo root exists.
 
 ## Safe serialization with `safeJsonStringify`

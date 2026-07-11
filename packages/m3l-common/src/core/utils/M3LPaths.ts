@@ -18,6 +18,11 @@ import {
   M3LExecutionEnvironment,
 } from "../environment/index.js";
 
+// Reuses the same containment guard `M3LFileCopier` applies to `subdir` /
+// `manifestFileName` — an internal helper is freely consumable from within
+// the package; only *re-exporting* it publicly would be forbidden.
+import { isSafeRelativeSegment } from "../../internal/files/guards.js";
+
 // ---------------------------------------------------------------------------
 // M3LPathType
 // ---------------------------------------------------------------------------
@@ -388,6 +393,88 @@ export class M3LPaths {
    */
   getCacheDir(): string {
     return this.cacheDir;
+  }
+
+  /**
+   * Resolves `name` to an absolute path inside `dir` — the single
+   * containment-enforcement point shared by {@link M3LPaths.resolveInput} and
+   * {@link M3LPaths.resolveOutput}, so the "no absolute paths, no `..`
+   * escape" rule lives in exactly one place instead of being duplicated per
+   * directory kind.
+   */
+  private resolveWithin(
+    dir: string,
+    name: string,
+    kind: "input" | "output",
+  ): string {
+    if (!isSafeRelativeSegment(name)) {
+      throw new M3LPathResolutionError(
+        `resolve${kind === "input" ? "Input" : "Output"}: name "${name}" must be a relative path within the ${kind} directory (absolute paths and ".." segments are rejected)`,
+      );
+    }
+    return path.join(dir, name);
+  }
+
+  /**
+   * Resolves `name` to an absolute path inside the input directory
+   * ({@link M3LPaths.getInputDir}).
+   *
+   * `name` must be a relative path segment that stays within the input
+   * directory: a caller-supplied name must never be able to escape the
+   * managed data tree, so this rejects absolute paths and any `..` segment
+   * (checked after normalization) via the same {@link isSafeRelativeSegment}
+   * guard {@link M3LFileCopier} applies to its own path-shaped options.
+   *
+   * @param name - A relative path (file name, or nested relative path) to
+   *   resolve inside the input directory.
+   * @returns Absolute path of `name` joined onto the input directory.
+   * @throws {@link M3LPathResolutionError} When `name` is absolute or
+   *   contains a `..` segment that would escape the input directory.
+   *
+   * @example
+   * ```ts
+   * import { M3LPaths } from "@m3l-automation/m3l-common/core";
+   *
+   * const paths = new M3LPaths();
+   * console.log(paths.resolveInput("records.jsonl"));
+   * // e.g. "/workspace/data/input/records.jsonl"
+   *
+   * paths.resolveInput("../secrets.env"); // throws M3LPathResolutionError
+   * ```
+   */
+  resolveInput(name: string): string {
+    return this.resolveWithin(this.inputDir, name, "input");
+  }
+
+  /**
+   * Resolves `name` to an absolute path inside the output directory
+   * ({@link M3LPaths.getOutputDir}).
+   *
+   * `name` must be a relative path segment that stays within the output
+   * directory: a caller-supplied name must never be able to escape the
+   * managed data tree, so this rejects absolute paths and any `..` segment
+   * (checked after normalization) via the same {@link isSafeRelativeSegment}
+   * guard {@link M3LFileCopier} applies to its own path-shaped options.
+   *
+   * @param name - A relative path (file name, or nested relative path) to
+   *   resolve inside the output directory.
+   * @returns Absolute path of `name` joined onto the output directory.
+   * @throws {@link M3LPathResolutionError} When `name` is absolute or
+   *   contains a `..` segment that would escape the output directory.
+   *
+   * @example
+   * ```ts
+   * import { M3LPaths } from "@m3l-automation/m3l-common/core";
+   *
+   * const paths = new M3LPaths();
+   * console.log(paths.resolveOutput("run/report.json"));
+   * // e.g. "/workspace/data/output/run/report.json"
+   *
+   * paths.resolveOutput("../secrets.env"); // throws M3LPathResolutionError
+   * ```
+   */
+  resolveOutput(name: string): string {
+    return this.resolveWithin(this.outputDir, name, "output");
   }
 
   /**
