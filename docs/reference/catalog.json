@@ -46,7 +46,8 @@
       "M3LUnsafeConfigKeyError",
       "M3LConfigValidator",
       "M3LConfigValidators",
-      "M3LConfigValidationError"
+      "M3LConfigValidationError",
+      "M3LConfigMissingError"
     ]
   },
   {

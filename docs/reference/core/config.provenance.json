@@ -92,9 +92,13 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigValidationError.ts",
           "symbol": "M3LConfigValidationError"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigMissingError.ts",
+          "symbol": "M3LConfigMissingError"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
+      "commit": "49e782153e77f5674352d56998ec2834fb7225c7",
       "retrieved": "2026-07-11"
     },
     {
@@ -115,9 +119,13 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameter.ts",
           "symbol": "M3LConfigParameter"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigMissingError.ts",
+          "symbol": "M3LConfigMissingError"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
+      "commit": "49e782153e77f5674352d56998ec2834fb7225c7",
       "retrieved": "2026-07-11"
     },
     {
@@ -128,7 +136,7 @@
           "symbol": "M3LConfig"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
+      "commit": "49e782153e77f5674352d56998ec2834fb7225c7",
       "retrieved": "2026-07-11"
     },
     {
@@ -143,7 +151,7 @@
           "symbol": "M3LUnknownParameterDetector"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
+      "commit": "49e782153e77f5674352d56998ec2834fb7225c7",
       "retrieved": "2026-07-11"
     }
   ]
