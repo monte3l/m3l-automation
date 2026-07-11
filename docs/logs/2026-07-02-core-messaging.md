@@ -8,7 +8,7 @@ divergences that came up (a stale plan, a pipeline-wide supply-chain block, six
 spec-silent contract decisions, post-GREEN test-side type defects, and count
 sites the plan missed), and the durable lessons.
 
-Plan of record: [`docs/plans/messaging-submodule-implementation.md`](../plans/messaging-submodule-implementation.md)
+Plan of record: [`docs/plans/messaging-submodule-implementation.md`](../plans/archive/messaging-submodule-implementation.md)
 
 ## Summary
 

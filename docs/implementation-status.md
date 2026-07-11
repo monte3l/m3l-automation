@@ -13,7 +13,7 @@ The barrels are wired; `errors`, `events`, `security`, `environment`, `utils`, `
 
 **Phase columns:** _Tests_ = TDD tests authored & failing for the right reason ·
 _Reviewed_ = passed `code-reviewer` + `spec-conformance-reviewer` (+ `security-reviewer` where relevant) ·
-_Planned_ = implementation plan exists in `docs/plans/`.
+_Planned_ = implementation plan exists in `docs/plans/archive/`.
 
 ## Barrels & infrastructure
 

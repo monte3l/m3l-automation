@@ -2,7 +2,7 @@
 
 - **Date:** 2026-07-06 · **Baseline:** `main` after the 1.1.0 checkpoint
 - **Implements:** `docs/plans/2026-07-06-consumer-fleet-roadmap.md`
-  (Phase 5 of [ADR-0021](../adr/0021-post-1.0-deepen-first-strategy.md)).
+  (Phase 5 of [ADR-0021](../../adr/0021-post-1.0-deepen-first-strategy.md)).
 - **Ground truth:** every fragment below was extracted from the removal
   commit `3ded259f` (the exact inverse diff) and from current `HEAD`. Where
   the old content was scaffold-era ("once `M3LScript` is implemented…"), it

@@ -3,7 +3,7 @@
 - **Date:** 2026-07-06 · **Starts:** after the 1.1.0 checkpoint of the
   deepen-first wave
   (`docs/plans/2026-07-06-post-1.0-deepen-first-roadmap.md`)
-- **Authority:** [ADR-0021](../adr/0021-post-1.0-deepen-first-strategy.md)
+- **Authority:** [ADR-0021](../../adr/0021-post-1.0-deepen-first-strategy.md)
   — "the in-repo consumer fleet follows as the immediate next iteration."
   Technical detail lives in
   `docs/plans/2026-07-06-consumer-fleet-implementation-plan.md`.

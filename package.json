@@ -22,7 +22,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint:md": "rumdl check . --no-cache --exclude \"node_modules/**,.claude/**,**/dist/**,CHANGELOG.md,.github/pull_request_template.md,docs/adr/template.md,docs/plans/**\"",
+    "lint:md": "rumdl check . --no-cache --exclude \"node_modules/**,.claude/**,**/dist/**,CHANGELOG.md,.github/pull_request_template.md,docs/adr/template.md,docs/plans/archive/**\"",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",

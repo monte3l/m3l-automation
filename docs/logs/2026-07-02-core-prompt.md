@@ -7,7 +7,7 @@ through the `implementing-submodules` hub-and-spoke TDD pipeline
 four divergences that required spoke re-dispatches, and the durable lessons for
 the next submodule.
 
-Plan of record: [`docs/plans/prompt-submodule-implementation.md`](../plans/prompt-submodule-implementation.md)
+Plan of record: [`docs/plans/prompt-submodule-implementation.md`](../plans/archive/prompt-submodule-implementation.md)
 
 ## Summary
 

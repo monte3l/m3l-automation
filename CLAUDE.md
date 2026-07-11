@@ -494,9 +494,18 @@ that reviews it" structural, and keeps the hub's context lean.
   `--model` pins.
 - **TDD**: tests are written from the documented contract and fail first, then
   the implementer makes them pass; review follows.
-- **Live status**: `docs/implementation-status.md` is the source of truth for
-  what is built vs. documented. The hub updates it after each phase — it is the
-  durable memory the isolated spokes do not share.
+- **Live status**: three living trackers, updated by the hub as work lands (they
+  are the durable memory the isolated spokes do not share). `docs/implementation-status.md`
+  is the source of truth for what library work is **built** vs. documented (the
+  count-enforced 22/22 ledger). `docs/ROADMAP.md` (coarse, unblock-first) and
+  `docs/plans/IMPLEMENTATION.md` (detailed per-item backlog) track **pending**
+  program work — the consumer-fleet waves, the library-friction F-series, and the
+  gated D4/D5 modules. When a unit lands: flip its status in the relevant
+  tracker, `git mv` any dated plan it completes into `docs/plans/archive/`, and a
+  new friction item from a work log is filed into `IMPLEMENTATION.md` (not left
+  narrative-only). Completed plans live in `docs/plans/archive/` (frozen,
+  excluded from `lint:md`); `docs/plans/README.md` and `docs/logs/README.md`
+  index them.
 - The `implementing-submodules` skill encodes this loop end-to-end; `scaffolding-submodules`
   scaffolds a greenfield module and hands off to it. All 22 bootstrap submodules
   already have `docs/reference` specs, so `implementing-submodules` is the normal entry

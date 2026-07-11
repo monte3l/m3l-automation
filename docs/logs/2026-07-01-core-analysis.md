@@ -8,7 +8,7 @@ the plan, the divergences (a stored-plan premise rot, two spoke turn-limit
 stalls, a converged review finding, and a prettier-vs-count-gate clash), and the
 durable lessons.
 
-Plan of record: [`docs/plans/analysis-submodule-implementation.md`](../plans/analysis-submodule-implementation.md)
+Plan of record: [`docs/plans/analysis-submodule-implementation.md`](../plans/archive/analysis-submodule-implementation.md)
 (audit-corrected before execution — see divergence 1).
 
 ## Summary

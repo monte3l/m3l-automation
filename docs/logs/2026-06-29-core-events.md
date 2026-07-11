@@ -5,7 +5,7 @@ Implementation of the second library submodule, `@m3l-automation/m3l-common`
 records what shipped, what matched the plan, what diverged and why, and the
 durable lessons for the remaining 19 submodules.
 
-Plan of record: [`docs/plans/events-submodule-implementation.md`](../plans/events-submodule-implementation.md).
+Plan of record: [`docs/plans/events-submodule-implementation.md`](../plans/archive/events-submodule-implementation.md).
 
 ## Summary
 

@@ -3,8 +3,8 @@
 - **Date:** 2026-07-09 · **Baseline:** `main` after PR #94
 - **Implements:** `docs/plans/2026-07-09-consumer-scripts-roadmap.md`
   (the Phase F0 decision record of the consumer-fleet roadmap;
-  [ADR-0021](../adr/0021-post-1.0-deepen-first-strategy.md) Phase 5,
-  [ADR-0022](../adr/0022-scripts-workspace-real-consumers.md)).
+  [ADR-0021](../../adr/0021-post-1.0-deepen-first-strategy.md) Phase 5,
+  [ADR-0022](../../adr/0022-reintroduce-scripts-workspace.md)).
 - **Ground truth:** every "exists today" claim below was verified against
   `HEAD` during the 2026-07-09 audit (three parallel read-only agents plus
   hub spot-checks of `packages/m3l-common/package.json`,

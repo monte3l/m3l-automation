@@ -9,7 +9,7 @@ records what shipped across PR #90 (merged) and PR #91, what matched the plan,
 what diverged, and the durable lessons.
 
 Plan of record:
-[`docs/plans/2026-07-09-consumer-script-pipeline.md`](../plans/2026-07-09-consumer-script-pipeline.md)
+[`docs/plans/2026-07-09-consumer-script-pipeline.md`](../plans/archive/2026-07-09-consumer-script-pipeline.md)
 
 ## Summary
 

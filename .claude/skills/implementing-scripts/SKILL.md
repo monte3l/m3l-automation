@@ -122,7 +122,12 @@ touches the `.env` secrets seam, and any AWS work flows through the
    pass runs `check:script-scaffold` and regenerates the consumer-scripts
    catalog via `gen:index`). Remind the user the commit is a `feat:` only if it
    changes what consumers of the _script_ get; plain `chore:`/`fix:` otherwise.
-   Finally invoke `/writing-work-logs` while the context is live.
+   Then invoke `/writing-work-logs` while the context is live. **Finally, update
+   the living trackers**: flip this script's status in `docs/ROADMAP.md` +
+   `docs/plans/IMPLEMENTATION.md` (`pending` → `in-review`/`done`), pull the
+   next-priority item up, and file any new library-friction the log recorded
+   into `IMPLEMENTATION.md` (not log-narrative-only). See `CLAUDE.md` →
+   _Agent Operating Model_ → _Live status_.
 
 ## What "good" looks like
 
