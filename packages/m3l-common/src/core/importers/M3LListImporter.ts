@@ -70,6 +70,42 @@ export interface M3LListImporterResult<TItem> {
 }
 
 /**
+ * The summary an {@link M3LListImporter.importStream} async generator
+ * RETURNS once it is fully drained (i.e. the value on the final
+ * `done: true` iteration result), mirroring the `import:completed` event
+ * payload plus the skip count that a streaming consumer has no other way to learn —
+ * unlike {@link M3LListImporter.import}, `importStream` never materializes an
+ * `errors` array, so this is the only place a caller can observe how many
+ * records were skipped without listening for `import:error`.
+ *
+ * Existing `for await…of` consumers are unaffected: a `for await` loop
+ * discards a generator's return value, so this is a purely additive,
+ * semver-minor widening of the streaming contract.
+ *
+ * @example
+ * ```typescript
+ * import { M3LJSONListImporter } from "@m3l-automation/m3l-common/core";
+ *
+ * const importer = new M3LJSONListImporter<{ id: number }>({});
+ * const stream = importer.importStream("./data/inputs/records.jsonl");
+ * let step = await stream.next();
+ * while (step.done !== true) {
+ *   step = await stream.next();
+ * }
+ * const summary = step.value;
+ * console.log(`skipped ${String(summary.skipped)} of ${String(summary.processed)}`);
+ * ```
+ */
+export interface M3LImportStreamSummary {
+  /** The total number of records processed: good + skipped (mirrors the `import:completed` payload). */
+  readonly processed: number;
+  /** The number of malformed/failed records that were skipped rather than yielded. */
+  readonly skipped: number;
+  /** Wall-clock duration of the stream, in milliseconds. */
+  readonly durationMs: number;
+}
+
+/**
  * The shared contract implemented by every list importer (`M3LCSVListImporter`,
  * `M3LJSONListImporter`): a batch access pattern and a streaming access
  * pattern over the same underlying source.
@@ -109,7 +145,10 @@ export interface M3LListImporter<TItem> {
    * @param source - A file path (streamed) or an in-memory `Buffer`
    *   (processed in memory). When omitted, the importer's configured default
    *   source is used.
-   * @returns An async generator yielding one item at a time.
+   * @returns An async generator yielding one item at a time and, once
+   *   drained, returning an {@link M3LImportStreamSummary}.
    */
-  importStream(source?: string | Buffer): AsyncGenerator<TItem>;
+  importStream(
+    source?: string | Buffer,
+  ): AsyncGenerator<TItem, M3LImportStreamSummary, void>;
 }

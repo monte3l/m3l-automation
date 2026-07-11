@@ -23,6 +23,7 @@ import {
 } from "../../internal/importers/resolveSource.js";
 
 import type {
+  M3LImportStreamSummary,
   M3LListImporter,
   M3LListImporterEvents,
   M3LListImporterResult,
@@ -205,7 +206,8 @@ export class M3LJSONListImporter<TItem>
    *
    * @param source - A file path or an in-memory `Buffer`. When omitted,
    *   `options.filePath` is used.
-   * @returns An async generator yielding one item at a time.
+   * @returns An async generator yielding one item at a time and, once
+   *   drained, returning an {@link M3LImportStreamSummary}.
    * @throws {@link M3LError} with code `ERR_IMPORT_SOURCE` when neither
    *   `source` nor `options.filePath` is supplied, the source cannot be read,
    *   or its format cannot be detected.
@@ -223,12 +225,15 @@ export class M3LJSONListImporter<TItem>
    * }
    * ```
    */
-  async *importStream(source?: string | Buffer): AsyncGenerator<TItem> {
+  async *importStream(
+    source?: string | Buffer,
+  ): AsyncGenerator<TItem, M3LImportStreamSummary, void> {
     const startedAt = Date.now();
     const resolved = resolveSource(source, this.#options.filePath);
     this.emit("import:started", { source: sourceLabel(resolved) });
 
     let index = 0;
+    let skipped = 0;
     for await (const outcome of this.#parseRecords(resolved)) {
       if (outcome.ok) {
         this.emit("import:item", { item: outcome.item, index });
@@ -238,13 +243,13 @@ export class M3LJSONListImporter<TItem>
       } else {
         this.emit("import:error", { error: outcome.error, index });
         index += 1;
+        skipped += 1;
         this.emit("import:progress", { processed: index });
       }
     }
-    this.emit("import:completed", {
-      processed: index,
-      durationMs: Date.now() - startedAt,
-    });
+    const durationMs = Date.now() - startedAt;
+    this.emit("import:completed", { processed: index, durationMs });
+    return { processed: index, skipped, durationMs };
   }
 
   /**

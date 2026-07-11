@@ -24,6 +24,7 @@ Exported symbols:
 - `M3LListImporter` — the `M3LListImporter<TItem>` contract
 - `M3LListImporterEvents` — the event map type
 - `M3LListImporterResult` — batch result type
+- `M3LImportStreamSummary` — the streaming return summary (skip count)
 - `M3LCSVListImporter`, `M3LCSVListImporterOptions`
 - `M3LCSVFormatAdapter`, `M3LCSVAdapterFactory`
 - `M3LJSONFileImporter`
@@ -35,8 +36,16 @@ Exported symbols:
 
 All list importers extend `M3LEventEmitterBase` and implement `M3LListImporter<TItem>`, which defines two access patterns:
 
-- `import(source)` — **batch**: returns all items at once.
-- `importStream(source)` — **streaming**: an async generator that yields items one by one.
+- `import(source)` — **batch**: returns all items at once, in an
+  `M3LListImporterResult` that includes the record-level `errors[]`.
+- `importStream(source)` — **streaming**: an async generator that yields items
+  one by one and, on completion, **returns** an `M3LImportStreamSummary`
+  (`{ processed, skipped, durationMs }`) as the generator's return value. This
+  closes the batch/streaming asymmetry: the malformed-record `skipped` count is
+  available directly from the stream, without subscribing to `import:error`.
+  Existing `for await … of` consumers ignore the return value and are
+  unaffected; a caller that wants the summary captures it from the loop's
+  completion (see the JSON/JSONL example below).
 
 ### Event map (`M3LListImporterEvents`)
 
@@ -99,9 +108,23 @@ const importer = new Core.M3LJSONListImporter<{ author: string }>({
   fieldPath: "metadata.author",
 });
 
+// Simple consumption ignores the return value (existing behavior, unaffected):
 for await (const item of importer.importStream("./data/inputs/records.jsonl")) {
   // ...
 }
+
+// To read the skip count, drive the generator manually and capture its return:
+const stream = importer.importStream("./data/inputs/records.jsonl");
+let step = await stream.next();
+while (step.done !== true) {
+  const item = step.value;
+  // ...process one item at a time; memory stays bounded
+  step = await stream.next();
+}
+const summary = step.value; // M3LImportStreamSummary
+console.log(
+  `skipped ${String(summary.skipped)} of ${String(summary.processed)}`,
+);
 ```
 
 ## Notes and behavior
