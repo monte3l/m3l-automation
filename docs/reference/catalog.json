@@ -156,6 +156,7 @@
       "M3LListImporter",
       "M3LListImporterEvents",
       "M3LListImporterResult",
+      "M3LImportStreamSummary",
       "M3LCSVListImporter",
       "M3LCSVListImporterOptions",
       "M3LCSVFormatAdapter",
