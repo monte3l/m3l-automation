@@ -8,45 +8,52 @@
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LExecutionEnvironment",
-          "lines": "731-824"
+          "lines": "731-824",
+          "blob": "8c18f5f119e2a2d1ce25f312dad4462763cb71e7"
         },
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LEnv",
-          "lines": "824-824"
+          "lines": "824-824",
+          "blob": "8c18f5f119e2a2d1ce25f312dad4462763cb71e7"
         },
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LExecutionEnvironmentType",
-          "lines": "48-80"
+          "lines": "48-80",
+          "blob": "8c18f5f119e2a2d1ce25f312dad4462763cb71e7"
         },
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LDeploymentMode",
-          "lines": "102-125"
+          "lines": "102-125",
+          "blob": "8c18f5f119e2a2d1ce25f312dad4462763cb71e7"
         },
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LCredentialSource",
-          "lines": "147-180"
+          "lines": "147-180",
+          "blob": "8c18f5f119e2a2d1ce25f312dad4462763cb71e7"
         },
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LExecutionEnvironmentInfo",
-          "lines": "347-395"
+          "lines": "347-395",
+          "blob": "8c18f5f119e2a2d1ce25f312dad4462763cb71e7"
         },
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LEnvironmentDetectionDetails",
-          "lines": "273-296"
+          "lines": "273-296",
+          "blob": "8c18f5f119e2a2d1ce25f312dad4462763cb71e7"
         },
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LEnvironmentDetectionError",
-          "lines": "232-252"
+          "lines": "232-252",
+          "blob": "8c18f5f119e2a2d1ce25f312dad4462763cb71e7"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -55,10 +62,10 @@
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LExecutionEnvironment",
-          "lines": "752-803"
+          "lines": "752-803",
+          "blob": "8c18f5f119e2a2d1ce25f312dad4462763cb71e7"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -67,15 +74,16 @@
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LDeploymentMode",
-          "lines": "102-125"
+          "lines": "102-125",
+          "blob": "8c18f5f119e2a2d1ce25f312dad4462763cb71e7"
         },
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LExecutionEnvironmentInfo",
-          "lines": "347-395"
+          "lines": "347-395",
+          "blob": "8c18f5f119e2a2d1ce25f312dad4462763cb71e7"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -84,10 +92,10 @@
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LExecutionEnvironmentType",
-          "lines": "48-80"
+          "lines": "48-80",
+          "blob": "8c18f5f119e2a2d1ce25f312dad4462763cb71e7"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -96,10 +104,10 @@
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LCredentialSource",
-          "lines": "147-180"
+          "lines": "147-180",
+          "blob": "8c18f5f119e2a2d1ce25f312dad4462763cb71e7"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -108,15 +116,16 @@
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LExecutionEnvironmentInfo",
-          "lines": "347-395"
+          "lines": "347-395",
+          "blob": "8c18f5f119e2a2d1ce25f312dad4462763cb71e7"
         },
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LEnvironmentDetectionDetails",
-          "lines": "273-296"
+          "lines": "273-296",
+          "blob": "8c18f5f119e2a2d1ce25f312dad4462763cb71e7"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -125,10 +134,10 @@
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LEnvironmentDetectionError",
-          "lines": "232-252"
+          "lines": "232-252",
+          "blob": "8c18f5f119e2a2d1ce25f312dad4462763cb71e7"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     }
   ]
