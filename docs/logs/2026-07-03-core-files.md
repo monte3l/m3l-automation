@@ -6,7 +6,7 @@ RED → GREEN → four-spoke parallel review → doc reconciliation (`/syncing-d
 → commits. It records what shipped, what matched the plan, the divergences
 (most of them surfaced by the review fan-out), and the durable lessons.
 
-Plan of record: [`docs/plans/files-submodule-implementation.md`](../plans/files-submodule-implementation.md)
+Plan of record: [`docs/plans/files-submodule-implementation.md`](../plans/archive/files-submodule-implementation.md)
 
 ## Summary
 

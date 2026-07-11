@@ -7,7 +7,7 @@ contract seed → RED → GREEN → five-spoke review → fix round → re-revie
 provenance + `/syncing-docs`. It records what shipped, what matched the plan,
 the divergences and their root causes, and the durable lessons.
 
-Plan of record: [`docs/plans/storage-submodule-implementation.md`](../plans/storage-submodule-implementation.md)
+Plan of record: [`docs/plans/storage-submodule-implementation.md`](../plans/archive/storage-submodule-implementation.md)
 
 ## Summary
 

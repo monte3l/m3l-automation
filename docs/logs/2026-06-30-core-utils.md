@@ -6,7 +6,7 @@ the full hub-and-spoke pipeline: Contract → RED → GREEN → Review → revie
 matched the plan, where the pipeline diverged and why, and the durable lessons
 extracted for future submodule work.
 
-Plan of record: [`docs/plans/utils-submodule-implementation.md`](../plans/utils-submodule-implementation.md)
+Plan of record: [`docs/plans/utils-submodule-implementation.md`](../plans/archive/utils-submodule-implementation.md)
 
 ## Summary
 

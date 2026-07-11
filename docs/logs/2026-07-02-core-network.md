@@ -8,7 +8,7 @@ linked worktree, and records what shipped, what matched the plan, the divergence
 blocker, a concurrent-resume race, and two real review Must-fixes), and the
 durable lessons.
 
-Plan of record: [`docs/plans/network-submodule-implementation.md`](../plans/network-submodule-implementation.md)
+Plan of record: [`docs/plans/network-submodule-implementation.md`](../plans/archive/network-submodule-implementation.md)
 
 ## Summary
 
