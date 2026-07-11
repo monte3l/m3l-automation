@@ -27,6 +27,14 @@ blocker, and the next intended action. One or two lines per update is enough. If
 your turn is cut short, this journal is what lets the hub resume you exactly
 where you stopped instead of re-deriving state by hand.
 
+**On a many-file task, write files first — don't over-explore.** When the task
+spans several test files (a multi-step consumer script, a large module), read
+only what you need to start, then **write every file — even terse — before
+refining any of them**. Exploring and planning all files up front can burn the
+whole budget before a single file lands, leaving the hub a truncated report and
+nothing on disk (a written-but-terse test file it can run beats a perfect one
+that was never written). Get all files down, run `vitest` once, then tighten.
+
 ## Tests-first (the default mode)
 
 In the TDD pipeline the implementation does **not exist yet** when you are

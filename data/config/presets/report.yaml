@@ -1,0 +1,13 @@
+# json-etl "report" preset — an ordered CSV report over a records dump.
+# Keys are json-etl config parameter names (an unknown key is rejected by the
+# preset loader). Run with: --preset report  (override any value on the CLI).
+input: records.ndjson
+fields:
+  - id=id
+  - name=metadata.name
+  - status=status
+filters:
+  - status ne archived
+format: csv
+output: report.csv
+multiValue: join

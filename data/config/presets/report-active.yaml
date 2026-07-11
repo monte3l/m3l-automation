@@ -1,0 +1,7 @@
+# json-etl "report-active" preset — the report, narrowed to active records.
+# `extends` is resolved relative to THIS file's directory; the derived keys
+# below wholly replace the base's (shallow merge), everything else is inherited.
+extends: ./report.yaml
+filters:
+  - status eq active
+output: report-active.csv
