@@ -21,6 +21,8 @@ _Maintenance_ at the bottom. Completed dated plans live under
   `extractAll` #96; aws/clients `cloudWatchLogs`/`dynamoDBDocument`/`athena`
   getters #97; template chore #98). **W1 `json-etl` done** (#99).
   **W2–W5 pending.**
+- **Library friction (P0)** — **F4/F5 done** (paths seam: `script.paths` +
+  `M3LPaths.resolveInput/resolveOutput`); **F8, F1, F2, F6 pending.**
 
 ## Priority 0 — Library hardening (do before more scripts)
 
@@ -31,11 +33,14 @@ call-sites in [`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#library-friction-f
 | Item   | What                                                                                            | Why now                                                                                                            |
 | ------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | **F8** | `M3LScript` preset seam — presets can't drive a run's config (config loader wires only CLI+env) | HIGH — breaks the §1.4 "presets + CLI overrides" design every fleet script assumes. Filed as task `task_ccda9320`. |
-| **F4** | Expose `script.paths` (M3LScript hides its `M3LPaths`)                                          | Every script hand-builds `new M3LPaths()`.                                                                         |
-| **F5** | `M3LPaths.resolveInput/Output(name)` (join + contain)                                           | Every script re-implements path join + a traversal guard.                                                          |
 | **F1** | Cross-parameter / `required` config validation                                                  | `sort⇒limit` and required-presence are hand-rolled run-start guards.                                               |
 | **F2** | `nonEmpty`/`minLength` config validators                                                        | Hand-written inline validators today.                                                                              |
 | **F6** | Importer surfaces its skip count                                                                | Only reachable via the `import:error` event.                                                                       |
+
+> **Landed** (paths seam): **F4** `M3LScript.paths` getter and **F5**
+> `M3LPaths.resolveInput/resolveOutput(name)` (join + traversal-contain) shipped;
+> `json-etl` now consumes both (its hand-built `new M3LPaths()` and local
+> `resolveContainedPath` are gone). Remaining P0: F8, F1, F2, F6.
 
 ## Priority 1 — Consumer fleet
 

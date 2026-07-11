@@ -1800,3 +1800,73 @@ describe("M3LPaths — per-kind env-var overrides", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// M3LPaths — resolveInput / resolveOutput (F5)
+// ---------------------------------------------------------------------------
+describe("M3LPaths — resolveInput / resolveOutput", () => {
+  const FAKE_ROOT = fakeRoot("fake", "monorepo");
+
+  beforeEach(() => {
+    // MONOREPO mode so getInputDir()/getOutputDir() are deterministic.
+    vi.spyOn(process, "cwd").mockReturnValue(
+      path.join(FAKE_ROOT, "packages", "tool"),
+    );
+    vi.spyOn(fs, "accessSync").mockImplementation(() => {});
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (p) => String(p) === path.join(FAKE_ROOT, "pnpm-workspace.yaml"),
+    );
+    vi.stubEnv("M3L_DEPLOYMENT_MODE", "");
+    vi.stubEnv("M3L_DATA_DIR", "");
+    vi.stubEnv("M3L_CONFIG_DIR", "");
+    vi.stubEnv("M3L_INPUT_DIR", "");
+    vi.stubEnv("M3L_OUTPUT_DIR", "");
+    vi.stubEnv("M3L_CACHE_DIR", "");
+    vi.stubEnv("M3L_BASE_DIR", "");
+    M3LExecutionEnvironment.resetForTesting();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    M3LExecutionEnvironment.resetForTesting();
+  });
+
+  test("resolveInput(name) joins name onto the input dir", () => {
+    const paths = new M3LPaths();
+    expect(paths.resolveInput("records.jsonl")).toBe(
+      path.join(FAKE_ROOT, "data", "input", "records.jsonl"),
+    );
+  });
+
+  test("resolveOutput(name) joins a nested name onto the output dir", () => {
+    const paths = new M3LPaths();
+    expect(paths.resolveOutput(path.join("run", "report.json"))).toBe(
+      path.join(FAKE_ROOT, "data", "output", "run", "report.json"),
+    );
+  });
+
+  describe("rejects an absolute or path-escaping name", () => {
+    const badNames: readonly string[] = [
+      path.join("..", "secrets.env"),
+      fakeRoot("etc", "passwd"),
+      path.join("a", "..", "..", "x"),
+    ];
+
+    test.each(badNames)(
+      "resolveInput(%j) throws M3LPathResolutionError",
+      (name) => {
+        const paths = new M3LPaths();
+        expect(() => paths.resolveInput(name)).toThrow(M3LPathResolutionError);
+      },
+    );
+
+    test.each(badNames)(
+      "resolveOutput(%j) throws M3LPathResolutionError",
+      (name) => {
+        const paths = new M3LPaths();
+        expect(() => paths.resolveOutput(name)).toThrow(M3LPathResolutionError);
+      },
+    );
+  });
+});

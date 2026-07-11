@@ -123,6 +123,7 @@ import {
 import type { M3LExecutionEnvironmentInfo } from "../src/core/environment/index.js";
 import { M3LLogger } from "../src/core/logging/index.js";
 import { M3LPrompt } from "../src/core/prompt/index.js";
+import { M3LPaths } from "../src/core/utils/index.js";
 
 // -----------------------------------------------------------------------
 // SUT — does not exist yet. This import MUST fail in RED with
@@ -314,6 +315,28 @@ describe("M3LScript — construction", () => {
   test("exposes an `aws` getter that is undefined before provisioning (construction only, no aws.profile declared)", () => {
     const script = new M3LScript({ metadata });
     expect(script.aws).toBeUndefined();
+  });
+
+  // F4: `M3LScript.paths` is a public getter exposing the `M3LPaths`
+  // instance held in the native private field `#paths`.
+  test("exposes a `paths` getter returning the internal M3LPaths instance", () => {
+    const script = new M3LScript({ metadata });
+    expect(script.paths).toBeDefined();
+    expect(script.paths).toBeInstanceOf(M3LPaths);
+  });
+
+  test("`paths` getter returns the same instance on every access (resolved once, reused)", () => {
+    const script = new M3LScript({ metadata });
+    expect(script.paths).toBe(script.paths);
+  });
+
+  test("`paths` getter is backed by a functioning M3LPaths instance", () => {
+    const script = new M3LScript({ metadata });
+    expect(script.paths.getInputDir()).toEqual(expect.any(String));
+  });
+
+  test("type-level: `paths` getter returns M3LPaths", () => {
+    expectTypeOf<M3LScript["paths"]>().toEqualTypeOf<M3LPaths>();
   });
 
   test("getConfiguration() is asynchronous (returns a thenable)", () => {
