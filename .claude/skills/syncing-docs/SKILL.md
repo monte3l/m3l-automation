@@ -32,25 +32,16 @@ missing file, removed symbol) before proceeding.
 node bin/check-doc-provenance.mjs --update
 ```
 
-Updates every sidecar's `commit` to `git HEAD` and `retrieved` to today's
-date. Only run after step 1 passed (even with staleness warnings).
+Staleness is content-addressed (git blob SHA per source file), not
+commit-addressed, so the bare `--update` is now safe to run repo-wide: it
+stamps `blob` and bumps `retrieved` only for sections whose source content
+actually changed, and skips writing any sidecar with nothing stale. A rebase
+or an unrelated module's change never re-stamps sidecars it didn't touch.
+Only run after step 1 passed (even with staleness warnings).
 
-**Scope the re-stamp when only some modules changed.** The bare `--update` is
-**repo-wide** — it bumps every validated sidecar to HEAD, so a single-module
-change ends up falsely re-stamping the other 21 sidecars (their `commit` jumps to
-your unrelated HEAD, claiming a re-verification that never happened). For a
-change that touched only some modules, scope it to the sidecars that reference a
-changed source file:
-
-```bash
-node bin/check-doc-provenance.mjs --update --affected <path/to/changed-source-file>
-```
-
-Then diff-check: `git status --porcelain -- docs/reference/`. If a sidecar for an
-untouched module shows as modified, the restamp was too broad —
-`git checkout -- docs/reference/` and re-run scoped. Use the bare repo-wide
-`--update` only when the change genuinely spans all modules (e.g. a
-tree-wide refactor) or as part of a dedicated reconciliation sweep.
+Scoping with `--affected <path/to/changed-source-file>` still works and is a
+useful optimization when you already know which sidecars are in play (fewer
+sidecars to re-verify), but it is no longer required for correctness.
 
 ### 3 — Verify doc counts and documented exports
 

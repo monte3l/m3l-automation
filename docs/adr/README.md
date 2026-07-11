@@ -68,3 +68,4 @@ surface).
 | 0021 | [Post-1.0.0 direction: deepen the library first, then build consumers](./0021-post-1.0-deepen-first-strategy.md)                | Accepted                |
 | 0022 | [Re-introduce the `scripts/` workspace for real consumers](./0022-reintroduce-scripts-workspace.md)                             | Accepted                |
 | 0023 | [Re-affirm the external code-index MCP deferral on new grounds](./0023-reaffirm-code-index-mcp-deferral.md)                     | Accepted                |
+| 0024 | [Deterministic prevention of derived-artifact merge conflicts](./0024-deterministic-derived-artifact-merges.md)                 | Accepted                |

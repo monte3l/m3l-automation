@@ -1,28 +1,37 @@
 #!/usr/bin/env node
 // Guards documented claims by linking reference-page headings to source
-// symbols at a specific git commit. Detects drift when source files change
-// after the recorded commit so doc-vs-code gaps surface in CI rather than
-// accumulating silently.
+// symbols. Detects drift when source content changes after the recorded
+// blob so doc-vs-code gaps surface in CI rather than accumulating silently.
 //
 // Each *.provenance.json sidecar in docs/reference/ describes one reference
 // page. Sections anchor a heading (e.g. "### `M3LError`") to one or more
-// source files and the git SHA at which the mapping was verified. The schema
-// lives at docs/reference/provenance.schema.json.
+// source files and the git blob SHA of each file's content when last
+// verified. Staleness is content-addressed, not commit-addressed: a rebase
+// that leaves a source file byte-identical never marks it stale, even though
+// the commit SHA changes. The schema lives at docs/reference/provenance.schema.json.
 //
 // Usage:
 //   node bin/check-doc-provenance.mjs                   # verify all sidecars
-//   node bin/check-doc-provenance.mjs --update          # re-stamp commit + date to HEAD
+//   node bin/check-doc-provenance.mjs --update          # re-stamp blob + date for changed sources only
 //   node bin/check-doc-provenance.mjs --affected <file> # only sidecars referencing <file>
 //
 // Exit contract: hard errors (bad heading/missing file/removed symbol) always
 // exit 1. In the full-verify path staleness ALSO exits 1 so cross-merge drift
 // fails CI; the --affected path (advisory hook) exits 0 with the warning on
-// stderr so mid-work edits are never blocked. Re-stamp with --update.
+// stderr so mid-work edits are never blocked. Re-stamp with --update — it is
+// safe to run bare since only sidecars with an actually-changed source blob
+// are rewritten.
 import process from "node:process";
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
-import { spawnSync } from "node:child_process";
+import {
+  parseHeadings,
+  isSymbolExported,
+  hashBlobs,
+  verifySidecarSections,
+  applyBlobUpdates,
+} from "./lib/doc-provenance.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const docsRef = join(root, "docs/reference");
@@ -41,42 +50,6 @@ function findSidecars(dir) {
     else if (entry.name.endsWith(".provenance.json")) results.push(full);
   }
   return results;
-}
-
-function headingsInMd(mdPath) {
-  return readFileSync(mdPath, "utf8")
-    .split("\n")
-    .filter((l) => /^#{1,6} /.test(l))
-    .map((l) => l.replace(/^#{1,6} /, "").trim());
-}
-
-function symbolExportedIn(filePath, symbol) {
-  const src = readFileSync(filePath, "utf8");
-  // Escape regex metacharacters in the symbol name (e.g. < > in generics).
-  const ident = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const directRe = new RegExp(
-    `\\bexport\\b(?:\\s+(?:abstract|declare|async))*\\s+` +
-      `(?:class|function|type|interface|const|let|var|enum)\\s+${ident}\\b`,
-  );
-  const namedRe = new RegExp(
-    `\\bexport\\b(?:\\s+type)?\\s*\\{[^}]*\\b${ident}\\b[^}]*\\}`,
-  );
-  return directRe.test(src) || namedRe.test(src);
-}
-
-function gitDiffChanged(commit, filePath) {
-  const res = spawnSync("git", ["diff", "--quiet", commit, "--", filePath], {
-    cwd: root,
-    encoding: "utf8",
-  });
-  return res.status === 1;
-}
-
-function gitHead() {
-  return (
-    spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" })
-      .stdout ?? ""
-  ).trim();
 }
 
 function today() {
@@ -107,6 +80,10 @@ let totalErrors = 0;
 let totalWarnings = 0;
 const validated = [];
 
+// One batched `git hash-object` for every source file across every sidecar
+// in scope, instead of a spawn per source per run.
+const parsedSidecars = [];
+const allSourceFiles = new Set();
 for (const sidecarPath of sidecars) {
   const rel = relative(root, sidecarPath);
   let data;
@@ -118,20 +95,14 @@ for (const sidecarPath of sidecars) {
     continue;
   }
 
-  let sidecarErrors = 0;
-  let sidecarWarnings = 0;
-
   if (typeof data.doc !== "string") {
     console.error(`✗  ${rel}: missing or invalid "doc" field`);
-    sidecarErrors++;
+    totalErrors++;
+    continue;
   }
   if (!Array.isArray(data.sections) || data.sections.length === 0) {
     console.error(`✗  ${rel}: "sections" must be a non-empty array`);
-    sidecarErrors++;
-  }
-
-  if (sidecarErrors > 0) {
-    totalErrors += sidecarErrors;
+    totalErrors++;
     continue;
   }
 
@@ -144,48 +115,42 @@ for (const sidecarPath of sidecars) {
     continue;
   }
 
-  const mdHeadings = headingsInMd(mdPath);
-
+  parsedSidecars.push({ sidecarPath, rel, data, mdPath });
   for (const section of data.sections) {
-    const tag = `"${section.heading}"`;
-
-    if (!mdHeadings.includes(section.heading)) {
-      console.error(
-        `✗  ${rel}: heading ${tag} not found in ${data.doc}\n` +
-          `   Known headings: ${mdHeadings.map((h) => `"${h}"`).join(", ")}`,
-      );
-      sidecarErrors++;
-    }
-
     for (const source of section.sources ?? []) {
-      const srcAbs = join(root, source.file);
-      if (!existsSync(srcAbs)) {
-        console.error(
-          `✗  ${rel}: source file not found: ${source.file} (section ${tag})`,
-        );
-        sidecarErrors++;
-        continue;
-      }
-      if (!symbolExportedIn(srcAbs, source.symbol)) {
-        console.error(
-          `✗  ${rel}: "${source.symbol}" not exported from ${source.file} (section ${tag})`,
-        );
-        sidecarErrors++;
-      }
-      if (section.commit && gitDiffChanged(section.commit, source.file)) {
-        process.stderr.write(
-          `⚠   ${rel}: stale — re-verify. ${source.file} changed since ` +
-            `${section.commit.slice(0, 8)} (section ${tag}).\n` +
-            `   Update the sidecar then run: node bin/check-doc-provenance.mjs --update\n`,
-        );
-        sidecarWarnings++;
-      }
+      if (existsSync(join(root, source.file))) allSourceFiles.add(source.file);
     }
   }
+}
 
-  totalErrors += sidecarErrors;
-  totalWarnings += sidecarWarnings;
-  if (sidecarErrors === 0) validated.push({ sidecarPath, data });
+const blobs = hashBlobs(root, [...allSourceFiles]);
+
+for (const { sidecarPath, rel, data, mdPath } of parsedSidecars) {
+  const mdHeadings = parseHeadings(readFileSync(mdPath, "utf8"));
+
+  const { errors, warnings, staleSources } = verifySidecarSections(
+    data,
+    mdHeadings,
+    {
+      fileExists: (file) => existsSync(join(root, file)),
+      symbolCheck: (file, symbol) =>
+        isSymbolExported(readFileSync(join(root, file), "utf8"), symbol),
+      blobOf: (file) => blobs.get(file),
+    },
+  );
+
+  for (const message of errors) console.error(`✗  ${rel}: ${message}`);
+  for (const message of warnings) {
+    process.stderr.write(
+      `⚠   ${rel}: ${message}\n` +
+        `   Update the sidecar then run: node bin/check-doc-provenance.mjs --update\n`,
+    );
+  }
+
+  totalErrors += errors.length;
+  totalWarnings += warnings.length;
+  if (errors.length === 0)
+    validated.push({ sidecarPath, rel, data, staleSources });
 }
 
 if (totalErrors > 0) {
@@ -194,16 +159,16 @@ if (totalErrors > 0) {
 }
 
 if (isUpdate) {
-  const head = gitHead();
   const date = today();
-  for (const { sidecarPath, data } of validated) {
-    for (const section of data.sections) {
-      section.commit = head;
-      section.retrieved = date;
-    }
-    writeFileSync(sidecarPath, `${JSON.stringify(data, null, 2)}\n`);
-    console.log(`Updated: ${relative(root, sidecarPath)}`);
+  let updatedCount = 0;
+  for (const { sidecarPath, rel, data, staleSources } of validated) {
+    const next = applyBlobUpdates(data, staleSources, date);
+    if (next === null) continue;
+    writeFileSync(sidecarPath, `${JSON.stringify(next, null, 2)}\n`);
+    console.log(`Updated: ${rel}`);
+    updatedCount++;
   }
+  if (updatedCount === 0) console.log("✓  No sidecars needed re-stamping.");
   process.exit(0);
 }
 
