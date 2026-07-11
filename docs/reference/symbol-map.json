@@ -432,6 +432,11 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/importers/M3LListImporter.ts"
   },
+  "M3LImportStreamSummary": {
+    "submodule": "importers",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/importers/M3LListImporter.ts"
+  },
   "M3LCSVListImporter": {
     "submodule": "importers",
     "namespace": "core",
