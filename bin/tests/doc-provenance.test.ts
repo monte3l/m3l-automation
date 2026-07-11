@@ -70,9 +70,18 @@ describe("hashBlobs", () => {
     expect(calls[0]).toEqual(["hash-object", "--", "a.ts"]);
   });
 
-  test("returns an empty map on a failed batch", () => {
-    const runGit = () => ({ status: 1, stdout: "" });
-    expect(hashBlobs("/repo", ["a.ts"], runGit).size).toBe(0);
+  test("throws (rather than silently returning an empty map) on a failed batch", () => {
+    // A swallowed failure here would make every blob resolve to `undefined`,
+    // which verifySidecarSections treats as "nothing to compare against" and
+    // silently skips — disabling staleness detection repo-wide.
+    const runGit = () => ({
+      status: 1,
+      stdout: "",
+      stderr: "fatal: bad object",
+    });
+    expect(() => hashBlobs("/repo", ["a.ts"], runGit)).toThrow(
+      /git hash-object failed \(exit 1\): fatal: bad object/,
+    );
   });
 
   test("returns an empty map for an empty file list without spawning", () => {

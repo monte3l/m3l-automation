@@ -123,7 +123,17 @@ for (const sidecarPath of sidecars) {
   }
 }
 
-const blobs = hashBlobs(root, [...allSourceFiles]);
+let blobs;
+try {
+  blobs = hashBlobs(root, [...allSourceFiles]);
+} catch (e) {
+  console.error(`✗  ${e.message}`);
+  console.error(
+    "   Provenance staleness cannot be verified without it — fix the git " +
+      "invocation and re-run.",
+  );
+  process.exit(1);
+}
 
 for (const { sidecarPath, rel, data, mdPath } of parsedSidecars) {
   const mdHeadings = parseHeadings(readFileSync(mdPath, "utf8"));

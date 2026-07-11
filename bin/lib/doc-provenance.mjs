@@ -64,17 +64,30 @@ function defaultRunGit(args, opts) {
  * pass paths already known to exist on disk — `git hash-object` fails the
  * whole batch if any path is missing.
  *
+ * A failed batch throws rather than returning an empty map: swallowing it
+ * would make every source's blob resolve to `undefined`, which
+ * {@link verifySidecarSections} treats as "nothing to compare against" and
+ * silently skips the staleness warning for — disabling staleness detection
+ * repo-wide with a clean `✓ verified` exit. The caller (the CLI) is expected
+ * to treat this as the same class of hard error as a missing source file.
+ *
  * @param {string} root - absolute repo root, used as the git cwd
  * @param {string[]} files - repo-relative paths
- * @param {(args: string[], opts: { cwd: string }) => { status: number | null, stdout: string }} [runGit]
- * @returns {Map<string, string>} file -> 40-hex blob SHA (empty if the batch failed)
+ * @param {(args: string[], opts: { cwd: string }) => { status: number | null, stdout: string, stderr?: string }} [runGit]
+ * @returns {Map<string, string>} file -> 40-hex blob SHA
+ * @throws {Error} when the batched `git hash-object` call itself fails
  */
 export function hashBlobs(root, files, runGit = defaultRunGit) {
   const map = new Map();
   const unique = [...new Set(files)];
   if (unique.length === 0) return map;
   const res = runGit(["hash-object", "--", ...unique], { cwd: root });
-  if (res.status !== 0) return map;
+  if (res.status !== 0) {
+    const detail = (res.stderr ?? "").trim();
+    throw new Error(
+      `git hash-object failed (exit ${String(res.status)})${detail ? `: ${detail}` : ""}`,
+    );
+  }
   const lines = res.stdout.split("\n").filter((l) => l.length > 0);
   unique.forEach((file, i) => {
     if (lines[i]) map.set(file, lines[i].trim());
