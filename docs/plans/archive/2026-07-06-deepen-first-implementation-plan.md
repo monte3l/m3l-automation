@@ -2,7 +2,7 @@
 
 - **Date:** 2026-07-06 · **Baseline:** `main` at 1.0.0
 - **Implements:** the 1.1 wave of
-  [ADR-0021](../adr/0021-post-1.0-deepen-first-strategy.md), sequenced by
+  [ADR-0021](../../adr/0021-post-1.0-deepen-first-strategy.md), sequenced by
   `docs/plans/2026-07-06-post-1.0-deepen-first-roadmap.md`. This document is
   the per-workstream technical detail the hub dispatches spokes from.
 - **Ground truth:** every signature quoted below was read from source at the

@@ -8,7 +8,7 @@ four-spoke review → must-fix round → final verify + provenance. It records w
 shipped, what matched the plan, what diverged, and durable lessons for future
 submodule work.
 
-Plan of record: [`docs/plans/environment-submodule-implementation.md`](../plans/environment-submodule-implementation.md)
+Plan of record: [`docs/plans/environment-submodule-implementation.md`](../plans/archive/environment-submodule-implementation.md)
 
 ## Summary
 

@@ -2,8 +2,8 @@
 
 - **Date:** 2026-07-09 · **Starts:** now (pipeline shipped — ADR-0022
   Accepted, generator + gates merged via PRs #90/#91)
-- **Authority:** [ADR-0021](../adr/0021-post-1.0-deepen-first-strategy.md)
-  Phase 5 and [ADR-0022](../adr/0022-scripts-workspace-real-consumers.md).
+- **Authority:** [ADR-0021](../../adr/0021-post-1.0-deepen-first-strategy.md)
+  Phase 5 and [ADR-0022](../../adr/0022-reintroduce-scripts-workspace.md).
   This document is the **Phase F0 decision record** of
   `docs/plans/2026-07-06-consumer-fleet-roadmap.md` — it names the fleet and
   fixes its conventions. Technical detail lives in

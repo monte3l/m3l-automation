@@ -10,7 +10,7 @@ stripped real behavior, a secret-leak in error messages, an
 misunderstanding), and the durable lessons — two of which were promoted into the
 implementer spoke prompt in this same change set.
 
-Plan of record: [`docs/plans/config-submodule-implementation.md`](../plans/config-submodule-implementation.md)
+Plan of record: [`docs/plans/config-submodule-implementation.md`](../plans/archive/config-submodule-implementation.md)
 
 ## Summary
 

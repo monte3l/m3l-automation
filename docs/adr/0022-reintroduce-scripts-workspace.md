@@ -185,7 +185,7 @@ skill), and docs. Scaffold-era "once `M3LScript` is implemented…" text is
 **rewritten against the shipped API**, never restored verbatim. `turbo.json`,
 `vitest.config.ts`, `lefthook.yml`, and both CI workflows need no change
 (their globs and `^build` ordering are already workspace-agnostic). Exact
-diffs live in `docs/plans/2026-07-06-consumer-fleet-implementation-plan.md`.
+diffs live in `docs/plans/archive/2026-07-06-consumer-fleet-implementation-plan.md`.
 
 ## Consequences
 
@@ -214,8 +214,8 @@ diffs live in `docs/plans/2026-07-06-consumer-fleet-implementation-plan.md`.
   per-package anti-hollow gate above).
 - Authority / sequencing: [ADR-0021](./0021-post-1.0-deepen-first-strategy.md)
   (post-1.0 direction — the consumer fleet as the immediate next iteration),
-  `docs/plans/2026-07-06-consumer-fleet-roadmap.md` (Phase F0–F4),
-  `docs/plans/2026-07-06-consumer-fleet-implementation-plan.md` (WS-S1–S6).
+  `docs/plans/archive/2026-07-06-consumer-fleet-roadmap.md` (Phase F0–F4),
+  `docs/plans/archive/2026-07-06-consumer-fleet-implementation-plan.md` (WS-S1–S6).
 - Related: [ADR-0004](./0004-exports-map-contract.md) (frozen exports map —
   untouched), [ADR-0013](./0013-git-worktrees-for-task-isolation.md) /
   [ADR-0014](./0014-symmetric-worktree-tooling.md) (worktree isolation the

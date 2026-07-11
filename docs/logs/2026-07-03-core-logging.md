@@ -9,7 +9,7 @@ dependency whose real API contradicted the plan, repeated spoke-turn
 truncations, a security-review-driven rewrite of the redaction surface, and a
 31-commit rebase caused by four submodules landing in parallel during the run.
 
-Plan of record: [`docs/plans/logging-submodule-implementation.md`](../plans/logging-submodule-implementation.md)
+Plan of record: [`docs/plans/logging-submodule-implementation.md`](../plans/archive/logging-submodule-implementation.md)
 
 ## Summary
 

@@ -12,7 +12,7 @@ importantly, as the **F4-loop's first entry** — the library-friction backlog
 this first consumer produced.
 
 Plan of record:
-[`docs/plans/2026-07-09-consumer-scripts-implementation-plan.md`](../plans/2026-07-09-consumer-scripts-implementation-plan.md)
+[`docs/plans/2026-07-09-consumer-scripts-implementation-plan.md`](../plans/archive/2026-07-09-consumer-scripts-implementation-plan.md)
 (§4).
 
 ## Summary

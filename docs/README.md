@@ -39,7 +39,7 @@ import { Core, AWS } from "@m3l-automation/m3l-common";
 ### Architecture
 
 - [Architecture overview](m3l-common-architecture.md) — package shape, namespaces, and module map
-- [Implementation plan](m3l-common-implementation.md) — initial build strategy and milestone breakdown
+- [Implementation plan](plans/archive/m3l-common-implementation.md) — _historical_: the 2026-06-28 build strategy (all 22 submodules now shipped; see [Implementation status](implementation-status.md))
 
 ### API Reference — Core
 

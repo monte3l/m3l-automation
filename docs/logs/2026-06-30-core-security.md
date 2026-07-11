@@ -6,7 +6,7 @@ log records what shipped, what matched the plan, what diverged and why, and the
 durable lessons for the remaining 19 submodules.
 
 Plan of record:
-[`docs/plans/security-submodule-implementation.md`](../plans/security-submodule-implementation.md).
+[`docs/plans/security-submodule-implementation.md`](../plans/archive/security-submodule-implementation.md).
 
 ## Summary
 

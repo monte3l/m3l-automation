@@ -7,7 +7,7 @@ records what shipped, what matched the plan, the divergences (a twice-truncated
 writer spoke, a runtime-green-but-typecheck-red test file, and two rounds of
 security-guard asymmetry caught only by re-review), and the durable lessons.
 
-Plan of record: [`docs/plans/importers-submodule-implementation.md`](../plans/importers-submodule-implementation.md)
+Plan of record: [`docs/plans/importers-submodule-implementation.md`](../plans/archive/importers-submodule-implementation.md)
 
 ## Summary
 

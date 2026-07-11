@@ -7,7 +7,7 @@ truncated spoke returns and a coverage/type-design convergence on one field),
 and the durable lessons — most of which confirm existing rules rather than add
 new ones.
 
-Plan of record: [`docs/plans/polling-submodule-implementation.md`](../plans/polling-submodule-implementation.md)
+Plan of record: [`docs/plans/polling-submodule-implementation.md`](../plans/archive/polling-submodule-implementation.md)
 
 ## Summary
 

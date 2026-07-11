@@ -7,7 +7,7 @@ what shipped, what matched the plan, the divergences (a worktree/tooling
 mismatch, a stale test stub, a TypeScript handler gotcha, and the review
 must-fixes), and the durable lessons.
 
-Plan of record: [`docs/plans/exporters-submodule-implementation.md`](../plans/exporters-submodule-implementation.md)
+Plan of record: [`docs/plans/exporters-submodule-implementation.md`](../plans/archive/exporters-submodule-implementation.md)
 
 ## Summary
 

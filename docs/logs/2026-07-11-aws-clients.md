@@ -11,7 +11,7 @@ spoke overstepping its scope, and a two-channel failure-test gap), and durable
 lessons.
 
 Plan of record:
-[`docs/plans/2026-07-09-consumer-scripts-implementation-plan.md`](../plans/2026-07-09-consumer-scripts-implementation-plan.md)
+[`docs/plans/2026-07-09-consumer-scripts-implementation-plan.md`](../plans/archive/2026-07-09-consumer-scripts-implementation-plan.md)
 (§3, W0-L2).
 
 ## Summary
