@@ -137,8 +137,15 @@ ADR-0013 (its durable home), not a per-plan caveat.
 5. **Phase 2 — RED.** Dispatch `test-author` with the contract and the target
    test path (`packages/m3l-common/tests/<module>.test.ts`). It writes happy +
    failure + `expectTypeOf` tests against the contract and confirms they **fail
-   for the right reason** (the symbols don't exist yet). Update the state file:
-   that module → 🧪 tests-written.
+   for the right reason** (the symbols don't exist yet). **Hand the spoke a
+   journal path** (e.g. `<scratchpad>/test-author-<module>.md`), exactly as you
+   do for `code-implementer` in Phase 3 — writing tests against a large existing
+   suite is exploration-heavy and a spoke can burn its whole turn reading before
+   it writes a single test, truncating mid-run. If the return looks truncated
+   (a mid-thought, not a completion report), verify the real state via
+   `git diff` and **resume the same spoke via `SendMessage`** ("stop exploring,
+   write the tests now") rather than re-dispatching fresh — its exploration
+   context is still loaded. Update the state file: that module → 🧪 tests-written.
 
 6. **Phase 3 — GREEN.** Dispatch `code-implementer` with the contract and
    the failing tests. It writes the minimal `src/<ns>/<module>/index.ts`

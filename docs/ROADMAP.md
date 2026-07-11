@@ -32,6 +32,10 @@ Fleet-blocking friction surfaced by W1 (the first consumer). These compound
 across every later script, so they come **before** W2. Detail + source
 call-sites in [`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#library-friction-f-series).
 
+> **F8 is in review** on `feat/script-preset-seam` — the preset→config seam
+> (`options.preset` at precedence level 6) has landed on the branch; F4/F5/F1/F2/F6
+> remain pending.
+
 | Item   | What                                                                                            | Why now                                                                                                            |
 | ------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | **F8** | `M3LScript` preset seam — presets can't drive a run's config (config loader wires only CLI+env) | HIGH — breaks the §1.4 "presets + CLI overrides" design every fleet script assumes. Filed as task `task_ccda9320`. |
