@@ -15,16 +15,9 @@ _Maintenance_ at the bottom. Completed dated plans live under
 
 ## Status snapshot
 
-- **Library** (`@m3l-automation/m3l-common`) — **22/22 submodules done**, shipped
-  at **v1.1.0** (deepen-first WS-A…WS-G). Complete.
-- **Consumer fleet** (ADR-0022 / ADR-0021 Phase 5) — **W0 done** (core/json
-  `extractAll` #96; aws/clients `cloudWatchLogs`/`dynamoDBDocument`/`athena`
-  getters #97; template chore #98). **W1 `json-etl` done** (#99).
-  **W2–W5 pending.**
-- **Library friction (P0)** — **F4/F5 done** (paths seam: `script.paths` +
-  `M3LPaths.resolveInput/resolveOutput`), **F1/F2 done** (config `required`
-  flag + `M3LConfigMissingError` and `nonEmpty`/`minLength` validators);
-  **F8, F6 pending.**
+Per-item status lives in the tables below (Priority 0/1/2) and in
+[`docs/implementation-status.md`](./implementation-status.md) — the
+count-enforced library ledger (22/22 submodules, shipped at v1.1.0).
 
 ## Priority 0 — Library hardening (do before more scripts)
 
@@ -32,25 +25,14 @@ Fleet-blocking friction surfaced by W1 (the first consumer). These compound
 across every later script, so they come **before** W2. Detail + source
 call-sites in [`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#library-friction-f-series).
 
-> **F8 is in review** on `feat/script-preset-seam` — the preset→config seam
-> (`options.preset` at precedence level 6) has landed on the branch; F4/F5/F1/F2/F6
-> remain pending.
-
-| Item   | What                                                                                            | Why now                                                                                                            |
-| ------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| **F8** | `M3LScript` preset seam — presets can't drive a run's config (config loader wires only CLI+env) | HIGH — breaks the §1.4 "presets + CLI overrides" design every fleet script assumes. Filed as task `task_ccda9320`. |
-| **F6** | Importer surfaces its skip count                                                                | Only reachable via the `import:error` event.                                                                       |
-
-> **Landed** (paths seam): **F4** `M3LScript.paths` getter and **F5**
-> `M3LPaths.resolveInput/resolveOutput(name)` (join + traversal-contain) shipped;
-> `json-etl` now consumes both (its hand-built `new M3LPaths()` and local
-> `resolveContainedPath` are gone).
->
-> **Landed** (config validators): **F1** `required: true` on
-> `M3LConfigParameter` (throws `M3LConfigMissingError`) and **F2**
-> `nonEmpty`/`minLength` on `M3LConfigValidators`; `json-etl` now declares
-> `required` + `nonEmpty` instead of hand-rolled guards. The cross-parameter
-> half of F1 is deferred as **F1b** (Priority 2). Remaining P0: F8, F6.
+| Item   | What                                                                                            | Status                                | Why now / Notes                                                                                                               |
+| ------ | ----------------------------------------------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **F8** | `M3LScript` preset seam — presets can't drive a run's config (config loader wires only CLI+env) | in review (`feat/script-preset-seam`) | HIGH — breaks the §1.4 "presets + CLI overrides" design every fleet script assumes. Filed as task `task_ccda9320`.            |
+| **F6** | Importer surfaces its skip count                                                                | pending                               | Only reachable via the `import:error` event.                                                                                  |
+| **F4** | `M3LScript.paths` getter (paths seam)                                                           | done                                  | `json-etl` now consumes it; its hand-built `new M3LPaths()` is gone.                                                          |
+| **F5** | `M3LPaths.resolveInput/resolveOutput(name)` (join + traversal-contain, paths seam)              | done                                  | `json-etl`'s local `resolveContainedPath` is gone.                                                                            |
+| **F1** | `required: true` on `M3LConfigParameter` (throws `M3LConfigMissingError`)                       | done                                  | `json-etl` declares `required` instead of hand-rolled presence guards. Cross-parameter half deferred as **F1b** (Priority 2). |
+| **F2** | `nonEmpty`/`minLength` on `M3LConfigValidators`                                                 | done                                  | `json-etl` declares `nonEmpty` instead of hand-rolled guards.                                                                 |
 
 ## Priority 1 — Consumer fleet
 
@@ -92,3 +74,10 @@ item. New friction from a work log is filed into `IMPLEMENTATION.md` (not left
 in the log). This is wired into the `implementing-scripts` /
 `implementing-submodules` close-out and `writing-work-logs` — see `CLAUDE.md` →
 _Agent Operating Model_.
+
+**Row-locality rule** (ADR-0024): one item = one table row; a status change
+touches only that row; no prose sentence may aggregate more than one item's
+status. This is why the Priority 0/1 tables carry a `Status` column instead of
+narrative "Landed …" blockquotes — a branch flipping one item's status edits
+exactly one line, so two branches landing different items never conflict on
+this file.
