@@ -7,46 +7,55 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/messaging/M3LMessenger.ts",
-          "symbol": "M3LMessenger"
+          "symbol": "M3LMessenger",
+          "blob": "45313ed8b3bac804596c7c128be1225d7ebbe30d"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
-          "symbol": "M3LMessageWriter"
+          "symbol": "M3LMessageWriter",
+          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
-          "symbol": "M3LMessageReader"
+          "symbol": "M3LMessageReader",
+          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
-          "symbol": "M3LOutboundMessage"
+          "symbol": "M3LOutboundMessage",
+          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
-          "symbol": "M3LReceivedMessage"
+          "symbol": "M3LReceivedMessage",
+          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
-          "symbol": "M3LMessageTarget"
+          "symbol": "M3LMessageTarget",
+          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
-          "symbol": "M3LMessageAuthor"
+          "symbol": "M3LMessageAuthor",
+          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
-          "symbol": "M3LMessageReceipt"
+          "symbol": "M3LMessageReceipt",
+          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
-          "symbol": "M3LInboundAttachment"
+          "symbol": "M3LInboundAttachment",
+          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
-          "symbol": "M3LOutboundAttachment"
+          "symbol": "M3LOutboundAttachment",
+          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -54,26 +63,30 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
-          "symbol": "M3LMessageWriter"
+          "symbol": "M3LMessageWriter",
+          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
-          "symbol": "M3LMessageReader"
+          "symbol": "M3LMessageReader",
+          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
-          "symbol": "M3LOutboundMessage"
+          "symbol": "M3LOutboundMessage",
+          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
-          "symbol": "M3LReceivedMessage"
+          "symbol": "M3LReceivedMessage",
+          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
-          "symbol": "M3LMessageReceipt"
+          "symbol": "M3LMessageReceipt",
+          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -81,10 +94,10 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/messaging/M3LMessenger.ts",
-          "symbol": "M3LMessenger"
+          "symbol": "M3LMessenger",
+          "blob": "45313ed8b3bac804596c7c128be1225d7ebbe30d"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -92,14 +105,15 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/messaging/M3LMessenger.ts",
-          "symbol": "M3LMessenger"
+          "symbol": "M3LMessenger",
+          "blob": "45313ed8b3bac804596c7c128be1225d7ebbe30d"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
-          "symbol": "M3LMessageReader"
+          "symbol": "M3LMessageReader",
+          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     }
   ]

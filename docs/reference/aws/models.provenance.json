@@ -7,26 +7,30 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
-          "symbol": "M3LAWSCredentialsErrorType"
+          "symbol": "M3LAWSCredentialsErrorType",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
         },
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
-          "symbol": "M3LAWSCredentialsErrorAnalysis"
+          "symbol": "M3LAWSCredentialsErrorAnalysis",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
         },
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
-          "symbol": "M3LAWSRetryContext"
+          "symbol": "M3LAWSRetryContext",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
         },
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
-          "symbol": "M3LAWSLoginResult"
+          "symbol": "M3LAWSLoginResult",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
         },
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
-          "symbol": "M3LAWSCredentialsManagerOptions"
+          "symbol": "M3LAWSCredentialsManagerOptions",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -34,10 +38,10 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
-          "symbol": "M3LAWSCredentialsErrorType"
+          "symbol": "M3LAWSCredentialsErrorType",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -45,10 +49,10 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
-          "symbol": "M3LAWSCredentialsErrorAnalysis"
+          "symbol": "M3LAWSCredentialsErrorAnalysis",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -56,10 +60,10 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
-          "symbol": "M3LAWSRetryContext"
+          "symbol": "M3LAWSRetryContext",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -67,10 +71,10 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
-          "symbol": "M3LAWSLoginResult"
+          "symbol": "M3LAWSLoginResult",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -78,10 +82,10 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
-          "symbol": "M3LAWSCredentialsManagerOptions"
+          "symbol": "M3LAWSCredentialsManagerOptions",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -89,10 +93,10 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
-          "symbol": "M3LAWSCredentialsErrorType"
+          "symbol": "M3LAWSCredentialsErrorType",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     }
   ]
