@@ -42,8 +42,8 @@
           "symbol": "M3LFileCopyError"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "97e184b22bebc831fd1b1b468f35c4d31e68b6e5",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Methods",
@@ -53,8 +53,8 @@
           "symbol": "M3LFileCopier"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "97e184b22bebc831fd1b1b468f35c4d31e68b6e5",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Default subdirectory for a path type",
@@ -64,8 +64,8 @@
           "symbol": "getDefaultSubdirForPathType"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "97e184b22bebc831fd1b1b468f35c4d31e68b6e5",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Notes and behavior",
@@ -83,8 +83,8 @@
           "symbol": "M3LFileCopyError"
         }
       ],
-      "commit": "28bf9526278dc469c96c220250578e95f6a58f82",
-      "retrieved": "2026-07-06"
+      "commit": "97e184b22bebc831fd1b1b468f35c4d31e68b6e5",
+      "retrieved": "2026-07-11"
     }
   ]
 }
