@@ -10,10 +10,9 @@ import { runJsonEtl } from "./steps/run-json-etl.js";
 //
 // `run`'s main function takes no arguments; reach the library through the
 // script instance (`script.logger`, `await script.getConfiguration()`,
-// `script.aws`) and inject what each step needs as parameters. `M3LScript`
-// does not expose its own `M3LPaths` instance, so one is constructed here;
-// the per-run correlation id is captured by `hooks.onBeforeRun` (mainFn
-// itself receives no `ctx`) and read back via `getCorrelationId()`.
+// `script.aws`, `script.paths`) and inject what each step needs as
+// parameters. The per-run correlation id is captured by `hooks.onBeforeRun`
+// (mainFn itself receives no `ctx`) and read back via `getCorrelationId()`.
 const script = new Core.M3LScript({
   metadata: { name: "json-etl", version: "0.0.0" },
   config: { params: configParameters },
@@ -22,7 +21,7 @@ const script = new Core.M3LScript({
 
 await script.run(async () => {
   const config = await script.getConfiguration();
-  const paths = new Core.M3LPaths();
+  const paths = script.paths;
   await runJsonEtl({
     config,
     paths,
