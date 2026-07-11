@@ -35,6 +35,23 @@ node bin/check-doc-provenance.mjs --update
 Updates every sidecar's `commit` to `git HEAD` and `retrieved` to today's
 date. Only run after step 1 passed (even with staleness warnings).
 
+**Scope the re-stamp when only some modules changed.** The bare `--update` is
+**repo-wide** — it bumps every validated sidecar to HEAD, so a single-module
+change ends up falsely re-stamping the other 21 sidecars (their `commit` jumps to
+your unrelated HEAD, claiming a re-verification that never happened). For a
+change that touched only some modules, scope it to the sidecars that reference a
+changed source file:
+
+```bash
+node bin/check-doc-provenance.mjs --update --affected <path/to/changed-source-file>
+```
+
+Then diff-check: `git status --porcelain -- docs/reference/`. If a sidecar for an
+untouched module shows as modified, the restamp was too broad —
+`git checkout -- docs/reference/` and re-run scoped. Use the bare repo-wide
+`--update` only when the change genuinely spans all modules (e.g. a
+tree-wide refactor) or as part of a dedicated reconciliation sweep.
+
 ### 3 — Verify doc counts and documented exports
 
 ```bash

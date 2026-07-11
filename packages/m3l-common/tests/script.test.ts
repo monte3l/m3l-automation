@@ -112,6 +112,8 @@ import {
   M3LConfigParameter,
   M3LConfigParameterType,
   M3LConfigSchema,
+  M3LInMemoryConfigProvider,
+  M3LPresetConfigProvider,
   M3LUnsafeConfigKeyError,
 } from "../src/core/config/index.js";
 import {
@@ -1529,6 +1531,23 @@ describe("M3LScriptOptions — type-level contract", () => {
     const options: M3LScriptOptions = { metadata };
     expect(options.correlationId).toBeUndefined();
   });
+
+  // F8 (preset seam): `options.preset` is an optional file path to a
+  // YAML/JSON preset, loaded (validated against `options.config.params`) and
+  // inserted at precedence level 6 — below CLI/env, above static defaults.
+  test("F8: preset is optional (string | undefined)", () => {
+    expectTypeOf<M3LScriptOptions["preset"]>().toEqualTypeOf<
+      string | undefined
+    >();
+  });
+
+  test("F8: an options object declaring a preset path is valid", () => {
+    const options: M3LScriptOptions = {
+      metadata,
+      preset: "./data/config/presets/prod.yaml",
+    };
+    expect(options.preset).toBe("./data/config/presets/prod.yaml");
+  });
 });
 
 // =============================================================================
@@ -1943,6 +1962,107 @@ describe("M3LScriptConfigLoader", () => {
     const config = await loader.load({ params: [unset] });
 
     expect(config.has("totallyUnset")).toBe(false);
+  });
+});
+
+// =============================================================================
+// M3LScriptConfigLoader — presetProviders precedence (F8: preset seam)
+//
+// Contract: `load()` gains a distinct, LOWEST-priority provider slot appended
+// AFTER CLI + env: providers = [...extraProviders, CLI, env, ...presetProviders].
+// `extraProviders` stays front-spread (highest priority).
+// =============================================================================
+describe("M3LScriptConfigLoader — presetProviders precedence (F8)", () => {
+  const originalArgv = process.argv;
+
+  /** Replaces `process.argv.slice(2)` (what `M3LCommandLineConfigProvider` reads by default) with `args`. */
+  function stubArgv(...args: string[]): void {
+    process.argv = [
+      originalArgv[0] ?? "node",
+      originalArgv[1] ?? "script",
+      ...args,
+    ];
+  }
+
+  afterEach(() => {
+    process.argv = originalArgv;
+  });
+
+  test("a presetProviders value fills a param with no CLI/env value, overriding its static defaultValue", async () => {
+    stubArgv();
+    const loader = new M3LScriptConfigLoader();
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+      defaultValue: "default-region",
+    });
+
+    const config = await loader.load({
+      params: [region],
+      presetProviders: [
+        new M3LPresetConfigProvider({ region: "preset-region" }),
+      ],
+    });
+
+    expect(config.get("region")).toBe("preset-region");
+  });
+
+  test("a CLI value overrides a presetProviders value for the same parameter", async () => {
+    stubArgv("--region=cli-region");
+    const loader = new M3LScriptConfigLoader();
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+
+    const config = await loader.load({
+      params: [region],
+      presetProviders: [
+        new M3LPresetConfigProvider({ region: "preset-region" }),
+      ],
+    });
+
+    expect(config.get("region")).toBe("cli-region");
+  });
+
+  test("an environment value overrides a presetProviders value for the same parameter", async () => {
+    stubArgv();
+    vi.stubEnv("REGION", "env-region");
+    const loader = new M3LScriptConfigLoader();
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+
+    const config = await loader.load({
+      params: [region],
+      presetProviders: [
+        new M3LPresetConfigProvider({ region: "preset-region" }),
+      ],
+    });
+
+    expect(config.get("region")).toBe("env-region");
+  });
+
+  test("an extraProviders value (front-spread, highest priority) overrides a presetProviders value", async () => {
+    stubArgv();
+    const loader = new M3LScriptConfigLoader();
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+
+    const config = await loader.load({
+      params: [region],
+      extraProviders: [
+        new M3LInMemoryConfigProvider({ region: "extra-region" }),
+      ],
+      presetProviders: [
+        new M3LPresetConfigProvider({ region: "preset-region" }),
+      ],
+    });
+
+    expect(config.get("region")).toBe("extra-region");
   });
 });
 
@@ -2616,6 +2736,237 @@ describe("M3LScriptPresetLoader — extends inheritance", () => {
         readonly string[]
       >();
     });
+  });
+});
+
+// =============================================================================
+// M3LScript — preset seam (F8)
+//
+// Contract: docs/reference/core/script.md + core/config.md. `options.preset`
+// is an optional file path to a YAML/JSON preset. When set, `M3LScript`
+// loads it (validated against `options.config.params`) and wires it in at
+// precedence level 6 (below CLI/env, above static `defaultValue`). Absent =>
+// no behavior change, no preset file read. F8 introduces NO new error
+// types -- the preset loader's own throws (`M3LPresetUnknownKeysError`, and
+// an `M3LError` coded "ERR_PRESET_LOAD" for a missing/malformed file)
+// propagate unchanged through `loadConfig()` -> `run()` (`onError` fires,
+// then the original error is rethrown).
+// =============================================================================
+describe("M3LScript — preset seam (F8)", () => {
+  const originalArgv = process.argv;
+
+  /** Replaces `process.argv.slice(2)` (what `M3LCommandLineConfigProvider` reads by default) with `args`. */
+  function stubArgv(...args: string[]): void {
+    process.argv = [
+      originalArgv[0] ?? "node",
+      originalArgv[1] ?? "script",
+      ...args,
+    ];
+  }
+
+  /** The single-parameter schema every test in this block declares. */
+  function makeRegionParam(defaultValue?: string): M3LConfigParameter {
+    return defaultValue === undefined
+      ? new M3LConfigParameter({
+          name: "region",
+          type: M3LConfigParameterType.STRING,
+        })
+      : new M3LConfigParameter({
+          name: "region",
+          type: M3LConfigParameterType.STRING,
+          defaultValue,
+        });
+  }
+
+  beforeEach(() => {
+    stubNonAwsEnvironment();
+    stubArgv();
+  });
+
+  afterEach(() => {
+    process.argv = originalArgv;
+  });
+
+  test("a preset value flows through run() into resolved configuration, overriding the param's static defaultValue", async () => {
+    vi.spyOn(fs, "readFileSync").mockReturnValue(
+      JSON.stringify({ region: "preset-region" }),
+    );
+    let resolvedRegion: unknown;
+    const script = new M3LScript({
+      metadata,
+      config: { params: [makeRegionParam("default-region")] },
+      preset: "/fixtures/preset.json",
+      hooks: {
+        onAfterConfigLoad: (ctx) => {
+          resolvedRegion = ctx.config.get("region");
+        },
+      },
+    });
+
+    await script.run(() => {});
+
+    expect(resolvedRegion).toBe("preset-region");
+  });
+
+  test("a CLI value overrides the preset value for the same parameter", async () => {
+    stubArgv("--region=cli-region");
+    vi.spyOn(fs, "readFileSync").mockReturnValue(
+      JSON.stringify({ region: "preset-region" }),
+    );
+    let resolvedRegion: unknown;
+    const script = new M3LScript({
+      metadata,
+      config: { params: [makeRegionParam()] },
+      preset: "/fixtures/preset.json",
+      hooks: {
+        onAfterConfigLoad: (ctx) => {
+          resolvedRegion = ctx.config.get("region");
+        },
+      },
+    });
+
+    await script.run(() => {});
+
+    expect(resolvedRegion).toBe("cli-region");
+  });
+
+  test("an environment value overrides the preset value for the same parameter", async () => {
+    vi.stubEnv("REGION", "env-region");
+    vi.spyOn(fs, "readFileSync").mockReturnValue(
+      JSON.stringify({ region: "preset-region" }),
+    );
+    let resolvedRegion: unknown;
+    const script = new M3LScript({
+      metadata,
+      config: { params: [makeRegionParam()] },
+      preset: "/fixtures/preset.json",
+      hooks: {
+        onAfterConfigLoad: (ctx) => {
+          resolvedRegion = ctx.config.get("region");
+        },
+      },
+    });
+
+    await script.run(() => {});
+
+    expect(resolvedRegion).toBe("env-region");
+  });
+
+  test("omitting options.preset resolves configuration exactly as before, with no preset file read", async () => {
+    const readSpy = vi.spyOn(fs, "readFileSync");
+    let resolvedRegion: unknown;
+    const script = new M3LScript({
+      metadata,
+      config: { params: [makeRegionParam("default-region")] },
+      hooks: {
+        onAfterConfigLoad: (ctx) => {
+          resolvedRegion = ctx.config.get("region");
+        },
+      },
+    });
+
+    await script.run(() => {});
+
+    expect(resolvedRegion).toBe("default-region");
+    expect(readSpy).not.toHaveBeenCalled();
+  });
+
+  test("a preset key not declared in options.config.params rejects run() with M3LPresetUnknownKeysError", async () => {
+    vi.spyOn(fs, "readFileSync").mockReturnValue(
+      JSON.stringify({ unknownKey: "value" }),
+    );
+    let onErrorError: unknown;
+    const script = new M3LScript({
+      metadata,
+      config: { params: [makeRegionParam()] },
+      preset: "/fixtures/preset-unknown-key.json",
+      hooks: {
+        onError: (_ctx, error) => {
+          onErrorError = error;
+        },
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      await script.run(() => {});
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LPresetUnknownKeysError);
+    expect(onErrorError).toBe(thrown);
+  });
+
+  test("a preset key that IS a declared param resolves fine (no throw)", async () => {
+    vi.spyOn(fs, "readFileSync").mockReturnValue(
+      JSON.stringify({ region: "preset-region" }),
+    );
+    const script = new M3LScript({
+      metadata,
+      config: { params: [makeRegionParam()] },
+      preset: "/fixtures/preset-known-key.json",
+    });
+
+    await expect(script.run(() => {})).resolves.toBeUndefined();
+  });
+
+  test("a missing/unreadable preset file rejects run() with an M3LError coded ERR_PRESET_LOAD (M3LPresetLoadError stays unexported)", async () => {
+    const enoentError = Object.assign(new Error("no such file or directory"), {
+      code: "ENOENT",
+    });
+    vi.spyOn(fs, "readFileSync").mockImplementation(() => {
+      throw enoentError;
+    });
+    let onErrorError: unknown;
+    const script = new M3LScript({
+      metadata,
+      config: { params: [makeRegionParam()] },
+      preset: "/fixtures/does-not-exist.json",
+      hooks: {
+        onError: (_ctx, error) => {
+          onErrorError = error;
+        },
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      await script.run(() => {});
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_PRESET_LOAD");
+    expect((thrown as M3LError).cause).toBe(enoentError);
+    expect(onErrorError).toBe(thrown);
+  });
+
+  test("preset supplied without options.config rejects run() with M3LPresetUnknownKeysError, since every top-level preset key is then unknown", async () => {
+    vi.spyOn(fs, "readFileSync").mockReturnValue(
+      JSON.stringify({ foo: "bar" }),
+    );
+    let onErrorError: unknown;
+    const script = new M3LScript({
+      metadata,
+      preset: "/fixtures/preset-no-config.json",
+      hooks: {
+        onError: (_ctx, error) => {
+          onErrorError = error;
+        },
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      await script.run(() => {});
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LPresetUnknownKeysError);
+    expect(onErrorError).toBe(thrown);
   });
 });
 

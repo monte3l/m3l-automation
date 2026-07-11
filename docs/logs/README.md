@@ -35,12 +35,13 @@ by `/writing-work-logs`; recurring lessons graduate into the rules/agents via
 
 ## Consumer-fleet program (ADR-0021 Phase 5 / ADR-0022)
 
-| Date       | Unit                                                                   | Log                                                  |
-| ---------- | ---------------------------------------------------------------------- | ---------------------------------------------------- |
-| 2026-07-09 | Script production pipeline (generator + gates)                         | [script-pipeline](./2026-07-09-script-pipeline.md)   |
-| 2026-07-10 | W0-L1 — `core/json` extraction extension (`extractAll`)                | [core-json](./2026-07-10-core-json.md)               |
-| 2026-07-11 | W0-L2 — `aws/clients` getters (cloudWatchLogs/dynamoDBDocument/athena) | [aws-clients](./2026-07-11-aws-clients.md)           |
-| 2026-07-11 | W1 — `json-etl` (first end-to-end consumer script)                     | [scripts-json-etl](./2026-07-11-scripts-json-etl.md) |
+| Date       | Unit                                                                   | Log                                                                |
+| ---------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 2026-07-09 | Script production pipeline (generator + gates)                         | [script-pipeline](./2026-07-09-script-pipeline.md)                 |
+| 2026-07-10 | W0-L1 — `core/json` extraction extension (`extractAll`)                | [core-json](./2026-07-10-core-json.md)                             |
+| 2026-07-11 | W0-L2 — `aws/clients` getters (cloudWatchLogs/dynamoDBDocument/athena) | [aws-clients](./2026-07-11-aws-clients.md)                         |
+| 2026-07-11 | W1 — `json-etl` (first end-to-end consumer script)                     | [scripts-json-etl](./2026-07-11-scripts-json-etl.md)               |
+| 2026-07-11 | F8 — `core/script` preset→config seam (`options.preset`, level 6)      | [core-script-preset-seam](./2026-07-11-core-script-preset-seam.md) |
 
 > W1 `json-etl`'s 8 library-friction items (F1–F8) are tracked in
 > [`../plans/IMPLEMENTATION.md`](../plans/IMPLEMENTATION.md#library-friction-f-series).
