@@ -11,6 +11,12 @@
 // reconciliation pass instead — the badges are a periodically refreshed
 // snapshot, and the authoritative source is always `git log` itself.
 //
+// Deliberately main-only (ADR-0024): running this on a feature branch bakes
+// that branch's own commits into the badge count, producing README churn
+// that conflicts with every other open branch's badge state on rebase. Run
+// it post-merge (on `main`) or during release grooming, never as part of a
+// branch-time /syncing-docs pass.
+//
 // Usage:
 //   node bin/gen-commit-stats.mjs   # idempotent; rewrites README.md in place
 import process from "node:process";
