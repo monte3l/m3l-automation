@@ -58,8 +58,8 @@
           "symbol": "M3LLoggerOptions"
         }
       ],
-      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
-      "retrieved": "2026-07-07"
+      "commit": "97e184b22bebc831fd1b1b468f35c4d31e68b6e5",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "`M3LLogger` methods",
@@ -69,8 +69,8 @@
           "symbol": "M3LLogger"
         }
       ],
-      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
-      "retrieved": "2026-07-07"
+      "commit": "97e184b22bebc831fd1b1b468f35c4d31e68b6e5",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "`M3LLogEventCategory`",
@@ -80,8 +80,8 @@
           "symbol": "M3LLogEventCategory"
         }
       ],
-      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
-      "retrieved": "2026-07-07"
+      "commit": "97e184b22bebc831fd1b1b468f35c4d31e68b6e5",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Correlation IDs",
@@ -99,8 +99,8 @@
           "symbol": "M3LJsonLoggerHandler"
         }
       ],
-      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
-      "retrieved": "2026-07-07"
+      "commit": "97e184b22bebc831fd1b1b468f35c4d31e68b6e5",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Composing handlers",
@@ -122,8 +122,8 @@
           "symbol": "M3LJsonLoggerHandler"
         }
       ],
-      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
-      "retrieved": "2026-07-07"
+      "commit": "97e184b22bebc831fd1b1b468f35c4d31e68b6e5",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Rendering a table",
@@ -141,8 +141,8 @@
           "symbol": "M3LTableColumn"
         }
       ],
-      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
-      "retrieved": "2026-07-07"
+      "commit": "97e184b22bebc831fd1b1b468f35c4d31e68b6e5",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Redacting sensitive data",
@@ -156,8 +156,8 @@
           "symbol": "redactSensitiveLogValue"
         }
       ],
-      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
-      "retrieved": "2026-07-07"
+      "commit": "97e184b22bebc831fd1b1b468f35c4d31e68b6e5",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Notes and behavior",
@@ -183,8 +183,8 @@
           "symbol": "M3LTableFormatter"
         }
       ],
-      "commit": "647fd5ff60dfc2277ac7a40896df6bc7a5646eb6",
-      "retrieved": "2026-07-07"
+      "commit": "97e184b22bebc831fd1b1b468f35c4d31e68b6e5",
+      "retrieved": "2026-07-11"
     }
   ]
 }

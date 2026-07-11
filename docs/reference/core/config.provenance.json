@@ -94,8 +94,8 @@
           "symbol": "M3LConfigValidationError"
         }
       ],
-      "commit": "424e4fb1a235ad9c908a11c80dda656af7c98938",
-      "retrieved": "2026-07-07"
+      "commit": "97e184b22bebc831fd1b1b468f35c4d31e68b6e5",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Schema-time validation",
@@ -117,8 +117,8 @@
           "symbol": "M3LConfigParameter"
         }
       ],
-      "commit": "424e4fb1a235ad9c908a11c80dda656af7c98938",
-      "retrieved": "2026-07-07"
+      "commit": "97e184b22bebc831fd1b1b468f35c4d31e68b6e5",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Source tracking",
@@ -128,8 +128,8 @@
           "symbol": "M3LConfig"
         }
       ],
-      "commit": "424e4fb1a235ad9c908a11c80dda656af7c98938",
-      "retrieved": "2026-07-07"
+      "commit": "97e184b22bebc831fd1b1b468f35c4d31e68b6e5",
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Notes and behavior",
@@ -143,8 +143,8 @@
           "symbol": "M3LUnknownParameterDetector"
         }
       ],
-      "commit": "424e4fb1a235ad9c908a11c80dda656af7c98938",
-      "retrieved": "2026-07-07"
+      "commit": "97e184b22bebc831fd1b1b468f35c4d31e68b6e5",
+      "retrieved": "2026-07-11"
     }
   ]
 }
