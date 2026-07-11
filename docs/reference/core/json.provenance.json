@@ -7,50 +7,60 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/json/fieldPath.ts",
-          "symbol": "parseFieldPath"
+          "symbol": "parseFieldPath",
+          "blob": "1bcc8e3ead9f90a526abbbf05eec8690a20dfcd0"
         },
         {
           "file": "packages/m3l-common/src/core/json/fieldPath.ts",
-          "symbol": "navigateFieldPath"
+          "symbol": "navigateFieldPath",
+          "blob": "1bcc8e3ead9f90a526abbbf05eec8690a20dfcd0"
         },
         {
           "file": "packages/m3l-common/src/core/json/fieldPath.ts",
-          "symbol": "extractAll"
+          "symbol": "extractAll",
+          "blob": "1bcc8e3ead9f90a526abbbf05eec8690a20dfcd0"
         },
         {
           "file": "packages/m3l-common/src/core/json/M3LJSONFieldExtractor.ts",
-          "symbol": "M3LJSONFieldExtractor"
+          "symbol": "M3LJSONFieldExtractor",
+          "blob": "dbf4c20aea99c6588b372b09b117841c47f9719e"
         },
         {
           "file": "packages/m3l-common/src/core/json/M3LJSONFormatDetector.ts",
-          "symbol": "M3LJSONFormatDetector"
+          "symbol": "M3LJSONFormatDetector",
+          "blob": "214d482ec252cac8fa503669a140b95b527b35c6"
         },
         {
           "file": "packages/m3l-common/src/core/json/types.ts",
-          "symbol": "M3LJSONFormat"
+          "symbol": "M3LJSONFormat",
+          "blob": "be49d176c3f7a186f429d1ac655cbf4c2d6f100a"
         },
         {
           "file": "packages/m3l-common/src/core/json/types.ts",
-          "symbol": "M3LJSONDetectionDepth"
+          "symbol": "M3LJSONDetectionDepth",
+          "blob": "be49d176c3f7a186f429d1ac655cbf4c2d6f100a"
         },
         {
           "file": "packages/m3l-common/src/core/json/types.ts",
-          "symbol": "M3LJSONDetectorOptions"
+          "symbol": "M3LJSONDetectorOptions",
+          "blob": "be49d176c3f7a186f429d1ac655cbf4c2d6f100a"
         },
         {
           "file": "packages/m3l-common/src/core/json/types.ts",
-          "symbol": "M3LJSONDetectionResult"
+          "symbol": "M3LJSONDetectionResult",
+          "blob": "be49d176c3f7a186f429d1ac655cbf4c2d6f100a"
         },
         {
           "file": "packages/m3l-common/src/core/json/types.ts",
-          "symbol": "M3LConfidence"
+          "symbol": "M3LConfidence",
+          "blob": "be49d176c3f7a186f429d1ac655cbf4c2d6f100a"
         },
         {
           "file": "packages/m3l-common/src/core/json/M3LJSONFormatDetectionError.ts",
-          "symbol": "M3LJSONFormatDetectionError"
+          "symbol": "M3LJSONFormatDetectionError",
+          "blob": "a2412f24167ea3bfcf07e542f85ca258882ea2f3"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -58,34 +68,40 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/json/fieldPath.ts",
-          "symbol": "parseFieldPath"
+          "symbol": "parseFieldPath",
+          "blob": "1bcc8e3ead9f90a526abbbf05eec8690a20dfcd0"
         },
         {
           "file": "packages/m3l-common/src/core/json/fieldPath.ts",
-          "symbol": "navigateFieldPath"
+          "symbol": "navigateFieldPath",
+          "blob": "1bcc8e3ead9f90a526abbbf05eec8690a20dfcd0"
         },
         {
           "file": "packages/m3l-common/src/core/json/fieldPath.ts",
-          "symbol": "extractAll"
+          "symbol": "extractAll",
+          "blob": "1bcc8e3ead9f90a526abbbf05eec8690a20dfcd0"
         },
         {
           "file": "packages/m3l-common/src/core/json/M3LJSONFieldExtractor.ts",
-          "symbol": "M3LJSONFieldExtractor"
+          "symbol": "M3LJSONFieldExtractor",
+          "blob": "dbf4c20aea99c6588b372b09b117841c47f9719e"
         },
         {
           "file": "packages/m3l-common/src/core/json/M3LJSONFormatDetector.ts",
-          "symbol": "M3LJSONFormatDetector"
+          "symbol": "M3LJSONFormatDetector",
+          "blob": "214d482ec252cac8fa503669a140b95b527b35c6"
         },
         {
           "file": "packages/m3l-common/src/core/json/types.ts",
-          "symbol": "M3LConfidence"
+          "symbol": "M3LConfidence",
+          "blob": "be49d176c3f7a186f429d1ac655cbf4c2d6f100a"
         },
         {
           "file": "packages/m3l-common/src/core/json/M3LJSONFormatDetectionError.ts",
-          "symbol": "M3LJSONFormatDetectionError"
+          "symbol": "M3LJSONFormatDetectionError",
+          "blob": "a2412f24167ea3bfcf07e542f85ca258882ea2f3"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     }
   ]

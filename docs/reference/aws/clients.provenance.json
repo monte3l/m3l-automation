@@ -7,26 +7,30 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/aws/clients/provider.ts",
-          "symbol": "AWSClientProvider"
+          "symbol": "AWSClientProvider",
+          "blob": "2821ccd910b8cb54eef5f11a2d005e4bf5f4c980"
         },
         {
           "file": "packages/m3l-common/src/aws/clients/multi-provider.ts",
-          "symbol": "AWSMultiClientProvider"
+          "symbol": "AWSMultiClientProvider",
+          "blob": "f4e1dedd3763bcd2c2080eea162a90e94f401264"
         },
         {
           "file": "packages/m3l-common/src/aws/clients/aws-provider.ts",
-          "symbol": "AWSProvider"
+          "symbol": "AWSProvider",
+          "blob": "7a24e01c1fdf28b3692951be12f7cf16f0820866"
         },
         {
           "file": "packages/m3l-common/src/aws/clients/region.ts",
-          "symbol": "AWS_REGION"
+          "symbol": "AWS_REGION",
+          "blob": "b5d25a4d22e17be0297c8eef12229ea2a350c42d"
         },
         {
           "file": "packages/m3l-common/src/aws/clients/error.ts",
-          "symbol": "M3LAWSClientError"
+          "symbol": "M3LAWSClientError",
+          "blob": "3f0bc7819dda0629b8c979a66965725d47505574"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -34,10 +38,10 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/aws/clients/provider.ts",
-          "symbol": "AWSClientProvider"
+          "symbol": "AWSClientProvider",
+          "blob": "2821ccd910b8cb54eef5f11a2d005e4bf5f4c980"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -45,10 +49,10 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/aws/clients/multi-provider.ts",
-          "symbol": "AWSMultiClientProvider"
+          "symbol": "AWSMultiClientProvider",
+          "blob": "f4e1dedd3763bcd2c2080eea162a90e94f401264"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -56,10 +60,10 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/aws/clients/aws-provider.ts",
-          "symbol": "AWSProvider"
+          "symbol": "AWSProvider",
+          "blob": "7a24e01c1fdf28b3692951be12f7cf16f0820866"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -67,10 +71,10 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/aws/clients/error.ts",
-          "symbol": "M3LAWSClientError"
+          "symbol": "M3LAWSClientError",
+          "blob": "3f0bc7819dda0629b8c979a66965725d47505574"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -78,10 +82,10 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/aws/clients/provider.ts",
-          "symbol": "AWSClientProvider"
+          "symbol": "AWSClientProvider",
+          "blob": "2821ccd910b8cb54eef5f11a2d005e4bf5f4c980"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     }
   ]

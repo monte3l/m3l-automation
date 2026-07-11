@@ -7,54 +7,65 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
-          "symbol": "M3LScript"
+          "symbol": "M3LScript",
+          "blob": "811e1bd7553809eb3aa5ab8b11c088cce6132448"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
-          "symbol": "M3LScriptOptions"
+          "symbol": "M3LScriptOptions",
+          "blob": "1395c11fa79d2a7d50af71f666d79c51b802492f"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
-          "symbol": "M3LScriptMetadata"
+          "symbol": "M3LScriptMetadata",
+          "blob": "1395c11fa79d2a7d50af71f666d79c51b802492f"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
-          "symbol": "M3LScriptLifecycleHooks"
+          "symbol": "M3LScriptLifecycleHooks",
+          "blob": "1395c11fa79d2a7d50af71f666d79c51b802492f"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
-          "symbol": "M3LScriptHookContext"
+          "symbol": "M3LScriptHookContext",
+          "blob": "1395c11fa79d2a7d50af71f666d79c51b802492f"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptConfigLoader.ts",
-          "symbol": "M3LScriptConfigLoader"
+          "symbol": "M3LScriptConfigLoader",
+          "blob": "ebb92dbcac5058271b033b0a22480863b14419e6"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptPresetLoader.ts",
-          "symbol": "M3LScriptPresetLoader"
+          "symbol": "M3LScriptPresetLoader",
+          "blob": "639558f4f6d96b0b509fdd97a2cf32714143b813"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LPresetUnknownKeysError.ts",
-          "symbol": "M3LPresetUnknownKeysError"
+          "symbol": "M3LPresetUnknownKeysError",
+          "blob": "ecd70a514193356dabbc03a94c6de44427f2d60a"
         },
         {
           "file": "packages/m3l-common/src/core/script/process-guards.ts",
-          "symbol": "installProcessGuards"
+          "symbol": "installProcessGuards",
+          "blob": "ad3fa52a011b632897b5c1687626de5e99d72c21"
         },
         {
           "file": "packages/m3l-common/src/core/script/process-guards.ts",
-          "symbol": "serializeError"
+          "symbol": "serializeError",
+          "blob": "ad3fa52a011b632897b5c1687626de5e99d72c21"
         },
         {
           "file": "packages/m3l-common/src/core/script/process-guards.ts",
-          "symbol": "setProcessGuardRequestId"
+          "symbol": "setProcessGuardRequestId",
+          "blob": "ad3fa52a011b632897b5c1687626de5e99d72c21"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LPresetCycleError.ts",
-          "symbol": "M3LPresetCycleError"
+          "symbol": "M3LPresetCycleError",
+          "blob": "00a0fdba20f351d6216ebf0f5d45dfdcd488fb05"
         }
       ],
-      "commit": "3b37dd63443866ef41ce09f0e1ae9ae1f70c7bf8",
       "retrieved": "2026-07-11"
     },
     {
@@ -62,10 +73,10 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
-          "symbol": "M3LScript"
+          "symbol": "M3LScript",
+          "blob": "811e1bd7553809eb3aa5ab8b11c088cce6132448"
         }
       ],
-      "commit": "3b37dd63443866ef41ce09f0e1ae9ae1f70c7bf8",
       "retrieved": "2026-07-11"
     },
     {
@@ -73,14 +84,15 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
-          "symbol": "M3LScriptLifecycleHooks"
+          "symbol": "M3LScriptLifecycleHooks",
+          "blob": "1395c11fa79d2a7d50af71f666d79c51b802492f"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
-          "symbol": "M3LScriptHookContext"
+          "symbol": "M3LScriptHookContext",
+          "blob": "1395c11fa79d2a7d50af71f666d79c51b802492f"
         }
       ],
-      "commit": "3b37dd63443866ef41ce09f0e1ae9ae1f70c7bf8",
       "retrieved": "2026-07-11"
     },
     {
@@ -88,10 +100,10 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
-          "symbol": "M3LScript"
+          "symbol": "M3LScript",
+          "blob": "811e1bd7553809eb3aa5ab8b11c088cce6132448"
         }
       ],
-      "commit": "3b37dd63443866ef41ce09f0e1ae9ae1f70c7bf8",
       "retrieved": "2026-07-11"
     },
     {
@@ -99,18 +111,20 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/script/process-guards.ts",
-          "symbol": "installProcessGuards"
+          "symbol": "installProcessGuards",
+          "blob": "ad3fa52a011b632897b5c1687626de5e99d72c21"
         },
         {
           "file": "packages/m3l-common/src/core/script/process-guards.ts",
-          "symbol": "serializeError"
+          "symbol": "serializeError",
+          "blob": "ad3fa52a011b632897b5c1687626de5e99d72c21"
         },
         {
           "file": "packages/m3l-common/src/core/script/process-guards.ts",
-          "symbol": "setProcessGuardRequestId"
+          "symbol": "setProcessGuardRequestId",
+          "blob": "ad3fa52a011b632897b5c1687626de5e99d72c21"
         }
       ],
-      "commit": "3b37dd63443866ef41ce09f0e1ae9ae1f70c7bf8",
       "retrieved": "2026-07-11"
     },
     {
@@ -118,18 +132,20 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
-          "symbol": "M3LScriptOptions"
+          "symbol": "M3LScriptOptions",
+          "blob": "1395c11fa79d2a7d50af71f666d79c51b802492f"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
-          "symbol": "M3LScriptHookContext"
+          "symbol": "M3LScriptHookContext",
+          "blob": "1395c11fa79d2a7d50af71f666d79c51b802492f"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
-          "symbol": "M3LScript"
+          "symbol": "M3LScript",
+          "blob": "811e1bd7553809eb3aa5ab8b11c088cce6132448"
         }
       ],
-      "commit": "3b37dd63443866ef41ce09f0e1ae9ae1f70c7bf8",
       "retrieved": "2026-07-11"
     },
     {
@@ -137,18 +153,20 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptPresetLoader.ts",
-          "symbol": "M3LScriptPresetLoader"
+          "symbol": "M3LScriptPresetLoader",
+          "blob": "639558f4f6d96b0b509fdd97a2cf32714143b813"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LPresetUnknownKeysError.ts",
-          "symbol": "M3LPresetUnknownKeysError"
+          "symbol": "M3LPresetUnknownKeysError",
+          "blob": "ecd70a514193356dabbc03a94c6de44427f2d60a"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LPresetCycleError.ts",
-          "symbol": "M3LPresetCycleError"
+          "symbol": "M3LPresetCycleError",
+          "blob": "00a0fdba20f351d6216ebf0f5d45dfdcd488fb05"
         }
       ],
-      "commit": "3b37dd63443866ef41ce09f0e1ae9ae1f70c7bf8",
       "retrieved": "2026-07-11"
     },
     {
@@ -156,10 +174,10 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
-          "symbol": "M3LScript"
+          "symbol": "M3LScript",
+          "blob": "811e1bd7553809eb3aa5ab8b11c088cce6132448"
         }
       ],
-      "commit": "3b37dd63443866ef41ce09f0e1ae9ae1f70c7bf8",
       "retrieved": "2026-07-11"
     },
     {
@@ -167,14 +185,15 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
-          "symbol": "M3LScript"
+          "symbol": "M3LScript",
+          "blob": "811e1bd7553809eb3aa5ab8b11c088cce6132448"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptPresetLoader.ts",
-          "symbol": "M3LScriptPresetLoader"
+          "symbol": "M3LScriptPresetLoader",
+          "blob": "639558f4f6d96b0b509fdd97a2cf32714143b813"
         }
       ],
-      "commit": "3b37dd63443866ef41ce09f0e1ae9ae1f70c7bf8",
       "retrieved": "2026-07-11"
     }
   ]

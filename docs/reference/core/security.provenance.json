@@ -8,15 +8,16 @@
         {
           "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
           "symbol": "isDangerousKey",
-          "lines": "46-48"
+          "lines": "46-48",
+          "blob": "9dd01aaf0eb6673c990a7a6060216a81275526e2"
         },
         {
           "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
           "symbol": "formatUnsafeKeyLocation",
-          "lines": "73-75"
+          "lines": "73-75",
+          "blob": "9dd01aaf0eb6673c990a7a6060216a81275526e2"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     },
     {
@@ -25,15 +26,16 @@
         {
           "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
           "symbol": "isDangerousKey",
-          "lines": "46-48"
+          "lines": "46-48",
+          "blob": "9dd01aaf0eb6673c990a7a6060216a81275526e2"
         },
         {
           "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
           "symbol": "formatUnsafeKeyLocation",
-          "lines": "73-75"
+          "lines": "73-75",
+          "blob": "9dd01aaf0eb6673c990a7a6060216a81275526e2"
         }
       ],
-      "commit": "7d6b8ab9280035b50ac33d5cc00e2171f70991f6",
       "retrieved": "2026-07-11"
     }
   ]
