@@ -27,16 +27,21 @@ interface M3LScriptConfigLoadOptions {
   /**
    * Additional providers consulted ahead of the standard command-line and
    * environment providers (highest priority first). Useful for a Lambda
-   * event payload or a loaded preset.
+   * event payload.
    */
   readonly extraProviders?: readonly M3LConfigProvider[];
+  /**
+   * Lowest-priority providers, appended AFTER the command-line and
+   * environment providers (precedence level 6, e.g. a loaded preset).
+   */
+  readonly presetProviders?: readonly M3LConfigProvider[];
 }
 
 /**
  * Resolves a script's declared {@link M3LConfigParameter} list against the
  * standard provider chain (extra providers, then command-line arguments,
- * then environment variables, in priority order), producing a populated
- * {@link M3LConfig} store.
+ * then environment variables, then preset providers, in priority order),
+ * producing a populated {@link M3LConfig} store.
  *
  * Each parameter's `asyncFallback` (if any) is honored via
  * {@link M3LConfigParameter.getValueAsync}, so `load` is asynchronous.
@@ -65,6 +70,7 @@ export class M3LScriptConfigLoader {
       ...(options.extraProviders ?? []),
       new M3LCommandLineConfigProvider(),
       new M3LEnvironmentConfigProvider(),
+      ...(options.presetProviders ?? []),
     ];
     const reader = new M3LConfigReader(providers);
     const config = new M3LConfig();

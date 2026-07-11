@@ -8,7 +8,12 @@
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 
-import { M3LConfig, M3LConfigSchema } from "../config/index.js";
+import {
+  M3LConfig,
+  M3LConfigSchema,
+  M3LPresetConfigProvider,
+  type M3LConfigProvider,
+} from "../config/index.js";
 import { M3LExecutionEnvironment } from "../environment/index.js";
 import type { M3LFileCopyReport } from "../files/index.js";
 import { M3LFileCopier, getDefaultSubdirForPathType } from "../files/index.js";
@@ -25,6 +30,7 @@ import {
   AWS_REGION_PARAM_NAME,
 } from "./aws-param-names.js";
 import { M3LScriptConfigLoader } from "./M3LScriptConfigLoader.js";
+import { M3LScriptPresetLoader } from "./M3LScriptPresetLoader.js";
 import { serializeError, setProcessGuardRequestId } from "./process-guards.js";
 import type {
   M3LScriptHookContext,
@@ -156,6 +162,13 @@ export class M3LScript {
    */
   private currentCorrelationId: string | undefined;
 
+  /**
+   * The caller-supplied `options.preset` path, or `undefined` when no preset
+   * was configured. `undefined` means stage 3 never reads a preset file and
+   * adds no `presetProviders` entry — see {@link M3LScript.loadConfig}.
+   */
+  private readonly preset: string | undefined;
+
   /** The logger facade wired for this script instance. */
   readonly logger: M3LLogger;
 
@@ -235,6 +248,7 @@ export class M3LScript {
         : undefined;
 
     this.configuredCorrelationId = options.correlationId;
+    this.preset = options.preset;
     this.logger =
       options.logger ?? new M3LLogger([new M3LConsoleLoggerHandler()]);
     this.prompt = options.prompt ?? new M3LPrompt();
@@ -448,10 +462,45 @@ export class M3LScript {
     };
   }
 
-  /** Stage 3: loads configuration via {@link M3LScriptConfigLoader}. */
+  /**
+   * Builds the level-6 `presetProviders` entry for {@link loadConfig} when
+   * `options.preset` was configured; `undefined` when it was not (so
+   * `loadConfig` reads no preset file and adds no provider). Split out of
+   * `loadConfig` to keep that method pure orchestration, mirroring the
+   * {@link resolveAwsIdentity} extraction below.
+   *
+   * Loads the preset via {@link M3LScriptPresetLoader}, validated against
+   * the declared schema when one is present. Any throw from the loader
+   * (e.g. `M3LPresetUnknownKeysError`, or an `M3LError` coded
+   * `"ERR_PRESET_LOAD"` for a missing/malformed file) propagates unchanged —
+   * this method does not catch/swallow it.
+   */
+  private buildPresetProviders(): readonly M3LConfigProvider[] | undefined {
+    if (this.preset === undefined) return undefined;
+
+    const presetLoader = new M3LScriptPresetLoader({
+      ...(this.schema !== undefined ? { schema: this.schema } : {}),
+    });
+    return [new M3LPresetConfigProvider(presetLoader.load(this.preset))];
+  }
+
+  /**
+   * Stage 3: loads configuration via {@link M3LScriptConfigLoader}.
+   *
+   * When `options.preset` was configured, the preset file is loaded (and
+   * validated against the declared schema) via {@link M3LScriptPresetLoader}
+   * first, and its values are wired in as a lowest-priority
+   * `presetProviders` entry. Any throw from the preset loader (e.g.
+   * `M3LPresetUnknownKeysError`, or an `M3LError` coded `"ERR_PRESET_LOAD"`
+   * for a missing/malformed file) propagates unchanged — F8 introduces no
+   * new error types and this method does not catch/swallow it.
+   */
   private async loadConfig(): Promise<void> {
+    const presetProviders = this.buildPresetProviders();
+
     this.config = await this.configLoader.load({
       params: this.schema?.parameters ?? [],
+      ...(presetProviders !== undefined ? { presetProviders } : {}),
     });
     this.configLoaded = true;
   }

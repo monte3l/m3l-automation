@@ -79,6 +79,7 @@ and failure diagnostics can all be tied back to the same execution.
 interface M3LScriptOptions {
   // ...existing fields
   readonly correlationId?: string; // optional; generated per run when omitted
+  readonly preset?: string; // optional path to a YAML/JSON preset file (see Preset loader)
 }
 
 interface M3LScriptHookContext {
@@ -113,6 +114,28 @@ interface M3LScriptHookContext {
 ## Preset loader
 
 `M3LScriptPresetLoader` loads named parameter presets from YAML or JSON files. It enforces a maximum nesting depth of 64 (`MAX_PRESET_STRUCTURE_DEPTH`) and uses Damerau-Levenshtein distance to suggest corrections for unknown keys. When a preset contains keys that are not recognized, it throws `M3LPresetUnknownKeysError`.
+
+### Wiring a preset into config (`options.preset`)
+
+`M3LScriptOptions.preset` is an optional path to a YAML/JSON preset file. When
+supplied, stage 3 (config load) loads the file via `M3LScriptPresetLoader` —
+validated against the script's declared `config.params` schema — and inserts its
+values into configuration resolution at **precedence level 6**: below CLI
+(level 1) and environment (level 4), above static `defaultValue`s (level 7). See
+[`config` → Resolution order](./config.md#resolution-order).
+
+When `options.preset` is omitted, no preset file is read and no preset provider
+is added — there is no behavior change. Supplying `preset` **without** a `config`
+declaration means there is no schema to validate against, so every top-level key
+is treated as unknown and the loader throws `M3LPresetUnknownKeysError` — a
+preset is meant to be used alongside a declared `config`. An empty string is
+treated as **present** (and fails at load with an `M3LError` coded
+`ERR_PRESET_LOAD`), not absent — omit the field to mean "no preset."
+
+Any throw from the preset loader — `M3LPresetUnknownKeysError`,
+`M3LPresetCycleError`, or an `M3LError` coded `ERR_PRESET_LOAD` for a
+missing/malformed file — propagates unchanged; the preset seam introduces no new
+error types and does not catch or swallow the failure.
 
 ### Preset inheritance (`extends`)
 
