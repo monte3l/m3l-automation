@@ -164,9 +164,11 @@ git rebase --continue   # or: git merge --continue
 This fires the `post-rewrite`/`post-merge` lefthook hook
 (`bin/post-integrate-regen.mjs`, ADR-0024), which regenerates
 `catalog.json`/`symbol-map.json` (`gen:index`), the count sites and
-implemented-list block (`gen:counts`), and re-stamps provenance blobs
-(`check-doc-provenance.mjs --update`) automatically — it never blocks and
-never commits, only reports dirty files. Step 5 below folds its output into
+implemented-list block (`gen:counts`), re-stamps provenance blobs
+(`check-doc-provenance.mjs --update`), and — only if `pnpm-lock.yaml` is
+still dirty at that point — runs `pnpm install` to re-sync it against the
+merged `package.json`. It never blocks and never commits, only reports
+dirty files. Step 5 below folds its output into
 the broader `/syncing-docs` pass rather than trusting it alone, since
 `/syncing-docs` also catches `check:doc-exports`, test counts, and
 `lint:md`, which the hook doesn't run.

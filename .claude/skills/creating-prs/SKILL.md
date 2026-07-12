@@ -79,7 +79,9 @@ git rebase origin/main
   `prepare`/`worktree:setup`) keeps the current side and exits 0 on any
   conflict there — no stop, no `git diff --diff-filter=U` entry for them at
   all. The `post-rewrite` lefthook hook (`bin/post-integrate-regen.mjs`) then
-  regenerates them automatically once the rebase finishes, reporting dirty
+  regenerates `catalog.json`/`symbol-map.json` automatically once the rebase
+  finishes; for `pnpm-lock.yaml` it runs `pnpm install` against the merged
+  `package.json` (only when the lockfile is actually dirty), reporting dirty
   files rather than committing. Land that reconciliation as a `docs:
 reconcile doc metadata` commit (this repo's standard pattern) before
   pushing. The `package.json` `dependencies` block and the "N of 22" count
