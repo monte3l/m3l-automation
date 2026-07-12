@@ -230,6 +230,11 @@ file.
 | `pre-push` (lefthook)      | `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test:coverage`, `pnpm build`, `pnpm check:exports`, `verify-signed-range`                                                         | whole repo                |
 | CI `verify` job (`ci.yml`) | everything the pre-push row runs, **plus** every `check:*` script, `pnpm build`, `pnpm knip`, `pnpm lint:md`, `gitleaks`, and `pnpm audit` — see the `verify` job for the full ordered list | whole repo, authoritative |
 
+`post-rewrite` (fires after `git rebase`) and `post-merge` (ADR-0024) both run
+`bin/post-integrate-regen.mjs` — informational, not part of `check:cadence`'s
+three machine-verified rows above (it never blocks; see "Git worktrees" below
+for what it does).
+
 There is **no pre-publish hook** — the package is internal and unpublished
 (ADR-0020), so every gate beyond the bypassable pre-push subset runs only in CI.
 
@@ -343,6 +348,20 @@ files (so they cost nothing in unrelated sessions):
   hand-managed (see ADR-0020).
 - Never `git push --force` to a shared branch.
 - Commits should always be small, incremental and, above all, meaningful.
+- **Generated-file merge drivers (ADR-0024).** `docs/reference/catalog.json`,
+  `docs/reference/symbol-map.json`, and `pnpm-lock.yaml` are tagged
+  `merge=m3l-generated` in `.gitattributes`; a registered custom git driver
+  (`bin/merge-driver-generated.mjs`) resolves any conflict on them by keeping
+  the current side and exiting 0, so a rebase/merge never stops on them. The
+  driver is registered into the **shared** repo config (`bin/install-merge-drivers.mjs`,
+  idempotent) from both `prepare` (fresh clones) and `worktree:setup`
+  (belt-and-braces). A `post-rewrite`/`post-merge` lefthook stage
+  (`bin/post-integrate-regen.mjs`) then regenerates those files — plus the
+  count sites and provenance blobs — immediately after, reporting dirty
+  files for a `docs: reconcile doc metadata` commit; it never auto-commits
+  and never blocks. `*.provenance.json` sidecars and the hand-edited
+  trackers/READMEs are deliberately **not** driver-covered — see
+  `/resolving-merge-conflicts` for their narrower remaining remit.
 
 ### Git worktrees (task isolation)
 
