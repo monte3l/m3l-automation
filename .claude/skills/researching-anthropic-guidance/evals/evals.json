@@ -1,0 +1,101 @@
+{
+  "skill_name": "researching-anthropic-guidance",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "we're about to redesign our subagent fleet — what does Anthropic officially recommend for subagent architecture, tool grants, and model selection? research this before we plan the redesign",
+      "expected_output": "3-5 Explore agents fanned out in one message, each scoped to one facet (e.g. architecture/composition, tool-grant philosophy, model selection, prompt conventions), each restricted to the Anthropic domain allowlist via WebSearch allowed_domains, each writing full findings to a scratchpad file and returning only a compact digest. Hub reads the scratchpad files and emits an inline briefing with Consensus, Contradictions, Coverage gaps, and Sources sections.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "parallel_explore_agents",
+          "description": "3-5 Explore agents dispatched in a single message (not sequential calls)"
+        },
+        {
+          "name": "domain_allowlist_used",
+          "description": "Each agent brief restricts WebSearch to the official Anthropic domain allowlist (anthropic.com, claude.com, platform.claude.com, code.claude.com, docs.claude.com, docs.anthropic.com and their www variants)"
+        },
+        {
+          "name": "github_scoped_correctly",
+          "description": "If GitHub is mentioned, the brief scopes acceptance to github.com/anthropics/* only, not bare github.com"
+        },
+        {
+          "name": "scratchpad_files_written",
+          "description": "Each agent is instructed to write full findings to a per-facet scratchpad file under a run directory, and to return only a compact digest plus the file path to the hub"
+        },
+        {
+          "name": "multiple_sources_per_facet",
+          "description": "Agents are instructed not to stop at the first matching source; synthesis draws on multiple distinct sources, not one per facet"
+        },
+        {
+          "name": "consensus_and_contradictions_present",
+          "description": "Final briefing includes both a Consensus/best-practices section and a Contradictions/drift section (even if the latter is empty with an explicit note, not silently omitted)"
+        },
+        {
+          "name": "no_non_anthropic_sources",
+          "description": "Every cited source URL in the final briefing is on the Anthropic domain allowlist or under github.com/anthropics/*"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "/researching-anthropic-guidance prompt caching — I want to know Anthropic's official recommendations before I redesign our prompt structure",
+      "expected_output": "3-5 Explore agents fanned out over prompt-caching facets (e.g. cache-breakpoint placement, TTL/cost tradeoffs, API usage patterns, model-specific behavior), restricted to the Anthropic allowlist, each annotating a scratchpad file and returning a digest. Hub synthesizes into the fixed briefing format with sourced consensus and any contradictions flagged.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "parallel_explore_agents",
+          "description": "3-5 Explore agents dispatched in one message"
+        },
+        {
+          "name": "domain_allowlist_used",
+          "description": "WebSearch calls restricted to the official Anthropic domain allowlist"
+        },
+        {
+          "name": "scratchpad_files_written",
+          "description": "Full findings written to scratchpad files per facet; hub response stays lean (digests only from agents)"
+        },
+        {
+          "name": "briefing_format_used",
+          "description": "Final output uses the fixed ## Research: <topic> briefing structure with Consensus, Contradictions, Coverage gaps, and Sources headings"
+        },
+        {
+          "name": "sources_cited_with_dates",
+          "description": "Each source in the Sources section includes title, URL, and a retrieved date"
+        },
+        {
+          "name": "no_files_written_without_confirmation",
+          "description": "No docs/research/*.md snapshot file is written unless the user explicitly confirmed persisting one"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "is there an official Anthropic engineering blog post about building effective agents? I want a synthesized summary I can cite, and flag it clearly if anything in there conflicts with the newer subagent docs",
+      "expected_output": "Explore agents fan out across facets of the 'effective agents' topic (workflow vs agent patterns, tool design, orchestration, evaluation), restricted to anthropic.com (including /engineering) and other allowlisted domains, WebFetching the blog post plus any current docs on the same topic. Synthesis explicitly compares the blog post's guidance against current docs and calls out any contradiction with a note on which is more current/authoritative.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "parallel_explore_agents",
+          "description": "3-5 Explore agents dispatched in one message"
+        },
+        {
+          "name": "engineering_blog_covered",
+          "description": "anthropic.com/engineering content is treated as an in-scope official source, not excluded"
+        },
+        {
+          "name": "cross_source_conflict_check",
+          "description": "Synthesis explicitly checks the blog post's claims against other retrieved sources (e.g. current docs) and reports agreement or conflict, not just a standalone summary of the blog"
+        },
+        {
+          "name": "contradiction_recency_noted",
+          "description": "If a contradiction is found, the briefing notes which source is newer/more authoritative rather than presenting both without guidance"
+        },
+        {
+          "name": "no_non_anthropic_sources",
+          "description": "No community blog, third-party summary, or non-anthropics GitHub org is substituted or cited"
+        }
+      ]
+    }
+  ]
+}
