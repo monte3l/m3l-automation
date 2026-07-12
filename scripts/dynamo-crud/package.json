@@ -1,0 +1,18 @@
+{
+  "name": "@m3l-automation/dynamo-crud",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "CRUD, batch, and streaming operations against a DynamoDB table with checkpoint resume and destructive-op confirmation",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "start": "node --env-file-if-exists=.env dist/main.js"
+  },
+  "dependencies": {
+    "@m3l-automation/m3l-common": "workspace:*"
+  }
+}
