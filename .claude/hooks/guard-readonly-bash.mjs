@@ -54,9 +54,30 @@ function baseName(token) {
   return parts[parts.length - 1];
 }
 
+// Global/wrapper flags — per verb — that consume the FOLLOWING token as their
+// value, so the walk to find the subcommand must skip both. Without this,
+// `git -C /tmp commit` or `pnpm --dir ./foo add lodash` resolve `sub` to the
+// flag's *value* ("/tmp", "./foo") instead of the real subcommand, defeating
+// MUTATING_SUBCOMMANDS entirely (a `--flag=value` inline form needs no entry
+// here — the value stays on the same token, which parseSegment already skips
+// as "starts with -"). Mirrors GLOBAL_OPTS_WITH_ARG in bin/lib/signed-range.mjs.
+const FLAGS_WITH_VALUE = {
+  git: new Set([
+    "-c",
+    "-C",
+    "--git-dir",
+    "--work-tree",
+    "--namespace",
+    "--exec-path",
+  ]),
+  pnpm: new Set(["-C", "--dir", "--filter", "--filter-prod"]),
+  npm: new Set(["-C", "--prefix"]),
+};
+
 /**
  * The command verb and (for multi-word CLIs) subcommand of one shell segment,
- * skipping leading `VAR=value` environment assignments.
+ * skipping leading `VAR=value` environment assignments and any global flags
+ * (per FLAGS_WITH_VALUE) that appear before the subcommand.
  *
  * @param {string} segment
  * @returns {{ verb: string, sub: string | undefined, tokens: string[] }}
@@ -65,8 +86,25 @@ function parseSegment(segment) {
   const tokens = segment.split(/\s+/).filter(Boolean);
   let i = 0;
   while (i < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i])) i++;
-  const verb = tokens[i] === undefined ? "" : baseName(tokens[i]);
-  const sub = tokens.slice(i + 1).find((t) => !t.startsWith("-"));
+  if (tokens[i] === undefined) return { verb: "", sub: undefined, tokens: [] };
+
+  const verb = baseName(tokens[i]);
+  const valueFlags = FLAGS_WITH_VALUE[verb] ?? new Set();
+  let sub;
+  let j = i + 1;
+  while (j < tokens.length) {
+    const t = tokens[j];
+    if (valueFlags.has(t)) {
+      j += 2; // skip the flag AND its value token
+      continue;
+    }
+    if (t.startsWith("-")) {
+      j += 1; // a flag that doesn't consume a following value
+      continue;
+    }
+    sub = t;
+    break;
+  }
   return { verb, sub, tokens: tokens.slice(i) };
 }
 
