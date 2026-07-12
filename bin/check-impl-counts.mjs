@@ -7,7 +7,8 @@
 // render, so a hand edit inside the markers is caught.
 //
 // This is the numerator counterpart to check-doc-counts.mjs, which owns the
-// denominator (total documented). The numerator rotted undetected once
+// denominator (total documented, itself derived — not a fixed number; see
+// bin/lib/count-sites.mjs). The numerator rotted undetected once
 // (see docs/logs/2026-07-01-core-json.md, divergence 1) because
 // packages/m3l-common/README.md was checked nowhere. Site inventory shared
 // with gen-doc-counts.mjs and check-doc-counts.mjs via bin/lib/count-sites.mjs.

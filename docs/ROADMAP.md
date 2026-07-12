@@ -4,7 +4,7 @@ The **living, prioritized view of pending program work**. It is the coarse
 companion to two other trackers:
 
 - [`docs/implementation-status.md`](./implementation-status.md) — the _done_
-  library ledger (22/22 submodules, count-enforced).
+  library ledger (23/23 submodules, count-enforced).
 - [`docs/plans/IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md) — the _detailed_
   per-item backlog this file summarizes.
 
@@ -17,7 +17,8 @@ _Maintenance_ at the bottom. Completed dated plans live under
 
 Per-item status lives in the tables below (Priority 0/1/2) and in
 [`docs/implementation-status.md`](./implementation-status.md) — the
-count-enforced library ledger (22/22 submodules, shipped at v1.1.0).
+count-enforced library ledger (23/23 submodules, shipped at v1.1.0 + the
+ad-hoc `aws/sqs` addition, ADR-0026).
 
 ## Priority 0 — Library hardening (do before more scripts)
 

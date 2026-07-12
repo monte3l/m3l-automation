@@ -10,7 +10,7 @@ Planning documents for m3l-automation, split into **living trackers** and
 - [`IMPLEMENTATION.md`](./IMPLEMENTATION.md) — the detailed per-item backlog
   (friction F-series, fleet W2–W5, gated D4/D5).
 - [`../implementation-status.md`](../implementation-status.md) — the _done_
-  library ledger (22/22 submodules, count-enforced).
+  library ledger (23/23 submodules, count-enforced).
 
 These are **fixed and living** (no date in the name), updated as work lands.
 
