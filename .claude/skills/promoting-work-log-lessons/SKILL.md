@@ -154,6 +154,10 @@ the filters, how many were dropped as already-promoted or already-captured. Then
 stop and let the user review. Do not proceed to Step 5 unless the invocation was
 `--apply` or the user approves.
 
+If many themes survive, write the full per-theme breakdown to a scratch file and
+keep the chat reply to the summary line plus theme names — don't paste every
+candidate's citations and proposed edit inline.
+
 ## Step 5 — Apply (only when approved)
 
 For each approved promotion:

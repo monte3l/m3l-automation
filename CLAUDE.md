@@ -304,6 +304,14 @@ files (so they cost nothing in unrelated sessions):
 - Input-collection prompts (e.g. "what is the script name?") are exempt — they
   are required-parameter asks, not planning clarifications.
 
+### Response Style
+
+- Keep chat responses concise. For a long deliverable (audit report, plan, ADR,
+  triage report), write it to a file and give only a short summary in chat —
+  don't paste the whole thing inline.
+- If a response would still run very large, split it across turns rather than
+  emitting it in one oversized reply.
+
 ## Git Workflow
 
 <!--
@@ -344,6 +352,11 @@ files (so they cost nothing in unrelated sessions):
   `guard-branch-isolation.mjs` hook enforces this for code work — it blocks
   `packages/*/src/**`, `scripts/*/src/**`, and `**/tests/**` writes while `HEAD`
   is `main` (or a detached HEAD on the `main` commit), so branch before implementing.
+- `git rebase --continue` and `git checkout` both bypass the `pre-commit`
+  prettier/eslint hook (it only fires on a normal `git commit`). Run
+  `pnpm format:check` yourself right after either before pushing — otherwise the
+  parallel pre-push `format:check` lane is what catches it, costing a full push
+  cycle to diagnose.
 - The package is internal and not published; `version` in package.json is
   hand-managed (see ADR-0020).
 - Never `git push --force` to a shared branch.
