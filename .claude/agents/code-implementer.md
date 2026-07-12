@@ -4,6 +4,7 @@ description: Writer spoke for both build pipelines — implementing-submodules (
 tools: Read, Write, Edit, Grep, Glob, Bash
 disallowedTools: Agent
 model: sonnet
+effort: high
 permissionMode: acceptEdits
 maxTurns: 40
 color: cyan
