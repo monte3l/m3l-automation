@@ -4,6 +4,7 @@ description: Read-only cross-cutting doc consistency auditor for m3l-common. Che
 tools: Read, Grep, Glob, Bash
 disallowedTools: Agent
 model: haiku
+effort: medium
 maxTurns: 40
 color: pink
 ---

@@ -55,3 +55,78 @@ export function normalizeClaudeModel(name) {
   if (CANONICAL_CLAUDE_MODELS.includes(name)) return name;
   return HISTORICAL_ALIASES[name] ?? null;
 }
+
+/**
+ * Legal values for a `.claude/agents/*.md` `model:` frontmatter field, per
+ * Anthropic's documented subagent configuration
+ * (https://code.claude.com/docs/en/sub-agents). Consumed by
+ * bin/check-agents.mjs to validate the MODEL-MATRIX block in
+ * docs/contributing/model-selection.md and every agent's frontmatter — not
+ * just that they agree with each other, but that the shared value is itself
+ * legal. `inherit` is included even though no agent in this repo currently
+ * uses it (every spoke pins an explicit tier), since it is a documented,
+ * valid frontmatter value.
+ */
+const AGENT_MODEL_ALIASES = Object.freeze([
+  "sonnet",
+  "opus",
+  "haiku",
+  "fable",
+  "inherit",
+]);
+
+/**
+ * Legal values for a `--model` pin on a GitHub Actions workflow. Broader than
+ * {@link AGENT_MODEL_ALIASES}: workflows may also use the session-level
+ * aliases `default`, `best`, and `opusplan` (opus during plan mode, sonnet
+ * for execution), plus the `opus[1m]` long-context variant. Full model IDs
+ * are still validated via the `claude-<family>-<n>` ID pattern.
+ */
+const WORKFLOW_MODEL_ALIASES = Object.freeze([
+  ...AGENT_MODEL_ALIASES,
+  "default",
+  "best",
+  "opusplan",
+  "opus[1m]",
+]);
+
+/** Legal effort levels for a subagent's `effort:` frontmatter field. */
+const EFFORT_LEVELS = Object.freeze(["low", "medium", "high", "xhigh", "max"]);
+
+/** Matches a full Anthropic model ID, e.g. `claude-opus-4-8` or `claude-sonnet-5`. */
+const MODEL_ID_PATTERN = /^claude-[a-z]+-[a-z0-9-]+$/;
+
+/**
+ * Is `value` a legal `model:` value for a `.claude/agents/*.md` subagent —
+ * one of {@link AGENT_MODEL_ALIASES} or a full model ID?
+ *
+ * @param {string | undefined} value
+ * @returns {boolean}
+ */
+export function isValidAgentModel(value) {
+  if (value === undefined) return false;
+  return AGENT_MODEL_ALIASES.includes(value) || MODEL_ID_PATTERN.test(value);
+}
+
+/**
+ * Is `value` a legal `--model` pin for a GitHub Actions workflow — one of
+ * {@link WORKFLOW_MODEL_ALIASES} or a full model ID?
+ *
+ * @param {string | undefined} value
+ * @returns {boolean}
+ */
+export function isValidWorkflowModel(value) {
+  if (value === undefined) return false;
+  return WORKFLOW_MODEL_ALIASES.includes(value) || MODEL_ID_PATTERN.test(value);
+}
+
+/**
+ * Is `value` a legal `effort:` value for a subagent?
+ *
+ * @param {string | undefined} value
+ * @returns {boolean}
+ */
+export function isValidEffort(value) {
+  if (value === undefined) return false;
+  return EFFORT_LEVELS.includes(value);
+}

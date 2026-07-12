@@ -49,6 +49,10 @@ pre-push:
     # layer is branch-protection "Require signed commits" (ADR-0016).
     verify-signatures:
       run: node bin/verify-signed-range.mjs
+    # Catch agent/model-matrix drift locally instead of first in CI (was
+    # CI-only; see docs/contributing/model-selection.md "Enforcement").
+    check-agents:
+      run: pnpm check:agents
 
 # Fire after `git rebase` completes (including a no-op rebase with nothing to
 # replay) and after `git merge` completes. Regenerates the derived files the

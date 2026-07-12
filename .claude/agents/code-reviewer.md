@@ -4,6 +4,7 @@ description: Read-only reviewer for m3l-common changes. Applies the four-part qu
 tools: Read, Grep, Glob, Bash
 disallowedTools: Agent
 model: sonnet
+effort: high
 maxTurns: 40
 color: blue
 ---

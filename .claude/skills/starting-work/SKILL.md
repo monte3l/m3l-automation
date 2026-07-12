@@ -92,10 +92,13 @@ Derive a concrete default for all four from steps 1–2:
 - **Model tier (advisory only)** — name the recommended model + effort for this
   task category from the matrix in `docs/contributing/model-selection.md`
   (e.g. "matrix row 2: Opus 4.8 at `xhigh` for a single-sitting implementation").
-  State it alongside the four decisions in your summary; do **not** add it to
-  the Step-4 confirmation questions — the hub model is user-selected via
-  `/model`, so this is a recommendation the user may act on, not a decision to
-  confirm.
+  For a plan-then-implement task (rows 1–2 — an audit/plan skill like
+  `/auditing` followed by implementation in the same or a later session),
+  recommend `/model opusplan` instead of a single fixed tier: Opus during
+  plan mode, Sonnet once execution starts. State it alongside the four
+  decisions in your summary; do **not** add it to the Step-4 confirmation
+  questions — the hub model is user-selected via `/model`, so this is a
+  recommendation the user may act on, not a decision to confirm.
 
 ### 4 — Confirm with the user (blocking)
 

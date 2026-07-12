@@ -4,6 +4,7 @@ description: Read-only type-design reviewer for m3l-common. Rates the type desig
 tools: Read, Grep, Glob, Bash
 disallowedTools: Agent
 model: opus
+effort: xhigh
 maxTurns: 40
 color: orange
 ---

@@ -110,6 +110,7 @@
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": true
   },
+  "availableModels": ["fable", "opus", "sonnet", "haiku"],
   "worktree": {
     "baseRef": "fresh"
   },
