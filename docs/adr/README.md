@@ -71,3 +71,4 @@ surface).
 | 0024 | [Deterministic prevention of derived-artifact merge conflicts](./0024-deterministic-derived-artifact-merges.md)                 | Accepted                |
 | 0025 | [Selective adoption of dynamic workflows for subagent orchestration](./0025-dynamic-workflows-assessment.md)                    | Proposed                |
 | 0026 | [Typed SQS operations wrapper over the raw SDK client](./0026-sqs-operations-wrapper.md)                                        | Accepted                |
+| 0027 | [Scripts never import `@aws-sdk/*`; the library grows typed AWS operation wrappers per consumer need](./0027-aws-sdk-boundary-typed-wrappers.md) | Accepted                |
