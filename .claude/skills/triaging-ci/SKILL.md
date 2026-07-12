@@ -119,3 +119,7 @@ After the diagnosis, present 3–5 solution options in a separate
 each option include: a one-line description, the exact command or change
 needed, and the main tradeoff. Do not apply any fix — leave the choice to the
 user.
+
+If triaging several failed runs in one pass, write the per-run reports to a
+file and keep the chat reply to a short summary table — don't paste every
+report inline.
