@@ -70,3 +70,4 @@ surface).
 | 0023 | [Re-affirm the external code-index MCP deferral on new grounds](./0023-reaffirm-code-index-mcp-deferral.md)                     | Accepted                |
 | 0024 | [Deterministic prevention of derived-artifact merge conflicts](./0024-deterministic-derived-artifact-merges.md)                 | Accepted                |
 | 0025 | [Selective adoption of dynamic workflows for subagent orchestration](./0025-dynamic-workflows-assessment.md)                    | Proposed                |
+| 0026 | [Typed SQS operations wrapper over the raw SDK client](./0026-sqs-operations-wrapper.md)                                        | Accepted                |
