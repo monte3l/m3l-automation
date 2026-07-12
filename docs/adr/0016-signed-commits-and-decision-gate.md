@@ -8,6 +8,23 @@
 > ([ADR-0020](./0020-drop-release-automation.md)), so the release-bot / verified-git-commit
 > accommodation described below no longer applies. The signed-commit policy
 > itself — all three layers — stands on its own merit and is unchanged.
+>
+> **Update (2026-07-12).** An audit against Anthropic's official Claude Code
+> hooks guidance (`/auditing`) added explicit `timeout`s to all 17
+> `.claude/settings.json` hooks, hardened `check:hooks` to validate event names
+> (error) and warn on a hook missing a `timeout`, and converted
+> `remind-sync-docs.mjs` from `execSync` string interpolation to
+> `execFileSync` array args. It also surfaced a known, deliberately unaddressed
+> gap: the `Write|Edit`-matcher PreToolUse guards (`guard-secret-writes`,
+> `guard-protected-paths`, `guard-branch-isolation`, `guard-js-extension`,
+> `guard-no-commonjs`) do not see files mutated via the `Bash` tool (e.g.
+> `echo > .env`, `sed -i` into `dist/` or `src/` off `main`) — Anthropic's hooks
+> guide documents this exact coverage gap and suggests either matching `Bash`
+> too or adding a `Stop`-hook working-tree scan (`git status --porcelain`).
+> Left unaddressed for now: CI (`gitleaks`, branch protection) remains the
+> authoritative backstop, and closing it is lower-value than the risk it
+> covers. Revisit if a `Bash`-mediated bypass of one of these guards is ever
+> observed in practice.
 
 ## Context and problem statement
 
