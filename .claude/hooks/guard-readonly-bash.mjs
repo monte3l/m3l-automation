@@ -43,9 +43,15 @@ async function readStdin() {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-/** Segment a shell command on `&&`/`||`/single `|`/`;`/newline chain operators. */
+/**
+ * Segment a shell command on `&&`/`||`/single `|`/`;`/newline chain operators.
+ * A `|` immediately preceded by `>` is the clobber-redirect operator (`>|`),
+ * not a pipe, so it must not split — otherwise `echo x >| file` gets chopped
+ * into "echo x >" and "file", hiding the redirect from the write-detection
+ * regex in classifyBashCommand.
+ */
 function segments(command) {
-  return command.split(/&&|\|\||\||;|\n/).map((s) => s.trim());
+  return command.split(/&&|\|\||(?<!>)\||;|\n/).map((s) => s.trim());
 }
 
 /** Strip a leading path (e.g. `/usr/bin/rm` → `rm`) for verb comparison. */
@@ -189,11 +195,15 @@ export function classifyBashCommand(command) {
   for (const segment of segments(command)) {
     if (segment.length === 0) continue;
 
-    // Write-redirection to a real file (not a discard target).
-    const redirect = segment.match(/(?<!\d)(>{1,2})\s*([^\s&|;]+)/);
+    // Write-redirection to a real file (not a discard target). No digit
+    // lookbehind: `1>file`/`2>file` are ordinary fd-prefixed writes, not fd
+    // duplication — `2>&1` is excluded below because its target starts with
+    // `&`, which the target class already rejects, so it never matches here
+    // at all. `\|?` also catches the clobber operator (`>|file`).
+    const redirect = segment.match(/(>{1,2}\|?)\s*([^\s&|;]+)/);
     if (
       redirect &&
-      !/^(\/dev\/null|nul|&\d)$/i.test(redirect[2].replace(/^["']|["']$/g, ""))
+      !/^(\/dev\/null|nul)$/i.test(redirect[2].replace(/^["']|["']$/g, ""))
     ) {
       return {
         blocked: true,
