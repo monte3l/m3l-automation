@@ -3,6 +3,7 @@ import {
   regenerationCommands,
   runRegeneration,
   dirtyFiles,
+  isLockfileDirty,
 } from "../post-integrate-regen.mjs";
 
 describe("regenerationCommands", () => {
@@ -13,6 +14,16 @@ describe("regenerationCommands", () => {
       ["node", ["bin/gen-doc-counts.mjs"]],
       ["node", ["bin/check-doc-provenance.mjs", "--update"]],
     ]);
+  });
+
+  test("appends pnpm install only when the lockfile is dirty", () => {
+    const commands = regenerationCommands(true);
+    expect(commands).toHaveLength(4);
+    expect(commands[3]).toEqual(["pnpm", ["install"]]);
+  });
+
+  test("defaults to not dirty (no pnpm install)", () => {
+    expect(regenerationCommands(false)).toHaveLength(3);
   });
 });
 
@@ -60,6 +71,19 @@ describe("runRegeneration", () => {
 
     expect(warnings).toHaveLength(3);
   });
+
+  test("threads lockfileDirty through to run pnpm install as the fourth command", () => {
+    const calls: [string, string[]][] = [];
+    const runCmd = (cmd: string, args: string[]) => {
+      calls.push([cmd, args]);
+    };
+
+    const warnings = runRegeneration(runCmd, true);
+
+    expect(warnings).toEqual([]);
+    expect(calls).toHaveLength(4);
+    expect(calls[3]).toEqual(["pnpm", ["install"]]);
+  });
 });
 
 describe("dirtyFiles", () => {
@@ -77,5 +101,25 @@ describe("dirtyFiles", () => {
   test("returns an empty array on a clean tree", () => {
     const runGit = () => "";
     expect(dirtyFiles(runGit)).toEqual([]);
+  });
+});
+
+describe("isLockfileDirty", () => {
+  test("true when pnpm-lock.yaml has a porcelain status line", () => {
+    const runGit = (args: string[]) => {
+      expect(args).toEqual(["status", "--porcelain", "--", "pnpm-lock.yaml"]);
+      return " M pnpm-lock.yaml\n";
+    };
+    expect(isLockfileDirty(runGit)).toBe(true);
+  });
+
+  test("false when scoped status output is empty", () => {
+    const runGit = () => "";
+    expect(isLockfileDirty(runGit)).toBe(false);
+  });
+
+  test("false when scoped status output is only whitespace", () => {
+    const runGit = () => "\n";
+    expect(isLockfileDirty(runGit)).toBe(false);
   });
 });

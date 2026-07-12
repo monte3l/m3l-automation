@@ -20,17 +20,29 @@ import { dirname } from "node:path";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
 /**
- * The regeneration commands to run, in order. Pure/static so tests can
- * assert on the exact command set without spawning anything.
+ * The regeneration commands to run, in order. `pnpm-lock.yaml` is tagged
+ * `merge=m3l-generated` (.gitattributes) alongside catalog.json/symbol-map.json,
+ * but unlike those two it isn't rebuilt from other repo state — it has to be
+ * re-derived from `package.json` via `pnpm install`. Without this, a
+ * driver-resolved lockfile conflict (kept the current side) can silently
+ * drift out of sync with a `package.json` that merged in new dependencies,
+ * caught only much later by CI's `--frozen-lockfile` on an unrelated PR.
+ * `pnpm install` only runs when `pnpm-lock.yaml` is actually dirty, so a
+ * rebase/merge that never touched it doesn't pay the cost every time.
  *
+ * @param {boolean} [lockfileDirty]
  * @returns {[string, string[]][]}
  */
-export function regenerationCommands() {
-  return [
+export function regenerationCommands(lockfileDirty = false) {
+  const commands = [
     ["node", ["bin/gen-reference-index.mjs"]],
     ["node", ["bin/gen-doc-counts.mjs"]],
     ["node", ["bin/check-doc-provenance.mjs", "--update"]],
   ];
+  if (lockfileDirty) {
+    commands.push(["pnpm", ["install"]]);
+  }
+  return commands;
 }
 
 /**
@@ -57,11 +69,12 @@ function defaultRun(cmd, args) {
  * just completed.
  *
  * @param {(cmd: string, args: string[]) => void} [runCmd]
+ * @param {boolean} [lockfileDirty]
  * @returns {string[]} human-readable warnings, one per failed command
  */
-export function runRegeneration(runCmd = defaultRun) {
+export function runRegeneration(runCmd = defaultRun, lockfileDirty = false) {
   const warnings = [];
-  for (const [cmd, args] of regenerationCommands()) {
+  for (const [cmd, args] of regenerationCommands(lockfileDirty)) {
     try {
       runCmd(cmd, args);
     } catch (err) {
@@ -100,8 +113,23 @@ export function dirtyFiles(runGit = defaultRunGit) {
     .map((l) => l.replace(/^\S+\s+/, ""));
 }
 
+/**
+ * Whether `pnpm-lock.yaml` is currently dirty (e.g. the merge driver kept
+ * the current side on a real conflict, or the merge otherwise touched it).
+ * Checked before regeneration so {@link runRegeneration} only pays for
+ * `pnpm install` when there's actually something to reconcile.
+ *
+ * @param {(args: string[]) => string} [runGit]
+ * @returns {boolean}
+ */
+export function isLockfileDirty(runGit = defaultRunGit) {
+  return (
+    runGit(["status", "--porcelain", "--", "pnpm-lock.yaml"]).trim().length > 0
+  );
+}
+
 if (process.argv[1]?.endsWith("post-integrate-regen.mjs")) {
-  const warnings = runRegeneration();
+  const warnings = runRegeneration(undefined, isLockfileDirty());
   for (const w of warnings) {
     console.error(`⚠  post-integrate-regen: ${w}`);
   }

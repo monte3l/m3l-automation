@@ -356,10 +356,12 @@ files (so they cost nothing in unrelated sessions):
   driver is registered into the **shared** repo config (`bin/install-merge-drivers.mjs`,
   idempotent) from both `prepare` (fresh clones) and `worktree:setup`
   (belt-and-braces). A `post-rewrite`/`post-merge` lefthook stage
-  (`bin/post-integrate-regen.mjs`) then regenerates those files — plus the
-  count sites and provenance blobs — immediately after, reporting dirty
-  files for a `docs: reconcile doc metadata` commit; it never auto-commits
-  and never blocks. `*.provenance.json` sidecars and the hand-edited
+  (`bin/post-integrate-regen.mjs`) then regenerates `catalog.json`/`symbol-map.json`
+  — plus the count sites and provenance blobs — immediately after; for
+  `pnpm-lock.yaml` specifically it runs `pnpm install` against the merged
+  `package.json`, but only when the lockfile is still dirty, so an unrelated
+  rebase doesn't pay that cost. It reports dirty files for a `docs: reconcile
+doc metadata` commit; it never auto-commits and never blocks. `*.provenance.json` sidecars and the hand-edited
   trackers/READMEs are deliberately **not** driver-covered — see
   `/resolving-merge-conflicts` for their narrower remaining remit.
 
