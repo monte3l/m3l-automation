@@ -54,10 +54,13 @@ seam is tracked as F1b in the backlog.)
 
 ## Steps
 
-One row per `src/steps/` module; each takes injected dependencies (config
-values, logger, paths) as a single options object and is unit-testable with
-plain mocks — no `M3LScript` lifecycle. Every record-set step is an
-`AsyncIterable`/async generator (O(1) memory) except where noted.
+One row per `src/steps/` **record-set pipeline** module; each takes injected
+dependencies (config values, logger, paths) as a single options object and is
+unit-testable with plain mocks — no `M3LScript` lifecycle. Every record-set
+step is an `AsyncIterable`/async generator (O(1) memory) except where noted.
+`src/steps/resolve-preset.ts` is a composition-time config helper (reads
+`--preset` before `M3LScript` construction) rather than a pipeline step, so it
+is not in this table — see [Presets](#presets).
 
 | Step             | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -90,11 +93,17 @@ and the library's `extends` inheritance (`M3LScriptPresetLoader`):
 - `report-active.yaml` — `extends: ./report.yaml`, overriding `filters` to a
   narrower subset (only active records) and the `output` name.
 
-They are loadable with `Core.M3LScriptPresetLoader`. A named preset does not yet
-drive a run's config end-to-end: `M3LScript`'s config loader wires only the CLI
-and environment providers, with no seam to add the loaded preset — a library gap
-recorded in the work log's friction section. Until it lands, pass parameters on
-the command line.
+Pass one by explicit path with `--preset`:
+
+```bash
+node dist/main.js --preset ../../data/config/presets/report.yaml
+```
+
+`main.ts` resolves `--preset` (`src/steps/resolve-preset.ts`) into
+`M3LScriptOptions.preset`, so the loaded preset's values drive the run at
+config precedence level 6 — below CLI/env, above the declared `defaultValue`s
+(see the resolution order above). There is no name-to-path resolution or
+library search root: `--preset` takes the file's explicit path.
 
 ## See also
 

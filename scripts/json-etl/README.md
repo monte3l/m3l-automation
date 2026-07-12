@@ -39,11 +39,15 @@ schema and semantics.
 
 `data/config/presets/report.yaml` and `report-active.yaml` (the latter
 `extends: report.yaml`) are example preset files showing the parameter bundle
-and the library's `extends` inheritance. Load one directly with
-`Core.M3LScriptPresetLoader`. Note: `M3LScript`'s config loader currently wires
-only the CLI and environment providers, so a named preset cannot yet drive a
-run's config end-to-end — pass parameters on the command line as shown above.
-The missing preset seam is recorded as library friction in the work log.
+and the library's `extends` inheritance. Pass one by explicit path with
+`--preset` and it drives the run's config (below CLI/env, above defaults):
+
+```bash
+node dist/main.js --preset ../../data/config/presets/report-active.yaml
+```
+
+`--preset` takes an explicit path — there is no name-to-path resolution or
+library search root (see [Data directories](#data-directories)).
 
 ## Examples
 
