@@ -7,10 +7,15 @@
 //      (spokes are leaf nodes — only the hub dispatches subagents). A spoke
 //      that omits `tools:` would inherit all tools, including `Agent`, so that
 //      is rejected too.
-//   3. The model-selection matrix holds: every agent's `model:` frontmatter
-//      and every `--model` pin in .github/workflows/*.yml matches the
-//      MODEL-MATRIX block in docs/contributing/model-selection.md, so the
-//      documented tiering and the executing config cannot drift apart.
+//   3. The model-selection matrix holds: every agent's `model:`/`effort:`
+//      frontmatter and every `--model` pin in .github/workflows/*.yml matches
+//      the MODEL-MATRIX block in docs/contributing/model-selection.md, so the
+//      documented tiering and the executing config cannot drift apart. Every
+//      model/effort value — in the matrix AND in frontmatter/pins — is also
+//      checked against the legal-value lists in bin/lib/claude-models.mjs, so
+//      a typo shared by both sides no longer passes silently, and an agent
+//      that omits `model:`/`effort:` is rejected with a dedicated message
+//      rather than surfacing as a confusing "model: undefined" mismatch.
 // It also warns (non-blocking) about agents that are defined but never
 // referenced anywhere.
 //
@@ -20,6 +25,11 @@ import process from "node:process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import {
+  isValidAgentModel,
+  isValidEffort,
+  isValidWorkflowModel,
+} from "./lib/claude-models.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const agentsDir = join(root, ".claude/agents");
@@ -61,7 +71,7 @@ function walk(dir, predicate) {
 }
 
 // --- 1. Catalogue the defined spokes and their tool grants ----------------
-const defined = new Map(); // name -> { tools: string[] | null, model, file }
+const defined = new Map(); // name -> { tools: string[] | null, model, effort, file }
 for (const file of walk(agentsDir, (n) => n.endsWith(".md"))) {
   const fm = frontmatter(file);
   if (fm === null || fm.name === undefined) continue;
@@ -69,7 +79,7 @@ for (const file of walk(agentsDir, (n) => n.endsWith(".md"))) {
     fm.tools === undefined
       ? null // no allowlist => inherits ALL tools (including Agent)
       : fm.tools.split(",").map((t) => t.trim());
-  defined.set(fm.name, { tools, model: fm.model, file });
+  defined.set(fm.name, { tools, model: fm.model, effort: fm.effort, file });
 }
 
 const known = new Set([...defined.keys(), ...BUILTINS]);
@@ -170,8 +180,8 @@ for (const [name, { tools, file }] of defined) {
 // match it exactly (see the "Enforcement" section of that doc).
 const matrixDoc = join(root, "docs/contributing/model-selection.md");
 const workflowsDir = join(root, ".github/workflows");
-const matrixAgents = new Map(); // agent name -> model alias
-const matrixWorkflows = new Map(); // workflow file -> pinned model
+const matrixAgents = new Map(); // agent name -> { model, effort }
+const matrixWorkflows = new Map(); // workflow file -> { model, effort }
 if (!existsSync(matrixDoc)) {
   console.error(
     "✗  docs/contributing/model-selection.md is missing — the model matrix " +
@@ -190,27 +200,92 @@ if (!existsSync(matrixDoc)) {
     errors++;
   } else {
     const rowRe =
-      /^\|\s*(agent|workflow)\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|/gm;
+      /^\|\s*(agent|workflow)\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|/gm;
     let row;
     while ((row = rowRe.exec(block[1])) !== null) {
-      const [, surface, name, model] = row;
-      if (surface === "agent") matrixAgents.set(name, model);
-      else matrixWorkflows.set(name, model);
+      const [, surface, name, model, effort] = row;
+      if (surface === "agent") {
+        matrixAgents.set(name, { model, effort });
+        if (!isValidAgentModel(model)) {
+          console.error(
+            `✗  MODEL-MATRIX row for agent "${name}" pins "model: ${model}", ` +
+              `which is not a legal subagent model (see AGENT_MODEL_ALIASES ` +
+              `in bin/lib/claude-models.mjs).`,
+          );
+          errors++;
+        }
+        if (!isValidEffort(effort)) {
+          console.error(
+            `✗  MODEL-MATRIX row for agent "${name}" pins "effort: ${effort}", ` +
+              `which is not a legal effort level (see EFFORT_LEVELS in ` +
+              `bin/lib/claude-models.mjs).`,
+          );
+          errors++;
+        }
+      } else {
+        matrixWorkflows.set(name, { model, effort });
+        if (!isValidWorkflowModel(model)) {
+          console.error(
+            `✗  MODEL-MATRIX row for workflow "${name}" pins "model: ${model}", ` +
+              `which is not a legal workflow model (see WORKFLOW_MODEL_ALIASES ` +
+              `in bin/lib/claude-models.mjs).`,
+          );
+          errors++;
+        }
+      }
     }
 
     // 5a. Agent frontmatter <-> matrix, both directions.
-    for (const [name, { model, file }] of defined) {
+    for (const [name, { model, effort, file }] of defined) {
+      const relFile = file.slice(root.length + 1);
+      if (model === undefined) {
+        console.error(
+          `✗  ${relFile} (${name}) omits "model:" frontmatter — every agent ` +
+            `must pin an explicit tier (see docs/contributing/model-selection.md).`,
+        );
+        errors++;
+      } else if (!isValidAgentModel(model)) {
+        console.error(
+          `✗  ${relFile} (${name}) declares "model: ${model}", which is not ` +
+            `a legal subagent model (see AGENT_MODEL_ALIASES in ` +
+            `bin/lib/claude-models.mjs).`,
+        );
+        errors++;
+      }
+      if (effort === undefined) {
+        console.error(
+          `✗  ${relFile} (${name}) omits "effort:" frontmatter — every agent ` +
+            `must pin an explicit level (see docs/contributing/model-selection.md).`,
+        );
+        errors++;
+      } else if (!isValidEffort(effort)) {
+        console.error(
+          `✗  ${relFile} (${name}) declares "effort: ${effort}", which is not ` +
+            `a legal effort level (see EFFORT_LEVELS in bin/lib/claude-models.mjs).`,
+        );
+        errors++;
+      }
+
       const expected = matrixAgents.get(name);
       if (expected === undefined) {
         console.error(
-          `✗  ${file.slice(root.length + 1)} (${name}) has no row in the ` +
-            `MODEL-MATRIX block of docs/contributing/model-selection.md.`,
+          `✗  ${relFile} (${name}) has no row in the MODEL-MATRIX block of ` +
+            `docs/contributing/model-selection.md.`,
         );
         errors++;
-      } else if (model !== expected) {
+        continue;
+      }
+      if (model !== undefined && model !== expected.model) {
         console.error(
-          `✗  ${file.slice(root.length + 1)} (${name}) declares "model: ${model}" ` +
-            `but docs/contributing/model-selection.md pins "${expected}".`,
+          `✗  ${relFile} (${name}) declares "model: ${model}" but ` +
+            `docs/contributing/model-selection.md pins "${expected.model}".`,
+        );
+        errors++;
+      }
+      if (effort !== undefined && effort !== expected.effort) {
+        console.error(
+          `✗  ${relFile} (${name}) declares "effort: ${effort}" but ` +
+            `docs/contributing/model-selection.md pins "${expected.effort}".`,
         );
         errors++;
       }
@@ -226,7 +301,7 @@ if (!existsSync(matrixDoc)) {
     }
 
     // 5b. Workflow --model pins <-> matrix, both directions.
-    const pinRe = /--model[= ]([\w.@:-]+)/g;
+    const pinRe = /--model[= ]([\w.@:[\]-]+)/g;
     const pinned = new Map(); // workflow file -> Set of pinned models
     for (const file of walk(workflowsDir, (n) => n.endsWith(".yml"))) {
       const name = file.slice(workflowsDir.length + 1);
@@ -235,6 +310,14 @@ if (!existsSync(matrixDoc)) {
       while ((pin = pinRe.exec(content)) !== null) {
         if (!pinned.has(name)) pinned.set(name, new Set());
         pinned.get(name).add(pin[1]);
+        if (!isValidWorkflowModel(pin[1])) {
+          console.error(
+            `✗  .github/workflows/${name} pins "--model ${pin[1]}", which is ` +
+              `not a legal workflow model (see WORKFLOW_MODEL_ALIASES in ` +
+              `bin/lib/claude-models.mjs).`,
+          );
+          errors++;
+        }
         const expected = matrixWorkflows.get(name);
         if (expected === undefined) {
           console.error(
@@ -242,16 +325,16 @@ if (!existsSync(matrixDoc)) {
               `row in the MODEL-MATRIX block of docs/contributing/model-selection.md.`,
           );
           errors++;
-        } else if (pin[1] !== expected) {
+        } else if (pin[1] !== expected.model) {
           console.error(
             `✗  .github/workflows/${name} pins "--model ${pin[1]}" but ` +
-              `docs/contributing/model-selection.md pins "${expected}".`,
+              `docs/contributing/model-selection.md pins "${expected.model}".`,
           );
           errors++;
         }
       }
     }
-    for (const [name, model] of matrixWorkflows) {
+    for (const [name, { model }] of matrixWorkflows) {
       if (!pinned.has(name)) {
         console.error(
           `✗  MODEL-MATRIX row pins workflow "${name}" to "${model}" but that ` +
