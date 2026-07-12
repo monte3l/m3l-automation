@@ -9,9 +9,14 @@ CRUD, batch, and streaming operations against a DynamoDB table with checkpoint r
 ## Purpose and scope
 
 `dynamo-crud` performs CRUD, batch, and streaming operations against a single
-DynamoDB table via the library's `dynamoDBDocument` (L2, item-shaped) client —
-`get | put | update | delete | query | scan | batch-write | batch-delete |
-export | import`. It is the first W2 scale-hardened script: reads at scale
+DynamoDB table via the library's [`aws/dynamodb`](../aws/dynamodb.md)
+high-level item operations (`AWS.getItem`/`putItem`/`updateItem`/`deleteItem`/
+`queryItems`/`scanSegment`/`batchWriteItems`/`batchDeleteItems`/
+`describeTable`) — `get | put | update | delete | query | scan | batch-write |
+batch-delete | export | import`. The script never constructs an AWS SDK
+command or imports `@aws-sdk/lib-dynamodb`/`@aws-sdk/client-dynamodb` itself;
+`aws/dynamodb` is the sole abstraction boundary over those SDK commands (see
+its contract page for why). It is the first W2 scale-hardened script: reads at scale
 (`scan`/`export`) run parallel segmented scan workers that page-loop and stream
 straight to a JSONL sink (never materializing the table in memory), and writes
 at scale (`batch-write`/`batch-delete`/`import`) chunk into 25-item `BatchWrite`
@@ -61,18 +66,18 @@ at **run start** (top of `run-dynamo-crud`), the same pattern as `json-etl`'s
 ## Steps
 
 One row per `src/steps/` **module**; each takes injected dependencies (config
-values, the `dynamoDBDocument` client, logger, paths) as a single options
+values, the `AWS.dynamodb` item operations, logger, paths) as a single options
 object and is unit-testable without the `M3LScript` lifecycle. Read-side and
 write-side steps are both `AsyncIterable`-based (O(1) memory) per the fleet's
 streaming step contract.
 
-| Step                | Responsibility                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `single-item-ops`   | `get` / `put` / `update` / `delete` against one key/item via `dynamoDBDocument`. `delete`/`update` route through the destructive-operation gate.                                                                                                                                                                                                                        |
-| `scan-table`        | `scan`/`query`/`export`: `totalSegments` parallel async-generator workers, each page-looping on `LastEvaluatedKey`, checkpointing every `checkpointEveryPages` pages, streaming records straight to the JSONL sink. `query` adds `indexName` + key-condition support.                                                                                                   |
-| `batch-write-table` | `batch-write`/`batch-delete`/`import`: reads records via `import-records` (shared `M3LJSONListImporter.importStream()` wrapper), chunks into 25-item `BatchWrite`/`BatchDelete` requests, retries `UnprocessedItems` through `M3LRetryRunner`'s throttling classifier bounded by `maxInFlightBatches`, and appends failed-after-retry items to `<output>/failed.jsonl`. |
-| `destructive-gate`  | Shared confirm-gate for `delete`/`update`/`batch-delete`/`import` into a non-empty table: prints the target table + an item-count estimate (`DescribeTable`) and requires confirmation before proceeding (fleet convention, promoted in W5).                                                                                                                            |
-| `run-dynamo-crud`   | Composes the pipeline — the only module that knows operation dispatch order: resolve operation → (destructive gate if applicable) → read or write step → emit the run summary (written/retried/failed/skipped counts) through the `ctx`-correlated logger, exiting non-zero on failures.                                                                                |
+| Step                | Responsibility                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `single-item-ops`   | `get` / `put` / `update` / `delete` against one key/item via `AWS.getItem`/`putItem`/`updateItem`/`deleteItem`. `delete`/`update` route through the destructive-operation gate.                                                                                                                                                                                                                     |
+| `scan-table`        | `scan`/`query`/`export`: `totalSegments` parallel workers each driving `AWS.scanSegment`/`queryItems` (async generators yielding `{ items, lastEvaluatedKey }` pages), checkpointing `lastEvaluatedKey` every `checkpointEveryPages` pages, streaming records straight to the JSONL sink. `query` adds `indexName` + `key` as the equality key condition.                                           |
+| `batch-write-table` | `batch-write`/`batch-delete`/`import`: reads records via `import-records` (shared `M3LJSONListImporter.importStream()` wrapper), chunks into 25-item groups, calls `AWS.batchWriteItems`/`batchDeleteItems`, retries each call's `unprocessed` result through `M3LRetryRunner`'s throttling classifier bounded by `maxInFlightBatches`, and appends still-failing items to `<output>/failed.jsonl`. |
+| `destructive-gate`  | Shared confirm-gate for `delete`/`update`/`batch-delete`/`import` into a non-empty table: prints the target table + an item-count estimate (`AWS.describeTable`) and requires confirmation before proceeding (fleet convention, promoted in W5).                                                                                                                                                    |
+| `run-dynamo-crud`   | Composes the pipeline — the only module that knows operation dispatch order: resolve operation → (destructive gate if applicable) → read or write step → emit the run summary (written/retried/failed/skipped counts) through the `ctx`-correlated logger, exiting non-zero on failures.                                                                                                            |
 
 ## Inputs and outputs
 
@@ -89,8 +94,8 @@ streaming step contract.
 
 ## See also
 
-- [`aws/clients`](../aws/clients.md) — the `dynamoDBDocument` (L2) getter used throughout.
-- [`core/polling`](../core/polling.md) — `M3LRetryRunner` and its throttling policies, used for `UnprocessedItems` retry.
+- [`aws/dynamodb`](../aws/dynamodb.md) — the high-level item operations (`getItem`/`putItem`/`updateItem`/`deleteItem`/`queryItems`/`scanSegment`/`batchWriteItems`/`batchDeleteItems`/`describeTable`) used throughout; the sole abstraction boundary over the AWS SDK commands.
+- [`core/polling`](../core/polling.md) — `M3LRetryRunner` and its throttling policies, used for `unprocessed`-result retry.
 - [`core/importers`](../core/importers.md) — `M3LJSONListImporter.importStream()`, wrapped by `import-records`.
 - [`core/script`](../core/script.md) — the `M3LScript` lifecycle the script runs on.
 - [ADR-0022](../../adr/0022-reintroduce-scripts-workspace.md) — fleet conventions.
