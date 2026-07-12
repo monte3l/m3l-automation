@@ -87,13 +87,14 @@ Split the conflicted paths from Step 1 into **derived-artifact** vs **logic**.
 
 **Derived / metadata — resolve by regeneration (safe for this skill):**
 
-| Conflicted path                                                                                                                     | Resolution                                                                                                                |
-| ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm-lock.yaml`                                                                                                                    | Take `main`'s version, then `pnpm install` to regenerate against the merged `package.json`.                               |
-| `package.json` → `dependencies` block                                                                                               | Union the two dependency sets, then `pnpm install`. **Never** touch the `version` field (see below).                      |
-| `README.md`, `packages/m3l-common/README.md`, `docs/README.md`, `docs/implementation-status.md` — the "N of 22" count prose / badge | Take `main`'s copy, flip your module's status row to ✅, and let `/syncing-docs` (Step 5) derive the authoritative count. |
-| `docs/reference/catalog.json` (reference index)                                                                                     | Do **not** hand-merge. Leave it; `/syncing-docs` regenerates it via `pnpm gen:index` in Step 5.                           |
-| `*.provenance.json` sidecars                                                                                                        | Do **not** hand-merge. `/syncing-docs` re-stamps them to the live post-resolution commit in Step 5.                       |
+| Conflicted path                                                                                   | Resolution                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm-lock.yaml`                                                                                  | Take `main`'s version, then `pnpm install` to regenerate against the merged `package.json`.                                                                                                                                                                                                                                                         |
+| `package.json` → `dependencies` block                                                             | Union the two dependency sets, then `pnpm install`. **Never** touch the `version` field (see below).                                                                                                                                                                                                                                                |
+| `README.md`, `packages/m3l-common/README.md`, `docs/README.md` — the "N of 22" count badges/prose | Take either side, then run `pnpm gen:counts` (Step 5) — it rewrites every site from the filesystem-derived counts, so which side you took doesn't matter.                                                                                                                                                                                           |
+| `docs/implementation-status.md` — the `<!-- BEGIN/END GENERATED IMPLEMENTED-LIST -->` block       | Take either side, then run `pnpm gen:counts` (Step 5) — regenerated from the ✅ rows, same as the count badges above. A conflict on the ✅ **table rows themselves** (two branches flipping the _same_ row) is a real status conflict, not derived — resolve it by hand (pick the row that reflects the true post-merge state) before regenerating. |
+| `docs/reference/catalog.json` (reference index)                                                   | Do **not** hand-merge. Leave it; `/syncing-docs` regenerates it via `pnpm gen:index` in Step 5.                                                                                                                                                                                                                                                     |
+| `*.provenance.json` sidecars                                                                      | Do **not** hand-merge. `/syncing-docs` re-stamps them to the live post-resolution commit in Step 5.                                                                                                                                                                                                                                                 |
 
 **Never hand-resolve — abort if these are the only way forward:**
 
@@ -145,8 +146,9 @@ conflicted paths.
 
 The resolution touched derived files, so reconcile doc metadata **before**
 committing anything further. Invoke `/syncing-docs` — it re-stamps provenance to
-the live post-resolution commit, regenerates `catalog.json`, and reconciles the
-"N of 22" counts. It only mutates working-tree files; it never commits.
+the live post-resolution commit, runs `pnpm gen:counts` to reconcile the
+"N of 22" counts and the implemented-list block, and regenerates
+`catalog.json`. It only mutates working-tree files; it never commits.
 
 `/syncing-docs` runs `pnpm lint:md`, which can fail — surface a `lint:md` failure
 like any other gate (fail fast, hand back). Then run the full pipeline:

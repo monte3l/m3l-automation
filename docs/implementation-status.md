@@ -2,7 +2,12 @@
 
 This is the **single source of truth** for what is implemented in
 `@m3l-automation/m3l-common` versus what the `docs/reference/**` pages specify.
-The barrels are wired; `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`, `prompt`, `exporters`, `storage`, `network`, `importers`, `files`, `logging`, `aws/models`, `script`, `aws/credentials`, and `aws/clients` are implemented and reviewed (22 of 22 submodules). See the table below for per-submodule status.
+
+<!-- BEGIN GENERATED IMPLEMENTED-LIST -->
+
+The barrels are wired; `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `logging`, `files`, `network`, `polling`, `prompt`, `importers`, `exporters`, `storage`, `text`, `script`, `models`, `credentials`, and `clients` are implemented and reviewed (22 of 22 submodules). See the table below for per-submodule status.
+
+<!-- END GENERATED IMPLEMENTED-LIST -->
 
 > **Maintenance contract (hub):** the main agent updates this file after **each
 > phase** of the `implementing-submodules` pipeline. It is the durable, cross-session

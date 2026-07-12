@@ -74,3 +74,16 @@ and [`archive/2026-07-06-consumer-fleet-roadmap.md`](./archive/2026-07-06-consum
 | **D5** platform extraction (minimal copy-and-parameterize path)                         | a second repo adopting the workflow                                                                                                                                                                                                   |
 | **TypeScript 6→7 toolchain upgrade** (deliberate hold, `check:deps` notice from PR #95) | TS7 compatibility verified across the toolchain (typescript-eslint, vitest, `tsc -b` project references) **and** a toolchain-upgrade decision taken — see `docs/logs/2026-07-10-core-json.md` / `docs/logs/2026-07-11-aws-clients.md` |
 | **External code-index MCP** (ADR-0012, re-affirmed by ADR-0023)                         | W2–W4 fleet landed **and** observed spoke grep/context friction the populated `catalog.json`/`symbol-map.json` cannot answer; candidates (Serena vs. Node-only indexer) re-rank then                                                  |
+
+## Maintenance
+
+When a unit lands: flip its `Status` cell in the relevant table above (and in
+[`ROADMAP.md`](../ROADMAP.md)), `git mv` any dated plan it completes into
+[`archive/`](./archive/), and file any new friction surfaced by a work log as a
+new row here (not left narrative-only in the log).
+
+**Row-locality rule** (ADR-0024): one item = one table row; a status change
+touches only that row; no prose sentence may aggregate more than one item's
+status. The tables above already follow this — a branch flipping one F-series
+item's status edits exactly one cell, so two branches landing different items
+never conflict on this file.
