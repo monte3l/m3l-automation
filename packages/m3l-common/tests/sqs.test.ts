@@ -244,7 +244,7 @@ describe("M3LSQSOperations", () => {
   });
 
   test("purgeQueue() rejects with M3LSQSOperationError (code ERR_SQS_OPERATION) when PurgeQueue rejects (e.g. cooldown)", async () => {
-    h.send.mockRejectedValueOnce(
+    h.send.mockRejectedValue(
       Object.assign(new Error("cooldown"), { name: "PurgeQueueInProgress" }),
     );
 
