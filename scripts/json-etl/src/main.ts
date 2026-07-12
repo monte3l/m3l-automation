@@ -2,6 +2,7 @@ import { Core } from "@m3l-automation/m3l-common";
 
 import { configParameters } from "./config.js";
 import { getCorrelationId, hooks } from "./hooks.js";
+import { resolvePresetOption } from "./steps/resolve-preset.js";
 import { runJsonEtl } from "./steps/run-json-etl.js";
 
 // Composition root ONLY (ADR-0022): construct the script, wire config/hooks,
@@ -17,6 +18,7 @@ const script = new Core.M3LScript({
   metadata: { name: "json-etl", version: "0.0.0" },
   config: { params: configParameters },
   hooks,
+  ...resolvePresetOption(),
 });
 
 await script.run(async () => {
