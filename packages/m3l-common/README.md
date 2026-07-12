@@ -17,7 +17,7 @@
 
 > **All 23 of 23 submodules are implemented and reviewed.** The package is
 > internal and not published to npm; `version` in `package.json` is hand-managed.
-> Implemented submodules: `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`, `prompt`, `exporters`, `storage`, `network`, `importers`, `files`, `logging`, `aws/models`, `script`, `aws/credentials`, `aws/clients`.
+> Implemented submodules: `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`, `prompt`, `exporters`, `storage`, `network`, `importers`, `files`, `logging`, `aws/models`, `script`, `aws/credentials`, `aws/clients`, `aws/sqs`.
 
 A shared infrastructure library for automation scripts and AWS Lambda handlers. It provides
 enterprise-grade building blocks — application scaffolding, configuration, logging, error
