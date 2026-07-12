@@ -459,6 +459,26 @@
   },
   {
     "namespace": "aws",
+    "name": "dynamodb",
+    "importPath": "@m3l-automation/m3l-common/aws",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/aws/dynamodb.md",
+    "symbols": [
+      "getItem",
+      "putItem",
+      "updateItem",
+      "deleteItem",
+      "queryItems",
+      "scanSegment",
+      "batchWriteItems",
+      "batchDeleteItems",
+      "describeTable",
+      "M3LDynamoDBOperationError"
+    ]
+  },
+  {
+    "namespace": "aws",
     "name": "models",
     "importPath": "@m3l-automation/m3l-common/aws",
     "status": "✅",

@@ -49,7 +49,16 @@ separation intact here by handing off rather than implementing inline.
    There is no generic `M3LNotImplementedError` in this repo — every module defines
    its own error (e.g. `M3LPathResolutionError`, `M3LJSONFormatDetectionError`), so
    define one for the new module and throw it from the stubs. Named exports only;
-   relative imports carry the `.js` extension.
+   relative imports carry the `.js` extension. **`index.ts` must stay a thin
+   barrel** (`export * from "./<file>.js";` per symbol group, mirroring
+   `aws/clients/index.ts`) — real logic goes in sibling files (e.g.
+   `operations.ts`, `provider.ts`). `vitest.config.ts`'s coverage config
+   excludes **every** `**/index.ts` project-wide (barrels are assumed to carry
+   no logic worth measuring); a module scaffolded with its real functions
+   directly inside `index.ts` silently drops out of the 80% coverage gate
+   entirely (found on `aws/dynamodb`, which needed a mid-implementation split
+   into `operations.ts` + a thin `index.ts` to get its coverage measured at
+   all — see `docs/logs/2026-07-13-aws-dynamodb.md`).
 3. Re-export the module from `packages/m3l-common/src/<ns>/index.ts`
    (`export * from "./<module>/index.js";`).
 4. Create `packages/m3l-common/tests/<module>.test.ts` with at least one

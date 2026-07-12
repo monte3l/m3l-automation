@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // Derives the canonical IMPLEMENTED-submodule count (the numerator of the
-// "N of 22" figure) from the Status column of docs/implementation-status.md and
+// "N of M" figure) from the Status column of docs/implementation-status.md and
 // asserts that every prose/badge/HTML site quoting that numerator agrees —
 // plus that the generated implemented-list block (the marker-delimited
 // sentence near the top of docs/implementation-status.md) matches a fresh
 // render, so a hand edit inside the markers is caught.
 //
 // This is the numerator counterpart to check-doc-counts.mjs, which owns the
-// denominator (total documented = 22). The numerator rotted undetected once
+// denominator (total documented). The numerator rotted undetected once
 // (see docs/logs/2026-07-01-core-json.md, divergence 1) because
 // packages/m3l-common/README.md was checked nowhere. Site inventory shared
 // with gen-doc-counts.mjs and check-doc-counts.mjs via bin/lib/count-sites.mjs.
@@ -107,5 +107,5 @@ if (errors > 0) {
 }
 
 console.log(
-  `✓  Implemented count matches everywhere: ${counts.implemented} of 22 (${namesCsv}).`,
+  `✓  Implemented count matches everywhere: ${counts.implemented} of ${counts.total} (${namesCsv}).`,
 );

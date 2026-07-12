@@ -1,0 +1,109 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "aws/dynamodb.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
+          "symbol": "getItem",
+          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
+          "symbol": "putItem",
+          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
+          "symbol": "updateItem",
+          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
+          "symbol": "deleteItem",
+          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
+          "symbol": "queryItems",
+          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
+          "symbol": "scanSegment",
+          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
+          "symbol": "batchWriteItems",
+          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
+          "symbol": "batchDeleteItems",
+          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
+          "symbol": "describeTable",
+          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/dynamodb/error.ts",
+          "symbol": "M3LDynamoDBOperationError",
+          "blob": "8d34aad4acc40c53ee341bc3411582d6729aaff8"
+        }
+      ],
+      "retrieved": "2026-07-12"
+    },
+    {
+      "heading": "Design choices",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
+          "symbol": "queryItems",
+          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
+          "symbol": "scanSegment",
+          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
+          "symbol": "batchWriteItems",
+          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
+          "symbol": "batchDeleteItems",
+          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
+          "symbol": "updateItem",
+          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/dynamodb/operations.ts",
+          "symbol": "describeTable",
+          "blob": "b924d79ff6edc85de4b088a6a751e3c3ef767516"
+        }
+      ],
+      "retrieved": "2026-07-12"
+    },
+    {
+      "heading": "`M3LDynamoDBOperationError`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/dynamodb/error.ts",
+          "symbol": "M3LDynamoDBOperationError",
+          "blob": "8d34aad4acc40c53ee341bc3411582d6729aaff8"
+        }
+      ],
+      "retrieved": "2026-07-12"
+    }
+  ]
+}
