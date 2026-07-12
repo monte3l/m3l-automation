@@ -202,20 +202,29 @@ function buildReceiveCommandInput(
  * or `failed`.
  *
  * @typeParam T - The caller's entry type (`M3LSQSSendEntry` or `M3LSQSDeleteEntry`).
+ * @param operation - The operation name, for the error message (`"sendBatch"` or `"deleteBatch"`).
  * @param entries - The caller's original input entries, in order.
  * @param failed - The SDK response's `Failed[]` (or `undefined`).
  * @returns The joined `{ successful, failed }` batch result.
+ * @throws {@link M3LSQSOperationError} if `Failed[]` contains an entry whose
+ *   `Id` is `undefined` or does not match any input entry's `id` — an
+ *   anomalous SDK response that would otherwise be silently dropped rather
+ *   than surfaced.
  */
 function joinBatchResult<T extends { readonly id: string }>(
+  operation: string,
   entries: readonly T[],
   failed: readonly BatchResultErrorEntry[] | undefined,
 ): M3LSQSBatchResult<T> {
-  const failedById = new Map((failed ?? []).map((f) => [f.Id, f]));
+  const failedList = failed ?? [];
+  const failedById = new Map(failedList.map((f) => [f.Id, f]));
   const successful: T[] = [];
   const failures: M3LSQSBatchFailure<T>[] = [];
+  const matchedIds = new Set<string>();
   for (const entry of entries) {
     const failure = failedById.get(entry.id);
     if (failure !== undefined) {
+      matchedIds.add(entry.id);
       failures.push({
         entry,
         code: failure.Code ?? "",
@@ -226,6 +235,21 @@ function joinBatchResult<T extends { readonly id: string }>(
       successful.push(entry);
     }
   }
+
+  // A Failed[] entry with no matching input entry id (including Id:
+  // undefined, which can never match a real caller id) would otherwise be
+  // silently dropped — it lands in neither `successful` nor `failed`. Treat
+  // that as a request-level failure rather than swallowing a real report.
+  const orphaned = failedList.filter(
+    (f) => f.Id === undefined || !matchedIds.has(f.Id),
+  );
+  if (orphaned.length > 0) {
+    throw new M3LSQSOperationError(
+      `${operation}: response contained ${String(orphaned.length)} Failed[] entries with no matching input entry id`,
+      { cause: orphaned },
+    );
+  }
+
   return { successful, failed: failures };
 }
 
@@ -323,8 +347,16 @@ export class M3LSQSOperations {
           new SendMessageBatchCommand({ QueueUrl: queueUrl, Entries }),
         ),
       );
-      return joinBatchResult(entries, response.Failed);
+      return joinBatchResult("sendBatch", entries, response.Failed);
     } catch (cause) {
+      // joinBatchResult can itself throw a specific M3LSQSOperationError
+      // (an orphaned Failed[] entry) from inside this try block — forward it
+      // unchanged rather than re-wrapping it under the generic "request
+      // failed" message below, which would be misleading (the request
+      // succeeded; the response shape was anomalous).
+      if (cause instanceof M3LSQSOperationError) {
+        throw cause;
+      }
       throw new M3LSQSOperationError(
         `sendBatch: SendMessageBatch failed for queueUrl=${queueUrl}`,
         { cause },
@@ -360,8 +392,14 @@ export class M3LSQSOperations {
           new DeleteMessageBatchCommand({ QueueUrl: queueUrl, Entries }),
         ),
       );
-      return joinBatchResult(entries, response.Failed);
+      return joinBatchResult("deleteBatch", entries, response.Failed);
     } catch (cause) {
+      // See the equivalent guard in sendBatch: joinBatchResult's own
+      // M3LSQSOperationError (orphaned Failed[] entry) must not be
+      // re-wrapped under the generic "request failed" message below.
+      if (cause instanceof M3LSQSOperationError) {
+        throw cause;
+      }
       throw new M3LSQSOperationError(
         `deleteBatch: DeleteMessageBatch failed for queueUrl=${queueUrl}`,
         { cause },

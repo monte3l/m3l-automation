@@ -5,11 +5,6 @@ import `@aws-sdk/client-sqs` command classes directly. See
 [ADR-0026](../../adr/0026-sqs-operations-wrapper.md) for why this module
 exists and why it is permitted to import `core/polling`.
 
-> **Scaffold status:** this page describes the intended contract.
-> Implementation is tracked in `docs/implementation-status.md` (status 🧪);
-> method bodies currently throw `M3LSQSOperationError("... not yet
-implemented")`.
-
 ## Overview
 
 Every AWS client getter on `AWSClientProvider` exposes a raw AWS SDK v3
@@ -143,8 +138,12 @@ const sqsOperations = new AWS.M3LSQSOperations(provider.sqs);
   client's connection lifecycle and is cleared (not independently destroyed)
   by `provider.close()`.
 - `core/polling` is an intentional, ADR-0026-recorded exception to Zone A
-  (`aws/**` may otherwise import only `core/errors`/`core/prompt`) — scoped
-  to this module's internal retry composition, not a general loosening.
+  (`aws/**` may otherwise import only `core/errors`/`core/prompt`), added for
+  this module's internal retry composition. The `eslint.config.js` exception
+  is zone-wide (`aws/**`, not `aws/sqs/**` specifically) — any other AWS
+  submodule may also import `core/polling` today, but only this module
+  actually does; it is not a general loosening of what `aws/**` may depend on
+  beyond that one edge.
 
 ## See also
 

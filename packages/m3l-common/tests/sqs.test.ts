@@ -261,6 +261,29 @@ describe("M3LSQSOperations", () => {
     expect(h.send).toHaveBeenCalled();
   });
 
+  test("purgeQueue() rejects with cause chained, and is not retried (send called exactly once)", async () => {
+    const cooldownError = Object.assign(new Error("cooldown"), {
+      name: "PurgeQueueInProgress",
+    });
+    h.send.mockRejectedValueOnce(cooldownError);
+
+    const operations = new M3LSQSOperations(fakeClient());
+
+    let thrown: unknown;
+    try {
+      await operations.purgeQueue(QUEUE_URL);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LSQSOperationError);
+    expect((thrown as M3LSQSOperationError).cause).toBe(cooldownError);
+    // Unlike sendBatch/deleteBatch (which retry on throttling), purgeQueue
+    // must call send exactly once — a cooldown rejection is a business
+    // condition, not a transient fault to retry through.
+    expect(h.send).toHaveBeenCalledTimes(1);
+  });
+
   test("purgeQueue() resolves to undefined on success, sending only QueueUrl", async () => {
     h.send.mockResolvedValueOnce({});
 
@@ -335,6 +358,34 @@ describe("M3LSQSOperations", () => {
       expect(failure?.code).toBe("InvalidParameterValue");
       expect(failure?.senderFault).toBe(true);
       expect(failure?.message).toBe("bad");
+    });
+
+    test("rejects M3LSQSOperationError when a Failed[] entry's Id doesn't match any input entry's id (orphaned failure)", async () => {
+      const entries: M3LSQSSendEntry[] = [{ id: "0", body: "hello" }];
+      h.send.mockResolvedValueOnce({
+        Successful: [],
+        Failed: [
+          {
+            Id: "nonexistent-id",
+            SenderFault: true,
+            Code: "SomeError",
+          },
+        ],
+      });
+
+      const operations = new M3LSQSOperations(fakeClient());
+
+      let thrown: unknown;
+      try {
+        await operations.sendBatch(QUEUE_URL, entries);
+      } catch (error) {
+        thrown = error;
+      }
+
+      // An orphaned Failed[].Id (no matching input entry) must surface as a
+      // request-level failure, not be silently dropped from the result.
+      expect(thrown).toBeInstanceOf(M3LSQSOperationError);
+      expect(thrown).toMatchObject({ code: "ERR_SQS_OPERATION" });
     });
 
     test("rejects M3LSQSOperationError when given more than 10 entries, without calling send", async () => {
