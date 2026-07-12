@@ -4,6 +4,14 @@
 - **Date:** 2026-07-11
 - **Deciders:** Enrico Lionello
 
+> **Update (2026-07-12).** All three PRs landed as designed: PR-1
+> (content-hash provenance, #107), PR-2 (derivable trackers, #108), and PR-3
+> (git merge drivers). The `merge=m3l-generated` driver is registered for
+> exactly the three files named in the PR-3 bullet below
+> (`docs/reference/catalog.json`, `docs/reference/symbol-map.json`,
+> `pnpm-lock.yaml`) — no driver for `*.provenance.json` or the hand-edited
+> trackers/READMEs, per the exclusions already recorded there.
+
 ## Context and problem statement
 
 Every merge to `main` forced all open parallel worktree branches to rebase
