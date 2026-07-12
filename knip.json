@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignore": [".claude/**", ".remember/**", "commitlint.config.js"],
+  "ignore": [".remember/**", "commitlint.config.js"],
   "ignoreDependencies": [
     "@commitlint/config-conventional",
     "@commitlint/types"
@@ -9,6 +9,9 @@
     "packages/m3l-common/src/core/environment/index.ts": ["duplicates"]
   },
   "workspaces": {
+    ".": {
+      "entry": [".claude/hooks/**/*.mjs"]
+    },
     "packages/m3l-common": {
       "entry": "src/index.ts",
       "project": "src/**/*.ts"
