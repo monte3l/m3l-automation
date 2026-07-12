@@ -199,16 +199,19 @@ export function classifyBashCommand(command) {
     // lookbehind: `1>file`/`2>file` are ordinary fd-prefixed writes, not fd
     // duplication — `2>&1` is excluded below because its target starts with
     // `&`, which the target class already rejects, so it never matches here
-    // at all. `\|?` also catches the clobber operator (`>|file`).
-    const redirect = segment.match(/(>{1,2}\|?)\s*([^\s&|;]+)/);
-    if (
-      redirect &&
-      !/^(\/dev\/null|nul)$/i.test(redirect[2].replace(/^["']|["']$/g, ""))
-    ) {
-      return {
-        blocked: true,
-        reason: `writes to "${redirect[2]}" via shell redirection ("${redirect[0]}")`,
-      };
+    // at all. `\|?` also catches the clobber operator (`>|file`). Global flag:
+    // a segment can carry more than one redirect (`cmd > /dev/null > real`),
+    // and a decoy discard target must not short-circuit the scan past a real
+    // one that follows it.
+    for (const redirect of segment.matchAll(/(>{1,2}\|?)\s*([^\s&|;]+)/g)) {
+      if (
+        !/^(\/dev\/null|nul)$/i.test(redirect[2].replace(/^["']|["']$/g, ""))
+      ) {
+        return {
+          blocked: true,
+          reason: `writes to "${redirect[2]}" via shell redirection ("${redirect[0]}")`,
+        };
+      }
     }
 
     const { verb, sub, tokens } = parseSegment(segment);
