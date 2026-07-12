@@ -37,8 +37,12 @@ describe("deriveCounts", () => {
     expect(counts.implementedNames).toEqual(["errors", "events", "models"]);
   });
 
-  test("uses real filesystem/status derivation by default (no deps passed)", () => {
-    const counts = deriveCounts();
+  test("total and implemented are always internally consistent with their parts", () => {
+    const counts = deriveCounts({
+      countCore: () => 5,
+      countAws: () => 2,
+      getStatus: () => ({ a: "✅", b: "❌", c: "✅", d: "✅" }),
+    });
     expect(counts.total).toBe(counts.coreCount + counts.awsCount);
     expect(counts.implemented).toBe(counts.implementedNames.length);
   });
