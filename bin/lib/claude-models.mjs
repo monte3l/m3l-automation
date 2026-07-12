@@ -91,13 +91,7 @@ const WORKFLOW_MODEL_ALIASES = Object.freeze([
 ]);
 
 /** Legal effort levels for a subagent's `effort:` frontmatter field. */
-const EFFORT_LEVELS = Object.freeze([
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-]);
+const EFFORT_LEVELS = Object.freeze(["low", "medium", "high", "xhigh", "max"]);
 
 /** Matches a full Anthropic model ID, e.g. `claude-opus-4-8` or `claude-sonnet-5`. */
 const MODEL_ID_PATTERN = /^claude-[a-z]+-[a-z0-9-]+$/;
