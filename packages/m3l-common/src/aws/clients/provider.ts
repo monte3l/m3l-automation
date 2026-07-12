@@ -25,6 +25,7 @@ import { fromIni } from "@aws-sdk/credential-provider-ini";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 
 import type { M3LAWSProfile, M3LAWSRegion } from "../models/index.js";
+import { M3LSQSOperations } from "../sqs/client.js";
 
 import { M3LAWSClientError } from "./error.js";
 import { AWS_REGION } from "./region.js";
@@ -121,6 +122,10 @@ export class AWSClientProvider {
   // `this.dynamoDB` before memoizing this wrapper) — close() must clear both
   // together, or a future per-service eviction can leave a stale wrapper here.
   private dynamoDBDocumentClient: DynamoDBDocumentClient | undefined;
+  // Invariant: when set, `sqs` is already in `cache` (the getter reads
+  // `this.sqs` before memoizing this wrapper) — close() must clear both
+  // together, mirroring `dynamoDBDocumentClient` above.
+  private sqsOperationsClient: M3LSQSOperations | undefined;
 
   /**
    * Creates a new `AWSClientProvider`.
@@ -263,6 +268,23 @@ export class AWSClientProvider {
   }
 
   /**
+   * The {@link M3LSQSOperations} wrapper over this provider's `sqs` client,
+   * constructed on first access. Shares the underlying `sqs` client's
+   * connection lifecycle: it is torn down when `close()` destroys that
+   * client, never destroyed independently (it holds no destroyable resource
+   * of its own).
+   */
+  get sqsOperations(): M3LSQSOperations {
+    const cached = this.sqsOperationsClient;
+    if (cached !== undefined) return cached;
+
+    const base = this.sqs; // may throw a typed M3LAWSClientError — let it propagate
+    const operations = new M3LSQSOperations(base);
+    this.sqsOperationsClient = operations;
+    return operations;
+  }
+
+  /**
    * Destroys every currently-cached client and clears the cache, so a later
    * getter access constructs a fresh instance. Services that were never
    * accessed are untouched.
@@ -298,6 +320,7 @@ export class AWSClientProvider {
 
     this.cache.clear();
     this.dynamoDBDocumentClient = undefined; // shares dynamoDB's lifecycle; not destroyed separately
+    this.sqsOperationsClient = undefined; // shares sqs's lifecycle; not destroyed separately
 
     if (failures.length > 0) {
       const services = failures.map((failure) => failure.service).join(", ");
