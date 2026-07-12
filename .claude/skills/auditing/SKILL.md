@@ -81,6 +81,14 @@ list. The core/json audit found its source plan asserted an
 already-fixed inconsistency and missed two count-bearing files
 (`docs/logs/2026-07-01-core-json.md`, divergence 1).
 
+**When a finding needs to be checked against what Anthropic itself
+recommends** — not just against repo state — invoke
+`researching-anthropic-guidance` and fold its briefing into the aggregated
+summary. The two skills read different sources: this one reads the repo,
+that one reads official Anthropic docs/blogs/whitepapers; a `GAP` this skill
+surfaces (e.g. "no documented subagent tool-grant policy") is often best
+resolved by first learning what Anthropic recommends before drafting the plan.
+
 Write a concise aggregated summary: themes as headings, bullet-listed items
 under each, **preserving the EXISTING / GAP / INCONSISTENCY prefix on every
 item** exactly as the agents used it. Do not rewrite items using prose labels
