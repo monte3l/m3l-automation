@@ -67,25 +67,26 @@ git rebase origin/main
   ```
 
   Tell the user which files conflict and hand off to the
-  `/resolving-merge-conflicts` skill (it auto-resolves the derived-artifact
-  conflicts below and hands back any real `src/`/test logic), then re-run this
-  skill. If they prefer to resolve by hand: `git rebase origin/main`, fix,
-  `git rebase --continue`. Stop here.
+  `/resolving-merge-conflicts` skill (its remit narrowed by the merge-driver
+  layer below to real `src/`/test logic, same-module provenance, and same-row
+  tracker collisions), then re-run this skill. If they prefer to resolve by
+  hand: `git rebase origin/main`, fix, `git rebase --continue`. Stop here.
 
-  **Exception — derived-artifact conflicts resolve by regeneration, not
-  hand-merge.** On a long-running branch, parallel submodules landing on `main`
-  routinely conflict on _generated or metadata_ files: `pnpm-lock.yaml`, the
-  `dependencies` block in `package.json`, the `N of 22` count prose (READMEs +
-  `implementation-status.md`), and the reference index
-  (`catalog.json`/`symbol-map.json`). These are safe for the hub to resolve
-  because none is hand-authored logic: take `main`'s version, then regenerate —
-  union the `dependencies` and re-run `pnpm install` for the lockfile; take
-  `main`'s doc-count files, flip your module's status row to ✅, and let
-  `pnpm gen:index` + `pnpm check:impl-counts` derive the authoritative count;
-  re-stamp your module's provenance to the _live_ (post-rebase) feature commit,
-  since the pre-rebase ref is gone. Land the reconciliation as a separate
-  `docs:` commit (the repo's "reconcile counts and index after rebasing onto
-  main" pattern). Still hand back on any conflict in real `src/`/test logic.
+  **Most derived-artifact conflicts auto-resolve during the rebase itself
+  (ADR-0024).** `docs/reference/catalog.json`, `docs/reference/symbol-map.json`,
+  and `pnpm-lock.yaml` are tagged `merge=m3l-generated` in `.gitattributes`; the
+  registered git merge driver (`bin/merge-driver-generated.mjs`, installed via
+  `prepare`/`worktree:setup`) keeps the current side and exits 0 on any
+  conflict there — no stop, no `git diff --diff-filter=U` entry for them at
+  all. The `post-rewrite` lefthook hook (`bin/post-integrate-regen.mjs`) then
+  regenerates them automatically once the rebase finishes, reporting dirty
+  files rather than committing. Land that reconciliation as a `docs:
+reconcile doc metadata` commit (this repo's standard pattern) before
+  pushing. The `package.json` `dependencies` block and the "N of 22" count
+  prose are **not** driver-covered (the source blocks, not their generated
+  outputs) — a conflict there still needs the union/regenerate treatment
+  `/resolving-merge-conflicts` Step 3 describes. Still hand back on any
+  conflict in real `src/`/test logic, or a same-row/same-module collision.
 
 - **Signing:** pushes are signature-gated, so rebased commits must stay signed.
   If the user's `commit.gpgsign` is unset, use the same recovery pattern
