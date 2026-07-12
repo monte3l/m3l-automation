@@ -59,6 +59,12 @@ claude-sonnet-5`) — not for spoke frontmatter, where auto-upgrade is the
 
 Every task or workflow category this project has performed, with the model tier
 it should run on. "Official grounding" quotes Anthropic's published positioning.
+When these URLs need refreshing — a new model/effort doc ships, or a row's
+citation goes stale — run `researching-anthropic-guidance` rather than
+re-Googling by hand: it fans out `Explore` agents restricted to Anthropic's
+official domains and returns a dated, sourced briefing in this same
+"grounding quote + URL" shape, the same convention this table and the ADR
+"Evidence gathered `<date>`" links already follow.
 
 Column 2 tags each row's workflow shape: **Coordinator workflow** = a hub
 session orchestrating (and possibly dispatching) other work, **Subagent
