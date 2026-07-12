@@ -20,11 +20,21 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 // 1. Run Vitest with the JSON reporter to get per-file test counts.
 // ---------------------------------------------------------------------------
 
-const res = spawnSync("pnpm", ["vitest", "run", "--reporter=json"], {
-  cwd: root,
-  encoding: "utf8",
-  maxBuffer: 10 * 1024 * 1024,
-});
+// Scoped to packages/m3l-common/tests: that's the only tree
+// docs/implementation-status.md's Notes column documents. Running the whole
+// repo here previously let a same-named scripts/*/tests/*.test.ts file (e.g.
+// scripts/json-etl/tests/config.test.ts) collide with a library submodule's
+// basename below and silently overwrite its count depending on vitest's
+// (non-deterministic) file-processing order.
+const res = spawnSync(
+  "pnpm",
+  ["vitest", "run", "--reporter=json", "packages/m3l-common/tests"],
+  {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 10 * 1024 * 1024,
+  },
+);
 
 // Vitest exits 0 on pass, 1 on failure. Guard against a broken suite.
 if (res.status !== 0) {
