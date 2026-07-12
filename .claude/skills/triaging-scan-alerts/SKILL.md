@@ -104,3 +104,7 @@ to choose from. For each: a one-line description, the concrete next step, and th
 main tradeoff. Do not edit code or dismiss alerts here — hand the actual code fix
 to the user or to `resolving-pr-comments`, and leave any alert dismissal (with a
 justification) to the user.
+
+If the alert count is large, write the full per-alert breakdown to a file and
+keep the chat reply to the blocking-alert summary and merge status — don't
+paste every alert inline.

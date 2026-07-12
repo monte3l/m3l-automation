@@ -173,6 +173,10 @@ the broader `/syncing-docs` pass rather than trusting it alone, since
 `/syncing-docs` also catches `check:doc-exports`, test counts, and
 `lint:md`, which the hook doesn't run.
 
+**Re-check formatting.** `git rebase --continue` (and `git checkout`) bypass the
+`pre-commit` prettier/eslint hook — it only fires on a normal `git commit`. Run
+`pnpm format:check` now rather than waiting for the pre-push lane to catch it.
+
 **Preserve signing.** Pushes are signature-gated. If the user's
 `commit.gpgsign` is unset, re-sign the resulting commits using the same recovery
 pattern `verify-signed-range` documents:
