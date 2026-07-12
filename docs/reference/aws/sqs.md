@@ -86,6 +86,24 @@ readonly M3LSQSBatchFailure<T>[] }`. Every input entry lands in exactly one
   of the two.
 - **`M3LSQSReceiveOptions`** — `{ maxMessages?, waitTimeSeconds?,
 visibilityTimeout?, messageAttributeNames?, systemAttributeNames? }`.
+  `maxMessages` defaults to `10`, `waitTimeSeconds` defaults to `20`
+  (mapped with `??`, not `||`, so an explicit `waitTimeSeconds: 0` — a
+  short poll — is honored rather than coerced back to the default).
+
+### Field-mapping details (`receive`)
+
+- A `Message` missing `MessageId`, `ReceiptHandle`, or `Body` (the SDK types
+  all three as optional; a real SQS response always populates them) maps the
+  missing field to `""` rather than throwing or skipping the message —
+  `receive` stays total over whatever shape the SDK returns.
+- An empty response and a response with no `Messages` field at all both
+  resolve to `[]` — `receive` treats "no messages" as success, not an error,
+  regardless of whether the SDK omitted the field or returned an empty array.
+- `messageAttributes` carries **string values only** (per its type). Sending:
+  each `[name, value]` entry is wrapped as `{ DataType: "String", StringValue:
+value }` for the SDK. Receiving: only entries whose `StringValue` is present
+  are extracted; a binary or list-valued attribute is skipped rather than
+  coerced to a string (so it never masquerades as an empty string).
 
 ## Usage
 
