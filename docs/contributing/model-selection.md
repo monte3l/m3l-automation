@@ -115,9 +115,10 @@ entry naming a specific model in a family … disables that family's wildcard
 entry", so pairing `sonnet` with `claude-sonnet-5` would have silently
 narrowed the `sonnet` alias to that one pinned version instead of letting it
 float — the opposite of step 4 above. `enforceAvailableModels` is
-deliberately unset: the four families already cover the entire current model
-catalog, so it would add risk (an unreachable Default) without narrowing
-anything further.
+deliberately unset: the four families already cover the entire current
+generally-available model catalog (limited-availability families, e.g.
+Mythos 5/Project Glasswing, are intentionally excluded until GA), so it would
+add risk (an unreachable Default) without narrowing anything further.
 
 The spoke and workflow rows above are machine-verified: `pnpm check:agents`
 (a CI step, also run in the `pre-push` git hook — see the cadence table in
@@ -127,6 +128,18 @@ block below, and that every value is a legal Anthropic model alias/ID or
 effort level (`bin/lib/claude-models.mjs`). Change a spoke's model or effort
 here **and** in its frontmatter, in the same commit — drift in either
 direction, or an illegal value, fails the check.
+
+The legal effort ladder (`bin/lib/claude-models.mjs` `EFFORT_LEVELS`) is
+`low` < `medium` < `high` < `xhigh` < `max`. Every row in this doc currently
+tops out at `xhigh` — "the best setting for most coding and agentic use
+cases" per the effort docs — so `max` is reserved headroom for a future
+task shape that needs it, not a value any row pins today; don't read "xhigh
+hardest" in row 1's notes as a hard ceiling in the code. Similarly, the legal
+agent `model:` values (`AGENT_MODEL_ALIASES`) include `inherit` — a
+resolution directive meaning "use the main session's model," not a model
+family — which is why it has no entry in the `availableModels` ceiling above:
+that allowlist restricts _families_, and `inherit` just defers to whichever
+family the session already resolved to.
 
 The hub session's model cannot be machine-enforced (it is user-selected via
 `/model`); the `starting-work` decision gate surfaces the matrix row for the
