@@ -35,6 +35,15 @@ describe("isSymbolExported", () => {
     expect(isSymbolExported("export { M3LFoo, M3LBar };", "M3LFoo")).toBe(true);
   });
 
+  test("finds a top-level exported generator function (function*)", () => {
+    expect(isSymbolExported("export function* m3lFoo() {}", "m3lFoo")).toBe(
+      true,
+    );
+    expect(
+      isSymbolExported("export async function* m3lFoo() {}", "m3lFoo"),
+    ).toBe(true);
+  });
+
   test("returns false when the symbol is absent", () => {
     expect(isSymbolExported("export class M3LFoo {}", "M3LBar")).toBe(false);
   });
