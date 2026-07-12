@@ -67,7 +67,7 @@ export function normalizeClaudeModel(name) {
  * uses it (every spoke pins an explicit tier), since it is a documented,
  * valid frontmatter value.
  */
-export const AGENT_MODEL_ALIASES = Object.freeze([
+const AGENT_MODEL_ALIASES = Object.freeze([
   "sonnet",
   "opus",
   "haiku",
@@ -82,7 +82,7 @@ export const AGENT_MODEL_ALIASES = Object.freeze([
  * for execution), plus the `opus[1m]` long-context variant. Full model IDs
  * are still validated via the `claude-<family>-<n>` ID pattern.
  */
-export const WORKFLOW_MODEL_ALIASES = Object.freeze([
+const WORKFLOW_MODEL_ALIASES = Object.freeze([
   ...AGENT_MODEL_ALIASES,
   "default",
   "best",
@@ -91,7 +91,7 @@ export const WORKFLOW_MODEL_ALIASES = Object.freeze([
 ]);
 
 /** Legal effort levels for a subagent's `effort:` frontmatter field. */
-export const EFFORT_LEVELS = Object.freeze([
+const EFFORT_LEVELS = Object.freeze([
   "low",
   "medium",
   "high",
