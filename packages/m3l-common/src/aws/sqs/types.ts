@@ -61,8 +61,12 @@ export interface M3LSQSDeleteEntry {
  * A single failed entry from a batch operation, joined back to the caller's
  * original input entry so it can be logged or re-driven without any
  * id bookkeeping on the caller's side.
+ *
+ * @typeParam T - The caller's entry type; bounded to `{ readonly id: string }`
+ *   since joining a failure back to its input entry requires a string `id`
+ *   (both {@link M3LSQSSendEntry} and {@link M3LSQSDeleteEntry} satisfy this).
  */
-export interface M3LSQSBatchFailure<T> {
+export interface M3LSQSBatchFailure<T extends { readonly id: string }> {
   /** The original input entry (an {@link M3LSQSSendEntry} or {@link M3LSQSDeleteEntry}) that failed. */
   readonly entry: T;
   /** The SQS error code for this entry (e.g. `"InvalidParameterValue"`). */
@@ -77,8 +81,11 @@ export interface M3LSQSBatchFailure<T> {
  * The result of a batch operation ({@link M3LSQSOperations.sendBatch} or
  * {@link M3LSQSOperations.deleteBatch}): every input entry lands in exactly
  * one of `successful` or `failed`.
+ *
+ * @typeParam T - The caller's entry type; bounded to `{ readonly id: string }`,
+ *   matching {@link M3LSQSBatchFailure}'s bound.
  */
-export interface M3LSQSBatchResult<T> {
+export interface M3LSQSBatchResult<T extends { readonly id: string }> {
   /** Entries SQS accepted. */
   readonly successful: readonly T[];
   /** Entries SQS rejected, each joined back to its original input entry. */
