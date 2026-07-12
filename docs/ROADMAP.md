@@ -51,19 +51,20 @@ clients; W4 last (each has a dependency decision); W5 is the standing F4 loop.
 
 Deliberately unscheduled until their gate opens (ADR-0021 D4/D5 intake).
 
-| Item                                                            | Unblock condition                                                                                                                                        |
-| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **D4** SSM config provider                                      | a 2nd script hand-rolling SSM config fetch (no new deps)                                                                                                 |
-| **D4** SES messaging transport                                  | a script needing notifications (new optional `@aws-sdk/client-sesv2` peer)                                                                               |
-| **D4** Lambda-invoke wrapper                                    | a script invoking Lambdas (no new deps)                                                                                                                  |
-| **D4** Slack/webhook transport                                  | first schedule the `M3LHttpClient` POST enhancement                                                                                                      |
-| **D5** platform extraction                                      | a second repo adopting the workflow                                                                                                                      |
-| **F1b** cross-parameter validation seam                         | a 2nd script hand-rolling a cross-field guard (`json-etl`'s `sort⇒limit` / `sort ∈ fields` is the 1st); needs an `M3LConfig`/`M3LConfigSchema`-level API |
-| **F3** `run(mainFn)` receives a `ctx`                           | 2.0 evidence only (breaking — collect, don't act)                                                                                                        |
-| **F7 / `onUnknownFormat`** tolerant per-record array import     | a consumer needing per-record tolerance on irregular non-JSONL input                                                                                     |
-| `@aws-sdk/client-scheduler` getter                              | `eventbridge-schedules` needing flexible (one-off/timezone) schedules                                                                                    |
-| **TypeScript 6→7 toolchain upgrade** (deliberate hold)          | TS7 verified across the toolchain (typescript-eslint, vitest, `tsc -b`) + a toolchain-upgrade decision (`check:deps` notice, PR #95)                     |
-| **External code-index MCP** (ADR-0012, re-affirmed by ADR-0023) | W2–W4 fleet landed + observed spoke grep friction the catalog/symbol-map can't answer                                                                    |
+| Item                                                                                 | Unblock condition                                                                                                                                        |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D4** SSM config provider                                                           | a 2nd script hand-rolling SSM config fetch (no new deps)                                                                                                 |
+| **D4** SES messaging transport                                                       | a script needing notifications (new optional `@aws-sdk/client-sesv2` peer)                                                                               |
+| **D4** Lambda-invoke wrapper                                                         | a script invoking Lambdas (no new deps)                                                                                                                  |
+| **D4** Slack/webhook transport                                                       | first schedule the `M3LHttpClient` POST enhancement                                                                                                      |
+| **D5** platform extraction                                                           | a second repo adopting the workflow                                                                                                                      |
+| **F1b** cross-parameter validation seam                                              | a 2nd script hand-rolling a cross-field guard (`json-etl`'s `sort⇒limit` / `sort ∈ fields` is the 1st); needs an `M3LConfig`/`M3LConfigSchema`-level API |
+| **F3** `run(mainFn)` receives a `ctx`                                                | 2.0 evidence only (breaking — collect, don't act)                                                                                                        |
+| **F7 / `onUnknownFormat`** tolerant per-record array import                          | a consumer needing per-record tolerance on irregular non-JSONL input                                                                                     |
+| `@aws-sdk/client-scheduler` getter                                                   | `eventbridge-schedules` needing flexible (one-off/timezone) schedules                                                                                    |
+| **TypeScript 6→7 toolchain upgrade** (deliberate hold)                               | TS7 verified across the toolchain (typescript-eslint, vitest, `tsc -b`) + a toolchain-upgrade decision (`check:deps` notice, PR #95)                     |
+| **External code-index MCP** (ADR-0012, re-affirmed by ADR-0023)                      | W2–W4 fleet landed + observed spoke grep friction the catalog/symbol-map can't answer                                                                    |
+| **ADR-0025** dynamic-workflows pilot (`auditing` fan-out + adversarial verification) | governance prerequisites land — `.claude/workflows/` surface validated against the MODEL-MATRIX and a token/agent-count guardrail defined (see ADR-0025) |
 
 ## Maintenance
 
