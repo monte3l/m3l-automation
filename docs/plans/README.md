@@ -29,6 +29,7 @@ lives in the trackers above. `archive/**` is excluded from `lint:md`.
 | Consumer-fleet (Phase 5)           | `2026-07-06-consumer-fleet-roadmap.md`, `2026-07-06-consumer-fleet-implementation-plan.md`            | **done/superseded** — F0/F1 shipped (PR #85–91); F2–F4 superseded by the trackers                                 |
 | Script pipeline                    | `2026-07-09-consumer-script-pipeline.md`                                                              | **done** — generator + gates (PRs #90/#91)                                                                        |
 | Consumer-scripts (W0–W5)           | `2026-07-09-consumer-scripts-roadmap.md`, `2026-07-09-consumer-scripts-implementation-plan.md`        | **superseded** by `ROADMAP.md` + `IMPLEMENTATION.md`; W0 shipped (#96/#97/#98), W1 done (#99), W2–W5 tracked live |
+| json-etl F-series adoption         | `2026-07-12-json-etl-adopt-seams.md`                                                                  | **done** — F8-adopt landed (`--preset` wiring); F6-adopt kept its event counter, gap filed as F6b                 |
 
 ## Adding a plan
 
