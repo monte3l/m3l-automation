@@ -4,6 +4,7 @@ description: Writes Vitest tests for an m3l-common export or a consumer-script p
 tools: Read, Grep, Glob, Edit, Write, Bash
 disallowedTools: Agent
 model: sonnet
+effort: high
 permissionMode: acceptEdits
 maxTurns: 40
 color: green

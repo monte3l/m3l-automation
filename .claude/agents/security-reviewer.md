@@ -4,6 +4,7 @@ description: Read-only security auditor for m3l-common. Audits the security-sens
 tools: Read, Grep, Glob, Bash
 disallowedTools: Agent
 model: opus
+effort: xhigh
 maxTurns: 40
 color: red
 ---

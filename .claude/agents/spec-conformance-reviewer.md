@@ -4,6 +4,7 @@ description: Read-only spec reviewer for m3l-common with two modes. As a contrac
 tools: Read, Grep, Glob, Bash
 disallowedTools: Agent
 model: opus
+effort: xhigh
 maxTurns: 40
 color: purple
 ---

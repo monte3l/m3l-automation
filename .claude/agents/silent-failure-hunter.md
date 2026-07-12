@@ -4,6 +4,7 @@ description: Read-only error-handling auditor for m3l-common. Hunts for silent f
 tools: Read, Grep, Glob, Bash
 disallowedTools: Agent
 model: sonnet
+effort: high
 maxTurns: 40
 color: yellow
 ---
