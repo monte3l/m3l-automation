@@ -6,7 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-worktree-ready.mjs\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-worktree-ready.mjs\"",
+            "timeout": 30
           }
         ]
       }
@@ -16,7 +17,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-decision-gate.mjs\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-decision-gate.mjs\"",
+            "timeout": 30
           }
         ]
       }
@@ -27,7 +29,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-git-push-signed.mjs\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-git-push-signed.mjs\"",
+            "timeout": 30
           }
         ]
       },
@@ -36,27 +39,33 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-js-extension.mjs\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-js-extension.mjs\"",
+            "timeout": 30
           },
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-no-commonjs.mjs\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-no-commonjs.mjs\"",
+            "timeout": 30
           },
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-protected-paths.mjs\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-protected-paths.mjs\"",
+            "timeout": 30
           },
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-eslint-disable-red.mjs\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-eslint-disable-red.mjs\"",
+            "timeout": 30
           },
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-branch-isolation.mjs\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-branch-isolation.mjs\"",
+            "timeout": 30
           },
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-secret-writes.mjs\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-secret-writes.mjs\"",
+            "timeout": 30
           }
         ]
       }
@@ -66,7 +75,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/remind-sync-docs.mjs\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/remind-sync-docs.mjs\"",
+            "timeout": 30
           }
         ]
       }
@@ -77,31 +87,38 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-md-verify.mjs\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-md-verify.mjs\"",
+            "timeout": 120
           },
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-exports-semver.mjs\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-exports-semver.mjs\"",
+            "timeout": 120
           },
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-verify.mjs\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-verify.mjs\"",
+            "timeout": 180
           },
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-doc-counts.mjs\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-doc-counts.mjs\"",
+            "timeout": 120
           },
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-provenance-staleness.mjs\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-provenance-staleness.mjs\"",
+            "timeout": 120
           },
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-index-staleness.mjs\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-index-staleness.mjs\"",
+            "timeout": 120
           },
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-red-phase-comments.mjs\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-red-phase-comments.mjs\"",
+            "timeout": 30
           }
         ]
       }
