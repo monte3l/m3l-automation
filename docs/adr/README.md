@@ -69,3 +69,4 @@ surface).
 | 0022 | [Re-introduce the `scripts/` workspace for real consumers](./0022-reintroduce-scripts-workspace.md)                             | Accepted                |
 | 0023 | [Re-affirm the external code-index MCP deferral on new grounds](./0023-reaffirm-code-index-mcp-deferral.md)                     | Accepted                |
 | 0024 | [Deterministic prevention of derived-artifact merge conflicts](./0024-deterministic-derived-artifact-merges.md)                 | Accepted                |
+| 0025 | [Selective adoption of dynamic workflows for subagent orchestration](./0025-dynamic-workflows-assessment.md)                    | Proposed                |
