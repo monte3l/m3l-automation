@@ -513,6 +513,14 @@ that reviews it" structural, and keeps the hub's context lean.
   in `docs/contributing/model-selection.md`; `pnpm check:agents` also enforces
   its MODEL-MATRIX block against agent `model:` frontmatter and workflow
   `--model` pins.
+- **Official-guidance research**: when a design or audit decision hinges on
+  what Anthropic itself recommends (agent/subagent design, model selection,
+  prompt engineering, MCP, context management) rather than on something
+  already decided in this repo, the hub runs `researching-anthropic-guidance`
+  — it fans out `Explore` agents restricted to official Anthropic domains,
+  each annotating a scratchpad file, then synthesizes the findings into a
+  consensus-plus-flagged-contradictions briefing. Hub-only, like `auditing`,
+  since it dispatches subagents.
 - **TDD**: tests are written from the documented contract and fail first, then
   the implementer makes them pass; review follows.
 - **Live status**: three living trackers, updated by the hub as work lands (they
@@ -582,7 +590,12 @@ file for the per-hook list and triggers.
 ================================================================
 -->
 
-1. **Explore** the public API and the `exports` map before editing.
+1. **Explore** the public API and the `exports` map before editing. When the
+   task hinges on external Anthropic guidance rather than repo state — agent
+   design, model-config practices, SDK/API usage, engineering-blog
+   recommendations — run `researching-anthropic-guidance` first and fold its
+   briefing into the plan; it complements `auditing` (which reads the repo)
+   with a read of official Anthropic sources.
 2. **Plan** in plan mode for any change to an exported signature or
    the `exports` map (it has semver impact).
 3. **Implement** the smallest change that satisfies the task.
