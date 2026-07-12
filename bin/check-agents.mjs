@@ -6,8 +6,17 @@
 //   2. The no-nesting invariant holds: no spoke is granted the `Agent` tool
 //      (spokes are leaf nodes — only the hub dispatches subagents). A spoke
 //      that omits `tools:` would inherit all tools, including `Agent`, so that
-//      is rejected too.
-//   3. The model-selection matrix holds: every agent's `model:`/`effort:`
+//      is rejected too. Every spoke must also declare `disallowedTools: Agent`
+//      as defense-in-depth alongside the tools allowlist.
+//   3. Least-privilege holds: only the designated writer spokes (see
+//      WRITER_SPOKES in bin/lib/agent-roster.mjs — also consumed by the
+//      .claude/hooks/guard-readonly-bash.mjs PreToolUse hook, so the roster
+//      can't drift between the static check and the runtime restriction) may
+//      hold the `Write`/`Edit` tools — every reviewer/research spoke must
+//      stay structurally read-only, not just read-only by prompt convention.
+//   4. Every agent declares a non-empty `description:` — Claude uses it to
+//      decide when to delegate (see https://code.claude.com/docs/en/sub-agents).
+//   5. The model-selection matrix holds: every agent's `model:`/`effort:`
 //      frontmatter and every `--model` pin in .github/workflows/*.yml matches
 //      the MODEL-MATRIX block in docs/contributing/model-selection.md, so the
 //      documented tiering and the executing config cannot drift apart. Every
@@ -22,7 +31,7 @@
 // Usage:
 //   node bin/check-agents.mjs   # exits 0 on success, 1 on any violation
 import process from "node:process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
@@ -30,13 +39,17 @@ import {
   isValidEffort,
   isValidWorkflowModel,
 } from "./lib/claude-models.mjs";
+import { WRITER_SPOKES, frontmatter, walk } from "./lib/agent-roster.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const agentsDir = join(root, ".claude/agents");
 const skillsDir = join(root, ".claude/skills");
 const claudeMd = join(root, "CLAUDE.md");
 
-// Built-in agent types shipped by Claude Code; these have no definition file.
+// Built-in agent types shipped by Claude Code. Most have no definition file;
+// `Explore` is the exception — this repo overrides the built-in with a
+// project definition (.claude/agents/Explore.md, pinned to `model: haiku`)
+// while still being recognized here as a known name.
 const BUILTINS = new Set([
   "Explore",
   "Plan",
@@ -45,33 +58,8 @@ const BUILTINS = new Set([
   "claude-code-guide",
 ]);
 
-/** Extract the YAML frontmatter block (between the first two `---` lines). */
-function frontmatter(filePath) {
-  const content = readFileSync(filePath, "utf8");
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
-  if (match === null) return null;
-  const fields = {};
-  for (const line of match[1].split("\n")) {
-    const kv = line.match(/^([A-Za-z]+):\s*(.*)$/);
-    if (kv !== null) fields[kv[1]] = kv[2].trim();
-  }
-  return fields;
-}
-
-/** Recursively collect files under `dir` whose name matches `predicate`. */
-function walk(dir, predicate) {
-  const out = [];
-  if (!existsSync(dir)) return out;
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...walk(full, predicate));
-    else if (predicate(entry.name)) out.push(full);
-  }
-  return out;
-}
-
 // --- 1. Catalogue the defined spokes and their tool grants ----------------
-const defined = new Map(); // name -> { tools: string[] | null, model, effort, file }
+const defined = new Map(); // name -> { tools, disallowedTools, model, effort, description, file }
 for (const file of walk(agentsDir, (n) => n.endsWith(".md"))) {
   const fm = frontmatter(file);
   if (fm === null || fm.name === undefined) continue;
@@ -79,7 +67,18 @@ for (const file of walk(agentsDir, (n) => n.endsWith(".md"))) {
     fm.tools === undefined
       ? null // no allowlist => inherits ALL tools (including Agent)
       : fm.tools.split(",").map((t) => t.trim());
-  defined.set(fm.name, { tools, model: fm.model, effort: fm.effort, file });
+  const disallowedTools =
+    fm.disallowedTools === undefined
+      ? []
+      : fm.disallowedTools.split(",").map((t) => t.trim());
+  defined.set(fm.name, {
+    tools,
+    disallowedTools,
+    model: fm.model,
+    effort: fm.effort,
+    description: fm.description,
+    file,
+  });
 }
 
 const known = new Set([...defined.keys(), ...BUILTINS]);
@@ -157,7 +156,7 @@ for (const file of [
 }
 
 // --- 4. No-nesting invariant: no spoke may hold the `Agent` tool -----------
-for (const [name, { tools, file }] of defined) {
+for (const [name, { tools, disallowedTools, file }] of defined) {
   if (tools === null) {
     console.error(
       `✗  ${file.slice(root.length + 1)} (${name}) omits "tools:", so it ` +
@@ -169,6 +168,49 @@ for (const [name, { tools, file }] of defined) {
     console.error(
       `✗  ${file.slice(root.length + 1)} (${name}) grants the "Agent" tool. ` +
         `Spokes are leaf nodes — only the hub dispatches subagents.`,
+    );
+    errors++;
+  }
+
+  // Defense-in-depth: every spoke must also declare `disallowedTools: Agent`
+  // explicitly, not just omit "Agent" from its tools allowlist above.
+  if (tools !== null && !disallowedTools.includes("Agent")) {
+    console.error(
+      `✗  ${file.slice(root.length + 1)} (${name}) omits ` +
+        `"disallowedTools: Agent" — every spoke must declare this alongside ` +
+        `the tools allowlist as defense-in-depth (leaf-node / no-nesting ` +
+        `invariant).`,
+    );
+    errors++;
+  }
+}
+
+// --- 4b. Least-privilege: only writer spokes may hold Write/Edit tools -----
+// Reviewer/research spokes claim to be read-only in their system prompts;
+// this makes that contract structural rather than prose-only.
+for (const [name, { tools, file }] of defined) {
+  if (tools === null || WRITER_SPOKES.has(name)) continue; // 4 already flags null
+  const writeTools = tools.filter((t) => t === "Write" || t === "Edit");
+  if (writeTools.length > 0) {
+    console.error(
+      `✗  ${file.slice(root.length + 1)} (${name}) grants ` +
+        `${writeTools.join(", ")}, but only ${[...WRITER_SPOKES].join(", ")} ` +
+        `may hold write tools — every other spoke must stay structurally ` +
+        `read-only.`,
+    );
+    errors++;
+  }
+}
+
+// --- 4c. Every spoke must declare a non-empty description ------------------
+// Claude uses `description` to decide when to delegate to a spoke — an empty
+// or missing one silently breaks automatic/explicit routing.
+for (const [name, { description, file }] of defined) {
+  if (description === undefined || description.length === 0) {
+    console.error(
+      `✗  ${file.slice(root.length + 1)} (${name}) omits "description:" ` +
+        `frontmatter, or it is empty — every spoke needs one so callers know ` +
+        `when to dispatch it.`,
     );
     errors++;
   }
