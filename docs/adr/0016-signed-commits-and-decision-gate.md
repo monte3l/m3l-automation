@@ -81,8 +81,9 @@ so the hook and the pre-push script agree on what "signed" means — mirroring h
   first to _inject_ context (`additionalContext`) rather than only stderr. On a
   change-intent prompt it surfaces the four decisions (location / branch / PR /
   push). Advisory; never blocks.
-- The `/start-work` skill formalizes those four decisions and is now the Step 0
-  that `implement-submodule`, `new-submodule`, `new-script`, and `audit` defer to.
+- The `/starting-work` skill formalizes those four decisions and is now the
+  Step 0 that `implementing-submodules`, `scaffolding-submodules`,
+  `scaffolding-scripts`, and `auditing` defer to.
 - `guard-branch-isolation.mjs` hardened to also block a **detached HEAD on the
   `main` commit**, and refactored to export unit-tested predicates.
 
@@ -111,4 +112,4 @@ policy stays as guidance (CLAUDE.md, the decision gate).
 - Related: `.claude/hooks/guard-git-push-signed.mjs`,
   `.claude/hooks/inject-decision-gate.mjs`, `.claude/hooks/guard-branch-isolation.mjs`,
   `bin/lib/signed-range.mjs`, `bin/verify-signed-range.mjs`, `bin/check-hooks.mjs`,
-  `.claude/skills/start-work/SKILL.md`, `docs/contributing/branch-protection.md`.
+  `.claude/skills/starting-work/SKILL.md`, `docs/contributing/branch-protection.md`.
