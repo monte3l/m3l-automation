@@ -53,7 +53,7 @@
     "worktree:setup": "node bin/worktree-setup.mjs",
     "worktree:remove": "node bin/worktree-remove.mjs",
     "worktree:prune": "node bin/worktree-prune.mjs",
-    "prepare": "lefthook install"
+    "prepare": "lefthook install && node bin/install-merge-drivers.mjs"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.4",

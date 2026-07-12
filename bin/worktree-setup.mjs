@@ -56,6 +56,12 @@ try {
   process.exit(1);
 }
 
+// Belt-and-braces alongside the `prepare` script: registers the
+// m3l-generated merge driver in the SHARED repo config (worktrees share
+// .git/config), so a worktree provisioned here has it even if `prepare` was
+// skipped. Idempotent; safe to run every time.
+run("node", ["bin/install-merge-drivers.mjs"]);
+
 const includeFile = join(worktreeRoot, ".worktreeinclude");
 let copied = 0;
 let skipped = 0;

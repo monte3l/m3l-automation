@@ -49,3 +49,18 @@ pre-push:
     # layer is branch-protection "Require signed commits" (ADR-0016).
     verify-signatures:
       run: node bin/verify-signed-range.mjs
+
+# Fire after `git rebase` completes (including a no-op rebase with nothing to
+# replay) and after `git merge` completes. Regenerates the derived files the
+# m3l-generated merge driver (.gitattributes, ADR-0024) deliberately left
+# un-regenerated, then reports dirty files for a `docs: reconcile doc
+# metadata` commit — never auto-commits, never blocks (always exits 0).
+post-rewrite:
+  commands:
+    regen:
+      run: node bin/post-integrate-regen.mjs
+
+post-merge:
+  commands:
+    regen:
+      run: node bin/post-integrate-regen.mjs
