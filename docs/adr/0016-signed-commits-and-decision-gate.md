@@ -8,6 +8,23 @@
 > ([ADR-0020](./0020-drop-release-automation.md)), so the release-bot / verified-git-commit
 > accommodation described below no longer applies. The signed-commit policy
 > itself — all three layers — stands on its own merit and is unchanged.
+>
+> **Update (2026-07-12).** An audit against Anthropic's official Claude Code
+> hooks guidance (`/auditing`) added explicit `timeout`s to all 17
+> `.claude/settings.json` hooks, hardened `check:hooks` to validate event names
+> (error) and warn on a hook missing a `timeout`, and converted
+> `remind-sync-docs.mjs` from `execSync` string interpolation to
+> `execFileSync` array args. It also surfaced a known, deliberately unaddressed
+> gap: the `Write|Edit`-matcher PreToolUse guards (`guard-secret-writes`,
+> `guard-protected-paths`, `guard-branch-isolation`, `guard-js-extension`,
+> `guard-no-commonjs`) do not see files mutated via the `Bash` tool (e.g.
+> `echo > .env`, `sed -i` into `dist/` or `src/` off `main`) — Anthropic's hooks
+> guide documents this exact coverage gap and suggests either matching `Bash`
+> too or adding a `Stop`-hook working-tree scan (`git status --porcelain`).
+> Left unaddressed for now: CI (`gitleaks`, branch protection) remains the
+> authoritative backstop, and closing it is lower-value than the risk it
+> covers. Revisit if a `Bash`-mediated bypass of one of these guards is ever
+> observed in practice.
 
 ## Context and problem statement
 
@@ -64,8 +81,9 @@ so the hook and the pre-push script agree on what "signed" means — mirroring h
   first to _inject_ context (`additionalContext`) rather than only stderr. On a
   change-intent prompt it surfaces the four decisions (location / branch / PR /
   push). Advisory; never blocks.
-- The `/start-work` skill formalizes those four decisions and is now the Step 0
-  that `implement-submodule`, `new-submodule`, `new-script`, and `audit` defer to.
+- The `/starting-work` skill formalizes those four decisions and is now the
+  Step 0 that `implementing-submodules`, `scaffolding-submodules`,
+  `scaffolding-scripts`, and `auditing` defer to.
 - `guard-branch-isolation.mjs` hardened to also block a **detached HEAD on the
   `main` commit**, and refactored to export unit-tested predicates.
 
@@ -94,4 +112,4 @@ policy stays as guidance (CLAUDE.md, the decision gate).
 - Related: `.claude/hooks/guard-git-push-signed.mjs`,
   `.claude/hooks/inject-decision-gate.mjs`, `.claude/hooks/guard-branch-isolation.mjs`,
   `bin/lib/signed-range.mjs`, `bin/verify-signed-range.mjs`, `bin/check-hooks.mjs`,
-  `.claude/skills/start-work/SKILL.md`, `docs/contributing/branch-protection.md`.
+  `.claude/skills/starting-work/SKILL.md`, `docs/contributing/branch-protection.md`.
