@@ -1350,6 +1350,56 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/credentials/error.ts"
   },
+  "getItem": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "putItem": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "updateItem": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "deleteItem": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "queryItems": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "scanSegment": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "batchWriteItems": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "batchDeleteItems": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "describeTable": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "M3LDynamoDBOperationError": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/error.ts"
+  },
   "M3LAWSCredentialsErrorType": {
     "submodule": "models",
     "namespace": "aws",
