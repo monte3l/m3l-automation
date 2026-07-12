@@ -90,7 +90,12 @@ const WORKFLOW_MODEL_ALIASES = Object.freeze([
   "opus[1m]",
 ]);
 
-/** Legal effort levels for a subagent's `effort:` frontmatter field. */
+/**
+ * Legal effort levels for a subagent's `effort:` frontmatter field, low to
+ * high. Every agent/matrix row today tops out at `xhigh` (see
+ * docs/contributing/model-selection.md, "Enforcement"); `max` is included as
+ * reserved headroom for a future task shape, not because any row uses it yet.
+ */
 const EFFORT_LEVELS = Object.freeze(["low", "medium", "high", "xhigh", "max"]);
 
 /** Matches a full Anthropic model ID, e.g. `claude-opus-4-8` or `claude-sonnet-5`. */
