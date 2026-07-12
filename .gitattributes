@@ -27,3 +27,23 @@
 
 # GitHub flags template files as Go Template — override to TypeScript
 templates/**/*.tmpl linguist-language=TypeScript
+
+# Generated-file merge drivers (ADR-0024). merge=m3l-generated resolves a
+# conflict by keeping the current side and exiting 0 (bin/merge-driver-generated.mjs);
+# the post-rewrite/post-merge hook (bin/post-integrate-regen.mjs) regenerates
+# afterward and the existing CI byte-compare gates (check:index,
+# check:doc-counts/check:impl-counts) guarantee the final bytes. Registered
+# by bin/install-merge-drivers.mjs (via `prepare` and `worktree:setup`); if
+# unregistered (fresh clone before `pnpm install`), git falls back to a
+# normal conflict on these files — nothing breaks.
+docs/reference/catalog.json merge=m3l-generated
+docs/reference/symbol-map.json merge=m3l-generated
+pnpm-lock.yaml merge=m3l-generated
+
+# Deliberately NOT tagged merge=m3l-generated:
+#   - docs/reference/**/*.provenance.json — post-PR-1 (content-hash
+#     addressing), cross-module sidecar conflicts don't occur; a same-module
+#     conflict means real parallel work on one module and must be hand-merged.
+#   - README.md / CLAUDE.md / docs/ROADMAP.md / docs/plans/IMPLEMENTATION.md /
+#     docs/implementation-status.md — hand-edited files; their "N of 22"
+#     count sites are reconciled by `pnpm gen:counts` (PR-2), not this driver.
