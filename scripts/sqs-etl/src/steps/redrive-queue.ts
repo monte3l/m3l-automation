@@ -90,12 +90,18 @@ function resolveSettings(config: Core.M3LConfig): RedriveSettings {
   };
 }
 
-/** Builds the `receive()` options for one page, omitting `visibilityTimeout` when unset. */
+/**
+ * Builds the `receive()` options for one page, capping `maxMessages` to
+ * whatever remains of the `batchSize` budget so a single call never
+ * over-fetches past the requested total, omitting `visibilityTimeout` when
+ * unset.
+ */
 function buildReceiveOptions(
   settings: RedriveSettings,
+  remaining: number,
 ): AWS.M3LSQSReceiveOptions {
   return {
-    maxMessages: RECEIVE_MAX_MESSAGES,
+    maxMessages: Math.min(RECEIVE_MAX_MESSAGES, remaining),
     waitTimeSeconds: RECEIVE_WAIT_TIME_SECONDS,
     ...(settings.visibilityTimeoutSeconds !== undefined && {
       visibilityTimeout: settings.visibilityTimeoutSeconds,
@@ -127,6 +133,24 @@ function toDeleteEntries(
 }
 
 /**
+ * Logs each `deleteBatch()` failure via `logger.warning`, surfacing it
+ * instead of silently discarding it (the entry itself is not written to
+ * `failed.jsonl` — that file's meaning is reserved for unsent `sendBatch`
+ * entries).
+ */
+function logDeleteFailures(
+  logger: Core.M3LLogger,
+  failures: readonly AWS.M3LSQSBatchFailure<AWS.M3LSQSDeleteEntry>[],
+): void {
+  for (const failure of failures) {
+    logger.warning(
+      `deleteBatch failed for receipt handle ${failure.entry.receiptHandle}`,
+      { failure },
+    );
+  }
+}
+
+/**
  * Runs the destructive-gate confirmation exactly once per `redriveQueue`
  * call: a no-op returning `true` on every call once `confirmed` is already
  * `true`.
@@ -147,6 +171,80 @@ async function confirmDeleteOnce(
     yes,
   });
   return true;
+}
+
+/** Best-effort closes `writer`, swallowing any close failure — used when a primary error already occurred and must not be masked by a subsequent close failure. */
+async function closeWriterBestEffort(
+  writer: Core.M3LListExporterStreamWriter<AWS.M3LSQSSendEntry>,
+): Promise<void> {
+  try {
+    await writer.close();
+  } catch {
+    // best-effort: a close failure must not mask the original error
+  }
+}
+
+/**
+ * Runs the receive/send/delete loop until `settings.batchSize` is reached or
+ * `receive()` returns an empty page: long-polls `dlqUrl`, `sendBatch()`s the
+ * page to `queueUrl`, appends unsent entries to `failedWriter`, and (once
+ * confirmed) `deleteBatch()`s from `dlqUrl` only the entries whose send
+ * succeeded.
+ *
+ * @returns The total count of messages received across every page.
+ */
+async function runRedrivePages(
+  deps: {
+    readonly logger: Core.M3LLogger;
+    readonly sqsOperations: AWS.M3LSQSOperations;
+    readonly prompt: Core.M3LPrompt;
+  },
+  settings: RedriveSettings,
+  failedWriter: Core.M3LListExporterStreamWriter<AWS.M3LSQSSendEntry>,
+): Promise<{ total: number }> {
+  let confirmed = false;
+  let total = 0;
+  for (;;) {
+    const receiveOptions = buildReceiveOptions(
+      settings,
+      settings.batchSize - total,
+    );
+    const messages = await deps.sqsOperations.receive(
+      settings.dlqUrl,
+      receiveOptions,
+    );
+    if (messages.length === 0) break;
+
+    const sendResult = await deps.sqsOperations.sendBatch(
+      settings.queueUrl,
+      toSendEntries(messages),
+    );
+
+    for (const failure of sendResult.failed) {
+      await failedWriter.append(failure.entry);
+    }
+
+    if (sendResult.successful.length > 0) {
+      confirmed = await confirmDeleteOnce(
+        confirmed,
+        deps,
+        `delete redriven messages from queue ${settings.dlqUrl}`,
+        settings.yes,
+      );
+      const successfulIds = new Set(
+        sendResult.successful.map((entry) => entry.id),
+      );
+      const deleteResult = await deps.sqsOperations.deleteBatch(
+        settings.dlqUrl,
+        toDeleteEntries(messages, successfulIds),
+      );
+      logDeleteFailures(deps.logger, deleteResult.failed);
+    }
+
+    total += messages.length;
+    if (total >= settings.batchSize) break;
+  }
+  return { total };
 }
 
 /**
@@ -190,7 +288,6 @@ export async function redriveQueue(deps: {
   readonly prompt: Core.M3LPrompt;
 }): Promise<void> {
   const settings = resolveSettings(deps.config);
-  const receiveOptions = buildReceiveOptions(settings);
   const failedPath = deps.paths.resolveOutput("failed.jsonl");
 
   const failedExporter = new Core.M3LJSONListExporter<AWS.M3LSQSSendEntry>({
@@ -199,49 +296,16 @@ export async function redriveQueue(deps: {
   });
   const failedWriter = failedExporter.exportStream();
 
-  let confirmed = false;
-  let total = 0;
+  let result: { total: number };
   try {
-    for (;;) {
-      const messages = await deps.sqsOperations.receive(
-        settings.dlqUrl,
-        receiveOptions,
-      );
-      if (messages.length === 0) break;
-
-      const sendResult = await deps.sqsOperations.sendBatch(
-        settings.queueUrl,
-        toSendEntries(messages),
-      );
-
-      for (const failure of sendResult.failed) {
-        await failedWriter.append(failure.entry);
-      }
-
-      if (sendResult.successful.length > 0) {
-        confirmed = await confirmDeleteOnce(
-          confirmed,
-          deps,
-          `delete redriven messages from queue ${settings.dlqUrl}`,
-          settings.yes,
-        );
-        const successfulIds = new Set(
-          sendResult.successful.map((entry) => entry.id),
-        );
-        await deps.sqsOperations.deleteBatch(
-          settings.dlqUrl,
-          toDeleteEntries(messages, successfulIds),
-        );
-      }
-
-      total += messages.length;
-      if (total >= settings.batchSize) break;
-    }
-  } finally {
-    await failedWriter.close();
+    result = await runRedrivePages(deps, settings, failedWriter);
+  } catch (cause) {
+    await closeWriterBestEffort(failedWriter);
+    throw cause;
   }
+  await failedWriter.close();
 
   deps.logger.step(`sqs-etl redrive run ${deps.correlationId} complete`, {
-    total,
+    total: result.total,
   });
 }

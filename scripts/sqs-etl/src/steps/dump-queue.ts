@@ -90,10 +90,18 @@ function resolveSettings(config: Core.M3LConfig): DumpSettings {
   };
 }
 
-/** Builds the `receive()` options for one page, omitting `visibilityTimeout` when unset. */
-function buildReceiveOptions(settings: DumpSettings): AWS.M3LSQSReceiveOptions {
+/**
+ * Builds the `receive()` options for one page, capping `maxMessages` to
+ * whatever remains of the `batchSize` budget so a single call never
+ * over-fetches past the requested total, omitting `visibilityTimeout` when
+ * unset.
+ */
+function buildReceiveOptions(
+  settings: DumpSettings,
+  remaining: number,
+): AWS.M3LSQSReceiveOptions {
   return {
-    maxMessages: RECEIVE_MAX_MESSAGES,
+    maxMessages: Math.min(RECEIVE_MAX_MESSAGES, remaining),
     waitTimeSeconds: RECEIVE_WAIT_TIME_SECONDS,
     ...(settings.visibilityTimeoutSeconds !== undefined && {
       visibilityTimeout: settings.visibilityTimeoutSeconds,
@@ -109,6 +117,24 @@ function toDeleteEntries(
     id: String(index),
     receiptHandle: message.receiptHandle,
   }));
+}
+
+/**
+ * Logs each `deleteBatch()` failure via `logger.warning`, surfacing it
+ * instead of silently discarding it (the entry itself is not written to
+ * `failed.jsonl` — that file's meaning is reserved for unsent `sendBatch`
+ * entries).
+ */
+function logDeleteFailures(
+  logger: Core.M3LLogger,
+  failures: readonly AWS.M3LSQSBatchFailure<AWS.M3LSQSDeleteEntry>[],
+): void {
+  for (const failure of failures) {
+    logger.warning(
+      `deleteBatch failed for receipt handle ${failure.entry.receiptHandle}`,
+      { failure },
+    );
+  }
 }
 
 /**
@@ -175,7 +201,6 @@ export async function dumpQueue(deps: {
 }): Promise<void> {
   const settings = resolveSettings(deps.config);
   const outputPath = deps.paths.resolveOutput(settings.output);
-  const receiveOptions = buildReceiveOptions(settings);
 
   const exporter = new Core.M3LJSONListExporter<AWS.M3LSQSReceivedMessage>({
     filePath: outputPath,
@@ -187,6 +212,10 @@ export async function dumpQueue(deps: {
   let total = 0;
   try {
     for (;;) {
+      const receiveOptions = buildReceiveOptions(
+        settings,
+        settings.batchSize - total,
+      );
       const messages = await deps.sqsOperations.receive(
         settings.queueUrl,
         receiveOptions,
@@ -204,18 +233,25 @@ export async function dumpQueue(deps: {
           `delete drained messages from queue ${settings.queueUrl}`,
           settings.yes,
         );
-        await deps.sqsOperations.deleteBatch(
+        const deleteResult = await deps.sqsOperations.deleteBatch(
           settings.queueUrl,
           toDeleteEntries(messages),
         );
+        logDeleteFailures(deps.logger, deleteResult.failed);
       }
 
       total += messages.length;
       if (total >= settings.batchSize) break;
     }
-  } finally {
-    await writer.close();
+  } catch (cause) {
+    try {
+      await writer.close();
+    } catch {
+      // best-effort: a close failure must not mask the original error
+    }
+    throw cause;
   }
+  await writer.close();
 
   deps.logger.step(`sqs-etl dump run ${deps.correlationId} complete`, {
     total,

@@ -51,6 +51,7 @@ export function stubInput(content: string): void {
 /** A minimal fake fs.WriteStream: records every chunk written to it. */
 export class FakeWriteStream extends EventEmitter {
   chunks: string[] = [];
+  #closeFailure: Error | undefined;
 
   write(chunk: string | Buffer, cb?: (error?: Error | null) => void): boolean {
     this.chunks.push(chunk.toString());
@@ -60,9 +61,25 @@ export class FakeWriteStream extends EventEmitter {
     return true;
   }
 
+  /**
+   * Arms this stream so its next `end()` call emits `'error'` with `error`
+   * instead of `'finish'` — simulates a close failure (e.g. disk full) for
+   * covering the try/finally-masks-the-real-error bug. Does not affect
+   * `write()`; every other test's default `end()` -> `'finish'` behavior is
+   * unchanged unless this is called first.
+   */
+  armCloseFailure(error: Error): void {
+    this.#closeFailure = error;
+  }
+
   end(chunk?: string | Buffer): this {
     if (chunk !== undefined) {
       this.chunks.push(chunk.toString());
+    }
+    const closeFailure = this.#closeFailure;
+    if (closeFailure !== undefined) {
+      queueMicrotask(() => this.emit("error", closeFailure));
+      return this;
     }
     queueMicrotask(() => this.emit("finish"));
     return this;

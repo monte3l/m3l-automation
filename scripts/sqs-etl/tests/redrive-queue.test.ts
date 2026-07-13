@@ -288,6 +288,152 @@ describe("redriveQueue", () => {
     expect(deleteBatchMock).not.toHaveBeenCalled();
   });
 
+  test("caps the DLQ receive() request itself to the remaining 'batchSize' budget, not just the count", async () => {
+    stubOutputStreams();
+    // 'receive()' is a fake and does not itself enforce 'maxMessages' — it
+    // returns a full 5-message page regardless of what was requested, so the
+    // ONLY way this assertion can pass is if the request itself was capped.
+    const receive = vi
+      .fn()
+      .mockResolvedValueOnce([
+        dlqMessage(1),
+        dlqMessage(2),
+        dlqMessage(3),
+        dlqMessage(4),
+        dlqMessage(5),
+      ])
+      .mockResolvedValueOnce([]);
+    const sqsOperations = createFakeSqsOperations({ receive });
+    const config = buildConfig({
+      queueUrl: "https://sqs.example/q",
+      dlqUrl: "https://sqs.example/dlq",
+      batchSize: 3,
+      yes: true,
+    });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+    const prompt = bypassPrompt();
+
+    await redriveQueue({
+      config,
+      paths,
+      logger,
+      correlationId: "run-batch-cap",
+      sqsOperations,
+      prompt,
+    });
+
+    expect(receive).toHaveBeenNthCalledWith(1, "https://sqs.example/dlq", {
+      maxMessages: 3,
+      waitTimeSeconds: 20,
+    });
+  });
+
+  test("a post-send deleteBatch() failure is surfaced via logger.warning, not silently discarded", async () => {
+    stubOutputStreams();
+    const receive = vi
+      .fn()
+      .mockResolvedValueOnce([dlqMessage(1), dlqMessage(2)])
+      .mockResolvedValueOnce([]);
+    const sendBatchMock = vi.fn().mockResolvedValue({
+      successful: [
+        { id: "0", body: dlqMessage(1).body },
+        { id: "1", body: dlqMessage(2).body },
+      ],
+      failed: [],
+    });
+    const failedDeleteEntry: AWS.M3LSQSDeleteEntry = {
+      id: "1",
+      receiptHandle: "rh-2",
+    };
+    const deleteBatchMock = vi.fn().mockResolvedValue({
+      successful: [{ id: "0", receiptHandle: "rh-1" }],
+      failed: [
+        {
+          entry: failedDeleteEntry,
+          code: "InternalError",
+          senderFault: false,
+        },
+      ],
+    });
+    const sqsOperations = createFakeSqsOperations({
+      receive,
+      sendBatch: sendBatchMock,
+      deleteBatch: deleteBatchMock,
+    });
+    const config = buildConfig({
+      queueUrl: "https://sqs.example/q",
+      dlqUrl: "https://sqs.example/dlq",
+      yes: true,
+    });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+    const warning = vi.spyOn(logger, "warning");
+    const prompt = bypassPrompt();
+
+    await redriveQueue({
+      config,
+      paths,
+      logger,
+      correlationId: "run-delete-failure",
+      sqsOperations,
+      prompt,
+    });
+
+    const calls = warning.mock.calls as unknown[][];
+    const mentionsFailure = calls.some((call) =>
+      call.some((arg) => JSON.stringify(arg).includes("rh-2")),
+    );
+    expect(mentionsFailure).toBe(true);
+  });
+
+  test("a writer.close() failure does not mask the original declined-confirmation error", async () => {
+    const { streams } = stubOutputStreams();
+    const receive = vi
+      .fn()
+      .mockResolvedValueOnce([dlqMessage(1)])
+      .mockResolvedValueOnce([]);
+    const sendBatchMock = vi.fn().mockResolvedValue({
+      successful: [{ id: "0", body: dlqMessage(1).body }],
+      failed: [],
+    });
+    const sqsOperations = createFakeSqsOperations({
+      receive,
+      sendBatch: sendBatchMock,
+    });
+    const config = buildConfig({
+      queueUrl: "https://sqs.example/q",
+      dlqUrl: "https://sqs.example/dlq",
+      yes: false,
+    });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+    const prompt = new Core.M3LPrompt();
+    const closeFailure = new Error("simulated close failure");
+    vi.spyOn(prompt, "confirm").mockImplementation(() => {
+      const failedStream = streams[streams.length - 1];
+      failedStream?.armCloseFailure(closeFailure);
+      return Promise.resolve(false);
+    });
+
+    let thrown: unknown;
+    try {
+      await redriveQueue({
+        config,
+        paths,
+        logger,
+        correlationId: "run-close-fail",
+        sqsOperations,
+        prompt,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    expect((thrown as Core.M3LError).code).toBe("ERR_SQS_ETL_ABORTED");
+  });
+
   test.each(["queueUrl", "dlqUrl"] as const)(
     "throws ERR_SQS_ETL_CONFIG when '%s' is missing, never calling receive()",
     async (missing) => {

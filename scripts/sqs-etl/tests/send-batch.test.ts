@@ -306,6 +306,42 @@ describe("sendBatch", () => {
     }
   });
 
+  test("a writer.close() failure does not mask the original sendBatch() rejection", async () => {
+    stubInput('{"id":1}');
+    const { streams } = stubOutputStreams();
+    const originalFailure = new Error("aws sendBatch unavailable");
+    const closeFailure = new Error("simulated close failure");
+    const sendBatchMock = vi.fn().mockImplementation(() => {
+      const failedStream = streams[streams.length - 1];
+      failedStream?.armCloseFailure(closeFailure);
+      return Promise.reject(originalFailure);
+    });
+    const sqsOperations = createFakeSqsOperations({
+      sendBatch: sendBatchMock,
+    });
+    const config = buildConfig({
+      queueUrl: "https://sqs.example/q",
+      input: "in.jsonl",
+    });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+
+    let thrown: unknown;
+    try {
+      await sendBatch({
+        config,
+        paths,
+        logger,
+        correlationId: "run-close-fail",
+        sqsOperations,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(originalFailure);
+  });
+
   test.each(["queueUrl", "input"] as const)(
     "throws ERR_SQS_ETL_CONFIG when '%s' is missing, never calling sendBatch",
     async (missing) => {
