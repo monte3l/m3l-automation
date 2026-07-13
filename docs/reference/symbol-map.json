@@ -1350,6 +1350,101 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/credentials/error.ts"
   },
+  "getItem": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "putItem": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "updateItem": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "deleteItem": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "queryItems": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "scanSegment": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "batchWriteItems": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "batchDeleteItems": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "describeTable": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "M3LDynamoDBOperationError": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/error.ts"
+  },
+  "M3LLogsInsightsClient": {
+    "submodule": "logs-insights",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/logs-insights/client.ts"
+  },
+  "LogsInsightsAwaitOptions": {
+    "submodule": "logs-insights",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/logs-insights/client.ts"
+  },
+  "StartLogsInsightsQueryInput": {
+    "submodule": "logs-insights",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/logs-insights/types.ts"
+  },
+  "LogsInsightsQueryResult": {
+    "submodule": "logs-insights",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/logs-insights/types.ts"
+  },
+  "LogsInsightsQueryStatistics": {
+    "submodule": "logs-insights",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/logs-insights/types.ts"
+  },
+  "LogsInsightsQueryStatus": {
+    "submodule": "logs-insights",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/logs-insights/types.ts"
+  },
+  "LogsInsightsRow": {
+    "submodule": "logs-insights",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/logs-insights/types.ts"
+  },
+  "M3LLogsInsightsStartQueryError": {
+    "submodule": "logs-insights",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/logs-insights/errors.ts"
+  },
+  "M3LLogsInsightsQueryFailedError": {
+    "submodule": "logs-insights",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/logs-insights/errors.ts"
+  },
   "M3LAWSCredentialsErrorType": {
     "submodule": "models",
     "namespace": "aws",
@@ -1374,5 +1469,45 @@
     "submodule": "models",
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/models/index.ts"
+  },
+  "M3LSQSOperations": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/client.ts"
+  },
+  "M3LSQSOperationError": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/error.ts"
+  },
+  "M3LSQSReceivedMessage": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSSendEntry": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSDeleteEntry": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSBatchFailure": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSBatchResult": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSReceiveOptions": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
   }
 }

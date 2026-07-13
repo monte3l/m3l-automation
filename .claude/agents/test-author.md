@@ -66,6 +66,14 @@ flips to green — but the rest of the discipline below is identical.)
      event) while good records still flow — separately from a source-level
      failure that rejects. The happy path hides whether a single bad record
      aborts the whole run; cover both batch and streaming access patterns.
+   - **Orphaned response entry** for any batch/join-back operation that
+     correlates a response array back to a request array by id (e.g. an SDK
+     batch call's per-entry success/failure list): add a case where the
+     response references an id the request never sent (or omits the id
+     field entirely). Silently dropping that entry — never surfacing in
+     either the success or failure bucket — is a repeatable failure class in
+     join-back code, not something the happy-path/documented-failure cases
+     catch on their own (`aws/sqs`, 2026-07-13).
    - **`expectTypeOf`** assertions where the type IS the contract (branded types,
      generic containers, discriminated unions like `M3LResult`).
 4. Keep tests deterministic and isolated: no real network or filesystem; mock

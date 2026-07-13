@@ -1,15 +1,21 @@
-// Shared site inventory for the "N of 22" submodule counts, consumed by both
+// Shared site inventory for the "N of M" submodule counts, consumed by both
 // the generator (gen-doc-counts.mjs) and the two checkers
 // (check-doc-counts.mjs, check-impl-counts.mjs) — a gen/check pair that
 // cannot drift, same pattern as gen-reference-index.mjs/check-reference-index.mjs
 // sharing bin/lib/reference-index.mjs.
 //
 // Two independent counts are tracked:
-//   - the DENOMINATOR ("total documented" = 22): Core + AWS reference pages
-//     on disk, asserted by the TOTAL_COUNT_SITES badges/prose.
+//   - the DENOMINATOR ("total documented"): Core + AWS reference pages on
+//     disk, asserted by the TOTAL_COUNT_SITES badges/prose. Historically
+//     always 22 (total == implemented) until the AWS `dynamodb` submodule was
+//     scaffolded without yet being implemented — every "N of M" site tracks
+//     both numbers independently so neither pattern hardcodes the other.
 //   - the NUMERATOR ("N implemented"): the ✅ rows in
 //     docs/implementation-status.md, asserted by the IMPLEMENTED_COUNT_SITES
-//     badges/prose and rendered as the generated implemented-list block.
+//     badges/prose and rendered as the generated implemented-list block. Its
+//     "of M" half is left wildcarded (see IMPLEMENTED_COUNT_SITES below) —
+//     the denominator's correctness is verified independently by the
+//     sibling TOTAL_COUNT_SITES entry for the same phrase.
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { root, parseImplementationStatus } from "./reference-index.mjs";
@@ -73,6 +79,15 @@ export function deriveCounts({
 
 // Denominator sites: each must show `counts.total` (or, for the two
 // CLAUDE.md/README namespace-specific badges, coreCount/awsCount).
+//
+// Every "N of M" or "N%2FM" phrase below is tracked by TWO independent sites
+// — one here (denominator = total) and its sibling in IMPLEMENTED_COUNT_SITES
+// (numerator = implemented) — so each number can change without the other's
+// pattern hardcoding a stale literal. This was a latent bug until the AWS
+// `dynamodb` submodule (scaffolded, not yet implemented) made total ≠
+// implemented for the first time: the four IMPLEMENTED_COUNT_SITES patterns
+// had hardcoded "22" as the denominator, which only worked by coincidence
+// while total and implemented were both always 22.
 export const TOTAL_COUNT_SITES = [
   {
     file: "CLAUDE.md",
@@ -87,6 +102,12 @@ export const TOTAL_COUNT_SITES = [
     expected: (counts) => counts.total,
   },
   {
+    file: "docs/README.md",
+    pattern: /implemented \(\d+ of (\d+)\)/,
+    label: "total submodule count (docs/README.md development-status callout)",
+    expected: (counts) => counts.total,
+  },
+  {
     file: "README.md",
     pattern: /modules-\d+%2F(\d+)-/,
     label: "total submodule count (root README.md badge URL)",
@@ -98,43 +119,64 @@ export const TOTAL_COUNT_SITES = [
     label: "total submodule count (root README.md prose)",
     expected: (counts) => counts.total,
   },
+  {
+    file: "packages/m3l-common/README.md",
+    pattern: /modules-\d+%2F(\d+)-/,
+    label: "total submodule count (npm-facing README.md badge URL)",
+    expected: (counts) => counts.total,
+  },
+  {
+    file: "packages/m3l-common/README.md",
+    pattern: /\d+ of (\d+) submodules are/,
+    label: "total submodule count (npm-facing README.md prose)",
+    expected: (counts) => counts.total,
+  },
+  {
+    file: "docs/implementation-status.md",
+    pattern: /\(\d+ of (\d+) submodules\)/,
+    label: "total submodule count (implementation-status.md intro prose)",
+    expected: (counts) => counts.total,
+  },
 ];
 
-// Numerator sites: each must show `counts.implemented`.
+// Numerator sites: each must show `counts.implemented`. The denominator half
+// of each phrase is wildcarded (`\d+`, not captured) — its correctness is
+// asserted independently by the sibling TOTAL_COUNT_SITES entry above, so
+// this pattern never needs to hardcode a specific total.
 export const IMPLEMENTED_COUNT_SITES = [
   {
     file: "README.md",
-    pattern: /modules-(\d+)%2F22/,
+    pattern: /modules-(\d+)%2F\d+/,
     label: "root README.md badge URL",
     expected: (counts) => counts.implemented,
   },
   {
     file: "README.md",
-    pattern: /(\d+) of 22 submodules are/,
+    pattern: /(\d+) of \d+ submodules are/,
     label: "root README.md prose callout",
     expected: (counts) => counts.implemented,
   },
   {
     file: "packages/m3l-common/README.md",
-    pattern: /modules-(\d+)%2F22/,
+    pattern: /modules-(\d+)%2F\d+/,
     label: "npm-facing README.md badge URL",
     expected: (counts) => counts.implemented,
   },
   {
     file: "packages/m3l-common/README.md",
-    pattern: /(\d+) of 22 submodules are/,
+    pattern: /(\d+) of \d+ submodules are/,
     label: "npm-facing README.md prose callout",
     expected: (counts) => counts.implemented,
   },
   {
     file: "docs/README.md",
-    pattern: /implemented \((\d+) of 22\)/,
+    pattern: /implemented \((\d+) of \d+\)/,
     label: "docs/README.md development-status callout",
     expected: (counts) => counts.implemented,
   },
   {
     file: "docs/implementation-status.md",
-    pattern: /\((\d+) of 22 submodules\)/,
+    pattern: /\((\d+) of \d+ submodules\)/,
     label: "implementation-status.md intro prose",
     expected: (counts) => counts.implemented,
   },
@@ -179,7 +221,7 @@ export function locateSite(content, site, counts) {
 
 /**
  * Render the implemented-list prose sentence ("The barrels are wired; `a`,
- * `b`, and `c` are implemented and reviewed (N of 22 submodules).") from the
+ * `b`, and `c` are implemented and reviewed (N of M submodules).") from the
  * derived implemented-name list, wrapped in its marker comments — same
  * mechanism as the generated catalog blocks in docs/reference/README.md.
  *
@@ -194,8 +236,8 @@ export function buildImplementedListBlock(counts) {
       : `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
   const sentence =
     `The barrels are wired; ${list} are implemented and reviewed ` +
-    `(${counts.implemented} of 22 submodules). See the table below for ` +
-    `per-submodule status.`;
+    `(${counts.implemented} of ${counts.total} submodules). See the table ` +
+    `below for per-submodule status.`;
   return [
     IMPLEMENTED_LIST_BEGIN_MARKER,
     "",

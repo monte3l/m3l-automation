@@ -54,7 +54,7 @@ describe("buildImplementedListBlock", () => {
     expect(block).toContain(IMPLEMENTED_LIST_BEGIN_MARKER);
     expect(block).toContain(IMPLEMENTED_LIST_END_MARKER);
     expect(block).toContain(
-      "`errors`, `events`, and `models` are implemented and reviewed (3 of 22 submodules)",
+      "`errors`, `events`, and `models` are implemented and reviewed (3 of 4 submodules)",
     );
   });
 
@@ -66,7 +66,7 @@ describe("buildImplementedListBlock", () => {
     });
     const block = buildImplementedListBlock(counts);
     expect(block).toContain(
-      "`errors` are implemented and reviewed (1 of 22 submodules)",
+      "`errors` are implemented and reviewed (1 of 1 submodules)",
     );
   });
 
@@ -78,7 +78,19 @@ describe("buildImplementedListBlock", () => {
     });
     const block = buildImplementedListBlock(counts);
     expect(block).toContain(
-      " are implemented and reviewed (0 of 22 submodules)",
+      " are implemented and reviewed (0 of 1 submodules)",
+    );
+  });
+
+  test("shows a denominator different from the numerator (total ≠ implemented)", () => {
+    const counts = deriveCounts({
+      countCore: () => 2,
+      countAws: () => 1,
+      getStatus: () => ({ errors: "✅", events: "🧪", models: "❌" }),
+    });
+    const block = buildImplementedListBlock(counts);
+    expect(block).toContain(
+      "`errors` are implemented and reviewed (1 of 3 submodules)",
     );
   });
 });
@@ -145,16 +157,41 @@ describe("generator + checker round-trip", () => {
     );
   }
 
+  // Keyed by `site.label` (unique per site) rather than sniffing substrings of
+  // `pattern.source` — with 8 total-count and 6 implemented-count sites now
+  // sharing overlapping shapes ("modules-N%2FM-", "N of M submodules are"),
+  // substring guessing stopped being able to tell every site apart.
+  const TOTAL_STALE_BY_LABEL: Record<string, string> = {
+    "Core barrel comment": "Core namespace barrel (0 submodules surfaced here)",
+    "total submodule count (development status callout)":
+      "0 submodules documented",
+    "total submodule count (docs/README.md development-status callout)":
+      "implemented (0 of 0)",
+    "total submodule count (root README.md badge URL)": "modules-99%2F0-red",
+    "total submodule count (root README.md prose)":
+      "0 of 0 submodules are implemented",
+    "total submodule count (npm-facing README.md badge URL)":
+      "modules-99%2F0-red",
+    "total submodule count (npm-facing README.md prose)":
+      "0 of 0 submodules are implemented",
+    "total submodule count (implementation-status.md intro prose)":
+      "(0 of 0 submodules)",
+  };
+
+  const IMPLEMENTED_STALE_BY_LABEL: Record<string, string> = {
+    "root README.md badge URL": "modules-0%2F99-red",
+    "root README.md prose callout": "0 of 99 submodules are implemented",
+    "npm-facing README.md badge URL": "modules-0%2F99-red",
+    "npm-facing README.md prose callout": "0 of 99 submodules are implemented",
+    "docs/README.md development-status callout": "implemented (0 of 99)",
+    "implementation-status.md intro prose": "(0 of 99 submodules)",
+  };
+
   test("a generate-then-check pass agrees for every total-count site", () => {
     const counts = fixtureCounts();
     for (const site of TOTAL_COUNT_SITES) {
-      const stale = site.pattern.source.includes("Core namespace barrel")
-        ? "Core namespace barrel (0 submodules surfaced here)"
-        : site.pattern.source.includes("submodules documented")
-          ? "0 submodules documented"
-          : site.pattern.source.includes("modules-\\d+%2F")
-            ? "modules-99%2F0-red"
-            : "0 of 0 submodules are implemented";
+      const stale = TOTAL_STALE_BY_LABEL[site.label];
+      expect(stale, `no stale fixture for label "${site.label}"`).toBeDefined();
       const regenerated = applySite(stale, site, counts);
       const checked = locateSite(regenerated, site, counts);
       expect(checked.actual).toBe(checked.expected);
@@ -164,9 +201,8 @@ describe("generator + checker round-trip", () => {
   test("a generate-then-check pass agrees for every implemented-count site", () => {
     const counts = fixtureCounts();
     for (const site of IMPLEMENTED_COUNT_SITES) {
-      const stale = site.pattern.source.includes("modules-")
-        ? "modules-0%2F22-red"
-        : "0 of 22 submodules are implemented";
+      const stale = IMPLEMENTED_STALE_BY_LABEL[site.label];
+      expect(stale, `no stale fixture for label "${site.label}"`).toBeDefined();
       const regenerated = applySite(stale, site, counts);
       const checked = locateSite(regenerated, site, counts);
       expect(checked.actual).toBe(checked.expected);
