@@ -12,7 +12,10 @@
 //     both numbers independently so neither pattern hardcodes the other.
 //   - the NUMERATOR ("N implemented"): the ✅ rows in
 //     docs/implementation-status.md, asserted by the IMPLEMENTED_COUNT_SITES
-//     badges/prose and rendered as the generated implemented-list block.
+//     badges/prose and rendered as the generated implemented-list block. Its
+//     "of M" half is left wildcarded (see IMPLEMENTED_COUNT_SITES below) —
+//     the denominator's correctness is verified independently by the
+//     sibling TOTAL_COUNT_SITES entry for the same phrase.
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { root, parseImplementationStatus } from "./reference-index.mjs";

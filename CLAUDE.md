@@ -539,7 +539,7 @@ that reviews it" structural, and keeps the hub's context lean.
 - **Live status**: three living trackers, updated by the hub as work lands (they
   are the durable memory the isolated spokes do not share). `docs/implementation-status.md`
   is the source of truth for what library work is **built** vs. documented (the
-  count-enforced 22/22 ledger — `pnpm gen:counts` regenerates every "N of 22"
+  count-enforced 24/24 ledger — `pnpm gen:counts` regenerates every "N of M"
   badge/prose site and the implemented-list block from the ✅ rows;
   `check:doc-counts`/`check:impl-counts` verify them). `docs/ROADMAP.md`
   (coarse, unblock-first) and `docs/plans/IMPLEMENTATION.md` (detailed
