@@ -236,6 +236,35 @@ describe("scanTable — checkpointing", () => {
     expect(parsed.segments).toEqual({ "0": { id: 1 } });
   });
 
+  test("does not advance the checkpoint until every item in the page has been yielded to the consumer", async () => {
+    vi.mocked(AWS.scanSegment).mockImplementation(async function* () {
+      await Promise.resolve();
+      yield { items: [{ id: 1 }, { id: 2 }], lastEvaluatedKey: { id: 2 } };
+    });
+
+    const iterator = scanTable(baseOptions({ checkpointEveryPages: 1 }))[
+      Symbol.asyncIterator
+    ]();
+
+    const first = await iterator.next();
+    expect(first.value).toEqual({ id: 1 });
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+
+    const second = await iterator.next();
+    expect(second.value).toEqual({ id: 2 });
+    // The last item of the page has just been handed to the consumer, but
+    // `driveSegment` has not yet resumed past `yield* page.items` to advance
+    // the checkpoint — a crash right here must not have already persisted a
+    // cursor past items the consumer hasn't necessarily finished writing.
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+
+    // Pulling once more resumes `driveSegment` past `yield*`, which is where
+    // the checkpoint now advances — proving it only does so once every item
+    // in the page has actually been yielded out.
+    await iterator.next();
+    expect(fsp.writeFile).toHaveBeenCalled();
+  });
+
   test("deletes the checkpoint file after the generator fully drains, ignoring an ENOENT on delete", async () => {
     vi.mocked(fsp.rm).mockRejectedValueOnce(enoentError());
     vi.mocked(AWS.scanSegment).mockImplementation(async function* () {

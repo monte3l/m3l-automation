@@ -213,6 +213,15 @@ async function* driveSegment(
 
   for await (const page of buildPages(opts, segmentIndex, startCursor)) {
     pageCount += 1;
+    // Yield this page's items to the consumer BEFORE advancing the
+    // checkpoint cursor past it. The consumer (streamToExporter) awaits
+    // each item's write before pulling the next, so by the time this
+    // generator resumes past `yield*`, every item in this page is already
+    // durably written — advancing the checkpoint any earlier would let a
+    // crash between the checkpoint write and the consumer draining this
+    // page silently lose those items on --resume (they'd never be
+    // re-fetched, since the resumed cursor starts after this page).
+    yield* page.items;
     state.set(segmentIndex, page.lastEvaluatedKey ?? null);
     if (pageCount % opts.checkpointEveryPages === 0) {
       await saveCheckpoint(opts.checkpointPath, state.snapshot());
@@ -221,7 +230,6 @@ async function* driveSegment(
         { checkpointPath: opts.checkpointPath, segmentIndex, pageCount },
       );
     }
-    yield* page.items;
   }
 }
 
@@ -229,6 +237,16 @@ async function* driveSegment(
  * Fans in every active segment's item stream into a single ordered-by-arrival
  * stream, driving each segment's `.next()` concurrently (bounded only by how
  * many segments are active) via a simple `Promise.race` scheduler.
+ *
+ * A segment's next `.next()` call is only issued **after** this generator
+ * resumes from yielding that segment's previous value — i.e., only once the
+ * downstream consumer has finished with it and asked for another. Eagerly
+ * prefetching a segment's next value immediately after producing the current
+ * one (rather than after the consumer resumes this generator) would let
+ * `driveSegment` race ahead past its own post-yield checkpoint update before
+ * the consumer has even received, let alone durably written, the value the
+ * checkpoint is about to advance past — silently defeating the no-data-loss
+ * ordering `driveSegment` otherwise guarantees.
  */
 async function* mergeAsync(
   sources: ReadonlyMap<number, AsyncGenerator<Record<string, unknown>>>,
@@ -249,10 +267,13 @@ async function* mergeAsync(
 
   while (pending.size > 0) {
     const { index, result } = await Promise.race(pending.values());
+    pending.delete(index);
     if (result.done === true) {
-      pending.delete(index);
       continue;
     }
+    yield result.value;
+    // Only issued once this generator resumes from the yield above — i.e.,
+    // once the consumer has finished with `result.value` and asked for more.
     const source = sources.get(index);
     if (source === undefined) {
       throw new Core.M3LError(
@@ -264,7 +285,6 @@ async function* mergeAsync(
       index,
       source.next().then((r) => ({ index, result: r })),
     );
-    yield result.value;
   }
 }
 
