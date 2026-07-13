@@ -81,7 +81,16 @@ flips to green — but the rest of the discipline below is identical.)
    `afterEach` — but **only** for collaborators your tests actually mock. Do not
    write `afterEach(() => vi.restoreAllMocks())` or similar teardown code for
    pure functions with no mocks; dead teardowns clutter the suite and require
-   removal later. Name tests by behavior.
+   removal later. **`vi.restoreAllMocks()` only undoes `vi.spyOn` spies — it
+   does NOT clear a plain `vi.fn()` created inside a top-level `vi.mock(...)`
+   factory** (the common pattern for mocking a named export like `AWS.getItem`).
+   Leaving only `restoreAllMocks()` in `afterEach` lets that `vi.fn()`'s call
+   history and `mockImplementation` leak into the next test — an intermittent,
+   confusing failure that only appears when the full suite runs, not a single
+   test in isolation. When a test file mocks any named export via `vi.mock()`,
+   also call `vi.mocked(theExport).mockReset()` per mocked export in `afterEach`
+   (recurred independently across 3 test files in one session; see
+   `docs/logs/2026-07-13-dynamo-crud.md`, divergence 2). Name tests by behavior.
 5. Parameterize with `test.each` when the same logic is exercised over many inputs.
 6. Run `pnpm test` (and `pnpm typecheck`). In tests-first mode, confirm the
    expected red; in backfill mode, iterate to green. Never mute or retry-mask a

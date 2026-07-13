@@ -41,9 +41,9 @@ Each script is one package under `scripts/<name>/`, scaffolded via
 [`2026-07-09-consumer-scripts-implementation-plan.md`](./archive/2026-07-09-consumer-scripts-implementation-plan.md)
 and its [roadmap](./archive/2026-07-09-consumer-scripts-roadmap.md).
 
-### W2 — scale-hardened (P1, pending; W0 clients present)
+### W2 — scale-hardened (P1, in progress; W0 clients present)
 
-- **`dynamo-crud`** — `get/put/update/delete/query/scan/batch-write/batch-delete/export/import`; parallel `Scan` segments, `LastEvaluatedKey` page-loop, persisted checkpoints + `--resume`, 25-item batch chunks with `UnprocessedItems` retry, streamed JSONL, `dynamoDBDocument` (W0-L2) throughout, destructive gate. Uses the `failed.jsonl` re-drive pattern.
+- **`dynamo-crud`** — **done.** `get/put/update/delete/query/scan/batch-write/batch-delete/export/import`; parallel `Scan` segments, `LastEvaluatedKey` page-loop, persisted checkpoints + `--resume` (keyed to a `runName` config parameter, not the per-invocation correlation id), 25-item batch chunks with a real retriable-classifier composition (`Core.combineClassifiers`) driving `UnprocessedItems` retry, streamed JSONL, the `aws/dynamodb` high-level operations (not raw `dynamoDBDocument`/SDK commands — the script never imports `@aws-sdk/*`) throughout, destructive gate. 83 tests; 3-reviewer fan-out (code-reviewer, security-reviewer, silent-failure-hunter) found and fixed 1 critical + 2 must-fix + 4 should-fix across two fix rounds; adversarial security refute pass confirmed clean.
 - **`logs-insights`** — `StartQuery`/`GetQueryResults` via `cloudWatchLogs` (W0-L2) + `M3LPollingPolicies.cloudWatchLogsQuery()`; `queryId` checkpoint; split-by-time-window for the 10k-row cap.
 - **`sqs-etl`** — **done**. `dump/send/redrive/delete/purge/transform` via `AWS.M3LSQSOperations` (`aws/sqs`, ADR-0026) — no direct `@aws-sdk/client-sqs` dependency. Long-poll receive loop (10/batch, budget-capped to `batchSize`), streamed JSONL, `sendBatch`/`deleteBatch` batching with `failed.jsonl` re-drive, shared destructive-gate confirmation (bypassable via `yes`), `transform` reusing `json-etl`'s filter grammar locally (a W5 promotion candidate once a 3rd script needs it). Checkpoint/resume and client-side rate capping deferred (see the script's contract page).
 
