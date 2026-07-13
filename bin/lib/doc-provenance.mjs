@@ -39,7 +39,11 @@ export function isSymbolExported(src, symbol) {
   const ident = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const directRe = new RegExp(
     `\\bexport\\b(?:\\s+(?:abstract|declare|async))*\\s+` +
-      `(?:class|function|type|interface|const|let|var|enum)\\s+${ident}\\b`,
+      // `function\*?` also matches a top-level exported generator function
+      // (`export async function* foo`) — the codebase's only async
+      // generators used to be class methods (`async *importStream`), never
+      // standalone exported functions, until aws/dynamodb's queryItems/scanSegment.
+      `(?:class|function\\*?|type|interface|const|let|var|enum)\\s+${ident}\\b`,
   );
   const namedRe = new RegExp(
     `\\bexport\\b(?:\\s+type)?\\s*\\{[^}]*\\b${ident}\\b[^}]*\\}`,

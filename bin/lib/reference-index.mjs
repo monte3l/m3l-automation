@@ -56,8 +56,10 @@ function parseImplementationStatus() {
     const cells = line.split("|");
     if (cells.length < 6) continue;
     const name = cells[1].trim();
-    // Only simple lowercase submodule names (not headers, separators, or infra rows)
-    if (!/^[a-z][a-z]+$/.test(name)) continue;
+    // Lowercase submodule names, hyphens allowed for multi-word names beyond
+    // the original bootstrap catalog (e.g. "logs-insights", ADR-0027) — not
+    // headers, separators, or infra rows.
+    if (!/^[a-z][a-z-]+$/.test(name)) continue;
     const statusCell = cells[5].trim();
     // First code point is the status emoji
     const emoji = [...statusCell][0] ?? "❌";

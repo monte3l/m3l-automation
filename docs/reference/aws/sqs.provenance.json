@@ -1,0 +1,132 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "aws/sqs.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/sqs/client.ts",
+          "symbol": "M3LSQSOperations",
+          "blob": "99c7108b5ad840e045737aba3bd50951111764d3"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/error.ts",
+          "symbol": "M3LSQSOperationError",
+          "blob": "427eb41e69589b2bb982c3f18049b3b689a3a705"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSReceivedMessage",
+          "blob": "d40aad90b54cdb1c0593977da03fbc1a1e01640b"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSSendEntry",
+          "blob": "d40aad90b54cdb1c0593977da03fbc1a1e01640b"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSDeleteEntry",
+          "blob": "d40aad90b54cdb1c0593977da03fbc1a1e01640b"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSBatchFailure",
+          "blob": "d40aad90b54cdb1c0593977da03fbc1a1e01640b"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSBatchResult",
+          "blob": "d40aad90b54cdb1c0593977da03fbc1a1e01640b"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSReceiveOptions",
+          "blob": "d40aad90b54cdb1c0593977da03fbc1a1e01640b"
+        }
+      ],
+      "retrieved": "2026-07-12"
+    },
+    {
+      "heading": "`M3LSQSOperations`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/sqs/client.ts",
+          "symbol": "M3LSQSOperations",
+          "blob": "99c7108b5ad840e045737aba3bd50951111764d3"
+        }
+      ],
+      "retrieved": "2026-07-12"
+    },
+    {
+      "heading": "`M3LSQSOperationError`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/sqs/error.ts",
+          "symbol": "M3LSQSOperationError",
+          "blob": "427eb41e69589b2bb982c3f18049b3b689a3a705"
+        }
+      ],
+      "retrieved": "2026-07-12"
+    },
+    {
+      "heading": "Plain types",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSReceivedMessage",
+          "blob": "d40aad90b54cdb1c0593977da03fbc1a1e01640b"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSSendEntry",
+          "blob": "d40aad90b54cdb1c0593977da03fbc1a1e01640b"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSDeleteEntry",
+          "blob": "d40aad90b54cdb1c0593977da03fbc1a1e01640b"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSBatchFailure",
+          "blob": "d40aad90b54cdb1c0593977da03fbc1a1e01640b"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSBatchResult",
+          "blob": "d40aad90b54cdb1c0593977da03fbc1a1e01640b"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/sqs/types.ts",
+          "symbol": "M3LSQSReceiveOptions",
+          "blob": "d40aad90b54cdb1c0593977da03fbc1a1e01640b"
+        }
+      ],
+      "retrieved": "2026-07-12"
+    },
+    {
+      "heading": "Field-mapping details (`receive`)",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/sqs/client.ts",
+          "symbol": "M3LSQSOperations",
+          "blob": "99c7108b5ad840e045737aba3bd50951111764d3"
+        }
+      ],
+      "retrieved": "2026-07-12"
+    },
+    {
+      "heading": "Notes and behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/sqs/client.ts",
+          "symbol": "M3LSQSOperations",
+          "blob": "99c7108b5ad840e045737aba3bd50951111764d3"
+        }
+      ],
+      "retrieved": "2026-07-12"
+    }
+  ]
+}

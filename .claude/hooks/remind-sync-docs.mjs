@@ -17,25 +17,32 @@
  * Non-blocking (exits 0 always). Advisories print to stderr so they surface
  * in the Claude Code transcript without blocking the session.
  */
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import process from "node:process";
 
 const projectDir = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
 
-function run(cmd) {
+function git(args) {
   try {
-    return execSync(cmd, { cwd: projectDir, encoding: "utf8" }).trim();
+    return execFileSync("git", args, {
+      cwd: projectDir,
+      encoding: "utf8",
+    }).trim();
   } catch {
     return "";
   }
 }
 
 function wasModified(pathSpec) {
-  const uncommitted = run(`git status --porcelain -- "${pathSpec}"`);
+  const uncommitted = git(["status", "--porcelain", "--", pathSpec]);
   if (uncommitted.length > 0) return true;
-  const recent = run(
-    `git log --oneline --since="2 hours ago" -- "${pathSpec}"`,
-  );
+  const recent = git([
+    "log",
+    "--oneline",
+    "--since=2 hours ago",
+    "--",
+    pathSpec,
+  ]);
   return recent.length > 0;
 }
 
@@ -60,7 +67,7 @@ if (wasModified("packages/m3l-common/tests/")) {
 // 3. Stray debug artifacts — a truncated writer spoke can leave these behind.
 // Match the debug-artifact markers (`scratch`/`repro`), not every untracked
 // test file: a legitimate new `<module>.test.ts` is untracked during RED too.
-const strayDebugFiles = run(`git status --porcelain -- "packages/**"`)
+const strayDebugFiles = git(["status", "--porcelain", "--", "packages/**"])
   .split("\n")
   .filter((line) => line.startsWith("??")) // untracked only
   .map((line) => line.slice(3).trim())
