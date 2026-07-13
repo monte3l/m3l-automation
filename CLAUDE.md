@@ -81,6 +81,10 @@ LTS+**. Primary consumers: automation scripts. The non-negotiable
 constraint is: minimal runtime dependencies, no breaking changes outside
 a major release, strict semver, no any in the public API, Node 24+ only
 
+**Owner:** the repo maintainer (single-maintainer project). Review this file
+whenever a submodule/script pipeline ships, or every ~6 months, whichever
+comes first.
+
 ## Tech Stack
 
 <!--
@@ -216,12 +220,9 @@ AWS keys) at write time and in CI.
 ================================================================
 -->
 
-Run any task with `pnpm <script>`; the full list is in `package.json`
-`scripts` (turbo fans them out per package and caches them). The safety-net
-cadence — which check runs at which stage — is the table below. It is the source
-of truth for the git-hook stages and is machine-verified against `lefthook.yml`
-by `pnpm check:cadence`, so keep the three lefthook rows in sync with the hook
-file.
+Run any task with `pnpm <script>`; the full list is in `package.json` `scripts`.
+The table below is the source of truth for the git-hook cadence, machine-verified
+against `lefthook.yml` by `pnpm check:cadence`.
 
 | Stage                      | Checks run                                                                                                                                                                                  | Scope                     |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
@@ -230,20 +231,11 @@ file.
 | `pre-push` (lefthook)      | `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test:coverage`, `pnpm build`, `pnpm check:exports`, `verify-signed-range`, `pnpm check:agents`                                    | whole repo                |
 | CI `verify` job (`ci.yml`) | everything the pre-push row runs, **plus** every `check:*` script, `pnpm build`, `pnpm knip`, `pnpm lint:md`, `gitleaks`, and `pnpm audit` — see the `verify` job for the full ordered list | whole repo, authoritative |
 
-`post-rewrite` (fires after `git rebase`) and `post-merge` (ADR-0024) both run
-`bin/post-integrate-regen.mjs` — informational, not part of `check:cadence`'s
-three machine-verified rows above (it never blocks; see "Git worktrees" below
-for what it does).
-
-There is **no pre-publish hook** — the package is internal and unpublished
-(ADR-0020), so every gate beyond the bypassable pre-push subset runs only in CI.
-
-The `pre-push` checks run **in parallel** (`lefthook.yml` `parallel: true`), but
-the stage still takes minutes — its wall-clock is the slowest lane, usually
-`test:coverage` or `lint`. `git push` blocks on it, so **budget for it**: run the
-push in the background or with a longer timeout rather than letting a foreground
-tool-timeout kill it mid-hook. Don't reach for `--no-verify` to skip the wait —
-CI re-runs everything and the hook is the local safety net.
+There is no pre-publish hook (package is internal/unpublished, ADR-0020); every
+gate beyond pre-push runs only in CI. `pre-push` runs in parallel but still
+takes minutes (`test:coverage`/`lint` are the slowest lanes) — budget for it
+(background or a longer timeout) rather than `--no-verify`, since CI re-runs
+everything anyway.
 
 ## CI/CD
 
@@ -293,7 +285,7 @@ files (so they cost nothing in unrelated sessions):
   Boy-Scout rule, and the semver hazard of touching the public surface.
 - `scripts/**` → `.claude/rules/scripts.md` — consuming the library via
   `workspace:*` and the `M3LScript` lifecycle.
-- Deeper reference: `.claude/rules/domain-knowledge.md` → `rules/01-06-*.md`.
+- Deeper reference: `.claude/rules/domain-knowledge.md`.
 
 ## Interaction Style
 
@@ -330,82 +322,20 @@ files (so they cost nothing in unrelated sessions):
 ================================================================
 -->
 
-- **Conventional Commits (required):** use the standard types (`feat:`,
-  `fix:`, `docs:`, `refactor:`, `test:`, `chore:`; `feat!:` or a
-  `BREAKING CHANGE:` footer for breaking changes) for readable, consistent
-  history. Enforced by `lefthook` `commit-msg` -> `bin/lint-commit.mjs`
-  (`@commitlint/lint` core, no CLI).
-- **AI co-authorship trailer:** when Claude authored/assisted a commit, add
-  `Co-Authored-By: <model> <noreply@anthropic.com>` with the **exact model from
-  the environment** — never copied from a template. Canonical names live in
-  `bin/lib/claude-models.mjs`; the same `commit-msg` hook rejects non-canonical
-  Claude trailers. See `docs/contributing/contributing.md`.
-- Git hooks run via **lefthook** (`lefthook.yml`): `pre-commit` runs
-  eslint + prettier on staged files; `pre-push` runs `format:check` + `lint` +
-  `typecheck` + `test:coverage` and refuses unsigned/unverified commits
-  (`verify-signed-range`). See the cadence table under "## Commands" for the
-  authoritative per-stage list.
+- **Conventional Commits (required)**, with an AI co-authorship trailer when
+  Claude authored/assisted. Enforced by the `commit-msg` hook. Trailer
+  mechanics and canonical model names: `docs/contributing/contributing.md`.
 - **Before change-work, run `/start-work`** — the pre-work decision gate that
-  settles location / branch / PR / push and confirms them (ADR-0016). It is the
-  Step 0 the change-initiating skills defer to.
-- Branch from `main`: `feat/<slug>`, `fix/<slug>`. The
-  `guard-branch-isolation.mjs` hook enforces this for code work — it blocks
-  `packages/*/src/**`, `scripts/*/src/**`, and `**/tests/**` writes while `HEAD`
-  is `main` (or a detached HEAD on the `main` commit), so branch before implementing.
-- `git rebase --continue` and `git checkout` both bypass the `pre-commit`
-  prettier/eslint hook (it only fires on a normal `git commit`). Run
-  `pnpm format:check` yourself right after either before pushing — otherwise the
-  parallel pre-push `format:check` lane is what catches it, costing a full push
-  cycle to diagnose.
-- The package is internal and not published; `version` in package.json is
-  hand-managed (see ADR-0020).
-- Never `git push --force` to a shared branch.
-- Commits should always be small, incremental and, above all, meaningful.
-- **Generated-file merge drivers (ADR-0024).** `docs/reference/catalog.json`,
-  `docs/reference/symbol-map.json`, and `pnpm-lock.yaml` are tagged
-  `merge=m3l-generated` in `.gitattributes`; a registered custom git driver
-  (`bin/merge-driver-generated.mjs`) resolves any conflict on them by keeping
-  the current side and exiting 0, so a rebase/merge never stops on them. The
-  driver is registered into the **shared** repo config (`bin/install-merge-drivers.mjs`,
-  idempotent) from both `prepare` (fresh clones) and `worktree:setup`
-  (belt-and-braces). A `post-rewrite`/`post-merge` lefthook stage
-  (`bin/post-integrate-regen.mjs`) then regenerates `catalog.json`/`symbol-map.json`
-  — plus the count sites and provenance blobs — immediately after; for
-  `pnpm-lock.yaml` specifically it runs `pnpm install` against the merged
-  `package.json`, but only when the lockfile is still dirty, so an unrelated
-  rebase doesn't pay that cost. It reports dirty files for a `docs: reconcile
-doc metadata` commit; it never auto-commits and never blocks. `*.provenance.json` sidecars and the hand-edited
-  trackers/READMEs are deliberately **not** driver-covered — see
-  `/resolving-merge-conflicts` for their narrower remaining remit.
-
-### Git worktrees (task isolation)
-
-See ADR-0013 for the full rules. Day-to-day:
-
-- **Manual (sibling dir):** `pnpm worktree:new <slug>` does it in one step —
-  `git worktree add ../m3l-automation-<slug> -b feat/<slug>` (branched from
-  `origin/main`) then provisions it via `worktree:setup`. The two underlying
-  steps still work by hand: `git worktree add …` then, from **inside** the new
-  worktree, `pnpm worktree:setup` (installs deps + copies the gitignored files
-  listed in `.worktreeinclude` — a fresh worktree has none). Note
-  `worktree:setup` copies **literal** paths only; glob/negation entries (e.g.
-  `.env.*`) are reported, not copied.
-- **Native:** `claude --worktree <name>` (or a spoke with `isolation: worktree`)
-  creates worktrees under `.claude/worktrees/` and copies `.worktreeinclude`
-  files, but does **not** run `pnpm install` — the `guard-worktree-ready.mjs`
-  SessionStart hook reminds you to.
-- **Cleanup:** `pnpm worktree:remove <slug>` is the symmetric teardown for a
-  manual worktree — `git worktree remove` + `git worktree prune` + delete the
-  branch if it's merged. `pnpm worktree:prune` (`--dry-run` to preview) is a
-  batch sweep that removes worktrees whose branch is **merged into `main`** or
-  that git marks **`prunable`** — it is _not_ location-scoped, so it will **not**
-  reap an unmerged worktree of any kind (that is what `worktree:remove` is for)
-  and it _will_ reap a merged sibling worktree, not only `.claude/worktrees/`
-  ones. Agent worktrees under `.claude/worktrees/` also auto-sweep after
-  `cleanupPeriodDays`. See ADR-0014.
-- Never run root `pnpm format`/`lint`/`test` against a nested
-  `.claude/worktrees/` checkout — run the scoped command from inside that
-  worktree instead.
+  settles location / branch / PR / push (ADR-0016). Branch from `main`:
+  `feat/<slug>`, `fix/<slug>`; `guard-branch-isolation.mjs` blocks
+  `packages/*/src/**`, `scripts/*/src/**`, `**/tests/**` writes while `HEAD` is
+  `main`.
+- Never `git push --force` to a shared branch. Commits should be small,
+  incremental, and meaningful.
+- **Worktrees** (ADR-0013/0014): `pnpm worktree:new <slug>` creates and
+  provisions an isolated sibling checkout; `pnpm worktree:remove <slug>` tears
+  it down. Full day-to-day mechanics (native `--worktree`, cleanup/prune
+  semantics, merge-driver regen) live in the ADRs — don't duplicate them here.
 
 ## Architecture & Decisions
 
@@ -509,79 +439,17 @@ See ADR-0013 for the full rules. Day-to-day:
 ================================================================
 -->
 
-This repo runs a **hub-and-spoke** model. The main agent is the **hub**: it
-plans, dispatches work to isolated subagents ("spokes"), reads their results,
-updates the status file, and decides the next step. The hub **does not write
-`src/`/test code and does not review code itself** — those run in spokes with
-the right tool grants. This makes "the agent that writes code is never the one
-that reviews it" structural, and keeps the hub's context lean.
+This repo runs a **hub-and-spoke** model: the main agent (hub) plans and
+dispatches to isolated subagents ("spokes") but never writes `src/`/test code
+or reviews it itself — that split is structural (every spoke carries
+`disallowedTools: Agent`, enforced by `pnpm check:agents`). Model tiering per
+spoke is in `docs/contributing/model-selection.md`. Full detail — the spoke
+roster, TDD loop, live-status trackers, and submodule/script pipelines — lives
+in `docs/contributing/agent-operating-model.md`.
 
-- **Spokes** are defined in `.claude/agents/*.md` (plus the built-in `Explore`
-  for read-only research): spec-conformance, `test-author` (RED),
-  `code-implementer` (GREEN), and the review agents. They are leaf nodes —
-  only the hub dispatches subagents (each carries `disallowedTools: Agent`), so
-  the graph stays flat at depth 1. `pnpm check:agents` enforces this and that
-  every `subagent_type` resolves to a real agent or known built-in.
-- **Model tiering**: which Claude model runs which task category is documented
-  in `docs/contributing/model-selection.md`; `pnpm check:agents` also enforces
-  its MODEL-MATRIX block against agent `model:` frontmatter and workflow
-  `--model` pins.
-- **Official-guidance research**: when a design or audit decision hinges on
-  what Anthropic itself recommends (agent/subagent design, model selection,
-  prompt engineering, MCP, context management) rather than on something
-  already decided in this repo, the hub runs `researching-anthropic-guidance`
-  — it fans out `Explore` agents restricted to official Anthropic domains,
-  each annotating a scratchpad file, then synthesizes the findings into a
-  consensus-plus-flagged-contradictions briefing. Hub-only, like `auditing`,
-  since it dispatches subagents.
-- **TDD**: tests are written from the documented contract and fail first, then
-  the implementer makes them pass; review follows.
-- **Live status**: three living trackers, updated by the hub as work lands (they
-  are the durable memory the isolated spokes do not share). `docs/implementation-status.md`
-  is the source of truth for what library work is **built** vs. documented (the
-  count-enforced 24/24 ledger — `pnpm gen:counts` regenerates every "N of M"
-  badge/prose site and the implemented-list block from the ✅ rows;
-  `check:doc-counts`/`check:impl-counts` verify them). `docs/ROADMAP.md`
-  (coarse, unblock-first) and `docs/plans/IMPLEMENTATION.md` (detailed
-  per-item backlog) track **pending** program work — the consumer-fleet
-  waves, the library-friction F-series, and the gated D4/D5 modules, each as
-  one table row per item (row-locality, ADR-0024) so status changes don't
-  conflict across parallel branches. When a unit lands: flip its status in
-  the relevant tracker, `git mv` any dated plan it completes into
-  `docs/plans/archive/`, and a new friction item from a work log is filed
-  into `IMPLEMENTATION.md` (not left narrative-only). Completed plans live in
-  `docs/plans/archive/` (frozen, excluded from `lint:md`);
-  `docs/plans/README.md` and `docs/logs/README.md` index them.
-- The `implementing-submodules` skill encodes this loop end-to-end; `scaffolding-submodules`
-  scaffolds a greenfield module and hands off to it. All 22 bootstrap submodules
-  already have `docs/reference` specs, so `implementing-submodules` is the normal entry
-  point; reach for `scaffolding-submodules` only to add a genuinely new (beyond-bootstrap)
-  module — it surfaces through the namespace barrel, never a new `exports` subpath.
-- **Consumer scripts have the same split**: `scaffolding-scripts` runs the
-  deterministic generator (`pnpm scaffold:script`, templates in
-  `templates/script/`, CI backstop `pnpm check:script-scaffold`) for a
-  greenfield `scripts/<name>/` package, then hands off to `implementing-scripts`
-  — the script-scale TDD loop reusing the same spokes (no coverage/exports
-  gates; `check:script-scaffold` + knip are the backstops).
-- **Current state**: see `docs/implementation-status.md` for the authoritative
-  built-vs-documented tracker and suggested build order.
-- **Lessons learned**: `docs/logs/` holds per-submodule work logs. The
-  `core/errors` log (`docs/logs/2026-06-29-core-errors.md`) is the durable
-  source for the process lessons baked into the spoke prompts — front-load exact
-  contract nuances, lint in-loop, justify error-channel `eslint-disable`, read
-  coverage from `coverage-final.json` (the v8 text table hides 100% files), and
-  trust the CLI over the IDE/LSP.
-
-**Claude Code hooks** (`.claude/settings.json`, implemented in
-`.claude/hooks/*.mjs` and `bin/`) add deterministic enforcement on top of this
-advisory file: across UserPromptSubmit / SessionStart / PreToolUse / PostToolUse /
-Stop they inject the pre-work decision gate (branch/PR/push), guard ESM `.js`
-imports, CommonJS, protected paths (`dist/`), branch isolation
-(`src/`/`tests/` writes off `main`, incl. a detached HEAD on `main`), unsigned
-`git push` (Bash matcher), RED-phase test noise, exports/semver drift, doc /
-provenance / index staleness, and worktree readiness — a violating edit or push is
-blocked or flagged at write time. `check:hooks` validates the wiring. See that
-file for the per-hook list and triggers.
+**Claude Code hooks** (`.claude/settings.json`) add deterministic enforcement
+on top of this advisory file — the full 18-hook inventory is
+`docs/contributing/hooks-reference.md`; `check:hooks` validates the wiring.
 
 ## Task Workflow
 
@@ -651,30 +519,17 @@ file for the per-hook list and triggers.
 ================================================================
 -->
 
-The deterministic prohibitions — `any`, a missing `.js` extension, CommonJS
-(`require` / `module.exports` / `__dirname`), hand-edits to `dist/`,
-non-Conventional commits, committed secrets/tokens (`gitleaks` in CI plus the
-`guard-secret-writes` write-time hook), pushing an unsigned/invalid-signature
-commit (`guard-git-push-signed` + `verify-signed-range` pre-push + branch-protection
-"Require signed commits"), and adding a dependency without updating the lockfile
-(`pnpm install --frozen-lockfile` in CI) — are enforced by ESLint, the hooks in
-`.claude/settings.json`, commitlint, and CI; a violating edit is blocked at write
-time. The `.js`-extension and CommonJS bans are intentionally
-guarded twice — a fast PreToolUse hook (`guard-js-extension` / `guard-no-commonjs`)
-blocks the write before it lands, and ESLint/CI is the authoritative backstop for
-any non-Claude or `--no-verify` edit; do not remove the hooks as "redundant."
+**Enforced at write time or in CI:** `any` in the public API, a missing `.js`
+extension, CommonJS (`require`/`module.exports`/`__dirname`), hand-edits to
+`dist/`, non-Conventional commits, committed secrets/tokens, an
+unsigned/invalid-signature push, and adding a dependency without updating the
+lockfile. The `.js`-extension and CommonJS bans are guarded twice (a
+PreToolUse hook plus ESLint/CI) — don't remove either as "redundant."
 
-The rules with **no** automated guard, so they need conscious care:
-
-- Never swallow errors silently. (Throwing a bare string is separately caught by
-  ESLint `@typescript-eslint/only-throw-error`; the silent-swallow half is the one
-  with no automated guard.)
-- No top-level side effects — keep modules tree-shakeable.
-- Keep the import graph shallow; don't pull a heavy dependency into the main
-  entry.
-- Never `git push --force` to a shared branch.
-- Surface new Core/AWS exports through the namespace barrel — never as a new
-  `exports` subpath.
+**No automated guard — need conscious care:** never swallow errors silently;
+no top-level side effects; keep the import graph shallow; never
+`git push --force`; surface new Core/AWS exports through the namespace barrel
+only, never a new `exports` subpath.
 
 ## Known Gotchas
 
