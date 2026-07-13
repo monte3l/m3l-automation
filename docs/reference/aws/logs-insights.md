@@ -69,4 +69,3 @@ Poll-attempt exhaustion (the attempt bound reached while the query is still `Run
 - [`aws/clients`](./clients.md) — the `script.aws.cloudWatchLogs` seam this submodule's client is injected from.
 - [`core/polling`](../core/polling.md) — `M3LPoller`, `M3LRetryRunner`, `M3LPollingPolicies.cloudWatchLogsQuery()`/`.awsThrottling()`.
 - [ADR-0027](../../adr/0027-aws-sdk-boundary-typed-wrappers.md) — the AWS SDK boundary decision this submodule implements.
-- [`scripts/logs-insights`](../scripts/logs-insights.md) — the consuming script.
