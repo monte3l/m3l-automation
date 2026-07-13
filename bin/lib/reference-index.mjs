@@ -57,7 +57,7 @@ function parseImplementationStatus() {
     if (cells.length < 6) continue;
     const name = cells[1].trim();
     // Lowercase submodule names, hyphens allowed for multi-word names beyond
-    // the original bootstrap catalog (e.g. "logs-insights", ADR-0026) — not
+    // the original bootstrap catalog (e.g. "logs-insights", ADR-0027) — not
     // headers, separators, or infra rows.
     if (!/^[a-z][a-z-]+$/.test(name)) continue;
     const statusCell = cells[5].trim();
