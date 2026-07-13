@@ -56,7 +56,7 @@ export interface LogsInsightsAwaitOptions {
 /**
  * Typed wrapper over CloudWatch Logs Insights query execution
  * (`StartQuery`/`GetQueryResults`), so consumer scripts never need to import
- * `@aws-sdk/client-cloudwatch-logs` directly (ADR-0026).
+ * `@aws-sdk/client-cloudwatch-logs` directly (ADR-0027).
  *
  * Wraps an already-provisioned `CloudWatchLogsClient` — obtain one from
  * `script.aws.cloudWatchLogs` (the library's credential/client-construction

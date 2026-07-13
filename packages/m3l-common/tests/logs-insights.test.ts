@@ -1,7 +1,7 @@
 /**
  * Tests for aws/logs-insights submodule.
  *
- * Contract source: docs/reference/aws/logs-insights.md, ADR-0026.
+ * Contract source: docs/reference/aws/logs-insights.md, ADR-0027.
  *
  * Exports under test (from `../src/aws/logs-insights/index.js`, following
  * the package's `../src/aws/index.js` barrel): M3LLogsInsightsClient,
