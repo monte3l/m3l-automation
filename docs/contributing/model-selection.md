@@ -102,6 +102,17 @@ variant of the same `opus` alias, used incidentally for large-working-set
 sessions (e.g. the worktree-isolation + model-tiering build-out) — not a
 separate task category.
 
+**Note (row 10):** diff-size-based scaling of `--max-turns`/`--model` for
+`claude-pr-review.yml` was evaluated (2026-07-13 audit of 121 merged PRs:
+mean 940.7 changes/14.6 files, median 424/10, p90 2,667/35) and deliberately
+**not** implemented — Anthropic publishes no diff-size threshold for
+turns/timeout/model tier (`researching-anthropic-guidance` pass, same date;
+see `docs/research/pr-review-action-tuning.md`), so a size-based cutoff here
+would be an unvalidated guess rather than a documented practice. The flat
+100-turn/Sonnet config stays; row 10's existing "if FAIL-verdict quality
+slips, the high-stakes rule argues for `opus` — revisit on evidence" is the
+actual trigger for ever changing it.
+
 ## Enforcement
 
 `.claude/settings.json` also sets a project-scoped

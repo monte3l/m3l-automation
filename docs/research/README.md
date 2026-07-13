@@ -33,7 +33,6 @@ when a snapshot looks out of date.
 
 ## Index
 
-| Date | Topic | Snapshot |
-| ---- | ----- | -------- |
-
-None yet — populated as snapshots are written.
+| Date       | Topic                                                          | Snapshot                                                 |
+| ---------- | -------------------------------------------------------------- | -------------------------------------------------------- |
+| 2026-07-13 | Claude PR Review Action tuning for this repo's PR-size profile | [pr-review-action-tuning.md](pr-review-action-tuning.md) |

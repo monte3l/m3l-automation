@@ -23,6 +23,12 @@ jobs:
   review:
     if: github.actor != 'dependabot[bot]' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    # Anthropic publishes no recommended value; reviews average ~20 minutes
+    # per code.claude.com/docs/en/code-review — 45 gives headroom for this
+    # repo's largest observed PRs (~5k changes) without leaving the GitHub
+    # default (360min) as an effective non-limit. See
+    # docs/research/pr-review-action-tuning.md.
+    timeout-minutes: 45
     permissions:
       contents: read
       pull-requests: write
@@ -128,6 +134,31 @@ jobs:
           gh pr diff "$PR" -R "$REPO" --name-only \
             > "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt" \
             || rm -f "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt"
+
+          # pnpm-lock.yaml is mechanically regenerated and already validated
+          # elsewhere (`pnpm install --frozen-lockfile` in CI,
+          # dependency-review.yml) — its diff adds volume without review
+          # value. Strip that one hunk from the patch Claude reads; leave
+          # every other file's diff untouched. Non-fatal: on any failure the
+          # original patch is left as-is rather than the job aborting.
+          patch="$GITHUB_WORKSPACE/.claude-pr-diff.patch"
+          if [ -f "$patch" ]; then
+            awk '
+              /^diff --git a\/pnpm-lock\.yaml b\/pnpm-lock\.yaml$/ {
+                print
+                print "(diff omitted — pnpm-lock.yaml is mechanically generated;"
+                print " validated by `pnpm install --frozen-lockfile` in CI and"
+                print " dependency-review.yml, not by this reviewer)"
+                skip = 1
+                next
+              }
+              /^diff --git / { skip = 0 }
+              skip { next }
+              { print }
+            ' "$patch" > "$patch.stripped" 2>/dev/null \
+              && mv "$patch.stripped" "$patch" \
+              || rm -f "$patch.stripped"
+          fi
 
       - uses: anthropics/claude-code-action@e90deca47693f9457b72f2b53c17d7c445a87342 # v1
         id: claude-review
@@ -294,11 +325,22 @@ jobs:
 
           changed_files="n/a"
           patch_lines="n/a"
+          patch_chars="0"
           if [ -f "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt" ]; then
             changed_files="$(wc -l < "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt" | tr -d ' ')"
           fi
           if [ -f "$GITHUB_WORKSPACE/.claude-pr-diff.patch" ]; then
             patch_lines="$(wc -l < "$GITHUB_WORKSPACE/.claude-pr-diff.patch" | tr -d ' ')"
+            patch_chars="$(wc -c < "$GITHUB_WORKSPACE/.claude-pr-diff.patch" | tr -d ' ')"
+          fi
+
+          # claude-code-action truncates diffs at 150k characters (no official
+          # numeric guard is published beyond that figure — see
+          # docs/research/pr-review-action-tuning.md). Warn loudly rather than
+          # let a silent truncation pass as a clean review.
+          if echo "$patch_chars" | grep -qE '^[0-9]+$' && [ "$patch_chars" -ge 120000 ]; then
+            echo "::warning title=Claude PR Review::Patch is ${patch_chars} characters — near/over the action's ~150k truncation limit; the review may have seen a truncated diff"
+            echo "**⚠️ Diff may have been truncated** — patch is ${patch_chars} characters, near/over the action's ~150k truncation limit." >> "$GITHUB_STEP_SUMMARY"
           fi
 
           if [ -z "$EXECUTION_FILE" ] || [ ! -s "$EXECUTION_FILE" ]; then
