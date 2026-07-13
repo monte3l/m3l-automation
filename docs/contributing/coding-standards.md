@@ -18,6 +18,3 @@ Jump straight to the section you need:
 - [Refactoring existing code & tests](./style-guide.md#part-3--refactoring-existing-code--tests)
   — the test safety net, small isolated steps, opportunistic/Boy-Scout refactoring,
   scope boundaries, and the semver hazard of touching the public surface.
-
-The deeper rationale (quality hierarchy, anti-patterns, review checklist) remains
-in [`rules/01-code-quality-and-standards.md`](../../rules/01-code-quality-and-standards.md).
