@@ -196,6 +196,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/m3l-common
 
+  scripts/sqs-etl:
+    dependencies:
+      '@m3l-automation/m3l-common':
+        specifier: workspace:*
+        version: link:../../packages/m3l-common
+
 packages:
 
   '@andrewbranch/untar.js@1.0.3':
