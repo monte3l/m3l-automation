@@ -173,6 +173,11 @@ export default tseslint.config(
     // through `M3LConfigParameter` and is read from the resolved config
     // (scripts.md / ADR-0022). This is the mechanically-checkable half of that
     // rule; the composition-root / injected-deps guidance stays advisory.
+    //
+    // Scripts must also never import the AWS SDK directly — all AWS SDK
+    // usage is mediated through @m3l-automation/m3l-common/aws (ADR-0027).
+    // packages/m3l-common/src/** is intentionally NOT covered by this block:
+    // the library itself legitimately imports the SDK.
     files: ["scripts/*/src/**/*.ts"],
     rules: {
       "no-restricted-syntax": [
@@ -182,6 +187,19 @@ export default tseslint.config(
             "MemberExpression[object.name='process'][property.name='env']",
           message:
             "Scripts must not read process.env directly — declare config via M3LConfigParameter and read it from the resolved config (scripts.md).",
+        },
+      ],
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@aws-sdk", "@aws-sdk/*", "@aws-sdk/**"],
+              allowTypeImports: false,
+              message:
+                "Scripts must not import @aws-sdk/* directly — use the typed wrappers in @m3l-automation/m3l-common/aws (e.g. M3LLogsInsightsClient). ADR-0027.",
+            },
+          ],
         },
       ],
     },
@@ -230,7 +248,9 @@ export default tseslint.config(
     //
     // Zone A: aws/** may import only core/errors, core/prompt, and
     // core/polling (the last widened by ADR-0026 for aws/sqs's internal
-    // retry composition — core/polling is acyclic w.r.t. aws/*).
+    // retry composition, and relied on by ADR-0027's aws/logs-insights for
+    // the same reason — core/polling is acyclic w.r.t. aws/*: it depends
+    // only on core/events + internal/, nothing in that chain imports aws).
     files: ["packages/m3l-common/src/aws/**/*.ts"],
     ignores: ["packages/m3l-common/src/aws/index.ts"],
     rules: {
@@ -244,7 +264,7 @@ export default tseslint.config(
               // `except` paths are relative to `from` (core).
               except: ["errors", "prompt", "polling"],
               message:
-                "aws/* may import only core/errors, core/prompt, and core/polling — no other core module (ADR-0009 layering, widened by ADR-0026).",
+                "aws/* may import only core/errors, core/prompt, and core/polling — no other core module (ADR-0009 layering).",
             },
           ],
         },
