@@ -38,6 +38,17 @@ paths:
 - **Filesystem error handling.** Ignore only `ENOENT` (denylist via a small
   `Set`) and **re-throw** `EACCES`/`EPERM`; scope any silent-skip to _parse
   failures only_, never a whole `catch`.
+- **Guard the parse step, not just the read and the validation around it.** A
+  read-then-`JSON.parse`-then-shape-validate sequence needs the same typed-error
+  treatment on all three steps — the `parse` call sitting between two already-guarded
+  steps is the one most likely to be left bare, surfacing a raw `SyntaxError`
+  instead of an `M3LError`. This matters doubly for any file that can hold
+  caller/user data (a checkpoint, a cache): Node's `SyntaxError` message embeds a
+  snippet of the malformed content, so an unguarded parse can leak that content to
+  a log/stderr sink on an unhandled rejection. Wrap the parse, throw the same
+  typed error the adjacent validation branch uses — and do **not** chain the raw
+  `SyntaxError` as `cause` if the file may hold sensitive content, since the cause
+  chain carries the leaking snippet forward.
 - **Fail loud on caller/config errors; stay lenient only on external data.**
   Validate caller- and config-supplied input at the public boundary and throw an
   `M3LError` subclass on violation — never silently coerce or skip it. Reserve
