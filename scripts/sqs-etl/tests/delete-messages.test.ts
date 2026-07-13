@@ -232,6 +232,45 @@ describe("deleteMessages", () => {
     }
   });
 
+  test("a writer.close() failure does not mask the original deleteBatch() rejection", async () => {
+    stubInput(JSON.stringify({ receiptHandle: "rh1" }));
+    const { streams } = stubOutputStreams();
+    const originalFailure = new Error("aws deleteBatch unavailable");
+    const closeFailure = new Error("simulated close failure");
+    const deleteBatchMock = vi.fn().mockImplementation(() => {
+      const failedStream = streams[streams.length - 1];
+      failedStream?.armCloseFailure(closeFailure);
+      return Promise.reject(originalFailure);
+    });
+    const sqsOperations = createFakeSqsOperations({
+      deleteBatch: deleteBatchMock,
+    });
+    const config = buildConfig({
+      queueUrl: "https://sqs.example/q",
+      input: "in.jsonl",
+      yes: true,
+    });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+    const prompt = bypassPrompt();
+
+    let thrown: unknown;
+    try {
+      await deleteMessages({
+        config,
+        paths,
+        logger,
+        correlationId: "run-close-fail",
+        sqsOperations,
+        prompt,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(originalFailure);
+  });
+
   test.each(["queueUrl", "input"] as const)(
     "throws ERR_SQS_ETL_CONFIG when '%s' is missing, never prompting or calling deleteBatch",
     async (missing) => {

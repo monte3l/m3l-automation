@@ -125,6 +125,62 @@ async function* chunkedRecords<T>(
   if (chunk.length > 0) yield chunk;
 }
 
+/** Best-effort closes `writer`, swallowing any close failure — used when a primary error already occurred and must not be masked by a subsequent close failure. */
+async function closeWriterBestEffort(
+  writer: Core.M3LListExporterStreamWriter<AWS.M3LSQSDeleteEntry>,
+): Promise<void> {
+  try {
+    await writer.close();
+  } catch {
+    // best-effort: a close failure must not mask the original error
+  }
+}
+
+/**
+ * Streams `inputPath`, chunks receipt handles into at most 10-entry batches,
+ * `deleteBatch()`s each from `settings.queueUrl`, and appends every per-entry
+ * failure to `failedWriter`.
+ *
+ * @returns The count of successfully deleted and failed entries.
+ */
+async function runDeleteBatches(
+  deps: {
+    readonly logger: Core.M3LLogger;
+    readonly sqsOperations: AWS.M3LSQSOperations;
+  },
+  settings: DeleteSettings,
+  inputPath: string,
+  failedWriter: Core.M3LListExporterStreamWriter<AWS.M3LSQSDeleteEntry>,
+): Promise<{ deleted: number; failed: number }> {
+  let deleted = 0;
+  let failed = 0;
+  const receiptHandles = readReceiptHandles(inputPath, (index, reason) => {
+    deps.logger.warning(
+      `skipped malformed row at index ${String(index)}: ${reason}`,
+    );
+  });
+
+  for await (const chunk of chunkedRecords(
+    receiptHandles,
+    settings.batchSize,
+    MAX_BATCH_ENTRIES,
+  )) {
+    const entries: AWS.M3LSQSDeleteEntry[] = chunk.map(
+      (receiptHandle, index) => ({ id: String(index), receiptHandle }),
+    );
+    const result = await deps.sqsOperations.deleteBatch(
+      settings.queueUrl,
+      entries,
+    );
+    for (const failure of result.failed) {
+      await failedWriter.append(failure.entry);
+    }
+    deleted += result.successful.length;
+    failed += result.failed.length;
+  }
+  return { deleted, failed };
+}
+
 /**
  * Runs the `delete` command: streams `input`, chunks receipt handles into
  * at most 10-entry batches, and `deleteBatch()`s each from `queueUrl`.
@@ -181,39 +237,14 @@ export async function deleteMessages(deps: {
   });
   const failedWriter = failedExporter.exportStream();
 
-  let deleted = 0;
-  let failed = 0;
+  let result: { deleted: number; failed: number };
   try {
-    const receiptHandles = readReceiptHandles(inputPath, (index, reason) => {
-      deps.logger.warning(
-        `skipped malformed row at index ${String(index)}: ${reason}`,
-      );
-    });
-
-    for await (const chunk of chunkedRecords(
-      receiptHandles,
-      settings.batchSize,
-      MAX_BATCH_ENTRIES,
-    )) {
-      const entries: AWS.M3LSQSDeleteEntry[] = chunk.map(
-        (receiptHandle, index) => ({ id: String(index), receiptHandle }),
-      );
-      const result = await deps.sqsOperations.deleteBatch(
-        settings.queueUrl,
-        entries,
-      );
-      for (const failure of result.failed) {
-        await failedWriter.append(failure.entry);
-      }
-      deleted += result.successful.length;
-      failed += result.failed.length;
-    }
-  } finally {
-    await failedWriter.close();
+    result = await runDeleteBatches(deps, settings, inputPath, failedWriter);
+  } catch (cause) {
+    await closeWriterBestEffort(failedWriter);
+    throw cause;
   }
+  await failedWriter.close();
 
-  deps.logger.step(`sqs-etl delete run ${deps.correlationId} complete`, {
-    deleted,
-    failed,
-  });
+  deps.logger.step(`sqs-etl delete run ${deps.correlationId} complete`, result);
 }

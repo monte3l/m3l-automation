@@ -248,6 +248,135 @@ describe("dumpQueue", () => {
     }
   });
 
+  test("caps the receive() request itself to the remaining 'batchSize' budget, not just the written/deleted count", async () => {
+    stubOutputStreams();
+    // 'receive()' is a fake and does not itself enforce 'maxMessages' — it
+    // returns a full 5-message page regardless of what was requested, so the
+    // ONLY way this assertion can pass is if the request itself was capped.
+    const receive = vi
+      .fn()
+      .mockResolvedValueOnce([
+        message(1),
+        message(2),
+        message(3),
+        message(4),
+        message(5),
+      ])
+      .mockResolvedValueOnce([]);
+    const sqsOperations = createFakeSqsOperations({ receive });
+    const config = buildConfig({
+      queueUrl: "https://sqs.example/q",
+      output: "out.jsonl",
+      batchSize: 3,
+    });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+    const prompt = new Core.M3LPrompt();
+
+    await dumpQueue({
+      config,
+      paths,
+      logger,
+      correlationId: "run-batch-cap",
+      sqsOperations,
+      prompt,
+    });
+
+    expect(receive).toHaveBeenNthCalledWith(1, "https://sqs.example/q", {
+      maxMessages: 3,
+      waitTimeSeconds: 20,
+    });
+  });
+
+  test("a deleteBatch() failure during deleteAfterDump is surfaced via logger.warning, not silently discarded", async () => {
+    stubOutputStreams();
+    const receive = vi
+      .fn()
+      .mockResolvedValueOnce([message(1), message(2)])
+      .mockResolvedValueOnce([]);
+    const failedDeleteEntry: AWS.M3LSQSDeleteEntry = {
+      id: "1",
+      receiptHandle: "rh-2",
+    };
+    const deleteBatch = vi.fn().mockResolvedValue({
+      successful: [{ id: "0", receiptHandle: "rh-1" }],
+      failed: [
+        {
+          entry: failedDeleteEntry,
+          code: "InternalError",
+          senderFault: false,
+        },
+      ],
+    });
+    const sqsOperations = createFakeSqsOperations({ receive, deleteBatch });
+    const config = buildConfig({
+      queueUrl: "https://sqs.example/q",
+      output: "out.jsonl",
+      deleteAfterDump: true,
+      yes: true,
+    });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+    const warning = vi.spyOn(logger, "warning");
+    const prompt = new Core.M3LPrompt();
+
+    await dumpQueue({
+      config,
+      paths,
+      logger,
+      correlationId: "run-delete-failure",
+      sqsOperations,
+      prompt,
+    });
+
+    const calls = warning.mock.calls as unknown[][];
+    const mentionsFailure = calls.some((call) =>
+      call.some((arg) => JSON.stringify(arg).includes("rh-2")),
+    );
+    expect(mentionsFailure).toBe(true);
+  });
+
+  test("a writer.close() failure does not mask the original declined-confirmation error", async () => {
+    const { streams } = stubOutputStreams();
+    const receive = vi
+      .fn()
+      .mockResolvedValueOnce([message(1)])
+      .mockResolvedValueOnce([]);
+    const sqsOperations = createFakeSqsOperations({ receive });
+    const config = buildConfig({
+      queueUrl: "https://sqs.example/q",
+      output: "out.jsonl",
+      deleteAfterDump: true,
+      yes: false,
+    });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+    const prompt = new Core.M3LPrompt();
+    const closeFailure = new Error("simulated close failure");
+    vi.spyOn(prompt, "confirm").mockImplementation(() => {
+      const output = streams[streams.length - 1];
+      output?.armCloseFailure(closeFailure);
+      return Promise.resolve(false);
+    });
+
+    let thrown: unknown;
+    try {
+      await dumpQueue({
+        config,
+        paths,
+        logger,
+        correlationId: "run-close-fail",
+        sqsOperations,
+        prompt,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    expect((thrown as Core.M3LError).code).toBe("ERR_SQS_ETL_ABORTED");
+  });
+
   test.each(["queueUrl", "output"] as const)(
     "throws ERR_SQS_ETL_CONFIG when '%s' is missing, never calling receive()",
     async (missing) => {

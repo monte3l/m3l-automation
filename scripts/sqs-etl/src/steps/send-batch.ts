@@ -230,9 +230,15 @@ export async function sendBatch(deps: {
       sent += result.successful.length;
       failed += result.failed.length;
     }
-  } finally {
-    await failedWriter.close();
+  } catch (cause) {
+    try {
+      await failedWriter.close();
+    } catch {
+      // best-effort: a close failure must not mask the original error
+    }
+    throw cause;
   }
+  await failedWriter.close();
 
   deps.logger.step(`sqs-etl send run ${deps.correlationId} complete`, {
     sent,
