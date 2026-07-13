@@ -4,6 +4,7 @@
     { "path": "./packages/m3l-common/tsconfig.build.json" },
     { "path": "./scripts/dynamo-crud/tsconfig.build.json" },
     { "path": "./scripts/json-etl/tsconfig.build.json" },
+    { "path": "./scripts/logs-insights/tsconfig.build.json" },
     { "path": "./scripts/sqs-etl/tsconfig.build.json" }
   ]
 }
