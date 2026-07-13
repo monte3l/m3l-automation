@@ -49,6 +49,14 @@ blocker, and the next intended action. One or two lines per update is enough. If
 your turn is cut short, this journal is what lets the hub resume you exactly
 where you stopped instead of re-deriving state by hand.
 
+**Reserve budget for the journal, not just the work.** As you approach the turn
+limit, prioritize writing one final journal line over squeezing in one more
+fix — a journal that ends mid-sentence is as useless as no journal at all. **On
+resume** (a `SendMessage` from the hub continuing this same session), re-read
+your own journal first before acting — that is what "get your bearings" means
+here, and it's cheaper than the hub re-deriving and re-narrating your prior
+state into the resume prompt.
+
 ## How to work
 
 1. Read the contract, the failing tests, and the spec page. Run the tests first

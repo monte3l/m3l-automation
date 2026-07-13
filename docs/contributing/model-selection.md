@@ -113,6 +113,28 @@ would be an unvalidated guess rather than a documented practice. The flat
 slips, the high-stakes rule argues for `opus` — revisit on evidence" is the
 actual trigger for ever changing it.
 
+**Context/output limits per tier, and their bearing on truncation risk.**
+Subagent mid-turn truncation (a spoke hitting `maxTurns: 40` or an
+output-token cap mid-thought — see
+`docs/contributing/subagent-context-management.md`) is more likely on a
+narrower window. Per the Claude API models reference
+([overview](https://platform.claude.com/docs/en/about-claude/models/overview)):
+
+| Tier                | Context window | Max output |
+| ------------------- | -------------- | ---------- |
+| Haiku 4.5           | 200k           | 64k        |
+| Sonnet 5 / Opus 4.8 | 1M             | 128k       |
+| Fable 5             | 1M             | 128k       |
+
+`Explore` runs on `haiku` — the narrowest window of the four tiers this repo
+uses — which is one more reason its prompt scopes it to excerpting rather than
+reading exhaustively (row 11 above). This is not a reason to default every
+spoke to a wider-context tier, though: per Anthropic's context-rot finding,
+"as token count grows, accuracy and recall degrade" — a bigger window trades
+one failure mode (truncation) for another (degraded recall), so tier choice
+should still follow the task-shape matrix above, not just "pick the biggest
+window available."
+
 ## Enforcement
 
 `.claude/settings.json` also sets a project-scoped

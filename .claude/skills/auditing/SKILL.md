@@ -39,13 +39,22 @@ becomes one Explore agent brief in the next step. Good facets are orthogonal and
 independently checkable (e.g. for "CI pipeline": step ordering, cache config,
 gate thresholds, secret handling, trigger conditions).
 
+Derive a short kebab-case topic slug (e.g. `ci-pipeline`) and a run directory
+under the session scratchpad: `<session-scratchpad-dir>/audit-<topic-slug>/`.
+Every agent in Step 2 writes into this directory — it is what keeps a
+thorough agent's full findings out of its return payload (see below) while
+still being available to you in full during aggregation.
+
 ### 2 — Fan out Explore agents (parallel)
 
 Spawn all agents **in a single message** so they run concurrently. Each agent
 receives:
 
 - A focused brief scoped to exactly one facet of the audit target.
-- This fixed report format (instruct each agent to use it verbatim):
+- The run directory from Step 1 and the exact filename to write:
+  `<run-dir>/<facet-slug>.md`.
+- This fixed report format (instruct each agent to use it verbatim, writing it
+  to the scratchpad file above — not only into its final response):
 
   ```
   ## Findings: <facet name>
@@ -58,12 +67,25 @@ receives:
   since excerpts miss content past the read window.
 - An instruction to mark items `EXISTING` when they can confirm the thing is
   implemented — not just when they cannot find evidence of a gap.
+- The **return-value instruction**: after writing the full findings to the
+  scratchpad file, the agent's final message back to you must be a **compact
+  digest only** — the facet name, an EXISTING/GAP/INCONSISTENCY count, and one
+  line per GAP or INCONSISTENCY item (skip re-stating EXISTING items, which
+  matter for verification but rarely drive the plan) — plus the scratchpad
+  file path. It must not repeat the full file contents in its response. This
+  is what keeps a wide fan-out from itself running a thorough agent out of
+  turn budget mid-report, and keeps your context budget for aggregation
+  rather than for re-reading verbose per-agent output.
 
-Use `subagent_type: "Explore"` for every agent. Do not write any files in this step.
+Use `subagent_type: "Explore"` for every agent. Do not write any files
+yourself in this step; the agents write their own scratchpad files.
 
 ### 3 — Aggregate and verify
 
-Collect all agent reports. For each `GAP` or `INCONSISTENCY` item:
+Collect all agent digests, then **read every scratchpad file in the run
+directory in full** — the digests are for triage, not verification; an
+item's exact wording and the file/line it cites matter for confirming it
+against the live repo. For each `GAP` or `INCONSISTENCY` item:
 
 1. Verify the claim is accurate — check the relevant file(s) yourself before
    treating it as a real gap. Agents sometimes flag things that exist under

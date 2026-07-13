@@ -62,6 +62,15 @@ that reviews it" structural, and keeps the hub's context lean.
   contract nuances, lint in-loop, justify error-channel `eslint-disable`, read
   coverage from `coverage-final.json` (the v8 text table hides 100% files), and
   trust the CLI over the IDE/LSP.
+- **Subagent mid-turn truncation** — a spoke hitting `maxTurns: 40` or an
+  output-token cap mid-thought — is this repo's most-recurring build
+  divergence (20+ logged occurrences). Detect it (never trust a mid-thought
+  "final" report), prevent it (decompose oversized dispatches up front, hand
+  writer spokes a journal path, bound review-spoke output to a digest), and
+  recover from it (resume the SAME spoke via `SendMessage`, verify on-disk
+  state yourself) per `docs/contributing/subagent-context-management.md` — the
+  terse checklist auto-loads as `.claude/rules/subagent-dispatch.md` when
+  touching `.claude/skills/**` or `.claude/agents/**`.
 
 See also: `docs/contributing/hooks-reference.md` (the deterministic enforcement
 layer underneath this advisory model) and `docs/contributing/model-selection.md`.

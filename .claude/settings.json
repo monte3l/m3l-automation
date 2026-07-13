@@ -40,6 +40,16 @@
         ]
       },
       {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-writer-dispatch-journal.mjs\"",
+            "timeout": 30
+          }
+        ]
+      },
+      {
         "matcher": "Write|Edit",
         "hooks": [
           {
