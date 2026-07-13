@@ -13,9 +13,12 @@
 //
 // Deliberately main-only (ADR-0024): running this on a feature branch bakes
 // that branch's own commits into the badge count, producing README churn
-// that conflicts with every other open branch's badge state on rebase. Run
-// it post-merge (on `main`) or during release grooming, never as part of a
-// branch-time /syncing-docs pass.
+// that conflicts with every other open branch's badge state on rebase. Never
+// run it as part of a branch-time /syncing-docs pass.
+//
+// bin/post-integrate-regen.mjs already runs this automatically post-merge
+// whenever HEAD is on `main` (gated by its isOnMainBranch() check) — this
+// file also stays safe to run directly by hand, e.g. during release grooming.
 //
 // Usage:
 //   node bin/gen-commit-stats.mjs   # idempotent; rewrites README.md in place

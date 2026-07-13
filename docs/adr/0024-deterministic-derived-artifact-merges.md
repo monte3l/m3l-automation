@@ -11,6 +11,13 @@
 > (`docs/reference/catalog.json`, `docs/reference/symbol-map.json`,
 > `pnpm-lock.yaml`) — no driver for `*.provenance.json` or the hand-edited
 > trackers/READMEs, per the exclusions already recorded there.
+>
+> **Update (2026-07-13).** PR-2's "`gen:commit-stats` moves to main-only"
+> line stated the policy but named no enforcement mechanism — it ran only
+> when someone remembered to invoke it by hand. `bin/post-integrate-regen.mjs`
+> now enforces it directly: a new `isOnMainBranch()` check gates the
+> commit-stats regen so it only fires post-merge/post-rewrite while `HEAD`
+> is `main`, closing the gap between the stated policy and its enforcement.
 
 ## Context and problem statement
 
