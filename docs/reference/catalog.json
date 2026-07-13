@@ -491,5 +491,23 @@
       "M3LAWSLoginResult",
       "M3LAWSCredentialsManagerOptions"
     ]
+  },
+  {
+    "namespace": "aws",
+    "name": "sqs",
+    "importPath": "@m3l-automation/m3l-common/aws",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/aws/sqs.md",
+    "symbols": [
+      "M3LSQSOperations",
+      "M3LSQSOperationError",
+      "M3LSQSReceivedMessage",
+      "M3LSQSSendEntry",
+      "M3LSQSDeleteEntry",
+      "M3LSQSBatchFailure",
+      "M3LSQSBatchResult",
+      "M3LSQSReceiveOptions"
+    ]
   }
 ]

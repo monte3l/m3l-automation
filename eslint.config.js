@@ -228,7 +228,9 @@ export default tseslint.config(
     // are excluded because they legitimately re-export every submodule (including
     // core/script); the internal/-sealing block above owns the barrels.
     //
-    // Zone A: aws/** may import only core/errors and core/prompt.
+    // Zone A: aws/** may import only core/errors, core/prompt, and
+    // core/polling (the last widened by ADR-0026 for aws/sqs's internal
+    // retry composition — core/polling is acyclic w.r.t. aws/*).
     files: ["packages/m3l-common/src/aws/**/*.ts"],
     ignores: ["packages/m3l-common/src/aws/index.ts"],
     rules: {
@@ -240,9 +242,9 @@ export default tseslint.config(
               target: "./packages/m3l-common/src/aws",
               from: "./packages/m3l-common/src/core",
               // `except` paths are relative to `from` (core).
-              except: ["errors", "prompt"],
+              except: ["errors", "prompt", "polling"],
               message:
-                "aws/* may import only core/errors and core/prompt — no other core module (ADR-0009 layering).",
+                "aws/* may import only core/errors, core/prompt, and core/polling — no other core module (ADR-0009 layering, widened by ADR-0026).",
             },
           ],
         },

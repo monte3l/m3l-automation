@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Regenerates every "N of 22" badge/prose site and the generated
+// Regenerates every "N of M" badge/prose site and the generated
 // implemented-list block from the derived counts. Run via: pnpm gen:counts
 //
 // Shares its site inventory and derivation with check-doc-counts.mjs and
