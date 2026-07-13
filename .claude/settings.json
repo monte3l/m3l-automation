@@ -110,6 +110,37 @@
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": true
   },
+  "permissions": {
+    "allow": [
+      "Bash(pnpm check:*)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm lint *)",
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm typecheck *)",
+      "Bash(pnpm lint:md)",
+      "Bash(pnpm lint:md *)",
+      "Bash(pnpm build)",
+      "Bash(pnpm build *)",
+      "Bash(pnpm test:coverage)",
+      "Bash(pnpm test:coverage *)",
+      "Bash(pnpm format:check)",
+      "Bash(pnpm format:check *)",
+      "Bash(gh pr view *)",
+      "Bash(git fetch *)",
+      "Bash(git rev-list *)",
+      "Bash(pnpm test)",
+      "Bash(pnpm test *)",
+      "Bash(pnpm exec tsc *)",
+      "Bash(pnpm exec vitest run *)",
+      "Bash(gh auth status)",
+      "Bash(gh run list *)",
+      "Bash(pnpm vitest run *)",
+      "Bash(pnpm exec eslint *)",
+      "Bash(gh run view *)",
+      "Bash(node_modules/.bin/prettier --check *)",
+      "Bash(gh pr checks *)"
+    ]
+  },
   "availableModels": ["fable", "opus", "sonnet", "haiku"],
   "worktree": {
     "baseRef": "fresh"
