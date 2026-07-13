@@ -165,9 +165,11 @@ must win — regenerate here, format after.
 **Not part of this pass:** `pnpm gen:commit-stats` (the AI co-authorship
 badges) is deliberately **main-only** (ADR-0024) — running it on a feature
 branch bakes that branch's own commits into the badge count, producing
-README churn that conflicts with every other open branch on rebase. Run it
-post-merge on `main`, or during release grooming; never as part of this
-branch-time reconciliation.
+README churn that conflicts with every other open branch on rebase.
+`bin/post-integrate-regen.mjs` already runs it automatically post-merge
+whenever `HEAD` is on `main`, so it's never something to remember to run by
+hand; the manual command remains available for release grooming, but it's
+never part of this branch-time reconciliation.
 
 ### 9 — Markdown lint
 
