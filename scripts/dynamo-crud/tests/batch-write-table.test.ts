@@ -272,6 +272,64 @@ describe("batchWriteTable", () => {
     expect(batchWriteItemsMock.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
+  test("logs the second concurrent chunk's hard failure while only the first propagates", async () => {
+    const errorA = new AWS.M3LDynamoDBOperationError("chunk A failed", {
+      context: { tableName: "orders", chunk: "A" },
+    });
+    const errorB = new AWS.M3LDynamoDBOperationError("chunk B failed", {
+      context: { tableName: "orders", chunk: "B" },
+    });
+
+    // Neither mock call rejects until BOTH have started, guaranteeing they
+    // are genuinely concurrent in-flight failures (rather than one settling
+    // before the second chunk is even dispatched).
+    let started = 0;
+    let releaseBoth: () => void = () => {
+      /* replaced below */
+    };
+    const bothStarted = new Promise<void>((resolve) => {
+      releaseBoth = resolve;
+    });
+
+    batchWriteItemsMock.mockImplementation(async () => {
+      started += 1;
+      // Snapshot which error this call throws BEFORE awaiting bothStarted —
+      // `started` is shared mutable state, and by the time the second call
+      // increments it, the first call's continuation may not have resumed
+      // yet, so reading `started` again after the await would see `2` for
+      // both calls.
+      const thisCallError = started === 1 ? errorA : errorB;
+      if (started === 2) releaseBoth();
+      await bothStarted;
+      throw thisCallError;
+    });
+
+    const warningSpy = vi.spyOn(logger, "warning");
+
+    let caught: unknown;
+    try {
+      await batchWriteTable({
+        dynamoDBDocument: fakeClient,
+        mode: "write",
+        tableName: "orders",
+        records: manyRecords(50),
+        maxInFlightBatches: 2,
+        retryRunner: makeRetryRunner(1),
+        logger,
+      });
+    } catch (error: unknown) {
+      caught = error;
+    }
+
+    expect([errorA, errorB]).toContain(caught);
+    const otherError = caught === errorA ? errorB : errorA;
+
+    expect(warningSpy).toHaveBeenCalledWith(
+      expect.stringContaining("already failed"),
+      { cause: otherError },
+    );
+  });
+
   test("type contract: BatchWriteTableResult.failed is readonly Record<string, unknown>[] and mode only accepts 'write' | 'delete'", () => {
     expectTypeOf<BatchWriteTableResult["failed"]>().toEqualTypeOf<
       readonly Record<string, unknown>[]

@@ -492,24 +492,34 @@ async function writeFailedRecords(
 }
 
 /**
- * The production retry classifier `dispatchBatch` hands to
- * `Core.M3LRetryRunner`: recognizes `batch-write-table`'s internal
- * "chunk has unprocessed items" sentinel by its `.code` (rather than
- * importing the deliberately unexported sentinel class) and classifies it
- * `"retriable"`, falling back to `Core.awsThrottlingClassifier` for
- * everything else (genuine AWS throttling/rate-limit errors). Without this
- * composition, `Core.awsThrottlingClassifier` alone returns `"unknown"` for
- * the sentinel, which — combined with `unknownDecision: "fatal"` — would
- * fail every chunk with any unprocessed items on the very first attempt,
- * never actually retrying DynamoDB's normal partial-capacity response.
+ * Recognizes `batch-write-table`'s internal "chunk has unprocessed items"
+ * sentinel by its `.code` (rather than importing the deliberately
+ * unexported sentinel class) and classifies it `"retriable"`; abstains
+ * (`"unknown"`) for everything else so {@link Core.combineClassifiers} falls
+ * through to the next classifier in the chain.
  */
-function batchRetryClassifier(error: unknown): Core.M3LRetryDecision {
+function batchSentinelClassifier(error: unknown): Core.M3LRetryDecision {
   if (error instanceof Core.M3LError && error.code === BATCH_RETRY_ERROR_CODE) {
     return "retriable";
   }
-  const advice = Core.awsThrottlingClassifier(error);
-  return typeof advice === "string" ? advice : advice.decision;
+  return "unknown";
 }
+
+/**
+ * The production retry classifier `dispatchBatch` hands to
+ * `Core.M3LRetryRunner`: recognizes `batch-write-table`'s internal
+ * "chunk has unprocessed items" sentinel via {@link batchSentinelClassifier},
+ * falling back to `Core.awsThrottlingClassifier` for everything else
+ * (genuine AWS throttling/rate-limit errors). Without this composition,
+ * `Core.awsThrottlingClassifier` alone returns `"unknown"` for the sentinel,
+ * which — combined with `unknownDecision: "fatal"` — would fail every chunk
+ * with any unprocessed items on the very first attempt, never actually
+ * retrying DynamoDB's normal partial-capacity response.
+ */
+const batchRetryClassifier = Core.combineClassifiers(
+  batchSentinelClassifier,
+  Core.awsThrottlingClassifier,
+);
 
 /**
  * `batch-write`/`batch-delete`/`import`: reads `input` via
