@@ -65,6 +65,18 @@ touches the `.env` secrets seam, and any AWS work flows through the
    `guard-branch-isolation.mjs` blocks on `main`; the gate settles
    branch/PR/push up front instead of mid-dispatch.
 
+   **Resuming a script paused on a library dependency: rebuild before trusting
+   a test failure.** If this script was blocked on a library submodule that
+   has since merged to `main` (e.g. a W2 script waiting on a new `aws/*`
+   wrapper), rebasing the worktree pulls in the new source but not
+   necessarily a fresh `dist/`. A stale/first-warm turbo cache can replay a
+   build from _before_ the new submodule existed, producing a spurious
+   `X is not a constructor`-style test failure that looks like a real
+   regression (`docs/logs/2026-07-13-sqs-etl.md`, divergence 2). Run `pnpm
+build` once after the rebase and confirm the new submodule's `dist/`
+   output actually exists before diagnosing a downstream test failure as
+   code drift.
+
 1. **Verify the precondition.** `scripts/<name>/` must exist and
    `pnpm check:script-scaffold` must be green. If the directory is missing, stop
    and run `scaffolding-scripts` first — this skill never lays down skeletons.
@@ -92,6 +104,19 @@ touches the `.env` secrets seam, and any AWS work flows through the
    its **injected deps** (never by booting the `M3LScript` lifecycle or setting
    env vars) and keeps the generated config smoke test honest against the real
    schema. Confirm the new tests fail for the right reason.
+
+   **A multi-step script's RED tests will trip the `pre-commit` eslint hook.**
+   `scaffolding-scripts` lays down only one starter step file, not one
+   placeholder per planned command — unlike `scaffolding-submodules`, which
+   pre-creates a throwing placeholder per export so RED imports resolve.
+   RED tests for a script with N > 1 planned steps (`docs/logs/2026-07-13-
+sqs-etl.md`, divergence 1: a 6-command/8-step script) will fail
+   `import-x/no-unresolved` on every not-yet-existing step file, cascading
+   into `@typescript-eslint/no-unsafe-*` errors that block a normal `git
+commit`. Don't fight this: either scaffold a throwing placeholder per
+   planned step before RED, or simply commit RED tests and the GREEN
+   implementation together in one commit instead of trying to land a
+   separate RED commit.
 
 5. **Phase 3 — GREEN.** Dispatch `code-implementer` with the contract and the
    failing tests. It fills the `steps/` modules (and the `config.ts`/`hooks.ts`
