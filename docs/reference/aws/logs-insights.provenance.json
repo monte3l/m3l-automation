@@ -8,12 +8,12 @@
         {
           "file": "packages/m3l-common/src/aws/logs-insights/client.ts",
           "symbol": "M3LLogsInsightsClient",
-          "blob": "16900ee20e5955fd3eb76d08815ed027aa0f6d1d"
+          "blob": "5e7443e33d1c595d6230d2bc9a06b0e93d6f6547"
         },
         {
           "file": "packages/m3l-common/src/aws/logs-insights/client.ts",
           "symbol": "LogsInsightsAwaitOptions",
-          "blob": "16900ee20e5955fd3eb76d08815ed027aa0f6d1d"
+          "blob": "5e7443e33d1c595d6230d2bc9a06b0e93d6f6547"
         },
         {
           "file": "packages/m3l-common/src/aws/logs-insights/types.ts",
@@ -59,7 +59,7 @@
         {
           "file": "packages/m3l-common/src/aws/logs-insights/client.ts",
           "symbol": "M3LLogsInsightsClient",
-          "blob": "16900ee20e5955fd3eb76d08815ed027aa0f6d1d"
+          "blob": "5e7443e33d1c595d6230d2bc9a06b0e93d6f6547"
         }
       ],
       "retrieved": "2026-07-13"
