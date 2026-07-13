@@ -124,6 +124,7 @@ itself legitimately imports the SDK.
   [ADR-0021](./0021-post-1.0-deepen-first-strategy.md) (the F-series
   "surfaced by consumer, becomes library friction" gate this decision
   follows); `docs/reference/aws/logs-insights.md` (the new submodule's
-  contract, once landed); `docs/reference/scripts/logs-insights.md` (the
-  consuming script's revised contract).
+  contract). The consuming `scripts/logs-insights` package and its own
+  revised contract page land in a later PR, once its business logic is
+  implemented.
 - Supersedes / superseded by: none.
