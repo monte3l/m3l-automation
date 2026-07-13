@@ -3,6 +3,18 @@ import { Core } from "@m3l-automation/m3l-common";
 const BATCH_SIZE_MIN = 1;
 const BATCH_SIZE_MAX = 10_000;
 const BATCH_SIZE_DEFAULT = 100;
+const VISIBILITY_TIMEOUT_MIN = 0;
+const VISIBILITY_TIMEOUT_MAX = 43_200;
+
+/** The `command` config parameter's finite set of operation modes. */
+export const SQS_ETL_COMMANDS = [
+  "dump",
+  "send",
+  "redrive",
+  "delete",
+  "purge",
+  "transform",
+] as const;
 
 /**
  * The declared configuration schema for `sqs-etl` — the script's only
@@ -10,11 +22,50 @@ const BATCH_SIZE_DEFAULT = 100;
  * it); declare a parameter here instead so resolution, coercion, validation,
  * and redaction all flow through the library.
  *
+ * Per-command requiredness (e.g. `queueUrl` for `dump` but not `transform`)
+ * is not expressed here — the library has no cross-parameter/conditional-
+ * required seam yet (F1b, deferred). Every parameter besides `command` and
+ * `aws.profile` is declared optional; `run-sqs-etl.ts`'s settings resolver
+ * guard-checks presence for the selected command before any SQS call. See
+ * `docs/reference/scripts/sqs-etl.md` for the full per-command requirement
+ * table.
+ *
  * Declare an AWS profile parameter with `Core.AWS_PROFILE_PARAM_NAME` when the
  * script touches AWS — that name is what enables the `script.aws`
  * dynamic-provisioning seam.
  */
 export const configParameters: readonly Core.M3LConfigParameter[] = [
+  new Core.M3LConfigParameter({
+    name: Core.AWS_PROFILE_PARAM_NAME,
+    type: Core.M3LConfigParameterType.STRING,
+    required: true,
+  }),
+  new Core.M3LConfigParameter({
+    name: "command",
+    type: Core.M3LConfigParameterType.STRING,
+    required: true,
+    validate: Core.M3LConfigValidators.oneOf(SQS_ETL_COMMANDS),
+  }),
+  new Core.M3LConfigParameter({
+    name: "queueUrl",
+    type: Core.M3LConfigParameterType.STRING,
+    validate: Core.M3LConfigValidators.nonEmpty,
+  }),
+  new Core.M3LConfigParameter({
+    name: "dlqUrl",
+    type: Core.M3LConfigParameterType.STRING,
+    validate: Core.M3LConfigValidators.nonEmpty,
+  }),
+  new Core.M3LConfigParameter({
+    name: "input",
+    type: Core.M3LConfigParameterType.STRING,
+    validate: Core.M3LConfigValidators.nonEmpty,
+  }),
+  new Core.M3LConfigParameter({
+    name: "output",
+    type: Core.M3LConfigParameterType.STRING,
+    validate: Core.M3LConfigValidators.nonEmpty,
+  }),
   new Core.M3LConfigParameter({
     name: "batchSize",
     type: Core.M3LConfigParameterType.INT,
@@ -22,8 +73,31 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     validate: Core.M3LConfigValidators.range(BATCH_SIZE_MIN, BATCH_SIZE_MAX),
   }),
   new Core.M3LConfigParameter({
-    name: Core.AWS_PROFILE_PARAM_NAME,
-    type: Core.M3LConfigParameterType.STRING,
-    required: true,
+    name: "visibilityTimeoutSeconds",
+    type: Core.M3LConfigParameterType.INT,
+    validate: Core.M3LConfigValidators.range(
+      VISIBILITY_TIMEOUT_MIN,
+      VISIBILITY_TIMEOUT_MAX,
+    ),
+  }),
+  new Core.M3LConfigParameter({
+    name: "deleteAfterDump",
+    type: Core.M3LConfigParameterType.BOOL,
+    defaultValue: false,
+  }),
+  new Core.M3LConfigParameter({
+    name: "yes",
+    type: Core.M3LConfigParameterType.BOOL,
+    defaultValue: false,
+  }),
+  new Core.M3LConfigParameter({
+    name: "fields",
+    type: Core.M3LConfigParameterType.STRING_ARRAY,
+    defaultValue: [],
+  }),
+  new Core.M3LConfigParameter({
+    name: "filters",
+    type: Core.M3LConfigParameterType.STRING_ARRAY,
+    defaultValue: [],
   }),
 ];
