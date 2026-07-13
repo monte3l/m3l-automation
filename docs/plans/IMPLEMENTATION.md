@@ -45,7 +45,7 @@ and its [roadmap](./archive/2026-07-09-consumer-scripts-roadmap.md).
 
 - **`dynamo-crud`** — `get/put/update/delete/query/scan/batch-write/batch-delete/export/import`; parallel `Scan` segments, `LastEvaluatedKey` page-loop, persisted checkpoints + `--resume`, 25-item batch chunks with `UnprocessedItems` retry, streamed JSONL, `dynamoDBDocument` (W0-L2) throughout, destructive gate. Uses the `failed.jsonl` re-drive pattern.
 - **`logs-insights`** — `StartQuery`/`GetQueryResults` via `cloudWatchLogs` (W0-L2) + `M3LPollingPolicies.cloudWatchLogsQuery()`; `queryId` checkpoint; split-by-time-window for the 10k-row cap.
-- **`sqs-etl`** — `dump/send/redrive/delete/purge/transform`; long-poll receive loop (10/batch), visibility-timeout budgeting, streamed JSONL, `SendMessageBatch` with `sqsBatchSend()` policy + `failed.jsonl`, purge cooldown note.
+- **`sqs-etl`** — **done**. `dump/send/redrive/delete/purge/transform` via `AWS.M3LSQSOperations` (`aws/sqs`, ADR-0026) — no direct `@aws-sdk/client-sqs` dependency. Long-poll receive loop (10/batch, budget-capped to `batchSize`), streamed JSONL, `sendBatch`/`deleteBatch` batching with `failed.jsonl` re-drive, shared destructive-gate confirmation (bypassable via `yes`), `transform` reusing `json-etl`'s filter grammar locally (a W5 promotion candidate once a 3rd script needs it). Checkpoint/resume and client-side rate capping deferred (see the script's contract page).
 
 ### W3 — control-plane CRUD (P1, pending; existing getters)
 
