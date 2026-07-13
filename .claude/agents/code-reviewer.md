@@ -111,3 +111,13 @@ project invariant (the four-part checklist, SOLID, or the `exports`/ESM/`any`
 rules above); route preference and stylistic items to **Nits** as explicitly
 optional. Don't manufacture findings to justify the pass: if the implementation
 is sound, say so plainly and let the Must-fix list be empty rather than padding it.
+
+**Bounded output (survive a turn limit).** A long findings report can itself run
+you out of turn budget mid-report, same failure as a writer spoke truncating
+mid-implementation. If the diff is large and findings would run long, write the
+full detail to a scratchpad file (the path the hub gives you, or
+`<scratchpad>/code-reviewer-<target>.md`) and return a **capped digest**
+instead: the one-line verdict, the Must-fix list in full (these are what block
+the hub — never truncate them), and for Should-fix/Nits a count plus the
+scratchpad path rather than every body. Keep each Must-fix entry to a couple of
+lines (`file:line` + the standard); longer reasoning belongs in the scratchpad.

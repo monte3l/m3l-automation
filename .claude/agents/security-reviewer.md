@@ -48,6 +48,15 @@ hardening nice-to-have. A sound surface should yield few or no Must-fix items;
 put defense-in-depth suggestions in **Nits** as explicitly optional, and don't
 invent risks to justify the review.
 
+**Bounded output (survive a turn limit).** A long findings report can itself run
+you out of turn budget mid-report. If the diff is large and findings would run
+long, write the full detail to a scratchpad file (the path the hub gives you,
+or `<scratchpad>/security-reviewer-<target>.md`) and return a **capped
+digest** instead: the one-line verdict, the Must-fix list in full (these block
+the hub — never truncate them), and for Should-fix/Nits a count plus the
+scratchpad path rather than every body. Keep each Must-fix entry to a couple of
+lines (`file:line` + the rule); longer reasoning belongs in the scratchpad.
+
 ## What findings look like
 
 **1 — Secret reaches a log sink (must-fix):**

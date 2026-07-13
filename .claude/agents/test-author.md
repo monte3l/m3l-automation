@@ -28,6 +28,14 @@ blocker, and the next intended action. One or two lines per update is enough. If
 your turn is cut short, this journal is what lets the hub resume you exactly
 where you stopped instead of re-deriving state by hand.
 
+**Reserve budget for the journal, not just the work.** As you approach the turn
+limit, prioritize writing one final journal line over squeezing in one more
+exploratory step — a journal that ends mid-sentence is as useless as no journal
+at all. **On resume** (a `SendMessage` from the hub continuing this same
+session), re-read your own journal first before acting — that is what "get
+your bearings" means here, and it's cheaper than the hub re-deriving and
+re-narrating your prior state into the resume prompt.
+
 **On a many-file task, write files first — don't over-explore.** When the task
 spans several test files (a multi-step consumer script, a large module), read
 only what you need to start, then **write every file — even terse — before

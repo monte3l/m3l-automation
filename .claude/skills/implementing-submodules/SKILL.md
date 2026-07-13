@@ -134,6 +134,20 @@ ADR-0013 (its durable home), not a per-plan caveat.
    throws on an `Err`). Precision here prevents the tests from over-constraining
    a type and saves a re-work round — especially for weaker routed models.
 
+   **Size the dispatch now, before RED/GREEN.** If the contract implies a large
+   surface — many exports, or a module that clearly needs more than roughly
+   6–8 source/test files — plan Phases 2 and 3 as **multiple bounded
+   sub-dispatches** (e.g. GREEN split into "core exports" then "edge-case
+   handling") rather than one open-ended turn per phase, and say so explicitly
+   when dispatching. This is the proactive complement to the journal +
+   write-files-first discipline in Phases 2/3 below: Anthropic's guidance is
+   to scale the number/scope of dispatches to task complexity rather than hand
+   one spoke an indivisible, oversized turn — see
+   `docs/contributing/subagent-context-management.md`. The
+   `2026-07-11-scripts-json-etl.md` `test-author` truncation (zero files
+   written across its entire 150k-token budget) is exactly the failure this
+   catches before it happens, not after.
+
 5. **Phase 2 — RED.** Dispatch `test-author` with the contract and the target
    test path (`packages/m3l-common/tests/<module>.test.ts`). It writes happy +
    failure + `expectTypeOf` tests against the contract and confirms they **fail

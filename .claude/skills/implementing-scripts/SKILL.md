@@ -99,6 +99,16 @@ build` once after the rebase and confirm the new submodule's `dist/`
    step throws, what is written to `M3L_OUTPUT_DIR`, which parameters are
    secrets.
 
+   **Size the dispatch now, before RED/GREEN.** A script with many planned
+   steps (roughly more than 6–8 step/test files) is exactly the shape that
+   exhausts a writer spoke's turn budget on exploration before it writes
+   anything — the worst logged case (`docs/logs/2026-07-11-scripts-json-etl.md`
+   §1, a 6-test/8-module script) had `test-author` burn its entire 150k-token
+   budget and write **zero files**. Plan RED and GREEN as multiple bounded
+   sub-dispatches (e.g. GREEN per step-group) for a script this size, rather
+   than one open-ended turn per phase, and say so explicitly when dispatching.
+   See `docs/contributing/subagent-context-management.md`.
+
 4. **Phase 2 — RED.** Dispatch `test-author` with the contract and target paths
    under `scripts/<name>/tests/`. It writes failing tests for each step through
    its **injected deps** (never by booting the `M3LScript` lifecycle or setting
