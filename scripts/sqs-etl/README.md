@@ -15,7 +15,37 @@ pnpm --filter @m3l-automation/sqs-etl start
 ```
 
 `start` runs `node --env-file-if-exists=.env dist/main.js`, so a local
-`scripts/sqs-etl/.env` is loaded automatically when present.
+`scripts/sqs-etl/.env` is loaded automatically when present. The `command`
+config parameter selects the operation; see the
+[contract page](../../docs/reference/scripts/sqs-etl.md) for the full
+per-command config schema.
+
+```bash
+# Drain a queue to JSONL (non-destructive; add --deleteAfterDump to drain-and-delete)
+node dist/main.js --command dump --queueUrl "$QUEUE_URL" --output dump.jsonl
+
+# Batch-publish JSONL records to a queue
+node dist/main.js --command send --queueUrl "$QUEUE_URL" --input records.jsonl
+
+# Move messages from a DLQ back to their source queue (destructive — prompts
+# for confirmation unless --yes)
+node dist/main.js --command redrive --queueUrl "$QUEUE_URL" --dlqUrl "$DLQ_URL"
+
+# Delete specific messages by receipt handle (destructive)
+node dist/main.js --command delete --queueUrl "$QUEUE_URL" --input to-delete.jsonl
+
+# Clear a queue entirely (destructive; SQS enforces a 60s cooldown between purges)
+node dist/main.js --command purge --queueUrl "$QUEUE_URL"
+
+# Map/filter a JSONL file locally — no SQS calls
+node dist/main.js --command transform \
+  --input dump.jsonl --output filtered.jsonl \
+  --fields "id=messageId,body=body" --filters "body contains error"
+```
+
+Every command still requires `aws.profile` (`AWS_PROFILE` in `.env`), even
+`transform`, since it never skips AWS provisioning — see the contract page's
+"Out of scope for this iteration" note.
 
 ## Environment (`.env`)
 

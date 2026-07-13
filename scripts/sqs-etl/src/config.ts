@@ -44,7 +44,7 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     name: "command",
     type: Core.M3LConfigParameterType.STRING,
     required: true,
-    validate: Core.M3LConfigValidators.oneOf(SQS_ETL_COMMANDS),
+    validate: Core.M3LConfigValidators.oneOf<string>(SQS_ETL_COMMANDS),
   }),
   new Core.M3LConfigParameter({
     name: "queueUrl",
