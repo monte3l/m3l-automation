@@ -40,7 +40,7 @@ call-sites in [`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#library-friction-f
 | Wave   | Scripts                                                                                             | Status         | Depends on                                                      |
 | ------ | --------------------------------------------------------------------------------------------------- | -------------- | --------------------------------------------------------------- |
 | **W1** | `json-etl`                                                                                          | **done** (#99) | W0 ✓                                                            |
-| **W2** | `dynamo-crud`                                                                                       | pending        | W0 ✓ (scale: checkpoint/resume, batch retry, `failed.jsonl`)    |
+| **W2** | `dynamo-crud`                                                                                       | **done**       | W0 ✓ (scale: checkpoint/resume, batch retry, `failed.jsonl`)    |
 | **W2** | `logs-insights`                                                                                     | pending        | W0 ✓ (scale: checkpoint/resume, batch retry, `failed.jsonl`)    |
 | **W2** | `sqs-etl`                                                                                           | **done**       | W0 ✓; consumes `aws/sqs` (`M3LSQSOperations`, ADR-0026)         |
 | **W3** | `s3-objects`, `lambda-ops`, `ecs-ops`, `cfn-stacks`, `codepipeline-ops`, `eventbridge-schedules`    | pending        | existing getters ✓; thin op-dispatch over the W1/W2 skeleton    |
