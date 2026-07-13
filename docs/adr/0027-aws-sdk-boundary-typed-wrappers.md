@@ -101,16 +101,17 @@ itself legitimately imports the SDK.
   errors (`M3LError` subclasses with stable `code`s); scripts are fully
   SDK-free and their step tests mock a plain library call instead of an AWS
   SDK client; precedent set for the rest of the W2–W4 fleet.
-- **Negative / trade-offs:** the `aws/**` ESLint dependency-direction zone
-  (ADR-0009) widens from `{errors, prompt}` to `{errors, prompt, polling}` so
-  wrappers can reuse `M3LPoller`/`M3LRetryRunner`/`M3LPollingPolicies` — a
-  verified-acyclic addition, but a real widening of that island's allowed
+- **Negative / trade-offs:** `aws/logs-insights` relies on the `aws/**` ESLint
+  dependency-direction zone (ADR-0009) already having widened from
+  `{errors, prompt}` to `{errors, prompt, polling}` — landed by ADR-0026
+  (`aws/sqs`) for the same `M3LPoller`/`M3LRetryRunner`/`M3LPollingPolicies`
+  reuse need, a verified-acyclic but real widening of that island's allowed
   surface. A new wrapper submodule is needed per new AWS operation a script
   needs going forward (accepted cost — matches the consumer-pull gate rather
   than speculative building).
 - **Semver impact:** minor — additive symbols through the existing `./aws`
   barrel (`M3LLogsInsightsClient` and its error/type exports); the
-  count-enforced submodule ledger moves 22→23 (AWS: 3→4).
+  count-enforced submodule ledger moves 24→25 (AWS: 5→6).
 
 ## Links
 
