@@ -37,15 +37,15 @@ call-sites in [`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#library-friction-f
 
 ## Priority 1 — Consumer fleet
 
-| Wave   | Scripts                                                                                             | Status         | Depends on                                                      |
-| ------ | --------------------------------------------------------------------------------------------------- | -------------- | --------------------------------------------------------------- |
-| **W1** | `json-etl`                                                                                          | **done** (#99) | W0 ✓                                                            |
-| **W2** | `dynamo-crud`                                                                                       | **done**       | W0 ✓ (scale: checkpoint/resume, batch retry, `failed.jsonl`)    |
-| **W2** | `logs-insights`                                                                                     | pending        | W0 ✓ (scale: checkpoint/resume, batch retry, `failed.jsonl`)    |
-| **W2** | `sqs-etl`                                                                                           | **done**       | W0 ✓; consumes `aws/sqs` (`M3LSQSOperations`, ADR-0026)         |
-| **W3** | `s3-objects`, `lambda-ops`, `ecs-ops`, `cfn-stacks`, `codepipeline-ops`, `eventbridge-schedules`    | pending        | existing getters ✓; thin op-dispatch over the W1/W2 skeleton    |
-| **W4** | `data-query` (Athena+`pg`+`mongodb`), `eks-ops` (`@kubernetes/client-node`), `apigw-client` (SigV4) | pending        | each carries a script-local dependency decision (own PR review) |
-| **W5** | Promotion pass — steps duplicated across ≥2 scripts graduate into the library                       | pending        | ≥2 scripts existing to observe duplication                      |
+| Wave   | Scripts                                                                                             | Status         | Depends on                                                             |
+| ------ | --------------------------------------------------------------------------------------------------- | -------------- | ---------------------------------------------------------------------- |
+| **W1** | `json-etl`                                                                                          | **done** (#99) | W0 ✓                                                                   |
+| **W2** | `dynamo-crud`                                                                                       | **done**       | W0 ✓ (scale: checkpoint/resume, batch retry, `failed.jsonl`)           |
+| **W2** | `logs-insights`                                                                                     | **done**       | W0 ✓; consumes `aws/logs-insights` (`M3LLogsInsightsClient`, ADR-0027) |
+| **W2** | `sqs-etl`                                                                                           | **done**       | W0 ✓; consumes `aws/sqs` (`M3LSQSOperations`, ADR-0026)                |
+| **W3** | `s3-objects`, `lambda-ops`, `ecs-ops`, `cfn-stacks`, `codepipeline-ops`, `eventbridge-schedules`    | pending        | existing getters ✓; thin op-dispatch over the W1/W2 skeleton           |
+| **W4** | `data-query` (Athena+`pg`+`mongodb`), `eks-ops` (`@kubernetes/client-node`), `apigw-client` (SigV4) | pending        | each carries a script-local dependency decision (own PR review)        |
+| **W5** | Promotion pass — steps duplicated across ≥2 scripts graduate into the library                       | pending        | ≥2 scripts existing to observe duplication                             |
 
 Sequencing: W2 proves the scale architecture; W3 is mechanical over existing
 clients; W4 last (each has a dependency decision); W5 is the standing F4 loop.
