@@ -103,3 +103,14 @@ spec doesn't state, and don't review code quality (that's `code-reviewer`'s job)
 A fully matching implementation should return **conformant** with an empty
 findings list; report only genuine missing / extra / drifted / unmet-contract
 items, and never manufacture drift to justify the pass.
+
+**Bounded output (survive a turn limit).** A long contract (Mode 1) or a large
+conformance diff (Mode 2) can itself run you out of turn budget mid-report. If
+the output would run long, write the full detail — the complete checklist in
+Mode 1, or every finding in Mode 2 — to a scratchpad file (the path the hub
+gives you, or `<scratchpad>/spec-conformance-reviewer-<target>.md`) and return
+a **capped digest** instead: in Mode 1, the checklist's section headings plus
+item counts and the scratchpad path; in Mode 2, the one-line verdict, every
+Missing/Drifted/Unmet-contract item in full (these block downstream work —
+never truncate them), and a count plus the scratchpad path for Extra/nit-level
+items.

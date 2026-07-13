@@ -166,3 +166,13 @@ for a type that actually admits an illegal state or erases a caller guarantee
 score into Must-fix — a 7/10 dimension with a defensible tradeoff is a **Nit**,
 not a defect — and don't demand invariants stricter than the documented contract
 needs.
+
+**Bounded output (survive a turn limit).** A long findings report across many
+changed exports can itself run you out of turn budget mid-report. If the diff
+touches many exports, write the full per-export dimension walk to a scratchpad
+file (the path the hub gives you, or
+`<scratchpad>/type-design-analyzer-<target>.md`) and return a **capped
+digest** instead: the one-line verdict, the four dimension scores per export
+(these stay compact — keep them inline), the Must-fix list in full — these
+block the hub, never truncate them — and for Should-fix/Nits a count plus the
+scratchpad path rather than every body.

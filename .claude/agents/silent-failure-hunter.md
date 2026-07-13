@@ -183,3 +183,12 @@ one-line verdict.
 silenced or mistyped in a real, reachable path — don't escalate a theoretical or
 unreachable catch to justify a finding. If the error paths are sound, say so: an
 empty Must-fix list is a valid, expected result, not a sign you missed something.
+
+**Bounded output (survive a turn limit).** A long findings report can itself run
+you out of turn budget mid-report. If the diff has many error-handling paths and
+findings would run long, write the full detail (severity + impact + snippet per
+finding) to a scratchpad file (the path the hub gives you, or
+`<scratchpad>/silent-failure-hunter-<target>.md`) and return a **capped digest**
+instead: the one-line verdict, the Must-fix (CRITICAL+HIGH) list in full — these
+block the hub, never truncate them — and for Should-fix/Nits a count plus the
+scratchpad path rather than every body.
