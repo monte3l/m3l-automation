@@ -91,6 +91,15 @@ throw "a string";
   (TS2322, `number` not assignable). The void-returning-callback leniency applies
   only to a return type of _exactly_ `void`, not a union containing it. Wrap the
   body: `() => { arr.push(v); }`.
+- **Never explicitly parameterize `vi.spyOn<T, S>`'s return type.** `vi.spyOn`
+  is overloaded (get-accessor / set-accessor / plain method); TypeScript
+  resolves an _explicit_ type-argument instantiation (`ReturnType<typeof
+vi.spyOn<T, S>>`) against the first overload regardless of which one the
+  actual call matches, so spying on a method (not an accessor) fails with
+  `Type '"methodName"' does not satisfy the constraint 'never'` even though the
+  runtime call `vi.spyOn(obj, "methodName")` is correct. Fix: drop the explicit
+  return-type annotation on the helper that returns the spy and let TypeScript
+  infer it from the `return` statement.
 
 ```typescript
 import { expect, test } from "vitest";
