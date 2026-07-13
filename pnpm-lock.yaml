@@ -190,6 +190,12 @@ importers:
         specifier: ^1.6.2
         version: 1.6.2
 
+  scripts/dynamo-crud:
+    dependencies:
+      '@m3l-automation/m3l-common':
+        specifier: workspace:*
+        version: link:../../packages/m3l-common
+
   scripts/json-etl:
     dependencies:
       '@m3l-automation/m3l-common':
