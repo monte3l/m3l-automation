@@ -282,7 +282,7 @@ export function paginate<T>(items: readonly T[], limit: number): Page<T> {
   `.js`-extension lint)
 - **This library's suite is unit-only by design.** Tests are deterministic and
   isolated: **no network, no filesystem** — mock the I/O primitive instead. The
-  broader test pyramid in `rules/02-testing.md` (integration/E2E layers exercising
+  broader test pyramid (integration/E2E layers exercising
   real databases/brokers/filesystems) describes general practice and is
   _aspirational_ here: a pure ESM utilities library has no such integration points,
   so those layers are intentionally absent. **[enforced]** (real `fs` mutation and
@@ -374,8 +374,8 @@ expectTypeOf<M3LResult<number, Error>>().toEqualTypeOf<
   absent entirely, not just `false`). **[advisory]**
 - **Never tolerate a flaky test** — diagnose and fix the nondeterminism; do not
   mute or retry-mask it. (In this repo, "quarantine" is not an option: the suite is
-  small and unit-only, so a flake is fixed immediately, not parked. Quarantine in
-  `rules/05` is a general large-suite CI practice, not a licence to mute these
+  small and unit-only, so a flake is fixed immediately, not parked. Test
+  quarantine is a general large-suite CI practice, not a licence to mute these
   tests.) **[advisory]**
 
 ### Coverage
@@ -475,9 +475,6 @@ bound (Fowler, Martin).
 
 ## See also
 
-- Deep rationale — [`rules/01-code-quality-and-standards.md`](../../rules/01-code-quality-and-standards.md)
-  (quality hierarchy, anti-patterns, review checklist) and
-  [`rules/02-testing.md`](../../rules/02-testing.md) (test pyramid theory, TDD cycle).
 - Auto-loading extracts — `.claude/rules/library-src.md`, `.claude/rules/tests.md`,
   `.claude/rules/refactoring.md`, `.claude/rules/scripts.md`.
 - [Contributing](./contributing.md) · [Architecture](../m3l-common-architecture.md)

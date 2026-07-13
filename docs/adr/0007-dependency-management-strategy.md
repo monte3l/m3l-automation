@@ -9,8 +9,8 @@
 The CI pipeline (secret-scan → lint → typecheck → test → build → export-check → knip)
 had no mechanism to detect vulnerable or severely outdated dependencies. A transitive
 HIGH/CRITICAL advisory could reach `main` and be published to npm undetected.
-`rules/05-data-and-infrastructure.md` mandates that security gates block promotion on
-critical findings; that rule was not yet enforced for the dependency surface.
+This repo's security posture mandates that security gates block promotion on
+critical findings; that expectation was not yet enforced for the dependency surface.
 
 `m3l-common` carries zero runtime production dependencies, so the entire exposure is the
 devDependencies tree at the workspace root — a single lockfile, one audit target.
