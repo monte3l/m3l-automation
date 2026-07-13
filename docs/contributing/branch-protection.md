@@ -48,6 +48,18 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     `gh api repos/monte3l/m3l-automation/commits/<pr-head-sha>/check-runs --jq '.check_runs[].name'`.
   - **Dependency Review** — the job in `.github/workflows/dependency-review.yml`
     (`fail-on-severity: high`). Required under ADR-0015; it runs on PRs only.
+  - **Dependabot PRs skip `review`, intentionally.** `claude-pr-review.yml`
+    excludes `actor == dependabot[bot]` from the `review` job because GitHub
+    does not pass repository secrets (including `CLAUDE_CODE_OAUTH_TOKEN`) to
+    workflow runs triggered by a Dependabot pull request — the same platform
+    restriction applied to fork PRs. With the whole job skipped rather than
+    merely a step, the `review` check reports conclusion `skipped` for these
+    PRs; GitHub treats a `skipped` required check as passing, so this does not
+    block merge. Dependabot PRs still have to clear `verify`, `dependency-review`,
+    and CodeQL like any other PR — they just don't get the Claude review pass.
+    The `reviewing-dependabot-prs` skill (`.claude/skills/reviewing-dependabot-prs/`)
+    is what actually reviews and acts on them instead, run manually rather than
+    as a required workflow gate (for the same secrets-access reason).
 - **Require branches to be up to date before merging.**
 - **Require signed commits.** This is the _authoritative_ layer of the
   signed-commit policy (ADR-0016): unlike the in-repo `guard-git-push-signed`
