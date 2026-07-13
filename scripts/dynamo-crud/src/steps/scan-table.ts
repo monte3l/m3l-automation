@@ -37,11 +37,6 @@ export interface ScanTableOptions {
   readonly logger: Core.M3LLogger;
 }
 
-/** Narrows `error` to a Node.js `ErrnoException` carrying a `.code`. */
-function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
-}
-
 /**
  * Loads and parses the checkpoint file for a `resume: true` run.
  *
@@ -59,7 +54,7 @@ async function loadCheckpoint(
     const parsed = JSON.parse(raw) as ScanCheckpoint;
     return parsed.segments;
   } catch (cause) {
-    if (isErrnoException(cause) && cause.code === "ENOENT") {
+    if (Core.isEnoentError(cause)) {
       throw new Core.M3LError(
         `scanTable: --resume set but checkpoint file '${checkpointPath}' does not exist`,
         { code: "ERR_DYNAMO_CRUD_CONFIG", cause },
@@ -105,7 +100,7 @@ async function deleteCheckpoint(checkpointPath: string): Promise<void> {
   try {
     await rm(checkpointPath);
   } catch (cause) {
-    if (isErrnoException(cause) && cause.code === "ENOENT") return;
+    if (Core.isEnoentError(cause)) return;
     throw new Core.M3LError(
       `scanTable: failed deleting checkpoint file '${checkpointPath}'`,
       { code: "ERR_DYNAMO_CRUD_CHECKPOINT", cause },
@@ -221,6 +216,10 @@ async function* driveSegment(
     state.set(segmentIndex, page.lastEvaluatedKey ?? null);
     if (pageCount % opts.checkpointEveryPages === 0) {
       await saveCheckpoint(opts.checkpointPath, state.snapshot());
+      opts.logger.step(
+        `scanTable: checkpoint written for '${opts.tableName}' (segment ${String(segmentIndex)}, ${String(pageCount)} pages)`,
+        { checkpointPath: opts.checkpointPath, segmentIndex, pageCount },
+      );
     }
     yield* page.items;
   }
@@ -323,6 +322,16 @@ export async function* scanTable(
     );
   }
 
+  opts.logger.step(
+    `scanTable: starting '${opts.mode}' on '${opts.tableName}' (${String(opts.totalSegments)} segment(s)${opts.resume ? ", resuming" : ""})`,
+    {
+      mode: opts.mode,
+      tableName: opts.tableName,
+      totalSegments: opts.totalSegments,
+      resume: opts.resume,
+    },
+  );
+
   const state = new SegmentCheckpointState(
     opts.resume ? await loadCheckpoint(opts.checkpointPath) : {},
   );
@@ -343,4 +352,8 @@ export async function* scanTable(
   yield* mergeAsync(activeSegments);
 
   await deleteCheckpoint(opts.checkpointPath);
+  opts.logger.step(
+    `scanTable: complete on '${opts.tableName}' — checkpoint cleared`,
+    { tableName: opts.tableName },
+  );
 }

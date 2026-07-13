@@ -3,25 +3,15 @@ import { writeFile } from "node:fs/promises";
 import type { AWS } from "@m3l-automation/m3l-common";
 import { Core } from "@m3l-automation/m3l-common";
 
-import { batchWriteTable } from "./batch-write-table.js";
+import {
+  BATCH_RETRY_ERROR_CODE,
+  batchWriteTable,
+} from "./batch-write-table.js";
+import { DYNAMO_OPERATIONS } from "../config.js";
 import { runDestructiveGate } from "./destructive-gate.js";
 import type { SingleItemOperation } from "./single-item-ops.js";
 import { runSingleItemOp } from "./single-item-ops.js";
 import { scanTable } from "./scan-table.js";
-
-/** The ten operations `dynamo-crud` supports, as declared by `config.ts`. */
-const DYNAMO_OPERATIONS = [
-  "get",
-  "put",
-  "update",
-  "delete",
-  "query",
-  "scan",
-  "batch-write",
-  "batch-delete",
-  "export",
-  "import",
-] as const;
 
 /** The closed union of `dynamo-crud`'s declared `operation` values. */
 type DynamoOperation = (typeof DYNAMO_OPERATIONS)[number];
@@ -55,6 +45,7 @@ interface RunSettings {
   readonly maxPagesPerSecond: number | undefined;
   readonly maxInFlightBatches: number;
   readonly checkpointEveryPages: number;
+  readonly runName: string | undefined;
   readonly resume: boolean;
   readonly key: Record<string, unknown> | undefined;
   readonly item: Record<string, unknown> | undefined;
@@ -261,6 +252,7 @@ function resolveSettings(config: Core.M3LConfig): RunSettings {
     maxPagesPerSecond: readOptionalNumber(config, "maxPagesPerSecond"),
     maxInFlightBatches: readNumber(config, "maxInFlightBatches"),
     checkpointEveryPages: readNumber(config, "checkpointEveryPages"),
+    runName: readOptionalString(config, "runName"),
     resume: readBool(config, "resume"),
     key,
     item,
@@ -398,6 +390,22 @@ async function streamToExporter(
 }
 
 /**
+ * Derives the checkpoint file's name for a resumable `scan`/`query`/`export`
+ * run. Deliberately independent of `correlationId` — a fresh CLI invocation
+ * generates a new `correlationId` every time (see `M3LScript`), so a
+ * `--resume` run keying its checkpoint lookup off `correlationId` could never
+ * find the checkpoint written by the run it is trying to resume. `runName`
+ * (when the operator sets it) is the stable identity that survives a kill;
+ * the `${operation}-${tableName}` fallback is deterministic for a given
+ * table+operation but can collide across two concurrent differently
+ * configured runs against the same table+operation (documented in
+ * `docs/reference/scripts/dynamo-crud.md`'s `runName` row).
+ */
+function resolveCheckpointFileName(settings: RunSettings): string {
+  return `${settings.runName ?? `${settings.operation}-${settings.tableName}`}.checkpoint.json`;
+}
+
+/**
  * `query`/`scan`/`export`: streams every item `scanTable` yields straight to
  * `output` as JSONL, counting each streamed item as one `read`. `query`
  * drives `scanTable`'s `"query"` mode (using `key` as the equality
@@ -418,7 +426,7 @@ async function dispatchScan(
   }
   const outputPath = deps.paths.resolveOutput(settings.output);
   const checkpointPath = deps.paths.resolveOutput(
-    `${deps.correlationId}.checkpoint.json`,
+    resolveCheckpointFileName(settings),
   );
   const mode: "scan" | "query" =
     settings.operation === "query" ? "query" : "scan";
@@ -484,6 +492,26 @@ async function writeFailedRecords(
 }
 
 /**
+ * The production retry classifier `dispatchBatch` hands to
+ * `Core.M3LRetryRunner`: recognizes `batch-write-table`'s internal
+ * "chunk has unprocessed items" sentinel by its `.code` (rather than
+ * importing the deliberately unexported sentinel class) and classifies it
+ * `"retriable"`, falling back to `Core.awsThrottlingClassifier` for
+ * everything else (genuine AWS throttling/rate-limit errors). Without this
+ * composition, `Core.awsThrottlingClassifier` alone returns `"unknown"` for
+ * the sentinel, which — combined with `unknownDecision: "fatal"` — would
+ * fail every chunk with any unprocessed items on the very first attempt,
+ * never actually retrying DynamoDB's normal partial-capacity response.
+ */
+function batchRetryClassifier(error: unknown): Core.M3LRetryDecision {
+  if (error instanceof Core.M3LError && error.code === BATCH_RETRY_ERROR_CODE) {
+    return "retriable";
+  }
+  const advice = Core.awsThrottlingClassifier(error);
+  return typeof advice === "string" ? advice : advice.decision;
+}
+
+/**
  * `batch-write`/`batch-delete`/`import`: reads `input` via
  * `Core.M3LJSONListImporter`, counting successfully parsed records as
  * `read` and malformed skipped lines as `skipped`, then routes the stream
@@ -526,7 +554,7 @@ async function dispatchBatch(
     settings.operation === "batch-delete" ? "delete" : "write";
 
   const retryRunner = new Core.M3LRetryRunner({
-    classifier: Core.awsThrottlingClassifier,
+    classifier: batchRetryClassifier,
     unknownDecision: "fatal",
   });
 
@@ -646,6 +674,9 @@ async function dispatch(
  *   skipped (malformed input records).
  * @throws {@link Core.M3LError} with code `ERR_DYNAMO_CRUD_CONFIG` when a
  *   required parameter is missing/malformed for the requested operation.
+ * @throws {@link Core.M3LError} with code `ERR_DYNAMO_CRUD_FAILED_ITEMS` when
+ *   the run completes but leaves one or more items failed after retry — a
+ *   partial batch failure must never be silent.
  *
  * @example
  * ```typescript
@@ -714,6 +745,17 @@ export async function runDynamoCrud(deps: {
     failed: summary.failed,
     skipped: summary.skipped,
   });
+
+  // A partial batch failure must never be silent: this is the domain
+  // decision that a non-zero `failed` count fails the whole run, so it lives
+  // here (not in `main.ts`, which stays pure composition/propagation per
+  // ADR-0022 — see main.ts's own header comment).
+  if (summary.failed > 0) {
+    throw new Core.M3LError(
+      `dynamo-crud run ${deps.correlationId} left ${String(summary.failed)} item(s) failed after retry`,
+      { code: "ERR_DYNAMO_CRUD_FAILED_ITEMS", context: { ...summary } },
+    );
+  }
 
   return summary;
 }
