@@ -12,6 +12,15 @@ export interface BatchWriteTableResult {
 }
 
 /**
+ * The `M3LError.code` {@link DynamoBatchUnprocessedSignal} carries. Exported
+ * so the caller composing the production `Core.M3LRetryRunner` (see
+ * `run-dynamo-crud.ts`) can recognize this sentinel by code and classify it
+ * `"retriable"`, without importing the (deliberately unexported) sentinel
+ * class itself.
+ */
+export const BATCH_RETRY_ERROR_CODE = "ERR_DYNAMO_CRUD_BATCH_RETRY";
+
+/**
  * Internal sentinel: thrown from inside a `Core.M3LRetryRunner.run` op body
  * when a `batchWriteItems`/`batchDeleteItems` call returns a non-empty
  * `unprocessed` result, converting that benign "some items unprocessed"
@@ -22,7 +31,7 @@ export interface BatchWriteTableResult {
 class DynamoBatchUnprocessedSignal extends Core.M3LError {
   constructor() {
     super("dynamo batch chunk has unprocessed items after this attempt", {
-      code: "ERR_DYNAMO_CRUD_BATCH_RETRY",
+      code: BATCH_RETRY_ERROR_CODE,
     });
   }
 }
@@ -119,12 +128,17 @@ async function processChunk(opts: {
  * Drives `chunks` through `worker`, bounding concurrent in-flight chunks to
  * `limit` via a `Promise.race`-based scheduler. A hard failure from any
  * chunk (i.e. `worker` rejects) stops launching new chunks and, once every
- * already-in-flight chunk has settled, rejects with that first error.
+ * already-in-flight chunk has settled, rejects with that first error. When
+ * two or more chunks fail concurrently (both already in flight before the
+ * first failure stops new launches), only the first error is ever rethrown —
+ * every subsequent one is logged via `logger.warning` so it isn't silently
+ * dropped, even though it can't also propagate.
  */
 async function processAllChunks(
   chunks: AsyncGenerator<Record<string, unknown>[]>,
   limit: number,
   worker: (chunk: Record<string, unknown>[]) => Promise<BatchWriteTableResult>,
+  logger: Core.M3LLogger,
 ): Promise<BatchWriteTableResult> {
   let written = 0;
   const failed: Record<string, unknown>[] = [];
@@ -138,6 +152,12 @@ async function processAllChunks(
       written += result.written;
       failed.push(...result.failed);
     } catch (error: unknown) {
+      if (firstError !== undefined) {
+        logger.warning(
+          "batch chunk failed after an earlier chunk had already failed — only the first error propagates, this one is logged instead of silently dropped",
+          { cause: error },
+        );
+      }
       firstError ??= error;
     }
   };
@@ -227,6 +247,7 @@ export async function batchWriteTable(opts: {
         retryRunner: opts.retryRunner,
         chunk,
       }),
+    opts.logger,
   );
 
   if (result.failed.length > 0) {

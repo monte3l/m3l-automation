@@ -36,7 +36,11 @@ await script.run(async () => {
     );
   }
 
-  const summary = await runDynamoCrud({
+  // Any failure (including a partial batch failure left `failed > 0`, which
+  // `runDynamoCrud` itself turns into an `ERR_DYNAMO_CRUD_FAILED_ITEMS`
+  // throw) propagates out through `M3LScript.run` unchanged — that decision
+  // is `runDynamoCrud`'s to make, not this composition root's.
+  await runDynamoCrud({
     config,
     paths,
     logger: script.logger,
@@ -45,14 +49,4 @@ await script.run(async () => {
     dynamoDB: aws.clients.dynamoDB,
     confirm: (message) => script.prompt.confirm(message),
   });
-
-  // A partial batch failure must never be silent: exit non-zero by throwing,
-  // the same mechanism `M3LScript.run` already uses to propagate any other
-  // failure out to the process (see docs/reference/core/script.md).
-  if (summary.failed > 0) {
-    throw new Core.M3LError(
-      `dynamo-crud run ${getCorrelationId()} left ${String(summary.failed)} item(s) failed after retry`,
-      { code: "ERR_DYNAMO_CRUD_FAILED_ITEMS", context: { ...summary } },
-    );
-  }
 });

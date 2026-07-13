@@ -26,7 +26,7 @@ const PROGRESS_EVERY_RECORDS_DEFAULT = 10_000;
 const RESUME_DEFAULT = false;
 
 /** The ten operations `dynamo-crud` supports. */
-const DYNAMO_OPERATIONS = [
+export const DYNAMO_OPERATIONS = [
   "get",
   "put",
   "update",
@@ -115,6 +115,11 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
       CHECKPOINT_EVERY_PAGES_MIN,
       CHECKPOINT_EVERY_PAGES_MAX,
     ),
+  }),
+  new Core.M3LConfigParameter({
+    name: "runName",
+    type: Core.M3LConfigParameterType.STRING,
+    validate: Core.M3LConfigValidators.nonEmpty,
   }),
   new Core.M3LConfigParameter({
     name: "resume",

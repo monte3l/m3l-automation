@@ -7,6 +7,7 @@ import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
 import type * as M3LCommon from "@m3l-automation/m3l-common";
+import type * as ScanTableModule from "../src/steps/scan-table.js";
 
 // Make both fs seams configurable so vi.spyOn can intercept individual
 // functions — mirrors scripts/json-etl/tests/run-json-etl.test.ts and
@@ -39,10 +40,22 @@ vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
   };
 });
 
+// One narrow exception to "the sibling steps run for real": wrap (not
+// replace) `scan-table.js`'s `scanTable` export in a `vi.fn()` so tests can
+// inspect the `checkpointPath` it was actually invoked with (fix #1 —
+// `--resume`'s checkpoint file must be keyed to `runName`/`operation`+
+// `tableName`, never the fresh-per-invocation `correlationId`). The real
+// implementation still runs underneath; this is a spy, not a stub.
+vi.mock("../src/steps/scan-table.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof ScanTableModule>();
+  return { ...actual, scanTable: vi.fn(actual.scanTable) };
+});
+
 import { AWS, Core } from "@m3l-automation/m3l-common";
 
 import type { RunDynamoCrudSummary } from "../src/steps/run-dynamo-crud.js";
 import { runDynamoCrud } from "../src/steps/run-dynamo-crud.js";
+import { scanTable } from "../src/steps/scan-table.js";
 
 /**
  * Contract: docs/reference/scripts/dynamo-crud.md, `run-dynamo-crud` row —
@@ -64,6 +77,9 @@ const queryItemsMock = vi.mocked(AWS.queryItems);
 const batchWriteItemsMock = vi.mocked(AWS.batchWriteItems);
 const batchDeleteItemsMock = vi.mocked(AWS.batchDeleteItems);
 const describeTableMock = vi.mocked(AWS.describeTable);
+// A spy wrapping the REAL scanTable implementation (see the vi.mock above) —
+// used only to inspect what `checkpointPath` a run actually invoked it with.
+const scanTableMock = vi.mocked(scanTable);
 
 // Only the mocked AWS functions are ever invoked on these clients in these
 // tests; the client values themselves are never dereferenced, so opaque
@@ -199,7 +215,32 @@ afterEach(() => {
   vi.mocked(AWS.batchWriteItems).mockReset();
   vi.mocked(AWS.batchDeleteItems).mockReset();
   vi.mocked(AWS.describeTable).mockReset();
+  // scanTableMock wraps the REAL implementation (vi.fn(actual.scanTable));
+  // only clear call history, never reset (a reset would drop the passthrough
+  // implementation and turn every subsequent call into `undefined`).
+  scanTableMock.mockClear();
 });
+
+/**
+ * Drives `promise` to settlement while flushing every pending fake timer, so
+ * `Core.M3LRetryRunner`'s real (production, un-injectable from here) default
+ * backoff/attempt bound resolves without a real wall-clock wait. Mirrors
+ * `packages/m3l-common/tests/polling.test.ts`'s `settleWithTimers`. Callers
+ * must wrap the call in `vi.useFakeTimers()`/`vi.useRealTimers()`.
+ */
+async function settleWithTimers<T>(promise: Promise<T>): Promise<T> {
+  let settled = false;
+  const settledOutcome = Promise.allSettled([promise]).then((results) => {
+    settled = true;
+    return results[0];
+  });
+  for (let i = 0; i < 1000 && !settled; i++) {
+    await vi.advanceTimersByTimeAsync(60_000);
+  }
+  const outcome = await settledOutcome;
+  if (outcome.status === "rejected") throw outcome.reason;
+  return outcome.value;
+}
 
 describe("runDynamoCrud — config guards (fire before any AWS call)", () => {
   test("throws ERR_DYNAMO_CRUD_CONFIG when operation 'get' is missing 'key'", async () => {
@@ -700,6 +741,155 @@ describe("runDynamoCrud — bad record vs. source failure (batch input)", () => 
 
     await expect(runDynamoCrud(deps)).rejects.toThrow();
     expect(batchWriteItemsMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("runDynamoCrud — checkpoint path keyed to runName/operation+tableName (fix #1)", () => {
+  function mockOnePageScan(): void {
+    scanSegmentMock.mockImplementation(function fakeScanSegment() {
+      return (async function* page() {
+        await Promise.resolve();
+        yield { items: [{ id: "a" }], lastEvaluatedKey: undefined };
+      })();
+    });
+  }
+
+  test("checkpointPath is identical across two runs with different correlationId values (no runName set)", async () => {
+    mockOnePageScan();
+    const configValues = {
+      ...BASE_CONFIG,
+      operation: "scan",
+      output: "out.jsonl",
+    };
+
+    stubOutputStream();
+    await runDynamoCrud({
+      ...buildDeps(configValues),
+      correlationId: "run-1",
+    });
+    stubOutputStream();
+    await runDynamoCrud({
+      ...buildDeps(configValues),
+      correlationId: "run-2",
+    });
+
+    expect(scanTableMock).toHaveBeenCalledTimes(2);
+    const paths = new Core.M3LPaths();
+    const expectedCheckpointPath = paths.resolveOutput(
+      "scan-orders.checkpoint.json",
+    );
+    const firstCallOptions = scanTableMock.mock.calls[0]?.[0];
+    const secondCallOptions = scanTableMock.mock.calls[1]?.[0];
+    expect(firstCallOptions?.checkpointPath).toBe(expectedCheckpointPath);
+    expect(secondCallOptions?.checkpointPath).toBe(expectedCheckpointPath);
+    // Both runs used the SAME checkpoint path despite different
+    // correlationId values — the bug this guards against tied checkpointPath
+    // to correlationId, which would have produced two distinct paths here.
+    expect(firstCallOptions?.checkpointPath).toBe(
+      secondCallOptions?.checkpointPath,
+    );
+  });
+
+  test("an explicit 'runName' overrides the operation+tableName fallback", async () => {
+    mockOnePageScan();
+    stubOutputStream();
+    const deps = buildDeps({
+      ...BASE_CONFIG,
+      operation: "scan",
+      output: "out.jsonl",
+      runName: "my-custom-job",
+    });
+
+    await runDynamoCrud(deps);
+
+    expect(scanTableMock).toHaveBeenCalledTimes(1);
+    const paths = new Core.M3LPaths();
+    const expectedCheckpointPath = paths.resolveOutput(
+      "my-custom-job.checkpoint.json",
+    );
+    const unexpectedFallbackPath = paths.resolveOutput(
+      "scan-orders.checkpoint.json",
+    );
+    const callOptions = scanTableMock.mock.calls[0]?.[0];
+    expect(callOptions?.checkpointPath).toBe(expectedCheckpointPath);
+    expect(callOptions?.checkpointPath).not.toBe(unexpectedFallbackPath);
+  });
+});
+
+describe("runDynamoCrud — a batch run left with failed items rejects (fix #2)", () => {
+  test("'batch-write' leaving items permanently unprocessed after retry rejects with ERR_DYNAMO_CRUD_FAILED_ITEMS", async () => {
+    stubInputFile(['{"id":"1"}', '{"id":"2"}', '{"id":"3"}'].join("\n"));
+    stubOutputStream();
+    // Every attempt leaves one item unprocessed, so the runner's own attempt
+    // bound (default maxAttempts) exhausts without ever fully succeeding.
+    batchWriteItemsMock.mockImplementation((_client, _table, items) =>
+      Promise.resolve({
+        written: items.length - 1,
+        unprocessed: [{ id: "3" }],
+      }),
+    );
+    const deps = buildDeps({
+      ...BASE_CONFIG,
+      operation: "batch-write",
+      input: "in.jsonl",
+    });
+
+    vi.useFakeTimers();
+    let thrown: unknown;
+    try {
+      await settleWithTimers(runDynamoCrud(deps));
+    } catch (error) {
+      thrown = error;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    expect((thrown as Core.M3LError).code).toBe("ERR_DYNAMO_CRUD_FAILED_ITEMS");
+    expect(batchWriteItemsMock.mock.calls.length).toBeGreaterThan(1);
+  });
+});
+
+describe("runDynamoCrud — the production retry-classifier composition actually retries (fix #3)", () => {
+  test("a chunk with transient unprocessed items succeeds on a later attempt instead of failing on the first", async () => {
+    stubInputFile(['{"id":"1"}', '{"id":"2"}'].join("\n"));
+    stubOutputStream();
+    let callCount = 0;
+    batchWriteItemsMock.mockImplementation((_client, _table, items) => {
+      callCount += 1;
+      if (callCount === 1) {
+        // First attempt: one item confirmed, one still unprocessed — this is
+        // `batch-write-table`'s internal retry sentinel
+        // (`BATCH_RETRY_ERROR_CODE`), not a genuine AWS throttling error, so
+        // only the composed classifier (not `Core.awsThrottlingClassifier`
+        // alone) recognizes it as retriable.
+        return Promise.resolve({ written: 1, unprocessed: [{ id: "2" }] });
+      }
+      // Second (and any later) attempt: the remaining item is now confirmed.
+      return Promise.resolve({ written: items.length, unprocessed: [] });
+    });
+    const deps = buildDeps({
+      ...BASE_CONFIG,
+      operation: "batch-write",
+      input: "in.jsonl",
+    });
+
+    vi.useFakeTimers();
+    let summary: RunDynamoCrudSummary | undefined;
+    try {
+      summary = await settleWithTimers(runDynamoCrud(deps));
+    } finally {
+      vi.useRealTimers();
+    }
+
+    // Proves the sentinel was classified "retriable" (not "unknown" ->
+    // "fatal") and the runner actually looped: without the composed
+    // classifier, the first unprocessed result would be classified
+    // "unknown" and resolved "fatal" by `unknownDecision: "fatal"`,
+    // folding into `failed` on the very first attempt — batchWriteItems
+    // would be called exactly once and `failed` would be nonzero.
+    expect(batchWriteItemsMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(summary).toEqual({ read: 2, written: 2, failed: 0, skipped: 0 });
   });
 });
 
