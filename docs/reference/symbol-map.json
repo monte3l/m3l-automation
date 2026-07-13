@@ -1424,5 +1424,45 @@
     "submodule": "models",
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/models/index.ts"
+  },
+  "M3LSQSOperations": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/client.ts"
+  },
+  "M3LSQSOperationError": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/error.ts"
+  },
+  "M3LSQSReceivedMessage": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSSendEntry": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSDeleteEntry": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSBatchFailure": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSBatchResult": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSReceiveOptions": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
   }
 }
