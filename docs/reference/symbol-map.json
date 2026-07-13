@@ -1400,6 +1400,51 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/dynamodb/error.ts"
   },
+  "M3LLogsInsightsClient": {
+    "submodule": "logs-insights",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/logs-insights/client.ts"
+  },
+  "LogsInsightsAwaitOptions": {
+    "submodule": "logs-insights",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/logs-insights/client.ts"
+  },
+  "StartLogsInsightsQueryInput": {
+    "submodule": "logs-insights",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/logs-insights/types.ts"
+  },
+  "LogsInsightsQueryResult": {
+    "submodule": "logs-insights",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/logs-insights/types.ts"
+  },
+  "LogsInsightsQueryStatistics": {
+    "submodule": "logs-insights",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/logs-insights/types.ts"
+  },
+  "LogsInsightsQueryStatus": {
+    "submodule": "logs-insights",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/logs-insights/types.ts"
+  },
+  "LogsInsightsRow": {
+    "submodule": "logs-insights",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/logs-insights/types.ts"
+  },
+  "M3LLogsInsightsStartQueryError": {
+    "submodule": "logs-insights",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/logs-insights/errors.ts"
+  },
+  "M3LLogsInsightsQueryFailedError": {
+    "submodule": "logs-insights",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/logs-insights/errors.ts"
+  },
   "M3LAWSCredentialsErrorType": {
     "submodule": "models",
     "namespace": "aws",

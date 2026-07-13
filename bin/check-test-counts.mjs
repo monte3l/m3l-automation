@@ -105,7 +105,7 @@ for (const line of statusContent.split("\n")) {
   const notes = cols[NOTES_COL].trim();
 
   if (!status.includes("✅")) continue;
-  if (!/^[a-z]+$/.test(submodule)) continue; // header row guard
+  if (!/^[a-z][a-z-]*$/.test(submodule)) continue; // header row guard
 
   const countMatch = /(\d+) tests/.exec(notes);
   if (!countMatch) continue; // row has no recorded count
