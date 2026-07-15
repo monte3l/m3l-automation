@@ -6,7 +6,8 @@ history**: they are not edited after landing (unlike the living trackers in
 [`../ROADMAP.md`](../ROADMAP.md) and
 [`../plans/IMPLEMENTATION.md`](../plans/IMPLEMENTATION.md)). New logs are added
 by `/writing-work-logs`; recurring lessons graduate into the rules/agents via
-`/promoting-work-log-lessons`.
+`/promoting-work-log-lessons`. Logs are **pipeline-scoped** — submodule and
+script implementation units get one; chore/docs/CI PRs deliberately do not.
 
 ## Library — Core & AWS submodules (v1.0 → v1.1)
 
@@ -35,13 +36,19 @@ by `/writing-work-logs`; recurring lessons graduate into the rules/agents via
 
 ## Consumer-fleet program (ADR-0021 Phase 5 / ADR-0022)
 
-| Date       | Unit                                                                   | Log                                                                |
-| ---------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| 2026-07-09 | Script production pipeline (generator + gates)                         | [script-pipeline](./2026-07-09-script-pipeline.md)                 |
-| 2026-07-10 | W0-L1 — `core/json` extraction extension (`extractAll`)                | [core-json](./2026-07-10-core-json.md)                             |
-| 2026-07-11 | W0-L2 — `aws/clients` getters (cloudWatchLogs/dynamoDBDocument/athena) | [aws-clients](./2026-07-11-aws-clients.md)                         |
-| 2026-07-11 | W1 — `json-etl` (first end-to-end consumer script)                     | [scripts-json-etl](./2026-07-11-scripts-json-etl.md)               |
-| 2026-07-11 | F8 — `core/script` preset→config seam (`options.preset`, level 6)      | [core-script-preset-seam](./2026-07-11-core-script-preset-seam.md) |
+| Date       | Unit                                                                       | Log                                                                |
+| ---------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 2026-07-09 | Script production pipeline (generator + gates)                             | [script-pipeline](./2026-07-09-script-pipeline.md)                 |
+| 2026-07-10 | W0-L1 — `core/json` extraction extension (`extractAll`)                    | [core-json](./2026-07-10-core-json.md)                             |
+| 2026-07-11 | W0-L2 — `aws/clients` getters (cloudWatchLogs/dynamoDBDocument/athena)     | [aws-clients](./2026-07-11-aws-clients.md)                         |
+| 2026-07-11 | W1 — `json-etl` (first end-to-end consumer script)                         | [scripts-json-etl](./2026-07-11-scripts-json-etl.md)               |
+| 2026-07-11 | F8 — `core/script` preset→config seam (`options.preset`, level 6)          | [core-script-preset-seam](./2026-07-11-core-script-preset-seam.md) |
+| 2026-07-13 | W2-L — `aws/dynamodb` high-level item operations (PR #118)                 | [aws-dynamodb](./2026-07-13-aws-dynamodb.md)                       |
+| 2026-07-13 | W2-L — `aws/sqs` `M3LSQSOperations` wrapper (ADR-0026, PR #119)            | [aws-sqs](./2026-07-13-aws-sqs.md)                                 |
+| 2026-07-13 | W2 — `sqs-etl` consumer script (PR #127)                                   | [sqs-etl](./2026-07-13-sqs-etl.md)                                 |
+| 2026-07-13 | W2 — `dynamo-crud` consumer script (PR #128)                               | [dynamo-crud](./2026-07-13-dynamo-crud.md)                         |
+| 2026-07-13 | W2 — `logs-insights` consumer script (PR #129)                             | [scripts-logs-insights](./2026-07-13-scripts-logs-insights.md)     |
+| 2026-07-15 | W2 close-out — merge outcomes #120/#127–#129, `aws/logs-insights` stand-in | [fleet-reconciliation](./2026-07-15-fleet-reconciliation.md)       |
 
 > W1 `json-etl`'s 8 library-friction items (F1–F8) are tracked in
 > [`../plans/IMPLEMENTATION.md`](../plans/IMPLEMENTATION.md#library-friction-f-series).

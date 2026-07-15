@@ -11,6 +11,24 @@ paths:
 > [`docs/reference/core/script.md`](../../docs/reference/core/script.md). This
 > file is the terse checklist that auto-loads when you edit a script.
 
+## Naming & dependency boundary (ADR-0028 / ADR-0029)
+
+- **Name AWS-scoped scripts after the full official AWS service** —
+  kebab-case `<service>[-<purpose>]`: `dynamodb-crud`,
+  `cloudwatch-logs-insights`, `cloudformation-stacks`. Never abbreviations
+  (`cfn`, `apigw`, `dynamo`). Non-AWS scripts (`json-etl`) are exempt.
+  Why: one greppable name per service across submodule, script, reference
+  page, and roadmap (ADR-0028 carries the noncompliance ledger for shipped
+  pre-policy names). Enforcement: reviewer-checked today; scaffold check
+  tracked as ROADMAP follow-up T5.
+- **Declare exactly one runtime dependency** —
+  `"@m3l-automation/m3l-common": "workspace:*"` — and no devDependencies
+  (the workspace root owns tooling). A capability the library lacks becomes
+  a typed library wrapper first (the ADR-0027 pattern); never a script-local
+  package. Why: one mediation seam, one supply-chain audit point, mockable
+  step tests. Enforcement: the `@aws-sdk/*` import ban (ESLint) today; the
+  full package.json check is tracked as ROADMAP follow-up T6 (ADR-0029).
+
 ## Layout — modular, never a single-file script
 
 - **`main.ts` is a composition root only:** construct `Core.M3LScript` with
