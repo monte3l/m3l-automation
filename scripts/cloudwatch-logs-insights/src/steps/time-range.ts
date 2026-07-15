@@ -1,5 +1,5 @@
 /**
- * `steps/time-range` — pure time-window planning for `logs-insights`.
+ * `steps/time-range` — pure time-window planning for `cloudwatch-logs-insights`.
  *
  * Business logic lives here — never in `main.ts`. This step takes no
  * dependencies at all (not even a logger): it is a pure function over

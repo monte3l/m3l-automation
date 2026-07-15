@@ -1,14 +1,15 @@
 /**
- * `steps/export-results` — writes the full accumulated `logs-insights` row
- * set to the output file, once.
+ * `steps/export-results` — writes the full accumulated
+ * `cloudwatch-logs-insights` row set to the output file, once.
  *
  * Business logic lives here — never in `main.ts`. Dispatches on `format` to
  * the whole-array `Core.M3LJSONListExporter` / `Core.M3LCSVListExporter`,
  * calling `export(items)` exactly once with every row gathered across every
  * window — never the streaming `exportStream()`/`append()` API. The list
  * exporters only support a whole-array write; re-opening the output file
- * mid-run would truncate it, which is why `run-logs-insights.ts` accumulates
- * rows (in memory and in the checkpoint) instead of writing incrementally.
+ * mid-run would truncate it, which is why `run-cloudwatch-logs-insights.ts`
+ * accumulates rows (in memory and in the checkpoint) instead of writing
+ * incrementally.
  */
 
 import { Core } from "@m3l-automation/m3l-common";

@@ -21,7 +21,7 @@ import {
 } from "../../src/steps/checkpoint.js";
 
 /**
- * Contract: docs/reference/scripts/logs-insights.md, `checkpoint` row + the
+ * Contract: docs/reference/scripts/cloudwatch-logs-insights.md, `checkpoint` row + the
  * "Resume and failure semantics" section. Reads/writes a JSON checkpoint file
  * (`<output>.checkpoint.json`, resolved under `M3L_OUTPUT_DIR` via
  * `Core.M3LPaths.resolveOutput()`) recording

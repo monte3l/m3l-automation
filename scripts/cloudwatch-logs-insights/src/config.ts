@@ -7,12 +7,13 @@ const LIMIT_MIN = 1;
 const LIMIT_MAX = 10_000;
 
 /**
- * The declared configuration schema for `logs-insights` — the script's only
- * input seam. Never read `process.env` directly (the scripts ESLint zone bans
- * it); every input the pipeline needs is declared here so resolution,
- * coercion, validation, and redaction all flow through the library.
+ * The declared configuration schema for `cloudwatch-logs-insights` — the
+ * script's only input seam. Never read `process.env` directly (the scripts
+ * ESLint zone bans it); every input the pipeline needs is declared here so
+ * resolution, coercion, validation, and redaction all flow through the
+ * library.
  *
- * Mirrors `docs/reference/scripts/logs-insights.md`'s "Configuration schema"
+ * Mirrors `docs/reference/scripts/cloudwatch-logs-insights.md`'s "Configuration schema"
  * table exactly (10 parameters, in table order). `aws.profile`, `logGroups`,
  * `query`, `start`, `end`, and `output` are `required: true` with
  * `Core.M3LConfigValidators.nonEmpty` — a missing value throws

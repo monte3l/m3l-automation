@@ -1,5 +1,5 @@
 {
-  "name": "@m3l-automation/logs-insights",
+  "name": "@m3l-automation/cloudwatch-logs-insights",
   "version": "0.0.0",
   "private": true,
   "type": "module",

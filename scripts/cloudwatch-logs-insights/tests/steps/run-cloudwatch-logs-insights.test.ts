@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 /**
- * Contract: docs/reference/scripts/logs-insights.md, `run-logs-insights` row
- * + "Resume and failure semantics". The orchestrator composes
+ * Contract: docs/reference/scripts/cloudwatch-logs-insights.md,
+ * `run-cloudwatch-logs-insights` row + "Resume and failure semantics". The
+ * orchestrator composes
  * resolve-settings -> time-range -> per-window
  * `AWS.M3LLogsInsightsClient.startQuery()` + checkpoint (record
  * `inFlightQueryId`) + `awaitResults()` -> accumulate rows -> checkpoint
@@ -34,7 +35,7 @@ vi.mock("../../src/steps/export-results.js", () => ({
 
 import { AWS, Core } from "@m3l-automation/m3l-common";
 
-import { runLogsInsights } from "../../src/steps/run-logs-insights.js";
+import { runCloudwatchLogsInsights } from "../../src/steps/run-cloudwatch-logs-insights.js";
 
 function buildConfig(values: Record<string, unknown>): Core.M3LConfig {
   const config = new Core.M3LConfig();
@@ -107,7 +108,7 @@ afterEach(() => {
   mocks.exportResults.mockReset().mockResolvedValue(undefined);
 });
 
-describe("runLogsInsights — happy path", () => {
+describe("runCloudwatchLogsInsights — happy path", () => {
   it("composes startQuery + checkpoint(inFlightQueryId) + awaitResults per window, accumulates rows, and exports once at the end", async () => {
     const callOrder: string[] = [];
     const client = buildClient();
@@ -146,7 +147,7 @@ describe("runLogsInsights — happy path", () => {
     const logger = new Core.M3LLogger([]);
     const paths = buildPaths();
 
-    const summary = await runLogsInsights({
+    const summary = await runCloudwatchLogsInsights({
       config,
       logger,
       client: asClient(client),
@@ -191,7 +192,7 @@ describe("runLogsInsights — happy path", () => {
   });
 });
 
-describe("runLogsInsights — abort on terminal failure", () => {
+describe("runCloudwatchLogsInsights — abort on terminal failure", () => {
   it("re-throws a terminal M3LLogsInsightsQueryFailedError and never calls export-results", async () => {
     const client = buildClient();
     let call = 0;
@@ -227,7 +228,7 @@ describe("runLogsInsights — abort on terminal failure", () => {
 
     let thrown: unknown;
     try {
-      await runLogsInsights({
+      await runCloudwatchLogsInsights({
         config,
         logger,
         client: asClient(client),
@@ -259,7 +260,7 @@ describe("runLogsInsights — abort on terminal failure", () => {
   });
 });
 
-describe("runLogsInsights — abort on startQuery failure", () => {
+describe("runCloudwatchLogsInsights — abort on startQuery failure", () => {
   it("re-throws a startQuery failure, logs the abort-at-window message, and never calls awaitResults/export-results/checkpoint-write for that window's completion", async () => {
     const client = buildClient();
     const startQueryError = new AWS.M3LLogsInsightsStartQueryError(
@@ -282,7 +283,7 @@ describe("runLogsInsights — abort on startQuery failure", () => {
 
     let thrown: unknown;
     try {
-      await runLogsInsights({
+      await runCloudwatchLogsInsights({
         config,
         logger,
         client: asClient(client),
@@ -297,7 +298,7 @@ describe("runLogsInsights — abort on startQuery failure", () => {
     expect(mocks.exportResults).not.toHaveBeenCalled();
 
     expect(loggerErrorSpy).toHaveBeenCalledWith(
-      "logs-insights aborted at window 0 of 1",
+      "cloudwatch-logs-insights aborted at window 0 of 1",
     );
 
     // A startQuery failure happens strictly before the checkpoint write that
@@ -306,7 +307,7 @@ describe("runLogsInsights — abort on startQuery failure", () => {
   });
 });
 
-describe("runLogsInsights — resume", () => {
+describe("runCloudwatchLogsInsights — resume", () => {
   it("skips already-completed windows and re-attaches to an in-flight query via awaitResults alone (no fresh startQuery)", async () => {
     const client = buildClient();
     let startQueryCalls = 0;
@@ -337,7 +338,7 @@ describe("runLogsInsights — resume", () => {
     const logger = new Core.M3LLogger([]);
     const paths = buildPaths();
 
-    const summary = await runLogsInsights({
+    const summary = await runCloudwatchLogsInsights({
       config,
       logger,
       client: asClient(client),

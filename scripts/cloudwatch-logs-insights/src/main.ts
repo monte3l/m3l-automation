@@ -2,7 +2,7 @@ import { AWS, Core } from "@m3l-automation/m3l-common";
 
 import { configParameters } from "./config.js";
 import { buildHooks } from "./hooks.js";
-import { runLogsInsights } from "./steps/run-logs-insights.js";
+import { runCloudwatchLogsInsights } from "./steps/run-cloudwatch-logs-insights.js";
 
 // Composition root ONLY (ADR-0022): construct the script, wire config/hooks,
 // and run the step. Any conditional, loop, or I/O beyond wiring belongs in a
@@ -16,11 +16,11 @@ import { runLogsInsights } from "./steps/run-logs-insights.js";
 // `paths` is constructed here (not read back from `script.paths`) because
 // `M3LScript`'s hooks are wired at construction time, before `script.paths`
 // exists — this is the one authoritative `M3LPaths` instance for the run,
-// threaded into both `buildHooks` and `runLogsInsights` below.
+// threaded into both `buildHooks` and `runCloudwatchLogsInsights` below.
 const paths = new Core.M3LPaths();
 
 const script = new Core.M3LScript({
-  metadata: { name: "logs-insights", version: "0.0.0" },
+  metadata: { name: "cloudwatch-logs-insights", version: "0.0.0" },
   config: { params: configParameters },
   hooks: buildHooks(paths),
 });
@@ -43,7 +43,7 @@ await script.run(async () => {
     script.aws.clients.cloudWatchLogs,
   );
 
-  await runLogsInsights({
+  await runCloudwatchLogsInsights({
     config,
     logger: script.logger,
     client,

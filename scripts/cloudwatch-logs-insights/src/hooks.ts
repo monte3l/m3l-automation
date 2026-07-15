@@ -3,7 +3,7 @@ import type { Core } from "@m3l-automation/m3l-common";
 import { deleteCheckpoint } from "./steps/checkpoint.js";
 
 /**
- * Builds the lifecycle hooks for `logs-insights`, bound to `paths`. All
+ * Builds the lifecycle hooks for `cloudwatch-logs-insights`, bound to `paths`. All
  * eight hooks are optional and run in the fixed order documented in
  * `docs/reference/core/script.md`.
  *
@@ -23,8 +23,9 @@ import { deleteCheckpoint } from "./steps/checkpoint.js";
  * `mainFn` has resolved successfully (stage 8, before `onCleanup`); a thrown
  * error skips straight to `onError`/`onCleanup` instead, so the checkpoint
  * (and its accumulated rows) is left intact for a subsequent `resume: true`
- * run, exactly as `docs/reference/scripts/logs-insights.md`'s "Inputs and
- * outputs" section specifies (`M3LScript` has no `onShutdown` hook).
+ * run, exactly as `docs/reference/scripts/cloudwatch-logs-insights.md`'s
+ * "Inputs and outputs" section specifies (`M3LScript` has no `onShutdown`
+ * hook).
  *
  * @param paths - The composition root's `Core.M3LPaths` instance.
  * @returns The lifecycle hooks object to pass to `Core.M3LScript`.
@@ -36,7 +37,7 @@ import { deleteCheckpoint } from "./steps/checkpoint.js";
  *
  * const paths = new Core.M3LPaths();
  * const script = new Core.M3LScript({
- *   metadata: { name: "logs-insights", version: "0.0.0" },
+ *   metadata: { name: "cloudwatch-logs-insights", version: "0.0.0" },
  *   config: { params: [] },
  *   hooks: buildHooks(paths),
  * });

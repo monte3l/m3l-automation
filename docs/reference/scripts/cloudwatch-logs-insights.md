@@ -1,4 +1,4 @@
-# logs-insights
+# cloudwatch-logs-insights
 
 Run a CloudWatch Logs Insights query across one or more log groups over a time
 range, splitting the range into fixed-size windows to stay under the
@@ -7,11 +7,11 @@ JSON or CSV. A run can be resumed after an interruption or a hard failure.
 
 > **This page is the script's contract** — configuration schema, steps, and
 > inputs/outputs. How to _run_ it lives in the colocated
-> [`scripts/logs-insights/README.md`](../../../scripts/logs-insights/README.md).
+> [`scripts/cloudwatch-logs-insights/README.md`](../../../scripts/cloudwatch-logs-insights/README.md).
 
 ## Purpose and scope
 
-`logs-insights` is a thin orchestrator over
+`cloudwatch-logs-insights` is a thin orchestrator over
 [`AWS.M3LLogsInsightsClient`](../aws/logs-insights.md) — it never imports
 `@aws-sdk/*` directly (ADR-0027, ESLint-enforced). The library client owns
 query execution, throttling retries, poll-to-completion, and AWS `ResultField[]`
@@ -57,13 +57,13 @@ One module per `src/steps/` responsibility; each takes injected dependencies
 (config values, logger, `script.aws`, `M3LPaths`) as a single options object
 and is unit-testable with plain mocks — no `M3LScript` lifecycle.
 
-| Step                | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `resolve-settings`  | Parse and validate the resolved config into a typed run-settings object: ISO-8601 `start`/`end` → epoch seconds (throwing on an unparseable string or `start >= end`), plus the pass-through fields (`logGroups`, `query`, `windowMinutes`, `limit`, `format`, `output`, `resume`). The single place the cross-parameter guard lives.                                                                             |
-| `time-range`        | Pure function splitting `[startEpochSeconds, endEpochSeconds)` into an ordered array of fixed-size `{ startTime, endTime }` windows of `windowMinutes * 60` seconds (the final window is shorter if the range doesn't divide evenly). No I/O.                                                                                                                                                                     |
-| `checkpoint`        | Read/write a JSON checkpoint file (`<output>.checkpoint.json`, resolved under `M3L_OUTPUT_DIR` via `Core.M3LPaths.resolveOutput()`) recording `{ completedWindows: number, rows: readonly LogsInsightsRow[], inFlightQueryId?: string }` — the **rows already fetched**, not just a count (see Resume semantics below). `resume: true` reads it; every other run starts from `{ completedWindows: 0, rows: [] }`. |
-| `export-results`    | Write the **full accumulated row set** (checkpoint's carried-over rows plus this run's newly-fetched rows) to the output file in one shot via the exporter's whole-array `export(items)` (`format`-dispatched `Core.M3LJSONListExporter` / `Core.M3LCSVListExporter`) — called **once**, after the last window, never incrementally per window.                                                                   |
-| `run-logs-insights` | The orchestrator — composes `resolve-settings` → `time-range` → per-window `AWS.M3LLogsInsightsClient.startQuery()` + `checkpoint` (record `inFlightQueryId`) + `awaitResults()` → accumulate rows → `checkpoint` update → `export-results` once at the end. A terminal query failure aborts the run with the checkpoint (and its accumulated rows) left intact.                                                  |
+| Step                           | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resolve-settings`             | Parse and validate the resolved config into a typed run-settings object: ISO-8601 `start`/`end` → epoch seconds (throwing on an unparseable string or `start >= end`), plus the pass-through fields (`logGroups`, `query`, `windowMinutes`, `limit`, `format`, `output`, `resume`). The single place the cross-parameter guard lives.                                                                             |
+| `time-range`                   | Pure function splitting `[startEpochSeconds, endEpochSeconds)` into an ordered array of fixed-size `{ startTime, endTime }` windows of `windowMinutes * 60` seconds (the final window is shorter if the range doesn't divide evenly). No I/O.                                                                                                                                                                     |
+| `checkpoint`                   | Read/write a JSON checkpoint file (`<output>.checkpoint.json`, resolved under `M3L_OUTPUT_DIR` via `Core.M3LPaths.resolveOutput()`) recording `{ completedWindows: number, rows: readonly LogsInsightsRow[], inFlightQueryId?: string }` — the **rows already fetched**, not just a count (see Resume semantics below). `resume: true` reads it; every other run starts from `{ completedWindows: 0, rows: [] }`. |
+| `export-results`               | Write the **full accumulated row set** (checkpoint's carried-over rows plus this run's newly-fetched rows) to the output file in one shot via the exporter's whole-array `export(items)` (`format`-dispatched `Core.M3LJSONListExporter` / `Core.M3LCSVListExporter`) — called **once**, after the last window, never incrementally per window.                                                                   |
+| `run-cloudwatch-logs-insights` | The orchestrator — composes `resolve-settings` → `time-range` → per-window `AWS.M3LLogsInsightsClient.startQuery()` + `checkpoint` (record `inFlightQueryId`) + `awaitResults()` → accumulate rows → `checkpoint` update → `export-results` once at the end. A terminal query failure aborts the run with the checkpoint (and its accumulated rows) left intact.                                                  |
 
 ## Resume and failure semantics
 
