@@ -12,7 +12,7 @@ JSON or CSV. A run can be resumed after an interruption or a hard failure.
 ## Purpose and scope
 
 `cloudwatch-logs-insights` is a thin orchestrator over
-[`AWS.M3LLogsInsightsClient`](../aws/logs-insights.md) — it never imports
+[`AWS.M3LLogsInsightsClient`](../aws/cloudwatch-logs-insights.md) — it never imports
 `@aws-sdk/*` directly (ADR-0027, ESLint-enforced). The library client owns
 query execution, throttling retries, poll-to-completion, and AWS `ResultField[]`
 row normalization; this script owns time-window planning, checkpointed
@@ -111,7 +111,7 @@ and is unit-testable with plain mocks — no `M3LScript` lifecycle.
 
 ## See also
 
-- [`aws/logs-insights`](../aws/logs-insights.md) — `M3LLogsInsightsClient`,
+- [`aws/cloudwatch-logs-insights`](../aws/cloudwatch-logs-insights.md) — `M3LLogsInsightsClient`,
   the query wrapper this script composes with.
 - [`aws/clients`](../aws/clients.md) — the `script.aws.clients.cloudWatchLogs` seam.
 - [`core/exporters`](../core/exporters.md) — the JSON/CSV list exporters.
