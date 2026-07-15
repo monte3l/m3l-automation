@@ -190,7 +190,7 @@ importers:
         specifier: ^1.6.2
         version: 1.6.2
 
-  scripts/dynamo-crud:
+  scripts/dynamodb-crud:
     dependencies:
       '@m3l-automation/m3l-common':
         specifier: workspace:*

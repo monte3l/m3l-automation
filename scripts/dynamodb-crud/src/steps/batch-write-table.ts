@@ -14,7 +14,7 @@ export interface BatchWriteTableResult {
 /**
  * The `M3LError.code` {@link DynamoBatchUnprocessedSignal} carries. Exported
  * so the caller composing the production `Core.M3LRetryRunner` (see
- * `run-dynamo-crud.ts`) can recognize this sentinel by code and classify it
+ * `run-dynamodb-crud.ts`) can recognize this sentinel by code and classify it
  * `"retriable"`, without importing the (deliberately unexported) sentinel
  * class itself.
  */
@@ -193,7 +193,7 @@ async function processAllChunks(
  * `retryRunner` — bounded to `maxInFlightBatches` concurrent chunks.
  *
  * Reading the input file and writing any `failed.jsonl` sink are out of
- * scope here — the caller (`run-dynamo-crud`) owns both; this step only
+ * scope here — the caller (`run-dynamodb-crud`) owns both; this step only
  * takes an already-parsed `AsyncIterable<Record<string, unknown>>`.
  *
  * @param opts - The provisioned document client, write/delete mode, target

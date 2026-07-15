@@ -26,7 +26,7 @@ import {
 } from "../src/aws/dynamodb/index.js";
 
 /**
- * Full contract suite for `aws/dynamodb` (W2 library friction: dynamo-crud
+ * Full contract suite for `aws/dynamodb` (W2 library friction: dynamodb-crud
  * needs item operations without importing the AWS SDK directly), per
  * `docs/reference/aws/dynamodb.md`.
  */

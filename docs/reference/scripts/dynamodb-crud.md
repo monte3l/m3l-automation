@@ -1,14 +1,14 @@
-# dynamo-crud
+# dynamodb-crud
 
 CRUD, batch, and streaming operations against a DynamoDB table with checkpoint resume and destructive-op confirmation
 
 > **This page is the script's contract** — configuration schema, steps, and
 > inputs/outputs. How to _run_ it lives in the colocated
-> [`scripts/dynamo-crud/README.md`](../../../scripts/dynamo-crud/README.md).
+> [`scripts/dynamodb-crud/README.md`](../../../scripts/dynamodb-crud/README.md).
 
 ## Purpose and scope
 
-`dynamo-crud` performs CRUD, batch, and streaming operations against a single
+`dynamodb-crud` performs CRUD, batch, and streaming operations against a single
 DynamoDB table via the library's [`aws/dynamodb`](../aws/dynamodb.md)
 high-level item operations (`AWS.getItem`/`putItem`/`updateItem`/`deleteItem`/
 `queryItems`/`scanSegment`/`batchWriteItems`/`batchDeleteItems`/
@@ -61,7 +61,7 @@ env/.env > preset > default.
 library at **config-load time**. The remaining per-operation requirements
 (e.g. `key` for `get`, `input` for `batch-write`) are **cross-parameter**
 constraints the per-parameter validators cannot express, so they stay guards
-at **run start** (top of `run-dynamo-crud`), the same pattern as `json-etl`'s
+at **run start** (top of `run-dynamodb-crud`), the same pattern as `json-etl`'s
 `sort`⇒`limit` guard (F1b backlog item).
 
 ## Steps
@@ -78,7 +78,7 @@ streaming step contract.
 | `scan-table`        | `scan`/`query`/`export`: `totalSegments` parallel workers each driving `AWS.scanSegment`/`queryItems` (async generators yielding `{ items, lastEvaluatedKey }` pages), checkpointing `lastEvaluatedKey` every `checkpointEveryPages` pages, streaming records straight to the JSONL sink. `query` adds `indexName` + `key` as the equality key condition.                                           |
 | `batch-write-table` | `batch-write`/`batch-delete`/`import`: reads records via `import-records` (shared `M3LJSONListImporter.importStream()` wrapper), chunks into 25-item groups, calls `AWS.batchWriteItems`/`batchDeleteItems`, retries each call's `unprocessed` result through `M3LRetryRunner`'s throttling classifier bounded by `maxInFlightBatches`, and appends still-failing items to `<output>/failed.jsonl`. |
 | `destructive-gate`  | Shared confirm-gate for `delete`/`update`/`batch-delete`/`import` into a non-empty table: prints the target table + an item-count estimate (`AWS.describeTable`) and requires confirmation before proceeding (fleet convention, promoted in W5).                                                                                                                                                    |
-| `run-dynamo-crud`   | Composes the pipeline — the only module that knows operation dispatch order: resolve operation → (destructive gate if applicable) → read or write step → emit the run summary (written/retried/failed/skipped counts) through the `ctx`-correlated logger, exiting non-zero on failures.                                                                                                            |
+| `run-dynamodb-crud` | Composes the pipeline — the only module that knows operation dispatch order: resolve operation → (destructive gate if applicable) → read or write step → emit the run summary (written/retried/failed/skipped counts) through the `ctx`-correlated logger, exiting non-zero on failures.                                                                                                            |
 
 ## Inputs and outputs
 

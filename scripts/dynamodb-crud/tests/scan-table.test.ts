@@ -46,7 +46,7 @@ import type {
 import { scanTable } from "../src/steps/scan-table.js";
 
 /**
- * Contract: docs/reference/scripts/dynamo-crud.md, `scan-table` row, plus the
+ * Contract: docs/reference/scripts/dynamodb-crud.md, `scan-table` row, plus the
  * verbatim `ScanCheckpoint`/`ScanTableOptions`/`scanTable` shapes handed down
  * for this RED phase.
  *
