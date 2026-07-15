@@ -1,6 +1,9 @@
 # 0027. Scripts never import `@aws-sdk/*`; the library grows typed AWS operation wrappers per consumer need
 
-- **Status:** Accepted
+- **Status:** Accepted — amended 2026-07-15: the context passage recording
+  script-local, AWS-adjacent dependencies as "an accepted, ratified pattern"
+  is superseded by [ADR-0029](./0029-script-dependency-boundary.md); the
+  decision itself stands in full
 - **Date:** 2026-07-12
 - **Deciders:** Enrico Lionello
 
@@ -127,4 +130,7 @@ itself legitimately imports the SDK.
   contract). The consuming `scripts/logs-insights` package and its own
   revised contract page land in a later PR, once its business logic is
   implemented.
-- Supersedes / superseded by: none.
+- Supersedes / superseded by: superseded in part by
+  [ADR-0029](./0029-script-dependency-boundary.md) (the script-local
+  dependency passage in the context section; the wrapper decision and the
+  `@aws-sdk/*` ban stand).

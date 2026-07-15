@@ -4,7 +4,7 @@ The **living, prioritized view of pending program work**. It is the coarse
 companion to two other trackers:
 
 - [`docs/implementation-status.md`](./implementation-status.md) — the _done_
-  library ledger (24/24 submodules, count-enforced).
+  library ledger (25/25 submodules, count-enforced).
 - [`docs/plans/IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md) — the _detailed_
   per-item backlog this file summarizes.
 
@@ -17,8 +17,9 @@ _Maintenance_ at the bottom. Completed dated plans live under
 
 Per-item status lives in the tables below (Priority 0/1/2) and in
 [`docs/implementation-status.md`](./implementation-status.md) — the
-count-enforced library ledger (24/24 submodules, shipped at v1.1.0 + the
-ad-hoc `aws/dynamodb` and `aws/sqs` additions, ADR-0026).
+count-enforced library ledger (25/25 submodules, shipped at v1.1.0 + the
+ad-hoc `aws/dynamodb`, `aws/sqs`, and `aws/logs-insights` additions,
+ADR-0026/ADR-0027).
 
 ## Priority 0 — Library hardening (do before more scripts)
 
@@ -37,18 +38,19 @@ call-sites in [`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#library-friction-f
 
 ## Priority 1 — Consumer fleet
 
-| Wave   | Scripts                                                                                             | Status         | Depends on                                                             |
-| ------ | --------------------------------------------------------------------------------------------------- | -------------- | ---------------------------------------------------------------------- |
-| **W1** | `json-etl`                                                                                          | **done** (#99) | W0 ✓                                                                   |
-| **W2** | `dynamo-crud`                                                                                       | **done**       | W0 ✓ (scale: checkpoint/resume, batch retry, `failed.jsonl`)           |
-| **W2** | `logs-insights`                                                                                     | **done**       | W0 ✓; consumes `aws/logs-insights` (`M3LLogsInsightsClient`, ADR-0027) |
-| **W2** | `sqs-etl`                                                                                           | **done**       | W0 ✓; consumes `aws/sqs` (`M3LSQSOperations`, ADR-0026)                |
-| **W3** | `s3-objects`, `lambda-ops`, `ecs-ops`, `cfn-stacks`, `codepipeline-ops`, `eventbridge-schedules`    | pending        | existing getters ✓; thin op-dispatch over the W1/W2 skeleton           |
-| **W4** | `data-query` (Athena+`pg`+`mongodb`), `eks-ops` (`@kubernetes/client-node`), `apigw-client` (SigV4) | pending        | each carries a script-local dependency decision (own PR review)        |
-| **W5** | Promotion pass — steps duplicated across ≥2 scripts graduate into the library                       | pending        | ≥2 scripts existing to observe duplication                             |
+| Wave   | Scripts                                                                                                                                                                    | Status         | Depends on                                                                       |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------- |
+| **W1** | `json-etl`                                                                                                                                                                 | **done** (#99) | W0 ✓                                                                             |
+| **W2** | `dynamo-crud`                                                                                                                                                              | **done**       | W0 ✓ (scale: checkpoint/resume, batch retry, `failed.jsonl`)                     |
+| **W2** | `logs-insights`                                                                                                                                                            | **done**       | W0 ✓; consumes `aws/logs-insights` (`M3LLogsInsightsClient`, ADR-0027)           |
+| **W2** | `sqs-etl`                                                                                                                                                                  | **done**       | W0 ✓; consumes `aws/sqs` (`M3LSQSOperations`, ADR-0026)                          |
+| **W3** | `s3-objects`, `lambda-ops`, `ecs-ops`, `cloudformation-stacks`, `codepipeline-ops`, `eventbridge-schedules`                                                                | pending        | existing getters ✓; thin op-dispatch over the W1/W2 skeleton; names per ADR-0028 |
+| **W4** | `athena-query` (Athena via existing getter; `pg`/`mongodb` dropped), `eks-ops` (EKS control-plane only), `api-gateway-client` (SigV4 via a future library signing wrapper) | pending        | all consume library wrappers only (ADR-0029); names per ADR-0028                 |
+| **W5** | Promotion pass — steps duplicated across ≥2 scripts graduate into the library                                                                                              | pending        | ≥2 scripts existing to observe duplication                                       |
 
 Sequencing: W2 proves the scale architecture; W3 is mechanical over existing
-clients; W4 last (each has a dependency decision); W5 is the standing F4 loop.
+clients; W4 last (each needs a new library wrapper first, ADR-0029); W5 is the
+standing F4 loop.
 
 ## Priority 2 — Gated / deferred
 
@@ -68,6 +70,22 @@ Deliberately unscheduled until their gate opens (ADR-0021 D4/D5 intake).
 | **TypeScript 6→7 toolchain upgrade** (deliberate hold)                               | TS7 verified across the toolchain (typescript-eslint, vitest, `tsc -b`) + a toolchain-upgrade decision (`check:deps` notice, PR #95)                     |
 | **External code-index MCP** (ADR-0012, re-affirmed by ADR-0023)                      | W2–W4 fleet landed + observed spoke grep friction the catalog/symbol-map can't answer                                                                    |
 | **ADR-0025** dynamic-workflows pilot (`auditing` fan-out + adversarial verification) | governance prerequisites land — `.claude/workflows/` surface validated against the MODEL-MATRIX and a token/agent-count guardrail defined (see ADR-0025) |
+
+## Governance follow-ups (ADR-0028 / ADR-0029)
+
+Filed by the 2026-07-15 fleet-governance audit
+([plan](./plans/archive/2026-07-15-fleet-governance-reconciliation.md)). Each
+is its own PR; the renames T1–T3 clear the ADR-0028 noncompliance ledger.
+
+| Item   | What                                                                  | Notes                                                                                                                                                                                                                                                                                                 |
+| ------ | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **T1** | Rename script `dynamo-crud` → `dynamodb-crud`                         | ~85 live refs: directory, package name, root `tsconfig.json` ref, reference-page filename, W2 row here, ADR-0027 fleet-example mention; `docs/logs/` + `docs/plans/archive/` filenames stay (immutable history); full gates + `/syncing-docs` after                                                   |
+| **T2** | Rename script `logs-insights` → `cloudwatch-logs-insights`            | same shape as T1                                                                                                                                                                                                                                                                                      |
+| **T3** | Rename submodule `aws/logs-insights` → `aws/cloudwatch-logs-insights` | src dir + barrel line in `src/aws/index.ts`, reference page + provenance sidecar filenames, `gen:index` regen; no public subpath change; symbols keep `M3LLogsInsights*` names unless that PR ratifies otherwise (renaming them is semver-major)                                                      |
+| **T4** | Track today-untracked count literals in `bin/lib/count-sites.mjs`     | add sites for CLAUDE.md's AWS-barrel comment (`/AWS namespace barrel \((\d+) submodules/`) and this file's two header counts — the literals the audit found rotted (CLAUDE.md said 4, actual 6; this file said 24/24, actual 25/25)                                                                   |
+| **T5** | Scaffold naming check (ADR-0028)                                      | extend `bin/lib/script-scaffold.mjs` (today: kebab-case regex only) + `check:script-scaffold` with the full-service-name rule                                                                                                                                                                         |
+| **T6** | Script dependency check (ADR-0029)                                    | assert every `scripts/*/package.json` declares dependencies == exactly `{"@m3l-automation/m3l-common": "workspace:*"}` and no devDependencies (extend `check:deps` or a new `check:*`); optional ESLint hardening: ban all bare imports under `scripts/*/src` except the library and `node:` builtins |
+| **T7** | Synthetic test for `bin/lib/count-sites.mjs` `deriveCounts()`         | fixture-based coverage candidate from `docs/logs/2026-07-13-aws-sqs.md`, previously filed nowhere                                                                                                                                                                                                     |
 
 ## Maintenance
 
