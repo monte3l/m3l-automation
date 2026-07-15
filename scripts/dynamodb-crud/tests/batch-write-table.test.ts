@@ -20,10 +20,10 @@ import type { BatchWriteTableResult } from "../src/steps/batch-write-table.js";
 import { batchWriteTable } from "../src/steps/batch-write-table.js";
 
 /**
- * Contract: docs/reference/scripts/dynamo-crud.md, `batch-write-table` row.
+ * Contract: docs/reference/scripts/dynamodb-crud.md, `batch-write-table` row.
  * Given an already-parsed `AsyncIterable<Record<string, unknown>>` (reading
  * the input file and writing `failed.jsonl` are out of scope for this step —
- * that's `run-dynamo-crud`'s job), `batchWriteTable`:
+ * that's `run-dynamodb-crud`'s job), `batchWriteTable`:
  *  - chunks into groups of at most 25 items (DynamoDB's `BatchWriteItem` cap);
  *  - dispatches each chunk to `AWS.batchWriteItems` (mode "write") or
  *    `AWS.batchDeleteItems` (mode "delete") — never both;

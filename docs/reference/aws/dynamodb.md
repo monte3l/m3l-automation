@@ -10,8 +10,8 @@ consumer (library or script) ever imports `@aws-sdk/lib-dynamodb` or
 
 ## Origin
 
-Surfaced as library friction while implementing the `dynamo-crud` W2 consumer
-script (`scripts/dynamo-crud`): the script's contract required constructing
+Surfaced as library friction while implementing the `dynamodb-crud` W2 consumer
+script (`scripts/dynamodb-crud`): the script's contract required constructing
 `GetCommand`/`PutCommand`/`UpdateCommand`/`DeleteCommand`/`QueryCommand`/
 `ScanCommand`/`BatchWriteCommand`/`DescribeTableCommand`, which would have
 required the script to depend on `@aws-sdk/lib-dynamodb` /
@@ -49,7 +49,7 @@ namespace):
 
 - **Pages, not items, from `queryItems`/`scanSegment`.** Both yield
   `AsyncGenerator<DynamoDBPage>` — `{ items, lastEvaluatedKey }` — rather than
-  individual items, so a caller (e.g. `dynamo-crud`'s checkpoint/resume
+  individual items, so a caller (e.g. `dynamodb-crud`'s checkpoint/resume
   convention) can persist `lastEvaluatedKey` between pages without buffering
   the whole result set.
 - **No retry inside `batchWriteItems`/`batchDeleteItems`.** Both return
@@ -79,7 +79,7 @@ the 25-item batch cap). Callers narrow via `code === "ERR_DYNAMODB_OPERATION"`.
 
 - Whether `queryItems`' equality-only key condition needs a follow-up (e.g. a
   sort-key operator like `begins_with`/`between`) — deferred until a real
-  consumer needs more than equality (see `dynamo-crud`'s contract page, which
+  consumer needs more than equality (see `dynamodb-crud`'s contract page, which
   also reuses `key` as an equality condition for its first cut).
 - Whether `updateItem`'s generated `SET`-only expression needs a `REMOVE` path
   for patch fields explicitly set to `undefined` — decide against a concrete
@@ -89,4 +89,4 @@ the 25-item batch cap). Callers narrow via `code === "ERR_DYNAMODB_OPERATION"`.
 
 - [`aws/clients`](./clients.md) — the `dynamoDBDocument`/`dynamoDB` clients this module wraps.
 - [`core/errors`](../core/errors.md) — the `M3LError` hierarchy `M3LDynamoDBOperationError` extends.
-- `scripts/dynamo-crud` — the first consumer of this module (in review on a separate branch).
+- `scripts/dynamodb-crud` — the first consumer of this module (in review on a separate branch).

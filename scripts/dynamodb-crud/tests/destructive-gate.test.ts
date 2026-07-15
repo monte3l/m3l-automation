@@ -12,7 +12,7 @@ import { AWS, Core } from "@m3l-automation/m3l-common";
 import { runDestructiveGate } from "../src/steps/destructive-gate.js";
 
 /**
- * Contract: docs/reference/scripts/dynamo-crud.md, `destructive-gate` row.
+ * Contract: docs/reference/scripts/dynamodb-crud.md, `destructive-gate` row.
  * Shared confirm-gate for `delete`/`update`/`batch-delete`/`import`: prints
  * the target table + an approximate item-count estimate (`AWS.describeTable`)
  * and requires confirmation before proceeding. `confirm` is an injected
