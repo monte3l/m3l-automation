@@ -154,7 +154,7 @@ packages/
     src/
       index.ts          # main entry / public barrel (re-exports Core + AWS)
       core/index.ts     # Core namespace barrel (19 submodules surfaced here)
-      aws/index.ts      # AWS namespace barrel (4 submodules surfaced here)
+      aws/index.ts      # AWS namespace barrel (6 submodules surfaced here)
       internal/         # NOT exported; no "exports" entry; may change freely
     dist/               # tsc output (ESM .js + .d.ts) — generated, never edit
     tests/              # *.test.ts (Vitest)
@@ -284,7 +284,8 @@ files (so they cost nothing in unrelated sessions):
   changes: test-safety-net first, small isolated `refactor:` commits, the
   Boy-Scout rule, and the semver hazard of touching the public surface.
 - `scripts/**` → `.claude/rules/scripts.md` — consuming the library via
-  `workspace:*` and the `M3LScript` lifecycle.
+  `workspace:*` (the only dependency, ADR-0029), service naming (ADR-0028),
+  and the `M3LScript` lifecycle.
 - Deeper reference: `.claude/rules/domain-knowledge.md`.
 
 ## Interaction Style
@@ -359,6 +360,9 @@ files (so they cost nothing in unrelated sessions):
   major bump; never re-export it.
 - Stay environment-agnostic; keep runtime dependencies minimal so the
   package tree-shakes cleanly.
+- Consumer scripts depend only on `@m3l-automation/m3l-common` — no
+  script-local dependencies (ADR-0029); AWS-scoped scripts/submodules carry
+  full official service names (ADR-0028).
 - Decisions live in `docs/adr/`; see @docs/adr/README.md.
 
 ## Security
