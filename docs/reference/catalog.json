@@ -450,6 +450,25 @@
   },
   {
     "namespace": "aws",
+    "name": "cloudwatch-logs-insights",
+    "importPath": "@m3l-automation/m3l-common/aws",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/aws/cloudwatch-logs-insights.md",
+    "symbols": [
+      "M3LLogsInsightsClient",
+      "LogsInsightsAwaitOptions",
+      "StartLogsInsightsQueryInput",
+      "LogsInsightsQueryResult",
+      "LogsInsightsQueryStatistics",
+      "LogsInsightsQueryStatus",
+      "LogsInsightsRow",
+      "M3LLogsInsightsStartQueryError",
+      "M3LLogsInsightsQueryFailedError"
+    ]
+  },
+  {
+    "namespace": "aws",
     "name": "credentials",
     "importPath": "@m3l-automation/m3l-common/aws",
     "status": "✅",
@@ -475,25 +494,6 @@
       "batchDeleteItems",
       "describeTable",
       "M3LDynamoDBOperationError"
-    ]
-  },
-  {
-    "namespace": "aws",
-    "name": "logs-insights",
-    "importPath": "@m3l-automation/m3l-common/aws",
-    "status": "✅",
-    "wired": true,
-    "docPath": "docs/reference/aws/logs-insights.md",
-    "symbols": [
-      "M3LLogsInsightsClient",
-      "LogsInsightsAwaitOptions",
-      "StartLogsInsightsQueryInput",
-      "LogsInsightsQueryResult",
-      "LogsInsightsQueryStatistics",
-      "LogsInsightsQueryStatus",
-      "LogsInsightsRow",
-      "M3LLogsInsightsStartQueryError",
-      "M3LLogsInsightsQueryFailedError"
     ]
   },
   {

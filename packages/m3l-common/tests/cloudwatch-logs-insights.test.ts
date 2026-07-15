@@ -1,9 +1,9 @@
 /**
- * Tests for aws/logs-insights submodule.
+ * Tests for aws/cloudwatch-logs-insights submodule.
  *
- * Contract source: docs/reference/aws/logs-insights.md, ADR-0027.
+ * Contract source: docs/reference/aws/cloudwatch-logs-insights.md, ADR-0027.
  *
- * Exports under test (from `../src/aws/logs-insights/index.js`, following
+ * Exports under test (from `../src/aws/cloudwatch-logs-insights/index.js`, following
  * the package's `../src/aws/index.js` barrel): M3LLogsInsightsClient,
  * M3LLogsInsightsStartQueryError, M3LLogsInsightsQueryFailedError.
  *
@@ -42,8 +42,8 @@ import {
   M3LLogsInsightsClient,
   M3LLogsInsightsQueryFailedError,
   M3LLogsInsightsStartQueryError,
-} from "../src/aws/logs-insights/index.js";
-import type { LogsInsightsQueryResult } from "../src/aws/logs-insights/index.js";
+} from "../src/aws/cloudwatch-logs-insights/index.js";
+import type { LogsInsightsQueryResult } from "../src/aws/cloudwatch-logs-insights/index.js";
 
 function fakeClient(send: (command: unknown) => unknown): CloudWatchLogsClient {
   return { send } as unknown as CloudWatchLogsClient;

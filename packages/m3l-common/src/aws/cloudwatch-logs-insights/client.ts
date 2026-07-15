@@ -1,5 +1,5 @@
 /**
- * `aws/logs-insights/client` — `M3LLogsInsightsClient`, a typed wrapper over
+ * `aws/cloudwatch-logs-insights/client` — `M3LLogsInsightsClient`, a typed wrapper over
  * CloudWatch Logs Insights query execution.
  *
  * @packageDocumentation

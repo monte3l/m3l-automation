@@ -1,5 +1,5 @@
 /**
- * `aws/logs-insights` — a typed CloudWatch Logs Insights query wrapper, so
+ * `aws/cloudwatch-logs-insights` — a typed CloudWatch Logs Insights query wrapper, so
  * consumer scripts never need to import `@aws-sdk/client-cloudwatch-logs`
  * directly (ADR-0027).
  *
