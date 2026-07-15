@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { planTimeWindows } from "../../src/steps/time-range.js";
 
 /**
- * Contract: docs/reference/scripts/logs-insights.md, `time-range` row. Pure
+ * Contract: docs/reference/scripts/cloudwatch-logs-insights.md, `time-range` row. Pure
  * function splitting `[startEpochSeconds, endEpochSeconds)` into an ordered
  * array of fixed-size `{ startTime, endTime }` windows of
  * `windowMinutes * 60` seconds — the final window is shorter when the range

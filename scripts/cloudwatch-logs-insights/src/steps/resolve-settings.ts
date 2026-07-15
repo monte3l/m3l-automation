@@ -1,6 +1,6 @@
 /**
- * `steps/resolve-settings` — parses the resolved `logs-insights` config into
- * a typed run-settings object.
+ * `steps/resolve-settings` — parses the resolved `cloudwatch-logs-insights`
+ * config into a typed run-settings object.
  *
  * Business logic lives here — never in `main.ts`. Presence/non-emptiness of
  * `start`/`end` (and every other required parameter) is already enforced by
@@ -54,8 +54,9 @@ class LogsInsightsSettingsError extends Core.M3LError {
 }
 
 /**
- * The typed, run-ready settings `run-logs-insights.ts` composes against —
- * the resolved config plus `start`/`end` converted to epoch seconds.
+ * The typed, run-ready settings `run-cloudwatch-logs-insights.ts` composes
+ * against — the resolved config plus `start`/`end` converted to epoch
+ * seconds.
  */
 export interface LogsInsightsRunSettings {
   /** Log group names, forwarded verbatim to every window's `StartQuery`. */
@@ -154,7 +155,7 @@ function parseEpochSeconds(value: unknown, name: string): number {
 }
 
 /**
- * Parses the resolved `logs-insights` config into a typed
+ * Parses the resolved `cloudwatch-logs-insights` config into a typed
  * {@link LogsInsightsRunSettings}, converting `start`/`end` to epoch seconds
  * and guarding the cross-parameter constraint `start < end`.
  *

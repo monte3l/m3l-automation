@@ -8,7 +8,7 @@ import {
 } from "../../src/steps/resolve-settings.js";
 
 /**
- * Contract: docs/reference/scripts/logs-insights.md, `resolve-settings` row +
+ * Contract: docs/reference/scripts/cloudwatch-logs-insights.md, `resolve-settings` row +
  * the "Required parameters" paragraph. Parses the resolved config into a
  * typed run-settings object: ISO-8601 `start`/`end` -> epoch seconds
  * (throwing on an unparseable string or `start >= end`), plus the
