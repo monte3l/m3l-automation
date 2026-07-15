@@ -53,12 +53,12 @@ vi.mock("../src/steps/scan-table.js", async (importOriginal) => {
 
 import { AWS, Core } from "@m3l-automation/m3l-common";
 
-import type { RunDynamoCrudSummary } from "../src/steps/run-dynamo-crud.js";
-import { runDynamoCrud } from "../src/steps/run-dynamo-crud.js";
+import type { RunDynamodbCrudSummary } from "../src/steps/run-dynamodb-crud.js";
+import { runDynamodbCrud } from "../src/steps/run-dynamodb-crud.js";
 import { scanTable } from "../src/steps/scan-table.js";
 
 /**
- * Contract: docs/reference/scripts/dynamo-crud.md, `run-dynamo-crud` row —
+ * Contract: docs/reference/scripts/dynamodb-crud.md, `run-dynamodb-crud` row —
  * the orchestrator. Resolves + guard-checks the 12 declared config
  * parameters, dispatches to the destructive gate (when applicable) and then
  * to whichever of `single-item-ops` / `scan-table` / `batch-write-table`
@@ -188,7 +188,7 @@ const BASE_CONFIG: Record<string, unknown> = {
 function buildDeps(
   configValues: Record<string, unknown>,
   overrides?: { readonly confirm?: (message: string) => Promise<boolean> },
-): Parameters<typeof runDynamoCrud>[0] {
+): Parameters<typeof runDynamodbCrud>[0] {
   return {
     config: buildConfig(configValues),
     paths: new Core.M3LPaths(),
@@ -242,7 +242,7 @@ async function settleWithTimers<T>(promise: Promise<T>): Promise<T> {
   return outcome.value;
 }
 
-describe("runDynamoCrud — config guards (fire before any AWS call)", () => {
+describe("runDynamodbCrud — config guards (fire before any AWS call)", () => {
   test("throws ERR_DYNAMO_CRUD_CONFIG when operation 'get' is missing 'key'", async () => {
     stubWriteFile();
     const deps = buildDeps({
@@ -253,7 +253,7 @@ describe("runDynamoCrud — config guards (fire before any AWS call)", () => {
 
     let thrown: unknown;
     try {
-      await runDynamoCrud(deps);
+      await runDynamodbCrud(deps);
     } catch (error) {
       thrown = error;
     }
@@ -265,7 +265,7 @@ describe("runDynamoCrud — config guards (fire before any AWS call)", () => {
   test("throws ERR_DYNAMO_CRUD_CONFIG when operation 'delete' is missing 'key'", async () => {
     const deps = buildDeps({ ...BASE_CONFIG, operation: "delete" });
 
-    await expect(runDynamoCrud(deps)).rejects.toMatchObject({
+    await expect(runDynamodbCrud(deps)).rejects.toMatchObject({
       code: "ERR_DYNAMO_CRUD_CONFIG",
     });
     expect(deleteItemMock).not.toHaveBeenCalled();
@@ -275,7 +275,7 @@ describe("runDynamoCrud — config guards (fire before any AWS call)", () => {
   test("throws ERR_DYNAMO_CRUD_CONFIG when operation 'put' is missing 'item'", async () => {
     const deps = buildDeps({ ...BASE_CONFIG, operation: "put" });
 
-    await expect(runDynamoCrud(deps)).rejects.toMatchObject({
+    await expect(runDynamodbCrud(deps)).rejects.toMatchObject({
       code: "ERR_DYNAMO_CRUD_CONFIG",
     });
     expect(putItemMock).not.toHaveBeenCalled();
@@ -288,7 +288,7 @@ describe("runDynamoCrud — config guards (fire before any AWS call)", () => {
       item: JSON.stringify({ status: "shipped" }),
     });
 
-    await expect(runDynamoCrud(deps)).rejects.toMatchObject({
+    await expect(runDynamodbCrud(deps)).rejects.toMatchObject({
       code: "ERR_DYNAMO_CRUD_CONFIG",
     });
     expect(updateItemMock).not.toHaveBeenCalled();
@@ -302,7 +302,7 @@ describe("runDynamoCrud — config guards (fire before any AWS call)", () => {
       key: JSON.stringify({ id: "42" }),
     });
 
-    await expect(runDynamoCrud(deps)).rejects.toMatchObject({
+    await expect(runDynamodbCrud(deps)).rejects.toMatchObject({
       code: "ERR_DYNAMO_CRUD_CONFIG",
     });
     expect(updateItemMock).not.toHaveBeenCalled();
@@ -317,7 +317,7 @@ describe("runDynamoCrud — config guards (fire before any AWS call)", () => {
       output: "out.jsonl",
     });
 
-    await expect(runDynamoCrud(deps)).rejects.toMatchObject({
+    await expect(runDynamodbCrud(deps)).rejects.toMatchObject({
       code: "ERR_DYNAMO_CRUD_CONFIG",
     });
     expect(queryItemsMock).not.toHaveBeenCalled();
@@ -332,7 +332,7 @@ describe("runDynamoCrud — config guards (fire before any AWS call)", () => {
         key: JSON.stringify({ id: "42" }),
       });
 
-      await expect(runDynamoCrud(deps)).rejects.toMatchObject({
+      await expect(runDynamodbCrud(deps)).rejects.toMatchObject({
         code: "ERR_DYNAMO_CRUD_CONFIG",
       });
       expect(getItemMock).not.toHaveBeenCalled();
@@ -346,7 +346,7 @@ describe("runDynamoCrud — config guards (fire before any AWS call)", () => {
     async (operation) => {
       const deps = buildDeps({ ...BASE_CONFIG, operation });
 
-      await expect(runDynamoCrud(deps)).rejects.toMatchObject({
+      await expect(runDynamodbCrud(deps)).rejects.toMatchObject({
         code: "ERR_DYNAMO_CRUD_CONFIG",
       });
       expect(batchWriteItemsMock).not.toHaveBeenCalled();
@@ -365,7 +365,7 @@ describe("runDynamoCrud — config guards (fire before any AWS call)", () => {
 
     let thrown: unknown;
     try {
-      await runDynamoCrud(deps);
+      await runDynamodbCrud(deps);
     } catch (error) {
       thrown = error;
     }
@@ -384,7 +384,7 @@ describe("runDynamoCrud — config guards (fire before any AWS call)", () => {
 
     let thrown: unknown;
     try {
-      await runDynamoCrud(deps);
+      await runDynamodbCrud(deps);
     } catch (error) {
       thrown = error;
     }
@@ -403,7 +403,7 @@ describe("runDynamoCrud — config guards (fire before any AWS call)", () => {
       output: "out.jsonl",
     });
 
-    await expect(runDynamoCrud(deps)).rejects.toMatchObject({
+    await expect(runDynamodbCrud(deps)).rejects.toMatchObject({
       code: "ERR_DYNAMO_CRUD_CONFIG",
     });
     expect(getItemMock).not.toHaveBeenCalled();
@@ -415,7 +415,7 @@ describe("runDynamoCrud — config guards (fire before any AWS call)", () => {
       operation: "frobnicate",
     });
 
-    await expect(runDynamoCrud(deps)).rejects.toMatchObject({
+    await expect(runDynamodbCrud(deps)).rejects.toMatchObject({
       code: "ERR_DYNAMO_CRUD_CONFIG",
     });
     expect(getItemMock).not.toHaveBeenCalled();
@@ -423,7 +423,7 @@ describe("runDynamoCrud — config guards (fire before any AWS call)", () => {
   });
 });
 
-describe("runDynamoCrud — destructive-operation gate", () => {
+describe("runDynamodbCrud — destructive-operation gate", () => {
   test("soft-lands on ERR_DYNAMO_CRUD_ABORTED: returns an all-zero summary and does not throw, logging a warning", async () => {
     describeTableMock.mockResolvedValue({
       itemCount: 10,
@@ -440,7 +440,7 @@ describe("runDynamoCrud — destructive-operation gate", () => {
     );
     const warningSpy = vi.spyOn(deps.logger, "warning");
 
-    const summary = await runDynamoCrud(deps);
+    const summary = await runDynamodbCrud(deps);
 
     expect(summary).toEqual({ read: 0, written: 0, failed: 0, skipped: 0 });
     expect(deleteItemMock).not.toHaveBeenCalled();
@@ -464,12 +464,12 @@ describe("runDynamoCrud — destructive-operation gate", () => {
       { confirm },
     );
 
-    await expect(runDynamoCrud(deps)).rejects.toThrow();
+    await expect(runDynamodbCrud(deps)).rejects.toThrow();
     expect(updateItemMock).not.toHaveBeenCalled();
   });
 });
 
-describe("runDynamoCrud — operation dispatch routing", () => {
+describe("runDynamodbCrud — operation dispatch routing", () => {
   test("'get' calls AWS.getItem and reports it as a read, not a write", async () => {
     stubWriteFile();
     getItemMock.mockResolvedValue({ id: "42", status: "paid" });
@@ -481,7 +481,7 @@ describe("runDynamoCrud — operation dispatch routing", () => {
     });
     const stepSpy = vi.spyOn(deps.logger, "step");
 
-    const summary = await runDynamoCrud(deps);
+    const summary = await runDynamodbCrud(deps);
 
     expect(getItemMock).toHaveBeenCalledWith(fakeDynamoDBDocument, "orders", {
       id: "42",
@@ -500,7 +500,7 @@ describe("runDynamoCrud — operation dispatch routing", () => {
       item: JSON.stringify(item),
     });
 
-    const summary = await runDynamoCrud(deps);
+    const summary = await runDynamodbCrud(deps);
 
     expect(putItemMock).toHaveBeenCalledWith(
       fakeDynamoDBDocument,
@@ -530,7 +530,7 @@ describe("runDynamoCrud — operation dispatch routing", () => {
       { confirm },
     );
 
-    const summary = await runDynamoCrud(deps);
+    const summary = await runDynamodbCrud(deps);
 
     expect(describeTableMock).toHaveBeenCalledWith(fakeDynamoDB, "orders");
     expect(confirm).toHaveBeenCalledTimes(1);
@@ -556,7 +556,7 @@ describe("runDynamoCrud — operation dispatch routing", () => {
       { confirm },
     );
 
-    const summary = await runDynamoCrud(deps);
+    const summary = await runDynamodbCrud(deps);
 
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(deleteItemMock).toHaveBeenCalledWith(
@@ -588,7 +588,7 @@ describe("runDynamoCrud — operation dispatch routing", () => {
       output: "out.jsonl",
     });
 
-    const summary = await runDynamoCrud(deps);
+    const summary = await runDynamodbCrud(deps);
 
     expect(queryItemsMock).toHaveBeenCalled();
     expect(summary).toEqual({ read: 2, written: 0, failed: 0, skipped: 0 });
@@ -615,7 +615,7 @@ describe("runDynamoCrud — operation dispatch routing", () => {
       output: "out.jsonl",
     });
 
-    const summary = await runDynamoCrud(deps);
+    const summary = await runDynamodbCrud(deps);
 
     expect(scanSegmentMock).toHaveBeenCalled();
     expect(queryItemsMock).not.toHaveBeenCalled();
@@ -637,7 +637,7 @@ describe("runDynamoCrud — operation dispatch routing", () => {
       output: "out.jsonl",
     });
 
-    const summary = await runDynamoCrud(deps);
+    const summary = await runDynamodbCrud(deps);
 
     expect(scanSegmentMock).toHaveBeenCalled();
     expect(summary).toEqual({ read: 1, written: 0, failed: 0, skipped: 0 });
@@ -655,7 +655,7 @@ describe("runDynamoCrud — operation dispatch routing", () => {
       input: "in.jsonl",
     });
 
-    const summary = await runDynamoCrud(deps);
+    const summary = await runDynamodbCrud(deps);
 
     expect(batchWriteItemsMock).toHaveBeenCalled();
     expect(batchDeleteItemsMock).not.toHaveBeenCalled();
@@ -677,7 +677,7 @@ describe("runDynamoCrud — operation dispatch routing", () => {
       { confirm },
     );
 
-    const summary = await runDynamoCrud(deps);
+    const summary = await runDynamodbCrud(deps);
 
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(batchDeleteItemsMock).toHaveBeenCalled();
@@ -700,7 +700,7 @@ describe("runDynamoCrud — operation dispatch routing", () => {
       { confirm },
     );
 
-    const summary = await runDynamoCrud(deps);
+    const summary = await runDynamodbCrud(deps);
 
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(batchWriteItemsMock).toHaveBeenCalled();
@@ -708,7 +708,7 @@ describe("runDynamoCrud — operation dispatch routing", () => {
   });
 });
 
-describe("runDynamoCrud — bad record vs. source failure (batch input)", () => {
+describe("runDynamodbCrud — bad record vs. source failure (batch input)", () => {
   test("a single malformed input line is skipped-and-counted while good records still get written", async () => {
     stubInputFile(
       ['{"id":"1"}', "not-json", '{"id":"2"}', '{"id":"3"}'].join("\n"),
@@ -722,7 +722,7 @@ describe("runDynamoCrud — bad record vs. source failure (batch input)", () => 
       input: "in.jsonl",
     });
 
-    const summary = await runDynamoCrud(deps);
+    const summary = await runDynamodbCrud(deps);
 
     expect(summary).toEqual({ read: 3, written: 3, failed: 0, skipped: 1 });
     expect(batchWriteItemsMock).toHaveBeenCalled();
@@ -739,12 +739,12 @@ describe("runDynamoCrud — bad record vs. source failure (batch input)", () => 
       input: "missing.jsonl",
     });
 
-    await expect(runDynamoCrud(deps)).rejects.toThrow();
+    await expect(runDynamodbCrud(deps)).rejects.toThrow();
     expect(batchWriteItemsMock).not.toHaveBeenCalled();
   });
 });
 
-describe("runDynamoCrud — checkpoint path keyed to runName/operation+tableName (fix #1)", () => {
+describe("runDynamodbCrud — checkpoint path keyed to runName/operation+tableName (fix #1)", () => {
   function mockOnePageScan(): void {
     scanSegmentMock.mockImplementation(function fakeScanSegment() {
       return (async function* page() {
@@ -763,12 +763,12 @@ describe("runDynamoCrud — checkpoint path keyed to runName/operation+tableName
     };
 
     stubOutputStream();
-    await runDynamoCrud({
+    await runDynamodbCrud({
       ...buildDeps(configValues),
       correlationId: "run-1",
     });
     stubOutputStream();
-    await runDynamoCrud({
+    await runDynamodbCrud({
       ...buildDeps(configValues),
       correlationId: "run-2",
     });
@@ -800,7 +800,7 @@ describe("runDynamoCrud — checkpoint path keyed to runName/operation+tableName
       runName: "my-custom-job",
     });
 
-    await runDynamoCrud(deps);
+    await runDynamodbCrud(deps);
 
     expect(scanTableMock).toHaveBeenCalledTimes(1);
     const paths = new Core.M3LPaths();
@@ -816,7 +816,7 @@ describe("runDynamoCrud — checkpoint path keyed to runName/operation+tableName
   });
 });
 
-describe("runDynamoCrud — a batch run left with failed items rejects (fix #2)", () => {
+describe("runDynamodbCrud — a batch run left with failed items rejects (fix #2)", () => {
   test("'batch-write' leaving items permanently unprocessed after retry rejects with ERR_DYNAMO_CRUD_FAILED_ITEMS", async () => {
     stubInputFile(['{"id":"1"}', '{"id":"2"}', '{"id":"3"}'].join("\n"));
     stubOutputStream();
@@ -837,7 +837,7 @@ describe("runDynamoCrud — a batch run left with failed items rejects (fix #2)"
     vi.useFakeTimers();
     let thrown: unknown;
     try {
-      await settleWithTimers(runDynamoCrud(deps));
+      await settleWithTimers(runDynamodbCrud(deps));
     } catch (error) {
       thrown = error;
     } finally {
@@ -850,7 +850,7 @@ describe("runDynamoCrud — a batch run left with failed items rejects (fix #2)"
   });
 });
 
-describe("runDynamoCrud — the production retry-classifier composition actually retries (fix #3)", () => {
+describe("runDynamodbCrud — the production retry-classifier composition actually retries (fix #3)", () => {
   test("a chunk with transient unprocessed items succeeds on a later attempt instead of failing on the first", async () => {
     stubInputFile(['{"id":"1"}', '{"id":"2"}'].join("\n"));
     stubOutputStream();
@@ -875,9 +875,9 @@ describe("runDynamoCrud — the production retry-classifier composition actually
     });
 
     vi.useFakeTimers();
-    let summary: RunDynamoCrudSummary | undefined;
+    let summary: RunDynamodbCrudSummary | undefined;
     try {
-      summary = await settleWithTimers(runDynamoCrud(deps));
+      summary = await settleWithTimers(runDynamodbCrud(deps));
     } finally {
       vi.useRealTimers();
     }
@@ -894,22 +894,22 @@ describe("runDynamoCrud — the production retry-classifier composition actually
 });
 
 describe("type contract", () => {
-  test("RunDynamoCrudSummary's four fields are numbers and runDynamoCrud resolves it", () => {
-    expectTypeOf<RunDynamoCrudSummary["read"]>().toBeNumber();
-    expectTypeOf<RunDynamoCrudSummary["written"]>().toBeNumber();
-    expectTypeOf<RunDynamoCrudSummary["failed"]>().toBeNumber();
-    expectTypeOf<RunDynamoCrudSummary["skipped"]>().toBeNumber();
-    expectTypeOf(runDynamoCrud).returns.toEqualTypeOf<
-      Promise<RunDynamoCrudSummary>
+  test("RunDynamodbCrudSummary's four fields are numbers and runDynamodbCrud resolves it", () => {
+    expectTypeOf<RunDynamodbCrudSummary["read"]>().toBeNumber();
+    expectTypeOf<RunDynamodbCrudSummary["written"]>().toBeNumber();
+    expectTypeOf<RunDynamodbCrudSummary["failed"]>().toBeNumber();
+    expectTypeOf<RunDynamodbCrudSummary["skipped"]>().toBeNumber();
+    expectTypeOf(runDynamodbCrud).returns.toEqualTypeOf<
+      Promise<RunDynamodbCrudSummary>
     >();
   });
 
-  test("runDynamoCrud's deps.dynamoDBDocument/dynamoDB are structurally derived from AWS.getItem/describeTable, never the SDK", () => {
+  test("runDynamodbCrud's deps.dynamoDBDocument/dynamoDB are structurally derived from AWS.getItem/describeTable, never the SDK", () => {
     expectTypeOf<
-      Parameters<typeof runDynamoCrud>[0]["dynamoDBDocument"]
+      Parameters<typeof runDynamodbCrud>[0]["dynamoDBDocument"]
     >().toEqualTypeOf<Parameters<typeof AWS.getItem>[0]>();
     expectTypeOf<
-      Parameters<typeof runDynamoCrud>[0]["dynamoDB"]
+      Parameters<typeof runDynamodbCrud>[0]["dynamoDB"]
     >().toEqualTypeOf<Parameters<typeof AWS.describeTable>[0]>();
   });
 });

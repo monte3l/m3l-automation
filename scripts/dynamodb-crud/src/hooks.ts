@@ -40,10 +40,10 @@ export function getCorrelationId(): string {
 }
 
 /**
- * Lifecycle hooks for `dynamo-crud`. All eight hooks are optional and run
+ * Lifecycle hooks for `dynamodb-crud`. All eight hooks are optional and run
  * in the fixed order documented in `docs/reference/core/script.md`.
  * `onBeforeRun` captures `ctx.correlationId` into this module's holder so
- * the composition root (`main.ts`) can thread it into `runDynamoCrud`, since
+ * the composition root (`main.ts`) can thread it into `runDynamodbCrud`, since
  * `mainFn` itself receives no hook context.
  */
 export const hooks: Core.M3LScriptLifecycleHooks = {

@@ -4,7 +4,7 @@ import { AWS, Core } from "@m3l-automation/m3l-common";
  * The four single-item DynamoDB operations this step drives: a plain
  * `getItem`/`putItem`/`updateItem`/`deleteItem` round-trip against one
  * key/item. `delete`/`update` are destructive — the orchestrator
- * (`run-dynamo-crud`) decides whether to route them through the
+ * (`run-dynamodb-crud`) decides whether to route them through the
  * destructive-operation gate before calling this step; this step never
  * gates itself.
  */

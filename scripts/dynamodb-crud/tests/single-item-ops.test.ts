@@ -3,11 +3,11 @@ import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 import type * as M3LCommonModule from "@m3l-automation/m3l-common";
 
 /**
- * Contract: docs/reference/scripts/dynamo-crud.md, `single-item-ops` row +
+ * Contract: docs/reference/scripts/dynamodb-crud.md, `single-item-ops` row +
  * docs/reference/aws/dynamodb.md (`getItem`/`putItem`/`updateItem`/`deleteItem`).
  * `get`/`put`/`update`/`delete` against one key/item via the mocked `AWS.*`
  * item operations. This step does NOT call the destructive-operation gate
- * itself — the `run-dynamo-crud` orchestrator decides whether to gate
+ * itself — the `run-dynamodb-crud` orchestrator decides whether to gate
  * `delete`/`update` before invoking this step. `key`/`item` arrive already
  * JSON-parsed plain objects (parsing happens in the orchestrator, not here).
  */

@@ -2,7 +2,7 @@ import { Core } from "@m3l-automation/m3l-common";
 
 import { configParameters } from "./config.js";
 import { getCorrelationId, hooks } from "./hooks.js";
-import { runDynamoCrud } from "./steps/run-dynamo-crud.js";
+import { runDynamodbCrud } from "./steps/run-dynamodb-crud.js";
 
 // Composition root ONLY (ADR-0022): construct the script, wire config/hooks,
 // and run the step. Any conditional, loop, or I/O beyond wiring belongs in a
@@ -15,7 +15,7 @@ import { runDynamoCrud } from "./steps/run-dynamo-crud.js";
 // `hooks.onBeforeRun` (mainFn itself receives no `ctx`) and read back via
 // `getCorrelationId()`.
 const script = new Core.M3LScript({
-  metadata: { name: "dynamo-crud", version: "0.0.0" },
+  metadata: { name: "dynamodb-crud", version: "0.0.0" },
   config: { params: configParameters },
   hooks,
 });
@@ -31,16 +31,16 @@ await script.run(async () => {
   const aws = script.aws;
   if (aws === undefined) {
     throw new Core.M3LError(
-      "dynamo-crud: script.aws was not provisioned despite declaring 'aws.profile'",
+      "dynamodb-crud: script.aws was not provisioned despite declaring 'aws.profile'",
       { code: "ERR_DYNAMO_CRUD_CONFIG" },
     );
   }
 
   // Any failure (including a partial batch failure left `failed > 0`, which
-  // `runDynamoCrud` itself turns into an `ERR_DYNAMO_CRUD_FAILED_ITEMS`
+  // `runDynamodbCrud` itself turns into an `ERR_DYNAMO_CRUD_FAILED_ITEMS`
   // throw) propagates out through `M3LScript.run` unchanged — that decision
-  // is `runDynamoCrud`'s to make, not this composition root's.
-  await runDynamoCrud({
+  // is `runDynamodbCrud`'s to make, not this composition root's.
+  await runDynamodbCrud({
     config,
     paths,
     logger: script.logger,

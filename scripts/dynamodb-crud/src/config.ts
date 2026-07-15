@@ -25,7 +25,7 @@ const PROGRESS_EVERY_RECORDS_DEFAULT = 10_000;
 
 const RESUME_DEFAULT = false;
 
-/** The ten operations `dynamo-crud` supports. */
+/** The ten operations `dynamodb-crud` supports. */
 export const DYNAMO_OPERATIONS = [
   "get",
   "put",
@@ -40,7 +40,7 @@ export const DYNAMO_OPERATIONS = [
 ] as const;
 
 /**
- * The declared configuration schema for `dynamo-crud` — the script's only
+ * The declared configuration schema for `dynamodb-crud` — the script's only
  * input seam. Never read `process.env` directly (the scripts ESLint zone bans
  * it); declare a parameter here instead so resolution, coercion, validation,
  * and redaction all flow through the library.
@@ -54,7 +54,7 @@ export const DYNAMO_OPERATIONS = [
  * per-operation requirements (e.g. `key` for `get`, `input` for
  * `batch-write`) are cross-parameter constraints a single parameter's
  * validator cannot express, so they are guard-checked at run start instead
- * (see `steps/run-dynamo-crud.ts`).
+ * (see `steps/run-dynamodb-crud.ts`).
  */
 export const configParameters: readonly Core.M3LConfigParameter[] = [
   new Core.M3LConfigParameter({

@@ -13,7 +13,7 @@ import type { SingleItemOperation } from "./single-item-ops.js";
 import { runSingleItemOp } from "./single-item-ops.js";
 import { scanTable } from "./scan-table.js";
 
-/** The closed union of `dynamo-crud`'s declared `operation` values. */
+/** The closed union of `dynamodb-crud`'s declared `operation` values. */
 type DynamoOperation = (typeof DYNAMO_OPERATIONS)[number];
 
 /** Operations that route through {@link runDestructiveGate} before proceeding. */
@@ -24,8 +24,8 @@ const DESTRUCTIVE_OPERATIONS: ReadonlySet<DynamoOperation> = new Set([
   "import",
 ]);
 
-/** The run summary `run-dynamo-crud` reports: items read/written/failed/skipped. */
-export interface RunDynamoCrudSummary {
+/** The run summary `run-dynamodb-crud` reports: items read/written/failed/skipped. */
+export interface RunDynamodbCrudSummary {
   /** Items read (fetched, streamed, or successfully parsed from input). */
   readonly read: number;
   /** Items DynamoDB actually confirmed written/updated/deleted. */
@@ -56,7 +56,7 @@ interface RunSettings {
 }
 
 /** The dependencies every per-operation dispatcher needs, once `config` has resolved to `settings`. */
-interface RunDynamoCrudDeps {
+interface RunDynamodbCrudDeps {
   readonly paths: Core.M3LPaths;
   readonly logger: Core.M3LLogger;
   readonly correlationId: string;
@@ -289,8 +289,8 @@ async function writeSingleResult(
 async function dispatchSingleItem(
   operation: SingleItemOperation,
   settings: RunSettings,
-  deps: RunDynamoCrudDeps,
-): Promise<RunDynamoCrudSummary> {
+  deps: RunDynamodbCrudDeps,
+): Promise<RunDynamodbCrudSummary> {
   const result = await runSingleItemOp({
     dynamoDBDocument: deps.dynamoDBDocument,
     operation,
@@ -326,12 +326,12 @@ async function sleep(ms: number): Promise<void> {
 
 /** Logs a progress line every `progressEveryRecords` records read. */
 function logProgressIfDue(
-  deps: RunDynamoCrudDeps,
+  deps: RunDynamodbCrudDeps,
   read: number,
   progressEveryRecords: number,
 ): void {
   if (read % progressEveryRecords === 0) {
-    deps.logger.step(`dynamo-crud run ${deps.correlationId} progress`, {
+    deps.logger.step(`dynamodb-crud run ${deps.correlationId} progress`, {
       read,
     });
   }
@@ -382,7 +382,7 @@ async function streamToExporter(
       }
     }
     if (cause instanceof Core.M3LError) throw cause;
-    throw new Core.M3LError("dynamo-crud scan/query/export failed", {
+    throw new Core.M3LError("dynamodb-crud scan/query/export failed", {
       code: "ERR_DYNAMO_CRUD_OUTPUT",
       cause,
     });
@@ -399,7 +399,7 @@ async function streamToExporter(
  * the `${operation}-${tableName}` fallback is deterministic for a given
  * table+operation but can collide across two concurrent differently
  * configured runs against the same table+operation (documented in
- * `docs/reference/scripts/dynamo-crud.md`'s `runName` row).
+ * `docs/reference/scripts/dynamodb-crud.md`'s `runName` row).
  */
 function resolveCheckpointFileName(settings: RunSettings): string {
   return `${settings.runName ?? `${settings.operation}-${settings.tableName}`}.checkpoint.json`;
@@ -415,8 +415,8 @@ function resolveCheckpointFileName(settings: RunSettings): string {
  */
 async function dispatchScan(
   settings: RunSettings,
-  deps: RunDynamoCrudDeps,
-): Promise<RunDynamoCrudSummary> {
+  deps: RunDynamodbCrudDeps,
+): Promise<RunDynamodbCrudSummary> {
   if (settings.output === undefined) {
     // Guarded by applyOperationGuards before resolveSettings ever returns;
     // unreachable in practice, kept as a defensive type-narrowing check.
@@ -531,8 +531,8 @@ const batchRetryClassifier = Core.combineClassifiers(
  */
 async function dispatchBatch(
   settings: RunSettings,
-  deps: RunDynamoCrudDeps,
-): Promise<RunDynamoCrudSummary> {
+  deps: RunDynamodbCrudDeps,
+): Promise<RunDynamodbCrudSummary> {
   if (settings.input === undefined) {
     // Guarded by applyOperationGuards before resolveSettings ever returns;
     // unreachable in practice, kept as a defensive type-narrowing check.
@@ -594,7 +594,7 @@ async function dispatchBatch(
   };
 }
 
-/** The three dispatch families `dynamo-crud` routes operations into. */
+/** The three dispatch families `dynamodb-crud` routes operations into. */
 type DispatchGroup = "single" | "scan" | "batch";
 
 /**
@@ -636,8 +636,8 @@ function isSingleItemOperation(
  */
 async function dispatch(
   settings: RunSettings,
-  deps: RunDynamoCrudDeps,
-): Promise<RunDynamoCrudSummary> {
+  deps: RunDynamodbCrudDeps,
+): Promise<RunDynamodbCrudSummary> {
   const group = DISPATCH_GROUP[settings.operation];
   switch (group) {
     case "single": {
@@ -667,7 +667,7 @@ async function dispatch(
 }
 
 /**
- * Composes the `dynamo-crud` pipeline end to end — the only module that
+ * Composes the `dynamodb-crud` pipeline end to end — the only module that
  * knows operation dispatch order: resolve + guard-check config → (the
  * destructive-operation gate, for `delete`/`update`/`batch-delete`/`import`)
  * → the operation-appropriate read/write step → the run summary.
@@ -691,11 +691,11 @@ async function dispatch(
  * @example
  * ```typescript
  * import { Core } from "@m3l-automation/m3l-common";
- * import { runDynamoCrud } from "./run-dynamo-crud.js";
+ * import { runDynamodbCrud } from "./run-dynamodb-crud.js";
  *
- * const summary = await runDynamoCrud({
+ * const summary = await runDynamodbCrud({
  *   config: await new Core.M3LScript({
- *     metadata: { name: "dynamo-crud", version: "0.0.0" },
+ *     metadata: { name: "dynamodb-crud", version: "0.0.0" },
  *     config: { params: [] },
  *   }).getConfiguration(),
  *   paths: new Core.M3LPaths(),
@@ -708,7 +708,7 @@ async function dispatch(
  * console.log(summary.read, summary.written, summary.failed, summary.skipped);
  * ```
  */
-export async function runDynamoCrud(deps: {
+export async function runDynamodbCrud(deps: {
   readonly config: Core.M3LConfig;
   readonly paths: Core.M3LPaths;
   readonly logger: Core.M3LLogger;
@@ -716,7 +716,7 @@ export async function runDynamoCrud(deps: {
   readonly dynamoDBDocument: Parameters<typeof AWS.getItem>[0];
   readonly dynamoDB: Parameters<typeof AWS.describeTable>[0];
   readonly confirm: (message: string) => Promise<boolean>;
-}): Promise<RunDynamoCrudSummary> {
+}): Promise<RunDynamodbCrudSummary> {
   const settings = resolveSettings(deps.config);
 
   if (DESTRUCTIVE_OPERATIONS.has(settings.operation)) {
@@ -734,7 +734,7 @@ export async function runDynamoCrud(deps: {
         cause.code === "ERR_DYNAMO_CRUD_ABORTED"
       ) {
         deps.logger.warning(
-          `dynamo-crud run ${deps.correlationId} aborted before '${settings.operation}' on table '${settings.tableName}'`,
+          `dynamodb-crud run ${deps.correlationId} aborted before '${settings.operation}' on table '${settings.tableName}'`,
         );
         return { read: 0, written: 0, failed: 0, skipped: 0 };
       }
@@ -749,7 +749,7 @@ export async function runDynamoCrud(deps: {
     dynamoDBDocument: deps.dynamoDBDocument,
   });
 
-  deps.logger.step(`dynamo-crud run ${deps.correlationId} complete`, {
+  deps.logger.step(`dynamodb-crud run ${deps.correlationId} complete`, {
     read: summary.read,
     written: summary.written,
     failed: summary.failed,
@@ -762,7 +762,7 @@ export async function runDynamoCrud(deps: {
   // ADR-0022 — see main.ts's own header comment).
   if (summary.failed > 0) {
     throw new Core.M3LError(
-      `dynamo-crud run ${deps.correlationId} left ${String(summary.failed)} item(s) failed after retry`,
+      `dynamodb-crud run ${deps.correlationId} left ${String(summary.failed)} item(s) failed after retry`,
       { code: "ERR_DYNAMO_CRUD_FAILED_ITEMS", context: { ...summary } },
     );
   }

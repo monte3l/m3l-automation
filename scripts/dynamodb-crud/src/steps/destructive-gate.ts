@@ -1,7 +1,7 @@
 import { AWS, Core } from "@m3l-automation/m3l-common";
 
 /**
- * Shared confirm-gate for `dynamo-crud`'s destructive operations
+ * Shared confirm-gate for `dynamodb-crud`'s destructive operations
  * (`delete`/`update`/`batch-delete`/`import`): describes the target table's
  * approximate size (`AWS.describeTable`) and requires operator confirmation
  * before the caller proceeds. Always prompts, even when the approximate
@@ -51,7 +51,7 @@ export async function runDestructiveGate(deps: {
   );
   if (!confirmed) {
     throw new Core.M3LError(
-      `dynamo-crud: '${deps.operation}' on table '${deps.tableName}' aborted by operator`,
+      `dynamodb-crud: '${deps.operation}' on table '${deps.tableName}' aborted by operator`,
       { code: "ERR_DYNAMO_CRUD_ABORTED" },
     );
   }

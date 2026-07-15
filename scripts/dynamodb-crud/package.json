@@ -1,5 +1,5 @@
 {
-  "name": "@m3l-automation/dynamo-crud",
+  "name": "@m3l-automation/dynamodb-crud",
   "version": "0.0.0",
   "private": true,
   "type": "module",
