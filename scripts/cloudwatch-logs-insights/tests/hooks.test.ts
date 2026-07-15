@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  *
  * `checkpoint.js` is mocked so this file asserts the hook's branching in
  * isolation, mirroring the mock-collaborator pattern used for
- * `run-logs-insights.test.ts`.
+ * `run-cloudwatch-logs-insights.test.ts`.
  */
 
 const mocks = vi.hoisted(() => ({

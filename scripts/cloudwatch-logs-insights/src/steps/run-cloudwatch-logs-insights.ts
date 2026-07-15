@@ -13,7 +13,7 @@ import { planTimeWindows } from "./time-range.js";
 import type { LogsInsightsTimeWindow } from "./time-range.js";
 
 /**
- * `steps/run-logs-insights` — the `logs-insights` orchestrator.
+ * `steps/run-cloudwatch-logs-insights` — the `cloudwatch-logs-insights` orchestrator.
  *
  * Business logic lives here — never in `main.ts`. Composes
  * `resolve-settings` -\> `time-range` -\> per-window
@@ -27,7 +27,7 @@ import type { LogsInsightsTimeWindow } from "./time-range.js";
  * only ever written on full completion.
  */
 
-/** The run summary `runLogsInsights` reports back to its caller. */
+/** The run summary `runCloudwatchLogsInsights` reports back to its caller. */
 export interface LogsInsightsRunSummary {
   /** The number of time windows fully completed (query started and awaited). */
   readonly windowsCompleted: number;
@@ -80,7 +80,7 @@ async function startOrReattachQuery(args: {
     });
   } catch (cause) {
     deps.logger.error(
-      `logs-insights aborted at window ${String(index)} of ${String(totalWindows)}`,
+      `cloudwatch-logs-insights aborted at window ${String(index)} of ${String(totalWindows)}`,
     );
     throw cause;
   }
@@ -122,7 +122,7 @@ async function awaitAndAccumulate(args: {
     result = await deps.client.awaitResults(queryId);
   } catch (cause) {
     deps.logger.error(
-      `logs-insights aborted at window ${String(index)} of ${String(totalWindows)}`,
+      `cloudwatch-logs-insights aborted at window ${String(index)} of ${String(totalWindows)}`,
     );
     throw cause;
   }
@@ -161,7 +161,7 @@ async function runWindow(args: {
 }
 
 /**
- * Runs the `logs-insights` orchestration: resolves settings, plans time
+ * Runs the `cloudwatch-logs-insights` orchestration: resolves settings, plans time
  * windows, executes each remaining window's query (checkpointing before and
  * after every poll), and exports the full accumulated row set once at the
  * end.
@@ -181,7 +181,7 @@ async function runWindow(args: {
  * @example
  * ```ts
  * import type { AWS, Core } from "@m3l-automation/m3l-common";
- * import { runLogsInsights } from "./run-logs-insights.js";
+ * import { runCloudwatchLogsInsights } from "./run-cloudwatch-logs-insights.js";
  *
  * async function run(
  *   config: Core.M3LConfig,
@@ -189,12 +189,17 @@ async function runWindow(args: {
  *   client: AWS.M3LLogsInsightsClient,
  *   paths: Core.M3LPaths,
  * ): Promise<void> {
- *   const summary = await runLogsInsights({ config, logger, client, paths });
+ *   const summary = await runCloudwatchLogsInsights({
+ *     config,
+ *     logger,
+ *     client,
+ *     paths,
+ *   });
  *   logger.success(`exported ${String(summary.rowsExported)} rows`);
  * }
  * ```
  */
-export async function runLogsInsights(deps: {
+export async function runCloudwatchLogsInsights(deps: {
   readonly config: Core.M3LConfig;
   readonly logger: Core.M3LLogger;
   readonly client: AWS.M3LLogsInsightsClient;
@@ -214,7 +219,7 @@ export async function runLogsInsights(deps: {
   const accumulatedRows: LogsInsightsRow[] = [...initial.rows];
 
   deps.logger.step(
-    `logs-insights: running ${String(windows.length - initial.completedWindows)} of ${String(windows.length)} windows`,
+    `cloudwatch-logs-insights: running ${String(windows.length - initial.completedWindows)} of ${String(windows.length)} windows`,
   );
 
   for (
@@ -256,7 +261,7 @@ export async function runLogsInsights(deps: {
     rowsExported: accumulatedRows.length,
   };
   deps.logger.success(
-    `logs-insights complete: ${String(summary.windowsCompleted)} windows, ${String(summary.rowsExported)} rows exported to '${settings.output}'`,
+    `cloudwatch-logs-insights complete: ${String(summary.windowsCompleted)} windows, ${String(summary.rowsExported)} rows exported to '${settings.output}'`,
   );
   return summary;
 }

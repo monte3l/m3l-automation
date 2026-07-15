@@ -5,7 +5,7 @@ import { Core } from "@m3l-automation/m3l-common";
 import { configParameters } from "../src/config.js";
 
 /**
- * Contract: docs/reference/scripts/logs-insights.md "Configuration schema"
+ * Contract: docs/reference/scripts/cloudwatch-logs-insights.md "Configuration schema"
  * table. 10 declared parameters: aws.profile, logGroups, query, start, end,
  * windowMinutes, limit, format, output, resume.
  *
@@ -63,7 +63,7 @@ function paramNamed(name: string): Core.M3LConfigParameter {
   return found;
 }
 
-describe("logs-insights config declaration", () => {
+describe("cloudwatch-logs-insights config declaration", () => {
   it("declares exactly the 10 documented parameters, in order", () => {
     const names = configParameters.map((parameter) => parameter.getName());
     expect(names).toEqual(EXPECTED_NAMES);

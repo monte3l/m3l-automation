@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as M3LCommonModule from "@m3l-automation/m3l-common";
 
 /**
- * Contract: docs/reference/scripts/logs-insights.md, `export-results` row.
+ * Contract: docs/reference/scripts/cloudwatch-logs-insights.md, `export-results` row.
  * Writes the full accumulated row set to the output file in ONE shot via the
  * exporter's whole-array `export(items)` (`format`-dispatched
  * `Core.M3LJSONListExporter` / `Core.M3LCSVListExporter`) — never

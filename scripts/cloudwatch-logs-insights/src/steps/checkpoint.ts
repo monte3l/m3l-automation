@@ -1,14 +1,14 @@
 /**
- * `steps/checkpoint` — read/write/delete the `logs-insights` resume
- * checkpoint file.
+ * `steps/checkpoint` — read/write/delete the `cloudwatch-logs-insights`
+ * resume checkpoint file.
  *
  * Business logic lives here — never in `main.ts`. The checkpoint records
  * `{ completedWindows, rows, inFlightQueryId? }` — the rows already fetched,
  * not just a count — so a resumed run never re-issues a completed window's
- * query and `run-logs-insights.ts` can write the output file exactly once,
- * from the full accumulated set (see the module doc on
- * `docs/reference/scripts/logs-insights.md` for why the exporters can't
- * append).
+ * query and `run-cloudwatch-logs-insights.ts` can write the output file
+ * exactly once, from the full accumulated set (see the module doc on
+ * `docs/reference/scripts/cloudwatch-logs-insights.md` for why the exporters
+ * can't append).
  */
 
 import * as fsp from "node:fs/promises";
@@ -19,7 +19,7 @@ import { Core } from "@m3l-automation/m3l-common";
 export type LogsInsightsRow = Record<string, string>;
 
 /**
- * The persisted resume state for a `logs-insights` run: how many windows
+ * The persisted resume state for a `cloudwatch-logs-insights` run: how many windows
  * have fully completed, the rows fetched so far (across every completed
  * window plus any prior resumed run), and — while a query is mid-flight —
  * the AWS `queryId` to re-attach to instead of re-issuing `StartQuery`.

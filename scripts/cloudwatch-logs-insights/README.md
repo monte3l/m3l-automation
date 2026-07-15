@@ -1,21 +1,21 @@
-# logs-insights
+# cloudwatch-logs-insights
 
 Run CloudWatch Logs Insights queries and export results, splitting by time window for the 10k-row cap
 
 > **This README covers how to run the script.** The contract — configuration
 > schema, steps, inputs/outputs — lives in the reference page:
-> [`docs/reference/scripts/logs-insights.md`](../../docs/reference/scripts/logs-insights.md).
+> [`docs/reference/scripts/cloudwatch-logs-insights.md`](../../docs/reference/scripts/cloudwatch-logs-insights.md).
 > Keep the two disjoint: run instructions here, contract there.
 
 ## Run
 
 ```bash
 pnpm build                                        # library first (turbo orders it)
-pnpm --filter @m3l-automation/logs-insights start
+pnpm --filter @m3l-automation/cloudwatch-logs-insights start
 ```
 
 `start` runs `node --env-file-if-exists=.env dist/main.js`, so a local
-`scripts/logs-insights/.env` is loaded automatically when present. Pass the
+`scripts/cloudwatch-logs-insights/.env` is loaded automatically when present. Pass the
 per-run configuration on the command line:
 
 ```bash
@@ -46,7 +46,7 @@ node dist/main.js \
   --resume true
 ```
 
-See the [contract page](../../docs/reference/scripts/logs-insights.md) for
+See the [contract page](../../docs/reference/scripts/cloudwatch-logs-insights.md) for
 the full config schema and resume/failure semantics.
 
 ## Environment (`.env`)
@@ -64,9 +64,9 @@ Per-script data isolation (ADR-0022): the library shares one flat
 a per-script subtree:
 
 ```dotenv
-M3L_CONFIG_DIR=<absolute-repo-path>/data/logs-insights/config
-M3L_INPUT_DIR=<absolute-repo-path>/data/logs-insights/input
-M3L_OUTPUT_DIR=<absolute-repo-path>/data/logs-insights/output
+M3L_CONFIG_DIR=<absolute-repo-path>/data/cloudwatch-logs-insights/config
+M3L_INPUT_DIR=<absolute-repo-path>/data/cloudwatch-logs-insights/input
+M3L_OUTPUT_DIR=<absolute-repo-path>/data/cloudwatch-logs-insights/output
 ```
 
 ## Data directories
