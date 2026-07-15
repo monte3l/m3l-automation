@@ -1,52 +1,52 @@
 {
   "$schema": "../provenance.schema.json",
-  "doc": "aws/logs-insights.md",
+  "doc": "aws/cloudwatch-logs-insights.md",
   "sections": [
     {
       "heading": "Public API",
       "sources": [
         {
-          "file": "packages/m3l-common/src/aws/logs-insights/client.ts",
+          "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/client.ts",
           "symbol": "M3LLogsInsightsClient",
           "blob": "5e7443e33d1c595d6230d2bc9a06b0e93d6f6547"
         },
         {
-          "file": "packages/m3l-common/src/aws/logs-insights/client.ts",
+          "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/client.ts",
           "symbol": "LogsInsightsAwaitOptions",
           "blob": "5e7443e33d1c595d6230d2bc9a06b0e93d6f6547"
         },
         {
-          "file": "packages/m3l-common/src/aws/logs-insights/types.ts",
+          "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/types.ts",
           "symbol": "StartLogsInsightsQueryInput",
           "blob": "aa7a1475a574330ca743370e6c2d203ad84a8cc2"
         },
         {
-          "file": "packages/m3l-common/src/aws/logs-insights/types.ts",
+          "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/types.ts",
           "symbol": "LogsInsightsQueryResult",
           "blob": "aa7a1475a574330ca743370e6c2d203ad84a8cc2"
         },
         {
-          "file": "packages/m3l-common/src/aws/logs-insights/types.ts",
+          "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/types.ts",
           "symbol": "LogsInsightsQueryStatistics",
           "blob": "aa7a1475a574330ca743370e6c2d203ad84a8cc2"
         },
         {
-          "file": "packages/m3l-common/src/aws/logs-insights/types.ts",
+          "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/types.ts",
           "symbol": "LogsInsightsQueryStatus",
           "blob": "aa7a1475a574330ca743370e6c2d203ad84a8cc2"
         },
         {
-          "file": "packages/m3l-common/src/aws/logs-insights/types.ts",
+          "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/types.ts",
           "symbol": "LogsInsightsRow",
           "blob": "aa7a1475a574330ca743370e6c2d203ad84a8cc2"
         },
         {
-          "file": "packages/m3l-common/src/aws/logs-insights/errors.ts",
+          "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/errors.ts",
           "symbol": "M3LLogsInsightsStartQueryError",
           "blob": "ec09cffa56aab2f87b31f686695d9525bbc862fc"
         },
         {
-          "file": "packages/m3l-common/src/aws/logs-insights/errors.ts",
+          "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/errors.ts",
           "symbol": "M3LLogsInsightsQueryFailedError",
           "blob": "ec09cffa56aab2f87b31f686695d9525bbc862fc"
         }
@@ -57,7 +57,7 @@
       "heading": "`M3LLogsInsightsClient`",
       "sources": [
         {
-          "file": "packages/m3l-common/src/aws/logs-insights/client.ts",
+          "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/client.ts",
           "symbol": "M3LLogsInsightsClient",
           "blob": "5e7443e33d1c595d6230d2bc9a06b0e93d6f6547"
         }
@@ -68,12 +68,12 @@
       "heading": "Error handling",
       "sources": [
         {
-          "file": "packages/m3l-common/src/aws/logs-insights/errors.ts",
+          "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/errors.ts",
           "symbol": "M3LLogsInsightsStartQueryError",
           "blob": "ec09cffa56aab2f87b31f686695d9525bbc862fc"
         },
         {
-          "file": "packages/m3l-common/src/aws/logs-insights/errors.ts",
+          "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/errors.ts",
           "symbol": "M3LLogsInsightsQueryFailedError",
           "blob": "ec09cffa56aab2f87b31f686695d9525bbc862fc"
         }

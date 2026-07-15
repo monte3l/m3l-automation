@@ -1,5 +1,5 @@
 /**
- * `aws/logs-insights/errors` — typed errors for CloudWatch Logs Insights
+ * `aws/cloudwatch-logs-insights/errors` — typed errors for CloudWatch Logs Insights
  * query execution failures.
  *
  * @packageDocumentation

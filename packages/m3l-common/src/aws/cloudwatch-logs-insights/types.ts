@@ -1,5 +1,5 @@
 /**
- * `aws/logs-insights/types` — request/response shapes for
+ * `aws/cloudwatch-logs-insights/types` — request/response shapes for
  * {@link M3LLogsInsightsClient}.
  *
  * @packageDocumentation
