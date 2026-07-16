@@ -14,34 +14,40 @@ import process from "node:process";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
+import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 
-const args = process.argv.slice(2);
+const { json, argv } = parseJsonFlag();
+const reporter = createReporter(json);
+
+const args = argv;
 const flags = new Set(args.filter((a) => a.startsWith("--")));
 const positionals = args.filter((a) => !a.startsWith("--"));
 const slug = positionals[0];
 
 if (!slug) {
-  console.error(
-    "✗  worktree:new: missing <slug>.\n" +
+  reporter.error(
+    "worktree:new: missing <slug>.\n" +
       "   Usage: pnpm worktree:new <slug> [--fix]",
   );
+  reporter.finish();
   process.exit(1);
 }
 if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
-  console.error(
-    `✗  worktree:new: invalid slug "${slug}". Use kebab-case ` +
+  reporter.error(
+    `worktree:new: invalid slug "${slug}". Use kebab-case ` +
       "(lowercase letters, digits, single hyphens), e.g. `core-json`.",
   );
+  reporter.finish();
   process.exit(1);
 }
 
 const prefix = flags.has("--fix") ? "fix" : "feat";
 const branch = `${prefix}/${slug}`;
 
-function git(argv, opts = {}) {
+function git(gitArgs, opts = {}) {
   // With stdio: "inherit" execFileSync returns null (output not captured), so
   // guard the .trim() — callers that inherit don't need the return value.
-  const out = execFileSync("git", argv, { encoding: "utf8", ...opts });
+  const out = execFileSync("git", gitArgs, { encoding: "utf8", ...opts });
   return typeof out === "string" ? out.trim() : "";
 }
 
@@ -73,47 +79,62 @@ const startPoint = refExists("origin/main")
     ? "main"
     : null;
 if (startPoint === null) {
-  console.error(
-    "✗  worktree:new: no `origin/main` or local `main` to branch from. " +
+  reporter.error(
+    "worktree:new: no `origin/main` or local `main` to branch from. " +
       "Fetch or check out `main` first.",
   );
+  reporter.finish();
   process.exit(1);
 }
 
-console.log(
+reporter.info(
   `→  Creating worktree ${worktreePath} on ${branch} (from ${startPoint}) ...`,
 );
 try {
   git(["worktree", "add", worktreePath, "-b", branch, startPoint], {
-    stdio: "inherit",
+    // In JSON mode, an inherited child stdout would pollute stdout with prose
+    // before the single JSON line finish() emits; human mode keeps "inherit"
+    // so the operator sees git's own progress output live. stderr stays
+    // inherited even in JSON mode — it never pollutes the stdout JSON
+    // contract, and a failing child's diagnostics must still surface.
+    stdio: json ? ["ignore", "ignore", "inherit"] : "inherit",
   });
 } catch {
-  console.error(
-    `✗  worktree:new: \`git worktree add\` failed. The branch \`${branch}\` or ` +
+  reporter.error(
+    `worktree:new: \`git worktree add\` failed. The branch \`${branch}\` or ` +
       `directory may already exist. Inspect \`git worktree list\` / ` +
       "`git branch --list` and retry with a different slug.",
   );
+  reporter.finish();
   process.exit(1);
 }
 
-console.log(`→  Provisioning ${worktreePath} ...`);
+reporter.info(`→  Provisioning ${worktreePath} ...`);
 const setupScript = fileURLToPath(
   new URL("./worktree-setup.mjs", import.meta.url),
 );
 try {
-  execFileSync("node", [setupScript], { stdio: "inherit", cwd: worktreePath });
+  execFileSync("node", [setupScript], {
+    // See the rationale above: stdout is suppressed in JSON mode, stderr
+    // stays inherited so a failing setup's diagnostics are never swallowed.
+    stdio: json ? ["ignore", "ignore", "inherit"] : "inherit",
+    cwd: worktreePath,
+  });
 } catch {
-  console.error(
-    "✗  worktree:new: the worktree was created but provisioning failed. " +
+  reporter.error(
+    "worktree:new: the worktree was created but provisioning failed. " +
       `Fix the error above, then re-run \`pnpm worktree:setup\` from inside ` +
       `${worktreePath}.`,
   );
+  reporter.finish({ worktreePath, branch });
   process.exit(1);
 }
 
-console.log(
-  `\n✓  Worktree ready at ${worktreePath} on ${branch}.\n` +
-    `   Next: \`cd ${join("..", `m3l-automation-${slug}`)}\`, make changes, ` +
+reporter.info("");
+reporter.succeed(`Worktree ready at ${worktreePath} on ${branch}.`);
+reporter.info(
+  `   Next: \`cd ${join("..", `m3l-automation-${slug}`)}\`, make changes, ` +
     "commit, and `git push -u origin HEAD`.\n" +
     `   Teardown when done: \`pnpm worktree:remove ${slug}\`.`,
 );
+reporter.finish({ worktreePath, branch });

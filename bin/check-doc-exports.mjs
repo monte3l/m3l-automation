@@ -28,6 +28,10 @@ import {
   barrelWiredModules,
   provenanceSymbols,
 } from "./lib/reference-index.mjs";
+import { parseJsonFlag, createReporter } from "./lib/report.mjs";
+
+const { json } = parseJsonFlag();
+const reporter = createReporter(json);
 
 const srcRoot = join(root, "packages/m3l-common/src");
 
@@ -109,6 +113,7 @@ function documentedMatcher(namespace, name) {
 
 let errors = 0;
 let checked = 0;
+const undocumentedExports = [];
 
 for (const namespace of NAMESPACES) {
   for (const name of barrelWiredModules(namespace)) {
@@ -123,26 +128,32 @@ for (const namespace of NAMESPACES) {
       .sort();
 
     if (undocumented.length > 0) {
-      console.error(
-        `✗  ${namespace}/${name}: ${undocumented.length} public export(s) not ` +
+      reporter.error(
+        `${namespace}/${name}: ${undocumented.length} public export(s) not ` +
           `documented in docs/reference/${namespace}/${name}.md ` +
           `(heading) or its provenance sidecar:\n` +
           undocumented.map((s) => `     • ${s}`).join("\n"),
       );
       errors += undocumented.length;
+      for (const sym of undocumented) {
+        undocumentedExports.push(`${namespace}/${name}:${sym}`);
+      }
     }
   }
 }
 
 if (errors > 0) {
-  console.error(
-    `\n✗  ${errors} undocumented public export(s). Document each in its ` +
-      `reference page and provenance sidecar (same change set), or move it to ` +
-      `internal/ if it should not be public.`,
-  );
+  if (!json)
+    console.error(
+      `\n✗  ${errors} undocumented public export(s). Document each in its ` +
+        `reference page and provenance sidecar (same change set), or move it to ` +
+        `internal/ if it should not be public.`,
+    );
+  reporter.finish({ undocumented: undocumentedExports });
   process.exit(1);
 }
 
-console.log(
-  `✓  All public exports documented across ${checked} implemented submodule(s).`,
+reporter.succeed(
+  `All public exports documented across ${checked} implemented submodule(s).`,
 );
+reporter.finish({ undocumented: undocumentedExports });

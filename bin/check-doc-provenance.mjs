@@ -32,15 +32,24 @@ import {
   verifySidecarSections,
   applyBlobUpdates,
 } from "./lib/doc-provenance.mjs";
+import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const docsRef = join(root, "docs/reference");
 
-const args = process.argv.slice(2);
+const { json, argv: args } = parseJsonFlag();
+const reporter = createReporter(json);
 const isUpdate = args.includes("--update");
 const affectedIdx = args.indexOf("--affected");
 const affectedFile =
   affectedIdx !== -1 ? (args[affectedIdx + 1] ?? null) : null;
+
+/** Derive the module name (e.g. "aws/clients") a sidecar path represents. */
+function moduleNameOf(sidecarPath) {
+  return relative(docsRef, sidecarPath)
+    .replace(/\.provenance\.json$/, "")
+    .replace(/\\/g, "/");
+}
 
 function findSidecars(dir) {
   const results = [];
@@ -71,7 +80,8 @@ if (affectedFile !== null) {
     }
   });
   if (sidecars.length === 0) {
-    console.log(`✓  No provenance sidecars reference ${affectedFile}.`);
+    reporter.succeed(`No provenance sidecars reference ${affectedFile}.`);
+    reporter.finish();
     process.exit(0);
   }
 }
@@ -90,27 +100,25 @@ for (const sidecarPath of sidecars) {
   try {
     data = JSON.parse(readFileSync(sidecarPath, "utf8"));
   } catch (e) {
-    console.error(`✗  ${rel}: invalid JSON — ${e.message}`);
+    reporter.error(`${rel}: invalid JSON — ${e.message}`);
     totalErrors++;
     continue;
   }
 
   if (typeof data.doc !== "string") {
-    console.error(`✗  ${rel}: missing or invalid "doc" field`);
+    reporter.error(`${rel}: missing or invalid "doc" field`);
     totalErrors++;
     continue;
   }
   if (!Array.isArray(data.sections) || data.sections.length === 0) {
-    console.error(`✗  ${rel}: "sections" must be a non-empty array`);
+    reporter.error(`${rel}: "sections" must be a non-empty array`);
     totalErrors++;
     continue;
   }
 
   const mdPath = join(docsRef, data.doc);
   if (!existsSync(mdPath)) {
-    console.error(
-      `✗  ${rel}: sibling doc not found: docs/reference/${data.doc}`,
-    );
+    reporter.error(`${rel}: sibling doc not found: docs/reference/${data.doc}`);
     totalErrors++;
     continue;
   }
@@ -127,11 +135,11 @@ let blobs;
 try {
   blobs = hashBlobs(root, [...allSourceFiles]);
 } catch (e) {
-  console.error(`✗  ${e.message}`);
-  console.error(
-    "   Provenance staleness cannot be verified without it — fix the git " +
-      "invocation and re-run.",
+  reporter.error(
+    `${e.message}\n   Provenance staleness cannot be verified without it — ` +
+      `fix the git invocation and re-run.`,
   );
+  reporter.finish();
   process.exit(1);
 }
 
@@ -149,11 +157,11 @@ for (const { sidecarPath, rel, data, mdPath } of parsedSidecars) {
     },
   );
 
-  for (const message of errors) console.error(`✗  ${rel}: ${message}`);
+  for (const message of errors) reporter.error(`${rel}: ${message}`);
   for (const message of warnings) {
-    process.stderr.write(
-      `⚠   ${rel}: ${message}\n` +
-        `   Update the sidecar then run: node bin/check-doc-provenance.mjs --update\n`,
+    reporter.warn(
+      `${rel}: ${message}\n` +
+        `   Update the sidecar then run: node bin/check-doc-provenance.mjs --update`,
     );
   }
 
@@ -164,21 +172,27 @@ for (const { sidecarPath, rel, data, mdPath } of parsedSidecars) {
 }
 
 if (totalErrors > 0) {
-  console.error(`\n✗  ${totalErrors} provenance error(s) found.`);
+  if (!json) console.error(`\n✗  ${totalErrors} provenance error(s) found.`);
+  reporter.finish();
   process.exit(1);
 }
 
 if (isUpdate) {
   const date = today();
   let updatedCount = 0;
+  const staleModules = [];
+  const restampedModules = [];
   for (const { sidecarPath, rel, data, staleSources } of validated) {
+    if (staleSources.length > 0) staleModules.push(moduleNameOf(sidecarPath));
     const next = applyBlobUpdates(data, staleSources, date);
     if (next === null) continue;
     writeFileSync(sidecarPath, `${JSON.stringify(next, null, 2)}\n`);
-    console.log(`Updated: ${rel}`);
+    reporter.change("updated", rel);
+    restampedModules.push(moduleNameOf(sidecarPath));
     updatedCount++;
   }
-  if (updatedCount === 0) console.log("✓  No sidecars needed re-stamping.");
+  if (updatedCount === 0) reporter.succeed("No sidecars needed re-stamping.");
+  reporter.finish({ stale: staleModules, restamped: restampedModules });
   process.exit(0);
 }
 
@@ -187,15 +201,18 @@ if (isUpdate) {
 // path (used by the guard-provenance-staleness PostToolUse hook) keeps exiting
 // 0 with the warning on stderr so mid-work source edits are never blocked.
 if (totalWarnings > 0 && affectedFile === null) {
-  process.stderr.write(
-    `\n✗  ${totalWarnings} provenance staleness warning(s) — re-stamp with ` +
-      `node bin/check-doc-provenance.mjs --update (or run /syncing-docs).\n`,
-  );
+  if (!json)
+    console.error(
+      `\n✗  ${totalWarnings} provenance staleness warning(s) — re-stamp with ` +
+        `node bin/check-doc-provenance.mjs --update (or run /syncing-docs).`,
+    );
+  reporter.finish();
   process.exit(1);
 }
 
 const warnSuffix =
   totalWarnings > 0 ? ` (${totalWarnings} staleness warning(s))` : "";
-console.log(
-  `✓  ${sidecars.length} provenance sidecar(s) verified${warnSuffix}.`,
+reporter.succeed(
+  `${sidecars.length} provenance sidecar(s) verified${warnSuffix}.`,
 );
+reporter.finish();

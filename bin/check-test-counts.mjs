@@ -13,8 +13,11 @@ import path, { dirname, join } from "node:path";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const { json } = parseJsonFlag();
+const reporter = createReporter(json);
 
 // ---------------------------------------------------------------------------
 // 1. Run Vitest with the JSON reporter to get per-file test counts.
@@ -39,10 +42,11 @@ const res = spawnSync(
 // Vitest exits 0 on pass, 1 on failure. Guard against a broken suite.
 if (res.status !== 0) {
   const detail = res.stderr?.trim() ?? "";
-  console.error(
-    `✗  vitest failed (exit ${String(res.status)}) — fix failing tests before checking counts.`,
+  reporter.error(
+    `vitest failed (exit ${String(res.status)}) — fix failing tests before checking counts.` +
+      (detail ? `\n${detail}` : ""),
   );
-  if (detail) console.error(detail);
+  reporter.finish();
   process.exit(1);
 }
 
@@ -50,9 +54,10 @@ let vitestData;
 try {
   vitestData = JSON.parse(res.stdout);
 } catch {
-  console.error(
-    "✗  Failed to parse vitest JSON output. Run `pnpm test` to confirm tests pass.",
+  reporter.error(
+    "Failed to parse vitest JSON output. Run `pnpm test` to confirm tests pass.",
   );
+  reporter.finish();
   process.exit(1);
 }
 
@@ -77,7 +82,8 @@ try {
     "utf8",
   );
 } catch {
-  console.error("✗  Cannot read docs/implementation-status.md");
+  reporter.error("Cannot read docs/implementation-status.md");
+  reporter.finish();
   process.exit(1);
 }
 
@@ -92,6 +98,7 @@ const NOTES_COL = 8;
 
 let errors = 0;
 let checked = 0;
+const mismatches = [];
 
 for (const line of statusContent.split("\n")) {
   if (!line.startsWith("|")) continue;
@@ -114,37 +121,43 @@ for (const line of statusContent.split("\n")) {
   const actual = actualCounts.get(submodule);
 
   if (actual === undefined) {
-    console.error(
-      `✗  ${submodule}: no matching test file in vitest results` +
+    reporter.error(
+      `${submodule}: no matching test file in vitest results` +
         ` (expected packages/m3l-common/tests/${submodule}.test.ts)`,
     );
+    mismatches.push({ submodule, recorded, actual: null });
     errors++;
     continue;
   }
 
   if (actual !== recorded) {
-    console.error(
-      `✗  ${submodule}: recorded ${recorded} tests, actual ${actual}` +
+    reporter.error(
+      `${submodule}: recorded ${recorded} tests, actual ${actual}` +
         ` — update the Notes column in docs/implementation-status.md`,
     );
+    mismatches.push({ submodule, recorded, actual });
     errors++;
   } else {
-    console.log(`✓  ${submodule}: ${actual} tests`);
+    reporter.info(`✓  ${submodule}: ${actual} tests`);
   }
   checked++;
 }
 
 if (errors > 0) {
-  console.error(
-    `\n✗  ${errors} count mismatch(es). Edit the Notes column in docs/implementation-status.md to match.`,
-  );
+  if (!json)
+    console.error(
+      `\n✗  ${errors} count mismatch(es). Edit the Notes column in docs/implementation-status.md to match.`,
+    );
+  reporter.finish({ mismatches });
   process.exit(1);
 }
 
 if (checked === 0) {
-  console.log(
-    "✓  No ✅ submodules with recorded test counts found — nothing to check.",
+  reporter.succeed(
+    "No ✅ submodules with recorded test counts found — nothing to check.",
   );
 } else {
-  console.log(`\n✓  All test counts match (${checked} submodule(s) verified).`);
+  reporter.info("");
+  reporter.succeed(`All test counts match (${checked} submodule(s) verified).`);
 }
+reporter.finish({ mismatches });
