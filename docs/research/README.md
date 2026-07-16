@@ -33,6 +33,7 @@ when a snapshot looks out of date.
 
 ## Index
 
-| Date       | Topic                                                          | Snapshot                                                 |
-| ---------- | -------------------------------------------------------------- | -------------------------------------------------------- |
-| 2026-07-13 | Claude PR Review Action tuning for this repo's PR-size profile | [pr-review-action-tuning.md](pr-review-action-tuning.md) |
+| Date       | Topic                                                          | Snapshot                                                           |
+| ---------- | -------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 2026-07-13 | Claude PR Review Action tuning for this repo's PR-size profile | [pr-review-action-tuning.md](pr-review-action-tuning.md)           |
+| 2026-07-16 | Writing custom tools and MCP servers (TypeScript)              | [writing-custom-tools-and-mcp.md](writing-custom-tools-and-mcp.md) |

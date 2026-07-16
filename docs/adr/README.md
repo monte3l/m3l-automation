@@ -74,3 +74,4 @@ surface).
 | 0027 | [Scripts never import `@aws-sdk/*`; the library grows typed AWS operation wrappers per consumer need](./0027-aws-sdk-boundary-typed-wrappers.md) | Accepted; amended by ADR-0029 |
 | 0028 | [AWS-scoped scripts and submodules are named with full official AWS service names](./0028-aws-service-naming-convention.md)                      | Accepted                      |
 | 0029 | [Consumer scripts depend only on @m3l-automation/m3l-common](./0029-script-dependency-boundary.md)                                               | Accepted                      |
+| 0030 | [Targeted workflow tooling and MCP adoption](./0030-targeted-workflow-tooling-and-mcp.md)                                                        | Accepted                      |
