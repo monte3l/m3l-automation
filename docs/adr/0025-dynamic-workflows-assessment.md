@@ -1,6 +1,6 @@
 # 0025. Selective adoption of dynamic workflows for subagent orchestration
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-12
 - **Deciders:** Enrico Lionello
 
@@ -123,6 +123,10 @@ be premature.
      fan-out that writes those paths while on `main`.
   4. **Define a per-step effort/model convention** before any workflow needs
      more than one model, since the current matrix schema does not support it.
+- **Prerequisite status (2026-07-16):** 1, 2, and 4 are implemented by
+  `check:workflows` (`bin/check-workflows.mjs`) and the `workflow-script`
+  MODEL-MATRIX surface; 3 is documented in
+  `docs/contributing/model-selection.md` § Enforcement.
 - **Semver impact:** none — this is a tooling/process decision with no effect
   on `@m3l-automation/m3l-common`'s public contract.
 

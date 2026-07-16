@@ -166,6 +166,13 @@ jobs:
       - name: Check subagent configuration (agents)
         run: pnpm check:agents
 
+      # Dynamic-workflow surface (ADR-0025): .claude/workflows/* model/effort
+      # choices match the MODEL-MATRIX and every script declares its max-agents
+      # guardrail. Distinct from "Check workflow docs" above, which reconciles
+      # the CLAUDE.md CI/CD table against .github/workflows/.
+      - name: Check dynamic-workflow surface (workflows)
+        run: pnpm check:workflows
+
       # Hook wiring: every .claude/settings.json hook command resolves to a real
       # .claude/hooks/*.mjs, and no hook file is left unwired.
       - name: Check hook wiring (hooks)

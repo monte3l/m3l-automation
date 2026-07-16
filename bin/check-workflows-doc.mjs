@@ -9,6 +9,11 @@
 // prose must match it in both directions — no undocumented workflow, no stale
 // row for a workflow that no longer exists.
 //
+// Not to be confused with its name-sibling bin/check-workflows.mjs
+// (`check:workflows`), which validates the .claude/workflows/ dynamic-workflow
+// surface against the MODEL-MATRIX (ADR-0025). Deliberately separate checks;
+// never merge them as "redundant."
+//
 // Usage:
 //   node bin/check-workflows-doc.mjs   # verify (fails on mismatch)
 import process from "node:process";
