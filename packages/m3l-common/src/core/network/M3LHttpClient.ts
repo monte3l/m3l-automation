@@ -45,9 +45,59 @@ export interface M3LHttpClientOptions {
   readonly proxyUrl?: string;
 }
 
+/**
+ * The HTTP methods {@link M3LHttpClient.request} and
+ * {@link M3LHttpClient.requestAbortable} accept.
+ */
+export type M3LHttpMethod =
+  "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD";
+
+/**
+ * Options for {@link M3LHttpClient.request} and
+ * {@link M3LHttpClient.requestAbortable}.
+ *
+ * @example
+ * ```ts
+ * import type { M3LHttpRequestOptions } from "@m3l-automation/m3l-common/core";
+ *
+ * const options: M3LHttpRequestOptions = {
+ *   method: "POST",
+ *   path: "/users",
+ *   headers: { "content-type": "application/json" },
+ *   body: JSON.stringify({ name: "Ada" }),
+ *   expectedStatus: 201,
+ * };
+ * ```
+ */
+export interface M3LHttpRequestOptions {
+  /** The HTTP verb to dispatch. */
+  readonly method: M3LHttpMethod;
+  /** The request path or full URL. Resolved against `baseUrl` exactly like `get()`. */
+  readonly path: string;
+  /**
+   * Per-request headers, shallow-merged over `defaultHeaders`
+   * (`{ ...defaultHeaders, ...headers }`); on an identical key the
+   * per-request value wins.
+   */
+  readonly headers?: Record<string, string>;
+  /**
+   * Request body passed straight to `undici`'s `fetch` — not serialized, and
+   * no `Content-Type` is inferred. Omit for `GET`/`HEAD`.
+   */
+  readonly body?: string | Uint8Array;
+  /**
+   * Accepted response status(es). Omitted means any 2xx is success
+   * (identical to `get()`'s current behavior). A single `number` requires an
+   * exact match; a non-empty `readonly number[]` accepts any listed status.
+   * Anything else throws {@link M3LHttpClientError} with
+   * `failure.reason === "status"`.
+   */
+  readonly expectedStatus?: number | readonly [number, ...number[]];
+}
+
 /** Payload emitted on the `"request"` event, just before dispatch. */
 export interface M3LHttpRequestEvent {
-  /** The HTTP method used for the request (always `"GET"` for this client). */
+  /** The HTTP method used for the request. */
   readonly method: string;
   /** The fully resolved request URL. */
   readonly url: string;
@@ -67,7 +117,11 @@ export interface M3LHttpResponseEvent {
   readonly url: string;
   /** The HTTP status code of the response. */
   readonly status: number;
-  /** Whether the response status is in the 2xx range. */
+  /**
+   * Whether the response status is in the 2xx range. Independent of
+   * `expectedStatus` — a 2xx response still reports `ok: true` even when a
+   * narrower `expectedStatus` causes the request to reject.
+   */
   readonly ok: boolean;
   /** Wall-clock duration of the request, in milliseconds. */
   readonly durationMs: number;
@@ -100,8 +154,9 @@ export interface M3LHttpClientEventMap {
 }
 
 /**
- * The result of {@link M3LHttpClient.getAbortable}: an in-flight promise plus
- * a cancel handle.
+ * The result of {@link M3LHttpClient.getAbortable} and
+ * {@link M3LHttpClient.requestAbortable}: an in-flight promise plus a cancel
+ * handle.
  */
 export interface M3LHttpAbortableRequest<T> {
   /** Resolves with the parsed response body, or rejects with {@link M3LHttpClientError}. */
@@ -111,11 +166,12 @@ export interface M3LHttpAbortableRequest<T> {
 }
 
 /**
- * Event-emitting HTTP client over `undici`'s `fetch`. Supports only `GET`
- * requests, automatic JSON parsing of matching response bodies, a
- * per-request timeout enforced via `AbortController`, typed failure
- * normalization (status / network / timeout / abort), optional proxy
- * routing, and structured debug logging.
+ * Event-emitting HTTP client over `undici`'s `fetch`. Offers `GET`
+ * convenience methods plus a general `request()`/`requestAbortable()` pair
+ * for any {@link M3LHttpMethod}, automatic JSON parsing of matching response
+ * bodies, a per-request timeout enforced via `AbortController`, typed
+ * failure normalization (status / network / timeout / abort), optional
+ * proxy routing, and structured debug logging.
  *
  * @example
  * ```ts
@@ -173,6 +229,7 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
 
   /**
    * Performs a `GET` request and resolves with the parsed response body.
+   * Equivalent to `request({ method: "GET", path })`.
    *
    * JSON responses (detected via `Content-Type`) are parsed automatically;
    * any other content type resolves to the raw response text.
@@ -187,11 +244,12 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
    *   failure, or a timeout.
    */
   get<T>(path: string): Promise<T> {
-    return this.#request<T>(path).promise;
+    return this.request<T>({ method: "GET", path });
   }
 
   /**
-   * Performs a cancellable `GET` request.
+   * Performs a cancellable `GET` request. Equivalent to
+   * `requestAbortable({ method: "GET", path })`.
    *
    * @typeParam T - The caller-asserted shape of the response body. This is
    *   not validated at runtime — the parsed body is returned as `T` without
@@ -203,7 +261,61 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
    *   {@link M3LHttpClientError} carrying `error.reason === "abort"`.
    */
   getAbortable<T>(path: string): M3LHttpAbortableRequest<T> {
-    return this.#request<T>(path);
+    return this.requestAbortable<T>({ method: "GET", path });
+  }
+
+  /**
+   * Performs a request for any {@link M3LHttpMethod} and resolves with the
+   * parsed response body.
+   *
+   * The client is transport-only: `options.body` is passed straight to
+   * `undici` with no serialization and no inferred `Content-Type`.
+   *
+   * @typeParam T - The caller-asserted shape of the response body. This is
+   *   not validated at runtime — the parsed body is returned as `T` without
+   *   a runtime check.
+   * @param options - The request options: `method` and `path` are required;
+   *   `headers`, `body`, and `expectedStatus` are optional.
+   * @returns A promise resolving to the parsed response body.
+   * @throws {@link M3LHttpClientError} when the response status is not
+   *   accepted (per `expectedStatus`, or any 2xx when omitted), on a
+   *   network failure, or on a timeout.
+   * @example
+   * ```ts
+   * import { M3LHttpClient } from "@m3l-automation/m3l-common/core";
+   *
+   * const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+   *
+   * const created = await client.request<{ id: string }>({
+   *   method: "POST",
+   *   path: "/users",
+   *   headers: { "content-type": "application/json" },
+   *   body: JSON.stringify({ name: "Ada" }),
+   *   expectedStatus: 201,
+   * });
+   * console.log(created.id);
+   * ```
+   */
+  request<T>(options: M3LHttpRequestOptions): Promise<T> {
+    return this.#dispatchRequest<T>(options).promise;
+  }
+
+  /**
+   * Performs a cancellable request for any {@link M3LHttpMethod}.
+   *
+   * @typeParam T - The caller-asserted shape of the response body. This is
+   *   not validated at runtime — the parsed body is returned as `T` without
+   *   a runtime check.
+   * @param options - The request options: `method` and `path` are required;
+   *   `headers`, `body`, and `expectedStatus` are optional.
+   * @returns An object containing the in-flight `promise` and an `abort()`
+   *   handle. Calling `abort()` rejects `promise` with
+   *   {@link M3LHttpClientError} carrying `error.reason === "abort"`.
+   */
+  requestAbortable<T>(
+    options: M3LHttpRequestOptions,
+  ): M3LHttpAbortableRequest<T> {
+    return this.#dispatchRequest<T>(options);
   }
 
   /**
@@ -217,15 +329,39 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
   }
 
   /**
-   * Core request implementation shared by {@link get} and
-   * {@link getAbortable}. Owns the `AbortController` lifecycle (timeout +
-   * manual abort), dispatch, response parsing, failure normalization, event
-   * emission, and debug logging.
+   * Determines whether a response `status` should be treated as a success.
+   * Omitted `expectedStatus` preserves the historical behavior (any 2xx);
+   * a single number requires an exact match; an array is membership-based.
    */
-  #request<T>(path: string): M3LHttpAbortableRequest<T> {
-    const method = "GET";
+  #isAccepted(
+    status: number,
+    ok: boolean,
+    expectedStatus: number | readonly number[] | undefined,
+  ): boolean {
+    if (expectedStatus === undefined) return ok;
+    if (typeof expectedStatus === "number") return status === expectedStatus;
+    return expectedStatus.includes(status);
+  }
+
+  /**
+   * Core request engine shared by {@link get}, {@link getAbortable},
+   * {@link request}, and {@link requestAbortable}. Owns the
+   * `AbortController` lifecycle (timeout + manual abort), header merging,
+   * dispatch, response parsing, failure normalization, event emission, and
+   * debug logging.
+   */
+  #dispatchRequest<T>(
+    options: M3LHttpRequestOptions,
+  ): M3LHttpAbortableRequest<T> {
+    const {
+      method,
+      path,
+      headers: requestHeaders,
+      body,
+      expectedStatus,
+    } = options;
     const url = this.#resolveUrl(path);
-    const headers = { ...this.#defaultHeaders };
+    const headers = { ...this.#defaultHeaders, ...requestHeaders };
     const controller = new AbortController();
     let failureReason: "timeout" | "abort" | undefined;
 
@@ -243,6 +379,8 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
       method,
       url,
       headers,
+      body,
+      expectedStatus,
       controller,
       timer,
       getFailureReason: () => failureReason,
@@ -257,14 +395,25 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
    * timer via `finally`.
    */
   async #dispatch<T>(input: {
-    readonly method: string;
+    readonly method: M3LHttpMethod;
     readonly url: string;
     readonly headers: Record<string, string>;
+    readonly body: string | Uint8Array | undefined;
+    readonly expectedStatus: number | readonly number[] | undefined;
     readonly controller: AbortController;
     readonly timer: ReturnType<typeof setTimeout>;
     readonly getFailureReason: () => "timeout" | "abort" | undefined;
   }): Promise<T> {
-    const { method, url, headers, controller, timer, getFailureReason } = input;
+    const {
+      method,
+      url,
+      headers,
+      body,
+      expectedStatus,
+      controller,
+      timer,
+      getFailureReason,
+    } = input;
 
     this.emit("request", { method, url, headers: { ...headers } });
 
@@ -274,6 +423,7 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
       const response = await fetch(url, {
         method,
         headers,
+        ...(body !== undefined && { body }),
         signal: controller.signal,
         ...(this.#dispatcher !== undefined && { dispatcher: this.#dispatcher }),
       });
@@ -284,7 +434,7 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
       this.#logDebug({ method, url, status });
       this.emit("response", { method, url, status, ok, durationMs });
 
-      if (!ok) {
+      if (!this.#isAccepted(status, ok, expectedStatus)) {
         throw new M3LHttpClientError(
           `request to ${url} failed with status ${String(status)}`,
           {
@@ -325,10 +475,10 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
 
   /**
    * Normalizes any failure raised during dispatch into a single
-   * {@link M3LHttpClientError}. An already-typed error (the non-2xx branch)
-   * passes through unchanged; every other failure is classified as
-   * `"timeout"`, `"abort"`, or `"network"` and wrapped with `cause` set to
-   * the original thrown value.
+   * {@link M3LHttpClientError}. An already-typed error (the unaccepted
+   * status branch) passes through unchanged; every other failure is
+   * classified as `"timeout"`, `"abort"`, or `"network"` and wrapped with
+   * `cause` set to the original thrown value.
    */
   #normalizeFailure(input: {
     readonly cause: unknown;
