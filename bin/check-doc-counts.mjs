@@ -19,7 +19,10 @@ import {
   locateSite,
   TOTAL_COUNT_SITES,
 } from "./lib/count-sites.mjs";
+import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 
+const { json } = parseJsonFlag();
+const reporter = createReporter(json);
 const counts = deriveCounts();
 let errors = 0;
 
@@ -29,16 +32,14 @@ for (const site of TOTAL_COUNT_SITES) {
   try {
     content = readFileSync(filePath, "utf8");
   } catch {
-    console.error(`✗  Cannot read ${site.file}`);
+    reporter.error(`Cannot read ${site.file}`);
     errors++;
     continue;
   }
 
   const result = locateSite(content, site, counts);
   if (!result.found) {
-    console.error(
-      `✗  ${site.file}: expected pattern not found: ${site.pattern}`,
-    );
+    reporter.error(`${site.file}: expected pattern not found: ${site.pattern}`);
     errors++;
     continue;
   }
@@ -50,8 +51,8 @@ for (const site of TOTAL_COUNT_SITES) {
         result.matchIndex + result.matchText.length + 20,
       )
       .trim();
-    console.error(
-      `✗  ${site.file}: ${site.label} says ${result.actual} but derived count is ${result.expected}\n` +
+    reporter.error(
+      `${site.file}: ${site.label} says ${result.actual} but derived count is ${result.expected}\n` +
         `   Derived: Core=${counts.coreCount} + AWS=${counts.awsCount} = ${counts.total}\n` +
         `   Context: "...${ctx}..."`,
     );
@@ -60,13 +61,30 @@ for (const site of TOTAL_COUNT_SITES) {
 }
 
 if (errors > 0) {
-  console.error(
-    `\n✗  ${errors} count mismatch(es). Update the prose to match the derived counts ` +
-      `(Core: ${counts.coreCount}, AWS: ${counts.awsCount}, total: ${counts.total}), or run pnpm gen:counts.`,
-  );
+  if (!json)
+    console.error(
+      `\n✗  ${errors} count mismatch(es). Update the prose to match the derived counts ` +
+        `(Core: ${counts.coreCount}, AWS: ${counts.awsCount}, total: ${counts.total}), or run pnpm gen:counts.`,
+    );
+  reporter.finish({
+    counts: {
+      core: counts.coreCount,
+      aws: counts.awsCount,
+      total: counts.total,
+      implemented: counts.implemented,
+    },
+  });
   process.exit(1);
 }
 
-console.log(
-  `✓  All doc counts match: ${counts.coreCount} Core + ${counts.awsCount} AWS = ${counts.total} total.`,
+reporter.succeed(
+  `All doc counts match: ${counts.coreCount} Core + ${counts.awsCount} AWS = ${counts.total} total.`,
 );
+reporter.finish({
+  counts: {
+    core: counts.coreCount,
+    aws: counts.awsCount,
+    total: counts.total,
+    implemented: counts.implemented,
+  },
+});

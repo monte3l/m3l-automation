@@ -40,6 +40,10 @@ import {
   isValidWorkflowModel,
 } from "./lib/claude-models.mjs";
 import { WRITER_SPOKES, frontmatter, walk } from "./lib/agent-roster.mjs";
+import { parseJsonFlag, createReporter } from "./lib/report.mjs";
+
+const { json } = parseJsonFlag();
+const reporter = createReporter(json);
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const agentsDir = join(root, ".claude/agents");
@@ -97,8 +101,8 @@ for (const file of skillFiles) {
     const name = m[1];
     referenced.add(name);
     if (!known.has(name)) {
-      console.error(
-        `✗  ${file.slice(root.length + 1)} references subagent_type "${name}" ` +
+      reporter.error(
+        `${file.slice(root.length + 1)} references subagent_type "${name}" ` +
           `which is not a defined agent (.claude/agents/) or a known built-in.`,
       );
       errors++;
@@ -130,8 +134,8 @@ if (existsSync(claudeMd)) {
       const name = m[1];
       referenced.add(name);
       if (!known.has(name)) {
-        console.error(
-          `✗  CLAUDE.md Spokes list names "${name}" which is not a defined ` +
+        reporter.error(
+          `CLAUDE.md Spokes list names "${name}" which is not a defined ` +
             `agent or a known built-in.`,
         );
         errors++;
@@ -158,15 +162,15 @@ for (const file of [
 // --- 4. No-nesting invariant: no spoke may hold the `Agent` tool -----------
 for (const [name, { tools, disallowedTools, file }] of defined) {
   if (tools === null) {
-    console.error(
-      `✗  ${file.slice(root.length + 1)} (${name}) omits "tools:", so it ` +
+    reporter.error(
+      `${file.slice(root.length + 1)} (${name}) omits "tools:", so it ` +
         `inherits ALL tools including "Agent". Spokes must declare an ` +
         `allowlist that excludes "Agent" (leaf-node / no-nesting invariant).`,
     );
     errors++;
   } else if (tools.includes("Agent")) {
-    console.error(
-      `✗  ${file.slice(root.length + 1)} (${name}) grants the "Agent" tool. ` +
+    reporter.error(
+      `${file.slice(root.length + 1)} (${name}) grants the "Agent" tool. ` +
         `Spokes are leaf nodes — only the hub dispatches subagents.`,
     );
     errors++;
@@ -175,8 +179,8 @@ for (const [name, { tools, disallowedTools, file }] of defined) {
   // Defense-in-depth: every spoke must also declare `disallowedTools: Agent`
   // explicitly, not just omit "Agent" from its tools allowlist above.
   if (tools !== null && !disallowedTools.includes("Agent")) {
-    console.error(
-      `✗  ${file.slice(root.length + 1)} (${name}) omits ` +
+    reporter.error(
+      `${file.slice(root.length + 1)} (${name}) omits ` +
         `"disallowedTools: Agent" — every spoke must declare this alongside ` +
         `the tools allowlist as defense-in-depth (leaf-node / no-nesting ` +
         `invariant).`,
@@ -192,8 +196,8 @@ for (const [name, { tools, file }] of defined) {
   if (tools === null || WRITER_SPOKES.has(name)) continue; // 4 already flags null
   const writeTools = tools.filter((t) => t === "Write" || t === "Edit");
   if (writeTools.length > 0) {
-    console.error(
-      `✗  ${file.slice(root.length + 1)} (${name}) grants ` +
+    reporter.error(
+      `${file.slice(root.length + 1)} (${name}) grants ` +
         `${writeTools.join(", ")}, but only ${[...WRITER_SPOKES].join(", ")} ` +
         `may hold write tools — every other spoke must stay structurally ` +
         `read-only.`,
@@ -207,8 +211,8 @@ for (const [name, { tools, file }] of defined) {
 // or missing one silently breaks automatic/explicit routing.
 for (const [name, { description, file }] of defined) {
   if (description === undefined || description.length === 0) {
-    console.error(
-      `✗  ${file.slice(root.length + 1)} (${name}) omits "description:" ` +
+    reporter.error(
+      `${file.slice(root.length + 1)} (${name}) omits "description:" ` +
         `frontmatter, or it is empty — every spoke needs one so callers know ` +
         `when to dispatch it.`,
     );
@@ -225,8 +229,8 @@ const workflowsDir = join(root, ".github/workflows");
 const matrixAgents = new Map(); // agent name -> { model, effort }
 const matrixWorkflows = new Map(); // workflow file -> { model, effort }
 if (!existsSync(matrixDoc)) {
-  console.error(
-    "✗  docs/contributing/model-selection.md is missing — the model matrix " +
+  reporter.error(
+    "docs/contributing/model-selection.md is missing — the model matrix " +
       "is required (see its Enforcement section).",
   );
   errors++;
@@ -236,8 +240,8 @@ if (!existsSync(matrixDoc)) {
     /<!-- BEGIN MODEL-MATRIX -->([\s\S]*?)<!-- END MODEL-MATRIX -->/,
   );
   if (block === null) {
-    console.error(
-      "✗  docs/contributing/model-selection.md lacks the MODEL-MATRIX block.",
+    reporter.error(
+      "docs/contributing/model-selection.md lacks the MODEL-MATRIX block.",
     );
     errors++;
   } else {
@@ -249,16 +253,16 @@ if (!existsSync(matrixDoc)) {
       if (surface === "agent") {
         matrixAgents.set(name, { model, effort });
         if (!isValidAgentModel(model)) {
-          console.error(
-            `✗  MODEL-MATRIX row for agent "${name}" pins "model: ${model}", ` +
+          reporter.error(
+            `MODEL-MATRIX row for agent "${name}" pins "model: ${model}", ` +
               `which is not a legal subagent model (see AGENT_MODEL_ALIASES ` +
               `in bin/lib/claude-models.mjs).`,
           );
           errors++;
         }
         if (!isValidEffort(effort)) {
-          console.error(
-            `✗  MODEL-MATRIX row for agent "${name}" pins "effort: ${effort}", ` +
+          reporter.error(
+            `MODEL-MATRIX row for agent "${name}" pins "effort: ${effort}", ` +
               `which is not a legal effort level (see EFFORT_LEVELS in ` +
               `bin/lib/claude-models.mjs).`,
           );
@@ -267,8 +271,8 @@ if (!existsSync(matrixDoc)) {
       } else {
         matrixWorkflows.set(name, { model, effort });
         if (!isValidWorkflowModel(model)) {
-          console.error(
-            `✗  MODEL-MATRIX row for workflow "${name}" pins "model: ${model}", ` +
+          reporter.error(
+            `MODEL-MATRIX row for workflow "${name}" pins "model: ${model}", ` +
               `which is not a legal workflow model (see WORKFLOW_MODEL_ALIASES ` +
               `in bin/lib/claude-models.mjs).`,
           );
@@ -281,28 +285,28 @@ if (!existsSync(matrixDoc)) {
     for (const [name, { model, effort, file }] of defined) {
       const relFile = file.slice(root.length + 1);
       if (model === undefined) {
-        console.error(
-          `✗  ${relFile} (${name}) omits "model:" frontmatter — every agent ` +
+        reporter.error(
+          `${relFile} (${name}) omits "model:" frontmatter — every agent ` +
             `must pin an explicit tier (see docs/contributing/model-selection.md).`,
         );
         errors++;
       } else if (!isValidAgentModel(model)) {
-        console.error(
-          `✗  ${relFile} (${name}) declares "model: ${model}", which is not ` +
+        reporter.error(
+          `${relFile} (${name}) declares "model: ${model}", which is not ` +
             `a legal subagent model (see AGENT_MODEL_ALIASES in ` +
             `bin/lib/claude-models.mjs).`,
         );
         errors++;
       }
       if (effort === undefined) {
-        console.error(
-          `✗  ${relFile} (${name}) omits "effort:" frontmatter — every agent ` +
+        reporter.error(
+          `${relFile} (${name}) omits "effort:" frontmatter — every agent ` +
             `must pin an explicit level (see docs/contributing/model-selection.md).`,
         );
         errors++;
       } else if (!isValidEffort(effort)) {
-        console.error(
-          `✗  ${relFile} (${name}) declares "effort: ${effort}", which is not ` +
+        reporter.error(
+          `${relFile} (${name}) declares "effort: ${effort}", which is not ` +
             `a legal effort level (see EFFORT_LEVELS in bin/lib/claude-models.mjs).`,
         );
         errors++;
@@ -310,23 +314,23 @@ if (!existsSync(matrixDoc)) {
 
       const expected = matrixAgents.get(name);
       if (expected === undefined) {
-        console.error(
-          `✗  ${relFile} (${name}) has no row in the MODEL-MATRIX block of ` +
+        reporter.error(
+          `${relFile} (${name}) has no row in the MODEL-MATRIX block of ` +
             `docs/contributing/model-selection.md.`,
         );
         errors++;
         continue;
       }
       if (model !== undefined && model !== expected.model) {
-        console.error(
-          `✗  ${relFile} (${name}) declares "model: ${model}" but ` +
+        reporter.error(
+          `${relFile} (${name}) declares "model: ${model}" but ` +
             `docs/contributing/model-selection.md pins "${expected.model}".`,
         );
         errors++;
       }
       if (effort !== undefined && effort !== expected.effort) {
-        console.error(
-          `✗  ${relFile} (${name}) declares "effort: ${effort}" but ` +
+        reporter.error(
+          `${relFile} (${name}) declares "effort: ${effort}" but ` +
             `docs/contributing/model-selection.md pins "${expected.effort}".`,
         );
         errors++;
@@ -334,8 +338,8 @@ if (!existsSync(matrixDoc)) {
     }
     for (const name of matrixAgents.keys()) {
       if (!defined.has(name)) {
-        console.error(
-          `✗  MODEL-MATRIX row names agent "${name}" which has no ` +
+        reporter.error(
+          `MODEL-MATRIX row names agent "${name}" which has no ` +
             `.claude/agents/ definition.`,
         );
         errors++;
@@ -353,8 +357,8 @@ if (!existsSync(matrixDoc)) {
         if (!pinned.has(name)) pinned.set(name, new Set());
         pinned.get(name).add(pin[1]);
         if (!isValidWorkflowModel(pin[1])) {
-          console.error(
-            `✗  .github/workflows/${name} pins "--model ${pin[1]}", which is ` +
+          reporter.error(
+            `.github/workflows/${name} pins "--model ${pin[1]}", which is ` +
               `not a legal workflow model (see WORKFLOW_MODEL_ALIASES in ` +
               `bin/lib/claude-models.mjs).`,
           );
@@ -362,14 +366,14 @@ if (!existsSync(matrixDoc)) {
         }
         const expected = matrixWorkflows.get(name);
         if (expected === undefined) {
-          console.error(
-            `✗  .github/workflows/${name} pins "--model ${pin[1]}" but has no ` +
+          reporter.error(
+            `.github/workflows/${name} pins "--model ${pin[1]}" but has no ` +
               `row in the MODEL-MATRIX block of docs/contributing/model-selection.md.`,
           );
           errors++;
         } else if (pin[1] !== expected.model) {
-          console.error(
-            `✗  .github/workflows/${name} pins "--model ${pin[1]}" but ` +
+          reporter.error(
+            `.github/workflows/${name} pins "--model ${pin[1]}" but ` +
               `docs/contributing/model-selection.md pins "${expected.model}".`,
           );
           errors++;
@@ -378,8 +382,8 @@ if (!existsSync(matrixDoc)) {
     }
     for (const [name, { model }] of matrixWorkflows) {
       if (!pinned.has(name)) {
-        console.error(
-          `✗  MODEL-MATRIX row pins workflow "${name}" to "${model}" but that ` +
+        reporter.error(
+          `MODEL-MATRIX row pins workflow "${name}" to "${model}" but that ` +
             `workflow has no --model pin (or does not exist).`,
         );
         errors++;
@@ -391,20 +395,24 @@ if (!existsSync(matrixDoc)) {
 // --- 6. Warn (non-blocking) on defined-but-unreferenced agents -------------
 for (const name of defined.keys()) {
   if (!referenced.has(name)) {
-    console.warn(
-      `⚠  agent "${name}" is defined but never referenced in skills or the ` +
+    reporter.warn(
+      `agent "${name}" is defined but never referenced in skills or the ` +
         `CLAUDE.md Spokes line.`,
     );
   }
 }
 
 if (errors > 0) {
-  console.error(`\n✗  ${errors} subagent configuration violation(s).`);
+  if (!json) {
+    console.error(`\n✗  ${errors} subagent configuration violation(s).`);
+  }
+  reporter.finish({ agents: defined.size });
   process.exit(1);
 }
 
-console.log(
-  `✓  ${defined.size} spokes valid: references resolve, none grant "Agent", ` +
+reporter.succeed(
+  `${defined.size} spokes valid: references resolve, none grant "Agent", ` +
     `and the model matrix (${matrixAgents.size} agents, ${matrixWorkflows.size} ` +
     `workflows) is in sync.`,
 );
+reporter.finish({ agents: defined.size });

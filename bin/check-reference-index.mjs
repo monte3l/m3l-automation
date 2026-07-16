@@ -17,6 +17,10 @@ import {
   buildScriptsReadmeBlock,
   root,
 } from "./lib/reference-index.mjs";
+import { parseJsonFlag, createReporter } from "./lib/report.mjs";
+
+const { json } = parseJsonFlag();
+const reporter = createReporter(json);
 
 function readJson(path) {
   try {
@@ -39,13 +43,13 @@ let errors = 0;
 
 const committedCatalog = readJson(join(root, "docs/reference/catalog.json"));
 if (committedCatalog === null) {
-  console.error(
-    "✗  docs/reference/catalog.json is missing — run pnpm gen:index.",
+  reporter.error(
+    "docs/reference/catalog.json is missing — run pnpm gen:index.",
   );
   errors++;
 } else if (JSON.stringify(committedCatalog) !== JSON.stringify(catalog)) {
-  console.error(
-    "✗  docs/reference/catalog.json is out of date — run pnpm gen:index.",
+  reporter.error(
+    "docs/reference/catalog.json is out of date — run pnpm gen:index.",
   );
   errors++;
 }
@@ -54,13 +58,13 @@ const committedSymbolMap = readJson(
   join(root, "docs/reference/symbol-map.json"),
 );
 if (committedSymbolMap === null) {
-  console.error(
-    "✗  docs/reference/symbol-map.json is missing — run pnpm gen:index.",
+  reporter.error(
+    "docs/reference/symbol-map.json is missing — run pnpm gen:index.",
   );
   errors++;
 } else if (JSON.stringify(committedSymbolMap) !== JSON.stringify(symbolMap)) {
-  console.error(
-    "✗  docs/reference/symbol-map.json is out of date — run pnpm gen:index.",
+  reporter.error(
+    "docs/reference/symbol-map.json is out of date — run pnpm gen:index.",
   );
   errors++;
 }
@@ -72,18 +76,18 @@ try {
   readmeContent = null;
 }
 if (readmeContent === null) {
-  console.error("✗  docs/reference/README.md is missing — run pnpm gen:index.");
+  reporter.error("docs/reference/README.md is missing — run pnpm gen:index.");
   errors++;
 } else {
   const committedBlock = extractBlock(readmeContent);
   if (committedBlock === null) {
-    console.error(
-      "✗  docs/reference/README.md is missing the GENERATED CATALOG markers — run pnpm gen:index.",
+    reporter.error(
+      "docs/reference/README.md is missing the GENERATED CATALOG markers — run pnpm gen:index.",
     );
     errors++;
   } else if (committedBlock !== buildReadmeBlock(catalog)) {
-    console.error(
-      "✗  docs/reference/README.md catalog block is out of date — run pnpm gen:index.",
+    reporter.error(
+      "docs/reference/README.md catalog block is out of date — run pnpm gen:index.",
     );
     errors++;
   }
@@ -94,27 +98,33 @@ if (readmeContent === null) {
     SCRIPTS_END_MARKER,
   );
   if (committedScriptsBlock === null) {
-    console.error(
-      "✗  docs/reference/README.md is missing the GENERATED SCRIPTS CATALOG markers — run pnpm gen:index.",
+    reporter.error(
+      "docs/reference/README.md is missing the GENERATED SCRIPTS CATALOG markers — run pnpm gen:index.",
     );
     errors++;
   } else if (
     committedScriptsBlock !== buildScriptsReadmeBlock(scriptsCatalog)
   ) {
-    console.error(
-      "✗  docs/reference/README.md scripts catalog block is out of date — run pnpm gen:index.",
+    reporter.error(
+      "docs/reference/README.md scripts catalog block is out of date — run pnpm gen:index.",
     );
     errors++;
   }
 }
 
 if (errors > 0) {
-  console.error(
-    `\n✗  ${errors} reference-index drift(s). Run pnpm gen:index to regenerate.`,
-  );
+  if (!json)
+    console.error(
+      `\n✗  ${errors} reference-index drift(s). Run pnpm gen:index to regenerate.`,
+    );
+  reporter.finish();
   process.exit(1);
 }
 
-console.log(
-  `✓  Reference index is up to date: ${catalog.length} modules, ${Object.keys(symbolMap).length} symbols.`,
+reporter.succeed(
+  `Reference index is up to date: ${catalog.length} modules, ${Object.keys(symbolMap).length} symbols.`,
 );
+reporter.finish({
+  modules: catalog.length,
+  symbols: Object.keys(symbolMap).length,
+});

@@ -38,16 +38,21 @@ import {
   serviceNameErrors,
   substituteTokens,
 } from "./lib/script-scaffold.mjs";
+import { parseJsonFlag, createReporter } from "./lib/report.mjs";
+
+const { json, argv } = parseJsonFlag();
+const reporter = createReporter(json);
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function fail(message) {
-  console.error(`✗  ${message}`);
+  reporter.error(message);
+  reporter.finish();
   process.exit(1);
 }
 
 // --- Parse arguments ---------------------------------------------------------
-const args = process.argv.slice(2);
+const args = argv;
 const name = args[0];
 let purpose = "TODO: describe what this automation does.";
 const purposeFlag = args.indexOf("--purpose");
@@ -105,16 +110,17 @@ try {
   for (const { template, target } of PACKAGE_TEMPLATE_FILES) {
     const resolvedTarget = substituteTokens(target, tokens);
     await emit(template, join(packageDir, resolvedTarget));
-    console.log(`✓  scripts/${name}/${resolvedTarget}`);
+    reporter.change("created", `scripts/${name}/${resolvedTarget}`);
   }
   await emit(DOC_PAGE_TEMPLATE, docPage);
-  console.log(`✓  ${docPagePath(name)}`);
+  reporter.change("created", docPagePath(name));
 } catch (cause) {
   rmSync(packageDir, { recursive: true, force: true });
   rmSync(docPage, { force: true });
-  console.error(
-    `✗  Scaffold failed and was rolled back (scripts/${name}/ removed): ${cause}`,
+  reporter.error(
+    `Scaffold failed and was rolled back (scripts/${name}/ removed): ${cause}`,
   );
+  reporter.finish({ scriptName: name });
   process.exit(1);
 }
 
@@ -135,11 +141,12 @@ if (!references.some((entry) => entry.path === ref)) {
       filepath: rootTsconfigPath,
     }),
   );
-  console.log(`✓  tsconfig.json references ${ref}`);
+  reporter.change("updated", "tsconfig.json", `references ${ref}`);
 }
 
-console.log(`
-Scaffold complete. Next steps:
+reporter.succeed(`Scaffold complete for scripts/${name}/.`);
+reporter.info(`
+Next steps:
   1. pnpm install                                # workspace glob picks up the package
   2. pnpm build                                  # turbo builds m3l-common first
   3. pnpm --filter @m3l-automation/${name} start # smoke run
@@ -147,3 +154,4 @@ Scaffold complete. Next steps:
   5. Fill in scripts/${name}/README.md (how to run) and
      ${docPagePath(name)} (the contract), then hand off
      implementation to the implementing-scripts pipeline.`);
+reporter.finish({ scriptName: name });

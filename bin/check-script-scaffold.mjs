@@ -35,12 +35,16 @@ import {
   scriptPackageDirs,
   serviceNameErrors,
 } from "./lib/script-scaffold.mjs";
+import { parseJsonFlag, createReporter } from "./lib/report.mjs";
+
+const { json } = parseJsonFlag();
+const reporter = createReporter(json);
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 let errors = 0;
 function report(message) {
-  console.error(`✗  ${message}`);
+  reporter.error(message);
   errors++;
 }
 
@@ -135,14 +139,18 @@ for (const ref of rootRefs.filter((path) => path.startsWith("./scripts/"))) {
 }
 
 if (errors > 0) {
-  console.error(
-    `\n✗  ${errors} script-scaffold mismatch(es). The shape is defined in bin/lib/script-scaffold.mjs (ADR-0022).`,
-  );
+  if (!json) {
+    console.error(
+      `\n✗  ${errors} script-scaffold mismatch(es). The shape is defined in bin/lib/script-scaffold.mjs (ADR-0022).`,
+    );
+  }
+  reporter.finish();
   process.exit(1);
 }
 
-console.log(
+reporter.succeed(
   scriptNames.length === 0
-    ? "✓  No script packages under scripts/ — nothing to check."
-    : `✓  ${scriptNames.length} script package(s) conform to the ADR-0022 scaffold shape.`,
+    ? "No script packages under scripts/ — nothing to check."
+    : `${scriptNames.length} script package(s) conform to the ADR-0022 scaffold shape.`,
 );
+reporter.finish();

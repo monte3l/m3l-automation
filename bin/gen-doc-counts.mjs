@@ -17,7 +17,10 @@ import {
   IMPLEMENTED_LIST_BEGIN_MARKER,
   IMPLEMENTED_LIST_END_MARKER,
 } from "./lib/count-sites.mjs";
+import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 
+const { json } = parseJsonFlag();
+const reporter = createReporter(json);
 const counts = deriveCounts();
 const allSites = [...TOTAL_COUNT_SITES, ...IMPLEMENTED_COUNT_SITES];
 const byFile = new Map();
@@ -34,7 +37,7 @@ for (const [file, sites] of byFile) {
   try {
     content = readFileSync(filePath, "utf8");
   } catch {
-    console.error(`✗  gen:counts — cannot read ${file}, skipping.`);
+    reporter.error(`gen:counts — cannot read ${file}, skipping.`);
     continue;
   }
 
@@ -55,7 +58,7 @@ for (const [file, sites] of byFile) {
   if (changed) {
     writeFileSync(filePath, content, "utf8");
     touchedFiles++;
-    console.log(`Updated: ${file}`);
+    reporter.change("updated", file);
   }
 }
 
@@ -79,21 +82,32 @@ if (statusContent !== null) {
     if (nextContent !== statusContent) {
       writeFileSync(statusPath, nextContent, "utf8");
       touchedFiles++;
-      console.log(
-        "Updated: docs/implementation-status.md (implemented-list block)",
+      reporter.change(
+        "updated",
+        "docs/implementation-status.md",
+        "(implemented-list block)",
       );
     }
   } else {
-    console.error(
-      "✗  gen:counts — docs/implementation-status.md is missing the GENERATED IMPLEMENTED-LIST markers; add them once, then re-run.",
+    reporter.error(
+      "gen:counts — docs/implementation-status.md is missing the GENERATED IMPLEMENTED-LIST markers; add them once, then re-run.",
     );
   }
 }
 
 if (touchedFiles === 0) {
-  console.log("✓  All count sites already match the derived counts.");
+  reporter.succeed("All count sites already match the derived counts.");
 } else {
-  console.log(
-    `✓  gen:counts done — ${touchedFiles} file(s) updated to Core=${counts.coreCount}, AWS=${counts.awsCount}, total=${counts.total}, implemented=${counts.implemented}.`,
+  reporter.succeed(
+    `gen:counts done — ${touchedFiles} file(s) updated to Core=${counts.coreCount}, AWS=${counts.awsCount}, total=${counts.total}, implemented=${counts.implemented}.`,
   );
 }
+
+reporter.finish({
+  counts: {
+    core: counts.coreCount,
+    aws: counts.awsCount,
+    total: counts.total,
+    implemented: counts.implemented,
+  },
+});
