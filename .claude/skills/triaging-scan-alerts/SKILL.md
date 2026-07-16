@@ -9,8 +9,9 @@ description: >-
   CodeQL alerts", "code scanning alerts", "security scanning alerts", "any CodeQL
   findings", "check the security tab", "what's in the security tab", "did CodeQL
   flag anything", "review the scanning alerts", or asks whether a PR is blocked
-  by a required code-scanning check. Always uses gh CLI; never uses GitHub MCP
-  (blocked by enterprise policy). Skip for: fixing claude-pr-review bot findings
+  by a required code-scanning check. Uses the gh CLI (GitHub-integration
+  stance: ADR-0030 — GitHub MCP is available; skills migrate incrementally when
+  next edited). Skip for: fixing claude-pr-review bot findings
   (use resolving-pr-comments), and diagnosing failed CI workflow steps (use
   triaging-ci).
 ---
