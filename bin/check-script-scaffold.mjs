@@ -33,6 +33,7 @@ import {
   packageManifestErrors,
   rootTsconfigRef,
   scriptPackageDirs,
+  serviceNameErrors,
 } from "./lib/script-scaffold.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -52,6 +53,10 @@ const rootRefs = (rootTsconfig.references ?? []).map((entry) => entry.path);
 // --- Forward: each script package conforms to the manifest -------------------
 for (const name of scriptNames) {
   const packageDir = join(root, "scripts", name);
+
+  for (const problem of serviceNameErrors(name)) {
+    report(`scripts/${name}: ${problem}`);
+  }
 
   for (const file of REQUIRED_EXACT_FILES) {
     if (!existsSync(join(packageDir, file))) {

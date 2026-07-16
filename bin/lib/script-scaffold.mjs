@@ -9,6 +9,54 @@ import { join } from "node:path";
 /** Kebab-case script names only: `data-sync`, `report-builder`, `probe`. */
 export const SCRIPT_NAME_RE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 
+/**
+ * ADR-0028: known-bad abbreviated AWS service tokens. A name whose FIRST
+ * hyphen-segment is one of these keys is rejected. This is a denylist, not a
+ * service-name allowlist — no canonical vocabulary of "every valid AWS
+ * service name" exists yet, nor any structural signal marking a script
+ * "AWS-scoped" versus not (see ADR-0028's scope-definition note), so an
+ * allowlist can't be built without inventing both. A denylist sidesteps that:
+ * it applies uniformly to every name, so a non-AWS name (`json-etl`) is
+ * simply never on the list.
+ */
+export const BANNED_LEADING_SEGMENTS = new Map([
+  ["dynamo", "dynamodb"],
+  ["cfn", "cloudformation"],
+  ["apigw", "api-gateway"],
+]);
+
+/**
+ * ADR-0028: bare AWS capability names that omit their owning service.
+ * Checked as an exact whole-name match (the missing piece is a leading
+ * prefix, not a segment substitution, so a leading-segment check can't
+ * catch it).
+ */
+export const BANNED_EXACT_NAMES = new Map([
+  ["logs-insights", "cloudwatch-logs-insights"],
+]);
+
+/**
+ * Validate a script name against the ADR-0028 full-service-name convention.
+ * Returns human-readable problem strings (empty array = compliant).
+ */
+export function serviceNameErrors(name) {
+  const problems = [];
+  const leadingSegment = name.split("-")[0];
+  const abbrevTarget = BANNED_LEADING_SEGMENTS.get(leadingSegment);
+  if (abbrevTarget) {
+    problems.push(
+      `"${name}" abbreviates the AWS service name (uses "${leadingSegment}") — ADR-0028 requires the full official service name ("${abbrevTarget}") as the leading segment.`,
+    );
+  }
+  const exactTarget = BANNED_EXACT_NAMES.get(name);
+  if (exactTarget) {
+    problems.push(
+      `"${name}" names an AWS capability without its owning service — ADR-0028 requires "${exactTarget}".`,
+    );
+  }
+  return problems;
+}
+
 /** Longest purpose accepted — one terse sentence, not a paragraph. */
 export const PURPOSE_MAX_LENGTH = 200;
 
