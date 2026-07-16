@@ -10,6 +10,7 @@ import {
 const FAKE_GH_PAT = `ghp_${"a1B2c3D4e5F6".repeat(3)}`; // ghp_ + 36 chars
 const FAKE_NPM = `npm_${"z9Y8x7W6v5U4".repeat(3)}`; // npm_ + 36 chars
 const FAKE_AKIA = "AKIA1234567890ABCDEF"; // AKIA + 16 chars
+const FAKE_CTX7 = `ctx7sk-${"0000aaaa-1111-2222-3333-bbbb4444cccc"}`; // ctx7sk- + 36 chars, fake
 
 describe("isEnvFilePath", () => {
   test("flags a bare .env file", () => {
@@ -60,12 +61,19 @@ describe("findSecrets", () => {
     expect(findSecrets(`token: "${FAKE_GH_PAT}"`)).not.toEqual([]);
     expect(findSecrets(`token: "${FAKE_NPM}"`)).not.toEqual([]);
     expect(findSecrets(`id = ${FAKE_AKIA}`)).not.toEqual([]);
+    expect(findSecrets(`"CONTEXT7_API_KEY": "${FAKE_CTX7}"`)).not.toEqual([]);
   });
 
   test("flags a PEM private key block", () => {
     expect(
       findSecrets("-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n"),
     ).not.toEqual([]);
+  });
+
+  test("does NOT flag the secretless .mcp.json env-expansion shape", () => {
+    expect(findSecrets('"CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"')).toEqual(
+      [],
+    );
   });
 
   test("every known secret key is covered", () => {

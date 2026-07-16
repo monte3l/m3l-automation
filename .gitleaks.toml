@@ -1,0 +1,11 @@
+# Extends gitleaks' default ruleset with repo-specific credential shapes.
+# CI runs gitleaks-action (ci.yml "Secret scan"); it auto-loads this file from
+# the repo root. Write-time counterpart: .claude/hooks/guard-secret-writes.mjs.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "context7-api-key"
+description = "Context7 API key (MCP server config — must stay in the user env, never committed; ADR-0030)"
+regex = '''\bctx7sk-[A-Za-z0-9-]{20,}\b'''
+keywords = ["ctx7sk-"]
