@@ -188,6 +188,19 @@ export default tseslint.config(
           message:
             "Scripts must not read process.env directly — declare config via M3LConfigParameter and read it from the resolved config (scripts.md).",
         },
+        {
+          // The no-restricted-imports rule below only visits static import /
+          // export declarations, so a dynamic `import("pkg")` would bypass
+          // the ADR-0029 boundary. Flag any dynamic import of a string
+          // literal that is not relative, not a node: builtin, and not the
+          // library (or a subpath) — the same allow-set as the static rule.
+          // Non-literal arguments (template/variable specifiers) can't be
+          // checked statically and are out of scope here.
+          selector:
+            "ImportExpression[source.type='Literal'][source.value=/^(?!\\.)(?!node:)(?!@m3l-automation\\/m3l-common($|\\/)).+$/]",
+          message:
+            "Scripts may only dynamically import @m3l-automation/m3l-common (or a subpath), node: builtins, or a relative module — ADR-0029 bans script-local dependencies.",
+        },
       ],
       "@typescript-eslint/no-restricted-imports": [
         "error",
@@ -198,6 +211,24 @@ export default tseslint.config(
               allowTypeImports: false,
               message:
                 "Scripts must not import @aws-sdk/* directly — use the typed wrappers in @m3l-automation/m3l-common/aws (e.g. M3LLogsInsightsClient). ADR-0027.",
+            },
+            {
+              // Any bare (non-relative) specifier that is neither the
+              // library nor a node: builtin — ADR-0029's package.json rule
+              // (check:script-deps) governs the declared dependency; this is
+              // its source-level backstop, catching a bare import that
+              // slipped past a hand-edited manifest. The real `@aws-sdk`
+              // scope is excluded so it surfaces only via the more specific
+              // message above — but the lookahead is scope-bounded with
+              // `($|/)` so a prefix-squat (`@aws-sdk-evil/x`, `@aws-sdkx`)
+              // is still banned here rather than slipping past both rules.
+              // The library lookahead is bounded the same way so
+              // `@m3l-automation/m3l-common-evil` is banned too.
+              regex:
+                "^(?!\\.)(?!node:)(?!@aws-sdk($|/))(?!@m3l-automation/m3l-common($|/)).+$",
+              allowTypeImports: false,
+              message:
+                "Scripts may only import @m3l-automation/m3l-common (or a subpath) and node: builtins — ADR-0029 bans script-local dependencies; a new capability becomes a library wrapper first.",
             },
           ],
         },
