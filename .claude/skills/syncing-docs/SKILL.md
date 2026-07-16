@@ -9,6 +9,24 @@ lint) — never source code, tests, or barrel exports.
 
 ## Steps
 
+### 0 — Preferred path: the composite entry point
+
+```bash
+pnpm sync:docs          # or: node bin/sync-docs.mjs [--affected <path>] [--json]
+```
+
+`bin/sync-docs.mjs` (ADR-0030 Phase 4) runs steps 1–9 below as one
+deterministic sequence: fail-fast ordering, the gen:index-before-prettier
+rule baked in (it prettier-writes exactly the artifacts `gen:index`
+regenerated), plus a machine check for the step-8 trap (every barrel export
+must appear in a sidecar `sections[].sources[]`). `--json` emits one
+aggregated payload; the human mode prints the summary block below. When it
+passes, this skill is done — report its summary. Fall back to the manual
+steps only when the composite itself is broken or you need to isolate a
+single failing step.
+
+### Manual sequence (fallback / reference)
+
 Run in order. **Fail fast**: stop at the first failing step, report the full
 error output, and tell the user what to fix before re-running.
 
