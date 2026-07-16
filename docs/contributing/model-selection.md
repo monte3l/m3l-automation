@@ -162,6 +162,36 @@ effort level (`bin/lib/claude-models.mjs`). Change a spoke's model or effort
 here **and** in its frontmatter, in the same commit — drift in either
 direction, or an illegal value, fails the check.
 
+A third surface, `workflow-script`, covers Claude Code **dynamic-workflow
+scripts** under `.claude/workflows/` (ADR-0025). Its rows come in two shapes:
+exactly one required file-level row `` `<file>` `` pinning the script's
+default (`inherit` model / `n/a` effort when every `agent()` call either
+overrides explicitly or dispatches a typed agent), plus one optional per-step
+row `` `<file>:<label>` `` for each distinct `model:`/`effort:` override,
+named by the `label` of the `agent()` call that carries it. Calls using
+`agentType: "<Agent>"` with no model/effort literals need no row — their
+governance rides that agent's existing `agent`-surface row. Two hard rules
+keep the surface statically auditable: `model:`/`effort:` values in a
+workflow script must be **string literals** (a dynamic value cannot be
+audited), and every script must declare an agent-count guardrail header
+`// max-agents: <N>` in its first 10 lines, with `1 <= N <= 25` — the ceiling
+anchored to the Workflow tool's own "large workflow" warning threshold
+(>25 agents). The companion >1.5M projected-token half of that threshold is
+advisory only: tokens are not statically checkable, so budget-heavy workflows
+should consult `budget.remaining()` at run time instead. All of this is
+machine-verified by `pnpm check:workflows` (`bin/check-workflows.mjs`, a
+CI-only step — not to be confused with `check:workflows-doc`, which
+reconciles the CLAUDE.md CI/CD table against `.github/workflows/`). The check
+verifies per-step rows by literal presence, not call-site association — each
+step row's model/effort/label must all appear in the script, but binding a
+literal to its specific `agent()` call is beyond a regex scan (two calls with
+swapped model-to-label pairings still pass), so PR review guards that
+association. One
+convention is not machine-checkable: any workflow whose agents write
+`packages/*/src/**` or `**/tests/**` must dispatch those agents with
+`isolation: "worktree"` (ADR-0013) — `guard-branch-isolation.mjs` blocks such
+writes on `main` regardless of which agent issues them.
+
 The legal effort ladder (`bin/lib/claude-models.mjs` `EFFORT_LEVELS`) is
 `low` < `medium` < `high` < `xhigh` < `max`. Every row in this doc currently
 tops out at `xhigh` — "the best setting for most coding and agentic use
@@ -176,8 +206,10 @@ family the session already resolved to.
 
 The hub session's model cannot be machine-enforced (it is user-selected via
 `/model`); the `starting-work` decision gate surfaces the matrix row for the
-task instead. Workflow rows have no effort concept (GitHub Actions `--model`
-pins carry no `--effort` flag today), so they carry `n/a`.
+task instead. GitHub-Actions `workflow` rows have no effort concept
+(`--model` pins carry no `--effort` flag today), so they carry `n/a`; a
+`workflow-script` file-level row may likewise carry `n/a` when the script
+never relies on a default effort.
 
 `haiku`, `sonnet`, `opus`, and `fable` are aliases that float to the current
 generation on release (per step 4 below) — as of this writing that means

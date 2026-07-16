@@ -69,7 +69,7 @@ surface).
 | 0022 | [Re-introduce the `scripts/` workspace for real consumers](./0022-reintroduce-scripts-workspace.md)                                              | Accepted                      |
 | 0023 | [Re-affirm the external code-index MCP deferral on new grounds](./0023-reaffirm-code-index-mcp-deferral.md)                                      | Accepted                      |
 | 0024 | [Deterministic prevention of derived-artifact merge conflicts](./0024-deterministic-derived-artifact-merges.md)                                  | Accepted                      |
-| 0025 | [Selective adoption of dynamic workflows for subagent orchestration](./0025-dynamic-workflows-assessment.md)                                     | Proposed                      |
+| 0025 | [Selective adoption of dynamic workflows for subagent orchestration](./0025-dynamic-workflows-assessment.md)                                     | Accepted                      |
 | 0026 | [Typed SQS operations wrapper over the raw SDK client](./0026-sqs-operations-wrapper.md)                                                         | Accepted                      |
 | 0027 | [Scripts never import `@aws-sdk/*`; the library grows typed AWS operation wrappers per consumer need](./0027-aws-sdk-boundary-typed-wrappers.md) | Accepted; amended by ADR-0029 |
 | 0028 | [AWS-scoped scripts and submodules are named with full official AWS service names](./0028-aws-service-naming-convention.md)                      | Accepted                      |
