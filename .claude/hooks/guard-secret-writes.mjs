@@ -40,6 +40,7 @@ export const SECRET_KEYS = [
   "AWS_ACCESS_KEY_ID",
   "AWS_SESSION_TOKEN",
   "GITLEAKS_LICENSE",
+  "CONTEXT7_API_KEY",
 ];
 
 // High-signal literal shapes — a match is almost certainly a real credential.
@@ -48,6 +49,7 @@ const TOKEN_LITERALS = [
   /\bgithub_pat_[A-Za-z0-9_]{22,}\b/, // GitHub fine-grained PAT
   /\bnpm_[A-Za-z0-9]{36}\b/, // npm automation token
   /\bAKIA[0-9A-Z]{16}\b/, // AWS access key id
+  /\bctx7sk-[A-Za-z0-9-]{20,}\b/, // Context7 API key (MCP config, ADR-0030)
   /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/, // PEM private key
 ];
 
