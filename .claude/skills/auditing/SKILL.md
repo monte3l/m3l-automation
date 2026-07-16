@@ -45,53 +45,77 @@ Every agent in Step 2 writes into this directory — it is what keeps a
 thorough agent's full findings out of its return payload (see below) while
 still being available to you in full during aggregation.
 
-### 2 — Fan out Explore agents (parallel)
+### 2 — Fan out via the `audit-fanout` workflow
 
-Spawn all agents **in a single message** so they run concurrently. Each agent
-receives:
+Invoke the **`Workflow` tool** with the named workflow `audit-fanout`
+(`.claude/workflows/audit-fanout.js`, the ADR-0025 pilot), passing as `args`:
 
-- A focused brief scoped to exactly one facet of the audit target.
-- The run directory from Step 1 and the exact filename to write:
-  `<run-dir>/<facet-slug>.md`.
-- This fixed report format (instruct each agent to use it verbatim, writing it
-  to the scratchpad file above — not only into its final response):
+```json
+{
+  "topic": "<the audit target>",
+  "runDir": "<run-dir from Step 1>",
+  "facets": [{ "name": "...", "slug": "...", "brief": "..." }]
+}
+```
 
-  ```
-  ## Findings: <facet name>
-  - EXISTING: <description of what is already in place>
-  - GAP: <something absent that would be expected>
-  - INCONSISTENCY: <something that conflicts with another part of the repo>
-  ```
+One facet entry per Step-1 facet (the workflow accepts at most 5). Each
+`brief` is the focused, single-facet instruction you would previously have
+written into an Explore agent prompt — restate any repo rule that matters,
+because the workflow's Explore agents skip `CLAUDE.md` exactly like manually
+dispatched ones. This skill-directed call is the Workflow tool's opt-in; no
+extra user confirmation is needed.
 
-- An explicit instruction to **read relevant files in full** (not just search),
-  since excerpts miss content past the read window.
-- An instruction to mark items `EXISTING` when they can confirm the thing is
-  implemented — not just when they cannot find evidence of a gap.
-- The **return-value instruction**: after writing the full findings to the
-  scratchpad file, the agent's final message back to you must be a **compact
-  digest only** — the facet name, an EXISTING/GAP/INCONSISTENCY count, and one
-  line per GAP or INCONSISTENCY item (skip re-stating EXISTING items, which
-  matter for verification but rarely drive the plan) — plus the scratchpad
-  file path. It must not repeat the full file contents in its response. This
-  is what keeps a wide fan-out from itself running a thorough agent out of
-  turn budget mid-report, and keeps your context budget for aggregation
-  rather than for re-reading verbose per-agent output.
+The workflow owns the mechanical slice end-to-end:
 
-Use `subagent_type: "Explore"` for every agent. Do not write any files
-yourself in this step; the agents write their own scratchpad files.
+- **Find:** one read-only Explore agent per facet writes a full report in the
+  fixed format below to `<run-dir>/<facet-slug>.md` and returns a compact
+  digest only (facet, counts, one entry per GAP/INCONSISTENCY) — keeping both
+  the agents' and your context budgets intact.
+- **Verify:** each GAP/INCONSISTENCY finding gets an independent adversarial
+  refute agent (the security-reviewer refute-mode pattern) that returns
+  `confirmed` only when a genuine refutation attempt fails.
+- **Return:** `{ confirmed, refuted, unverified, facets }` — findings past the
+  workflow's verify budget arrive in `unverified` for you to check manually
+  in Step 3.
 
-### 3 — Aggregate and verify
+The fixed report format every finder uses verbatim:
 
-Collect all agent digests, then **read every scratchpad file in the run
-directory in full** — the digests are for triage, not verification; an
-item's exact wording and the file/line it cites matter for confirming it
-against the live repo. For each `GAP` or `INCONSISTENCY` item:
+```
+## Findings: <facet name>
+- EXISTING: <description of what is already in place>
+- GAP: <something absent that would be expected>
+- INCONSISTENCY: <something that conflicts with another part of the repo>
+```
 
-1. Verify the claim is accurate — check the relevant file(s) yourself before
-   treating it as a real gap. Agents sometimes flag things that exist under
-   different names or paths.
-2. Discard anything that turns out to be already implemented.
-3. Group surviving items by theme (e.g. "missing CI gate", "doc drift",
+**Fallback — Workflow tool unavailable in the session:** dispatch the fan-out
+manually instead: one `subagent_type: "Explore"` agent per facet, all in a
+single message, each given the facet brief, the exact scratchpad path, the
+fixed report format above, an instruction to read relevant files in full, the
+mark-EXISTING-only-when-confirmed rule, and the compact-digest return rule.
+The adversarial refute pass is then skipped — every finding lands in Step 3
+for your own verification, which is the backstop either way.
+
+Do not write any files yourself in this step; the agents write their own
+scratchpad files.
+
+### 3 — Aggregate and verify (hub judgment)
+
+Read every scratchpad file in the run directory **in full** — digests and
+workflow verdicts are for triage, not final judgment; an item's exact wording
+and the file/line it cites matter for the plan. If a facet's report file is
+missing (a finder can fail to write it even after returning a digest), its
+digest items still arrived — treat them like `unverified` and check each one
+yourself. Then:
+
+1. Personally verify every `unverified` item (findings past the workflow's
+   verify budget, refuters that died mid-run, or the whole set on the manual
+   fallback path) — check the relevant file(s) yourself before treating it
+   as a real gap. Agents sometimes flag things that exist under different
+   names or paths.
+2. Spot-check any `refuted` verdict that discards a finding the user
+   explicitly asked about — a refuter can be wrong too.
+3. Discard anything that turns out to be already implemented.
+4. Group surviving items by theme (e.g. "missing CI gate", "doc drift",
    "hook coverage").
 
 **When the audit target is (or cites) a stored `docs/plans/*.md`, treat every

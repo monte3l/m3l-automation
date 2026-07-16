@@ -58,3 +58,4 @@ script implementation units get one; chore/docs/CI PRs deliberately do not.
 | Date       | Change                                              | Log                                                                |
 | ---------- | --------------------------------------------------- | ------------------------------------------------------------------ |
 | 2026-07-11 | Parallelize the pre-push verify (fix push timeouts) | [prepush-parallelization](./2026-07-11-prepush-parallelization.md) |
+| 2026-07-16 | `audit-fanout` dynamic workflow (ADR-0025 pilot)    | [audit-fanout-workflow](./2026-07-16-audit-fanout-workflow.md)     |
