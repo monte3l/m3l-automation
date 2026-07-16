@@ -29,6 +29,8 @@ vi.mock("node:fs", async () => {
 });
 
 import {
+  BANNED_EXACT_NAMES,
+  BANNED_LEADING_SEGMENTS,
   PACKAGE_TEMPLATE_FILES,
   PURPOSE_MAX_LENGTH,
   REQUIRED_EXACT_FILES,
@@ -41,6 +43,7 @@ import {
   rootTsconfigRef,
   scriptPackageDirs,
   scriptTokens,
+  serviceNameErrors,
   substituteTokens,
 } from "../lib/script-scaffold.mjs";
 
@@ -367,5 +370,65 @@ describe("scriptPackageDirs", () => {
     }) as unknown as typeof fs.readdirSync);
 
     expect(scriptPackageDirs(root)).toEqual(["data-sync"]);
+  });
+});
+
+describe("BANNED_LEADING_SEGMENTS", () => {
+  test("maps each known abbreviated AWS service token to its full name", () => {
+    expect(BANNED_LEADING_SEGMENTS.get("dynamo")).toBe("dynamodb");
+    expect(BANNED_LEADING_SEGMENTS.get("cfn")).toBe("cloudformation");
+    expect(BANNED_LEADING_SEGMENTS.get("apigw")).toBe("api-gateway");
+  });
+});
+
+describe("BANNED_EXACT_NAMES", () => {
+  test("maps each known bare capability name to its full service-qualified name", () => {
+    expect(BANNED_EXACT_NAMES.get("logs-insights")).toBe(
+      "cloudwatch-logs-insights",
+    );
+  });
+});
+
+describe("serviceNameErrors", () => {
+  test.each([
+    ["dynamo-crud", "dynamo", "dynamodb"],
+    ["cfn-stacks", "cfn", "cloudformation"],
+    ["apigw-client", "apigw", "api-gateway"],
+  ])(
+    "flags %j for abbreviating the AWS service name, suggesting the full name",
+    (name, abbrev, fullName) => {
+      const errors = serviceNameErrors(name);
+      expect(errors).toEqual([
+        `"${name}" abbreviates the AWS service name (uses "${abbrev}") — ADR-0028 requires the full official service name ("${fullName}") as the leading segment.`,
+      ]);
+    },
+  );
+
+  test("flags the exact bare-capability name, suggesting the service-qualified name", () => {
+    expect(serviceNameErrors("logs-insights")).toEqual([
+      '"logs-insights" names an AWS capability without its owning service — ADR-0028 requires "cloudwatch-logs-insights".',
+    ]);
+  });
+
+  test.each(["dynamodb-crud", "cloudwatch-logs-insights", "sqs-etl"])(
+    "passes a compliant full AWS service name %j (empty array)",
+    (name) => {
+      expect(serviceNameErrors(name)).toEqual([]);
+    },
+  );
+
+  test("passes a non-AWS name that never comes close to a banned token", () => {
+    expect(serviceNameErrors("json-etl")).toEqual([]);
+  });
+
+  test("does not flag a banned token that appears in a non-leading segment", () => {
+    // "dynamo" is only banned as the FIRST hyphen segment; here it's second.
+    expect(serviceNameErrors("crud-dynamo")).toEqual([]);
+  });
+
+  test("does not flag a name that merely contains the banned exact name as a substring", () => {
+    // BANNED_EXACT_NAMES is an exact whole-name Map lookup, not substring search.
+    expect(serviceNameErrors("foo-logs-insights")).toEqual([]);
+    expect(serviceNameErrors("logs-insights-extra")).toEqual([]);
   });
 });

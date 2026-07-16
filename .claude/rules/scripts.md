@@ -19,8 +19,9 @@ paths:
   (`cfn`, `apigw`, `dynamo`). Non-AWS scripts (`json-etl`) are exempt.
   Why: one greppable name per service across submodule, script, reference
   page, and roadmap (ADR-0028 carries the noncompliance ledger for shipped
-  pre-policy names). Enforcement: reviewer-checked today; scaffold check
-  tracked as ROADMAP follow-up T5.
+  pre-policy names). Enforcement: `serviceNameErrors()` (a known-abbreviation
+  denylist, `bin/lib/script-scaffold.mjs`) is checked by both
+  `pnpm scaffold:script` and `check:script-scaffold` (ROADMAP follow-up T5).
 - **Declare exactly one runtime dependency** —
   `"@m3l-automation/m3l-common": "workspace:*"` — and no devDependencies
   (the workspace root owns tooling). A capability the library lacks becomes

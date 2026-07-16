@@ -35,6 +35,7 @@ import {
   purposeErrors,
   rootTsconfigRef,
   scriptTokens,
+  serviceNameErrors,
   substituteTokens,
 } from "./lib/script-scaffold.mjs";
 
@@ -63,6 +64,9 @@ if (!SCRIPT_NAME_RE.test(name)) {
   fail(
     `Script name "${name}" must be kebab-case ([a-z0-9] segments separated by "-").`,
   );
+}
+for (const problem of serviceNameErrors(name)) {
+  fail(problem);
 }
 for (const problem of purposeErrors(purpose)) {
   fail(problem);
