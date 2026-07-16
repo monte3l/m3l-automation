@@ -148,6 +148,13 @@ jobs:
       - name: Check script scaffold conformance
         run: pnpm check:script-scaffold
 
+      # Every scripts/*/package.json must declare exactly the ADR-0029
+      # dependency boundary — @m3l-automation/m3l-common via workspace:* and
+      # no devDependencies. The @aws-sdk/* import ban (eslint.config.js) is
+      # the source-level half of this same rule.
+      - name: Check script dependency boundary
+        run: pnpm check:script-deps
+
       # Every public export surfaced through a namespace barrel must be
       # documented — present in its reference page heading or provenance sidecar.
       # Deterministic backstop for the spec-conformance / docs-consistency spokes.

@@ -27,8 +27,11 @@ paths:
   (the workspace root owns tooling). A capability the library lacks becomes
   a typed library wrapper first (the ADR-0027 pattern); never a script-local
   package. Why: one mediation seam, one supply-chain audit point, mockable
-  step tests. Enforcement: the `@aws-sdk/*` import ban (ESLint) today; the
-  full package.json check is tracked as ROADMAP follow-up T6 (ADR-0029).
+  step tests. Enforcement: `check:script-deps`
+  (`bin/check-script-deps.mjs`) asserts the package.json declaration; the
+  `@aws-sdk/*`-specific and blanket bare-import bans (ESLint,
+  `scripts/*/src/**/*.ts`) cover the source level (ROADMAP follow-up T6,
+  ADR-0029).
 
 ## Layout — modular, never a single-file script
 
