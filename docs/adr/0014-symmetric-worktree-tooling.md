@@ -79,6 +79,22 @@ manual flow's glob/config gaps bite in practice.
 - **Semver impact:** none — repo tooling and docs only; no change to
   `packages/m3l-common/src/**` or the `exports` map (`chore:` / `docs:`).
 
+## Amendment (2026-07-16)
+
+Three corrections/additions to the tooling described above, surfaced by a
+documentation audit:
+
+- **Branch-point fallback.** `worktree:new` branches from `origin/main` when
+  available, but falls back to the local `main` branch if `origin/main` is
+  absent (erroring only when neither exists) — not the unconditional
+  `origin/main` this ADR originally described.
+- **Slug validation.** `worktree:new <slug>` validates the slug against
+  `^[a-z0-9]+(?:-[a-z0-9]+)*$` (kebab-case) and exits with an error on a
+  non-conforming slug.
+- **`worktree:remove --force`.** `worktree:remove <slug> --force` discards
+  uncommitted/untracked changes before removing the worktree, in addition to
+  the merged-branch teardown described above.
+
 ## Links
 
 - Supersedes / superseded by: none. **Extends ADR-0013** (git worktrees for task

@@ -74,6 +74,13 @@ feat/<slug>` (sibling directory, keeping the `feat/<slug>` branch convention and
 - **Semver impact:** none — no change to `packages/m3l-common/src/**` or the
   `exports` map. Changes are repo tooling and docs (`chore:` / `docs:`).
 
+## Amendment (2026-07-16)
+
+`bin/worktree-new.mjs` (added in ADR-0014) does not enforce `origin/main`
+unconditionally, as the `worktree.baseRef = "fresh"` bullet above states: it
+falls back to the local `main` branch when `origin/main` is absent, and only
+errors when neither ref exists.
+
 ## Links
 
 - Supersedes / superseded by: none.
