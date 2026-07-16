@@ -96,6 +96,25 @@ export const TOTAL_COUNT_SITES = [
     expected: (counts) => counts.coreCount,
   },
   {
+    file: "CLAUDE.md",
+    pattern: /AWS namespace barrel \((\d+) submodules surfaced here\)/,
+    label: "AWS barrel comment",
+    expected: (counts) => counts.awsCount,
+  },
+  {
+    file: "docs/ROADMAP.md",
+    pattern: /library ledger \(\d+\/(\d+) submodules, count-enforced\)/,
+    label: "total submodule count (ROADMAP.md intro pointer)",
+    expected: (counts) => counts.total,
+  },
+  {
+    file: "docs/ROADMAP.md",
+    pattern:
+      /count-enforced library ledger \(\d+\/(\d+) submodules, shipped at/,
+    label: "total submodule count (ROADMAP.md Status snapshot)",
+    expected: (counts) => counts.total,
+  },
+  {
     file: "docs/README.md",
     pattern: /(\d+) submodules documented/,
     label: "total submodule count (development status callout)",
@@ -178,6 +197,19 @@ export const IMPLEMENTED_COUNT_SITES = [
     file: "docs/implementation-status.md",
     pattern: /\((\d+) of \d+ submodules\)/,
     label: "implementation-status.md intro prose",
+    expected: (counts) => counts.implemented,
+  },
+  {
+    file: "docs/ROADMAP.md",
+    pattern: /library ledger \((\d+)\/\d+ submodules, count-enforced\)/,
+    label: "ROADMAP.md intro pointer",
+    expected: (counts) => counts.implemented,
+  },
+  {
+    file: "docs/ROADMAP.md",
+    pattern:
+      /count-enforced library ledger \((\d+)\/\d+ submodules, shipped at/,
+    label: "ROADMAP.md Status snapshot",
     expected: (counts) => counts.implemented,
   },
 ];
