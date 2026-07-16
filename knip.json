@@ -10,7 +10,7 @@
   },
   "workspaces": {
     ".": {
-      "entry": [".claude/hooks/**/*.mjs"]
+      "entry": [".claude/hooks/**/*.mjs", ".claude/workflows/**/*.js"]
     },
     "packages/m3l-common": {
       "entry": "src/index.ts",

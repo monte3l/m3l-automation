@@ -217,18 +217,20 @@ Haiku 4.5, Sonnet 5, Opus 4.8, and Fable 5 respectively.
 
 <!-- BEGIN MODEL-MATRIX -->
 
-| Surface  | Name                        | Model             | Effort   |
-| -------- | --------------------------- | ----------------- | -------- |
-| agent    | `code-implementer`          | `sonnet`          | `high`   |
-| agent    | `test-author`               | `sonnet`          | `high`   |
-| agent    | `code-reviewer`             | `sonnet`          | `high`   |
-| agent    | `silent-failure-hunter`     | `sonnet`          | `high`   |
-| agent    | `security-reviewer`         | `opus`            | `xhigh`  |
-| agent    | `type-design-analyzer`      | `opus`            | `xhigh`  |
-| agent    | `spec-conformance-reviewer` | `opus`            | `xhigh`  |
-| agent    | `docs-consistency-reviewer` | `haiku`           | `medium` |
-| agent    | `Explore`                   | `haiku`           | `low`    |
-| workflow | `claude-pr-review.yml`      | `claude-sonnet-5` | `n/a`    |
-| workflow | `claude-assistant.yml`      | `claude-sonnet-5` | `n/a`    |
+| Surface         | Name                        | Model             | Effort   |
+| --------------- | --------------------------- | ----------------- | -------- |
+| agent           | `code-implementer`          | `sonnet`          | `high`   |
+| agent           | `test-author`               | `sonnet`          | `high`   |
+| agent           | `code-reviewer`             | `sonnet`          | `high`   |
+| agent           | `silent-failure-hunter`     | `sonnet`          | `high`   |
+| agent           | `security-reviewer`         | `opus`            | `xhigh`  |
+| agent           | `type-design-analyzer`      | `opus`            | `xhigh`  |
+| agent           | `spec-conformance-reviewer` | `opus`            | `xhigh`  |
+| agent           | `docs-consistency-reviewer` | `haiku`           | `medium` |
+| agent           | `Explore`                   | `haiku`           | `low`    |
+| workflow        | `claude-pr-review.yml`      | `claude-sonnet-5` | `n/a`    |
+| workflow        | `claude-assistant.yml`      | `claude-sonnet-5` | `n/a`    |
+| workflow-script | `audit-fanout.js`           | `inherit`         | `n/a`    |
+| workflow-script | `audit-fanout.js:verify`    | `sonnet`          | `medium` |
 
 <!-- END MODEL-MATRIX -->
