@@ -31,6 +31,11 @@
           "blob": "851afd725425003f938e1b53167e12f0438dbe6f"
         },
         {
+          "file": "packages/m3l-common/src/core/config/M3LConfigParameterType.ts",
+          "symbol": "M3LCoercedValue",
+          "blob": "851afd725425003f938e1b53167e12f0438dbe6f"
+        },
+        {
           "file": "packages/m3l-common/src/core/config/M3LConfigSchema.ts",
           "symbol": "M3LConfigSchema",
           "blob": "b68dc96f9dd1f4f03bcd973c96349a2c5e4f5640"

@@ -24,6 +24,79 @@ const END_MARKER = "<!-- END GENERATED CATALOG -->";
 const SCRIPTS_BEGIN_MARKER = "<!-- BEGIN GENERATED SCRIPTS CATALOG -->";
 const SCRIPTS_END_MARKER = "<!-- END GENERATED SCRIPTS CATALOG -->";
 
+/**
+ * Strip generic parameters so `M3LResult<T, E>` and `M3LResult` compare equal.
+ * Shared by check-doc-exports and sync-docs's barrel-vs-sidecar-sources check —
+ * both need the same "public symbol" identity notion.
+ *
+ * @param {string} symbol
+ * @returns {string}
+ */
+export function baseName(symbol) {
+  return symbol.replace(/<.*$/s, "").trim();
+}
+
+/**
+ * Collect the named exports declared or re-exported by one .ts file, resolving
+ * `export * from "./sibling.js"` transitively. `visited` guards against
+ * cycles. Submodule index.ts files are pure `export * from "./file.js"`
+ * re-exports, so this resolves one level into each referenced sibling file. It
+ * does NOT reach into internal/ (never re-exported through a public barrel per
+ * the library rules), so anything it finds is genuinely public.
+ *
+ * Shared by check-doc-exports (barrel vs docs coverage) and sync-docs's
+ * barrel-vs-sidecar-sources check.
+ *
+ * @param {string} absTsPath
+ * @param {Set<string>} visited
+ * @returns {Set<string>}
+ */
+export function fileExports(absTsPath, visited) {
+  if (visited.has(absTsPath)) return new Set();
+  visited.add(absTsPath);
+
+  let src;
+  try {
+    src = readFileSync(absTsPath, "utf8");
+  } catch {
+    return new Set();
+  }
+
+  const names = new Set();
+
+  // 1. Direct declarations: export (class|function|const|type|interface|enum) X
+  const declRe =
+    /\bexport\s+(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:class|function|const|let|var|type|interface|enum)\s+([A-Za-z_$][\w$]*)/g;
+  for (const m of src.matchAll(declRe)) names.add(m[1]);
+
+  // 2. Named export lists: export { A, B as C, type D } [from "..."]
+  const listRe = /\bexport\s+(?:type\s+)?\{([^}]*)\}/g;
+  for (const m of src.matchAll(listRe)) {
+    for (const rawItem of m[1].split(",")) {
+      const item = rawItem.trim().replace(/^type\s+/, "");
+      if (!item || item === "default") continue;
+      const asMatch = /\bas\s+([A-Za-z_$][\w$]*)/.exec(item);
+      const exported = asMatch ? asMatch[1] : item;
+      if (exported !== "default") names.add(exported);
+    }
+  }
+
+  // 3. export * as ns from "..."
+  const starAsRe = /\bexport\s+\*\s+as\s+([A-Za-z_$][\w$]*)\s+from/g;
+  for (const m of src.matchAll(starAsRe)) names.add(m[1]);
+
+  // 4. export * from "./sibling.js" — resolve and recurse.
+  const starRe = /\bexport\s+\*\s+from\s+["']([^"']+)["']/g;
+  for (const m of src.matchAll(starRe)) {
+    const spec = m[1];
+    if (!spec.startsWith(".")) continue; // never follow package specifiers
+    const resolved = join(dirname(absTsPath), spec.replace(/\.js$/, ".ts"));
+    for (const n of fileExports(resolved, visited)) names.add(n);
+  }
+
+  return names;
+}
+
 function barrelWiredModules(namespace) {
   const barrelPath = join(
     root,
@@ -80,6 +153,9 @@ function provenanceSymbols(namespace, name) {
   } catch {
     return [];
   }
+  // Valid JSON that isn't an object (e.g. a literal `null`, array, or scalar)
+  // has no `.sections` to iterate — treat it the same as unreadable/malformed.
+  if (data === null || typeof data !== "object") return [];
   // First-occurrence deduplication: first section that names a symbol wins.
   const seen = new Map();
   for (const section of data.sections ?? []) {
