@@ -214,9 +214,12 @@ See ADR-0013.
 
 `.worktreeinclude` lists the gitignored local files (`.env`, `.env.local`) that
 `pnpm worktree:setup` copies. It takes **literal paths only** (no globs or
-negation), relative to the repo root; entries must be gitignored. Keep entries
-within the checkout — `..` and absolute paths aren't rejected, so don't add
-them. It's fine to list a file that doesn't exist yet in your checkout:
+negation), relative to the repo root; entries must be gitignored. Neither
+`worktree:setup` nor `pnpm check:worktree` validates the path: a `..` entry can
+escape the checkout via path traversal, so avoid it; an absolute-looking entry
+doesn't escape (it's joined as a relative path, landing somewhere nonsensical
+inside the checkout) but is still meaningless — keep entries as plain relative
+paths. It's fine to list a file that doesn't exist yet in your checkout:
 `worktree:setup` silently skips it (without counting it in the "skipped"
 total) and `pnpm check:worktree` warns rather than errors. Run
 `pnpm check:worktree` after editing it to catch tracked-file or glob mistakes.
