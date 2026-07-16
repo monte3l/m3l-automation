@@ -18,6 +18,11 @@ export default tseslint.config(
       ".claude/agents/**",
       ".claude/skills/**",
       ".claude/rules/**",
+      // Dynamic-workflow scripts (ADR-0025): the Workflow tool runs the body
+      // inside an async function scope with ambient orchestration globals, so
+      // the file's top-level `return` is unparseable as a standard ES module.
+      // `pnpm check:workflows` is the lint for this surface.
+      ".claude/workflows/**",
       // Nested worktrees are independent checkouts of other branches; linting
       // them from the main tree reports on (and can't resolve) foreign code.
       ".claude/worktrees/**",
