@@ -21,6 +21,11 @@
           "blob": "5276910bcb29001242673be74312d15c05635471"
         },
         {
+          "file": "packages/m3l-common/src/core/network/M3LHttpClientError.ts",
+          "symbol": "M3LHttpFailure",
+          "blob": "5276910bcb29001242673be74312d15c05635471"
+        },
+        {
           "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
           "symbol": "M3LHttpAbortableRequest",
           "blob": "d17f8f3fc2acab49f8a36431ec459ffdddaa9bd1"

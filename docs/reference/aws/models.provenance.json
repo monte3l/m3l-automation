@@ -7,6 +7,46 @@
       "sources": [
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "M3LAWSRegion",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "M3LAWSProfile",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "parseAWSRegion",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "parseAWSProfile",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "isAWSRegion",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "isAWSProfile",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "M3LAWSIdentityError",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
+          "symbol": "M3LAWSIdentityErrorCode",
+          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "M3LAWSCredentialsErrorType",
           "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
         },

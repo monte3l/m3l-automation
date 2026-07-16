@@ -21,12 +21,14 @@
 //   pnpm check:doc-exports   # verify (fails on any undocumented export)
 import process from "node:process";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import {
   root,
   NAMESPACES,
   barrelWiredModules,
   provenanceSymbols,
+  baseName,
+  fileExports,
 } from "./lib/reference-index.mjs";
 import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 
@@ -34,59 +36,6 @@ const { json } = parseJsonFlag();
 const reporter = createReporter(json);
 
 const srcRoot = join(root, "packages/m3l-common/src");
-
-// Strip generic parameters so `M3LResult<T, E>` and `M3LResult` compare equal.
-function baseName(symbol) {
-  return symbol.replace(/<.*$/s, "").trim();
-}
-
-// Collect the named exports declared or re-exported by one .ts file, resolving
-// `export * from "./sibling.js"` transitively. `visited` guards against cycles.
-function fileExports(absTsPath, visited) {
-  if (visited.has(absTsPath)) return new Set();
-  visited.add(absTsPath);
-
-  let src;
-  try {
-    src = readFileSync(absTsPath, "utf8");
-  } catch {
-    return new Set();
-  }
-
-  const names = new Set();
-
-  // 1. Direct declarations: export (class|function|const|type|interface|enum) X
-  const declRe =
-    /\bexport\s+(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:class|function|const|let|var|type|interface|enum)\s+([A-Za-z_$][\w$]*)/g;
-  for (const m of src.matchAll(declRe)) names.add(m[1]);
-
-  // 2. Named export lists: export { A, B as C, type D } [from "..."]
-  const listRe = /\bexport\s+(?:type\s+)?\{([^}]*)\}/g;
-  for (const m of src.matchAll(listRe)) {
-    for (const rawItem of m[1].split(",")) {
-      const item = rawItem.trim().replace(/^type\s+/, "");
-      if (!item || item === "default") continue;
-      const asMatch = /\bas\s+([A-Za-z_$][\w$]*)/.exec(item);
-      const exported = asMatch ? asMatch[1] : item;
-      if (exported !== "default") names.add(exported);
-    }
-  }
-
-  // 3. export * as ns from "..."
-  const starAsRe = /\bexport\s+\*\s+as\s+([A-Za-z_$][\w$]*)\s+from/g;
-  for (const m of src.matchAll(starAsRe)) names.add(m[1]);
-
-  // 4. export * from "./sibling.js" — resolve and recurse.
-  const starRe = /\bexport\s+\*\s+from\s+["']([^"']+)["']/g;
-  for (const m of src.matchAll(starRe)) {
-    const spec = m[1];
-    if (!spec.startsWith(".")) continue; // never follow package specifiers
-    const resolved = join(dirname(absTsPath), spec.replace(/\.js$/, ".ts"));
-    for (const n of fileExports(resolved, visited)) names.add(n);
-  }
-
-  return names;
-}
 
 // A symbol is "documented" when it is named on its reference page — either
 // listed in the provenance sidecar or written anywhere in the .md as a

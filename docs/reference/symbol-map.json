@@ -64,6 +64,11 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/config/M3LConfigParameterType.ts"
   },
+  "M3LCoercedValue": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigParameterType.ts"
+  },
   "M3LConfigSchema": {
     "submodule": "config",
     "namespace": "core",
@@ -219,6 +224,108 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/errors/M3LErrorUtils.ts",
     "lines": "40-48"
+  },
+  "M3LErrorCode": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LError.ts",
+    "lines": "172-172"
+  },
+  "M3L_ERROR_CODES": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LError.ts",
+    "lines": "88-147"
+  },
+  "M3LResultOk": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
+    "lines": "28-31"
+  },
+  "M3LResultErr": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
+    "lines": "38-41"
+  },
+  "isOk": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
+    "lines": "105-107"
+  },
+  "isErr": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
+    "lines": "115-117"
+  },
+  "unwrap": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
+    "lines": "139-148"
+  },
+  "unwrapOr": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
+    "lines": "162-164"
+  },
+  "map": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
+    "lines": "188-209"
+  },
+  "mapErr": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
+    "lines": "228-249"
+  },
+  "andThen": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
+    "lines": "269-277"
+  },
+  "fromPromise": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
+    "lines": "303-317"
+  },
+  "tryCatch": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
+    "lines": "337-343"
+  },
+  "toError": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LErrorUtils.ts",
+    "lines": "68-73"
+  },
+  "getErrorStack": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LErrorUtils.ts",
+    "lines": "128-133"
+  },
+  "hasErrorName": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LErrorUtils.ts",
+    "lines": "153-160"
+  },
+  "errorMessageContains": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LErrorUtils.ts",
+    "lines": "181-186"
   },
   "M3LErrorOptions": {
     "submodule": "errors",
@@ -672,6 +779,11 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/network/M3LHttpClientError.ts"
   },
+  "M3LHttpFailure": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LHttpClientError.ts"
+  },
   "M3LHttpAbortableRequest": {
     "submodule": "network",
     "namespace": "core",
@@ -941,6 +1053,16 @@
     "submodule": "script",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/script/M3LPresetCycleError.ts"
+  },
+  "AWS_PROFILE_PARAM_NAME": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/aws-param-names.ts"
+  },
+  "AWS_REGION_PARAM_NAME": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/aws-param-names.ts"
   },
   "isDangerousKey": {
     "submodule": "security",
@@ -1440,10 +1562,90 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
   },
+  "DynamoDBKey": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "DynamoDBItem": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "DynamoDBPage": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "QueryItemsOptions": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "ScanSegmentOptions": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "BatchWriteResult": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "BatchDeleteResult": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
+  "TableDescription": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/operations.ts"
+  },
   "M3LDynamoDBOperationError": {
     "submodule": "dynamodb",
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/dynamodb/error.ts"
+  },
+  "M3LAWSRegion": {
+    "submodule": "models",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/models/index.ts"
+  },
+  "M3LAWSProfile": {
+    "submodule": "models",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/models/index.ts"
+  },
+  "parseAWSRegion": {
+    "submodule": "models",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/models/index.ts"
+  },
+  "parseAWSProfile": {
+    "submodule": "models",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/models/index.ts"
+  },
+  "isAWSRegion": {
+    "submodule": "models",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/models/index.ts"
+  },
+  "isAWSProfile": {
+    "submodule": "models",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/models/index.ts"
+  },
+  "M3LAWSIdentityError": {
+    "submodule": "models",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/models/index.ts"
+  },
+  "M3LAWSIdentityErrorCode": {
+    "submodule": "models",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/models/index.ts"
   },
   "M3LAWSCredentialsErrorType": {
     "submodule": "models",

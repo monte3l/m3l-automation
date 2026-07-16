@@ -64,6 +64,16 @@
           "file": "packages/m3l-common/src/core/script/M3LPresetCycleError.ts",
           "symbol": "M3LPresetCycleError",
           "blob": "00a0fdba20f351d6216ebf0f5d45dfdcd488fb05"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/aws-param-names.ts",
+          "symbol": "AWS_PROFILE_PARAM_NAME",
+          "blob": "ff720c51059bf77d638ad04c61e650fb92c1ebc0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/script/aws-param-names.ts",
+          "symbol": "AWS_REGION_PARAM_NAME",
+          "blob": "ff720c51059bf77d638ad04c61e650fb92c1ebc0"
         }
       ],
       "retrieved": "2026-07-11"
