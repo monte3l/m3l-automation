@@ -261,6 +261,8 @@
     "symbols": [
       "M3LHttpClient",
       "M3LHttpClientOptions",
+      "M3LHttpMethod",
+      "M3LHttpRequestOptions",
       "M3LHttpFailureReason",
       "M3LHttpFailure",
       "M3LHttpAbortableRequest",
