@@ -45,7 +45,9 @@ import type {
   M3LHttpErrorEvent,
   M3LHttpFailure,
   M3LHttpFailureReason,
+  M3LHttpMethod,
   M3LHttpRequestEvent,
+  M3LHttpRequestOptions,
   M3LHttpResponseEvent,
 } from "../src/core/network/index.js";
 
@@ -95,6 +97,19 @@ function makeResponse(options: {
     },
   };
   return fake as unknown as UndiciResponse;
+}
+
+/** Shape of the second argument `undici`'s `fetch` receives from the client. */
+interface FetchCallOptions {
+  readonly method?: string;
+  readonly headers?: Record<string, string>;
+  readonly body?: unknown;
+  readonly dispatcher?: unknown;
+}
+
+/** Reads and casts the options bag passed to a given `fetch` call (defaults to the first). */
+function fetchCallOptions(callIndex = 0): FetchCallOptions | undefined {
+  return mockFetch.mock.calls[callIndex]?.[1] as FetchCallOptions | undefined;
 }
 
 /**
@@ -645,6 +660,339 @@ describe("M3LHttpClient — debug logging", () => {
 });
 
 // ---------------------------------------------------------------------------
+// 12 — request() method routing
+// ---------------------------------------------------------------------------
+describe("M3LHttpClient.request — method routing", () => {
+  test.each<M3LHttpMethod>(["GET", "POST", "PATCH", "DELETE", "HEAD"])(
+    "request({ method: %s, path }) dispatches that method to fetch",
+    async (method) => {
+      mockFetch.mockResolvedValue(
+        makeResponse({
+          status: 200,
+          contentType: "application/json",
+          body: {},
+        }),
+      );
+      const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+      await client.request({ method, path: "/items" });
+
+      const options = fetchCallOptions();
+      expect(options?.method).toBe(method);
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// 13 — get() delegates to request() behavior-equivalently
+// ---------------------------------------------------------------------------
+describe("M3LHttpClient.get — delegates to request()", () => {
+  test("get(path) and request({ method: 'GET', path }) dispatch the same resolved URL and merged headers", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({ status: 200, contentType: "application/json", body: {} }),
+    );
+    const client = new M3LHttpClient({
+      baseUrl: "https://api.example.com",
+      defaultHeaders: { accept: "application/json" },
+    });
+
+    await client.get("/users/42");
+    const viaGetUrl = mockFetch.mock.calls[0]?.[0];
+    const viaGetOptions = fetchCallOptions();
+
+    mockFetch.mockClear();
+    mockFetch.mockResolvedValue(
+      makeResponse({ status: 200, contentType: "application/json", body: {} }),
+    );
+
+    await client.request({ method: "GET", path: "/users/42" });
+    const viaRequestUrl = mockFetch.mock.calls[0]?.[0];
+    const viaRequestOptions = fetchCallOptions();
+
+    expect(viaRequestUrl).toBe(viaGetUrl);
+    expect(viaRequestOptions?.method).toBe(viaGetOptions?.method);
+    expect(viaRequestOptions?.headers).toEqual(viaGetOptions?.headers);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 14 — Header merge semantics
+// ---------------------------------------------------------------------------
+describe("M3LHttpClient.request — header merge semantics", () => {
+  test("per-request headers shallow-merge over defaultHeaders, and the per-request value wins on a collision key", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({ status: 200, contentType: "application/json", body: {} }),
+    );
+    const client = new M3LHttpClient({
+      baseUrl: "https://api.example.com",
+      defaultHeaders: {
+        "x-api-key": "default-key",
+        accept: "application/json",
+      },
+    });
+    const received: M3LHttpRequestEvent[] = [];
+    client.on("request", (event) => {
+      received.push(event);
+    });
+
+    await client.request({
+      method: "POST",
+      path: "/items",
+      headers: { "x-api-key": "override-key", "content-type": "text/plain" },
+    });
+
+    const expectedMerged = {
+      "x-api-key": "override-key",
+      accept: "application/json",
+      "content-type": "text/plain",
+    };
+
+    expect(fetchCallOptions()?.headers).toMatchObject(expectedMerged);
+    expect(received).toHaveLength(1);
+    expect(received[0]?.headers).toMatchObject(expectedMerged);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 15 — Body pass-through
+// ---------------------------------------------------------------------------
+describe("M3LHttpClient.request — body pass-through", () => {
+  test("a string body is passed to fetch unmodified, with no auto-stringify", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({ status: 200, contentType: "application/json", body: {} }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+    const payload = JSON.stringify({ name: "Ada" });
+
+    await client.request({ method: "POST", path: "/users", body: payload });
+
+    expect(fetchCallOptions()?.body).toBe(payload);
+  });
+
+  test("a Uint8Array body is passed to fetch unmodified", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({ status: 200, contentType: "application/json", body: {} }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+    const payload = new Uint8Array([1, 2, 3]);
+
+    await client.request({ method: "PUT", path: "/blob", body: payload });
+
+    expect(fetchCallOptions()?.body).toBe(payload);
+  });
+
+  test("an omitted body means no 'body' key is passed to fetch at all", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({ status: 200, contentType: "application/json", body: {} }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    await client.request({ method: "GET", path: "/ping" });
+
+    expect(fetchCallOptions()).not.toHaveProperty("body");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 16 — expectedStatus semantics
+// ---------------------------------------------------------------------------
+describe("M3LHttpClient.request — expectedStatus semantics", () => {
+  test("omitted expectedStatus accepts any 2xx, matching get()'s current behavior", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({ status: 204, contentType: "application/json", body: {} }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    await expect(
+      client.request({ method: "DELETE", path: "/items/1" }),
+    ).resolves.toBeDefined();
+  });
+
+  test("a single-number expectedStatus rejects a different 2xx that isn't an exact match", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 200,
+        contentType: "application/json",
+        body: { id: "1" },
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.request({
+        method: "POST",
+        path: "/users",
+        expectedStatus: 201,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.reason).toBe("status");
+    if (httpError.failure.reason === "status") {
+      expect(httpError.failure.status).toBe(200);
+    }
+  });
+
+  test("a single-number expectedStatus succeeds on the exact match", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 201,
+        contentType: "application/json",
+        body: { id: "1" },
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    await expect(
+      client.request({
+        method: "POST",
+        path: "/users",
+        expectedStatus: 201,
+      }),
+    ).resolves.toEqual({ id: "1" });
+  });
+
+  test.each([
+    [202, [200, 202, 204], true],
+    [500, [200, 202, 204], false],
+  ])(
+    "an array expectedStatus is membership-based: status %d against %j succeeds=%s",
+    async (status, allowList, shouldSucceed) => {
+      mockFetch.mockResolvedValue(
+        makeResponse({ status, contentType: "application/json", body: {} }),
+      );
+      const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+      const pending = client.request({
+        method: "POST",
+        path: "/items",
+        // `test.each` array-literal rows infer as plain `number[]`, which
+        // doesn't structurally overlap the non-empty-tuple `expectedStatus`
+        // type — every row here is a non-empty literal, so the `unknown`
+        // bridge is a provably-safe narrowing, not a way around the invariant.
+        expectedStatus: allowList as unknown as readonly [number, ...number[]],
+      });
+
+      if (shouldSucceed) {
+        await expect(pending).resolves.toBeDefined();
+      } else {
+        await expect(pending).rejects.toBeInstanceOf(M3LHttpClientError);
+      }
+    },
+  );
+
+  test("the 'response' event's ok field stays true for a 2xx even when expectedStatus causes the promise to reject", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({ status: 200, contentType: "application/json", body: {} }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+    const received: M3LHttpResponseEvent[] = [];
+    client.on("response", (event) => {
+      received.push(event);
+    });
+
+    await expect(
+      client.request({
+        method: "POST",
+        path: "/users",
+        expectedStatus: 201,
+      }),
+    ).rejects.toBeInstanceOf(M3LHttpClientError);
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.status).toBe(200);
+    expect(received[0]?.ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 17 — requestAbortable()
+// ---------------------------------------------------------------------------
+describe("M3LHttpClient.requestAbortable", () => {
+  test("returns { promise, abort } and abort() rejects the promise with reason 'abort'", async () => {
+    fetchRespectsAbort();
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    const { promise, abort } = client.requestAbortable<{ id: string }>({
+      method: "POST",
+      path: "/slow",
+    });
+
+    expect(typeof abort).toBe("function");
+
+    let thrown: unknown;
+    const settlement = promise.catch((error: unknown) => {
+      thrown = error;
+    });
+
+    abort();
+    await settlement;
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    expect((thrown as M3LHttpClientError).reason).toBe("abort");
+  });
+
+  test("resolves the promise with the parsed body when not aborted (happy path)", async () => {
+    const created = { id: "7" };
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 201,
+        contentType: "application/json",
+        body: created,
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    const { promise } = client.requestAbortable<{ id: string }>({
+      method: "POST",
+      path: "/users",
+      expectedStatus: 201,
+    });
+
+    await expect(promise).resolves.toEqual(created);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 18 — Events fire for every method, carrying the resolved method
+// ---------------------------------------------------------------------------
+describe("M3LHttpClient — events carry the resolved method for non-GET requests", () => {
+  test("request/response/error events report method 'POST', not hardcoded 'GET'", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({ status: 500, contentType: "application/json", body: {} }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+    const requestEvents: M3LHttpRequestEvent[] = [];
+    const responseEvents: M3LHttpResponseEvent[] = [];
+    const errorEvents: M3LHttpErrorEvent[] = [];
+    client.on("request", (event) => {
+      requestEvents.push(event);
+    });
+    client.on("response", (event) => {
+      responseEvents.push(event);
+    });
+    client.on("error", (event) => {
+      errorEvents.push(event);
+    });
+
+    await expect(
+      client.request({ method: "POST", path: "/broken" }),
+    ).rejects.toBeInstanceOf(M3LHttpClientError);
+
+    expect(requestEvents).toHaveLength(1);
+    expect(requestEvents[0]?.method).toBe("POST");
+    expect(responseEvents).toHaveLength(1);
+    expect(responseEvents[0]?.method).toBe("POST");
+    expect(errorEvents).toHaveLength(1);
+    expect(errorEvents[0]?.method).toBe("POST");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Type-level tests
 // ---------------------------------------------------------------------------
 describe("M3LHttpClient — type-level contract", () => {
@@ -669,17 +1017,19 @@ describe("M3LHttpClient — type-level contract", () => {
   test("get<T> returns Promise<T> — generic response type flows through", () => {
     expectTypeOf<M3LHttpClient["get"]>().parameter(0).toEqualTypeOf<string>();
 
-    const client: M3LHttpClient = new M3LHttpClient();
-    expectTypeOf(client.get<{ id: string }>("/x")).toEqualTypeOf<
-      Promise<{ id: string }>
-    >();
+    // A `typeof` type query over the prototype method never produces a
+    // runtime member-access expression, so it neither calls `get` nor trips
+    // `@typescript-eslint/unbound-method`/`no-unused-vars` the way binding
+    // an instance just to reference its method would.
+    expectTypeOf<
+      ReturnType<typeof M3LHttpClient.prototype.get<{ id: string }>>
+    >().toEqualTypeOf<Promise<{ id: string }>>();
   });
 
   test("getAbortable<T> returns the exported M3LHttpAbortableRequest<T> shape", () => {
-    const client: M3LHttpClient = new M3LHttpClient();
-    expectTypeOf(client.getAbortable<{ id: string }>("/x")).toEqualTypeOf<
-      M3LHttpAbortableRequest<{ id: string }>
-    >();
+    expectTypeOf<
+      ReturnType<typeof M3LHttpClient.prototype.getAbortable<{ id: string }>>
+    >().toEqualTypeOf<M3LHttpAbortableRequest<{ id: string }>>();
   });
 
   test("M3LHttpAbortableRequest<T> has readonly promise and abort fields", () => {
@@ -803,5 +1153,53 @@ describe("M3LHttpClient — type-level contract", () => {
     };
     expectTypeOf(classify).parameter(0).toEqualTypeOf<M3LHttpClientError>();
     expectTypeOf(classify).returns.toEqualTypeOf<string>();
+  });
+
+  test("M3LHttpMethod is the exact documented six-member union", () => {
+    expectTypeOf<M3LHttpMethod>().toEqualTypeOf<
+      "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD"
+    >();
+  });
+
+  test("M3LHttpRequestOptions has method/path required and headers/body/expectedStatus optional, with the documented field types", () => {
+    expectTypeOf<M3LHttpRequestOptions>().toEqualTypeOf<{
+      readonly method: M3LHttpMethod;
+      readonly path: string;
+      readonly headers?: Record<string, string>;
+      readonly body?: string | Uint8Array;
+      readonly expectedStatus?: number | readonly [number, ...number[]];
+    }>();
+  });
+
+  test("request<T> takes a single M3LHttpRequestOptions argument and returns Promise<T>", () => {
+    expectTypeOf<M3LHttpClient["request"]>()
+      .parameter(0)
+      .toEqualTypeOf<M3LHttpRequestOptions>();
+
+    // A `typeof` type query over the prototype method resolves T without
+    // ever invoking `request` at runtime — see the `get<T>` test above for
+    // the same pattern.
+    expectTypeOf<
+      ReturnType<typeof M3LHttpClient.prototype.request<{ id: string }>>
+    >().toEqualTypeOf<Promise<{ id: string }>>();
+  });
+
+  test("requestAbortable<T> takes a single M3LHttpRequestOptions argument and returns M3LHttpAbortableRequest<T>", () => {
+    expectTypeOf<M3LHttpClient["requestAbortable"]>()
+      .parameter(0)
+      .toEqualTypeOf<M3LHttpRequestOptions>();
+
+    expectTypeOf<
+      ReturnType<
+        typeof M3LHttpClient.prototype.requestAbortable<{ id: string }>
+      >
+    >().toEqualTypeOf<M3LHttpAbortableRequest<{ id: string }>>();
+  });
+
+  test("get<T>'s parameter-0 type is still exactly string — a regression guard against drifting to M3LHttpRequestOptions", () => {
+    expectTypeOf<M3LHttpClient["get"]>().parameter(0).toEqualTypeOf<string>();
+    expectTypeOf<M3LHttpClient["getAbortable"]>()
+      .parameter(0)
+      .toEqualTypeOf<string>();
   });
 });
