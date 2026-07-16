@@ -170,7 +170,10 @@
       "Bash(pnpm exec eslint *)",
       "Bash(gh run view *)",
       "Bash(node_modules/.bin/prettier --check *)",
-      "Bash(gh pr checks *)"
+      "Bash(gh pr checks *)",
+      "mcp__m3l__repo_verify",
+      "mcp__m3l__catalog_query",
+      "mcp__m3l__commit_lint"
     ]
   },
   "availableModels": ["fable", "opus", "sonnet", "haiku"],
