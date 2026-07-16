@@ -44,6 +44,7 @@
     "check:zones": "node bin/check-eslint-zones.mjs",
     "check:deps": "node bin/check-deps.mjs",
     "check:test-counts": "node bin/check-test-counts.mjs",
+    "check:workflows": "node bin/check-workflows.mjs",
     "check:workflows-doc": "node bin/check-workflows-doc.mjs",
     "check:cadence": "node bin/check-cadence-doc.mjs",
     "check:worktree": "node bin/check-worktree-include.mjs",
