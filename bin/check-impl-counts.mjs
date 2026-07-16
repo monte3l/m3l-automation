@@ -31,7 +31,10 @@ import {
   IMPLEMENTED_LIST_BEGIN_MARKER,
   IMPLEMENTED_LIST_END_MARKER,
 } from "./lib/count-sites.mjs";
+import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 
+const { json } = parseJsonFlag();
+const reporter = createReporter(json);
 const counts = deriveCounts();
 const namesCsv = counts.implementedNames.join(", ");
 let errors = 0;
@@ -40,7 +43,7 @@ function read(file) {
   try {
     return readFileSync(join(root, file), "utf8");
   } catch {
-    console.error(`✗  Cannot read ${file}`);
+    reporter.error(`Cannot read ${file}`);
     errors++;
     return null;
   }
@@ -52,9 +55,7 @@ for (const site of IMPLEMENTED_COUNT_SITES) {
 
   const result = locateSite(content, site, counts);
   if (!result.found) {
-    console.error(
-      `✗  ${site.file}: expected pattern not found: ${site.pattern}`,
-    );
+    reporter.error(`${site.file}: expected pattern not found: ${site.pattern}`);
     errors++;
     continue;
   }
@@ -66,8 +67,8 @@ for (const site of IMPLEMENTED_COUNT_SITES) {
         result.matchIndex + result.matchText.length + 20,
       )
       .trim();
-    console.error(
-      `✗  ${site.file}: ${site.label} says ${result.actual} but derived count is ${result.expected}\n` +
+    reporter.error(
+      `${site.file}: ${site.label} says ${result.actual} but derived count is ${result.expected}\n` +
         `   Context: "...${ctx}..."`,
     );
     errors++;
@@ -79,8 +80,8 @@ if (statusContent !== null) {
   const start = statusContent.indexOf(IMPLEMENTED_LIST_BEGIN_MARKER);
   const end = statusContent.indexOf(IMPLEMENTED_LIST_END_MARKER);
   if (start === -1 || end === -1) {
-    console.error(
-      "✗  docs/implementation-status.md is missing the GENERATED IMPLEMENTED-LIST markers — run pnpm gen:counts.",
+    reporter.error(
+      "docs/implementation-status.md is missing the GENERATED IMPLEMENTED-LIST markers — run pnpm gen:counts.",
     );
     errors++;
   } else {
@@ -90,8 +91,8 @@ if (statusContent !== null) {
     );
     const freshBlock = buildImplementedListBlock(counts);
     if (committedBlock !== freshBlock) {
-      console.error(
-        "✗  docs/implementation-status.md implemented-list block is out of date — run pnpm gen:counts.",
+      reporter.error(
+        "docs/implementation-status.md implemented-list block is out of date — run pnpm gen:counts.",
       );
       errors++;
     }
@@ -99,14 +100,31 @@ if (statusContent !== null) {
 }
 
 if (errors > 0) {
-  console.error(
-    `\n✗  ${errors} implemented-count mismatch(es). Derived implemented count ` +
-      `is ${counts.implemented} (${namesCsv}). Run pnpm gen:counts, or fix the ` +
-      `Status column in docs/implementation-status.md if the derivation is wrong.`,
-  );
+  if (!json)
+    console.error(
+      `\n✗  ${errors} implemented-count mismatch(es). Derived implemented count ` +
+        `is ${counts.implemented} (${namesCsv}). Run pnpm gen:counts, or fix the ` +
+        `Status column in docs/implementation-status.md if the derivation is wrong.`,
+    );
+  reporter.finish({
+    counts: {
+      core: counts.coreCount,
+      aws: counts.awsCount,
+      total: counts.total,
+      implemented: counts.implemented,
+    },
+  });
   process.exit(1);
 }
 
-console.log(
-  `✓  Implemented count matches everywhere: ${counts.implemented} of ${counts.total} (${namesCsv}).`,
+reporter.succeed(
+  `Implemented count matches everywhere: ${counts.implemented} of ${counts.total} (${namesCsv}).`,
 );
+reporter.finish({
+  counts: {
+    core: counts.coreCount,
+    aws: counts.awsCount,
+    total: counts.total,
+    implemented: counts.implemented,
+  },
+});

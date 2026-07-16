@@ -11,13 +11,17 @@
 import process from "node:process";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 
-const args = new Set(process.argv.slice(2));
+const { json, argv } = parseJsonFlag();
+const reporter = createReporter(json);
+
+const args = new Set(argv);
 const dryRun = args.has("--dry-run");
 const force = args.has("--force");
 
-function git(argv) {
-  return execFileSync("git", argv, { encoding: "utf8" }).trim();
+function git(gitArgs) {
+  return execFileSync("git", gitArgs, { encoding: "utf8" }).trim();
 }
 
 // `git branch --merged main` silently yields an empty set when `main` is
@@ -39,11 +43,12 @@ function branchExists(name) {
 }
 
 if (!branchExists("main")) {
-  console.error(
-    "✗  worktree:prune: no local `main` branch found. This script removes " +
+  reporter.error(
+    "worktree:prune: no local `main` branch found. This script removes " +
       "worktrees whose branch is merged into `main`; check out or fetch `main` " +
       "and re-run.",
   );
+  reporter.finish({ pruned: [], dryRun });
   process.exit(1);
 }
 
@@ -81,11 +86,12 @@ const candidates = records.filter((w) => {
 });
 
 if (candidates.length === 0) {
-  console.log("✓  No stale worktrees to prune.");
+  reporter.succeed("No stale worktrees to prune.");
+  reporter.finish({ pruned: [], dryRun });
   process.exit(0);
 }
 
-console.log(`Found ${candidates.length} stale worktree(s):`);
+reporter.info(`Found ${candidates.length} stale worktree(s):`);
 for (const w of candidates) {
   const why = [
     w.flags.includes("prunable") ? "prunable" : null,
@@ -93,26 +99,32 @@ for (const w of candidates) {
   ]
     .filter(Boolean)
     .join(", ");
-  console.log(`  • ${w.path}  [${w.branch ?? "detached"}]  (${why})`);
+  reporter.info(`  • ${w.path}  [${w.branch ?? "detached"}]  (${why})`);
 }
 
 if (dryRun) {
-  console.log("\n(dry run — nothing removed)");
+  reporter.info("\n(dry run — nothing removed)");
+  reporter.finish({
+    pruned: candidates.map((w) => w.path),
+    dryRun: true,
+  });
   process.exit(0);
 }
 
 let removed = 0;
 let failed = 0;
+const prunedPaths = [];
 for (const w of candidates) {
   const removeArgs = ["worktree", "remove", w.path];
   if (force) removeArgs.push("--force");
   try {
     execFileSync("git", removeArgs, { stdio: "pipe" });
-    console.log(`✓  Removed ${w.path}`);
+    reporter.change("removed", w.path);
+    prunedPaths.push(w.path);
     removed++;
   } catch {
-    console.error(
-      `✗  Could not remove ${w.path} (uncommitted changes or untracked files). ` +
+    reporter.error(
+      `Could not remove ${w.path} (uncommitted changes or untracked files). ` +
         "Re-run with --force to discard them.",
     );
     failed++;
@@ -122,13 +134,15 @@ for (const w of candidates) {
 try {
   git(["worktree", "prune"]);
 } catch (err) {
-  console.error(
-    `✗  worktree:prune: \`git worktree prune\` failed ` +
+  reporter.error(
+    `worktree:prune: \`git worktree prune\` failed ` +
       `(${/** @type {Error} */ (err).message}). Stale admin entries may remain; ` +
       "re-run or inspect `git worktree list`.",
   );
   failed++;
 }
 
-console.log(`\n✓  Pruned ${removed} worktree(s); ${failed} skipped.`);
+reporter.info("");
+reporter.succeed(`Pruned ${removed} worktree(s); ${failed} skipped.`);
+reporter.finish({ pruned: prunedPaths, dryRun: false });
 if (failed > 0) process.exit(1);

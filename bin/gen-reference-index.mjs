@@ -3,7 +3,7 @@
 // and the generated table block in docs/reference/README.md.
 // Run via: pnpm gen:index
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { format, resolveConfig } from "prettier";
 import {
   BEGIN_MARKER,
@@ -16,6 +16,10 @@ import {
   buildScriptsReadmeBlock,
   root,
 } from "./lib/reference-index.mjs";
+import { parseJsonFlag, createReporter } from "./lib/report.mjs";
+
+const { json } = parseJsonFlag();
+const reporter = createReporter(json);
 
 const refDir = join(root, "docs/reference");
 
@@ -79,10 +83,18 @@ const scriptsCatalog = buildScriptsCatalog();
 
 mkdirSync(refDir, { recursive: true });
 
-await writeJsonFormatted(join(refDir, "catalog.json"), catalog);
-await writeJsonFormatted(join(refDir, "symbol-map.json"), symbolMap);
-updateReadme(catalog, scriptsCatalog);
+const catalogPath = join(refDir, "catalog.json");
+const symbolMapPath = join(refDir, "symbol-map.json");
+const readmePath = join(refDir, "README.md");
 
-console.log(
-  `✓  Reference index generated: ${catalog.length} modules, ${Object.keys(symbolMap).length} symbols, ${scriptsCatalog.length} consumer script(s).`,
+await writeJsonFormatted(catalogPath, catalog);
+reporter.change("updated", relative(root, catalogPath));
+await writeJsonFormatted(symbolMapPath, symbolMap);
+reporter.change("updated", relative(root, symbolMapPath));
+updateReadme(catalog, scriptsCatalog);
+reporter.change("updated", relative(root, readmePath));
+
+reporter.succeed(
+  `Reference index generated: ${catalog.length} modules, ${Object.keys(symbolMap).length} symbols, ${scriptsCatalog.length} consumer script(s).`,
 );
+reporter.finish();
