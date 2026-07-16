@@ -7,7 +7,8 @@
 //   cd ../m3l-automation-<slug>
 //   pnpm worktree:setup
 //
-// Steps: install dependencies, then copy the gitignored local files listed in
+// Steps: install dependencies, register the m3l-generated merge driver
+// (ADR-0024), then copy the gitignored local files listed in
 // `.worktreeinclude` from the main checkout (a fresh worktree has none of them).
 import process from "node:process";
 import { execFileSync } from "node:child_process";

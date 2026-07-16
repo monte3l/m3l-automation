@@ -187,6 +187,14 @@ cd ../m3l-automation-<slug>
 pnpm worktree:setup        # install deps + copy gitignored files (.env, …)
 ```
 
+Run `worktree:setup` from inside the new worktree — it refuses to run from the
+main checkout. `pnpm worktree:new <slug>` (or `--fix` for a `fix/<slug>`
+branch) does both steps in one command; it branches from `origin/main`,
+falling back to the local `main` if `origin/main` is absent, and validates
+`<slug>` as kebab-case (lowercase letters, digits, single hyphens). Tear down
+the symmetric way with `pnpm worktree:remove <slug>` (add `--force` to discard
+uncommitted/untracked changes first).
+
 A fresh worktree is a clean checkout: it has no `node_modules` and none of your
 gitignored local files, which is why `pnpm worktree:setup` exists. The `.git`
 directory (and therefore the lefthook hooks) is shared, so hooks work without a
@@ -206,7 +214,11 @@ See ADR-0013.
 
 `.worktreeinclude` lists the gitignored local files (`.env`, `.env.local`) that
 `pnpm worktree:setup` copies. It takes **literal paths only** (no globs or
-negation), relative to the repo root; entries must be gitignored. Run
+negation), relative to the repo root; entries must be gitignored. Keep entries
+within the checkout — `..` and absolute paths aren't rejected, so don't add
+them. It's fine to list a file that doesn't exist yet in your checkout:
+`worktree:setup` silently skips it (without counting it in the "skipped"
+total) and `pnpm check:worktree` warns rather than errors. Run
 `pnpm check:worktree` after editing it to catch tracked-file or glob mistakes.
 The native `claude --worktree` flow copies these files automatically but still
 needs `pnpm install` (or `pnpm worktree:setup`) for dependencies.
@@ -219,6 +231,8 @@ Troubleshooting:
   shows: `git worktree prune`.
 - `pnpm format` touched another branch's files: run the command from inside that
   worktree instead of the main tree.
+- `pnpm worktree:prune` errors with "no local `main` branch found": it needs a
+  local `main` to compute the merged set; check out or fetch `main` and re-run.
 
 ## Definition of Done
 
