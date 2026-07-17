@@ -37,8 +37,11 @@ try {
 
 const filePath = input.tool_input?.file_path ?? "";
 // Only guard TS/JS source; skip config files, docs, and this hook dir.
+// Normalize separators first: Windows paths use "\", and a literal "/"
+// check silently never matches there, leaving this hook unable to exempt
+// its own directory on that platform.
 if (!/\.(ts|tsx|mts|cts|js|mjs)$/.test(filePath)) process.exit(0);
-if (filePath.includes("/.claude/hooks/")) process.exit(0);
+if (filePath.replace(/\\/g, "/").includes("/.claude/hooks/")) process.exit(0);
 
 const source = contentToCheck(input).join("\n");
 const hits = PATTERNS.filter((p) => p.re.test(source)).map((p) => p.label);
