@@ -202,6 +202,12 @@ importers:
         specifier: ^1.6.2
         version: 1.6.2
 
+  scripts/api-gateway-client:
+    dependencies:
+      '@m3l-automation/m3l-common':
+        specifier: workspace:*
+        version: link:../../packages/m3l-common
+
   scripts/cloudwatch-logs-insights:
     dependencies:
       '@m3l-automation/m3l-common':

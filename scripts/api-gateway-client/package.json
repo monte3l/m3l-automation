@@ -1,0 +1,18 @@
+{
+  "name": "@m3l-automation/api-gateway-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Invoke HTTP APIs fronted by AWS API Gateway — single request or bounded-concurrency batch, with none/api-key/iam auth.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "start": "node --env-file-if-exists=.env dist/main.js"
+  },
+  "dependencies": {
+    "@m3l-automation/m3l-common": "workspace:*"
+  }
+}
