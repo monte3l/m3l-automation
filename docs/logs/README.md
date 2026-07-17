@@ -6,8 +6,11 @@ history**: they are not edited after landing (unlike the living trackers in
 [`../ROADMAP.md`](../ROADMAP.md) and
 [`../plans/IMPLEMENTATION.md`](../plans/IMPLEMENTATION.md)). New logs are added
 by `/writing-work-logs`; recurring lessons graduate into the rules/agents via
-`/promoting-work-log-lessons`. Logs are **pipeline-scoped** — submodule and
-script implementation units get one; chore/docs/CI PRs deliberately do not.
+`/promoting-work-log-lessons`. There's no automated trigger for that sweep —
+run it periodically by feel: every ~5–8 new logs, or whenever a lesson in a
+fresh log feels familiar from an earlier one. Logs are **pipeline-scoped** —
+submodule and script implementation units get one; chore/docs/CI PRs
+deliberately do not.
 
 ## Library — Core & AWS submodules (v1.0 → v1.1)
 

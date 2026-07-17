@@ -457,7 +457,9 @@ on top of this advisory file — the full 18-hook inventory is
 Subagent mid-turn truncation — this repo's most-recurring build divergence —
 is covered in `docs/contributing/agent-operating-model.md`'s "Lessons
 learned" bullet, backed by the full playbook at
-`docs/contributing/subagent-context-management.md`.
+`docs/contributing/subagent-context-management.md`. Which skills are expected
+to fire often versus rarely (and why a quiet skill isn't necessarily a broken
+one) is tracked in `docs/contributing/skills-catalog.md`.
 
 ## Task Workflow
 
