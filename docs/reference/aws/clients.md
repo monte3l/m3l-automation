@@ -76,6 +76,15 @@ credentials. Two behave specially:
   `M3LPollingPolicies.cloudWatchLogsQuery()` polls, and `athena` pairs with
   `M3LPollingPolicies.athenaQuery()` for Athena query execution.
 
+**Convenience getters** — unlike the service-client getters above, these
+return a library-owned wrapper object rather than a raw AWS SDK client, but
+are cached the same lazy-on-first-access way:
+
+| Getter          | Returns                            | Notes                                                                                                                                                                   |
+| --------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sqsOperations` | [`M3LSQSOperations`](./sqs.md)     | Constructed from this provider's `sqs` client (`new M3LSQSOperations(this.sqs)`). Shares the underlying `sqs` client's connection lifecycle — see below.                |
+| `requestSigner` | [`M3LRequestSigner`](./signing.md) | Built from this provider's own resolved `profile`/`region`. Holds no destroyable resource of its own — its cache is cleared, not independently destroyed, by `close()`. |
+
 Other members:
 
 - Credential resolution — uses `fromIni({ profile })` for a named profile, otherwise the SDK default credential chain.
