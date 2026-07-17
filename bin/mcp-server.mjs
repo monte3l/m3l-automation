@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// In-repo MCP server (ADR-0030 Phase 5). Exposes the six repo-maintenance
+// In-repo MCP server (ADR-0030 Phase 5/6). Exposes the seven repo-maintenance
 // tools defined in bin/lib/mcp-tools.mjs — repo_verify, docs_sync,
-// worktree_manage, scaffold_script, commit_lint, and catalog_query — to
-// Claude Code (and any other MCP client) over stdio, under server name "m3l"
+// worktree_manage, scaffold_script, commit_lint, catalog_query, and
+// spoke_recover — to Claude Code (and any other MCP client) over stdio, under
+// server name "m3l"
 // (so the tools surface as mcp__m3l__<tool>). `catalog_query` is this
 // server's interim answer to ADR-0012/0023: instead of an agent reading
 // docs/reference/catalog.json + symbol-map.json in full (~11k tokens) to

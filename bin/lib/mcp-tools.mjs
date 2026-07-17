@@ -559,7 +559,56 @@ export function catalogQuery(args) {
 }
 
 /**
- * The six registered tools, in server-registration order. Each entry's
+ * Read the truncation-recovery playbook's deterministic first step
+ * (docs/contributing/subagent-context-management.md, ADR-0030 Phase 6) by
+ * wrapping bin/spoke-recovery.mjs: parse a writer-spoke's journal, verify
+ * on-disk state (`git status`/`git diff`), and return a resume-vs-redispatch
+ * recommendation. Deliberately does NOT accept a `test` argument — running
+ * a targeted vitest pass can take minutes, and this tool stays read-only and
+ * fast (the CLI's `--test` flag exists for exactly that heavier case, used
+ * directly rather than through this tool).
+ *
+ * @param {{ journal?: unknown, expected?: unknown }} args
+ * @returns {{ content: { type: "text", text: string }[], isError: boolean }}
+ * @example
+ * ```js
+ * import { spokeRecover } from "./mcp-tools.mjs";
+ * const result = spokeRecover({ journal: "scratchpad/code-implementer-retry.md" });
+ * ```
+ */
+export function spokeRecover(args) {
+  const journal = args?.journal;
+  if (typeof journal !== "string" || journal.length === 0) {
+    return errorResult(
+      `spoke_recover requires 'journal' (path to the spoke's scratchpad ` +
+        `journal), e.g. { journal: "scratchpad/code-implementer-retry.md" }.`,
+    );
+  }
+  const expected = args?.expected;
+  if (
+    expected !== undefined &&
+    !(Array.isArray(expected) && expected.every((e) => typeof e === "string"))
+  ) {
+    return errorResult(
+      "spoke_recover: 'expected' must be an array of strings when provided.",
+    );
+  }
+  const cliArgs = ["--journal", journal];
+  if (Array.isArray(expected) && expected.length > 0) {
+    cliArgs.push("--expected", expected.join(","));
+  }
+  const { payload, error } = spawnJson("bin/spoke-recovery.mjs", cliArgs);
+  if (error !== null) return errorResult(`spoke_recover: ${error}`);
+  // A journal-missing/unreadable result is exit 1 by the CLI's own contract
+  // (the "no durable trace" case) but is still a normal, well-formed answer
+  // here — the caller asked "what should I do?" and got a definite
+  // redispatch recommendation, not a tool malfunction — so isError stays
+  // false whenever the payload parsed successfully.
+  return toolResult(/** @type {Record<string, unknown>} */ (payload), false);
+}
+
+/**
+ * The seven registered tools, in server-registration order. Each entry's
  * `config` is passed straight to `McpServer#registerTool` and its `handler`
  * is the exported function above — kept together here so
  * bin/mcp-server.mjs stays a pure registration loop.
@@ -740,5 +789,36 @@ export const TOOLS = [
       annotations: { readOnlyHint: true },
     },
     handler: catalogQuery,
+  },
+  {
+    name: "spoke_recover",
+    config: {
+      description:
+        "Runs the deterministic first step of the truncation-recovery playbook " +
+        "(docs/contributing/subagent-context-management.md, ADR-0030 Phase 6): " +
+        "parses a writer-spoke's scratchpad journal, verifies on-disk state via " +
+        "`git status`/`git diff`, cross-references it against `expected` paths " +
+        "when given, and returns a resume/redispatch/none recommendation with a " +
+        "punch-list. Use it right after a writer-spoke (test-author, " +
+        "code-implementer) truncates mid-turn or reports something ambiguous — " +
+        "NOT for a spoke still mid-flight. It deliberately never runs tests (that " +
+        "would make a read-only tool slow); pass `journal` a repo-relative or " +
+        "absolute path, and it still returns a well-formed answer (not a tool " +
+        "error) even when the journal is missing — that itself is a valid " +
+        "'redispatch, no durable trace' recommendation.",
+      inputSchema: {
+        journal: z
+          .string()
+          .describe("Path to the spoke's scratchpad journal file to parse."),
+        expected: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "File globs/paths the dispatch intended to touch, cross-referenced against git status.",
+          ),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    handler: spokeRecover,
   },
 ];
