@@ -119,7 +119,7 @@ failure like any other gate (fail fast, hand back) rather than pushing past it.
 
 If `/syncing-docs` produced working-tree changes, commit them as a standalone
 reconciliation commit **before** the push, so the change is in the commit
-history the PR is generated from (Steps 8–10) — this skill otherwise never
+history the PR is generated from (Steps 9–11) — this skill otherwise never
 creates commits:
 
 ```bash
@@ -129,7 +129,28 @@ git commit -S -m "docs: reconcile doc metadata"
 
 If it produced no changes, there is nothing to commit — continue.
 
-### 5 — Pre-push review
+### 5 — Archive the originating plan (if applicable)
+
+If this session entered plan mode for this unit of work (a file exists under
+`~/.claude/plans/` for this task), decide whether it clears the archival bar
+from `docs/plans/README.md`: does it ratify or reference an ADR, span more than
+one PR, add or change a `.claude/skills|hooks|agents` file, or make a
+cross-cutting governance/infra change? If yes:
+
+- Write a condensed narrative (not a raw transcript dump) to
+  `docs/plans/archive/<merge-date>-<slug>.md` — dated by today (the landing
+  date), following the existing archived-plan voice: a title, a
+  `**Status: shipped**` line with the PR/commit reference, `## Context`,
+  `## Approach / Decisions`, and `## Outcome` cross-linking any related work log
+  or ADR.
+- Add a row to `docs/plans/README.md`'s Archive table.
+- Fold both into the doc-reconciliation commit from Step 4 (or make a
+  standalone `docs: archive <slug> plan` commit if Step 4 produced no changes).
+
+If the unit is a routine submodule/script implementation (already covered by
+the mandatory work log) or a trivial one-off fix, skip this step.
+
+### 6 — Pre-push review
 
 Check which files changed since main:
 
@@ -155,10 +176,10 @@ If the diff contains **only docs/automation changes** (no `src/**` files),
 dispatch `docs-consistency-reviewer` instead.
 
 After collecting spoke results: if any spoke reports a **Must-fix** finding,
-fix it and loop back through Steps 3–5 before pushing. Do not push with
+fix it and loop back through Steps 3, 4, and 6 before pushing. Do not push with
 outstanding Must-fix findings.
 
-### 6 — Pre-existing code-scanning check
+### 7 — Pre-existing code-scanning check
 
 CodeQL runs via GitHub "default setup" and its `Analyze (...)` check-runs are
 required to merge (see `docs/contributing/branch-protection.md`). Before
@@ -173,14 +194,14 @@ gh api repos/{owner}/{repo}/code-scanning/alerts \
         | "\(.rule.id) \(.most_recent_instance.location.path)"'
 ```
 
-Cross-reference the paths against the changed set from Step 5
+Cross-reference the paths against the changed set from Step 6
 (`git diff main...HEAD --name-only`). If any alert path matches, list the
 matches and tell the user to triage them with the `triaging-scan-alerts` skill
 before merge. This is informational — alerts for **newly pushed** code only
 appear after the post-push scan, so `triaging-scan-alerts` is the follow-up once
 the PR is open.
 
-### 7 — Push the branch
+### 8 — Push the branch
 
 ```bash
 git push -u origin HEAD
@@ -207,19 +228,19 @@ own feature branch** but never on a shared branch (per CLAUDE.md, "never
 git push --force-with-lease
 ```
 
-### 8 — Gather commits since main
+### 9 — Gather commits since main
 
 ```bash
 git log main...HEAD --oneline
 ```
 
-### 9 — Generate the PR title
+### 10 — Generate the PR title
 
 Pick the most impactful commit (breaking > feat > fix > refactor/docs/chore).
 Format as a Conventional Commit, 70 chars max. The title alone must make the
 purpose of the branch clear to a reviewer skimming a PR list.
 
-### 10 — Generate the PR body
+### 11 — Generate the PR body
 
 Write a body that matches the quality and specificity of the examples below.
 The bullets in **Summary** should name actual symbols, files, or behaviours —
@@ -228,7 +249,7 @@ reflect the _actual files changed_, not a generic template. The **Notes** line
 must state the commit type, the public-API impact (additive / behavioural /
 breaking / none), and any migration instructions for breaking changes.
 
-### 11 — Submit the PR
+### 12 — Submit the PR
 
 ```bash
 gh pr create --title "..." --body "$(cat <<'EOF'
@@ -240,7 +261,7 @@ EOF
 Pass `--draft` if the branch name starts with `wip/` or if the user explicitly
 asked for a draft PR.
 
-### 12 — Confirm mergeability
+### 13 — Confirm mergeability
 
 After the PR exists, ask GitHub whether it merges cleanly:
 
