@@ -76,3 +76,4 @@ surface).
 | 0029 | [Consumer scripts depend only on @m3l-automation/m3l-common](./0029-script-dependency-boundary.md)                                               | Accepted                      |
 | 0030 | [Targeted workflow tooling and MCP adoption](./0030-targeted-workflow-tooling-and-mcp.md)                                                        | Accepted                      |
 | 0031 | [Relational and document data-engine access for the consumer fleet](./0031-relational-and-document-data-engine-access.md)                        | Proposed                      |
+| 0032 | [Centralized project-state and roadmap visibility hub](./0032-project-management-visibility-hub.md)                                              | Proposed                      |
