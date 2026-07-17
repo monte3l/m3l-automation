@@ -134,6 +134,7 @@ import {
 } from "../src/aws/clients/index.js";
 import { parseAWSProfile, parseAWSRegion } from "../src/aws/models/index.js";
 import type { M3LAWSProfile, M3LAWSRegion } from "../src/aws/models/index.js";
+import { M3LRequestSigner } from "../src/aws/signing/index.js";
 import type { S3Client } from "@aws-sdk/client-s3";
 import type { CloudWatchLogsClient } from "@aws-sdk/client-cloudwatch-logs";
 import type { AthenaClient } from "@aws-sdk/client-athena";
@@ -419,6 +420,66 @@ describe("AWSClientProvider getter: dynamoDBDocument", () => {
     expect((thrown as M3LAWSClientError).code).toBe("ERR_AWS_CLIENT");
     expect((thrown as M3LAWSClientError).cause).toBe(original);
     expect((thrown as M3LAWSClientError).message).toContain("dynamoDBDocument");
+  });
+});
+
+// =============================================================================
+// AWSClientProvider — requestSigner (shares no destroyable resource; unlike
+// every other getter above, `M3LRequestSigner` is NOT mocked here — its own
+// construction is documented/tested (tests/signing.test.ts) as performing no
+// I/O, so exercising the REAL class is what proves the getter's `profile`
+// conditional-spread branch (tests/reference/aws/clients.md — "resolves
+// credentials the same profile-aware way") actually builds without throwing
+// under both branches, rather than just asserting a mock was called.
+// =============================================================================
+describe("AWSClientProvider getter: requestSigner", () => {
+  test("constructs an M3LRequestSigner on first access", () => {
+    const provider = new AWSClientProvider();
+
+    expect(provider.requestSigner).toBeInstanceOf(M3LRequestSigner);
+  });
+
+  test("caches the signer — repeat access returns the SAME instance", () => {
+    const provider = new AWSClientProvider();
+
+    const first = provider.requestSigner;
+    const second = provider.requestSigner;
+
+    expect(second).toBe(first);
+  });
+
+  test("constructs successfully with no profile set (SDK default credential chain branch)", () => {
+    const provider = new AWSClientProvider();
+
+    expect(() => provider.requestSigner).not.toThrow();
+  });
+
+  test("constructs successfully with a profile set (fromIni branch)", () => {
+    const provider = new AWSClientProvider({
+      profile: parseAWSProfile("my-profile"),
+    });
+
+    expect(() => provider.requestSigner).not.toThrow();
+    expect(provider.requestSigner).toBeInstanceOf(M3LRequestSigner);
+  });
+
+  test("close() does not attempt to destroy the request signer — it holds no destroyable resource of its own", () => {
+    const provider = new AWSClientProvider();
+
+    void provider.requestSigner;
+
+    expect(() => provider.close()).not.toThrow();
+    expect(h.destroy).not.toHaveBeenCalled();
+  });
+
+  test("close() clears the cache — a subsequent access constructs a fresh instance", () => {
+    const provider = new AWSClientProvider();
+
+    const before = provider.requestSigner;
+    provider.close();
+    const after = provider.requestSigner;
+
+    expect(after).not.toBe(before);
   });
 });
 
