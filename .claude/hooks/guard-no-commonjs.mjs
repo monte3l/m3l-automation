@@ -12,7 +12,12 @@ import { fileURLToPath } from "node:url";
 const PATTERNS = [
   { re: /\brequire\s*\(/, label: "require(...)" },
   { re: /\bmodule\.exports\b/, label: "module.exports" },
-  { re: /\bexports\.[A-Za-z_$]/, label: "exports.<name>" },
+  // A bare \b also fires inside kebab-case filenames like
+  // "check-doc-exports.mjs" (hyphen -> letter is a word-boundary
+  // transition). Excluding a preceding identifier char or hyphen keeps real
+  // `exports.foo = ...` assignments blocked while letting mentions of any
+  // "*-exports.<ext>" bin script through.
+  { re: /(?<![\w-])exports\.[A-Za-z_$]/, label: "exports.<name>" },
   { re: /\b__dirname\b/, label: "__dirname" },
   { re: /\b__filename\b/, label: "__filename" },
 ];
