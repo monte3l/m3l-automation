@@ -68,6 +68,13 @@ What shipped, tailored to the task:
   must-fix count).
 - **General task**: files created/modified/deleted, commands run and their
   outcomes, any notable metrics.
+- **Skills used**: a `Skills used:` line naming every skill invoked during the
+  task (e.g. `Skills used: starting-work, implementing-submodules,
+syncing-docs, creating-prs`), including sub-skills dispatched internally.
+  This is what makes a future usage audit a single grep against
+  `docs/logs/*.md` instead of reconstructing invocations from commit messages
+  and git archaeology — see `docs/contributing/skills-catalog.md` for why that
+  matters.
 
 The summary should be dense enough that a reader can understand the scope in
 30 seconds without reading the rest of the log.
