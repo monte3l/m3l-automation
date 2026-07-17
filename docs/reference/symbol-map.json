@@ -1682,6 +1682,26 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/models/index.ts"
   },
+  "M3LRequestSigner": {
+    "submodule": "signing",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/signing/client.ts"
+  },
+  "M3LSigningError": {
+    "submodule": "signing",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/signing/error.ts"
+  },
+  "M3LRequestSignerOptions": {
+    "submodule": "signing",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/signing/types.ts"
+  },
+  "M3LSignableRequest": {
+    "submodule": "signing",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/signing/types.ts"
+  },
   "M3LSQSOperations": {
     "submodule": "sqs",
     "namespace": "aws",

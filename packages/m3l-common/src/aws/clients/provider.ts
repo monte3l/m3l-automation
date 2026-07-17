@@ -25,6 +25,7 @@ import { fromIni } from "@aws-sdk/credential-provider-ini";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 
 import type { M3LAWSProfile, M3LAWSRegion } from "../models/index.js";
+import { M3LRequestSigner } from "../signing/client.js";
 import { M3LSQSOperations } from "../sqs/client.js";
 
 import { M3LAWSClientError } from "./error.js";
@@ -126,6 +127,10 @@ export class AWSClientProvider {
   // `this.sqs` before memoizing this wrapper) — close() must clear both
   // together, mirroring `dynamoDBDocumentClient` above.
   private sqsOperationsClient: M3LSQSOperations | undefined;
+  // Holds no destroyable resource of its own (unlike a raw SDK client) — just
+  // a cached instance built from this provider's own profile/region, cleared
+  // (not independently destroyed) by close().
+  private requestSignerClient: M3LRequestSigner | undefined;
 
   /**
    * Creates a new `AWSClientProvider`.
@@ -285,6 +290,25 @@ export class AWSClientProvider {
   }
 
   /**
+   * The {@link M3LRequestSigner} for this provider's profile/region,
+   * constructed on first access from the provider's own `profile`/`region`
+   * (not a raw SDK client). It holds no destroyable resource of its own and
+   * is cleared — not independently destroyed — by `close()`.
+   */
+  get requestSigner(): M3LRequestSigner {
+    const cached = this.requestSignerClient;
+    if (cached !== undefined) return cached;
+
+    const { profile } = this;
+    const signer = new M3LRequestSigner({
+      region: this.region,
+      ...(profile !== undefined && { profile }),
+    });
+    this.requestSignerClient = signer;
+    return signer;
+  }
+
+  /**
    * Destroys every currently-cached client and clears the cache, so a later
    * getter access constructs a fresh instance. Services that were never
    * accessed are untouched.
@@ -321,6 +345,7 @@ export class AWSClientProvider {
     this.cache.clear();
     this.dynamoDBDocumentClient = undefined; // shares dynamoDB's lifecycle; not destroyed separately
     this.sqsOperationsClient = undefined; // shares sqs's lifecycle; not destroyed separately
+    this.requestSignerClient = undefined; // holds no destroyable resource of its own
 
     if (failures.length > 0) {
       const services = failures.map((failure) => failure.service).join(", ");

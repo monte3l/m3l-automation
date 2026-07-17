@@ -552,6 +552,20 @@
   },
   {
     "namespace": "aws",
+    "name": "signing",
+    "importPath": "@m3l-automation/m3l-common/aws",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/aws/signing.md",
+    "symbols": [
+      "M3LRequestSigner",
+      "M3LSigningError",
+      "M3LRequestSignerOptions",
+      "M3LSignableRequest"
+    ]
+  },
+  {
+    "namespace": "aws",
     "name": "sqs",
     "importPath": "@m3l-automation/m3l-common/aws",
     "status": "✅",
