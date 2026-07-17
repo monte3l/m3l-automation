@@ -41,3 +41,7 @@ status`/`git diff`, re-run `tsc`/`eslint`/`vitest`/coverage) before deciding
 - **Don't raise `maxTurns` as the fix.** More context/turns is not free —
   Anthropic's context-rot finding says accuracy degrades as token count grows.
   Scoping, journaling, and pacing are the preferred levers.
+- **Run `bin/spoke-recovery.mjs` (or the `mcp__m3l__spoke_recover` tool)
+  first** when recovering a truncated/ambiguous spoke — it automates the
+  journal-parse + on-disk-verification step so you judge from a structured
+  recommendation instead of re-deriving state by hand.

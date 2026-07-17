@@ -25,6 +25,7 @@ import {
   docsSync,
   repoVerify,
   scaffoldScript,
+  spokeRecover,
   worktreeManage,
 } from "../lib/mcp-tools.mjs";
 
@@ -39,8 +40,8 @@ function payloadOf(result: {
 }
 
 describe("TOOLS registration contract", () => {
-  test("registers exactly six tools", () => {
-    expect(TOOLS).toHaveLength(6);
+  test("registers exactly seven tools", () => {
+    expect(TOOLS).toHaveLength(7);
   });
 
   test.each(TOOLS)(
@@ -448,5 +449,96 @@ describe("scaffoldScript (mocked execFileSync)", () => {
     expect(result.isError).toBe(true);
     expect(payloadOf(result).error).toContain("name");
     expect(h.execFileSync).not.toHaveBeenCalled();
+  });
+});
+
+describe("spokeRecover (mocked execFileSync)", () => {
+  test("happy path spawns bin/spoke-recovery.mjs with --journal <path> and --json, returning its payload", () => {
+    h.execFileSync.mockReset();
+    h.execFileSync.mockReturnValueOnce(
+      JSON.stringify({
+        ok: true,
+        recommendation: { action: "resume", punchList: [], rationale: "..." },
+      }),
+    );
+    const result = spokeRecover({ journal: "scratchpad/writer-a.md" });
+    expect(result.isError).toBe(false);
+    const payload = payloadOf(result);
+    expect(payload.ok).toBe(true);
+    const [cmd, args] = h.execFileSync.mock.calls[0] as [string, string[]];
+    expect(cmd).toBe("node");
+    expect(args[0]).toContain("spoke-recovery.mjs");
+    expect(args).toContain("--journal");
+    expect(args).toContain("scratchpad/writer-a.md");
+    expect(args).toContain("--json");
+  });
+
+  test("forwards 'expected' as a comma-joined --expected list", () => {
+    h.execFileSync.mockReset();
+    h.execFileSync.mockReturnValueOnce(JSON.stringify({ ok: true }));
+    spokeRecover({
+      journal: "scratchpad/writer-a.md",
+      expected: ["src/a.ts", "src/b/**"],
+    });
+    const [, args] = h.execFileSync.mock.calls[0] as [string, string[]];
+    expect(args).toContain("--expected");
+    expect(args).toContain("src/a.ts,src/b/**");
+  });
+
+  test("missing 'journal' → isError usage message, no spawn attempted", () => {
+    h.execFileSync.mockReset();
+    const result = spokeRecover({});
+    expect(result.isError).toBe(true);
+    expect(payloadOf(result).error).toContain("journal");
+    expect(h.execFileSync).not.toHaveBeenCalled();
+  });
+
+  test("a non-array 'expected' → isError usage message, no spawn attempted", () => {
+    h.execFileSync.mockReset();
+    const result = spokeRecover({
+      journal: "scratchpad/writer-a.md",
+      expected: "src/a.ts",
+    });
+    expect(result.isError).toBe(true);
+    expect(payloadOf(result).error).toContain("array of strings");
+    expect(h.execFileSync).not.toHaveBeenCalled();
+  });
+
+  test("child exits 1 with a JSON redispatch-recommendation payload on stdout → payload surfaced, isError stays false", () => {
+    h.execFileSync.mockReset();
+    const redispatchPayload = {
+      ok: false,
+      recommendation: {
+        action: "redispatch",
+        punchList: [],
+        rationale: "no durable trace",
+      },
+    };
+    const err = Object.assign(new Error("Command failed"), {
+      stdout: JSON.stringify(redispatchPayload),
+      status: 1,
+    });
+    h.execFileSync.mockImplementationOnce(() => {
+      throw err;
+    });
+    const result = spokeRecover({ journal: "scratchpad/missing.md" });
+    // The CLI's own contract treats a missing/unreadable journal (or the
+    // "no durable trace" case) as exit 1 with a well-formed recommendation on
+    // stdout, not a malfunction — spokeRecover surfaces that payload with
+    // isError:false, per its handler comment.
+    expect(result.isError).toBe(false);
+    const payload = payloadOf(result);
+    expect(payload).toEqual(redispatchPayload);
+  });
+
+  test("child spawn failure with no parseable stdout → isError true with the spoke_recover-prefixed message", () => {
+    h.execFileSync.mockReset();
+    const err = Object.assign(new Error("spawn ENOENT"), { status: 1 });
+    h.execFileSync.mockImplementationOnce(() => {
+      throw err;
+    });
+    const result = spokeRecover({ journal: "scratchpad/writer-a.md" });
+    expect(result.isError).toBe(true);
+    expect(payloadOf(result).error).toContain("spoke_recover");
   });
 });

@@ -111,6 +111,27 @@ Review spokes (`code-reviewer`, `security-reviewer`, `silent-failure-hunter`,
 no on-disk work product to resume, so they don't carry this journal pattern.
 Their mitigation is different — see the next section.
 
+## Recover: automate the manual first step
+
+The manual recovery routine above — re-read the spoke's journal, verify
+on-disk state with `git status`/`git diff`, optionally re-run the targeted
+tests, then decide resume-vs-redispatch — was, until ADR-0030 Phase 6, done
+entirely by hand each time. `bin/spoke-recovery.mjs` (also exposed as the
+`mcp__m3l__spoke_recover` tool) automates exactly that deterministic first
+step: it parses the journal's progress markers, cross-references `--expected`
+paths against `git status --porcelain`, optionally runs a targeted vitest
+pattern (CLI-only — the MCP tool omits this so it stays read-only and fast),
+and emits a `resume` / `redispatch` / `none` / `unverifiable` recommendation
+with a punch-list. Run it (or call the tool) right after a writer-spoke
+truncates or reports something ambiguous, then apply the hub's own judgment
+on top — it feeds the decision above, it does not replace it. Its
+outstanding-item heuristic assumes one journal tracks one linear
+workstream (the dispatch convention — one spoke, one scoped task, one
+journal); a journal that interleaves two parallel workstreams can let a
+later "done" entry for one retroactively mask an earlier still-open item
+for the other, so don't hand a single spoke a journal spanning multiple
+independent workstreams if you need that heuristic to stay trustworthy.
+
 ## Prevent: bounded output (the digest pattern)
 
 Anthropic: subagents should act as "intelligent filters," returning "a
