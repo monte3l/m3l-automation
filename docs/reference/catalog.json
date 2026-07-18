@@ -458,6 +458,26 @@
   },
   {
     "namespace": "aws",
+    "name": "athena",
+    "importPath": "@m3l-automation/m3l-common/aws",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/aws/athena.md",
+    "symbols": [
+      "M3LAthenaClient",
+      "AthenaAwaitOptions",
+      "StartAthenaQueryInput",
+      "AthenaQueryResult",
+      "AthenaQueryStatistics",
+      "AthenaQueryStatus",
+      "AthenaRow",
+      "AthenaColumnInfo",
+      "M3LAthenaStartQueryError",
+      "M3LAthenaQueryFailedError"
+    ]
+  },
+  {
+    "namespace": "aws",
     "name": "clients",
     "importPath": "@m3l-automation/m3l-common/aws",
     "status": "✅",

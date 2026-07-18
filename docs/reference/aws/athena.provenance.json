@@ -1,0 +1,100 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "aws/athena.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/athena/client.ts",
+          "symbol": "M3LAthenaClient",
+          "blob": "68f181a4fbb8da38eef29619e886120fc0a464b5"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/athena/client.ts",
+          "symbol": "AthenaAwaitOptions",
+          "blob": "68f181a4fbb8da38eef29619e886120fc0a464b5"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/athena/types.ts",
+          "symbol": "StartAthenaQueryInput",
+          "blob": "99fa85afb74ab66233b93727de4df7b7fd538df2"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/athena/types.ts",
+          "symbol": "AthenaQueryResult",
+          "blob": "99fa85afb74ab66233b93727de4df7b7fd538df2"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/athena/types.ts",
+          "symbol": "AthenaQueryStatistics",
+          "blob": "99fa85afb74ab66233b93727de4df7b7fd538df2"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/athena/types.ts",
+          "symbol": "AthenaQueryStatus",
+          "blob": "99fa85afb74ab66233b93727de4df7b7fd538df2"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/athena/types.ts",
+          "symbol": "AthenaRow",
+          "blob": "99fa85afb74ab66233b93727de4df7b7fd538df2"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/athena/types.ts",
+          "symbol": "AthenaColumnInfo",
+          "blob": "99fa85afb74ab66233b93727de4df7b7fd538df2"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/athena/errors.ts",
+          "symbol": "M3LAthenaStartQueryError",
+          "blob": "d66f7b6efd4a9471249005813d06c854bb371e1c"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/athena/errors.ts",
+          "symbol": "M3LAthenaQueryFailedError",
+          "blob": "d66f7b6efd4a9471249005813d06c854bb371e1c"
+        }
+      ],
+      "retrieved": "2026-07-18"
+    },
+    {
+      "heading": "`M3LAthenaClient`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/athena/client.ts",
+          "symbol": "M3LAthenaClient",
+          "blob": "68f181a4fbb8da38eef29619e886120fc0a464b5"
+        }
+      ],
+      "retrieved": "2026-07-18"
+    },
+    {
+      "heading": "Row normalization contract (Athena-specific pagination hazard)",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/athena/client.ts",
+          "symbol": "M3LAthenaClient",
+          "blob": "68f181a4fbb8da38eef29619e886120fc0a464b5"
+        }
+      ],
+      "retrieved": "2026-07-18"
+    },
+    {
+      "heading": "Error handling",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/athena/errors.ts",
+          "symbol": "M3LAthenaStartQueryError",
+          "blob": "d66f7b6efd4a9471249005813d06c854bb371e1c"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/athena/errors.ts",
+          "symbol": "M3LAthenaQueryFailedError",
+          "blob": "d66f7b6efd4a9471249005813d06c854bb371e1c"
+        }
+      ],
+      "retrieved": "2026-07-18"
+    }
+  ]
+}

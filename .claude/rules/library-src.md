@@ -27,7 +27,13 @@ paths:
 - **Typed error hierarchy.** Throw subclasses of `M3LError`; never bare strings.
   Chain underlying failures with the `cause` option. Subclasses override `code`
   as a `readonly` **literal** (e.g. `M3LEnvironmentDetectionError`,
-  `M3LPathResolutionError`) so the code narrows at the call site.
+  `M3LPathResolutionError`) so the code narrows at the call site. **Register
+  every new subclass's `code` in `M3L_ERROR_CODES`**
+  (`core/errors/M3LError.ts`, alphabetically sorted) in the same commit that
+  defines the class. The source-scan completeness guard (`errors.test.ts`)
+  that catches an omission lives in `core/errors` and only runs as part of the
+  full-workspace suite — a new submodule's own isolated test run gives no
+  signal that this step was skipped (found on `aws/athena`, 2026-07-18).
 - **Never export error-constructor options interfaces.** Callers _catch_
   errors, they don't construct them — the options shape is an implementation
   detail of the constructor, not public API.
