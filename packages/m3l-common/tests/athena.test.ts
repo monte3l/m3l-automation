@@ -431,6 +431,36 @@ describe("M3LAthenaClient.awaitResults", () => {
     expect(send).toHaveBeenCalledTimes(2);
   });
 
+  test("rejects M3LAthenaQueryFailedError with status UNKNOWN and no cause when GetQueryResults returns rows but no column metadata", async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({
+        QueryExecution: { Status: { State: "SUCCEEDED" } },
+      })
+      .mockResolvedValueOnce({
+        ResultSet: {
+          Rows: [
+            { Data: [{ VarCharValue: "id" }, { VarCharValue: "name" }] },
+            { Data: [{ VarCharValue: "1" }, { VarCharValue: "alice" }] },
+          ],
+          ResultSetMetadata: { ColumnInfo: [] },
+        },
+      });
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    const thrown = await settleWithTimers(
+      client.awaitResults("q-no-columns").catch((error: unknown) => error),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LAthenaQueryFailedError);
+    expect((thrown as M3LAthenaQueryFailedError).context).toMatchObject({
+      queryExecutionId: "q-no-columns",
+      status: "UNKNOWN",
+    });
+    expect((thrown as M3LAthenaQueryFailedError).cause).toBeUndefined();
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
   test("propagates the poller's own ERR_POLL_EXHAUSTED error, narrowed by code (not class), when GetQueryExecution never reaches a terminal status", async () => {
     const send = vi.fn().mockResolvedValue({
       QueryExecution: { Status: { State: "RUNNING" } },

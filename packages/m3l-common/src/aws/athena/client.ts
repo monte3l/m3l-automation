@@ -267,6 +267,54 @@ export class M3LAthenaClient {
   }
 
   /**
+   * Normalizes one `GetQueryResults` page: derives `columns` from
+   * `ResultSetMetadata.ColumnInfo` on the first page only (later pages carry
+   * the same schema and no header row), strips the header row, and
+   * positionally maps each remaining `Row` onto `columns[].name`. Isolated
+   * so `#collectResults`'s loop stays within the project's complexity
+   * budget.
+   *
+   * @param page - The raw `GetQueryResultsCommandOutput` for this page.
+   * @param isFirstPage - Whether this is the first `GetQueryResults` page.
+   * @param previousColumns - The column schema carried from the first page,
+   *   reused as-is on subsequent pages.
+   * @param queryExecutionId - The AWS-assigned query execution identifier
+   *   (for the error context, should the guard below fire).
+   * @returns This page's column schema and its normalized data rows.
+   * @throws {@link M3LAthenaQueryFailedError} (`status: "UNKNOWN"`) When the
+   *   page carries data rows but no column metadata (a malformed-but-HTTP-
+   *   successful response) — normalizing such a row would silently produce
+   *   `{}` instead.
+   */
+  #normalizePage(
+    page: GetQueryResultsCommandOutput,
+    isFirstPage: boolean,
+    previousColumns: AthenaQueryResult["columns"],
+    queryExecutionId: string,
+  ): { columns: AthenaQueryResult["columns"]; rows: AthenaRow[] } {
+    const columns = isFirstPage
+      ? this.#mapColumns(page.ResultSet?.ResultSetMetadata?.ColumnInfo ?? [])
+      : previousColumns;
+
+    const dataRows = this.#stripHeaderRow(
+      page.ResultSet?.Rows ?? [],
+      isFirstPage,
+    );
+
+    if (columns.length === 0 && dataRows.length > 0) {
+      throw new M3LAthenaQueryFailedError(
+        "GetQueryResults returned rows but no column metadata",
+        { queryExecutionId, status: "UNKNOWN" },
+      );
+    }
+
+    return {
+      columns,
+      rows: dataRows.map((row) => this.#normalizeRow(row.Data ?? [], columns)),
+    };
+  }
+
+  /**
    * Fetches every `GetQueryResults` page for a `SUCCEEDED` query and returns
    * the normalized columns/rows. The header row (the first `Row` of the
    * first page only, for `SELECT`/DML queries) is stripped; every row is
@@ -275,6 +323,10 @@ export class M3LAthenaClient {
    *
    * @param queryExecutionId - The AWS-assigned query execution identifier.
    * @returns The normalized column schema and every accumulated row.
+   * @throws {@link M3LAthenaQueryFailedError} (`status: "UNKNOWN"`) When a
+   *   page carries data rows but no column metadata (a malformed-but-HTTP-
+   *   successful response) — normalizing such a row would silently produce
+   *   `{}` instead.
    */
   async #collectResults(
     queryExecutionId: string,
@@ -288,19 +340,14 @@ export class M3LAthenaClient {
         queryExecutionId,
         nextToken,
       );
-      if (isFirstPage) {
-        columns = this.#mapColumns(
-          page.ResultSet?.ResultSetMetadata?.ColumnInfo ?? [],
-        );
-      }
-
-      const dataRows = this.#stripHeaderRow(
-        page.ResultSet?.Rows ?? [],
+      const pageResult = this.#normalizePage(
+        page,
         isFirstPage,
+        columns,
+        queryExecutionId,
       );
-      for (const row of dataRows) {
-        rows.push(this.#normalizeRow(row.Data ?? [], columns));
-      }
+      columns = pageResult.columns;
+      rows.push(...pageResult.rows);
 
       nextToken = page.NextToken;
       isFirstPage = false;
@@ -363,10 +410,11 @@ export class M3LAthenaClient {
    * @param options - Optional poller override.
    * @returns The normalized query result once the query reaches `SUCCEEDED`.
    * @throws {@link M3LAthenaQueryFailedError} When the query reaches a
-   *   terminal non-`SUCCEEDED` status, or when the `GetQueryExecution`/
+   *   terminal non-`SUCCEEDED` status, when the `GetQueryExecution`/
    *   `GetQueryResults` SDK call itself fails (after any throttling retries
    *   are exhausted; reported with `status: "UNKNOWN"` and the original error
-   *   chained via `cause`).
+   *   chained via `cause`), or when a `GetQueryResults` page carries data rows
+   *   but no column metadata (`status: "UNKNOWN"`, no `cause`).
    * @throws A plain `M3LError` with `code === "ERR_POLL_EXHAUSTED"` when the
    *   poll attempt bound is reached while the query is still queued/running.
    */

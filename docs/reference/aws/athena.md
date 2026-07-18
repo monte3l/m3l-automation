@@ -2,10 +2,6 @@
 
 `M3LAthenaClient` is a typed wrapper over Amazon Athena query execution (`StartQueryExecution`/`GetQueryExecution`/`GetQueryResults`), so consumer scripts never need to import `@aws-sdk/client-athena` directly ([ADR-0029](../../adr/0029-script-dependency-boundary.md)).
 
-**Status: scaffolded, not yet implemented.** Every `M3LAthenaClient` method
-currently throws unconditionally (see `src/aws/athena/client.ts`). This page
-is the contract `implementing-submodules` implements against.
-
 ## Overview
 
 The submodule wraps an **injected**, already-provisioned `AthenaClient` — obtain one from `script.aws.athena` (the library's credential/client-construction seam) and inject it here. `M3LAthenaClient` never constructs its own client from a profile/region; that stays behind the `aws.profile` seam.
