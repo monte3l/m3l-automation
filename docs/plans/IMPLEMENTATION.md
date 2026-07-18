@@ -49,7 +49,7 @@ and its [roadmap](./archive/2026-07-09-consumer-scripts-roadmap.md).
 
 ### W3 — control-plane CRUD (P1, pending; existing getters)
 
-Thin op-dispatch (`list`/`describe`/`create`/`update`/`delete` + per-service verbs) over the shared W1/W2 skeleton, mutating ops confirm-gated: **`s3-objects`** (`s3`), **`lambda-ops`** (`lambda`), **`ecs-ops`** (`ecs`, `waitUntilStable`), **`cfn-stacks`** (`cloudFormation`, stack-event streaming), **`codepipeline-ops`** (`codePipeline`, `watch`), **`eventbridge-schedules`** (`eventBridge`; decide rules-vs-`scheduler` at spec time — see gated getter below).
+Thin op-dispatch (`list`/`describe`/`create`/`update`/`delete` + per-service verbs) over the shared W1/W2 skeleton, mutating ops confirm-gated: **`s3-objects`** (`s3`), **`lambda-ops`** (`lambda`), **`ecs-ops`** (`ecs`, `waitUntilStable`), **`cfn-stacks`** (`cloudFormation`, stack-event streaming), **`codepipeline-ops`** (`codePipeline`, `watch`), **`eventbridge-schedules`** (consumes the new `aws/eventbridge` wrapper, `M3LEventBridgeOperations` — scope decided as EventBridge **rules**, not the separate Scheduler service; see `docs/reference/aws/eventbridge.md`).
 
 ### W4 — library-wrapper-gated (P1, pending; no script-local deps — ADR-0029)
 

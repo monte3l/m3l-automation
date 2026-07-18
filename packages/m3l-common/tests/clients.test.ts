@@ -132,6 +132,7 @@ import {
   AWSProvider,
   M3LAWSClientError,
 } from "../src/aws/clients/index.js";
+import { M3LEventBridgeOperations } from "../src/aws/eventbridge/index.js";
 import { parseAWSProfile, parseAWSRegion } from "../src/aws/models/index.js";
 import type { M3LAWSProfile, M3LAWSRegion } from "../src/aws/models/index.js";
 import { M3LRequestSigner } from "../src/aws/signing/index.js";
@@ -478,6 +479,52 @@ describe("AWSClientProvider getter: requestSigner", () => {
     const before = provider.requestSigner;
     provider.close();
     const after = provider.requestSigner;
+
+    expect(after).not.toBe(before);
+  });
+});
+
+// =============================================================================
+// AWSClientProvider — eventBridgeOperations (shares the eventBridge client
+// lifecycle, mirroring the `sqsOperations` getter's pattern in
+// src/aws/clients/provider.ts: a plain wrapper constructed from the already-
+// cached raw client, holding no destroyable resource of its own).
+// =============================================================================
+describe("AWSClientProvider getter: eventBridgeOperations", () => {
+  test("constructs its wrapper and the underlying eventBridge client on first access", () => {
+    const provider = new AWSClientProvider();
+
+    const operations = provider.eventBridgeOperations;
+
+    expect(operations).toBeInstanceOf(M3LEventBridgeOperations);
+    expect(h.eventBridgeCtor).toHaveBeenCalledTimes(1);
+  });
+
+  test("caches the wrapper — repeat access returns the SAME instance", () => {
+    const provider = new AWSClientProvider();
+
+    const first = provider.eventBridgeOperations;
+    const second = provider.eventBridgeOperations;
+
+    expect(second).toBe(first);
+    expect(h.eventBridgeCtor).toHaveBeenCalledTimes(1);
+  });
+
+  test("close() destroys the shared underlying eventBridge client exactly once (the wrapper holds no destroyable resource of its own)", () => {
+    const provider = new AWSClientProvider();
+
+    void provider.eventBridgeOperations;
+    provider.close();
+
+    expect(h.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  test("close() clears it — a subsequent access after close() constructs a fresh instance", () => {
+    const provider = new AWSClientProvider();
+
+    const before = provider.eventBridgeOperations;
+    provider.close();
+    const after = provider.eventBridgeOperations;
 
     expect(after).not.toBe(before);
   });
