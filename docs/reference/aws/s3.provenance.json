@@ -1,0 +1,134 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "aws/s3.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "listObjects",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "headObject",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "getObject",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "putObject",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "copyObject",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "deleteObject",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "deleteObjects",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "S3ObjectSummary",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "ListObjectsOptions",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "S3Page",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "S3ObjectMetadata",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "GetObjectResult",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "PutObjectOptions",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "CopyObjectSource",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "S3DeleteError",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "DeleteObjectsResult",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/error.ts",
+          "symbol": "M3LS3OperationError",
+          "blob": "c10908aa8807b8546d824459a62943c6bc3834b2"
+        }
+      ],
+      "retrieved": "2026-07-18"
+    },
+    {
+      "heading": "Design choices",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "listObjects",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "deleteObjects",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "copyObject",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/operations.ts",
+          "symbol": "headObject",
+          "blob": "872930b267559a4825be524a591e707313a84372"
+        }
+      ],
+      "retrieved": "2026-07-18"
+    },
+    {
+      "heading": "`M3LS3OperationError`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/s3/error.ts",
+          "symbol": "M3LS3OperationError",
+          "blob": "c10908aa8807b8546d824459a62943c6bc3834b2"
+        }
+      ],
+      "retrieved": "2026-07-18"
+    }
+  ]
+}
