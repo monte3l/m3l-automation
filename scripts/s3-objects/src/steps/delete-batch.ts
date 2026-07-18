@@ -107,22 +107,18 @@ async function writeFailed(
     format: "jsonl",
   });
   const writer = exporter.exportStream();
-  let closed = false;
   try {
     for (const error of errors) {
       await writer.append(error);
     }
     await writer.close();
-    closed = true;
   } catch (cause) {
-    if (!closed) {
-      try {
-        await writer.close();
-      } catch (closeError) {
-        logger.warning("failed.jsonl close after failure also failed", {
-          cause: closeError,
-        });
-      }
+    try {
+      await writer.close();
+    } catch (closeError) {
+      logger.warning("failed.jsonl close after failure also failed", {
+        cause: closeError,
+      });
     }
     if (cause instanceof Core.M3LError) throw cause;
     throw new Core.M3LError(`failed writing '${outputPath}'`, {

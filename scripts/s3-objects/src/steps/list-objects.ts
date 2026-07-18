@@ -57,7 +57,6 @@ export async function runListObjects(deps: {
   const writer = exporter.exportStream();
 
   let processed = 0;
-  let closed = false;
   try {
     // `AWS.ListObjectsOptions` declares `prefix?: string` (no explicit
     // `| undefined`), so under `exactOptionalPropertyTypes` a literal
@@ -81,18 +80,15 @@ export async function runListObjects(deps: {
       }
     }
     await writer.close();
-    closed = true;
   } catch (cause) {
     // Best-effort cleanup only: a second close() failure here must not mask
     // the primary listing/append failure being re-thrown below.
-    if (!closed) {
-      try {
-        await writer.close();
-      } catch (closeError) {
-        deps.logger.warning("output close after failure also failed", {
-          cause: closeError,
-        });
-      }
+    try {
+      await writer.close();
+    } catch (closeError) {
+      deps.logger.warning("output close after failure also failed", {
+        cause: closeError,
+      });
     }
     if (cause instanceof AWS.M3LS3OperationError) throw cause;
     if (cause instanceof Core.M3LError) throw cause;
