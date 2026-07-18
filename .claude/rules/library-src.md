@@ -61,6 +61,14 @@ paths:
   tolerant handling (skip / default / warn) for _external_ data you don't control
   (file contents, network payloads). Don't blur the two: a malformed caller
   argument is a bug to surface, malformed external data is a condition to absorb.
+- **Narrow a `try`/`catch` to just the fallible call, never the
+  post-processing.** Wrapping response-mapping/construction inside the same
+  `try` as an async SDK/IO call means a future local bug in the mapping gets
+  mislabeled as an upstream failure (`M3LSomeOperationError` chaining a
+  `TypeError`, implying the call itself failed when it didn't). Assign the
+  awaited result inside `try`/`catch`, then build the return value after the
+  `catch` block resolves — see `aws/lambda/client.ts`'s per-method shape for
+  the pattern (`docs/logs/2026-07-18-aws-lambda.md`).
 - **`interface` for shapes callers implement/extend; `type` for unions,
   intersections, mapped/branded types.**
 - **Constrain a row-shaped generic with `extends object`, not

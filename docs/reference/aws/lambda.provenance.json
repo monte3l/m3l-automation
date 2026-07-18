@@ -1,0 +1,120 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "aws/lambda.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/lambda/client.ts",
+          "symbol": "M3LLambdaOperations",
+          "blob": "23c94b72374f575a56b1aaaaf21cf4a6a8fee819"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/lambda/error.ts",
+          "symbol": "M3LLambdaOperationError",
+          "blob": "04db1ae80f5ce87657db0d9c46de9ef626793caf"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/lambda/types.ts",
+          "symbol": "M3LLambdaFunctionSummary",
+          "blob": "cc432362450ecd0050f18076f95c62458a6ad944"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/lambda/types.ts",
+          "symbol": "M3LLambdaFunctionConfiguration",
+          "blob": "cc432362450ecd0050f18076f95c62458a6ad944"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/lambda/types.ts",
+          "symbol": "M3LLambdaListFunctionsResult",
+          "blob": "cc432362450ecd0050f18076f95c62458a6ad944"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/lambda/types.ts",
+          "symbol": "M3LLambdaInvokeResult",
+          "blob": "cc432362450ecd0050f18076f95c62458a6ad944"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/lambda/types.ts",
+          "symbol": "M3LLambdaCreateFunctionInput",
+          "blob": "cc432362450ecd0050f18076f95c62458a6ad944"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/lambda/types.ts",
+          "symbol": "M3LLambdaUpdateFunctionCodeInput",
+          "blob": "cc432362450ecd0050f18076f95c62458a6ad944"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/lambda/types.ts",
+          "symbol": "M3LLambdaUpdateFunctionConfigurationInput",
+          "blob": "cc432362450ecd0050f18076f95c62458a6ad944"
+        }
+      ],
+      "retrieved": "2026-07-18"
+    },
+    {
+      "heading": "`M3LLambdaOperations`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/lambda/client.ts",
+          "symbol": "M3LLambdaOperations",
+          "blob": "23c94b72374f575a56b1aaaaf21cf4a6a8fee819"
+        }
+      ],
+      "retrieved": "2026-07-18"
+    },
+    {
+      "heading": "Plain types (field-by-field)",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/lambda/types.ts",
+          "symbol": "M3LLambdaFunctionSummary",
+          "blob": "cc432362450ecd0050f18076f95c62458a6ad944"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/lambda/types.ts",
+          "symbol": "M3LLambdaFunctionConfiguration",
+          "blob": "cc432362450ecd0050f18076f95c62458a6ad944"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/lambda/types.ts",
+          "symbol": "M3LLambdaListFunctionsResult",
+          "blob": "cc432362450ecd0050f18076f95c62458a6ad944"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/lambda/types.ts",
+          "symbol": "M3LLambdaInvokeResult",
+          "blob": "cc432362450ecd0050f18076f95c62458a6ad944"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/lambda/types.ts",
+          "symbol": "M3LLambdaCreateFunctionInput",
+          "blob": "cc432362450ecd0050f18076f95c62458a6ad944"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/lambda/types.ts",
+          "symbol": "M3LLambdaUpdateFunctionCodeInput",
+          "blob": "cc432362450ecd0050f18076f95c62458a6ad944"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/lambda/types.ts",
+          "symbol": "M3LLambdaUpdateFunctionConfigurationInput",
+          "blob": "cc432362450ecd0050f18076f95c62458a6ad944"
+        }
+      ],
+      "retrieved": "2026-07-18"
+    },
+    {
+      "heading": "`M3LLambdaOperationError`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/lambda/error.ts",
+          "symbol": "M3LLambdaOperationError",
+          "blob": "04db1ae80f5ce87657db0d9c46de9ef626793caf"
+        }
+      ],
+      "retrieved": "2026-07-18"
+    }
+  ]
+}

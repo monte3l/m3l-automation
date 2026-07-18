@@ -1,0 +1,18 @@
+{
+  "name": "@m3l-automation/lambda-ops",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Manage AWS Lambda functions: list, describe, create, update, delete, and invoke",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "start": "node --env-file-if-exists=.env dist/main.js"
+  },
+  "dependencies": {
+    "@m3l-automation/m3l-common": "workspace:*"
+  }
+}

@@ -1762,6 +1762,51 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/eventbridge/types.ts"
   },
+  "M3LLambdaOperations": {
+    "submodule": "lambda",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/lambda/client.ts"
+  },
+  "M3LLambdaOperationError": {
+    "submodule": "lambda",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/lambda/error.ts"
+  },
+  "M3LLambdaFunctionSummary": {
+    "submodule": "lambda",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/lambda/types.ts"
+  },
+  "M3LLambdaFunctionConfiguration": {
+    "submodule": "lambda",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/lambda/types.ts"
+  },
+  "M3LLambdaListFunctionsResult": {
+    "submodule": "lambda",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/lambda/types.ts"
+  },
+  "M3LLambdaInvokeResult": {
+    "submodule": "lambda",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/lambda/types.ts"
+  },
+  "M3LLambdaCreateFunctionInput": {
+    "submodule": "lambda",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/lambda/types.ts"
+  },
+  "M3LLambdaUpdateFunctionCodeInput": {
+    "submodule": "lambda",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/lambda/types.ts"
+  },
+  "M3LLambdaUpdateFunctionConfigurationInput": {
+    "submodule": "lambda",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/lambda/types.ts"
+  },
   "M3LAWSRegion": {
     "submodule": "models",
     "namespace": "aws",
