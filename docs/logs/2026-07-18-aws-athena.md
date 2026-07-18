@@ -183,7 +183,6 @@ on the full-suite run to catch a repo-wide-only test.
   and report rather than keep double-checking") to every review prompt, not
   just after a stall is observed. This is what turned a 60+ minute stall into
   a ~90-second bounded pass on retry.
-  _(promoted → .claude/skills/implementing-submodules/SKILL.md)_
 - **A stalled background agent isn't necessarily frozen — check before
   assuming failure, but don't wait indefinitely either.** The killed
   `security-reviewer`'s final snapshot showed genuine, on-topic reasoning
