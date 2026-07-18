@@ -115,13 +115,17 @@ function barrelWiredModules(namespace) {
   return names;
 }
 
-function parseImplementationStatus() {
-  const filePath = join(root, "docs/implementation-status.md");
-  let content;
-  try {
-    content = readFileSync(filePath, "utf8");
-  } catch {
-    return {};
+// Injectable for tests: pass `content` to parse a fixture instead of the
+// real `docs/implementation-status.md` (mirrors count-sites.mjs's
+// `getStatus` fixture pattern).
+function parseImplementationStatus(content) {
+  if (content === undefined) {
+    const filePath = join(root, "docs/implementation-status.md");
+    try {
+      content = readFileSync(filePath, "utf8");
+    } catch {
+      return {};
+    }
   }
   const statusMap = {};
   for (const line of content.split("\n")) {
@@ -129,10 +133,12 @@ function parseImplementationStatus() {
     const cells = line.split("|");
     if (cells.length < 6) continue;
     const name = cells[1].trim();
-    // Lowercase submodule names, hyphens allowed for multi-word names beyond
-    // the original bootstrap catalog (e.g. "logs-insights", ADR-0027) — not
-    // headers, separators, or infra rows.
-    if (!/^[a-z][a-z-]+$/.test(name)) continue;
+    // Lowercase submodule names: hyphens allowed for multi-word names beyond
+    // the original bootstrap catalog (e.g. "logs-insights", ADR-0027), and
+    // digits allowed for full official AWS service names (ADR-0028) that
+    // contain one (e.g. "s3", "ec2") — not headers, separators, or infra
+    // rows.
+    if (!/^[a-z][a-z0-9-]+$/.test(name)) continue;
     const statusCell = cells[5].trim();
     // First code point is the status emoji
     const emoji = [...statusCell][0] ?? "❌";

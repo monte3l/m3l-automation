@@ -1682,6 +1682,91 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/models/index.ts"
   },
+  "listObjects": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/operations.ts"
+  },
+  "headObject": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/operations.ts"
+  },
+  "getObject": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/operations.ts"
+  },
+  "putObject": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/operations.ts"
+  },
+  "copyObject": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/operations.ts"
+  },
+  "deleteObject": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/operations.ts"
+  },
+  "deleteObjects": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/operations.ts"
+  },
+  "S3ObjectSummary": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/operations.ts"
+  },
+  "ListObjectsOptions": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/operations.ts"
+  },
+  "S3Page": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/operations.ts"
+  },
+  "S3ObjectMetadata": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/operations.ts"
+  },
+  "GetObjectResult": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/operations.ts"
+  },
+  "PutObjectOptions": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/operations.ts"
+  },
+  "CopyObjectSource": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/operations.ts"
+  },
+  "S3DeleteError": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/operations.ts"
+  },
+  "DeleteObjectsResult": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/operations.ts"
+  },
+  "M3LS3OperationError": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/error.ts"
+  },
   "M3LRequestSigner": {
     "submodule": "signing",
     "namespace": "aws",
