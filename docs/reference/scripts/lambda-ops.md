@@ -97,7 +97,11 @@ in a redundant script-local code.
   `M3LLambdaListFunctionsResult` for `list`, `M3LLambdaFunctionConfiguration`
   for `describe`/`create`/`update-code`/`update-configuration`, or
   `M3LLambdaInvokeResult` for `invoke`. `delete` writes nothing (even if
-  `output` is set). Omitting `output` logs the result instead of persisting it.
+  `output` is set). Omitting `output` logs only the run summary below — never
+  the full result — since a `list`/`describe`/`create`/`update-*` response or
+  an `invoke` result (whose `payload`/`logResult` can carry caller data or an
+  execution-log tail) must never be echoed into the log sink (CLAUDE.md
+  §Security — never log secrets, tokens, or caller data).
 - **Reports:** a run summary (operation, function name, and — for `invoke` —
   the resolved `statusCode`) through the `correlationId`-tagged logger; `invoke`
   exits non-zero when the function itself errored (`functionError` populated),
