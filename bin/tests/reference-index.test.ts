@@ -18,7 +18,11 @@ vi.mock("node:fs", async () => {
   return { ...actual };
 });
 
-import { baseName, fileExports } from "../lib/reference-index.mjs";
+import {
+  baseName,
+  fileExports,
+  parseImplementationStatus,
+} from "../lib/reference-index.mjs";
 
 describe("baseName", () => {
   test("returns a plain symbol unchanged", () => {
@@ -182,5 +186,44 @@ describe("fileExports", () => {
     mockSources({ [aPath]: "export const M3LFromA = 1;" });
     const visited = new Set([aPath]);
     expect(fileExports(aPath, visited)).toEqual(new Set());
+  });
+});
+
+describe("parseImplementationStatus", () => {
+  function row(name: string, status: string): string {
+    // Mirrors the real table's column layout: | name | spec | planned |
+    // symbols | status | tests | reviewed | notes |
+    return `| ${name} | \`aws/${name}.md\` | ❌ | 1 | ${status} | ✅ | ✅ | notes |`;
+  }
+
+  test("parses a hyphenated multi-word submodule name", () => {
+    const content = row("cloudwatch-logs-insights", "✅");
+    expect(parseImplementationStatus(content)).toEqual({
+      "cloudwatch-logs-insights": "✅",
+    });
+  });
+
+  test("parses a submodule name containing a digit (full official AWS service name, ADR-0028)", () => {
+    // Regression: the name-validation regex previously excluded any digit
+    // (`/^[a-z][a-z-]+$/`), silently dropping "s3" from the status map, the
+    // implemented-list prose, and the doc-count totals — found when the
+    // aws/s3 submodule (ADR-0033) shipped as the first digit-bearing name.
+    const content = row("s3", "✅");
+    expect(parseImplementationStatus(content)).toEqual({ s3: "✅" });
+  });
+
+  test("ignores a non-status-row line (heading, separator, prose)", () => {
+    const content = [
+      "# Implementation status",
+      "| Submodule | Spec | Planned | Symbols (≈) | Status | Tests | Reviewed | Notes |",
+      "| --------- | ---- | ------- | ----------- | ------ | ----- | -------- | ----- |",
+      row("errors", "✅"),
+    ].join("\n");
+    expect(parseImplementationStatus(content)).toEqual({ errors: "✅" });
+  });
+
+  test("returns the first code point of the status cell as the emoji", () => {
+    const content = row("dynamodb", "🧪 tests-written");
+    expect(parseImplementationStatus(content)).toEqual({ dynamodb: "🧪" });
   });
 });

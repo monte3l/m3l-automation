@@ -552,6 +552,33 @@
   },
   {
     "namespace": "aws",
+    "name": "s3",
+    "importPath": "@m3l-automation/m3l-common/aws",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/aws/s3.md",
+    "symbols": [
+      "listObjects",
+      "headObject",
+      "getObject",
+      "putObject",
+      "copyObject",
+      "deleteObject",
+      "deleteObjects",
+      "S3ObjectSummary",
+      "ListObjectsOptions",
+      "S3Page",
+      "S3ObjectMetadata",
+      "GetObjectResult",
+      "PutObjectOptions",
+      "CopyObjectSource",
+      "S3DeleteError",
+      "DeleteObjectsResult",
+      "M3LS3OperationError"
+    ]
+  },
+  {
+    "namespace": "aws",
     "name": "signing",
     "importPath": "@m3l-automation/m3l-common/aws",
     "status": "✅",
