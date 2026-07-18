@@ -226,6 +226,12 @@ expect(new Set(names).size).toBe(names.length);
 - Test observable behavior, not implementation details or private paths.
 - Do not weaken assertions to make a test pass. If the contract looks wrong, say
   so rather than codifying a bug.
+- **When asked to test a specific behavior another spoke's report claimed** (an
+  error code, a wrapping shape, a propagation path), verify it against the real
+  source first — a prior report is a summary, not ground truth. If the source
+  disagrees, write the assertion against the actual behavior and flag the
+  discrepancy in your report; don't silently codify a wrong assumption into a
+  test (`docs/logs/2026-07-18-s3-objects.md`, divergence 4).
 - **Don't _strengthen_ beyond the contract either.** Asserting an invariant the
   spec never stated forces the implementer to add code to satisfy it, dragging
   the implementation off the house style. For a const-object "enum replacement"
