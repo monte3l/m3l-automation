@@ -24,6 +24,7 @@ import { STSClient } from "@aws-sdk/client-sts";
 import { fromIni } from "@aws-sdk/credential-provider-ini";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 
+import { M3LEventBridgeOperations } from "../eventbridge/client.js";
 import type { M3LAWSProfile, M3LAWSRegion } from "../models/index.js";
 import { M3LRequestSigner } from "../signing/client.js";
 import { M3LSQSOperations } from "../sqs/client.js";
@@ -127,6 +128,10 @@ export class AWSClientProvider {
   // `this.sqs` before memoizing this wrapper) — close() must clear both
   // together, mirroring `dynamoDBDocumentClient` above.
   private sqsOperationsClient: M3LSQSOperations | undefined;
+  // Invariant: when set, `eventBridge` is already in `cache` (the getter
+  // reads `this.eventBridge` before memoizing this wrapper) — close() must
+  // clear both together, mirroring `sqsOperationsClient` above.
+  private eventBridgeOperationsClient: M3LEventBridgeOperations | undefined;
   // Holds no destroyable resource of its own (unlike a raw SDK client) — just
   // a cached instance built from this provider's own profile/region, cleared
   // (not independently destroyed) by close().
@@ -290,6 +295,23 @@ export class AWSClientProvider {
   }
 
   /**
+   * The {@link M3LEventBridgeOperations} wrapper over this provider's
+   * `eventBridge` client, constructed on first access. Shares the underlying
+   * `eventBridge` client's connection lifecycle: it is torn down when
+   * `close()` destroys that client, never destroyed independently (it holds
+   * no destroyable resource of its own).
+   */
+  get eventBridgeOperations(): M3LEventBridgeOperations {
+    const cached = this.eventBridgeOperationsClient;
+    if (cached !== undefined) return cached;
+
+    const base = this.eventBridge; // may throw a typed M3LAWSClientError — let it propagate
+    const operations = new M3LEventBridgeOperations(base);
+    this.eventBridgeOperationsClient = operations;
+    return operations;
+  }
+
+  /**
    * The {@link M3LRequestSigner} for this provider's profile/region,
    * constructed on first access from the provider's own `profile`/`region`
    * (not a raw SDK client). It holds no destroyable resource of its own and
@@ -345,6 +367,7 @@ export class AWSClientProvider {
     this.cache.clear();
     this.dynamoDBDocumentClient = undefined; // shares dynamoDB's lifecycle; not destroyed separately
     this.sqsOperationsClient = undefined; // shares sqs's lifecycle; not destroyed separately
+    this.eventBridgeOperationsClient = undefined; // shares eventBridge's lifecycle; not destroyed separately
     this.requestSignerClient = undefined; // holds no destroyable resource of its own
 
     if (failures.length > 0) {

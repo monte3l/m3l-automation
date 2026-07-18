@@ -1,0 +1,196 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "aws/eventbridge.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/client.ts",
+          "symbol": "M3LEventBridgeOperations",
+          "blob": "ec1f9b2c68e5d19f16a0c1fce9f0048182975bb0"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/error.ts",
+          "symbol": "M3LEventBridgeOperationError",
+          "blob": "dddbaef41cd79f7d2c7df0db4aa5452e4dc83316"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeRuleState",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeRule",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeRuleDetail",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeEventBusOptions",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeListRulesOptions",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeListRulesResult",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgePutRuleInput",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgePutRuleResult",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeDeleteRuleOptions",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeTarget",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeListTargetsOptions",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeListTargetsResult",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgePutTargetsFailure",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgePutTargetsResult",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeRemoveTargetsOptions",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeRemoveTargetsFailure",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeRemoveTargetsResult",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        }
+      ],
+      "retrieved": "2026-07-18"
+    },
+    {
+      "heading": "`M3LEventBridgeOperations`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/client.ts",
+          "symbol": "M3LEventBridgeOperations",
+          "blob": "ec1f9b2c68e5d19f16a0c1fce9f0048182975bb0"
+        }
+      ],
+      "retrieved": "2026-07-18"
+    },
+    {
+      "heading": "`M3LEventBridgeOperationError`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/error.ts",
+          "symbol": "M3LEventBridgeOperationError",
+          "blob": "dddbaef41cd79f7d2c7df0db4aa5452e4dc83316"
+        }
+      ],
+      "retrieved": "2026-07-18"
+    },
+    {
+      "heading": "Plain types",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeRule",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeRuleDetail",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeRuleState",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeTarget",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgePutRuleInput",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgePutRuleResult",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgePutTargetsFailure",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgePutTargetsResult",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeRemoveTargetsFailure",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/types.ts",
+          "symbol": "M3LEventBridgeRemoveTargetsResult",
+          "blob": "ce4c2c6686ebe013b8f6580e07cd29e2c9249925"
+        }
+      ],
+      "retrieved": "2026-07-18"
+    },
+    {
+      "heading": "Notes and behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/eventbridge/client.ts",
+          "symbol": "M3LEventBridgeOperations",
+          "blob": "ec1f9b2c68e5d19f16a0c1fce9f0048182975bb0"
+        }
+      ],
+      "retrieved": "2026-07-18"
+    }
+  ]
+}

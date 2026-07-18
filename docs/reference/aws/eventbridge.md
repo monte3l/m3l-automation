@@ -109,8 +109,9 @@ state?, description?, roleArn?, managedBy?, eventBusName? }`. `name`/`arn`
   `id` must be unique within a `putTargets`/`removeTargets` batch.
 - **`M3LEventBridgePutRuleInput`** — `{ name, eventPattern?,
 scheduleExpression?, state?, description?, roleArn?, eventBusName? }`.
-  Provide exactly one of `eventPattern`/`scheduleExpression` — EventBridge
-  itself enforces this; the wrapper does not pre-validate it.
+  A discriminated union on `eventPattern`/`scheduleExpression`: the type
+  itself enforces exactly one is provided (both-set and neither-set are
+  compile-time errors), matching the underlying EventBridge API constraint.
 - **`M3LEventBridgePutRuleResult`** — `{ ruleArn }`; defaults to `""` if the
   SDK response omits it.
 - **`M3LEventBridgePutTargetsFailure`** / **`M3LEventBridgeRemoveTargetsFailure`**

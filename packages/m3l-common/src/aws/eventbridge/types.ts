@@ -88,21 +88,33 @@ export interface M3LEventBridgeListRulesResult {
   readonly nextToken?: string;
 }
 
-/** Input for {@link M3LEventBridgeOperations.putRule} (creates or updates a rule). */
-export interface M3LEventBridgePutRuleInput extends M3LEventBridgeEventBusOptions {
+/**
+ * Input for {@link M3LEventBridgeOperations.putRule} (creates or updates a
+ * rule). A discriminated union on `eventPattern`/`scheduleExpression`: the
+ * type enforces exactly one is provided, so both-set and neither-set are
+ * compile-time errors rather than an EventBridge-side runtime rejection.
+ */
+export type M3LEventBridgePutRuleInput = M3LEventBridgeEventBusOptions & {
   /** The name of the rule to create or update. */
   readonly name: string;
-  /** The event pattern. Provide exactly one of `eventPattern`/`scheduleExpression` per the EventBridge API. */
-  readonly eventPattern?: string;
-  /** The schedule expression (`cron(...)` / `rate(...)`). Provide exactly one of `eventPattern`/`scheduleExpression`. */
-  readonly scheduleExpression?: string;
   /** The rule's initial/updated state. Defaults to `ENABLED` on the EventBridge side when omitted on create. */
   readonly state?: M3LEventBridgeRuleState;
   /** A description of the rule. */
   readonly description?: string;
   /** The ARN of the IAM role used for target invocation. */
   readonly roleArn?: string;
-}
+} & (
+    | {
+        /** The event pattern. The type enforces exactly one of `eventPattern`/`scheduleExpression` is provided. */
+        readonly eventPattern: string;
+        readonly scheduleExpression?: never;
+      }
+    | {
+        /** The schedule expression (`cron(...)` / `rate(...)`). The type enforces exactly one of `eventPattern`/`scheduleExpression` is provided. */
+        readonly scheduleExpression: string;
+        readonly eventPattern?: never;
+      }
+  );
 
 /** The result of {@link M3LEventBridgeOperations.putRule}. */
 export interface M3LEventBridgePutRuleResult {
