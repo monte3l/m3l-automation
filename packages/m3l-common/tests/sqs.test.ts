@@ -11,10 +11,6 @@
  * `vi.mock` + `vi.hoisted` bag (this repo's convention — see
  * `tests/clients.test.ts`), extended with a `.send()` spy dispatching by
  * command class (no existing test mocks `.send()`; this is the first).
- *
- * SCAFFOLD STATUS: these tests are RED by design — `M3LSQSOperations`'s
- * methods currently throw `M3LSQSOperationError("... not yet implemented")`
- * (see src/aws/sqs/client.ts). `implementing-submodules` turns them GREEN.
  */
 
 import { beforeEach, describe, expect, expectTypeOf, test, vi } from "vitest";
