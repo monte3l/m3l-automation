@@ -130,6 +130,33 @@ describe("runSingleObjectOp — describe", () => {
     expect(summary).toEqual({ processed: 1 });
     expect(warningSpy).toHaveBeenCalled();
   });
+
+  test("fsp.writeFile rejecting throws Core.M3LError coded ERR_S3_OBJECTS_OUTPUT chaining the original fs error as cause", async () => {
+    const fsError = new Error("ENOSPC: no space left on device");
+    vi.spyOn(fsp, "writeFile").mockRejectedValue(fsError);
+    headObjectMock.mockResolvedValue(undefined);
+    const logger = new Core.M3LLogger([]);
+
+    let thrown: unknown;
+    try {
+      await runSingleObjectOp({
+        client: fakeClient,
+        operation: "describe",
+        bucket: "reports",
+        key: "2026/07/summary.json",
+        outputPath: "describe-out.json",
+        logger,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    const error = thrown as Core.M3LError;
+    expect(error.code).toBe("ERR_S3_OBJECTS_OUTPUT");
+    expect(error.message).toBe("failed writing 'describe-out.json'");
+    expect(error.cause).toBe(fsError);
+  });
 });
 
 describe("runSingleObjectOp — get", () => {
@@ -192,6 +219,41 @@ describe("runSingleObjectOp — get", () => {
 
     expect(thrown).toBe(operationError);
   });
+
+  test("fsp.writeFile rejecting throws Core.M3LError coded ERR_S3_OBJECTS_OUTPUT chaining the original fs error as cause", async () => {
+    const fsError = new Error("EACCES: permission denied");
+    vi.spyOn(fsp, "writeFile").mockRejectedValue(fsError);
+    getObjectMock.mockResolvedValue({
+      body: new Uint8Array([1, 2, 3]),
+      metadata: {
+        contentLength: 3,
+        contentType: undefined,
+        eTag: undefined,
+        lastModified: undefined,
+      },
+    });
+    const logger = new Core.M3LLogger([]);
+
+    let thrown: unknown;
+    try {
+      await runSingleObjectOp({
+        client: fakeClient,
+        operation: "get",
+        bucket: "reports",
+        key: "2026/07/summary.json",
+        outputPath: "get-out.bin",
+        logger,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    const error = thrown as Core.M3LError;
+    expect(error.code).toBe("ERR_S3_OBJECTS_OUTPUT");
+    expect(error.message).toBe("failed writing 'get-out.bin'");
+    expect(error.cause).toBe(fsError);
+  });
 });
 
 describe("runSingleObjectOp — put", () => {
@@ -220,6 +282,33 @@ describe("runSingleObjectOp — put", () => {
       { contentType: "application/json" },
     );
     expect(summary).toEqual({ processed: 1 });
+  });
+
+  test("fsp.readFile rejecting throws Core.M3LError coded ERR_S3_OBJECTS_OUTPUT chaining the original fs error as cause, without calling AWS.putObject", async () => {
+    const fsError = new Error("ENOENT: no such file or directory");
+    vi.spyOn(fsp, "readFile").mockRejectedValue(fsError);
+    const logger = new Core.M3LLogger([]);
+
+    let thrown: unknown;
+    try {
+      await runSingleObjectOp({
+        client: fakeClient,
+        operation: "put",
+        bucket: "reports",
+        key: "2026/07/summary.json",
+        inputPath: "put-in.bin",
+        logger,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    const error = thrown as Core.M3LError;
+    expect(error.code).toBe("ERR_S3_OBJECTS_OUTPUT");
+    expect(error.message).toBe("failed reading 'put-in.bin'");
+    expect(error.cause).toBe(fsError);
+    expect(putObjectMock).not.toHaveBeenCalled();
   });
 });
 

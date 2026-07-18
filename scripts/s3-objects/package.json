@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "TODO: describe what this automation does.",
+  "description": "Thin op-dispatch over the aws/s3 typed operations wrapper: list, describe, get, put, copy, and delete S3 objects",
   "engines": {
     "node": ">=24"
   },

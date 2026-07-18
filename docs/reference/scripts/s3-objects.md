@@ -103,6 +103,20 @@ have to guess:
   `fs.appendFile`) — same pattern as `dynamodb-crud`'s `writeFailedRecords`.
   Each record is `{ key, message }`, carrying `AWS.deleteObjects`'s
   SDK-reported failure reason (`S3DeleteError`), not just the bare key.
+- **`delete-batch`'s key-list records are validated before use.** Each
+  parsed record's `key` field must be a non-empty string; a malformed
+  record (missing, empty, or the wrong type) is never sent to
+  `AWS.deleteObjects` — it is reported the same way a real per-key SDK
+  failure is, through `errors`/`failed.jsonl`.
+- **A whole chunk's `AWS.deleteObjects` call rejecting is fatal, but
+  surfaces prior progress.** This is distinct from a chunk returning
+  per-key errors (the normal partial-failure path, which keeps going). If
+  the SDK call itself throws (e.g. throttling, a mid-run permissions
+  change), `delete-batch` writes whatever chunk errors were already
+  collected to `failed.jsonl`, then throws `ERR_S3_OBJECTS_OUTPUT`
+  chaining the original error as `cause`, with `{ deleted, priorErrorCount
+}` in `context` so the operator can see how much of the run completed
+  before the abort.
 - **Destructive-gate decline soft-lands.** When the operator declines the
   confirmation prompt (`destructiveGate` throws `ERR_S3_OBJECTS_ABORTED`),
   `run-s3-objects` catches that specific code, logs a `warning`, and returns

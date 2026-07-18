@@ -204,17 +204,33 @@ function resolveSettings(config: Core.M3LConfig): RunSettings {
   };
 }
 
+/**
+ * Narrows an optional field to its defined value, throwing a defensive
+ * config error otherwise. `applyOperationGuards` has already enforced
+ * presence for every field callers read this way before those callers are
+ * ever invoked — this is a type-narrowing safety net, not an expected
+ * runtime path.
+ */
+function requireDefined(value: string | undefined, name: string): string {
+  if (value === undefined) {
+    throw new Core.M3LError(`'${name}' is required for this operation`, {
+      code: "ERR_S3_OBJECTS_CONFIG",
+    });
+  }
+  return value;
+}
+
 /** Builds the human-readable description shown to the destructive-gate confirmation prompt. */
 function describeDestructiveOp(settings: RunSettings): string {
   switch (settings.operation) {
     case "put":
-      return `put object ${settings.bucket}/${String(settings.key)}`;
+      return `put object ${settings.bucket}/${requireDefined(settings.key, "key")}`;
     case "copy":
-      return `copy ${String(settings.sourceBucket)}/${String(settings.sourceKey)} to ${settings.bucket}/${String(settings.key)}`;
+      return `copy ${requireDefined(settings.sourceBucket, "sourceBucket")}/${requireDefined(settings.sourceKey, "sourceKey")} to ${settings.bucket}/${requireDefined(settings.key, "key")}`;
     case "delete":
-      return `delete object ${settings.bucket}/${String(settings.key)}`;
+      return `delete object ${settings.bucket}/${requireDefined(settings.key, "key")}`;
     case "delete-batch":
-      return `delete-batch keys listed in '${String(settings.input)}' against bucket ${settings.bucket}`;
+      return `delete-batch keys listed in '${requireDefined(settings.input, "input")}' against bucket ${settings.bucket}`;
     case "list":
     case "describe":
     case "get":
@@ -239,22 +255,6 @@ interface DispatchDeps {
   readonly paths: Core.M3LPaths;
   readonly logger: Core.M3LLogger;
   readonly s3: Parameters<typeof AWS.listObjects>[0];
-}
-
-/**
- * Narrows an optional field to its defined value, throwing a defensive
- * config error otherwise. `applyOperationGuards` has already enforced
- * presence for every field `dispatch` reads this way before `dispatch` is
- * ever called — this is a type-narrowing safety net, not an expected runtime
- * path.
- */
-function requireDefined(value: string | undefined, name: string): string {
-  if (value === undefined) {
-    throw new Core.M3LError(`'${name}' is required for this operation`, {
-      code: "ERR_S3_OBJECTS_CONFIG",
-    });
-  }
-  return value;
 }
 
 /** `list`: streams the bucket listing to `output`, translating `runListObjects`'s summary. */

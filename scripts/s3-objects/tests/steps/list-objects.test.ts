@@ -80,6 +80,24 @@ function stubOutputStream(): FakeWriteStream {
   return output;
 }
 
+/**
+ * A write stream whose every `write()` call fails via the callback-error
+ * path (mirrors a real `fs.WriteStream` surfacing an EIO/ENOSPC mid-write),
+ * used to exercise `runListObjects`'s `writer.append()` failure branch.
+ */
+class FailingAppendWriteStream extends FakeWriteStream {
+  override write(
+    _chunk: string | Buffer,
+    cb?: (error?: Error | null) => void,
+  ): boolean {
+    const error = new Error("EIO: simulated write failure");
+    queueMicrotask(() => {
+      cb?.(error);
+    });
+    return true;
+  }
+}
+
 function readJSONLLines(output: FakeWriteStream): unknown[] {
   return output
     .content()
@@ -207,6 +225,40 @@ describe("runListObjects", () => {
     }
 
     expect(thrown).toBe(operationError);
+  });
+
+  test("a local write-stream failure during writer.append() is surfaced as Core.M3LError, unmodified — M3LJSONListExporter already wraps the raw fs error as an M3LError (ERR_JSON_LIST_EXPORT) before this step's own catch sees it, so the `if (cause instanceof Core.M3LError) throw cause;` branch re-throws it as-is rather than re-wrapping to ERR_S3_OBJECTS_OUTPUT", async () => {
+    vi.spyOn(fs, "createWriteStream").mockReturnValue(
+      new FailingAppendWriteStream() as unknown as WriteStream,
+    );
+    listObjectsMock.mockImplementation(async function* fakeListObjects() {
+      await Promise.resolve();
+      yield {
+        objects: [
+          { key: "a", size: 1, lastModified: undefined, eTag: undefined },
+        ],
+        nextContinuationToken: undefined,
+      };
+    });
+
+    let thrown: unknown;
+    try {
+      await runListObjects({
+        client: fakeClient,
+        bucket: "reports",
+        outputPath: "listing.jsonl",
+        logger: new Core.M3LLogger([]),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    const error = thrown as Core.M3LError;
+    expect(error.code).toBe("ERR_JSON_LIST_EXPORT");
+    expect(error.code).not.toBe("ERR_S3_OBJECTS_OUTPUT");
+    expect(error.cause).toBeInstanceOf(Error);
+    expect((error.cause as Error).message).toBe("EIO: simulated write failure");
   });
 });
 

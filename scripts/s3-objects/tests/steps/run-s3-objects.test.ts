@@ -407,6 +407,26 @@ describe("runS3Objects — gate-decline soft-lands", () => {
     expect(deleteObjectMock).not.toHaveBeenCalled();
     expect(warningSpy).toHaveBeenCalled();
   });
+
+  test("a gate failure OTHER than ERR_S3_OBJECTS_ABORTED propagates unmodified — it is not soft-landed to an all-zero summary", async () => {
+    const prompt = new Core.M3LPrompt();
+    const unrelatedError = new Error("prompt backend unavailable");
+    vi.spyOn(prompt, "confirm").mockRejectedValue(unrelatedError);
+    const deps = buildDeps(
+      { ...BASE_CONFIG, operation: "delete", key: "2026/07/summary.json" },
+      { prompt },
+    );
+
+    let thrown: unknown;
+    try {
+      await runS3Objects(deps);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(unrelatedError);
+    expect(deleteObjectMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("runS3Objects — operation dispatch routing", () => {

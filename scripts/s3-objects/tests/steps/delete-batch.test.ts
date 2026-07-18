@@ -244,6 +244,119 @@ describe("runDeleteBatch", () => {
     expect(result).toEqual({ deleted: 0, errors: [] });
     expect(createWriteStreamSpy).not.toHaveBeenCalled();
   });
+
+  test("a chunk's AWS.deleteObjects call rejecting fatally after prior chunk progress throws Core.M3LError with the prior deleted/errors persisted to failed.jsonl before the throw", async () => {
+    stubInputFile(keyRecordsJSONL(2500));
+    const priorError = { key: "k500", message: "AccessDenied" };
+    const operationError = new AWS.M3LS3OperationError("deleteObjects failed", {
+      cause: new Error("throttled"),
+    });
+    deleteObjectsMock
+      .mockResolvedValueOnce({ deleted: 999, errors: [priorError] })
+      .mockRejectedValueOnce(operationError);
+    const output = new FakeWriteStream();
+    const createWriteStreamSpy = vi
+      .spyOn(fs, "createWriteStream")
+      .mockReturnValue(output as unknown as WriteStream);
+
+    let thrown: unknown;
+    try {
+      await runDeleteBatch({
+        client: fakeClient,
+        bucket: "reports",
+        inputPath: "keys.jsonl",
+        failedOutputPath: "failed.jsonl",
+        logger: new Core.M3LLogger([]),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(deleteObjectsMock).toHaveBeenCalledTimes(2);
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    const error = thrown as Core.M3LError;
+    expect(error.code).toBe("ERR_S3_OBJECTS_OUTPUT");
+    expect(error.message).toContain("delete-batch aborted");
+    expect(error.message).toContain("999");
+    expect(error.cause).toBe(operationError);
+    expect(error.context).toEqual({ deleted: 999, priorErrorCount: 1 });
+    // The prior chunk's errors were persisted to failed.jsonl before the throw.
+    expect(createWriteStreamSpy).toHaveBeenCalledTimes(1);
+    expect(createWriteStreamSpy).toHaveBeenCalledWith("failed.jsonl");
+    expect(readJSONLLines(output)).toEqual([priorError]);
+  });
+
+  test("a chunk's AWS.deleteObjects call rejecting fatally on the FIRST chunk (no prior progress) reports deleted: 0, priorErrorCount: 0, and never touches failed.jsonl", async () => {
+    stubInputFile(keyRecordsJSONL(3));
+    const operationError = new AWS.M3LS3OperationError("deleteObjects failed", {
+      cause: new Error("network blip"),
+    });
+    deleteObjectsMock.mockRejectedValueOnce(operationError);
+    const createWriteStreamSpy = vi.spyOn(fs, "createWriteStream");
+
+    let thrown: unknown;
+    try {
+      await runDeleteBatch({
+        client: fakeClient,
+        bucket: "reports",
+        inputPath: "keys.jsonl",
+        failedOutputPath: "failed.jsonl",
+        logger: new Core.M3LLogger([]),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    const error = thrown as Core.M3LError;
+    expect(error.code).toBe("ERR_S3_OBJECTS_OUTPUT");
+    expect(error.cause).toBe(operationError);
+    expect(error.context).toEqual({ deleted: 0, priorErrorCount: 0 });
+    expect(createWriteStreamSpy).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["missing key field", {}, "undefined"],
+    ["empty string key", { key: "" }, ""],
+    ["wrong-type key (number)", { key: 123 }, "123"],
+  ] as const)(
+    "an invalid key record (%s) is never passed to AWS.deleteObjects, is reported in errors/failed.jsonl, while valid keys in the same batch still process",
+    async (_label, invalidRecord, expectedErrorKey) => {
+      const lines = [
+        JSON.stringify({ key: "good1" }),
+        JSON.stringify(invalidRecord),
+        JSON.stringify({ key: "good2" }),
+      ].join("\n");
+      stubInputFile(lines);
+      deleteObjectsMock.mockResolvedValue({ deleted: 2, errors: [] });
+      const output = new FakeWriteStream();
+      const createWriteStreamSpy = vi
+        .spyOn(fs, "createWriteStream")
+        .mockReturnValue(output as unknown as WriteStream);
+
+      const result = await runDeleteBatch({
+        client: fakeClient,
+        bucket: "reports",
+        inputPath: "keys.jsonl",
+        failedOutputPath: "failed.jsonl",
+        logger: new Core.M3LLogger([]),
+      });
+
+      expect(deleteObjectsMock).toHaveBeenCalledTimes(1);
+      expect(deleteObjectsMock).toHaveBeenCalledWith(fakeClient, "reports", [
+        "good1",
+        "good2",
+      ]);
+      const expectedError = {
+        key: expectedErrorKey,
+        message: "invalid key record: 'key' must be a non-empty string",
+      };
+      expect(result.deleted).toBe(2);
+      expect(result.errors).toEqual([expectedError]);
+      expect(createWriteStreamSpy).toHaveBeenCalledTimes(1);
+      expect(readJSONLLines(output)).toEqual([expectedError]);
+    },
+  );
 });
 
 describe("type contract", () => {

@@ -34,7 +34,14 @@ const DELETE_OBJECTS_KEY_CAP = 1000;
  */
 const ERR_IMPORT_SOURCE_CODE = "ERR_IMPORT_SOURCE";
 
-/** One key record read from the `input` JSONL file. */
+/**
+ * One key record read from the `input` JSONL file. The `Core.M3LJSONListImporter<KeyRecord>`
+ * generic is erased at runtime — a malformed record (`{"key":""}`,
+ * `{"key":123}`, or a record missing `key` entirely) still flows through
+ * `importStream` typed as `KeyRecord`, so `record.key` must be re-validated
+ * at runtime (see the `unknown`-read in {@link runDeleteBatch}'s loop) rather
+ * than trusted as the declared `string`.
+ */
 interface KeyRecord {
   readonly key: string;
 }
@@ -67,6 +74,26 @@ async function deleteChunk(
       context: { bucket, keyCount: keys.length },
     });
   }
+}
+
+/**
+ * Classifies one imported `KeyRecord`: a valid non-empty string key, or the
+ * `AWS.S3DeleteError` to report when `record.key` fails runtime validation.
+ * The `Core.M3LJSONListImporter<KeyRecord>` generic is erased at runtime, so
+ * `record.key` is re-read as `unknown` here rather than trusted as the
+ * declared `string` (see the `KeyRecord` interface's own doc).
+ */
+function classifyKeyRecord(
+  record: KeyRecord,
+): { readonly key: string } | { readonly error: AWS.S3DeleteError } {
+  const key: unknown = record.key;
+  if (typeof key === "string" && key.length > 0) return { key };
+  return {
+    error: {
+      key: typeof key === "string" ? key : String(key),
+      message: "invalid key record: 'key' must be a non-empty string",
+    },
+  };
 }
 
 /** Writes `errors` once as JSONL to `outputPath` — the `delete-batch` failure sink. */
@@ -106,42 +133,56 @@ async function writeFailed(
 }
 
 /**
- * Reads the key list at `inputPath`, deletes every key in ≤1000-key chunks,
- * and writes the aggregated per-key failures once to `failedOutputPath`.
- *
- * @param deps - Injected dependencies: the provisioned `s3` client, the
- *   target bucket, the resolved input/failed-output file paths, and a
- *   logger.
- * @returns The aggregated result across every chunk.
- * @throws {@link AWS.M3LS3OperationError} when a chunk's `AWS.deleteObjects`
- *   call rejects (propagated unmodified).
- * @throws {@link Core.M3LError} coded `ERR_S3_OBJECTS_OUTPUT` when reading
- *   `inputPath` or writing `failedOutputPath` fails.
- *
- * @example
- * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
- * import { runDeleteBatch } from "./delete-batch.js";
- *
- * const result = await runDeleteBatch({
- *   client: script.aws?.clients.s3,
- *   bucket: "reports",
- *   inputPath: "keys.jsonl",
- *   failedOutputPath: "failed.jsonl",
- *   logger: new Core.M3LLogger([]),
- * });
- * console.log(result.deleted, result.errors.length);
- * ```
+ * Handles a chunk's `AWS.deleteObjects` call rejecting fatally (the whole
+ * `DeleteObjects` request failed — throttling, a permissions change mid-run,
+ * etc. — not a per-key failure, which never throws and is aggregated via
+ * `deleteChunk`'s return value instead). Whatever `deleted`/`errors` state
+ * accumulated from prior successful chunks in this run would otherwise be
+ * silently discarded — this persists it to `failedOutputPath` before
+ * surfacing the fatal error.
  */
-export async function runDeleteBatch(deps: {
+async function handleFatalChunkFailure(
+  cause: AWS.M3LS3OperationError,
+  failedOutputPath: string,
+  logger: Core.M3LLogger,
+  deleted: number,
+  errors: readonly AWS.S3DeleteError[],
+): Promise<never> {
+  if (errors.length > 0) {
+    await writeFailed(failedOutputPath, errors, logger);
+  }
+  throw new Core.M3LError(
+    `delete-batch aborted: a chunk's AWS.deleteObjects call failed after ${String(deleted)} key(s) already deleted`,
+    {
+      code: "ERR_S3_OBJECTS_OUTPUT",
+      cause,
+      context: { deleted, priorErrorCount: errors.length },
+    },
+  );
+}
+
+/** The dependencies both {@link collectAndDeleteKeys} and {@link runDeleteBatch} share. */
+interface DeleteBatchDeps {
   readonly client: Parameters<typeof AWS.deleteObjects>[0];
   readonly bucket: string;
   readonly inputPath: string;
   readonly failedOutputPath: string;
   readonly logger: Core.M3LLogger;
-}): Promise<RunDeleteBatchResult> {
-  const importer = new Core.M3LJSONListImporter<KeyRecord>({});
+}
 
+/**
+ * Reads `inputPath`'s key records and deletes every key in ≤1000-key
+ * chunks, aggregating `deleted`/`errors` across every chunk. Handles the "no
+ * recognizable JSON/JSONL key records" short-circuit and the fatal
+ * chunk-rejection path (via {@link handleFatalChunkFailure}) — does NOT
+ * write `failedOutputPath` itself on the happy/partial-failure path; the
+ * caller ({@link runDeleteBatch}) does that once after this resolves, so the
+ * "zero keys" short-circuit never touches the failure sink.
+ */
+async function collectAndDeleteKeys(
+  deps: DeleteBatchDeps,
+  importer: Core.M3LJSONListImporter<KeyRecord>,
+): Promise<RunDeleteBatchResult> {
   let deleted = 0;
   const errors: AWS.S3DeleteError[] = [];
   let chunk: string[] = [];
@@ -157,14 +198,27 @@ export async function runDeleteBatch(deps: {
   try {
     const bytes = await readFile(deps.inputPath);
     for await (const record of importer.importStream(bytes)) {
-      chunk.push(record.key);
+      const classified = classifyKeyRecord(record);
+      if ("key" in classified) {
+        chunk.push(classified.key);
+      } else {
+        errors.push(classified.error);
+      }
       if (chunk.length === DELETE_OBJECTS_KEY_CAP) {
         await flush();
       }
     }
     await flush();
   } catch (cause) {
-    if (cause instanceof AWS.M3LS3OperationError) throw cause;
+    if (cause instanceof AWS.M3LS3OperationError) {
+      return handleFatalChunkFailure(
+        cause,
+        deps.failedOutputPath,
+        deps.logger,
+        deleted,
+        errors,
+      );
+    }
     // An input with no detectable JSON/JSONL shape (including a genuinely
     // empty file) carries no key records to delete — treated the same as an
     // explicitly empty key list, not as a fatal read failure.
@@ -185,9 +239,49 @@ export async function runDeleteBatch(deps: {
     });
   }
 
-  if (errors.length > 0) {
-    await writeFailed(deps.failedOutputPath, errors, deps.logger);
-  }
-
   return { deleted, errors };
+}
+
+/**
+ * Reads the key list at `inputPath`, deletes every key in ≤1000-key chunks,
+ * and writes the aggregated per-key failures once to `failedOutputPath`.
+ *
+ * @param deps - Injected dependencies: the provisioned `s3` client, the
+ *   target bucket, the resolved input/failed-output file paths, and a
+ *   logger.
+ * @returns The aggregated result across every chunk.
+ * @throws {@link Core.M3LError} coded `ERR_S3_OBJECTS_OUTPUT` when reading
+ *   `inputPath` fails, when writing `failedOutputPath` fails, or when a
+ *   chunk's `AWS.deleteObjects` call itself rejects fatally (the whole
+ *   `DeleteObjects` request failing, not a per-key failure) — the original
+ *   {@link AWS.M3LS3OperationError} is chained as `cause`, and `context`
+ *   carries `{ deleted, priorErrorCount }` so the operator can see how much
+ *   progress happened before the abort; any `errors` already accumulated
+ *   from prior successful chunks are still written to `failedOutputPath`
+ *   before this throws.
+ *
+ * @example
+ * ```typescript
+ * import { Core } from "@m3l-automation/m3l-common";
+ * import { runDeleteBatch } from "./delete-batch.js";
+ *
+ * const result = await runDeleteBatch({
+ *   client: script.aws?.clients.s3,
+ *   bucket: "reports",
+ *   inputPath: "keys.jsonl",
+ *   failedOutputPath: "failed.jsonl",
+ *   logger: new Core.M3LLogger([]),
+ * });
+ * console.log(result.deleted, result.errors.length);
+ * ```
+ */
+export async function runDeleteBatch(
+  deps: DeleteBatchDeps,
+): Promise<RunDeleteBatchResult> {
+  const importer = new Core.M3LJSONListImporter<KeyRecord>({});
+  const result = await collectAndDeleteKeys(deps, importer);
+  if (result.errors.length > 0) {
+    await writeFailed(deps.failedOutputPath, result.errors, deps.logger);
+  }
+  return result;
 }

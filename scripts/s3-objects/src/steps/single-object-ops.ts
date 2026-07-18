@@ -52,7 +52,15 @@ async function runDescribe(
   if (metadata === undefined) {
     logger.warning(`describe: no object found at '${bucket}/${key}'`);
   }
-  await writeFile(outputPath, JSON.stringify(metadata ?? null));
+  try {
+    await writeFile(outputPath, JSON.stringify(metadata ?? null));
+  } catch (cause) {
+    if (cause instanceof Core.M3LError) throw cause;
+    throw new Core.M3LError(`failed writing '${outputPath}'`, {
+      code: "ERR_S3_OBJECTS_OUTPUT",
+      cause,
+    });
+  }
 }
 
 /**
@@ -67,7 +75,15 @@ async function runGet(
   outputPath: string,
 ): Promise<void> {
   const { body } = await AWS.getObject(client, bucket, key);
-  await writeFile(outputPath, body);
+  try {
+    await writeFile(outputPath, body);
+  } catch (cause) {
+    if (cause instanceof Core.M3LError) throw cause;
+    throw new Core.M3LError(`failed writing '${outputPath}'`, {
+      code: "ERR_S3_OBJECTS_OUTPUT",
+      cause,
+    });
+  }
 }
 
 /** Reads `inputPath`'s raw bytes and writes them as the object body (`AWS.putObject`). */
@@ -78,7 +94,16 @@ async function runPut(
   inputPath: string,
   contentType: string | undefined,
 ): Promise<void> {
-  const body = await readFile(inputPath);
+  let body: Buffer;
+  try {
+    body = await readFile(inputPath);
+  } catch (cause) {
+    if (cause instanceof Core.M3LError) throw cause;
+    throw new Core.M3LError(`failed reading '${inputPath}'`, {
+      code: "ERR_S3_OBJECTS_OUTPUT",
+      cause,
+    });
+  }
   await AWS.putObject(client, bucket, key, body, {
     ...(contentType !== undefined && { contentType }),
   });
@@ -178,6 +203,9 @@ async function dispatchDelete(deps: SingleObjectOpDeps): Promise<void> {
  * @throws {@link Core.M3LError} coded `ERR_S3_OBJECTS_CONFIG` when a field
  *   the selected operation requires is missing (defensive — `run-s3-objects`
  *   is expected to have already guard-checked this before calling in).
+ * @throws {@link Core.M3LError} coded `ERR_S3_OBJECTS_OUTPUT` when a local
+ *   filesystem read/write fails — writing `outputPath` for `describe`/`get`,
+ *   or reading `inputPath` for `put`.
  *
  * @example
  * ```typescript
