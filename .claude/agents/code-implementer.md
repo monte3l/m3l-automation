@@ -98,6 +98,14 @@ state into the resume prompt.
    test/typecheck/lint status. If you needed a runtime dependency that wasn't
    already approved/installed, STOP and report it — do not run `pnpm add` or
    hand-edit `pnpm-lock.yaml`.
+5. **Applying a review finding that reverses an earlier design-rationale
+   statement (not just fixing a bug, but doing the thing an earlier comment
+   said wasn't needed): grep the tree for the phrase that stated the old
+   rationale** (in both `src/` and `tests/`) and update every hit. No gate
+   catches a stale "X isn't needed here" comment left behind after a Should-fix
+   makes X needed — it doesn't affect behavior or tests, only correctness of
+   the documentation (found on `athena-query`'s `resolve-settings.ts`
+   extraction, 2026-07-18).
 
 ## Project invariants (these are how review will judge you)
 
