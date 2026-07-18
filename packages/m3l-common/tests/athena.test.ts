@@ -37,6 +37,7 @@ import {
 } from "@aws-sdk/client-athena";
 
 import { M3LError } from "../src/core/errors/index.js";
+import { M3LBackoff } from "../src/core/polling/index.js";
 
 import {
   M3LAthenaClient,
@@ -107,6 +108,52 @@ describe("M3LAthenaClient.startQuery", () => {
     });
     expect(send).toHaveBeenCalled();
   });
+
+  test("rejects M3LAthenaStartQueryError with no cause when the response carries no QueryExecutionId", async () => {
+    const send = vi.fn().mockResolvedValue({});
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    const promise = settleWithTimers(
+      client.startQuery({ queryString: "SELECT 1" }),
+    );
+
+    await expect(promise).rejects.toMatchObject({
+      code: "ERR_ATHENA_START_QUERY",
+    });
+    const thrown = await promise.catch((error: unknown) => error);
+    expect((thrown as M3LAthenaStartQueryError).cause).toBeUndefined();
+    expect(send).toHaveBeenCalled();
+  });
+
+  test("maps every optional StartAthenaQueryInput field onto the StartQueryExecutionCommand input", async () => {
+    const send = vi.fn().mockResolvedValue({ QueryExecutionId: "q-full" });
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    await settleWithTimers(
+      client.startQuery({
+        queryString: "SELECT * FROM my_table",
+        database: "my_database",
+        catalog: "my_catalog",
+        outputLocation: "s3://my-bucket/results/",
+        workGroup: "my_workgroup",
+        executionParameters: ["a", "b"],
+      }),
+    );
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const [command] = send.mock.calls[0] as [unknown];
+    expect(command).toBeInstanceOf(StartQueryExecutionCommand);
+    expect((command as StartQueryExecutionCommand).input).toMatchObject({
+      QueryString: "SELECT * FROM my_table",
+      QueryExecutionContext: {
+        Database: "my_database",
+        Catalog: "my_catalog",
+      },
+      ResultConfiguration: { OutputLocation: "s3://my-bucket/results/" },
+      WorkGroup: "my_workgroup",
+      ExecutionParameters: ["a", "b"],
+    });
+  });
 });
 
 describe("M3LAthenaClient.awaitResults", () => {
@@ -143,6 +190,171 @@ describe("M3LAthenaClient.awaitResults", () => {
     expect(send).toHaveBeenCalledWith(expect.any(GetQueryResultsCommand));
   });
 
+  test("accumulates rows across GetQueryResults pages without dropping the first row of page two", async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({
+        QueryExecution: { Status: { State: "SUCCEEDED" } },
+      })
+      .mockResolvedValueOnce({
+        NextToken: "next-token",
+        ResultSet: {
+          Rows: [
+            { Data: [{ VarCharValue: "id" }, { VarCharValue: "name" }] },
+            { Data: [{ VarCharValue: "1" }, { VarCharValue: "alice" }] },
+          ],
+          ResultSetMetadata: {
+            ColumnInfo: [
+              { Name: "id", Type: "bigint" },
+              { Name: "name", Type: "varchar" },
+            ],
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        ResultSet: {
+          Rows: [{ Data: [{ VarCharValue: "2" }, { VarCharValue: "bob" }] }],
+          ResultSetMetadata: {
+            ColumnInfo: [
+              { Name: "id", Type: "bigint" },
+              { Name: "name", Type: "varchar" },
+            ],
+          },
+        },
+      });
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    const result = await settleWithTimers(client.awaitResults("q-page"));
+
+    expect(result.rows).toEqual([
+      { id: "1", name: "alice" },
+      { id: "2", name: "bob" },
+    ]);
+    expect(send).toHaveBeenCalledTimes(3);
+    const [secondPageCommand] = send.mock.calls[2] as [unknown];
+    expect(secondPageCommand).toBeInstanceOf(GetQueryResultsCommand);
+    expect((secondPageCommand as GetQueryResultsCommand).input.NextToken).toBe(
+      "next-token",
+    );
+  });
+
+  test("continues polling through RUNNING before reaching SUCCEEDED", async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({
+        QueryExecution: { Status: { State: "RUNNING" } },
+      })
+      .mockResolvedValueOnce({
+        QueryExecution: { Status: { State: "SUCCEEDED" } },
+      })
+      .mockResolvedValueOnce({
+        ResultSet: { Rows: [], ResultSetMetadata: { ColumnInfo: [] } },
+      });
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    const result = await settleWithTimers(client.awaitResults("q-loop"));
+
+    expect(result.status).toBe("SUCCEEDED");
+    expect(send).toHaveBeenCalledTimes(3);
+  });
+
+  test("maps ResultSetMetadata.ColumnInfo to result.columns", async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({
+        QueryExecution: { Status: { State: "SUCCEEDED" } },
+      })
+      .mockResolvedValueOnce({
+        ResultSet: {
+          Rows: [{ Data: [{ VarCharValue: "id" }, { VarCharValue: "name" }] }],
+          ResultSetMetadata: {
+            ColumnInfo: [
+              { Name: "id", Type: "bigint" },
+              { Name: "name", Type: "varchar" },
+            ],
+          },
+        },
+      });
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    const result = await settleWithTimers(client.awaitResults("q-columns"));
+
+    expect(result.columns).toEqual([
+      { name: "id", type: "bigint" },
+      { name: "name", type: "varchar" },
+    ]);
+  });
+
+  test("maps GetQueryExecution Statistics to camelCase result.statistics", async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({
+        QueryExecution: {
+          Status: { State: "SUCCEEDED" },
+          Statistics: {
+            DataScannedInBytes: 2048,
+            TotalExecutionTimeInMillis: 500,
+            EngineExecutionTimeInMillis: 400,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        ResultSet: { Rows: [], ResultSetMetadata: { ColumnInfo: [] } },
+      });
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    const result = await settleWithTimers(client.awaitResults("q-stats"));
+
+    expect(result.statistics).toEqual({
+      dataScannedInBytes: 2048,
+      totalExecutionTimeInMillis: 500,
+      engineExecutionTimeInMillis: 400,
+    });
+  });
+
+  test("leaves result.statistics undefined when GetQueryExecution carries no Statistics", async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({
+        QueryExecution: { Status: { State: "SUCCEEDED" } },
+      })
+      .mockResolvedValueOnce({
+        ResultSet: { Rows: [], ResultSetMetadata: { ColumnInfo: [] } },
+      });
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    const result = await settleWithTimers(client.awaitResults("q-no-stats"));
+
+    expect(result.statistics).toBeUndefined();
+  });
+
+  test("normalizes a Datum with no VarCharValue to an empty string", async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({
+        QueryExecution: { Status: { State: "SUCCEEDED" } },
+      })
+      .mockResolvedValueOnce({
+        ResultSet: {
+          Rows: [
+            { Data: [{ VarCharValue: "id" }, { VarCharValue: "name" }] },
+            { Data: [{ VarCharValue: "1" }, {}] },
+          ],
+          ResultSetMetadata: {
+            ColumnInfo: [
+              { Name: "id", Type: "bigint" },
+              { Name: "name", Type: "varchar" },
+            ],
+          },
+        },
+      });
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    const result = await settleWithTimers(client.awaitResults("q-null"));
+
+    expect(result.rows).toEqual([{ id: "1", name: "" }]);
+  });
+
   test("rejects M3LAthenaQueryFailedError when the query reaches a terminal FAILED status", async () => {
     const send = vi.fn().mockResolvedValue({
       QueryExecution: {
@@ -157,6 +369,114 @@ describe("M3LAthenaClient.awaitResults", () => {
       code: "ERR_ATHENA_QUERY_FAILED",
     });
     expect(send).toHaveBeenCalled();
+  });
+
+  test("rejects M3LAthenaQueryFailedError when the query reaches a terminal CANCELLED status", async () => {
+    const send = vi.fn().mockResolvedValue({
+      QueryExecution: {
+        Status: { State: "CANCELLED", StateChangeReason: "user cancelled" },
+      },
+    });
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    const thrown = await settleWithTimers(
+      client.awaitResults("q-cancelled").catch((error: unknown) => error),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LAthenaQueryFailedError);
+    expect((thrown as M3LAthenaQueryFailedError).context).toMatchObject({
+      queryExecutionId: "q-cancelled",
+      status: "CANCELLED",
+    });
+    expect((thrown as M3LAthenaQueryFailedError).cause).toBeUndefined();
+    expect(send).toHaveBeenCalled();
+  });
+
+  test("rejects M3LAthenaQueryFailedError with status UNKNOWN and chained cause when GetQueryExecution's send fails", async () => {
+    const sdkError = new Error("network blip");
+    const send = vi.fn().mockRejectedValue(sdkError);
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    const thrown = await settleWithTimers(
+      client.awaitResults("q-send-fail").catch((error: unknown) => error),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LAthenaQueryFailedError);
+    expect((thrown as M3LAthenaQueryFailedError).context).toMatchObject({
+      status: "UNKNOWN",
+    });
+    expect((thrown as M3LAthenaQueryFailedError).cause).toBe(sdkError);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  test("rejects M3LAthenaQueryFailedError with status UNKNOWN and chained cause when GetQueryResults' send fails after GetQueryExecution succeeds", async () => {
+    const sdkError = new Error("results fetch blew up");
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({
+        QueryExecution: { Status: { State: "SUCCEEDED" } },
+      })
+      .mockRejectedValue(sdkError);
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    const thrown = await settleWithTimers(
+      client.awaitResults("q-results-fail").catch((error: unknown) => error),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LAthenaQueryFailedError);
+    expect((thrown as M3LAthenaQueryFailedError).context).toMatchObject({
+      status: "UNKNOWN",
+    });
+    expect((thrown as M3LAthenaQueryFailedError).cause).toBe(sdkError);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  test("propagates the poller's own ERR_POLL_EXHAUSTED error, narrowed by code (not class), when GetQueryExecution never reaches a terminal status", async () => {
+    const send = vi.fn().mockResolvedValue({
+      QueryExecution: { Status: { State: "RUNNING" } },
+    });
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    const thrown = await settleWithTimers(
+      client
+        .awaitResults("q-slow", {
+          pollerOptions: { backoff: M3LBackoff.constant(1), maxAttempts: 2 },
+        })
+        .catch((error: unknown) => error),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_POLL_EXHAUSTED");
+    expect(thrown).not.toBeInstanceOf(M3LAthenaQueryFailedError);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("M3LAthenaClient.runQuery", () => {
+  test("sends StartQueryExecution, then GetQueryExecution, then GetQueryResults in sequence", async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({ QueryExecutionId: "q-e2e" })
+      .mockResolvedValueOnce({
+        QueryExecution: { Status: { State: "SUCCEEDED" } },
+      })
+      .mockResolvedValueOnce({
+        ResultSet: { Rows: [], ResultSetMetadata: { ColumnInfo: [] } },
+      });
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    const result = await settleWithTimers(
+      client.runQuery({ queryString: "SELECT 1" }),
+    );
+
+    expect(result.queryExecutionId).toBe("q-e2e");
+    expect(send).toHaveBeenCalledTimes(3);
+    const [startCommand] = send.mock.calls[0] as [unknown];
+    const [getExecCommand] = send.mock.calls[1] as [unknown];
+    const [getResultsCommand] = send.mock.calls[2] as [unknown];
+    expect(startCommand).toBeInstanceOf(StartQueryExecutionCommand);
+    expect(getExecCommand).toBeInstanceOf(GetQueryExecutionCommand);
+    expect(getResultsCommand).toBeInstanceOf(GetQueryResultsCommand);
   });
 });
 
