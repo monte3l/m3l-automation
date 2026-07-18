@@ -5,7 +5,7 @@
  * Public submodules (documented under `docs/reference/aws/`) are re-exported
  * here as they are implemented, in dependency order: `models`, `credentials`,
  * `clients`, `dynamodb`, `cloudwatch-logs-insights`, `sqs`, `signing`, `s3`,
- * `athena`.
+ * `athena`, `eventbridge`.
  *
  * @packageDocumentation
  */
@@ -19,3 +19,4 @@ export * from "./sqs/index.js";
 export * from "./signing/index.js";
 export * from "./s3/index.js";
 export * from "./athena/index.js";
+export * from "./eventbridge/index.js";
