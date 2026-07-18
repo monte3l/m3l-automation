@@ -184,8 +184,8 @@ importers:
         specifier: ^3.4.6
         version: 3.4.6
       adm-zip:
-        specifier: ^0.5.18
-        version: 0.5.18
+        specifier: ^0.6.0
+        version: 0.6.0
       cheerio:
         specifier: ^1.2.0
         version: 1.2.0
@@ -1617,9 +1617,9 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
-  adm-zip@0.5.18:
-    resolution: {integrity: sha512-ufJnssQGbxzLNS1Ho9bCtX4rQKCCvoVuDLHoJyc3F9dOGDB4BkWs2Ci0kv53lqocAEQ/Cbi+I2XCsNYGqVYqng==}
-    engines: {node: '>=12.0'}
+  adm-zip@0.6.0:
+    resolution: {integrity: sha512-XleryMhbuksdKtofnWZ9Sk+4CUTbms4Mb/EU32SZwToAyZ5RgVos/ki8n+yr0LWHOGKuakbXTuuYNHLQjhddgg==}
+    engines: {node: '>=14.0'}
 
   ajv-formats@3.0.1:
     resolution: {integrity: sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==}
@@ -4953,7 +4953,7 @@ snapshots:
 
   acorn@8.17.0: {}
 
-  adm-zip@0.5.18: {}
+  adm-zip@0.6.0: {}
 
   ajv-formats@3.0.1(ajv@8.20.0):
     optionalDependencies:
