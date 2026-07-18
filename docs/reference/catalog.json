@@ -578,6 +578,25 @@
   },
   {
     "namespace": "aws",
+    "name": "lambda",
+    "importPath": "@m3l-automation/m3l-common/aws",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/aws/lambda.md",
+    "symbols": [
+      "M3LLambdaOperations",
+      "M3LLambdaOperationError",
+      "M3LLambdaFunctionSummary",
+      "M3LLambdaFunctionConfiguration",
+      "M3LLambdaListFunctionsResult",
+      "M3LLambdaInvokeResult",
+      "M3LLambdaCreateFunctionInput",
+      "M3LLambdaUpdateFunctionCodeInput",
+      "M3LLambdaUpdateFunctionConfigurationInput"
+    ]
+  },
+  {
+    "namespace": "aws",
     "name": "models",
     "importPath": "@m3l-automation/m3l-common/aws",
     "status": "✅",
