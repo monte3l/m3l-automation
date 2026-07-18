@@ -4,9 +4,8 @@ This log covers implementing the `aws/eventbridge` submodule (Unit 1 of the
 `eventbridge-schedules` two-unit plan) end-to-end through the
 `scaffolding-submodules` → `implementing-submodules` pipeline: contract
 extraction, RED, GREEN, a 5-spoke review fan-out, should-fix remediation, and
-full doc reconciliation. It records what shipped, what matched the plan, one
-real divergence (a stalled review dispatch), and the durable lesson it
-produced.
+full doc reconciliation. It records what shipped, what matched the plan, and
+one real divergence (a stalled review dispatch).
 
 Plan of record: [`docs-roadmap-md-docs-plans-implementati-binary-panda.md`](C:\Users\enri3.claude\plans\docs-roadmap-md-docs-plans-implementati-binary-panda.md)
 
@@ -156,15 +155,16 @@ it's a change to shared tooling outside this submodule's scope.
 
 ## Lessons learned
 
-- **Extend RED/GREEN dispatch sizing to review fan-outs.** The repo's
-  subagent-dispatch rule already tells the hub to split large work into
-  bounded sub-dispatches up front; this session is direct evidence the same
-  applies to review dispatches — a large enough diff (5 files, 1,560 lines)
-  stalled a `code-reviewer` spoke for over an hour even when four sibling
-  spokes on related but smaller scopes completed cleanly. Also folds in
-  giving large-diff review spokes a journal path, closing the same
-  observability gap RED/GREEN spokes already have.
-  _(promoted → `.claude/rules/subagent-dispatch.md`)_
+- **A large review diff can stall a spoke for an hour with no error signal.**
+  The repo's subagent-dispatch rule already tells the hub to split large
+  RED/GREEN work into bounded sub-dispatches up front; this session showed
+  the same risk on the review side — a 5-file, 1,560-line diff (plus an
+  instruction to cross-reference a sibling module) stalled `code-reviewer`
+  for over an hour, while four sibling spokes on related but smaller scopes
+  completed cleanly in 8–78 minutes. Splitting the stalled review into two
+  narrower scoped dispatches after the fact resolved it (~8 minutes each,
+  zero must-fix). Not folded into a durable rule this time — documenting the
+  incident here so a future recurrence has precedent to reason from.
 - **A stalled read-only spoke is safe to kill and inspect.** Before killing,
   confirming the spoke's tool grants are read-only (via its agent
   definition) and checking `git status`/`git diff --stat` afterward gives a

@@ -38,16 +38,6 @@ status`/`git diff`, re-run `tsc`/`eslint`/`vitest`/coverage) before deciding
   Should-fix/Nits summary plus the file path. Applies to `code-reviewer`,
   `security-reviewer`, `silent-failure-hunter`, `type-design-analyzer`,
   `spec-conformance-reviewer`, and any `auditing`/fan-out Explore dispatch.
-- **Size review dispatches to diff size, same as RED/GREEN.** A single
-  `code-reviewer` turn over a large diff (roughly \>3–4 files or a few
-  hundred lines), especially with an added "cross-reference this sibling
-  file" instruction, is the same oversized-turn risk the RED/GREEN sizing
-  rule targets — split it into scoped sub-dispatches (by file group or
-  concern) up front rather than discovering the stall after an hour with no
-  progress signal (`docs/logs/2026-07-18-aws-eventbridge.md`). Give review
-  spokes a journal path too when the diff is large — a read-only reviewer
-  with no journal gives no way to tell "still reading" from "stuck" short of
-  blocking or killing it.
 - **Don't raise `maxTurns` as the fix.** More context/turns is not free —
   Anthropic's context-rot finding says accuracy degrades as token count grows.
   Scoping, journaling, and pacing are the preferred levers.
