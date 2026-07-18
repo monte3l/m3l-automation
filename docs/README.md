@@ -82,6 +82,12 @@ Utilities
 - [`credentials`](reference/aws/credentials.md) — `M3LAWSCredentialsManager`
 - [`clients`](reference/aws/clients.md) — `AWSClientProvider`, `AWSMultiClientProvider`
 - [`models`](reference/aws/models.md) — shared AWS model types
+- [`dynamodb`](reference/aws/dynamodb.md) — high-level DynamoDB item operations
+- [`cloudwatch-logs-insights`](reference/aws/cloudwatch-logs-insights.md) — `M3LLogsInsightsClient`
+- [`sqs`](reference/aws/sqs.md) — `M3LSQSOperations`
+- [`signing`](reference/aws/signing.md) — `M3LRequestSigner`
+- [`s3`](reference/aws/s3.md) — high-level S3 object operations
+- [`athena`](reference/aws/athena.md) — `M3LAthenaClient`
 
 ### Contributing
 
