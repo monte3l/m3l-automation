@@ -1447,6 +1447,56 @@
     "file": "packages/m3l-common/src/core/utils/guards.ts",
     "lines": "427-441"
   },
+  "M3LAthenaClient": {
+    "submodule": "athena",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/athena/client.ts"
+  },
+  "AthenaAwaitOptions": {
+    "submodule": "athena",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/athena/client.ts"
+  },
+  "StartAthenaQueryInput": {
+    "submodule": "athena",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/athena/types.ts"
+  },
+  "AthenaQueryResult": {
+    "submodule": "athena",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/athena/types.ts"
+  },
+  "AthenaQueryStatistics": {
+    "submodule": "athena",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/athena/types.ts"
+  },
+  "AthenaQueryStatus": {
+    "submodule": "athena",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/athena/types.ts"
+  },
+  "AthenaRow": {
+    "submodule": "athena",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/athena/types.ts"
+  },
+  "AthenaColumnInfo": {
+    "submodule": "athena",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/athena/types.ts"
+  },
+  "M3LAthenaStartQueryError": {
+    "submodule": "athena",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/athena/errors.ts"
+  },
+  "M3LAthenaQueryFailedError": {
+    "submodule": "athena",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/athena/errors.ts"
+  },
   "AWSClientProvider": {
     "submodule": "clients",
     "namespace": "aws",

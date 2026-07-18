@@ -53,7 +53,7 @@ Thin op-dispatch (`list`/`describe`/`create`/`update`/`delete` + per-service ver
 
 ### W4 — library-wrapper-gated (P1, pending; no script-local deps — ADR-0029)
 
-- **`athena-query`** (was `data-query`; ADR-0028/ADR-0029) — Athena-only via the `athena` getter (W0-L2) + `athenaQuery()` policy; results feed the shared extract/filter/export steps. The PostgreSQL (`pg`) and DocumentDB (`mongodb`) engines are dropped from fleet scope — script-local dependencies are superseded by ADR-0029.
+- **`athena-query`** (was `data-query`; ADR-0028/ADR-0029) — Athena-only; results feed the shared extract/filter/export steps. The PostgreSQL (`pg`) and DocumentDB (`mongodb`) engines are dropped from fleet scope — script-local dependencies are superseded by ADR-0029. Its library prerequisite — the `aws/athena` operations wrapper the script needs since it cannot call the raw `athena` getter directly (scripts are banned from `@aws-sdk/*`, T6) — is **done** (`docs/reference/aws/athena.md`, `M3LAthenaClient`; landed on `feat/aws-athena`). `athena-query` itself (the script package under `scripts/athena-query/`) is unblocked and **not yet started** — needs its own `/starting-work` → `/scaffolding-scripts` → `/implementing-scripts` pass.
 - **`eks-ops`** — rescoped to EKS control-plane operations via the `eks` getter only; kubectl-level workload ops (previously `@kubernetes/client-node` script-local) are out of scope per ADR-0029.
 - **`api-gateway-client`** (was `apigw-client`; ADR-0028) — calls APIs behind API Gateway via `M3LHttpClient`; auth `none|api-key|iam`; IAM signing via a future library wrapper (e.g. an `aws/signing` submodule owning `@smithy/signature-v4` as a library dep, ADR-0029); batch mode with `failed.jsonl`.
 
