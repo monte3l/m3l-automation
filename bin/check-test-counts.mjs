@@ -112,7 +112,10 @@ for (const line of statusContent.split("\n")) {
   const notes = cols[NOTES_COL].trim();
 
   if (!status.includes("✅")) continue;
-  if (!/^[a-z][a-z-]*$/.test(submodule)) continue; // header row guard
+  // Header row guard. Digits allowed for full official AWS service names
+  // (ADR-0028) that contain one (e.g. "s3", "ec2") — mirrors the same fix in
+  // bin/lib/reference-index.mjs's parseImplementationStatus().
+  if (!/^[a-z][a-z0-9-]*$/.test(submodule)) continue;
 
   const countMatch = /(\d+) tests/.exec(notes);
   if (!countMatch) continue; // row has no recorded count
