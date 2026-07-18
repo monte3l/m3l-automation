@@ -109,6 +109,19 @@ build` once after the rebase and confirm the new submodule's `dist/`
    than one open-ended turn per phase, and say so explicitly when dispatching.
    See `docs/contributing/subagent-context-management.md`.
 
+   **Treat the contract page as a hypothesis, not a finished spec, for any
+   script with several operations or cross-parameter requirements.** A
+   hub-authored contract page written in one pass tends to under-specify
+   exactly the decisions `test-author`/`code-implementer` would otherwise
+   guess divergently (e.g. an unspecified not-found behavior, an
+   unspecified failure-summary shape, an unnamed error-code family, an
+   unspecified soft-land-vs-propagate decision). Run
+   `spec-conformance-reviewer` in **contract mode** against the page before
+   RED and treat any ambiguity it flags as blocking — close it by amending
+   the doc, not by letting two downstream spokes pick their own
+   interpretation (`docs/logs/2026-07-18-s3-objects.md`, divergence 1,
+   surfaced 5 real gaps this way).
+
 4. **Phase 2 — RED.** Dispatch `test-author` with the contract and target paths
    under `scripts/<name>/tests/`. It writes failing tests for each step through
    its **injected deps** (never by booting the `M3LScript` lifecycle or setting
