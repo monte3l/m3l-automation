@@ -21,39 +21,68 @@ event-source-mapping management, and the still-gated D4 "Lambda-invoke
 wrapper" library seam — this script calls the existing getter directly, it
 does not add a new library wrapper.
 
-> **Scaffold status:** this page currently reflects the scaffolded contract
-> seam. The concrete per-operation configuration parameters and the `steps/`
-> decomposition are designed by the `implementing-scripts` TDD pipeline; this
-> table will grow an `operation` parameter (and its per-operation siblings)
-> once that lands.
-
 ## Configuration schema
 
 Declared in `src/config.ts` (`configParameters`); config is the script's only
-input seam.
+input seam. Per-operation requiredness (the "Required for" column) is **not**
+expressed by `M3LConfigParameter({ required: true })` beyond `operation` itself
+— the library has no cross-parameter/conditional-required seam yet (F1b,
+deferred). Every parameter besides `aws.profile`/`operation` is declared
+optional, and `run-lambda-ops.ts` guard-checks presence per operation before
+any AWS call (mirroring `api-gateway-client`'s per-command guard).
 
-| Parameter     | Type     | Default | Validation             | Description                                                                                                                                                              |
-| ------------- | -------- | ------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `aws.profile` | `STRING` | —       | `nonEmpty`, `required` | AWS profile name; enables the `script.aws` dynamic-provisioning seam (`Core.AWS_PROFILE_PARAM_NAME`)                                                                     |
-| `batchSize`   | `INT`    | `100`   | `range(1, 10_000)`     | Starter placeholder from the scaffold template; superseded once the real per-operation parameters (`operation`, `functionName`, etc.) are declared during implementation |
+| Parameter      | Type     | Default | Validation                                                                                           | Required for                                            | Description                                                                                                                                                                                                                                      |
+| -------------- | -------- | ------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `aws.profile`  | `STRING` | —       | `required: true`, `nonEmpty`                                                                         | all                                                     | AWS profile name; declaring it enables the `script.aws` dynamic-provisioning seam (`Core.AWS_PROFILE_PARAM_NAME`)                                                                                                                                |
+| `operation`    | `STRING` | —       | `required: true`, `oneOf(list, describe, invoke, create, update-code, update-configuration, delete)` | all                                                     | Selects which of the 7 `M3LLambdaOperations` methods this run dispatches                                                                                                                                                                         |
+| `functionName` | `STRING` | —       | `nonEmpty` (guard-checked)                                                                           | all except `list`                                       | The target function's name or ARN                                                                                                                                                                                                                |
+| `marker`       | `STRING` | —       | `nonEmpty` (guard-checked)                                                                           | `list` (optional)                                       | Continuation token from a previous page's `nextMarker`, forwarded to `listFunctions({ marker })`                                                                                                                                                 |
+| `zipFilePath`  | `STRING` | —       | `nonEmpty` (guard-checked)                                                                           | `create`, `update-code`                                 | Path to a deployment-package zip, resolved via `M3LPaths.resolveInput` and read as raw bytes for the SDK's `zipFile: Uint8Array` field. No packaging/build happens here — the zip must already exist                                             |
+| `input`        | `STRING` | —       | `nonEmpty` (guard-checked)                                                                           | `create`, `update-configuration`; optional for `invoke` | Path resolved via `M3LPaths.resolveInput` to a JSON file: the function-definition fields (`runtime`/`role`/`handler`/`description`/`timeout`/`memorySize`/`environment`) for `create`/`update-configuration`, or the invoke payload for `invoke` |
+| `output`       | `STRING` | —       | `nonEmpty` (guard-checked)                                                                           | all (optional)                                          | Path resolved via `M3LPaths.resolveOutput`; when set, the operation's result is persisted as a single JSON document (not JSONL — these are single-item calls, never streamed)                                                                    |
+| `yes`          | `BOOL`   | `false` | —                                                                                                    | any mutating operation (optional)                       | Bypasses the destructive-operation confirmation prompt for unattended runs; the bypass is logged as a warning                                                                                                                                    |
 
 ## Steps
 
 One row per `src/steps/` module; each step takes injected dependencies and is
-unit-testable without the lifecycle.
+unit-testable without the lifecycle. `run-lambda-ops.ts` dispatches on the
+resolved `operation`; every operation except `list`/`describe` routes through
+`destructive-gate` first.
 
-| Step             | Responsibility                                                                             |
-| ---------------- | ------------------------------------------------------------------------------------------ |
-| `run-lambda-ops` | Starter placeholder (logs and returns) pending the real operation-dispatch implementation. |
+| Step               | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run-lambda-ops`   | Composition/dispatcher: resolves and guard-checks config per operation, runs `destructive-gate` for every mutating operation, dispatches to the operation-appropriate step, persists `output` when configured, and logs a run summary. For `invoke`, throws `ERR_LAMBDA_OPS_FUNCTION_ERROR` when the result's `functionError` is populated — `M3LLambdaOperations.invokeFunction` never throws for a function-level error, so this is the layer that turns a handler failure into a non-zero exit. |
+| `destructive-gate` | Shared confirmation step (mirrors `api-gateway-client`'s): prints the target operation + function name, prompts via `script.prompt.confirm(description)`, and throws `ERR_LAMBDA_OPS_ABORTED` when declined; bypassed by `yes` (bypass logged as a warning so an unattended run still leaves an audit trail).                                                                                                                                                                                      |
+| `read-functions`   | `list` (`listFunctions({ marker })`) and `describe` (`getFunction(functionName)`) — never gated.                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `write-function`   | `create` (reads `zipFilePath` bytes + parsed `input` fields, calls `createFunction`), `update-code` (reads `zipFilePath` bytes, calls `updateFunctionCode`), `update-configuration` (parsed `input` fields, calls `updateFunctionConfiguration`), `delete` (calls `deleteFunction`, writes no output).                                                                                                                                                                                             |
+| `invoke-function`  | `invoke`: reads an optional JSON payload from `input`, calls `invokeFunction(functionName, payload)`.                                                                                                                                                                                                                                                                                                                                                                                              |
+
+Script-local error codes are plain `M3LError.code` strings (the field is an
+open `string`, not a closed union — exactly like `sqs-etl`'s `ERR_SQS_ETL_*`
+and `api-gateway-client`'s `ERR_API_GATEWAY_CLIENT_*`), all prefixed
+`ERR_LAMBDA_OPS_`:
+
+- `ERR_LAMBDA_OPS_CONFIG` — a guard-checked per-operation requirement was
+  unmet, or `script.aws` was not provisioned despite declaring `aws.profile`.
+- `ERR_LAMBDA_OPS_ABORTED` — the destructive-gate confirmation was declined.
+- `ERR_LAMBDA_OPS_FUNCTION_ERROR` — `invoke` returned a populated
+  `functionError` (the handler threw or timed out).
+- `ERR_LAMBDA_OPS_OUTPUT` — writing the resolved `output` file failed.
 
 ## Inputs and outputs
 
-Pending implementation. Expected shape, matching the W2/W3 scripts already
-shipped: `list`/`describe` write JSON/CSV to `M3L_OUTPUT_DIR`; `create`/
-`update` read a function definition from `M3L_INPUT_DIR` or an explicit config
-path; `invoke` reads a payload from `M3L_INPUT_DIR` and writes the Lambda
-response to `M3L_OUTPUT_DIR`; `delete` reads only a `functionName`/`operation`
-pair from config.
+- **Reads:** `zipFilePath` (raw bytes, for `create`/`update-code`) and `input`
+  (JSON, for `create`/`update-configuration`/`invoke`), both resolved under
+  `M3L_INPUT_DIR`.
+- **Writes:** when `output` is configured, the single JSON result document
+  (the function configuration for `list`/`describe`/`create`/`update-code`/
+  `update-configuration`, or the invoke result for `invoke`) under
+  `M3L_OUTPUT_DIR`. `delete` writes nothing. Omitting `output` logs the result
+  instead of persisting it.
+- **Reports:** a run summary (operation, function name, and — for `invoke` —
+  the resolved `statusCode`) through the `correlationId`-tagged logger; `invoke`
+  exits non-zero when the function itself errored (`functionError` populated),
+  never silently.
 
 ## See also
 
