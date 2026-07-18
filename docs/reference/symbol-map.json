@@ -1667,6 +1667,101 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/dynamodb/error.ts"
   },
+  "M3LEventBridgeOperations": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/client.ts"
+  },
+  "M3LEventBridgeOperationError": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/error.ts"
+  },
+  "M3LEventBridgeRuleState": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/types.ts"
+  },
+  "M3LEventBridgeRule": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/types.ts"
+  },
+  "M3LEventBridgeRuleDetail": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/types.ts"
+  },
+  "M3LEventBridgeEventBusOptions": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/types.ts"
+  },
+  "M3LEventBridgeListRulesOptions": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/types.ts"
+  },
+  "M3LEventBridgeListRulesResult": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/types.ts"
+  },
+  "M3LEventBridgePutRuleInput": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/types.ts"
+  },
+  "M3LEventBridgePutRuleResult": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/types.ts"
+  },
+  "M3LEventBridgeDeleteRuleOptions": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/types.ts"
+  },
+  "M3LEventBridgeTarget": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/types.ts"
+  },
+  "M3LEventBridgeListTargetsOptions": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/types.ts"
+  },
+  "M3LEventBridgeListTargetsResult": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/types.ts"
+  },
+  "M3LEventBridgePutTargetsFailure": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/types.ts"
+  },
+  "M3LEventBridgePutTargetsResult": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/types.ts"
+  },
+  "M3LEventBridgeRemoveTargetsOptions": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/types.ts"
+  },
+  "M3LEventBridgeRemoveTargetsFailure": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/types.ts"
+  },
+  "M3LEventBridgeRemoveTargetsResult": {
+    "submodule": "eventbridge",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eventbridge/types.ts"
+  },
   "M3LAWSRegion": {
     "submodule": "models",
     "namespace": "aws",
