@@ -205,6 +205,21 @@ ADR-0013 (its durable home), not a per-plan caveat.
    **Must-fix** items back to `code-implementer`, and re-run tests/review
    until clean.
 
+   **Scope every review dispatch narrowly and explicitly.** Enumerate a small,
+   exact file list and an exact checklist of what to answer — not "review
+   these files" — and add an explicit convergence instruction ("if you feel
+   the urge to explore further to be thorough, stop and report what you have
+   instead") to every prompt. An unbounded review on a module with several
+   plausible cross-file comparisons available (a finished peer, a doc spec, a
+   test file) can fail to converge for over an hour with no individual step
+   being wrong to take; on `aws/athena` three of five review spokes stalled
+   this way and converged in ~90s once redispatched with bounded scope
+   (2026-07-18). A stalled `local_agent` isn't necessarily frozen — a
+   non-blocking `TaskOutput` check confirms the harness still considers it
+   alive, but that gives no visibility into internal progress; a large,
+   sustained duration gap versus sibling spokes on the same diff is still the
+   right signal to stop and redispatch rather than keep waiting.
+
    **Adversarial refute pass (high-risk surface only).** When the diff touches
    `aws/**` or code that redacts secrets or resolves credentials, and the
    first-pass `security-reviewer` came back clean, dispatch a **second**
