@@ -194,6 +194,23 @@ describe("writeCheckpoint", () => {
       queryExecutionId: "query-second",
     });
   });
+
+  it.each(["EACCES", "EPERM"] as const)(
+    "re-throws a %s failure instead of swallowing it",
+    async (code) => {
+      const { paths } = buildPaths("/data/output/results.json.checkpoint.json");
+      const error = errnoError(code);
+      vi.spyOn(fsp, "writeFile").mockRejectedValue(error);
+
+      await expect(
+        writeCheckpoint({
+          paths,
+          output: "results.json",
+          checkpoint: { queryExecutionId: "query-abc" },
+        }),
+      ).rejects.toBe(error);
+    },
+  );
 });
 
 describe("deleteCheckpoint", () => {
