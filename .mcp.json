@@ -10,9 +10,7 @@
     "m3l": {
       "type": "stdio",
       "command": "node",
-      "args": [
-        "bin/mcp-server.mjs"
-      ]
+      "args": ["bin/mcp-server.mjs"]
     },
     "github": {
       "type": "http",
