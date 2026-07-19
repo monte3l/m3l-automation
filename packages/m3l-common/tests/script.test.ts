@@ -3088,7 +3088,8 @@ describe("installProcessGuards()", () => {
 
   test("returns void", () => {
     vi.spyOn(process, "on").mockImplementation(() => process);
-    expect(installProcessGuards()).toBeUndefined();
+    installProcessGuards();
+    expectTypeOf(installProcessGuards).returns.toBeVoid();
   });
 
   describe("type-level contract", () => {
@@ -3158,7 +3159,7 @@ describe("serializeError()", () => {
 describe("setProcessGuardRequestId()", () => {
   test("accepts a string and returns void without throwing", () => {
     expect(() => setProcessGuardRequestId("req-12345")).not.toThrow();
-    expect(setProcessGuardRequestId("req-12345")).toBeUndefined();
+    expectTypeOf(setProcessGuardRequestId).returns.toBeVoid();
   });
 
   describe("type-level contract", () => {

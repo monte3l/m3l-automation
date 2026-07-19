@@ -361,25 +361,21 @@ async function streamToExporter(
   logger: Core.M3LLogger,
   onItem: (item: Record<string, unknown>) => Promise<void>,
 ): Promise<void> {
-  let closed = false;
   try {
     for await (const item of records) {
       await writer.append(item);
       await onItem(item);
     }
     await writer.close();
-    closed = true;
   } catch (cause) {
     // Best-effort cleanup only: a second close() failure here must not mask
     // the primary read/append failure being re-thrown below.
-    if (!closed) {
-      try {
-        await writer.close();
-      } catch (closeError) {
-        logger.warning("export close after failure also failed", {
-          cause: closeError,
-        });
-      }
+    try {
+      await writer.close();
+    } catch (closeError) {
+      logger.warning("export close after failure also failed", {
+        cause: closeError,
+      });
     }
     if (cause instanceof Core.M3LError) throw cause;
     throw new Core.M3LError("dynamodb-crud scan/query/export failed", {

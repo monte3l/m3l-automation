@@ -326,22 +326,19 @@ async function processRecord(
 }
 
 /**
- * Wraps a `transformRecords` run failure: best-effort closes `stream` if it
- * was not already closed, then re-throws `cause` unchanged if it is already
- * an {@link Core.M3LError}, otherwise wraps it as one.
+ * Wraps a `transformRecords` run failure: best-effort closes `stream`, then
+ * re-throws `cause` unchanged if it is already an {@link Core.M3LError},
+ * otherwise wraps it as one.
  */
 async function wrapTransformError(
   cause: unknown,
   stream: fs.WriteStream,
-  closed: boolean,
   correlationId: string,
 ): Promise<never> {
-  if (!closed) {
-    try {
-      await endStream(stream);
-    } catch {
-      // best-effort: a second close failure must not mask the real cause.
-    }
+  try {
+    await endStream(stream);
+  } catch {
+    // best-effort: a second close failure must not mask the real cause.
   }
   if (cause instanceof Core.M3LError) throw cause;
   throw new Core.M3LError(`sqs-etl transform run ${correlationId} failed`, {
@@ -398,7 +395,6 @@ export async function transformRecords(deps: {
   let skipped = 0;
 
   const stream = fs.createWriteStream(outputPath);
-  let closed = false;
   try {
     const records = readJsonlRecords(inputPath, (index, cause) => {
       skipped += 1;
@@ -415,9 +411,8 @@ export async function transformRecords(deps: {
       else if (outcome === "skipped") skipped += 1;
     }
     await endStream(stream);
-    closed = true;
   } catch (cause) {
-    await wrapTransformError(cause, stream, closed, deps.correlationId);
+    await wrapTransformError(cause, stream, deps.correlationId);
   }
 
   deps.logger.step(`sqs-etl transform run ${deps.correlationId} complete`, {
