@@ -188,7 +188,7 @@ file this branch changes** — so you learn about a blocker now, not after the P
 is open.
 
 ```bash
-gh api repos/{owner}/{repo}/code-scanning/alerts \
+gh api --method GET repos/{owner}/{repo}/code-scanning/alerts \
   -f state=open -f tool_name=CodeQL \
   --jq '.[] | select(.rule.severity=="error")
         | "\(.rule.id) \(.most_recent_instance.location.path)"'
