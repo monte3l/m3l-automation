@@ -52,12 +52,18 @@ Pull every open alert (`--paginate` so alerts beyond the first page are not
 silently missed):
 
 ```bash
-gh api repos/{owner}/{repo}/code-scanning/alerts --paginate -f state=open
+gh api --method GET repos/{owner}/{repo}/code-scanning/alerts --paginate -f state=open
 ```
 
-If the endpoint returns `403`/`404`, code scanning is not enabled or the token
-lacks the `security_events` scope — report that and stop. If the list is empty,
-report "no open code-scanning alerts" and stop.
+`--method GET` is required: `gh api` silently switches to POST whenever a
+`-f` field is present unless the method is stated explicitly, and this
+endpoint only has a GET handler — a POST here 404s instead of 405, which
+looks identical to code scanning being disabled.
+
+If the endpoint still returns `403`/`404` with `--method GET` in place, code
+scanning is not enabled or the token lacks the `security_events` scope —
+report that and stop. If the list is empty, report "no open code-scanning
+alerts" and stop.
 
 ### 3 — Group and map
 
@@ -65,7 +71,7 @@ Group alerts by `tool.name` (**CodeQL** vs **Scorecard**) and `rule.severity`,
 mapping each to its rule and location:
 
 ```bash
-gh api repos/{owner}/{repo}/code-scanning/alerts --paginate -f state=open \
+gh api --method GET repos/{owner}/{repo}/code-scanning/alerts --paginate -f state=open \
   --jq '.[] | "\(.tool.name)\t\(.rule.severity)\t\(.rule.id)\t\(.most_recent_instance.location.path):\(.most_recent_instance.location.start_line)"'
 ```
 
