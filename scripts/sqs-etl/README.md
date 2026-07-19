@@ -20,32 +20,31 @@ config parameter selects the operation; see the
 [contract page](../../docs/reference/scripts/sqs-etl.md) for the full
 per-command config schema.
 
+### Examples
+
 ```bash
-# Drain a queue to JSONL (non-destructive; add --deleteAfterDump to drain-and-delete)
+# Minimal — drain a queue to JSONL (non-destructive)
 node dist/main.js --command dump --queueUrl "$QUEUE_URL" --output dump.jsonl
 
-# Batch-publish JSONL records to a queue
+# Common — batch-publish JSONL records to a queue
 node dist/main.js --command send --queueUrl "$QUEUE_URL" --input records.jsonl
 
-# Move messages from a DLQ back to their source queue (destructive — prompts
-# for confirmation unless --yes)
-node dist/main.js --command redrive --queueUrl "$QUEUE_URL" --dlqUrl "$DLQ_URL"
+# Production — redrive a DLQ back to its source, tuned batch size, unattended
+node dist/main.js --command redrive --queueUrl "$QUEUE_URL" \
+  --dlqUrl "$DLQ_URL" --batchSize 500 --yes
 
-# Delete specific messages by receipt handle (destructive)
-node dist/main.js --command delete --queueUrl "$QUEUE_URL" --input to-delete.jsonl
-
-# Clear a queue entirely (destructive; SQS enforces a 60s cooldown between purges)
+# Edge case — purge a queue entirely; SQS enforces a 60s cooldown between
+# purges on the same queue, so a rapid retry fails with PurgeQueueInProgress
 node dist/main.js --command purge --queueUrl "$QUEUE_URL"
-
-# Map/filter a JSONL file locally — no SQS calls
-node dist/main.js --command transform \
-  --input dump.jsonl --output filtered.jsonl \
-  --fields "id=messageId,body=body" --filters "body contains error"
 ```
 
-Every command still requires `aws.profile` (`AWS_PROFILE` in `.env`), even
-`transform`, since it never skips AWS provisioning — see the contract page's
-"Out of scope for this iteration" note.
+`delete` (by receipt handle) shares `redrive`'s destructive-gate shape;
+`transform`'s `--fields`/`--filters` grammar is the same one taught in
+[json-etl's examples](../json-etl/README.md#examples) — it maps/filters a
+JSONL file locally, with no SQS calls. Every command still requires
+`aws.profile` (`AWS_PROFILE` in `.env`), even `transform`, since it never
+skips AWS provisioning — see the contract page's "Out of scope for this
+iteration" note.
 
 ## Environment (`.env`)
 

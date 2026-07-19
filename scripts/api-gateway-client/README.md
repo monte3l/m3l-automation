@@ -21,26 +21,29 @@ pnpm --filter @m3l-automation/api-gateway-client start
 see the [contract page](../../docs/reference/scripts/api-gateway-client.md) for
 the full config schema.
 
+### Examples
+
 ```bash
-# Single GET, no auth
+# Minimal — single GET, no auth
 node dist/main.js --command request --auth none \
   --baseUrl "$API_BASE_URL" --method GET --path /health
 
-# Single POST with an API key (the key comes from .env API_GATEWAY_API_KEY,
-# never a CLI flag — mutating verb, so it prompts unless --yes)
+# Common — single POST with an API key (the key comes from .env
+# API_GATEWAY_API_KEY, never a CLI flag — mutating verb, prompts unless --yes)
 node dist/main.js --command request --auth api-key \
   --baseUrl "$API_BASE_URL" --method POST --path /items \
   --body '{"name":"widget"}'
 
-# Single GET with IAM (SigV4) auth — requires AWS_PROFILE in .env
-node dist/main.js --command request --auth iam \
-  --baseUrl "$API_BASE_URL" --method GET --path /secure/ping
-
-# Batch: fan a JSONL file of { path, body? } records through the template
-# (uniform method), bounded to 8 in flight; responses + failed.jsonl to output
+# Production — batch: fan a JSONL file of { path, body? } records through the
+# template (uniform method), bounded to 8 in flight; responses + failed.jsonl
 node dist/main.js --command batch --auth iam \
   --baseUrl "$API_BASE_URL" --method POST \
   --input requests.jsonl --output responses.jsonl --maxInFlight 8
+
+# Edge case — IAM-authed DELETE, unattended (bypasses the mutating-verb
+# confirmation prompt; the bypass is logged as a warning)
+node dist/main.js --command request --auth iam \
+  --baseUrl "$API_BASE_URL" --method DELETE --path /items/42 --yes
 ```
 
 Mutating verbs (`POST`/`PUT`/`PATCH`/`DELETE`) prompt for confirmation before
