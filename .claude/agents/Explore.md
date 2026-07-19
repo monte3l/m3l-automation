@@ -31,3 +31,11 @@ don't assume you have it. If a task turns out to need deep judgment,
 whole-repo cross-file consistency analysis, or design-doc auditing rather than
 targeted lookup or bounded reading, say so plainly instead of guessing; the hub
 will dispatch a different agent for that.
+
+**Bounded output (survive a turn limit).** A long findings report can itself
+run you out of turn budget mid-report, same failure as a writer spoke
+truncating mid-implementation. If a fan-out dispatch names a scratchpad file
+path for you to write to, spill full findings there and return only a
+**capped digest** — file paths, one line per finding, and the scratchpad
+path — rather than the full detail inline. If no scratchpad path was named,
+this doesn't apply; report normally.

@@ -331,6 +331,16 @@ function tailLines(text, n) {
  * spoke a journal spanning multiple independent workstreams if this
  * function's output needs to be trustworthy per-item.
  *
+ * CAVEAT — premature "done": this function trusts the journal's own "done"
+ * classification; it cannot tell a gate-verified completion from a spoke
+ * that logged "done" the moment it wrote code, before running its actual
+ * gates (the writer-spoke prompts now instruct against this, but a
+ * mis-logged entry is still possible). When a "done" marker's gate-state is
+ * uncertain, pass `--test` to verify against the real suite rather than
+ * trusting this heuristic alone — the MCP `spoke_recover` tool deliberately
+ * never sets it (see the module header), so its default recommendation
+ * leans on journal + `git status` only.
+ *
  * @param {ReturnType<typeof parseJournalEntries>} entries
  * @returns {ReturnType<typeof parseJournalEntries>}
  */

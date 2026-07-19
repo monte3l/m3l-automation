@@ -36,6 +36,14 @@ session), re-read your own journal first before acting — that is what "get
 your bearings" means here, and it's cheaper than the hub re-deriving and
 re-narrating your prior state into the resume prompt.
 
+**Only log a step as done once its gate actually passes.** A recovery tool
+reading this journal treats a later "done" entry as resolving every earlier
+pending item positionally — logging "done" the moment a test file is written,
+before it actually runs (and fails for the right reason) or goes green in
+backfill mode, can mask genuinely outstanding work from that recovery step.
+Write "done" after the run confirms the expected result, not when the file
+lands.
+
 **On a many-file task, write files first — don't over-explore.** When the task
 spans several test files (a multi-step consumer script, a large module), read
 only what you need to start, then **write every file — even terse — before

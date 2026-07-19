@@ -184,6 +184,12 @@ silenced or mistyped in a real, reachable path — don't escalate a theoretical 
 unreachable catch to justify a finding. If the error paths are sound, say so: an
 empty Must-fix list is a valid, expected result, not a sign you missed something.
 
+**Converge and report.** Once you've answered the checklist against the files
+you were given, stop — don't keep re-reading or re-verifying "just in case."
+An unbounded review scope has stalled spokes for 30-60+ minutes in this
+repo's history; report what you found rather than chasing diminishing
+returns.
+
 **Bounded output (survive a turn limit).** A long findings report can itself run
 you out of turn budget mid-report. If the diff has many error-handling paths and
 findings would run long, write the full detail (severity + impact + snippet per

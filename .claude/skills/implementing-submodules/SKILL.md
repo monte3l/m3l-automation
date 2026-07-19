@@ -205,6 +205,14 @@ ADR-0013 (its durable home), not a per-plan caveat.
    **Must-fix** items back to `code-implementer`, and re-run tests/review
    until clean.
 
+   **Size this dispatch too, the same as Phases 2/3 above.** Give each
+   reviewer a tight per-spoke file list rather than the whole diff plus
+   "explore the repo" latitude — an unbounded review scope stalled spokes for
+   30-60+ minutes in `docs/logs/2026-07-18-aws-athena.md`,
+   `2026-07-18-aws-eventbridge.md`, and `2026-07-18-aws-s3.md`, all fixed by
+   narrowing the file list. Split by concern (e.g. one reviewer per new file
+   group) once the diff exceeds ~3–4 files.
+
    **Adversarial refute pass (high-risk surface only).** When the diff touches
    `aws/**` or code that redacts secrets or resolves credentials, and the
    first-pass `security-reviewer` came back clean, dispatch a **second**

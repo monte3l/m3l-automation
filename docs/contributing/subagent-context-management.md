@@ -52,7 +52,24 @@ Per the Claude API/Agent SDK reference (`platform.claude.com/docs/en/build-with-
   (final text) field is **absent** on this subtype. Never read a spoke's
   narrated "final" text as authoritative without first checking whether it
   actually completed; a mid-thought fragment is the signature of exactly this
-  case.
+  case. A budget-capped dispatch (`maxBudgetUsd`) exhausts the same way with
+  `subtype: "error_max_budget_usd"`.
+- **As of Claude Code v2.1.199**, a foreground subagent that already produced
+  some text before truncating returns that **partial output plus an explicit
+  "didn't finish" note**, rather than a bare fragment — a stronger signal than
+  the older mid-thought-guess heuristic when it's present. A subagent that
+  produced nothing before truncating instead fails outright ("Agent terminated
+  early due to an API error"). A subagent that never gets a result at all
+  (a connection/process failure) is a **third, distinct** stall shape — no
+  `ResultMessage` is emitted, so there's nothing to read `stop_reason` from.
+- **A `SubagentStop` hook (`.claude/hooks/detect-spoke-truncation.mjs`) is now
+  wired**, closing the "nothing inspects a spoke's output" gap: it runs a
+  prose heuristic over the finished spoke's last message (empty, a trailing
+  ellipsis, or an unclosed "let me"/"now"/"next" phrase) and prints a
+  stderr reminder to verify before trusting the report. It is advisory
+  only and a heuristic over text, not a parse of `stop_reason`/`subtype` (the
+  hook payload doesn't expose those) — treat its absence of a warning as "no
+  signal," not as proof the report is trustworthy.
 - Recovery for a turn-limit exhaustion: resume the session (capture and reuse
   its ID / call `SendMessage` to the **same** spoke) rather than starting a
   fresh agent — a fresh dispatch has no memory of the prior exploration and
@@ -107,8 +124,9 @@ substituting for it:
    hub re-deriving state and re-narrating it into the resume prompt.
 
 Review spokes (`code-reviewer`, `security-reviewer`, `silent-failure-hunter`,
-`type-design-analyzer`, `spec-conformance-reviewer`) are read-only and produce
-no on-disk work product to resume, so they don't carry this journal pattern.
+`type-design-analyzer`, `spec-conformance-reviewer`, `docs-consistency-reviewer`)
+are read-only and produce no on-disk work product to resume, so they don't
+carry this journal pattern.
 Their mitigation is different — see the next section.
 
 ## Recover: automate the manual first step
