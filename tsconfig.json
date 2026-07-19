@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/m3l-common/tsconfig.build.json" },
     { "path": "./scripts/api-gateway-client/tsconfig.build.json" },
+    { "path": "./scripts/athena-query/tsconfig.build.json" },
     { "path": "./scripts/cloudwatch-logs-insights/tsconfig.build.json" },
     { "path": "./scripts/dynamodb-crud/tsconfig.build.json" },
     { "path": "./scripts/json-etl/tsconfig.build.json" },

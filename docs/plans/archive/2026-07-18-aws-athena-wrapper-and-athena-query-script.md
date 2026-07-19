@@ -1,6 +1,6 @@
 # `aws/athena` wrapper + `athena-query` script (2026-07-18)
 
-**Status: PR 1 shipped** (`feat/aws-athena`); **PR 2 (`scripts/athena-query`) pending**
+**Status: shipped** — PR 1 (`feat/aws-athena`, #162) and PR 2 (`feat/athena-query`)
 
 ## Context
 
@@ -62,11 +62,24 @@ prerequisite (see the row above).
   lines, 88.88% branches. Full workspace suite post-rebase: 3416 tests,
   build/typecheck/lint/format all green.
 - **PR 2 — `scripts/athena-query`:** deliberately deferred to a later
-  session/PR, per plan. Needs its own `/starting-work` → `/scaffolding-scripts`
-  → `/implementing-scripts` pass once `aws/athena` merges to `main`.
+  session, per plan; picked up once `aws/athena` had merged to `main` (#162).
+  Built in a new linked worktree (`m3l-automation-athena-query`, branch
+  `feat/athena-query`) via `scaffolding-scripts` → `implementing-scripts`.
+  Mirrors `cloudwatch-logs-insights`'s start/checkpoint/await/export pattern,
+  simplified for a single non-windowed query: `startQuery()` checkpoints the
+  in-flight `queryExecutionId` before `awaitResults()` polls to completion, so
+  `--resume true` can reattach instead of re-issuing the query on a terminal
+  failure or interruption. `code-reviewer`, `security-reviewer`, and
+  `silent-failure-hunter` all came back clean; the one should-fix (extract
+  settings-narrowing into its own `resolve-settings.ts` step, for parity with
+  the sibling script's testability) was applied. Also fixed a stale
+  `script.aws.athena` → `script.aws.clients.athena` reference left in
+  `docs/reference/aws/athena.md` from PR 1.
 
 ## Outcome
 
 `aws/athena` (`M3LAthenaClient` + 9 supporting types/errors) shipped on
-`feat/aws-athena`, unblocking `athena-query`. See
-`docs/logs/2026-07-18-aws-athena.md` for the full work log.
+`feat/aws-athena` (#162), unblocking `athena-query`. `scripts/athena-query`
+then shipped on `feat/athena-query`, closing out the W4 tracker item. See
+`docs/logs/2026-07-18-aws-athena.md` (PR 1) and the athena-query work log
+(PR 2) for the full narratives.

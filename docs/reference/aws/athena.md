@@ -4,7 +4,7 @@
 
 ## Overview
 
-The submodule wraps an **injected**, already-provisioned `AthenaClient` — obtain one from `script.aws.athena` (the library's credential/client-construction seam) and inject it here. `M3LAthenaClient` never constructs its own client from a profile/region; that stays behind the `aws.profile` seam.
+The submodule wraps an **injected**, already-provisioned `AthenaClient` — obtain one from `script.aws.clients.athena` (the library's credential/client-construction seam) and inject it here. `M3LAthenaClient` never constructs its own client from a profile/region; that stays behind the `aws.profile` seam.
 
 It composes with `core/polling`: query completion is polled via `M3LPoller` built from `M3LPollingPolicies.athenaQuery()`, and the initial `StartQueryExecution` call (plus every `GetQueryExecution`/`GetQueryResults` call) is retried under AWS throttling via `M3LRetryRunner` + `M3LPollingPolicies.awsThrottling()` — matching the `M3LLogsInsightsClient` precedent.
 
@@ -94,7 +94,7 @@ Poll-attempt exhaustion (the attempt bound reached while the query is still `QUE
 
 ## See also
 
-- [`aws/clients`](./clients.md) — the `script.aws.athena` seam this submodule's client is injected from.
+- [`aws/clients`](./clients.md) — the `script.aws.clients.athena` seam this submodule's client is injected from.
 - [`aws/cloudwatch-logs-insights`](./cloudwatch-logs-insights.md) — the async start/await decomposition and row-normalization precedent this submodule mirrors.
 - [`core/polling`](../core/polling.md) — `M3LPoller`, `M3LRetryRunner`, `M3LPollingPolicies.athenaQuery()`/`.awsThrottling()`.
 - [ADR-0029](../../adr/0029-script-dependency-boundary.md) — the script-dependency-boundary decision this submodule unblocks (`athena-query`, W4).
