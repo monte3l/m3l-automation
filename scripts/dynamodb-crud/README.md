@@ -17,6 +17,35 @@ pnpm --filter @m3l-automation/dynamodb-crud start
 `start` runs `node --env-file-if-exists=.env dist/main.js`, so a local
 `scripts/dynamodb-crud/.env` is loaded automatically when present.
 
+### Examples
+
+```bash
+# Minimal — fetch one item by its primary key
+node dist/main.js --operation get --tableName orders \
+  --key '{"orderId":"A-100"}' --output item.json
+
+# Common — merge-patch one field into an existing item
+# (destructive: this operation always prompts for confirmation —
+# dynamodb-crud has no --yes bypass for any operation)
+node dist/main.js --operation update --tableName orders \
+  --key '{"orderId":"A-100"}' --item '{"status":"shipped"}' \
+  --output result.json
+
+# Production — parallel segmented export at scale, tuned for RCUs
+node dist/main.js --operation export --tableName orders \
+  --totalSegments 8 --batchSize 500 --maxInFlightBatches 8 \
+  --maxPagesPerSecond 20 --checkpointEveryPages 10 \
+  --runName orders-export --output orders-export.jsonl
+
+# Edge case — resume the export above after it was killed mid-run
+# (same --runName reattaches the checkpoint; resume only covers the
+# read side — scan/query/export — not batch-write/batch-delete/import)
+node dist/main.js --operation export --tableName orders \
+  --totalSegments 8 --batchSize 500 --maxInFlightBatches 8 \
+  --maxPagesPerSecond 20 --checkpointEveryPages 10 \
+  --runName orders-export --output orders-export.jsonl --resume true
+```
+
 ## Environment (`.env`)
 
 The `.env` file is gitignored (and listed in `.worktreeinclude` so worktrees

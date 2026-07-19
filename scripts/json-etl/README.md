@@ -49,10 +49,13 @@ node dist/main.js --preset ../../data/config/presets/report-active.yaml
 `--preset` takes an explicit path — there is no name-to-path resolution or
 library search root (see [Data directories](#data-directories)).
 
-## Examples
+### Examples
 
-Each example below is a real input file, the command, and the exact output it
-produces. Two grammars do the work:
+Unlike the other scripts in this repo, these examples show real input data
+and output — json-etl's two flag grammars (`--fields`/`--filters`) are worth
+teaching with real values, not just flags. Each example below is a real input
+file, the command, and the exact output it produces. Two grammars do the
+work:
 
 - **`--fields`** is a comma-separated list of `outputName=path` — pick which
   values to keep and what to call them. A `path` walks nested data by dots

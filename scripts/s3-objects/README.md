@@ -21,35 +21,30 @@ pnpm --filter @m3l-automation/s3-objects start
 [contract page](../../docs/reference/scripts/s3-objects.md) for the full
 per-operation config schema.
 
+### Examples
+
 ```bash
-# List objects under a prefix to JSONL (non-destructive)
+# Minimal — list objects under a prefix to JSONL (non-destructive)
 node dist/main.js --operation list --bucket reports --prefix "2026/" \
   --output listing.jsonl
 
-# Fetch an object's metadata only
-node dist/main.js --operation describe --bucket reports \
-  --key "2026/07/summary.json" --output summary.meta.json
-
-# Download an object's body
+# Common — download an object's body
 node dist/main.js --operation get --bucket reports \
   --key "2026/07/summary.json" --output summary.json
 
-# Upload a local file as an object (destructive — overwrites; prompts unless --yes)
+# Production — delete up to 1000+ objects named in a JSONL key list,
+# unattended (destructive; chunks internally)
+node dist/main.js --operation delete-batch --bucket reports \
+  --input to-delete.jsonl --yes
+
+# Edge case — upload without --yes: overwrites, so it prompts interactively
 node dist/main.js --operation put --bucket reports \
   --key "2026/07/summary.json" --input summary.json --contentType application/json
-
-# Copy an object within or across buckets (destructive — overwrites; prompts unless --yes)
-node dist/main.js --operation copy --bucket archive \
-  --key "2026/07/summary.json" --sourceBucket reports --sourceKey "2026/07/summary.json"
-
-# Delete a single object (destructive)
-node dist/main.js --operation delete --bucket reports --key "2026/07/summary.json"
-
-# Delete up to 1000+ objects named in a JSONL key list (destructive; chunks internally)
-node dist/main.js --operation delete-batch --bucket reports --input to-delete.jsonl
 ```
 
-Every operation still requires `aws.profile` (`AWS_PROFILE` in `.env`).
+`describe` (metadata-only fetch) and `copy` (within/across buckets) share
+`get`'s/`put`'s single-object shape. Every operation still requires
+`aws.profile` (`AWS_PROFILE` in `.env`).
 
 ## Environment (`.env`)
 
