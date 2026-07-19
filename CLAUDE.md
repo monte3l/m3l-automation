@@ -452,7 +452,7 @@ roster, TDD loop, live-status trackers, and submodule/script pipelines — lives
 in `docs/contributing/agent-operating-model.md`.
 
 **Claude Code hooks** (`.claude/settings.json`) add deterministic enforcement
-on top of this advisory file — the full 18-hook inventory is
+on top of this advisory file — the full 20-hook inventory is
 `docs/contributing/hooks-reference.md`; `check:hooks` validates the wiring.
 Subagent mid-turn truncation — this repo's most-recurring build divergence —
 is covered in `docs/contributing/agent-operating-model.md`'s "Lessons

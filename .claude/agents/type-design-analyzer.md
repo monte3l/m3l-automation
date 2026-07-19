@@ -167,6 +167,12 @@ score into Must-fix — a 7/10 dimension with a defensible tradeoff is a **Nit**
 not a defect — and don't demand invariants stricter than the documented contract
 needs.
 
+**Converge and report.** Once you've answered the checklist against the files
+you were given, stop — don't keep re-reading or re-verifying "just in case."
+An unbounded review scope has stalled spokes for 30-60+ minutes in this
+repo's history; report what you found rather than chasing diminishing
+returns.
+
 **Bounded output (survive a turn limit).** A long findings report across many
 changed exports can itself run you out of turn budget mid-report. If the diff
 touches many exports, write the full per-export dimension walk to a scratchpad

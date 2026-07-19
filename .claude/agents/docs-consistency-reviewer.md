@@ -119,3 +119,18 @@ Lead with the overall verdict so the hub can gate a PR immediately.
 one of the six checks — if a check passes, mark it PASS and move on; don't
 downgrade a genuine PASS to a caveat or invent drift. **CLEAN** is the expected
 result for a well-maintained tree, not a sign the audit was too shallow.
+
+**Converge and report.** Once you've run all six checks, stop — don't keep
+re-reading files "just in case." An unbounded review scope has stalled spokes
+for 30-60+ minutes in this repo's history; report the verdict rather than
+chasing diminishing returns.
+
+**Bounded output (survive a turn limit).** Checks 4 (barrel exports vs docs)
+and 6 (orphaned docs) can enumerate long lists across every submodule, which
+can itself run you out of turn budget mid-report. If a check's finding list
+would run long, write the full detail to a scratchpad file (the path the hub
+gives you, or `<scratchpad>/docs-consistency-reviewer-<target>.md`) and
+return a **capped digest** instead: the per-check PASS/MISMATCH verdict line
+for all six checks in full (these are the report — never truncate them), and
+for a check with many findings, a count plus the scratchpad path rather than
+every entry.

@@ -21,6 +21,19 @@ occurrences. The checklist:
   a module/script spanning many files gets split into bounded sub-dispatches
   up front, not handed to one spoke as an indivisible turn. Don't rely on
   journaling to make an oversized turn safe.
+- **Bound review-spoke INPUT scope too, not just output.** The above bullet
+  covers writer turns; review fan-outs need the same discipline on the other
+  side. Give each review spoke a tight per-spoke file list (2–5 files) and
+  split a Phase-4 review dispatch **by concern** once the diff exceeds ~3–4
+  files or a few hundred lines, rather than handing one reviewer the whole
+  diff plus "explore the repo" latitude — an unbounded scope stalled 3 of 5
+  review spokes for 60+ minutes in `docs/logs/2026-07-18-aws-athena.md` and a
+  single oversized `code-reviewer` dispatch for over an hour in
+  `docs/logs/2026-07-18-aws-eventbridge.md`, both fixed by narrowing the file
+  list. Every review-spoke prompt also carries a **converge and report**
+  instruction — stop once its checklist is answered rather than re-verifying
+  indefinitely; a spoke that never converges is indistinguishable from a
+  stalled one.
 - **Hand writer spokes (`test-author`, `code-implementer`) an explicit journal
   path** in the dispatch prompt. `.claude/hooks/guard-writer-dispatch-journal.mjs`
   warns (non-blocking) when one is missing.
@@ -37,7 +50,13 @@ status`/`git diff`, re-run `tsc`/`eslint`/`vitest`/coverage) before deciding
   findings spill to a scratchpad file; the return is a capped Must-fix/
   Should-fix/Nits summary plus the file path. Applies to `code-reviewer`,
   `security-reviewer`, `silent-failure-hunter`, `type-design-analyzer`,
-  `spec-conformance-reviewer`, and any `auditing`/fan-out Explore dispatch.
+  `spec-conformance-reviewer`, `docs-consistency-reviewer`, and any
+  `auditing`/fan-out Explore dispatch.
+- **A `SubagentStop` hook (`detect-spoke-truncation.mjs`) now flags a
+  suspicious-looking return automatically** — treat its stderr reminder as a
+  prompt to apply the "never trust a final report" step below, not as a
+  replacement for it; it's a heuristic over prose, not a parse of the SDK's
+  actual truncation signal.
 - **Don't raise `maxTurns` as the fix.** More context/turns is not free —
   Anthropic's context-rot finding says accuracy degrades as token count grows.
   Scoping, journaling, and pacing are the preferred levers.

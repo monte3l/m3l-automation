@@ -48,6 +48,12 @@ hardening nice-to-have. A sound surface should yield few or no Must-fix items;
 put defense-in-depth suggestions in **Nits** as explicitly optional, and don't
 invent risks to justify the review.
 
+**Converge and report.** Once you've answered the checklist against the files
+you were given, stop — don't keep re-reading or re-verifying "just in case."
+An unbounded review scope has stalled spokes for 30-60+ minutes in this
+repo's history; report what you found rather than chasing diminishing
+returns.
+
 **Bounded output (survive a turn limit).** A long findings report can itself run
 you out of turn budget mid-report. If the diff is large and findings would run
 long, write the full detail to a scratchpad file (the path the hub gives you,

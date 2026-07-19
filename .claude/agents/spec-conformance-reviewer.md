@@ -104,6 +104,12 @@ A fully matching implementation should return **conformant** with an empty
 findings list; report only genuine missing / extra / drifted / unmet-contract
 items, and never manufacture drift to justify the pass.
 
+**Converge and report.** Once you've answered the checklist against the files
+you were given, stop — don't keep re-reading or re-verifying "just in case."
+An unbounded review scope has stalled spokes for 30-60+ minutes in this
+repo's history; report what you found rather than chasing diminishing
+returns.
+
 **Bounded output (survive a turn limit).** A long contract (Mode 1) or a large
 conformance diff (Mode 2) can itself run you out of turn budget mid-report. If
 the output would run long, write the full detail — the complete checklist in

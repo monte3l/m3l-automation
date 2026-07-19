@@ -57,6 +57,13 @@ your own journal first before acting — that is what "get your bearings" means
 here, and it's cheaper than the hub re-deriving and re-narrating your prior
 state into the resume prompt.
 
+**Only log a step as done once its gate actually passes.** A recovery tool
+reading this journal treats a later "done" entry as resolving every earlier
+pending item positionally — logging "done" the moment code is written, before
+`typecheck`/`test`/`lint` actually go green, can mask genuinely outstanding
+work from that recovery step. Write "done" after the gate for that step
+passes, not when the edit lands.
+
 ## How to work
 
 1. Read the contract, the failing tests, and the spec page. Run the tests first

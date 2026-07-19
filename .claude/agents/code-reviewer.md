@@ -112,6 +112,12 @@ rules above); route preference and stylistic items to **Nits** as explicitly
 optional. Don't manufacture findings to justify the pass: if the implementation
 is sound, say so plainly and let the Must-fix list be empty rather than padding it.
 
+**Converge and report.** Once you've answered the checklist against the files
+you were given, stop — don't keep re-reading or re-verifying "just in case."
+An unbounded review scope has stalled spokes for 30-60+ minutes in this
+repo's history; report what you found rather than chasing diminishing
+returns.
+
 **Bounded output (survive a turn limit).** A long findings report can itself run
 you out of turn budget mid-report, same failure as a writer spoke truncating
 mid-implementation. If the diff is large and findings would run long, write the

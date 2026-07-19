@@ -65,12 +65,16 @@ that reviews it" structural, and keeps the hub's context lean.
 - **Subagent mid-turn truncation** — a spoke hitting `maxTurns: 40` or an
   output-token cap mid-thought — is this repo's most-recurring build
   divergence (20+ logged occurrences). Detect it (never trust a mid-thought
-  "final" report), prevent it (decompose oversized dispatches up front, hand
-  writer spokes a journal path, bound review-spoke output to a digest), and
-  recover from it (resume the SAME spoke via `SendMessage`, verify on-disk
-  state yourself) per `docs/contributing/subagent-context-management.md` — the
-  terse checklist auto-loads as `.claude/rules/subagent-dispatch.md` when
-  touching `.claude/skills/**` or `.claude/agents/**`.
+  "final" report — the `SubagentStop` hook `detect-spoke-truncation.mjs` now
+  flags a suspicious-looking return automatically), prevent it (decompose
+  oversized dispatches up front, hand writer spokes a journal path, bound
+  review-spoke input scope as well as output to a digest), and recover from it
+  (run `bin/spoke-recovery.mjs` / `mcp__m3l__spoke_recover` first to automate
+  the journal-parse + on-disk-verification step, then resume the SAME spoke
+  via `SendMessage` on top of that recommendation rather than re-deriving
+  state entirely by hand) per `docs/contributing/subagent-context-management.md`
+  — the terse checklist auto-loads as `.claude/rules/subagent-dispatch.md`
+  when touching `.claude/skills/**` or `.claude/agents/**`.
 
 See also: `docs/contributing/hooks-reference.md` (the deterministic enforcement
 layer underneath this advisory model) and `docs/contributing/model-selection.md`.
