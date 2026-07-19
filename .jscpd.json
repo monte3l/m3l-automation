@@ -1,13 +1,7 @@
 {
   "path": ["."],
   "pattern": "{packages,scripts}/*/src/**/*.ts",
-  "ignore": [
-    "**/dist/**",
-    "**/node_modules/**",
-    "**/coverage/**",
-    "**/tests/**",
-    ".claude/**"
-  ],
+  "ignore": ["**/dist/**", "**/node_modules/**", "**/coverage/**"],
   "gitignore": true,
   "reporters": ["console-full"],
   "threshold": 4,

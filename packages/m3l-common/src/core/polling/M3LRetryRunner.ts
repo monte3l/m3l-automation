@@ -151,13 +151,7 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
    * @throws The last thrown error (unchanged) on a fatal verdict, an unresolved
    *   `unknown` verdict, or retry exhaustion.
    */
-  // Pre-existing retry-classification control flow (Cognitive Complexity 17
-  // vs. the 15 allowed); the ordering between fatal/exhausted/server-delay
-  // branches is load-bearing (see the inline comments below) and needs a
-  // dedicated test-safety-net pass to refactor safely, not an inline edit
-  // alongside the ADR-0034 lint-gate rollout. Tracked as accepted debt in
-  // ADR-0034.
-  // eslint-disable-next-line sonarjs/cognitive-complexity
+  // eslint-disable-next-line sonarjs/cognitive-complexity -- pre-existing retry-classification control flow (17 vs. the 15 allowed); the ordering between fatal/exhausted/server-delay branches is load-bearing (see the inline comments below) and needs a dedicated test-safety-net pass to refactor safely, so it is tracked as accepted debt in ADR-0034 instead
   async run<T>(op: () => Promise<T>): Promise<T> {
     let prevDelay: number | undefined;
     const lastAttempt = this.#maxAttempts - 1;
