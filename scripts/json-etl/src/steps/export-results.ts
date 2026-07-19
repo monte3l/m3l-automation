@@ -99,26 +99,21 @@ export async function exportResults(opts: {
 }): Promise<void> {
   const exporter = createExporter(opts.format, opts.outputPath, opts.columns);
   const writer = exporter.exportStream();
-  let closed = false;
 
   try {
     for await (const record of opts.records) {
       await writer.append(record);
     }
     await writer.close();
-    closed = true;
   } catch (cause) {
     // Best-effort cleanup only: a second close() failure here must not mask
-    // the primary append/close failure being re-thrown below. Call close()
-    // at most once — a successful close() above already released resources.
-    if (!closed) {
-      try {
-        await writer.close();
-      } catch (closeError) {
-        opts.logger?.warning("export close after failure also failed", {
-          cause: closeError,
-        });
-      }
+    // the primary append/close failure being re-thrown below.
+    try {
+      await writer.close();
+    } catch (closeError) {
+      opts.logger?.warning("export close after failure also failed", {
+        cause: closeError,
+      });
     }
     if (cause instanceof Core.M3LError) throw cause;
     throw new Core.M3LError("json-etl export failed", {
