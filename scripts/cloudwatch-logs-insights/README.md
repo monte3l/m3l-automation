@@ -18,8 +18,18 @@ pnpm --filter @m3l-automation/cloudwatch-logs-insights start
 `scripts/cloudwatch-logs-insights/.env` is loaded automatically when present. Pass the
 per-run configuration on the command line:
 
+### Examples
+
 ```bash
-# Query the last hour across two log groups, 15-minute windows, CSV output.
+# Minimal — one log group, default 60-minute window, default JSON output
+node dist/main.js \
+  --aws.profile my-sso-profile \
+  --logGroups "/aws/lambda/checkout" \
+  --query 'fields @timestamp, @message | filter @message like /ERROR/' \
+  --start 2026-07-01T00:00:00Z --end 2026-07-01T01:00:00Z \
+  --output errors.json
+
+# Common — two log groups, 15-minute windows, CSV output
 node dist/main.js \
   --aws.profile my-sso-profile \
   --logGroups "/aws/lambda/checkout,/aws/lambda/payments" \
@@ -27,26 +37,33 @@ node dist/main.js \
   --start 2026-07-01T00:00:00Z --end 2026-07-01T01:00:00Z \
   --windowMinutes 15 \
   --format csv --output errors.csv
-```
 
-Writes `errors.csv` to `M3L_OUTPUT_DIR`, plus a `errors.csv.checkpoint.json`
-sidecar that's deleted automatically once the run completes successfully. If
-a run is interrupted or a window's query fails, re-invoke the **exact same
-command** with `--resume true` appended to continue from where it left off
-instead of re-querying already-fetched windows:
-
-```bash
+# Production — 24h range across three log groups, per-window row cap
 node dist/main.js \
   --aws.profile my-sso-profile \
-  --logGroups "/aws/lambda/checkout,/aws/lambda/payments" \
+  --logGroups "/aws/lambda/checkout,/aws/lambda/payments,/aws/lambda/fulfillment" \
   --query 'fields @timestamp, @message | filter @message like /ERROR/' \
-  --start 2026-07-01T00:00:00Z --end 2026-07-01T01:00:00Z \
-  --windowMinutes 15 \
+  --start 2026-07-01T00:00:00Z --end 2026-07-02T00:00:00Z \
+  --windowMinutes 15 --limit 5000 \
+  --format csv --output errors.csv
+
+# Edge case — reattach to the production run above after it was interrupted
+# (re-invoke the exact same command with --resume true appended)
+node dist/main.js \
+  --aws.profile my-sso-profile \
+  --logGroups "/aws/lambda/checkout,/aws/lambda/payments,/aws/lambda/fulfillment" \
+  --query 'fields @timestamp, @message | filter @message like /ERROR/' \
+  --start 2026-07-01T00:00:00Z --end 2026-07-02T00:00:00Z \
+  --windowMinutes 15 --limit 5000 \
   --format csv --output errors.csv \
   --resume true
 ```
 
-See the [contract page](../../docs/reference/scripts/cloudwatch-logs-insights.md) for
+Writes the output file to `M3L_OUTPUT_DIR`, plus a `<output>.checkpoint.json`
+sidecar that's deleted automatically once the run completes successfully;
+`--resume true` continues from the first incomplete window instead of
+re-querying already-fetched ones. See the
+[contract page](../../docs/reference/scripts/cloudwatch-logs-insights.md) for
 the full config schema and resume/failure semantics.
 
 ## Environment (`.env`)

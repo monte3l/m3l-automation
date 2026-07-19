@@ -17,6 +17,29 @@ pnpm --filter @m3l-automation/lambda-ops start
 `start` runs `node --env-file-if-exists=.env dist/main.js`, so a local
 `scripts/lambda-ops/.env` is loaded automatically when present.
 
+### Examples
+
+```bash
+# Minimal — list functions in the account/region
+node dist/main.js --operation list --output functions.json
+
+# Common — invoke a function with a JSON payload
+# (invoke is confirm-gated too, not just create/update/delete)
+node dist/main.js --operation invoke --functionName my-function \
+  --input payload.json --output result.json
+
+# Production — create a function from a zip + config, unattended
+node dist/main.js --operation create --functionName orders-processor \
+  --zipFilePath dist/orders-processor.zip --input function-def.json \
+  --output orders-processor.json --yes
+
+# Edge case — delete without --yes: the default interactive prompt
+node dist/main.js --operation delete --functionName decommissioned-worker
+```
+
+`function-def.json` must carry at least `runtime`, `role`, and `handler` for
+`create` — those three fields are guard-checked present before the call.
+
 ## Environment (`.env`)
 
 The `.env` file is gitignored (and listed in `.worktreeinclude` so worktrees

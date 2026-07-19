@@ -20,38 +20,32 @@ pnpm --filter @m3l-automation/eventbridge-schedules start
 [contract page](../../docs/reference/scripts/eventbridge-schedules.md) for the
 full config schema.
 
+### Examples
+
 ```bash
-# List rules on the default event bus
+# Minimal — list rules on the default event bus
 node dist/main.js --operation list
 
-# List, filtered by prefix, writing the result to output/rules.json
-node dist/main.js --operation list --namePrefix nightly- --output rules.json
+# Common — describe one rule, writing detail to output/rule.json
+node dist/main.js --operation describe --ruleName nightly-cleanup \
+  --output rule.json
 
-# Describe one rule
-node dist/main.js --operation describe --ruleName nightly-cleanup
-
-# Create a scheduled rule (mutating — prompts for confirmation unless --yes)
+# Production — create a scheduled rule with targets attached in one call
 node dist/main.js --operation create --ruleName nightly-cleanup \
   --scheduleExpression "rate(1 day)" --state ENABLED \
-  --description "Nightly cleanup job"
-
-# Create with targets attached in the same call
-node dist/main.js --operation create --ruleName nightly-cleanup \
-  --scheduleExpression "rate(1 day)" \
+  --description "Nightly cleanup job" \
   --targets '[{"id":"lambda-target","arn":"arn:aws:lambda:...:function:cleanup"}]'
 
-# Update an existing rule's pattern (upsert — same PutRule call as create)
-node dist/main.js --operation update --ruleName nightly-cleanup \
-  --eventPattern '{"source":["custom.myapp"]}'
-
-# Disable, then delete
-node dist/main.js --operation disable --ruleName nightly-cleanup
-node dist/main.js --operation delete --ruleName nightly-cleanup
+# Edge case — delete an AWS-managed rule (requires --force) unattended (--yes)
+node dist/main.js --operation delete --ruleName legacy-rule --force --yes
 ```
 
-Mutating operations (`create`/`update`/`delete`/`enable`/`disable`) prompt for
-confirmation before dispatch — add `--yes` for unattended runs (the bypass is
-logged). `list`/`describe` are never gated.
+`update`/`enable`/`disable` share `create`'s/`delete`'s shape (`update` takes
+the same fields as `create` — EventBridge's own `PutRule` upsert semantics —
+and `enable`/`disable` take only `--ruleName`). Mutating operations
+(`create`/`update`/`delete`/`enable`/`disable`) prompt for confirmation before
+dispatch — add `--yes` for unattended runs (the bypass is logged). `list`/
+`describe` are never gated.
 
 ## Environment (`.env`)
 

@@ -18,33 +18,47 @@ pnpm --filter @m3l-automation/athena-query start
 `scripts/athena-query/.env` is loaded automatically when present. Pass the
 per-run configuration on the command line:
 
+### Examples
+
 ```bash
-# Run a query against a named database, CSV output.
+# Minimal — run a query, default JSON output
+node dist/main.js \
+  --aws.profile my-sso-profile \
+  --queryString "SELECT * FROM orders LIMIT 10" \
+  --output preview.json
+
+# Common — named database, S3 results location, CSV output
 node dist/main.js \
   --aws.profile my-sso-profile \
   --queryString "SELECT * FROM orders WHERE order_date >= DATE '2026-07-01'" \
   --database analytics \
   --outputLocation s3://my-athena-results-bucket/query-results/ \
   --format csv --output orders.csv
-```
 
-Writes `orders.csv` to `M3L_OUTPUT_DIR`, plus an `orders.csv.checkpoint.json`
-sidecar that's deleted automatically once the run completes successfully. If
-the process is interrupted while the query is still running (or the query
-itself fails), re-invoke the **exact same command** with `--resume true`
-appended to reattach to the in-flight query instead of re-issuing it:
-
-```bash
+# Production — parameterized query against a dedicated workgroup/catalog
 node dist/main.js \
   --aws.profile my-sso-profile \
-  --queryString "SELECT * FROM orders WHERE order_date >= DATE '2026-07-01'" \
-  --database analytics \
+  --queryString "SELECT * FROM orders WHERE region = ? AND status = ?" \
+  --database analytics --catalog AwsDataCatalog --workGroup analytics-batch \
+  --executionParameters "us-east-1,shipped" \
+  --outputLocation s3://my-athena-results-bucket/query-results/ \
+  --format csv --output orders.csv
+
+# Edge case — reattach to the production run above after it was interrupted
+# (re-invoke the exact same command with --resume true appended)
+node dist/main.js \
+  --aws.profile my-sso-profile \
+  --queryString "SELECT * FROM orders WHERE region = ? AND status = ?" \
+  --database analytics --catalog AwsDataCatalog --workGroup analytics-batch \
+  --executionParameters "us-east-1,shipped" \
   --outputLocation s3://my-athena-results-bucket/query-results/ \
   --format csv --output orders.csv \
   --resume true
 ```
 
-See the [contract page](../../docs/reference/scripts/athena-query.md) for the
+Writes the output file to `M3L_OUTPUT_DIR`, plus a `<output>.checkpoint.json`
+sidecar that's deleted automatically once the run completes successfully. See
+the [contract page](../../docs/reference/scripts/athena-query.md) for the
 full config schema and resume/failure semantics.
 
 ## Environment (`.env`)
