@@ -16,6 +16,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -188,6 +189,12 @@ jobs:
       # paths, so worktree:setup provisions a fresh worktree correctly.
       - name: Check worktree include
         run: pnpm check:worktree
+
+      # Copy-paste duplication density (ADR-0034) — the one Sonar-style metric
+      # not covered by ESLint's per-function complexity rules. CI-only: not
+      # in pre-push, to keep that lane's wall-clock unchanged.
+      - name: Check code duplication (jscpd)
+        run: pnpm check:dup
 
       - name: Unused files / exports / dependencies (knip)
         run: pnpm knip

@@ -1,5 +1,6 @@
-# OpenSSF Scorecard — supply-chain posture scoring for this public, published
-# package (ADR-0015). Complements CodeQL (code) and dependency-review (deps) by
+# OpenSSF Scorecard — supply-chain posture scoring for this public repository
+# (ADR-0015; the package itself is internal/unpublished per ADR-0020).
+# Complements CodeQL (code) and dependency-review (deps) by
 # grading repo-level hygiene: branch protection, pinned dependencies, token
 # permissions, and dangerous-workflow patterns. Results upload as SARIF so they
 # surface in the existing Security tab alongside CodeQL.

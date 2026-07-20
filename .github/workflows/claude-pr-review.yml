@@ -9,7 +9,6 @@ on:
     paths-ignore:
       - "**.md"
       - "docs/**"
-      - ".github/workflows/dependabot.yml"
       - ".github/dependabot.yml"
 
 permissions:
@@ -58,7 +57,6 @@ jobs:
             case "$1" in
               *.md) return 0 ;;
               docs/*) return 0 ;;
-              .github/workflows/dependabot.yml) return 0 ;;
               .github/dependabot.yml) return 0 ;;
               *) return 1 ;;
             esac

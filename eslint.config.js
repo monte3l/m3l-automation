@@ -4,6 +4,7 @@ import tseslint from "typescript-eslint";
 import { importX } from "eslint-plugin-import-x";
 import { createTypeScriptImportResolver } from "eslint-import-resolver-typescript";
 import tsdoc from "eslint-plugin-tsdoc";
+import sonarjs from "eslint-plugin-sonarjs";
 import globals from "globals";
 
 export default tseslint.config(
@@ -99,7 +100,7 @@ export default tseslint.config(
     // checks never trip on tests, config (vitest.config.ts uses a default
     // export), or tooling.
     files: ["packages/*/src/**/*.ts", "scripts/*/src/**/*.ts"],
-    plugins: { tsdoc },
+    plugins: { tsdoc, sonarjs },
     rules: {
       // TSDoc must be well-formed on shipped source (rules 01: documentation).
       // Warn-first: surfaces malformed doc comments without blocking the
@@ -157,6 +158,14 @@ export default tseslint.config(
         "error",
         { max: 60, skipBlankLines: true, skipComments: true },
       ],
+
+      // Cognitive complexity (ADR-0034): the one dimension cyclomatic
+      // `complexity` above does not capture — nesting/branching that reads as
+      // hard to follow even when the cyclomatic count stays low. Only this
+      // single rule is enabled, not the plugin's full `recommended` preset,
+      // to keep the change to the one gap ADR-0015 named as Sonar's residual
+      // value. Default threshold (15).
+      "sonarjs/cognitive-complexity": "error",
 
       // Named constants over magic values (rules 01). TS-aware variant handles
       // enums / type indexes; the common literals stay allowed.
