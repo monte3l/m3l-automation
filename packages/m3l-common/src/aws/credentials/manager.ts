@@ -336,6 +336,7 @@ export class M3LAWSCredentialsManager {
    * });
    * ```
    */
+  // eslint-disable-next-line sonarjs/cognitive-complexity -- pre-existing retry/relogin control flow (20 vs. the 15 allowed); refactoring security-sensitive SSO credential logic needs a dedicated test-safety-net pass, not an inline edit alongside the ADR-0034 lint-gate rollout, so it is tracked as accepted debt there instead
   async retryWithRelogin<T>(
     operation: () => Promise<T>,
     profile?: M3LAWSProfile,
