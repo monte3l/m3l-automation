@@ -130,7 +130,7 @@ authorship or copyright claim (using an AI tool does not make it a legal
 co-author). The sanctioned model names live in
 [bin/lib/claude-models.mjs](bin/lib/claude-models.mjs), the `commit-msg` hook
 rejects non-canonical names, and the badges are **live**: on every push to
-`main` a CI workflow ([pages-commit-stats.yml](.github/workflows/pages-commit-stats.yml))
+`main` a CI workflow ([pages.yml](.github/workflows/pages.yml))
 counts the trailers ([bin/gen-commit-stats.mjs](bin/gen-commit-stats.mjs)) and
 publishes shields.io endpoint JSON
 ([bin/gen-commit-stats-endpoint.mjs](bin/gen-commit-stats-endpoint.mjs)) to

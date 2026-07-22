@@ -242,14 +242,14 @@ everything anyway.
 Six GitHub Actions workflows in `.github/workflows/` (plus Dependabot via the
 GitHub-native `.github/dependabot.yml`, which is config, not a workflow):
 
-| Workflow                 | Trigger                             | Purpose                                                                                                                                                          |
-| ------------------------ | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ci.yml`                 | push / PR → main                    | Full quality-gate pipeline — secrets, deps, lint, formatting, types, and tests must all pass before merge                                                        |
-| `claude-pr-review.yml`   | PR opened / sync / reopened / ready | **Mandatory blocking gate** — produces PASS/FAIL verdict; merge requires PASS; skips re-review when a prior PASS still applies (no reviewable files changed)     |
-| `claude-assistant.yml`   | @claude in issues / PRs             | On-demand Claude Code assistant                                                                                                                                  |
-| `dependency-review.yml`  | PR → main                           | Blocks HIGH/CRITICAL vulnerability advisories                                                                                                                    |
-| `scorecard.yml`          | push → main / weekly cron           | OpenSSF Scorecard supply-chain posture scoring (ADR-0015); uploads SARIF to the Security tab                                                                     |
-| `pages-commit-stats.yml` | push → main / manual dispatch       | Publishes shields.io endpoint-badge JSON (AI co-authorship commit stats) to GitHub Pages via artifact deploy — badge data leaves git history (ADR-0032 addendum) |
+| Workflow                | Trigger                             | Purpose                                                                                                                                                                                                             |
+| ----------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`                | push / PR → main                    | Full quality-gate pipeline — secrets, deps, lint, formatting, types, and tests must all pass before merge                                                                                                           |
+| `claude-pr-review.yml`  | PR opened / sync / reopened / ready | **Mandatory blocking gate** — produces PASS/FAIL verdict; merge requires PASS; skips re-review when a prior PASS still applies (no reviewable files changed)                                                        |
+| `claude-assistant.yml`  | @claude in issues / PRs             | On-demand Claude Code assistant                                                                                                                                                                                     |
+| `dependency-review.yml` | PR → main                           | Blocks HIGH/CRITICAL vulnerability advisories                                                                                                                                                                       |
+| `scorecard.yml`         | push → main / weekly cron           | OpenSSF Scorecard supply-chain posture scoring (ADR-0015); uploads SARIF to the Security tab                                                                                                                        |
+| `pages.yml`             | push → main / manual dispatch       | Builds and deploys the GitHub Pages site — visibility-hub dashboard at `/` (ADR-0032) plus shields.io commit-stats endpoint-badge JSON at `/commit-stats/` (ADR-0032 addendum); supersedes `pages-commit-stats.yml` |
 
 ## Coding, errors & tests (path-scoped)
 
