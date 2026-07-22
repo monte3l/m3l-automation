@@ -60,8 +60,8 @@ function applySite(
 // fixtures work against any injected counts (the fixture round-trip below and
 // the synthetic-bump describe further down both reuse them).
 const TOTAL_STALE_BY_LABEL: Record<string, string> = {
-  "Core barrel comment": "Core namespace barrel (0 submodules surfaced here)",
-  "AWS barrel comment": "AWS namespace barrel (0 submodules surfaced here)",
+  "Core barrel comment": "Core namespace barrel (0 documented submodules)",
+  "AWS barrel comment": "AWS namespace barrel (0 documented submodules)",
   "total submodule count (ROADMAP.md intro pointer)":
     "library ledger (0/0 submodules, count-enforced)",
   "total submodule count (ROADMAP.md Status snapshot)":
