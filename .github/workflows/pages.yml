@@ -1,14 +1,13 @@
-# Publishes the AI co-authorship commit-stats as shields.io endpoint-badge
-# JSON (ADR-0032 addendum): computed from git trailer history on every push
-# to main and deployed to GitHub Pages as an artifact — no git commit, no
-# README churn, GITHUB_TOKEN only.
+# Builds and deploys the GitHub Pages site (ADR-0032): the visibility-hub
+# dashboard at the site root (bin/gen-project-hub.mjs -> dist/index.html)
+# plus the AI co-authorship commit-stats endpoint-badge JSON under
+# /commit-stats/ (bin/gen-commit-stats-endpoint.mjs, ADR-0032 addendum).
 #
-# Output is namespaced under /commit-stats/ (upload path is dist/, the
-# generator writes dist/commit-stats/*.json) so the site root stays free for
-# the future full visibility-hub pages.yml, which must reuse or supersede
-# this workflow rather than stand up a second Pages deploy — GitHub Pages
-# serves one site per repo.
-name: Pages commit-stats
+# Supersedes pages-commit-stats.yml: GitHub Pages serves one site per repo
+# and every deploy replaces the whole site, so both artifacts MUST be
+# generated in this single build job and uploaded as one dist/ artifact —
+# never split into a second Pages workflow. GITHUB_TOKEN only, no git commit.
+name: Pages
 
 on:
   push:
@@ -31,18 +30,21 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          # Full history: the generator counts Co-Authored-By trailers across
-          # all of git log and totals via rev-list --count HEAD.
+          # Full history: the commit-stats generator counts Co-Authored-By
+          # trailers across all of git log and totals via rev-list --count.
           fetch-depth: 0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
 
-      # No pnpm install: the generator uses only node builtins plus two
-      # dependency-free repo .mjs modules, and shells out to git.
-      - name: Generate endpoint badge JSON
+      # No pnpm install: both generators use only node builtins plus
+      # dependency-free repo .mjs modules, and shell out to git.
+      - name: Generate commit-stats endpoint badge JSON
         run: node bin/gen-commit-stats-endpoint.mjs
+
+      - name: Generate visibility-hub dashboard
+        run: node bin/gen-project-hub.mjs
 
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 

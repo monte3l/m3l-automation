@@ -4,7 +4,7 @@
 // (bin/lib/claude-models.mjs) into their canonical model name. Consumed by
 // bin/gen-commit-stats-endpoint.mjs, which publishes the counts as
 // shields.io endpoint-badge JSON to GitHub Pages on every push to `main`
-// (.github/workflows/pages-commit-stats.yml, ADR-0032 addendum) — the badge
+// (.github/workflows/pages.yml, ADR-0032 addendum) — the badge
 // numbers live outside git history instead of being baked into a committed
 // README block.
 //

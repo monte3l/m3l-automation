@@ -183,7 +183,7 @@ must win — regenerate here, format after.
 **Not part of this pass:** the AI co-authorship badges. They are live
 shields.io endpoint badges (ADR-0032 addendum): CI computes the counts on
 every push to `main` and publishes them to GitHub Pages
-(`.github/workflows/pages-commit-stats.yml`), so no local command touches
+(`.github/workflows/pages.yml`), so no local command touches
 them and the README never needs a badge reconcile.
 
 ### 9 — Markdown lint

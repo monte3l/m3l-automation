@@ -3,7 +3,7 @@
 // plus one per canonical Claude model — to dist/commit-stats/. Each payload
 // follows the shields.io endpoint-badge schema
 // (https://shields.io/badges/endpoint-badge): {schemaVersion, label, message,
-// color, labelColor, style}. .github/workflows/pages-commit-stats.yml runs
+// color, labelColor, style}. .github/workflows/pages.yml runs
 // this on every push to main and publishes dist/commit-stats/ to GitHub
 // Pages, so the badge numbers live outside git history instead of being
 // baked into a committed README block (ADR-0032 addendum). This is the
