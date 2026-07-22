@@ -51,7 +51,6 @@
     "check:worktree": "node bin/check-worktree-include.mjs",
     "check:dup": "jscpd",
     "gen:index": "node bin/gen-reference-index.mjs",
-    "gen:commit-stats": "node bin/gen-commit-stats.mjs",
     "gen:commit-stats-endpoint": "node bin/gen-commit-stats-endpoint.mjs",
     "check:index": "node bin/check-reference-index.mjs",
     "worktree:new": "node bin/worktree-new.mjs",

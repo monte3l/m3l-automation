@@ -2,7 +2,8 @@
 // `Co-Authored-By:` git trailers, plus read-time normalization for the
 // non-canonical variants that already exist in history. Consumed by
 // bin/lint-commit.mjs (write-time validation at the commit-msg stage) and
-// bin/gen-commit-stats.mjs (read-time aggregation for the README badges).
+// bin/gen-commit-stats.mjs (read-time trailer aggregation, published as
+// endpoint badges by bin/gen-commit-stats-endpoint.mjs).
 // The convention itself is documented in docs/contributing/contributing.md.
 
 /** The only email sanctioned for Claude co-author trailers. */
