@@ -178,6 +178,7 @@ doesn't require a retroactive split.
   It is not part of `typecheck`/`lint`/`test`/`build` and scripts are exempt
   from the coverage gate that would otherwise catch this class of drift on a
   submodule — run it explicitly as its own step 7 check, every time.
+  _(promoted → .claude/skills/implementing-scripts/SKILL.md, .claude/rules/scripts.md)_
 - **A review Should-fix that reverses an earlier design-rationale statement
   needs a stale-comment sweep, not just the code change.** Grep for the exact
   phrase that stated the old rationale across both `src/` and `tests/` before
