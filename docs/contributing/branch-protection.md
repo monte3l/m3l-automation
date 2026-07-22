@@ -3,8 +3,13 @@
 The automated gates in this repo (CI checks, the Claude PR review verdict) only
 become _blocking_ once `main` is protected to require them. Workflow files
 cannot configure branch protection themselves — it is a repository setting. This
-page records the configuration. **The rule described below has been applied** via
-`gh api` as part of ADR-0011.
+page records the configuration. **The rule described below is applied** via
+`gh api`, restored and re-verified on 2026-07-22 after a Scorecard
+`BranchProtectionID` alert found it had silently drifted to disabled (see the
+2026-07-22 update in [ADR-0016](../adr/0016-signed-commits-and-decision-gate.md)).
+A second, independent layer — a GitHub ruleset — now enforces the same rules
+on top; see [Ruleset (defense-in-depth layer)](#ruleset-defense-in-depth-layer)
+below.
 
 ## Required configuration for `main`
 
@@ -76,16 +81,40 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
 Optionally, to add a human approval on top of the automated review:
 
 - **Require approvals** (at least 1) and **Require review from Code Owners**.
-  This needs a `.github/CODEOWNERS` file pointing at a real team/user, e.g.:
+  `.github/CODEOWNERS` (`* @enri3l`) now exists with a real handle, so this is
+  available whenever it's wanted — but as of 2026-07-22 it is deliberately
+  **not** enabled as a merge gate on either protection layer (see the
+  ruleset section below), to avoid making @giulmonte's review turnaround a
+  hard bottleneck for the sole active maintainer. Revisit separately if that
+  changes.
 
-  ```text
-  # .github/CODEOWNERS — replace the handle with your actual reviewer team.
-  *                       @m3l-automation/maintainers
-  packages/m3l-common/    @m3l-automation/maintainers
-  ```
+## Ruleset (defense-in-depth layer)
 
-  CODEOWNERS is intentionally not committed yet because it requires a real
-  GitHub team/user handle; add it once the reviewing team exists.
+Alongside classic branch protection above, `main` is also covered by a GitHub
+**repository ruleset** named `main-dual-layer-protection`
+(`enforcement: active`, `bypass_actors: []`), created 2026-07-22 — see the
+2026-07-22 update in
+[ADR-0016](../adr/0016-signed-commits-and-decision-gate.md) for why. It
+enforces, independently of the classic rule above:
+
+- `deletion` — blocks deleting `main`.
+- `non_fast_forward` — blocks force-pushes.
+- `required_signatures` — mirrors the classic "Require signed commits" rule.
+- `pull_request` — requires a PR (no approval count / CODEOWNERS gate, matching
+  the scoping decision above).
+- `required_status_checks` — the same five contexts as classic protection:
+  `verify`, `review`, `Analyze (javascript-typescript)`, `Analyze (actions)`,
+  `Dependency Review`.
+
+**This is intentionally overlapping, not a replacement.** GitHub enforces
+whichever of classic protection and an applicable ruleset is more restrictive
+for a given ref; neither layer can loosen what the other enforces. The
+ruleset exists because classic protection on `main` was found to have
+silently drifted to fully disabled with no error or notification — a second,
+independently configured layer means one mechanism being disabled or
+misconfigured again doesn't leave `main` unprotected. Manage both when
+changing policy: a rule added to only one layer is not authoritative on its
+own.
 
 ## Why the verdict file, not just a comment
 
