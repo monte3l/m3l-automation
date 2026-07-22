@@ -6,6 +6,16 @@ overrides:
   "@typescript-eslint/typescript-estree": "^8.62.0"
   "@typescript-eslint/project-service": "^8.62.0"
   "@typescript-eslint/tsconfig-utils": "^8.62.0"
+  # Security-advisory pins for vulnerable transitive ranges (2026-07-22):
+  # GHSA brace-expansion DoS, linkify-it mailto DoS, fast-uri host confusion
+  # x2, @hono/node-server path traversal. Scoped to the vulnerable ranges so
+  # unaffected majors resolve untouched; drop once the direct deps catch up.
+  # Caret (not >=) so the pin cannot jump a major (linkify-it@6 is ESM-only
+  # and breaks mailparser's require chain).
+  "brace-expansion@>=3.0.0 <5.0.7": "^5.0.7"
+  "linkify-it@<=5.0.1": "^5.0.2"
+  "fast-uri@>=3.0.0 <=3.1.3": "^3.1.4"
+  "@hono/node-server@<2.0.5": "^2.0.5"
 allowBuilds:
   unrs-resolver: false
   lefthook: true
