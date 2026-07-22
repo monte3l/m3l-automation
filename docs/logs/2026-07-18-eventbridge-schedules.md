@@ -91,7 +91,7 @@ writing-work-logs.
 
 ## What didn't go as planned, and why
 
-### 1. Two test-fixture bugs slipped through RED and were only caught during GREEN verification
+### 1. Two test-fixture bugs slipped through RED and were only caught during GREEN verification _(promoted → .claude/agents/test-author.md, .claude/rules/tests.md)_
 
 Two separate, unrelated bugs in test files (not implementation code) surfaced
 while `code-implementer` spokes verified their own scope during GREEN:
@@ -198,6 +198,7 @@ verification commands myself took under two minutes).
   it. Always run the full script-specific gate set (`check:script-scaffold`,
   `knip`) as its own step after should-fix remediation, not folded silently
   into "the reviewers already covered code quality."
+  _(promoted → .claude/skills/implementing-scripts/SKILL.md, .claude/rules/scripts.md)_
 - **A short, oddly-phrased final report from a spoke is worth a two-minute
   direct verification, not a re-dispatch.** The should-fix spoke's journal
   plus a direct re-run of the five gate commands confirmed everything was

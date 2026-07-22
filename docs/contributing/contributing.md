@@ -174,6 +174,11 @@ commit counts in the README stay queryable from history.
 - The package is internal and not published to npm; `version` in
   `package.json` is hand-managed (see ADR-0020).
 - Never `git push --force` to a shared branch.
+- When branch B is stacked on unmerged branch A and A lands via **squash
+  merge**, a plain `git rebase main` replays A's already-merged commits and
+  conflicts; use `git rebase --onto origin/main <A> <B>` to transplant only
+  B's own commits. Used three times without conflict in the ADR-0030 tooling
+  program (`docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md`).
 
 ### Worktrees for parallel work
 

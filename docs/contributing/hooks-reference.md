@@ -38,5 +38,11 @@ the rule.
 **Blocking** hooks exit 2 and reject the tool call outright. **Advisory** hooks
 also exit 2 but only print a reminder to stderr — they never stop the edit.
 
+**Known gap (accepted risk):** the `Write|Edit` PreToolUse guards cannot see
+file writes made through `Bash` (`echo > .env`, heredocs, `tee`). This was
+deliberately not closed at the hook layer in the 2026-07-12 hardening pass; CI
+`gitleaks` and branch protection are the backstops. Tracked in
+`docs/plans/IMPLEMENTATION.md` (P2 table).
+
 See also: `bin/check-hooks.mjs` (wiring validator), ADR-0016 (signed-commit
 enforcement), `docs/contributing/branch-protection.md`.

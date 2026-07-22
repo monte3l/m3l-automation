@@ -203,6 +203,7 @@ authoritative count rather than hand-guessing the numerator.
 - **Re-review after every substantial fix round** — a must-fix fix is new code:
   hoisting the file copier to fix "archives nothing" introduced "accumulates
   across warm invocations." The focused round-2 re-review is not optional.
+  _(promoted → .claude/skills/implementing-submodules/SKILL.md, .claude/rules/subagent-dispatch.md)_
 
 - **Check new `M3LScript` state against `resetForInvocation()`** — any field added
   to the script must either reset per Lambda invocation or be deliberate

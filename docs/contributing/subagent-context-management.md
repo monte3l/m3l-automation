@@ -171,6 +171,24 @@ close the remaining gaps:
   digest shape for its Explore fan-out, instead of returning full findings
   inline.
 
+## Efficacy watch (as of 2026-07-22)
+
+Honest status of the two mitigation layers: **recovery works, prevention is
+unproven.** After the 2026-07-14 hardening wave (this doc, the
+`subagent-dispatch.md` extract, journal refinements), 7 writer-spoke
+truncations still occurred on 2026-07-17
+(`docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md` — all recovered
+losslessly via journals, zero lost work) and 3 review spokes stalled 60+
+minutes on 2026-07-18 (`2026-07-18-aws-athena.md`,
+`2026-07-18-aws-eventbridge.md`, `2026-07-18-aws-s3.md`). The 2026-07-19
+second wave (the `SubagentStop` detector + the review-scope-binding rule in
+`subagent-dispatch.md`) has **no efficacy evidence yet** — the log history
+ends too soon after it landed. To give the next audit hard data, every work
+log now records a **`Spoke incidents:`** line (see
+`.claude/skills/writing-work-logs/SKILL.md`, Step 2 → Summary) — judge this
+section against those counts, and update it when the evidence lands either
+way.
+
 ## A note on model tier and context window
 
 Context/output limits differ meaningfully by tier (see

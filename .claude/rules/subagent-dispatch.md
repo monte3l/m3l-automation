@@ -34,6 +34,14 @@ occurrences. The checklist:
   instruction — stop once its checklist is answered rather than re-verifying
   indefinitely; a spoke that never converges is indistinguishable from a
   stalled one.
+- **Re-review every substantive fix round, bounded.** Must-fix fixes are new
+  writer code with no reviewer between them and the commit; post-review fix
+  batches introduced fresh Must-fix defects in at least four pipelines
+  (`2026-07-02-core-text.md`, `2026-07-03-core-script.md`,
+  `2026-07-03-core-importers.md`, `2026-07-13-dynamo-crud.md`). Dispatch a
+  focused confirmation pass — the reviewer(s) whose findings drove the fixes,
+  scoped to the changed files only, not a fresh full fan-out — before declaring
+  the review loop closed.
 - **Hand writer spokes (`test-author`, `code-implementer`) an explicit journal
   path** in the dispatch prompt. `.claude/hooks/guard-writer-dispatch-journal.mjs`
   warns (non-blocking) when one is missing.
