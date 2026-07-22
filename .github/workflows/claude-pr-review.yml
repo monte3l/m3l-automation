@@ -4,12 +4,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
-    # Skip when every changed file is docs/config-only — no library code to review.
-    # A PR that touches at least one non-excluded file still triggers the full review.
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - ".github/dependabot.yml"
 
 permissions:
   contents: read
@@ -52,7 +46,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          # This ignore set MUST mirror the top-level `paths-ignore` trigger.
+          # There is no top-level `paths-ignore` trigger filter — the job must
+          # run (and report a status) on every non-draft PR touching main, so
+          # this predicate alone decides what's reviewable, for both a
+          # brand-new PR (Gate 0 below) and a re-review since the last PASS
+          # (further down).
           is_ignored() {
             case "$1" in
               *.md) return 0 ;;
@@ -66,6 +64,36 @@ jobs:
             echo "should_review=true" >> "$GITHUB_OUTPUT"
             echo "$1"
           }
+
+          # Gate 0: is there anything reviewable in the PR at all, regardless
+          # of review history? Must run BEFORE the prior-comment check below,
+          # so a brand-new, 100%-docs PR short-circuits here on its first push
+          # instead of falling into "no prior comment" and triggering a real
+          # review. Fail-safe: any ambiguity defaults to should_review=true.
+          full_files="$(gh pr diff "$PR" -R "$REPO" --name-only 2>/dev/null || echo "__ERROR__")"
+          if [ "$full_files" = "__ERROR__" ]; then
+            review "gh pr diff --name-only failed — running review."
+            exit 0
+          fi
+          if [ -z "$full_files" ]; then
+            review "PR diff reports no changed files — running review."
+            exit 0
+          fi
+
+          all_ignored=true
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            if ! is_ignored "$f"; then
+              all_ignored=false
+              break
+            fi
+          done <<< "$full_files"
+
+          if [ "$all_ignored" = true ]; then
+            echo "should_review=false" >> "$GITHUB_OUTPUT"
+            echo "Entire PR diff is docs/config-only — skipping review."
+            exit 0
+          fi
 
           # --slurp so the jq filter runs once over all pages (a bare
           # --paginate --jq applies `last` per page and can concatenate bodies).

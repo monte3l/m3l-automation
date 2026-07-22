@@ -17,10 +17,13 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
 
 - **Require a pull request before merging.** Direct pushes to `main` are
   disallowed; everything lands through a PR. This is what makes "the agent that
-  writes code is never the one that reviews it" structural (rules 01/04).
-  Exception: changes to the review gate itself (`claude-pr-review.yml`) may
-  be landed directly by the maintainer, since routing a gate change through the
-  gate it modifies creates a circular dependency.
+  writes code is never the one that reviews it" structural (rules 01/04). As
+  of 2026-07-22, both protection layers have `bypass_actors: []` /
+  `enforce_admins: true` — there is no direct-push exception for anyone,
+  including the maintainer. A change to the review gate itself
+  (`claude-pr-review.yml`) still lands through a normal PR: it isn't covered
+  by the guard step's ignored-path set, so it naturally triggers a real
+  review like any other code change — no bypass is used or needed.
 - **Require status checks to pass before merging**, and mark these as required:
   - `verify` — the job in `.github/workflows/ci.yml` (lint, typecheck, public
     API snapshot, coverage-gated tests, build, `check:exports`, `knip`).
@@ -33,11 +36,15 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     `ready_for_review` and on every subsequent push to a ready PR. The workflow
     pre-computes the PR diff (`.claude-pr-diff.patch`) and hands it to the
     reviewer, so it reviews the supplied patch instead of spending turns fetching
-    it — a typical review uses only a few of those turns. As an
-    optimization, a push is **skipped** (the prior PASS is carried forward so
-    the check stays green) when the latest verdict was PASS and only
-    `paths-ignore` files (docs/config) changed since the reviewed commit,
-    tracked via a `claude-review-sha` marker in the sticky comment; any
+    it — a typical review uses only a few of those turns. The job itself runs
+    unconditionally on every non-draft PR (no trigger-level path filter) so the
+    required `review` check always reports; a guard step decides whether an
+    actual Claude review is needed. It's **skipped** (the verdict is written as
+    `PASS` directly, or carried forward from a prior `PASS`) in two cases: the
+    PR's entire diff is docs/config-only per the guard step's `is_ignored`
+    predicate (no library code to review at all), or the latest verdict was
+    `PASS` and only `is_ignored`-matching files changed since the reviewed
+    commit, tracked via a `claude-review-sha` marker in the sticky comment; any
     reviewable change re-triggers a full review. This does not weaken the
     fail-closed gate. The verdict-file mechanism and fail-closed behavior are
     unchanged. A separate, non-blocking step logs run metrics (turns used
