@@ -158,7 +158,7 @@ jobs:
               || rm -f "$patch.stripped"
           fi
 
-      - uses: anthropics/claude-code-action@e90deca47693f9457b72f2b53c17d7c445a87342 # v1
+      - uses: anthropics/claude-code-action@af0559ee4f514d1ef21826982bed13f7edc3c35e # v1
         id: claude-review
         if: steps.guard.outputs.should_review == 'true'
         with:
