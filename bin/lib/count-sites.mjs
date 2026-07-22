@@ -91,13 +91,13 @@ export function deriveCounts({
 export const TOTAL_COUNT_SITES = [
   {
     file: "CLAUDE.md",
-    pattern: /Core namespace barrel \((\d+) submodules surfaced here\)/,
+    pattern: /Core namespace barrel \((\d+) documented submodules\)/,
     label: "Core barrel comment",
     expected: (counts) => counts.coreCount,
   },
   {
     file: "CLAUDE.md",
-    pattern: /AWS namespace barrel \((\d+) submodules surfaced here\)/,
+    pattern: /AWS namespace barrel \((\d+) documented submodules\)/,
     label: "AWS barrel comment",
     expected: (counts) => counts.awsCount,
   },

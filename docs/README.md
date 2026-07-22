@@ -2,7 +2,7 @@
 
 `@m3l-automation/m3l-common` is a shared infrastructure library for every automation script, Lambda handler, and tool that needs enterprise-grade building blocks — application scaffolding, multi-source configuration, structured logging, interactive prompts, file import/export, full-text search, polling/retry resilience, and AWS credential and client management. It is written in TypeScript (strict), ships ESM-only, targets Node.js 24+, and keeps runtime dependencies minimal.
 
-> **Development status:** Internal package, not published to npm (`version` is hand-managed). 30 submodules documented; `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `config`, `messaging`, `polling`, `text`, `prompt`, `exporters`, `storage`, `network`, `importers`, `files`, `logging`, `aws/models`, `script`, `aws/credentials`, `aws/clients` + `aws/dynamodb`/`aws/cloudwatch-logs-insights`/`aws/sqs` implemented (30 of 30). See [Implementation status](implementation-status.md) for the per-module breakdown.
+> **Development status:** Internal package, not published to npm (`version` is hand-managed). 31 submodules documented; `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `config`, `messaging`, `polling`, `text`, `prompt`, `exporters`, `storage`, `network`, `importers`, `files`, `logging`, `aws/models`, `script`, `aws/credentials`, `aws/clients` + `aws/dynamodb`/`aws/cloudwatch-logs-insights`/`aws/sqs` implemented (30 of 31). See [Implementation status](implementation-status.md) for the per-module breakdown.
 
 ## Import paths
 
@@ -35,6 +35,7 @@ import { Core, AWS } from "@m3l-automation/m3l-common";
 - [Configuration](guides/configuration.md) — providers, resolution order, async fallback, presets
 - [Environments and paths](guides/environments-and-paths.md) — environment detection and filesystem layout
 - [Capability index](guides/capability-index.md) — which class to use for a given need
+- [Troubleshooting](guides/troubleshooting.md) — failure triage, debug output, post-mortem, filing reports
 
 ### Architecture
 
@@ -70,6 +71,7 @@ Resilience
 - [`polling`](reference/core/polling.md) — `M3LPoller`, `M3LRetryRunner`, `M3LBackoff`, classifiers
 - [`errors`](reference/core/errors.md) — `M3LError`, `M3LResult<T, E>`
 - [`events`](reference/core/events.md) — type-safe event emitter
+- [`diagnostics`](reference/core/diagnostics.md) — run reports, exit codes, cause-chain formatting (_spec-only, ADR-0035_)
 
 Utilities
 

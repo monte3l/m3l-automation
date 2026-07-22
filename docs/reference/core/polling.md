@@ -95,6 +95,21 @@ error from `run()`), so a consumer that needs error detail catches it there.
 Attempt numbers in payloads are **1-based** (`attempt` runs `1..maxAttempts`),
 matching the `attempts` count carried in the exhaustion error context.
 
+**The thrown error does not carry attempt history — the events do.** On
+exhaustion `M3LRetryRunner.run()` re-throws the _last_ error **unchanged**, for
+every terminal path (fatal, unknown-resolved-fatal, exhausted): inspecting the
+thrown error alone cannot distinguish "failed once, fatally" from "retried to
+exhaustion". The distinction — and the full attempt history (counts, delays,
+classifications) — is observable only through the event stream
+(`retry:fatal` vs `retry:exhausted`). To retain it past the throw, subscribe a
+collector: the [`M3LBreadcrumbTrail`](./diagnostics.md#m3lbreadcrumbtrail)
+(ADR-0035) attaches to these exact events and carries the history into run
+reports and `onError` context without changing any thrown shape. Similarly,
+`M3LPollExhaustedError` carries `context.attempts` but `M3LPollFailureError`
+today carries no context; ADR-0035 adds an optional, additive `context`
+parameter to `M3LPollFailureError` so a terminal `failure` decision can carry
+the attempt it occurred on.
+
 ### `M3LPoller` events (`M3LPollerEventMap`)
 
 | Event            | Emitted when                                                             | Payload                   |
@@ -257,6 +272,7 @@ const runner = new Core.M3LRetryRunner(Core.M3LPollingPolicies.awsThrottling());
 
 - [network](./network.md)
 - [errors](./errors.md)
+- [diagnostics](./diagnostics.md) — breadcrumb trail over these events
 - [utils](./utils.md)
 - [Capability index](../../guides/capability-index.md)
 - [Architecture overview](../../m3l-common-architecture.md)

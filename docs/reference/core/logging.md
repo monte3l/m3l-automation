@@ -20,8 +20,6 @@ Public surface (`logging/index.ts`):
 - `M3LTableFormatter`, `M3LTableOptions`, `M3LTableColumn` — table rendering.
 - `redactSensitiveLogText`, `redactSensitiveLogValue` — redaction helpers.
 
-> Note: the architecture overview lists this category type once as `M3LLogEventCateM3Lry`; that is a typo. The correct exported name is **`M3LLogEventCategory`**.
-
 ### `M3LLogger` methods
 
 `M3LLogger` exposes the typed methods:
@@ -30,6 +28,34 @@ Public surface (`logging/index.ts`):
 ### `M3LLogEventCategory`
 
 Nine categories: `TEXT`, `STEP`, `SUCCESS`, `ERROR`, `FATAL`, `WARNING`, `HEADER`, `INFO`, `SECTION`.
+
+### Log levels and debug mode
+
+> **Status: specified, not yet implemented** —
+> [ADR-0035](../../adr/0035-failure-reporting-and-diagnostics.md) phase 3.
+> Today the logger has no level filtering: every event fans out to every
+> handler unconditionally.
+
+- A tenth category, `DEBUG`, sits below `TEXT` and carries the library's own
+  diagnostic events (breadcrumbs, timings). The categories gain a severity
+  ordering (`DEBUG < TEXT/STEP/INFO/SECTION/HEADER < SUCCESS < WARNING <
+ERROR < FATAL`) solely for floor comparison — the category enum itself is
+  unchanged.
+- `M3LLoggerOptions.minLevel` sets the logger-wide severity floor (default:
+  everything passes, preserving current behavior); each built-in handler
+  accepts the same option for a per-sink floor (e.g. console at `INFO`, file
+  handler at `DEBUG`).
+- Resolution reuses the config precedence chain: `--log-level` / `--debug` CLI
+  flags > `M3L_LOG_LEVEL` / `M3L_DEBUG=1` environment > config file > default.
+  `M3L_DEBUG=1` is the one-switch debug mode: it drops the floor to `DEBUG`.
+- `logger.errorFrom(error, message?)` logs an `ERROR` event with the error's
+  `code`, `context`, and the **full recursive cause chain** promoted to
+  structured fields (via `serializeErrorChain` from
+  [diagnostics](./diagnostics.md#formaterrorchain)) — unlike `serializeError`,
+  which is single-level and omits `cause`.
+- `logger.time(label)` returns a disposer that logs a `DEBUG` event carrying
+  `durationMs` — the shared replacement for the inline `Date.now()` deltas the
+  importer/network/credentials modules currently duplicate.
 
 ### Correlation IDs
 
@@ -113,7 +139,7 @@ const safeValue = Core.redactSensitiveLogValue({ apiKey: "secret" });
 - **Ordered handler array.** `M3LLogger` delegates each `M3LLogEvent` to every handler in array order; each handler decides independently how to render the event.
 - **`M3LConsoleLoggerHandler`** writes to `process.stdout` / `process.stderr` with ANSI colors and indentation, and automatically disables colors in non-TTY contexts (Lambda, CI, a pipe) to keep logs machine-readable.
 - **`M3LFileLoggerHandler`** streams to a file through a `M3LFileListExporter`, maintaining an internal sequential write queue to preserve ordering under concurrent emits. Its `reset()` is intentionally a no-op so logs are not lost across script resets.
-- **`M3LJsonLoggerHandler`** emits one JSON line per event (one CloudWatch log entry per message) and promotes scalar fields from the event's `data` payload to the top level for easy CloudWatch Insights querying. Empty spacer events are dropped.
+- **`M3LJsonLoggerHandler`** emits one JSON line per event (one CloudWatch log entry per message) and promotes scalar fields from the event's `data` payload to the top level for easy CloudWatch Insights querying. Empty spacer events are dropped. Worked Insights queries (by `correlationId`, by category, by promoted fields) live in the [troubleshooting guide](../../guides/troubleshooting.md#5-correlation-ids-and-cloudwatch-insights).
 - **Table rendering.** `M3LTableFormatter` supports per-column alignment and ANSI-aware width (via `string-width`). Three border styles are available: `full` (Unicode box-drawing characters `┌ ─ │ ├ ┤ └ ┐ ┘`), `border-less` (minimal characters), and `compact` (no border characters).
 
 ## See also
@@ -121,4 +147,6 @@ const safeValue = Core.redactSensitiveLogValue({ apiKey: "secret" });
 - [Core / events](./events.md)
 - [Core / prompt](./prompt.md) — shares TTY-aware rendering
 - [Core / errors](./errors.md)
+- [Core / diagnostics](./diagnostics.md) — cause-chain serialization, run reports
+- [Guide: Troubleshooting](../../guides/troubleshooting.md)
 - [Architecture overview](../../m3l-common-architecture.md)

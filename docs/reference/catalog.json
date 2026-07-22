@@ -53,6 +53,15 @@
   },
   {
     "namespace": "core",
+    "name": "diagnostics",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/core/diagnostics.md",
+    "symbols": []
+  },
+  {
+    "namespace": "core",
     "name": "environment",
     "importPath": "@m3l-automation/m3l-common/core",
     "status": "✅",

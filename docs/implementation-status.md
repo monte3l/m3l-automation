@@ -5,7 +5,7 @@ This is the **single source of truth** for what is implemented in
 
 <!-- BEGIN GENERATED IMPLEMENTED-LIST -->
 
-The barrels are wired; `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `logging`, `files`, `network`, `polling`, `prompt`, `importers`, `exporters`, `storage`, `text`, `script`, `models`, `credentials`, `clients`, `dynamodb`, `cloudwatch-logs-insights`, `sqs`, `signing`, `s3`, `athena`, `eventbridge`, and `lambda` are implemented and reviewed (30 of 30 submodules). See the table below for per-submodule status.
+The barrels are wired; `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `logging`, `files`, `network`, `polling`, `prompt`, `importers`, `exporters`, `storage`, `text`, `script`, `models`, `credentials`, `clients`, `dynamodb`, `cloudwatch-logs-insights`, `sqs`, `signing`, `s3`, `athena`, `eventbridge`, and `lambda` are implemented and reviewed (30 of 31 submodules). See the table below for per-submodule status.
 
 <!-- END GENERATED IMPLEMENTED-LIST -->
 
