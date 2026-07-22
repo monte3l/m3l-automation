@@ -6,9 +6,10 @@
 // color, labelColor, style}. .github/workflows/pages-commit-stats.yml runs
 // this on every push to main and publishes dist/commit-stats/ to GitHub
 // Pages, so the badge numbers live outside git history instead of being
-// baked into a committed README block (ADR-0032 addendum). This replaces the
-// README-rewriting flow in bin/gen-commit-stats.mjs once the README migrates
-// to referencing these hosted endpoints.
+// baked into a committed README block (ADR-0032 addendum). This is the
+// publishing path for those badges — the old README-rewriting flow was
+// removed from bin/gen-commit-stats.mjs when the README cut over to
+// referencing these hosted endpoints (ADR-0032 addendum PR 2).
 //
 // Reuses bin/gen-commit-stats.mjs's counting logic (countCommitsByModel,
 // countTotalCommits) and bin/lib/claude-models.mjs's canonical model list
@@ -83,7 +84,7 @@ export function endpointPayload(label, message, color) {
  * written under: `aggregate.json` first, then one entry per
  * `CANONICAL_CLAUDE_MODELS` entry, in canonical (capability-tier) order.
  *
- * Unlike `buildBadgeBlock` (bin/gen-commit-stats.mjs), a model absent from
+ * Unlike the retired static README badge block, a model absent from
  * `counts` still gets a payload here — with a "0 commits" message — rather
  * than being omitted. shields.io endpoint badges are addressed individually
  * by filename, so a README (or any consumer) can reference a model's badge

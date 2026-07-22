@@ -180,14 +180,11 @@ non-prettier-formatted JSON, so if `format` runs first, `format:check` then fail
 on the regenerated `catalog.json`. Whichever runs last wins, and the generator
 must win — regenerate here, format after.
 
-**Not part of this pass:** `pnpm gen:commit-stats` (the AI co-authorship
-badges) is deliberately **main-only** (ADR-0024) — running it on a feature
-branch bakes that branch's own commits into the badge count, producing
-README churn that conflicts with every other open branch on rebase.
-`bin/post-integrate-regen.mjs` already runs it automatically post-merge
-whenever `HEAD` is on `main`, so it's never something to remember to run by
-hand; the manual command remains available for release grooming, but it's
-never part of this branch-time reconciliation.
+**Not part of this pass:** the AI co-authorship badges. They are live
+shields.io endpoint badges (ADR-0032 addendum): CI computes the counts on
+every push to `main` and publishes them to GitHub Pages
+(`.github/workflows/pages-commit-stats.yml`), so no local command touches
+them and the README never needs a badge reconcile.
 
 ### 9 — Markdown lint
 
@@ -217,7 +214,8 @@ Output after all steps complete:
 - Reference index:       ✓ (gen:index + check:index) / ✗
 - Markdown lint:         ✓ / ✗
 
-Commit-stats badges are main-only (not part of this pass) — see step 8's note.
+Commit-stats badges are live CI-published endpoint badges (not part of this
+pass) — see step 8's note.
 ```
 
 Replace ✓ with ✗ and include the tool's error output for any failed step.

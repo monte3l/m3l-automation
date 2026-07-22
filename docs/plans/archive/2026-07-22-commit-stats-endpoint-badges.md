@@ -1,8 +1,9 @@
 # Commit-stats endpoint-badge migration — PR 1 (ADR-0032 addendum)
 
-**Status: PR 1 shipped** — `feat/commit-stats-endpoint-badges` (endpoint
-generator + `pages-commit-stats.yml` Pages deploy); **PR 2 (README URL swap +
-old-write-path removal) pending** a later session.
+**Status: shipped** — PR #185 (`feat/commit-stats-endpoint-badges`: endpoint
+generator + `pages-commit-stats.yml` Pages deploy) and PR #186
+(`feat/commit-stats-endpoint-cutover`: README URL swap + old-write-path
+removal).
 
 ## Context
 
@@ -54,7 +55,8 @@ write path, so `main` never references a not-yet-existing JSON URL.
 
 ## Outcome
 
-PR 1 shipped on `feat/commit-stats-endpoint-badges`. Deferred to PR 2:
+PR 1 shipped on `feat/commit-stats-endpoint-badges` (#185); PR 2 shipped on
+`feat/commit-stats-endpoint-cutover` (#186), covering everything below:
 README badge-URL swap + marker removal + disclosure-wording update (including
 README's prose pointer at `bin/gen-commit-stats.mjs`), removal of
 `buildBadgeBlock`/`replaceBadgeBlock` and the `onMain` regen branch

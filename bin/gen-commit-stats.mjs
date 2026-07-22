@@ -1,50 +1,26 @@
 #!/usr/bin/env node
-// Regenerates the AI co-authorship badges in the root README from git
-// history: a leading aggregate ratio badge ("AI co-authored: N of T commits")
-// plus one badge per model. Counts every `Co-Authored-By: …
-// <noreply@anthropic.com>` trailer, folds historical aliases
-// (bin/lib/claude-models.mjs) into their canonical model, and rewrites the
-// marker-delimited badge block.
+// Counts AI co-authorship from the repo's `Co-Authored-By: …
+// <noreply@anthropic.com>` trailer history, folding historical aliases
+// (bin/lib/claude-models.mjs) into their canonical model name. Consumed by
+// bin/gen-commit-stats-endpoint.mjs, which publishes the counts as
+// shields.io endpoint-badge JSON to GitHub Pages on every push to `main`
+// (.github/workflows/pages-commit-stats.yml, ADR-0032 addendum) — the badge
+// numbers live outside git history instead of being baked into a committed
+// README block.
 //
 // Deliberately NOT a CI gate: the counts change on every commit, so a
-// fail-on-drift check would fail every PR. Freshness rides the /syncing-docs
-// reconciliation pass instead — the badges are a periodically refreshed
-// snapshot, and the authoritative source is always `git log` itself.
-//
-// Deliberately main-only (ADR-0024): running this on a feature branch bakes
-// that branch's own commits into the badge count, producing README churn
-// that conflicts with every other open branch's badge state on rebase. Never
-// run it as part of a branch-time /syncing-docs pass.
-//
-// bin/post-integrate-regen.mjs already runs this automatically post-merge
-// whenever HEAD is on `main` (gated by its isOnMainBranch() check) — this
-// file also stays safe to run directly by hand, e.g. during release grooming.
-//
-// Usage:
-//   node bin/gen-commit-stats.mjs   # idempotent; rewrites README.md in place
-import process from "node:process";
+// fail-on-drift check would fail every PR. The authoritative source is
+// always `git log` itself.
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
-  CANONICAL_CLAUDE_MODELS,
   CO_AUTHOR_EMAIL,
   normalizeClaudeModel,
   parseCoAuthor,
 } from "./lib/claude-models.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const readmePath = join(root, "README.md");
-
-export const BEGIN_MARKER = "<!-- BEGIN COMMIT-STATS-BADGES -->";
-export const END_MARKER = "<!-- END COMMIT-STATS-BADGES -->";
-
-/** Style shared with the hand-written badges above the block. */
-const BADGE_STYLE = "style=flat-square&labelColor=272822";
-const BADGE_COLOR = "A6E22E";
-/** The aggregate ratio badge gets the accent color to stand apart from the per-model rows. */
-const AGGREGATE_COLOR = "66D9EF";
 
 /**
  * Count commits per canonical Claude model from the repo's trailer history.
@@ -86,76 +62,4 @@ export function countTotalCommits() {
       encoding: "utf8",
     }).trim(),
   );
-}
-
-/** Escape a shields.io static-badge path segment (dashes double, spaces encode). */
-function badgeSegment(text) {
-  return String(text).replace(/-/g, "--").replace(/ /g, "%20");
-}
-
-/**
- * Build the marker-delimited badge block: a leading aggregate ratio badge
- * ("AI co-authored: N of T commits"), then one badge per model that has
- * commits, in allowlist (capability-tier) order. Both numbers come from the
- * same git snapshot, so the block is internally consistent — merge, bot, and
- * direct human commits carry no trailer, which is why the per-model sum is
- * deliberately below the total.
- *
- * @param {Map<string, number>} counts
- * @param {number} total - all commits reachable from HEAD
- * @returns {string}
- */
-export function buildBadgeBlock(counts, total) {
-  const sum = [...counts.values()].reduce((a, b) => a + b, 0);
-  const aggregateUrl = `https://img.shields.io/badge/${badgeSegment("AI co-authored")}-${badgeSegment(`${sum} of ${total} commits`)}-${AGGREGATE_COLOR}?${BADGE_STYLE}`;
-  const lines = [
-    BEGIN_MARKER,
-    `<a href="#co-developed-with-claude"><img src="${aggregateUrl}" alt="AI co-authored: ${sum} of ${total} commits"></a>`,
-  ];
-  for (const model of CANONICAL_CLAUDE_MODELS) {
-    const count = counts.get(model);
-    if (count === undefined) continue;
-    const url = `https://img.shields.io/badge/${badgeSegment(model)}-${badgeSegment(count)}%20commits-${BADGE_COLOR}?${BADGE_STYLE}`;
-    lines.push(
-      `<a href="#co-developed-with-claude"><img src="${url}" alt="${model}: ${count} commits"></a>`,
-    );
-  }
-  lines.push(END_MARKER);
-  return lines.join("\n");
-}
-
-/**
- * Replace the marker-delimited block in the README content.
- *
- * @param {string} content
- * @param {string} block
- * @returns {string}
- */
-export function replaceBadgeBlock(content, block) {
-  const start = content.indexOf(BEGIN_MARKER);
-  const end = content.indexOf(END_MARKER);
-  if (start === -1 || end === -1) {
-    throw new Error(
-      `README.md is missing the ${BEGIN_MARKER} … ${END_MARKER} block`,
-    );
-  }
-  return (
-    content.slice(0, start) + block + content.slice(end + END_MARKER.length)
-  );
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const counts = countCommitsByModel();
-  const total = countTotalCommits();
-  const content = readFileSync(readmePath, "utf8");
-  const next = replaceBadgeBlock(content, buildBadgeBlock(counts, total));
-  if (next === content) {
-    console.log("✓  commit-stats badges already current");
-  } else {
-    writeFileSync(readmePath, next);
-    const sum = [...counts.values()].reduce((a, b) => a + b, 0);
-    console.log(
-      `✓  commit-stats badges regenerated (${sum} of ${total} commits co-authored, across ${counts.size} models)`,
-    );
-  }
 }
