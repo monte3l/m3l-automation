@@ -64,9 +64,12 @@ function splitTableRow(line) {
 /**
  * Parse the first markdown pipe-table that follows `headingRegex` in `content`.
  * Cells are split on unescaped `|`, trimmed, and unescaped (`\|` -> `|`); the
- * divider row is skipped. Parsing stops at the first blank line or the next
- * `#`-heading; the same boundary applies while searching for the table itself,
- * so a heading with prose but no table before the next heading yields `null`.
+ * divider row is skipped. While searching for the table's start, blank lines
+ * and prose are skipped over; the search (and, once inside the table, row
+ * collection) bails out as soon as it hits a `#`-heading or runs out of
+ * content, so a heading with prose but no table before the next heading
+ * yields `null` and a table's row collection stops at the first blank line
+ * or the next heading, whichever comes first.
  *
  * @param {string} content
  * @param {RegExp} headingRegex must match the heading line (a `/m`-flagged
@@ -647,6 +650,9 @@ function renderCorpusList(entries, labelFn) {
   if (entries.length === 0) return '<p class="empty">None.</p>';
   const items = entries
     .map(
+      // entry.href is not escapeHtml()'d: every href in this module comes
+      // from blobUrl(), which percent-encodes each path segment, so it can
+      // never contain a raw '"' that would break out of the attribute.
       (entry) =>
         `<li><a href="${entry.href}">${escapeHtml(labelFn(entry))}</a></li>`,
     )

@@ -41,13 +41,21 @@ function readDoc(relativePath) {
   return readFileSync(join(root, relativePath), "utf8");
 }
 
-/** List a directory's `.md` filenames (basenames only), excluding `skip`. */
+/**
+ * List a directory's `.md` filenames (basenames only), excluding `skip`. A
+ * genuinely-absent directory (ENOENT) is tolerated as "no files"; any other
+ * readdir failure (permissions, not-a-directory, …) is rethrown so the
+ * main-guard's try/catch surfaces it instead of silently reporting zero docs.
+ */
 function listMarkdownFiles(dir, skip = []) {
   let entries;
   try {
     entries = readdirSync(join(root, dir), { withFileTypes: true });
-  } catch {
-    return [];
+  } catch (cause) {
+    if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
+      return [];
+    }
+    throw cause;
   }
   return entries
     .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
@@ -94,6 +102,26 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { json } = parseJsonFlag();
   const reporter = createReporter(json);
 
+  try {
+    runGenerator(reporter);
+  } catch (cause) {
+    reporter.error(
+      `Project hub generation failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+    reporter.finish();
+    process.exit(1);
+  }
+}
+
+/**
+ * The full read -> extract -> render -> write pipeline, run inside the
+ * main-guard's try/catch so any unexpected failure (a malformed
+ * catalog.json, a readdir error other than ENOENT, …) is reported through
+ * `reporter` and exits 1 rather than crashing with an unhandled stack trace.
+ *
+ * @param {ReturnType<typeof createReporter>} reporter
+ */
+function runGenerator(reporter) {
   const roadmap = extractRoadmap(readDoc("docs/ROADMAP.md"));
   const backlog = extractImplementation(
     readDoc("docs/plans/IMPLEMENTATION.md"),
