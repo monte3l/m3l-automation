@@ -165,10 +165,7 @@ This fires the `post-rewrite`/`post-merge` lefthook hook
 (`bin/post-integrate-regen.mjs`, ADR-0024), which regenerates
 `catalog.json`/`symbol-map.json` (`gen:index`), the count sites and
 implemented-list block (`gen:counts`), re-stamps provenance blobs
-(`check-doc-provenance.mjs --update`) — and, only when `HEAD` is on
-`main`, the README's commit-stats badges (`gen-commit-stats.mjs`; never on
-a feature branch, so a merge-conflict rebase on your own branch skips this
-step) — and, only if `pnpm-lock.yaml` is
+(`check-doc-provenance.mjs --update`) — and, only if `pnpm-lock.yaml` is
 still dirty at that point, runs `pnpm install` to re-sync it against the
 merged `package.json`. It never blocks and never commits, only reports
 dirty files. Step 5 below folds its output into

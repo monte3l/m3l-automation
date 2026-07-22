@@ -18,6 +18,16 @@
 > now enforces it directly: a new `isOnMainBranch()` check gates the
 > commit-stats regen so it only fires post-merge/post-rewrite while `HEAD`
 > is `main`, closing the gap between the stated policy and its enforcement.
+>
+> **Update (2026-07-22).** The endpoint-badge migration (ADR-0032 addendum,
+> PRs #185/#186) supersedes the "`gen:commit-stats` moves to main-only"
+> clause entirely: the README's commit-stats badges are now live shields.io
+> endpoint badges whose JSON is computed in CI on every push to `main` and
+> published to GitHub Pages — the artifact no longer touches `README.md` via
+> git at all. `bin/gen-commit-stats.mjs` is reduced to the trailer-counting
+> functions (consumed by `bin/gen-commit-stats-endpoint.mjs`), and the
+> `isOnMainBranch()`/`onMain` gate in `bin/post-integrate-regen.mjs` is
+> removed with the write path it guarded.
 
 ## Context and problem statement
 

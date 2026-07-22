@@ -16,13 +16,15 @@
 </p>
 
 <p align="center">
-<!-- BEGIN COMMIT-STATS-BADGES -->
-<a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/AI%20co--authored-484%20of%20724%20commits-66D9EF?style=flat-square&labelColor=272822" alt="AI co-authored: 484 of 724 commits"></a>
-<a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Fable%205-29%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Fable 5: 29 commits"></a>
-<a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Opus%204.8-287%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Opus 4.8: 287 commits"></a>
-<a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Sonnet%205-62%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Sonnet 5: 62 commits"></a>
-<a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Sonnet%204.6-106%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Sonnet 4.6: 106 commits"></a>
-<!-- END COMMIT-STATS-BADGES -->
+<!-- Live shields.io endpoint badges (ADR-0032 addendum): counts are computed
+     in CI on every push to main and served from GitHub Pages — these URLs
+     never change, only the hosted JSON does. A new model's badge is added
+     here alongside its bin/lib/claude-models.mjs allowlist entry. -->
+<a href="#co-developed-with-claude"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fmonte3l.github.io%2Fm3l-automation%2Fcommit-stats%2Faggregate.json" alt="AI co-authored commits"></a>
+<a href="#co-developed-with-claude"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fmonte3l.github.io%2Fm3l-automation%2Fcommit-stats%2Fclaude-fable-5.json" alt="Claude Fable 5 commits"></a>
+<a href="#co-developed-with-claude"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fmonte3l.github.io%2Fm3l-automation%2Fcommit-stats%2Fclaude-opus-4-8.json" alt="Claude Opus 4.8 commits"></a>
+<a href="#co-developed-with-claude"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fmonte3l.github.io%2Fm3l-automation%2Fcommit-stats%2Fclaude-sonnet-5.json" alt="Claude Sonnet 5 commits"></a>
+<a href="#co-developed-with-claude"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fmonte3l.github.io%2Fm3l-automation%2Fcommit-stats%2Fclaude-sonnet-4-6.json" alt="Claude Sonnet 4.6 commits"></a>
 </p>
 
 > **All 30 of 31 submodules are implemented and reviewed.** The package is
@@ -127,12 +129,16 @@ which Claude model assisted a commit. It is a _provenance marker_, not a legal
 authorship or copyright claim (using an AI tool does not make it a legal
 co-author). The sanctioned model names live in
 [bin/lib/claude-models.mjs](bin/lib/claude-models.mjs), the `commit-msg` hook
-rejects non-canonical names, and
-[bin/gen-commit-stats.mjs](bin/gen-commit-stats.mjs) derives the badge counts
-from those trailers. Merge commits, bot commits (Dependabot, release bot), and
-direct human commits carry no trailer, so the per-model badges deliberately sum
-to less than the repository's total commit count — the aggregate badge shows
-the ratio as of the last refresh. Which model handles which kind of task is documented in
+rejects non-canonical names, and the badges are **live**: on every push to
+`main` a CI workflow ([pages-commit-stats.yml](.github/workflows/pages-commit-stats.yml))
+counts the trailers ([bin/gen-commit-stats.mjs](bin/gen-commit-stats.mjs)) and
+publishes shields.io endpoint JSON
+([bin/gen-commit-stats-endpoint.mjs](bin/gen-commit-stats-endpoint.mjs)) to
+GitHub Pages — no README edit, no git commit, just the hosted numbers changing
+(shields caches renders for a few minutes). Merge commits, bot commits
+(Dependabot, release bot), and direct human commits carry no trailer, so the
+per-model badges deliberately sum to less than the repository's total commit
+count — the aggregate badge shows the ratio. Which model handles which kind of task is documented in
 [docs/contributing/model-selection.md](docs/contributing/model-selection.md).
 
 ## License

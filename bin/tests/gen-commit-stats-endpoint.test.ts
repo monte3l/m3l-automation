@@ -101,10 +101,10 @@ describe("buildEndpointPayloads", () => {
     expect(payloads.size).toBe(CANONICAL_CLAUDE_MODELS.length + 1);
   });
 
-  // Deliberately diverges from `buildBadgeBlock` (bin/gen-commit-stats.mjs),
-  // which omits zero-count models from the README badge row: shields.io
-  // endpoint files are addressed individually by filename, so a model with
-  // zero commits still needs a "0 commits" file or its badge 404s.
+  // Deliberately diverges from the retired static README badge row, which
+  // omitted zero-count models: shields.io endpoint files are addressed
+  // individually by filename, so a model with zero commits still needs a
+  // "0 commits" file or its badge 404s.
   test("keeps a zero-count entry for every model absent from counts", () => {
     const payloads = buildEndpointPayloads(
       new Map([["Claude Fable 5", 2]]),

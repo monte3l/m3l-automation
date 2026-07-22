@@ -31,20 +31,14 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
  * rebase/merge that never touched it doesn't pay the cost every time.
  *
  * @param {boolean} [lockfileDirty]
- * @param {boolean} [onMain] - append the commit-stats regen, gated to `main`
- *   (ADR-0024: the badges legitimately differ per branch, so regenerating them
- *   on a feature branch would bake that branch's own commits into the count).
  * @returns {[string, string[]][]}
  */
-export function regenerationCommands(lockfileDirty = false, onMain = false) {
+export function regenerationCommands(lockfileDirty = false) {
   const commands = [
     ["node", ["bin/gen-reference-index.mjs"]],
     ["node", ["bin/gen-doc-counts.mjs"]],
     ["node", ["bin/check-doc-provenance.mjs", "--update"]],
   ];
-  if (onMain) {
-    commands.push(["node", ["bin/gen-commit-stats.mjs"]]);
-  }
   if (lockfileDirty) {
     commands.push(["pnpm", ["install"]]);
   }
@@ -76,16 +70,11 @@ function defaultRun(cmd, args) {
  *
  * @param {(cmd: string, args: string[]) => void} [runCmd]
  * @param {boolean} [lockfileDirty]
- * @param {boolean} [onMain]
  * @returns {string[]} human-readable warnings, one per failed command
  */
-export function runRegeneration(
-  runCmd = defaultRun,
-  lockfileDirty = false,
-  onMain = false,
-) {
+export function runRegeneration(runCmd = defaultRun, lockfileDirty = false) {
   const warnings = [];
-  for (const [cmd, args] of regenerationCommands(lockfileDirty, onMain)) {
+  for (const [cmd, args] of regenerationCommands(lockfileDirty)) {
     try {
       runCmd(cmd, args);
     } catch (err) {
@@ -139,24 +128,8 @@ export function isLockfileDirty(runGit = defaultRunGit) {
   );
 }
 
-/**
- * Whether the current `HEAD` is on `main` — the only branch the commit-stats
- * badges are allowed to regenerate on (ADR-0024). A detached `HEAD` (git
- * reports the literal string `"HEAD"`) is treated as not-main.
- *
- * @param {(args: string[]) => string} [runGit]
- * @returns {boolean}
- */
-export function isOnMainBranch(runGit = defaultRunGit) {
-  return runGit(["rev-parse", "--abbrev-ref", "HEAD"]).trim() === "main";
-}
-
 if (process.argv[1]?.endsWith("post-integrate-regen.mjs")) {
-  const warnings = runRegeneration(
-    undefined,
-    isLockfileDirty(),
-    isOnMainBranch(),
-  );
+  const warnings = runRegeneration(undefined, isLockfileDirty());
   for (const w of warnings) {
     console.error(`⚠  post-integrate-regen: ${w}`);
   }
