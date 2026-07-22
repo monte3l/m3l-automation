@@ -1,0 +1,108 @@
+name: Failure report
+description: >-
+  Report a failing script run or library error for troubleshooting — a crash,
+  unexpected status, retry/poll exhaustion, or wrong exit code.
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Before filing, walk the triage steps in the
+        [troubleshooting guide](/docs/guides/troubleshooting.md) — it
+        resolves most `caller`-origin (script/config) failures without an
+        issue. **Redact everything you paste**: never include credentials,
+        tokens, account ids you consider sensitive, or customer data. Log
+        output is redacted by the library; config files and hand-copied
+        values are not.
+  - type: input
+    id: affected
+    attributes:
+      label: Affected script or submodule
+      description: >-
+        The consumer script (e.g. `s3-objects`) or library submodule (e.g.
+        `core/polling`, `aws/athena`) the failure surfaces in.
+      placeholder: core/polling
+    validations:
+      required: true
+  - type: input
+    id: error-code
+    attributes:
+      label: Error code of the root cause
+      description: >-
+        The `code` of the **deepest** error in the cause chain (walk
+        `error.cause` to the root). See the
+        [error-code catalog](/docs/reference/core/errors.md#error-code-catalog).
+      placeholder: ERR_POLL_EXHAUSTED
+    validations:
+      required: false
+  - type: dropdown
+    id: origin
+    attributes:
+      label: Fault origin (your triage)
+      description: >-
+        Per the troubleshooting guide's triage table — who do you believe must
+        act?
+      options:
+        - library — internal library fault (invariant violation, wrong behavior vs docs)
+        - script/config — my script or configuration (filing because the failure mode was undiagnosable)
+        - external — AWS/HTTP/remote system (filing because the library surfaced it poorly)
+        - unsure
+    validations:
+      required: true
+  - type: input
+    id: exit-code
+    attributes:
+      label: Exit code and invocation
+      description: How the script was started and what exit code the process produced.
+      placeholder: "pnpm --filter s3-objects start --profile prod → exit 1"
+    validations:
+      required: false
+  - type: input
+    id: correlation-id
+    attributes:
+      label: Correlation ID
+      description: The failing run's `correlationId` (from logs or the run report).
+    validations:
+      required: false
+  - type: textarea
+    id: chain
+    attributes:
+      label: Error output / cause chain
+      description: >-
+        The full error output including stack traces — ideally the complete
+        cause chain and, when available, the run report
+        (`data/output/<timestamp>/run-report.json`). Redact before pasting.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps, or note if the failure is intermittent.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: false
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      value: |
+        - `@m3l-automation/m3l-common` version:
+        - Node.js version:
+        - OS:
+        - Execution mode (monorepo / standalone / Lambda):
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you already tried
+      description: >-
+        Debug output enabled? Dry-run attempted? Retried? External system
+        checked?
+    validations:
+      required: false

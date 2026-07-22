@@ -62,6 +62,39 @@ Each hook receives a `M3LScriptHookContext` carrying the live config store and
 the run's `correlationId` (see [Correlation IDs](#correlation-ids)), so a hook
 can read resolved configuration and the trace id during any stage.
 
+## File archival (stage 9)
+
+Stage 9 archives the run's inputs: a fresh `M3LFileCopier` auto-discovers every
+regular file in `paths.getInputDir()` and `paths.getConfigDir()` and copies
+them into a per-run timestamped directory:
+
+```text
+data/output/<timestamp>/
+├── input/    # snapshot of data/input at run time
+└── config/   # snapshot of data/config at run time
+```
+
+Constraints: 100 MB per-file default cap, no overwrite of existing
+destinations, path-traversal guards. The archive result is available afterwards
+via `getLastArchiveReport()`.
+
+Archival runs on the **success path only** — a run that fails before stage 9
+archives nothing today. The
+[diagnostics run report](./diagnostics.md#m3lrunreport--m3lrunreporter)
+(ADR-0035) extends this same directory with a `run-report.json` written on
+**both** outcomes, failure included.
+
+## Exit codes
+
+`run()` itself never exits and never sets an exit code: on failure it re-throws
+after the `onError`/`onCleanup` hooks, and the process falls through to Node's
+default unhandled-rejection behavior (exit code `1`) unless the composition
+root intervenes. The differentiated exit-code contract — `2` caller/config,
+`3` external, `4` library, `5` interrupted — is provided by the opt-in
+[`runScript()` wrapper](./diagnostics.md#runscript) (ADR-0035), which sets
+`process.exitCode` from `mapErrorToExitCode`; bare `run()` behavior is
+unchanged.
+
 ## Signal handling
 
 Signal handlers for `SIGTERM`, `SIGINT`, and `SIGQUIT` are registered only in non-AWS environments. A second signal forces an immediate exit with code `1`. In AWS execution environments (for example, Lambda), these handlers are not installed.
@@ -69,6 +102,24 @@ Signal handlers for `SIGTERM`, `SIGINT`, and `SIGQUIT` are registered only in no
 ## Process guards
 
 `installProcessGuards()` is a process-global singleton that installs `unhandledRejection`, `uncaughtException`, `warning`, and `beforeExit` handlers. In Lambda, call `setProcessGuardRequestId(requestId)` to attribute guard-caught errors to the current invocation. `serializeError` produces a serializable representation of an error for these guard paths.
+
+**Who installs the guards.** `M3LScript` never calls `installProcessGuards()`
+itself — installation is the composition root's responsibility, and the two
+fault-handling layers deliberately differ:
+
+- **Guards observe, signals control.** The process guards only capture and
+  report faults (a redacted JSON diagnostic on stderr); they never change exit
+  behavior. Note the flip side: installing an `uncaughtException` handler
+  suppresses Node's default crash-and-exit for that fault class, so an
+  observed process may keep running after an uncaught exception. The signal
+  layer is the opposite: it _controls_ shutdown and force-exits on a second
+  signal.
+- **CLI:** call `installProcessGuards()` once at the top of `main.ts` — or use
+  the [`runScript()` wrapper](./diagnostics.md#runscript) (ADR-0035), which
+  installs them, adds a top-level catch, and sets the exit code.
+- **Lambda:** guards are optional; if used, call `installProcessGuards()` once
+  at module scope (cold start). `setProcessGuardRequestId` is wired per
+  invocation by `createLambdaHandler()` automatically.
 
 ## Correlation IDs
 
@@ -238,9 +289,11 @@ export const handler = script.createLambdaHandler<MyEvent, MyResult>(
 ## See also
 
 - [config](./config.md)
+- [diagnostics](./diagnostics.md) — `runScript()`, exit codes, run reports
 - [environment](./environment.md)
 - [errors](./errors.md)
 - [logging](./logging.md)
 - [Guide: Writing a script](../../guides/writing-a-script.md)
+- [Guide: Troubleshooting](../../guides/troubleshooting.md)
 - [Guide: Lambda handlers](../../guides/lambda-handlers.md)
 - [Architecture overview](../../m3l-common-architecture.md)

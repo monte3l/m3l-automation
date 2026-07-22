@@ -273,8 +273,19 @@ process lifecycle there.
 
 For unhandled faults that escape normal flow, `installProcessGuards()` installs
 a process-global guard layer (`unhandledRejection`, `uncaughtException`,
-`warning`, and `beforeExit`). See the
-[script reference](../reference/core/script.md#process-guards) for details.
+`warning`, and `beforeExit`). **Installing it is your composition root's job**
+— `M3LScript` never installs it for you, and no consumer script gets it by
+default. For a CLI script, call it once at the top of `main.ts`, before
+`script.run(...)`; the guards are observe-only (they report faults to stderr,
+they never exit the process), while the signal layer above is what controls
+shutdown. See the
+[script reference](../reference/core/script.md#process-guards) for the full
+responsibility contract, and the
+[troubleshooting guide](./troubleshooting.md) for how guard output is used in
+diagnosis. The `runScript()` wrapper
+([diagnostics](../reference/core/diagnostics.md#runscript), ADR-0035) will make
+this automatic — guards, top-level catch, exit code, and run report in one
+call.
 
 ## 7. A worked end-to-end example
 

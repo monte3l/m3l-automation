@@ -138,7 +138,7 @@ Available providers: `M3LCommandLineConfigProvider`, `M3LJSONConfigProvider`, `M
 
 #### `logging` — Structured multi-handler logging
 
-**Public surface** (`logging/index.ts`): `M3LLogger`, `M3LLogEvent`, `M3LLogEventCateM3Lry`, `M3LConsoleLoggerHandler`, `M3LFileLoggerHandler`, `M3LJsonLoggerHandler`, `M3LTableFormatter`, `M3LTableOptions`, `M3LTableColumn`, `redactSensitiveLogText`, `redactSensitiveLogValue`.
+**Public surface** (`logging/index.ts`): `M3LLogger`, `M3LLogEvent`, `M3LLogEventCategory`, `M3LConsoleLoggerHandler`, `M3LFileLoggerHandler`, `M3LJsonLoggerHandler`, `M3LTableFormatter`, `M3LTableOptions`, `M3LTableColumn`, `redactSensitiveLogText`, `redactSensitiveLogValue`.
 
 `logging/M3LLogger.ts`: `M3LLogger` manages an ordered array of `M3LLoggerHandler` instances. It exposes typed methods: `text`, `step`, `info`, `success`, `warning`, `error`, `fatal`, `section`, `header`, `newline`, `table`, `simpleTable`, `keyValueTable`.
 
