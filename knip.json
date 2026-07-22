@@ -5,6 +5,7 @@
     "@commitlint/config-conventional",
     "@commitlint/types"
   ],
+  "ignoreBinaries": ["gh"],
   "ignoreIssues": {
     "packages/m3l-common/src/core/environment/index.ts": ["duplicates"]
   },
