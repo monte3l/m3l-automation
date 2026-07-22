@@ -1,0 +1,65 @@
+# Publishes the AI co-authorship commit-stats as shields.io endpoint-badge
+# JSON (ADR-0032 addendum): computed from git trailer history on every push
+# to main and deployed to GitHub Pages as an artifact — no git commit, no
+# README churn, GITHUB_TOKEN only.
+#
+# Output is namespaced under /commit-stats/ (upload path is dist/, the
+# generator writes dist/commit-stats/*.json) so the site root stays free for
+# the future full visibility-hub pages.yml, which must reuse or supersede
+# this workflow rather than stand up a second Pages deploy — GitHub Pages
+# serves one site per repo.
+name: Pages commit-stats
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # first-deploy verification / manual refresh
+
+permissions:
+  contents: read
+
+# GitHub's Pages convention: one deploy group, never cancel a production
+# deploy mid-flight (deliberate deviation from ci.yml's cancel-in-progress).
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Full history: the generator counts Co-Authored-By trailers across
+          # all of git log and totals via rev-list --count HEAD.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      # No pnpm install: the generator uses only node builtins plus two
+      # dependency-free repo .mjs modules, and shells out to git.
+      - name: Generate endpoint badge JSON
+        run: node bin/gen-commit-stats-endpoint.mjs
+
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
