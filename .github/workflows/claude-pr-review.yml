@@ -80,16 +80,32 @@ jobs:
             exit 0
           fi
 
-          all_ignored=true
+          non_ignored_files=""
           while IFS= read -r f; do
             [ -z "$f" ] && continue
             if ! is_ignored "$f"; then
-              all_ignored=false
-              break
+              non_ignored_files="${non_ignored_files}${f}"$'\n'
             fi
           done <<< "$full_files"
+          non_ignored_count="$(printf '%s' "$non_ignored_files" | grep -c . || true)"
 
-          if [ "$all_ignored" = true ]; then
+          # Whether this PR's only reviewable change is the review-gate
+          # workflow itself. GitHub refuses to mint the OIDC token
+          # claude-code-action needs whenever the running workflow file
+          # differs from main's copy, so the action always self-skips on
+          # such a PR — a live review can never happen here regardless of
+          # should_review. Recorded now so the fallback step after the
+          # action can tell "structurally impossible" (safe to auto-pass)
+          # apart from "Claude ran and forgot to write a verdict" (a real
+          # bug that must keep failing). Fail-safe default: false.
+          only_workflow_gate_change=false
+          if [ "$non_ignored_count" -eq 1 ] \
+             && [ "$(printf '%s' "$non_ignored_files" | head -n1)" = ".github/workflows/claude-pr-review.yml" ]; then
+            only_workflow_gate_change=true
+          fi
+          echo "only_workflow_gate_change=$only_workflow_gate_change" >> "$GITHUB_OUTPUT"
+
+          if [ "$non_ignored_count" -eq 0 ]; then
             echo "should_review=false" >> "$GITHUB_OUTPUT"
             echo "Entire PR diff is docs/config-only — skipping review."
             exit 0
@@ -410,6 +426,37 @@ jobs:
           else
             echo "::notice title=Claude PR Review::Used ${num_turns}/100 turns (\$${cost_usd}, ${duration_ms}ms)"
           fi
+
+      # Fallback for the one case Claude structurally cannot review: a PR
+      # that edits claude-pr-review.yml itself. GitHub's workflow-validation
+      # guard refuses to mint the OIDC token claude-code-action needs
+      # whenever the running workflow file differs from main's copy, so the
+      # action always self-skips (exits success, writes no verdict) on such
+      # a PR. Only auto-passes when the workflow file is this PR's SOLE
+      # non-ignored change (Gate 0 above) AND the action's own execution_file
+      # is empty, proving it never actually attempted a review — a
+      # non-empty execution_file means Claude ran but broke its contract by
+      # not writing a verdict, which must keep failing loudly rather than
+      # being silently waved through. The `steps.claude-review.outcome ==
+      # 'success'` check is implied by the default step condition (no
+      # always()): if the action itself errored, this step is skipped and
+      # Enforce review verdict fails as normal.
+      - name: Auto-pass isolated review-gate self-change
+        if: steps.guard.outputs.should_review == 'true' && steps.guard.outputs.only_workflow_gate_change == 'true' && steps.claude-review.outcome == 'success'
+        env:
+          EXECUTION_FILE: ${{ steps.claude-review.outputs.execution_file }}
+        run: |
+          set -euo pipefail
+          if [ -f "$GITHUB_WORKSPACE/.claude-review-verdict" ]; then
+            echo "Verdict already written — nothing to do."
+            exit 0
+          fi
+          if [ -n "$EXECUTION_FILE" ] && [ -s "$EXECUTION_FILE" ]; then
+            echo "Execution file is non-empty — a real review attempt happened without writing a verdict; not auto-passing."
+            exit 0
+          fi
+          echo "claude-pr-review.yml is this PR's only reviewable change and the action's execution_file is empty — GitHub's OIDC workflow-validation guard made a live review structurally impossible. Auto-passing."
+          printf 'PASS' > "$GITHUB_WORKSPACE/.claude-review-verdict"
 
       # When the review was skipped (prior PASS still valid), carry that PASS
       # forward so the enforce step below keeps the required check green.

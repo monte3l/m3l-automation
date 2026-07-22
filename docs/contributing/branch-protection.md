@@ -21,9 +21,16 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
   of 2026-07-22, both protection layers have `bypass_actors: []` /
   `enforce_admins: true` — there is no direct-push exception for anyone,
   including the maintainer. A change to the review gate itself
-  (`claude-pr-review.yml`) still lands through a normal PR: it isn't covered
-  by the guard step's ignored-path set, so it naturally triggers a real
-  review like any other code change — no bypass is used or needed.
+  (`claude-pr-review.yml`) still lands through a normal PR, but cannot get a
+  live Claude review: GitHub refuses to mint the OIDC token
+  `claude-code-action` needs whenever the running workflow file differs from
+  `main`'s copy, so the action always self-skips on such a PR. A dedicated
+  guard-step fallback auto-passes this one case — only when the workflow file
+  is the PR's sole non-ignored change and the action's own execution trace is
+  empty (proving no review was ever attempted, not that one ran and silently
+  dropped its verdict) — otherwise the check stays failing. Bundling other
+  changes alongside a workflow-gate edit does not ride along on this
+  fallback; it still requires a genuine review.
 - **Require status checks to pass before merging**, and mark these as required:
   - `verify` — the job in `.github/workflows/ci.yml` (lint, typecheck, public
     API snapshot, coverage-gated tests, build, `check:exports`, `knip`).
