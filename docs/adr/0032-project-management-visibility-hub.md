@@ -464,3 +464,38 @@ Pages serves one site per repo by default.
    URLs and remove the old write path in a second change, so `main` never
    points at a not-yet-existing JSON URL and nothing lands half-wired.
    Rolling back is just reverting the second change.
+
+## Update (2026-07-22): implementation resolutions and a gh-project token correction
+
+The addendum's endpoint-badge migration shipped (PRs #185/#186), and the hub
+implementation itself is now underway. Three resolutions, recorded here so the
+implementation doesn't silently diverge from the decision record:
+
+- **Correction — `gh project` and `GITHUB_TOKEN`.** Option 1's claim that the
+  `gh project` commands "run from a GitHub Actions job using the repo's
+  `GITHUB_TOKEN`" is wrong: the Actions-provided `GITHUB_TOKEN` carries no
+  Projects (v2) scope and can neither read nor write Projects items —
+  `gh project` needs a token with the `project` scope (classic PAT or GitHub
+  App permission). Under this ADR's own no-new-secrets driver, the two one-way
+  sync scripts therefore run **locally, maintainer-invoked** (`pnpm sync:hub`)
+  against the maintainer's own `gh` CLI auth (one-time
+  `gh auth refresh -s project`), not in CI. The read-only-projection model is
+  unaffected: any staleness is corrected by the next run.
+- **Open question resolved — dashboard shape.** The generator renders the
+  **lightweight index + status-aggregation dashboard**, not a full
+  docs-portal: the structured trackers (`ROADMAP.md`,
+  `plans/IMPLEMENTATION.md`, `implementation-status.md`,
+  `reference/catalog.json`) are lifted into live HTML tables, and every other
+  corpus file (ADRs with parsed status lines, work logs, archived plans,
+  reference pages, READMEs) is indexed with metadata and linked to its GitHub
+  blob URL. Zero new dependencies: a plain Node ESM generator
+  (`bin/gen-project-hub.mjs` + pure builders in `bin/lib/project-hub.mjs`)
+  emitting one self-contained static HTML page.
+- **Open question resolved — custom domain.** Deferred entirely; the site
+  stays at `https://monte3l.github.io/m3l-automation/`. Wiring a domain later
+  is its own small unit (CNAME + DNS + updating the README's badge JSON URLs,
+  which encode the host).
+
+As the addendum predicted, `pages.yml` now supersedes
+`pages-commit-stats.yml`: one build job runs both generators (hub at the site
+root, badges under `/commit-stats/`) and deploys a single `dist/` artifact.
