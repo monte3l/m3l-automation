@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a defect in an implemented submodule
+labels: ["bug"]
+body:
+  - type: input
+    id: submodule
+    attributes:
+      label: Affected submodule
+      description: Which submodule is the bug in? (errors, events, …)
+      placeholder: core/errors
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What went wrong? Be concise.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead? Include stack traces if relevant (redacted).
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      value: |
+        - `@m3l-automation/m3l-common` version:
+        - Node.js version:
+        - OS:
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else that helps narrow it down.
+    validations:
+      required: false

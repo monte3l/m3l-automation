@@ -104,10 +104,17 @@ order and alias behavior.
 
 `installProcessGuards()` is a process-global singleton that captures unhandled
 faults (`unhandledRejection`, `uncaughtException`, `warning`, `beforeExit`).
+It is **not** installed automatically — if you want guard coverage in Lambda,
+call `installProcessGuards()` once at **module scope** (it runs at cold start;
+the singleton makes repeat calls harmless). The guards observe and report
+only; they never alter how the invocation completes.
+
 Because the process is shared across invocations, call
 `setProcessGuardRequestId(requestId)` at the start of each invocation so any
 guard-caught error is attributed to the correct request. Pass the AWS request
-id from the Lambda context.
+id from the Lambda context (note that `createLambdaHandler()` already wires
+this id when it resolves the invocation's correlation id — the explicit call
+below matters when your handler does not go through `createLambdaHandler()`).
 
 ```typescript
 import { Core } from "@m3l-automation/m3l-common";

@@ -78,3 +78,5 @@ surface).
 | 0031 | [Relational and document data-engine access for the consumer fleet](./0031-relational-and-document-data-engine-access.md)                        | Proposed                      |
 | 0032 | [Centralized project-state and roadmap visibility hub](./0032-project-management-visibility-hub.md)                                              | Accepted                      |
 | 0033 | [Typed S3 operations wrapper over the raw SDK client](./0033-aws-s3-operations-wrapper.md)                                                       | Accepted                      |
+| 0034 | [Sonar/Act-Podman re-assessment: OSS complexity/duplication gates, Act/Podman declined](./0034-sonar-act-podman-reassessment.md)                 | Accepted                      |
+| 0035 | [Failure reporting and diagnostics architecture](./0035-failure-reporting-and-diagnostics.md)                                                    | Accepted                      |
