@@ -164,7 +164,10 @@ export function hubMarker(key) {
  */
 export function parseHubMarker(body) {
   if (!body) return null;
-  const match = /<!-- m3l-hub-sync:(.+?) -->/.exec(body);
+  // Anchored to occupy its own line (only leading/trailing whitespace
+  // allowed) so a human issue that merely QUOTES the marker text mid-line
+  // or mid-paragraph is never mistaken for a hub-sync-owned issue.
+  const match = /^\s*<!-- m3l-hub-sync:(.+?) -->\s*$/m.exec(body);
   return match ? match[1] : null;
 }
 

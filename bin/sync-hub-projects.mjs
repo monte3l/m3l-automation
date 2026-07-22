@@ -47,6 +47,13 @@ const IMPLEMENTATION_PATH = "docs/plans/IMPLEMENTATION.md";
 // matching the mapping baked into planProjectSync.
 const DESIRED_STATUS_OPTIONS = ["Pending", "In review", "Done"];
 
+// The --limit passed to `gh issue list` / `gh project item-list`. A result
+// whose length reaches this window means gh silently truncated the page —
+// reading only part of the tracked issues/board items would make the
+// planner think removed rows are gone and re-add/duplicate them, so that
+// case is a hard error, never a silent under-read.
+const LIST_LIMIT = 500;
+
 /**
  * The single injected `gh` execution seam: every runner call goes through
  * this function (or a test double shaped like it) so nothing else in this
@@ -161,6 +168,15 @@ function updateStatusFieldOptions(runGhFn, fieldId) {
   runGhFn(["api", "graphql", "-f", `query=${mutation}`]);
 }
 
+/** Whether a Status field's current options are exactly the desired set. */
+function statusOptionsMatch(optionIdByName) {
+  const currentNames = [...optionIdByName.keys()];
+  return (
+    currentNames.length === DESIRED_STATUS_OPTIONS.length &&
+    DESIRED_STATUS_OPTIONS.every((name) => optionIdByName.has(name))
+  );
+}
+
 /**
  * Ensure the board's Status field carries exactly {@link DESIRED_STATUS_OPTIONS}.
  * Never throws: inspection or mutation failures are reported as a warning
@@ -178,13 +194,7 @@ function ensureStatusOptions(runGhFn, reporter, projectNumber) {
     return;
   }
 
-  const currentNames = [...statusField.optionIdByName.keys()];
-  const matches =
-    currentNames.length === DESIRED_STATUS_OPTIONS.length &&
-    DESIRED_STATUS_OPTIONS.every((name) =>
-      statusField.optionIdByName.has(name),
-    );
-  if (matches) return;
+  if (statusOptionsMatch(statusField.optionIdByName)) return;
 
   try {
     updateStatusFieldOptions(runGhFn, statusField.fieldId);
@@ -199,9 +209,72 @@ function ensureStatusOptions(runGhFn, reporter, projectNumber) {
   }
 }
 
-/** Create (or reuse) the board, then ensure its Status field. Idempotent. */
-function runInit({ runGh: runGhFn, reporter, projects }) {
-  let project = findProjectByTitle(projects);
+// Read-only preview of what --init (without --apply) would do to the
+// Status field of an already-existing board — never mutates.
+function previewStatusOptions(runGhFn, reporter, projectNumber) {
+  let statusField;
+  try {
+    statusField = resolveStatusField(runGhFn, projectNumber);
+  } catch (cause) {
+    reporter.info(
+      `Could not inspect the Status field (${ghErrorMessage(cause)}); would attempt to set its ` +
+        `options to: ${DESIRED_STATUS_OPTIONS.join(", ")}.`,
+    );
+    return;
+  }
+
+  if (statusOptionsMatch(statusField.optionIdByName)) {
+    reporter.info(
+      `Status field options already match: ${DESIRED_STATUS_OPTIONS.join(", ")}.`,
+    );
+    return;
+  }
+
+  const currentNames = [...statusField.optionIdByName.keys()];
+  reporter.info(
+    `Would set Status field options to: ${DESIRED_STATUS_OPTIONS.join(", ")} ` +
+      `(currently: ${currentNames.length > 0 ? currentNames.join(", ") : "none"}).`,
+  );
+}
+
+/**
+ * Create (or reuse) the board, then ensure its Status field. Idempotent.
+ * Without `apply`, only read-only probes run (project list, and — for an
+ * already-existing board — field-list) and the function prints what it
+ * WOULD do; with `apply`, it executes. Never calls `process.exit`; always
+ * returns `{ ok: true }` (this path has no failure branch of its own —
+ * `gh` failures propagate to the caller's try/catch).
+ *
+ * @returns {{ ok: boolean }}
+ */
+function runInit({ runGh: runGhFn, reporter, apply, projects }) {
+  const existingProject = findProjectByTitle(projects);
+
+  if (!apply) {
+    if (existingProject) {
+      reporter.info(
+        `Would reuse existing project "${HUB_PROJECT_TITLE}" (#${existingProject.number}).`,
+      );
+      previewStatusOptions(runGhFn, reporter, existingProject.number);
+    } else {
+      reporter.info(
+        `Would create project board "${HUB_PROJECT_TITLE}" (owner: ${OWNER}).`,
+      );
+      reporter.info(
+        `Would then set its Status field options to: ${DESIRED_STATUS_OPTIONS.join(", ")}.`,
+      );
+    }
+    reporter.succeed("Dry run — pass --apply to execute.");
+    reporter.finish({
+      applied: false,
+      project: existingProject
+        ? { number: existingProject.number, title: existingProject.title }
+        : null,
+    });
+    return { ok: true };
+  }
+
+  let project = existingProject;
   if (project) {
     reporter.info(
       `Project "${HUB_PROJECT_TITLE}" already exists (#${project.number}); reusing it.`,
@@ -230,14 +303,19 @@ function runInit({ runGh: runGhFn, reporter, projects }) {
     `Project board ready: "${HUB_PROJECT_TITLE}" (#${project.number}).`,
   );
   reporter.finish({
+    applied: true,
     project: { number: project.number, title: HUB_PROJECT_TITLE },
   });
+  return { ok: true };
 }
 
 // Every hub-sync-managed issue carries the hub-sync label (bin/sync-hub-issues.mjs
 // is the only writer that ever applies it, on create), so filtering by label
 // here is equivalent to "every marker-bearing issue."
-function loadHubIssues(runGhFn) {
+//
+// Returns `null` (after reporting the error) when the response reached the
+// --limit window — see the LIST_LIMIT comment.
+function loadHubIssues(runGhFn, reporter) {
   const raw = runGhFn([
     "issue",
     "list",
@@ -250,10 +328,18 @@ function loadHubIssues(runGhFn) {
     "--json",
     "number,body,state",
     "--limit",
-    "500",
+    String(LIST_LIMIT),
   ]);
   const trimmed = raw.trim();
-  return trimmed === "" ? [] : JSON.parse(trimmed);
+  const issues = trimmed === "" ? [] : JSON.parse(trimmed);
+  if (issues.length >= LIST_LIMIT) {
+    reporter.error(
+      `gh issue list returned ${issues.length} issue(s), at or beyond the --limit ${LIST_LIMIT} window — ` +
+        `the sync would under-read and could duplicate board items; raise the limit.`,
+    );
+    return null;
+  }
+  return issues;
 }
 
 // Join a fetched hub-sync issue to the current item it tracks (by marker
@@ -272,7 +358,9 @@ function toTrackedIssue(issue, itemByKey) {
   };
 }
 
-function loadProjectItems(runGhFn, projectNumber) {
+// Returns `null` (after reporting the error) when the response reached the
+// --limit window — see the LIST_LIMIT comment.
+function loadProjectItems(runGhFn, reporter, projectNumber) {
   const raw = runGhFn([
     "project",
     "item-list",
@@ -282,10 +370,17 @@ function loadProjectItems(runGhFn, projectNumber) {
     "--format",
     "json",
     "--limit",
-    "500",
+    String(LIST_LIMIT),
   ]);
   const parsed = JSON.parse(raw);
   const items = Array.isArray(parsed) ? parsed : (parsed.items ?? []);
+  if (items.length >= LIST_LIMIT) {
+    reporter.error(
+      `gh project item-list returned ${items.length} item(s), at or beyond the --limit ${LIST_LIMIT} window — ` +
+        `the sync would under-read and could duplicate board items; raise the limit.`,
+    );
+    return null;
+  }
   return items
     .map((item) => ({
       itemId: item.id,
@@ -421,7 +516,13 @@ function applyProjectPlan({ runGh: runGhFn, reporter, projectNumber, plan }) {
  * The full read -> plan -> (print | apply) pipeline, plus the one-time
  * `--init` path. Every I/O dependency is injected so the orchestration
  * itself stays testable; the main-guard below wires the real
- * `gh`/filesystem implementations.
+ * `gh`/filesystem implementations. NEVER calls `process.exit` itself —
+ * every failure path (the `gh project list` preflight, extraction errors, a
+ * missing board, a truncated result window, any other `gh` call throwing)
+ * is caught here and turned into a reported error plus a returned
+ * `{ ok: false }`, so the function is always safely callable (and its
+ * outcome assertable) without killing the calling process. Only the
+ * main-guard below turns a `!ok` outcome into `process.exit(1)`.
  *
  * @param {{
  *   runGh: typeof runGh,
@@ -430,18 +531,20 @@ function applyProjectPlan({ runGh: runGhFn, reporter, projectNumber, plan }) {
  *   init: boolean,
  *   readDoc: typeof readDoc,
  * }} deps
+ * @returns {{ ok: boolean }}
  * @example
  * ```js
  * import { createReporter } from "./lib/report.mjs";
  * import { runProjectSync } from "./sync-hub-projects.mjs";
  *
- * runProjectSync({
+ * const outcome = runProjectSync({
  *   runGh: (args) => "",
  *   reporter: createReporter(false),
  *   apply: false,
  *   init: false,
  *   readDoc: (path) => "",
  * });
+ * outcome.ok; // false — an empty runGh stub fails the `gh project list` preflight
  * ```
  */
 export function runProjectSync({
@@ -451,50 +554,88 @@ export function runProjectSync({
   init,
   readDoc: readDocFn,
 }) {
-  const projects = probeProjects(runGhFn);
+  try {
+    const projects = probeProjects(runGhFn);
 
-  if (init) {
-    runInit({ runGh: runGhFn, reporter, projects });
-    return;
-  }
+    if (init) {
+      return runInit({ runGh: runGhFn, reporter, apply, projects });
+    }
 
-  const project = findProjectByTitle(projects);
-  if (!project) {
-    reporter.error(
-      `Project board "${HUB_PROJECT_TITLE}" not found — run with --init to create it.`,
+    const project = findProjectByTitle(projects);
+    if (!project) {
+      reporter.error(
+        `Project board "${HUB_PROJECT_TITLE}" not found — run with --init to create it.`,
+      );
+      reporter.finish();
+      return { ok: false };
+    }
+
+    const roadmap = extractRoadmap(readDocFn(ROADMAP_PATH));
+    const implementation = extractImplementation(
+      readDocFn(IMPLEMENTATION_PATH),
     );
-    reporter.finish();
-    process.exit(1);
-  }
+    const extractionErrors = [...roadmap.errors, ...implementation.errors];
+    if (extractionErrors.length > 0) {
+      for (const message of extractionErrors) reporter.error(message);
+      reporter.finish();
+      return { ok: false };
+    }
 
-  const roadmap = extractRoadmap(readDocFn(ROADMAP_PATH));
-  const implementation = extractImplementation(readDocFn(IMPLEMENTATION_PATH));
-  const extractionErrors = [...roadmap.errors, ...implementation.errors];
-  if (extractionErrors.length > 0) {
-    for (const message of extractionErrors) reporter.error(message);
-    reporter.finish();
-    process.exit(1);
-  }
+    const items = actionableItems(roadmap, implementation);
+    const itemByKey = new Map(items.map((item) => [item.key, item]));
 
-  const items = actionableItems(roadmap, implementation);
-  const itemByKey = new Map(items.map((item) => [item.key, item]));
+    const hubIssues = loadHubIssues(runGhFn, reporter);
+    if (hubIssues === null) {
+      reporter.finish();
+      return { ok: false };
+    }
+    const trackedIssues = hubIssues
+      .map((issue) => toTrackedIssue(issue, itemByKey))
+      .filter((issue) => issue !== null);
 
-  const trackedIssues = loadHubIssues(runGhFn)
-    .map((issue) => toTrackedIssue(issue, itemByKey))
-    .filter((issue) => issue !== null);
-  const existingProjectItems = loadProjectItems(runGhFn, project.number);
+    const existingProjectItems = loadProjectItems(
+      runGhFn,
+      reporter,
+      project.number,
+    );
+    if (existingProjectItems === null) {
+      reporter.finish();
+      return { ok: false };
+    }
 
-  const plan = planProjectSync(trackedIssues, existingProjectItems);
+    const plan = planProjectSync(trackedIssues, existingProjectItems);
 
-  printPlan(reporter, plan);
+    printPlan(reporter, plan);
 
-  if (!apply) {
+    if (!apply) {
+      reporter.succeed(
+        `Dry run — pass --apply to execute. Would add ${plan.add.length}, ` +
+          `update status on ${plan.setStatus.length}, archive ${plan.archive.length}.`,
+      );
+      reporter.finish({
+        applied: false,
+        project: { number: project.number, title: project.title },
+        board: {
+          add: plan.add.length,
+          setStatus: plan.setStatus.length,
+          archive: plan.archive.length,
+        },
+      });
+      return { ok: true };
+    }
+
+    applyProjectPlan({
+      runGh: runGhFn,
+      reporter,
+      projectNumber: project.number,
+      plan,
+    });
+
     reporter.succeed(
-      `Dry run — pass --apply to execute. Would add ${plan.add.length}, ` +
-        `update status on ${plan.setStatus.length}, archive ${plan.archive.length}.`,
+      `Applied: added ${plan.add.length}, updated status on ${plan.setStatus.length}, archived ${plan.archive.length}.`,
     );
     reporter.finish({
-      applied: false,
+      applied: true,
       project: { number: project.number, title: project.title },
       board: {
         add: plan.add.length,
@@ -502,28 +643,14 @@ export function runProjectSync({
         archive: plan.archive.length,
       },
     });
-    return;
+    return { ok: true };
+  } catch (cause) {
+    reporter.error(
+      `Project sync failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+    reporter.finish();
+    return { ok: false };
   }
-
-  applyProjectPlan({
-    runGh: runGhFn,
-    reporter,
-    projectNumber: project.number,
-    plan,
-  });
-
-  reporter.succeed(
-    `Applied: added ${plan.add.length}, updated status on ${plan.setStatus.length}, archived ${plan.archive.length}.`,
-  );
-  reporter.finish({
-    applied: true,
-    project: { number: project.number, title: project.title },
-    board: {
-      add: plan.add.length,
-      setStatus: plan.setStatus.length,
-      archive: plan.archive.length,
-    },
-  });
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -532,13 +659,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const init = argv.includes("--init");
   const reporter = createReporter(json);
 
-  try {
-    runProjectSync({ runGh, reporter, apply, init, readDoc });
-  } catch (cause) {
-    reporter.error(
-      `Project sync failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-    );
-    reporter.finish();
-    process.exit(1);
-  }
+  const outcome = runProjectSync({ runGh, reporter, apply, init, readDoc });
+  if (!outcome.ok) process.exit(1);
 }

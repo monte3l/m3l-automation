@@ -36,6 +36,11 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = "monte3l/m3l-automation";
 const ROADMAP_PATH = "docs/ROADMAP.md";
 const IMPLEMENTATION_PATH = "docs/plans/IMPLEMENTATION.md";
+// The --limit passed to `gh issue list`. A result whose length reaches this
+// window means gh silently truncated the page — reading only part of the
+// tracked issues would make the planner think removed issues are gone and
+// re-create them, so that case is a hard error, never a silent under-read.
+const LIST_LIMIT = 500;
 
 // The hub-sync label plus the four priority labels, bootstrapped (create or
 // `--force` update) on every --apply run before any issue/milestone action.
@@ -112,15 +117,18 @@ function parseJsonArray(raw, context) {
   return parsed;
 }
 
-/** `gh auth status` preflight — throws with a clear remedy on failure. */
+/**
+ * `gh auth status` preflight. Returns `null` on success, or a clear
+ * human-readable remedy message on failure — never throws, so the caller
+ * can turn a failed preflight into a reported error and a returned outcome
+ * rather than an uncaught exception.
+ */
 function checkGhAuth(runGhFn) {
   try {
     runGhFn(["auth", "status"]);
+    return null;
   } catch (cause) {
-    throw new Error(
-      `gh auth status failed — run \`gh auth login\` first: ${ghErrorMessage(cause)}`,
-      { cause },
-    );
+    return `gh auth status failed — run \`gh auth login\` first: ${ghErrorMessage(cause)}`;
   }
 }
 
@@ -136,7 +144,10 @@ function loadExistingMilestoneTitles(runGhFn) {
 // close-detection needs to notice a row that was removed from the trackers.
 // A markerless issue that happens to carry the label is still never touched
 // (planIssueSync's own safety property: match is by marker only).
-function loadExistingIssues(runGhFn) {
+//
+// Returns `null` (after reporting the error) when the response reached the
+// --limit window — see the LIST_LIMIT comment.
+function loadExistingIssues(runGhFn, reporter) {
   const raw = runGhFn([
     "issue",
     "list",
@@ -149,9 +160,17 @@ function loadExistingIssues(runGhFn) {
     "--json",
     "number,title,body,state,labels",
     "--limit",
-    "500",
+    String(LIST_LIMIT),
   ]);
-  return parseJsonArray(raw, "issue list").map((issue) => ({
+  const issues = parseJsonArray(raw, "issue list");
+  if (issues.length >= LIST_LIMIT) {
+    reporter.error(
+      `gh issue list returned ${issues.length} issue(s), at or beyond the --limit ${LIST_LIMIT} window — ` +
+        `the sync would under-read and could duplicate issues; raise the limit.`,
+    );
+    return null;
+  }
+  return issues.map((issue) => ({
     number: issue.number,
     title: issue.title,
     body: issue.body ?? "",
@@ -280,7 +299,13 @@ function printPlan(reporter, milestonePlan, issuePlan) {
 /**
  * The full read -> plan -> (print | apply) pipeline. Every I/O dependency is
  * injected so the orchestration itself stays testable; the main-guard below
- * wires the real `gh`/filesystem implementations.
+ * wires the real `gh`/filesystem implementations. NEVER calls
+ * `process.exit` itself — every failure path (auth preflight, extraction
+ * errors, a `gh` call throwing, a truncated result window) is caught here
+ * and turned into a reported error plus a returned `{ ok: false }`, so the
+ * function is always safely callable (and its outcome assertable) without
+ * killing the calling process. Only the main-guard below turns a `!ok`
+ * outcome into `process.exit(1)`.
  *
  * @param {{
  *   runGh: typeof runGh,
@@ -288,17 +313,19 @@ function printPlan(reporter, milestonePlan, issuePlan) {
  *   apply: boolean,
  *   readDoc: typeof readDoc,
  * }} deps
+ * @returns {{ ok: boolean }}
  * @example
  * ```js
  * import { createReporter } from "./lib/report.mjs";
  * import { runIssueSync } from "./sync-hub-issues.mjs";
  *
- * runIssueSync({
+ * const outcome = runIssueSync({
  *   runGh: (args) => "",
  *   reporter: createReporter(false),
  *   apply: false,
  *   readDoc: (path) => "",
  * });
+ * outcome.ok; // false — an empty runGh stub fails the auth preflight
  * ```
  */
 export function runIssueSync({
@@ -307,39 +334,100 @@ export function runIssueSync({
   apply,
   readDoc: readDocFn,
 }) {
-  checkGhAuth(runGhFn);
+  try {
+    const authError = checkGhAuth(runGhFn);
+    if (authError !== null) {
+      reporter.error(authError);
+      reporter.finish();
+      return { ok: false };
+    }
 
-  const roadmap = extractRoadmap(readDocFn(ROADMAP_PATH));
-  const implementation = extractImplementation(readDocFn(IMPLEMENTATION_PATH));
-  const extractionErrors = [...roadmap.errors, ...implementation.errors];
-  if (extractionErrors.length > 0) {
-    for (const message of extractionErrors) reporter.error(message);
-    reporter.finish();
-    process.exit(1);
-  }
+    const roadmap = extractRoadmap(readDocFn(ROADMAP_PATH));
+    const implementation = extractImplementation(
+      readDocFn(IMPLEMENTATION_PATH),
+    );
+    const extractionErrors = [...roadmap.errors, ...implementation.errors];
+    if (extractionErrors.length > 0) {
+      for (const message of extractionErrors) reporter.error(message);
+      reporter.finish();
+      return { ok: false };
+    }
 
-  const items = actionableItems(roadmap, implementation);
+    const items = actionableItems(roadmap, implementation);
 
-  const existingMilestoneTitles = loadExistingMilestoneTitles(runGhFn);
-  const existingIssues = loadExistingIssues(runGhFn);
-  const existingIssuesByNumber = new Map(
-    existingIssues.map((issue) => [issue.number, issue]),
-  );
+    const existingMilestoneTitles = loadExistingMilestoneTitles(runGhFn);
+    const existingIssues = loadExistingIssues(runGhFn, reporter);
+    if (existingIssues === null) {
+      reporter.finish();
+      return { ok: false };
+    }
+    const existingIssuesByNumber = new Map(
+      existingIssues.map((issue) => [issue.number, issue]),
+    );
 
-  const milestonePlan = planMilestones(items, existingMilestoneTitles);
-  const issuePlan = planIssueSync(items, existingIssues);
+    const milestonePlan = planMilestones(items, existingMilestoneTitles);
+    const issuePlan = planIssueSync(items, existingIssues);
 
-  printPlan(reporter, milestonePlan, issuePlan);
+    printPlan(reporter, milestonePlan, issuePlan);
 
-  if (!apply) {
+    if (!apply) {
+      reporter.succeed(
+        `Dry run — pass --apply to execute. Would create ${milestonePlan.create.length} milestone(s); ` +
+          `${issuePlan.create.length} issue(s) to create, ${issuePlan.update.length} to update, ` +
+          `${issuePlan.close.length} to close, ${issuePlan.reopen.length} to reopen, ` +
+          `${issuePlan.untouched.length} untouched.`,
+      );
+      reporter.finish({
+        applied: false,
+        milestones: { create: milestonePlan.create.length },
+        issues: {
+          create: issuePlan.create.length,
+          update: issuePlan.update.length,
+          close: issuePlan.close.length,
+          reopen: issuePlan.reopen.length,
+          untouched: issuePlan.untouched.length,
+        },
+      });
+      return { ok: true };
+    }
+
+    bootstrapLabels(runGhFn);
+
+    for (const title of milestonePlan.create) {
+      createMilestone(runGhFn, title);
+      reporter.change("created", `milestone: ${title}`);
+    }
+
+    for (const { key, payload } of issuePlan.create) {
+      createIssue(runGhFn, payload);
+      reporter.change("created", `issue [${key}] ${payload.title}`);
+    }
+
+    for (const { number, key, payload } of issuePlan.update) {
+      editIssue(runGhFn, number, payload, existingIssuesByNumber.get(number));
+      reporter.change("updated", `issue #${number} [${key}]`);
+    }
+
+    for (const { number, key, comment } of issuePlan.close) {
+      closeIssue(runGhFn, number, comment);
+      reporter.change(
+        "removed",
+        `issue #${number} [${key}] closed (${comment})`,
+      );
+    }
+
+    for (const { number, key, payload } of issuePlan.reopen) {
+      reopenIssue(runGhFn, number);
+      editIssue(runGhFn, number, payload, existingIssuesByNumber.get(number));
+      reporter.change("updated", `issue #${number} [${key}] reopened`);
+    }
+
     reporter.succeed(
-      `Dry run — pass --apply to execute. Would create ${milestonePlan.create.length} milestone(s); ` +
-        `${issuePlan.create.length} issue(s) to create, ${issuePlan.update.length} to update, ` +
-        `${issuePlan.close.length} to close, ${issuePlan.reopen.length} to reopen, ` +
-        `${issuePlan.untouched.length} untouched.`,
+      `Applied: ${milestonePlan.create.length} milestone(s) created; ${issuePlan.create.length} issue(s) created, ` +
+        `${issuePlan.update.length} updated, ${issuePlan.close.length} closed, ${issuePlan.reopen.length} reopened.`,
     );
     reporter.finish({
-      applied: false,
+      applied: true,
       milestones: { create: milestonePlan.create.length },
       issues: {
         create: issuePlan.create.length,
@@ -349,52 +437,14 @@ export function runIssueSync({
         untouched: issuePlan.untouched.length,
       },
     });
-    return;
+    return { ok: true };
+  } catch (cause) {
+    reporter.error(
+      `Issue sync failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+    reporter.finish();
+    return { ok: false };
   }
-
-  bootstrapLabels(runGhFn);
-
-  for (const title of milestonePlan.create) {
-    createMilestone(runGhFn, title);
-    reporter.change("created", `milestone: ${title}`);
-  }
-
-  for (const { key, payload } of issuePlan.create) {
-    createIssue(runGhFn, payload);
-    reporter.change("created", `issue [${key}] ${payload.title}`);
-  }
-
-  for (const { number, key, payload } of issuePlan.update) {
-    editIssue(runGhFn, number, payload, existingIssuesByNumber.get(number));
-    reporter.change("updated", `issue #${number} [${key}]`);
-  }
-
-  for (const { number, key, comment } of issuePlan.close) {
-    closeIssue(runGhFn, number, comment);
-    reporter.change("removed", `issue #${number} [${key}] closed (${comment})`);
-  }
-
-  for (const { number, key, payload } of issuePlan.reopen) {
-    reopenIssue(runGhFn, number);
-    editIssue(runGhFn, number, payload, existingIssuesByNumber.get(number));
-    reporter.change("updated", `issue #${number} [${key}] reopened`);
-  }
-
-  reporter.succeed(
-    `Applied: ${milestonePlan.create.length} milestone(s) created; ${issuePlan.create.length} issue(s) created, ` +
-      `${issuePlan.update.length} updated, ${issuePlan.close.length} closed, ${issuePlan.reopen.length} reopened.`,
-  );
-  reporter.finish({
-    applied: true,
-    milestones: { create: milestonePlan.create.length },
-    issues: {
-      create: issuePlan.create.length,
-      update: issuePlan.update.length,
-      close: issuePlan.close.length,
-      reopen: issuePlan.reopen.length,
-      untouched: issuePlan.untouched.length,
-    },
-  });
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -402,13 +452,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const apply = argv.includes("--apply");
   const reporter = createReporter(json);
 
-  try {
-    runIssueSync({ runGh, reporter, apply, readDoc });
-  } catch (cause) {
-    reporter.error(
-      `Issue sync failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-    );
-    reporter.finish();
-    process.exit(1);
-  }
+  const outcome = runIssueSync({ runGh, reporter, apply, readDoc });
+  if (!outcome.ok) process.exit(1);
 }

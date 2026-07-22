@@ -244,6 +244,12 @@ describe("parseHubMarker", () => {
   test("returns null for an undefined body", () => {
     expect(parseHubMarker(undefined)).toBeNull();
   });
+
+  test("returns null when the marker text is only quoted mid-line (regex is line-anchored)", () => {
+    const body =
+      "the text `<!-- m3l-hub-sync:impl:F7 -->` broke the earlier un-anchored regex";
+    expect(parseHubMarker(body)).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
