@@ -25,6 +25,21 @@
 > authoritative backstop, and closing it is lower-value than the risk it
 > covers. Revisit if a `Bash`-mediated bypass of one of these guards is ever
 > observed in practice.
+>
+> **Update (2026-07-22).** A Scorecard `BranchProtectionID` alert
+> ([ADR-0015](./0015-code-scanning-tooling-evaluation.md)) surfaced that GitHub
+> branch protection on `main` — documented above and in `branch-protection.md`
+> as the authoritative, unbypassable layer — had silently drifted to disabled
+> (`GET .../branches/main/protection` returned 404). Classic protection was
+> restored to the originally documented settings, and a GitHub **ruleset**
+> (`main-dual-layer-protection`) was added as a second, independently
+> configured enforcement path layering the same rules (no bypass, signed
+> commits, force-push/deletion blocked, the same five required status checks)
+> on top. GitHub enforces whichever of the two is more restrictive when both
+> target a ref, and neither can loosen what the other enforces — so if either
+> layer is ever again disabled or misconfigured, the other still blocks.
+> Human-approval / CODEOWNERS gating was deliberately left out of both layers
+> in this pass; see `branch-protection.md` for current detail.
 
 ## Context and problem statement
 

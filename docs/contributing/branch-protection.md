@@ -3,8 +3,13 @@
 The automated gates in this repo (CI checks, the Claude PR review verdict) only
 become _blocking_ once `main` is protected to require them. Workflow files
 cannot configure branch protection themselves — it is a repository setting. This
-page records the configuration. **The rule described below has been applied** via
-`gh api` as part of ADR-0011.
+page records the configuration. **The rule described below is applied** via
+`gh api`, restored and re-verified on 2026-07-22 after a Scorecard
+`BranchProtectionID` alert found it had silently drifted to disabled (see the
+2026-07-22 update in [ADR-0016](../adr/0016-signed-commits-and-decision-gate.md)).
+A second, independent layer — a GitHub ruleset — now enforces the same rules
+on top; see [Ruleset (defense-in-depth layer)](#ruleset-defense-in-depth-layer)
+below.
 
 ## Required configuration for `main`
 
@@ -12,10 +17,20 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
 
 - **Require a pull request before merging.** Direct pushes to `main` are
   disallowed; everything lands through a PR. This is what makes "the agent that
-  writes code is never the one that reviews it" structural (rules 01/04).
-  Exception: changes to the review gate itself (`claude-pr-review.yml`) may
-  be landed directly by the maintainer, since routing a gate change through the
-  gate it modifies creates a circular dependency.
+  writes code is never the one that reviews it" structural (rules 01/04). As
+  of 2026-07-22, both protection layers have `bypass_actors: []` /
+  `enforce_admins: true` — there is no direct-push exception for anyone,
+  including the maintainer. A change to the review gate itself
+  (`claude-pr-review.yml`) still lands through a normal PR, but cannot get a
+  live Claude review: GitHub refuses to mint the OIDC token
+  `claude-code-action` needs whenever the running workflow file differs from
+  `main`'s copy, so the action always self-skips on such a PR. A dedicated
+  guard-step fallback auto-passes this one case — only when the workflow file
+  is the PR's sole non-ignored change and the action's own execution trace is
+  empty (proving no review was ever attempted, not that one ran and silently
+  dropped its verdict) — otherwise the check stays failing. Bundling other
+  changes alongside a workflow-gate edit does not ride along on this
+  fallback; it still requires a genuine review.
 - **Require status checks to pass before merging**, and mark these as required:
   - `verify` — the job in `.github/workflows/ci.yml` (lint, typecheck, public
     API snapshot, coverage-gated tests, build, `check:exports`, `knip`).
@@ -28,11 +43,15 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     `ready_for_review` and on every subsequent push to a ready PR. The workflow
     pre-computes the PR diff (`.claude-pr-diff.patch`) and hands it to the
     reviewer, so it reviews the supplied patch instead of spending turns fetching
-    it — a typical review uses only a few of those turns. As an
-    optimization, a push is **skipped** (the prior PASS is carried forward so
-    the check stays green) when the latest verdict was PASS and only
-    `paths-ignore` files (docs/config) changed since the reviewed commit,
-    tracked via a `claude-review-sha` marker in the sticky comment; any
+    it — a typical review uses only a few of those turns. The job itself runs
+    unconditionally on every non-draft PR (no trigger-level path filter) so the
+    required `review` check always reports; a guard step decides whether an
+    actual Claude review is needed. It's **skipped** (the verdict is written as
+    `PASS` directly, or carried forward from a prior `PASS`) in two cases: the
+    PR's entire diff is docs/config-only per the guard step's `is_ignored`
+    predicate (no library code to review at all), or the latest verdict was
+    `PASS` and only `is_ignored`-matching files changed since the reviewed
+    commit, tracked via a `claude-review-sha` marker in the sticky comment; any
     reviewable change re-triggers a full review. This does not weaken the
     fail-closed gate. The verdict-file mechanism and fail-closed behavior are
     unchanged. A separate, non-blocking step logs run metrics (turns used
@@ -76,16 +95,40 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
 Optionally, to add a human approval on top of the automated review:
 
 - **Require approvals** (at least 1) and **Require review from Code Owners**.
-  This needs a `.github/CODEOWNERS` file pointing at a real team/user, e.g.:
+  `.github/CODEOWNERS` (`* @enri3l`) now exists with a real handle, so this is
+  available whenever it's wanted — but as of 2026-07-22 it is deliberately
+  **not** enabled as a merge gate on either protection layer (see the
+  ruleset section below), to avoid making @giulmonte's review turnaround a
+  hard bottleneck for the sole active maintainer. Revisit separately if that
+  changes.
 
-  ```text
-  # .github/CODEOWNERS — replace the handle with your actual reviewer team.
-  *                       @m3l-automation/maintainers
-  packages/m3l-common/    @m3l-automation/maintainers
-  ```
+## Ruleset (defense-in-depth layer)
 
-  CODEOWNERS is intentionally not committed yet because it requires a real
-  GitHub team/user handle; add it once the reviewing team exists.
+Alongside classic branch protection above, `main` is also covered by a GitHub
+**repository ruleset** named `main-dual-layer-protection`
+(`enforcement: active`, `bypass_actors: []`), created 2026-07-22 — see the
+2026-07-22 update in
+[ADR-0016](../adr/0016-signed-commits-and-decision-gate.md) for why. It
+enforces, independently of the classic rule above:
+
+- `deletion` — blocks deleting `main`.
+- `non_fast_forward` — blocks force-pushes.
+- `required_signatures` — mirrors the classic "Require signed commits" rule.
+- `pull_request` — requires a PR (no approval count / CODEOWNERS gate, matching
+  the scoping decision above).
+- `required_status_checks` — the same five contexts as classic protection:
+  `verify`, `review`, `Analyze (javascript-typescript)`, `Analyze (actions)`,
+  `Dependency Review`.
+
+**This is intentionally overlapping, not a replacement.** GitHub enforces
+whichever of classic protection and an applicable ruleset is more restrictive
+for a given ref; neither layer can loosen what the other enforces. The
+ruleset exists because classic protection on `main` was found to have
+silently drifted to fully disabled with no error or notification — a second,
+independently configured layer means one mechanism being disabled or
+misconfigured again doesn't leave `main` unprotected. Manage both when
+changing policy: a rule added to only one layer is not authoritative on its
+own.
 
 ## Why the verdict file, not just a comment
 
