@@ -578,7 +578,7 @@ if (!json) {
     );
   }
   console.log(
-    "\nCommit-stats badges are main-only (not part of this pass) — see the skill's step 8 note.",
+    "\nCommit-stats badges are live CI-published endpoint badges (not part of this pass) — see the skill's step 8 note.",
   );
 }
 

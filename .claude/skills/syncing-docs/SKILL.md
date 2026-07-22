@@ -214,7 +214,8 @@ Output after all steps complete:
 - Reference index:       ✓ (gen:index + check:index) / ✗
 - Markdown lint:         ✓ / ✗
 
-Commit-stats badges are main-only (not part of this pass) — see step 8's note.
+Commit-stats badges are live CI-published endpoint badges (not part of this
+pass) — see step 8's note.
 ```
 
 Replace ✓ with ✗ and include the tool's error output for any failed step.
