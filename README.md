@@ -17,10 +17,10 @@
 
 <p align="center">
 <!-- BEGIN COMMIT-STATS-BADGES -->
-<a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/AI%20co--authored-480%20of%20720%20commits-66D9EF?style=flat-square&labelColor=272822" alt="AI co-authored: 480 of 720 commits"></a>
-<a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Fable%205-26%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Fable 5: 26 commits"></a>
+<a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/AI%20co--authored-484%20of%20724%20commits-66D9EF?style=flat-square&labelColor=272822" alt="AI co-authored: 484 of 724 commits"></a>
+<a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Fable%205-29%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Fable 5: 29 commits"></a>
 <a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Opus%204.8-287%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Opus 4.8: 287 commits"></a>
-<a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Sonnet%205-61%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Sonnet 5: 61 commits"></a>
+<a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Sonnet%205-62%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Sonnet 5: 62 commits"></a>
 <a href="#co-developed-with-claude"><img src="https://img.shields.io/badge/Claude%20Sonnet%204.6-106%20commits-A6E22E?style=flat-square&labelColor=272822" alt="Claude Sonnet 4.6: 106 commits"></a>
 <!-- END COMMIT-STATS-BADGES -->
 </p>
