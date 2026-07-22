@@ -108,9 +108,16 @@ flips to green — but the rest of the discipline below is identical.)
    (recurred independently across 3 test files in one session; see
    `docs/logs/2026-07-13-dynamo-crud.md`, divergence 2). Name tests by behavior.
 5. Parameterize with `test.each` when the same logic is exercised over many inputs.
-6. Run `pnpm test` (and `pnpm typecheck`). In tests-first mode, confirm the
-   expected red; in backfill mode, iterate to green. Never mute or retry-mask a
-   flaky test — diagnose it.
+6. Run `pnpm test`, then — as a **separate, mandatory gate** — `pnpm typecheck`.
+   Vitest transforms without type-checking, so a suite that fails RED for the
+   right reason (or goes green in backfill) can still hide real `tsc` errors
+   inside the test file itself; those surfaced only at later gates twice
+   (`docs/logs/2026-07-03-core-importers.md`,
+   `docs/logs/2026-07-18-eventbridge-schedules.md` § divergence 1). In RED, the
+   **only** acceptable typecheck errors are the not-yet-existing module's own
+   missing symbols — any other diagnostic is a test-file defect to fix now, not
+   at GREEN. In tests-first mode, confirm the expected red; in backfill mode,
+   iterate to green. Never mute or retry-mask a flaky test — diagnose it.
 7. Run `pnpm exec eslint <your test file>` to iterate quickly. Before handing
    back, run **`pnpm lint` (workspace root, no `-C` flag)** and clear every
    finding in the test file itself — this matches the hub gate exactly and

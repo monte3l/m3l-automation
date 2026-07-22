@@ -123,6 +123,7 @@ to surface.
   utility exists and is exported" ≠ "the feature is wired." Run it once; the
   preset gap proves a loader can ship fully documented yet be unreachable from
   the surface that's supposed to use it.
+  _(promoted → .claude/skills/implementing-scripts/SKILL.md, .claude/skills/implementing-submodules/SKILL.md)_
 - **First-consumer smoke runs are the real acceptance.** The mocked step tests
   were all green, but only the live CLI run confirmed extraction + filter + sort
   - CSV column order + skip-counting + correlationId compose correctly.

@@ -76,6 +76,11 @@ throw "a string";
 
 ### Test-tooling gotchas
 
+- **Runtime-green ≠ typecheck-green.** Vitest transforms without type-checking;
+  a test file that passes (or fails RED for the right reason) can still fail
+  `tsc -b`. Run `pnpm typecheck` as its own gate on every test file you touch —
+  in RED, the only expected diagnostics are the not-yet-existing module's
+  missing symbols; anything else is a test-file defect to fix now.
 - **eslint runs in-loop** (`post-edit-verify`: prettier → eslint → typecheck →
   vitest). Resolve eslint findings as you write — don't defer them to a later
   `pnpm lint` pass; that defeats the in-loop signal.

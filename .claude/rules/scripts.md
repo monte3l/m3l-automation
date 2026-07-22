@@ -59,7 +59,10 @@ paths:
 
 - **Consume the library via `workspace:*`**
   (`"@m3l-automation/m3l-common": "workspace:*"`), not a published version. knip
-  fails an unused dependency, so the script must actually exercise the library.
+  fails an unused dependency **or a consumer-less export** — re-run `pnpm knip`
+  after any fix/remediation round; its static-reachability check is not covered
+  by typecheck/lint/test/build, so the script must actually exercise the library
+  and every export must have a consumer.
 - **Construct `Core.M3LScript` once with `M3LScriptOptions`; never subclass it.**
   Run with `script.run(async (ctx) => { ... })`.
 - **Lifecycle hooks run in fixed order:** `onBeforeInit` → `onAfterInit` →

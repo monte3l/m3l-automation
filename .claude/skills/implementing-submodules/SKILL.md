@@ -205,6 +205,16 @@ ADR-0013 (its durable home), not a per-plan caveat.
    **Must-fix** items back to `code-implementer`, and re-run tests/review
    until clean.
 
+   **Re-review every substantive fix round with a bounded confirmation pass.**
+   A fix round is new writer code with no reviewer between it and the commit —
+   post-review fix batches introduced fresh Must-fix defects in at least four
+   pipelines (`docs/logs/2026-07-02-core-text.md` divergence 10,
+   `2026-07-03-core-script.md` divergence 4, `2026-07-03-core-importers.md`,
+   and the `2026-07-13-dynamo-crud.md` two-round loop). After the fixes land,
+   dispatch a **focused confirmation re-review scoped to the changed files
+   only** — typically just the reviewer(s) whose findings drove the fixes —
+   not a fresh full fan-out, and not hub self-verification alone.
+
    **Size this dispatch too, the same as Phases 2/3 above.** Give each
    reviewer a tight per-spoke file list rather than the whole diff plus
    "explore the repo" latitude — an unbounded review scope stalled spokes for
@@ -238,6 +248,15 @@ ADR-0013 (its durable home), not a per-plan caveat.
    AND the provenance sidecar in the _same_ change set** — otherwise
    spec-conformance reads it as undocumented drift and provenance has no heading
    to map it to (`docs/logs/2026-07-01-core-json.md`, divergence 2).
+
+   **Before shipping a doc that describes a runtime mechanism (a flag, a seam,
+   a consumption path), run it once end-to-end** — "the utility exists and is
+   exported" ≠ "the feature is wired". The json-etl preset loader shipped
+   fully documented yet unreachable from `M3LScriptOptions`
+   (`docs/logs/2026-07-11-scripts-json-etl.md`), and a contract page shipped
+   `script.aws.athena` for what is really `script.aws.clients.athena`, caught
+   only by the first consumer (`docs/logs/2026-07-18-scripts-athena-query.md`).
+   The smoke run is the acceptance test for the doc, not just the code.
 
    Once the status file reflects the true ✅ count, **invoke `/syncing-docs`** to run
    the full doc-reconciliation stack in one pass — provenance re-stamp,

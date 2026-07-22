@@ -159,6 +159,7 @@ widened in this PR.
   N+1 needs unmerged phase N, branch stacked, then
   `git rebase --onto origin/main <parent> <branch>` after the squash merge;
   used three times here without conflict beyond one config-array union.
+  _(promoted → docs/contributing/contributing.md)_
 - **Re-verify plan premises at build time** — two premises had self-healed
   between planning and building; the authoritative skill/doc text at build
   time outranks the plan that quoted it.
@@ -166,6 +167,7 @@ widened in this PR.
   `matchesExpected`/`globToRegExp`) an export landed test-less and `pnpm
 knip` was the gate that caught it; pair every new export with the test that
   imports it in the same change set.
+  _(promoted → .claude/skills/implementing-scripts/SKILL.md, .claude/rules/scripts.md)_
 
 No library friction items surfaced — every change in this delivery was repo
 tooling; `docs/plans/IMPLEMENTATION.md` needs no new rows from this log.

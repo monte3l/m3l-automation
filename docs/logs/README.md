@@ -6,9 +6,10 @@ history**: they are not edited after landing (unlike the living trackers in
 [`../ROADMAP.md`](../ROADMAP.md) and
 [`../plans/IMPLEMENTATION.md`](../plans/IMPLEMENTATION.md)). New logs are added
 by `/writing-work-logs`; recurring lessons graduate into the rules/agents via
-`/promoting-work-log-lessons`. There's no automated trigger for that sweep —
-run it periodically by feel: every ~5–8 new logs, or whenever a lesson in a
-fresh log feels familiar from an earlier one. Logs are **pipeline-scoped** —
+`/promoting-work-log-lessons`. Run that sweep after **every 5 new logs** —
+`/writing-work-logs` Step 5 checks this (it counts logs newer than the latest
+`promoted →` stamp and prompts the sweep at 5+), or sooner whenever a lesson in
+a fresh log feels familiar from an earlier one. Logs are **pipeline-scoped** —
 submodule and script implementation units get one; chore/docs/CI PRs
 deliberately do not.
 
@@ -52,13 +53,24 @@ deliberately do not.
 | 2026-07-13 | W2 — `dynamo-crud` consumer script (PR #128)                               | [dynamo-crud](./2026-07-13-dynamo-crud.md)                         |
 | 2026-07-13 | W2 — `logs-insights` consumer script (PR #129)                             | [scripts-logs-insights](./2026-07-13-scripts-logs-insights.md)     |
 | 2026-07-15 | W2 close-out — merge outcomes #120/#127–#129, `aws/logs-insights` stand-in | [fleet-reconciliation](./2026-07-15-fleet-reconciliation.md)       |
+| 2026-07-18 | W3-L — `aws/s3` typed operations wrapper (ADR-0033, PR #160)               | [aws-s3](./2026-07-18-aws-s3.md)                                   |
+| 2026-07-18 | W3-L — `aws/lambda` `M3LLambdaOperations` wrapper                          | [aws-lambda](./2026-07-18-aws-lambda.md)                           |
+| 2026-07-18 | W3-L — `aws/eventbridge` `M3LEventBridgeOperations` wrapper                | [aws-eventbridge](./2026-07-18-aws-eventbridge.md)                 |
+| 2026-07-18 | W4-L — `aws/athena` `M3LAthenaClient` wrapper (PR #162)                    | [aws-athena](./2026-07-18-aws-athena.md)                           |
+| 2026-07-18 | W3 — `s3-objects` consumer script                                          | [s3-objects](./2026-07-18-s3-objects.md)                           |
+| 2026-07-18 | W3 — `lambda-ops` consumer script                                          | [scripts-lambda-ops](./2026-07-18-scripts-lambda-ops.md)           |
+| 2026-07-18 | W3 — `eventbridge-schedules` consumer script                               | [eventbridge-schedules](./2026-07-18-eventbridge-schedules.md)     |
+| 2026-07-18 | W4 — `athena-query` consumer script                                        | [scripts-athena-query](./2026-07-18-scripts-athena-query.md)       |
 
 > W1 `json-etl`'s 8 library-friction items (F1–F8) are tracked in
 > [`../plans/IMPLEMENTATION.md`](../plans/IMPLEMENTATION.md#library-friction-f-series).
 
 ## Workflow / infra
 
-| Date       | Change                                              | Log                                                                |
-| ---------- | --------------------------------------------------- | ------------------------------------------------------------------ |
-| 2026-07-11 | Parallelize the pre-push verify (fix push timeouts) | [prepush-parallelization](./2026-07-11-prepush-parallelization.md) |
-| 2026-07-16 | `audit-fanout` dynamic workflow (ADR-0025 pilot)    | [audit-fanout-workflow](./2026-07-16-audit-fanout-workflow.md)     |
+| Date       | Change                                              | Log                                                                            |
+| ---------- | --------------------------------------------------- | ------------------------------------------------------------------------------ |
+| 2026-07-11 | Parallelize the pre-push verify (fix push timeouts) | [prepush-parallelization](./2026-07-11-prepush-parallelization.md)             |
+| 2026-07-16 | `audit-fanout` dynamic workflow (ADR-0025 pilot)    | [audit-fanout-workflow](./2026-07-16-audit-fanout-workflow.md)                 |
+| 2026-07-17 | ADR-0030 workflow tooling + MCP program (6 phases)  | [adr-0030-workflow-tooling-mcp](./2026-07-17-adr-0030-workflow-tooling-mcp.md) |
+| 2026-07-19 | Subagent stall/truncation guidance integration      | [subagent-stall-integration](./2026-07-19-subagent-stall-integration.md)       |
+| 2026-07-22 | Promotion audit — unpromoted/unlearned lesson sweep | [promotion-audit](./2026-07-22-promotion-audit.md)                             |

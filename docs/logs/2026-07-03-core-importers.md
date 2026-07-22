@@ -194,6 +194,7 @@ revert `--update`'s incidental re-stamps of sidecars you didn't change.
 - **Runtime-green ≠ typecheck-green for tests** — Vitest strips types, so a
   passing test file can still fail `tsc -b`/`eslint`. A tests-writing spoke must
   run both, not just the runner.
+  _(promoted → .claude/agents/test-author.md, .claude/rules/tests.md)_
 - **A new options/config interface behind a class is a symbol-count event** —
   `export *` will surface it; for a documented-N-symbols contract, inline it or
   document it, and let RED assert the exact export set. `check:doc-exports` is the
@@ -205,6 +206,7 @@ revert `--update`'s incidental re-stamps of sidecars you didn't change.
 - **Re-review the fix round, not just the original** — fixes are fresh writer
   code; an independent pass on the diff preserves writer≠reviewer and caught a
   MEDIUM + two residual asymmetries here.
+  _(promoted → .claude/skills/implementing-submodules/SKILL.md, .claude/rules/subagent-dispatch.md)_
 - **Streaming/parse code needs a bad-record + throwing-callback test** — the
   happy path hides whether one bad record is skipped-and-emitted or aborts the
   whole run. _(promoted → .claude/agents/test-author.md)_

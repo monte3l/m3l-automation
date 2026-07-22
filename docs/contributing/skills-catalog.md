@@ -77,9 +77,9 @@ actually apply.
 
 ### Periodic maintenance — genuine gap
 
-| Skill                        | Evidence                             | Gap                                                                                                                                                                                                       |
-| ---------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `promoting-work-log-lessons` | ~3 mentions; no scheduling mechanism | 20+ work logs have accumulated since the pipeline started with no clear evidence the periodic sweep has run recently. See `docs/logs/README.md` for the manual cadence note added alongside this catalog. |
+| Skill                        | Evidence                             | Gap                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `promoting-work-log-lessons` | ~3 mentions; no scheduling mechanism | Partially closed 2026-07-22: a documented cadence now exists — the sweep runs after **every 5 new logs**, checked as a `/writing-work-logs` Step 5 checklist item (it counts logs since the newest `promoted →` stamp and prompts the sweep). See `docs/logs/README.md`. Still checklist-driven, not hook-driven — re-audit whether it actually fires. |
 
 ### Moderate — possibly bypassed for a cheaper ad-hoc alternative
 

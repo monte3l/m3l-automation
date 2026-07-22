@@ -75,6 +75,14 @@ syncing-docs, creating-prs`), including sub-skills dispatched internally.
   `docs/logs/*.md` instead of reconstructing invocations from commit messages
   and git archaeology — see `docs/contributing/skills-catalog.md` for why that
   matters.
+- **Spoke incidents**: a `Spoke incidents:` line with counts for the run —
+  writer-spoke truncations, review-spoke stalls (>15 min without converging),
+  and `SendMessage` resumes (e.g.
+  `Spoke incidents: 2 truncations / 0 stalls / 2 resumes`, or
+  `Spoke incidents: none`). This is the measurable signal the
+  truncation-prevention efficacy watch
+  (`docs/contributing/subagent-context-management.md`) aggregates — record it
+  even (especially) when it is `none`.
 
 The summary should be dense enough that a reader can understand the scope in
 30 seconds without reading the rest of the log.
@@ -225,6 +233,11 @@ After writing, print:
 1. The full path of the created file
 2. A one-line summary of what the log captures
 3. Any rule/prompt promotions proposed in Step 4 (or "none")
+4. **Sweep-cadence check:** count the logs newer than the most recent
+   `_(promoted → …)_` stamp (`grep -l "promoted →" docs/logs/*.md`, then
+   compare dates). If **5 or more** new logs have accumulated since the last
+   sweep, recommend running `/promoting-work-log-lessons` now — this is the
+   documented trigger for the cross-log sweep (see `docs/logs/README.md`).
 
 Do NOT commit the file. Committing is the user's next step via `/writing-commits`
 with a `docs:` message. Remind them of this so the handoff is clear.

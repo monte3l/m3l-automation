@@ -156,6 +156,14 @@ commit`. Don't fight this: either scaffold a throwing placeholder per
    try/catch, async fan-out, or retry/poll logic. Route Must-fix findings back
    to `code-implementer` and re-run until clean.
 
+   **Re-review every substantive fix round with a bounded confirmation pass.**
+   A fix round is new writer code with no reviewer between it and the commit —
+   post-review fix batches introduced fresh Must-fix defects in at least four
+   pipelines (see `.claude/rules/subagent-dispatch.md`). After the fixes land,
+   dispatch a **focused confirmation re-review scoped to the changed files
+   only** — typically just the reviewer(s) whose findings drove the fixes —
+   not a fresh full fan-out, and not hub self-verification alone.
+
    **Size this dispatch too, the same as RED/GREEN above.** Give each reviewer
    a tight per-spoke file list rather than the whole diff plus "explore the
    repo" latitude — an unbounded review scope stalled spokes for 30-60+
@@ -168,7 +176,14 @@ commit`. Don't fight this: either scaffold a throwing placeholder per
    `pnpm check:script-scaffold` (shape conformance) and `pnpm knip` (a script
    that declares the `workspace:*` dependency but doesn't exercise the library
    fails — the anti-hollow gate), then the smoke run
-   `pnpm --filter @m3l-automation/<name> start`. Deliberately absent: the 80%
+   `pnpm --filter @m3l-automation/<name> start`. **Run the script-specific
+   gates (`check:script-scaffold`, `knip`) again after every fix/remediation
+   round, not once** — knip's static-reachability check catches
+   hollow/consumer-less exports that review spokes structurally don't look
+   for, and it has flagged real drift introduced by fix rounds three times
+   (`docs/logs/2026-07-18-eventbridge-schedules.md`,
+   `2026-07-18-scripts-athena-query.md`,
+   `2026-07-17-adr-0030-workflow-tooling-mcp.md`). Deliberately absent: the 80%
    coverage gate (scripts are exempt by ADR-0022 §8), exports-map checks, and
    provenance stamping — do not import them from the submodule pipeline.
 
@@ -176,7 +191,17 @@ commit`. Don't fight this: either scaffold a throwing placeholder per
    shipped — `scripts/<name>/README.md` (how to run) and the contract page's
    schema/steps tables (the contract) — then invoke `/syncing-docs` (its script
    pass runs `check:script-scaffold` and regenerates the consumer-scripts
-   catalog via `gen:index`). Remind the user the commit is a `feat:` only if it
+   catalog via `gen:index`).
+
+   **Before shipping a doc that describes a runtime mechanism (a flag, a seam,
+   a consumption path), run it once end-to-end** — "the utility exists and is
+   exported" ≠ "the feature is wired". The json-etl preset loader shipped fully
+   documented yet unreachable from `M3LScriptOptions`
+   (`docs/logs/2026-07-11-scripts-json-etl.md`), and the athena contract page
+   shipped `script.aws.athena` for what is really `script.aws.clients.athena`,
+   caught only by the first consumer
+   (`docs/logs/2026-07-18-scripts-athena-query.md`). The smoke run is the
+   acceptance test for the doc, not just the code. Remind the user the commit is a `feat:` only if it
    changes what consumers of the _script_ get; plain `chore:`/`fix:` otherwise.
    Then invoke `/writing-work-logs` while the context is live. **Finally, update
    the living trackers**: flip this script's status in `docs/ROADMAP.md` +
