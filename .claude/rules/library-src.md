@@ -80,6 +80,19 @@ paths:
   the internal cast it removes.
 - **Exhaustive `switch`** over finite sets; handle every case and fail on the
   unexpected.
+- **Allowlist, never denylist, for a redaction or sanitization boundary.**
+  Enumerate the fields you keep; drop everything else. A pattern that tries to
+  _recognize_ what is unsafe (a regex over URLs, key-name heuristics) is a
+  denylist against unbounded input and does not converge — `core/diagnostics`
+  proved it across four adversarial rounds: every allowlisted surface leaked
+  nothing, the denylist failed all four and regressed three times. Where the
+  input is genuinely free text, say "best effort" in the TSDoc and reclassify
+  the artifact instead of promising a guarantee.
+- **A TSDoc sentence asserting a security property is a claim to verify, not
+  prose to write.** Probe the built output before writing it; under-claim by
+  default. A false mechanism in a doc comment propagates into the next
+  reader's reasoning (three `core/diagnostics` fix rounds shipped ones that
+  were wrong).
 - **TSDoc on every exported symbol**, with an `@example` on primary entry points.
   Comment the _why_, not the _what_.
 - **`internal/` is private.** Never re-export it through a public barrel; it has
