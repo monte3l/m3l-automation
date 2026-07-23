@@ -7,6 +7,7 @@
  * @packageDocumentation
  */
 
+export * from "./catalog.js";
 export * from "./M3LError.js";
 export * from "./M3LErrorUtils.js";
 export * from "./M3LResult.js";

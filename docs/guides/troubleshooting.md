@@ -55,15 +55,22 @@ for the resolution rules.
 
 ## 3. Post-mortem: run archives and run reports
 
-Each script run archives its inputs under a timestamped directory (created by
-stage 9 of the [lifecycle](../reference/core/script.md#execution-flow)):
+Each script run archives its inputs (stage 9 of the
+[lifecycle](../reference/core/script.md#execution-flow)), and — once composed
+through the diagnostics reporter — writes a per-run report:
 
 ```text
-data/output/<timestamp>/
-├── input/    # snapshot of data/input at run time
-├── config/   # snapshot of data/config at run time
-└── run-report.json   # (ADR-0035) outcome, exit code, timeline, failure chain
+data/output/
+├── inputs/                    # snapshot of data/input at run time (flat, not timestamped)
+├── configs/                   # snapshot of data/config at run time (flat, not timestamped)
+└── 2026-07-23T10-14-02.000Z/  # one directory per run, named by its start time
+    └── run-report.json        # outcome, exit code, timeline, failure chain
 ```
+
+Note the two are **not** in the same directory: archival is flat and overwrites
+across runs, while each run report gets its own timestamped directory. Only the
+run report is per-run, so it is the reliable artifact when reconstructing a
+specific failure.
 
 - The base directory is `data/output/` at the monorepo root (or
   `$M3L_BASE_DIR/output` standalone; `M3L_OUTPUT_DIR` overrides — see the

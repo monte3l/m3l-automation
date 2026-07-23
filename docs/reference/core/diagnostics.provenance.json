@@ -1,0 +1,203 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/diagnostics.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/exit-codes.ts",
+          "symbol": "M3L_EXIT_CODES",
+          "lines": "26-52",
+          "blob": "0d8c6089dbbe0c15a66c2042bfa9b51a732ffa59"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/exit-codes.ts",
+          "symbol": "M3LExitCode",
+          "lines": "53-71",
+          "blob": "0d8c6089dbbe0c15a66c2042bfa9b51a732ffa59"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/exit-codes.ts",
+          "symbol": "M3LErrorExitCode",
+          "lines": "72-98",
+          "blob": "0d8c6089dbbe0c15a66c2042bfa9b51a732ffa59"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/exit-codes.ts",
+          "symbol": "isM3LErrorOrigin",
+          "lines": "99-181",
+          "blob": "0d8c6089dbbe0c15a66c2042bfa9b51a732ffa59"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/exit-codes.ts",
+          "symbol": "mapErrorToExitCode",
+          "lines": "182-189",
+          "blob": "0d8c6089dbbe0c15a66c2042bfa9b51a732ffa59"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
+          "symbol": "M3LFormatErrorChainOptions",
+          "lines": "45-61",
+          "blob": "ebbeabf4fdc74ac5a8a0e6e977f0d59b28b1052b"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
+          "symbol": "M3LSerializedError",
+          "lines": "62-236",
+          "blob": "ebbeabf4fdc74ac5a8a0e6e977f0d59b28b1052b"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
+          "symbol": "scrubUrlsInText",
+          "lines": "237-386",
+          "blob": "ebbeabf4fdc74ac5a8a0e6e977f0d59b28b1052b"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
+          "symbol": "formatErrorChain",
+          "lines": "387-432",
+          "blob": "ebbeabf4fdc74ac5a8a0e6e977f0d59b28b1052b"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
+          "symbol": "serializeErrorChain",
+          "lines": "433-446",
+          "blob": "ebbeabf4fdc74ac5a8a0e6e977f0d59b28b1052b"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
+          "symbol": "M3LBreadcrumb",
+          "lines": "40-64",
+          "blob": "a836f17236834eeaf31066801c78af2939ade86a"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
+          "symbol": "M3LBreadcrumbScalar",
+          "lines": "65-82",
+          "blob": "a836f17236834eeaf31066801c78af2939ade86a"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
+          "symbol": "M3LBreadcrumbSource",
+          "lines": "83-99",
+          "blob": "a836f17236834eeaf31066801c78af2939ade86a"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
+          "symbol": "M3LBreadcrumbTrailOptions",
+          "lines": "100-117",
+          "blob": "a836f17236834eeaf31066801c78af2939ade86a"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
+          "symbol": "M3LBreadcrumbAttachOptions",
+          "lines": "118-600",
+          "blob": "a836f17236834eeaf31066801c78af2939ade86a"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
+          "symbol": "M3LBreadcrumbTrail",
+          "lines": "601-768",
+          "blob": "a836f17236834eeaf31066801c78af2939ade86a"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
+          "symbol": "M3LConfigSchemaPort",
+          "lines": "51-71",
+          "blob": "9a0c29bfcf16f4c65a2338f820e8ee555fb8a98e"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
+          "symbol": "M3LConfigSourcePort",
+          "lines": "72-94",
+          "blob": "9a0c29bfcf16f4c65a2338f820e8ee555fb8a98e"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
+          "symbol": "M3LPathsPort",
+          "lines": "95-131",
+          "blob": "9a0c29bfcf16f4c65a2338f820e8ee555fb8a98e"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
+          "symbol": "M3LConfigFingerprintEntry",
+          "lines": "132-187",
+          "blob": "9a0c29bfcf16f4c65a2338f820e8ee555fb8a98e"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
+          "symbol": "M3LDiagnosticsEnvironment",
+          "lines": "188-251",
+          "blob": "9a0c29bfcf16f4c65a2338f820e8ee555fb8a98e"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
+          "symbol": "M3LDiagnosticsPaths",
+          "lines": "252-277",
+          "blob": "9a0c29bfcf16f4c65a2338f820e8ee555fb8a98e"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
+          "symbol": "M3LDiagnosticsSnapshot",
+          "lines": "278-308",
+          "blob": "9a0c29bfcf16f4c65a2338f820e8ee555fb8a98e"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
+          "symbol": "M3LCollectDiagnosticsOptions",
+          "lines": "309-496",
+          "blob": "9a0c29bfcf16f4c65a2338f820e8ee555fb8a98e"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
+          "symbol": "collectDiagnostics",
+          "lines": "497-518",
+          "blob": "9a0c29bfcf16f4c65a2338f820e8ee555fb8a98e"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
+          "symbol": "M3LRunOutcome",
+          "lines": "48-60",
+          "blob": "f479983b009195b26c4a60ed1e2a4d84ed3a19e0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
+          "symbol": "M3LRunReportFailure",
+          "lines": "61-83",
+          "blob": "f479983b009195b26c4a60ed1e2a4d84ed3a19e0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
+          "symbol": "M3LRunReportInput",
+          "lines": "84-111",
+          "blob": "f479983b009195b26c4a60ed1e2a4d84ed3a19e0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
+          "symbol": "M3LRunReportBase",
+          "lines": "112-146",
+          "blob": "f479983b009195b26c4a60ed1e2a4d84ed3a19e0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
+          "symbol": "M3LRunReport",
+          "lines": "147-172",
+          "blob": "f479983b009195b26c4a60ed1e2a4d84ed3a19e0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
+          "symbol": "M3LRunReporterOptions",
+          "lines": "173-668",
+          "blob": "f479983b009195b26c4a60ed1e2a4d84ed3a19e0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
+          "symbol": "M3LRunReporter",
+          "lines": "669-911",
+          "blob": "f479983b009195b26c4a60ed1e2a4d84ed3a19e0"
+        }
+      ]
+    }
+  ]
+}

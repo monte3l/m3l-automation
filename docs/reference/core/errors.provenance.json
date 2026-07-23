@@ -124,6 +124,42 @@
           "symbol": "errorMessageContains",
           "lines": "181-186",
           "blob": "3f9bd2957063630928d0e8a3e8e0dc11f927abdb"
+        },
+        {
+          "file": "packages/m3l-common/src/core/errors/catalog.ts",
+          "symbol": "M3LErrorOrigin",
+          "lines": "37-67",
+          "blob": "94b9de7464e0ea32acd1556e25e50adedce8d9ea"
+        },
+        {
+          "file": "packages/m3l-common/src/core/errors/catalog.ts",
+          "symbol": "M3LErrorRetryable",
+          "lines": "68-82",
+          "blob": "94b9de7464e0ea32acd1556e25e50adedce8d9ea"
+        },
+        {
+          "file": "packages/m3l-common/src/core/errors/catalog.ts",
+          "symbol": "M3LErrorClassification",
+          "lines": "83-109",
+          "blob": "94b9de7464e0ea32acd1556e25e50adedce8d9ea"
+        },
+        {
+          "file": "packages/m3l-common/src/core/errors/catalog.ts",
+          "symbol": "M3L_ERROR_CATALOG",
+          "lines": "110-204",
+          "blob": "94b9de7464e0ea32acd1556e25e50adedce8d9ea"
+        },
+        {
+          "file": "packages/m3l-common/src/core/errors/catalog.ts",
+          "symbol": "isM3LErrorCode",
+          "lines": "205-226",
+          "blob": "94b9de7464e0ea32acd1556e25e50adedce8d9ea"
+        },
+        {
+          "file": "packages/m3l-common/src/core/errors/catalog.ts",
+          "symbol": "classifyErrorCode",
+          "lines": "227-232",
+          "blob": "94b9de7464e0ea32acd1556e25e50adedce8d9ea"
         }
       ],
       "retrieved": "2026-07-18"
