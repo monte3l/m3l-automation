@@ -142,7 +142,7 @@ Available providers: `M3LCommandLineConfigProvider`, `M3LJSONConfigProvider`, `M
 
 `logging/M3LLogger.ts`: `M3LLogger` manages an ordered array of `M3LLoggerHandler` instances. It exposes typed methods: `text`, `step`, `info`, `success`, `warning`, `error`, `fatal`, `section`, `header`, `newline`, `table`, `simpleTable`, `keyValueTable`.
 
-`logging/M3LLogEventCategory.ts`: nine categories — `TEXT`, `STEP`, `SUCCESS`, `ERROR`, `FATAL`, `WARNING`, `HEADER`, `INFO`, `SECTION`.
+`logging/M3LLogEventCategory.ts`: ten categories — `TEXT`, `STEP`, `SUCCESS`, `ERROR`, `FATAL`, `WARNING`, `HEADER`, `INFO`, `SECTION`, `DEBUG`.
 
 Three built-in handler implementations:
 
