@@ -123,3 +123,27 @@ safe, not on you to prove it is broken. If after a genuine attempt you cannot
 construct any such path, report **refutation failed → confirmed safe** with the
 specific attempts you made and why each is blocked. The hub confirms the surface
 only when refutation fails.
+
+**Execute, do not read.** Reasoning about a regex or a guard is not refutation.
+Write throwaway probes under the session scratchpad that import from
+`packages/m3l-common/dist/` (rebuild first if stale) and read the leaked bytes
+back off disk. In `core/diagnostics` (2026-07-23) six confirmatory reviewers
+reading the code found zero of ten leaks; four refute passes executing against
+`dist/` found all ten — including a presigned-URL signature written verbatim
+into a persisted artifact.
+
+**State plainly which attacks you did not run.** A refutation that silently
+skips a class of input reads as coverage it did not provide.
+
+**Also attack the FIX, not just the original finding.** When dispatched after a
+fix round, assume the fix is incomplete _and_ that it broke something the
+previous version handled — three of four `core/diagnostics` fix rounds
+introduced a regression, one of which silently disabled `Map`/`Set` redaction
+that had previously worked. Re-run the prior rounds' vectors, not only the new
+one.
+
+**Repeated successful refutation is an architecture signal, not a backlog.**
+If two or more rounds each find new bypasses of the same mechanism, say so
+explicitly and name the structural alternative (allowlist the enumerable input;
+narrow what is persisted; reclassify the artifact). Do not simply hand back
+another patch list — that is the loop that failed four times here.
