@@ -15,6 +15,7 @@ import {
   redactSensitiveLogText,
   redactSensitiveLogValue,
 } from "../logging/index.js";
+import { isDangerousKey } from "../security/index.js";
 
 /**
  * The maximum number of `cause` levels walked before the chain is truncated.
@@ -186,24 +187,43 @@ function walkErrorChain(input: unknown): WalkResult {
  * (and any credential riding its userinfo/query) through unscrubbed.
  *
  * The trailing, non-capturing group is the fix for a real leak: the primary
- * character class excludes `"`, `'`, `<`, `>` so the match never straddles a
+ * character class excludes `"`/`'`/`<`/`>` so the match never straddles a
  * quote/bracket delimiter, but that means a query value written as
- * `?token="secret"` or `?token=<secret>` stops the match at `token=` —
- * consuming and dropping the `key=` anchor while leaving the quoted/bracketed
- * value stranded *outside* the match, unrecognizable to any anchor-based
- * redactor once the anchor is gone. The `(?<==)` lookbehind fires only when
- * the primary match actually ended on a bare `=` (i.e. the character
- * immediately excluded was a delimiter, not part of the URL itself), so a
- * quote/bracket that merely happens to follow a complete, `=`-terminated URL
- * segment is captured and dropped together with the URL rather than left
- * behind — conservative by construction, since it only ever extends a match
- * that would otherwise end mid-assignment, never across whitespace into
- * unrelated following prose (a newline- or space-separated value is left
- * alone, deferring to the name-based redactor that runs before this scrub in
- * every call site in this module).
+ * `?token="secret"` stops the match at `token=` — consuming and dropping the
+ * `key=` anchor while leaving the quoted value stranded *outside* the match,
+ * unrecognizable to any anchor-based redactor once the anchor is gone. The
+ * `(?<==)` lookbehind fires only when the primary match actually ended on a
+ * bare `=` (i.e. the character immediately excluded was a delimiter, not part
+ * of the URL itself), so a quote that merely happens to follow a complete,
+ * `=`-terminated URL segment is captured and dropped together with the URL
+ * rather than left behind.
+ *
+ * Two alternatives per quote style, tried closed-first: `"[^"]*"` (a
+ * genuinely closed value, e.g. `token="secret" next` — matched up to its own
+ * closing quote so unrelated trailing prose is untouched) and, only when no
+ * closing quote exists anywhere in the rest of the string,
+ * `"[^"\s]*` — an *unterminated* value (a truncated log line, a shell
+ * fragment: `token="secret failed`) captured only up to the next whitespace
+ * or end of string. Without this second alternative the whole optional group
+ * fails to match at all (an unclosed `"[^"]*"` cannot match), so the bare `=`
+ * anchor is dropped by group 1 while the unterminated value is left entirely
+ * outside the match — worse than the closed case, since nothing recognizes a
+ * key-less value. Bounding the fallback at the next whitespace keeps it
+ * conservative: it can only ever extend a match that already ended
+ * mid-assignment, never swallow across whitespace into unrelated following
+ * prose.
+ *
+ * No angle-bracket alternative: `<secret>` is not excluded from
+ * `core/logging`'s `EMBEDDED_SENSITIVE_PATTERN` value class (only quotes are
+ * excluded there), so a sensitive-named key wrapped in angle brackets is
+ * already redacted by that name-based pass before this scrub ever runs.
+ * Matching `<…>` here bought no additional coverage and cost real prose: a
+ * closed tag immediately after a bare `=` (`?a=<div>keepme</div>`) would be
+ * silently consumed and dropped alongside the URL, corrupting unrelated
+ * markup in the surrounding message.
  */
 const URL_PATTERN =
-  /(https?:\/\/[^\s"'<>]+)(?:(?<==)(?:"[^"]*"|'[^']*'|<[^>]*>))?/giu;
+  /(https?:\/\/[^\s"'<>]+)(?:(?<==)(?:"[^"]*"|'[^']*'|"[^"\s]*|'[^'\s]*))?/giu;
 
 /**
  * Finds every `http(s)://` URL-shaped substring in `text` and rewrites it to
@@ -213,9 +233,20 @@ const URL_PATTERN =
  * `X-Amz-Signature`/`X-Amz-Credential` query param; an API key or bearer
  * token passed as `?access_token=`). Intended as a defense-in-depth pass over
  * free text (an error `message`, a `stack` frame) that embeds a raw request
- * URL, run BEFORE the name-based `redactSensitiveLogText`/
- * `redactSensitiveLogValue` pass — a URL-shaped leak is not something either
- * recognizes by key or literal name.
+ * URL — a URL-shaped leak is not something the name-based
+ * `redactSensitiveLogText`/`redactSensitiveLogValue` pass recognizes by key or
+ * literal name, so this scrub exists to cover it.
+ *
+ * Callers MUST run this AFTER the name-based `redactSensitiveLogText`/
+ * `redactSensitiveLogValue` pass, never before (every call site in this
+ * module follows that order). Running the URL scrub first can strip a `key=`
+ * anchor immediately adjacent to a scrub stop character (`"`, `'`, a
+ * newline) — e.g. `token="SECRET"` loses its `?` up through `token=` once the
+ * URL match consumes it — leaving the bare value behind with no `key=` prefix
+ * for the name-based redactor to recognize, which is strictly worse than
+ * redacting alone. Redacting first replaces the value with the `[REDACTED]`
+ * literal while the anchor is still intact, so this scrub can only ever trim
+ * an already-safe placeholder, never an unredacted secret.
  *
  * Never throws: a match that fails to parse as a `URL` (or resolves to a
  * non-`http(s)` protocol) is left verbatim in the output, deferring to the
@@ -238,8 +269,8 @@ export function scrubUrlsInText(text: string): string {
   return text.replace(URL_PATTERN, (match: string, urlPart: string) => {
     try {
       // Parse only the captured `urlPart` (group 1) — never the overall
-      // `match`, which may additionally include a trailing quoted/bracketed
-      // value the `URL` constructor would not understand. Both are dropped
+      // `match`, which may additionally include a trailing quoted value the
+      // `URL` constructor would not understand. Both are dropped
       // together on success: the whole `match` is replaced by
       // `origin + pathname`, so the stranded-value defect this pattern
       // exists to fix (see the pattern's own TSDoc) cannot recur.
@@ -261,6 +292,17 @@ export function scrubUrlsInText(text: string): string {
  * scrub an `M3LError` level's `context` before it is redacted, since a
  * credential-bearing URL may be nested arbitrarily deep in caller-supplied
  * diagnostic context.
+ *
+ * Scrubs object **keys**, not just values: a URL used as a `context` object
+ * key (e.g. a results-keyed-by-URL shape) would otherwise reach the report
+ * verbatim even though the identical URL riding as a *value* gets scrubbed.
+ * `isDangerousKey` is checked (on the pre-scrub key) for the same
+ * prototype-pollution reason `redactSensitiveLogValue`'s own clone already
+ * guards against — defense-in-depth at this construction site, not the
+ * primary guard. If scrubbing collapses two distinct keys to the same
+ * string, the later entry wins: `Object.entries` preserves insertion order,
+ * so this is a plain, deterministic last-write-wins overwrite, never a
+ * silent drop of both.
  */
 function scrubUrlsInValue(value: unknown): unknown {
   if (typeof value === "string") return scrubUrlsInText(value);
@@ -269,7 +311,8 @@ function scrubUrlsInValue(value: unknown): unknown {
   if (isPlainRecord(value)) {
     const result: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value)) {
-      result[key] = scrubUrlsInValue(entry);
+      if (isDangerousKey(key)) continue;
+      result[scrubUrlsInText(key)] = scrubUrlsInValue(entry);
     }
     return result;
   }

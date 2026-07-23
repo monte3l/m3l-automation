@@ -193,31 +193,31 @@
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
-    "lines": "45-61"
+    "lines": "46-62"
   },
   "M3LSerializedError": {
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
-    "lines": "62-236"
+    "lines": "63-267"
   },
   "scrubUrlsInText": {
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
-    "lines": "237-386"
+    "lines": "268-429"
   },
   "formatErrorChain": {
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
-    "lines": "387-432"
+    "lines": "430-475"
   },
   "serializeErrorChain": {
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
-    "lines": "433-446"
+    "lines": "476-489"
   },
   "M3LBreadcrumb": {
     "submodule": "diagnostics",
@@ -271,85 +271,85 @@
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
-    "lines": "95-131"
+    "lines": "95-141"
   },
   "M3LConfigFingerprintEntry": {
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
-    "lines": "132-187"
+    "lines": "142-197"
   },
   "M3LDiagnosticsEnvironment": {
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
-    "lines": "188-251"
+    "lines": "198-261"
   },
   "M3LDiagnosticsPaths": {
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
-    "lines": "252-277"
+    "lines": "262-287"
   },
   "M3LDiagnosticsSnapshot": {
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
-    "lines": "278-308"
+    "lines": "288-318"
   },
   "M3LCollectDiagnosticsOptions": {
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
-    "lines": "309-496"
+    "lines": "319-532"
   },
   "collectDiagnostics": {
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
-    "lines": "497-518"
+    "lines": "533-554"
   },
   "M3LRunOutcome": {
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
-    "lines": "48-60"
+    "lines": "52-64"
   },
   "M3LRunReportFailure": {
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
-    "lines": "61-83"
+    "lines": "65-87"
   },
   "M3LRunReportInput": {
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
-    "lines": "84-111"
+    "lines": "88-115"
   },
   "M3LRunReportBase": {
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
-    "lines": "112-146"
+    "lines": "116-150"
   },
   "M3LRunReport": {
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
-    "lines": "147-172"
+    "lines": "151-176"
   },
   "M3LRunReporterOptions": {
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
-    "lines": "173-668"
+    "lines": "177-946"
   },
   "M3LRunReporter": {
     "submodule": "diagnostics",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
-    "lines": "669-911"
+    "lines": "947-1189"
   },
   "M3LExecutionEnvironment": {
     "submodule": "environment",

@@ -11,6 +11,10 @@ import { dirname, join, resolve, sep } from "node:path";
 
 import { M3LError } from "../errors/index.js";
 import { isSafeRelativeSegment } from "../../internal/files/guards.js";
+import type {
+  FileCopyOutcome,
+  FileCopySkipReason,
+} from "../../internal/files/types.js";
 import { logBestEffortDiagnostic } from "../../internal/script/diagnostics.js";
 import { redactSensitiveLogValue } from "../logging/index.js";
 import { isDangerousKey } from "../security/index.js";
@@ -21,7 +25,7 @@ import { collectDiagnostics } from "./collect.js";
 import type { M3LDiagnosticsSnapshot, M3LPathsPort } from "./collect.js";
 import { M3L_EXIT_CODES, mapErrorToExitCode } from "./exit-codes.js";
 import type { M3LSerializedError } from "./format-error.js";
-import { serializeErrorChain } from "./format-error.js";
+import { scrubUrlsInText, serializeErrorChain } from "./format-error.js";
 
 /** Default report file name when {@link M3LRunReporterOptions.fileName} is omitted. */
 const DEFAULT_FILE_NAME = "run-report.json";
@@ -475,9 +479,20 @@ function normalizePlainObject(
  * `redactSensitiveLogValue(new Set(...))` returned `{}` (dropping every
  * member outright) — and it is strictly more informative than that baseline
  * while remaining just as leak-free.
+ *
+ * `set.size` is read through an accessor a hostile `Set` subclass (or a
+ * `Proxy` wrapping one) can override to return arbitrary content — including
+ * a string carrying a secret — rather than a genuine cardinality. The result
+ * is validated as a non-negative integer before interpolation; anything else
+ * degrades to `0` rather than being interpolated verbatim.
  */
 function describeSetCardinality(set: ReadonlySet<unknown>): string {
-  return `[set: ${set.size} item${set.size === 1 ? "" : "s"}]`;
+  const rawSize: unknown = set.size;
+  const size =
+    typeof rawSize === "number" && Number.isInteger(rawSize) && rawSize >= 0
+      ? rawSize
+      : 0;
+  return `[set: ${size} item${size === 1 ? "" : "s"}]`;
 }
 
 /**
@@ -572,48 +587,311 @@ function normalizeForRedaction(
   if (typeof value !== "object") return scalarToRedactable(value);
 
   // `value` is narrowed to a non-null `object` here — every other `typeof`
-  // result already returned above via `scalarToRedactable`.
+  // result already returned above via `scalarToRedactable`. `visited` is a
+  // true SEEN-set for the whole traversal — deliberately never removed once
+  // added, even after this node's subtree finishes normalizing. Deleting on
+  // unwind (this module's own pre-fix baseline) turns `visited` into a
+  // PATH-set instead: a perfectly acyclic but *shared* subgraph (the same
+  // object reachable via more than one route, e.g. fan-out N × depth M) is
+  // then re-expanded from scratch at every reference, which is exponential in
+  // the fan-out and OOMs the process well before any genuine cycle would ever
+  // be hit — strictly worse than the "[Circular]" marker below, since an OOM
+  // is not catchable by `sanitizeValue`'s `try`, defeating the whole
+  // never-throw contract. Collapsing a shared (non-cyclic) reference to the
+  // same marker a genuine cycle gets is an accepted, documented tradeoff:
+  // both are "already normalized, don't re-expand".
   if (visited.has(value)) return "[Circular]";
   visited.add(value);
-  try {
-    return normalizeObjectShape(value, depth, visited);
-  } finally {
-    visited.delete(value);
+  return normalizeObjectShape(value, depth, visited);
+}
+
+/**
+ * Recursively applies {@link scrubUrlsInText} to every string leaf reachable
+ * from `value` — an array element or plain-object property value — leaving
+ * every other type unchanged. Deliberately narrower than
+ * `format-error.ts`'s own `scrubUrlsInValue`: by the time {@link sanitizeValue}
+ * calls this, `value` has already passed through {@link normalizeForRedaction}
+ * and `redactSensitiveLogValue`, both of which only ever produce plain JSON
+ * shapes (`string`/`number`/`boolean`/`null`/array/plain record) — there is no
+ * `Map`/`Set`/class instance/`toJSON` left to special-case.
+ *
+ * Exists so `archive`, `timeline`, and `environment` get the exact same URL
+ * scrub `redactContext` (`format-error.ts`) already applies to a serialized
+ * error's `context` — a presigned URL's `X-Amz-Signature`/`X-Amz-Credential`
+ * query params are a working bearer credential, and neither is a "sensitive
+ * key name" `redactSensitiveLogValue` would otherwise recognize.
+ *
+ * Scrubs object **keys**, not just values: {@link normalizeForRedaction}
+ * turns a `Map`'s entries into object keys (`normalizeMapEntries`), so a URL
+ * used as a `Map`/plain-object key would otherwise reach the report verbatim
+ * even though the identical URL riding as a *value* gets scrubbed — an
+ * asymmetry a results-keyed-by-URL map (an ordinary automation shape) would
+ * hit in practice. `isDangerousKey` is re-checked here (on the pre-scrub
+ * key) for the same prototype-pollution reason {@link normalizeMapEntries}/
+ * {@link normalizePlainObject} already check it on construction — those two
+ * upstream call sites already drop such a key before it reaches here, so this
+ * is defense-in-depth, not the primary guard. If scrubbing collapses two
+ * distinct keys to the same string (e.g. two differently-signed URLs whose
+ * origin+pathname happen to match), the later entry wins: `Object.entries`
+ * preserves insertion order, so this is a plain, deterministic
+ * last-write-wins overwrite, never a silent drop of both.
+ */
+function scrubUrlsInSanitizedValue(value: unknown): unknown {
+  if (typeof value === "string") return scrubUrlsInText(value);
+  if (Array.isArray(value)) {
+    return value.map((entry) => scrubUrlsInSanitizedValue(entry));
   }
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (isDangerousKey(key)) continue;
+      result[scrubUrlsInText(key)] = scrubUrlsInSanitizedValue(entry);
+    }
+    return result;
+  }
+  return value;
 }
 
 /**
  * Redacts `value` for safe embedding into a persisted {@link M3LRunReport}.
- * Cycle/depth-breaking and `Map`/`Set`/`toJSON` normalization
- * ({@link normalizeForRedaction}) run strictly *first*, redaction runs
- * *last* — never the reverse. `redactSensitiveLogValue` has no cycle guard
- * and throws `RangeError` on a genuinely circular value (or a ~20k-deep
- * acyclic one); running it first and falling back to
- * {@link normalizeForRedaction} on that failure would mean the fallback path
- * — the one taken for exactly the hostile inputs this function exists to
- * guard against — emits **no** redaction at all. `redactSensitiveLogValue`
- * then runs on that acyclic, key-preserving result, so it always executes
- * and always has the last word. Guarded end-to-end so
- * {@link M3LRunReporter.build} still never throws: any failure at any step
- * returns {@link UNREDACTABLE_PLACEHOLDER}, never the raw value. Shared by
- * `archive`, `timeline`, and `environment` so none of the three can bypass
- * redaction on its way into the persisted report.
+ * Runs, strictly in this order: (1) cycle/depth-breaking and `Map`/`Set`/
+ * `toJSON` normalization ({@link normalizeForRedaction}), (2) name-based
+ * redaction (`redactSensitiveLogValue`), (3) URL scrubbing
+ * ({@link scrubUrlsInSanitizedValue}) — mirroring the exact order
+ * `format-error.ts`'s `redactContext` already applies to a serialized error's
+ * `context`, for the same reason: `redactSensitiveLogValue` has no cycle
+ * guard and throws `RangeError` on a genuinely circular value (or a
+ * ~20k-deep acyclic one), so it must run after step (1), never before; and
+ * running the URL scrub before redaction can strip a `key=` anchor
+ * immediately adjacent to a scrub stop character (e.g. `token="secret"`),
+ * stranding an unredacted value with no anchor left for the name-based pass
+ * to recognize — so redaction must have the second-to-last word, and the URL
+ * scrub only ever trims an already-redacted, already-safe result. Guarded
+ * end-to-end so {@link M3LRunReporter.build} still never throws: any failure
+ * at any step returns {@link UNREDACTABLE_PLACEHOLDER}, never the raw value.
+ * Shared by `archive`, `timeline`, and `environment` so none of the three can
+ * bypass redaction (or the URL scrub) on its way into the persisted report.
  */
 function sanitizeValue(value: unknown): unknown {
   try {
     const acyclic = normalizeForRedaction(value, 0, new WeakSet<object>());
-    return redactSensitiveLogValue(acyclic);
+    const redacted = redactSensitiveLogValue(acyclic);
+    return scrubUrlsInSanitizedValue(redacted);
   } catch {
     return UNREDACTABLE_PLACEHOLDER;
   }
 }
 
-/** Builds the `{ archive }` entry, or `{}` when `input.archive` is `undefined`. */
+// ---------------------------------------------------------------------------
+// archive projection — allowlist the one known `archive` shape
+// ---------------------------------------------------------------------------
+
+/**
+ * The subset of {@link FileCopySkipReason} literals a wire value must be one
+ * of to survive {@link projectSkipReason} — the documented enum from
+ * `internal/files/types.ts`, restated here (not imported as a runtime value)
+ * since that module exports only the type.
+ */
+const FILE_COPY_SKIP_REASONS: readonly FileCopySkipReason[] = [
+  "size-too-large",
+  "already-exists",
+  "source-unreadable",
+  "declined-by-prompt",
+];
+
+/**
+ * The defensive projection {@link projectArchiveReport} builds — a bounded
+ * subset of `M3LFileCopyReport` (`internal/files/types.ts`'s `CopyReport`),
+ * re-declared locally rather than reusing `CopyReport`/`CopyReportSummary`
+ * directly: every field here is optional (including inside `summary`) because
+ * a field that fails validation is *omitted*, not defaulted — `CopyReport`
+ * itself declares every field required, which would force a fabricated
+ * default (e.g. `copied: 0`) for a field that was simply never supplied,
+ * misrepresenting the source data.
+ */
+interface ProjectedArchiveReport {
+  readonly results?: readonly FileCopyOutcome[];
+  readonly summary?: {
+    readonly totalRegistered?: number;
+    readonly copied?: number;
+    readonly skipped?: number;
+    readonly skippedByReason?: Partial<Record<FileCopySkipReason, number>>;
+    readonly totalBytesCopied?: number;
+  };
+}
+
+/** Narrows `value` to a `string`, else `undefined` — never coerces. */
+function projectString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+/** Narrows `value` to a finite `number`, else `undefined` — never coerces. */
+function projectFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+/** Narrows `value` to one of the four documented {@link FileCopySkipReason} literals. */
+function projectSkipReason(value: unknown): FileCopySkipReason | undefined {
+  return typeof value === "string" &&
+    (FILE_COPY_SKIP_REASONS as readonly string[]).includes(value)
+    ? (value as FileCopySkipReason)
+    : undefined;
+}
+
+/**
+ * Projects one candidate array element to a well-typed {@link FileCopyOutcome},
+ * or `undefined` when it matches neither arm of the `skipped`-discriminated
+ * union — an entry that fails to project is dropped from the array entirely,
+ * never passed through partially-typed.
+ */
+function projectFileCopyOutcome(entry: unknown): FileCopyOutcome | undefined {
+  if (typeof entry !== "object" || entry === null) return undefined;
+  const record = entry as Record<string, unknown>;
+  const source = projectString(record.source);
+  const destination = projectString(record.destination);
+  const timestamp = projectString(record.timestamp);
+  if (
+    source === undefined ||
+    destination === undefined ||
+    timestamp === undefined
+  ) {
+    return undefined;
+  }
+
+  if (record.skipped === false) {
+    const size = projectFiniteNumber(record.size);
+    return size === undefined
+      ? undefined
+      : { skipped: false, source, destination, size, timestamp };
+  }
+  if (record.skipped === true) {
+    const reason = projectSkipReason(record.reason);
+    return reason === undefined
+      ? undefined
+      : { skipped: true, source, destination, reason, timestamp };
+  }
+  return undefined;
+}
+
+/**
+ * Projects `value` to a `readonly FileCopyOutcome[]`, dropping every element
+ * that does not conform, or `undefined` when `value` is not even an array.
+ */
+function projectFileCopyResults(
+  value: unknown,
+): readonly FileCopyOutcome[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const projected: FileCopyOutcome[] = [];
+  for (const entry of value as readonly unknown[]) {
+    const outcome = projectFileCopyOutcome(entry);
+    if (outcome !== undefined) projected.push(outcome);
+  }
+  return projected;
+}
+
+/**
+ * Projects `value` to a `Partial<Record<FileCopySkipReason, number>>`
+ * containing only the four documented reasons whose count is itself a valid
+ * finite number; every other key (an unrecognized reason, or a
+ * non-numeric count) is dropped. Returns `undefined` when `value` is not an
+ * object at all.
+ */
+function projectSkippedByReason(
+  value: unknown,
+): Partial<Record<FileCopySkipReason, number>> | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Record<string, unknown>;
+  const result: Partial<Record<FileCopySkipReason, number>> = {};
+  for (const reason of FILE_COPY_SKIP_REASONS) {
+    const count = projectFiniteNumber(record[reason]);
+    if (count !== undefined) result[reason] = count;
+  }
+  return result;
+}
+
+/**
+ * Projects `value` to the `summary` sub-shape of {@link ProjectedArchiveReport},
+ * copying only the fields `CopyReportSummary` declares and validating each
+ * against its declared type; an invalid or missing field is simply omitted
+ * (never defaulted, never passed through raw). Returns `undefined` when
+ * `value` is not an object at all.
+ */
+function projectCopyReportSummary(
+  value: unknown,
+): ProjectedArchiveReport["summary"] {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Record<string, unknown>;
+  const totalRegistered = projectFiniteNumber(record.totalRegistered);
+  const copied = projectFiniteNumber(record.copied);
+  const skipped = projectFiniteNumber(record.skipped);
+  const totalBytesCopied = projectFiniteNumber(record.totalBytesCopied);
+  const skippedByReason = projectSkippedByReason(record.skippedByReason);
+
+  return {
+    ...(totalRegistered !== undefined && { totalRegistered }),
+    ...(copied !== undefined && { copied }),
+    ...(skipped !== undefined && { skipped }),
+    ...(skippedByReason !== undefined && { skippedByReason }),
+    ...(totalBytesCopied !== undefined && { totalBytesCopied }),
+  };
+}
+
+/**
+ * Projects an arbitrary `archive` input down to the one shape it is
+ * documented to carry — the stage-9 archive report `M3LScript.getLastArchiveReport()`
+ * returns, publicly typed `M3LFileCopyReport` (`CopyReport` here) — instead of
+ * accepting and serializing whatever shape a caller happens to pass. Copies
+ * only `results` and `summary`, each validated/coerced field-by-field (a path
+ * is a `string`, a count is a `number`, a skip-reason is one of its four
+ * documented literals); anything that does not conform — an unrecognized
+ * top-level field, a malformed array entry, a wrong-typed count — is DROPPED,
+ * never passed through. This closes what was previously the single largest
+ * unbounded-input surface on the persisted report: `archive` was typed
+ * `unknown` and serialized wholesale (after redaction only), so any shape a
+ * caller attached under that field reached the report verbatim.
+ *
+ * Returns `undefined` when `archive` is not an object, or is an object with
+ * neither a recognizable `results` array nor a recognizable `summary` —
+ * i.e. nothing about it resembles the documented shape — so
+ * {@link buildArchiveEntry} omits the `archive` field entirely rather than
+ * embedding an empty shell.
+ *
+ * The projected result is still run through {@link sanitizeValue} by
+ * {@link buildArchiveEntry} afterward, as defense-in-depth: a `source`/
+ * `destination` path is a plain `string` field this projection accepts
+ * as-is, and could itself carry a credential-bearing URL fragment (e.g.
+ * copying from a presigned S3 URL) that redaction/URL-scrubbing must still
+ * catch even after projection.
+ */
+function projectArchiveReport(
+  archive: unknown,
+): ProjectedArchiveReport | undefined {
+  if (typeof archive !== "object" || archive === null) return undefined;
+  const record = archive as Record<string, unknown>;
+  const results = projectFileCopyResults(record.results);
+  const summary = projectCopyReportSummary(record.summary);
+  if (results === undefined && summary === undefined) return undefined;
+
+  return {
+    ...(results !== undefined && { results }),
+    ...(summary !== undefined && { summary }),
+  };
+}
+
+/**
+ * Builds the `{ archive }` entry, or `{}` when `input.archive` is `undefined`
+ * or does not project to any recognizable field of the documented
+ * `M3LFileCopyReport` shape (see {@link projectArchiveReport}).
+ */
 function buildArchiveEntry(
   archive: unknown,
 ): { archive: unknown } | Record<string, never> {
   if (archive === undefined) return {};
-  return { archive: sanitizeValue(archive) };
+  const projected = projectArchiveReport(archive);
+  if (projected === undefined) return {};
+  return { archive: sanitizeValue(projected) };
 }
 
 /**

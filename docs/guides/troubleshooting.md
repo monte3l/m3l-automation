@@ -178,12 +178,41 @@ this guide's triage. Have ready:
 3. The `correlationId` of the failing run.
 4. Environment: package version, Node version, OS, standalone vs monorepo vs
    Lambda.
-5. The cause chain (stacks included) and — **(ADR-0035)** — the
-   `run-report.json` from `data/output/<timestamp>/`.
+5. The cause chain of the root failure — see the sharing rules below before
+   pasting any of it.
 
-**Redact before pasting.** Log output passes the library's redaction helpers,
-but raw config files, env dumps, and hand-copied values do not. Never include
-credentials, tokens, account ids you consider sensitive, or customer data.
+### `run-report.json` is a crash dump — treat it as sensitive
+
+**Do not attach `run-report.json` to a public issue without reviewing it
+first.** It deliberately carries full diagnostic fidelity: error messages,
+stack traces, cause-chain context bags, and the archive manifest. Any of those
+can contain whatever a caller or an upstream service put there — a request URL
+with a presigned signature, a credential embedded in an error string, absolute
+paths that disclose your OS username.
+
+The library redacts it on a best-effort basis (`redactSensitiveLogValue` plus
+URL scrubbing) and that catches the common shapes, but it is a heuristic, not a
+guarantee. Four adversarial reviews of the phase-1 implementation each found
+inputs it did not catch; see
+[ADR-0035's 2026-07-23 update](../adr/0035-failure-reporting-and-diagnostics.md#update-2026-07-23--the-run-report-is-a-sensitive-artifact)
+for the reasoning and the known residual gaps.
+
+Practical guidance:
+
+- **Read the report before sharing it.** It is small and human-readable.
+- Prefer pasting the specific fields a maintainer asked for — `outcome`,
+  `exitCode`, `correlationId`, the failing `stage`, and the root cause's `name`
+  and `code` — over the whole file. Those fields carry no free text.
+- The **breadcrumb timeline** is held to a stricter standard: every event is
+  summarized to named scalar fields before storage (header _names_ only, never
+  values; importer record contents dropped entirely), so it is the safest part
+  of the report to share wholesale.
+- Store reports where you would store a crash dump, and prune
+  `data/output/` accordingly.
+
+**Redact before pasting anything else, too.** Raw config files, env dumps, and
+hand-copied values pass through no redaction at all. Never include credentials,
+tokens, account ids you consider sensitive, or customer data.
 
 ## See also
 

@@ -115,12 +115,22 @@ export interface M3LPathsPort {
  * persisted snapshot.** It only blocks *type-level* pass-through (excess-property
  * checking rejects a fresh object literal that adds a `value` key); a cast, a
  * widened variable, or a hostile/buggy {@link M3LConfigSourcePort} at runtime
- * is not caught by the type at all. The actual enforcement is the runtime
- * projection in this module: every entry is built as a fresh `{ name, source }`
- * literal (never a spread of a caller-supplied object), and `source` is
- * validated to look like a short label before being stored — see
- * `sanitizeSourceLabel` in this file. Do not assume the type alone is
- * sufficient; it isn't.
+ * is not caught by the type at all. Two runtime mechanisms in this module do
+ * the actual enforcement: (1) every entry is built as a fresh
+ * `{ name, source }` object literal (never a spread of a caller-supplied
+ * object), so a `value` key on a port's return can never ride along; and
+ * (2) `source` itself is passed through an **allowlist** of the library's own
+ * known source labels (`sanitizeSourceLabel` in this file) — anything not on
+ * that list, including a lowercase-hyphenated string that would pass a mere
+ * shape check, is replaced by a fixed `"other"` marker rather than stored
+ * verbatim. Do not assume the type alone is sufficient; it isn't.
+ *
+ * **`source` is `undefined` for every parameter in every run of this library
+ * today**: `M3LScriptConfigLoader.load()` calls `config.set(name, value)`
+ * with no source argument, and nothing else in the library populates one.
+ * The allowlist above only matters once a caller supplies its own
+ * {@link M3LConfigSourcePort} — this is defense against that future/external
+ * port, not something this module's own callers currently exercise.
  *
  * @example
  * ```ts
@@ -354,33 +364,61 @@ function tryCollectPaths(
 }
 
 /**
- * The longest string tolerated as a config source *label*. Every label this
- * library itself produces (`"cli"`, `"environment-variable"`, `"json-file"`,
- * ...) is well under this bound; a value this long is treated as implausible
- * for a label and rejected.
+ * The fixed, non-reversible marker stored in place of an unrecognized
+ * {@link M3LConfigSourcePort.sourceOf} return value. Used instead of dropping
+ * to `undefined` so a caller can still see "some source supplied this, just
+ * not one the library recognizes" without any risk of the raw (possibly
+ * secret-shaped) value — or even a truncated prefix of it — reaching the
+ * snapshot. A truncated secret is still a leaked secret, so this is a fixed
+ * literal, never a slice of `raw`.
  */
-const MAX_SOURCE_LABEL_LENGTH = 32;
+const UNRECOGNIZED_SOURCE_LABEL = "other";
 
 /**
- * The shape of a plausible source label: one or more lowercase words joined
- * by single hyphens, matching every label this library itself produces
- * (`"cli"`, `"environment-variable"`, `"json-file"`). No digits, uppercase,
- * or other punctuation — the kind of characters an actual secret/token value
- * (mixed case, digits, base64/JWT punctuation) would almost always contain.
+ * Every source label this library itself can produce, across every
+ * `M3L*ConfigProvider`/loader in `core/config`. A {@link sanitizeSourceLabel}
+ * return is stored verbatim only when it is a member of this set.
+ *
+ * This is an **allowlist**, not a shape check: a shape-based denylist (e.g.
+ * "lowercase words joined by hyphens") is exactly as strong as an adversary's
+ * willingness to pick a lowercase-hyphenated secret — `"correct-horse-battery-staple"`
+ * or `"aws-secret-do-not-share"` both satisfy any plausible shape rule while
+ * being actual secret material. Enumerating the finite set of labels the
+ * library itself emits closes that gap entirely: nothing outside this set
+ * — recognized-shaped or not — is ever stored as-is.
  */
-const SOURCE_LABEL_PATTERN = /^[a-z]+(?:-[a-z]+)*$/;
+const KNOWN_SOURCE_LABELS: ReadonlySet<string> = new Set([
+  "cli",
+  "environment-variable",
+  "json-file",
+  "yaml-file",
+  "preset",
+  "in-memory",
+  "lambda-event",
+  "default",
+]);
 
 /**
  * Validates that `raw` — a {@link M3LConfigSourcePort.sourceOf} return value
- * — is a plausible source *label* rather than a smuggled config *value*.
+ * — is one of the finite set of source labels this library itself can
+ * produce ({@link KNOWN_SOURCE_LABELS}), rather than a smuggled config
+ * *value* or an unrecognized custom label.
  *
  * This is the runtime enforcement that backs
  * {@link M3LConfigFingerprintEntry}'s `value?: never` field: that field is a
  * compile-time-only guard, erased at runtime, so a hostile or buggy port
- * could return the config value itself where a source label is expected.
- * Anything that isn't a short, lowercase, hyphenated identifier is rejected
- * outright — **never truncated**, since a truncated secret is still a leaked
- * secret — and the caller falls back to `undefined`.
+ * could return the config value itself where a source label is expected. An
+ * **allowlist** (not a shape/pattern denylist) is what actually stops that —
+ * see {@link KNOWN_SOURCE_LABELS} for why a shape rule alone is insufficient.
+ * A recognized label passes through verbatim; anything else — including a
+ * legitimate but unrecognized custom label from a caller-supplied port — is
+ * replaced by the fixed {@link UNRECOGNIZED_SOURCE_LABEL} marker, **never**
+ * the raw value and **never** a truncation of it (a truncated secret is
+ * still a leaked secret). `undefined` stays `undefined`.
+ *
+ * This deliberately trades a little fidelity — a script's own custom source
+ * label shows up as `"other"` rather than its real name — for a guarantee
+ * that nothing outside the known set ever reaches a persisted snapshot.
  *
  * `raw` is accepted as `unknown` (not the port's declared return type of
  * `string | undefined`) because a hostile/misbehaving port is exactly the
@@ -389,17 +427,15 @@ const SOURCE_LABEL_PATTERN = /^[a-z]+(?:-[a-z]+)*$/;
  */
 function sanitizeSourceLabel(raw: unknown): string | undefined {
   if (raw === undefined) return undefined;
-  if (typeof raw !== "string") return undefined;
-  if (raw.length === 0 || raw.length > MAX_SOURCE_LABEL_LENGTH) {
-    return undefined;
-  }
-  return SOURCE_LABEL_PATTERN.test(raw) ? raw : undefined;
+  if (typeof raw !== "string") return UNRECOGNIZED_SOURCE_LABEL;
+  return KNOWN_SOURCE_LABELS.has(raw) ? raw : UNRECOGNIZED_SOURCE_LABEL;
 }
 
 /**
  * Reads `name`'s source from `port`, tolerating a throwing port and
  * sanitizing the result through {@link sanitizeSourceLabel} so an
- * implausible (i.e. potentially secret-shaped) return value is never stored.
+ * unrecognized (i.e. potentially secret-shaped) return value is never stored
+ * verbatim.
  */
 function readSourceOf(
   port: M3LConfigSourcePort | undefined,

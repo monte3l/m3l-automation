@@ -689,6 +689,50 @@ describe("scrubUrlsInText()", () => {
   });
 });
 
+// =============================================================================
+// scrubUrlsInText() — round-4 security fix regressions (lock-in). Round 3's
+// fix only handled CLOSED quote delimiters (`token="secret" rest`); an
+// unclosed quote let the URL match consume and drop the `key=` anchor while
+// the raw, unterminated value survived outside the match — unrecognizable to
+// any anchor-based redactor once the anchor was gone. This is the regression
+// guard for that stranded-value defect.
+// =============================================================================
+describe("scrubUrlsInText() — round-4 (unterminated quote, lock-in)", () => {
+  test('an unterminated " quote value is scrubbed, not stranded outside the match', () => {
+    const result = scrubUrlsInText('GET https://h/p?token="QSEC failed');
+    expect(result).not.toContain("QSEC");
+  });
+
+  test("an unterminated ' quote value is scrubbed, not stranded outside the match", () => {
+    const result = scrubUrlsInText("GET https://h/p?token='QSEC failed");
+    expect(result).not.toContain("QSEC");
+  });
+
+  test('a CLOSED quoted query value ("QSEC") still scrubs correctly', () => {
+    const result = scrubUrlsInText('GET https://h/p?token="QSEC" ok');
+    expect(result).not.toContain("QSEC");
+  });
+
+  test("an unquoted query value still scrubs correctly", () => {
+    const result = scrubUrlsInText("GET https://h/p?token=QSEC ok");
+    expect(result).not.toContain("QSEC");
+  });
+
+  test("a bare key= at the very end of the string does not crash", () => {
+    expect(() => scrubUrlsInText("https://h/p?token=")).not.toThrow();
+  });
+
+  test("a sentence with no URL at all is returned unchanged", () => {
+    const text = "this is just a plain sentence with no url in it";
+    expect(scrubUrlsInText(text)).toBe(text);
+  });
+
+  test("unrelated markup immediately after a query param survives untouched — the angle-bracket branch was removed precisely to avoid mangling it", () => {
+    const text = "https://api.example.com/v1?a=<div>keepme</div>";
+    expect(scrubUrlsInText(text)).toContain("<div>keepme</div>");
+  });
+});
+
 describe("M3LFormatErrorChainOptions / M3LSerializedError types", () => {
   test("both stacks and redact default to true (documented as optional booleans)", () => {
     expectTypeOf<M3LFormatErrorChainOptions>().toEqualTypeOf<{

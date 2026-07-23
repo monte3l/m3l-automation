@@ -1002,6 +1002,54 @@ describe("collectDiagnostics — config fingerprint (names + sources only, never
   });
 });
 
+// =============================================================================
+// sanitizeSourceLabel — round-4 security fix regression (lock-in): the
+// unrecognized-source label check is now an ALLOWLIST, not a shape regex. A
+// shape-based denylist ("lowercase words joined by hyphens") is exactly as
+// strong as an adversary's willingness to pick a lowercase-hyphenated
+// secret — a prior shape regex let any such string through verbatim.
+// =============================================================================
+describe("collectDiagnostics — sanitizeSourceLabel allowlist (security Must-fix)", () => {
+  test.each([
+    "correct-horse-battery-staple",
+    "hunterhunterhunter",
+    "deadbeefcafe",
+    "aws-secret-do-not-share",
+  ])(
+    "an unrecognized sourceOf() return value (%s) is replaced by the fixed 'other' marker, never stored verbatim",
+    (rawSource) => {
+      const schema: M3LConfigSchemaPort = { declaredNames: () => ["apiKey"] };
+      const config: M3LConfigSourcePort = { sourceOf: () => rawSource };
+
+      const snapshot = collectDiagnostics({ schema, config });
+
+      expect(snapshot.config).toEqual([{ name: "apiKey", source: "other" }]);
+      expect(JSON.stringify(snapshot)).not.toContain(rawSource);
+    },
+  );
+
+  test.each(["cli", "environment-variable"])(
+    "a known source label (%s) is stored verbatim",
+    (known) => {
+      const schema: M3LConfigSchemaPort = { declaredNames: () => ["apiKey"] };
+      const config: M3LConfigSourcePort = { sourceOf: () => known };
+
+      const snapshot = collectDiagnostics({ schema, config });
+
+      expect(snapshot.config).toEqual([{ name: "apiKey", source: known }]);
+    },
+  );
+
+  test("undefined sourceOf() return stays undefined, never becomes 'other'", () => {
+    const schema: M3LConfigSchemaPort = { declaredNames: () => ["apiKey"] };
+    const config: M3LConfigSourcePort = { sourceOf: () => undefined };
+
+    const snapshot = collectDiagnostics({ schema, config });
+
+    expect(snapshot.config).toEqual([{ name: "apiKey", source: undefined }]);
+  });
+});
+
 describe("collectDiagnostics — tryCollectConfig catch: a broken schema vs. no schema wired", () => {
   test("declaredNames() throwing an Error: config is omitted AND a labeled stderr diagnostic fires", () => {
     const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -1360,15 +1408,27 @@ describe("M3LRunReporter.build()", () => {
     expect(report.environment.nodeVersion).toBe(process.version);
   });
 
-  test("archive passes through redactSensitiveLogValue before landing in the report", () => {
+  // Re-pointed off `archive` onto `timeline`: `archive` is now projected to
+  // the documented M3LFileCopyReport shape (see the "archive projection"
+  // describe below), so an arbitrary `{ apiKey, ok }` shape no longer reaches
+  // sanitizeValue at all — it is dropped by the projection before redaction
+  // ever runs. `timeline` still accepts arbitrary data and exercises the
+  // exact same sanitizeValue pipeline.
+  test("timeline breadcrumb payload passes through redactSensitiveLogValue before landing in the report", () => {
     const reporter = new M3LRunReporter();
+    const breadcrumb: M3LBreadcrumb = {
+      timestamp: new Date().toISOString(),
+      source: "test",
+      event: "custom:event",
+      payload: { apiKey: "sk-secret", ok: true },
+    };
     const report = reporter.build({
       ...baseInput,
       outcome: "success",
-      archive: { apiKey: "sk-secret", ok: true },
+      timeline: [breadcrumb],
     });
-    expect(JSON.stringify(report.archive)).not.toContain("sk-secret");
-    expect(report.archive).toMatchObject({ ok: true });
+    expect(JSON.stringify(report.timeline)).not.toContain("sk-secret");
+    expect(report.timeline[0]?.payload).toMatchObject({ ok: true });
   });
 
   test("never throws for hostile input: null error, circular archive, hostile-getter error", () => {
@@ -1414,9 +1474,21 @@ describe("M3LRunReporter.build()", () => {
       ...baseInput,
       finishedAt: new Date("2026-07-23T10:21:00.000Z"),
       outcome: "success",
-      archive: { copied: 2 },
+      // A real M3LFileCopyReport-shaped summary — an arbitrary `{ copied: 2 }`
+      // no longer projects to anything (dropped), which would leave `archive`
+      // absent from the round trip and no longer exercise this field at all.
+      archive: {
+        summary: {
+          totalRegistered: 3,
+          copied: 2,
+          skipped: 1,
+          skippedByReason: { "already-exists": 1 },
+          totalBytesCopied: 2048,
+        },
+      },
     });
     expect(JSON.parse(JSON.stringify(report))).toEqual(report);
+    expect(report.archive).toMatchObject({ summary: { copied: 2 } });
   });
 
   test("full JSON round trip — a fully-populated failure report", () => {
@@ -1679,19 +1751,32 @@ describe("M3LRunReporter.persist() — the failure path always attempts a write,
   // JSON.parse(safeJsonStringify(value)) FIRST, which normalizes a BigInt to
   // its string form before redaction ever sees it — so persistence now
   // SUCCEEDS. Do not restore the old "resolves undefined" expectation.
-  test("a BigInt riding the archive is normalized to its string form, so persist() resolves the written path", async () => {
+  //
+  // Re-pointed off `archive` onto `environment`: `archive` is now projected
+  // to the documented M3LFileCopyReport shape, so a `{ big: 1n }` payload no
+  // longer reaches sanitizeValue at all (dropped by the projection).
+  // `environment` still accepts arbitrary data (via the same `as
+  // M3LDiagnosticsSnapshot` escape hatch the round-4 presigned-URL test
+  // already uses) and exercises the exact same sanitizeValue pipeline.
+  // `timeline`'s `payload` cannot be used here instead — it is typed to
+  // scalar-only values (`M3LBreadcrumbScalar`), which a raw BigInt fails.
+  test("a BigInt riding the environment is normalized to its string form, so persist() resolves the written path", async () => {
     const reporter = new M3LRunReporter({
       paths: { getOutputDir: () => outDir },
     });
+    const environment = {
+      ...collectDiagnostics(),
+      big: 1n,
+    } as unknown as M3LDiagnosticsSnapshot;
 
     const writtenPath = await reporter.persist(
-      baseReportInput({ archive: { big: 1n } }),
+      baseReportInput({ environment }),
     );
 
     expect(writtenPath).toBeDefined();
     const raw = await readFile(writtenPath as string, "utf8");
-    const parsed = JSON.parse(raw) as { archive?: { big?: unknown } };
-    expect(parsed.archive?.big).toBe("1");
+    const parsed = JSON.parse(raw) as { environment?: { big?: unknown } };
+    expect(parsed.environment?.big).toBe("1");
   });
 
   test("on write failure, emits a best-effort stderr diagnostic starting 'm3l-script: '", async () => {
@@ -1974,6 +2059,21 @@ describe("M3LRunReporter — round-3 security fix regressions (lock-in, must not
     return readFile(writtenPath as string, "utf8");
   }
 
+  /**
+   * Wraps `field` in a valid `M3LDiagnosticsSnapshot` for use as
+   * `input.environment` — the escape hatch this describe block's tests use
+   * to carry arbitrary (non-scalar) data through sanitizeValue, mirroring
+   * the round-4 presigned-URL-in-environment test's own cast pattern.
+   */
+  function environmentWith(
+    field: Record<string, unknown>,
+  ): M3LDiagnosticsSnapshot {
+    return {
+      ...collectDiagnostics(),
+      ...field,
+    };
+  }
+
   // (a) REGRESSION LOCK: a Set used to be dropped entirely by
   // `redactSensitiveLogValue` (returning `{}` for a bare Set); an
   // intermediate fix then turned it into a raw array of its bare members —
@@ -1981,9 +2081,17 @@ describe("M3LRunReporter — round-3 security fix regressions (lock-in, must not
   // no key name for `isSensitiveKey` to inspect. Do NOT "simplify"
   // `describeSetCardinality` back into `[...set]` — that reintroduces this
   // exact leak.
+  //
+  // Re-pointed off `archive` onto `environment`: `archive` is now projected
+  // to the documented M3LFileCopyReport shape (see the "archive projection"
+  // describe below) and a `{ s: Set }` shape does not conform, so it would be
+  // dropped before ever reaching sanitizeValue — `environment` exercises the
+  // same sanitizeValue pipeline without that projection.
   test("a Set's raw contents never reach the written report; only a non-reversible cardinality marker does", async () => {
     const raw = await persistAndReadBack(
-      reportInputWith({ archive: { s: new Set(["sk-SET"]) } }),
+      reportInputWith({
+        environment: environmentWith({ s: new Set(["sk-SET"]) }),
+      }),
     );
     expect(raw).not.toContain("sk-SET");
     expect(raw).toContain("[set: 1 item]");
@@ -1991,7 +2099,9 @@ describe("M3LRunReporter — round-3 security fix regressions (lock-in, must not
 
   test("a nested Set several levels deep is also reduced to a cardinality marker, never leaked", async () => {
     const raw = await persistAndReadBack(
-      reportInputWith({ archive: { a: { b: new Set(["sk-NEST"]) } } }),
+      reportInputWith({
+        environment: environmentWith({ a: { b: new Set(["sk-NEST"]) } }),
+      }),
     );
     expect(raw).not.toContain("sk-NEST");
     expect(raw).toContain("[set: 1 item]");
@@ -2001,24 +2111,37 @@ describe("M3LRunReporter — round-3 security fix regressions (lock-in, must not
   // plain Record first, so `apiKey` is a real object key
   // `redactSensitiveLogValue` can recognize, not an element of a
   // `[key, value]` pair array. Guards against re-breaking this alongside (a).
+  //
+  // Re-pointed off `archive` onto `environment` for the same projection
+  // reason as (a).
   test("a Map's sensitive key is still redacted by name; the secret value never reaches the report", async () => {
     const raw = await persistAndReadBack(
-      reportInputWith({ archive: { s: new Map([["apiKey", "sk-MAP"]]) } }),
+      reportInputWith({
+        environment: environmentWith({ s: new Map([["apiKey", "sk-MAP"]]) }),
+      }),
     );
     expect(raw).not.toContain("sk-MAP");
     const parsed = JSON.parse(raw) as {
-      archive?: { s?: { apiKey?: string } };
+      environment?: { s?: { apiKey?: string } };
     };
-    expect(parsed.archive?.s?.apiKey).toBe("[REDACTED]");
+    expect(parsed.environment?.s?.apiKey).toBe("[REDACTED]");
   });
 
   // (c) Cyclic value: sanitizeValue's cycle-breaking pre-pass must run
   // BEFORE redaction, never the reverse — otherwise redaction throws on the
   // cycle and the fallback path emits no redaction at all.
-  test("a cyclic archive value never leaks its secret into the written report", async () => {
+  //
+  // Re-pointed off `archive` onto `environment`: a cyclic `{ apiKey, self }`
+  // shape does not conform to the projected M3LFileCopyReport shape either,
+  // so it would be dropped before reaching sanitizeValue — trivially "safe"
+  // for the wrong reason. `environment` still exercises the real
+  // cycle-breaking pre-pass this test locks in.
+  test("a cyclic environment value never leaks its secret into the written report", async () => {
     const cyclic: Record<string, unknown> = { apiKey: "sk-CYC" };
     cyclic.self = cyclic;
-    const raw = await persistAndReadBack(reportInputWith({ archive: cyclic }));
+    const raw = await persistAndReadBack(
+      reportInputWith({ environment: environmentWith(cyclic) }),
+    );
     expect(raw).not.toContain("sk-CYC");
   });
 
@@ -2028,10 +2151,15 @@ describe("M3LRunReporter — round-3 security fix regressions (lock-in, must not
   // `toJSON()` (guarded against a throwing implementation), ahead of
   // enumerating its properties, so a class using `toJSON` as its redaction
   // boundary is respected rather than bypassed.
+  //
+  // Re-pointed off `archive` onto `environment` for the same projection
+  // reason as (a)/(c).
   test("an own-property toJSON returning a secret does not bypass redaction", async () => {
     const raw = await persistAndReadBack(
       reportInputWith({
-        archive: { c: { toJSON: () => ({ apiKey: "sk-TJ" }) } },
+        environment: environmentWith({
+          c: { toJSON: () => ({ apiKey: "sk-TJ" }) },
+        }),
       }),
     );
     expect(raw).not.toContain("sk-TJ");
@@ -2216,49 +2344,79 @@ describe("M3LRunReporter — closing remaining branch coverage", () => {
     realpathSpy.mockRestore();
   });
 
+  /**
+   * Wraps `field` in a valid `M3LDiagnosticsSnapshot` for use as
+   * `input.environment` — see the identical helper's TSDoc in the round-3
+   * describe block above for why `environment` (not `archive`) is the
+   * vehicle for these sanitizeValue-internals tests.
+   */
+  function environmentWith(
+    field: Record<string, unknown>,
+  ): M3LDiagnosticsSnapshot {
+    return {
+      ...collectDiagnostics(),
+      ...field,
+    };
+  }
+
   // normalizePlainObject: a dangerous key (`__proto__`) on a plain object
   // must be dropped, not bracket-assigned onto the sanitized clone (which
   // would mutate its prototype instead of adding a data property).
+  //
+  // Re-pointed off `archive` onto `environment`: `archive` is now projected
+  // to the documented M3LFileCopyReport shape, so a bare `{ ok: true }`
+  // payload does not conform and would be dropped before normalizePlainObject
+  // ever runs on it.
   test("a dangerous __proto__ key on a plain object is dropped, sibling data still redacts normally", async () => {
-    const archive: Record<string, unknown> = { ok: true };
-    Object.defineProperty(archive, "__proto__", {
+    const field: Record<string, unknown> = { ok: true };
+    Object.defineProperty(field, "__proto__", {
       value: "sk-PROTO",
       enumerable: true,
       configurable: true,
     });
-    const raw = await persistAndReadBack(reportInputWith({ archive }));
+    const raw = await persistAndReadBack(
+      reportInputWith({ environment: environmentWith(field) }),
+    );
     expect(raw).not.toContain("sk-PROTO");
-    const parsed = JSON.parse(raw) as { archive?: { ok?: boolean } };
-    expect(parsed.archive?.ok).toBe(true);
+    const parsed = JSON.parse(raw) as { environment?: { ok?: boolean } };
+    expect(parsed.environment?.ok).toBe(true);
   });
 
   // normalizeMapEntries: a non-string key has no representable key name (so
   // the entry is dropped rather than leaking through a pair-array fallback),
   // and a dangerous string key (`__proto__`) is dropped for the same
   // prototype-pollution reason as the plain-object case above.
+  //
+  // Re-pointed off `archive` onto `environment` for the same projection
+  // reason as the previous test.
   test("a Map with a non-string key and a dangerous string key drops both, keeping the normal entry", async () => {
-    const archive = {
+    const field = {
       m: new Map<unknown, unknown>([
         ["apiKey", "sk-MAPKEY"],
         [42, "dropped-numeric-key"],
         ["__proto__", "dropped-dangerous-key"],
       ]),
     };
-    const raw = await persistAndReadBack(reportInputWith({ archive }));
+    const raw = await persistAndReadBack(
+      reportInputWith({ environment: environmentWith(field) }),
+    );
     expect(raw).not.toContain("sk-MAPKEY");
     expect(raw).not.toContain("dropped-numeric-key");
     expect(raw).not.toContain("dropped-dangerous-key");
     const parsed = JSON.parse(raw) as {
-      archive?: { m?: Record<string, unknown> };
+      environment?: { m?: Record<string, unknown> };
     };
-    expect(parsed.archive?.m).toEqual({ apiKey: "[REDACTED]" });
+    expect(parsed.environment?.m).toEqual({ apiKey: "[REDACTED]" });
   });
 
   // scalarToRedactable: symbol (with/without a description)/function/
   // undefined/null leaves, plus a non-empty array walked element-by-element
   // (the array .map() callback itself, not just the empty-array default).
+  //
+  // Re-pointed off `archive` onto `environment` for the same projection
+  // reason as the previous two tests.
   test("symbol/function/undefined/null leaves normalize safely, and a non-empty array is walked element-by-element", async () => {
-    const archive = {
+    const field = {
       sym: Symbol("hasDescription"),
       bareSym: Symbol(),
       fn: (): string => "unreachable",
@@ -2266,9 +2424,11 @@ describe("M3LRunReporter — closing remaining branch coverage", () => {
       nil: null,
       tags: ["keep-one", "keep-two"],
     };
-    const raw = await persistAndReadBack(reportInputWith({ archive }));
+    const raw = await persistAndReadBack(
+      reportInputWith({ environment: environmentWith(field) }),
+    );
     const parsed = JSON.parse(raw) as {
-      archive?: {
+      environment?: {
         sym?: string;
         bareSym?: string;
         fn?: string;
@@ -2277,12 +2437,12 @@ describe("M3LRunReporter — closing remaining branch coverage", () => {
         tags?: string[];
       };
     };
-    expect(parsed.archive?.sym).toBe("hasDescription");
-    expect(parsed.archive?.bareSym).toBe("");
-    expect(parsed.archive?.fn).toBe("");
-    expect(parsed.archive?.undef).toBeNull();
-    expect(parsed.archive?.nil).toBeNull();
-    expect(parsed.archive?.tags).toEqual(["keep-one", "keep-two"]);
+    expect(parsed.environment?.sym).toBe("hasDescription");
+    expect(parsed.environment?.bareSym).toBe("");
+    expect(parsed.environment?.fn).toBe("");
+    expect(parsed.environment?.undef).toBeNull();
+    expect(parsed.environment?.nil).toBeNull();
+    expect(parsed.environment?.tags).toEqual(["keep-one", "keep-two"]);
   });
 
   // safeToISOString: a hostile Date-like whose toISOString() throws falls
@@ -2338,8 +2498,12 @@ describe("M3LRunReporter — closing remaining branch coverage", () => {
 
   // invokeToJSONSafely: a throwing own-property toJSON degrades that node
   // (only) to the unredactable placeholder, without blanking sibling data.
+  //
+  // Re-pointed off `archive` onto `environment`: `archive` is now projected
+  // to the documented M3LFileCopyReport shape, so this shape does not conform
+  // and would be dropped before invokeToJSONSafely ever runs on it.
   test("a throwing own-property toJSON degrades that node to the unredactable placeholder, without blanking siblings", async () => {
-    const archive = {
+    const field = {
       ok: true,
       broken: {
         toJSON: (): never => {
@@ -2347,20 +2511,26 @@ describe("M3LRunReporter — closing remaining branch coverage", () => {
         },
       },
     };
-    const raw = await persistAndReadBack(reportInputWith({ archive }));
+    const raw = await persistAndReadBack(
+      reportInputWith({ environment: environmentWith(field) }),
+    );
     const parsed = JSON.parse(raw) as {
-      archive?: { ok?: boolean; broken?: string };
+      environment?: { ok?: boolean; broken?: string };
     };
-    expect(parsed.archive?.ok).toBe(true);
-    expect(parsed.archive?.broken).toBe("[unredactable value omitted]");
+    expect(parsed.environment?.ok).toBe(true);
+    expect(parsed.environment?.broken).toBe("[unredactable value omitted]");
   });
 
   // sanitizeValue's own outermost catch: a Proxy whose `ownKeys` trap throws
   // makes `Object.keys()` itself throw inside normalizeForRedaction — caught
   // by sanitizeValue, degrading the WHOLE value to the placeholder (not just
   // one field), since the failure happened before any redaction could run.
+  //
+  // Re-pointed off `archive` onto `environment`: an `archive` shaped this way
+  // would be dropped entirely by the projection (never even reaching
+  // sanitizeValue), silently defeating this lock-in.
   test("a Proxy with a throwing ownKeys trap degrades the whole sanitizeValue call to the unredactable placeholder", async () => {
-    const hostileArchive: Record<string, unknown> = new Proxy(
+    const hostileValue: Record<string, unknown> = new Proxy(
       {},
       {
         ownKeys(): never {
@@ -2369,10 +2539,12 @@ describe("M3LRunReporter — closing remaining branch coverage", () => {
       },
     );
     const raw = await persistAndReadBack(
-      reportInputWith({ archive: hostileArchive }),
+      reportInputWith({
+        environment: environmentWith({ hostile: hostileValue }),
+      }),
     );
-    const parsed = JSON.parse(raw) as { archive?: unknown };
-    expect(parsed.archive).toBe("[unredactable value omitted]");
+    const parsed = JSON.parse(raw) as { environment?: unknown };
+    expect(parsed.environment).toBe("[unredactable value omitted]");
   });
 
   // buildPersistFailureDiagnostic: a non-Error cause degrades to
@@ -2518,5 +2690,713 @@ describe("M3LRunReport — type contract", () => {
       return "not a failure";
     }
     expect(typeof describeOutcome).toBe("function");
+  });
+});
+
+// =============================================================================
+// M3LRunReporter — round-4 security fix regressions (lock-in). Every case
+// asserts the SECRET STRING is absent from the actual WRITTEN report file
+// read back from disk — never merely that persist()/build() didn't throw.
+// =============================================================================
+
+// -----------------------------------------------------------------------
+// (1) Unterminated-quote stranded value: round 3's fix only handled CLOSED
+// delimiters (`token="secret" rest`) — an unclosed quote let the URL match
+// consume and drop the `key=` anchor while the raw, unterminated value
+// survived untouched *outside* the match, unrecognizable to the name-based
+// redactor once the anchor was gone.
+// -----------------------------------------------------------------------
+describe("M3LRunReporter — round-4 (unterminated-quote stranded value, lock-in)", () => {
+  let outDir: string;
+
+  beforeEach(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-round4-quote-"));
+  });
+
+  afterEach(async () => {
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  function reportInputWith(
+    overrides: Partial<M3LRunReportInput>,
+  ): M3LRunReportInput {
+    return {
+      script: { name: "test-script", version: "1.0.0" },
+      correlationId: "corr-1",
+      startedAt: new Date("2026-07-23T10:20:30.123Z"),
+      outcome: "success",
+      ...overrides,
+    };
+  }
+
+  async function persistAndReadBack(input: M3LRunReportInput): Promise<string> {
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const writtenPath = await reporter.persist(input);
+    expect(writtenPath).toBeDefined();
+    return readFile(writtenPath as string, "utf8");
+  }
+
+  test.each(['"', "'"])(
+    "an unterminated %s-quote query value in an error's message AND context is never stranded outside the URL scrub match",
+    async (quoteChar) => {
+      const rawMessage = `GET https://h/p?token=${quoteChar}QSEC1 failed`;
+      const error = new M3LError(rawMessage, {
+        code: "ERR_CONFIG_MISSING",
+        context: { detail: rawMessage },
+      });
+
+      const raw = await persistAndReadBack(
+        reportInputWith({ outcome: "failure", stage: "mainFn", error }),
+      );
+      expect(raw).not.toContain("QSEC1");
+    },
+  );
+});
+
+// -----------------------------------------------------------------------
+// (2) Presigned URL must not reach the report: `sanitizeValue` previously ran
+// no URL scrub at all while `format-error.ts`'s `redactContext` already did —
+// the asymmetry was the bug. `archive`, `timeline`, and `environment` all
+// share `sanitizeValue`'s pipeline and must stay in lockstep.
+// -----------------------------------------------------------------------
+describe("M3LRunReporter — round-4 (presigned URL must not reach the report, lock-in)", () => {
+  let outDir: string;
+
+  const PRESIGNED_URL =
+    "https://s3.amazonaws.com/bk/obj?X-Amz-Signature=PRESIG&X-Amz-Credential=AKIAEXAMPLE";
+
+  beforeEach(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-round4-presign-"));
+  });
+
+  afterEach(async () => {
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  function reportInputWith(
+    overrides: Partial<M3LRunReportInput>,
+  ): M3LRunReportInput {
+    return {
+      script: { name: "test-script", version: "1.0.0" },
+      correlationId: "corr-1",
+      startedAt: new Date("2026-07-23T10:20:30.123Z"),
+      outcome: "success",
+      ...overrides,
+    };
+  }
+
+  async function persistAndReadBack(input: M3LRunReportInput): Promise<string> {
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const writtenPath = await reporter.persist(input);
+    expect(writtenPath).toBeDefined();
+    return readFile(writtenPath as string, "utf8");
+  }
+
+  // UPDATED (post-projection): this test still passes, but now for a
+  // DIFFERENT reason than when it was written. `archive` is projected to the
+  // documented M3LFileCopyReport shape (`{ results, summary }`) before
+  // sanitizeValue ever runs — `uploadUrl` is not part of that shape, so the
+  // whole `archive` field is DROPPED here, not scrubbed. The secret is absent
+  // from the report because the field never survives projection, not because
+  // the URL scrub caught it. See the "archive projection" describe below for
+  // the case that DOES still exercise the URL scrub post-projection: a
+  // presigned URL riding a legitimate `results[].source` field.
+  test("archive.uploadUrl: neither PRESIG nor AKIAEXAMPLE reach the written report (now because the field is dropped, not scrubbed)", async () => {
+    const raw = await persistAndReadBack(
+      reportInputWith({ archive: { uploadUrl: PRESIGNED_URL } }),
+    );
+    expect(raw).not.toContain("PRESIG");
+    expect(raw).not.toContain("AKIAEXAMPLE");
+  });
+
+  test("a timeline breadcrumb payload carrying the presigned URL: neither PRESIG nor AKIAEXAMPLE reach the written report", async () => {
+    const breadcrumb: M3LBreadcrumb = {
+      timestamp: new Date().toISOString(),
+      source: "test",
+      event: "custom:upload",
+      payload: { uploadUrl: PRESIGNED_URL },
+    };
+
+    const raw = await persistAndReadBack(
+      reportInputWith({ timeline: [breadcrumb] }),
+    );
+    expect(raw).not.toContain("PRESIG");
+    expect(raw).not.toContain("AKIAEXAMPLE");
+  });
+
+  test("environment carrying the presigned URL: neither PRESIG nor AKIAEXAMPLE reach the written report", async () => {
+    const environment = {
+      ...collectDiagnostics(),
+      uploadUrl: PRESIGNED_URL,
+    } as M3LDiagnosticsSnapshot;
+
+    const raw = await persistAndReadBack(reportInputWith({ environment }));
+    expect(raw).not.toContain("PRESIG");
+    expect(raw).not.toContain("AKIAEXAMPLE");
+  });
+});
+
+// -----------------------------------------------------------------------
+// (3) Shared (acyclic) subgraph must not OOM: `visited` is now a true
+// SEEN-set (never deleted on unwind) rather than a PATH-set, so a perfectly
+// acyclic but SHARED subgraph collapses to "[Circular]" the same as a
+// genuine cycle instead of being exponentially re-expanded at every
+// reference. Before the fix, fan-out 8 x depth 9 exhausted the heap after
+// ~24s with an UNCATCHABLE `FATAL ERROR: Ineffective mark-compacts`, which
+// killed the process on the very failure path the report exists to
+// document.
+//
+// Re-pointed off `archive` onto `environment`: a fan-out/cyclic object shaped
+// like `{ c0: …, c1: … }` (no `results`/`summary`) does not conform to the
+// projected M3LFileCopyReport shape, so it would be DROPPED before ever
+// reaching sanitizeValue's traversal — silently defeating both locks below
+// (the OOM-prevention `visited` SEEN-set logic, and cycle detection, would
+// never actually run). `environment` still accepts arbitrary data and
+// exercises the real traversal these tests exist to guard.
+// -----------------------------------------------------------------------
+describe("M3LRunReporter — round-4 (shared acyclic subgraph must not OOM, lock-in)", () => {
+  let outDir: string;
+
+  beforeEach(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-round4-shared-"));
+  });
+
+  afterEach(async () => {
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  function reportInputWith(
+    overrides: Partial<M3LRunReportInput>,
+  ): M3LRunReportInput {
+    return {
+      script: { name: "test-script", version: "1.0.0" },
+      correlationId: "corr-1",
+      startedAt: new Date("2026-07-23T10:20:30.123Z"),
+      outcome: "success",
+      ...overrides,
+    };
+  }
+
+  test("a shared (acyclic) subgraph with fan-out 8 x depth 9 does not exhaust the heap; persist() completes and resolves", async () => {
+    let node: Record<string, unknown> = { leaf: "x" };
+    for (let depth = 0; depth < 9; depth += 1) {
+      const next: Record<string, unknown> = {};
+      for (let fanout = 0; fanout < 8; fanout += 1) {
+        next[`c${fanout}`] = node;
+      }
+      node = next;
+    }
+
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const environment = { ...collectDiagnostics(), node };
+    const writtenPath = await reporter.persist(
+      reportInputWith({ environment }),
+    );
+    expect(writtenPath).toBeDefined();
+  }, 20_000); // Generous but finite: a regression should time out and fail rather than hang CI indefinitely.
+
+  test("a genuine cycle is still detected (must not have regressed)", async () => {
+    const cyclic: Record<string, unknown> = { apiKey: "sk-CYCLE4" };
+    cyclic.self = cyclic;
+
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const environment = { ...collectDiagnostics(), cyclic };
+    const writtenPath = await reporter.persist(
+      reportInputWith({ environment }),
+    );
+    expect(writtenPath).toBeDefined();
+    const raw = await readFile(writtenPath as string, "utf8");
+    expect(raw).not.toContain("sk-CYCLE4");
+  });
+});
+
+// -----------------------------------------------------------------------
+// (5) describeSetCardinality: a hostile `size` getter (non-integer, negative,
+// or otherwise not a genuine cardinality) must never be interpolated
+// verbatim into the marker — it degrades to `0` instead.
+// -----------------------------------------------------------------------
+describe("M3LRunReporter — round-4 (describeSetCardinality hostile size, lock-in)", () => {
+  let outDir: string;
+
+  beforeEach(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-round4-setsize-"));
+  });
+
+  afterEach(async () => {
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  function reportInputWith(
+    overrides: Partial<M3LRunReportInput>,
+  ): M3LRunReportInput {
+    return {
+      script: { name: "test-script", version: "1.0.0" },
+      correlationId: "corr-1",
+      startedAt: new Date("2026-07-23T10:20:30.123Z"),
+      outcome: "success",
+      ...overrides,
+    };
+  }
+
+  // Re-pointed off `archive` onto `environment`: `archive` is now projected
+  // to the documented M3LFileCopyReport shape, so a `{ s: Set }` shape does
+  // not conform and would be dropped before describeSetCardinality ever runs
+  // on it.
+  test.each([
+    ["1); DROP TABLE x; --", "DROP TABLE"],
+    [-5, "-5"],
+    [1.7, "1.7"],
+    [Number.NaN, "NaN"],
+  ] as const)(
+    "a Set whose size getter returns the hostile/non-integer value %p degrades to a plain non-negative integer marker, never the injected value",
+    async (hostileSize, forbiddenFragment) => {
+      const hostileSet = new Set(["sk-SIZE"]);
+      Object.defineProperty(hostileSet, "size", {
+        get: () => hostileSize,
+        configurable: true,
+      });
+
+      const reporter = new M3LRunReporter({
+        paths: { getOutputDir: () => outDir },
+      });
+      const environment = {
+        ...collectDiagnostics(),
+        s: hostileSet,
+      };
+      const writtenPath = await reporter.persist(
+        reportInputWith({ environment }),
+      );
+      expect(writtenPath).toBeDefined();
+      const raw = await readFile(writtenPath as string, "utf8");
+
+      expect(raw).not.toContain("sk-SIZE");
+      expect(raw).toMatch(/\[set: \d+ items?\]/);
+      expect(raw).not.toContain(String(forbiddenFragment));
+    },
+  );
+});
+
+// =============================================================================
+// M3LRunReporter — archive projection (M3LFileCopyReport allowlist): `archive`
+// is projected field-by-field to the documented M3LFileCopyReport shape
+// (`{ results, summary }`) before ever reaching sanitizeValue — anything not
+// part of that shape is DROPPED, not passed through. This closes the largest
+// unbounded-input surface on the persisted report (a confirmed leak: a
+// presigned S3 URL riding an arbitrary `archive` shape reached disk).
+// =============================================================================
+describe("M3LRunReporter — archive projection (M3LFileCopyReport allowlist)", () => {
+  let outDir: string;
+
+  const PRESIGNED_URL =
+    "https://s3.amazonaws.com/bk/obj?X-Amz-Signature=PROJPRESIG&X-Amz-Credential=AKIAPROJEX";
+
+  beforeEach(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-archive-proj-"));
+  });
+
+  afterEach(async () => {
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  function reportInputWith(
+    overrides: Partial<M3LRunReportInput>,
+  ): M3LRunReportInput {
+    return {
+      script: { name: "test-script", version: "1.0.0" },
+      correlationId: "corr-1",
+      startedAt: new Date("2026-07-23T10:20:30.123Z"),
+      outcome: "success",
+      ...overrides,
+    };
+  }
+
+  async function persistAndReadBack(input: M3LRunReportInput): Promise<string> {
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const writtenPath = await reporter.persist(input);
+    expect(writtenPath).toBeDefined();
+    return readFile(writtenPath as string, "utf8");
+  }
+
+  test("a real M3LFileCopyReport-shaped archive round-trips with its useful fields intact", async () => {
+    const validReport = {
+      results: [
+        {
+          skipped: false,
+          source: "/src/a.csv",
+          destination: "/out/inputs/a.csv",
+          size: 1234,
+          timestamp: "2026-07-23T10:00:00.000Z",
+        },
+        {
+          skipped: true,
+          source: "/src/b.csv",
+          destination: "/out/inputs/b.csv",
+          reason: "already-exists",
+          timestamp: "2026-07-23T10:00:01.000Z",
+        },
+      ],
+      summary: {
+        totalRegistered: 2,
+        copied: 1,
+        skipped: 1,
+        skippedByReason: { "already-exists": 1 },
+        totalBytesCopied: 1234,
+      },
+    };
+
+    const raw = await persistAndReadBack(
+      reportInputWith({ archive: validReport }),
+    );
+    const parsed = JSON.parse(raw) as { archive?: unknown };
+    expect(parsed.archive).toEqual(validReport);
+  });
+
+  test("an arbitrary object unrelated to M3LFileCopyReport is dropped entirely — neither secret reaches the written report", async () => {
+    const raw = await persistAndReadBack(
+      reportInputWith({
+        archive: { secretBlob: "sk-ARB", nested: { tok: "sk-ARB2" } },
+      }),
+    );
+    expect(raw).not.toContain("sk-ARB");
+    expect(raw).not.toContain("sk-ARB2");
+    const parsed = JSON.parse(raw) as { archive?: unknown };
+    expect(parsed.archive).toBeUndefined();
+  });
+
+  test("a presigned URL under a non-conforming top-level key is dropped, not merely scrubbed", async () => {
+    const raw = await persistAndReadBack(
+      reportInputWith({ archive: { uploadUrl: PRESIGNED_URL } }),
+    );
+    const parsed = JSON.parse(raw) as { archive?: unknown };
+    expect(parsed.archive).toBeUndefined();
+    expect(raw).not.toContain("PROJPRESIG");
+    expect(raw).not.toContain("AKIAPROJEX");
+  });
+
+  test("a results entry with wrong-typed fields is dropped entirely, not passed through partially-typed", async () => {
+    const raw = await persistAndReadBack(
+      reportInputWith({
+        archive: {
+          results: [
+            {
+              skipped: false,
+              source: 123, // wrong type: should be a string
+              destination: "/out/a.csv",
+              size: "not-a-number", // wrong type: should be a number
+              timestamp: "2026-07-23T10:00:00.000Z",
+            },
+            {
+              skipped: false,
+              source: "/src/good.csv",
+              destination: "/out/good.csv",
+              size: 10,
+              timestamp: "2026-07-23T10:00:02.000Z",
+            },
+          ],
+        },
+      }),
+    );
+    const parsed = JSON.parse(raw) as {
+      archive?: { results?: readonly unknown[] };
+    };
+    expect(parsed.archive?.results).toHaveLength(1);
+    expect(parsed.archive?.results?.[0]).toMatchObject({
+      source: "/src/good.csv",
+    });
+  });
+
+  test("a missing summary and a non-array results are each independently omitted, never fabricated", async () => {
+    const raw = await persistAndReadBack(
+      reportInputWith({ archive: { results: "not-an-array" } }),
+    );
+    const parsed = JSON.parse(raw) as { archive?: unknown };
+    // `results` fails to project (not an array) and there is no `summary`
+    // either, so the whole `archive` field is omitted — never a fabricated
+    // `{ results: [] }` shell.
+    expect(parsed.archive).toBeUndefined();
+  });
+
+  test("an unrecognized skip reason literal is dropped from a skipped result entry, never passed through", async () => {
+    const raw = await persistAndReadBack(
+      reportInputWith({
+        archive: {
+          results: [
+            {
+              skipped: true,
+              source: "/src/c.csv",
+              destination: "/out/c.csv",
+              reason: "not-a-real-reason",
+              timestamp: "2026-07-23T10:00:03.000Z",
+            },
+          ],
+        },
+      }),
+    );
+    const parsed = JSON.parse(raw) as {
+      archive?: { results?: readonly unknown[] };
+    };
+    // The entry fails to project (its `reason` is not one of the four
+    // documented literals) and is dropped, leaving an empty `results` array.
+    expect(parsed.archive?.results).toEqual([]);
+  });
+
+  test("a presigned URL riding a legitimate results[].source field still gets scrubbed after projection", async () => {
+    const raw = await persistAndReadBack(
+      reportInputWith({
+        archive: {
+          results: [
+            {
+              skipped: false,
+              source: PRESIGNED_URL,
+              destination: "/out/a.csv",
+              size: 10,
+              timestamp: "2026-07-23T10:00:00.000Z",
+            },
+          ],
+        },
+      }),
+    );
+    expect(raw).not.toContain("PROJPRESIG");
+    expect(raw).not.toContain("AKIAPROJEX");
+    const parsed = JSON.parse(raw) as {
+      archive?: { results?: ReadonlyArray<{ source?: string }> };
+    };
+    expect(parsed.archive?.results?.[0]?.source).toBe(
+      "https://s3.amazonaws.com/bk/obj",
+    );
+  });
+
+  test("a non-object results entry (string/number/null) is dropped, keeping only the valid entries", async () => {
+    const raw = await persistAndReadBack(
+      reportInputWith({
+        archive: {
+          results: [
+            "not-an-object",
+            42,
+            null,
+            {
+              skipped: false,
+              source: "/src/good.csv",
+              destination: "/out/good.csv",
+              size: 5,
+              timestamp: "2026-07-23T10:00:04.000Z",
+            },
+          ],
+        },
+      }),
+    );
+    const parsed = JSON.parse(raw) as {
+      archive?: { results?: ReadonlyArray<{ source?: string }> };
+    };
+    expect(parsed.archive?.results).toHaveLength(1);
+    expect(parsed.archive?.results?.[0]?.source).toBe("/src/good.csv");
+  });
+
+  test("a skipped: false entry with an invalid size (only that field wrong) is dropped entirely", async () => {
+    const raw = await persistAndReadBack(
+      reportInputWith({
+        archive: {
+          results: [
+            {
+              skipped: false,
+              source: "/src/badsize.csv",
+              destination: "/out/badsize.csv",
+              size: "not-a-number",
+              timestamp: "2026-07-23T10:00:05.000Z",
+            },
+          ],
+        },
+      }),
+    );
+    const parsed = JSON.parse(raw) as {
+      archive?: { results?: readonly unknown[] };
+    };
+    expect(parsed.archive?.results).toEqual([]);
+  });
+
+  test("a results entry with neither skipped: true nor skipped: false is dropped entirely", async () => {
+    const raw = await persistAndReadBack(
+      reportInputWith({
+        archive: {
+          results: [
+            {
+              source: "/src/noflag.csv",
+              destination: "/out/noflag.csv",
+              timestamp: "2026-07-23T10:00:06.000Z",
+            },
+          ],
+        },
+      }),
+    );
+    const parsed = JSON.parse(raw) as {
+      archive?: { results?: readonly unknown[] };
+    };
+    expect(parsed.archive?.results).toEqual([]);
+  });
+
+  test("a non-object summary.skippedByReason is omitted, sibling summary fields still project", async () => {
+    const raw = await persistAndReadBack(
+      reportInputWith({
+        archive: {
+          summary: {
+            totalRegistered: 4,
+            copied: 3,
+            skipped: 1,
+            skippedByReason: "not-an-object",
+            totalBytesCopied: 500,
+          },
+        },
+      }),
+    );
+    const parsed = JSON.parse(raw) as {
+      archive?: {
+        summary?: { copied?: number; skippedByReason?: unknown };
+      };
+    };
+    expect(parsed.archive?.summary?.copied).toBe(3);
+    expect(parsed.archive?.summary?.skippedByReason).toBeUndefined();
+  });
+
+  test.each([["a plain string"], [42], [true]] as const)(
+    "a non-object archive (%p) is dropped, never throwing",
+    async (nonObjectArchive) => {
+      const raw = await persistAndReadBack(
+        reportInputWith({ archive: nonObjectArchive }),
+      );
+      const parsed = JSON.parse(raw) as { archive?: unknown };
+      expect(parsed.archive).toBeUndefined();
+    },
+  );
+
+  test("a null archive is dropped, never throwing", async () => {
+    const raw = await persistAndReadBack(reportInputWith({ archive: null }));
+    const parsed = JSON.parse(raw) as { archive?: unknown };
+    expect(parsed.archive).toBeUndefined();
+  });
+});
+
+// =============================================================================
+// M3LRunReporter — object-KEY URL scrubbing (new fix, no coverage yet): a URL
+// riding as an object/Map KEY must be scrubbed the same way the identical URL
+// riding as a VALUE already is. The key/value asymmetry was the bug —
+// `scrubUrlsInSanitizedValue` (run-report.ts) and `scrubUrlsInValue`
+// (format-error.ts, for M3LError.context) both scrub keys, but had no
+// regression cover proving it. Every case below asserts the SECRET STRING is
+// absent from the actual WRITTEN report read back from disk, and the control
+// (same URL as a value) is asserted clean too — the asymmetry is only
+// meaningful relative to that control.
+// =============================================================================
+describe("M3LRunReporter — object-KEY URL scrubbing (new fix, no coverage yet)", () => {
+  let outDir: string;
+
+  const KEY_URL =
+    "https://bkt.s3.amazonaws.com/o?X-Amz-Signature=SIGKEY&X-Amz-Credential=AKIAEX";
+
+  beforeEach(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-keyscrub-"));
+  });
+
+  afterEach(async () => {
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  function reportInputWith(
+    overrides: Partial<M3LRunReportInput>,
+  ): M3LRunReportInput {
+    return {
+      script: { name: "test-script", version: "1.0.0" },
+      correlationId: "corr-1",
+      startedAt: new Date("2026-07-23T10:20:30.123Z"),
+      outcome: "success",
+      ...overrides,
+    };
+  }
+
+  async function persistAndReadBack(input: M3LRunReportInput): Promise<string> {
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const writtenPath = await reporter.persist(input);
+    expect(writtenPath).toBeDefined();
+    return readFile(writtenPath as string, "utf8");
+  }
+
+  test("a URL used as a plain-object key is scrubbed; the identical URL as a value is also clean (control)", async () => {
+    const breadcrumb: M3LBreadcrumb = {
+      timestamp: new Date().toISOString(),
+      source: "test",
+      event: "custom:event",
+      payload: { [KEY_URL]: "ok", valueControl: KEY_URL },
+    };
+
+    const raw = await persistAndReadBack(
+      reportInputWith({ timeline: [breadcrumb] }),
+    );
+    expect(raw).not.toContain("SIGKEY");
+    expect(raw).not.toContain("AKIAEX");
+
+    const parsed = JSON.parse(raw) as {
+      timeline?: ReadonlyArray<{ payload?: Record<string, unknown> }>;
+    };
+    const payload = parsed.timeline?.[0]?.payload ?? {};
+    expect(Object.keys(payload)).toContain("https://bkt.s3.amazonaws.com/o");
+    expect(payload["https://bkt.s3.amazonaws.com/o"]).toBe("ok");
+    expect(payload.valueControl).toBe("https://bkt.s3.amazonaws.com/o");
+  });
+
+  test("a URL used as a Map key, nested several levels deep, is scrubbed", async () => {
+    const nested = {
+      level1: {
+        level2: {
+          level3: new Map([[KEY_URL, "ok"]]),
+        },
+      },
+    };
+    const environment = { ...collectDiagnostics(), nested };
+
+    const raw = await persistAndReadBack(reportInputWith({ environment }));
+    expect(raw).not.toContain("SIGKEY");
+    expect(raw).not.toContain("AKIAEX");
+
+    const parsed = JSON.parse(raw) as {
+      environment?: {
+        nested?: {
+          level1?: { level2?: { level3?: Record<string, unknown> } };
+        };
+      };
+    };
+    const level3 = parsed.environment?.nested?.level1?.level2?.level3 ?? {};
+    expect(Object.keys(level3)).toContain("https://bkt.s3.amazonaws.com/o");
+    expect(level3["https://bkt.s3.amazonaws.com/o"]).toBe("ok");
+  });
+
+  test("a URL used as a key in M3LError.context is scrubbed, alongside the identical URL riding as a value (control)", async () => {
+    const error = new M3LError("upload failed", {
+      code: "ERR_CONFIG_MISSING",
+      context: { [KEY_URL]: "ok", valueControl: KEY_URL },
+    });
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+
+    const writtenPath = await reporter.persist(
+      reportInputWith({ outcome: "failure", stage: "mainFn", error }),
+    );
+    expect(writtenPath).toBeDefined();
+    const raw = await readFile(writtenPath as string, "utf8");
+
+    expect(raw).not.toContain("SIGKEY");
+    expect(raw).not.toContain("AKIAEX");
+    expect(raw).toContain("https://bkt.s3.amazonaws.com/o");
   });
 });

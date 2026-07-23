@@ -21,9 +21,29 @@ answers the operator's questions: _what exit code did the run produce and why,
 what was happening just before it failed, and what artifact can I read after
 the process is gone?_
 
-Everything here is redaction-first (reusing `redactSensitiveLogValue` /
-`redactSensitiveLogText` from [`logging`](./logging.md)) and additive — no
-existing `M3LScript`, logger, or error behavior changes.
+Everything here is additive — no existing `M3LScript`, logger, or error
+behavior changes.
+
+> **Two different redaction guarantees live in this module. Know which one you
+> are relying on.**
+>
+> - **Allowlisted surfaces — a guarantee.** The breadcrumb trail, the config
+>   fingerprint, and the source-label set keep only named, scalar fields
+>   enumerated in advance. A payload field nobody allowlisted is dropped, so
+>   there is nothing for a heuristic to miss. Header _names_ are kept, values
+>   never are; importer record contents are dropped entirely.
+> - **Free-text surfaces — best effort only.** Error `message`, `stack`, and
+>   `context`, and the `archive` manifest, are redacted with
+>   `redactSensitiveLogValue` / `redactSensitiveLogText` plus URL scrubbing.
+>   Those are heuristics over unbounded input. They catch the common shapes and
+>   are _not_ a guarantee.
+>
+> Consequently **`run-report.json` is a sensitive artifact — treat it as a
+> crash dump**, not as something to attach to a public issue unreviewed. See
+> [ADR-0035's 2026-07-23 update](../../adr/0035-failure-reporting-and-diagnostics.md#update-2026-07-23--the-run-report-is-a-sensitive-artifact)
+> for the evidence behind that classification and the known residual gaps, and
+> the [troubleshooting guide](../../guides/troubleshooting.md) for what is safe
+> to share.
 
 ## Public API
 
