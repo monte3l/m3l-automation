@@ -99,6 +99,23 @@ paths:
   no `exports` entry and may change without a major bump.
 - **The `exports` map is the public contract** (`.`, `./core`, `./aws`). Adding,
   removing, or retyping a subpath is a semver event — plan before editing it.
+- **"Additive" is about construction, not just consumption.** Before calling an
+  added field on an options/context type additive, grep the whole repo —
+  `scripts/**` and `tests/**` included — for hand-construction of that type. A
+  **required** field added to any type that a caller or a test fake _constructs_
+  is source-breaking, even when production code only ever _receives_ it (found
+  A4a: a required `dryRun` on `M3LScriptHookContext` broke 7 consumer test
+  fakes). Reading the type in isolation hides the semver event.
+- **In a top-level catch whose job is to set an exit code, set it first.**
+  Assign `process.exitCode` (or the equivalent scheduler signal) immediately,
+  before any report/log work that could throw — the exit code is the only thing
+  a scheduler reads, and a throw in the reporting path must never cost it. A
+  best-effort wrapper must guard the _construction_ of its payload, not only the
+  I/O call: the input builder is as fallible as the write. Corollary: a wrapper
+  that installs an `uncaughtException` guard _suppresses_ Node's default crash,
+  so a lost exit code becomes a silent exit-0 **success** — verify the failure
+  path by running built `dist/` in a child process and reading the shell's `$?`,
+  never just `process.exitCode` in-process (found A4a).
 - **Dependency loading & declaration** (full rationale: ADR-0017). Classify a new
   external dependency by _required vs optional_, not by size:
   - **Required** (the library needs it for its purpose) → hard `dependencies`,
