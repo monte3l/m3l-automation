@@ -159,6 +159,198 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/config/M3LConfigMissingError.ts"
   },
+  "M3L_EXIT_CODES": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/exit-codes.ts",
+    "lines": "26-52"
+  },
+  "M3LExitCode": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/exit-codes.ts",
+    "lines": "53-71"
+  },
+  "M3LErrorExitCode": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/exit-codes.ts",
+    "lines": "72-98"
+  },
+  "isM3LErrorOrigin": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/exit-codes.ts",
+    "lines": "99-181"
+  },
+  "mapErrorToExitCode": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/exit-codes.ts",
+    "lines": "182-189"
+  },
+  "M3LFormatErrorChainOptions": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
+    "lines": "46-62"
+  },
+  "M3LSerializedError": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
+    "lines": "63-267"
+  },
+  "scrubUrlsInText": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
+    "lines": "268-429"
+  },
+  "formatErrorChain": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
+    "lines": "430-475"
+  },
+  "serializeErrorChain": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
+    "lines": "476-489"
+  },
+  "M3LBreadcrumb": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
+    "lines": "40-64"
+  },
+  "M3LBreadcrumbScalar": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
+    "lines": "65-82"
+  },
+  "M3LBreadcrumbSource": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
+    "lines": "83-99"
+  },
+  "M3LBreadcrumbTrailOptions": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
+    "lines": "100-117"
+  },
+  "M3LBreadcrumbAttachOptions": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
+    "lines": "118-600"
+  },
+  "M3LBreadcrumbTrail": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
+    "lines": "601-768"
+  },
+  "M3LConfigSchemaPort": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
+    "lines": "51-71"
+  },
+  "M3LConfigSourcePort": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
+    "lines": "72-94"
+  },
+  "M3LPathsPort": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
+    "lines": "95-141"
+  },
+  "M3LConfigFingerprintEntry": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
+    "lines": "142-197"
+  },
+  "M3LDiagnosticsEnvironment": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
+    "lines": "198-261"
+  },
+  "M3LDiagnosticsPaths": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
+    "lines": "262-287"
+  },
+  "M3LDiagnosticsSnapshot": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
+    "lines": "288-318"
+  },
+  "M3LCollectDiagnosticsOptions": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
+    "lines": "319-532"
+  },
+  "collectDiagnostics": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
+    "lines": "533-554"
+  },
+  "M3LRunOutcome": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
+    "lines": "52-64"
+  },
+  "M3LRunReportFailure": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
+    "lines": "65-87"
+  },
+  "M3LRunReportInput": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
+    "lines": "88-115"
+  },
+  "M3LRunReportBase": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
+    "lines": "116-150"
+  },
+  "M3LRunReport": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
+    "lines": "151-176"
+  },
+  "M3LRunReporterOptions": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
+    "lines": "177-946"
+  },
+  "M3LRunReporter": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
+    "lines": "947-1189"
+  },
   "M3LExecutionEnvironment": {
     "submodule": "environment",
     "namespace": "core",
@@ -326,6 +518,42 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/errors/M3LErrorUtils.ts",
     "lines": "181-186"
+  },
+  "M3LErrorOrigin": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/catalog.ts",
+    "lines": "37-67"
+  },
+  "M3LErrorRetryable": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/catalog.ts",
+    "lines": "68-82"
+  },
+  "M3LErrorClassification": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/catalog.ts",
+    "lines": "83-109"
+  },
+  "M3L_ERROR_CATALOG": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/catalog.ts",
+    "lines": "110-204"
+  },
+  "isM3LErrorCode": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/catalog.ts",
+    "lines": "205-226"
+  },
+  "classifyErrorCode": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/catalog.ts",
+    "lines": "227-232"
   },
   "M3LErrorOptions": {
     "submodule": "errors",

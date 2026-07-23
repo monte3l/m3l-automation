@@ -69,20 +69,29 @@ regular file in `paths.getInputDir()` and `paths.getConfigDir()` and copies
 them into a per-run timestamped directory:
 
 ```text
-data/output/<timestamp>/
-├── input/    # snapshot of data/input at run time
-└── config/   # snapshot of data/config at run time
+data/output/
+├── inputs/    # snapshot of data/input at run time
+└── configs/   # snapshot of data/config at run time
 ```
 
 Constraints: 100 MB per-file default cap, no overwrite of existing
 destinations, path-traversal guards. The archive result is available afterwards
 via `getLastArchiveReport()`.
 
+> Archival is **flat and not timestamped**: `M3LFileCopier` resolves its
+> destination from `M3LPaths.getOutputDir()` directly and groups files by
+> `getDefaultSubdirForPathType` (`inputs`/`configs`). An earlier draft of this
+> page drew a `data/output/<timestamp>/` tree with `input/`/`config/`
+> subdirectories; neither the timestamp nor those singular names have ever
+> existed in the code.
+
 Archival runs on the **success path only** — a run that fails before stage 9
 archives nothing today. The
 [diagnostics run report](./diagnostics.md#m3lrunreport--m3lrunreporter)
-(ADR-0035) extends this same directory with a `run-report.json` written on
-**both** outcomes, failure included.
+(ADR-0035 phase 1) is written on **both** outcomes, failure included, into its
+own per-run `data/output/<startedAt>/` directory — deliberately _not_ shared
+with the flat archival above, since changing that layout would break the nine
+consumer scripts already reading it. Reconciling the two is ADR-0035 phase 5.
 
 ## Exit codes
 

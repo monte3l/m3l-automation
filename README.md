@@ -12,7 +12,7 @@
 <a href="https://nodejs.org/api/esm.html"><img src="https://img.shields.io/badge/esm-only-66D9EF?style=flat-square&labelColor=272822" alt="ESM only"></a>
 <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-66D9EF?style=flat-square&labelColor=272822" alt="TypeScript strict"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-A6E22E?style=flat-square&labelColor=272822" alt="Apache-2.0"></a>
-<a href="docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-30%2F31-A6E22E?style=flat-square&labelColor=272822" alt="modules: 25/25"></a>
+<a href="docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-31%2F31-A6E22E?style=flat-square&labelColor=272822" alt="modules: 25/25"></a>
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@
 <a href="#co-developed-with-claude"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fmonte3l.github.io%2Fm3l-automation%2Fcommit-stats%2Fclaude-sonnet-4-6.json" alt="Claude Sonnet 4.6 commits"></a>
 </p>
 
-> **All 30 of 31 submodules are implemented and reviewed.** The package is
+> **All 31 of 31 submodules are implemented and reviewed.** The package is
 > internal and not published to npm; `version` in `package.json` is hand-managed.
 > Implemented submodules: `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `polling`, `text`, `prompt`, `exporters`, `storage`, `network`, `importers`, `files`, `logging`, `aws/models`, `script`, `aws/credentials`, `aws/clients`, `aws/dynamodb`, `aws/sqs`. See [Implementation status](docs/implementation-status.md)
 > for the per-module breakdown.
