@@ -1,5 +1,5 @@
 /**
- * `core/logging/M3LLogEventCategory` — the nine documented log event
+ * `core/logging/M3LLogEventCategory` — the ten documented log event
  * categories.
  *
  * @packageDocumentation
@@ -42,6 +42,14 @@ export const M3LLogEventCategory = {
   INFO: "info",
   /** A section divider or grouping label. */
   SECTION: "section",
+  /**
+   * The library's own diagnostic events — breadcrumbs, timings — emitted by
+   * {@link M3LLogger.time} and other internal instrumentation (ADR-0035
+   * phase 3). Ranked below every other category by
+   * `src/internal/logging/levels.ts`'s severity floor, so a `minLevel` above
+   * `DEBUG` suppresses it by default.
+   */
+  DEBUG: "debug",
 } as const;
 
 /**
@@ -58,3 +66,32 @@ export const M3LLogEventCategory = {
  */
 export type M3LLogEventCategory =
   (typeof M3LLogEventCategory)[keyof typeof M3LLogEventCategory];
+
+/**
+ * The subset of {@link M3LLogEventCategory} that may be spelled as a
+ * `minLevel` severity floor (review fix round).
+ *
+ * The categories are presentational groupings, not a severity ladder in
+ * their own right — `text`/`step`/`info`/`section`/`header` are all ranked
+ * `1` by `src/internal/logging/levels.ts`'s severity table. Allowing all four
+ * tied spellings as a *floor* value bought nothing (they behave identically)
+ * while inviting inconsistency across call sites (`minLevel: HEADER` vs.
+ * `minLevel: TEXT` reading as different intents for an identical effect).
+ * This type exposes exactly one canonical spelling per rank — `info` stands
+ * in for the whole rank-1 tie — while the runtime tie itself is unchanged:
+ * an `INFO` floor still admits `text`/`step`/`section`/`header` *events*,
+ * since `passesFloor` still compares by rank, not by exact category.
+ *
+ * @example
+ * ```ts
+ * import type { M3LLogLevelFloor } from "@m3l-automation/m3l-common/core";
+ * import { M3LLogEventCategory, M3LLogger } from "@m3l-automation/m3l-common/core";
+ *
+ * const floor: M3LLogLevelFloor = M3LLogEventCategory.WARNING;
+ * const logger = new M3LLogger([], { minLevel: floor });
+ * ```
+ */
+export type M3LLogLevelFloor = Exclude<
+  M3LLogEventCategory,
+  "text" | "step" | "section" | "header"
+>;

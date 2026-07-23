@@ -90,18 +90,30 @@ the run succeeded far enough to archive — or re-run with debug output (§4).
 
 ## 4. Turning on debug output
 
-**Today** the logger has no level filtering — every event reaches every
-handler; "debug output" means adding log calls or handlers. **(ADR-0035)**:
+Available today:
+
+- `logger.errorFrom(error)` — logs an error with its code, context, and the
+  full recursive cause chain as structured fields. Safe to call on any caught
+  value; it never throws.
+- `logger.time(label)` — returns a callable that logs a `DEBUG` event carrying
+  the elapsed `durationMs`.
+- `minLevel` — a severity floor, set per logger and per handler when you
+  construct them (e.g. a console handler at `INFO` alongside a file handler at
+  `DEBUG`). The `DEBUG` category carries the library's own diagnostic events.
+- `collectDiagnostics()` — an on-demand redacted snapshot (environment, paths,
+  config fingerprint) worth exposing behind a `--diagnostics` flag.
+
+Not yet available — **(ADR-0035 phase 4)**, ships with `runScript()`, which is
+what can read CLI flags and config:
 
 - `M3L_DEBUG=1` — one-switch debug mode: drops the level floor to `DEBUG` and
   surfaces the library's own diagnostic events (breadcrumbs, timings).
 - `M3L_LOG_LEVEL=<level>` / `--log-level <level>` / `--debug` — the same floor
   via the standard config precedence chain (CLI > env > config file >
   default).
-- `logger.errorFrom(error)` — logs an error with code, context, and the full
-  cause chain as structured fields.
-- `collectDiagnostics()` — an on-demand redacted snapshot (environment, paths,
-  config fingerprint) worth exposing behind a `--diagnostics` flag.
+
+Until then, set `minLevel` explicitly when constructing the logger/handlers in
+your script's composition root.
 
 Structured JSON output for machine consumption is available today: add
 `M3LJsonLoggerHandler` to the logger's handler array

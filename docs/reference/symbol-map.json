@@ -942,6 +942,21 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/logging/M3LLogger.ts"
   },
+  "M3LLogLevelFloor": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/M3LLogEventCategory.ts"
+  },
+  "M3LConsoleLoggerHandlerOptions": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/M3LConsoleLoggerHandler.ts"
+  },
+  "M3LJsonLoggerHandlerOptions": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/M3LJsonLoggerHandler.ts"
+  },
   "M3LMessenger": {
     "submodule": "messaging",
     "namespace": "core",

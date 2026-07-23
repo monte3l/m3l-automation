@@ -15,7 +15,7 @@ import type { M3LErrorOrigin, M3LErrorRetryable } from "../errors/index.js";
 import {
   redactSensitiveLogText,
   redactSensitiveLogValue,
-} from "../logging/index.js";
+} from "../logging/redact.js";
 import { isDangerousKey } from "../security/index.js";
 
 /**

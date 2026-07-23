@@ -4,8 +4,13 @@
  * @packageDocumentation
  */
 
+import {
+  assertValidFloor,
+  passesFloor,
+} from "../../internal/logging/levels.js";
 import { isDangerousKey } from "../security/index.js";
 import { M3LLogEventCategory } from "./M3LLogEventCategory.js";
+import type { M3LLogLevelFloor } from "./M3LLogEventCategory.js";
 import type { M3LLogEvent, M3LLoggerHandler } from "./M3LLogEvent.js";
 
 /** A JSON scalar value: what {@link M3LJsonLoggerHandler} promotes to the top level. */
@@ -85,6 +90,28 @@ function splitDataFields(data: Record<string, unknown>): SplitDataFields {
 }
 
 /**
+ * Construction options for {@link M3LJsonLoggerHandler}.
+ *
+ * @example
+ * ```ts
+ * import type { M3LJsonLoggerHandlerOptions } from "@m3l-automation/m3l-common/core";
+ * import { M3LLogEventCategory } from "@m3l-automation/m3l-common/core";
+ *
+ * const options: M3LJsonLoggerHandlerOptions = {
+ *   minLevel: M3LLogEventCategory.WARNING,
+ * };
+ * ```
+ */
+export interface M3LJsonLoggerHandlerOptions {
+  /**
+   * This handler's own severity floor; see
+   * {@link M3LLoggerOptions.minLevel} for the full contract (composition
+   * with the owning {@link M3LLogger}'s floor, the rank-tie behavior).
+   */
+  readonly minLevel?: M3LLogLevelFloor;
+}
+
+/**
  * Writes one newline-terminated line of JSON per {@link M3LLogEvent} to
  * `process.stdout` — one CloudWatch (or other line-oriented log collector)
  * entry per message. Scalar fields (`string | number | boolean | null`) of
@@ -102,12 +129,28 @@ function splitDataFields(data: Record<string, unknown>): SplitDataFields {
  * ```
  */
 export class M3LJsonLoggerHandler implements M3LLoggerHandler {
+  readonly #minLevel: M3LLogEventCategory | undefined;
+
+  /**
+   * Creates a JSON logger handler.
+   *
+   * @param options - Optional construction options.
+   */
+  constructor(options: M3LJsonLoggerHandlerOptions = {}) {
+    assertValidFloor(options.minLevel, "M3LJsonLoggerHandler");
+    this.#minLevel = options.minLevel;
+  }
+
   /**
    * Writes `event` as one JSON line, unless it is an empty spacer event.
+   * Self-filters against this handler's own `minLevel` floor before
+   * rendering.
    *
    * @param event - The event to render.
    */
   handle(event: M3LLogEvent): void {
+    if (!passesFloor(event.category, this.#minLevel)) return;
+
     if (event.category === M3LLogEventCategory.TEXT && event.message === "") {
       // Spacer events carry no information worth a CloudWatch log entry.
       return;
