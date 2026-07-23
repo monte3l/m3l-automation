@@ -8,6 +8,9 @@
  * @packageDocumentation
  */
 
+import { classifyErrorCode } from "./catalog.js";
+import type { M3LErrorOrigin, M3LErrorRetryable } from "./catalog.js";
+
 /**
  * Constructor options for {@link M3LError}.
  *
@@ -35,6 +38,21 @@ export interface M3LErrorOptions {
    * Typed `unknown` because any thrown value may be caught.
    */
   readonly cause?: unknown;
+  /**
+   * Who must act to fix this failure. Defaults to the classification
+   * {@link classifyErrorCode} derives from `code` via the built-in catalog
+   * (`M3L_ERROR_CATALOG`); pass this explicitly only to override that default
+   * for a specific instance. `undefined` when `code` has no catalog entry.
+   */
+  readonly origin?: M3LErrorOrigin;
+  /**
+   * Whether re-running the failed operation without changes can plausibly
+   * succeed. Defaults to the classification {@link classifyErrorCode} derives
+   * from `code` via the built-in catalog (`M3L_ERROR_CATALOG`); pass this
+   * explicitly only to override that default for a specific instance.
+   * `undefined` when `code` has no catalog entry.
+   */
+  readonly retryable?: M3LErrorRetryable;
 }
 
 /**
@@ -191,11 +209,45 @@ export class M3LError extends Error {
   override readonly cause: unknown;
 
   /**
+   * Who must act to fix this failure. Resolved as: an explicit
+   * `options.origin` wins; otherwise the classification
+   * {@link classifyErrorCode} derives from `options.code` via the built-in
+   * catalog; otherwise `undefined` for a code the catalog does not classify.
+   *
+   * Because the default is catalog-derived rather than pinned per subclass,
+   * `error.origin` types as `M3LErrorOrigin | undefined` at a catch site —
+   * it does not narrow to a literal the way `code` can on a subclass that
+   * overrides it.
+   */
+  readonly origin: M3LErrorOrigin | undefined;
+
+  /**
+   * Whether re-running the failed operation without changes can plausibly
+   * succeed. Resolved as: an explicit `options.retryable` wins; otherwise the
+   * classification {@link classifyErrorCode} derives from `options.code` via
+   * the built-in catalog; otherwise `undefined` for a code the catalog does
+   * not classify.
+   *
+   * Because the default is catalog-derived rather than pinned per subclass,
+   * `error.retryable` types as `M3LErrorRetryable | undefined` at a catch
+   * site — it does not narrow to a literal the way `code` can on a subclass
+   * that overrides it.
+   *
+   * @remarks
+   * `"situational"` (see {@link M3LErrorRetryable}) is truthy, so
+   * `if (err.retryable)` is almost never the right check on a caught
+   * instance. Test `err.retryable === true` for "definitely safe to retry
+   * without further inspection"; any other value — including
+   * `"situational"` — means inspect the instance before deciding.
+   */
+  readonly retryable: M3LErrorRetryable | undefined;
+
+  /**
    * Creates a new `M3LError`.
    *
    * @param message - Human-readable description of the failure.
    * @param options - Required options bag carrying `code`, optional `context`,
-   *   and optional `cause`.
+   *   optional `cause`, and optional `origin`/`retryable` overrides.
    */
   constructor(message: string, options: M3LErrorOptions) {
     super(message);
@@ -204,6 +256,10 @@ export class M3LError extends Error {
     this.code = options.code;
     this.context = options.context ?? {};
     this.cause = options.cause;
+
+    const classification = classifyErrorCode(options.code);
+    this.origin = options.origin ?? classification?.origin;
+    this.retryable = options.retryable ?? classification?.retryable;
 
     // Capture a clean stack trace, excluding the constructor frame.
     // Guard for environments (e.g. some test runners) that lack this V8 API.
@@ -222,7 +278,8 @@ export class M3LError extends Error {
    * not this method.
    *
    * @returns A plain record with `name`, `message`, `code`, `context`,
-   *   `cause`, and `stack` — verbatim from the instance fields.
+   *   `cause`, `stack`, `origin`, and `retryable` — verbatim from the
+   *   instance fields.
    */
   toJSON(): {
     name: string;
@@ -231,6 +288,8 @@ export class M3LError extends Error {
     context: Record<string, unknown>;
     cause: unknown;
     stack: string | undefined;
+    origin: M3LErrorOrigin | undefined;
+    retryable: M3LErrorRetryable | undefined;
   } {
     return {
       name: this.name,
@@ -239,6 +298,8 @@ export class M3LError extends Error {
       context: this.context,
       cause: this.cause,
       stack: this.stack,
+      origin: this.origin,
+      retryable: this.retryable,
     };
   }
 }

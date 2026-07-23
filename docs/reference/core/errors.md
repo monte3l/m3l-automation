@@ -6,7 +6,7 @@ Structured error handling for `@m3l-automation/m3l-common`: a typed error base c
 
 The `errors` module provides two complementary tools:
 
-- **`M3LError`** — an `Error` subclass that carries a stable `code`, an arbitrary `context` object, a properly-typed `cause`, and a `toJSON()` serializer.
+- **`M3LError`** — an `Error` subclass that carries a stable `code`, an arbitrary `context` object, a properly-typed `cause`, a fault-origin classification (`origin`/`retryable`), and a `toJSON()` serializer.
 - **`M3LResult<T, E>`** — a discriminated union modeled after Rust's `Result`, with a set of operators (`map`, `mapErr`, `andThen`, `unwrap`, `unwrapOr`, `fromPromise`, `tryCatch`, …) that let code propagate failures as values rather than throwing.
 
 A set of `M3LErrorUtils` helper functions normalize `unknown` thrown values (as caught in `catch` blocks) into well-typed errors.
@@ -31,6 +31,8 @@ Public surface (`errors/index.ts`):
 - `code` — a stable string identifier for the failure mode.
 - `context` — an arbitrary object carrying structured diagnostic data.
 - `cause` — a properly-typed underlying error, set via `M3LErrorOptions`.
+- `origin` / `retryable` — the fault-origin classification, defaulted from the
+  [error-code catalog](#error-code-catalog) (see [Fault origin](#fault-origin)).
 - `toJSON()` — serializes all fields, including the `stack`.
 
 Subclass `M3LError` per failure mode rather than throwing bare strings.
@@ -66,12 +68,10 @@ emitted (subclass field or bare `M3LError`).
 
 ### Fault origin
 
-> **Status: specified, not yet implemented** —
-> [ADR-0035](../../adr/0035-failure-reporting-and-diagnostics.md) phase 2.
-
-`M3LErrorOptions` gains two optional, additive fields, defaulted per subclass
-and `undefined` on bare `M3LError` (unclassified — no existing construction
-changes meaning):
+`M3LErrorOptions` carries two optional, additive fields, defaulted from the
+[error-code catalog](#error-code-catalog) below and `undefined` for any code the
+catalog does not classify (unclassified — no existing construction changes
+meaning):
 
 - `origin: "caller" | "library" | "external"` — who must act to fix the
   failure. `caller`: the script/config author (bad config, invalid argument,
@@ -86,8 +86,17 @@ changes meaning):
 and the triage table in the
 [troubleshooting guide](../../guides/troubleshooting.md#1-triage-whose-failure-is-it):
 `caller` → exit 2, `external` → exit 3, `library` → exit 4. The source-scan
-completeness test that guards `M3L_ERROR_CODES` extends to assert every
+completeness test that guards `M3L_ERROR_CODES` also asserts that every
 built-in code has a catalog classification below.
+
+**How the default is resolved.** `M3LError`'s constructor performs a single
+catalog lookup on its own `code`: an explicit `origin`/`retryable` option always
+wins, otherwise the catalog classification applies, otherwise both stay
+`undefined`. Subclasses therefore inherit their classification without
+declaring it — there is no per-subclass literal that could drift from the
+catalog the exit-code registry reads. The trade-off is that `error.origin` types
+as `M3LErrorOrigin | undefined` at a catch site rather than narrowing to a
+literal the way a subclass's pinned `code` does.
 
 ### Error-code catalog
 
@@ -135,8 +144,10 @@ member.
 `mapErrorToExitCode` (see
 [diagnostics](./diagnostics.md#exit-code-registry--m3l_exit_codes--maperrortoexitcode))
 consults this catalog as its second resolution step, after reading an error's
-own `origin` field. Until phase 2 adds `origin` to `M3LErrorOptions`, the
-catalog lookup is the only branch a real library error reaches.
+own `origin` field. Both branches are live: a built-in error carries the
+`origin` its code classifies to, so the structural read resolves it, and the
+catalog lookup remains the fallback for a plain object or a foreign error that
+carries a recognised `code` but no `origin`.
 
 | Code                              | Module (thrower)                                    | Meaning                                                                  | Origin   | Retryable   |
 | --------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------ | -------- | ----------- |

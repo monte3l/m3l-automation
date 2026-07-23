@@ -12,7 +12,11 @@ import {
   isM3LErrorCode,
   M3L_ERROR_CATALOG,
 } from "../src/core/errors/catalog.js";
-import type { M3LErrorClassification } from "../src/core/errors/catalog.js";
+import type {
+  M3LErrorClassification,
+  M3LErrorOrigin,
+  M3LErrorRetryable,
+} from "../src/core/errors/catalog.js";
 import {
   isM3LErrorOrigin,
   mapErrorToExitCode,
@@ -361,6 +365,20 @@ describe("mapErrorToExitCode()", () => {
     }
   });
 
+  test("an explicit M3LError.origin beats the catalog classification for its code (disagreement case)", () => {
+    // Both branches would agree and produce the same code for a
+    // well-classified error, which cannot prove the first resolution step
+    // (structural `origin`) is actually live rather than dead code. This is
+    // deliberately a *disagreement*: ERR_HTTP_REQUEST's catalog origin is
+    // "external" (exit code 3), but an explicit `origin: "caller"` option on
+    // the M3LError instance must win, producing 2.
+    const error = new M3LError("classification override", {
+      code: "ERR_HTTP_REQUEST",
+      origin: "caller",
+    });
+    expect(mapErrorToExitCode(error)).toBe(2);
+  });
+
   test("never calls process.exit()", () => {
     mapErrorToExitCode(new M3LError("e", { code: "ERR_S3_OPERATION" }));
     mapErrorToExitCode(null);
@@ -588,6 +606,22 @@ describe("serializeErrorChain()", () => {
     expect(levels[1]?.code).toBeUndefined();
   });
 
+  test("carries origin/retryable for an M3LError level (ADR-0035 phase 2)", () => {
+    const error = new M3LError("s3 op failed", { code: "ERR_S3_OPERATION" });
+    const [level] = serializeErrorChain(error);
+    expect(level?.origin).toBe("external");
+    expect(level?.retryable).toBe(true);
+  });
+
+  test("a plain Error level has NO origin/retryable keys at all — not present-and-undefined", () => {
+    const [level] = serializeErrorChain(new Error("plain failure"));
+    // toBeUndefined() cannot distinguish an absent key from a
+    // present-but-undefined one; a present-and-undefined key would change
+    // the persisted JSON shape, which is a real defect.
+    expect(level).not.toHaveProperty("origin");
+    expect(level).not.toHaveProperty("retryable");
+  });
+
   test("redacts sensitive messages by default; redact:false renders verbatim", () => {
     const secret = "authorization: Bearer abc123";
     const redactedLevels = serializeErrorChain(new Error(secret));
@@ -748,6 +782,8 @@ describe("M3LFormatErrorChainOptions / M3LSerializedError types", () => {
       readonly code?: string;
       readonly stack?: string;
       readonly context?: Record<string, unknown>;
+      readonly origin?: M3LErrorOrigin;
+      readonly retryable?: M3LErrorRetryable;
     }>();
   });
 });

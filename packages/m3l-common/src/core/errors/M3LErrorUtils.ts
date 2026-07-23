@@ -100,12 +100,20 @@ export function wrapError(
   options?: Omit<M3LErrorOptions, "cause">,
 ): M3LError {
   const code = options?.code ?? DEFAULT_WRAP_ERROR_CODE;
-  // Omit the `context` key entirely when absent so `exactOptionalPropertyTypes`
-  // is satisfied — passing `context: undefined` would be a type error.
-  if (options?.context !== undefined) {
-    return new M3LError(message, { code, context: options.context, cause });
-  }
-  return new M3LError(message, { code, cause });
+  // Omit each optional key entirely when absent, rather than passing it as
+  // `undefined`, so `exactOptionalPropertyTypes` is satisfied — and so that an
+  // explicit caller-supplied `origin`/`retryable` is forwarded to `M3LError`
+  // (which would otherwise fall back to the catalog classification for
+  // `code`, silently overriding what the caller asked for).
+  return new M3LError(message, {
+    code,
+    cause,
+    ...(options?.context !== undefined ? { context: options.context } : {}),
+    ...(options?.origin !== undefined ? { origin: options.origin } : {}),
+    ...(options?.retryable !== undefined
+      ? { retryable: options.retryable }
+      : {}),
+  });
 }
 
 /**

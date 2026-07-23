@@ -9,7 +9,7 @@
           "file": "packages/m3l-common/src/core/errors/M3LError.ts",
           "symbol": "M3LError",
           "lines": "59-123",
-          "blob": "acdcb81c2c5befa1f5e142e7a952ded94aba6d7f"
+          "blob": "ac284b17e73f345089cd362571663dfe24ee7d3a"
         },
         {
           "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
@@ -21,19 +21,19 @@
           "file": "packages/m3l-common/src/core/errors/M3LErrorUtils.ts",
           "symbol": "getErrorMessage",
           "lines": "40-48",
-          "blob": "3f9bd2957063630928d0e8a3e8e0dc11f927abdb"
+          "blob": "665d8c37311dfd380b360dc2de850a0635e9a6a1"
         },
         {
           "file": "packages/m3l-common/src/core/errors/M3LError.ts",
           "symbol": "M3LErrorCode",
           "lines": "172-172",
-          "blob": "acdcb81c2c5befa1f5e142e7a952ded94aba6d7f"
+          "blob": "ac284b17e73f345089cd362571663dfe24ee7d3a"
         },
         {
           "file": "packages/m3l-common/src/core/errors/M3LError.ts",
           "symbol": "M3L_ERROR_CODES",
           "lines": "88-147",
-          "blob": "acdcb81c2c5befa1f5e142e7a952ded94aba6d7f"
+          "blob": "ac284b17e73f345089cd362571663dfe24ee7d3a"
         },
         {
           "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
@@ -105,64 +105,64 @@
           "file": "packages/m3l-common/src/core/errors/M3LErrorUtils.ts",
           "symbol": "toError",
           "lines": "68-73",
-          "blob": "3f9bd2957063630928d0e8a3e8e0dc11f927abdb"
+          "blob": "665d8c37311dfd380b360dc2de850a0635e9a6a1"
         },
         {
           "file": "packages/m3l-common/src/core/errors/M3LErrorUtils.ts",
           "symbol": "getErrorStack",
           "lines": "128-133",
-          "blob": "3f9bd2957063630928d0e8a3e8e0dc11f927abdb"
+          "blob": "665d8c37311dfd380b360dc2de850a0635e9a6a1"
         },
         {
           "file": "packages/m3l-common/src/core/errors/M3LErrorUtils.ts",
           "symbol": "hasErrorName",
           "lines": "153-160",
-          "blob": "3f9bd2957063630928d0e8a3e8e0dc11f927abdb"
+          "blob": "665d8c37311dfd380b360dc2de850a0635e9a6a1"
         },
         {
           "file": "packages/m3l-common/src/core/errors/M3LErrorUtils.ts",
           "symbol": "errorMessageContains",
           "lines": "181-186",
-          "blob": "3f9bd2957063630928d0e8a3e8e0dc11f927abdb"
+          "blob": "665d8c37311dfd380b360dc2de850a0635e9a6a1"
         },
         {
           "file": "packages/m3l-common/src/core/errors/catalog.ts",
           "symbol": "M3LErrorOrigin",
           "lines": "37-67",
-          "blob": "94b9de7464e0ea32acd1556e25e50adedce8d9ea"
+          "blob": "4dc473abb74711efc0d0eed16033b09e633ead45"
         },
         {
           "file": "packages/m3l-common/src/core/errors/catalog.ts",
           "symbol": "M3LErrorRetryable",
           "lines": "68-82",
-          "blob": "94b9de7464e0ea32acd1556e25e50adedce8d9ea"
+          "blob": "4dc473abb74711efc0d0eed16033b09e633ead45"
         },
         {
           "file": "packages/m3l-common/src/core/errors/catalog.ts",
           "symbol": "M3LErrorClassification",
           "lines": "83-109",
-          "blob": "94b9de7464e0ea32acd1556e25e50adedce8d9ea"
+          "blob": "4dc473abb74711efc0d0eed16033b09e633ead45"
         },
         {
           "file": "packages/m3l-common/src/core/errors/catalog.ts",
           "symbol": "M3L_ERROR_CATALOG",
           "lines": "110-204",
-          "blob": "94b9de7464e0ea32acd1556e25e50adedce8d9ea"
+          "blob": "4dc473abb74711efc0d0eed16033b09e633ead45"
         },
         {
           "file": "packages/m3l-common/src/core/errors/catalog.ts",
           "symbol": "isM3LErrorCode",
           "lines": "205-226",
-          "blob": "94b9de7464e0ea32acd1556e25e50adedce8d9ea"
+          "blob": "4dc473abb74711efc0d0eed16033b09e633ead45"
         },
         {
           "file": "packages/m3l-common/src/core/errors/catalog.ts",
           "symbol": "classifyErrorCode",
           "lines": "227-232",
-          "blob": "94b9de7464e0ea32acd1556e25e50adedce8d9ea"
+          "blob": "4dc473abb74711efc0d0eed16033b09e633ead45"
         }
       ],
-      "retrieved": "2026-07-18"
+      "retrieved": "2026-07-23"
     },
     {
       "heading": "`M3LError`",
@@ -171,16 +171,16 @@
           "file": "packages/m3l-common/src/core/errors/M3LError.ts",
           "symbol": "M3LError",
           "lines": "59-123",
-          "blob": "acdcb81c2c5befa1f5e142e7a952ded94aba6d7f"
+          "blob": "ac284b17e73f345089cd362571663dfe24ee7d3a"
         },
         {
           "file": "packages/m3l-common/src/core/errors/M3LError.ts",
           "symbol": "M3LErrorOptions",
           "lines": "25-38",
-          "blob": "acdcb81c2c5befa1f5e142e7a952ded94aba6d7f"
+          "blob": "ac284b17e73f345089cd362571663dfe24ee7d3a"
         }
       ],
-      "retrieved": "2026-07-18"
+      "retrieved": "2026-07-23"
     },
     {
       "heading": "`M3LResult<T, E>`",
@@ -207,16 +207,16 @@
           "file": "packages/m3l-common/src/core/errors/M3LErrorUtils.ts",
           "symbol": "getErrorMessage",
           "lines": "40-48",
-          "blob": "3f9bd2957063630928d0e8a3e8e0dc11f927abdb"
+          "blob": "665d8c37311dfd380b360dc2de850a0635e9a6a1"
         },
         {
           "file": "packages/m3l-common/src/core/errors/M3LErrorUtils.ts",
           "symbol": "wrapError",
           "lines": "97-109",
-          "blob": "3f9bd2957063630928d0e8a3e8e0dc11f927abdb"
+          "blob": "665d8c37311dfd380b360dc2de850a0635e9a6a1"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-07-23"
     }
   ]
 }
