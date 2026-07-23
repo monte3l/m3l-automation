@@ -13,8 +13,9 @@ surfaces land phase by phase. Everything else is available now.
 ## 1. Triage: whose failure is it?
 
 Every built-in error carries a stable `code` (see the
-[error-code catalog](../reference/core/errors.md#error-code-catalog)) and —
-**(ADR-0035)** — an `origin` field. Classify first, then act:
+[error-code catalog](../reference/core/errors.md#error-code-catalog)) and an
+[`origin`](../reference/core/errors.md#fault-origin) field, defaulted from that
+catalog. Classify first, then act:
 
 | `origin`   | It means                                                    | You should                                                                                                                    |
 | ---------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -22,18 +23,19 @@ Every built-in error carries a stable `code` (see the
 | `external` | An external system (AWS, HTTP endpoint, remote job) failed  | Check the external system's status/permissions/limits; often retryable — see the catalog's `retryable` column                 |
 | `library`  | An internal invariant of `@m3l-automation/m3l-common` broke | File a [failure report](#7-filing-a-failure-report) — this is a library bug                                                   |
 
-Until `origin` ships, the same triage works through the code itself: config and
-validation codes (`ERR_CONFIG_*`, `ERR_PRESET_*`, argument validation) are
-caller-side; AWS/HTTP/poll codes (`ERR_S3_OPERATION`, `ERR_HTTP_REQUEST`,
-`ERR_POLL_EXHAUSTED`, …) are external; anything the catalog marks `library` —
-or any crash with no `M3LError` in its chain originating inside the package —
-is a library issue.
+When `origin` is absent — a thrown value that is not an `M3LError`, or one
+carrying a code the catalog does not classify — the same triage works through
+the code itself: config and validation codes (`ERR_CONFIG_*`, `ERR_PRESET_*`,
+argument validation) are caller-side; AWS/HTTP/poll codes
+(`ERR_S3_OPERATION`, `ERR_HTTP_REQUEST`, `ERR_POLL_EXHAUSTED`, …) are external;
+anything the catalog marks `library` — or any crash with no `M3LError` in its
+chain originating inside the package — is a library issue.
 
 Walk the whole chain, not just the top error: failures are chained through
 `cause` (`wrapError`), and the _root_ cause usually carries the actionable
-code. **(ADR-0035)** `formatErrorChain(error)` prints the full chain with
-stacks; until then, inspect `error.cause` recursively (each `M3LError`
-serializes via `toJSON()`).
+code. [`formatErrorChain(error)`](../reference/core/diagnostics.md) prints the
+full chain with stacks, and `serializeErrorChain(error)` returns it as
+structured levels carrying each `M3LError`'s `code`, `origin`, and `retryable`.
 
 ## 2. Exit codes
 
@@ -173,7 +175,7 @@ separate "my config/credentials are wrong" from "my logic is wrong".
 Use the **Failure report** issue form (`.github/ISSUE_TEMPLATE`), which mirrors
 this guide's triage. Have ready:
 
-1. The error `code` (and `origin` once available) of the **root** cause.
+1. The error `code` and `origin` of the **root** cause.
 2. The exit code and how the script was invoked.
 3. The `correlationId` of the failing run.
 4. Environment: package version, Node version, OS, standalone vs monorepo vs

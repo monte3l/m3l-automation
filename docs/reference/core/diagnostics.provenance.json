@@ -39,31 +39,31 @@
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "M3LFormatErrorChainOptions",
           "lines": "46-62",
-          "blob": "3ada19731868aaf5d13c347d3e3d04917a1449e2"
+          "blob": "a9467ef3dda362d132da670e764571179bb31a8b"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "M3LSerializedError",
           "lines": "63-267",
-          "blob": "3ada19731868aaf5d13c347d3e3d04917a1449e2"
+          "blob": "a9467ef3dda362d132da670e764571179bb31a8b"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "scrubUrlsInText",
           "lines": "268-429",
-          "blob": "3ada19731868aaf5d13c347d3e3d04917a1449e2"
+          "blob": "a9467ef3dda362d132da670e764571179bb31a8b"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "formatErrorChain",
           "lines": "430-475",
-          "blob": "3ada19731868aaf5d13c347d3e3d04917a1449e2"
+          "blob": "a9467ef3dda362d132da670e764571179bb31a8b"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "serializeErrorChain",
           "lines": "476-489",
-          "blob": "3ada19731868aaf5d13c347d3e3d04917a1449e2"
+          "blob": "a9467ef3dda362d132da670e764571179bb31a8b"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
@@ -197,7 +197,8 @@
           "lines": "947-1189",
           "blob": "bc63a61aa74eb3919d54e42de12b24e04b7fe92a"
         }
-      ]
+      ],
+      "retrieved": "2026-07-23"
     }
   ]
 }

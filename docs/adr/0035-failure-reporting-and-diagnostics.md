@@ -101,6 +101,19 @@ built-in code; the source-scan completeness test that already guards
 `M3L_ERROR_CODES` extends to assert every built-in code has a catalog
 classification.
 
+> **Implementation note (phase 2, 2026-07-23).** "Defaulted per subclass" is
+> satisfied by deriving the default in the `M3LError` base constructor from
+> `classifyErrorCode(code)`, rather than by pinning a literal in each of the 36
+> subclasses. Because every built-in subclass pins a literal `code` and the
+> catalog is exhaustively keyed over `M3LErrorCode`, the two are equivalent for
+> every built-in error — and deriving is the stronger guarantee, since a
+> per-subclass literal could silently disagree with the catalog that
+> `mapErrorToExitCode` reads. The only difference is static: `error.origin`
+> types as `M3LErrorOrigin | undefined` at a catch site instead of narrowing to
+> a literal. Consequently a code with no catalog entry — a caller-defined code
+> on a consumer subclass — is what yields `undefined`, which is the same
+> unclassified outcome an un-annotated subclass would have had.
+
 **This is the library-vs-script separation**: `origin: "library"` errors are
 library bugs (file a bug report against m3l-common); `origin: "caller"` errors
 are script/config issues (fix the script); `origin: "external"` errors are

@@ -2,11 +2,12 @@
  * `core/errors/catalog` — the fault-origin classification for every built-in
  * {@link M3LErrorCode}.
  *
- * ADR-0035 phase 1 introduces this catalog ahead of phase 2's
- * `M3LErrorOptions.origin`/`retryable` fields (not yet added to `M3LError`
- * itself — see `docs/reference/core/errors.md`'s "Fault origin" section).
+ * ADR-0035 phase 1 introduces this catalog; phase 2 built on top of it by
+ * adding `origin`/`retryable` fields directly to `M3LError`, defaulted from
+ * this catalog's classification for the instance's `code` (see
+ * `docs/reference/core/errors.md`'s "Fault origin" section).
  * {@link M3LErrorOrigin} is defined here, not in `M3LError.ts`, precisely so
- * phase 2 can import it without this module depending on that one.
+ * `M3LError.ts` can import it without this module depending on that one.
  *
  * @packageDocumentation
  */

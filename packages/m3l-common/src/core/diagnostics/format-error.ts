@@ -11,6 +11,7 @@
  */
 
 import { M3LError, toError } from "../errors/index.js";
+import type { M3LErrorOrigin, M3LErrorRetryable } from "../errors/index.js";
 import {
   redactSensitiveLogText,
   redactSensitiveLogValue,
@@ -71,6 +72,19 @@ export interface M3LSerializedError {
   readonly stack?: string;
   /** Structured diagnostic context, present only for an {@link M3LError} level. */
   readonly context?: Record<string, unknown>;
+  /**
+   * Who must act to fix the failure (ADR-0035 phase 2), present only for an
+   * {@link M3LError} level whose `origin` is classified — absent both for a
+   * non-`M3LError` level and for an `M3LError` with no catalog classification.
+   */
+  readonly origin?: M3LErrorOrigin;
+  /**
+   * Whether re-running the failed operation without changes can plausibly
+   * succeed (ADR-0035 phase 2), present only for an {@link M3LError} level
+   * whose `retryable` is classified — absent both for a non-`M3LError` level
+   * and for an `M3LError` with no catalog classification.
+   */
+  readonly retryable?: M3LErrorRetryable;
 }
 
 /** The result of walking an error's `cause` chain. */
@@ -392,6 +406,8 @@ function serializeLevel(
 
   const isM3LError = level instanceof M3LError;
   const context = isM3LError ? redactContext(level.context, redact) : undefined;
+  const origin = isM3LError ? level.origin : undefined;
+  const retryable = isM3LError ? level.retryable : undefined;
 
   return {
     name,
@@ -399,6 +415,8 @@ function serializeLevel(
     ...(isM3LError && { code: level.code }),
     ...(stack !== undefined && { stack: maybeRedactText(stack, redact) }),
     ...(context !== undefined && { context }),
+    ...(origin !== undefined && { origin }),
+    ...(retryable !== undefined && { retryable }),
   };
 }
 
