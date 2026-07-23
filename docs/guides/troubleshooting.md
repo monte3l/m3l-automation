@@ -5,11 +5,11 @@ origin, read the diagnostic surfaces (errors, logs, exit codes, run archives),
 turn on debug output, attach a debugger, and file a failure report that can be
 acted on.
 
-Everything below is available today except where explicitly marked **not yet
-available** — the remaining gap is the log-level precedence chain
-(`M3L_DEBUG=1` / `--log-level`), which is
-[ADR-0035](../adr/0035-failure-reporting-and-diagnostics.md) phase 4b. Until it
-lands, set the severity floor explicitly when constructing the logger.
+Everything below is available today. The log-level precedence chain
+(`M3L_DEBUG=1` / `M3L_LOG_LEVEL` / `--log-level` / `--debug`, resolved for
+`M3LScript`'s default logger) shipped in
+[ADR-0035](../adr/0035-failure-reporting-and-diagnostics.md) phase 4b — CLI and
+environment tiers only; a config-file tier was deliberately not added (see §4).
 
 ## 1. Triage: whose failure is it?
 
@@ -104,18 +104,26 @@ Available today:
 - `collectDiagnostics()` — an on-demand redacted snapshot (environment, paths,
   config fingerprint) worth exposing behind a `--diagnostics` flag.
 
-Not yet available — **(ADR-0035 phase 4b)**. This did _not_ ship with
-`runScript()`; resolving it needs the config chain to reach a logger that is
-already constructed:
+Also available today, for a script composed via `M3LScript` **(ADR-0035 phase
+4b)** — these set the floor on the default logger `M3LScript` builds (a
+caller-supplied `options.logger` opts out entirely):
 
 - `M3L_DEBUG=1` — one-switch debug mode: drops the level floor to `DEBUG` and
-  surfaces the library's own diagnostic events (breadcrumbs, timings).
-- `M3L_LOG_LEVEL=<level>` / `--log-level <level>` / `--debug` — the same floor
-  via the standard config precedence chain (CLI > env > config file >
-  default).
+  surfaces the library's own diagnostic events (breadcrumbs, timings). Truthy
+  values are `1`/`true`; anything else is off.
+- `M3L_LOG_LEVEL=<level>` / `--log-level=<level>` / `--debug` — the same floor
+  via the precedence chain **CLI > env > default**: `--log-level`/`--debug` beat
+  `M3L_LOG_LEVEL`/`M3L_DEBUG`, which beat the built-in default. `<level>` is one
+  of `debug`/`info`/`success`/`warning`/`error`/`fatal` (case-insensitive); an
+  unknown value — or a valueless `--log-level` — fails loud with `M3LError`
+  (`ERR_INVALID_ARGUMENT`) at construction.
 
-Until then, set `minLevel` explicitly when constructing the logger/handlers in
-your script's composition root.
+A **config-file tier was deliberately not added**: a config-file floor cannot
+affect the logs emitted while config is still loading, and CLI + env cover the
+operational need
+([ADR §2.5 carve-out](../adr/0035-failure-reporting-and-diagnostics.md#25-log-levels-and-the-debug-toggle-logging)).
+When you construct a logger yourself (outside `M3LScript`), set `minLevel`
+explicitly in your composition root.
 
 Structured JSON output for machine consumption is available today: add
 `M3LJsonLoggerHandler` to the logger's handler array

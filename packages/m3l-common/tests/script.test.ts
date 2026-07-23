@@ -123,7 +123,10 @@ import {
   M3LCredentialSource,
 } from "../src/core/environment/index.js";
 import type { M3LExecutionEnvironmentInfo } from "../src/core/environment/index.js";
-import { M3LLogger } from "../src/core/logging/index.js";
+import {
+  M3LConsoleLoggerHandler,
+  M3LLogger,
+} from "../src/core/logging/index.js";
 import { M3LPrompt } from "../src/core/prompt/index.js";
 import { M3LPaths } from "../src/core/utils/index.js";
 
@@ -4453,5 +4456,116 @@ describe("M3LScript — accessors (ADR-0035 phase 4a)", () => {
         string | undefined
       >();
     });
+  });
+});
+
+// =============================================================================
+// ADR-0035 phase 4b (A4b): the constructor resolves a log-level floor from
+// CLI/env and passes it as the DEFAULT logger's `minLevel` — never mutating
+// or overriding a caller-supplied `options.logger`.
+//
+// These tests focus on the ENV tier of the precedence chain; the full
+// CLI > env > default matrix is owned by `resolveLogLevelFloor`'s own unit
+// tests in logging.test.ts. This suite only proves the wiring reaches the
+// default logger.
+//
+// `process.env.M3L_LOG_LEVEL`/`M3L_DEBUG` are stubbed via `vi.stubEnv` (the
+// established pattern in this file — see `vi.unstubAllEnvs()` in the
+// file-level `afterEach` above), never assigned directly, so nothing leaks
+// into the rest of the suite.
+// =============================================================================
+describe("M3LScript constructor — default logger honors the resolved log-level floor (ADR-0035 phase 4b)", () => {
+  beforeEach(() => {
+    stubNonAwsEnvironment();
+  });
+
+  test("M3L_LOG_LEVEL=error: the default logger drops an info event and admits an error event", () => {
+    vi.stubEnv("M3L_LOG_LEVEL", "error");
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+    const script = new M3LScript({ metadata });
+    script.logger.info("dropped by the error floor");
+    expect(stdoutSpy).not.toHaveBeenCalled();
+
+    script.logger.error("admitted by the error floor");
+    expect(stderrSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("M3L_LOG_LEVEL=error: the default logger also admits a fatal event", () => {
+    vi.stubEnv("M3L_LOG_LEVEL", "error");
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+    const script = new M3LScript({ metadata });
+    script.logger.fatal("admitted by the error floor");
+    expect(stderrSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("M3L_DEBUG=1: the default logger admits a debug event", () => {
+    vi.stubEnv("M3L_DEBUG", "1");
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+    const script = new M3LScript({ metadata });
+    const stop = script.logger.time("probe");
+    stop();
+
+    expect(stdoutSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("a caller-supplied options.logger is unaffected by a set M3L_LOG_LEVEL: it still admits info", () => {
+    vi.stubEnv("M3L_LOG_LEVEL", "error");
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+    const suppliedLogger = new M3LLogger([new M3LConsoleLoggerHandler()]);
+    new M3LScript({ metadata, logger: suppliedLogger });
+
+    suppliedLogger.info(
+      "must still pass — the constructor must not mutate a caller-supplied logger",
+    );
+    expect(stdoutSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("bare construction, no M3L_LOG_LEVEL/M3L_DEBUG set: the default logger keeps the additive no-floor behavior (info still passes)", () => {
+    vi.stubEnv("M3L_LOG_LEVEL", "");
+    vi.stubEnv("M3L_DEBUG", "");
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+    const script = new M3LScript({ metadata });
+    script.logger.info("admitted with no floor configured");
+
+    expect(stdoutSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("an invalid M3L_LOG_LEVEL throws M3LError with code ERR_INVALID_ARGUMENT at construction", () => {
+    vi.stubEnv("M3L_LOG_LEVEL", "verbose");
+
+    let thrown: unknown;
+    try {
+      new M3LScript({ metadata });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+  });
+
+  // Contrast with the test above: an invalid M3L_LOG_LEVEL only matters when
+  // the constructor is building the DEFAULT logger. A caller-supplied
+  // `options.logger` opts out of floor resolution entirely, so the same
+  // invalid env value must not crash construction, and the custom logger
+  // must remain unaffected (still admits info).
+  test("a caller-supplied options.logger opts out of floor resolution: an invalid M3L_LOG_LEVEL does NOT throw, and the custom logger still admits info", () => {
+    vi.stubEnv("M3L_LOG_LEVEL", "verbose");
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+    const customLogger = new M3LLogger([new M3LConsoleLoggerHandler()]);
+
+    expect(
+      () => new M3LScript({ metadata, logger: customLogger }),
+    ).not.toThrow();
+
+    customLogger.info("still admitted — the custom logger is exempt");
+    expect(stdoutSpy).toHaveBeenCalledTimes(1);
   });
 });

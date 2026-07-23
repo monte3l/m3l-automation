@@ -21,6 +21,7 @@ import { M3LConsoleLoggerHandler, M3LLogger } from "../logging/index.js";
 import { M3LPrompt } from "../prompt/index.js";
 import { M3LPaths, isEnoentError } from "../utils/index.js";
 
+import { resolveLogLevelFloor } from "../../internal/logging/resolveLogLevelFloor.js";
 import { M3LAWSProvisioningError } from "../../internal/script/M3LAWSProvisioningError.js";
 import { logBestEffortDiagnostic } from "../../internal/script/diagnostics.js";
 import { registerShutdownSignals } from "../../internal/script/signalHandlers.js";
@@ -298,6 +299,12 @@ export class M3LScript {
    *
    * @param options - The script's metadata, optional config schema, hooks,
    *   and facility overrides.
+   * @throws {@link M3LError} with code `ERR_INVALID_ARGUMENT` when
+   *   `options.logger` is omitted and the ambient CLI/env log-level chain
+   *   (`--log-level`/`M3L_LOG_LEVEL`) carries an out-of-vocabulary value, or
+   *   `--log-level` is present with no value — see
+   *   {@link resolveLogLevelFloor}. Never thrown when `options.logger` is
+   *   supplied: a caller-supplied logger opts out of that resolution entirely.
    */
   constructor(options: M3LScriptOptions) {
     this.scriptMetadata = options.metadata;
@@ -309,8 +316,7 @@ export class M3LScript {
 
     this.configuredCorrelationId = options.correlationId;
     this.preset = options.preset;
-    this.logger =
-      options.logger ?? new M3LLogger([new M3LConsoleLoggerHandler()]);
+    this.logger = options.logger ?? this.buildDefaultLogger();
     this.prompt = options.prompt ?? new M3LPrompt();
 
     const env = M3LExecutionEnvironment.detect();
@@ -322,6 +328,24 @@ export class M3LScript {
       // than replacing them.
       registerShutdownSignals(() => this.runCleanup("signal-shutdown"));
     }
+  }
+
+  /**
+   * Builds the default logger used when the caller omits
+   * `options.logger` — a single {@link M3LConsoleLoggerHandler} with
+   * `minLevel` set to whatever {@link resolveLogLevelFloor} resolves from
+   * the ambient CLI/env chain. Only called from the `??` branch of the
+   * constructor's logger assignment, so a caller-supplied logger never
+   * triggers (or is affected by) this resolution.
+   */
+  private buildDefaultLogger(): M3LLogger {
+    const resolvedLogLevelFloor = resolveLogLevelFloor();
+    return new M3LLogger(
+      [new M3LConsoleLoggerHandler()],
+      resolvedLogLevelFloor !== undefined
+        ? { minLevel: resolvedLogLevelFloor }
+        : undefined,
+    );
   }
 
   /**

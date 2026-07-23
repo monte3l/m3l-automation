@@ -195,6 +195,13 @@ export interface M3LScriptOptions {
    * A pre-built logger instance to use instead of the default
    * {@link M3LLogger} (a single {@link M3LConsoleLoggerHandler}). Useful in
    * tests that need to assert on emitted log events.
+   *
+   * When omitted, the default logger's `minLevel` is resolved from the
+   * ambient CLI/env log-level chain — an explicit `--log-level`/`--debug` CLI
+   * flag beats `M3L_LOG_LEVEL`/`M3L_DEBUG=1` in the environment, and neither
+   * set means no floor. Supplying `logger` here opts out of that resolution
+   * entirely: a caller-supplied logger's `minLevel` (if any) is never
+   * consulted, mutated, or overridden by this chain.
    */
   readonly logger?: M3LLogger;
   /**

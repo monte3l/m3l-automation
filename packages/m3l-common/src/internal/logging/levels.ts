@@ -9,7 +9,10 @@
  */
 
 import { M3LError } from "../../core/errors/index.js";
-import type { M3LLogEventCategory } from "../../core/logging/M3LLogEventCategory.js";
+import type {
+  M3LLogEventCategory,
+  M3LLogLevelFloor,
+} from "../../core/logging/M3LLogEventCategory.js";
 
 /**
  * The severity rank of each {@link M3LLogEventCategory}, used only to compare
@@ -43,6 +46,79 @@ const CATEGORY_RANK: Record<M3LLogEventCategory, number> = {
   error: 4,
   fatal: 5,
 };
+
+/**
+ * The six canonical {@link M3LLogLevelFloor} members, as a `Record` rather
+ * than a hand-listed array or alias-exclusion filter — mirroring how
+ * {@link CATEGORY_RANK} is `Record<M3LLogEventCategory, number>` above. This
+ * makes the vocabulary a **compile-time exhaustiveness check**: widening or
+ * narrowing `M3LLogLevelFloor`'s `Exclude` clause in
+ * `M3LLogEventCategory.ts` without updating this object is a missing- or
+ * excess-property TS error here, not a silent runtime drift between the type
+ * and {@link LOG_LEVEL_FLOORS}'s actual membership.
+ */
+const LOG_LEVEL_FLOOR_MEMBERS: Record<M3LLogLevelFloor, true> = {
+  debug: true,
+  info: true,
+  success: true,
+  warning: true,
+  error: true,
+  fatal: true,
+};
+
+/**
+ * The six canonical {@link M3LLogLevelFloor} names a `minLevel` floor may be
+ * spelled with at a CLI/env/config boundary — the runtime keys of
+ * {@link LOG_LEVEL_FLOOR_MEMBERS}.
+ */
+export const LOG_LEVEL_FLOORS: readonly M3LLogLevelFloor[] = Object.keys(
+  LOG_LEVEL_FLOOR_MEMBERS,
+) as readonly M3LLogLevelFloor[];
+
+/** Fast membership lookup backing {@link parseLogLevelFloor}. */
+const LOG_LEVEL_FLOOR_LOOKUP: ReadonlySet<string> = new Set(LOG_LEVEL_FLOORS);
+
+/**
+ * Parses a raw string (CLI flag value, environment variable) into a
+ * canonical {@link M3LLogLevelFloor}, trimming surrounding whitespace and
+ * lowercasing so `"  ERROR  "` and `"error"` are equivalent inputs.
+ *
+ * Restricted to the six-member {@link LOG_LEVEL_FLOORS} vocabulary rather
+ * than all ten {@link M3LLogEventCategory} members — the four tied rank-1
+ * spellings (`text`/`step`/`section`/`header`) are presentational groupings,
+ * not floor values a caller should be choosing between, so accepting them
+ * here would silently reintroduce the ambiguity `M3LLogLevelFloor` was
+ * narrowed to remove.
+ *
+ * @param raw - The raw, unnormalized candidate value.
+ * @param source - The CLI flag or environment variable name to name in the
+ *   thrown message (e.g. `"--log-level"`, `"M3L_LOG_LEVEL"`).
+ * @returns The normalized, canonical floor value.
+ * @throws {@link M3LError} with code `ERR_INVALID_ARGUMENT` when `raw` does
+ *   not normalize to one of {@link LOG_LEVEL_FLOORS}.
+ * @example
+ * ```ts
+ * import { parseLogLevelFloor } from "../internal/logging/levels.js";
+ *
+ * const floor = parseLogLevelFloor("  WARNING  ", "--log-level");
+ * // floor === "warning"
+ * ```
+ */
+export function parseLogLevelFloor(
+  raw: string,
+  source: string,
+): M3LLogLevelFloor {
+  const normalized = raw.trim().toLowerCase();
+  if (LOG_LEVEL_FLOOR_LOOKUP.has(normalized)) {
+    return normalized as M3LLogLevelFloor;
+  }
+  throw new M3LError(
+    `${source}: expected one of ${JSON.stringify(
+      LOG_LEVEL_FLOORS,
+    )}, got ${JSON.stringify(raw)}`,
+    { code: "ERR_INVALID_ARGUMENT" },
+  );
+}
 
 /**
  * Validates a `minLevel` value at **construction** time, not per-event.

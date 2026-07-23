@@ -6,6 +6,8 @@ The `script` module provides `M3LScript`, the single entry point for every scrip
 
 `M3LScript` is instantiated with a single `M3LScriptOptions` object and does not extend any base class. Its constructor wires together config, logging, prompts, and AWS credential management. You then call either `run(mainFunction)` for CLI execution or `createLambdaHandler()` for an AWS Lambda-compatible handler — both drive the same initialization pipeline.
 
+When you do not pass `options.logger`, the constructor builds a default logger whose severity floor (`minLevel`) is resolved from the ambient CLI/env: `--log-level=<level>`/`--debug` > `M3L_LOG_LEVEL`/`M3L_DEBUG=1` > no floor (ADR-0035 phase 4b). An out-of-vocabulary level — or a valueless `--log-level` — throws `M3LError` (`ERR_INVALID_ARGUMENT`) at construction; a caller-supplied `options.logger` opts out of this entirely. See [`logging` → Resolving `minLevel` from CLI / environment](./logging.md#resolving-minlevel-from-cli--environment-m3lscript).
+
 Eight lifecycle hooks let you observe and extend each stage of execution. A process-global guard layer (`installProcessGuards`) captures unhandled faults, and `M3LScriptPresetLoader` loads named parameter presets from YAML/JSON files with bounded nesting depth and typo suggestions.
 
 ## Public API

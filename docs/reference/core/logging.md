@@ -84,19 +84,44 @@ The ranking itself is internal and not exported.
   is unavailable under this project's `lib: ["es2024"]`, so `using` is not
   supported.
 
-> **Not yet implemented** —
-> [ADR-0035](../../adr/0035-failure-reporting-and-diagnostics.md) phase **4b**.
-> Resolution from the config precedence chain (`--log-level` / `--debug` CLI
-> flags > `M3L_LOG_LEVEL` / `M3L_DEBUG=1` environment > config file > default),
-> including the one-switch `M3L_DEBUG=1` debug mode, is still pending. It did
-> **not** ship with [`runScript()`](./script.md#runscript) in phase 4a: the
-> default logger is constructed in the `M3LScript` constructor, before config
-> is loaded, and a logger's floor is fixed at construction — so the
-> config-file tier of that chain cannot reach it without new API.
-> It cannot live here either: reading CLI flags and config requires
-> `core/script`, and ADR-0009 Zone B forbids `core/logging` from importing it.
-> Today `minLevel` is set by the caller when constructing the logger or a
-> handler.
+#### Resolving `minLevel` from CLI / environment ([`M3LScript`])
+
+When [`M3LScript`](./script.md) builds its **default** logger (i.e. the caller
+did not pass an `options.logger`), it resolves that logger's `minLevel` floor
+from the ambient CLI arguments and environment
+([ADR-0035](../../adr/0035-failure-reporting-and-diagnostics.md) phase **4b**),
+so an operator can raise or lower verbosity without editing the composition
+root. Precedence, highest first:
+
+| Tier    | Source                                           | Yields                       |
+| ------- | ------------------------------------------------ | ---------------------------- |
+| CLI     | `--log-level=<floor>`, else `--debug`            | that floor, else `DEBUG`     |
+| env     | `M3L_LOG_LEVEL=<floor>`, else `M3L_DEBUG` truthy | that floor, else `DEBUG`     |
+| default | neither set                                      | no floor (everything passes) |
+
+- The value vocabulary is the six `M3LLogLevelFloor` names
+  (`debug`/`info`/`success`/`warning`/`error`/`fatal`), matched
+  **case-insensitively** and trimmed. An out-of-vocabulary explicit value — or a
+  valueless `--log-level` — throws `M3LError` (`ERR_INVALID_ARGUMENT`) **at
+  construction**, consistent with the loud-failure rule above. The
+  `--debug`/`M3L_DEBUG` toggles are presence/truthiness switches (`M3L_DEBUG` on
+  for `1`/`true`); they never throw.
+- A **caller-supplied `options.logger` is never touched** and opts out of this
+  resolution entirely — the CLI/env floor applies only to the logger `M3LScript`
+  constructs for you.
+- **Config-file tier — deliberately not supported.** ADR-0035 §2.5 originally
+  listed a `config file` tier below `env`; it was dropped in phase 4b. A
+  config-file floor cannot influence the logs emitted _during_ config load (the
+  floor would only be known afterward), and applying it to the
+  already-constructed default logger would require either a public mutator on
+  `M3LLogger` or rebuilding the logger (breaking identity for holders of
+  `script.logger`). CLI + env cover the operational need. See the
+  [ADR §2.5 carve-out](../../adr/0035-failure-reporting-and-diagnostics.md#25-log-levels-and-the-debug-toggle-logging).
+
+Outside `M3LScript`, `minLevel` is still set by the caller when constructing the
+logger or a handler directly.
+
+[`M3LScript`]: ./script.md
 
 ### Correlation IDs
 
