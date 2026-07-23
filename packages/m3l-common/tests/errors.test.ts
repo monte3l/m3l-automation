@@ -25,14 +25,23 @@ import {
   unwrapOr,
   wrapError,
 } from "../src/core/errors/index.js";
-import type { M3LThresholdRuleValidationError } from "../src/core/analysis/M3LThresholdRuleValidationError.js";
+import {
+  classifyErrorCode,
+  M3L_ERROR_CATALOG,
+} from "../src/core/errors/catalog.js";
 import type {
-  M3LConfigCoercionError,
-  M3LConfigParseError,
-  M3LUnsafeConfigKeyError,
+  M3LErrorOrigin,
+  M3LErrorRetryable,
+} from "../src/core/errors/catalog.js";
+import type { M3LThresholdRuleValidationError } from "../src/core/analysis/M3LThresholdRuleValidationError.js";
+import {
+  M3LConfigMissingError,
+  type M3LConfigCoercionError,
+  type M3LConfigParseError,
+  type M3LUnsafeConfigKeyError,
 } from "../src/core/config/index.js";
 import type { M3LEnvironmentDetectionError } from "../src/core/environment/index.js";
-import type { M3LFileCopyError } from "../src/core/files/index.js";
+import { M3LFileCopyError } from "../src/core/files/index.js";
 import type { M3LJSONFormatDetectionError } from "../src/core/json/index.js";
 import type { M3LHttpClientError } from "../src/core/network/index.js";
 import type { M3LPollExhaustedError } from "../src/internal/polling/errors.js";
@@ -190,6 +199,92 @@ describe("M3LError class", () => {
     } finally {
       Error.captureStackTrace = original;
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LError fault-origin classification (ADR-0035 phase 2)
+//
+// `origin`/`retryable` are resolved as: an explicit constructor option wins;
+// otherwise derived from `classifyErrorCode(options.code)`; otherwise
+// `undefined`. Both fields are definite (not optional) on the instance, but
+// their TYPE includes `undefined` — required under `exactOptionalPropertyTypes`.
+// ---------------------------------------------------------------------------
+describe("M3LError fault-origin classification", () => {
+  test("a built-in subclass reports its catalog classification with nothing passed by the caller", () => {
+    const e = new M3LConfigMissingError("x");
+    expect(e.origin).toBe("caller");
+    expect(e.retryable).toBe(false);
+  });
+
+  test("a different built-in subclass reports a different catalog classification (not hardcoded)", () => {
+    // ERR_FILE_COPY classifies as { origin: "external", retryable: false } —
+    // a different origin than M3LConfigMissingError's "caller" above, proving
+    // the resolution actually reads the catalog per-code rather than
+    // returning a fixed value.
+    expect(M3L_ERROR_CATALOG.ERR_FILE_COPY).toEqual({
+      origin: "external",
+      retryable: false,
+    });
+    const e = new M3LFileCopyError("copy failed");
+    expect(e.origin).toBe("external");
+    expect(e.retryable).toBe(false);
+  });
+
+  test("a bare M3LError with an unknown/unclassified code leaves both fields undefined", () => {
+    const e = new M3LError("mystery failure", { code: "NOT_A_REAL_CODE" });
+    expect(e.origin).toBeUndefined();
+    expect(e.retryable).toBeUndefined();
+  });
+
+  test("an explicit origin/retryable option overrides the catalog classification", () => {
+    // The catalog says ERR_HTTP_REQUEST is { origin: "external", retryable: true }.
+    expect(M3L_ERROR_CATALOG.ERR_HTTP_REQUEST).toEqual({
+      origin: "external",
+      retryable: true,
+    });
+    const e = new M3LError("overridden classification", {
+      code: "ERR_HTTP_REQUEST",
+      origin: "caller",
+      retryable: false,
+    });
+    // Assert both fields independently — an implementation could plumb one
+    // and not the other.
+    expect(e.origin).toBe("caller");
+    expect(e.retryable).toBe(false);
+  });
+
+  test("toJSON carries origin and retryable", () => {
+    const e = new M3LError("classified", { code: "ERR_HTTP_REQUEST" });
+    const json = e.toJSON();
+    expect(json.origin).toBe("external");
+    expect(json.retryable).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LErrorOptions / M3LError fault-origin fields — type-level contract
+// ---------------------------------------------------------------------------
+describe("M3LErrorOptions / M3LError fault-origin fields — type-level", () => {
+  test("origin and retryable are optional on M3LErrorOptions", () => {
+    expectTypeOf<M3LErrorOptions>().toExtend<{
+      code: string;
+      context?: Record<string, unknown>;
+      cause?: unknown;
+      origin?: M3LErrorOrigin;
+      retryable?: M3LErrorRetryable;
+    }>();
+    // Omitting both must still satisfy the interface (required-ness check).
+    expectTypeOf<{ code: string }>().toExtend<M3LErrorOptions>();
+  });
+
+  test("M3LError instance fields include undefined in their type (definite, not optional)", () => {
+    expectTypeOf<M3LError["origin"]>().toEqualTypeOf<
+      M3LErrorOrigin | undefined
+    >();
+    expectTypeOf<M3LError["retryable"]>().toEqualTypeOf<
+      M3LErrorRetryable | undefined
+    >();
   });
 });
 
@@ -667,6 +762,40 @@ describe("wrapError()", () => {
     expect(wrapped).toBeInstanceOf(M3LError);
     expect(wrapped.cause).toBe("string cause");
   });
+
+  test("a wrap with a known catalog code picks up the catalog's fault-origin classification", () => {
+    // wrapError constructs `new M3LError(message, { code, ... })` under the
+    // hood — a known code must flow through the same catalog-resolution rule
+    // M3LError itself applies.
+    const wrapped = wrapError(new Error("upstream"), "s3 op failed", {
+      code: "ERR_S3_OPERATION",
+    });
+    expect(M3L_ERROR_CATALOG.ERR_S3_OPERATION).toEqual({
+      origin: "external",
+      retryable: true,
+    });
+    expect(wrapped.origin).toBe("external");
+    expect(wrapped.retryable).toBe(true);
+  });
+
+  test("an explicit origin and retryable override the catalog's classification, alongside context", () => {
+    // ERR_HTTP_REQUEST's catalog entry disagrees with the values passed below
+    // (origin "external", retryable true) so this cannot pass by the catalog
+    // default alone — the explicit caller overrides must survive.
+    expect(M3L_ERROR_CATALOG.ERR_HTTP_REQUEST).toEqual({
+      origin: "external",
+      retryable: true,
+    });
+    const wrapped = wrapError(new Error("upstream"), "request failed", {
+      code: "ERR_HTTP_REQUEST",
+      origin: "caller",
+      retryable: false,
+      context: { attempt: 2 },
+    });
+    expect(wrapped.origin).toBe("caller");
+    expect(wrapped.retryable).toBe(false);
+    expect(wrapped.context).toEqual({ attempt: 2 });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -954,6 +1083,17 @@ describe("M3L_ERROR_CODES source-scan completeness", () => {
         `In src but not in M3L_ERROR_CODES: ${JSON.stringify(missingFromTuple)}\n` +
         `In M3L_ERROR_CODES but not emitted in src: ${JSON.stringify(staleInTuple)}`,
     ).toEqual({ missingFromTuple: [], staleInTuple: [] });
+  });
+
+  // ADR-0035 §2.1: every built-in code must resolve to a defined
+  // classification — a code present in M3L_ERROR_CODES but absent from
+  // M3L_ERROR_CATALOG would otherwise silently resolve `origin`/`retryable`
+  // to `undefined` for every instance of that code.
+  test("every member of M3L_ERROR_CODES resolves to a defined classification via classifyErrorCode", () => {
+    const unclassified = M3L_ERROR_CODES.filter(
+      (code) => classifyErrorCode(code) === undefined,
+    );
+    expect(unclassified).toEqual([]);
   });
 });
 

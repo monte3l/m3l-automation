@@ -68,6 +68,30 @@ Surfaced through `core` (the `diagnostics` sub-module).
 - `M3LSerializedError` — one level of that walk.
 - `M3LFormatErrorChainOptions` — `{ stacks?, redact? }`, both defaulting to
   `true`.
+
+`M3LSerializedError` carries `name` and `message` always; every other field is
+present only when the level supplies it:
+
+```typescript
+interface M3LSerializedError {
+  readonly name: string;
+  readonly message: string;
+  readonly code?: string;
+  readonly stack?: string;
+  readonly context?: Record<string, unknown>;
+  readonly origin?: M3LErrorOrigin;
+  readonly retryable?: M3LErrorRetryable;
+}
+```
+
+`code`, `context`, `origin`, and `retryable` appear only for a level that is an
+`M3LError`; `origin`/`retryable` additionally require that level's `code` to
+carry a [catalog classification](./errors.md#fault-origin) (or an explicit
+constructor override). **The key is omitted, not set to `undefined`** — a
+serialized level for a plain `Error` has no `origin` property at all, so the
+written run report contains no `"origin": null` entries and `"origin" in level`
+is a reliable presence check.
+
 - `scrubUrlsInText` — rewrites `http(s)` URLs in free text to
   `origin + pathname`, dropping userinfo, query, and fragment.
 
