@@ -57,6 +57,11 @@ import {
 import { serializeErrorChain } from "../src/core/diagnostics/index.js";
 import { M3LError } from "../src/core/errors/index.js";
 import { M3LFileListExporter } from "../src/core/exporters/index.js";
+import {
+  LOG_LEVEL_FLOORS,
+  parseLogLevelFloor,
+} from "../src/internal/logging/levels.js";
+import { resolveLogLevelFloor } from "../src/internal/logging/resolveLogLevelFloor.js";
 import type {
   M3LConsoleLoggerHandlerOptions,
   M3LFileLoggerHandlerOptions,
@@ -2172,5 +2177,218 @@ describe("A3 type-level contracts (minLevel across four options interfaces, time
 
   test("logger.time returns a plain () => void callable", () => {
     expectTypeOf<M3LLogger["time"]>().returns.toEqualTypeOf<() => void>();
+  });
+});
+
+// =============================================================================
+// ADR-0035 phase 4b (A4b): log-level precedence chain.
+//
+// `resolveLogLevelFloor` resolves a `M3LLogLevelFloor | undefined` from
+// injected `argv`/`env`, following CLI > env > default precedence. Every test
+// here injects explicit `{ argv, env }` — none rely on the real process
+// globals (that wiring is covered separately, in script.test.ts, through the
+// M3LScript constructor).
+//
+// `parseLogLevelFloor`/`LOG_LEVEL_FLOORS` are the lower-level helpers backing
+// the resolver, added to the existing `internal/logging/levels.ts` file
+// alongside `assertValidFloor`/`passesFloor`.
+// =============================================================================
+describe("resolveLogLevelFloor — log-level precedence chain (ADR-0035 phase 4b)", () => {
+  test("neither CLI nor env set: resolves to undefined", () => {
+    expect(resolveLogLevelFloor({ argv: [], env: {} })).toBeUndefined();
+  });
+
+  test("CLI --log-level beats env M3L_LOG_LEVEL when both are set", () => {
+    const result = resolveLogLevelFloor({
+      argv: ["--log-level=debug"],
+      env: { M3L_LOG_LEVEL: "error" },
+    });
+    expect(result).toBe("debug");
+  });
+
+  test("within CLI, explicit --log-level beats the --debug shorthand", () => {
+    const result = resolveLogLevelFloor({
+      argv: ["--debug", "--log-level=warning"],
+      env: {},
+    });
+    expect(result).toBe("warning");
+  });
+
+  test("within env, M3L_LOG_LEVEL beats M3L_DEBUG", () => {
+    const result = resolveLogLevelFloor({
+      argv: [],
+      env: { M3L_LOG_LEVEL: "error", M3L_DEBUG: "1" },
+    });
+    expect(result).toBe("error");
+  });
+
+  test("--debug presence alone (no --log-level) resolves to the debug floor", () => {
+    const result = resolveLogLevelFloor({ argv: ["--debug"], env: {} });
+    expect(result).toBe("debug");
+  });
+
+  test("--debug=1 is still treated as mere PRESENCE of the debug flag, not its parsed value", () => {
+    // parseArgv binds a trailing token to a bare flag as its literal string
+    // value ("1"), but the resolver only checks whether the `debug` key is
+    // present at all — any parsed value (or `true`) counts as "on".
+    const result = resolveLogLevelFloor({ argv: ["--debug=1"], env: {} });
+    expect(result).toBe("debug");
+  });
+
+  test("a bare --log-level with no value fails loud: throws M3LError with code ERR_INVALID_ARGUMENT", () => {
+    // parseArgv stores boolean `true` for a valueless flag; the resolver
+    // must reject that rather than silently falling through to a lower
+    // tier (the pre-fix bug).
+    let thrown: unknown;
+    try {
+      resolveLogLevelFloor({ argv: ["--log-level"], env: {} });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+  });
+
+  test("a bare --log-level is not rescued by a following --debug — explicit-but-malformed input fails loud rather than falling back", () => {
+    let thrown: unknown;
+    try {
+      resolveLogLevelFloor({ argv: ["--log-level", "--debug"], env: {} });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+  });
+
+  test("lazy tiering: a valid CLI value resolves without ever validating a lower-precedence invalid env value", () => {
+    const result = resolveLogLevelFloor({
+      argv: ["--log-level=warning"],
+      env: { M3L_LOG_LEVEL: "verbose" },
+    });
+    expect(result).toBe("warning");
+  });
+
+  test("CLI --log-level value is trimmed and lowercased", () => {
+    const result = resolveLogLevelFloor({
+      argv: ["--log-level=  error  "],
+      env: {},
+    });
+    expect(result).toBe("error");
+  });
+
+  test("env M3L_LOG_LEVEL value is trimmed and lowercased", () => {
+    const result = resolveLogLevelFloor({
+      argv: [],
+      env: { M3L_LOG_LEVEL: "  WARNING  " },
+    });
+    expect(result).toBe("warning");
+  });
+
+  test.each([
+    ["1", "debug"],
+    ["true", "debug"],
+    ["TRUE", "debug"],
+    ["True", "debug"],
+    ["0", undefined],
+    ["false", undefined],
+    ["", undefined],
+  ] as const)(
+    "M3L_DEBUG=%s resolves to %s (env-tier boolean toggle)",
+    (value, expected) => {
+      const result = resolveLogLevelFloor({
+        argv: [],
+        env: { M3L_DEBUG: value },
+      });
+      expect(result).toBe(expected);
+    },
+  );
+
+  test("M3L_DEBUG absent (not just falsy) resolves to undefined alongside an unset M3L_LOG_LEVEL", () => {
+    const result = resolveLogLevelFloor({ argv: [], env: {} });
+    expect(result).toBeUndefined();
+  });
+
+  test("a non-truthy M3L_DEBUG never throws — the boolean toggle is not subject to the vocabulary check", () => {
+    expect(() =>
+      resolveLogLevelFloor({ argv: [], env: { M3L_DEBUG: "0" } }),
+    ).not.toThrow();
+    expect(
+      resolveLogLevelFloor({ argv: [], env: { M3L_DEBUG: "0" } }),
+    ).toBeUndefined();
+  });
+
+  test("an out-of-vocabulary CLI --log-level value throws M3LError with code ERR_INVALID_ARGUMENT", () => {
+    let thrown: unknown;
+    try {
+      resolveLogLevelFloor({ argv: ["--log-level=verbose"], env: {} });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+  });
+
+  test("an out-of-vocabulary env M3L_LOG_LEVEL value throws M3LError with code ERR_INVALID_ARGUMENT", () => {
+    let thrown: unknown;
+    try {
+      resolveLogLevelFloor({ argv: [], env: { M3L_LOG_LEVEL: "nope" } });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+  });
+
+  test.each(["step", "text", "section", "header"])(
+    "the tied rank-1 spelling %s is rejected as an input value, not accepted as an alias for info",
+    (spelling) => {
+      let thrown: unknown;
+      try {
+        resolveLogLevelFloor({ argv: [`--log-level=${spelling}`], env: {} });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+    },
+  );
+
+  test("resolveLogLevelFloor({}) type-checks as returning M3LLogLevelFloor | undefined", () => {
+    expectTypeOf(resolveLogLevelFloor({})).toEqualTypeOf<
+      M3LLogLevelFloor | undefined
+    >();
+  });
+});
+
+describe("parseLogLevelFloor / LOG_LEVEL_FLOORS (internal/logging/levels, ADR-0035 phase 4b)", () => {
+  test("LOG_LEVEL_FLOORS lists exactly the six canonical floor names", () => {
+    expect(new Set(LOG_LEVEL_FLOORS)).toEqual(
+      new Set(["debug", "info", "success", "warning", "error", "fatal"]),
+    );
+    expect(LOG_LEVEL_FLOORS).toHaveLength(6);
+  });
+
+  test("a valid canonical value passes through unchanged", () => {
+    expect(parseLogLevelFloor("warning", "test-source")).toBe("warning");
+  });
+
+  test("is case-insensitive and trims surrounding whitespace", () => {
+    expect(parseLogLevelFloor("  ERROR  ", "test-source")).toBe("error");
+  });
+
+  test("an out-of-vocabulary value throws M3LError with code ERR_INVALID_ARGUMENT naming the source", () => {
+    let thrown: unknown;
+    try {
+      parseLogLevelFloor("verbose", "test-source");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+    expect((thrown as M3LError).message).toContain("test-source");
+  });
+
+  test("a tied rank-1 spelling (step) is rejected, not accepted as an alias for info", () => {
+    expect(() => parseLogLevelFloor("step", "test-source")).toThrow(M3LError);
   });
 });

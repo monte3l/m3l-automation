@@ -199,6 +199,22 @@ runScript(script, mainFn, options?) →
   `serializeError`-omits-`cause` gap); `logger.time(label)` returns a disposer
   that logs a duration, replacing the per-module inline `Date.now()` deltas.
 
+**Carve-out (phase 4b): the config-file tier was dropped — CLI + env only.**
+Phase 4b ships `--log-level`/`--debug` > `M3L_LOG_LEVEL`/`M3L_DEBUG=1` > default,
+resolved once in the `M3LScript` constructor for the default logger it builds (a
+caller-supplied `options.logger` opts out entirely). The `config file` tier was
+cut for two reasons: (1) a config-file floor cannot influence the logs emitted
+_while config is still loading_ — the floor would only be known afterward, so
+the tier is inert for exactly the early-stage output an operator most wants to
+see; and (2) applying it to the already-constructed default logger (built before
+config loads, with a `readonly` floor) would need either a public mutator on
+`M3LLogger` or rebuilding the logger, which breaks identity for any holder of
+`script.logger`. CLI + env cover the operational need. An out-of-vocabulary
+explicit value — or a valueless `--log-level` — fails loud with `M3LError`
+(`ERR_INVALID_ARGUMENT`); the `--debug`/`M3L_DEBUG` toggles are boolean and never
+throw. This is additive and semver-minor: no new public symbol (the resolver is
+`internal/`), no `exports`-map change.
+
 ### 2.6 Diagnostic context: breadcrumbs, dumps, dry-run (diagnostics)
 
 - `M3LBreadcrumbTrail` subscribes to the existing typed event fabric
@@ -267,10 +283,14 @@ docs-first pipeline (`scaffolding-submodules` → `implementing-submodules`, or
      dry-run) and `M3LPollFailureError` context. `runScript` ships from
      `core/script`, not `core/diagnostics`: Zone B forbids
      `core/* → core/script`.
-   - **4b** — the log-level precedence chain inherited from phase 3. Deferred
-     because the default logger is built in the `M3LScript` constructor,
-     before config loads, and `M3LLogger`'s floor is fixed at construction —
-     so the config-file tier needs new API to reach it.
+   - **4b** — the log-level precedence chain inherited from phase 3. Shipped
+     CLI + env only (`--log-level`/`--debug` > `M3L_LOG_LEVEL`/`M3L_DEBUG=1` >
+     default), resolved in the `M3LScript` constructor for its default logger.
+     The originally-listed config-file tier was dropped rather than deferred —
+     it cannot influence config-load-time logs, and reaching the
+     already-constructed default logger would need a public `M3LLogger` mutator
+     or a logger rebuild that breaks `script.logger` identity (see the §2.5
+     carve-out). No new public symbol; the resolver is `internal/`.
 5. Template + consumer-script refresh — scaffold template adopts `runScript()`;
    existing scripts migrate opportunistically.
 
