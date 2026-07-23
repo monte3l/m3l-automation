@@ -1317,6 +1317,21 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/script/aws-param-names.ts"
   },
+  "runScript": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/run-script.ts"
+  },
+  "M3LRunScriptOptions": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/run-script.ts"
+  },
+  "M3LScriptRunOptions": {
+    "submodule": "script",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts"
+  },
   "isDangerousKey": {
     "submodule": "security",
     "namespace": "core",
