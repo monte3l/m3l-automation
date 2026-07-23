@@ -282,10 +282,9 @@ shutdown. See the
 [script reference](../reference/core/script.md#process-guards) for the full
 responsibility contract, and the
 [troubleshooting guide](./troubleshooting.md) for how guard output is used in
-diagnosis. The `runScript()` wrapper
-([diagnostics](../reference/core/diagnostics.md#runscript), ADR-0035) will make
-this automatic — guards, top-level catch, exit code, and run report in one
-call.
+diagnosis. The [`runScript()` wrapper](../reference/core/script.md#runscript) (ADR-0035)
+makes this automatic — guards, top-level catch, exit code, and run report in
+one call.
 
 ## 7. A worked end-to-end example
 

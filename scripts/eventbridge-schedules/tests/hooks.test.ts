@@ -21,7 +21,7 @@ import { getCorrelationId, hooks } from "../src/hooks.js";
  */
 
 function fakeHookContext(correlationId: string): Core.M3LScriptHookContext {
-  return { config: new Core.M3LConfig(), correlationId };
+  return { config: new Core.M3LConfig(), correlationId, dryRun: false };
 }
 
 test("getCorrelationId throws a typed M3LError when called before onBeforeRun has ever run", () => {
