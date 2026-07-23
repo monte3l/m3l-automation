@@ -117,8 +117,12 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
           this.emit("poll:success", { attempt: attempt + 1 });
           return decision.value;
         case "failure":
+          // `attempt` is carried as `context.attempt` (mirroring the sibling
+          // `M3LPollExhaustedError`'s `context.attempts`) so a terminal
+          // failure can be traced back to the attempt it failed on.
           throw new M3LPollFailureError(
             "poll check returned a terminal failure decision",
+            { attempt: attempt + 1 },
           );
         case "continue": {
           if (attempt < this.#maxAttempts - 1) {

@@ -15,20 +15,29 @@ Exported from `@m3l-automation/m3l-common/core` (the `script` sub-module):
 - `M3LScript`
 - `M3LScriptOptions`
 - `M3LScriptMetadata`
+- `M3LScriptRunOptions` — the optional second argument to `run()` (`{ dryRun? }`).
 - `M3LScriptLifecycleHooks`
 - `M3LScriptHookContext`
 - `M3LScriptConfigLoader`
 - `M3LScriptPresetLoader`
 - `M3LPresetUnknownKeysError`
 - `M3LPresetCycleError`
+- `runScript` — the composition-root wrapper (see [`runScript()`](#runscript)).
+- `M3LRunScriptOptions` — its options (`{ dryRun?, report?, trail? }`).
 - `installProcessGuards`
 - `serializeError`
 - `setProcessGuardRequestId`
 - `AWS_PROFILE_PARAM_NAME` / `AWS_REGION_PARAM_NAME` — the canonical config parameter names (`"aws.profile"` / `"aws.region"`) the AWS-provisioning seam looks up
 
+`M3LScript` additionally exposes three read accessors the wrapper uses to build
+a run report, all safe to call from consumer code: `metadata`, `correlationId`
+(`undefined` before the first run), and `getLastFailureStage()` (the stage that
+was in progress when the most recent run threw; `undefined` on a fresh script
+and after a success).
+
 ## Execution flow
 
-`run(mainFunction)` is the primary CLI entry point. It orchestrates initialization, config load, AWS provisioning, the user function, and cleanup, returning a `Promise<void>`. The stages are:
+`run(mainFunction, options?)` is the primary CLI entry point. It orchestrates initialization, config load, AWS provisioning, the user function, and cleanup, returning a `Promise<void>`. The optional second argument is an `M3LScriptRunOptions` (`{ dryRun? }`); omitting it is exactly the historical behavior. The stages are:
 
 ```text
 M3LScript.run(mainFn)
@@ -42,6 +51,10 @@ M3LScript.run(mainFn)
   8. hooks: onAfterRun → onCleanup
   9. file archival                           ← copies input/config files to the output dir
 ```
+
+Under `{ dryRun: true }` the pipeline stops after stage 5 and then runs
+`onCleanup` — stages 6, 7, the `onAfterRun` half of 8, and 9 are all skipped.
+See [Dry runs](#dry-runs).
 
 `createLambdaHandler<TEvent, TResult, TContext>()` wraps the same initialization pipeline in an AWS Lambda-compatible handler function. Per invocation, the `initialized` and `configLoaded` flags are reset and the config store is cleared, so each invocation starts clean. SDK clients are intentionally not reset between invocations, so connections are reused across warm starts.
 
@@ -58,9 +71,15 @@ The eight hooks declared on `M3LScriptLifecycleHooks` are, in execution order:
 - `onError`
 - `onCleanup`
 
-Each hook receives a `M3LScriptHookContext` carrying the live config store and
-the run's `correlationId` (see [Correlation IDs](#correlation-ids)), so a hook
-can read resolved configuration and the trace id during any stage.
+Each hook receives a `M3LScriptHookContext` carrying the live config store, the
+run's `correlationId` (see [Correlation IDs](#correlation-ids)), and `dryRun`,
+so a hook can read resolved configuration and the trace id during any stage and
+branch on whether this is a [dry run](#dry-runs).
+
+`dryRun` is a required `boolean`, not an optional one — it is `false` on a
+normal run rather than absent, so a hook can write `if (ctx.dryRun)` directly
+instead of `if (ctx.dryRun ?? false)`. Code that builds a `M3LScriptHookContext`
+by hand (typically a test fake) must supply it.
 
 ## File archival (stage 9)
 
@@ -86,12 +105,81 @@ via `getLastArchiveReport()`.
 > existed in the code.
 
 Archival runs on the **success path only** — a run that fails before stage 9
-archives nothing today. The
+archives nothing today, and a [dry run](#dry-runs) skips stage 9 entirely. The
 [diagnostics run report](./diagnostics.md#m3lrunreport--m3lrunreporter)
 (ADR-0035 phase 1) is written on **both** outcomes, failure included, into its
 own per-run `data/output/<startedAt>/` directory — deliberately _not_ shared
 with the flat archival above, since changing that layout would break the nine
 consumer scripts already reading it. Reconciling the two is ADR-0035 phase 5.
+
+## `runScript()`
+
+The composition-root wrapper — the one place process-wide concerns compose.
+Bare `script.run(mainFn)` remains fully supported and unchanged for callers who
+want the primitive.
+
+```typescript
+function runScript(
+  script: M3LScript,
+  mainFn: () => void | Promise<void>,
+  options?: M3LRunScriptOptions, // { dryRun?, report?, trail? }
+): Promise<void>;
+```
+
+1. Installs the process guards (`installProcessGuards()`).
+2. Runs `script.run(mainFn)` under a top-level catch.
+3. **On failure:** logs the error via `logger.errorFrom` (code, context, and the
+   full cause chain), sets `process.exitCode` from `mapErrorToExitCode`, then
+   writes the failure run report.
+4. **On success:** writes the success run report and leaves `exitCode` at `0`.
+5. `dryRun: true` stops after stage 5 — see [Dry runs](#dry-runs).
+
+**It never re-throws, and never calls `process.exit()`.** Both are deliberate.
+Re-throwing would surface as an unhandled rejection, and Node then exits `1`
+_regardless of `process.exitCode`_ — which would defeat the entire exit-code
+registry this wrapper exists to deliver. The error is not lost: it is preserved
+in full in both the log line and the run report. Setting `process.exitCode`
+rather than calling `process.exit()` lets in-flight writes flush.
+
+The exit code is assigned **before** any report work, so a failure to build or
+persist the report can never cost you the exit code — the only signal a
+scheduler actually reads. Report writing is best-effort on both outcomes: a
+failure there is recorded as a stderr diagnostic and never shadows the original
+error.
+
+| Option   | Default | Effect                                                                  |
+| -------- | ------- | ----------------------------------------------------------------------- |
+| `dryRun` | `false` | Stop after stage 5; report `outcome: "dry-run"`                         |
+| `report` | `true`  | `false` skips report persistence entirely; the exit code is still set   |
+| `trail`  | —       | An `M3LBreadcrumbTrail`; its `entries()` become the report's `timeline` |
+
+```typescript
+import { Core } from "@m3l-automation/m3l-common";
+
+const script = new Core.M3LScript({
+  metadata: { name: "report-builder", version: "1.0.0" },
+});
+
+await Core.runScript(script, async () => {
+  // user code; a thrown M3LError's origin decides the exit code
+});
+```
+
+## Dry runs
+
+`runScript(script, mainFn, { dryRun: true })` — or `script.run(mainFn, { dryRun: true })`
+for the primitive — executes stages 1–5 (environment detection, init hooks,
+config load and validation, AWS provisioning including credential validation),
+then stops. It is the fastest way to separate "my config or credentials are
+wrong" from "my logic is wrong".
+
+- `mainFn` never runs; `onBeforeRun` and `onAfterRun` never fire.
+- **`onCleanup` still runs.** Every other terminal path (success, failure,
+  shutdown signal) runs cleanup, so a dry run that skipped it would be the one
+  path that leaks whatever stages 1–5 allocated.
+- Stage 9 archival is skipped, and the dry-run report carries no `archive` key.
+- Hooks observe `ctx.dryRun === true`, so a hook can branch on it for
+  side-effect-aware behavior deeper than the boundary.
 
 ## Exit codes
 
@@ -100,13 +188,17 @@ after the `onError`/`onCleanup` hooks, and the process falls through to Node's
 default unhandled-rejection behavior (exit code `1`) unless the composition
 root intervenes. The differentiated exit-code contract — `2` caller/config,
 `3` external, `4` library, `5` interrupted — is provided by the opt-in
-[`runScript()` wrapper](./diagnostics.md#runscript) (ADR-0035), which sets
-`process.exitCode` from `mapErrorToExitCode`; bare `run()` behavior is
-unchanged.
+[`runScript()` wrapper](#runscript), which sets `process.exitCode` from
+`mapErrorToExitCode`; bare `run()` behavior is unchanged.
 
 ## Signal handling
 
-Signal handlers for `SIGTERM`, `SIGINT`, and `SIGQUIT` are registered only in non-AWS environments. A second signal forces an immediate exit with code `1`. In AWS execution environments (for example, Lambda), these handlers are not installed.
+Signal handlers for `SIGTERM`, `SIGINT`, and `SIGQUIT` are registered only in non-AWS environments. In AWS execution environments (for example, Lambda), these handlers are not installed.
+
+A second signal forces an immediate exit. The code is `1` by default; for the
+duration of a `runScript()` call it is `5` (`INTERRUPTED`), and the previous
+value is restored when that call settles — so a bare `run()` in the same
+process keeps forcing `1`, exactly as it did before the wrapper existed.
 
 ## Process guards
 
@@ -124,8 +216,8 @@ fault-handling layers deliberately differ:
   layer is the opposite: it _controls_ shutdown and force-exits on a second
   signal.
 - **CLI:** call `installProcessGuards()` once at the top of `main.ts` — or use
-  the [`runScript()` wrapper](./diagnostics.md#runscript) (ADR-0035), which
-  installs them, adds a top-level catch, and sets the exit code.
+  the [`runScript()` wrapper](#runscript), which installs them, adds a
+  top-level catch, and sets the exit code.
 - **Lambda:** guards are optional; if used, call `installProcessGuards()` once
   at module scope (cold start). `setProcessGuardRequestId` is wired per
   invocation by `createLambdaHandler()` automatically.
@@ -145,6 +237,7 @@ interface M3LScriptOptions {
 interface M3LScriptHookContext {
   readonly config: M3LReadonlyConfig;
   readonly correlationId: string; // always resolved by the first hook
+  readonly dryRun: boolean; // required; false on a normal run
 }
 ```
 
@@ -298,7 +391,7 @@ export const handler = script.createLambdaHandler<MyEvent, MyResult>(
 ## See also
 
 - [config](./config.md)
-- [diagnostics](./diagnostics.md) — `runScript()`, exit codes, run reports
+- [diagnostics](./diagnostics.md) — exit-code registry, run reports, breadcrumbs
 - [environment](./environment.md)
 - [errors](./errors.md)
 - [logging](./logging.md)

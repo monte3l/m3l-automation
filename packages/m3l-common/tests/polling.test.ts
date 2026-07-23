@@ -41,6 +41,15 @@ import {
 } from "vitest";
 
 import { M3LError } from "../src/core/errors/index.js";
+// `M3LPollFailureError` is internal (private to `core/polling`, no barrel
+// export — see the file banner above), so it is imported directly from its
+// path, mirroring the existing precedent in `tests/script.test.ts` and
+// `tests/prompt.test.ts` for whitebox-covering an internal helper the public
+// surface cannot fully reach. Its optional `context` constructor param is
+// never exercised by `M3LPoller`'s own two call sites (neither passes one),
+// so both constructor branches are covered directly here instead of relying
+// on the public API to happen to reach them.
+import { M3LPollFailureError } from "../src/internal/polling/errors.js";
 import {
   awsNetworkClassifier,
   awsThrottlingClassifier,
@@ -1393,5 +1402,32 @@ describe("core/polling", () => {
         });
       });
     });
+  });
+});
+
+// =============================================================================
+// M3LPollFailureError — internal constructor's optional `context` param
+//
+// Whitebox-only: neither of `M3LPoller`'s own two throw sites passes a
+// `context`, so the "with context" constructor branch is unreachable through
+// the public API and must be exercised directly against the internal class.
+// =============================================================================
+describe("M3LPollFailureError (internal) — optional context", () => {
+  test("constructed without context: context is an empty record, code is ERR_POLL_FAILURE, and it is an M3LError", () => {
+    const error = new M3LPollFailureError("terminal failure");
+
+    expect(error).toBeInstanceOf(M3LError);
+    expect(error.code).toBe("ERR_POLL_FAILURE");
+    expect(error.context).toEqual({});
+  });
+
+  test("constructed with context: context carries it verbatim", () => {
+    const context = { attempt: 3, reason: "upstream rejected" };
+
+    const error = new M3LPollFailureError("terminal failure", context);
+
+    expect(error).toBeInstanceOf(M3LError);
+    expect(error.code).toBe("ERR_POLL_FAILURE");
+    expect(error.context).toEqual(context);
   });
 });
