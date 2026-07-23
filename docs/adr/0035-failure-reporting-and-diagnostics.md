@@ -248,6 +248,70 @@ docs-first pipeline (`scaffolding-submodules` → `implementing-submodules`, or
 No tracking issues are filed for these phases (single-maintainer repo; this
 rollout section is the sequencing record).
 
+## Update (2026-07-23) — the run report is a sensitive artifact
+
+Implementing phase 1 disproved a premise this ADR carried implicitly: that
+`run-report.json` could be made safe to share by redacting it. It cannot, and
+the attempt was actively counterproductive.
+
+**Evidence.** Four adversarial refute passes ran against the phase-1
+implementation. All four succeeded, finding ten confirmed secret leaks into the
+persisted report. More telling than the count is the pattern:
+
+- Every leak was in a **denylist** surface — free-text error `message`/`stack`,
+  arbitrary caller-supplied `archive`/`context` — guarded by a URL-scrubbing
+  regex plus `redactSensitiveLogValue`'s heuristic key-name matching.
+- Every **allowlist** surface held across all four rounds without a single
+  leak: the breadcrumb summarizers (which keep only named scalar fields per
+  event), the source-label allowlist, the set-cardinality marker.
+- Every **structural invariant** held: path containment, symlink/`wx` write
+  protection, the cycle seen-set, `Map`/`Set` key-preserving normalization.
+- Three of the four fix rounds **introduced regressions**. Round 1's
+  cycle-breaking pre-pass silently disabled `Map`/`Set` redaction that had
+  previously worked; round 4's regex rewrite reopened
+  `?X-Amz-Signature=<value>` and made an unterminated quote swallow a following
+  URL. Each rewrite of the pattern broke a case its predecessor handled.
+
+A regex over unbounded caller text is a denylist against an infinite input
+space. It does not converge, and iterating on it made the surface less stable,
+not more.
+
+**Decision.** `run-report.json` is reclassified as a **sensitive artifact — a
+crash dump**. It retains full diagnostic fidelity (error messages, stacks,
+cause-chain context, the archive manifest), and redaction remains as
+defense-in-depth rather than a guarantee. What changes is the contract around
+it:
+
+- `docs/guides/troubleshooting.md` no longer tells operators to attach the
+  report to bug reports. The guidance is now: treat it as sensitive, review
+  before sharing.
+- §2.3's "redaction-first" framing above describes an aspiration the
+  implementation approximates, not a property it guarantees. The
+  [diagnostics reference](../reference/core/diagnostics.md) states the real
+  contract.
+- The two surfaces that _can_ be allowlisted were converted rather than
+  patched: `archive` is projected to the known `M3LFileCopyReport` shape
+  instead of accepting an arbitrary object, and object **keys** are scrubbed
+  alongside values.
+
+**Accepted residual limitations** (documented, not fixed — the reclassification
+is what covers them):
+
+- `?X-Amz-Signature=<angle-bracketed-value>` is not URL-scrubbed, because
+  `signature` is absent from `SENSITIVE_KEY_NAMES` so the name-based pass
+  cannot fire either.
+- An unterminated quote after a URL `key=` can swallow a following URL to
+  end-of-string; if the outer URL then fails to parse, the swallowed span is
+  restored verbatim.
+- Free-text error messages and stacks may contain anything a caller or an
+  upstream service put there, including absolute paths that disclose the OS
+  username.
+
+**Consequence for the breadcrumb trail.** The trail keeps its stricter
+guarantee — it is allowlisted per event and has survived every adversarial
+pass — so it remains suitable for sharing where the full report is not. That
+asymmetry is deliberate.
+
 ## Links
 
 - Related: [ADR-0005](./0005-error-hierarchy.md) (M3LError/M3LResult model —

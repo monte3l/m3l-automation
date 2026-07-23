@@ -19,6 +19,10 @@ Public surface (`errors/index.ts`):
 - `M3L_ERROR_CODES` — the runtime `as const` tuple of every built-in error code (the source of truth `M3LErrorCode` derives from)
 - `M3LErrorUtils` functions: `getErrorMessage`, `toError`, `wrapError`, `getErrorStack`, `hasErrorName`, `errorMessageContains`
 - Result operators: `ok`, `err`, `isOk`, `isErr`, `unwrap`, `unwrapOr`, `map`, `mapErr`, `andThen`, `fromPromise`, `tryCatch`
+- Fault-origin classification (ADR-0035 phase 1 — see
+  [Error-code catalog](#error-code-catalog)): `M3LErrorOrigin`,
+  `M3LErrorRetryable`, `M3LErrorClassification`, `M3L_ERROR_CATALOG`,
+  `classifyErrorCode`, `isM3LErrorCode`
 
 ### `M3LError`
 
@@ -92,6 +96,47 @@ implementation defaults for `origin`/`retryable` under ADR-0035). No built-in
 code is classified `library` today — the built-in surface is strictly
 caller/external; `library` is reserved for internal invariant violations,
 which have no stable dedicated codes by definition.
+
+The table below is mirrored in code as `M3L_ERROR_CATALOG`, shipped by
+ADR-0035 phase 1:
+
+```typescript
+type M3LErrorOrigin = "caller" | "library" | "external";
+type M3LErrorRetryable = boolean | "situational";
+
+interface M3LErrorClassification {
+  readonly origin: M3LErrorOrigin;
+  readonly retryable: M3LErrorRetryable;
+}
+
+const M3L_ERROR_CATALOG: Readonly<Record<M3LErrorCode, M3LErrorClassification>>;
+
+function classifyErrorCode(code: string): M3LErrorClassification | undefined;
+function isM3LErrorCode(code: string): code is M3LErrorCode;
+```
+
+`M3L_ERROR_CATALOG` carries an explicit `Record<M3LErrorCode, …>` annotation
+rather than `as const`, which makes catalog drift a **compile** error in both
+directions: a code added to `M3L_ERROR_CODES` without a classification fails
+the exhaustive key requirement, and a stale entry for a removed code fails the
+excess-property check. That is stronger than the source-scan test alone.
+
+`classifyErrorCode` is prototype-pollution safe — `classifyErrorCode("toString")`
+and `("constructor")` return `undefined`, not an inherited `Object.prototype`
+member.
+
+> **`"situational"` is truthy.** Do not write `if (classification.retryable)` —
+> that retries every situational code, including `ERR_ATHENA_QUERY_FAILED` on a
+> terminal `FAILED` status, which is explicitly _not_ retryable. Test
+> `retryable === true` and handle `"situational"` by inspecting the specific
+> instance's terminal status or context. The union keeps the shape ADR-0035
+> §2.1 ratified; the footgun is a documented caveat, not an accident.
+
+`mapErrorToExitCode` (see
+[diagnostics](./diagnostics.md#exit-code-registry--m3l_exit_codes--maperrortoexitcode))
+consults this catalog as its second resolution step, after reading an error's
+own `origin` field. Until phase 2 adds `origin` to `M3LErrorOptions`, the
+catalog lookup is the only branch a real library error reaches.
 
 | Code                              | Module (thrower)                                    | Meaning                                                                  | Origin   | Retryable   |
 | --------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------ | -------- | ----------- |

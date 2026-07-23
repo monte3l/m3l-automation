@@ -4,7 +4,7 @@ The **living, prioritized view of pending program work**. It is the coarse
 companion to two other trackers:
 
 - [`docs/implementation-status.md`](./implementation-status.md) — the _done_
-  library ledger (30/31 submodules, count-enforced).
+  library ledger (31/31 submodules, count-enforced).
 - [`docs/plans/IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md) — the _detailed_
   per-item backlog this file summarizes.
 
@@ -17,7 +17,7 @@ _Maintenance_ at the bottom. Completed dated plans live under
 
 Per-item status lives in the tables below (Priority 0/1/2) and in
 [`docs/implementation-status.md`](./implementation-status.md) — the
-count-enforced library ledger (30/31 submodules, shipped at v1.1.0 + the
+count-enforced library ledger (31/31 submodules, shipped at v1.1.0 + the
 ad-hoc `aws/dynamodb`, `aws/sqs`, and `aws/cloudwatch-logs-insights` additions,
 ADR-0026/ADR-0027).
 
@@ -35,6 +35,25 @@ call-sites in [`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#library-friction-f
 | **F5** | `M3LPaths.resolveInput/resolveOutput(name)` (join + traversal-contain, paths seam)              | done        | `json-etl`'s local `resolveContainedPath` is gone.                                                                                                                                                                              |
 | **F1** | `required: true` on `M3LConfigParameter` (throws `M3LConfigMissingError`)                       | done        | `json-etl` declares `required` instead of hand-rolled presence guards. Cross-parameter half deferred as **F1b** (Priority 2).                                                                                                   |
 | **F2** | `nonEmpty`/`minLength` on `M3LConfigValidators`                                                 | done        | `json-etl` declares `nonEmpty` instead of hand-rolled guards.                                                                                                                                                                   |
+
+### ADR-0035 rollout — failure reporting & diagnostics
+
+The five phases mandated by
+[ADR-0035](./adr/0035-failure-reporting-and-diagnostics.md) § Rollout. Priority 0
+because the gap they close is fleet-wide: an unattended cron/CI run that fails
+today leaves **no artifact at all** — stage-9 archival runs on the success path
+only, `M3LScript.run()` never logs the failing error, and every failure exits `1`
+regardless of cause. That compounds across all nine consumer scripts exactly as the
+F-series friction did. Per-phase detail:
+[`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#adr-0035-rollout--failure-reporting--diagnostics).
+
+| Item   | What                                                                                               | Status  | Why now / Notes                                                                                                                                                                                                                                            |
+| ------ | -------------------------------------------------------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A1** | `core/diagnostics` submodule — run reports, exit-code registry, cause-chain formatter, breadcrumbs | done    | Ships `core/errors/catalog.ts` (64-code `origin`/`retryable` classification) in the same change set so `mapErrorToExitCode` lands complete, not inert. Corrected three false claims in the shipped specs — see the spec-drift note in `IMPLEMENTATION.md`. |
+| **A2** | `core/errors` — `origin`/`retryable` on `M3LErrorOptions` + per-subclass defaults                  | pending | Unblocks the `origin` branch of `mapErrorToExitCode`, which A1 can only reach via catalog lookup today. `M3LErrorOrigin`/`M3LErrorRetryable` already exist from A1 — import, don't redeclare.                                                              |
+| **A3** | `core/logging` — `DEBUG` category, `minLevel` floor, `errorFrom`, `time`                           | pending | The one-switch `M3L_DEBUG=1` debug mode; closes the `serializeError`-omits-`cause` gap at the logging layer.                                                                                                                                               |
+| **A4** | `core/script` — `runScript()` wrapper + `M3LPollFailureError` context                              | pending | The phase that makes exit codes `2`/`3`/`4` observable. **Placement is not settled:** ADR-0009 Zone B forbids `core/* → core/script`, so `runScript` cannot live in `core/diagnostics` beside the rest of the machinery — resolve before scoping.          |
+| **A5** | Template + consumer-script refresh — scaffold adopts `runScript()`                                 | pending | Gated on A4. Also the natural point to reconcile the directory split A1 left open: stage-9 archival writes flat to `data/output/{inputs,configs}/` while the run report owns `data/output/<timestamp>/`.                                                   |
 
 ## Priority 1 — Consumer fleet
 
