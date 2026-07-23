@@ -87,17 +87,6 @@ export interface M3LScriptHookContext {
    * Correlation IDs reference for the full resolution precedence.
    */
   readonly correlationId: string;
-  /**
-   * Whether the current run is a dry run (see {@link M3LScriptRunOptions.dryRun}).
-   * Required, never optional: a hook needs to branch on this value directly
-   * (`if (ctx.dryRun) { ... }`) without a `?? false` fallback at every call
-   * site, and `false` is itself meaningful information (this run performs
-   * real work) rather than an absence of information — so it is always
-   * present, `false` on every normal run and on every
-   * {@link M3LScript.createLambdaHandler} invocation (dry-run only applies to
-   * {@link M3LScript.run}).
-   */
-  readonly dryRun: boolean;
 }
 
 /** The signature shared by every {@link M3LScriptLifecycleHooks} hook except `onError`. */
@@ -232,30 +221,4 @@ export interface M3LScriptOptions {
    * `""` — to mean "no preset."
    */
   readonly preset?: string;
-}
-
-/**
- * Per-call options for {@link M3LScript.run}, distinct from the once-per-instance
- * {@link M3LScriptOptions} passed to the constructor.
- *
- * @example
- * ```ts
- * import { M3LScript } from "@m3l-automation/m3l-common/core";
- *
- * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
- *
- * // Exercise stages 1-5 (env detect, hooks, config load, AWS provisioning)
- * // without invoking mainFn or archiving files — useful for a `--dry-run`
- * // CLI flag that validates configuration/credentials without side effects.
- * await script.run(async () => {}, { dryRun: true });
- * ```
- */
-export interface M3LScriptRunOptions {
-  /**
-   * When `true`, {@link M3LScript.run} stops after stage 5 (AWS provisioning):
-   * `onBeforeRun`, `mainFn`, the `onAfterRun` half of stage 8, and stage 9
-   * (file archival) are all skipped. `onCleanup` still runs — see
-   * {@link M3LScript.run}'s own TSDoc for why. Defaults to `false`.
-   */
-  readonly dryRun?: boolean;
 }

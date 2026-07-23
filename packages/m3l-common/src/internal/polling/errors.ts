@@ -18,11 +18,8 @@ export class M3LPollFailureError extends M3LError {
   /** Narrows the inherited `code` to the literal `"ERR_POLL_FAILURE"`. */
   override readonly code: "ERR_POLL_FAILURE";
 
-  constructor(message: string, context?: Record<string, unknown>) {
-    super(message, {
-      code: "ERR_POLL_FAILURE",
-      ...(context !== undefined ? { context } : {}),
-    });
+  constructor(message: string) {
+    super(message, { code: "ERR_POLL_FAILURE" });
     this.code = "ERR_POLL_FAILURE";
   }
 }

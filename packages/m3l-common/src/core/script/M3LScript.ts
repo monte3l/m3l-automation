@@ -35,9 +35,7 @@ import { serializeError, setProcessGuardRequestId } from "./process-guards.js";
 import type {
   M3LScriptHookContext,
   M3LScriptLifecycleHooks,
-  M3LScriptMetadata,
   M3LScriptOptions,
-  M3LScriptRunOptions,
 } from "./M3LScriptOptions.js";
 
 // Type-only imports: erased at compile time, so importing the types here
@@ -46,35 +44,6 @@ import type {
 // `provisionAws` / `resolveAwsIdentity` below.
 import type { AWSProvider } from "../../aws/clients/index.js";
 import type { M3LAWSProfile, M3LAWSRegion } from "../../aws/models/index.js";
-
-/**
- * The nine pipeline stages {@link M3LScript.runPipeline} drives through, in
- * order, plus the dry-run-only `"cleanup"` label. Kept as a non-exported
- * union (rather than surfacing it through {@link M3LScriptOptions.js}) so the
- * labels cannot drift out of sync with the stages that set them —
- * {@link M3LScript.getLastFailureStage} widens the return type to plain
- * `string` so this internal type never leaks into the emitted `.d.ts`,
- * matching {@link M3LRunReportInput.stage}'s own `string | undefined` shape.
- *
- * `"cleanup"` is the tenth member, distinct from `"after-run"`: a dry run's
- * early-return branch runs `onCleanup` without ever having run the normal
- * `"after-run"` stage (`onAfterRun`), so labeling a throwing dry-run
- * `onCleanup` as `"after-run"` would misreport a stage that never ran. It is
- * used ONLY by the dry-run branch — the normal (non-dry-run) path's
- * `onCleanup` call keeps the pre-existing `"after-run"` label, since 9
- * existing test labels are already pinned to that value.
- */
-type M3LScriptPipelineStage =
-  | "environment"
-  | "init-hooks"
-  | "config-load"
-  | "config-hooks"
-  | "aws-provisioning"
-  | "before-run"
-  | "main"
-  | "after-run"
-  | "archive"
-  | "cleanup";
 
 /**
  * Invokes `hook` (if defined) with `ctx`, awaiting the result. A `hook` left
@@ -163,9 +132,6 @@ export class M3LScript {
   private readonly configLoader = new M3LScriptConfigLoader();
   readonly #paths = new M3LPaths();
 
-  /** The caller-supplied `options.metadata`, returned verbatim by {@link M3LScript.metadata}. */
-  private readonly scriptMetadata: M3LScriptMetadata;
-
   /** Reset per Lambda invocation; `true` once stage 1 has run at least once. */
   private initialized = false;
   /** Reset per Lambda invocation; `true` once config has been loaded. */
@@ -180,31 +146,6 @@ export class M3LScript {
    * `resetForInvocation` — see {@link M3LScript.provisionAws}.
    */
   private awsProvider: AWSProvider | undefined;
-
-  /**
-   * Whether the run currently in progress was started with `{ dryRun: true }`
-   * — mirrored onto every {@link M3LScriptHookContext.dryRun} built during
-   * that run. Reset at the top of every {@link M3LScript.runPipeline} call
-   * (including a Lambda invocation, which never passes `dryRun`), so it
-   * always reflects the CURRENT run rather than leaking a prior one's value.
-   */
-  private currentDryRun = false;
-
-  /**
-   * The stage {@link M3LScript.runPipeline} most recently BEGAN — updated as
-   * each stage starts, not as it completes, so a throw from within a stage
-   * still finds the right label already recorded. Captured into
-   * {@link M3LScript.lastFailureStage} from `runWithErrorHandling`'s catch
-   * block; not itself part of the public surface.
-   */
-  private currentStage: M3LScriptPipelineStage | undefined;
-
-  /**
-   * The stage that was in progress when the most recently completed `run`/
-   * Lambda invocation threw, or `undefined` on a fresh script or after a
-   * successful run — see {@link M3LScript.getLastFailureStage}.
-   */
-  private lastFailureStage: M3LScriptPipelineStage | undefined;
 
   /**
    * The caller-supplied `options.correlationId`, used verbatim for every run
@@ -300,7 +241,6 @@ export class M3LScript {
    *   and facility overrides.
    */
   constructor(options: M3LScriptOptions) {
-    this.scriptMetadata = options.metadata;
     this.hooks = options.hooks ?? {};
     this.schema =
       options.config !== undefined
@@ -346,81 +286,6 @@ export class M3LScript {
   }
 
   /**
-   * The script's identifying metadata, exactly as supplied to the
-   * constructor's `options.metadata` — e.g. so a `runScript` composition
-   * root can label a persisted run report with the script's name/version
-   * without the caller re-threading the same value it already gave the
-   * constructor.
-   *
-   * @returns The constructor's `options.metadata`, verbatim.
-   *
-   * @example
-   * ```ts
-   * import { M3LScript } from "@m3l-automation/m3l-common/core";
-   *
-   * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
-   * console.log(script.metadata.name); // "x"
-   * ```
-   */
-  get metadata(): M3LScriptMetadata {
-    return this.scriptMetadata;
-  }
-
-  /**
-   * The current run's/invocation's resolved correlation id, or `undefined`
-   * before {@link M3LScript.run} (or the handler from
-   * {@link M3LScript.createLambdaHandler}) has been called at least once.
-   * Mirrors the same id every hook observes via
-   * {@link M3LScriptHookContext.correlationId} during that run.
-   *
-   * @returns The resolved correlation id, or `undefined`.
-   *
-   * @example
-   * ```ts
-   * import { M3LScript } from "@m3l-automation/m3l-common/core";
-   *
-   * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
-   * await script.run(async () => {});
-   * console.log(script.correlationId); // a resolved id, e.g. a UUID
-   * ```
-   */
-  get correlationId(): string | undefined {
-    return this.currentCorrelationId;
-  }
-
-  /**
-   * The pipeline stage that was in progress when the most recently completed
-   * `run`/Lambda invocation threw. `undefined` on a fresh script and after a
-   * successful run — cleared at the start of every {@link M3LScript.runPipeline}
-   * call, not only set on failure, so a success following an earlier failure
-   * reports `undefined` rather than the previous run's stale stage.
-   *
-   * @returns One of `"environment"`, `"init-hooks"`, `"config-load"`,
-   *   `"config-hooks"`, `"aws-provisioning"`, `"before-run"`, `"main"`,
-   *   `"after-run"`, `"archive"`, or `undefined`. `"cleanup"` is also
-   *   possible, but dry-run only — a throwing `onCleanup` during a dry run's
-   *   early-return branch (which never runs the normal `"after-run"` stage)
-   *   surfaces as `"cleanup"` rather than `"after-run"`.
-   *
-   * @example
-   * ```ts
-   * import { M3LScript } from "@m3l-automation/m3l-common/core";
-   *
-   * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
-   * try {
-   *   await script.run(async () => {
-   *     throw new Error("boom");
-   *   });
-   * } catch {
-   *   console.log(script.getLastFailureStage()); // "main"
-   * }
-   * ```
-   */
-  getLastFailureStage(): string | undefined {
-    return this.lastFailureStage;
-  }
-
-  /**
    * Runs the nine-stage execution pipeline around `mainFn`:
    *
    * 1. {@link M3LExecutionEnvironment.detect} (environment detection).
@@ -452,32 +317,16 @@ export class M3LScript {
    * intentional (cleanup must still be attempted on the error path even
    * though it already ran once) rather than an accidental double-invocation.
    *
-   * When `options.dryRun` is `true`, the pipeline stops after stage 5 (AWS
-   * provisioning): `onBeforeRun`, `mainFn`, the `onAfterRun` half of stage 8,
-   * and stage 9 (file archival) are all skipped. `onCleanup` still runs —
-   * every OTHER terminal path (success, error, shutdown signal) runs cleanup,
-   * so a dry run that skipped it would be the one path that leaks whatever
-   * stages 1-5 allocated (e.g. a provisioned {@link M3LScript.aws} facade).
-   * Do not "fix" this by skipping `onCleanup` too.
-   *
    * @param mainFn - The user function to run at stage 7. May be synchronous
    *   or asynchronous; an asynchronous `mainFn` is awaited before stage 8.
-   * @param options - Per-call run options; see {@link M3LScriptRunOptions}.
    * @returns A promise that resolves once every stage (including cleanup and
-   *   archival, unless skipped by `dryRun`) has completed.
+   *   archival) has completed.
    * @throws The original error from whichever stage failed — always, and
    *   always after `onError` and `onCleanup` have both been given a chance
    *   to run.
    */
-  async run(
-    mainFn: () => void | Promise<void>,
-    options?: M3LScriptRunOptions,
-  ): Promise<void> {
-    await this.runWithErrorHandling(
-      mainFn,
-      undefined,
-      options?.dryRun ?? false,
-    );
+  async run(mainFn: () => void | Promise<void>): Promise<void> {
+    await this.runWithErrorHandling(mainFn);
   }
 
   /**
@@ -485,20 +334,15 @@ export class M3LScript {
    * both {@link M3LScript.run} and {@link M3LScript.createLambdaHandler} — the
    * latter additionally threads a preferred correlation id (the platform
    * request id) through to {@link M3LScript.resolveCorrelationId} without
-   * widening `run`'s own public signature. Also clears
-   * {@link M3LScript.lastFailureStage} before every run so a success
-   * following an earlier failure reports `undefined`, not the stale stage.
+   * widening `run`'s own public signature.
    */
   private async runWithErrorHandling(
     mainFn: () => void | Promise<void>,
     preferredCorrelationId?: string,
-    dryRun = false,
   ): Promise<void> {
-    this.lastFailureStage = undefined;
     try {
-      await this.runPipeline(mainFn, preferredCorrelationId, dryRun);
+      await this.runPipeline(mainFn, preferredCorrelationId);
     } catch (cause) {
-      this.lastFailureStage = this.currentStage;
       await this.runOnErrorBestEffort(cause);
       await this.runCleanup("onError");
       throw cause;
@@ -605,10 +449,7 @@ export class M3LScript {
     return resolved;
   }
 
-  /**
-   * Builds the hook context carrying the live config store, resolved
-   * correlation id, and the current run's dry-run flag.
-   */
+  /** Builds the hook context carrying the live config store and resolved correlation id. */
   private hookContext(): M3LScriptHookContext {
     // `currentCorrelationId` is resolved at the very top of `runPipeline`,
     // before stage 1, so by the time any hook fires (including `onError` from
@@ -618,11 +459,6 @@ export class M3LScript {
     return {
       config: this.config,
       correlationId: this.currentCorrelationId ?? this.resolveCorrelationId(),
-      // `currentDryRun` defaults to `false` and is only ever set `true` for
-      // the duration of a `run(mainFn, { dryRun: true })` call — a hook
-      // invoked from `createLambdaHandler` (which never threads `dryRun`) or
-      // outside any run always observes `false`.
-      dryRun: this.currentDryRun,
     };
   }
 
@@ -801,24 +637,11 @@ export class M3LScript {
     return this.lastArchiveReport;
   }
 
-  /**
-   * Runs stages 1-9, without any error/cleanup handling (that lives in
-   * `run`). Tracks the currently-running stage in {@link M3LScript.currentStage}
-   * (read by `runWithErrorHandling`'s catch block on failure) and, when
-   * `dryRun` is `true`, stops after stage 5 — see {@link M3LScript.run}'s
-   * TSDoc for the full dry-run contract.
-   */
+  /** Runs stages 1-9, without any error/cleanup handling (that lives in `run`). */
   private async runPipeline(
     mainFn: () => void | Promise<void>,
     preferredCorrelationId?: string,
-    dryRun = false,
   ): Promise<void> {
-    // Reset per-run state that must never leak a prior run's value: the
-    // dry-run flag every hook's `ctx.dryRun` reads, and the in-progress-stage
-    // marker `runWithErrorHandling`'s catch block captures on failure.
-    this.currentDryRun = dryRun;
-    this.currentStage = undefined;
-
     // Resolve the run's correlation id before ANY stage runs — including
     // stage 1 (environment detection) below — so `ctx.correlationId` is a
     // stable, non-empty string on every hook this run invokes, even
@@ -831,60 +654,30 @@ export class M3LScript {
     // construction) — this call exists so stage 1 is independently
     // observable, and re-runs on every `run`/Lambda invocation, per the
     // documented pipeline order.
-    this.currentStage = "environment";
     M3LExecutionEnvironment.detect();
     this.initialized = true;
 
     // Stage 2: init hooks.
-    this.currentStage = "init-hooks";
     await runHook(this.hooks.onBeforeInit, this.hookContext());
     await runHook(this.hooks.onAfterInit, this.hookContext());
 
-    // Stage 3 + 4: config load + hooks. `currentStage` is (re-)set
-    // immediately before each of the three calls below so a throw from any
-    // one of them is attributed to the right label regardless of call order
-    // (the hooks bracket the load, not follow it).
-    this.currentStage = "config-hooks";
+    // Stage 3 + 4: config load + hooks.
     await runHook(this.hooks.onBeforeConfigLoad, this.hookContext());
-    this.currentStage = "config-load";
     await this.loadConfig();
-    this.currentStage = "config-hooks";
     await runHook(this.hooks.onAfterConfigLoad, this.hookContext());
 
     // Stage 5: AWS client provisioning.
-    this.currentStage = "aws-provisioning";
     await this.provisionAws();
 
-    if (dryRun) {
-      // Dry run: stages 6-9 (onBeforeRun, mainFn, onAfterRun, archival) are
-      // all skipped. `onCleanup` still runs, though — every OTHER terminal
-      // path (success, error, shutdown signal) runs cleanup, so a dry run
-      // that skipped it would be the one path that leaks whatever stages 1-5
-      // allocated (e.g. a provisioned `aws` facade or acquired resources).
-      // Do not "fix" this by skipping `onCleanup` too.
-      //
-      // Labeled `"cleanup"`, NOT the normal path's `"after-run"`: this branch
-      // never ran `onAfterRun` (the other half of stage 8), so a throwing
-      // `onCleanup` here must not be misreported as a failure of a stage that
-      // never executed.
-      this.currentStage = "cleanup";
-      await runHook(this.hooks.onCleanup, this.hookContext());
-      return;
-    }
-
     // Stage 6 + 7: onBeforeRun, mainFn.
-    this.currentStage = "before-run";
     await runHook(this.hooks.onBeforeRun, this.hookContext());
-    this.currentStage = "main";
     await mainFn();
 
     // Stage 8: onAfterRun, onCleanup.
-    this.currentStage = "after-run";
     await runHook(this.hooks.onAfterRun, this.hookContext());
     await runHook(this.hooks.onCleanup, this.hookContext());
 
     // Stage 9: file archival.
-    this.currentStage = "archive";
     await this.archiveFiles();
   }
 

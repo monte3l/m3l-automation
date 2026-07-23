@@ -8,27 +8,27 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "9e00ebf89c354399f22d2dacbbed19b80192d585"
+          "blob": "811e1bd7553809eb3aa5ab8b11c088cce6132448"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
           "symbol": "M3LScriptOptions",
-          "blob": "e3fb69d464e32574b4527217789a590f1d4f1d72"
+          "blob": "1395c11fa79d2a7d50af71f666d79c51b802492f"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
           "symbol": "M3LScriptMetadata",
-          "blob": "e3fb69d464e32574b4527217789a590f1d4f1d72"
+          "blob": "1395c11fa79d2a7d50af71f666d79c51b802492f"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
           "symbol": "M3LScriptLifecycleHooks",
-          "blob": "e3fb69d464e32574b4527217789a590f1d4f1d72"
+          "blob": "1395c11fa79d2a7d50af71f666d79c51b802492f"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
           "symbol": "M3LScriptHookContext",
-          "blob": "e3fb69d464e32574b4527217789a590f1d4f1d72"
+          "blob": "1395c11fa79d2a7d50af71f666d79c51b802492f"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptConfigLoader.ts",
@@ -74,24 +74,9 @@
           "file": "packages/m3l-common/src/core/script/aws-param-names.ts",
           "symbol": "AWS_REGION_PARAM_NAME",
           "blob": "ff720c51059bf77d638ad04c61e650fb92c1ebc0"
-        },
-        {
-          "file": "packages/m3l-common/src/core/script/run-script.ts",
-          "symbol": "runScript",
-          "blob": "8781193c0dadb7ca1b83fc256476e24c49807044"
-        },
-        {
-          "file": "packages/m3l-common/src/core/script/run-script.ts",
-          "symbol": "M3LRunScriptOptions",
-          "blob": "8781193c0dadb7ca1b83fc256476e24c49807044"
-        },
-        {
-          "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
-          "symbol": "M3LScriptRunOptions",
-          "blob": "e3fb69d464e32574b4527217789a590f1d4f1d72"
         }
       ],
-      "retrieved": "2026-07-23"
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Execution flow",
@@ -99,10 +84,10 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "9e00ebf89c354399f22d2dacbbed19b80192d585"
+          "blob": "811e1bd7553809eb3aa5ab8b11c088cce6132448"
         }
       ],
-      "retrieved": "2026-07-23"
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Lifecycle hooks",
@@ -110,47 +95,15 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
           "symbol": "M3LScriptLifecycleHooks",
-          "blob": "e3fb69d464e32574b4527217789a590f1d4f1d72"
+          "blob": "1395c11fa79d2a7d50af71f666d79c51b802492f"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
           "symbol": "M3LScriptHookContext",
-          "blob": "e3fb69d464e32574b4527217789a590f1d4f1d72"
+          "blob": "1395c11fa79d2a7d50af71f666d79c51b802492f"
         }
       ],
-      "retrieved": "2026-07-23"
-    },
-    {
-      "heading": "`runScript()`",
-      "sources": [
-        {
-          "file": "packages/m3l-common/src/core/script/run-script.ts",
-          "symbol": "runScript",
-          "blob": "8781193c0dadb7ca1b83fc256476e24c49807044"
-        },
-        {
-          "file": "packages/m3l-common/src/core/script/run-script.ts",
-          "symbol": "M3LRunScriptOptions",
-          "blob": "8781193c0dadb7ca1b83fc256476e24c49807044"
-        }
-      ],
-      "retrieved": "2026-07-23"
-    },
-    {
-      "heading": "Dry runs",
-      "sources": [
-        {
-          "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
-          "symbol": "M3LScriptRunOptions",
-          "blob": "e3fb69d464e32574b4527217789a590f1d4f1d72"
-        },
-        {
-          "file": "packages/m3l-common/src/core/script/M3LScript.ts",
-          "symbol": "M3LScript",
-          "blob": "9e00ebf89c354399f22d2dacbbed19b80192d585"
-        }
-      ],
-      "retrieved": "2026-07-23"
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Signal handling",
@@ -158,10 +111,10 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "9e00ebf89c354399f22d2dacbbed19b80192d585"
+          "blob": "811e1bd7553809eb3aa5ab8b11c088cce6132448"
         }
       ],
-      "retrieved": "2026-07-23"
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Process guards",
@@ -190,20 +143,20 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
           "symbol": "M3LScriptOptions",
-          "blob": "e3fb69d464e32574b4527217789a590f1d4f1d72"
+          "blob": "1395c11fa79d2a7d50af71f666d79c51b802492f"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptOptions.ts",
           "symbol": "M3LScriptHookContext",
-          "blob": "e3fb69d464e32574b4527217789a590f1d4f1d72"
+          "blob": "1395c11fa79d2a7d50af71f666d79c51b802492f"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "9e00ebf89c354399f22d2dacbbed19b80192d585"
+          "blob": "811e1bd7553809eb3aa5ab8b11c088cce6132448"
         }
       ],
-      "retrieved": "2026-07-23"
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Preset loader",
@@ -232,10 +185,10 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "9e00ebf89c354399f22d2dacbbed19b80192d585"
+          "blob": "811e1bd7553809eb3aa5ab8b11c088cce6132448"
         }
       ],
-      "retrieved": "2026-07-23"
+      "retrieved": "2026-07-11"
     },
     {
       "heading": "Notes and behavior",
@@ -243,7 +196,7 @@
         {
           "file": "packages/m3l-common/src/core/script/M3LScript.ts",
           "symbol": "M3LScript",
-          "blob": "9e00ebf89c354399f22d2dacbbed19b80192d585"
+          "blob": "811e1bd7553809eb3aa5ab8b11c088cce6132448"
         },
         {
           "file": "packages/m3l-common/src/core/script/M3LScriptPresetLoader.ts",
@@ -251,7 +204,7 @@
           "blob": "639558f4f6d96b0b509fdd97a2cf32714143b813"
         }
       ],
-      "retrieved": "2026-07-23"
+      "retrieved": "2026-07-11"
     }
   ]
 }

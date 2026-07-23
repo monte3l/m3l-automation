@@ -1,10 +1,9 @@
 /**
  * `core/script` — the CLI / Lambda entry-point framework: `M3LScript` wires
  * configuration, logging, prompts, and process guards for automation
- * scripts and Lambda handlers; `runScript` is the composition-root wrapper
- * around it (ADR-0035 phase 4a).
+ * scripts and Lambda handlers.
  *
- * Re-exports exactly the seventeen public symbols documented in
+ * Re-exports exactly the fourteen public symbols documented in
  * `docs/reference/core/script.md`. No logic lives here; this file is a
  * barrel only.
  *
@@ -21,7 +20,6 @@ export type {
   M3LScriptLifecycleHooks,
   M3LScriptMetadata,
   M3LScriptOptions,
-  M3LScriptRunOptions,
 } from "./M3LScriptOptions.js";
 export { M3LScriptConfigLoader } from "./M3LScriptConfigLoader.js";
 export { M3LScriptPresetLoader } from "./M3LScriptPresetLoader.js";
@@ -32,5 +30,3 @@ export {
   serializeError,
   setProcessGuardRequestId,
 } from "./process-guards.js";
-export { runScript } from "./run-script.js";
-export type { M3LRunScriptOptions } from "./run-script.js";

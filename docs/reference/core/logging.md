@@ -85,18 +85,13 @@ The ranking itself is internal and not exported.
   supported.
 
 > **Not yet implemented** —
-> [ADR-0035](../../adr/0035-failure-reporting-and-diagnostics.md) phase **4b**.
+> [ADR-0035](../../adr/0035-failure-reporting-and-diagnostics.md) phase 4.
 > Resolution from the config precedence chain (`--log-level` / `--debug` CLI
 > flags > `M3L_LOG_LEVEL` / `M3L_DEBUG=1` environment > config file > default),
-> including the one-switch `M3L_DEBUG=1` debug mode, is still pending. It did
-> **not** ship with [`runScript()`](./script.md#runscript) in phase 4a: the
-> default logger is constructed in the `M3LScript` constructor, before config
-> is loaded, and a logger's floor is fixed at construction — so the
-> config-file tier of that chain cannot reach it without new API.
-> It cannot live here either: reading CLI flags and config requires
-> `core/script`, and ADR-0009 Zone B forbids `core/logging` from importing it.
-> Today `minLevel` is set by the caller when constructing the logger or a
-> handler.
+> including the one-switch `M3L_DEBUG=1` debug mode, ships with `runScript()`.
+> It cannot live here: reading CLI flags and config requires `core/script`, and
+> ADR-0009 Zone B forbids `core/logging` from importing it. Today `minLevel` is
+> set by the caller when constructing the logger or a handler.
 
 ### Correlation IDs
 

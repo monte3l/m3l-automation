@@ -6,11 +6,11 @@ cause-chain formatter, an event-fed breadcrumb trail, an on-demand diagnostic
 snapshot, and the `runScript()` composition-root wrapper that ties them into a
 script's lifecycle.
 
-> **Status: implemented.** Every symbol here is surfaced through the `core`
-> namespace barrel — never as a new `exports` subpath. `runScript` ships from
-> [`core/script`](./script.md#runscript), not this module: ADR-0009 Zone B
-> forbids `core/* → core/script`, so the wrapper cannot live beside the
-> machinery it composes.
+> **Status: implemented (ADR-0035 phase 1).** `runScript` and
+> `M3LRunScriptOptions` remain **specified, not yet implemented** — they are
+> [ADR-0035](../../adr/0035-failure-reporting-and-diagnostics.md) **phase 4**
+> and are marked inline below. Every symbol here is surfaced through the `core`
+> namespace barrel — never as a new `exports` subpath.
 
 ## Overview
 
@@ -126,11 +126,13 @@ is a reliable presence check.
 - `M3LRunReporter` — builds and persists a run report.
 - `M3LRunReporterOptions` — `{ paths?, fileName? }`.
 
-### The composition-root wrapper
+### Phase 4 (not yet implemented)
 
-`runScript` and `M3LRunScriptOptions` compose everything on this page into a
-script's lifecycle, but they are exported from `core/script` — see
-[`script` → `runScript()`](./script.md#runscript) for the contract.
+- `runScript`, `M3LRunScriptOptions` — the composition-root wrapper. See
+  [ADR-0035](../../adr/0035-failure-reporting-and-diagnostics.md) § Rollout.
+  Note ADR-0009 Zone B forbids `core/* → core/script`, so the wrapper cannot
+  live in this submodule beside the rest of the machinery; its placement is
+  resolved in phase 4.
 
 The error-code classification `mapErrorToExitCode` falls back to
 (`M3L_ERROR_CATALOG`, `classifyErrorCode`, `M3LErrorOrigin`,
@@ -166,11 +168,10 @@ set by the caller and are unreachable from this function by construction rather
 than by convention.
 
 **Contract:** nothing in the library calls `process.exit()` on this path.
-[`runScript()`](./script.md#runscript) assigns `process.exitCode` so in-flight
-writes (file logger, run report) flush before the process ends naturally. The
-signal layer's second-signal forced exit maps to `5` only for the duration of a
-`runScript()` call — the previous value is restored when it settles, so a bare
-`M3LScript.run()` keeps its existing behavior exactly.
+`runScript()` (phase 4) assigns `process.exitCode` so in-flight writes (file
+logger, run report) flush before the process ends naturally. The signal layer's
+second-signal forced exit maps to `5` only when composed through `runScript()`;
+bare `M3LScript.run()` keeps its existing behavior exactly.
 
 ### `formatErrorChain`
 
@@ -381,7 +382,7 @@ signature is not implementable, for two independent reasons:
 1. **Layering.** ADR-0009 Zone B (enforced by `bin/check-eslint-zones.mjs`)
    makes `core/script` the composition root that no other `core` module may
    import. `core/diagnostics` importing it would be a lint failure — and would
-   become a genuine import cycle once `runScript()` needs
+   become a genuine import cycle once phase 4's `runScript()` needs
    diagnostics.
 2. **Encapsulation.** `M3LScript`'s config schema is a private field with no
    public accessor, so a script instance could not supply declared parameter
@@ -445,15 +446,41 @@ rather than stored, so a misimplemented port cannot smuggle a value through the
 
 ### `runScript`
 
-Moved. The composition-root wrapper ships from `core/script` — ADR-0009 Zone B
-forbids `core/diagnostics` from importing `core/script`, and
-`bin/check-doc-exports.mjs` resolves a symbol's reference page from the barrel
-it is exported by. See [`script` → `runScript()`](./script.md#runscript) for the
-full contract, and [`script` → Dry runs](./script.md#dry-runs) for `dryRun`.
+> **Status: specified, not yet implemented — ADR-0035 phase 4.** Everything
+> above this heading ships today; this section is the contract phase 4 builds
+> against. Note its placement is an open question: ADR-0009 Zone B forbids
+> `core/* → core/script`, so the wrapper cannot live in `core/diagnostics`
+> beside the machinery it composes.
+
+```typescript
+function runScript(
+  script: M3LScript,
+  mainFn: () => void | Promise<void>,
+  options?: M3LRunScriptOptions, // { dryRun?: boolean; report?: boolean; trail?: M3LBreadcrumbTrail }
+): Promise<void>;
+```
+
+The composition-root wrapper — the one place process-wide concerns compose
+(see [`script` → Process guards](./script.md#process-guards) for the
+responsibility contract):
+
+1. Installs process guards (`installProcessGuards()`).
+2. Runs `script.run(mainFn)` under a top-level catch.
+3. On failure: logs the error via `logger.errorFrom` when the script has a
+   logger, writes the failure run report, sets `process.exitCode` from
+   `mapErrorToExitCode`.
+4. On success: writes the success run report, leaves `exitCode` at `0`.
+5. `dryRun: true` stops the pipeline after stage 5 (AWS provisioning /
+   credential validation) and records `outcome: "dry-run"` — configuration and
+   credentials are validated with no side effects. Hooks observe
+   `ctx.dryRun` for side-effect-aware behavior deeper than the boundary.
+
+`runScript()` never calls `process.exit()`. Bare `script.run(mainFn)` remains
+fully supported and unchanged for callers that want the primitive.
 
 ## Usage examples
 
-Writing a run report by hand — what [`runScript()`](./script.md#runscript) does for you,
+Writing a run report by hand — what phase 4's `runScript()` will do for you,
 and what a script can do today:
 
 ```typescript

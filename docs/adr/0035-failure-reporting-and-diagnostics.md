@@ -236,19 +236,10 @@ runScript(script, mainFn, options?) →
   one more public symbol whose behavior overlaps `run()` (mitigated: `run()`
   stays primitive, the wrapper composes it); exit codes are coarse by design —
   consumers needing finer grain read the run report or error code.
-- **Semver impact:** minor, repeatedly — each phase is additive (new fields
+- **Semver impact:** minor, repeatedly — every phase is additive (new fields
   with `undefined` defaults, new optional options, new exported symbols through
   the existing `core` barrel; no new `exports` subpath). No major is required
   at any phase.
-
-  **One carve-out, found in phase 4a.** `M3LScriptHookContext` gained a
-  **required** `dryRun: boolean` rather than an optional one, so a hook can
-  branch on `ctx.dryRun` without a `?? false` dance. That is source-breaking
-  for anyone _constructing_ the context as an object literal — which hooks
-  never do, but test fakes do: seven in-repo consumer scripts had to add the
-  field. Accepted rather than weakened to optional, because the package is
-  internal and unpublished (ADR-0020), so every consumer lives in this monorepo
-  and was fixed in the same change set.
 
 ## Rollout
 
@@ -262,15 +253,8 @@ docs-first pipeline (`scaffolding-submodules` → `implementing-submodules`, or
 2. `core/errors` — `origin`/`retryable` on `M3LErrorOptions` + per-subclass
    defaults + catalog completeness test extension.
 3. `core/logging` — `DEBUG` category, `minLevel`, `errorFrom`, `time`.
-4. `core/script`, split in two when it shipped:
-   - **4a** — the `runScript()` wrapper (guards + catch + report + exit code +
-     dry-run) and `M3LPollFailureError` context. `runScript` ships from
-     `core/script`, not `core/diagnostics`: Zone B forbids
-     `core/* → core/script`.
-   - **4b** — the log-level precedence chain inherited from phase 3. Deferred
-     because the default logger is built in the `M3LScript` constructor,
-     before config loads, and `M3LLogger`'s floor is fixed at construction —
-     so the config-file tier needs new API to reach it.
+4. `core/script` — `runScript()` wrapper (guards + catch + report + exit code +
+   dry-run), `M3LPollFailureError` context.
 5. Template + consumer-script refresh — scaffold template adopts `runScript()`;
    existing scripts migrate opportunistically.
 

@@ -401,10 +401,7 @@
       "setProcessGuardRequestId",
       "M3LPresetCycleError",
       "AWS_PROFILE_PARAM_NAME",
-      "AWS_REGION_PARAM_NAME",
-      "runScript",
-      "M3LRunScriptOptions",
-      "M3LScriptRunOptions"
+      "AWS_REGION_PARAM_NAME"
     ]
   },
   {

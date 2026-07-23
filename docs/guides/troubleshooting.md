@@ -5,11 +5,10 @@ origin, read the diagnostic surfaces (errors, logs, exit codes, run archives),
 turn on debug output, attach a debugger, and file a failure report that can be
 acted on.
 
-Everything below is available today except where explicitly marked **not yet
-available** — the remaining gap is the log-level precedence chain
-(`M3L_DEBUG=1` / `--log-level`), which is
-[ADR-0035](../adr/0035-failure-reporting-and-diagnostics.md) phase 4b. Until it
-lands, set the severity floor explicitly when constructing the logger.
+Some mechanisms below ship with the
+[ADR-0035](../adr/0035-failure-reporting-and-diagnostics.md) rollout and are
+marked **(ADR-0035)** — the surrounding workflow applies today; those specific
+surfaces land phase by phase. Everything else is available now.
 
 ## 1. Triage: whose failure is it?
 
@@ -40,9 +39,9 @@ structured levels carrying each `M3LError`'s `code`, `origin`, and `retryable`.
 
 ## 2. Exit codes
 
-A script composed through [`runScript()`](../reference/core/script.md#runscript)
-produces the registry codes below. A bare `M3LScript.run()` still exits with
-Node's default `1` — it re-throws and maps nothing, by design.
+Today every failure exits with Node's default code `1` (`M3LScript.run()`
+re-throws; nothing maps codes). **(ADR-0035)** scripts composed through
+`runScript()` produce the registry codes:
 
 | Exit code | Meaning                              | Scheduler guidance                          |
 | --------- | ------------------------------------ | ------------------------------------------- |
@@ -78,10 +77,10 @@ specific failure.
 - The base directory is `data/output/` at the monorepo root (or
   `$M3L_BASE_DIR/output` standalone; `M3L_OUTPUT_DIR` overrides — see the
   [environments and paths guide](./environments-and-paths.md)).
-- Archival runs only on the success path — a failed run leaves no archive.
-  The failure path, however, always writes `run-report.json` (outcome, failing
-  stage, full serialized cause chain, breadcrumb timeline, environment
-  snapshot), so the artifact exists precisely when you need it.
+- **Today** archival runs only on the success path — a failed run leaves no
+  archive. **(ADR-0035)** the failure path always writes `run-report.json`
+  (outcome, failing stage, full serialized cause chain, breadcrumb timeline,
+  environment snapshot), so the artifact exists precisely when you need it.
 - Retention is yours: the library never prunes `data/output/`. Prune by
   timestamp directory.
 
@@ -104,9 +103,8 @@ Available today:
 - `collectDiagnostics()` — an on-demand redacted snapshot (environment, paths,
   config fingerprint) worth exposing behind a `--diagnostics` flag.
 
-Not yet available — **(ADR-0035 phase 4b)**. This did _not_ ship with
-`runScript()`; resolving it needs the config chain to reach a logger that is
-already constructed:
+Not yet available — **(ADR-0035 phase 4)**, ships with `runScript()`, which is
+what can read CLI flags and config:
 
 - `M3L_DEBUG=1` — one-switch debug mode: drops the level floor to `DEBUG` and
   surfaces the library's own diagnostic events (breadcrumbs, timings).
@@ -179,11 +177,10 @@ node --inspect-brk --enable-source-maps dist/main.js --profile dev
 - Second-signal kill: if a hung script ignores the first `SIGINT`, a second one
   force-exits (see [script → Signal handling](../reference/core/script.md#signal-handling)).
 
-[`runScript(script, mainFn, { dryRun: true })`](../reference/core/script.md#dry-runs)
-validates environment, configuration, and AWS credentials — stages 1–5 —
-without executing `mainFn`: the fastest way to separate "my config/credentials
-are wrong" from "my logic is wrong". A `--dry-run` flag in the script templates
-is still pending (ADR-0035 phase 5).
+**(ADR-0035)** `runScript(script, mainFn, { dryRun: true })` (or `--dry-run` in
+refreshed script templates) validates environment, configuration, and AWS
+credentials — stages 1–5 — without executing `mainFn`: the fastest way to
+separate "my config/credentials are wrong" from "my logic is wrong".
 
 ## 7. Filing a failure report
 
@@ -237,6 +234,6 @@ tokens, account ids you consider sensitive, or customer data.
 - [logging](../reference/core/logging.md) — handlers, redaction, correlation
 - [script](../reference/core/script.md) — lifecycle, signals, guards
 - [diagnostics](../reference/core/diagnostics.md) — run reports, exit codes,
-  breadcrumbs
+  breadcrumbs **(ADR-0035)**
 - [Writing a script](./writing-a-script.md) · [Lambda handlers](./lambda-handlers.md)
 - [ADR-0035](../adr/0035-failure-reporting-and-diagnostics.md)
