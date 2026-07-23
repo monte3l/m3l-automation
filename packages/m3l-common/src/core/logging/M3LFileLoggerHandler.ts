@@ -5,8 +5,16 @@
  * @packageDocumentation
  */
 
+import {
+  assertValidFloor,
+  passesFloor,
+} from "../../internal/logging/levels.js";
 import { M3LError } from "../errors/index.js";
 import { M3LFileListExporter } from "../exporters/M3LFileListExporter.js";
+import type {
+  M3LLogEventCategory,
+  M3LLogLevelFloor,
+} from "./M3LLogEventCategory.js";
 import type { M3LLogEvent, M3LLoggerHandler } from "./M3LLogEvent.js";
 
 /**
@@ -22,6 +30,12 @@ import type { M3LLogEvent, M3LLoggerHandler } from "./M3LLogEvent.js";
 export interface M3LFileLoggerHandlerOptions {
   /** The destination file path. */
   readonly filePath: string;
+  /**
+   * This handler's own severity floor; see
+   * {@link M3LLoggerOptions.minLevel} for the full contract (composition
+   * with the owning {@link M3LLogger}'s floor, the rank-tie behavior).
+   */
+  readonly minLevel?: M3LLogLevelFloor;
 }
 
 /**
@@ -63,6 +77,7 @@ export interface M3LFileLoggerHandlerOptions {
 export class M3LFileLoggerHandler implements M3LLoggerHandler {
   readonly #exporter: M3LFileListExporter<M3LLogEvent>;
   readonly #events: M3LLogEvent[] = [];
+  readonly #minLevel: M3LLogEventCategory | undefined;
   #writeQueue: Promise<void> = Promise.resolve();
 
   /**
@@ -71,19 +86,24 @@ export class M3LFileLoggerHandler implements M3LLoggerHandler {
    * @param options - Construction options.
    */
   constructor(options: M3LFileLoggerHandlerOptions) {
+    assertValidFloor(options.minLevel, "M3LFileLoggerHandler");
     this.#exporter = new M3LFileListExporter<M3LLogEvent>({
       filePath: options.filePath,
     });
+    this.#minLevel = options.minLevel;
   }
 
   /**
    * Appends `event` to the in-memory history and enqueues a whole-file
    * rewrite of the accumulated history. Returns synchronously; the queued
-   * write settles asynchronously.
+   * write settles asynchronously. Self-filters against this handler's own
+   * `minLevel` floor before appending.
    *
    * @param event - The event to append and persist.
    */
   handle(event: M3LLogEvent): void {
+    if (!passesFloor(event.category, this.#minLevel)) return;
+
     this.#events.push(event);
     const snapshot = [...this.#events];
     // Chain onto the existing queue so writes stay strictly sequential. The

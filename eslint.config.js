@@ -343,6 +343,28 @@ export default tseslint.config(
     },
   },
   {
+    // core/logging <-> core/diagnostics must stay acyclic (ADR-0035 phase 3).
+    // The two modules genuinely depend on each other's *files*: M3LLogger
+    // imports serializeErrorChain from diagnostics/format-error.js, while the
+    // diagnostics files import the redaction helpers from logging/redact.js.
+    // That is a DAG only because the diagnostics side imports the redact module
+    // directly — routing it through `../logging/index.js` (the barrel, which
+    // re-exports M3LLogger) closes the loop
+    // `M3LLogger -> format-error -> logging/index -> M3LLogger`.
+    //
+    // Nothing about those import lines advertises how load-bearing they are, so
+    // this rule pins the invariant. Deliberately scoped to these two modules
+    // rather than repo-wide: core/environment <-> core/utils (via M3LPaths)
+    // carries three pre-existing cycles, and unpicking those is its own change.
+    files: [
+      "packages/m3l-common/src/core/logging/**/*.ts",
+      "packages/m3l-common/src/core/diagnostics/**/*.ts",
+    ],
+    rules: {
+      "import-x/no-cycle": ["error", { maxDepth: Infinity }],
+    },
+  },
+  {
     // Node.js automation scripts (bin/) and Claude Code hooks (.claude/hooks/).
     // Plain ESM .mjs — no TypeScript project service. Enables the rules that
     // caught historical PR findings: empty-catch swallowing, variable shadowing,

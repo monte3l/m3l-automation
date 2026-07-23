@@ -14,7 +14,7 @@
  */
 
 import { M3LError } from "../errors/index.js";
-import { redactSensitiveLogValue } from "../logging/index.js";
+import { redactSensitiveLogValue } from "../logging/redact.js";
 
 import { scrubUrlsInText } from "./format-error.js";
 

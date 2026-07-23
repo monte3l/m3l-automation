@@ -16,7 +16,7 @@ import type {
   FileCopySkipReason,
 } from "../../internal/files/types.js";
 import { logBestEffortDiagnostic } from "../../internal/script/diagnostics.js";
-import { redactSensitiveLogValue } from "../logging/index.js";
+import { redactSensitiveLogValue } from "../logging/redact.js";
 import { isDangerousKey } from "../security/index.js";
 import { M3LPaths, M3LPathResolutionError } from "../utils/index.js";
 

@@ -13,49 +13,85 @@ Three built-in handlers cover the common sinks, and a table formatter renders al
 Public surface (`logging/index.ts`):
 
 - `M3LLogger` — the logger facade over an ordered handler array.
-- `M3LLoggerOptions` — optional logger construction options (currently `correlationId`).
+- `M3LLoggerOptions` — optional logger construction options (`correlationId`, `minLevel`).
 - `M3LLogEvent` — the per-message event object (carries an optional `correlationId`).
-- `M3LLogEventCategory` — the event category enum (nine categories).
+- `M3LLogEventCategory` — the event category enum (ten categories).
+- `M3LLogLevelFloor` — the categories accepted as a severity floor (see
+  [Log levels](#log-levels-and-debug-mode)).
 - `M3LConsoleLoggerHandler`, `M3LFileLoggerHandler`, `M3LJsonLoggerHandler` — the three built-in handlers.
+- `M3LConsoleLoggerHandlerOptions`, `M3LFileLoggerHandlerOptions`, `M3LJsonLoggerHandlerOptions` —
+  per-handler construction options; each carries an optional `minLevel` sink floor
+  (`M3LFileLoggerHandlerOptions` additionally carries the required `filePath`).
 - `M3LTableFormatter`, `M3LTableOptions`, `M3LTableColumn` — table rendering.
 - `redactSensitiveLogText`, `redactSensitiveLogValue` — redaction helpers.
 
 ### `M3LLogger` methods
 
 `M3LLogger` exposes the typed methods:
-`text`, `step`, `info`, `success`, `warning`, `error`, `fatal`, `section`, `header`, `newline`, `table`, `simpleTable`, `keyValueTable`.
+`text`, `step`, `info`, `success`, `warning`, `error`, `fatal`, `section`, `header`, `newline`, `table`, `simpleTable`, `keyValueTable`, `errorFrom`, `time`.
 
 ### `M3LLogEventCategory`
 
-Nine categories: `TEXT`, `STEP`, `SUCCESS`, `ERROR`, `FATAL`, `WARNING`, `HEADER`, `INFO`, `SECTION`.
+Ten categories: `TEXT`, `STEP`, `SUCCESS`, `ERROR`, `FATAL`, `WARNING`, `HEADER`, `INFO`, `SECTION`, `DEBUG`.
 
 ### Log levels and debug mode
 
-> **Status: specified, not yet implemented** —
-> [ADR-0035](../../adr/0035-failure-reporting-and-diagnostics.md) phase 3.
-> Today the logger has no level filtering: every event fans out to every
-> handler unconditionally.
+A tenth category, `DEBUG`, sits below every other and carries the library's own
+diagnostic events (breadcrumbs, timings). The categories carry a severity ranking
+used **solely** for floor comparison:
 
-- A tenth category, `DEBUG`, sits below `TEXT` and carries the library's own
-  diagnostic events (breadcrumbs, timings). The categories gain a severity
-  ordering (`DEBUG < TEXT/STEP/INFO/SECTION/HEADER < SUCCESS < WARNING <
-ERROR < FATAL`) solely for floor comparison — the category enum itself is
-  unchanged.
-- `M3LLoggerOptions.minLevel` sets the logger-wide severity floor (default:
-  everything passes, preserving current behavior); each built-in handler
-  accepts the same option for a per-sink floor (e.g. console at `INFO`, file
-  handler at `DEBUG`).
-- Resolution reuses the config precedence chain: `--log-level` / `--debug` CLI
-  flags > `M3L_LOG_LEVEL` / `M3L_DEBUG=1` environment > config file > default.
-  `M3L_DEBUG=1` is the one-switch debug mode: it drops the floor to `DEBUG`.
+| Rank | Categories                                  |
+| ---- | ------------------------------------------- |
+| 0    | `DEBUG`                                     |
+| 1    | `TEXT`, `STEP`, `INFO`, `SECTION`, `HEADER` |
+| 2    | `SUCCESS`                                   |
+| 3    | `WARNING`                                   |
+| 4    | `ERROR`                                     |
+| 5    | `FATAL`                                     |
+
+The five rank-1 categories are **tied** — they are presentational groupings, not
+severities. Because a floor of `TEXT`, `STEP`, `SECTION`, or `HEADER` would be
+indistinguishable from `INFO`, the floor type `M3LLogLevelFloor` excludes those
+four spellings and keeps `INFO` as the rank-1 representative. It is derived
+(`Exclude<M3LLogEventCategory, …>`), so it cannot drift from the category set.
+The ranking itself is internal and not exported.
+
+- `M3LLoggerOptions.minLevel` sets the logger-wide severity floor; each built-in
+  handler accepts the same option for a per-sink floor (e.g. console at `INFO`,
+  file handler at `DEBUG`). Both default to **no floor — everything passes**, so
+  a logger or handler constructed without one behaves exactly as it did before
+  this phase. A logger floor and a handler floor compose: the stricter wins.
+- An unrecognised `minLevel` (reachable only by casting past the type, e.g. from
+  a config file) throws `M3LError` with code `ERR_INVALID_ARGUMENT` **at
+  construction**, not at the first emitted event. Failing loudly at wiring time
+  is deliberate: a floor that silently matched nothing would discard every log
+  line, `FATAL` included.
+- An event's category is compared against the floor in the logger's single
+  dispatch path, so `newline()` and the three table methods — which all emit
+  `TEXT` — are filtered out by any floor above `TEXT`.
 - `logger.errorFrom(error, message?)` logs an `ERROR` event with the error's
   `code`, `context`, and the **full recursive cause chain** promoted to
   structured fields (via `serializeErrorChain` from
   [diagnostics](./diagnostics.md#formaterrorchain)) — unlike `serializeError`,
-  which is single-level and omits `cause`.
-- `logger.time(label)` returns a disposer that logs a `DEBUG` event carrying
-  `durationMs` — the shared replacement for the inline `Date.now()` deltas the
-  importer/network/credentials modules currently duplicate.
+  which is single-level and omits `cause`. It takes `unknown` (it is called from
+  a `catch`) and never throws, even when the caught value's own `message` or
+  `stack` getter throws — it still emits the event rather than losing the
+  failure it exists to report.
+- `logger.time(label)` returns a plain callable that, when invoked, logs a
+  `DEBUG` event carrying `label` and `durationMs` — the shared replacement for
+  the inline `Date.now()` deltas the importer/network/credentials modules
+  currently duplicate. It is deliberately **not** a `Disposable`: `Symbol.dispose`
+  is unavailable under this project's `lib: ["es2024"]`, so `using` is not
+  supported.
+
+> **Not yet implemented** —
+> [ADR-0035](../../adr/0035-failure-reporting-and-diagnostics.md) phase 4.
+> Resolution from the config precedence chain (`--log-level` / `--debug` CLI
+> flags > `M3L_LOG_LEVEL` / `M3L_DEBUG=1` environment > config file > default),
+> including the one-switch `M3L_DEBUG=1` debug mode, ships with `runScript()`.
+> It cannot live here: reading CLI flags and config requires `core/script`, and
+> ADR-0009 Zone B forbids `core/logging` from importing it. Today `minLevel` is
+> set by the caller when constructing the logger or a handler.
 
 ### Correlation IDs
 
@@ -67,6 +103,7 @@ invocation.
 ```typescript
 interface M3LLoggerOptions {
   readonly correlationId?: string;
+  readonly minLevel?: M3LLogLevelFloor;
 }
 
 // A logger constructed with a correlationId stamps it onto every event it emits.
@@ -136,7 +173,7 @@ const safeValue = Core.redactSensitiveLogValue({ apiKey: "secret" });
 
 ## Notes and behavior
 
-- **Ordered handler array.** `M3LLogger` delegates each `M3LLogEvent` to every handler in array order; each handler decides independently how to render the event.
+- **Ordered handler array.** `M3LLogger` delegates each `M3LLogEvent` to every handler in array order; each handler decides independently how to render the event. When a `minLevel` floor is set, an event below the logger's floor is dropped before any handler sees it, and each handler additionally drops events below its own floor.
 - **`M3LConsoleLoggerHandler`** writes to `process.stdout` / `process.stderr` with ANSI colors and indentation, and automatically disables colors in non-TTY contexts (Lambda, CI, a pipe) to keep logs machine-readable.
 - **`M3LFileLoggerHandler`** streams to a file through a `M3LFileListExporter`, maintaining an internal sequential write queue to preserve ordering under concurrent emits. Its `reset()` is intentionally a no-op so logs are not lost across script resets.
 - **`M3LJsonLoggerHandler`** emits one JSON line per event (one CloudWatch log entry per message) and promotes scalar fields from the event's `data` payload to the top level for easy CloudWatch Insights querying. Empty spacer events are dropped. Worked Insights queries (by `correlationId`, by category, by promoted fields) live in the [troubleshooting guide](../../guides/troubleshooting.md#5-correlation-ids-and-cloudwatch-insights).

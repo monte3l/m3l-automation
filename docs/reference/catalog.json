@@ -276,7 +276,10 @@
       "M3LTableColumn",
       "redactSensitiveLogText",
       "redactSensitiveLogValue",
-      "M3LLoggerOptions"
+      "M3LLoggerOptions",
+      "M3LLogLevelFloor",
+      "M3LConsoleLoggerHandlerOptions",
+      "M3LJsonLoggerHandlerOptions"
     ]
   },
   {

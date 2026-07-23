@@ -54,10 +54,15 @@ import {
   vi,
 } from "vitest";
 
+import { serializeErrorChain } from "../src/core/diagnostics/index.js";
 import { M3LError } from "../src/core/errors/index.js";
 import { M3LFileListExporter } from "../src/core/exporters/index.js";
 import type {
+  M3LConsoleLoggerHandlerOptions,
+  M3LFileLoggerHandlerOptions,
+  M3LJsonLoggerHandlerOptions,
   M3LLogEvent,
+  M3LLogLevelFloor,
   M3LLoggerOptions,
   M3LTableColumn,
   M3LTableOptions,
@@ -119,7 +124,7 @@ function makeFakeHandler(): FakeHandler {
 // M3LLogEventCategory — enum shape
 // ---------------------------------------------------------------------------
 describe("M3LLogEventCategory", () => {
-  test("has the nine documented members with lowercase-name string values", () => {
+  test("has the ten documented members with lowercase-name string values (ADR-0035 phase 3 adds DEBUG)", () => {
     expect(M3LLogEventCategory.TEXT).toBe("text");
     expect(M3LLogEventCategory.STEP).toBe("step");
     expect(M3LLogEventCategory.SUCCESS).toBe("success");
@@ -129,9 +134,10 @@ describe("M3LLogEventCategory", () => {
     expect(M3LLogEventCategory.HEADER).toBe("header");
     expect(M3LLogEventCategory.INFO).toBe("info");
     expect(M3LLogEventCategory.SECTION).toBe("section");
+    expect(M3LLogEventCategory.DEBUG).toBe("debug");
   });
 
-  test("exposes exactly the nine documented member keys", () => {
+  test("exposes exactly the ten documented member keys", () => {
     expect(Object.keys(M3LLogEventCategory).sort()).toEqual(
       [
         "TEXT",
@@ -143,6 +149,7 @@ describe("M3LLogEventCategory", () => {
         "HEADER",
         "INFO",
         "SECTION",
+        "DEBUG",
       ].sort(),
     );
   });
@@ -160,9 +167,10 @@ describe("M3LLogEventCategory", () => {
     expectTypeOf(M3LLogEventCategory.HEADER).toEqualTypeOf<"header">();
     expectTypeOf(M3LLogEventCategory.INFO).toEqualTypeOf<"info">();
     expectTypeOf(M3LLogEventCategory.SECTION).toEqualTypeOf<"section">();
+    expectTypeOf(M3LLogEventCategory.DEBUG).toEqualTypeOf<"debug">();
   });
 
-  test("type-level: the M3LLogEventCategory TYPE is the 9-member string literal union", () => {
+  test("type-level: the M3LLogEventCategory TYPE is the 10-member string literal union (ADR-0035 phase 3 adds 'debug')", () => {
     expectTypeOf<M3LLogEventCategory>().toEqualTypeOf<
       | "text"
       | "step"
@@ -173,6 +181,7 @@ describe("M3LLogEventCategory", () => {
       | "header"
       | "info"
       | "section"
+      | "debug"
     >();
   });
 });
@@ -230,9 +239,10 @@ describe("M3LLogEvent type", () => {
 // M3LLoggerOptions — construction widening (WS-D correlation IDs)
 // ---------------------------------------------------------------------------
 describe("M3LLoggerOptions — type-level contract", () => {
-  test("M3LLoggerOptions equals { readonly correlationId?: string }", () => {
+  test("M3LLoggerOptions equals { readonly correlationId?: string; readonly minLevel?: M3LLogLevelFloor } (review fix round narrows minLevel to the 6-member floor type)", () => {
     expectTypeOf<M3LLoggerOptions>().toEqualTypeOf<{
       readonly correlationId?: string;
+      readonly minLevel?: M3LLogLevelFloor;
     }>();
   });
 
@@ -781,6 +791,38 @@ describe("M3LFileLoggerHandler", () => {
     expect(written).toContain("ERR_FILE_LIST_EXPORT");
     expect(written).not.toContain("SECRET_MESSAGE_MUST_NOT_LEAK");
     expect(written).not.toContain("SECRET_DATA_MUST_NOT_LEAK");
+  });
+
+  test("minLevel drops an event below the floor before it ever reaches the exporter, but still exports one at or above the floor", async () => {
+    const exportSpy = vi
+      .spyOn(M3LFileListExporter.prototype, "export")
+      .mockResolvedValue(undefined);
+    const filePath = nextTempFilePath();
+    const handler = new M3LFileLoggerHandler({
+      filePath,
+      minLevel: M3LLogEventCategory.WARNING,
+    });
+
+    handler.handle({
+      category: M3LLogEventCategory.INFO,
+      message: "below the WARNING floor",
+    });
+    expect(exportSpy).not.toHaveBeenCalled();
+
+    handler.handle({
+      category: M3LLogEventCategory.ERROR,
+      message: "at or above the WARNING floor",
+    });
+    await vi.waitFor(() => {
+      expect(exportSpy).toHaveBeenCalledTimes(1);
+    });
+
+    const [writtenEvents] = exportSpy.mock.calls[0] ?? [];
+    expect(
+      (writtenEvents as readonly M3LLogEvent[]).map((event) => event.message),
+    ).toEqual(["at or above the WARNING floor"]);
+
+    exportSpy.mockRestore();
   });
 
   test("a non-M3LError export failure is stringified in the stderr diagnostic (the exporter's own error-normalization branch)", async () => {
@@ -1531,5 +1573,604 @@ describe("redactSensitiveLogValue", () => {
 
     expect(result.correlationId).toBe("abc-123");
     expect(result.token).toBe("[REDACTED]");
+  });
+});
+
+// =============================================================================
+// ADR-0035 phase 3 (A3): DEBUG category, minLevel severity floors,
+// logger.errorFrom(), logger.time().
+//
+// Severity ranks (DEBUG(0) < TEXT/STEP/INFO/SECTION/HEADER(1) < SUCCESS(2) <
+// WARNING(3) < ERROR(4) < FATAL(5)) are an internal, unexported detail
+// (src/internal/logging/levels.ts) — the rank table below is a TEST-LOCAL
+// fixture used only to compute expected pass/fail sets against the PUBLIC
+// M3LLoggerOptions.minLevel / handler minLevel behavior. It is not an import
+// of the internal module.
+// =============================================================================
+
+/** Every category, in the order the contract lists them (rank ascending). */
+const ALL_CATEGORIES: readonly M3LLogEventCategory[] = [
+  M3LLogEventCategory.DEBUG,
+  M3LLogEventCategory.TEXT,
+  M3LLogEventCategory.STEP,
+  M3LLogEventCategory.INFO,
+  M3LLogEventCategory.SECTION,
+  M3LLogEventCategory.HEADER,
+  M3LLogEventCategory.SUCCESS,
+  M3LLogEventCategory.WARNING,
+  M3LLogEventCategory.ERROR,
+  M3LLogEventCategory.FATAL,
+];
+
+/** Test-local mirror of the documented severity ranks, for computing expectations only. */
+const TEST_CATEGORY_RANK: Record<M3LLogEventCategory, number> = {
+  [M3LLogEventCategory.DEBUG]: 0,
+  [M3LLogEventCategory.TEXT]: 1,
+  [M3LLogEventCategory.STEP]: 1,
+  [M3LLogEventCategory.INFO]: 1,
+  [M3LLogEventCategory.SECTION]: 1,
+  [M3LLogEventCategory.HEADER]: 1,
+  [M3LLogEventCategory.SUCCESS]: 2,
+  [M3LLogEventCategory.WARNING]: 3,
+  [M3LLogEventCategory.ERROR]: 4,
+  [M3LLogEventCategory.FATAL]: 5,
+};
+
+/**
+ * Emits exactly one event of `category` through the PUBLIC API — the message
+ * method matching that category, or (for DEBUG, which has no direct message
+ * method) a completed `time()` call.
+ */
+function emitCategory(logger: M3LLogger, category: M3LLogEventCategory): void {
+  switch (category) {
+    case M3LLogEventCategory.DEBUG: {
+      const stop = logger.time("probe");
+      stop();
+      break;
+    }
+    case M3LLogEventCategory.TEXT:
+      logger.text("probe");
+      break;
+    case M3LLogEventCategory.STEP:
+      logger.step("probe");
+      break;
+    case M3LLogEventCategory.INFO:
+      logger.info("probe");
+      break;
+    case M3LLogEventCategory.SECTION:
+      logger.section("probe");
+      break;
+    case M3LLogEventCategory.HEADER:
+      logger.header("probe");
+      break;
+    case M3LLogEventCategory.SUCCESS:
+      logger.success("probe");
+      break;
+    case M3LLogEventCategory.WARNING:
+      logger.warning("probe");
+      break;
+    case M3LLogEventCategory.ERROR:
+      logger.error("probe");
+      break;
+    case M3LLogEventCategory.FATAL:
+      logger.fatal("probe");
+      break;
+  }
+}
+
+/** Emits every category once through `logger` and returns the categories the handler actually received, in call order. */
+function admittedCategories(
+  logger: M3LLogger,
+  handler: FakeHandler,
+): M3LLogEventCategory[] {
+  for (const category of ALL_CATEGORIES) {
+    emitCategory(logger, category);
+  }
+  return handler.handle.mock.calls.map((call) => call[0].category);
+}
+
+describe("M3LLoggerOptions.minLevel — severity floor filtering (ADR-0035 phase 3)", () => {
+  test("additive guarantee: a logger built the old way (no options) still delivers all ten categories to its handler", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    const admitted = admittedCategories(logger, handler);
+
+    expect(admitted).toHaveLength(ALL_CATEGORIES.length);
+    expect(new Set(admitted)).toEqual(new Set(ALL_CATEGORIES));
+  });
+
+  test.each([
+    M3LLogEventCategory.DEBUG,
+    M3LLogEventCategory.INFO,
+    M3LLogEventCategory.SUCCESS,
+    M3LLogEventCategory.WARNING,
+    M3LLogEventCategory.ERROR,
+    M3LLogEventCategory.FATAL,
+  ])(
+    // INFO stands in for the excluded rank-1 spellings (TEXT/STEP/SECTION/
+    // HEADER) — review fix round narrows `minLevel` to `M3LLogLevelFloor`,
+    // which admits only INFO among the tied rank-1 categories.
+    "minLevel: %s admits exactly the categories at or above its rank",
+    (floor) => {
+      const handler = makeFakeHandler();
+      const logger = new M3LLogger([handler], { minLevel: floor });
+
+      const admitted = new Set(admittedCategories(logger, handler));
+      const floorRank = TEST_CATEGORY_RANK[floor];
+      const expected = new Set(
+        ALL_CATEGORIES.filter(
+          (category) => TEST_CATEGORY_RANK[category] >= floorRank,
+        ),
+      );
+
+      expect(admitted).toEqual(expected);
+    },
+  );
+
+  // Review fix round (M3LLogLevelFloor narrowing): `minLevel: TEXT` and
+  // `minLevel: HEADER` no longer type-check as a floor at all (both are
+  // excluded from M3LLogLevelFloor), so the old "tie is symmetric across two
+  // floor spellings" test can no longer be expressed that way. The runtime
+  // tie among the five rank-1 categories is still real — it is asserted
+  // directly below, through the one spelling (`INFO`) that remains a valid
+  // floor.
+  test("a floor of INFO admits all five rank-1 categories (text, step, info, section, header) — the rank-1 tie is still real even though it can no longer be spelled via an excluded category as the floor itself", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler], {
+      minLevel: M3LLogEventCategory.INFO,
+    });
+
+    logger.text("probe");
+    logger.step("probe");
+    logger.info("probe");
+    logger.section("probe");
+    logger.header("probe");
+
+    expect(handler.handle).toHaveBeenCalledTimes(5);
+    const admitted = new Set(
+      handler.handle.mock.calls.map((call) => call[0].category),
+    );
+    expect(admitted).toEqual(
+      new Set([
+        M3LLogEventCategory.TEXT,
+        M3LLogEventCategory.STEP,
+        M3LLogEventCategory.INFO,
+        M3LLogEventCategory.SECTION,
+        M3LLogEventCategory.HEADER,
+      ]),
+    );
+  });
+
+  test("newline() and the three table methods emit TEXT, so a floor above TEXT filters all of them out", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler], {
+      minLevel: M3LLogEventCategory.SUCCESS,
+    });
+
+    logger.newline();
+    logger.table([{ a: 1 }]);
+    logger.simpleTable([{ a: 1 }]);
+    logger.keyValueTable({ a: 1 });
+
+    expect(handler.handle).not.toHaveBeenCalled();
+  });
+});
+
+describe("per-handler minLevel — self-filtering, independent of other handlers (ADR-0035 phase 3)", () => {
+  test("two handlers on one logger with different minLevel values each admit their own subset from a single emit call", () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+    // jsonHandler has no floor (admits everything); consoleHandler only
+    // admits ERROR and above.
+    const jsonHandler = new M3LJsonLoggerHandler();
+    const consoleHandler = new M3LConsoleLoggerHandler({
+      minLevel: M3LLogEventCategory.ERROR,
+    });
+    const logger = new M3LLogger([jsonHandler, consoleHandler]);
+
+    // A single emit call: WARNING. jsonHandler's floor admits it (writes to
+    // stdout); consoleHandler's floor (ERROR) rejects it (no write at all).
+    logger.warning("below the console handler's floor");
+
+    expect(stdoutSpy).toHaveBeenCalledTimes(1);
+    expect(stderrSpy).not.toHaveBeenCalled();
+
+    stdoutSpy.mockClear();
+    stderrSpy.mockClear();
+
+    // A second, single emit call: FATAL. Both handlers' floors now admit
+    // it — jsonHandler writes to stdout, consoleHandler (FATAL routes to
+    // stderr) writes to stderr.
+    logger.fatal("above both handlers' floors");
+
+    expect(stdoutSpy).toHaveBeenCalledTimes(1);
+    expect(stderrSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("composition: a stricter LOGGER floor blocks a handler with a lenient minLevel (handler.handle is never invoked)", () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const jsonHandler = new M3LJsonLoggerHandler({
+      minLevel: M3LLogEventCategory.DEBUG,
+    });
+    const logger = new M3LLogger([jsonHandler], {
+      minLevel: M3LLogEventCategory.WARNING,
+    });
+
+    logger.info("blocked by the logger's own floor");
+    expect(stdoutSpy).not.toHaveBeenCalled();
+
+    logger.warning("admitted by the logger's floor and the handler's floor");
+    expect(stdoutSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("composition: a stricter HANDLER floor suppresses the write even when the logger's own floor admits the event", () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const jsonHandler = new M3LJsonLoggerHandler({
+      minLevel: M3LLogEventCategory.ERROR,
+    });
+    const logger = new M3LLogger([jsonHandler], {
+      minLevel: M3LLogEventCategory.DEBUG,
+    });
+
+    logger.warning("admitted by the logger, rejected by the handler's floor");
+    expect(stdoutSpy).not.toHaveBeenCalled();
+
+    logger.error("admitted by both floors");
+    expect(stdoutSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review fix round (CRITICAL defect 1): an unranked minLevel used to make
+// `passesFloor`'s rank comparison coerce to NaN, silently dropping every
+// event with no throw and no diagnostic. The fix validates `minLevel` at
+// CONSTRUCTION time and throws M3LError({ code: "ERR_INVALID_ARGUMENT" }),
+// following the `assertValidLimit` precedent in
+// `core/diagnostics/breadcrumbs.ts`. Each test reaches the invalid value via
+// `as unknown as M3LLogLevelFloor` — the established pattern this file
+// already uses for M3LTableOptions.border / M3LTableColumn.align.
+// ---------------------------------------------------------------------------
+describe("minLevel validation — construction time, not first emit (review fix round, CRITICAL defect 1)", () => {
+  const invalidMinLevel = "warn" as unknown as M3LLogLevelFloor;
+
+  test("new M3LLogger throws M3LError with code ERR_INVALID_ARGUMENT for an unranked minLevel, at construction", () => {
+    const handler = makeFakeHandler();
+
+    let thrown: unknown;
+    try {
+      new M3LLogger([handler], { minLevel: invalidMinLevel });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+    // No event was ever dispatched — the throw happened before any emit path
+    // could run, not lazily on the first logged event.
+    expect(handler.handle).not.toHaveBeenCalled();
+  });
+
+  test("new M3LConsoleLoggerHandler throws M3LError with code ERR_INVALID_ARGUMENT for an unranked minLevel, at construction", () => {
+    let thrown: unknown;
+    try {
+      new M3LConsoleLoggerHandler({ minLevel: invalidMinLevel });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+  });
+
+  test("new M3LJsonLoggerHandler throws M3LError with code ERR_INVALID_ARGUMENT for an unranked minLevel, at construction", () => {
+    let thrown: unknown;
+    try {
+      new M3LJsonLoggerHandler({ minLevel: invalidMinLevel });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+  });
+
+  test("new M3LFileLoggerHandler throws M3LError with code ERR_INVALID_ARGUMENT for an unranked minLevel, at construction", () => {
+    let thrown: unknown;
+    try {
+      new M3LFileLoggerHandler({
+        filePath: "review-fix-round.log",
+        minLevel: invalidMinLevel,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+  });
+
+  test("a valid minLevel still constructs each of the four types without throwing", () => {
+    expect(
+      () => new M3LLogger([], { minLevel: M3LLogEventCategory.WARNING }),
+    ).not.toThrow();
+    expect(
+      () =>
+        new M3LConsoleLoggerHandler({
+          minLevel: M3LLogEventCategory.WARNING,
+        }),
+    ).not.toThrow();
+    expect(
+      () => new M3LJsonLoggerHandler({ minLevel: M3LLogEventCategory.WARNING }),
+    ).not.toThrow();
+    expect(
+      () =>
+        new M3LFileLoggerHandler({
+          filePath: "review-fix-round.log",
+          minLevel: M3LLogEventCategory.WARNING,
+        }),
+    ).not.toThrow();
+  });
+
+  test("omitting minLevel still constructs each of the four types without throwing (the additive default)", () => {
+    expect(() => new M3LLogger([])).not.toThrow();
+    expect(() => new M3LConsoleLoggerHandler()).not.toThrow();
+    expect(() => new M3LJsonLoggerHandler()).not.toThrow();
+    expect(
+      () => new M3LFileLoggerHandler({ filePath: "review-fix-round.log" }),
+    ).not.toThrow();
+  });
+});
+
+describe("logger.errorFrom() (ADR-0035 phase 3)", () => {
+  test("promotes code/context and the full 3-deep mixed chain, preserving A2 origin/retryable per M3LError level", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    const root = new M3LError("upstream http call failed", {
+      code: "ERR_HTTP_REQUEST",
+      context: { attempt: 3 },
+    });
+    const middle = new Error("an intermediate plain failure", {
+      cause: root,
+    });
+    const top = new M3LError("required config value missing", {
+      code: "ERR_CONFIG_MISSING",
+      context: { key: "API_URL" },
+      cause: middle,
+    });
+
+    logger.errorFrom(top);
+
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.category).toBe(M3LLogEventCategory.ERROR);
+
+    const expectedChain = serializeErrorChain(top);
+    expect(expectedChain).toHaveLength(3);
+
+    const data = event.data as Record<string, unknown>;
+    expect(data.chain).toEqual(expectedChain);
+    expect(data.code).toBe(expectedChain[0]?.code);
+    expect(data.context).toEqual(expectedChain[0]?.context);
+
+    const chain = data.chain as typeof expectedChain;
+    expect(chain[0]?.code).toBe("ERR_CONFIG_MISSING");
+    expect(chain[0]?.origin).toBe("caller");
+    expect(chain[0]?.retryable).toBe(false);
+
+    // The middle, plain-Error level carries no code/origin/retryable at all.
+    expect(chain[1]).not.toHaveProperty("code");
+    expect(chain[1]).not.toHaveProperty("origin");
+    expect(chain[1]).not.toHaveProperty("retryable");
+
+    expect(chain[2]?.code).toBe("ERR_HTTP_REQUEST");
+    expect(chain[2]?.origin).toBe("external");
+    expect(chain[2]?.retryable).toBe(true);
+  });
+
+  test("uses the given message override when supplied, otherwise falls back to the error's own message", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    logger.errorFrom(new Error("underlying failure"), "custom description");
+    const withOverride = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(withOverride.message).toBe("custom description");
+
+    logger.errorFrom(new Error("underlying failure"));
+    const withoutOverride = handler.handle.mock.calls[1]?.[0] as M3LLogEvent;
+    expect(withoutOverride.message).toBe("underlying failure");
+  });
+
+  test.each([
+    ["a thrown string", "boom"],
+    ["a thrown null", null],
+  ])("handles %s on the unknown channel without throwing", (_label, thrown) => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    expect(() => logger.errorFrom(thrown)).not.toThrow();
+
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.category).toBe(M3LLogEventCategory.ERROR);
+    const data = event.data as Record<string, unknown>;
+    expect(Array.isArray(data.chain)).toBe(true);
+    expect((data.chain as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  test("emits an ERROR event, which a FATAL floor suppresses", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler], {
+      minLevel: M3LLogEventCategory.FATAL,
+    });
+
+    logger.errorFrom(new Error("suppressed by the FATAL floor"));
+
+    expect(handler.handle).not.toHaveBeenCalled();
+  });
+
+  test("redacts a secret-looking value in a cause's context — it does not reach the handler verbatim", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    const cause = new M3LError("upstream call failed", {
+      code: "ERR_HTTP_REQUEST",
+      context: { apiKey: "s3cr3t-upstream-value" },
+    });
+    const top = new M3LError("request failed", {
+      code: "ERR_HTTP_REQUEST",
+      cause,
+    });
+
+    logger.errorFrom(top);
+
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(JSON.stringify(event.data)).not.toContain("s3cr3t-upstream-value");
+  });
+
+  // ---------------------------------------------------------------------------
+  // Review fix round (CRITICAL defect 2): `errorFrom` called
+  // `getErrorMessage(error)` directly and unguarded, so an `Error` whose
+  // `message` getter throws made `errorFrom` ITSELF throw — the original
+  // failure was never reported, and a new exception escaped the caller's own
+  // `catch` block. Each case below builds the hostile getter via
+  // `Object.defineProperty` on an already-constructed `Error` instance rather
+  // than a subclass `get message()` override — the base `Error` constructor
+  // defines `message` as an own data property that shadows a prototype
+  // accessor, so only a post-construction `defineProperty` actually
+  // intercepts reads.
+  // ---------------------------------------------------------------------------
+  test("does not throw when the error's own message getter throws, and still emits an ERROR event carrying a chain", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    const hostile = new Error("original message");
+    Object.defineProperty(hostile, "message", {
+      get(): string {
+        throw new Error("message getter exploded");
+      },
+      configurable: true,
+    });
+
+    expect(() => logger.errorFrom(hostile)).not.toThrow();
+
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.category).toBe(M3LLogEventCategory.ERROR);
+    const data = event.data as Record<string, unknown>;
+    expect(Array.isArray(data.chain)).toBe(true);
+    expect((data.chain as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  test("does not throw when the error's own stack getter throws, and still emits an ERROR event carrying a chain", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    const hostile = new Error("a normal message");
+    Object.defineProperty(hostile, "stack", {
+      get(): string {
+        throw new Error("stack getter exploded");
+      },
+      configurable: true,
+    });
+
+    expect(() => logger.errorFrom(hostile)).not.toThrow();
+
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.category).toBe(M3LLogEventCategory.ERROR);
+    const data = event.data as Record<string, unknown>;
+    expect(Array.isArray(data.chain)).toBe(true);
+    expect((data.chain as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  test("does not throw when a NESTED cause's message getter throws, and still emits an ERROR event carrying a chain", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    const nestedCause = new Error("nested cause message");
+    Object.defineProperty(nestedCause, "message", {
+      get(): string {
+        throw new Error("nested message getter exploded");
+      },
+      configurable: true,
+    });
+    const top = new Error("top-level message is fine", { cause: nestedCause });
+
+    expect(() => logger.errorFrom(top)).not.toThrow();
+
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.category).toBe(M3LLogEventCategory.ERROR);
+    const data = event.data as Record<string, unknown>;
+    expect(Array.isArray(data.chain)).toBe(true);
+    expect((data.chain as unknown[]).length).toBeGreaterThan(0);
+  });
+});
+
+describe("logger.time() (ADR-0035 phase 3)", () => {
+  test("returns a plain callable; invoking it emits a DEBUG event with the label and a non-negative numeric durationMs", () => {
+    const handler = makeFakeHandler();
+    const logger = new M3LLogger([handler]);
+
+    const stop = logger.time("import-step");
+    expect(handler.handle).not.toHaveBeenCalled();
+
+    stop();
+
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+    const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
+    expect(event.category).toBe(M3LLogEventCategory.DEBUG);
+    const data = event.data as Record<string, unknown>;
+    expect(data.label).toBe("import-step");
+    expect(typeof data.durationMs).toBe("number");
+    expect(data.durationMs as number).toBeGreaterThanOrEqual(0);
+  });
+
+  test("is suppressed by any floor above DEBUG", () => {
+    const handler = makeFakeHandler();
+    // INFO stands in for the excluded TEXT spelling — both are rank 1, and
+    // INFO is the M3LLogLevelFloor-narrowed representative of that rank.
+    const logger = new M3LLogger([handler], {
+      minLevel: M3LLogEventCategory.INFO,
+    });
+
+    const stop = logger.time("import-step");
+    stop();
+
+    expect(handler.handle).not.toHaveBeenCalled();
+  });
+});
+
+describe("A3 type-level contracts (minLevel across four options interfaces, time's return type)", () => {
+  test("M3LLoggerOptions.minLevel is optional and typed M3LLogLevelFloor", () => {
+    expectTypeOf<M3LLoggerOptions["minLevel"]>().toEqualTypeOf<
+      M3LLogLevelFloor | undefined
+    >();
+  });
+
+  test("M3LConsoleLoggerHandlerOptions equals { readonly minLevel?: M3LLogLevelFloor }", () => {
+    expectTypeOf<M3LConsoleLoggerHandlerOptions>().toEqualTypeOf<{
+      readonly minLevel?: M3LLogLevelFloor;
+    }>();
+  });
+
+  test("M3LJsonLoggerHandlerOptions equals { readonly minLevel?: M3LLogLevelFloor }", () => {
+    expectTypeOf<M3LJsonLoggerHandlerOptions>().toEqualTypeOf<{
+      readonly minLevel?: M3LLogLevelFloor;
+    }>();
+  });
+
+  test("M3LFileLoggerHandlerOptions.minLevel is optional and typed M3LLogLevelFloor, alongside the existing filePath field", () => {
+    expectTypeOf<M3LFileLoggerHandlerOptions>().toEqualTypeOf<{
+      readonly filePath: string;
+      readonly minLevel?: M3LLogLevelFloor;
+    }>();
+  });
+
+  test("logger.time returns a plain () => void callable", () => {
+    expectTypeOf<M3LLogger["time"]>().returns.toEqualTypeOf<() => void>();
   });
 });

@@ -39,67 +39,67 @@
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "M3LFormatErrorChainOptions",
           "lines": "46-62",
-          "blob": "a9467ef3dda362d132da670e764571179bb31a8b"
+          "blob": "146cf15cd9dec5da3d84d4b366eed137aaa5895b"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "M3LSerializedError",
           "lines": "63-267",
-          "blob": "a9467ef3dda362d132da670e764571179bb31a8b"
+          "blob": "146cf15cd9dec5da3d84d4b366eed137aaa5895b"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "scrubUrlsInText",
           "lines": "268-429",
-          "blob": "a9467ef3dda362d132da670e764571179bb31a8b"
+          "blob": "146cf15cd9dec5da3d84d4b366eed137aaa5895b"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "formatErrorChain",
           "lines": "430-475",
-          "blob": "a9467ef3dda362d132da670e764571179bb31a8b"
+          "blob": "146cf15cd9dec5da3d84d4b366eed137aaa5895b"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
           "symbol": "serializeErrorChain",
           "lines": "476-489",
-          "blob": "a9467ef3dda362d132da670e764571179bb31a8b"
+          "blob": "146cf15cd9dec5da3d84d4b366eed137aaa5895b"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
           "symbol": "M3LBreadcrumb",
           "lines": "40-64",
-          "blob": "a836f17236834eeaf31066801c78af2939ade86a"
+          "blob": "fa22fceb9e628d3282b26ba7e3b5992e3f20873e"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
           "symbol": "M3LBreadcrumbScalar",
           "lines": "65-82",
-          "blob": "a836f17236834eeaf31066801c78af2939ade86a"
+          "blob": "fa22fceb9e628d3282b26ba7e3b5992e3f20873e"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
           "symbol": "M3LBreadcrumbSource",
           "lines": "83-99",
-          "blob": "a836f17236834eeaf31066801c78af2939ade86a"
+          "blob": "fa22fceb9e628d3282b26ba7e3b5992e3f20873e"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
           "symbol": "M3LBreadcrumbTrailOptions",
           "lines": "100-117",
-          "blob": "a836f17236834eeaf31066801c78af2939ade86a"
+          "blob": "fa22fceb9e628d3282b26ba7e3b5992e3f20873e"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
           "symbol": "M3LBreadcrumbAttachOptions",
           "lines": "118-600",
-          "blob": "a836f17236834eeaf31066801c78af2939ade86a"
+          "blob": "fa22fceb9e628d3282b26ba7e3b5992e3f20873e"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
           "symbol": "M3LBreadcrumbTrail",
           "lines": "601-768",
-          "blob": "a836f17236834eeaf31066801c78af2939ade86a"
+          "blob": "fa22fceb9e628d3282b26ba7e3b5992e3f20873e"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
@@ -159,43 +159,43 @@
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunOutcome",
           "lines": "52-64",
-          "blob": "bc63a61aa74eb3919d54e42de12b24e04b7fe92a"
+          "blob": "9eeac58c2da924c4d8527cbafa220b31af0ac6df"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReportFailure",
           "lines": "65-87",
-          "blob": "bc63a61aa74eb3919d54e42de12b24e04b7fe92a"
+          "blob": "9eeac58c2da924c4d8527cbafa220b31af0ac6df"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReportInput",
           "lines": "88-115",
-          "blob": "bc63a61aa74eb3919d54e42de12b24e04b7fe92a"
+          "blob": "9eeac58c2da924c4d8527cbafa220b31af0ac6df"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReportBase",
           "lines": "116-150",
-          "blob": "bc63a61aa74eb3919d54e42de12b24e04b7fe92a"
+          "blob": "9eeac58c2da924c4d8527cbafa220b31af0ac6df"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReport",
           "lines": "151-176",
-          "blob": "bc63a61aa74eb3919d54e42de12b24e04b7fe92a"
+          "blob": "9eeac58c2da924c4d8527cbafa220b31af0ac6df"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReporterOptions",
           "lines": "177-946",
-          "blob": "bc63a61aa74eb3919d54e42de12b24e04b7fe92a"
+          "blob": "9eeac58c2da924c4d8527cbafa220b31af0ac6df"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReporter",
           "lines": "947-1189",
-          "blob": "bc63a61aa74eb3919d54e42de12b24e04b7fe92a"
+          "blob": "9eeac58c2da924c4d8527cbafa220b31af0ac6df"
         }
       ],
       "retrieved": "2026-07-23"
