@@ -35,7 +35,11 @@ function buildConfig(values: Record<string, unknown>): Core.M3LConfig {
 function fakeHookContext(
   values: Record<string, unknown>,
 ): Core.M3LScriptHookContext {
-  return { config: buildConfig(values), correlationId: "test-corr-id" };
+  return {
+    config: buildConfig(values),
+    correlationId: "test-corr-id",
+    dryRun: false,
+  };
 }
 
 afterEach(() => {

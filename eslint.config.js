@@ -353,12 +353,19 @@ export default tseslint.config(
     // `M3LLogger -> format-error -> logging/index -> M3LLogger`.
     //
     // Nothing about those import lines advertises how load-bearing they are, so
-    // this rule pins the invariant. Deliberately scoped to these two modules
+    // this rule pins the invariant. Deliberately scoped to these modules
     // rather than repo-wide: core/environment <-> core/utils (via M3LPaths)
     // carries three pre-existing cycles, and unpicking those is its own change.
+    //
+    // core/script is also covered here (ADR-0035 phase 4a): `runScript`
+    // introduces a new core/script -> core/diagnostics edge (the composition
+    // root's only permitted cross-module import, ADR-0009 Zone B), and
+    // nothing else catches a cycle on that edge unless this rule covers the
+    // file too.
     files: [
       "packages/m3l-common/src/core/logging/**/*.ts",
       "packages/m3l-common/src/core/diagnostics/**/*.ts",
+      "packages/m3l-common/src/core/script/**/*.ts",
     ],
     rules: {
       "import-x/no-cycle": ["error", { maxDepth: Infinity }],
