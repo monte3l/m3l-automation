@@ -21,6 +21,14 @@ occurrences. The checklist:
   a module/script spanning many files gets split into bounded sub-dispatches
   up front, not handed to one spoke as an indivisible turn. Don't rely on
   journaling to make an oversized turn safe.
+- **Size a FIX round by file, not by finding count.** A review fan-out returns
+  findings grouped by concern; dispatching them that way hands one spoke every
+  file the findings touch. Regroup by file — one spoke per file (or tight file
+  group), every finding for that file in one prompt — so each spoke loads one
+  file's context. Ten findings across four files in a single dispatch burned
+  106 k tokens and wrote **nothing** (`2026-07-23-core-diagnostics.md`); the same
+  ten, split one-spoke-per-file, landed cleanly in parallel. It also removes
+  write conflicts, so the spokes can run concurrently.
 - **Bound review-spoke INPUT scope too, not just output.** The above bullet
   covers writer turns; review fan-outs need the same discipline on the other
   side. Give each review spoke a tight per-spoke file list (2–5 files) and

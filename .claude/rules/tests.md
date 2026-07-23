@@ -25,6 +25,17 @@ paths:
   Damerau-Levenshtein helper at ~10%, asserting nothing). If a behavioral stage's
   only test is "doesn't throw", it is a coverage gap — read
   `coverage/coverage-final.json` to catch a named-but-unexercised path.
+- **Assert barrel reachability through the package entry point.** Every test
+  here imports `src/` paths directly, so none of them can observe a broken
+  namespace re-export. A `core/index.ts` missing its
+  `export * from "./<module>/index.js";` line once passed the entire suite green
+  while nothing in that submodule was reachable as `Core.*`. `tests/index.test.ts`
+  carries a table-driven check naming one load-bearing symbol per submodule
+  barrel — add a row when you add a submodule.
+- **Audit test vehicles when a fix narrows what a field accepts.** A test that
+  can no longer fail reads as coverage but is worse than none: projecting
+  `M3LRunReport.archive` to a known shape silently disabled two regression
+  lock-ins that used `archive` to carry arbitrary values.
 - **Type-level tests with `expectTypeOf`** where the type IS the contract.
   `toEqualTypeOf` is strict about `readonly` property modifiers — a type with
   `readonly` members is _not_ equal to one with mutable members, and the failure
