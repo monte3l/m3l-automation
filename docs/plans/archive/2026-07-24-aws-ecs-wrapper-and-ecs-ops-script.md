@@ -1,6 +1,7 @@
 # `aws/ecs` wrapper + `ecs-ops` script (2026-07-24)
 
-**Status: PR 1 shipped** — `feat/aws-ecs`; PR 2 (`scripts/ecs-ops`) not started
+**Status: shipped** — PR 1 (`aws/ecs` wrapper) on `feat/aws-ecs`, merged as #224;
+PR 2 (`scripts/ecs-ops`) on `feat/ecs-ops`, #225
 
 ## Context
 
@@ -57,6 +58,8 @@ deferred to a later session.
 ## Outcome
 
 `aws/ecs` (`M3LECSOperations` + `M3LECSOperationError` + 9 plain types)
-shipped on `feat/aws-ecs`, unblocking `ecs-ops`. `scripts/ecs-ops` (PR 2) is
-deferred to a later session. See `docs/logs/2026-07-24-aws-ecs.md` for the
-full narrative.
+shipped on `feat/aws-ecs` (#224), unblocking `ecs-ops`. `scripts/ecs-ops`
+(8 operations, 112 tests, 0 must-fix/should-fix across the 3-reviewer fan-out)
+shipped on `feat/ecs-ops` (#225), completing the chain. See
+`docs/logs/2026-07-24-aws-ecs.md` and `docs/logs/2026-07-24-scripts-ecs-ops.md`
+for the full narrative.

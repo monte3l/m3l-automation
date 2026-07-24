@@ -72,6 +72,11 @@ that separation by handing off rather than implementing inline.
    templates under `templates/script/` are the single source of the shape, and
    `check:script-scaffold` fails CI on any drift from them.
 
+   `--purpose` rejects any `/` character (it can terminate the doc comment the
+   purpose is emitted into) — an operations-dispatch script's natural
+   verb-list phrasing (`list/describe/create/...`) will trip this; use commas
+   instead (`docs/logs/2026-07-24-scripts-ecs-ops.md`).
+
 3. Run `pnpm install` (the workspace glob picks up the new package), then
    `pnpm build` (turbo orders `m3l-common` first), then the smoke run
    `pnpm --filter @m3l-automation/<name> start`, then `pnpm test` (the
