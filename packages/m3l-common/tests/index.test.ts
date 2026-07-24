@@ -87,6 +87,21 @@ test.each(CORE_REACHABILITY_CASES)(
 );
 
 /**
+ * `confirmDestructive` (core/prompt) is a second export from a submodule
+ * that already has a `CORE_REACHABILITY_CASES` row (`M3LPrompt`). That row
+ * only proves `core/prompt/index.ts`'s pre-existing `export * from
+ * "./M3LPrompt.js"` line is wired — it says nothing about the *new*
+ * `export * from "./M3LDestructiveGate.js"` line the promoted function
+ * needs, which is exactly the failure class this file exists to catch (a
+ * dropped barrel line invisible to every test that imports `src/` directly).
+ */
+test("Core.confirmDestructive is reachable through the public namespace (submodule core/prompt)", () => {
+  const value = readNamespaceMember(m3l.Core, "confirmDestructive");
+  expect(value).toBeDefined();
+  expect(typeof value).toBe("function");
+});
+
+/**
  * One load-bearing, representative symbol per AWS submodule barrel wired
  * into `src/aws/index.ts`. Same rationale as {@link CORE_REACHABILITY_CASES}.
  */

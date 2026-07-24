@@ -366,6 +366,8 @@
     "wired": true,
     "docPath": "docs/reference/core/prompt.md",
     "symbols": [
+      "confirmDestructive",
+      "M3LConfirmDestructiveOptions",
       "M3LPrompt",
       "M3LPromptOptions",
       "M3LMultiSpinner",
