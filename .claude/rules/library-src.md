@@ -61,6 +61,20 @@ paths:
   tolerant handling (skip / default / warn) for _external_ data you don't control
   (file contents, network payloads). Don't blur the two: a malformed caller
   argument is a bug to surface, malformed external data is a condition to absorb.
+- **Present-but-valueless is malformed input, not "absent" — fail loud.** A flag
+  a parser yields as a boolean `true` because it carried no value (e.g. a bare
+  `--log-level` with no `=value`) is malformed _explicit_ input; rejecting it with
+  an `M3LError` beats silently falling through to a lower-precedence tier. When a
+  value can arrive in a `string | boolean`-style union, the boolean arm is the
+  tell that the caller supplied the key but not a value — validate it, don't
+  treat it as unset (found A4b: a fall-through instruction let a valueless
+  `--log-level` silently pick the wrong floor).
+- **Discard the computation when the caller opts out.** Side-effecting resolution
+  that only feeds an optional-default resource belongs _inside_ the
+  `options.x ?? buildDefault()` branch, not eagerly above it — otherwise a caller
+  who supplied their own `x` still pays its cost, and eats its throw, for a result
+  that is then discarded (found A4b: an eager env/CLI floor resolve threw at
+  construction even when `options.logger` was supplied and the floor unused).
 - **Narrow a `try`/`catch` to just the fallible call, never the
   post-processing.** Wrapping response-mapping/construction inside the same
   `try` as an async SDK/IO call means a future local bug in the mapping gets
@@ -80,6 +94,14 @@ paths:
   the internal cast it removes.
 - **Exhaustive `switch`** over finite sets; handle every case and fail on the
   unexpected.
+- **Track a string-literal union at runtime with `Record<Union, true>`, not an
+  `is`-predicate filter.** A `filter((x): x is T => …)` _looks_ derived but
+  launders a runtime `Set`/array through an unchecked assertion, so adding or
+  removing a union member drifts silently. Key a
+  `const MEMBERS: Record<Union, true> = { … }` literal off the union and
+  `Object.keys(MEMBERS)` it — the compiler then rejects both a missing and an
+  excess key, the same guarantee `CATEGORY_RANK: Record<M3LLogEventCategory,
+number>` already relies on (found A4b: `LOG_LEVEL_FLOORS`).
 - **Allowlist, never denylist, for a redaction or sanitization boundary.**
   Enumerate the fields you keep; drop everything else. A pattern that tries to
   _recognize_ what is unsafe (a regex over URLs, key-name heuristics) is a
