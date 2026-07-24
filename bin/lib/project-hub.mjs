@@ -142,30 +142,37 @@ export function columnIndex(header, name) {
 }
 
 /**
- * Classify a tracker table's status cell into one of the four badge kinds the
+ * Classify a tracker table's status cell into one of the six badge kinds the
  * hub renders. Strips `**bold**` markers first, then matches a leading
- * done/pending/in-review word or one of the four status emoji; anything else
- * (including an empty cell) is "other".
+ * done/to-do/in-progress/deferred/blocked/rejected keyword or one of the four
+ * legacy status emoji (kept for the count-enforced `implementation-status.md`
+ * ledger, whose ✅/🧪/🟢/❌ cells are never rewritten to keywords). An
+ * unrecognized or empty cell defaults to "todo" — source Status cells are a
+ * single authored keyword, so there is no ambiguous "other" case left to
+ * preserve.
  *
  * @param {string} cell
- * @returns {"done" | "pending" | "in-review" | "other"}
+ * @returns {"done" | "todo" | "in-progress" | "deferred" | "blocked" | "rejected"}
  * @example
  * ```js
  * import { classifyStatus } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
  *
- * classifyStatus("**done** (#99)"); // "done"
+ * classifyStatus("**Done**"); // "done"
  * ```
  */
 export function classifyStatus(cell) {
   const stripped = cell.replace(/\*\*/g, "").trim();
   if (stripped.startsWith("✅")) return "done";
-  if (stripped.startsWith("❌")) return "pending";
+  if (stripped.startsWith("❌")) return "todo";
   if (stripped.startsWith("🧪") || stripped.startsWith("🟢"))
-    return "in-review";
+    return "in-progress";
   if (/^done\b/i.test(stripped)) return "done";
-  if (/^pending\b/i.test(stripped)) return "pending";
-  if (/^in-review\b/i.test(stripped)) return "in-review";
-  return "other";
+  if (/^to\s?do\b/i.test(stripped)) return "todo";
+  if (/^in[\s-]?progress\b/i.test(stripped)) return "in-progress";
+  if (/^deferred\b/i.test(stripped)) return "deferred";
+  if (/^blocked\b/i.test(stripped)) return "blocked";
+  if (/^rejected\b/i.test(stripped)) return "rejected";
+  return "todo";
 }
 
 function classifyAdrStatusKind(statusText) {
@@ -548,9 +555,11 @@ export function renderCellMarkdown(text, sourceDir) {
 
 const STATUS_BADGE_LABELS = {
   done: "Done",
-  pending: "Pending",
-  "in-review": "In review",
-  other: "Other",
+  todo: "To Do",
+  "in-progress": "In Progress",
+  deferred: "Deferred",
+  blocked: "Blocked",
+  rejected: "Rejected",
 };
 
 /**
@@ -575,9 +584,11 @@ export function renderStatusBadge(kind) {
  * Render one tracker table (a header + rows, as returned by
  * {@link parseMarkdownTable}) as a captioned, id'd `<table>` wrapped in an
  * `overflow-x: auto` div. `statusColumn` (pass -1, or omit, when the table has
- * no Status column — see {@link columnIndex}) renders that column as a
- * {@link renderStatusBadge} badge followed by its raw text; every other cell
- * goes through {@link renderCellMarkdown}.
+ * no Status column — see {@link columnIndex}) renders that column as ONLY a
+ * {@link renderStatusBadge} badge — the raw cell text is dropped, since every
+ * source Status cell is a single authored keyword and any supporting detail
+ * (a merging PR reference, an unblock condition) belongs in another column;
+ * every other cell goes through {@link renderCellMarkdown}.
  *
  * @param {{ id: string, caption: string, header: string[], rows: string[][], statusColumn?: number, sourceDir: string }} table
  * @returns {string}
@@ -589,7 +600,7 @@ export function renderStatusBadge(kind) {
  *   id: "priority0",
  *   caption: "Priority 0",
  *   header: ["Item", "Status"],
- *   rows: [["F8", "done"]],
+ *   rows: [["F8", "Done"]],
  *   statusColumn: 1,
  *   sourceDir: "docs",
  * });
@@ -612,7 +623,7 @@ export function renderTrackerTable({
         .map((cell, index) => {
           if (index === statusColumn) {
             const kind = classifyStatus(cell);
-            return `<td>${renderStatusBadge(kind)} ${renderCellMarkdown(cell, sourceDir)}</td>`;
+            return `<td>${renderStatusBadge(kind)}</td>`;
           }
           return `<td>${renderCellMarkdown(cell, sourceDir)}</td>`;
         })
@@ -668,9 +679,11 @@ const HUB_STYLE = `
   --muted: #57606a;
   --border: #d0d7de;
   --badge-done: #1a7f37;
-  --badge-pending: #6e7781;
-  --badge-in-review: #9a6700;
-  --badge-other: #57606a;
+  --badge-todo: #0969da;
+  --badge-in-progress: #9a6700;
+  --badge-deferred: #8250df;
+  --badge-blocked: #cf222e;
+  --badge-rejected: #6e7781;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -679,9 +692,11 @@ const HUB_STYLE = `
     --muted: #8b949e;
     --border: #30363d;
     --badge-done: #3fb950;
-    --badge-pending: #8b949e;
-    --badge-in-review: #d29922;
-    --badge-other: #8b949e;
+    --badge-todo: #58a6ff;
+    --badge-in-progress: #d29922;
+    --badge-deferred: #a371f7;
+    --badge-blocked: #f85149;
+    --badge-rejected: #8b949e;
   }
 }
 * { box-sizing: border-box; }
@@ -724,9 +739,11 @@ tbody tr:nth-child(even) { background: color-mix(in srgb, var(--fg) 4%, transpar
   color: #ffffff;
 }
 .badge-done { background: var(--badge-done); }
-.badge-pending { background: var(--badge-pending); }
-.badge-in-review { background: var(--badge-in-review); }
-.badge-other { background: var(--badge-other); }
+.badge-todo { background: var(--badge-todo); }
+.badge-in-progress { background: var(--badge-in-progress); }
+.badge-deferred { background: var(--badge-deferred); }
+.badge-blocked { background: var(--badge-blocked); }
+.badge-rejected { background: var(--badge-rejected); }
 .errors { color: #cf222e; }
 .empty { color: var(--muted); font-style: italic; }
 footer { margin-top: 3rem; color: var(--muted); font-size: 0.85rem; }

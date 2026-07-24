@@ -28,33 +28,33 @@ const ROADMAP_FIXTURE = `# Roadmap — m3l-automation
 
 ## Priority 0 — Library hardening (do before more scripts)
 
-| Item   | What                                                                                            | Status      | Why now / Notes                             |
-| ------ | ----------------------------------------------------------------------------------------------- | ----------- | -------------------------------------------- |
-| **F8** | \`M3LScript\` preset seam — presets can't drive a run's config (config loader wires only CLI+env) | done (#106) | wired at precedence level 6                  |
-| **F6** | Importer surfaces its skip count                                                                | done (#103) | now returns \`{ processed, skipped }\`         |
-| **F4** | \`M3LScript.paths\` getter (paths seam)                                                           | done        | json-etl now consumes it                     |
+| Item   | What                                                                                            | Status | Why now / Notes                             |
+| ------ | ----------------------------------------------------------------------------------------------- | ------ | -------------------------------------------- |
+| **F8** | \`M3LScript\` preset seam — presets can't drive a run's config (config loader wires only CLI+env) | Done   | **PR:** #106. wired at precedence level 6    |
+| **F6** | Importer surfaces its skip count                                                                | Done   | **PR:** #103. now returns \`{ processed, skipped }\` |
+| **F4** | \`M3LScript.paths\` getter (paths seam)                                                           | Done   | **PR:** #104. json-etl now consumes it       |
 
 ## Priority 1 — Consumer fleet
 
-| Wave   | Scripts             | Status          | Depends on           |
-| ------ | -------------------- | --------------- | ---------------------- |
-| **W1** | \`json-etl\`          | **done** (#99)  | W0                     |
-| **W2** | \`dynamodb-crud\`     | **done**        | W0                     |
-| **W3** | \`ecs-ops\`           | pending         | getter reality: raw    |
+| Wave   | Scripts             | Status  | Depends on           |
+| ------ | -------------------- | ------- | ---------------------- |
+| **W1** | \`json-etl\`          | Done    | **PR:** #99. W0        |
+| **W2** | \`dynamodb-crud\`     | Done    | **PR:** #128. W0       |
+| **W3** | \`ecs-ops\`           | Blocked | getter reality: raw    |
 
 ## Priority 2 — Gated / deferred
 
-| Item                                            | Unblock condition                                                   |
-| ------------------------------------------------ | ---------------------------------------------------------------------- |
-| **D4** SSM config provider                        | a 2nd script hand-rolling SSM config fetch                             |
-| **F7 / \`onUnknownFormat\`** tolerant per-record   | a consumer needing per-record tolerance on irregular non-JSONL input   |
+| Item                                            | Status   | Unblock condition                                                   |
+| ------------------------------------------------ | -------- | ---------------------------------------------------------------------- |
+| **D4** SSM config provider                        | Deferred | a 2nd script hand-rolling SSM config fetch                             |
+| **F7 / \`onUnknownFormat\`** tolerant per-record   | Deferred | a consumer needing per-record tolerance on irregular non-JSONL input   |
 
 ## Governance follow-ups (ADR-0028 / ADR-0029)
 
-| Item   | What                                | Notes                                                          |
-| ------ | ------------------------------------ | ------------------------------------------------------------- |
-| **T1** | Rename script \`dynamo-crud\`         | **done** — landed on \`refactor/rename-dynamo-crud\`             |
-| **T8** | Getter-reality pre-flight check       | pending — backlog only                                        |
+| Item   | What                                | Status   | Notes                                                          |
+| ------ | ------------------------------------ | -------- | ------------------------------------------------------------- |
+| **T1** | Rename script \`dynamo-crud\`         | Done     | **PR:** #135. landed on \`refactor/rename-dynamo-crud\`          |
+| **T8** | Getter-reality pre-flight check       | Deferred | backlog only                                                   |
 `;
 
 const ROADMAP_MISSING_PRIORITY1_FIXTURE = `# Roadmap — m3l-automation
@@ -82,24 +82,24 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 
 ## Library friction (F-series)
 
-| ID     | Priority | Status  | Title & change                                                                                                    | Source / call-site |
-| ------ | -------- | ------- | -------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| **F8** | P0       | done (#106) | Preset seam: \`M3LScriptOptions.preset\` is wired at precedence level 6                                            | json-etl log F8       |
-| **F7** | P2       | pending | Opt-in \`onUnknownFormat: "throw" \\| "skip"\` tolerant per-record import on \`M3LJSONListImporter\`                  | json-etl log F7       |
+| ID     | Priority | Status   | Title & change                                                                                                    | Source / call-site |
+| ------ | -------- | -------- | -------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| **F8** | P0       | Done     | Preset seam: \`M3LScriptOptions.preset\` is wired at precedence level 6                                            | **PR:** #106. json-etl log F8 |
+| **F7** | P2       | Deferred | Opt-in \`onUnknownFormat: "throw" \\| "skip"\` tolerant per-record import on \`M3LJSONListImporter\`                  | json-etl log F7       |
 
 ## AWS getter reality
 
-| Provider getter | AWS service (ADR-0028 name) | Status                    | Wrapper submodule | Consuming script(s)  | ADR / precedent                 |
-| ----------------- | ------------------------------ | --------------------------- | -------------------- | ----------------------- | ---------------------------------- |
-| \`s3\`             | S3                             | **wrapped**                 | \`aws/s3\`            | \`s3-objects\` (done)     | ADR-0033                           |
-| \`ecs\`            | ECS                             | **raw — no wrapper yet**   | —                     | pending: \`ecs-ops\`      | ADR-0027 boundary rule applies     |
+| Provider getter | AWS service (ADR-0028 name) | Status | Wrapper submodule       | Consuming script(s)  | ADR / precedent                 |
+| ----------------- | ------------------------------ | ------ | -------------------------- | ----------------------- | ---------------------------------- |
+| \`s3\`             | S3                             | Done   | \`aws/s3\`                  | \`s3-objects\` (done)     | ADR-0033                           |
+| \`ecs\`            | ECS                             | To Do  | — (raw, no wrapper yet)    | pending: \`ecs-ops\`      | ADR-0027 boundary rule applies     |
 
 ## Gated library modules & deferred decisions (P2)
 
-| ID                                                            | Unblock condition                                                       |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| **D4** SSM config provider                                        | a 2nd script hand-rolling SSM config fetch                                  |
-| **F7 / \`onUnknownFormat\`** tolerant per-record array import      | a consumer needing per-record tolerance on irregular non-JSONL input        |
+| ID                                                            | Status   | Unblock condition                                                       |
+| ----------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------- |
+| **D4** SSM config provider                                        | Deferred | a 2nd script hand-rolling SSM config fetch                                  |
+| **F7 / \`onUnknownFormat\`** tolerant per-record array import      | Deferred | a consumer needing per-record tolerance on irregular non-JSONL input        |
 `;
 
 const IMPLEMENTATION_STATUS_FIXTURE = `# Implementation status — m3l-common vs. documented spec
@@ -342,20 +342,23 @@ describe("columnIndex", () => {
 
 describe("classifyStatus", () => {
   test.each([
+    ["Done", "done"],
     ["done", "done"],
-    ["done (#106)", "done"],
-    ["**done** (#99)", "done"],
-    ["done (paths seam)", "done"],
-    ["pending", "pending"],
-    ["pending — backlog only", "pending"],
-    ["in-review", "in-review"],
-    ["in-review (paths seam)", "in-review"],
+    ["**Done**", "done"],
+    ["To Do", "todo"],
+    ["todo", "todo"],
+    ["In Progress", "in-progress"],
+    ["in-progress", "in-progress"],
+    ["Deferred", "deferred"],
+    ["deferred — backlog only", "deferred"],
+    ["Blocked", "blocked"],
+    ["Rejected", "rejected"],
     ["✅", "done"],
-    ["❌", "pending"],
-    ["🧪", "in-review"],
-    ["🟢", "in-review"],
-    ["something else entirely", "other"],
-    ["", "other"],
+    ["❌", "todo"],
+    ["🧪", "in-progress"],
+    ["🟢", "in-progress"],
+    ["something else entirely", "todo"],
+    ["", "todo"],
   ])("classifies %j as %s", (cell, expected) => {
     expect(classifyStatus(cell)).toBe(expected);
   });
@@ -472,14 +475,23 @@ describe("extractRoadmap", () => {
     expect(result.errors).toEqual([]);
   });
 
-  test("priority2 has no Status column (2 columns)", () => {
+  test("priority2 carries a Status column (3 columns)", () => {
     const result = extractRoadmap(ROADMAP_FIXTURE);
-    expect(result.priority2?.header).toEqual(["Item", "Unblock condition"]);
+    expect(result.priority2?.header).toEqual([
+      "Item",
+      "Status",
+      "Unblock condition",
+    ]);
   });
 
-  test("governance rows are present with their 3 columns", () => {
+  test("governance rows are present with their 4 columns", () => {
     const result = extractRoadmap(ROADMAP_FIXTURE);
-    expect(result.governance?.header).toEqual(["Item", "What", "Notes"]);
+    expect(result.governance?.header).toEqual([
+      "Item",
+      "What",
+      "Status",
+      "Notes",
+    ]);
     expect(result.governance?.rows.some((row) => row[0] === "**T1**")).toBe(
       true,
     );
@@ -512,7 +524,7 @@ describe("extractImplementation", () => {
       (row) => row[idIndex] === "**F7**",
     );
     expect(f7Row).toBeDefined();
-    expect(f7Row?.[statusIndex]).toBe("pending");
+    expect(f7Row?.[statusIndex]).toBe("Deferred");
     expect(f7Row?.[titleIndex]).toContain("|");
   });
 
@@ -617,15 +629,21 @@ describe("renderCellMarkdown", () => {
 
 describe("renderStatusBadge", () => {
   test.each([
-    ["done", "badge-done"],
-    ["pending", "badge-pending"],
-    ["in-review", "badge-in-review"],
-    ["other", "badge-other"],
-  ])("renders a <span> with a badge-%s class", (kind, expectedClass) => {
-    const html = renderStatusBadge(kind);
-    expect(html).toMatch(/<span[^>]*class="[^"]*"/);
-    expect(html).toContain(expectedClass);
-  });
+    ["done", "badge-done", "Done"],
+    ["todo", "badge-todo", "To Do"],
+    ["in-progress", "badge-in-progress", "In Progress"],
+    ["deferred", "badge-deferred", "Deferred"],
+    ["blocked", "badge-blocked", "Blocked"],
+    ["rejected", "badge-rejected", "Rejected"],
+  ])(
+    "renders a <span> with a badge-%s class",
+    (kind, expectedClass, expectedLabel) => {
+      const html = renderStatusBadge(kind);
+      expect(html).toMatch(/<span[^>]*class="[^"]*"/);
+      expect(html).toContain(expectedClass);
+      expect(html).toContain(expectedLabel);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -639,8 +657,8 @@ describe("renderTrackerTable", () => {
       caption: "Priority 0",
       header: ["Item", "What", "Status"],
       rows: [
-        ["F8", "preset seam", "done"],
-        ["F6", "skip count", "pending"],
+        ["F8", "preset seam", "Done"],
+        ["F6", "skip count", "Deferred"],
       ],
       statusColumn: 2,
       sourceDir: "docs",
@@ -649,11 +667,25 @@ describe("renderTrackerTable", () => {
     expect(html).toContain("Priority 0");
     expect(html).toContain("<table");
     expect(html).toContain("badge-done");
-    expect(html).toContain("badge-pending");
+    expect(html).toContain("badge-deferred");
     expect(html).toContain("F8");
     expect(html).toContain("preset seam");
     expect(html).toContain("F6");
     expect(html).toContain("skip count");
+  });
+
+  test("renders the status cell as ONLY the badge — the raw cell text is dropped", () => {
+    const html = renderTrackerTable({
+      id: "priority0",
+      caption: "Priority 0",
+      header: ["Item", "Status"],
+      rows: [["F8", "Done (#106) — extra detail"]],
+      statusColumn: 1,
+      sourceDir: "docs",
+    });
+    expect(html).toContain("badge-done");
+    expect(html).not.toContain("#106");
+    expect(html).not.toContain("extra detail");
   });
 });
 
@@ -669,11 +701,14 @@ describe("renderHubPage", () => {
     roadmap: {
       priority0: {
         header: ["Item", "What", "Status"],
-        rows: [["F8", "preset seam", "done"]],
+        rows: [["F8", "preset seam", "Done"]],
       },
       priority1: { header: ["Wave", "Scripts", "Status"], rows: [] },
-      priority2: { header: ["Item", "Unblock condition"], rows: [] },
-      governance: { header: ["Item", "What", "Notes"], rows: [] },
+      priority2: {
+        header: ["Item", "Status", "Unblock condition"],
+        rows: [],
+      },
+      governance: { header: ["Item", "What", "Status", "Notes"], rows: [] },
       errors: [],
     },
     backlog: {
@@ -689,7 +724,7 @@ describe("renderHubPage", () => {
           [
             "F7",
             "P2",
-            "pending",
+            "Deferred",
             "<script>alert(1)</script>",
             "json-etl log F7",
           ],
