@@ -221,8 +221,11 @@ AWS keys) at write time and in CI.
 -->
 
 Run any task with `pnpm <script>`; the full list is in `package.json` `scripts`.
-The table below is the source of truth for the git-hook cadence, machine-verified
-against `lefthook.yml` by `pnpm check:cadence`.
+Run `pnpm commands` to list every one grouped by family with a description of
+its scope and intended usage (`bin/lib/command-catalog.mjs`, non-drift-checked
+by `pnpm check:command-catalog`). The table below is the source of truth for
+the git-hook cadence, machine-verified against `lefthook.yml` by
+`pnpm check:cadence`.
 
 | Stage                      | Checks run                                                                                                                                                                                  | Scope                     |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |

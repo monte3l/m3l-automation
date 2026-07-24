@@ -190,6 +190,12 @@ jobs:
       - name: Check worktree include
         run: pnpm check:worktree
 
+      # bin/lib/command-catalog.mjs (the pnpm commands data) must have exactly
+      # one row per package.json script, in both directions — the non-drift
+      # gate for the pnpm commands lister.
+      - name: Check command catalog
+        run: pnpm check:command-catalog
+
       # Copy-paste duplication density (ADR-0034) — the one Sonar-style metric
       # not covered by ESLint's per-function complexity rules. CI-only: not
       # in pre-push, to keep that lane's wall-clock unchanged.

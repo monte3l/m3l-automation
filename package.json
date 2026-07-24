@@ -20,6 +20,7 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "lint": "eslint .",
+    "lint:commit": "node bin/lint-commit.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint:md": "rumdl check . --no-cache --exclude \"node_modules/**,.claude/**,**/dist/**,CHANGELOG.md,.github/pull_request_template.md,docs/adr/template.md,docs/plans/archive/**\"",
@@ -27,6 +28,8 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "knip": "knip",
+    "commands": "node bin/list-commands.mjs",
+    "check:command-catalog": "node bin/check-command-catalog.mjs",
     "check:api": "node bin/check-exports-snapshot.mjs",
     "check:provenance": "node bin/check-doc-provenance.mjs",
     "check:doc-counts": "node bin/check-doc-counts.mjs",
@@ -52,6 +55,7 @@
     "check:workflows-doc": "node bin/check-workflows-doc.mjs",
     "check:cadence": "node bin/check-cadence-doc.mjs",
     "check:worktree": "node bin/check-worktree-include.mjs",
+    "check:signed-range": "node bin/verify-signed-range.mjs",
     "check:dup": "jscpd",
     "gen:index": "node bin/gen-reference-index.mjs",
     "gen:commit-stats-endpoint": "node bin/gen-commit-stats-endpoint.mjs",
@@ -61,6 +65,7 @@
     "worktree:setup": "node bin/worktree-setup.mjs",
     "worktree:remove": "node bin/worktree-remove.mjs",
     "worktree:prune": "node bin/worktree-prune.mjs",
+    "spoke:recover": "node bin/spoke-recovery.mjs",
     "prepare": "lefthook install && node bin/install-merge-drivers.mjs"
   },
   "devDependencies": {
