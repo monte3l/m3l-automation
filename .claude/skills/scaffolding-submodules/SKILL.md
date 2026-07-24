@@ -104,6 +104,34 @@ export function navigateFieldPath(): unknown {
 }
 ```
 
+**For a placeholder returning `Promise<T>`, reject the promise — don't
+`throw` synchronously.** A non-`async` method (needed to satisfy
+`@typescript-eslint/require-await` when there's no real `await` yet) that
+`throw`s synchronously crashes any test that passes the call expression
+directly to `expect(fn()).rejects...` — the throw fires while evaluating the
+argument, before `.rejects` ever gets a Promise to attach to, so the test
+still "fails" but for a confusing, wrong reason (an uncaught exception, not a
+clean rejected-promise assertion). Use `Promise.reject` instead — it stays
+non-`async` (no unnecessary `await`) while genuinely returning a rejected
+promise, matching the eventual real `async` implementation's calling contract
+(found scaffolding `aws/ecs`, `docs/logs/2026-07-24-aws-ecs.md`):
+
+```ts
+// good — a rejected Promise, not a synchronous throw
+export function fetchThing(id: string): Promise<Thing> {
+  return Promise.reject(
+    new M3LThingOperationError(`fetchThing: not yet implemented (id=${id})`),
+  );
+}
+// bad — throws synchronously; expect(fetchThing(id)).rejects.toThrow(...)
+//       crashes on the call itself instead of asserting a clean rejection
+export async function fetchThing(id: string): Promise<Thing> {
+  throw new M3LThingOperationError(
+    `fetchThing: not yet implemented (id=${id})`,
+  );
+}
+```
+
 **3 — Errors subclass the one hierarchy (define the module's own error):**
 
 ```ts

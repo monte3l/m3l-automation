@@ -154,7 +154,7 @@ packages/
     src/
       index.ts          # main entry / public barrel (re-exports Core + AWS)
       core/index.ts     # Core namespace barrel (20 documented submodules)
-      aws/index.ts      # AWS namespace barrel (11 documented submodules)
+      aws/index.ts      # AWS namespace barrel (12 documented submodules)
       internal/         # NOT exported; no "exports" entry; may change freely
     dist/               # tsc output (ESM .js + .d.ts) — generated, never edit
     tests/              # *.test.ts (Vitest)
