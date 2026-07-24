@@ -1,7 +1,6 @@
 import { Core } from "@m3l-automation/m3l-common";
 import type { AWS } from "@m3l-automation/m3l-common";
 
-import { destructiveGate } from "./destructive-gate.js";
 import { resolveAuthHeaders } from "./resolve-auth-headers.js";
 
 /**
@@ -9,7 +8,7 @@ import { resolveAuthHeaders } from "./resolve-auth-headers.js";
  * run, confirm-gated when `method` is mutating.
  */
 
-/** HTTP verbs `destructive-gate` confirms before dispatch; GET/HEAD are never gated. */
+/** HTTP verbs `Core.confirmDestructive` confirms before dispatch; GET/HEAD are never gated. */
 const MUTATING_METHODS: readonly string[] = ["POST", "PUT", "PATCH", "DELETE"];
 
 /**
@@ -86,8 +85,9 @@ async function writeResponseIfConfigured(
 }
 
 /**
- * Runs the `request` command: guard-resolves `path`, runs `destructive-gate`
- * when `method` is mutating, resolves the auth headers for this one request,
+ * Runs the `request` command: guard-resolves `path`, runs
+ * `Core.confirmDestructive` when `method` is mutating, resolves the auth
+ * headers for this one request,
  * dispatches it via the injected `httpClient`, and writes the response to
  * `output` when configured.
  *
@@ -140,11 +140,12 @@ export async function singleRequest(deps: {
   const url = buildRequestUrl(path, baseUrl);
 
   if (MUTATING_METHODS.includes(method)) {
-    await destructiveGate({
+    await Core.confirmDestructive({
       prompt: deps.prompt,
       logger: deps.logger,
       description: `${method} ${url}`,
       yes,
+      code: "ERR_API_GATEWAY_CLIENT_ABORTED",
     });
   }
 

@@ -1,8 +1,6 @@
 import { Core } from "@m3l-automation/m3l-common";
 import type { AWS } from "@m3l-automation/m3l-common";
 
-import { destructiveGate } from "./destructive-gate.js";
-
 /**
  * `purge-queue` — clears `queueUrl`'s contents via
  * `sqsOperations.purgeQueue()`. Confirm-gated (bypassed by `yes`). SQS
@@ -43,8 +41,8 @@ function readYes(config: Core.M3LConfig): boolean {
 }
 
 /**
- * Runs the `purge` command: clears `queueUrl` once the destructive-gate
- * confirmation has cleared.
+ * Runs the `purge` command: clears `queueUrl` once the
+ * `Core.confirmDestructive` confirmation has cleared.
  *
  * @param deps - The resolved config, logger, correlation id, the injected
  *   `AWS.M3LSQSOperations`, and the interactive-prompt facade.
@@ -84,11 +82,12 @@ export async function purgeQueue(deps: {
   const queueUrl = readQueueUrl(deps.config);
   const yes = readYes(deps.config);
 
-  await destructiveGate({
+  await Core.confirmDestructive({
     prompt: deps.prompt,
     logger: deps.logger,
     description: `purge queue ${queueUrl}`,
     yes,
+    code: "ERR_SQS_ETL_ABORTED",
   });
 
   await deps.sqsOperations.purgeQueue(queueUrl);

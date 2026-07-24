@@ -1,8 +1,6 @@
 import { Core } from "@m3l-automation/m3l-common";
 import type { AWS } from "@m3l-automation/m3l-common";
 
-import { destructiveGate } from "./destructive-gate.js";
-
 /**
  * `dump-queue` — long-polls `receive()` (10 messages/call,
  * `waitTimeSeconds: 20`) and streams each received message to `output` as
@@ -138,8 +136,9 @@ function logDeleteFailures(
 }
 
 /**
- * Runs the destructive-gate confirmation exactly once per `dumpQueue` call:
- * a no-op returning `true` on every call once `confirmed` is already `true`.
+ * Runs the `Core.confirmDestructive` confirmation exactly once per
+ * `dumpQueue` call: a no-op returning `true` on every call once `confirmed`
+ * is already `true`.
  *
  * @returns `true` — either already confirmed, or just confirmed now.
  */
@@ -150,11 +149,12 @@ async function confirmDeleteOnce(
   yes: boolean,
 ): Promise<boolean> {
   if (confirmed) return true;
-  await destructiveGate({
+  await Core.confirmDestructive({
     prompt: deps.prompt,
     logger: deps.logger,
     description,
     yes,
+    code: "ERR_SQS_ETL_ABORTED",
   });
   return true;
 }
@@ -162,7 +162,8 @@ async function confirmDeleteOnce(
 /**
  * Runs the `dump` command: drains up to `batchSize` messages from
  * `queueUrl` into `output` as JSONL, optionally deleting each written page
- * (`deleteAfterDump`) once the destructive-gate confirmation has cleared.
+ * (`deleteAfterDump`) once the `Core.confirmDestructive` confirmation has
+ * cleared.
  *
  * @param deps - The resolved config, `M3LPaths`, logger, correlation id, the
  *   injected `AWS.M3LSQSOperations`, and the interactive-prompt facade.

@@ -3,10 +3,10 @@ import type { AWS } from "@m3l-automation/m3l-common";
 
 /**
  * `run-eventbridge-schedules` — the thin composition step: reads the already
- * `oneOf`-validated `operation` config parameter, runs `destructiveGate` for
- * the five mutating operations, then dispatches, unchanged, the full deps
- * object to the matching step. This module owns no business logic of its
- * own beyond the gate + dispatch.
+ * `oneOf`-validated `operation` config parameter, runs
+ * `Core.confirmDestructive` for the five mutating operations, then
+ * dispatches, unchanged, the full deps object to the matching step. This
+ * module owns no business logic of its own beyond the gate + dispatch.
  */
 
 /** The dependencies every dispatched step receives, unchanged. */
@@ -29,8 +29,9 @@ const MUTATING_OPERATIONS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Reads the `ruleName` config parameter for display in the destructive-gate
- * description, falling back to `"(unspecified)"` when unset or empty.
+ * Reads the `ruleName` config parameter for display in the
+ * `Core.confirmDestructive` description, falling back to `"(unspecified)"`
+ * when unset or empty.
  *
  * Deliberately distinct from `config-helpers.ts`'s `readRequiredRuleName`:
  * this reader is display-only and must never throw — the gate still needs a
@@ -45,7 +46,7 @@ function readRuleNameForDisplay(config: Core.M3LConfig): string {
 /**
  * Runs `eventbridge-schedules`: for the five mutating operations
  * (`create`/`update`/`delete`/`enable`/`disable`), confirms via
- * `destructiveGate` before dispatching (skipped entirely for `list`/
+ * `Core.confirmDestructive` before dispatching (skipped entirely for `list`/
  * `describe`), then dispatches to the `steps/` module matching the resolved
  * `operation`.
  *
@@ -54,7 +55,7 @@ function readRuleNameForDisplay(config: Core.M3LConfig): string {
  *   facade — forwarded unchanged to whichever step is selected.
  * @returns A promise that resolves once the dispatched step completes.
  * @throws {@link Core.M3LError} coded `"ERR_EVENTBRIDGE_SCHEDULES_ABORTED"`
- *   when the user declines the destructive-gate confirmation.
+ *   when the user declines the `Core.confirmDestructive` confirmation.
  * @throws {@link Core.M3LError} coded `"ERR_EVENTBRIDGE_SCHEDULES_CONFIG"`
  *   when `operation` is not one of the seven declared values —
  *   unreachable through the declared config schema's `oneOf` validator,
@@ -85,22 +86,23 @@ export async function runEventbridgeSchedules(
 ): Promise<void> {
   const operation = deps.config.get("operation");
 
-  // `destructiveGate` and every step module below are imported dynamically,
-  // at dispatch time rather than at this module's top level:
-  // `run-eventbridge-schedules.test.ts` replaces each of these modules with
-  // a `vi.mock` factory that closes over a `vi.fn()` spy declared later in
-  // the same test file, so a top-level static import here would resolve the
-  // (mocked) module graph — invoking the factory — before those spies are
-  // initialized, throwing a TDZ `ReferenceError`. Dispatch-time dynamic
-  // import defers resolution until this function actually runs — inside a
-  // test body, after the spies exist.
+  // Every step module dispatched below is imported dynamically, at dispatch
+  // time rather than at this module's top level: `run-eventbridge-schedules
+  // .test.ts` replaces each of these modules with a `vi.mock` factory that
+  // closes over a `vi.fn()` spy declared later in the same test file, so a
+  // top-level static import here would resolve the (mocked) module graph —
+  // invoking the factory — before those spies are initialized, throwing a
+  // TDZ `ReferenceError`. Dispatch-time dynamic import defers resolution
+  // until this function actually runs — inside a test body, after the spies
+  // exist. `Core.confirmDestructive` is a stable library function, not
+  // locally mockable this way, so it is imported statically alongside `Core`.
   if (typeof operation === "string" && MUTATING_OPERATIONS.has(operation)) {
-    const { destructiveGate } = await import("./destructive-gate.js");
-    await destructiveGate({
+    await Core.confirmDestructive({
       prompt: deps.prompt,
       logger: deps.logger,
       description: `${operation} rule '${readRuleNameForDisplay(deps.config)}'`,
       yes: deps.config.get("yes") === true,
+      code: "ERR_EVENTBRIDGE_SCHEDULES_ABORTED",
     });
   }
 

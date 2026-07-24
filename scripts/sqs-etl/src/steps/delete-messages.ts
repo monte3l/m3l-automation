@@ -3,8 +3,6 @@ import * as fsp from "node:fs/promises";
 import { Core } from "@m3l-automation/m3l-common";
 import type { AWS } from "@m3l-automation/m3l-common";
 
-import { destructiveGate } from "./destructive-gate.js";
-
 /**
  * `delete-messages` — streams `input` JSONL (`{ receiptHandle }` rows),
  * chunks them into at most 10-entry `AWS.M3LSQSDeleteEntry` batches (the SQS
@@ -189,8 +187,8 @@ async function runDeleteBatches(
  *   injected `AWS.M3LSQSOperations`, and the interactive-prompt facade.
  * @returns A promise that resolves once every batch has been deleted.
  * @throws {@link Core.M3LError} coded `"ERR_SQS_ETL_CONFIG"` when `queueUrl`/
- *   `input` is missing, or `"ERR_SQS_ETL_ABORTED"` when the destructive-gate
- *   confirmation is declined.
+ *   `input` is missing, or `"ERR_SQS_ETL_ABORTED"` when the
+ *   `Core.confirmDestructive` confirmation is declined.
  *
  * @example
  * ```typescript
@@ -224,11 +222,12 @@ export async function deleteMessages(deps: {
   const inputPath = deps.paths.resolveInput(settings.input);
   const failedPath = deps.paths.resolveOutput("failed.jsonl");
 
-  await destructiveGate({
+  await Core.confirmDestructive({
     prompt: deps.prompt,
     logger: deps.logger,
     description: `delete messages from queue ${settings.queueUrl}`,
     yes: settings.yes,
+    code: "ERR_SQS_ETL_ABORTED",
   });
 
   const failedExporter = new Core.M3LJSONListExporter<AWS.M3LSQSDeleteEntry>({

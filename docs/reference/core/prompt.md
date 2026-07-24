@@ -29,6 +29,10 @@ Public surface (`prompt/index.ts`):
 - `M3LNumberPromptOptions` — `{ min?, max?, default? }` for `number`.
 - `M3LSuggestFn` — the `autocomplete` suggest function,
   `(term: string | undefined) => M3LChoices<Value> | Promise<M3LChoices<Value>>`.
+- `confirmDestructive`, `M3LConfirmDestructiveOptions` — the shared
+  confirm-before-destroy step, promoted from an identical `destructive-gate.ts`
+  step duplicated across 5 consumer scripts. Bypasses, prompts for, or aborts a
+  destructive action depending on a caller-supplied `yes` flag.
 
 ### `M3LPrompt`
 
@@ -54,6 +58,16 @@ Operates in two modes:
 ### `M3LLoadingBar`
 
 Renders a progress bar with configurable fill characters (default `█` / `░`) and accepts percentage updates (0–100) via `.update(percentage, message)`.
+
+### `confirmDestructive`
+
+A standalone function (not a method on `M3LPrompt`) that gates a destructive action behind interactive confirmation, with a `yes`-flag bypass for non-interactive/scripted runs. Takes `{ prompt, logger, description, yes, code }` and has three behaviors:
+
+- **Bypass** (`yes: true`) — skips confirmation entirely, logs a single warning (`destructive confirmation bypassed (yes=true): <description>`) via `logger.warning`, and resolves. `prompt.confirm` is never called.
+- **Confirmed** (`yes: false`, `prompt.confirm` resolves `true`) — prompts with `Confirm: <description>?` and resolves normally once confirmed.
+- **Declined** (`yes: false`, `prompt.confirm` resolves `false`) — throws an `M3LError` (`aborted: <description>`) carrying the caller-supplied `code` verbatim.
+
+A rejection from `prompt.confirm` (e.g. the adapter throws on a cancelled prompt) propagates unchanged and is never converted into the `aborted` error — callers that need to distinguish an explicit decline from a cancelled/failed prompt can rely on this passthrough.
 
 ## Usage examples
 
