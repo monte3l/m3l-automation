@@ -36,7 +36,14 @@ paths:
   signal that this step was skipped (found on `aws/athena`, 2026-07-18).
 - **Never export error-constructor options interfaces.** Callers _catch_
   errors, they don't construct them — the options shape is an implementation
-  detail of the constructor, not public API.
+  detail of the constructor, not public API. This is scoped to `M3LError`
+  subclass constructors only — a regular function's options bag that callers
+  genuinely construct at the call site should still be exported next to the
+  function (e.g. `M3LRunScriptOptions`), per "export each type next to the
+  value it describes" below. Don't over-apply the constructor rule to every
+  multi-field parameter object (found on `Core.confirmDestructive`'s
+  promotion, 2026-07-24 — `M3LConfirmDestructiveOptions` was left unexported
+  by default until two independent reviewers flagged the same fix).
 - **Discriminate a swallow by `code`, not class.** When one `M3LError` subclass
   carries several `code`s, a `catch (e) { if (e instanceof X) skip }` drops the
   very failures the codes distinguish (a corrupt input vs. a merely-unsupported

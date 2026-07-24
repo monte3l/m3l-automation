@@ -148,9 +148,12 @@ and its [roadmap](./archive/2026-07-09-consumer-scripts-roadmap.md).
 - **`eks-ops`** — pending, rescoped to EKS control-plane operations via the `eks` getter only; kubectl-level workload ops (previously `@kubernetes/client-node` script-local) are out of scope per ADR-0029. **Check the AWS getter reality table before starting — `eks` is raw today; do not assume the existing getter is sufficient** (`s3-objects`/`lambda-ops`/`eventbridge-schedules` all needed a new wrapper first).
 - **`api-gateway-client`** (was `apigw-client`; ADR-0028) — **done** (#157). Calls APIs behind API Gateway via `M3LHttpClient`; auth `none|api-key|iam`; IAM signing via the `aws/signing` submodule (`M3LRequestSigner`, owning `@smithy/signature-v4` as a library dep, ADR-0029) — see AWS getter reality table above; batch mode with `failed.jsonl`.
 
-### W5 — promotion pass (P1, pending; needs ≥2 scripts)
+### W5 — promotion pass (P1, in progress)
 
-Steps duplicated across ≥2 scripts graduate into the library (ADR-0021 F4 standing loop). Named candidates already: the destructive-operation gate (§1.5) and the checkpoint/resume convention (§1.2).
+Steps duplicated across ≥2 scripts graduate into the library (ADR-0021 F4 standing loop).
+
+- **Destructive-operation gate (§1.5)** — **done.** Promoted the byte-identical `destructiveGate({prompt, logger, description, yes})` step (previously duplicated across `api-gateway-client`, `eventbridge-schedules`, `lambda-ops`, `s3-objects`, `sqs-etl`) into `Core.confirmDestructive({prompt, logger, description, yes, code})` (`core/prompt`, `docs/reference/core/prompt.md`). Each caller now passes its own `ERR_<NAME>_ABORTED` `code` explicitly; behavior is otherwise byte-identical. All 5 scripts' local `destructive-gate.ts`/`destructive-gate.test.ts` deleted. `dynamodb-crud`'s `runDestructiveGate` is a distinct variant (does a `describeTable` size lookup) and was intentionally left unmigrated. Triggered by CI's `jscpd` duplication gate (ADR-0034) crossing threshold on the `ecs-ops` PR (#225) — see `docs/logs/2026-07-24-w5-promote-destructive-gate.md`.
+- **Checkpoint/resume convention (§1.2)** — still pending; the next named W5 candidate.
 
 ## Gated library modules & deferred decisions (P2)
 
