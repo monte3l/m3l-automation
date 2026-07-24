@@ -1,14 +1,21 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
+import type * as M3LCommon from "@m3l-automation/m3l-common";
+
 /**
  * Contract: spec-conformance-reviewer's `scripts/eventbridge-schedules`
  * contract §5. Thin dispatcher — reads `operation` (already oneOf-validated
  * by the declared schema) and dynamic-imports the matching step, forwarding
  * the deps object unchanged. For the 5 mutating operations
- * (create/update/delete/enable/disable) the dispatcher runs `destructiveGate`
+ * (create/update/delete/enable/disable) the dispatcher runs `Core.confirmDestructive`
  * BEFORE the dynamic import, with description
  * `${operation} rule '${ruleNameForDisplay}'`; `list`/`describe` skip the
- * gate entirely. `api-gateway-client/tests/run-api-gateway-client.test.ts`
+ * gate entirely. `Core.confirmDestructive` is a stable library function, not
+ * a locally dynamic-imported step, so it is intercepted via a package-level
+ * `vi.mock("@m3l-automation/m3l-common", ...)` factory that spreads the real
+ * module and overrides only `Core.confirmDestructive`, rather than a
+ * `vi.mock` of a local module path.
+ * `api-gateway-client/tests/run-api-gateway-client.test.ts`
  * is the direct model: dynamic import (not a top-level static import) so
  * this file can `vi.mock` each step before dispatch resolves it. This file
  * asserts ONLY the dispatch + gate wiring — never a step's internal logic
@@ -22,7 +29,13 @@ const updateRuleMock = vi.fn();
 const deleteRuleMock = vi.fn();
 const enableRuleMock = vi.fn();
 const disableRuleMock = vi.fn();
-const destructiveGateMock = vi.fn();
+// vi.hoisted() is required here (unlike the plain vi.fn() step mocks below):
+// @m3l-automation/m3l-common is imported statically below, so its vi.mock
+// factory runs eagerly at module-eval time when that import is resolved —
+// before a plain top-level `const` would have initialized. The relative-path
+// step mocks are only resolved lazily via the dispatcher's dynamic import()
+// inside a test body, by which point a plain const has long since run.
+const destructiveGateMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../src/steps/list-rules.js", () => ({ listRules: listRulesMock }));
 vi.mock("../src/steps/describe-rule.js", () => ({
@@ -43,9 +56,13 @@ vi.mock("../src/steps/enable-rule.js", () => ({
 vi.mock("../src/steps/disable-rule.js", () => ({
   disableRule: disableRuleMock,
 }));
-vi.mock("../src/steps/destructive-gate.js", () => ({
-  destructiveGate: destructiveGateMock,
-}));
+vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+  const actual = await importOriginal<typeof M3LCommon>();
+  return {
+    ...actual,
+    Core: { ...actual.Core, confirmDestructive: destructiveGateMock },
+  };
+});
 
 import { Core } from "@m3l-automation/m3l-common";
 import type { AWS } from "@m3l-automation/m3l-common";
