@@ -21,13 +21,22 @@ const script = new Core.M3LScript({
   ...resolvePresetOption(),
 });
 
-await script.run(async () => {
-  const config = await script.getConfiguration();
-  const paths = script.paths;
-  await runJsonEtl({
-    config,
-    paths,
-    logger: script.logger,
-    correlationId: getCorrelationId(),
-  });
-});
+// A --dry-run switch validates environment, configuration, and AWS
+// credentials (pipeline stages 1-5) without executing the run — the one
+// argv read the composition root is permitted.
+const dryRun = process.argv.includes("--dry-run");
+
+await Core.runScript(
+  script,
+  async () => {
+    const config = await script.getConfiguration();
+    const paths = script.paths;
+    await runJsonEtl({
+      config,
+      paths,
+      logger: script.logger,
+      correlationId: getCorrelationId(),
+    });
+  },
+  { dryRun },
+);

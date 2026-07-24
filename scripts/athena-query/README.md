@@ -61,6 +61,21 @@ sidecar that's deleted automatically once the run completes successfully. See
 the [contract page](../../docs/reference/scripts/athena-query.md) for the
 full config schema and resume/failure semantics.
 
+### Operational flags
+
+Every script composes through `Core.runScript` (ADR-0035), so these work uniformly:
+
+- `--dry-run` — validate environment, configuration, and AWS credentials
+  (pipeline stages 1–5) without running the script: `node dist/main.js --dry-run`.
+- `--log-level=<level>` / `--debug`, or `M3L_LOG_LEVEL=<level>` / `M3L_DEBUG=1` —
+  set the log severity floor (`debug`/`info`/`success`/`warning`/`error`/`fatal`).
+  CLI wins over env; an unknown value fails loud.
+- **Exit codes** map the failure origin for schedulers: `0` success, `2`
+  configuration/usage (do not retry), `3` external system (retry with backoff is
+  reasonable), `4` library-internal (file a report), `5` interrupted (signal).
+- Each run writes its inputs, configs, and `run-report.json` under one
+  per-run `data/output/<timestamp>/` directory.
+
 ## Environment (`.env`)
 
 The `.env` file is gitignored (and listed in `.worktreeinclude` so worktrees

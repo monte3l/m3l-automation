@@ -25,26 +25,35 @@ const script = new Core.M3LScript({
   hooks,
 });
 
-await script.run(async () => {
-  const config = await script.getConfiguration();
+// A --dry-run switch validates environment, configuration, and AWS
+// credentials (pipeline stages 1-5) without executing the run — the one
+// argv read the composition root is permitted.
+const dryRun = process.argv.includes("--dry-run");
 
-  // `script.aws` is `AWSProvider | undefined` at the type level (only
-  // provisioned when `aws.profile` is declared) — declaring `aws.profile`
-  // in `config.ts` always provisions it here, but the guard is required
-  // since the type doesn't guarantee it; never a `!` assertion.
-  if (script.aws === undefined) {
-    throw new Core.M3LError(
-      "script.aws was not provisioned despite a declared 'aws.profile' parameter",
-      { code: "ERR_ATHENA_NO_AWS_PROVIDER" },
-    );
-  }
+await Core.runScript(
+  script,
+  async () => {
+    const config = await script.getConfiguration();
 
-  const client = new AWS.M3LAthenaClient(script.aws.clients.athena);
+    // `script.aws` is `AWSProvider | undefined` at the type level (only
+    // provisioned when `aws.profile` is declared) — declaring `aws.profile`
+    // in `config.ts` always provisions it here, but the guard is required
+    // since the type doesn't guarantee it; never a `!` assertion.
+    if (script.aws === undefined) {
+      throw new Core.M3LError(
+        "script.aws was not provisioned despite a declared 'aws.profile' parameter",
+        { code: "ERR_ATHENA_NO_AWS_PROVIDER" },
+      );
+    }
 
-  await runAthenaQuery({
-    config,
-    logger: script.logger,
-    client,
-    paths,
-  });
-});
+    const client = new AWS.M3LAthenaClient(script.aws.clients.athena);
+
+    await runAthenaQuery({
+      config,
+      logger: script.logger,
+      client,
+      paths,
+    });
+  },
+  { dryRun },
+);

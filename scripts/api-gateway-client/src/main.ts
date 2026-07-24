@@ -22,22 +22,31 @@ const script = new Core.M3LScript({
   hooks,
 });
 
-await script.run(async () => {
-  const config = await script.getConfiguration();
+// A --dry-run switch validates environment, configuration, and AWS
+// credentials (pipeline stages 1-5) without executing the run — the one
+// argv read the composition root is permitted.
+const dryRun = process.argv.includes("--dry-run");
 
-  const baseUrl = config.get("baseUrl");
-  const httpClient = new Core.M3LHttpClient({
-    ...(typeof baseUrl === "string" && { baseUrl }),
-    defaultHeaders: {},
-  });
+await Core.runScript(
+  script,
+  async () => {
+    const config = await script.getConfiguration();
 
-  await runApiGatewayClient({
-    config,
-    paths: script.paths,
-    logger: script.logger,
-    correlationId: getCorrelationId(),
-    httpClient,
-    signer: script.aws?.clients.requestSigner,
-    prompt: script.prompt,
-  });
-});
+    const baseUrl = config.get("baseUrl");
+    const httpClient = new Core.M3LHttpClient({
+      ...(typeof baseUrl === "string" && { baseUrl }),
+      defaultHeaders: {},
+    });
+
+    await runApiGatewayClient({
+      config,
+      paths: script.paths,
+      logger: script.logger,
+      correlationId: getCorrelationId(),
+      httpClient,
+      signer: script.aws?.clients.requestSigner,
+      prompt: script.prompt,
+    });
+  },
+  { dryRun },
+);

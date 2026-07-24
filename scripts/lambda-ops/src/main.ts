@@ -20,27 +20,36 @@ const script = new Core.M3LScript({
   hooks,
 });
 
-await script.run(async () => {
-  const config = await script.getConfiguration();
+// A --dry-run switch validates environment, configuration, and AWS
+// credentials (pipeline stages 1-5) without executing the run — the one
+// argv read the composition root is permitted.
+const dryRun = process.argv.includes("--dry-run");
 
-  // This script always declares `aws.profile` (config.ts), so `script.aws`
-  // is provisioned once configuration resolves; a still-`undefined` facade
-  // here is a wiring bug, not a runtime condition — fail loud with a typed
-  // error rather than a non-null assertion.
-  const aws = script.aws;
-  if (aws === undefined) {
-    throw new Core.M3LError(
-      "lambda-ops: script.aws was not provisioned despite declaring 'aws.profile'",
-      { code: "ERR_LAMBDA_OPS_CONFIG" },
-    );
-  }
+await Core.runScript(
+  script,
+  async () => {
+    const config = await script.getConfiguration();
 
-  await runLambdaOps({
-    config,
-    paths: script.paths,
-    logger: script.logger,
-    correlationId: getCorrelationId(),
-    operations: new AWS.M3LLambdaOperations(aws.clients.lambda),
-    prompt: script.prompt,
-  });
-});
+    // This script always declares `aws.profile` (config.ts), so `script.aws`
+    // is provisioned once configuration resolves; a still-`undefined` facade
+    // here is a wiring bug, not a runtime condition — fail loud with a typed
+    // error rather than a non-null assertion.
+    const aws = script.aws;
+    if (aws === undefined) {
+      throw new Core.M3LError(
+        "lambda-ops: script.aws was not provisioned despite declaring 'aws.profile'",
+        { code: "ERR_LAMBDA_OPS_CONFIG" },
+      );
+    }
+
+    await runLambdaOps({
+      config,
+      paths: script.paths,
+      logger: script.logger,
+      correlationId: getCorrelationId(),
+      operations: new AWS.M3LLambdaOperations(aws.clients.lambda),
+      prompt: script.prompt,
+    });
+  },
+  { dryRun },
+);

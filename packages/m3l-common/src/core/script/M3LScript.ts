@@ -7,6 +7,7 @@
 
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
+import { join } from "node:path";
 
 import {
   M3LConfig,
@@ -21,6 +22,7 @@ import { M3LConsoleLoggerHandler, M3LLogger } from "../logging/index.js";
 import { M3LPrompt } from "../prompt/index.js";
 import { M3LPaths, isEnoentError } from "../utils/index.js";
 
+import { runDirectoryName } from "../../internal/diagnostics/runDirectoryName.js";
 import { resolveLogLevelFloor } from "../../internal/logging/resolveLogLevelFloor.js";
 import { M3LAWSProvisioningError } from "../../internal/script/M3LAWSProvisioningError.js";
 import { logBestEffortDiagnostic } from "../../internal/script/diagnostics.js";
@@ -190,6 +192,18 @@ export class M3LScript {
    * always reflects the CURRENT run rather than leaking a prior one's value.
    */
   private currentDryRun = false;
+
+  /**
+   * The current run's/invocation's start timestamp — mirrored onto
+   * {@link M3LScript.runStartedAt}. Reset at the top of every
+   * {@link M3LScript.runPipeline} call (including a Lambda invocation),
+   * BEFORE stage 1, so it is set on every run (success, failure, or
+   * dry-run) and never leaks a prior run's value. Both stage-9 archival
+   * ({@link M3LScript.archiveFiles}) and the run report
+   * (`core/script/run-script.ts`) derive their co-located per-run directory
+   * from this same timestamp via `runDirectoryName`.
+   */
+  private currentRunStartedAt: Date | undefined;
 
   /**
    * The stage {@link M3LScript.runPipeline} most recently BEGAN — updated as
@@ -445,6 +459,36 @@ export class M3LScript {
   }
 
   /**
+   * The current run's/invocation's start timestamp. `undefined` before
+   * {@link M3LScript.run} (or the handler from
+   * {@link M3LScript.createLambdaHandler}) has been called at least once;
+   * refreshed at the top of every run thereafter, so a later run's value is
+   * always strictly later than an earlier one's.
+   *
+   * Both stage-9 file archival and the persisted run report
+   * (`core/script/run-script.ts`'s `runScript`) derive their co-located
+   * per-run `<outputDir>/<timestamp>/` directory from this same value.
+   *
+   * Instance-scoped, one-in-flight-run-at-a-time state — see
+   * {@link M3LScript.run}'s TSDoc for why overlapping `run`/`runScript` calls
+   * on the SAME instance are unsupported.
+   *
+   * @returns The current run's start time, or `undefined`.
+   *
+   * @example
+   * ```ts
+   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   *
+   * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
+   * await script.run(async () => {});
+   * console.log(script.runStartedAt); // a Date
+   * ```
+   */
+  get runStartedAt(): Date | undefined {
+    return this.currentRunStartedAt;
+  }
+
+  /**
    * Runs the nine-stage execution pipeline around `mainFn`:
    *
    * 1. {@link M3LExecutionEnvironment.detect} (environment detection).
@@ -483,6 +527,18 @@ export class M3LScript {
    * so a dry run that skipped it would be the one path that leaks whatever
    * stages 1-5 allocated (e.g. a provisioned {@link M3LScript.aws} facade).
    * Do not "fix" this by skipping `onCleanup` too.
+   *
+   * A single `M3LScript` instance supports only ONE in-flight run at a time:
+   * `currentRunStartedAt`/`currentDryRun`/`currentStage`/`currentCorrelationId`/
+   * `config` are instance-scoped mutable state, reset at the top of every
+   * call, not per-call-scoped — there is no reentrancy guard. Calling `run`
+   * (or `runScript`) a second time on the SAME instance while an earlier call
+   * is still in flight is unsupported: the later call's reset overwrites the
+   * earlier call's state out from under it (e.g. a later run's
+   * {@link M3LScript.runStartedAt} clobbering the value the earlier run's
+   * stage-9 archival is about to read, silently misplacing that earlier
+   * run's archived files under the LATER run's directory). Concurrent runs
+   * must use separate `M3LScript` instances.
    *
    * @param mainFn - The user function to run at stage 7. May be synchronous
    *   or asynchronous; an asynchronous `mainFn` is awaited before stage 8.
@@ -799,9 +855,25 @@ export class M3LScript {
    *
    * The resulting report is stored so callers (and tests) can observe what
    * was actually archived via {@link M3LScript.getLastArchiveReport}.
+   *
+   * Files land under this run's own `<outputDir>/<runDirectoryName>/`
+   * subdirectory — the same directory the persisted run report
+   * (`core/script/run-script.ts`) is written to — rather than a flat
+   * `<outputDir>/inputs|configs`, so a run's full output (archived files
+   * plus its report) is co-located (ADR-0035 phase 5, A5 part 1). Falls
+   * back to a freshly-captured `new Date()` in the (unreachable in
+   * practice) case this runs before {@link M3LScript.currentRunStartedAt}
+   * has been set.
    */
   private async archiveFiles(): Promise<void> {
-    const fileCopier = new M3LFileCopier();
+    const runStartedAt = this.currentRunStartedAt ?? new Date();
+    const runOutputDir = join(
+      this.#paths.getOutputDir(),
+      runDirectoryName(runStartedAt),
+    );
+    const fileCopier = new M3LFileCopier({
+      paths: { getOutputDir: () => runOutputDir },
+    });
     for (const sourcePath of listRegularFiles(this.#paths.getInputDir())) {
       fileCopier.registerFile(sourcePath, {
         subdir: getDefaultSubdirForPathType("input"),
@@ -842,6 +914,7 @@ export class M3LScript {
     // marker `runWithErrorHandling`'s catch block captures on failure.
     this.currentDryRun = dryRun;
     this.currentStage = undefined;
+    this.currentRunStartedAt = new Date();
 
     // Resolve the run's correlation id before ANY stage runs — including
     // stage 1 (environment detection) below — so `ctx.correlationId` is a

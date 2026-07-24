@@ -20,33 +20,42 @@ const script = new Core.M3LScript({
   hooks,
 });
 
-await script.run(async () => {
-  const config = await script.getConfiguration();
-  const paths = script.paths;
+// A --dry-run switch validates environment, configuration, and AWS
+// credentials (pipeline stages 1-5) without executing the run — the one
+// argv read the composition root is permitted.
+const dryRun = process.argv.includes("--dry-run");
 
-  // This script always declares `aws.profile` (config.ts), so `script.aws`
-  // is provisioned once configuration resolves; a still-`undefined` facade
-  // here is a wiring bug, not a runtime condition — fail loud with a typed
-  // error rather than a non-null assertion.
-  const aws = script.aws;
-  if (aws === undefined) {
-    throw new Core.M3LError(
-      "dynamodb-crud: script.aws was not provisioned despite declaring 'aws.profile'",
-      { code: "ERR_DYNAMO_CRUD_CONFIG" },
-    );
-  }
+await Core.runScript(
+  script,
+  async () => {
+    const config = await script.getConfiguration();
+    const paths = script.paths;
 
-  // Any failure (including a partial batch failure left `failed > 0`, which
-  // `runDynamodbCrud` itself turns into an `ERR_DYNAMO_CRUD_FAILED_ITEMS`
-  // throw) propagates out through `M3LScript.run` unchanged — that decision
-  // is `runDynamodbCrud`'s to make, not this composition root's.
-  await runDynamodbCrud({
-    config,
-    paths,
-    logger: script.logger,
-    correlationId: getCorrelationId(),
-    dynamoDBDocument: aws.clients.dynamoDBDocument,
-    dynamoDB: aws.clients.dynamoDB,
-    confirm: (message) => script.prompt.confirm(message),
-  });
-});
+    // This script always declares `aws.profile` (config.ts), so `script.aws`
+    // is provisioned once configuration resolves; a still-`undefined` facade
+    // here is a wiring bug, not a runtime condition — fail loud with a typed
+    // error rather than a non-null assertion.
+    const aws = script.aws;
+    if (aws === undefined) {
+      throw new Core.M3LError(
+        "dynamodb-crud: script.aws was not provisioned despite declaring 'aws.profile'",
+        { code: "ERR_DYNAMO_CRUD_CONFIG" },
+      );
+    }
+
+    // Any failure (including a partial batch failure left `failed > 0`, which
+    // `runDynamodbCrud` itself turns into an `ERR_DYNAMO_CRUD_FAILED_ITEMS`
+    // throw) propagates out through `Core.runScript` unchanged — that decision
+    // is `runDynamodbCrud`'s to make, not this composition root's.
+    await runDynamodbCrud({
+      config,
+      paths,
+      logger: script.logger,
+      correlationId: getCorrelationId(),
+      dynamoDBDocument: aws.clients.dynamoDBDocument,
+      dynamoDB: aws.clients.dynamoDB,
+      confirm: (message) => script.prompt.confirm(message),
+    });
+  },
+  { dryRun },
+);

@@ -10,6 +10,10 @@ import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 
 import { M3LError } from "../errors/index.js";
+import {
+  runDirectoryName,
+  safeToISOString,
+} from "../../internal/diagnostics/runDirectoryName.js";
 import { isSafeRelativeSegment } from "../../internal/files/guards.js";
 import type {
   FileCopyOutcome,
@@ -185,11 +189,6 @@ export interface M3LRunReporterOptions {
 // build() helpers
 // ---------------------------------------------------------------------------
 
-/** Sanitizes an ISO timestamp for use as a directory name: every `:` becomes `-`. */
-function sanitizeTimestamp(iso: string): string {
-  return iso.replaceAll(":", "-");
-}
-
 /**
  * Throws {@link M3LPathResolutionError} when `segment` is not safe to join
  * beneath the output directory — mirrors the containment guard
@@ -289,15 +288,6 @@ async function assertNoSymlinkEscape(
     throw new M3LPathResolutionError(
       `M3LRunReporter: realpath-resolved report path "${resolvedFilePath}" escapes the realpath-resolved output directory "${resolvedOutputDir}"`,
     );
-  }
-}
-
-/** `date.toISOString()`, falling back to the Unix epoch on a hostile `Date`. */
-function safeToISOString(date: Date): string {
-  try {
-    return date.toISOString();
-  } catch {
-    return new Date(0).toISOString();
   }
 }
 
@@ -968,21 +958,28 @@ export class M3LRunReporter {
   }
 
   /**
-   * Computes the report's destination path for a run started at `startedAtIso`.
+   * Computes the report's destination path for a run whose per-run directory
+   * is `reportDirSegment`.
    *
-   * Validates both the sanitized timestamp segment and the configured
-   * `fileName` against {@link isSafeRelativeSegment} (the same guard
-   * `M3LPaths.resolveWithin` applies to `resolveInput`/`resolveOutput`), then
-   * asserts the fully-resolved path still lands inside the resolved output
-   * directory — a caller-supplied `startedAt` (surfaced as a plain, unvalidated
-   * `string` on {@link M3LRunReport.startedAt}) must never be able to escape
-   * the managed output tree.
+   * `reportDirSegment` must already be the FINAL, sanitized directory name —
+   * every `:` already replaced by `-` — never a raw ISO timestamp; sanitizing
+   * is the caller's job (via {@link runDirectoryName} for a `Date`, or
+   * `.replaceAll(":", "-")` directly for an already-`string` `startedAt`, e.g.
+   * {@link M3LRunReporter.write}'s `report.startedAt`) so this method has
+   * exactly one contract regardless of which caller reaches it. Validates
+   * both that segment and the configured `fileName` against
+   * {@link isSafeRelativeSegment} (the same guard `M3LPaths.resolveWithin`
+   * applies to `resolveInput`/`resolveOutput`), then asserts the
+   * fully-resolved path still lands inside the resolved output directory — a
+   * caller-supplied `startedAt` (surfaced as a plain, unvalidated `string` on
+   * {@link M3LRunReport.startedAt}) must never be able to escape the managed
+   * output tree.
    *
    * @throws {@link M3LPathResolutionError} When either segment is unsafe, or
    *   the resolved path escapes the output directory.
    */
-  #buildReportPath(startedAtIso: string): string {
-    return this.#buildReportPathWithOutputDir(startedAtIso).filePath;
+  #buildReportPath(reportDirSegment: string): string {
+    return this.#buildReportPathWithOutputDir(reportDirSegment).filePath;
   }
 
   /**
@@ -992,17 +989,19 @@ export class M3LRunReporter {
    * {@link assertNoSymlinkEscape} check against the exact same `outputDir`
    * without re-resolving it (and, when no `paths` port was injected,
    * without constructing a second `M3LPaths` instance).
+   *
+   * `reportDirSegment` carries the same already-sanitized contract as
+   * {@link M3LRunReporter.#buildReportPath} — see that method's TSDoc.
    */
-  #buildReportPathWithOutputDir(startedAtIso: string): {
+  #buildReportPathWithOutputDir(reportDirSegment: string): {
     readonly filePath: string;
     readonly outputDir: string;
   } {
-    const timestampSegment = sanitizeTimestamp(startedAtIso);
-    assertSafeReportSegment(timestampSegment, "startedAt-derived segment");
+    assertSafeReportSegment(reportDirSegment, "startedAt-derived segment");
     assertSafeReportSegment(this.#fileName, "fileName");
 
     const outputDir = this.#resolveOutputDir();
-    const filePath = join(outputDir, timestampSegment, this.#fileName);
+    const filePath = join(outputDir, reportDirSegment, this.#fileName);
     assertContainedWithinOutputDir(filePath, outputDir);
     return { filePath, outputDir };
   }
@@ -1026,7 +1025,7 @@ export class M3LRunReporter {
    * ```
    */
   resolveReportPath(startedAt: Date): string {
-    return this.#buildReportPath(safeToISOString(startedAt));
+    return this.#buildReportPath(runDirectoryName(startedAt));
   }
 
   /**
@@ -1116,8 +1115,11 @@ export class M3LRunReporter {
    * ```
    */
   async write(report: M3LRunReport): Promise<string> {
+    // `report.startedAt` is a plain, unvalidated `string` (not a `Date`) —
+    // sanitized directly here into the same already-final segment contract
+    // `#buildReportPathWithOutputDir` now requires from every caller.
     const { filePath, outputDir } = this.#buildReportPathWithOutputDir(
-      report.startedAt,
+      report.startedAt.replaceAll(":", "-"),
     );
     await assertNoSymlinkEscape(filePath, outputDir);
     await mkdir(dirname(filePath), { recursive: true });
