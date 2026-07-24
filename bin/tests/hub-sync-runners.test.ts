@@ -24,48 +24,48 @@ const ROADMAP_FIXTURE = `# Roadmap — m3l-automation
 
 ## Priority 0
 
-| Item    | What      | Status  | Why now / Notes |
-| ------- | ---------- | ------- | ------------------ |
-| **P0A** | thing one  | pending | notes               |
+| Item    | What      | Status | Why now / Notes |
+| ------- | ---------- | ------ | ------------------ |
+| **P0A** | thing one  | To Do  | notes               |
 
 ## Priority 1
 
-| Wave   | Scripts | Status  | Depends on |
-| ------ | ------- | ------- | ---------- |
-| **W1** | \`svc\`   | pending | W0         |
+| Wave   | Scripts | Status | Depends on |
+| ------ | ------- | ------ | ---------- |
+| **W1** | \`svc\`   | To Do  | W0         |
 
 ## Priority 2
 
-| Item                | Unblock condition |
-| --------------------- | -------------------- |
-| **D1** gated thing    | condition             |
+| Item                | Status   | Unblock condition |
+| --------------------- | -------- | -------------------- |
+| **D1** gated thing    | Deferred | condition             |
 
 ## Governance follow-ups
 
-| Item   | What              | Notes   |
-| ------ | ------------------ | ------- |
-| **T1** | governance thing    | pending |
+| Item   | What              | Status | Notes   |
+| ------ | ------------------ | ------ | ------- |
+| **T1** | governance thing    | To Do  | pending owner |
 `;
 
 const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 
 ## Library friction (F-series)
 
-| ID     | Priority | Status  | Title & change    | Source / call-site |
-| ------ | -------- | ------- | -------------------- | --------------------- |
-| **F1** | P1       | pending | friction change       | site                   |
+| ID     | Priority | Status | Title & change    | Source / call-site |
+| ------ | -------- | ------ | -------------------- | --------------------- |
+| **F1** | P1       | To Do  | friction change       | site                   |
 
 ## AWS getter reality
 
-| Provider getter | AWS service | Status  | Wrapper submodule | Consuming script(s) | ADR / precedent |
-| ----------------- | ------------- | ------- | -------------------- | ----------------------- | ------------------ |
-| \`x\`               | X             | wrapped | aws/x                  | script                   | ADR                 |
+| Provider getter | AWS service | Status | Wrapper submodule | Consuming script(s) | ADR / precedent |
+| ----------------- | ------------- | ------ | -------------------- | ----------------------- | ------------------ |
+| \`x\`               | X             | Done   | aws/x                  | script                   | ADR                 |
 
 ## Gated library modules & deferred decisions (P2)
 
-| ID                  | Unblock condition |
-| --------------------- | -------------------- |
-| **D1** gated thing    | condition             |
+| ID                  | Status   | Unblock condition |
+| --------------------- | -------- | -------------------- |
+| **D1** gated thing    | Deferred | condition             |
 `;
 
 function makeReadDoc(
@@ -441,29 +441,29 @@ describe("runIssueSync", () => {
 
 ## Priority 0
 
-| Item   | What                  | Status  | Why now / Notes |
-| ------ | ---------------------- | ------- | ------------------ |
-| **UA** | update-target thing     | pending | notes               |
-| **UB** | close-target thing      | done    | notes               |
-| **UC** | reopen-target thing     | pending | notes               |
+| Item   | What                  | Status | Why now / Notes |
+| ------ | ---------------------- | ------ | ------------------ |
+| **UA** | update-target thing     | To Do  | notes               |
+| **UB** | close-target thing      | Done   | notes               |
+| **UC** | reopen-target thing     | To Do  | notes               |
 
 ## Priority 1
 
-| Wave   | Scripts | Status  | Depends on |
-| ------ | ------- | ------- | ---------- |
-| **W1** | \`svc\`   | pending | W0         |
+| Wave   | Scripts | Status | Depends on |
+| ------ | ------- | ------ | ---------- |
+| **W1** | \`svc\`   | To Do  | W0         |
 
 ## Priority 2
 
-| Item                | Unblock condition |
-| --------------------- | -------------------- |
-| **D1** gated thing    | condition             |
+| Item                | Status   | Unblock condition |
+| --------------------- | -------- | -------------------- |
+| **D1** gated thing    | Deferred | condition             |
 
 ## Governance follow-ups
 
-| Item   | What              | Notes   |
-| ------ | ------------------ | ------- |
-| **T1** | governance thing    | pending |
+| Item   | What              | Status | Notes   |
+| ------ | ------------------ | ------ | ------- |
+| **T1** | governance thing    | To Do  | pending owner |
 `;
     const existingIssues = [
       {
@@ -571,7 +571,7 @@ describe("runIssueSync", () => {
   });
 
   test("tracker extraction errors: returns { ok: false }, reports the errors, and makes no gh calls beyond auth", () => {
-    const brokenRoadmap = `# Roadmap — m3l-automation\n\n## Priority 0\n\n| Item | What | Status | Why now / Notes |\n| --- | --- | --- | --- |\n| **P0A** | thing | pending | notes |\n`;
+    const brokenRoadmap = `# Roadmap — m3l-automation\n\n## Priority 0\n\n| Item | What | Status | Why now / Notes |\n| --- | --- | --- | --- |\n| **P0A** | thing | To Do | notes |\n`;
     const { runGh, calls } = scriptedGh([authOkRule()]);
     const reporter = createFakeReporter();
 

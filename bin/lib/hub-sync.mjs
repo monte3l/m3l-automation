@@ -175,7 +175,7 @@ export function parseHubMarker(body) {
  * @typedef {{
  *   key: string,
  *   title: string,
- *   status: "done" | "pending" | "in-review" | "other",
+ *   status: "done" | "todo" | "in-progress" | "deferred" | "blocked" | "rejected",
  *   priority: "p0" | "p1" | "p2" | "governance",
  *   sourcePath: string,
  *   sourceAnchor: string,
@@ -274,18 +274,18 @@ export function actionableItems(roadmap, implementation) {
     const { header, rows } = roadmap.governance;
     const itemIndex = columnIndex(header, "Item");
     const whatIndex = columnIndex(header, "What");
-    const notesIndex = columnIndex(header, "Notes");
+    const statusIndex = columnIndex(header, "Status");
     for (const row of rows) {
       const itemCell = row[itemIndex] ?? "";
       const strippedItem = stripMarkdown(itemCell);
       addItem({
         key: `roadmap:gov:${slug(itemCell)}`,
         title: `${strippedItem} — ${row[whatIndex] ?? ""}`,
-        status: classifyStatus(row[notesIndex] ?? ""),
+        status: classifyStatus(row[statusIndex] ?? ""),
         priority: "governance",
         sourcePath: ROADMAP_PATH,
         sourceAnchor: ROADMAP_ANCHORS.governance,
-        detail: buildDetail(header, row, new Set([itemIndex])),
+        detail: buildDetail(header, row, new Set([itemIndex, statusIndex])),
       });
     }
   }
@@ -313,16 +313,17 @@ export function actionableItems(roadmap, implementation) {
   if (implementation.gated) {
     const { header, rows } = implementation.gated;
     const idIndex = columnIndex(header, "ID");
+    const statusIndex = columnIndex(header, "Status");
     for (const row of rows) {
       const idCell = row[idIndex] ?? "";
       addItem({
         key: `impl:${slug(idCell)}`,
         title: stripMarkdown(idCell),
-        status: "pending",
+        status: classifyStatus(row[statusIndex] ?? ""),
         priority: "p2",
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.gated,
-        detail: buildDetail(header, row, new Set([idIndex])),
+        detail: buildDetail(header, row, new Set([idIndex, statusIndex])),
       });
     }
   }
@@ -345,7 +346,7 @@ export function actionableItems(roadmap, implementation) {
  * buildIssuePayload({
  *   key: "impl:F7",
  *   title: "F7 — Opt-in tolerant handling",
- *   status: "pending",
+ *   status: "deferred",
  *   priority: "p2",
  *   sourcePath: "docs/plans/IMPLEMENTATION.md",
  *   sourceAnchor: "#library-friction-f-series",
@@ -399,12 +400,21 @@ export function planMilestones(items, existingTitles) {
   return { create };
 }
 
-// Comment text explaining a planned close, for the two distinct reasons a
+// Comment text explaining a planned close, for the three distinct reasons a
 // hub-sync-managed issue closes.
 const CLOSE_REASON = {
   done: "Item marked done in source trackers.",
+  rejected: "Item marked rejected in source trackers.",
   removed: "Item removed from source trackers.",
 };
+
+// An Item whose status is "done" or "rejected" is resolved: it should never
+// have an open issue, and never gets a new one created — the "done" half was
+// always true; "rejected" (explicitly decided against, not merely deferred)
+// closes the same way.
+function isResolved(status) {
+  return status === "done" || status === "rejected";
+}
 
 /**
  * Plan the create/update/close/reopen actions that bring `existingIssues`
@@ -470,7 +480,7 @@ export function planIssueSync(items, existingIssues) {
       issue.title !== payload.title || issue.body !== payload.body;
 
     if (issue.state === "closed") {
-      if (item.status === "done") {
+      if (isResolved(item.status)) {
         untouched.push({ number: issue.number, reason: "in sync" });
       } else {
         reopen.push({ number: issue.number, key, payload });
@@ -478,8 +488,12 @@ export function planIssueSync(items, existingIssues) {
       continue;
     }
 
-    if (item.status === "done") {
-      close.push({ number: issue.number, key, comment: CLOSE_REASON.done });
+    if (isResolved(item.status)) {
+      close.push({
+        number: issue.number,
+        key,
+        comment: CLOSE_REASON[item.status],
+      });
     } else if (isDirty) {
       update.push({ number: issue.number, key, payload });
     } else {
@@ -488,31 +502,33 @@ export function planIssueSync(items, existingIssues) {
   }
 
   for (const item of items) {
-    if (matchedKeys.has(item.key) || item.status === "done") continue;
+    if (matchedKeys.has(item.key) || isResolved(item.status)) continue;
     create.push({ key: item.key, payload: buildIssuePayload(item) });
   }
 
   return { create, update, close, reopen, untouched };
 }
 
+// The board's single-select "Status" field carries only these three options
+// (never extended to match the tracker's 6-value vocabulary one-for-one —
+// that would need a board schema change this planner doesn't make). Every
+// Item status maps conservatively onto the closest of the three: "todo" /
+// "deferred" / "blocked" (all not-yet-actionable-or-waiting) collapse to
+// Pending, "in-progress" to In review, and "done" / "rejected" (both
+// resolved — a rejected item's issue is closed by planIssueSync, so this
+// mapping is only reached defensively) to Done.
 const PROJECT_STATUS_OPTIONS = {
-  pending: "Pending",
-  "in-review": "In review",
+  todo: "Pending",
+  "in-progress": "In review",
+  deferred: "Pending",
+  blocked: "Pending",
   done: "Done",
-  other: "Pending",
+  rejected: "Done",
 };
 
 // Map an Item/tracked-issue status to its board single-select option name.
 function projectStatusOption(status) {
-  switch (status) {
-    case "pending":
-    case "in-review":
-    case "done":
-    case "other":
-      return PROJECT_STATUS_OPTIONS[status];
-    default:
-      return PROJECT_STATUS_OPTIONS.other;
-  }
+  return PROJECT_STATUS_OPTIONS[status] ?? PROJECT_STATUS_OPTIONS.todo;
 }
 
 /**
@@ -536,7 +552,7 @@ function projectStatusOption(status) {
  * ```js
  * import { planProjectSync } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
  *
- * planProjectSync([{ number: 1, state: "open", status: "pending" }], []);
+ * planProjectSync([{ number: 1, state: "open", status: "todo" }], []);
  * // { add: [{ issueNumber: 1, status: "Pending" }], setStatus: [], archive: [] }
  * ```
  */
