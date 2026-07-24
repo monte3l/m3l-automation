@@ -1,0 +1,13 @@
+{
+  "//": "Tooling project (editor + ESLint typed linting + test type-checking). Includes tests; emits nothing. The build uses tsconfig.build.json.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true
+  },
+  "references": [{ "path": "../../packages/m3l-common/tsconfig.build.json" }],
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "exclude": ["dist", "node_modules"]
+}
