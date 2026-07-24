@@ -1,7 +1,7 @@
-import { Core } from "@m3l-automation/m3l-common";
+import { AWS, Core } from "@m3l-automation/m3l-common";
 
 import { configParameters } from "./config.js";
-import { hooks } from "./hooks.js";
+import { getCorrelationId, hooks } from "./hooks.js";
 import { runEcsOps } from "./steps/run-ecs-ops.js";
 
 // Composition root ONLY (ADR-0022): construct the script, wire config/hooks,
@@ -31,10 +31,29 @@ await Core.runScript(
   async () => {
     // Resolve the declared config (CLI + preset + env + defaults) and inject
     // what the step needs as a single options object — never reach for
-    // `process.env` or a global. Add `script.aws` / `M3LPaths` dirs here too
-    // when the step needs them.
+    // `process.env` or a global.
     const config = await script.getConfiguration();
-    await runEcsOps({ logger: script.logger, config });
+
+    // This script always declares `aws.profile` (config.ts), so `script.aws`
+    // is provisioned once configuration resolves; a still-`undefined` facade
+    // here is a wiring bug, not a runtime condition — fail loud with a typed
+    // error rather than a non-null assertion.
+    const aws = script.aws;
+    if (aws === undefined) {
+      throw new Core.M3LError(
+        "ecs-ops: script.aws was not provisioned despite declaring 'aws.profile'",
+        { code: "ERR_ECS_OPS_CONFIG" },
+      );
+    }
+
+    await runEcsOps({
+      config,
+      paths: script.paths,
+      logger: script.logger,
+      correlationId: getCorrelationId(),
+      operations: new AWS.M3LECSOperations(aws.clients.ecs),
+      prompt: script.prompt,
+    });
   },
   { dryRun },
 );
