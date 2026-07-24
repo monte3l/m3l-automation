@@ -250,8 +250,15 @@ export async function runScript(
     await script.run(mainFn, runOptions);
 
     if (reporter !== undefined) {
+      // `script.runStartedAt` is co-located with stage-9 archival's own
+      // per-run directory (both derive their directory name from the same
+      // timestamp via `runDirectoryName`, ADR-0035 phase 5 A5 part 1) — this
+      // wrapper's own `startedAt` (captured above, before `script.run` even
+      // began) is only a defensive fallback for the fresh-script case where
+      // `runPipeline` never got a chance to set it.
+      const reportStartedAt = script.runStartedAt ?? startedAt;
       await persistBestEffort(reporter, () =>
-        buildSuccessInput(script, startedAt, options),
+        buildSuccessInput(script, reportStartedAt, options),
       );
     }
   } catch (error) {
@@ -266,8 +273,12 @@ export async function runScript(
     process.exitCode = mapErrorToExitCode(error);
 
     if (reporter !== undefined) {
+      // See the success branch above: prefer the script's own per-run
+      // timestamp so the failure report lands in the same per-run directory
+      // stage-9 archival (if it ran before failing) used.
+      const reportStartedAt = script.runStartedAt ?? startedAt;
       await persistBestEffort(reporter, () =>
-        buildFailureInput(script, startedAt, options, error),
+        buildFailureInput(script, reportStartedAt, options, error),
       );
     }
   } finally {

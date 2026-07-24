@@ -8,20 +8,33 @@ import { run__SCRIPT_NAME_PASCAL__ } from "./steps/run-__SCRIPT_NAME__.js";
 // and run the step. Any conditional, loop, or I/O beyond wiring belongs in a
 // steps/ module — reviewers reject business logic here.
 //
-// `run`'s main function takes no arguments; reach the library through the
-// script instance (`script.logger`, `await script.getConfiguration()`,
-// `script.aws`) and inject what each step needs as parameters.
+// `runScript`'s main function takes no arguments; reach the library through
+// the script instance (`script.logger`, `await script.getConfiguration()`,
+// `script.aws`) and inject what each step needs as parameters. Wrapping with
+// `Core.runScript` (rather than bare `script.run`) adds process guards, a
+// top-level catch with origin-specific `process.exitCode`, and a persisted
+// run report; passing `{ dryRun }` runs validation stages 1-5 (env/config/AWS)
+// without executing the main function.
 const script = new Core.M3LScript({
   metadata: { name: "__SCRIPT_NAME__", version: "0.0.0" },
   config: { params: configParameters },
   hooks,
 });
 
-await script.run(async () => {
-  // Resolve the declared config (CLI + preset + env + defaults) and inject
-  // what the step needs as a single options object — never reach for
-  // `process.env` or a global. Add `script.aws` / `M3LPaths` dirs here too
-  // when the step needs them.
-  const config = await script.getConfiguration();
-  await run__SCRIPT_NAME_PASCAL__({ logger: script.logger, config });
-});
+// A --dry-run switch validates environment, configuration, and AWS
+// credentials (pipeline stages 1-5) without executing the run — the one
+// argv read the composition root is permitted.
+const dryRun = process.argv.includes("--dry-run");
+
+await Core.runScript(
+  script,
+  async () => {
+    // Resolve the declared config (CLI + preset + env + defaults) and inject
+    // what the step needs as a single options object — never reach for
+    // `process.env` or a global. Add `script.aws` / `M3LPaths` dirs here too
+    // when the step needs them.
+    const config = await script.getConfiguration();
+    await run__SCRIPT_NAME_PASCAL__({ logger: script.logger, config });
+  },
+  { dryRun },
+);

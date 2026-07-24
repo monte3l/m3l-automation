@@ -20,28 +20,37 @@ const script = new Core.M3LScript({
   hooks,
 });
 
-await script.run(async () => {
-  const config = await script.getConfiguration();
+// A --dry-run switch validates environment, configuration, and AWS
+// credentials (pipeline stages 1-5) without executing the run — the one
+// argv read the composition root is permitted.
+const dryRun = process.argv.includes("--dry-run");
 
-  // Declaring `aws.profile` (Core.AWS_PROFILE_PARAM_NAME) in config.ts
-  // triggers M3LScript's AWS-provisioning stage before mainFn runs, so
-  // `script.aws` is defined here — the undefined branch only guards against
-  // a future wiring regression (e.g. the parameter being dropped from
-  // config.ts), never an expected runtime path.
-  const aws = script.aws;
-  if (aws === undefined) {
-    throw new Core.M3LError(
-      "AWS was not provisioned — declare 'aws.profile' in config.ts to enable script.aws",
-      { code: "ERR_S3_OBJECTS_CONFIG" },
-    );
-  }
+await Core.runScript(
+  script,
+  async () => {
+    const config = await script.getConfiguration();
 
-  await runS3Objects({
-    config,
-    paths: script.paths,
-    logger: script.logger,
-    correlationId: getCorrelationId(),
-    s3: aws.clients.s3,
-    prompt: script.prompt,
-  });
-});
+    // Declaring `aws.profile` (Core.AWS_PROFILE_PARAM_NAME) in config.ts
+    // triggers M3LScript's AWS-provisioning stage before mainFn runs, so
+    // `script.aws` is defined here — the undefined branch only guards against
+    // a future wiring regression (e.g. the parameter being dropped from
+    // config.ts), never an expected runtime path.
+    const aws = script.aws;
+    if (aws === undefined) {
+      throw new Core.M3LError(
+        "AWS was not provisioned — declare 'aws.profile' in config.ts to enable script.aws",
+        { code: "ERR_S3_OBJECTS_CONFIG" },
+      );
+    }
+
+    await runS3Objects({
+      config,
+      paths: script.paths,
+      logger: script.logger,
+      correlationId: getCorrelationId(),
+      s3: aws.clients.s3,
+      prompt: script.prompt,
+    });
+  },
+  { dryRun },
+);
