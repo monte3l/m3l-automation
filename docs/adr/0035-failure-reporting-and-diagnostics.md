@@ -291,8 +291,17 @@ docs-first pipeline (`scaffolding-submodules` → `implementing-submodules`, or
      already-constructed default logger would need a public `M3LLogger` mutator
      or a logger rebuild that breaks `script.logger` identity (see the §2.5
      carve-out). No new public symbol; the resolver is `internal/`.
-5. Template + consumer-script refresh — scaffold template adopts `runScript()`;
-   existing scripts migrate opportunistically.
+5. Template + consumer-script refresh — **shipped**. The scaffold template and
+   all nine existing scripts migrated from bare `script.run(fn)` to
+   `Core.runScript(script, fn, { dryRun })`, so every consumer now surfaces the
+   origin-specific exit codes and the run report, plus a `--dry-run` switch. This
+   phase also reconciled the archival-vs-report directory split A1 left open:
+   `M3LScript` now owns a per-run `runStartedAt`, and stage-9 archival and the run
+   report both derive their directory from it, so a run's `inputs/`, `configs/`,
+   and `run-report.json` co-locate under one `data/output/<timestamp>/`. **One
+   behavioral delta:** archival moved from flat/overwriting `data/output/{inputs,
+configs}` to the per-run timestamped directory (no exported-symbol change; the
+   `runDirectoryName` seam is `internal/`).
 
 No tracking issues are filed for these phases (single-maintainer repo; this
 rollout section is the sequencing record).

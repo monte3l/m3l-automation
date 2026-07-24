@@ -86,33 +86,37 @@ by hand (typically a test fake) must supply it.
 ## File archival (stage 9)
 
 Stage 9 archives the run's inputs: a fresh `M3LFileCopier` auto-discovers every
-regular file in `paths.getInputDir()` and `paths.getConfigDir()` and copies
-them into a per-run timestamped directory:
+regular file in `paths.getInputDir()` and `paths.getConfigDir()` and copies them
+into the run's own **per-run timestamped directory**, the same one the run
+report uses (ADR-0035 phase 5):
 
 ```text
 data/output/
-├── inputs/    # snapshot of data/input at run time
-└── configs/   # snapshot of data/config at run time
+└── 2026-07-24T10-14-02.000Z/  # this run's directory, named by its start time
+    ├── inputs/                 # snapshot of data/input at run time
+    ├── configs/                # snapshot of data/config at run time
+    └── run-report.json         # written by runScript on every outcome
 ```
 
-Constraints: 100 MB per-file default cap, no overwrite of existing
-destinations, path-traversal guards. The archive result is available afterwards
-via `getLastArchiveReport()`.
-
-> Archival is **flat and not timestamped**: `M3LFileCopier` resolves its
-> destination from `M3LPaths.getOutputDir()` directly and groups files by
-> `getDefaultSubdirForPathType` (`inputs`/`configs`). An earlier draft of this
-> page drew a `data/output/<timestamp>/` tree with `input/`/`config/`
-> subdirectories; neither the timestamp nor those singular names have ever
-> existed in the code.
+The directory name derives from `runStartedAt` — the per-run `Date` `M3LScript`
+resolves at the top of the pipeline and exposes via `script.runStartedAt`. Stage-9 archival injects a run-scoped output port
+(`M3LFileCopier({ paths: { getOutputDir: () => <outputDir>/<timestamp> } })`) and
+[`runScript`](#runscript) feeds the same `runStartedAt` to the `M3LRunReporter`,
+so the archive and the report co-locate by construction rather than landing in
+separate trees. Constraints: 100 MB per-file default cap, no overwrite of
+existing destinations, path-traversal guards. The archive result is available
+afterwards via `getLastArchiveReport()`.
 
 Archival runs on the **success path only** — a run that fails before stage 9
-archives nothing today, and a [dry run](#dry-runs) skips stage 9 entirely. The
+archives nothing, and a [dry run](#dry-runs) skips stage 9 entirely — so a failed
+or dry run leaves a `<timestamp>/` directory holding only `run-report.json`. The
 [diagnostics run report](./diagnostics.md#m3lrunreport--m3lrunreporter)
-(ADR-0035 phase 1) is written on **both** outcomes, failure included, into its
-own per-run `data/output/<startedAt>/` directory — deliberately _not_ shared
-with the flat archival above, since changing that layout would break the nine
-consumer scripts already reading it. Reconciling the two is ADR-0035 phase 5.
+(ADR-0035 phase 1) is written on **both** outcomes, failure included.
+
+> **Concurrency:** a single `M3LScript` instance supports one in-flight run at a
+> time — its per-run state (including `runStartedAt`) is instance-scoped, not
+> per-call. Run concurrent work on separate instances; overlapping `run()` /
+> `runScript()` calls on one instance are unsupported.
 
 ## `runScript()`
 

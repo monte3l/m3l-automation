@@ -64,16 +64,17 @@ through the diagnostics reporter — writes a per-run report:
 
 ```text
 data/output/
-├── inputs/                    # snapshot of data/input at run time (flat, not timestamped)
-├── configs/                   # snapshot of data/config at run time (flat, not timestamped)
-└── 2026-07-23T10-14-02.000Z/  # one directory per run, named by its start time
-    └── run-report.json        # outcome, exit code, timeline, failure chain
+└── 2026-07-24T10-14-02.000Z/  # one directory per run, named by its start time
+    ├── inputs/                 # snapshot of data/input at run time
+    ├── configs/                # snapshot of data/config at run time
+    └── run-report.json         # outcome, exit code, timeline, failure chain
 ```
 
-Note the two are **not** in the same directory: archival is flat and overwrites
-across runs, while each run report gets its own timestamped directory. Only the
-run report is per-run, so it is the reliable artifact when reconstructing a
-specific failure.
+Everything for one run lives under a single per-run `<timestamp>/` directory:
+the input/config archive and the run report share it, both derived from the same
+run-start timestamp (ADR-0035 phase 5). Nothing is flat or overwritten across
+runs anymore, so each run's post-mortem is self-contained — copy or prune a run
+by its one directory.
 
 - The base directory is `data/output/` at the monorepo root (or
   `$M3L_BASE_DIR/output` standalone; `M3L_OUTPUT_DIR` overrides — see the
@@ -190,8 +191,9 @@ node --inspect-brk --enable-source-maps dist/main.js --profile dev
 [`runScript(script, mainFn, { dryRun: true })`](../reference/core/script.md#dry-runs)
 validates environment, configuration, and AWS credentials — stages 1–5 —
 without executing `mainFn`: the fastest way to separate "my config/credentials
-are wrong" from "my logic is wrong". A `--dry-run` flag in the script templates
-is still pending (ADR-0035 phase 5).
+are wrong" from "my logic is wrong". Scripts scaffolded from the template expose
+this as a **`--dry-run`** flag (ADR-0035 phase 5), so `node dist/main.js
+--dry-run` runs the validation without side effects.
 
 ## 7. Filing a failure report
 
