@@ -6,6 +6,7 @@
     { "path": "./scripts/athena-query/tsconfig.build.json" },
     { "path": "./scripts/cloudwatch-logs-insights/tsconfig.build.json" },
     { "path": "./scripts/dynamodb-crud/tsconfig.build.json" },
+    { "path": "./scripts/ecs-ops/tsconfig.build.json" },
     { "path": "./scripts/eventbridge-schedules/tsconfig.build.json" },
     { "path": "./scripts/json-etl/tsconfig.build.json" },
     { "path": "./scripts/lambda-ops/tsconfig.build.json" },

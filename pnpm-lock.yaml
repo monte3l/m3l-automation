@@ -233,6 +233,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/m3l-common
 
+  scripts/ecs-ops:
+    dependencies:
+      '@m3l-automation/m3l-common':
+        specifier: workspace:*
+        version: link:../../packages/m3l-common
+
   scripts/eventbridge-schedules:
     dependencies:
       '@m3l-automation/m3l-common':
