@@ -7,12 +7,6 @@ wait-for-stable) and inspect clusters (read-only), over the typed
 > **This page is the script's contract** — configuration schema, steps, and
 > inputs/outputs. How to _run_ it lives in the colocated
 > [`scripts/ecs-ops/README.md`](../../../scripts/ecs-ops/README.md).
->
-> **Scaffold status:** this script is scaffolded — the config schema and
-> steps tables below are the ratified contract, but only the `aws.profile`
-> parameter and a starter `run-ecs-ops` step exist in `src/` today.
-> `implementing-scripts` fills the remaining config parameters and step
-> modules in against this contract.
 
 ## Purpose and scope
 
