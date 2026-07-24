@@ -1,0 +1,140 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "aws/ecs.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/ecs/client.ts",
+          "symbol": "M3LECSOperations",
+          "blob": "c0384ae262faa1c469d3c942eee6de3ab6952685"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/ecs/error.ts",
+          "symbol": "M3LECSOperationError",
+          "blob": "39c5e14481837a3dc648e1eb297bcd4d2ff26a94"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/ecs/types.ts",
+          "symbol": "M3LECSListServicesResult",
+          "blob": "0108c0fcd2839ffd930595a7d4a4c4730f9dc2de"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/ecs/types.ts",
+          "symbol": "M3LECSServiceDescription",
+          "blob": "0108c0fcd2839ffd930595a7d4a4c4730f9dc2de"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/ecs/types.ts",
+          "symbol": "M3LECSCreateServiceInput",
+          "blob": "0108c0fcd2839ffd930595a7d4a4c4730f9dc2de"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/ecs/types.ts",
+          "symbol": "M3LECSUpdateServiceInput",
+          "blob": "0108c0fcd2839ffd930595a7d4a4c4730f9dc2de"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/ecs/types.ts",
+          "symbol": "M3LECSWaiterResult",
+          "blob": "0108c0fcd2839ffd930595a7d4a4c4730f9dc2de"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/ecs/types.ts",
+          "symbol": "M3LECSListClustersResult",
+          "blob": "0108c0fcd2839ffd930595a7d4a4c4730f9dc2de"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/ecs/types.ts",
+          "symbol": "M3LECSClusterSummary",
+          "blob": "0108c0fcd2839ffd930595a7d4a4c4730f9dc2de"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/ecs/types.ts",
+          "symbol": "M3LECSLoadBalancer",
+          "blob": "0108c0fcd2839ffd930595a7d4a4c4730f9dc2de"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/ecs/types.ts",
+          "symbol": "M3LECSNetworkConfiguration",
+          "blob": "0108c0fcd2839ffd930595a7d4a4c4730f9dc2de"
+        }
+      ],
+      "retrieved": "2026-07-24"
+    },
+    {
+      "heading": "`M3LECSOperations`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/ecs/client.ts",
+          "symbol": "M3LECSOperations",
+          "blob": "c0384ae262faa1c469d3c942eee6de3ab6952685"
+        }
+      ],
+      "retrieved": "2026-07-24"
+    },
+    {
+      "heading": "Plain types (field-by-field)",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/ecs/types.ts",
+          "symbol": "M3LECSListServicesResult",
+          "blob": "0108c0fcd2839ffd930595a7d4a4c4730f9dc2de"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/ecs/types.ts",
+          "symbol": "M3LECSServiceDescription",
+          "blob": "0108c0fcd2839ffd930595a7d4a4c4730f9dc2de"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/ecs/types.ts",
+          "symbol": "M3LECSCreateServiceInput",
+          "blob": "0108c0fcd2839ffd930595a7d4a4c4730f9dc2de"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/ecs/types.ts",
+          "symbol": "M3LECSUpdateServiceInput",
+          "blob": "0108c0fcd2839ffd930595a7d4a4c4730f9dc2de"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/ecs/types.ts",
+          "symbol": "M3LECSWaiterResult",
+          "blob": "0108c0fcd2839ffd930595a7d4a4c4730f9dc2de"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/ecs/types.ts",
+          "symbol": "M3LECSListClustersResult",
+          "blob": "0108c0fcd2839ffd930595a7d4a4c4730f9dc2de"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/ecs/types.ts",
+          "symbol": "M3LECSClusterSummary",
+          "blob": "0108c0fcd2839ffd930595a7d4a4c4730f9dc2de"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/ecs/types.ts",
+          "symbol": "M3LECSLoadBalancer",
+          "blob": "0108c0fcd2839ffd930595a7d4a4c4730f9dc2de"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/ecs/types.ts",
+          "symbol": "M3LECSNetworkConfiguration",
+          "blob": "0108c0fcd2839ffd930595a7d4a4c4730f9dc2de"
+        }
+      ],
+      "retrieved": "2026-07-24"
+    },
+    {
+      "heading": "`M3LECSOperationError`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/ecs/error.ts",
+          "symbol": "M3LECSOperationError",
+          "blob": "39c5e14481837a3dc648e1eb297bcd4d2ff26a94"
+        }
+      ],
+      "retrieved": "2026-07-24"
+    }
+  ]
+}

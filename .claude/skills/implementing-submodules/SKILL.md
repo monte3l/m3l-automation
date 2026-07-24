@@ -134,6 +134,24 @@ ADR-0013 (its durable home), not a per-plan caveat.
    throws on an `Err`). Precision here prevents the tests from over-constraining
    a type and saves a re-work round — especially for weaker routed models.
 
+   **For an `aws/*` wrapper around anything beyond a plain `.send()` call — a
+   waiter, a paginator, a multi-step poll — verify the SDK's actual
+   resolve/throw behavior against its installed dist-types before the doc's
+   behavioral contract is treated as settled**, not after. A doc drafted from
+   intent alone ("timeout is data, not a fault") can be unachievable with the
+   chosen SDK primitive: `aws/ecs`'s first-drafted contract said
+   `waitUntilServicesStable` both "wraps the waiter" and "resolves on
+   timeout," but the SDK's current, non-deprecated waiter actually _throws_ on
+   any non-`SUCCESS` state, and its `FAILURE` terminal state is
+   indistinguishable by error identity from a genuine call failure (found
+   `docs/logs/2026-07-24-aws-ecs.md`). Have the contract-extraction pass check
+   `node_modules/.pnpm/<pkg>/node_modules/<pkg>/dist-types/**` for the actual
+   operation's throw/resolve shape, its response nesting (singular vs. plural
+   field), and field-name casing — resolve any resulting ambiguity (a default
+   value, an unclassifiable-state fallback) in the doc itself before
+   dispatching `test-author`/`code-implementer`, so both spokes work from one
+   settled contract instead of guessing independently and diverging.
+
    **Size the dispatch now, before RED/GREEN.** If the contract implies a large
    surface — many exports, or a module that clearly needs more than roughly
    6–8 source/test files — plan Phases 2 and 3 as **multiple bounded

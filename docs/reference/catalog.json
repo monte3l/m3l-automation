@@ -603,6 +603,27 @@
   },
   {
     "namespace": "aws",
+    "name": "ecs",
+    "importPath": "@m3l-automation/m3l-common/aws",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/aws/ecs.md",
+    "symbols": [
+      "M3LECSOperations",
+      "M3LECSOperationError",
+      "M3LECSListServicesResult",
+      "M3LECSServiceDescription",
+      "M3LECSCreateServiceInput",
+      "M3LECSUpdateServiceInput",
+      "M3LECSWaiterResult",
+      "M3LECSListClustersResult",
+      "M3LECSClusterSummary",
+      "M3LECSLoadBalancer",
+      "M3LECSNetworkConfiguration"
+    ]
+  },
+  {
+    "namespace": "aws",
     "name": "eventbridge",
     "importPath": "@m3l-automation/m3l-common/aws",
     "status": "✅",

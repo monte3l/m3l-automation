@@ -1925,6 +1925,61 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/dynamodb/error.ts"
   },
+  "M3LECSOperations": {
+    "submodule": "ecs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/ecs/client.ts"
+  },
+  "M3LECSOperationError": {
+    "submodule": "ecs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/ecs/error.ts"
+  },
+  "M3LECSListServicesResult": {
+    "submodule": "ecs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/ecs/types.ts"
+  },
+  "M3LECSServiceDescription": {
+    "submodule": "ecs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/ecs/types.ts"
+  },
+  "M3LECSCreateServiceInput": {
+    "submodule": "ecs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/ecs/types.ts"
+  },
+  "M3LECSUpdateServiceInput": {
+    "submodule": "ecs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/ecs/types.ts"
+  },
+  "M3LECSWaiterResult": {
+    "submodule": "ecs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/ecs/types.ts"
+  },
+  "M3LECSListClustersResult": {
+    "submodule": "ecs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/ecs/types.ts"
+  },
+  "M3LECSClusterSummary": {
+    "submodule": "ecs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/ecs/types.ts"
+  },
+  "M3LECSLoadBalancer": {
+    "submodule": "ecs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/ecs/types.ts"
+  },
+  "M3LECSNetworkConfiguration": {
+    "submodule": "ecs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/ecs/types.ts"
+  },
   "M3LEventBridgeOperations": {
     "submodule": "eventbridge",
     "namespace": "aws",
