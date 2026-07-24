@@ -179,18 +179,18 @@ function splitServices(raw: string): readonly string[] {
     .filter((segment) => segment.length > 0);
 }
 
-/** Dynamic-imports and runs `destructive-gate` — every mutating operation routes through this before dispatch. */
+/** Runs `Core.confirmDestructive` — every mutating operation routes through this before dispatch. */
 async function runGate(
   description: string,
   yes: boolean,
   deps: Pick<DispatchDeps, "prompt" | "logger">,
 ): Promise<void> {
-  const { destructiveGate } = await import("./destructive-gate.js");
-  await destructiveGate({
+  await Core.confirmDestructive({
     prompt: deps.prompt,
     logger: deps.logger,
     description,
     yes,
+    code: "ERR_ECS_OPS_ABORTED",
   });
 }
 
@@ -394,7 +394,7 @@ function isWriteOperation(
  * {@link DISPATCH_GROUP} into the four per-family dispatchers, each of which
  * guard-checks its own per-operation cross-parameter requirements before any
  * gate or AWS call, then — for every mutating operation — runs
- * `destructive-gate`.
+ * `Core.confirmDestructive`.
  */
 async function dispatchOperation(
   operation: EcsOperation,
@@ -499,7 +499,7 @@ function assertWaitStable(
 
 /**
  * Composes the `ecs-ops` pipeline end to end: resolves + guard-checks
- * config, runs `destructive-gate` for every mutating operation, dispatches to
+ * config, runs `Core.confirmDestructive` for every mutating operation, dispatches to
  * the operation-appropriate step, persists the result to `output` (when
  * configured) via `Core.M3LJSONFileExporter`, and — for
  * `wait-services-stable` — throws once the result has had a chance to be

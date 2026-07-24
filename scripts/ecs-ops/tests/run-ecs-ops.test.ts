@@ -2,6 +2,8 @@ import * as fsp from "node:fs/promises";
 
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
+import type * as M3LCommon from "@m3l-automation/m3l-common";
+
 /**
  * Contract: docs/reference/scripts/ecs-ops.md `run-ecs-ops` row — the
  * orchestrator/dispatcher. Resolves and guard-checks config per operation
@@ -18,7 +20,11 @@ import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
  * ONLY the orchestrator's guard/gate/dispatch/persist wiring, never a
  * step's internal logic — that is each step's own test file's job);
  * `node:fs/promises` and `Core.M3LJSONFileExporter` are the true I/O
- * boundary, also mocked.
+ * boundary, also mocked. `Core.confirmDestructive` is a stable library
+ * function, not a locally dynamic-imported step, so it is intercepted via a
+ * package-level `vi.mock("@m3l-automation/m3l-common", ...)` factory that
+ * spreads the real module and overrides only `Core.confirmDestructive`,
+ * rather than a `vi.mock` of a local module path.
  */
 
 vi.mock("node:fs/promises", async () => {
@@ -26,15 +32,27 @@ vi.mock("node:fs/promises", async () => {
   return { ...actual, readFile: vi.fn(actual.readFile) };
 });
 
-const destructiveGateMock = vi.fn().mockResolvedValue(undefined);
+// vi.hoisted() is required here (unlike the plain vi.fn() locals below):
+// @m3l-automation/m3l-common is imported statically below, so its vi.mock
+// factory runs eagerly at module-eval time when that import is resolved —
+// before a plain top-level `const` would have initialized. The relative-path
+// step mocks are only resolved lazily via the dispatcher's dynamic import()
+// inside a test body, by which point a plain const has long since run.
+const destructiveGateMock = vi.hoisted(() =>
+  vi.fn().mockResolvedValue(undefined),
+);
 const readServicesMock = vi.fn();
 const writeServiceMock = vi.fn();
 const waitServicesMock = vi.fn();
 const readClustersMock = vi.fn();
 
-vi.mock("../src/steps/destructive-gate.js", () => ({
-  destructiveGate: destructiveGateMock,
-}));
+vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+  const actual = await importOriginal<typeof M3LCommon>();
+  return {
+    ...actual,
+    Core: { ...actual.Core, confirmDestructive: destructiveGateMock },
+  };
+});
 vi.mock("../src/steps/read-services.js", () => ({
   readServices: readServicesMock,
 }));
