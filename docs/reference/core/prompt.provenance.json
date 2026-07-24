@@ -6,6 +6,16 @@
       "heading": "Public API",
       "sources": [
         {
+          "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
+          "symbol": "confirmDestructive",
+          "blob": "89b187babef4d0f20d3ff6f9673d79ff4e0fd004"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
+          "symbol": "M3LConfirmDestructiveOptions",
+          "blob": "89b187babef4d0f20d3ff6f9673d79ff4e0fd004"
+        },
+        {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
           "symbol": "M3LPrompt",
           "blob": "30d7c494eaec85baddf4fbeba501143ef7432f0b"

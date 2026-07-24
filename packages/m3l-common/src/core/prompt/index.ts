@@ -9,6 +9,7 @@
  * @packageDocumentation
  */
 
+export * from "./M3LDestructiveGate.js";
 export * from "./M3LLoadingBar.js";
 export * from "./M3LMultiSpinner.js";
 export * from "./M3LPrompt.js";

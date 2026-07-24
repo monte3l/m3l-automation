@@ -1187,6 +1187,16 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/polling/events.ts"
   },
+  "confirmDestructive": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts"
+  },
+  "M3LConfirmDestructiveOptions": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts"
+  },
   "M3LPrompt": {
     "submodule": "prompt",
     "namespace": "core",

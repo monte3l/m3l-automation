@@ -2,7 +2,6 @@ import type { AWS } from "@m3l-automation/m3l-common";
 import { Core } from "@m3l-automation/m3l-common";
 
 import { S3_OBJECTS_OPERATIONS } from "../config.js";
-import { destructiveGate } from "./destructive-gate.js";
 import { runDeleteBatch } from "./delete-batch.js";
 import { runListObjects } from "./list-objects.js";
 import { runSingleObjectOp } from "./single-object-ops.js";
@@ -10,7 +9,7 @@ import { runSingleObjectOp } from "./single-object-ops.js";
 /** The closed union of `s3-objects`'s declared `operation` values. */
 type S3ObjectsOperation = (typeof S3_OBJECTS_OPERATIONS)[number];
 
-/** Operations that route through {@link destructiveGate} before proceeding. */
+/** Operations that route through {@link Core.confirmDestructive} before proceeding. */
 const DESTRUCTIVE_OPERATIONS: ReadonlySet<S3ObjectsOperation> = new Set([
   "put",
   "copy",
@@ -220,7 +219,7 @@ function requireDefined(value: string | undefined, name: string): string {
   return value;
 }
 
-/** Builds the human-readable description shown to the destructive-gate confirmation prompt. */
+/** Builds the human-readable description shown to the `Core.confirmDestructive` confirmation prompt. */
 function describeDestructiveOp(settings: RunSettings): string {
   switch (settings.operation) {
     case "put":
@@ -476,11 +475,12 @@ export async function runS3Objects(deps: {
 
   if (DESTRUCTIVE_OPERATIONS.has(settings.operation)) {
     try {
-      await destructiveGate({
+      await Core.confirmDestructive({
         prompt: deps.prompt,
         logger: deps.logger,
         description: describeDestructiveOp(settings),
         yes: settings.yes,
+        code: "ERR_S3_OBJECTS_ABORTED",
       });
     } catch (cause) {
       if (

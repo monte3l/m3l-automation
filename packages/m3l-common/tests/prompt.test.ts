@@ -3,11 +3,19 @@
  *
  * Contract source: docs/reference/core/prompt.md
  * Exports: M3LPrompt, M3LMultiSpinner, M3LLoadingBar, M3LPromptValidationError,
- *   and types M3LMultiSpinnerOptions, M3LLoadingBarOptions, M3LPromptOptions,
- *   M3LPromptAdapter, M3LChoice, M3LChoices, M3LNumberPromptOptions,
- *   M3LSuggestFn (12 symbols total).
+ *   confirmDestructive, and types M3LMultiSpinnerOptions, M3LLoadingBarOptions,
+ *   M3LPromptOptions, M3LPromptAdapter, M3LChoice, M3LChoices,
+ *   M3LNumberPromptOptions, M3LSuggestFn, M3LConfirmDestructiveOptions
+ *   (14 symbols total).
  *
  * Key behavioral contracts under test:
+ *  - confirmDestructive: promoted from an identical script-local step
+ *    duplicated across 5 consumer scripts (see e.g.
+ *    scripts/lambda-ops/src/steps/destructive-gate.ts). Bypass (`yes:true`)
+ *    logs a warning and never calls `prompt.confirm`; a decline throws
+ *    `M3LError` with the caller-supplied `code` (not a hardcoded literal); an
+ *    adapter rejection propagates unchanged, never converted to the
+ *    `aborted` error.
  *  - B1/D-env: mode selection — live-ANSI iff M3LExecutionEnvironment.isInteractive()
  *    AND stream.isTTY; the `interactive` option overrides auto-detection.
  *  - B2: plain-mode output contains no ANSI escapes.
@@ -48,7 +56,9 @@ const inquirerMocks = vi.hoisted(() => ({
 vi.mock("@inquirer/prompts", () => inquirerMocks);
 
 import { M3LError } from "../src/core/errors/index.js";
+import { M3LLogger } from "../src/core/logging/index.js";
 import {
+  confirmDestructive,
   M3LLoadingBar,
   M3LMultiSpinner,
   M3LPrompt,
@@ -813,6 +823,124 @@ describe("M3LPrompt.autocomplete", () => {
     await expect(prompt.autocomplete("Region?", suggest)).rejects.toBe(
       cancellation,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// confirmDestructive — promoted from the identical script-local step
+// duplicated across 5 consumer scripts (e.g.
+// scripts/lambda-ops/src/steps/destructive-gate.ts). M3LPrompt/M3LLogger are
+// real classes with private (`#`) fields, so a plain object literal cannot
+// structurally satisfy either type — real instances are constructed and
+// their public methods are `vi.spyOn`-wrapped, mirroring the pattern already
+// established at the script-step-test layer this function is promoted from.
+// ---------------------------------------------------------------------------
+describe("confirmDestructive", () => {
+  test("bypass (yes:true): logs a single warning with the bypass message and never calls prompt.confirm", async () => {
+    const prompt = new M3LPrompt();
+    const confirm = vi.spyOn(prompt, "confirm");
+    const logger = new M3LLogger([]);
+    const warning = vi.spyOn(logger, "warning");
+
+    await expect(
+      confirmDestructive({
+        prompt,
+        logger,
+        description: "delete bucket my-bucket",
+        yes: true,
+        code: "ERR_TEST_ABORTED",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(warning).toHaveBeenCalledTimes(1);
+    expect(warning.mock.calls[0]).toHaveLength(1);
+    expect(warning.mock.calls[0]?.[0]).toBe(
+      "destructive confirmation bypassed (yes=true): delete bucket my-bucket",
+    );
+  });
+
+  test("confirmed (yes:false, confirm resolves true): prompts with the exact message and resolves", async () => {
+    const prompt = new M3LPrompt();
+    const confirm = vi.spyOn(prompt, "confirm").mockResolvedValue(true);
+    const logger = new M3LLogger([]);
+
+    await expect(
+      confirmDestructive({
+        prompt,
+        logger,
+        description: "delete bucket my-bucket",
+        yes: false,
+        code: "ERR_TEST_ABORTED",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm.mock.calls[0]).toHaveLength(1);
+    expect(confirm.mock.calls[0]?.[0]).toBe(
+      "Confirm: delete bucket my-bucket?",
+    );
+  });
+
+  test("declined (yes:false, confirm resolves false): throws M3LError with the caller-supplied code", async () => {
+    const prompt = new M3LPrompt();
+    vi.spyOn(prompt, "confirm").mockResolvedValue(false);
+    const logger = new M3LLogger([]);
+
+    let thrown: unknown;
+    try {
+      await confirmDestructive({
+        prompt,
+        logger,
+        description: "delete bucket my-bucket",
+        yes: false,
+        code: "ERR_TEST_ABORTED",
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).message).toBe(
+      "aborted: delete bucket my-bucket",
+    );
+    // A distinctive, non-hardcoded test code proves the caller-supplied
+    // `code` flows through verbatim rather than a literal baked into the
+    // implementation.
+    expect((thrown as M3LError).code).toBe("ERR_TEST_ABORTED");
+  });
+
+  test("rejection passthrough: an adapter rejection propagates unchanged, not converted into the aborted M3LError", async () => {
+    const prompt = new M3LPrompt();
+    const cancellation = new Error("User force closed the prompt");
+    vi.spyOn(prompt, "confirm").mockRejectedValue(cancellation);
+    const logger = new M3LLogger([]);
+
+    await expect(
+      confirmDestructive({
+        prompt,
+        logger,
+        description: "delete bucket my-bucket",
+        yes: false,
+        code: "ERR_TEST_ABORTED",
+      }),
+    ).rejects.toBe(cancellation);
+  });
+
+  describe("type-level contract", () => {
+    test("deps.code accepts an arbitrary string, not a narrowed literal union", () => {
+      expectTypeOf(confirmDestructive).parameter(0).toMatchTypeOf<{
+        readonly prompt: M3LPrompt;
+        readonly logger: M3LLogger;
+        readonly description: string;
+        readonly yes: boolean;
+        readonly code: string;
+      }>();
+    });
+
+    test("returns Promise<void>", () => {
+      expectTypeOf(confirmDestructive).returns.toEqualTypeOf<Promise<void>>();
+    });
   });
 });
 

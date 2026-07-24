@@ -170,19 +170,19 @@ function buildGateDescription(
   return `${operation} function '${functionName}'`;
 }
 
-/** Dynamic-imports and runs `destructive-gate` — every mutating operation routes through this before dispatch. */
+/** Runs `Core.confirmDestructive` — every mutating operation routes through this before dispatch. */
 async function runGate(
   operation: LambdaOperation,
   functionName: string,
   yes: boolean,
   deps: Pick<DispatchDeps, "prompt" | "logger">,
 ): Promise<void> {
-  const { destructiveGate } = await import("./destructive-gate.js");
-  await destructiveGate({
+  await Core.confirmDestructive({
     prompt: deps.prompt,
     logger: deps.logger,
     description: buildGateDescription(operation, functionName),
     yes,
+    code: "ERR_LAMBDA_OPS_ABORTED",
   });
 }
 
@@ -352,7 +352,7 @@ async function dispatchWrite(
  * {@link DISPATCH_GROUP} into {@link dispatchRead}/{@link dispatchInvoke}/
  * {@link dispatchWrite}, each of which guard-checks its own per-operation
  * cross-parameter requirements before any gate or AWS call, then — for every
- * operation except `list`/`describe` — runs `destructive-gate`.
+ * operation except `list`/`describe` — runs `Core.confirmDestructive`.
  */
 async function dispatchOperation(
   operation: LambdaOperation,
@@ -393,7 +393,7 @@ async function dispatchOperation(
 
 /**
  * Composes the `lambda-ops` pipeline end to end: resolves + guard-checks
- * config, runs `destructive-gate` for every mutating operation, dispatches to
+ * config, runs `Core.confirmDestructive` for every mutating operation, dispatches to
  * the operation-appropriate step, persists the result to `output` (when
  * configured) via `Core.M3LJSONFileExporter`, and — for `invoke` — throws
  * once a populated `functionError` has had a chance to be persisted first.

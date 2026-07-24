@@ -3,7 +3,6 @@ import * as fsp from "node:fs/promises";
 import { Core } from "@m3l-automation/m3l-common";
 import type { AWS } from "@m3l-automation/m3l-common";
 
-import { destructiveGate } from "./destructive-gate.js";
 import { resolveAuthHeaders } from "./resolve-auth-headers.js";
 
 /**
@@ -27,7 +26,7 @@ interface BatchRequestDeps {
   readonly prompt: Core.M3LPrompt;
 }
 
-/** HTTP verbs `destructive-gate` confirms before dispatch; GET/HEAD are never gated. */
+/** HTTP verbs `Core.confirmDestructive` confirms before dispatch; GET/HEAD are never gated. */
 const MUTATING_METHODS: readonly string[] = ["POST", "PUT", "PATCH", "DELETE"];
 
 /** Falls back to the declared `maxInFlight` default (`config.ts`) when unset. */
@@ -402,8 +401,9 @@ async function dispatchRecord(
 }
 
 /**
- * Runs the `batch` command: guard-resolves `input`, runs `destructive-gate`
- * once up front when `method` is mutating, streams `input` JSONL records,
+ * Runs the `batch` command: guard-resolves `input`, runs
+ * `Core.confirmDestructive` once up front when `method` is mutating, streams
+ * `input` JSONL records,
  * resolves auth headers and dispatches each record through a
  * `Core.M3LConcurrencyPool(maxInFlight)`, appending successful responses to
  * `output` and per-record failures (original record + normalized error
@@ -443,11 +443,12 @@ export async function batchRequest(deps: BatchRequestDeps): Promise<void> {
   const settings = resolveBatchSettings(deps.config);
 
   if (MUTATING_METHODS.includes(settings.method)) {
-    await destructiveGate({
+    await Core.confirmDestructive({
       prompt: deps.prompt,
       logger: deps.logger,
       description: `${settings.method} batch requests from '${settings.input}'`,
       yes: settings.yes,
+      code: "ERR_API_GATEWAY_CLIENT_ABORTED",
     });
   }
 

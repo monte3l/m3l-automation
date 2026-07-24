@@ -1,8 +1,6 @@
 import { Core } from "@m3l-automation/m3l-common";
 import type { AWS } from "@m3l-automation/m3l-common";
 
-import { destructiveGate } from "./destructive-gate.js";
-
 /**
  * `redrive-queue` — moves messages from a DLQ (`dlqUrl`) back to their
  * source queue (`queueUrl`). Long-polls `receive()` from `dlqUrl` up to
@@ -151,9 +149,9 @@ function logDeleteFailures(
 }
 
 /**
- * Runs the destructive-gate confirmation exactly once per `redriveQueue`
- * call: a no-op returning `true` on every call once `confirmed` is already
- * `true`.
+ * Runs the `Core.confirmDestructive` confirmation exactly once per
+ * `redriveQueue` call: a no-op returning `true` on every call once
+ * `confirmed` is already `true`.
  *
  * @returns `true` — either already confirmed, or just confirmed now.
  */
@@ -164,11 +162,12 @@ async function confirmDeleteOnce(
   yes: boolean,
 ): Promise<boolean> {
   if (confirmed) return true;
-  await destructiveGate({
+  await Core.confirmDestructive({
     prompt: deps.prompt,
     logger: deps.logger,
     description,
     yes,
+    code: "ERR_SQS_ETL_ABORTED",
   });
   return true;
 }
@@ -255,9 +254,9 @@ async function runRedrivePages(
  *   injected `AWS.M3LSQSOperations`, and the interactive-prompt facade.
  * @returns A promise that resolves once the run completes.
  * @throws {@link Core.M3LError} coded `"ERR_SQS_ETL_CONFIG"` when `queueUrl`/
- *   `dlqUrl` is missing, or `"ERR_SQS_ETL_ABORTED"` when the destructive-gate
- *   confirmation is declined (any already-sent entries stay sent — only the
- *   DLQ delete is aborted).
+ *   `dlqUrl` is missing, or `"ERR_SQS_ETL_ABORTED"` when the
+ *   `Core.confirmDestructive` confirmation is declined (any already-sent
+ *   entries stay sent — only the DLQ delete is aborted).
  *
  * @example
  * ```typescript
