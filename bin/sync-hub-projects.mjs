@@ -345,7 +345,7 @@ function loadHubIssues(runGhFn, reporter) {
 // Join a fetched hub-sync issue to the current item it tracks (by marker
 // key) to recover its board status; a marker whose item is no longer in the
 // trackers (already closed by bin/sync-hub-issues.mjs, most likely) falls
-// back to "other" -> "Pending", which only matters if the issue is somehow
+// back to "todo" -> "Pending", which only matters if the issue is somehow
 // still open. A markerless issue is never tracked, by construction.
 function toTrackedIssue(issue, itemByKey) {
   const key = parseHubMarker(issue.body);
@@ -354,7 +354,7 @@ function toTrackedIssue(issue, itemByKey) {
   return {
     number: issue.number,
     state: issue.state === "CLOSED" ? "closed" : "open",
-    status: item ? item.status : "other",
+    status: item ? item.status : "todo",
   };
 }
 

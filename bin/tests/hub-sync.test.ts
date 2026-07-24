@@ -19,117 +19,123 @@ import {
 // contract so actionableItems is exercised against realistic markdown, built
 // by running the REAL extractRoadmap/extractImplementation from
 // project-hub.mjs (keeps the two libs contractually coupled in tests).
+//
+// Status cells use the hub's 6-value badge vocabulary (Done / To Do /
+// In Progress / Deferred / Blocked / Rejected); classifyStatus lowercases and
+// hyphenates these into the kebab kind strings ("done" / "todo" /
+// "in-progress" / "deferred" / "blocked" / "rejected") that Item.status and
+// the planners below operate on.
 // ---------------------------------------------------------------------------
 
 const ROADMAP_FIXTURE = `# Roadmap — m3l-automation
 
 ## Priority 0
 
-| Item    | What                          | Status      | Why now / Notes      |
-| ------- | ------------------------------ | ----------- | ---------------------- |
-| **P0A** | First priority zero item       | pending     | needs doing             |
-| **P0B** | Second priority zero item      | done (#42)  | already shipped         |
-| \`Multi/Word\`: Test!! | Punctuation-heavy item | pending | for slug testing |
+| Item    | What                          | Status   | Why now / Notes      |
+| ------- | ------------------------------ | -------- | ---------------------- |
+| **P0A** | First priority zero item       | To Do    | needs doing             |
+| **P0B** | Second priority zero item      | Done     | **PR:** #42. already shipped |
+| \`Multi/Word\`: Test!! | Punctuation-heavy item | To Do | for slug testing |
 
 ## Priority 1
 
-| Wave   | Scripts    | Status  | Depends on |
-| ------ | ---------- | ------- | ---------- |
-| **W3** | \`ecs-ops\`  | pending | W0         |
-| **W4** | \`sqs-etl\`  | done    | W0         |
+| Wave   | Scripts    | Status | Depends on |
+| ------ | ---------- | ------ | ---------- |
+| **W3** | \`ecs-ops\`  | To Do  | W0         |
+| **W4** | \`sqs-etl\`  | Done   | W0         |
 
 ## Priority 2
 
-| Item              | Unblock condition                     |
-| ------------------ | ---------------------------------------- |
-| **D4** SSM config  | a 2nd script hand-rolling SSM config     |
+| Item              | Status   | Unblock condition                     |
+| ------------------ | -------- | ---------------------------------------- |
+| **D4** SSM config  | Deferred | a 2nd script hand-rolling SSM config     |
 
 ## Governance follow-ups
 
-| Item   | What                  | Notes                           |
-| ------ | ---------------------- | ---------------------------------- |
-| **T1** | Rename script           | **done** — landed on branch        |
-| **T8** | Getter-reality check     | pending — backlog only             |
+| Item   | What                  | Status   | Notes                           |
+| ------ | ---------------------- | -------- | ---------------------------------- |
+| **T1** | Rename script           | Done     | landed on branch        |
+| **T8** | Getter-reality check     | Deferred | backlog only             |
 `;
 
 const ROADMAP_MISSING_GOVERNANCE_FIXTURE = `# Roadmap — m3l-automation
 
 ## Priority 0
 
-| Item    | What                    | Status  | Why now / Notes |
-| ------- | ------------------------ | ------- | ------------------ |
-| **P0A** | First priority zero item | pending | needs doing         |
+| Item    | What                    | Status | Why now / Notes |
+| ------- | ------------------------ | ------ | ------------------ |
+| **P0A** | First priority zero item | To Do  | needs doing         |
 
 ## Priority 1
 
-| Wave   | Scripts    | Status  | Depends on |
-| ------ | ---------- | ------- | ---------- |
-| **W3** | \`ecs-ops\`  | pending | W0         |
+| Wave   | Scripts    | Status | Depends on |
+| ------ | ---------- | ------ | ---------- |
+| **W3** | \`ecs-ops\`  | To Do  | W0         |
 
 ## Priority 2
 
-| Item              | Unblock condition                    |
-| ------------------ | --------------------------------------- |
-| **D4** SSM config  | a 2nd script hand-rolling SSM config    |
+| Item              | Status   | Unblock condition                    |
+| ------------------ | -------- | --------------------------------------- |
+| **D4** SSM config  | Deferred | a 2nd script hand-rolling SSM config    |
 `;
 
 const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 
 ## Library friction (F-series)
 
-| ID     | Priority | Status  | Title & change                                          | Source / call-site |
-| ------ | -------- | ------- | ----------------------------------------------------------- | --------------------- |
-| **F7** | P2       | pending | Opt-in \`onUnknownFormat\` tolerant a \\| b handling           | json-etl log F7        |
-| **F9** | P1       | done    | Some other change entirely                                 | some other log         |
+| ID     | Priority | Status   | Title & change                                          | Source / call-site |
+| ------ | -------- | -------- | ----------------------------------------------------------- | --------------------- |
+| **F7** | P2       | Deferred | Opt-in \`onUnknownFormat\` tolerant a \\| b handling           | json-etl log F7        |
+| **F9** | P1       | Done     | Some other change entirely                                 | some other log         |
 
 ## AWS getter reality
 
-| Provider getter | AWS service | Status  | Wrapper submodule | Consuming script(s) | ADR / precedent |
-| ----------------- | ------------- | ------- | -------------------- | ----------------------- | ------------------ |
-| \`s3\`             | S3            | wrapped | aws/s3                | s3-objects (done)         | ADR-0033            |
+| Provider getter | AWS service | Status | Wrapper submodule | Consuming script(s) | ADR / precedent |
+| ----------------- | ------------- | ------ | -------------------- | ----------------------- | ------------------ |
+| \`s3\`             | S3            | Done   | aws/s3                | s3-objects (done)         | ADR-0033            |
 
 ## Gated library modules & deferred decisions (P2)
 
-| ID                  | Unblock condition                          |
-| --------------------- | ---------------------------------------------- |
-| **D4** SSM config      | a 2nd script hand-rolling SSM config fetch      |
+| ID                  | Status   | Unblock condition                          |
+| --------------------- | -------- | ---------------------------------------------- |
+| **D4** SSM config      | Deferred | a 2nd script hand-rolling SSM config fetch      |
 `;
 
 const IMPLEMENTATION_MISSING_GATED_FIXTURE = `# Implementation backlog — m3l-automation
 
 ## Library friction (F-series)
 
-| ID     | Priority | Status  | Title & change      | Source / call-site |
-| ------ | -------- | ------- | ---------------------- | --------------------- |
-| **F7** | P2       | pending | still relevant          | json-etl log F7        |
+| ID     | Priority | Status   | Title & change      | Source / call-site |
+| ------ | -------- | -------- | ---------------------- | --------------------- |
+| **F7** | P2       | Deferred | still relevant          | json-etl log F7        |
 
 ## AWS getter reality
 
-| Provider getter | AWS service | Status  | Wrapper submodule | Consuming script(s) | ADR / precedent |
-| ----------------- | ------------- | ------- | -------------------- | ----------------------- | ------------------ |
-| \`s3\`             | S3            | wrapped | aws/s3                | s3-objects (done)         | ADR-0033            |
+| Provider getter | AWS service | Status | Wrapper submodule | Consuming script(s) | ADR / precedent |
+| ----------------- | ------------- | ------ | -------------------- | ----------------------- | ------------------ |
+| \`s3\`             | S3            | Done   | aws/s3                | s3-objects (done)         | ADR-0033            |
 `;
 
 const IMPLEMENTATION_DEDUPE_FIXTURE = `# Implementation backlog — m3l-automation
 
 ## Library friction (F-series)
 
-| ID     | Priority | Status  | Title & change            | Source / call-site |
-| ------ | -------- | ------- | ---------------------------- | --------------------- |
-| **F7** | P2       | pending | First title for F7             | first-call-site         |
-| **F7** | P1       | done    | Second title for F7            | second-call-site        |
+| ID     | Priority | Status   | Title & change            | Source / call-site |
+| ------ | -------- | -------- | ---------------------------- | --------------------- |
+| **F7** | P2       | Deferred | First title for F7             | first-call-site         |
+| **F7** | P1       | Done     | Second title for F7            | second-call-site        |
 
 ## AWS getter reality
 
-| Provider getter | AWS service | Status  | Wrapper submodule | Consuming script(s) | ADR / precedent |
-| ----------------- | ------------- | ------- | -------------------- | ----------------------- | ------------------ |
-| \`s3\`             | S3            | wrapped | aws/s3                | s3-objects (done)         | ADR-0033            |
+| Provider getter | AWS service | Status | Wrapper submodule | Consuming script(s) | ADR / precedent |
+| ----------------- | ------------- | ------ | -------------------- | ----------------------- | ------------------ |
+| \`s3\`             | S3            | Done   | aws/s3                | s3-objects (done)         | ADR-0033            |
 
 ## Gated library modules & deferred decisions (P2)
 
-| ID                  | Unblock condition                          |
-| --------------------- | ---------------------------------------------- |
-| **D4** SSM config      | a 2nd script hand-rolling SSM config fetch      |
+| ID                  | Status   | Unblock condition                          |
+| --------------------- | -------- | ---------------------------------------------- |
+| **D4** SSM config      | Deferred | a 2nd script hand-rolling SSM config fetch      |
 `;
 
 // ---------------------------------------------------------------------------
@@ -142,7 +148,7 @@ const IMPLEMENTATION_DEDUPE_FIXTURE = `# Implementation backlog — m3l-automati
 interface TestItem {
   key: string;
   title: string;
-  status: "done" | "pending" | "in-review" | "other";
+  status: "done" | "todo" | "in-progress" | "deferred" | "blocked" | "rejected";
   priority: "p0" | "p1" | "p2" | "governance";
   sourcePath: string;
   sourceAnchor: string;
@@ -153,7 +159,7 @@ function makeItem(overrides: Partial<TestItem> = {}): TestItem {
   return {
     key: "roadmap:p0:sample-item",
     title: "Sample item",
-    status: "pending",
+    status: "todo",
     priority: "p0",
     sourcePath: "docs/ROADMAP.md",
     sourceAnchor: "#priority-0",
@@ -277,7 +283,7 @@ describe("actionableItems", () => {
 
     expect(gated).toBeDefined();
     expect(gated?.priority).toBe("p2");
-    expect(gated?.status).toBe("pending");
+    expect(gated?.status).toBe("deferred");
     expect(gated?.detail).toContain("Unblock condition");
     expect(gated?.detail).toContain(
       "a 2nd script hand-rolling SSM config fetch",
@@ -311,7 +317,7 @@ describe("actionableItems", () => {
     expect(doneF9?.status).toBe("done");
   });
 
-  test("governance status is classified from the Notes cell, not a Status column", () => {
+  test("governance status is classified from a Status column, not the Notes cell", () => {
     const roadmap = extractRoadmap(ROADMAP_FIXTURE);
     const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
     const items = actionableItems(roadmap, implementation) as TestItem[];
@@ -321,7 +327,7 @@ describe("actionableItems", () => {
 
     expect(t1?.priority).toBe("governance");
     expect(t1?.status).toBe("done");
-    expect(t8?.status).toBe("pending");
+    expect(t8?.status).toBe("deferred");
   });
 
   test("F-series title is '<ID> — <Title & change>' with markdown-stripped ID", () => {
@@ -334,7 +340,7 @@ describe("actionableItems", () => {
       "F7 — Opt-in `onUnknownFormat` tolerant a | b handling",
     );
     expect(f7?.priority).toBe("p2");
-    expect(f7?.status).toBe("pending");
+    expect(f7?.status).toBe("deferred");
     expect(f7?.sourcePath).toBe("docs/plans/IMPLEMENTATION.md");
   });
 
@@ -370,7 +376,7 @@ describe("actionableItems", () => {
     const f7 = f7Items[0];
     expect(f7?.title).toContain("First title for F7");
     expect(f7?.priority).toBe("p2");
-    expect(f7?.status).toBe("pending");
+    expect(f7?.status).toBe("deferred");
     expect(f7?.detail).toContain("first-call-site");
     expect(f7?.detail).toContain("second-call-site");
   });
@@ -551,13 +557,10 @@ function issueFromPayload(
 }
 
 describe("planIssueSync", () => {
-  test("fresh state: all non-done items go to create; a done item with no issue creates nothing", () => {
-    const pendingItem = makeItem({ key: "roadmap:p0:a", status: "pending" });
+  test("fresh state: all non-resolved items go to create; a done item with no issue creates nothing", () => {
+    const todoItem = makeItem({ key: "roadmap:p0:a", status: "todo" });
     const doneItem = makeItem({ key: "roadmap:p0:b", status: "done" });
-    const result = planIssueSync(
-      [pendingItem, doneItem],
-      [],
-    ) as IssueSyncResult;
+    const result = planIssueSync([todoItem, doneItem], []) as IssueSyncResult;
 
     expect(result.create).toHaveLength(1);
     expect(result.create[0]?.key).toBe("roadmap:p0:a");
@@ -566,10 +569,23 @@ describe("planIssueSync", () => {
     expect(result.reopen).toEqual([]);
   });
 
+  test("a rejected item with no issue also creates nothing", () => {
+    const rejectedItem = makeItem({
+      key: "roadmap:p0:rejected-item",
+      status: "rejected",
+    });
+    const result = planIssueSync([rejectedItem], []) as IssueSyncResult;
+
+    expect(result.create).toEqual([]);
+    expect(result.update).toEqual([]);
+    expect(result.close).toEqual([]);
+    expect(result.reopen).toEqual([]);
+  });
+
   test("idempotency: re-running over issues built from the plan's own payloads yields empty create/update/close/reopen", () => {
     const items = [
-      makeItem({ key: "roadmap:p0:a", status: "pending" }),
-      makeItem({ key: "roadmap:p1:b", status: "pending", priority: "p1" }),
+      makeItem({ key: "roadmap:p0:a", status: "todo" }),
+      makeItem({ key: "roadmap:p1:b", status: "todo", priority: "p1" }),
     ];
     const firstRun = planIssueSync(items, []) as IssueSyncResult;
     const rebuiltIssues: TestIssue[] = firstRun.create.map((entry, index) => ({
@@ -591,17 +607,17 @@ describe("planIssueSync", () => {
   test("a status change that alters the desired body triggers update", () => {
     const original = makeItem({
       key: "roadmap:gov:t8",
-      status: "pending",
+      status: "todo",
       priority: "governance",
-      detail: "**Notes:** pending — needs owner",
+      detail: "**Notes:** todo — needs owner",
     });
     const existingIssue = issueFromPayload(10, original, "open");
 
     const updated = makeItem({
       key: "roadmap:gov:t8",
-      status: "in-review",
+      status: "in-progress",
       priority: "governance",
-      detail: "**Notes:** in-review — owner assigned",
+      detail: "**Notes:** in-progress — owner assigned",
     });
     const result = planIssueSync([updated], [existingIssue]) as IssueSyncResult;
 
@@ -614,7 +630,7 @@ describe("planIssueSync", () => {
   });
 
   test("an item that is now done closes its matched open issue, with an explanatory comment", () => {
-    const original = makeItem({ key: "roadmap:p0:c", status: "pending" });
+    const original = makeItem({ key: "roadmap:p0:c", status: "todo" });
     const existingIssue = issueFromPayload(11, original, "open");
 
     const doneItem = makeItem({ key: "roadmap:p0:c", status: "done" });
@@ -631,10 +647,31 @@ describe("planIssueSync", () => {
     expect(result.reopen).toEqual([]);
   });
 
+  test("an item that is now rejected closes its matched open issue, with an explanatory comment", () => {
+    const original = makeItem({ key: "roadmap:p0:rej", status: "todo" });
+    const existingIssue = issueFromPayload(16, original, "open");
+
+    const rejectedItem = makeItem({
+      key: "roadmap:p0:rej",
+      status: "rejected",
+    });
+    const result = planIssueSync(
+      [rejectedItem],
+      [existingIssue],
+    ) as IssueSyncResult;
+
+    expect(result.close).toHaveLength(1);
+    expect(result.close[0]?.number).toBe(16);
+    expect(result.close[0]?.key).toBe("roadmap:p0:rej");
+    expect(result.close[0]?.comment).toMatch(/rejected/i);
+    expect(result.update).toEqual([]);
+    expect(result.reopen).toEqual([]);
+  });
+
   test("an issue whose marker key vanished from items closes, with a 'removed' comment", () => {
     const vanished = makeItem({
       key: "roadmap:p0:vanished",
-      status: "pending",
+      status: "todo",
     });
     const existingIssue = issueFromPayload(12, vanished, "open");
 
@@ -664,16 +701,13 @@ describe("planIssueSync", () => {
     expect(result.reopen).toEqual([]);
   });
 
-  test("a closed issue whose item regressed to non-done reopens (reopen + update in one entry)", () => {
+  test("a closed issue whose item regressed to non-resolved reopens (reopen + update in one entry)", () => {
     const item = makeItem({ key: "roadmap:p0:d" });
     const doneVersion = { ...item, status: "done" as const };
     const closedIssue = issueFromPayload(14, doneVersion, "closed");
 
-    const pendingAgain = { ...item, status: "pending" as const };
-    const result = planIssueSync(
-      [pendingAgain],
-      [closedIssue],
-    ) as IssueSyncResult;
+    const todoAgain = { ...item, status: "todo" as const };
+    const result = planIssueSync([todoAgain], [closedIssue]) as IssueSyncResult;
 
     expect(result.reopen).toHaveLength(1);
     expect(result.reopen[0]?.number).toBe(14);
@@ -683,11 +717,29 @@ describe("planIssueSync", () => {
     expect(result.update).toEqual([]);
   });
 
+  test("a closed issue whose item is now rejected stays untouched (both are resolved states)", () => {
+    const item = makeItem({ key: "roadmap:p0:e" });
+    const doneVersion = { ...item, status: "done" as const };
+    const closedIssue = issueFromPayload(17, doneVersion, "closed");
+
+    const rejectedNow = { ...item, status: "rejected" as const };
+    const result = planIssueSync(
+      [rejectedNow],
+      [closedIssue],
+    ) as IssueSyncResult;
+
+    expect(result.untouched).toEqual([{ number: 17, reason: "in sync" }]);
+    expect(result.reopen).toEqual([]);
+    expect(result.create).toEqual([]);
+    expect(result.close).toEqual([]);
+    expect(result.update).toEqual([]);
+  });
+
   test("matching is by marker only: a markerless issue with an identical title is untouched, and the item still creates", () => {
     const item = makeItem({
       key: "roadmap:p0:dup",
       title: "Duplicate Title",
-      status: "pending",
+      status: "todo",
     });
     const lookalikeIssue: TestIssue = {
       number: 15,
@@ -726,7 +778,7 @@ interface ProjectItem {
 describe("planProjectSync", () => {
   test("an open tracked issue absent from the board is added with its mapped status name", () => {
     const trackedIssues: TrackedIssue[] = [
-      { number: 1, state: "open", status: "pending" },
+      { number: 1, state: "open", status: "todo" },
     ];
     const result = planProjectSync(trackedIssues, []);
 
@@ -736,10 +788,12 @@ describe("planProjectSync", () => {
   });
 
   test.each([
-    ["pending", "Pending"],
-    ["in-review", "In review"],
+    ["todo", "Pending"],
+    ["in-progress", "In review"],
+    ["deferred", "Pending"],
+    ["blocked", "Pending"],
     ["done", "Done"],
-    ["other", "Pending"],
+    ["rejected", "Done"],
   ] as const)(
     "maps tracked-issue status %s to the board option %j when adding",
     (status, expectedOption) => {
@@ -753,7 +807,7 @@ describe("planProjectSync", () => {
 
   test("a board item whose status drifted from the desired mapping is corrected via setStatus", () => {
     const trackedIssues: TrackedIssue[] = [
-      { number: 3, state: "open", status: "in-review" },
+      { number: 3, state: "open", status: "in-progress" },
     ];
     const existingProjectItems: ProjectItem[] = [
       { itemId: "PVTI_1", issueNumber: 3, status: "Pending" },
@@ -794,7 +848,7 @@ describe("planProjectSync", () => {
 
   test("idempotency: re-running over the state its own plan produced yields empty add/setStatus/archive", () => {
     const trackedIssues: TrackedIssue[] = [
-      { number: 5, state: "open", status: "pending" },
+      { number: 5, state: "open", status: "todo" },
     ];
     const firstRun = planProjectSync(trackedIssues, []);
     expect(firstRun.add).toHaveLength(1);
