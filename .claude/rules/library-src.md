@@ -83,6 +83,20 @@ paths:
   awaited result inside `try`/`catch`, then build the return value after the
   `catch` block resolves — see `aws/lambda/client.ts`'s per-method shape for
   the pattern (`docs/logs/2026-07-18-aws-lambda.md`).
+- **Co-locate by a shared value, not by shared code.** When two independent
+  mechanisms must agree on a derived path/id/name, give ONE owner the raw value
+  and have both derive the result through a single shared helper — never let each
+  capture its own copy of the value and re-derive independently, which drifts
+  silently. Found A5: `M3LScript.runStartedAt` is the one per-run `Date`; stage-9
+  archival and the run reporter both run it through `runDirectoryName`, so their
+  directories cannot disagree.
+- **Migrate a relocated transform at every call site, or not at all.** Moving a
+  sanitize/normalize/coerce step out of a callee and onto its call sites is only
+  safe when EVERY caller moves in the same change and the in-callee version is
+  deleted — a half-migrated transform leaves the callee double-processing some
+  inputs and trusting others, and the parameter name silently lies about its
+  contract (found A5: `run-report.ts`'s report-path builder sanitized for one
+  caller and double-sanitized the other after a partial extraction).
 - **`interface` for shapes callers implement/extend; `type` for unions,
   intersections, mapped/branded types.**
 - **Constrain a row-shaped generic with `extends object`, not
