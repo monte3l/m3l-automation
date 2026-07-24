@@ -193,6 +193,12 @@ import {
 // depend on this file's test execution order; spying on the function
 // reference itself does not.
 import * as ProcessGuardsModule from "../src/core/script/process-guards.js";
+// ADR-0035 phase 5 (A5 part 1): `runDirectoryName` is the same helper both
+// stage-9 archival and `M3LRunReporter` derive their per-run directory
+// segment from — imported directly (not through a public barrel) so tests
+// can compute the EXPECTED directory name independently of whatever
+// implementation detail M3LScript/runScript use internally.
+import { runDirectoryName } from "../src/internal/diagnostics/runDirectoryName.js";
 import { fakeRoot } from "./helpers/fake-path.js";
 
 // ---------------------------------------------------------------------------
@@ -1125,6 +1131,72 @@ describe("M3LScript.run() — stage 9 file archival (getLastArchiveReport)", () 
     expect(report?.summary.copied).toBe(2);
     expect(report?.results).toHaveLength(2);
     expect(report?.results.every((result) => !result.skipped)).toBe(true);
+  });
+
+  // ADR-0035 phase 5 (A5 part 1): stage-9 archival now lands under the
+  // per-run `<outputDir>/<runDirectoryName(runStartedAt)>/` directory, the
+  // SAME directory the run report is persisted to — not the old flat
+  // `<outputDir>/inputs`/`<outputDir>/configs`.
+  test("archives input/config files under the per-run directory, not a flat <outputDir>/inputs|configs", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-24T10:14:02.000Z"));
+
+    const root = fakeRoot("fake", "archive-per-run-dir");
+    const inputDir = `${root}/data/input`;
+    const configDir = `${root}/data/config`;
+    const outputDir = `${root}/data/output`;
+
+    vi.stubEnv("M3L_INPUT_DIR", inputDir);
+    vi.stubEnv("M3L_CONFIG_DIR", configDir);
+    vi.stubEnv("M3L_OUTPUT_DIR", outputDir);
+
+    vi.spyOn(nodeFs, "readdirSync").mockImplementation(((
+      dir: fs.PathLike,
+    ): fs.Dirent[] => {
+      if (String(dir) === inputDir) return [fakeFileDirent("source.csv")];
+      if (String(dir) === configDir) return [fakeFileDirent("config.yaml")];
+      return [];
+    }) as unknown as typeof nodeFs.readdirSync);
+    vi.spyOn(fsPromises, "stat").mockImplementation((target: fs.PathLike) => {
+      const targetPath = String(target);
+      if (
+        targetPath === `${inputDir}/source.csv` ||
+        targetPath === `${configDir}/config.yaml`
+      ) {
+        return Promise.resolve({ size: 128 } as fs.Stats);
+      }
+      return Promise.reject(
+        Object.assign(new Error("ENOENT"), { code: "ENOENT" }),
+      );
+    });
+    const copyFileSpy = vi
+      .spyOn(fsPromises, "copyFile")
+      .mockResolvedValue(undefined);
+
+    const script = new M3LScript({ metadata });
+    await script.run(() => {});
+
+    expect(script.runStartedAt).toBeInstanceOf(Date);
+    const runDir = runDirectoryName(script.runStartedAt as Date);
+
+    const destinations = copyFileSpy.mock.calls.map(([, dest]) => String(dest));
+    expect(destinations).toHaveLength(2);
+    expect(
+      destinations.some(
+        (dest) => dest === `${outputDir}/${runDir}/inputs/source.csv`,
+      ),
+    ).toBe(true);
+    expect(
+      destinations.some(
+        (dest) => dest === `${outputDir}/${runDir}/configs/config.yaml`,
+      ),
+    ).toBe(true);
+    // The old flat destination must NOT be used anymore.
+    expect(
+      destinations.some((dest) => dest === `${outputDir}/inputs/source.csv`),
+    ).toBe(false);
+
+    vi.useRealTimers();
   });
 
   test.each([
@@ -3608,6 +3680,41 @@ describe("runScript() — composition-root wrapper", () => {
     });
   });
 
+  // ADR-0035 phase 5 (A5 part 1): the run report is now persisted under the
+  // SAME per-run directory stage-9 archival uses, both derived from
+  // `script.runStartedAt` via `runDirectoryName` — not a separately-captured
+  // wrapper timestamp.
+  describe("run report is co-located with stage-9 archival under one per-run directory (ADR-0035 phase 5, A5 part 1)", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    test("persists run-report.json under <outputDir>/<runDirectoryName(script.runStartedAt)>/run-report.json", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-07-24T10:14:02.000Z"));
+
+      const root = fakeRoot("fake", "runscript-report-colocation");
+      const outputDir = `${root}/data/output`;
+      vi.stubEnv("M3L_OUTPUT_DIR", outputDir);
+
+      const writeFileSpy = vi
+        .spyOn(fsPromises, "writeFile")
+        .mockResolvedValue(undefined);
+
+      const script = new M3LScript({ metadata });
+      await runScript(script, () => {});
+
+      expect(script.runStartedAt).toBeInstanceOf(Date);
+      const runDir = runDirectoryName(script.runStartedAt as Date);
+      const expectedReportPath = `${outputDir}/${runDir}/run-report.json`;
+
+      const writtenPaths = writeFileSpy.mock.calls.map(([target]) =>
+        String(target as fs.PathLike),
+      );
+      expect(writtenPaths).toContain(expectedReportPath);
+    });
+  });
+
   describe("dry-run must not embed a stale archive (ADR-0035 phase 4a regression)", () => {
     test("a dry run on an instance that already ran for real omits `archive` entirely rather than embedding the PRIOR real run's archive manifest", async () => {
       const persistSpy = vi
@@ -4243,6 +4350,49 @@ describe("M3LScript — accessors (ADR-0035 phase 4a)", () => {
     });
   });
 
+  // ADR-0035 phase 5 (A5 part 1): co-locates stage-9 archival and the run
+  // report under one `<outputDir>/<runDirectoryName(runStartedAt)>/`
+  // directory. `runStartedAt` is the single per-run timestamp both call
+  // sites derive their directory name from.
+  describe("runStartedAt", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    test("is undefined on a freshly-constructed script that hasn't run", () => {
+      const script = new M3LScript({ metadata });
+
+      expect(script.runStartedAt).toBeUndefined();
+    });
+
+    test("is a Date after script.run() resolves", async () => {
+      const script = new M3LScript({ metadata });
+
+      await script.run(() => {});
+
+      expect(script.runStartedAt).toBeInstanceOf(Date);
+    });
+
+    test("is refreshed on every run — a later run's timestamp is strictly later than an earlier run's", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-07-24T10:00:00.000Z"));
+
+      const script = new M3LScript({ metadata });
+      await script.run(() => {});
+      const firstRunStartedAt = script.runStartedAt;
+      expect(firstRunStartedAt).toBeInstanceOf(Date);
+
+      vi.setSystemTime(new Date("2026-07-24T10:05:00.000Z"));
+      await script.run(() => {});
+      const secondRunStartedAt = script.runStartedAt;
+      expect(secondRunStartedAt).toBeInstanceOf(Date);
+
+      expect((secondRunStartedAt as Date).getTime()).toBeGreaterThan(
+        (firstRunStartedAt as Date).getTime(),
+      );
+    });
+  });
+
   describe("getLastFailureStage()", () => {
     test("is undefined on a fresh script", () => {
       const script = new M3LScript({ metadata });
@@ -4454,6 +4604,12 @@ describe("M3LScript — accessors (ADR-0035 phase 4a)", () => {
     test("getLastFailureStage() returns string | undefined", () => {
       expectTypeOf<M3LScript["getLastFailureStage"]>().returns.toEqualTypeOf<
         string | undefined
+      >();
+    });
+
+    test("runStartedAt getter returns Date | undefined", () => {
+      expectTypeOf<M3LScript["runStartedAt"]>().toEqualTypeOf<
+        Date | undefined
       >();
     });
   });

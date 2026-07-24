@@ -39,6 +39,12 @@ import type {
 import { redactSensitiveLogText } from "../src/core/logging/redact.js";
 import { serializeError } from "../src/core/script/process-guards.js";
 import { readPackageVersion } from "../src/internal/diagnostics/packageVersion.js";
+// -----------------------------------------------------------------------
+// SUT — does not exist yet (ADR-0035 phase 5, A5 part 1). This import MUST
+// fail in RED with "Cannot find module" (or equivalent). Do not wrap it in a
+// try/catch — the whole file failing to resolve is the expected RED signal.
+// -----------------------------------------------------------------------
+import { runDirectoryName } from "../src/internal/diagnostics/runDirectoryName.js";
 
 // ---------------------------------------------------------------------------
 // core/errors/catalog.ts
@@ -918,6 +924,38 @@ describe("readPackageVersion() — computeVersion()'s defensive branches", () =>
     expect(mod.readPackageVersion()).toBe("unknown");
     expect(mod.readPackageVersion()).toBe("unknown");
     expect(readFileSyncMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// src/internal/diagnostics/runDirectoryName.ts — ADR-0035 phase 5 (A5 part 1).
+// Co-locates stage-9 archival and the run report under one
+// `<outputDir>/<timestamp>/` directory: this helper is the single source of
+// truth both call sites derive that timestamp segment from.
+// ---------------------------------------------------------------------------
+describe("runDirectoryName()", () => {
+  test("returns the ISO timestamp with every colon replaced by a hyphen", () => {
+    const startedAt = new Date("2026-07-24T10:14:02.000Z");
+    expect(runDirectoryName(startedAt)).toBe("2026-07-24T10-14-02.000Z");
+  });
+
+  test("replaces ALL colons, not just the first", () => {
+    const startedAt = new Date("2026-01-05T00:00:00.000Z");
+    const name = runDirectoryName(startedAt);
+    expect(name).not.toContain(":");
+    expect(name).toBe("2026-01-05T00-00-00.000Z");
+  });
+
+  test("falls back to the Unix epoch, never throwing, when toISOString() throws (a hostile/invalid Date)", () => {
+    const invalidDate = new Date(NaN);
+    expect(() => runDirectoryName(invalidDate)).not.toThrow();
+    expect(runDirectoryName(invalidDate)).toBe("1970-01-01T00-00-00.000Z");
+  });
+
+  test("two distinct valid Dates produce distinct directory names", () => {
+    const first = runDirectoryName(new Date("2026-07-24T10:14:02.000Z"));
+    const second = runDirectoryName(new Date("2026-07-24T10:14:03.000Z"));
+    expect(first).not.toBe(second);
   });
 });
 
