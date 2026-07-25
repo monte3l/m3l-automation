@@ -115,7 +115,7 @@ Co-Authored-By: <exact model name from your environment> <noreply@anthropic.com>
 
 **Co-Authored-By footer**: include whenever Claude authored or substantially
 assisted the commit. Use the exact model name from the environment (e.g.,
-`Claude Fable 5`, `Claude Opus 4.8`) — never copy a model name from an example
+`Claude Fable 5`, `Claude Opus 5`) — never copy a model name from an example
 or template. The canonical allowlist lives in `bin/lib/claude-models.mjs`, and
 the `commit-msg` hook (`bin/lint-commit.mjs`) rejects any Claude trailer whose
 name isn't on it. The trailer is a provenance marker, not a legal authorship
@@ -224,7 +224,7 @@ remaining submodules don't re-hit them.
 
 No src/, test, or exports-map changes; zero semver impact.
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 ```
 
 ---

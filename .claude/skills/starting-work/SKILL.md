@@ -91,7 +91,7 @@ Derive a concrete default for all four from steps 1–2:
 - **Push target** — `origin <the recommended branch>`. Never `origin main`.
 - **Model tier (advisory only)** — name the recommended model + effort for this
   task category from the matrix in `docs/contributing/model-selection.md`
-  (e.g. "matrix row 2: Opus 4.8 at `xhigh` for a single-sitting implementation").
+  (e.g. "matrix row 2: Opus 5 at `xhigh` for a single-sitting implementation").
   For a plan-then-implement task (rows 1–2 — an audit/plan skill like
   `/auditing` followed by implementation in the same or a later session),
   recommend `/model opusplan` instead of a single fixed tier: Opus during
