@@ -23,7 +23,7 @@
      - Scope/usage     — what the section is for
      - Status          — Mandatory | Recommended | Optional | Niche
      - Best practices  — how to write it well
-     - Model notes     — how Fable 5 / Opus 4.8 / Sonnet 4.6 /
+     - Model notes     — how Fable 5 / Opus 5 / Sonnet 4.6 /
                           Haiku 4.5 consume it
    Block-level HTML comments are STRIPPED before CLAUDE.md is
    injected into the model's context, so this documentation
@@ -64,7 +64,7 @@
                  domain, and the single most important
                  constraint. No marketing prose.
  Model notes   : Haiku 4.5 leans heavily on this to disambiguate
-                 intent — be concrete. Opus 4.8 and Fable 5 infer
+                 intent — be concrete. Opus 5 and Fable 5 infer
                  architecture from terse framing; Sonnet 4.6 sits
                  between. Name the language/version explicitly for
                  every tier.
@@ -136,7 +136,7 @@ See @package.json for the full dependency set, scripts, and the
                  prefer nested CLAUDE.md files per package
                  (lazy-loaded) over one giant root layout.
  Model notes   : High value for Haiku 4.5 (reduces
-                 wrong-directory edits). Opus 4.8 / Fable 5 will
+                 wrong-directory edits). Opus 5 / Fable 5 will
                  explore if omitted, but stating it saves
                  tokens/time.
 ================================================================
@@ -267,7 +267,7 @@ GitHub-native `.github/dependabot.yml`, which is config, not a workflow):
                  Defer mechanical rules to Prettier/ESLint config
                  and say so.
  Model notes   : Haiku 4.5 needs explicit, enumerated rules plus
-                 an example. Sonnet 4.6, Opus 4.8, and Fable 5
+                 an example. Sonnet 4.6, Opus 5, and Fable 5
                  generalize from one canonical example.
 ================================================================
 -->
@@ -352,7 +352,7 @@ files (so they cost nothing in unrelated sessions):
  Status        : Optional (Recommended for non-trivial systems).
  Best practices: Record decisions + rationale + what's explicitly
                  out of scope. Link to ADRs rather than inlining.
- Model notes   : Opus 4.8 and Fable 5 extract the most value here
+ Model notes   : Opus 5 and Fable 5 extract the most value here
                  — they reason about trade-offs and respect
                  boundaries. Keep terse for Haiku 4.5.
 ================================================================
@@ -404,7 +404,7 @@ files (so they cost nothing in unrelated sessions):
  Best practices: Give measurable budgets, not "make it fast". For
                  a library, the relevant budget is import cost and
                  tree-shakeability.
- Model notes   : Opus 4.8 and Fable 5 reason about complexity
+ Model notes   : Opus 5 and Fable 5 reason about complexity
                  trade-offs from budgets; Haiku 4.5 needs the
                  explicit threshold to act on.
 ================================================================
@@ -476,7 +476,7 @@ one) is tracked in `docs/contributing/skills-catalog.md`.
  Best practices: Make verification explicit and tie "done" to the
                  Commands section. Encourage plan mode for risky
                  areas (anything touching the public API).
- Model notes   : Opus 4.8 and Fable 5 self-direct this loop with
+ Model notes   : Opus 5 and Fable 5 self-direct this loop with
                  light prompting and are the right choice for the
                  Plan step on ambiguous tasks. Sonnet 4.6 is the
                  day-to-day default for Implement. Haiku 4.5 suits
