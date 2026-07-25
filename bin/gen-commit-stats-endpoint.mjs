@@ -39,13 +39,13 @@ const LABEL_COLOR = "272822";
  * endpoint badge will be served under: lowercase, with `.` and spaces
  * folded to `-`.
  *
- * @param {string} name - canonical model name, e.g. "Claude Opus 4.8"
- * @returns {string} slug, e.g. "claude-opus-4-8"
+ * @param {string} name - canonical model name, e.g. "Claude Opus 5"
+ * @returns {string} slug, e.g. "claude-opus-5"
  * @example
  * ```js
  * import { modelSlug } from "@m3l-automation/workspace/bin/gen-commit-stats-endpoint.mjs";
  *
- * modelSlug("Claude Opus 4.8"); // "claude-opus-4-8"
+ * modelSlug("Claude Opus 5"); // "claude-opus-5"
  * ```
  */
 export function modelSlug(name) {

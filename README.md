@@ -22,6 +22,7 @@
      here alongside its bin/lib/claude-models.mjs allowlist entry. -->
 <a href="#co-developed-with-claude"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fmonte3l.github.io%2Fm3l-automation%2Fcommit-stats%2Faggregate.json" alt="AI co-authored commits"></a>
 <a href="#co-developed-with-claude"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fmonte3l.github.io%2Fm3l-automation%2Fcommit-stats%2Fclaude-fable-5.json" alt="Claude Fable 5 commits"></a>
+<a href="#co-developed-with-claude"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fmonte3l.github.io%2Fm3l-automation%2Fcommit-stats%2Fclaude-opus-5.json" alt="Claude Opus 5 commits"></a>
 <a href="#co-developed-with-claude"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fmonte3l.github.io%2Fm3l-automation%2Fcommit-stats%2Fclaude-opus-4-8.json" alt="Claude Opus 4.8 commits"></a>
 <a href="#co-developed-with-claude"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fmonte3l.github.io%2Fm3l-automation%2Fcommit-stats%2Fclaude-sonnet-5.json" alt="Claude Sonnet 5 commits"></a>
 <a href="#co-developed-with-claude"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fmonte3l.github.io%2Fm3l-automation%2Fcommit-stats%2Fclaude-sonnet-4-6.json" alt="Claude Sonnet 4.6 commits"></a>

@@ -25,6 +25,7 @@ const counts = new Map([
 describe("modelSlug", () => {
   test.each([
     ["Claude Fable 5", "claude-fable-5"],
+    ["Claude Opus 5", "claude-opus-5"],
     ["Claude Opus 4.8", "claude-opus-4-8"],
     ["Claude Sonnet 5", "claude-sonnet-5"],
     ["Claude Sonnet 4.6", "claude-sonnet-4-6"],
@@ -87,6 +88,7 @@ describe("buildEndpointPayloads", () => {
     expect([...payloads.keys()]).toEqual([
       "aggregate.json",
       "claude-fable-5.json",
+      "claude-opus-5.json",
       "claude-opus-4-8.json",
       "claude-sonnet-5.json",
       "claude-sonnet-4-6.json",
@@ -112,6 +114,9 @@ describe("buildEndpointPayloads", () => {
     );
     expect(payloads.get("claude-fable-5.json")).toMatchObject({
       message: "2 commits",
+    });
+    expect(payloads.get("claude-opus-5.json")).toMatchObject({
+      message: "0 commits",
     });
     expect(payloads.get("claude-opus-4-8.json")).toMatchObject({
       message: "0 commits",
