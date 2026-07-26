@@ -163,12 +163,15 @@ await store.delete();
   onto the checkpoint path. A crash mid-write leaves either the previous
   checkpoint or the new one — never a truncated file a subsequent `read()`
   would reject with `ERR_CHECKPOINT_PARSE`. Temp-file cleanup on a failed
-  write never masks the original error. This is a self-contained
-  implementation, not a call into an existing library helper: no
-  write-temp-then-rename primitive exists anywhere in
-  `packages/m3l-common/src` today (the archived consumer-scripts plan's §1.2
-  describes the guarantee as "via `core/files` guards", but `core/files` has
-  no atomic writer — only `M3LFileCopier`/`M3LFileCopyError`).
+  write never masks the original error. `write()` delegates this to
+  `internal/files/atomicWrite.ts` (`writeFileAtomic`), a new **internal-only**
+  helper — no write-temp-then-rename primitive existed anywhere in
+  `packages/m3l-common/src` before this submodule (the archived
+  consumer-scripts plan's §1.2 describes the guarantee as "via `core/files`
+  guards", but `core/files` has no atomic writer — only
+  `M3LFileCopier`/`M3LFileCopyError`). It stays `internal/` and unexported
+  rather than promoted into `core/files` until a second caller justifies the
+  public surface.
 - **`cause` chaining is resolved by error kind, not by caller option.**
   `ERR_CHECKPOINT_IO` always chains; `ERR_CHECKPOINT_PARSE` never does. A
   toggle to disable the parse-path protection would be a security footgun,
