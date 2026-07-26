@@ -754,8 +754,31 @@ describe("runDynamodbCrud — checkpoint identity keyed to runName/operation+tab
     });
   }
 
+  /**
+   * `Core` is never mocked in this file (see the top-of-file `vi.mock`
+   * factory), so `scanTable`'s real, unmocked completion path constructs a
+   * real `Core.M3LCheckpointStore` and calls its real `.write()`/`.delete()`
+   * — which would otherwise perform real `fsp.writeFile`/`fsp.rename`/
+   * `fsp.unlink` calls against the real `data/output/` directory
+   * (`M3LCheckpointStore.write()` uses `internal/files/atomicWrite`'s
+   * write-temp-then-rename; `.delete()` uses `fsp.unlink` directly — see
+   * `packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts`).
+   * `Core.M3LPaths.resolveOutput` itself performs no filesystem I/O (it is a
+   * pure path computation, per its own TSDoc), so stubbing only the three
+   * fs primitives below — not `resolveOutput` — keeps both tests' real,
+   * deterministic `paths.resolveOutput(...)` equality/inequality assertions
+   * intact while guaranteeing no real file is ever written, renamed, or
+   * unlinked.
+   */
+  function stubCheckpointFs(): void {
+    vi.spyOn(fsp, "writeFile").mockResolvedValue(undefined);
+    vi.spyOn(fsp, "rename").mockResolvedValue(undefined);
+    vi.spyOn(fsp, "unlink").mockResolvedValue(undefined);
+  }
+
   test("checkpointStore.path is identical across two runs with different correlationId values (no runName set)", async () => {
     mockOnePageScan();
+    stubCheckpointFs();
     const configValues = {
       ...BASE_CONFIG,
       operation: "scan",
@@ -795,6 +818,7 @@ describe("runDynamodbCrud — checkpoint identity keyed to runName/operation+tab
 
   test("an explicit 'runName' overrides the operation+tableName fallback", async () => {
     mockOnePageScan();
+    stubCheckpointFs();
     stubOutputStream();
     const deps = buildDeps({
       ...BASE_CONFIG,

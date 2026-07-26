@@ -1,5 +1,7 @@
 import { Core, type AWS } from "@m3l-automation/m3l-common";
 
+import { buildCheckpointStore, EMPTY_CHECKPOINT } from "./checkpoint.js";
+import type { LogsInsightsCheckpoint, LogsInsightsRow } from "./checkpoint.js";
 import { exportResults } from "./export-results.js";
 import { resolveSettings } from "./resolve-settings.js";
 import type { LogsInsightsRunSettings } from "./resolve-settings.js";
@@ -21,52 +23,11 @@ import type { LogsInsightsTimeWindow } from "./time-range.js";
  * only ever written on full completion.
  *
  * The checkpoint's payload shape (`LogsInsightsCheckpoint`, `LogsInsightsRow`),
- * its type guard (`isLogsInsightsCheckpoint`, exported so `hooks.ts` can
- * construct its own validated `Core.M3LCheckpointStore` for delete-on-success),
- * and its empty-run default (`EMPTY_CHECKPOINT`) live in this module rather
- * than a separate `steps/checkpoint.js` — persistence itself is now delegated
- * to `Core.M3LCheckpointStore`.
+ * its type guard (`isLogsInsightsCheckpoint`), its empty-run default
+ * (`EMPTY_CHECKPOINT`), and the shared `buildCheckpointStore` factory live in
+ * `./checkpoint.js` — a neutral module shared with `hooks.ts`, which also
+ * needs the payload contract for its own delete-on-success store.
  */
-
-/** A single normalized Logs Insights result row (`AWS.LogsInsightsRow`, restated to avoid a type-only cross-namespace import here). */
-export type LogsInsightsRow = Record<string, string>;
-
-/**
- * The persisted resume state for a `cloudwatch-logs-insights` run: how many windows
- * have fully completed, the rows fetched so far (across every completed
- * window plus any prior resumed run), and — while a query is mid-flight —
- * the AWS `queryId` to re-attach to instead of re-issuing `StartQuery`.
- */
-export interface LogsInsightsCheckpoint {
-  /** The number of windows whose rows are already reflected in `rows`. */
-  readonly completedWindows: number;
-  /** The rows fetched so far, across every completed window. */
-  readonly rows: readonly LogsInsightsRow[];
-  /** The AWS query id for a window whose `StartQuery` has fired but whose `awaitResults` has not yet completed, if any. */
-  readonly inFlightQueryId?: string;
-}
-
-/** The checkpoint state a fresh (non-resumed) run starts from. */
-export const EMPTY_CHECKPOINT: LogsInsightsCheckpoint = {
-  completedWindows: 0,
-  rows: [],
-};
-
-/**
- * Narrows a JSON-parsed value to {@link LogsInsightsCheckpoint}. Passed to
- * `Core.M3LCheckpointStore` as its required `validate` predicate; exported
- * so `hooks.ts` can construct its own store for delete-on-success.
- */
-export function isLogsInsightsCheckpoint(
-  value: unknown,
-): value is LogsInsightsCheckpoint {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Record<string, unknown>;
-  if (typeof candidate["completedWindows"] !== "number") return false;
-  if (!Array.isArray(candidate["rows"])) return false;
-  const inFlightQueryId = candidate["inFlightQueryId"];
-  return inFlightQueryId === undefined || typeof inFlightQueryId === "string";
-}
 
 /** The run summary `runCloudwatchLogsInsights` reports back to its caller. */
 export interface LogsInsightsRunSummary {
@@ -74,6 +35,20 @@ export interface LogsInsightsRunSummary {
   readonly windowsCompleted: number;
   /** The total number of rows in the exported output. */
   readonly rowsExported: number;
+}
+
+/**
+ * The dependencies the window-processing helpers ({@link startOrReattachQuery},
+ * {@link awaitAndAccumulate}, {@link runWindow}, {@link runRemainingWindows})
+ * actually read. Deliberately narrower than `runCloudwatchLogsInsights`'s own
+ * top-level `deps` parameter — none of these four helpers reads `paths`
+ * (only the orchestrator does, to build the checkpoint store via
+ * `buildCheckpointStore`), so it is not threaded through here.
+ */
+interface WindowDeps {
+  readonly logger: Core.M3LLogger;
+  readonly client: AWS.M3LLogsInsightsClient;
+  readonly checkpointStore: Core.M3LCheckpointStore<LogsInsightsCheckpoint>;
 }
 
 /**
@@ -85,12 +60,7 @@ export interface LogsInsightsRunSummary {
  * of the window's lifecycle (`startQuery` vs `awaitResults`) failed.
  */
 async function startOrReattachQuery(args: {
-  readonly deps: {
-    readonly logger: Core.M3LLogger;
-    readonly client: AWS.M3LLogsInsightsClient;
-    readonly paths: Core.M3LPaths;
-    readonly checkpointStore: Core.M3LCheckpointStore<LogsInsightsCheckpoint>;
-  };
+  readonly deps: WindowDeps;
   readonly settings: LogsInsightsRunSettings;
   readonly index: number;
   readonly totalWindows: number;
@@ -141,12 +111,7 @@ async function startOrReattachQuery(args: {
  * failure so the caller's abort message reports the failing window.
  */
 async function awaitAndAccumulate(args: {
-  readonly deps: {
-    readonly logger: Core.M3LLogger;
-    readonly client: AWS.M3LLogsInsightsClient;
-    readonly paths: Core.M3LPaths;
-    readonly checkpointStore: Core.M3LCheckpointStore<LogsInsightsCheckpoint>;
-  };
+  readonly deps: WindowDeps;
   readonly settings: LogsInsightsRunSettings;
   readonly index: number;
   readonly totalWindows: number;
@@ -178,12 +143,7 @@ async function awaitAndAccumulate(args: {
  * {@link awaitAndAccumulate} for the two halves of the lifecycle.
  */
 async function runWindow(args: {
-  readonly deps: {
-    readonly logger: Core.M3LLogger;
-    readonly client: AWS.M3LLogsInsightsClient;
-    readonly paths: Core.M3LPaths;
-    readonly checkpointStore: Core.M3LCheckpointStore<LogsInsightsCheckpoint>;
-  };
+  readonly deps: WindowDeps;
   readonly settings: LogsInsightsRunSettings;
   readonly index: number;
   readonly totalWindows: number;
@@ -202,12 +162,7 @@ async function runWindow(args: {
  * module's line-count budget.
  */
 async function runRemainingWindows(args: {
-  readonly deps: {
-    readonly logger: Core.M3LLogger;
-    readonly client: AWS.M3LLogsInsightsClient;
-    readonly paths: Core.M3LPaths;
-    readonly checkpointStore: Core.M3LCheckpointStore<LogsInsightsCheckpoint>;
-  };
+  readonly deps: WindowDeps;
   readonly settings: LogsInsightsRunSettings;
   readonly windows: readonly LogsInsightsTimeWindow[];
   readonly initial: LogsInsightsCheckpoint;
@@ -297,19 +252,19 @@ export async function runCloudwatchLogsInsights(deps: {
     settings.windowMinutes,
   );
 
-  const checkpointStore = new Core.M3LCheckpointStore<LogsInsightsCheckpoint>({
-    paths: deps.paths,
-    name: settings.output,
-    validate: isLogsInsightsCheckpoint,
-    // `--resume` with no checkpoint file is a typed config error, not a
-    // silent fresh start (docs/reference/core/checkpoint.md's §1.2
-    // conformance contract) — a non-resume run still never touches the
-    // checkpoint file at all (see the `settings.resume ?` branch below), so
-    // the `{kind:"empty"}` arm here is exercised only by that branch.
-    missing: settings.resume
+  // `--resume` with no checkpoint file is a typed config error, not a
+  // silent fresh start (docs/reference/core/checkpoint.md's §1.2
+  // conformance contract). The `{kind:"empty"}` arm is supplied only to
+  // satisfy the store's required `missing` field — this script never calls
+  // `read()` on a non-resume run (see the `settings.resume ?` branch below),
+  // so that arm is not exercised in practice today.
+  const checkpointStore = buildCheckpointStore(
+    deps.paths,
+    settings.output,
+    settings.resume
       ? { kind: "error" }
       : { kind: "empty", value: EMPTY_CHECKPOINT },
-  });
+  );
 
   const initial: LogsInsightsCheckpoint = settings.resume
     ? await checkpointStore.read()
@@ -319,8 +274,13 @@ export async function runCloudwatchLogsInsights(deps: {
     `cloudwatch-logs-insights: running ${String(windows.length - initial.completedWindows)} of ${String(windows.length)} windows`,
   );
 
+  const windowDeps: WindowDeps = {
+    logger: deps.logger,
+    client: deps.client,
+    checkpointStore,
+  };
   const accumulatedRows = await runRemainingWindows({
-    deps: { ...deps, checkpointStore },
+    deps: windowDeps,
     settings,
     windows,
     initial,

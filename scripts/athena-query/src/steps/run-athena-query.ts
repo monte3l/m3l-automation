@@ -107,9 +107,10 @@ export async function runAthenaQuery(deps: {
     validate: isAthenaCheckpoint,
     // `--resume` with no checkpoint file is a typed config error, not a
     // silent fresh start (docs/reference/core/checkpoint.md's §1.2
-    // conformance contract) — a non-resume run still never touches the
-    // checkpoint file at all (see the `resume ?` branch below), so the
-    // `{kind:"empty"}` arm here is exercised only by that branch.
+    // conformance contract). The `{kind:"empty"}` arm is supplied only to
+    // satisfy the store's required `missing` field — this script never
+    // calls `read()` on a non-resume run (see the `resume ?` branch below),
+    // so that arm is not exercised in practice today.
     missing: resume
       ? { kind: "error" }
       : { kind: "empty", value: EMPTY_CHECKPOINT },

@@ -1,10 +1,6 @@
-import { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@m3l-automation/m3l-common";
 
-import {
-  EMPTY_CHECKPOINT,
-  isLogsInsightsCheckpoint,
-} from "./steps/run-cloudwatch-logs-insights.js";
-import type { LogsInsightsCheckpoint } from "./steps/run-cloudwatch-logs-insights.js";
+import { buildCheckpointStore, EMPTY_CHECKPOINT } from "./steps/checkpoint.js";
 
 /**
  * Builds the lifecycle hooks for `cloudwatch-logs-insights`, bound to `paths`. All
@@ -55,13 +51,13 @@ export function buildHooks(paths: Core.M3LPaths): Core.M3LScriptLifecycleHooks {
     onAfterRun: async (ctx) => {
       const output = ctx.config.get("output");
       if (typeof output !== "string" || output.length === 0) return;
-      const checkpointStore =
-        new Core.M3LCheckpointStore<LogsInsightsCheckpoint>({
-          paths,
-          name: output,
-          validate: isLogsInsightsCheckpoint,
-          missing: { kind: "empty", value: EMPTY_CHECKPOINT },
-        });
+      // `missing` is inert here: this hook only ever calls `.delete()`, which
+      // never consults the missing-checkpoint policy — see
+      // `buildCheckpointStore`'s TSDoc for why it is still supplied.
+      const checkpointStore = buildCheckpointStore(paths, output, {
+        kind: "empty",
+        value: EMPTY_CHECKPOINT,
+      });
       await checkpointStore.delete();
     },
   };
