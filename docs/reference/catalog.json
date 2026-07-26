@@ -19,6 +19,23 @@
   },
   {
     "namespace": "core",
+    "name": "checkpoint",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/core/checkpoint.md",
+    "symbols": [
+      "M3LCheckpointStore",
+      "M3LCheckpointStoreOptions",
+      "M3LCheckpointMissingPolicy",
+      "M3LCheckpointPathsPort",
+      "M3LCheckpointError",
+      "M3LCheckpointErrorCode",
+      "writeFileAtomic"
+    ]
+  },
+  {
+    "namespace": "core",
     "name": "config",
     "importPath": "@m3l-automation/m3l-common/core",
     "status": "✅",

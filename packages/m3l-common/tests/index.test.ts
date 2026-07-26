@@ -45,6 +45,7 @@ const CORE_REACHABILITY_CASES: ReadonlyArray<
   ]
 > = [
   ["analysis", "M3LThresholdEvaluator", "function"],
+  ["checkpoint", "M3LCheckpointStore", "function"],
   ["config", "M3LConfig", "function"],
   ["diagnostics", "mapErrorToExitCode", "function"],
   ["diagnostics", "M3L_EXIT_CODES", "object"],

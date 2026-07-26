@@ -153,7 +153,7 @@ packages/
   m3l-common/           # the published library (@m3l-automation/m3l-common)
     src/
       index.ts          # main entry / public barrel (re-exports Core + AWS)
-      core/index.ts     # Core namespace barrel (20 documented submodules)
+      core/index.ts     # Core namespace barrel (21 documented submodules)
       aws/index.ts      # AWS namespace barrel (12 documented submodules)
       internal/         # NOT exported; no "exports" entry; may change freely
     dist/               # tsc output (ESM .js + .d.ts) — generated, never edit
