@@ -1,0 +1,602 @@
+/**
+ * Tests for core/checkpoint submodule (RED phase — module not yet
+ * implemented).
+ *
+ * Contract source: docs/reference/core/checkpoint.md.
+ *
+ * Exports under test: `M3LCheckpointStore` (class), `M3LCheckpointError`
+ * (class), and types `M3LCheckpointStoreOptions`, `M3LCheckpointMissingPolicy`,
+ * `M3LCheckpointPathsPort`, `M3LCheckpointErrorCode`.
+ *
+ * Key behavioral contracts under test:
+ *  - read(): parses + validates a present file; applies the `missing` policy
+ *    only on ENOENT (identity-return for `{kind:"empty"}`, throw
+ *    ERR_CHECKPOINT_MISSING chaining the ENOENT cause for `{kind:"error"}`).
+ *  - A present-but-corrupt file always throws ERR_CHECKPOINT_PARSE, even
+ *    under a `{kind:"empty"}` policy — the missing policy governs absence
+ *    only, never corruption.
+ *  - ERR_CHECKPOINT_PARSE never chains the raw SyntaxError as `cause` and
+ *    never leaks a snippet of the malformed content into `message` — a
+ *    checkpoint may hold caller data.
+ *  - A non-ENOENT read/write/delete failure always throws ERR_CHECKPOINT_IO,
+ *    chaining the underlying errno error as `cause`.
+ *  - write() is atomic: a uniquely-named temp file is written as a sibling of
+ *    the target (never os.tmpdir()) and renamed onto it; a rejected rename
+ *    must not corrupt the prior file and must not leave the temp file behind.
+ *  - write()'s ENOENT (missing parent directory) maps to ERR_CHECKPOINT_IO,
+ *    never ERR_CHECKPOINT_MISSING — that code is reserved for read().
+ *  - delete() tolerates an absent file; a non-ENOENT failure is
+ *    ERR_CHECKPOINT_IO.
+ *  - `path` is resolved once at construction via
+ *    `paths.resolveOutput(`${name}.checkpoint.json`)` and stays stable.
+ *  - An unsafe `name` surfaces `M3LPathResolutionError` straight out of the
+ *    constructor, unwrapped — never converted to `M3LCheckpointError`.
+ */
+
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  expectTypeOf,
+  test,
+  vi,
+} from "vitest";
+
+import * as fsp from "node:fs/promises";
+
+// Make 'node:fs/promises' configurable so vi.spyOn can intercept individual
+// functions while everything else still hits the real filesystem (ESM
+// namespace objects are non-writable by default) — mirrors the pattern
+// already used for 'fs' in tests/config.test.ts.
+vi.mock("node:fs/promises", async () => {
+  const actual = await vi.importActual<typeof fsp>("node:fs/promises");
+  return { ...actual };
+});
+
+// Named imports (not `fsp.<method>` member calls) are used for every direct,
+// real-filesystem call in this file: the repo's `no-restricted-syntax` guard
+// bans mutating `fs`/`fsp`/`fsPromises` *member-expression* calls in tests,
+// but a bare identifier call (`mkdtemp(...)`) is unaffected — the same
+// pattern `tests/files.test.ts` already relies on. `fsp` itself is retained
+// only as the `vi.spyOn(fsp, "...")` target for the handful of tests that
+// force a specific rejection.
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+
+import {
+  M3LCheckpointError,
+  M3LCheckpointStore,
+} from "../src/core/checkpoint/index.js";
+import type {
+  M3LCheckpointErrorCode,
+  M3LCheckpointPathsPort,
+  M3LCheckpointStoreOptions,
+} from "../src/core/checkpoint/index.js";
+import { M3LError } from "../src/core/errors/index.js";
+import { M3LPathResolutionError } from "../src/core/utils/index.js";
+
+// ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
+
+interface TestCheckpoint {
+  readonly queryId?: string;
+}
+
+function isTestCheckpoint(value: unknown): value is TestCheckpoint {
+  if (typeof value !== "object" || value === null) return false;
+  const id = (value as Partial<TestCheckpoint>).queryId;
+  return id === undefined || typeof id === "string";
+}
+
+const EMPTY_CHECKPOINT: TestCheckpoint = {};
+
+function makePathsPort(dir: string): M3LCheckpointPathsPort {
+  return {
+    resolveOutput: (name: string) => path.join(dir, name),
+  };
+}
+
+/**
+ * Narrows a mock-call argument to `string`, guarding the possibly-`undefined`
+ * indexed access (`mock.calls[0]?.[0]`) without a non-null assertion.
+ */
+function asString(value: unknown, label: string): string {
+  if (typeof value !== "string") {
+    throw new TypeError(
+      `expected ${label} to be a string, got ${typeof value}`,
+    );
+  }
+  return value;
+}
+
+let dir: string;
+
+beforeEach(async () => {
+  dir = await mkdtemp(path.join(tmpdir(), "m3l-checkpoint-"));
+});
+
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await rm(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// M3LCheckpointStore.read()
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore.read()", () => {
+  test("happy path: a valid checkpoint file on disk parses and validates, returned as TCheckpoint", async () => {
+    const filePath = path.join(dir, "run-a.checkpoint.json");
+    await writeFile(filePath, JSON.stringify({ queryId: "q-1" }), "utf8");
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-a",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    await expect(store.read()).resolves.toEqual({ queryId: "q-1" });
+  });
+
+  test("{kind:'empty'} policy: file absent (ENOENT) resolves with the supplied value BY IDENTITY, not a clone", async () => {
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-missing-empty",
+      validate: isTestCheckpoint,
+      missing: { kind: "empty", value: EMPTY_CHECKPOINT },
+    });
+
+    const result = await store.read();
+    expect(result).toBe(EMPTY_CHECKPOINT);
+  });
+
+  test("{kind:'error'} policy: file absent (ENOENT) throws ERR_CHECKPOINT_MISSING chaining the ENOENT cause", async () => {
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-missing-error",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.read();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_MISSING");
+    const cause = (thrown as M3LCheckpointError).cause;
+    expect(cause).toBeInstanceOf(Error);
+    expect((cause as NodeJS.ErrnoException).code).toBe("ENOENT");
+  });
+
+  test("a {kind:'empty'} policy does NOT suppress ERR_CHECKPOINT_PARSE for a present-but-corrupt file", async () => {
+    const filePath = path.join(dir, "run-corrupt.checkpoint.json");
+    await writeFile(filePath, "{ not valid json", "utf8");
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-corrupt",
+      validate: isTestCheckpoint,
+      missing: { kind: "empty", value: EMPTY_CHECKPOINT },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.read();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_PARSE");
+  });
+
+  test("invalid JSON: throws ERR_CHECKPOINT_PARSE with cause undefined and no raw-content leak in the message", async () => {
+    const SENSITIVE_MARKER = "sekrit-marker-9f3a-do-not-leak";
+    const filePath = path.join(dir, "run-invalid-json.checkpoint.json");
+    await writeFile(
+      filePath,
+      `{ "queryId": "${SENSITIVE_MARKER}", not valid json`,
+      "utf8",
+    );
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-invalid-json",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.read();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_PARSE");
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    expect((thrown as M3LCheckpointError).message).not.toContain(
+      SENSITIVE_MARKER,
+    );
+  });
+
+  test("valid JSON failing validate: throws the same ERR_CHECKPOINT_PARSE code", async () => {
+    const filePath = path.join(dir, "run-invalid-shape.checkpoint.json");
+    await writeFile(filePath, JSON.stringify({ queryId: 42 }), "utf8");
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-invalid-shape",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.read();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_PARSE");
+  });
+
+  test("a non-ENOENT read failure (EACCES) throws ERR_CHECKPOINT_IO chaining the underlying errno error", async () => {
+    const eaccesError = Object.assign(new Error("EACCES: permission denied"), {
+      code: "EACCES",
+    });
+    vi.spyOn(fsp, "readFile").mockRejectedValueOnce(eaccesError);
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-locked-read",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.read();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    expect((thrown as M3LCheckpointError).cause).toBe(eaccesError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LCheckpointStore.write()
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore.write()", () => {
+  test("happy path: after write(), read() returns the written value back out (round-trip)", async () => {
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-roundtrip",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ queryId: "q-roundtrip" });
+    await expect(store.read()).resolves.toEqual({ queryId: "q-roundtrip" });
+  });
+
+  test("atomicity: the temp file is written as a sibling of the target directory, never os.tmpdir()", async () => {
+    const writeFileSpy = vi
+      .spyOn(fsp, "writeFile")
+      .mockResolvedValue(undefined);
+    const renameSpy = vi.spyOn(fsp, "rename").mockResolvedValue(undefined);
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-atomic",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ queryId: "q-atomic" });
+
+    expect(writeFileSpy).toHaveBeenCalledTimes(1);
+    const tempPathArg = asString(
+      writeFileSpy.mock.calls[0]?.[0],
+      "temp write path",
+    );
+    expect(path.dirname(tempPathArg)).toBe(dir);
+    expect(path.dirname(tempPathArg)).not.toBe(tmpdir());
+
+    expect(renameSpy).toHaveBeenCalledTimes(1);
+    const renameFrom = asString(renameSpy.mock.calls[0]?.[0], "rename from");
+    const renameTo = asString(renameSpy.mock.calls[0]?.[1], "rename to");
+    expect(renameFrom).toBe(tempPathArg);
+    expect(renameTo).toBe(store.path);
+  });
+
+  test("atomicity: temp file names are unique across calls (no fixed shared temp name)", async () => {
+    const writeFileSpy = vi
+      .spyOn(fsp, "writeFile")
+      .mockResolvedValue(undefined);
+    vi.spyOn(fsp, "rename").mockResolvedValue(undefined);
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-unique-temp",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ queryId: "q-1" });
+    await store.write({ queryId: "q-2" });
+
+    expect(writeFileSpy).toHaveBeenCalledTimes(2);
+    const firstTemp = asString(
+      writeFileSpy.mock.calls[0]?.[0],
+      "first temp path",
+    );
+    const secondTemp = asString(
+      writeFileSpy.mock.calls[1]?.[0],
+      "second temp path",
+    );
+    expect(firstTemp).not.toBe(secondTemp);
+  });
+
+  test("a rejecting rename leaves the prior file's content byte-intact and removes the temp file", async () => {
+    // Real disk for the successful first write and for the byte-level
+    // assertions below; only `rename` is mocked (once) to force the specific
+    // failure this test proves. A permissions-based approach (chmod 0) is
+    // unreliable here because CI/containers commonly run tests as root,
+    // where permission checks are bypassed — the failure would silently not
+    // reproduce and the test would pass without exercising anything.
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-rename-fail",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ queryId: "original" });
+    const beforeBytes = await readFile(store.path, "utf8");
+
+    const renameFailure = Object.assign(new Error("EPERM: rename failed"), {
+      code: "EPERM",
+    });
+    vi.spyOn(fsp, "rename").mockRejectedValueOnce(renameFailure);
+
+    await expect(store.write({ queryId: "should-not-land" })).rejects.toThrow();
+
+    const afterBytes = await readFile(store.path, "utf8");
+    expect(afterBytes).toBe(beforeBytes);
+
+    const entries = await readdir(dir);
+    expect(entries).toEqual([path.basename(store.path)]);
+  });
+
+  test("ENOENT from a missing parent directory maps to ERR_CHECKPOINT_IO, never ERR_CHECKPOINT_MISSING", async () => {
+    const missingParentDir = path.join(dir, "does-not-exist");
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(missingParentDir),
+      name: "run-no-parent",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ queryId: "q-1" });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    expect((thrown as M3LCheckpointError).code).not.toBe(
+      "ERR_CHECKPOINT_MISSING",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LCheckpointStore.delete()
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore.delete()", () => {
+  test("resolves without throwing when the checkpoint file does not exist (ENOENT-tolerant)", async () => {
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-never-written",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    await expect(store.delete()).resolves.toBeUndefined();
+  });
+
+  test("a non-ENOENT delete failure throws ERR_CHECKPOINT_IO", async () => {
+    const filePath = path.join(dir, "run-locked-delete.checkpoint.json");
+    await writeFile(filePath, JSON.stringify({}), "utf8");
+    const permissionError = Object.assign(
+      new Error("EPERM: operation not permitted"),
+      { code: "EPERM" },
+    );
+    vi.spyOn(fsp, "unlink").mockRejectedValueOnce(permissionError);
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-locked-delete",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.delete();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LCheckpointStore.path
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore.path", () => {
+  test("is resolved once via paths.resolveOutput(`${name}.checkpoint.json`) and is stable across repeated reads", async () => {
+    const resolveOutput = vi.fn((name: string) => path.join(dir, name));
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: { resolveOutput },
+      name: "run-path",
+      validate: isTestCheckpoint,
+      missing: { kind: "empty", value: EMPTY_CHECKPOINT },
+    });
+
+    expect(resolveOutput).toHaveBeenCalledTimes(1);
+    expect(resolveOutput).toHaveBeenCalledWith("run-path.checkpoint.json");
+    expect(store.path).toBe(path.join(dir, "run-path.checkpoint.json"));
+
+    const firstAccess = store.path;
+    await store.read();
+    await store.read();
+    const secondAccess = store.path;
+
+    expect(secondAccess).toBe(firstAccess);
+    // Resolution happens once at construction — repeated reads must not
+    // trigger additional resolveOutput calls.
+    expect(resolveOutput).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LCheckpointStore constructor — pass-through of an unsafe `name`
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore constructor", () => {
+  test("an unsafe name propagates M3LPathResolutionError unchanged, not wrapped in M3LCheckpointError", () => {
+    const pathResolutionFailure = new M3LPathResolutionError(
+      "resolveOutput rejected an unsafe name",
+    );
+    const throwingPaths: M3LCheckpointPathsPort = {
+      resolveOutput: () => {
+        throw pathResolutionFailure;
+      },
+    };
+
+    let thrown: unknown;
+    try {
+      const store = new M3LCheckpointStore<TestCheckpoint>({
+        paths: throwingPaths,
+        name: "../escape",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+      });
+      // Referenced solely to avoid an unused-variable lint finding in the
+      // (unreachable, since the constructor is expected to throw) success
+      // path.
+      expect(store).toBeUndefined();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(pathResolutionFailure);
+    expect(thrown).not.toBeInstanceOf(M3LCheckpointError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LCheckpointError (direct construction)
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointError", () => {
+  test("omits context and cause when neither is supplied", () => {
+    const error = new M3LCheckpointError("boom", {
+      code: "ERR_CHECKPOINT_IO",
+    });
+
+    expect(error).toBeInstanceOf(M3LCheckpointError);
+    expect(error).toBeInstanceOf(M3LError);
+    expect(error.code).toBe("ERR_CHECKPOINT_IO");
+    // M3LError's base constructor defaults an omitted `context` to `{}`
+    // (never `undefined`) — this still exercises the omitted-context branch
+    // of M3LCheckpointError's conditional spread.
+    expect(error.context).toEqual({});
+    expect(error.cause).toBeUndefined();
+  });
+
+  test("round-trips context and cause when both are supplied", () => {
+    const cause = new Error("underlying failure");
+    const context = { path: "/tmp/run.checkpoint.json" };
+
+    const error = new M3LCheckpointError("boom", {
+      code: "ERR_CHECKPOINT_MISSING",
+      context,
+      cause,
+    });
+
+    expect(error.code).toBe("ERR_CHECKPOINT_MISSING");
+    expect(error.context).toEqual(context);
+    expect(error.cause).toBe(cause);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Type-level contract
+// ---------------------------------------------------------------------------
+describe("type-level contract", () => {
+  test("read() returns Promise<TCheckpoint>, not TCheckpoint | undefined, under the 'empty' missing policy", async () => {
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-type-empty",
+      validate: isTestCheckpoint,
+      missing: { kind: "empty", value: EMPTY_CHECKPOINT },
+    });
+
+    const result = store.read();
+    expectTypeOf(result).toEqualTypeOf<Promise<TestCheckpoint>>();
+    await result;
+  });
+
+  test("read() returns Promise<TCheckpoint>, not TCheckpoint | undefined, under the 'error' missing policy", async () => {
+    const filePath = path.join(dir, "run-type-error.checkpoint.json");
+    await writeFile(filePath, JSON.stringify({}), "utf8");
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-type-error",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    const result = store.read();
+    expectTypeOf(result).toEqualTypeOf<Promise<TestCheckpoint>>();
+    await result;
+  });
+
+  test("M3LCheckpointErrorCode is exactly the 3-member union (no wider, no narrower)", () => {
+    expectTypeOf<M3LCheckpointErrorCode>().toEqualTypeOf<
+      "ERR_CHECKPOINT_IO" | "ERR_CHECKPOINT_MISSING" | "ERR_CHECKPOINT_PARSE"
+    >();
+  });
+
+  test("M3LCheckpointStoreOptions<T>['missing'] rejects the 'error' arm paired with an extra 'value' field", () => {
+    // Aliased so the excess-property literal below fits on the same line as
+    // its `@ts-expect-error` directive — TS reports an excess-property error
+    // at the offending property's own line, not the annotation's line, so a
+    // multi-line literal would leave the directive "unused" while the real
+    // error fires one line down.
+    type Missing = M3LCheckpointStoreOptions<TestCheckpoint>["missing"];
+    // @ts-expect-error -- the "error" arm must not accept a `value` field
+    const impossible: Missing = { kind: "error", value: {} };
+    expect(impossible).toBeDefined();
+  });
+
+  test("M3LCheckpointError is assignable to M3LCheckpointError['code']'s narrowed union", () => {
+    expectTypeOf<
+      M3LCheckpointError["code"]
+    >().toEqualTypeOf<M3LCheckpointErrorCode>();
+  });
+});

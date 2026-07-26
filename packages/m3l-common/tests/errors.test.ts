@@ -34,6 +34,7 @@ import type {
   M3LErrorRetryable,
 } from "../src/core/errors/catalog.js";
 import type { M3LThresholdRuleValidationError } from "../src/core/analysis/M3LThresholdRuleValidationError.js";
+import type { M3LCheckpointError } from "../src/core/checkpoint/index.js";
 import {
   M3LConfigMissingError,
   type M3LConfigCoercionError,
@@ -961,6 +962,7 @@ describe("M3LErrorCode type", () => {
       M3LAWSCredentialsError["code"]
     >().toMatchTypeOf<M3LErrorCode>();
     expectTypeOf<M3LAWSIdentityError["code"]>().toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<M3LCheckpointError["code"]>().toMatchTypeOf<M3LErrorCode>();
   });
 
   test("does not narrow M3LError.code itself, which stays string", () => {
