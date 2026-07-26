@@ -1,5 +1,3 @@
-import { readFile, rm, writeFile } from "node:fs/promises";
-
 import { AWS, Core } from "@m3l-automation/m3l-common";
 
 /**
@@ -29,83 +27,47 @@ export interface ScanTableOptions {
   readonly keyCondition: Record<string, unknown> | undefined;
   /** Write a checkpoint every this many pages, per segment. */
   readonly checkpointEveryPages: number;
-  /** Resume from a previously written checkpoint at `checkpointPath`. */
+  /** Resume from a previously written checkpoint in `checkpointStore`. */
   readonly resume: boolean;
-  /** The checkpoint file's path. */
-  readonly checkpointPath: string;
+  /** The injected checkpoint store backing this run's resume state. */
+  readonly checkpointStore: Core.M3LCheckpointStore<ScanCheckpoint>;
   /** Logger for diagnostics. */
   readonly logger: Core.M3LLogger;
 }
 
 /**
- * Loads and parses the checkpoint file for a `resume: true` run.
+ * Type guard narrowing a JSON-parsed value to {@link ScanCheckpoint}, passed
+ * as the `validate` option to the injected `Core.M3LCheckpointStore`. Rejects
+ * anything whose `segments` is not a plain (non-array) object, or whose
+ * entries are not each `null` or a plain (non-array) object.
  *
- * @throws {@link Core.M3LError} with code `ERR_DYNAMO_CRUD_CONFIG` when the
- *   checkpoint file does not exist — `resume: true` with no checkpoint is a
- *   config error, not a silent fresh start.
- * @throws {@link Core.M3LError} with code `ERR_DYNAMO_CRUD_CHECKPOINT` on any
- *   other read failure.
- */
-async function loadCheckpoint(
-  checkpointPath: string,
-): Promise<ScanCheckpoint["segments"]> {
-  try {
-    const raw = await readFile(checkpointPath, "utf-8");
-    const parsed = JSON.parse(raw) as ScanCheckpoint;
-    return parsed.segments;
-  } catch (cause) {
-    if (Core.isEnoentError(cause)) {
-      throw new Core.M3LError(
-        `scanTable: --resume set but checkpoint file '${checkpointPath}' does not exist`,
-        { code: "ERR_DYNAMO_CRUD_CONFIG", cause },
-      );
-    }
-    throw new Core.M3LError(
-      `scanTable: failed reading checkpoint file '${checkpointPath}'`,
-      { code: "ERR_DYNAMO_CRUD_CHECKPOINT", cause },
-    );
-  }
-}
-
-/**
- * Persists the full checkpoint snapshot (every segment's current state),
- * overwriting any prior contents.
+ * @param value - The unknown, JSON-parsed candidate.
+ * @returns Whether `value` is a well-formed {@link ScanCheckpoint}.
+ * @example
+ * ```typescript
+ * import { isScanCheckpoint } from "./scan-table.js";
  *
- * @throws {@link Core.M3LError} with code `ERR_DYNAMO_CRUD_CHECKPOINT` when
- *   the write fails, chaining the original cause.
+ * const candidate: unknown = JSON.parse('{"segments":{"0":null}}');
+ * if (isScanCheckpoint(candidate)) {
+ *   // candidate is narrowed to ScanCheckpoint here
+ * }
+ * ```
  */
-async function saveCheckpoint(
-  checkpointPath: string,
-  segments: ScanCheckpoint["segments"],
-): Promise<void> {
-  try {
-    await writeFile(checkpointPath, JSON.stringify({ segments }));
-  } catch (cause) {
-    throw new Core.M3LError(
-      `scanTable: failed writing checkpoint file '${checkpointPath}'`,
-      { code: "ERR_DYNAMO_CRUD_CHECKPOINT", cause },
-    );
+export function isScanCheckpoint(value: unknown): value is ScanCheckpoint {
+  if (typeof value !== "object" || value === null) return false;
+  const segments = (value as Partial<ScanCheckpoint>).segments;
+  if (
+    typeof segments !== "object" ||
+    segments === null ||
+    Array.isArray(segments)
+  ) {
+    return false;
   }
-}
-
-/**
- * Deletes the checkpoint file once every segment has fully drained. A
- * missing file (already deleted, or never written because the run never
- * hit a checkpoint boundary) is not an error.
- *
- * @throws {@link Core.M3LError} with code `ERR_DYNAMO_CRUD_CHECKPOINT` on any
- *   failure other than the file already being absent.
- */
-async function deleteCheckpoint(checkpointPath: string): Promise<void> {
-  try {
-    await rm(checkpointPath);
-  } catch (cause) {
-    if (Core.isEnoentError(cause)) return;
-    throw new Core.M3LError(
-      `scanTable: failed deleting checkpoint file '${checkpointPath}'`,
-      { code: "ERR_DYNAMO_CRUD_CHECKPOINT", cause },
-    );
-  }
+  return Object.values(segments).every(
+    (cursor) =>
+      cursor === null ||
+      (typeof cursor === "object" && cursor !== null && !Array.isArray(cursor)),
+  );
 }
 
 /**
@@ -224,10 +186,10 @@ async function* driveSegment(
     yield* page.items;
     state.set(segmentIndex, page.lastEvaluatedKey ?? null);
     if (pageCount % opts.checkpointEveryPages === 0) {
-      await saveCheckpoint(opts.checkpointPath, state.snapshot());
+      await opts.checkpointStore.write({ segments: state.snapshot() });
       opts.logger.step(
         `scanTable: checkpoint written for '${opts.tableName}' (segment ${String(segmentIndex)}, ${String(pageCount)} pages)`,
-        { checkpointPath: opts.checkpointPath, segmentIndex, pageCount },
+        { checkpointPath: opts.checkpointStore.path, segmentIndex, pageCount },
       );
     }
   }
@@ -294,26 +256,39 @@ async function* mergeAsync(
  * checkpointing each segment's cursor every `checkpointEveryPages` pages so a
  * killed run can `resume`.
  *
- * `resume: true` loads `checkpointPath`: a segment recorded as `null` is
+ * `resume: true` reads `checkpointStore`: a segment recorded as `null` is
  * already fully drained and is skipped (no further AWS call for it); a
- * segment recorded with a cursor object resumes from it. The checkpoint file
- * is deleted once every segment has fully drained.
+ * segment recorded with a cursor object resumes from it. The checkpoint is
+ * deleted once every segment has fully drained.
  *
- * @param opts - Mode, table, segmentation, and checkpoint settings.
+ * @param opts - Mode, table, segmentation, and checkpoint settings. The
+ *   caller constructs `checkpointStore` (a `Core.M3LCheckpointStore`) with
+ *   the missing-checkpoint policy appropriate for `resume`.
  * @returns An async generator yielding one plain record at a time.
  * @throws {@link Core.M3LError} with code `ERR_DYNAMO_CRUD_CONFIG` when
- *   `mode` is `"query"` and `keyCondition` is missing, or when `resume` is
- *   `true` and the checkpoint file does not exist — both checked before any
+ *   `mode` is `"query"` and `keyCondition` is missing — checked before any
  *   AWS call.
- * @throws {@link Core.M3LError} with code `ERR_DYNAMO_CRUD_CHECKPOINT` on an
- *   unexpected checkpoint read/write/delete failure.
+ * @throws A `Core.M3LCheckpointError` (from `checkpointStore.read()`,
+ *   `.write()`, or `.delete()`) with code `ERR_CHECKPOINT_MISSING` when
+ *   `resume` is `true` and no checkpoint exists, `ERR_CHECKPOINT_PARSE` when
+ *   an existing checkpoint is malformed, or `ERR_CHECKPOINT_IO` on any other
+ *   read/write/delete failure.
  * @throws An `AWS.M3LDynamoDBOperationError` from the underlying
  *   `scanSegment`/`queryItems` call propagates unmodified.
  *
  * @example
  * ```typescript
  * import { AWS, Core } from "@m3l-automation/m3l-common";
- * import { scanTable } from "./scan-table.js";
+ * import { isScanCheckpoint, scanTable } from "./scan-table.js";
+ * import type { ScanCheckpoint } from "./scan-table.js";
+ *
+ * const paths = new Core.M3LPaths();
+ * const checkpointStore = new Core.M3LCheckpointStore<ScanCheckpoint>({
+ *   paths,
+ *   name: "run-1",
+ *   validate: isScanCheckpoint,
+ *   missing: { kind: "empty", value: { segments: {} } },
+ * });
  *
  * for await (const item of scanTable({
  *   dynamoDBDocument: script.aws.clients.dynamoDBDocument,
@@ -325,7 +300,7 @@ async function* mergeAsync(
  *   keyCondition: undefined,
  *   checkpointEveryPages: 25,
  *   resume: false,
- *   checkpointPath: "./data/outputs/run-1.checkpoint.json",
+ *   checkpointStore,
  *   logger: new Core.M3LLogger([]),
  * })) {
  *   // ...
@@ -353,7 +328,7 @@ export async function* scanTable(
   );
 
   const state = new SegmentCheckpointState(
-    opts.resume ? await loadCheckpoint(opts.checkpointPath) : {},
+    opts.resume ? (await opts.checkpointStore.read()).segments : {},
   );
 
   const activeSegments = new Map<
@@ -371,7 +346,7 @@ export async function* scanTable(
 
   yield* mergeAsync(activeSegments);
 
-  await deleteCheckpoint(opts.checkpointPath);
+  await opts.checkpointStore.delete();
   opts.logger.step(
     `scanTable: complete on '${opts.tableName}' — checkpoint cleared`,
     { tableName: opts.tableName },

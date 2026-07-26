@@ -1,6 +1,6 @@
 import type { Core } from "@m3l-automation/m3l-common";
 
-import { deleteCheckpoint } from "./steps/checkpoint.js";
+import { buildCheckpointStore, EMPTY_CHECKPOINT } from "./steps/checkpoint.js";
 
 /**
  * Builds the lifecycle hooks for `cloudwatch-logs-insights`, bound to `paths`. All
@@ -25,7 +25,10 @@ import { deleteCheckpoint } from "./steps/checkpoint.js";
  * (and its accumulated rows) is left intact for a subsequent `resume: true`
  * run, exactly as `docs/reference/scripts/cloudwatch-logs-insights.md`'s
  * "Inputs and outputs" section specifies (`M3LScript` has no `onShutdown`
- * hook).
+ * hook). The store is constructed here, inside the hook body, rather than
+ * once in `buildHooks`: its `name` is the resolved `output` config value,
+ * which is only known once `ctx.config` is available at hook-invocation
+ * time.
  *
  * @param paths - The composition root's `Core.M3LPaths` instance.
  * @returns The lifecycle hooks object to pass to `Core.M3LScript`.
@@ -48,7 +51,14 @@ export function buildHooks(paths: Core.M3LPaths): Core.M3LScriptLifecycleHooks {
     onAfterRun: async (ctx) => {
       const output = ctx.config.get("output");
       if (typeof output !== "string" || output.length === 0) return;
-      await deleteCheckpoint({ paths, output });
+      // `missing` is inert here: this hook only ever calls `.delete()`, which
+      // never consults the missing-checkpoint policy — see
+      // `buildCheckpointStore`'s TSDoc for why it is still supplied.
+      const checkpointStore = buildCheckpointStore(paths, output, {
+        kind: "empty",
+        value: EMPTY_CHECKPOINT,
+      });
+      await checkpointStore.delete();
     },
   };
 }

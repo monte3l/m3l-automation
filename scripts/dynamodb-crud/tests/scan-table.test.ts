@@ -1,5 +1,3 @@
-import * as fsp from "node:fs/promises";
-
 import {
   afterEach,
   beforeEach,
@@ -10,18 +8,11 @@ import {
   vi,
 } from "vitest";
 
-// Make 'node:fs/promises' configurable so vi.spyOn can intercept individual
-// functions (ESM namespace objects are non-writable) — mirrors
-// scripts/json-etl/tests/import-records.test.ts.
-vi.mock("node:fs/promises", async () => {
-  const actual = await vi.importActual<typeof fsp>("node:fs/promises");
-  return { ...actual };
-});
-
 import type * as M3LCommonModule from "@m3l-automation/m3l-common";
 
-// Mock only AWS.scanSegment/queryItems (async generators), keeping every
-// other Core/AWS export real (Core.M3LLogger, Core.M3LError, and
+// Mock AWS.scanSegment/queryItems (async generators) and Core.M3LCheckpointStore
+// (a fresh, independently-mocked instance per `new`), keeping every other
+// Core/AWS export real (Core.M3LLogger, Core.M3LError, and
 // AWS.M3LDynamoDBOperationError are used verbatim below).
 vi.mock("@m3l-automation/m3l-common", async () => {
   const actual = await vi.importActual<typeof M3LCommonModule>(
@@ -34,6 +25,20 @@ vi.mock("@m3l-automation/m3l-common", async () => {
       scanSegment: vi.fn(),
       queryItems: vi.fn(),
     },
+    Core: {
+      ...actual.Core,
+      // A plain `function` (not an arrow) — `new Core.M3LCheckpointStore(...)`
+      // below requires a constructible mock implementation; an arrow function
+      // is never constructible and throws "is not a constructor" at runtime.
+      M3LCheckpointStore: vi.fn().mockImplementation(function FakeStore() {
+        return {
+          read: vi.fn(),
+          write: vi.fn().mockResolvedValue(undefined),
+          delete: vi.fn().mockResolvedValue(undefined),
+          path: "run.checkpoint.json",
+        };
+      }),
+    },
   };
 });
 
@@ -43,17 +48,15 @@ import type {
   ScanCheckpoint,
   ScanTableOptions,
 } from "../src/steps/scan-table.js";
-import { scanTable } from "../src/steps/scan-table.js";
+import { isScanCheckpoint, scanTable } from "../src/steps/scan-table.js";
 
 /**
- * Contract: docs/reference/scripts/dynamodb-crud.md, `scan-table` row, plus the
- * verbatim `ScanCheckpoint`/`ScanTableOptions`/`scanTable` shapes handed down
- * for this RED phase.
- *
- * Design choice (documented per the task instructions, since the contract
- * says "fs.rm or unlink" without picking one): these tests mock `fs.rm` as
- * the checkpoint-delete primitive. If the implementer chooses `unlink`
- * instead, the relevant tests need a matching update — flagged to the hub.
+ * Contract: docs/reference/scripts/dynamodb-crud.md, `scan-table` row, plus
+ * docs/reference/core/checkpoint.md for the injected `Core.M3LCheckpointStore`
+ * collaborator. `Core.M3LCheckpointStore` is mocked as a constructor that
+ * returns a fresh fake `{read,write,delete,path}` instance on every `new` —
+ * checkpoint I/O is entirely the library's concern (already tested there);
+ * `scan-table.ts` only calls through the store's methods.
  */
 
 type DynamoDBDocumentClient = Parameters<typeof AWS.scanSegment>[0];
@@ -62,6 +65,25 @@ type DynamoDBDocumentClient = Parameters<typeof AWS.scanSegment>[0];
 const fakeClient = {} as unknown as DynamoDBDocumentClient;
 
 const logger = new Core.M3LLogger([]);
+
+function alwaysScanCheckpoint(_value: unknown): _value is ScanCheckpoint {
+  return true;
+}
+
+function buildCheckpointStore(): Core.M3LCheckpointStore<ScanCheckpoint> {
+  return new Core.M3LCheckpointStore<ScanCheckpoint>({
+    paths: new Core.M3LPaths(),
+    name: "run",
+    validate: alwaysScanCheckpoint,
+    missing: { kind: "empty", value: { segments: {} } },
+  });
+}
+
+let checkpointStore: Core.M3LCheckpointStore<ScanCheckpoint>;
+
+beforeEach(() => {
+  checkpointStore = buildCheckpointStore();
+});
 
 function baseOptions(
   overrides: Partial<ScanTableOptions> = {},
@@ -76,7 +98,7 @@ function baseOptions(
     keyCondition: undefined,
     checkpointEveryPages: 100,
     resume: false,
-    checkpointPath: "run.checkpoint.json",
+    checkpointStore,
     logger,
     ...overrides,
   };
@@ -88,22 +110,11 @@ async function drain<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   return out;
 }
 
-function enoentError(): NodeJS.ErrnoException {
-  return Object.assign(new Error("no such file or directory"), {
-    code: "ENOENT",
-  });
-}
-
-beforeEach(() => {
-  vi.spyOn(fsp, "writeFile").mockResolvedValue(undefined);
-  vi.spyOn(fsp, "rm").mockResolvedValue(undefined);
-});
-
 afterEach(() => {
-  // restoreAllMocks() only undoes vi.spyOn spies (fsp.writeFile/rm below); it
-  // does not clear plain vi.fn() mocks (AWS.scanSegment/queryItems, created
-  // inside the top-level vi.mock() factory), so their call history and
-  // mockImplementation would otherwise leak into the next test.
+  // restoreAllMocks() only undoes vi.spyOn spies; it does not clear plain
+  // vi.fn() mocks (AWS.scanSegment/queryItems, created inside the top-level
+  // vi.mock() factory), so their call history and mockImplementation would
+  // otherwise leak into the next test.
   vi.restoreAllMocks();
   vi.mocked(AWS.scanSegment).mockReset();
   vi.mocked(AWS.queryItems).mockReset();
@@ -215,7 +226,7 @@ describe("scanTable — query mode", () => {
 });
 
 describe("scanTable — checkpointing", () => {
-  test("writes the checkpoint file every checkpointEveryPages pages, keyed by segment index", async () => {
+  test("writes the checkpoint every checkpointEveryPages pages, keyed by segment index", async () => {
     vi.mocked(AWS.scanSegment).mockImplementation(async function* () {
       await Promise.resolve();
       yield { items: [{ id: 1 }], lastEvaluatedKey: { id: 1 } };
@@ -224,16 +235,10 @@ describe("scanTable — checkpointing", () => {
 
     await drain(scanTable(baseOptions({ checkpointEveryPages: 1 })));
 
-    expect(fsp.writeFile).toHaveBeenCalled();
-    const firstCall = vi.mocked(fsp.writeFile).mock.calls[0];
-    expect(firstCall).toBeDefined();
-    if (firstCall === undefined) throw new Error("unreachable");
-    const [path, payload] = firstCall;
-    expect(path).toBe("run.checkpoint.json");
-    if (typeof payload !== "string")
-      throw new Error("expected a string payload");
-    const parsed = JSON.parse(payload) as ScanCheckpoint;
-    expect(parsed.segments).toEqual({ "0": { id: 1 } });
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- mocked store property is a vi.fn(), never called unbound
+    expect(checkpointStore.write).toHaveBeenCalledWith({
+      segments: { "0": { id: 1 } },
+    });
   });
 
   test("does not advance the checkpoint until every item in the page has been yielded to the consumer", async () => {
@@ -248,7 +253,8 @@ describe("scanTable — checkpointing", () => {
 
     const first = await iterator.next();
     expect(first.value).toEqual({ id: 1 });
-    expect(fsp.writeFile).not.toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- mocked store property is a vi.fn(), never called unbound
+    expect(checkpointStore.write).not.toHaveBeenCalled();
 
     const second = await iterator.next();
     expect(second.value).toEqual({ id: 2 });
@@ -256,17 +262,18 @@ describe("scanTable — checkpointing", () => {
     // `driveSegment` has not yet resumed past `yield* page.items` to advance
     // the checkpoint — a crash right here must not have already persisted a
     // cursor past items the consumer hasn't necessarily finished writing.
-    expect(fsp.writeFile).not.toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- mocked store property is a vi.fn(), never called unbound
+    expect(checkpointStore.write).not.toHaveBeenCalled();
 
     // Pulling once more resumes `driveSegment` past `yield*`, which is where
     // the checkpoint now advances — proving it only does so once every item
     // in the page has actually been yielded out.
     await iterator.next();
-    expect(fsp.writeFile).toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- mocked store property is a vi.fn(), never called unbound
+    expect(checkpointStore.write).toHaveBeenCalled();
   });
 
-  test("deletes the checkpoint file after the generator fully drains, ignoring an ENOENT on delete", async () => {
-    vi.mocked(fsp.rm).mockRejectedValueOnce(enoentError());
+  test("deletes the checkpoint after the generator fully drains", async () => {
     vi.mocked(AWS.scanSegment).mockImplementation(async function* () {
       await Promise.resolve();
       yield { items: [{ id: 1 }], lastEvaluatedKey: undefined };
@@ -277,12 +284,15 @@ describe("scanTable — checkpointing", () => {
     );
 
     expect(items).toEqual([{ id: 1 }]);
-    expect(fsp.rm).toHaveBeenCalledWith("run.checkpoint.json");
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- mocked store property is a vi.fn(), never called unbound
+    expect(checkpointStore.delete).toHaveBeenCalledTimes(1);
   });
 
-  test("wraps a non-ENOENT checkpoint write failure in a typed checkpoint error, chaining the cause", async () => {
-    const writeError = new Error("EACCES: permission denied");
-    vi.mocked(fsp.writeFile).mockRejectedValue(writeError);
+  test("propagates a checkpoint write failure unmodified (no local re-wrapping)", async () => {
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- mocked store property is a vi.fn(), never called unbound
+    vi.mocked(checkpointStore.write).mockRejectedValue(
+      new Core.M3LCheckpointError("boom", { code: "ERR_CHECKPOINT_IO" }),
+    );
     vi.mocked(AWS.scanSegment).mockImplementation(async function* () {
       await Promise.resolve();
       yield { items: [{ id: 1 }], lastEvaluatedKey: { id: 1 } };
@@ -296,9 +306,8 @@ describe("scanTable — checkpointing", () => {
       thrown = error;
     }
 
-    expect(thrown).toBeInstanceOf(Core.M3LError);
-    expect((thrown as Core.M3LError).code).toBe("ERR_DYNAMO_CRUD_CHECKPOINT");
-    expect((thrown as Core.M3LError).cause).toBe(writeError);
+    expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
+    expect((thrown as Core.M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
   });
 
   test("totalSegments: 2 aggregates item counts and marks both segments done in the final checkpoint (interleaving itself is not asserted)", async () => {
@@ -328,23 +337,21 @@ describe("scanTable — checkpointing", () => {
       new Set(["a1", "a2", "b1", "b2"]),
     );
 
-    const lastCall = vi.mocked(fsp.writeFile).mock.calls.at(-1);
-    expect(lastCall).toBeDefined();
-    if (lastCall === undefined) throw new Error("unreachable");
-    const [, lastPayload] = lastCall;
-    if (typeof lastPayload !== "string")
-      throw new Error("expected a string payload");
-    const parsed = JSON.parse(lastPayload) as ScanCheckpoint;
-    expect(parsed.segments).toEqual({ "0": null, "1": null });
-    expect(fsp.rm).toHaveBeenCalledWith("run.checkpoint.json");
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- mocked store property is a vi.fn(), never called unbound
+    expect(checkpointStore.write).toHaveBeenLastCalledWith({
+      segments: { "0": null, "1": null },
+    });
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- mocked store property is a vi.fn(), never called unbound
+    expect(checkpointStore.delete).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("scanTable — resume", () => {
   test("resumes a segment from its saved checkpoint cursor", async () => {
-    vi.spyOn(fsp, "readFile").mockResolvedValue(
-      JSON.stringify({ segments: { "0": { cursorId: "abc" } } }),
-    );
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- mocked store property is a vi.fn(), never called unbound
+    vi.mocked(checkpointStore.read).mockResolvedValue({
+      segments: { "0": { cursorId: "abc" } },
+    });
     vi.mocked(AWS.scanSegment).mockImplementation(async function* () {
       await Promise.resolve();
       yield { items: [{ id: "resumed" }], lastEvaluatedKey: undefined };
@@ -361,9 +368,10 @@ describe("scanTable — resume", () => {
   });
 
   test("skips a segment already recorded as done (null) — no further AWS call for it", async () => {
-    vi.spyOn(fsp, "readFile").mockResolvedValue(
-      JSON.stringify({ segments: { "0": null } }),
-    );
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- mocked store property is a vi.fn(), never called unbound
+    vi.mocked(checkpointStore.read).mockResolvedValue({
+      segments: { "0": null },
+    });
 
     const items = await drain(
       scanTable(baseOptions({ resume: true, totalSegments: 1 })),
@@ -371,30 +379,28 @@ describe("scanTable — resume", () => {
 
     expect(items).toEqual([]);
     expect(AWS.scanSegment).not.toHaveBeenCalled();
-    expect(fsp.rm).toHaveBeenCalledWith("run.checkpoint.json");
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- mocked store property is a vi.fn(), never called unbound
+    expect(checkpointStore.delete).toHaveBeenCalledTimes(1);
   });
 
-  test("resume: true with a missing checkpoint file throws a typed config error naming the path, before any AWS call", async () => {
-    vi.spyOn(fsp, "readFile").mockRejectedValue(enoentError());
+  test("resume: true propagates the checkpoint store's ERR_CHECKPOINT_MISSING rejection before any AWS call", async () => {
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- mocked store property is a vi.fn(), never called unbound
+    vi.mocked(checkpointStore.read).mockRejectedValue(
+      new Core.M3LCheckpointError("checkpoint missing", {
+        code: "ERR_CHECKPOINT_MISSING",
+      }),
+    );
 
     let thrown: unknown;
     try {
-      await drain(
-        scanTable(
-          baseOptions({
-            resume: true,
-            checkpointPath: "missing.checkpoint.json",
-          }),
-        ),
-      );
+      await drain(scanTable(baseOptions({ resume: true, checkpointStore })));
     } catch (error) {
       thrown = error;
     }
 
-    expect(thrown).toBeInstanceOf(Core.M3LError);
-    expect((thrown as Core.M3LError).code).toBe("ERR_DYNAMO_CRUD_CONFIG");
-    expect((thrown as Core.M3LError).message).toContain(
-      "missing.checkpoint.json",
+    expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
+    expect((thrown as Core.M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_MISSING",
     );
     expect(AWS.scanSegment).not.toHaveBeenCalled();
   });
@@ -411,5 +417,25 @@ describe("scanTable — type contract", () => {
     expectTypeOf<ScanCheckpoint["segments"]>().toEqualTypeOf<
       Record<string, Record<string, unknown> | null>
     >();
+  });
+});
+
+describe("isScanCheckpoint", () => {
+  test.each<[string, unknown]>([
+    ["a non-object", "not-an-object"],
+    ["an object with a non-object segments", { segments: "nope" }],
+    ["an object whose segments is an array", { segments: [] }],
+    [
+      "an object whose segments has an array-valued entry",
+      { segments: { "0": [] } },
+    ],
+  ])("rejects %s", (_description, candidate) => {
+    expect(isScanCheckpoint(candidate)).toBe(false);
+  });
+
+  test("accepts a well-formed checkpoint", () => {
+    expect(
+      isScanCheckpoint({ segments: { "0": null, "1": { key: "x" } } }),
+    ).toBe(true);
   });
 });
