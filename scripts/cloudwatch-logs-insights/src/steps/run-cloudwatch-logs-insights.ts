@@ -1,10 +1,6 @@
 import { Core, type AWS } from "@m3l-automation/m3l-common";
 
-import {
-  EMPTY_CHECKPOINT,
-  readCheckpoint,
-  writeCheckpoint,
-} from "./checkpoint.js";
+import { buildCheckpointStore, EMPTY_CHECKPOINT } from "./checkpoint.js";
 import type { LogsInsightsCheckpoint, LogsInsightsRow } from "./checkpoint.js";
 import { exportResults } from "./export-results.js";
 import { resolveSettings } from "./resolve-settings.js";
@@ -25,6 +21,12 @@ import type { LogsInsightsTimeWindow } from "./time-range.js";
  * waiting on it. A terminal query failure aborts the whole run with the
  * checkpoint (and its accumulated rows) left intact — the output file is
  * only ever written on full completion.
+ *
+ * The checkpoint's payload shape (`LogsInsightsCheckpoint`, `LogsInsightsRow`),
+ * its type guard (`isLogsInsightsCheckpoint`), its empty-run default
+ * (`EMPTY_CHECKPOINT`), and the shared `buildCheckpointStore` factory live in
+ * `./checkpoint.js` — a neutral module shared with `hooks.ts`, which also
+ * needs the payload contract for its own delete-on-success store.
  */
 
 /** The run summary `runCloudwatchLogsInsights` reports back to its caller. */
@@ -36,6 +38,20 @@ export interface LogsInsightsRunSummary {
 }
 
 /**
+ * The dependencies the window-processing helpers ({@link startOrReattachQuery},
+ * {@link awaitAndAccumulate}, {@link runWindow}, {@link runRemainingWindows})
+ * actually read. Deliberately narrower than `runCloudwatchLogsInsights`'s own
+ * top-level `deps` parameter — none of these four helpers reads `paths`
+ * (only the orchestrator does, to build the checkpoint store via
+ * `buildCheckpointStore`), so it is not threaded through here.
+ */
+interface WindowDeps {
+  readonly logger: Core.M3LLogger;
+  readonly client: AWS.M3LLogsInsightsClient;
+  readonly checkpointStore: Core.M3LCheckpointStore<LogsInsightsCheckpoint>;
+}
+
+/**
  * Starts a fresh query for `window` and checkpoints its in-flight query id,
  * or reuses `reattachQueryId` when resuming a run whose query was already
  * started (and checkpointed) before the previous process exited. Logs and
@@ -44,11 +60,7 @@ export interface LogsInsightsRunSummary {
  * of the window's lifecycle (`startQuery` vs `awaitResults`) failed.
  */
 async function startOrReattachQuery(args: {
-  readonly deps: {
-    readonly logger: Core.M3LLogger;
-    readonly client: AWS.M3LLogsInsightsClient;
-    readonly paths: Core.M3LPaths;
-  };
+  readonly deps: WindowDeps;
   readonly settings: LogsInsightsRunSettings;
   readonly index: number;
   readonly totalWindows: number;
@@ -85,14 +97,10 @@ async function startOrReattachQuery(args: {
     throw cause;
   }
 
-  await writeCheckpoint({
-    paths: deps.paths,
-    output: settings.output,
-    checkpoint: {
-      completedWindows: index,
-      rows: accumulatedRows,
-      inFlightQueryId: queryId,
-    },
+  await deps.checkpointStore.write({
+    completedWindows: index,
+    rows: accumulatedRows,
+    inFlightQueryId: queryId,
   });
   return queryId;
 }
@@ -103,19 +111,14 @@ async function startOrReattachQuery(args: {
  * failure so the caller's abort message reports the failing window.
  */
 async function awaitAndAccumulate(args: {
-  readonly deps: {
-    readonly logger: Core.M3LLogger;
-    readonly client: AWS.M3LLogsInsightsClient;
-    readonly paths: Core.M3LPaths;
-  };
+  readonly deps: WindowDeps;
   readonly settings: LogsInsightsRunSettings;
   readonly index: number;
   readonly totalWindows: number;
   readonly queryId: string;
   readonly accumulatedRows: LogsInsightsRow[];
 }): Promise<void> {
-  const { deps, settings, index, totalWindows, queryId, accumulatedRows } =
-    args;
+  const { deps, index, totalWindows, queryId, accumulatedRows } = args;
 
   let result: AWS.LogsInsightsQueryResult;
   try {
@@ -128,13 +131,9 @@ async function awaitAndAccumulate(args: {
   }
 
   accumulatedRows.push(...result.rows);
-  await writeCheckpoint({
-    paths: deps.paths,
-    output: settings.output,
-    checkpoint: {
-      completedWindows: index + 1,
-      rows: accumulatedRows,
-    },
+  await deps.checkpointStore.write({
+    completedWindows: index + 1,
+    rows: accumulatedRows,
   });
 }
 
@@ -144,11 +143,7 @@ async function awaitAndAccumulate(args: {
  * {@link awaitAndAccumulate} for the two halves of the lifecycle.
  */
 async function runWindow(args: {
-  readonly deps: {
-    readonly logger: Core.M3LLogger;
-    readonly client: AWS.M3LLogsInsightsClient;
-    readonly paths: Core.M3LPaths;
-  };
+  readonly deps: WindowDeps;
   readonly settings: LogsInsightsRunSettings;
   readonly index: number;
   readonly totalWindows: number;
@@ -158,6 +153,51 @@ async function runWindow(args: {
 }): Promise<void> {
   const queryId = await startOrReattachQuery(args);
   await awaitAndAccumulate({ ...args, queryId });
+}
+
+/**
+ * Runs every window from `initial.completedWindows` through the end of
+ * `windows`, accumulating rows in place. Extracted from
+ * {@link runCloudwatchLogsInsights} to keep that function within the
+ * module's line-count budget.
+ */
+async function runRemainingWindows(args: {
+  readonly deps: WindowDeps;
+  readonly settings: LogsInsightsRunSettings;
+  readonly windows: readonly LogsInsightsTimeWindow[];
+  readonly initial: LogsInsightsCheckpoint;
+}): Promise<LogsInsightsRow[]> {
+  const { deps, settings, windows, initial } = args;
+  const accumulatedRows: LogsInsightsRow[] = [...initial.rows];
+
+  for (
+    let index = initial.completedWindows;
+    index < windows.length;
+    index += 1
+  ) {
+    const window = windows[index];
+    if (window === undefined) {
+      throw new Core.M3LError(
+        `planned time window ${String(index)} is out of range`,
+        { code: "ERR_LOGS_INSIGHTS_WINDOW_RANGE" },
+      );
+    }
+
+    const reattachQueryId =
+      index === initial.completedWindows ? initial.inFlightQueryId : undefined;
+
+    await runWindow({
+      deps,
+      settings,
+      index,
+      totalWindows: windows.length,
+      window,
+      reattachQueryId,
+      accumulatedRows,
+    });
+  }
+
+  return accumulatedRows;
 }
 
 /**
@@ -212,42 +252,39 @@ export async function runCloudwatchLogsInsights(deps: {
     settings.windowMinutes,
   );
 
-  const initial: LogsInsightsCheckpoint = settings.resume
-    ? await readCheckpoint({ paths: deps.paths, output: settings.output })
-    : EMPTY_CHECKPOINT;
+  // `--resume` with no checkpoint file is a typed config error, not a
+  // silent fresh start (docs/reference/core/checkpoint.md's §1.2
+  // conformance contract). The `{kind:"empty"}` arm is supplied only to
+  // satisfy the store's required `missing` field — this script never calls
+  // `read()` on a non-resume run (see the `settings.resume ?` branch below),
+  // so that arm is not exercised in practice today.
+  const checkpointStore = buildCheckpointStore(
+    deps.paths,
+    settings.output,
+    settings.resume
+      ? { kind: "error" }
+      : { kind: "empty", value: EMPTY_CHECKPOINT },
+  );
 
-  const accumulatedRows: LogsInsightsRow[] = [...initial.rows];
+  const initial: LogsInsightsCheckpoint = settings.resume
+    ? await checkpointStore.read()
+    : EMPTY_CHECKPOINT;
 
   deps.logger.step(
     `cloudwatch-logs-insights: running ${String(windows.length - initial.completedWindows)} of ${String(windows.length)} windows`,
   );
 
-  for (
-    let index = initial.completedWindows;
-    index < windows.length;
-    index += 1
-  ) {
-    const window = windows[index];
-    if (window === undefined) {
-      throw new Core.M3LError(
-        `planned time window ${String(index)} is out of range`,
-        { code: "ERR_LOGS_INSIGHTS_WINDOW_RANGE" },
-      );
-    }
-
-    const reattachQueryId =
-      index === initial.completedWindows ? initial.inFlightQueryId : undefined;
-
-    await runWindow({
-      deps,
-      settings,
-      index,
-      totalWindows: windows.length,
-      window,
-      reattachQueryId,
-      accumulatedRows,
-    });
-  }
+  const windowDeps: WindowDeps = {
+    logger: deps.logger,
+    client: deps.client,
+    checkpointStore,
+  };
+  const accumulatedRows = await runRemainingWindows({
+    deps: windowDeps,
+    settings,
+    windows,
+    initial,
+  });
 
   await exportResults({
     rows: accumulatedRows,

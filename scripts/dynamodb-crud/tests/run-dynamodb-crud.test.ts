@@ -42,8 +42,8 @@ vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
 
 // One narrow exception to "the sibling steps run for real": wrap (not
 // replace) `scan-table.js`'s `scanTable` export in a `vi.fn()` so tests can
-// inspect the `checkpointPath` it was actually invoked with (fix #1 —
-// `--resume`'s checkpoint file must be keyed to `runName`/`operation`+
+// inspect the `checkpointStore` it was actually invoked with (fix #1 —
+// `--resume`'s checkpoint identity must be keyed to `runName`/`operation`+
 // `tableName`, never the fresh-per-invocation `correlationId`). The real
 // implementation still runs underneath; this is a spy, not a stub.
 vi.mock("../src/steps/scan-table.js", async (importOriginal) => {
@@ -78,7 +78,7 @@ const batchWriteItemsMock = vi.mocked(AWS.batchWriteItems);
 const batchDeleteItemsMock = vi.mocked(AWS.batchDeleteItems);
 const describeTableMock = vi.mocked(AWS.describeTable);
 // A spy wrapping the REAL scanTable implementation (see the vi.mock above) —
-// used only to inspect what `checkpointPath` a run actually invoked it with.
+// used only to inspect what `checkpointStore` a run actually invoked it with.
 const scanTableMock = vi.mocked(scanTable);
 
 // Only the mocked AWS functions are ever invoked on these clients in these
@@ -744,7 +744,7 @@ describe("runDynamodbCrud — bad record vs. source failure (batch input)", () =
   });
 });
 
-describe("runDynamodbCrud — checkpoint path keyed to runName/operation+tableName (fix #1)", () => {
+describe("runDynamodbCrud — checkpoint identity keyed to runName/operation+tableName (fix #1)", () => {
   function mockOnePageScan(): void {
     scanSegmentMock.mockImplementation(function fakeScanSegment() {
       return (async function* page() {
@@ -754,8 +754,31 @@ describe("runDynamodbCrud — checkpoint path keyed to runName/operation+tableNa
     });
   }
 
-  test("checkpointPath is identical across two runs with different correlationId values (no runName set)", async () => {
+  /**
+   * `Core` is never mocked in this file (see the top-of-file `vi.mock`
+   * factory), so `scanTable`'s real, unmocked completion path constructs a
+   * real `Core.M3LCheckpointStore` and calls its real `.write()`/`.delete()`
+   * — which would otherwise perform real `fsp.writeFile`/`fsp.rename`/
+   * `fsp.unlink` calls against the real `data/output/` directory
+   * (`M3LCheckpointStore.write()` uses `internal/files/atomicWrite`'s
+   * write-temp-then-rename; `.delete()` uses `fsp.unlink` directly — see
+   * `packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts`).
+   * `Core.M3LPaths.resolveOutput` itself performs no filesystem I/O (it is a
+   * pure path computation, per its own TSDoc), so stubbing only the three
+   * fs primitives below — not `resolveOutput` — keeps both tests' real,
+   * deterministic `paths.resolveOutput(...)` equality/inequality assertions
+   * intact while guaranteeing no real file is ever written, renamed, or
+   * unlinked.
+   */
+  function stubCheckpointFs(): void {
+    vi.spyOn(fsp, "writeFile").mockResolvedValue(undefined);
+    vi.spyOn(fsp, "rename").mockResolvedValue(undefined);
+    vi.spyOn(fsp, "unlink").mockResolvedValue(undefined);
+  }
+
+  test("checkpointStore.path is identical across two runs with different correlationId values (no runName set)", async () => {
     mockOnePageScan();
+    stubCheckpointFs();
     const configValues = {
       ...BASE_CONFIG,
       operation: "scan",
@@ -780,18 +803,22 @@ describe("runDynamodbCrud — checkpoint path keyed to runName/operation+tableNa
     );
     const firstCallOptions = scanTableMock.mock.calls[0]?.[0];
     const secondCallOptions = scanTableMock.mock.calls[1]?.[0];
-    expect(firstCallOptions?.checkpointPath).toBe(expectedCheckpointPath);
-    expect(secondCallOptions?.checkpointPath).toBe(expectedCheckpointPath);
-    // Both runs used the SAME checkpoint path despite different
-    // correlationId values — the bug this guards against tied checkpointPath
-    // to correlationId, which would have produced two distinct paths here.
-    expect(firstCallOptions?.checkpointPath).toBe(
-      secondCallOptions?.checkpointPath,
+    expect(firstCallOptions?.checkpointStore.path).toBe(expectedCheckpointPath);
+    expect(secondCallOptions?.checkpointStore.path).toBe(
+      expectedCheckpointPath,
+    );
+    // Both runs used the SAME checkpoint identity despite different
+    // correlationId values — the bug this guards against tied the checkpoint
+    // identity to correlationId, which would have produced two distinct
+    // paths here.
+    expect(firstCallOptions?.checkpointStore.path).toBe(
+      secondCallOptions?.checkpointStore.path,
     );
   });
 
   test("an explicit 'runName' overrides the operation+tableName fallback", async () => {
     mockOnePageScan();
+    stubCheckpointFs();
     stubOutputStream();
     const deps = buildDeps({
       ...BASE_CONFIG,
@@ -811,8 +838,8 @@ describe("runDynamodbCrud — checkpoint path keyed to runName/operation+tableNa
       "scan-orders.checkpoint.json",
     );
     const callOptions = scanTableMock.mock.calls[0]?.[0];
-    expect(callOptions?.checkpointPath).toBe(expectedCheckpointPath);
-    expect(callOptions?.checkpointPath).not.toBe(unexpectedFallbackPath);
+    expect(callOptions?.checkpointStore.path).toBe(expectedCheckpointPath);
+    expect(callOptions?.checkpointStore.path).not.toBe(unexpectedFallbackPath);
   });
 });
 
