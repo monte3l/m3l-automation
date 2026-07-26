@@ -301,7 +301,14 @@ export async function runCloudwatchLogsInsights(deps: {
     paths: deps.paths,
     name: settings.output,
     validate: isLogsInsightsCheckpoint,
-    missing: { kind: "empty", value: EMPTY_CHECKPOINT },
+    // `--resume` with no checkpoint file is a typed config error, not a
+    // silent fresh start (docs/reference/core/checkpoint.md's §1.2
+    // conformance contract) — a non-resume run still never touches the
+    // checkpoint file at all (see the `settings.resume ?` branch below), so
+    // the `{kind:"empty"}` arm here is exercised only by that branch.
+    missing: settings.resume
+      ? { kind: "error" }
+      : { kind: "empty", value: EMPTY_CHECKPOINT },
   });
 
   const initial: LogsInsightsCheckpoint = settings.resume
