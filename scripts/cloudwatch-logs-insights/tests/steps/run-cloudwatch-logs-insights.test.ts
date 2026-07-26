@@ -66,6 +66,10 @@ vi.mock("../../src/steps/export-results.js", () => ({
 import { AWS, Core } from "@m3l-automation/m3l-common";
 
 import { runCloudwatchLogsInsights } from "../../src/steps/run-cloudwatch-logs-insights.js";
+import {
+  isLogsInsightsCheckpoint,
+  type LogsInsightsCheckpoint,
+} from "../../src/steps/checkpoint.js";
 
 function buildConfig(values: Record<string, unknown>): Core.M3LConfig {
   const config = new Core.M3LConfig();
@@ -436,5 +440,39 @@ describe("runCloudwatchLogsInsights — resume", () => {
     );
     expect(client.startQuery).not.toHaveBeenCalled();
     expect(exportResultsMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("isLogsInsightsCheckpoint", () => {
+  it.each<[string, unknown]>([
+    ["a non-object", "not-an-object"],
+    ["null", null],
+    ["an object with completedWindows missing", { rows: [] }],
+    [
+      "an object with completedWindows not a number",
+      { completedWindows: "0", rows: [] },
+    ],
+    ["an object with rows missing", { completedWindows: 0 }],
+    ["an object with rows not an array", { completedWindows: 0, rows: "nope" }],
+    [
+      "an object whose inFlightQueryId is present but not a string",
+      { completedWindows: 0, rows: [], inFlightQueryId: 123 },
+    ],
+  ])("rejects %s", (_description, candidate) => {
+    expect(isLogsInsightsCheckpoint(candidate)).toBe(false);
+  });
+
+  it("accepts an object with no inFlightQueryId (the optional field absent)", () => {
+    const candidate: LogsInsightsCheckpoint = { completedWindows: 0, rows: [] };
+    expect(isLogsInsightsCheckpoint(candidate)).toBe(true);
+  });
+
+  it("accepts a well-formed checkpoint with rows and an inFlightQueryId", () => {
+    const candidate: LogsInsightsCheckpoint = {
+      completedWindows: 2,
+      rows: [{ a: "b" }],
+      inFlightQueryId: "q-1",
+    };
+    expect(isLogsInsightsCheckpoint(candidate)).toBe(true);
   });
 });

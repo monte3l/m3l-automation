@@ -69,7 +69,9 @@ vi.mock("../../src/steps/export-results.js", () => ({
 import { AWS, Core } from "@m3l-automation/m3l-common";
 
 import {
+  isAthenaCheckpoint,
   runAthenaQuery,
+  type AthenaCheckpoint,
   type AthenaRunSummary,
 } from "../../src/steps/run-athena-query.js";
 
@@ -432,5 +434,29 @@ describe("runAthenaQuery — run summary type", () => {
       readonly rowsExported: number;
       readonly queryExecutionId: string;
     }>();
+  });
+});
+
+describe("isAthenaCheckpoint", () => {
+  it.each<[string, unknown]>([
+    ["a non-object", "not-an-object"],
+    ["null", null],
+    ["an array", []],
+    [
+      "an object whose queryExecutionId is present but not a string",
+      { queryExecutionId: 123 },
+    ],
+  ])("rejects %s", (_description, candidate) => {
+    expect(isAthenaCheckpoint(candidate)).toBe(false);
+  });
+
+  it("accepts an object with no queryExecutionId (the optional field absent)", () => {
+    const candidate: AthenaCheckpoint = {};
+    expect(isAthenaCheckpoint(candidate)).toBe(true);
+  });
+
+  it("accepts a well-formed checkpoint with a string queryExecutionId", () => {
+    const candidate: AthenaCheckpoint = { queryExecutionId: "q-123" };
+    expect(isAthenaCheckpoint(candidate)).toBe(true);
   });
 });

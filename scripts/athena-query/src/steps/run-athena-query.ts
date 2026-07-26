@@ -41,7 +41,7 @@ const EMPTY_CHECKPOINT: AthenaCheckpoint = {};
  * Narrows a JSON-parsed value to {@link AthenaCheckpoint}. Passed to
  * `Core.M3LCheckpointStore` as its required `validate` predicate.
  */
-function isAthenaCheckpoint(value: unknown): value is AthenaCheckpoint {
+export function isAthenaCheckpoint(value: unknown): value is AthenaCheckpoint {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
   }
