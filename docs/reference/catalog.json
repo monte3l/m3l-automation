@@ -566,6 +566,33 @@
   },
   {
     "namespace": "aws",
+    "name": "cloudformation",
+    "importPath": "@m3l-automation/m3l-common/aws",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/aws/cloudformation.md",
+    "symbols": [
+      "M3LCloudFormationOperations",
+      "M3LCloudFormationOperationError",
+      "M3LCloudFormationListStacksResult",
+      "M3LCloudFormationStack",
+      "M3LCloudFormationStackSummary",
+      "M3LCloudFormationCreateStackInput",
+      "M3LCloudFormationCreateStackResult",
+      "M3LCloudFormationUpdateStackInput",
+      "M3LCloudFormationUpdateStackResult",
+      "M3LCloudFormationDeleteStackOptions",
+      "M3LCloudFormationDescribeStackEventsResult",
+      "M3LCloudFormationStackEvent",
+      "M3LCloudFormationWaiterResult",
+      "M3LCloudFormationWaitOptions",
+      "M3LCloudFormationKeyValue",
+      "M3LCloudFormationOutput",
+      "M3LCloudFormationCapability"
+    ]
+  },
+  {
+    "namespace": "aws",
     "name": "cloudwatch-logs-insights",
     "importPath": "@m3l-automation/m3l-common/aws",
     "status": "✅",

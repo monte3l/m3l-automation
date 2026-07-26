@@ -135,7 +135,15 @@ number>` already relies on (found A4b: `LOG_LEVEL_FLOORS`).
   prose to write.** Probe the built output before writing it; under-claim by
   default. A false mechanism in a doc comment propagates into the next
   reader's reasoning (three `core/diagnostics` fix rounds shipped ones that
-  were wrong).
+  were wrong). A "never surfaced to the caller"-style claim needs a
+  **per-channel** audit, not a per-return-type one: a resolved value and a
+  thrown error's `cause`/`message` are separate observable channels, and a
+  claim proven true for one can still be false for the other (`aws/cloudformation`'s
+  waiter doc correctly said its resolved `{state,reason?}` never carries a
+  stack record, but the SDK's own waiter machinery embeds the full last
+  `DescribeStacksCommand` response — including caller-supplied parameter/output
+  values — into the thrown error's `cause` on the `FAILURE` path, which the
+  wrapper then chains straight through).
 - **TSDoc on every exported symbol**, with an `@example` on primary entry points.
   Comment the _why_, not the _what_.
 - **`internal/` is private.** Never re-export it through a public barrel; it has
