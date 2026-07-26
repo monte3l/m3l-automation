@@ -19,6 +19,15 @@
   },
   {
     "namespace": "core",
+    "name": "checkpoint",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "❌",
+    "wired": false,
+    "docPath": "docs/reference/core/checkpoint.md",
+    "symbols": []
+  },
+  {
+    "namespace": "core",
     "name": "config",
     "importPath": "@m3l-automation/m3l-common/core",
     "status": "✅",
