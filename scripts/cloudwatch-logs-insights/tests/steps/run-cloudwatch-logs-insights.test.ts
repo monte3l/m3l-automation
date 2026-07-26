@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type * as M3LCommon from "@m3l-automation/m3l-common";
+
 /**
  * Contract: docs/reference/scripts/cloudwatch-logs-insights.md,
  * `run-cloudwatch-logs-insights` row + "Resume and failure semantics". The
@@ -9,28 +11,56 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * `inFlightQueryId`) + `awaitResults()` -> accumulate rows -> checkpoint
  * update -> export-results once at the end.
  *
- * `checkpoint.ts` and `export-results.ts` are mocked (per the brief) so this
- * file asserts the ORCHESTRATION contract in isolation: call order,
- * inFlightQueryId checkpointing before the poll, row accumulation, and
- * abort-on-terminal-failure. `resolve-settings.ts`/`time-range.ts` are left
- * real (pure, already contract-tested in their own files) — mocking them too
- * would just re-implement them here.
+ * `Core.M3LCheckpointStore` and `export-results.ts` are mocked (per the
+ * brief) so this file asserts the ORCHESTRATION contract in isolation: call
+ * order, inFlightQueryId checkpointing before the poll, row accumulation,
+ * and abort-on-terminal-failure. `Core.M3LCheckpointStore` is a stable
+ * library class constructed directly by the source, so it is intercepted
+ * via a package-level `vi.mock("@m3l-automation/m3l-common", ...)` factory
+ * that spreads the real module and overrides only `Core.M3LCheckpointStore`
+ * with a mocked constructor (same pattern as
+ * `scripts/athena-query/tests/steps/run-athena-query.test.ts`).
+ * `resolve-settings.ts`/`time-range.ts` are left real (pure, already
+ * contract-tested in their own files) — mocking them too would just
+ * re-implement them here.
  */
 
-const mocks = vi.hoisted(() => ({
-  readCheckpoint: vi.fn(),
-  writeCheckpoint: vi.fn().mockResolvedValue(undefined),
-  exportResults: vi.fn().mockResolvedValue(undefined),
+// vi.hoisted() is required here: @m3l-automation/m3l-common is imported
+// statically below, so its vi.mock factory runs eagerly at module-eval time
+// when that import is resolved — before a plain top-level `const` would have
+// initialized.
+const checkpointMocks = vi.hoisted(() => ({
+  read: vi.fn(),
+  write: vi.fn().mockResolvedValue(undefined),
+  delete: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("../../src/steps/checkpoint.js", () => ({
-  readCheckpoint: mocks.readCheckpoint,
-  writeCheckpoint: mocks.writeCheckpoint,
-  EMPTY_CHECKPOINT: { completedWindows: 0, rows: [] },
-}));
+const exportResultsMock = vi.hoisted(() =>
+  vi.fn().mockResolvedValue(undefined),
+);
+
+vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+  const actual = await importOriginal<typeof M3LCommon>();
+  return {
+    ...actual,
+    Core: {
+      ...actual.Core,
+      // A plain arrow function cannot be invoked with `new` — the source
+      // constructs `new Core.M3LCheckpointStore(...)`, so the mocked
+      // implementation must be an ordinary function expression.
+      M3LCheckpointStore: vi.fn().mockImplementation(function mockedStore() {
+        return {
+          read: checkpointMocks.read,
+          write: checkpointMocks.write,
+          delete: checkpointMocks.delete,
+        };
+      }),
+    },
+  };
+});
 
 vi.mock("../../src/steps/export-results.js", () => ({
-  exportResults: mocks.exportResults,
+  exportResults: exportResultsMock,
 }));
 
 import { AWS, Core } from "@m3l-automation/m3l-common";
@@ -103,9 +133,11 @@ function buildPaths(): Core.M3LPaths {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  mocks.readCheckpoint.mockReset();
-  mocks.writeCheckpoint.mockReset().mockResolvedValue(undefined);
-  mocks.exportResults.mockReset().mockResolvedValue(undefined);
+  checkpointMocks.read.mockReset();
+  checkpointMocks.write.mockReset().mockResolvedValue(undefined);
+  checkpointMocks.delete.mockReset().mockResolvedValue(undefined);
+  exportResultsMock.mockReset().mockResolvedValue(undefined);
+  vi.mocked(Core.M3LCheckpointStore).mockClear();
 });
 
 describe("runCloudwatchLogsInsights — happy path", () => {
@@ -117,14 +149,12 @@ describe("runCloudwatchLogsInsights — happy path", () => {
       callOrder.push(`startQuery:${id}`);
       return Promise.resolve(id);
     });
-    mocks.writeCheckpoint.mockImplementation(
-      (options: {
-        checkpoint: { completedWindows: number; inFlightQueryId?: string };
-      }) => {
+    checkpointMocks.write.mockImplementation(
+      (checkpoint: { completedWindows: number; inFlightQueryId?: string }) => {
         callOrder.push(
-          options.checkpoint.inFlightQueryId !== undefined
-            ? `writeCheckpoint:inFlight:${options.checkpoint.inFlightQueryId}`
-            : `writeCheckpoint:completed:${String(options.checkpoint.completedWindows)}`,
+          checkpoint.inFlightQueryId !== undefined
+            ? `writeCheckpoint:inFlight:${checkpoint.inFlightQueryId}`
+            : `writeCheckpoint:completed:${String(checkpoint.completedWindows)}`,
         );
         return Promise.resolve();
       },
@@ -160,7 +190,7 @@ describe("runCloudwatchLogsInsights — happy path", () => {
     expect(client.awaitResults).toHaveBeenCalledTimes(2);
 
     // Non-resume run never reads the checkpoint.
-    expect(mocks.readCheckpoint).not.toHaveBeenCalled();
+    expect(checkpointMocks.read).not.toHaveBeenCalled();
 
     // inFlightQueryId is checkpointed BEFORE the poll, for every window.
     expect(callOrder).toEqual([
@@ -176,8 +206,8 @@ describe("runCloudwatchLogsInsights — happy path", () => {
 
     // export-results is called exactly once, after every window, with the
     // full accumulated row set.
-    expect(mocks.exportResults).toHaveBeenCalledTimes(1);
-    expect(mocks.exportResults).toHaveBeenCalledWith(
+    expect(exportResultsMock).toHaveBeenCalledTimes(1);
+    expect(exportResultsMock).toHaveBeenCalledWith(
       expect.objectContaining({
         rows: [
           { "@message": "row-from-query-0" },
@@ -239,22 +269,20 @@ describe("runCloudwatchLogsInsights — abort on terminal failure", () => {
     }
 
     expect(thrown).toBeInstanceOf(AWS.M3LLogsInsightsQueryFailedError);
-    expect(mocks.exportResults).not.toHaveBeenCalled();
+    expect(exportResultsMock).not.toHaveBeenCalled();
 
     // The checkpoint is updated after each COMPLETED window only — no write
     // ever records the failing window as complete.
     interface WriteCheckpointCallArgs {
-      readonly checkpoint: {
-        readonly completedWindows: number;
-        readonly inFlightQueryId?: string;
-      };
+      readonly completedWindows: number;
+      readonly inFlightQueryId?: string;
     }
-    const calls = mocks.writeCheckpoint.mock.calls as [
+    const calls = checkpointMocks.write.mock.calls as [
       WriteCheckpointCallArgs,
     ][];
-    for (const [options] of calls) {
-      if (options.checkpoint.inFlightQueryId === undefined) {
-        expect(options.checkpoint.completedWindows).toBeLessThanOrEqual(1);
+    for (const [checkpoint] of calls) {
+      if (checkpoint.inFlightQueryId === undefined) {
+        expect(checkpoint.completedWindows).toBeLessThanOrEqual(1);
       }
     }
   });
@@ -295,7 +323,7 @@ describe("runCloudwatchLogsInsights — abort on startQuery failure", () => {
 
     expect(thrown).toBe(startQueryError);
     expect(client.awaitResults).not.toHaveBeenCalled();
-    expect(mocks.exportResults).not.toHaveBeenCalled();
+    expect(exportResultsMock).not.toHaveBeenCalled();
 
     expect(loggerErrorSpy).toHaveBeenCalledWith(
       "cloudwatch-logs-insights aborted at window 0 of 1",
@@ -303,7 +331,7 @@ describe("runCloudwatchLogsInsights — abort on startQuery failure", () => {
 
     // A startQuery failure happens strictly before the checkpoint write that
     // would record an inFlightQueryId, so no checkpoint write fires at all.
-    expect(mocks.writeCheckpoint).not.toHaveBeenCalled();
+    expect(checkpointMocks.write).not.toHaveBeenCalled();
   });
 });
 
@@ -323,7 +351,7 @@ describe("runCloudwatchLogsInsights — resume", () => {
       });
     });
 
-    mocks.readCheckpoint.mockResolvedValue({
+    checkpointMocks.read.mockResolvedValue({
       completedWindows: 1,
       rows: [{ "@message": "already-fetched" }],
       inFlightQueryId: "query-inflight",
@@ -345,7 +373,7 @@ describe("runCloudwatchLogsInsights — resume", () => {
       paths,
     });
 
-    expect(mocks.readCheckpoint).toHaveBeenCalledTimes(1);
+    expect(checkpointMocks.read).toHaveBeenCalledTimes(1);
 
     // Window 1 (the recorded in-flight window) re-attaches directly — one
     // fresh startQuery only, for window 2. `awaitResults`'s optional second
@@ -359,8 +387,8 @@ describe("runCloudwatchLogsInsights — resume", () => {
 
     // Final export carries the checkpoint's carried-over row plus both
     // newly-fetched rows.
-    expect(mocks.exportResults).toHaveBeenCalledTimes(1);
-    expect(mocks.exportResults).toHaveBeenCalledWith(
+    expect(exportResultsMock).toHaveBeenCalledTimes(1);
+    expect(exportResultsMock).toHaveBeenCalledWith(
       expect.objectContaining({
         rows: expect.arrayContaining([
           { "@message": "already-fetched" },
@@ -371,5 +399,42 @@ describe("runCloudwatchLogsInsights — resume", () => {
     );
 
     expect(summary).toEqual({ windowsCompleted: 3, rowsExported: 3 });
+  });
+
+  it("propagates ERR_CHECKPOINT_MISSING when resuming with no checkpoint file, never calling any window's startQuery", async () => {
+    const client = buildClient();
+    checkpointMocks.read.mockRejectedValue(
+      new Core.M3LCheckpointError("no checkpoint file found", {
+        code: "ERR_CHECKPOINT_MISSING",
+      }),
+    );
+
+    const config = buildConfig({
+      ...BASE_VALUES,
+      start: "2026-07-01T00:00:00Z",
+      end: "2026-07-01T02:00:00Z",
+      resume: true,
+    });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+
+    let thrown: unknown;
+    try {
+      await runCloudwatchLogsInsights({
+        config,
+        logger,
+        client: asClient(client),
+        paths,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
+    expect((thrown as Core.M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_MISSING",
+    );
+    expect(client.startQuery).not.toHaveBeenCalled();
+    expect(exportResultsMock).not.toHaveBeenCalled();
   });
 });

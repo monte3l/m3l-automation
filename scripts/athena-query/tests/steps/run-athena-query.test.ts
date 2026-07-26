@@ -1,40 +1,69 @@
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
+import type * as M3LCommon from "@m3l-automation/m3l-common";
+
 /**
  * Contract: docs/reference/scripts/athena-query.md, `run-athena-query` row +
  * "Resume and failure semantics". The orchestrator builds a
  * `StartAthenaQueryInput` from config, checkpoints-or-reattaches
- * (`checkpoint` + `AWS.M3LAthenaClient.startQuery()`, recording
+ * (`Core.M3LCheckpointStore` + `AWS.M3LAthenaClient.startQuery()`, recording
  * `queryExecutionId`, or reattaching to a checkpointed one), calls
  * `awaitResults()`, calls `export-results` once, then deletes the
  * checkpoint. A terminal query failure aborts the run with the checkpoint
  * left intact.
  *
- * `checkpoint.ts` and `export-results.ts` are mocked (per the brief) so this
- * file asserts the ORCHESTRATION contract in isolation: call order,
- * queryExecutionId checkpointing before the poll, and abort-on-terminal-
- * failure. There is a `resolve-settings` step (`resolveAthenaSettings`), but
- * unlike `cloudwatch-logs-insights`'s it is simpler — just per-field
- * narrowing of the resolved config into `StartAthenaQueryInput`, no
- * cross-parameter or ISO-8601 checks — so it is exercised directly here
- * rather than mocked.
+ * `Core.M3LCheckpointStore` and `export-results.ts` are mocked (per the
+ * brief) so this file asserts the ORCHESTRATION contract in isolation: call
+ * order, queryExecutionId checkpointing before the poll, and abort-on-
+ * terminal-failure. `Core.M3LCheckpointStore` is a stable library class
+ * (constructed directly by the source, not a locally dynamic-imported step),
+ * so it is intercepted via a package-level
+ * `vi.mock("@m3l-automation/m3l-common", ...)` factory that spreads the real
+ * module and overrides only `Core.M3LCheckpointStore` with a mocked
+ * constructor — matching `scripts/lambda-ops/tests/run-lambda-ops.test.ts`'s
+ * pattern for `Core.confirmDestructive`. There is a `resolve-settings` step
+ * (`resolveAthenaSettings`), but unlike `cloudwatch-logs-insights`'s it is
+ * simpler — just per-field narrowing of the resolved config into
+ * `StartAthenaQueryInput`, no cross-parameter or ISO-8601 checks — so it is
+ * exercised directly here rather than mocked.
  */
 
-const mocks = vi.hoisted(() => ({
-  readCheckpoint: vi.fn(),
-  writeCheckpoint: vi.fn().mockResolvedValue(undefined),
-  deleteCheckpoint: vi.fn().mockResolvedValue(undefined),
-  exportResults: vi.fn().mockResolvedValue(undefined),
+// vi.hoisted() is required here: @m3l-automation/m3l-common is imported
+// statically below, so its vi.mock factory runs eagerly at module-eval time
+// when that import is resolved — before a plain top-level `const` would have
+// initialized.
+const checkpointMocks = vi.hoisted(() => ({
+  read: vi.fn(),
+  write: vi.fn().mockResolvedValue(undefined),
+  delete: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("../../src/steps/checkpoint.js", () => ({
-  readCheckpoint: mocks.readCheckpoint,
-  writeCheckpoint: mocks.writeCheckpoint,
-  deleteCheckpoint: mocks.deleteCheckpoint,
-}));
+const exportResultsMock = vi.hoisted(() =>
+  vi.fn().mockResolvedValue(undefined),
+);
+
+vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+  const actual = await importOriginal<typeof M3LCommon>();
+  return {
+    ...actual,
+    Core: {
+      ...actual.Core,
+      // A plain arrow function cannot be invoked with `new` — the source
+      // constructs `new Core.M3LCheckpointStore(...)`, so the mocked
+      // implementation must be an ordinary function expression.
+      M3LCheckpointStore: vi.fn().mockImplementation(function mockedStore() {
+        return {
+          read: checkpointMocks.read,
+          write: checkpointMocks.write,
+          delete: checkpointMocks.delete,
+        };
+      }),
+    },
+  };
+});
 
 vi.mock("../../src/steps/export-results.js", () => ({
-  exportResults: mocks.exportResults,
+  exportResults: exportResultsMock,
 }));
 
 import { AWS, Core } from "@m3l-automation/m3l-common";
@@ -119,10 +148,11 @@ function buildResult(
 
 afterEach(() => {
   vi.restoreAllMocks();
-  mocks.readCheckpoint.mockReset();
-  mocks.writeCheckpoint.mockReset().mockResolvedValue(undefined);
-  mocks.deleteCheckpoint.mockReset().mockResolvedValue(undefined);
-  mocks.exportResults.mockReset().mockResolvedValue(undefined);
+  checkpointMocks.read.mockReset();
+  checkpointMocks.write.mockReset().mockResolvedValue(undefined);
+  checkpointMocks.delete.mockReset().mockResolvedValue(undefined);
+  exportResultsMock.mockReset().mockResolvedValue(undefined);
+  vi.mocked(Core.M3LCheckpointStore).mockClear();
 });
 
 describe("runAthenaQuery — happy path (fresh run)", () => {
@@ -133,10 +163,10 @@ describe("runAthenaQuery — happy path (fresh run)", () => {
       callOrder.push("startQuery");
       return Promise.resolve("query-123");
     });
-    mocks.writeCheckpoint.mockImplementation(
-      (options: { checkpoint: { queryExecutionId?: string } }) => {
+    checkpointMocks.write.mockImplementation(
+      (checkpoint: { queryExecutionId?: string }) => {
         callOrder.push(
-          `writeCheckpoint:${options.checkpoint.queryExecutionId ?? "none"}`,
+          `writeCheckpoint:${checkpoint.queryExecutionId ?? "none"}`,
         );
         return Promise.resolve();
       },
@@ -150,11 +180,11 @@ describe("runAthenaQuery — happy path (fresh run)", () => {
         ]),
       );
     });
-    mocks.exportResults.mockImplementation(() => {
+    exportResultsMock.mockImplementation(() => {
       callOrder.push("exportResults");
       return Promise.resolve();
     });
-    mocks.deleteCheckpoint.mockImplementation(() => {
+    checkpointMocks.delete.mockImplementation(() => {
       callOrder.push("deleteCheckpoint");
       return Promise.resolve();
     });
@@ -178,7 +208,7 @@ describe("runAthenaQuery — happy path (fresh run)", () => {
     });
 
     // Non-resume run never reads the checkpoint.
-    expect(mocks.readCheckpoint).not.toHaveBeenCalled();
+    expect(checkpointMocks.read).not.toHaveBeenCalled();
 
     // startQuery + awaitResults decomposition, never runQuery.
     expect(client.runQuery).not.toHaveBeenCalled();
@@ -203,8 +233,8 @@ describe("runAthenaQuery — happy path (fresh run)", () => {
       "deleteCheckpoint",
     ]);
 
-    expect(mocks.exportResults).toHaveBeenCalledTimes(1);
-    expect(mocks.exportResults).toHaveBeenCalledWith(
+    expect(exportResultsMock).toHaveBeenCalledTimes(1);
+    expect(exportResultsMock).toHaveBeenCalledWith(
       expect.objectContaining({
         rows: [
           { id: "1", name: "alice" },
@@ -215,7 +245,7 @@ describe("runAthenaQuery — happy path (fresh run)", () => {
       }),
     );
 
-    expect(mocks.deleteCheckpoint).toHaveBeenCalledTimes(1);
+    expect(checkpointMocks.delete).toHaveBeenCalledTimes(1);
 
     expect(summary).toEqual({
       rowsExported: 2,
@@ -246,7 +276,7 @@ describe("runAthenaQuery — resume", () => {
     client.awaitResults.mockResolvedValue(
       buildResult("query-inflight", [{ id: "1", name: "alice" }]),
     );
-    mocks.readCheckpoint.mockResolvedValue({
+    checkpointMocks.read.mockResolvedValue({
       queryExecutionId: "query-inflight",
     });
 
@@ -261,11 +291,11 @@ describe("runAthenaQuery — resume", () => {
       paths,
     });
 
-    expect(mocks.readCheckpoint).toHaveBeenCalledTimes(1);
+    expect(checkpointMocks.read).toHaveBeenCalledTimes(1);
     expect(client.startQuery).not.toHaveBeenCalled();
     expect(client.awaitResults).toHaveBeenCalledWith("query-inflight");
-    expect(mocks.exportResults).toHaveBeenCalledTimes(1);
-    expect(mocks.deleteCheckpoint).toHaveBeenCalledTimes(1);
+    expect(exportResultsMock).toHaveBeenCalledTimes(1);
+    expect(checkpointMocks.delete).toHaveBeenCalledTimes(1);
     expect(summary).toEqual({
       rowsExported: 1,
       queryExecutionId: "query-inflight",
@@ -276,7 +306,7 @@ describe("runAthenaQuery — resume", () => {
     const client = buildClient();
     client.startQuery.mockResolvedValue("query-fresh");
     client.awaitResults.mockResolvedValue(buildResult("query-fresh", []));
-    mocks.readCheckpoint.mockResolvedValue({});
+    checkpointMocks.read.mockResolvedValue({});
 
     const config = buildConfig({ ...BASE_VALUES, resume: true });
     const logger = new Core.M3LLogger([]);
@@ -284,9 +314,41 @@ describe("runAthenaQuery — resume", () => {
 
     await runAthenaQuery({ config, logger, client: asClient(client), paths });
 
-    expect(mocks.readCheckpoint).toHaveBeenCalledTimes(1);
+    expect(checkpointMocks.read).toHaveBeenCalledTimes(1);
     expect(client.startQuery).toHaveBeenCalledTimes(1);
     expect(client.awaitResults).toHaveBeenCalledWith("query-fresh");
+  });
+
+  it("propagates ERR_CHECKPOINT_MISSING when resuming with no checkpoint file, never calling startQuery", async () => {
+    const client = buildClient();
+    checkpointMocks.read.mockRejectedValue(
+      new Core.M3LCheckpointError("no checkpoint file found", {
+        code: "ERR_CHECKPOINT_MISSING",
+      }),
+    );
+
+    const config = buildConfig({ ...BASE_VALUES, resume: true });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+
+    let thrown: unknown;
+    try {
+      await runAthenaQuery({
+        config,
+        logger,
+        client: asClient(client),
+        paths,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
+    expect((thrown as Core.M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_MISSING",
+    );
+    expect(client.startQuery).not.toHaveBeenCalled();
+    expect(exportResultsMock).not.toHaveBeenCalled();
   });
 });
 
@@ -318,17 +380,15 @@ describe("runAthenaQuery — abort on terminal query failure", () => {
 
     expect(thrown).toBeInstanceOf(AWS.M3LAthenaQueryFailedError);
     expect(thrown).toBe(failure);
-    expect(mocks.exportResults).not.toHaveBeenCalled();
-    expect(mocks.deleteCheckpoint).not.toHaveBeenCalled();
+    expect(exportResultsMock).not.toHaveBeenCalled();
+    expect(checkpointMocks.delete).not.toHaveBeenCalled();
 
     // The checkpoint WAS written with the in-flight id before the poll, so a
     // future resume can reattach — only the delete-on-success step is
     // skipped.
-    expect(mocks.writeCheckpoint).toHaveBeenCalledWith(
-      expect.objectContaining({
-        checkpoint: { queryExecutionId: "query-abort" },
-      }),
-    );
+    expect(checkpointMocks.write).toHaveBeenCalledWith({
+      queryExecutionId: "query-abort",
+    });
   });
 
   it("re-throws a startQuery failure and never calls awaitResults/export-results/deleteCheckpoint", async () => {
@@ -357,12 +417,12 @@ describe("runAthenaQuery — abort on terminal query failure", () => {
 
     expect(thrown).toBe(startFailure);
     expect(client.awaitResults).not.toHaveBeenCalled();
-    expect(mocks.exportResults).not.toHaveBeenCalled();
-    expect(mocks.deleteCheckpoint).not.toHaveBeenCalled();
+    expect(exportResultsMock).not.toHaveBeenCalled();
+    expect(checkpointMocks.delete).not.toHaveBeenCalled();
 
     // A startQuery failure happens strictly before the checkpoint write that
     // would record a queryExecutionId, so no checkpoint write fires at all.
-    expect(mocks.writeCheckpoint).not.toHaveBeenCalled();
+    expect(checkpointMocks.write).not.toHaveBeenCalled();
   });
 });
 
