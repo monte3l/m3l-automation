@@ -16,6 +16,7 @@
  */
 
 export * from "./analysis/index.js";
+export * from "./checkpoint/index.js";
 export * from "./config/index.js";
 export * from "./diagnostics/index.js";
 export * from "./environment/index.js";
