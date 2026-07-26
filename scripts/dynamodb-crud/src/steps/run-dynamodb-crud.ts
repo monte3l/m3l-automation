@@ -9,9 +9,10 @@ import {
 } from "./batch-write-table.js";
 import { DYNAMO_OPERATIONS } from "../config.js";
 import { runDestructiveGate } from "./destructive-gate.js";
+import type { ScanCheckpoint } from "./scan-table.js";
+import { isScanCheckpoint, scanTable } from "./scan-table.js";
 import type { SingleItemOperation } from "./single-item-ops.js";
 import { runSingleItemOp } from "./single-item-ops.js";
-import { scanTable } from "./scan-table.js";
 
 /** The closed union of `dynamodb-crud`'s declared `operation` values. */
 type DynamoOperation = (typeof DYNAMO_OPERATIONS)[number];
@@ -386,19 +387,22 @@ async function streamToExporter(
 }
 
 /**
- * Derives the checkpoint file's name for a resumable `scan`/`query`/`export`
- * run. Deliberately independent of `correlationId` — a fresh CLI invocation
- * generates a new `correlationId` every time (see `M3LScript`), so a
- * `--resume` run keying its checkpoint lookup off `correlationId` could never
- * find the checkpoint written by the run it is trying to resume. `runName`
- * (when the operator sets it) is the stable identity that survives a kill;
- * the `${operation}-${tableName}` fallback is deterministic for a given
- * table+operation but can collide across two concurrent differently
- * configured runs against the same table+operation (documented in
- * `docs/reference/scripts/dynamodb-crud.md`'s `runName` row).
+ * Derives the checkpoint's bare identity/name for a resumable
+ * `scan`/`query`/`export` run. Deliberately independent of `correlationId` —
+ * a fresh CLI invocation generates a new `correlationId` every time (see
+ * `M3LScript`), so a `--resume` run keying its checkpoint lookup off
+ * `correlationId` could never find the checkpoint written by the run it is
+ * trying to resume. `runName` (when the operator sets it) is the stable
+ * identity that survives a kill; the `${operation}-${tableName}` fallback is
+ * deterministic for a given table+operation but can collide across two
+ * concurrent differently configured runs against the same table+operation
+ * (documented in `docs/reference/scripts/dynamodb-crud.md`'s `runName` row).
+ *
+ * @returns The checkpoint's bare identity/name, without the file suffix —
+ *   `Core.M3LCheckpointStore` appends `.checkpoint.json` itself.
  */
-function resolveCheckpointFileName(settings: RunSettings): string {
-  return `${settings.runName ?? `${settings.operation}-${settings.tableName}`}.checkpoint.json`;
+function resolveCheckpointName(settings: RunSettings): string {
+  return settings.runName ?? `${settings.operation}-${settings.tableName}`;
 }
 
 /**
@@ -421,9 +425,14 @@ async function dispatchScan(
     });
   }
   const outputPath = deps.paths.resolveOutput(settings.output);
-  const checkpointPath = deps.paths.resolveOutput(
-    resolveCheckpointFileName(settings),
-  );
+  const checkpointStore = new Core.M3LCheckpointStore<ScanCheckpoint>({
+    paths: deps.paths,
+    name: resolveCheckpointName(settings),
+    validate: isScanCheckpoint,
+    missing: settings.resume
+      ? { kind: "error" }
+      : { kind: "empty", value: { segments: {} } },
+  });
   const mode: "scan" | "query" =
     settings.operation === "query" ? "query" : "scan";
 
@@ -437,7 +446,7 @@ async function dispatchScan(
     keyCondition: settings.key,
     checkpointEveryPages: settings.checkpointEveryPages,
     resume: settings.resume,
-    checkpointPath,
+    checkpointStore,
     logger: deps.logger,
   });
 

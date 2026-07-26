@@ -3,7 +3,7 @@
  *
  * Business logic lives here — never in `main.ts`. Builds a
  * `StartAthenaQueryInput` from the resolved config, checkpoints-or-reattaches
- * (`checkpoint` + `AWS.M3LAthenaClient.startQuery()`, recording
+ * (`Core.M3LCheckpointStore` + `AWS.M3LAthenaClient.startQuery()`, recording
  * `queryExecutionId`, or reattaching to a checkpointed one), calls
  * `awaitResults()`, exports the full row set once, then deletes the
  * checkpoint on success. Deliberately calls `startQuery` + `awaitResults`
@@ -11,17 +11,44 @@
  * checkpointed the moment the query starts, before waiting on it. A terminal
  * query failure aborts the run with the checkpoint left intact — the output
  * file is only ever written once `awaitResults` succeeds.
+ *
+ * The checkpoint's payload shape (`AthenaCheckpoint`), its type guard
+ * (`isAthenaCheckpoint`), and its empty-run default (`EMPTY_CHECKPOINT`) live
+ * in this module rather than a separate `steps/checkpoint.js`: this script
+ * has a single, non-windowed checkpoint concern, so a dedicated module would
+ * be a near-empty wrapper around `Core.M3LCheckpointStore`.
  */
 
-import { type Core, type AWS } from "@m3l-automation/m3l-common";
+import { Core, type AWS } from "@m3l-automation/m3l-common";
 
-import {
-  deleteCheckpoint,
-  readCheckpoint,
-  writeCheckpoint,
-} from "./checkpoint.js";
 import { exportResults } from "./export-results.js";
 import { resolveAthenaSettings } from "./resolve-settings.js";
+
+/**
+ * The persisted resume state for an `athena-query` run: the AWS
+ * `QueryExecutionId` for a query whose `StartQueryExecution` has fired but
+ * whose `awaitResults` has not yet completed, if any.
+ */
+export interface AthenaCheckpoint {
+  /** The in-flight (or terminally-failed) Athena query execution id, if any. */
+  readonly queryExecutionId?: string;
+}
+
+/** The checkpoint state a fresh (non-resumed) run starts from. */
+const EMPTY_CHECKPOINT: AthenaCheckpoint = {};
+
+/**
+ * Narrows a JSON-parsed value to {@link AthenaCheckpoint}. Passed to
+ * `Core.M3LCheckpointStore` as its required `validate` predicate.
+ */
+function isAthenaCheckpoint(value: unknown): value is AthenaCheckpoint {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  const queryExecutionId = candidate["queryExecutionId"];
+  return queryExecutionId === undefined || typeof queryExecutionId === "string";
+}
 
 /** The run summary `runAthenaQuery` reports back to its caller. */
 export interface AthenaRunSummary {
@@ -74,19 +101,20 @@ export async function runAthenaQuery(deps: {
   const settings = resolveAthenaSettings(deps.config);
   const { output, format, resume } = settings;
 
-  const checkpoint = resume
-    ? await readCheckpoint({ paths: deps.paths, output })
-    : {};
+  const checkpointStore = new Core.M3LCheckpointStore<AthenaCheckpoint>({
+    paths: deps.paths,
+    name: output,
+    validate: isAthenaCheckpoint,
+    missing: { kind: "empty", value: EMPTY_CHECKPOINT },
+  });
+
+  const checkpoint = resume ? await checkpointStore.read() : EMPTY_CHECKPOINT;
 
   let queryExecutionId = checkpoint.queryExecutionId;
   if (queryExecutionId === undefined) {
     deps.logger.step("athena-query: starting a new query execution");
     queryExecutionId = await deps.client.startQuery(settings.startInput);
-    await writeCheckpoint({
-      paths: deps.paths,
-      output,
-      checkpoint: { queryExecutionId },
-    });
+    await checkpointStore.write({ queryExecutionId });
   } else {
     deps.logger.step(
       `athena-query: reattaching to in-flight query '${queryExecutionId}'`,
@@ -102,7 +130,7 @@ export async function runAthenaQuery(deps: {
     paths: deps.paths,
   });
 
-  await deleteCheckpoint({ paths: deps.paths, output });
+  await checkpointStore.delete();
 
   const summary: AthenaRunSummary = {
     rowsExported: result.rows.length,

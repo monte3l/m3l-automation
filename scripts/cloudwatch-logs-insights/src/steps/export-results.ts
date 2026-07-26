@@ -14,7 +14,7 @@
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import type { LogsInsightsRow } from "./checkpoint.js";
+import type { LogsInsightsRow } from "./run-cloudwatch-logs-insights.js";
 
 /**
  * Writes `rows` to the `output` file under `M3L_OUTPUT_DIR`, in the
