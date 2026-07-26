@@ -1830,6 +1830,16 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/cloudformation/client.ts"
   },
+  "M3LCloudFormationListStacksOptions": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/client.ts"
+  },
+  "M3LCloudFormationDescribeStackEventsOptions": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/client.ts"
+  },
   "M3LCloudFormationOperationError": {
     "submodule": "cloudformation",
     "namespace": "aws",

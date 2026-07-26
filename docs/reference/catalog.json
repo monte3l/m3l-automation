@@ -573,6 +573,8 @@
     "docPath": "docs/reference/aws/cloudformation.md",
     "symbols": [
       "M3LCloudFormationOperations",
+      "M3LCloudFormationListStacksOptions",
+      "M3LCloudFormationDescribeStackEventsOptions",
       "M3LCloudFormationOperationError",
       "M3LCloudFormationListStacksResult",
       "M3LCloudFormationStack",

@@ -11,6 +11,16 @@
           "blob": "d126195a966ce54b8a7074a8f86e7f8487752f31"
         },
         {
+          "file": "packages/m3l-common/src/aws/cloudformation/client.ts",
+          "symbol": "M3LCloudFormationListStacksOptions",
+          "blob": "d126195a966ce54b8a7074a8f86e7f8487752f31"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudformation/client.ts",
+          "symbol": "M3LCloudFormationDescribeStackEventsOptions",
+          "blob": "d126195a966ce54b8a7074a8f86e7f8487752f31"
+        },
+        {
           "file": "packages/m3l-common/src/aws/cloudformation/error.ts",
           "symbol": "M3LCloudFormationOperationError",
           "blob": "15fb3900e9c586f87a61eb1a361827aef21316fb"
