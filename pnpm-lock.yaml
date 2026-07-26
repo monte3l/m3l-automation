@@ -221,6 +221,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/m3l-common
 
+  scripts/cloudformation-stacks:
+    dependencies:
+      '@m3l-automation/m3l-common':
+        specifier: workspace:*
+        version: link:../../packages/m3l-common
+
   scripts/cloudwatch-logs-insights:
     dependencies:
       '@m3l-automation/m3l-common':
