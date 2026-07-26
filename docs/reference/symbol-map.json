@@ -1825,6 +1825,101 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/clients/error.ts"
   },
+  "M3LCloudFormationOperations": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/client.ts"
+  },
+  "M3LCloudFormationListStacksOptions": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/client.ts"
+  },
+  "M3LCloudFormationDescribeStackEventsOptions": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/client.ts"
+  },
+  "M3LCloudFormationOperationError": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/error.ts"
+  },
+  "M3LCloudFormationListStacksResult": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/types.ts"
+  },
+  "M3LCloudFormationStack": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/types.ts"
+  },
+  "M3LCloudFormationStackSummary": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/types.ts"
+  },
+  "M3LCloudFormationCreateStackInput": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/types.ts"
+  },
+  "M3LCloudFormationCreateStackResult": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/types.ts"
+  },
+  "M3LCloudFormationUpdateStackInput": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/types.ts"
+  },
+  "M3LCloudFormationUpdateStackResult": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/types.ts"
+  },
+  "M3LCloudFormationDeleteStackOptions": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/types.ts"
+  },
+  "M3LCloudFormationDescribeStackEventsResult": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/types.ts"
+  },
+  "M3LCloudFormationStackEvent": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/types.ts"
+  },
+  "M3LCloudFormationWaiterResult": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/types.ts"
+  },
+  "M3LCloudFormationWaitOptions": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/types.ts"
+  },
+  "M3LCloudFormationKeyValue": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/types.ts"
+  },
+  "M3LCloudFormationOutput": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/types.ts"
+  },
+  "M3LCloudFormationCapability": {
+    "submodule": "cloudformation",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudformation/types.ts"
+  },
   "M3LLogsInsightsClient": {
     "submodule": "cloudwatch-logs-insights",
     "namespace": "aws",
