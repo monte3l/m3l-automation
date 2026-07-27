@@ -2295,6 +2295,116 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/ecs/types.ts"
   },
+  "M3LEKSOperations": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/client.ts"
+  },
+  "M3LEKSListClustersOptions": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/client.ts"
+  },
+  "M3LEKSListNodegroupsOptions": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/client.ts"
+  },
+  "M3LEKSOperationError": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/error.ts"
+  },
+  "M3LEKSVpcConfig": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/types.ts"
+  },
+  "M3LEKSVpcConfigInput": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/types.ts"
+  },
+  "M3LEKSClusterSummary": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/types.ts"
+  },
+  "M3LEKSListClustersResult": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/types.ts"
+  },
+  "M3LEKSCreateClusterInput": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/types.ts"
+  },
+  "M3LEKSUpdateClusterConfigInput": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/types.ts"
+  },
+  "M3LEKSUpdateClusterVersionInput": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/types.ts"
+  },
+  "M3LEKSNodegroupSummary": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/types.ts"
+  },
+  "M3LEKSNodegroupScalingConfig": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/types.ts"
+  },
+  "M3LEKSListNodegroupsResult": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/types.ts"
+  },
+  "M3LEKSCreateNodegroupInput": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/types.ts"
+  },
+  "M3LEKSUpdateLabelsPayload": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/types.ts"
+  },
+  "M3LEKSUpdateNodegroupConfigInput": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/types.ts"
+  },
+  "M3LEKSUpdateNodegroupVersionInput": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/types.ts"
+  },
+  "M3LEKSUpdateError": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/types.ts"
+  },
+  "M3LEKSUpdate": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/types.ts"
+  },
+  "M3LEKSWaiterResult": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/types.ts"
+  },
+  "M3LEKSWaiterOptions": {
+    "submodule": "eks",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/eks/types.ts"
+  },
   "M3LEventBridgeOperations": {
     "submodule": "eventbridge",
     "namespace": "aws",
