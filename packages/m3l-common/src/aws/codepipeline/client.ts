@@ -1330,16 +1330,19 @@ export class M3LCodePipelineOperations {
   async createPipeline(
     input: M3LCodePipelineCreatePipelineInput,
   ): Promise<M3LCodePipelineDeclaration> {
+    // Built outside the try block: buildDeclaration validates write-path
+    // enum fields (assertKnownEnumValue) and can throw before .send() is
+    // ever called — that must not be mislabeled as "CreatePipeline failed".
+    const command = new CreatePipelineCommand({
+      pipeline: buildDeclaration(input.declaration),
+      ...(input.tags !== undefined && {
+        tags: input.tags.map(buildTag),
+      }),
+    });
+
     let response;
     try {
-      response = await this.#client.send(
-        new CreatePipelineCommand({
-          pipeline: buildDeclaration(input.declaration),
-          ...(input.tags !== undefined && {
-            tags: input.tags.map(buildTag),
-          }),
-        }),
-      );
+      response = await this.#client.send(command);
     } catch (cause) {
       throw new M3LCodePipelineOperationError(
         `M3LCodePipelineOperations.createPipeline: CreatePipeline failed for name=${input.declaration.name}`,
@@ -1369,13 +1372,16 @@ export class M3LCodePipelineOperations {
   async updatePipeline(
     declaration: M3LCodePipelineDeclaration,
   ): Promise<M3LCodePipelineDeclaration> {
+    // Built outside the try block: buildDeclaration validates write-path
+    // enum fields (assertKnownEnumValue) and can throw before .send() is
+    // ever called — that must not be mislabeled as "UpdatePipeline failed".
+    const command = new UpdatePipelineCommand({
+      pipeline: buildDeclaration(declaration),
+    });
+
     let response;
     try {
-      response = await this.#client.send(
-        new UpdatePipelineCommand({
-          pipeline: buildDeclaration(declaration),
-        }),
-      );
+      response = await this.#client.send(command);
     } catch (cause) {
       throw new M3LCodePipelineOperationError(
         `M3LCodePipelineOperations.updatePipeline: UpdatePipeline failed for name=${declaration.name}`,

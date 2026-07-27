@@ -1697,7 +1697,9 @@ describe("M3LCodePipelineOperations", () => {
 
       await expect(
         operations.createPipeline({ declaration: invalid }),
-      ).rejects.toBeInstanceOf(M3LCodePipelineOperationError);
+      ).rejects.toThrow(
+        "invalid actionTypeId.category=NotARealCategory (expected one of:",
+      );
       expect(h.send).not.toHaveBeenCalled();
     });
 
@@ -1710,7 +1712,9 @@ describe("M3LCodePipelineOperations", () => {
 
       await expect(
         operations.createPipeline({ declaration: invalid }),
-      ).rejects.toBeInstanceOf(M3LCodePipelineOperationError);
+      ).rejects.toThrow(
+        "invalid artifactStore.type=NotARealStoreType (expected one of:",
+      );
       expect(h.send).not.toHaveBeenCalled();
     });
 
@@ -1723,7 +1727,9 @@ describe("M3LCodePipelineOperations", () => {
 
       await expect(
         operations.createPipeline({ declaration: invalid }),
-      ).rejects.toBeInstanceOf(M3LCodePipelineOperationError);
+      ).rejects.toThrow(
+        "invalid declaration.pipelineType=V3 (expected one of:",
+      );
       expect(h.send).not.toHaveBeenCalled();
     });
 
