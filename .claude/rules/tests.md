@@ -54,6 +54,18 @@ paths:
 - **Mock Node built-ins via the async-factory form** that preserves real
   exports, then `vi.spyOn` individual methods:
   `vi.mock("fs", async () => { const actual = await vi.importActual<typeof import("fs")>("fs"); return { ...actual }; })`.
+- **Mock an SDK package the same way once it has a mixed class-and-data
+  export surface.** A plain `vi.mock("pkg", () => ({...}))` object literal
+  silently omits every export the factory doesn't list — harmless while the
+  module under test only imports _types_ from `pkg` (erased at compile time),
+  but the moment it imports a value (e.g. an SDK's data-only enum object, to
+  validate a caller-supplied string against `Object.values(SomeEnum)`), that
+  import resolves to `undefined` under the mock and throws at module-load
+  time before a single test can even register. Default new SDK-client mocks
+  to the `importOriginal`-preserving async factory from the start — pass real
+  constants/enums through unchanged, keep only the classes/functions that
+  need mock behavior replaced (`aws/codepipeline`, 2026-07-27: adding runtime
+  enum validation broke a mock written when only types were imported).
 - **Mock a port with generic methods by inference, not `extends`.** A structural
   port whose methods are generic (`select<Value>(...)`) can't be mocked via
   `interface Mock extends Port { select: ReturnType<typeof vi.fn> }` — a
