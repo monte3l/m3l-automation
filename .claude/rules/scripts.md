@@ -50,6 +50,21 @@ paths:
   rules (complexity ≤ 10, max-depth ≤ 3, max-lines-per-function ≤ 60, named
   exports, no default export) cap **module size and shape**; the
   composition-root purity of `main.ts` itself remains reviewer-checked.
+- **A single-switch operation dispatcher does not scale past ~8-10 operations
+  under the size caps above.** `ecs-ops`'s `switch (group)` over a
+  `DISPATCH_GROUP` table (8 operations, 4 families) fits comfortably; copying
+  the same shape for a 13-operation/7-family dispatcher (`codepipeline-ops`)
+  blew `max-lines-per-function`/`complexity` on the first pass. For a double-digit
+  operation count, split into a two-level exhaustive type-predicate chain from
+  the start: a top-level function handling a subset of operations directly via
+  `if (isXOperation(operation)) return dispatchX(...)`, falling through to a
+  second function for the remainder. The second function's parameter needs its
+  own narrower literal-union type (e.g. `Exclude<Operation, ...already-handled>`),
+  not the full operation union — TypeScript does not carry control-flow
+  narrowing across a function-call boundary, so a full-union parameter leaves
+  the final `exhaustive: never` completeness check failing to compile even when
+  the runtime dispatch is already correct (`aws/codepipeline`'s `codepipeline-ops`,
+  2026-07-27).
 - **Scaffold with the generator, never by hand:** `pnpm scaffold:script <name>`
   emits the whole shape from `templates/script/`; to evolve the shape, change
   the templates + manifest together — a hand-added or hand-dropped file fails

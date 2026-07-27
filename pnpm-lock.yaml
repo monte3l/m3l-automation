@@ -233,6 +233,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/m3l-common
 
+  scripts/codepipeline-ops:
+    dependencies:
+      '@m3l-automation/m3l-common':
+        specifier: workspace:*
+        version: link:../../packages/m3l-common
+
   scripts/dynamodb-crud:
     dependencies:
       '@m3l-automation/m3l-common':

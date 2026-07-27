@@ -1,0 +1,18 @@
+{
+  "name": "@m3l-automation/codepipeline-ops",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Thin CodePipeline op-dispatch, list, describe, create, update, delete, execution control, stage transitions, watch",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "start": "node --env-file-if-exists=.env dist/main.js"
+  },
+  "dependencies": {
+    "@m3l-automation/m3l-common": "workspace:*"
+  }
+}
