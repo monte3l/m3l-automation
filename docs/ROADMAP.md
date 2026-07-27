@@ -4,7 +4,7 @@ The **living, prioritized view of pending program work**. It is the coarse
 companion to two other trackers:
 
 - [`docs/implementation-status.md`](./implementation-status.md) — the _done_
-  library ledger (34/34 submodules, count-enforced).
+  library ledger (35/35 submodules, count-enforced).
 - [`docs/plans/IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md) — the _detailed_
   per-item backlog this file summarizes.
 
@@ -17,7 +17,7 @@ _Maintenance_ at the bottom. Completed dated plans live under
 
 Per-item status lives in the tables below (Priority 0/1/2) and in
 [`docs/implementation-status.md`](./implementation-status.md) — the
-count-enforced library ledger (34/34 submodules, shipped at v1.1.0 + the
+count-enforced library ledger (35/35 submodules, shipped at v1.1.0 + the
 ad-hoc `aws/dynamodb`, `aws/sqs`, and `aws/cloudwatch-logs-insights` additions,
 ADR-0026/ADR-0027).
 
@@ -75,7 +75,7 @@ from its name alone (ADR-0027/ADR-0029).
 | **W3** | `eventbridge-schedules`                                                       | Done        | **PR:** #167. W0 ✓; consumes `aws/eventbridge` — wrapped (see AWS getter reality table); `M3LEventBridgeOperations`, ADR-0027; 7 operations (list/describe/create/update/delete/enable/disable), scoped to EventBridge rules only (not Scheduler); 117 tests                                                                                                          |
 | **W3** | `ecs-ops`                                                                     | Done        | **PR:** #225 (script) + #224 (`aws/ecs` wrapper, 2-PR chain). W0 ✓; consumes `aws/ecs` — wrapped (see [AWS getter reality table](./plans/IMPLEMENTATION.md#aws-getter-reality)); `M3LECSOperations`, ADR-0027; 8 operations (list/describe/create/update/delete-service + wait-services-stable + list/describe-cluster), 112 tests                                    |
 | **W3** | `cloudformation-stacks`                                                       | Done        | **PR:** #233 (script) + #232 (`aws/cloudformation` wrapper, 2-PR chain). W0 ✓; consumes `aws/cloudformation` — wrapped (see [AWS getter reality table](./plans/IMPLEMENTATION.md#aws-getter-reality)); `M3LCloudFormationOperations`, ADR-0027; 9 operations (list/describe/create/update/delete-stack + describe-stack-events + 3 wait-stack-\*-complete), 120 tests |
-| **W3** | `codepipeline-ops`                                                            | Blocked     | getter reality: `codePipeline` is raw — no wrapper yet (see AWS getter reality table); do not scope as 1-PR until re-verified — resolve wrapper-vs-getter status first; name per ADR-0028                                                                                                                                                                             |
+| **W3** | `codepipeline-ops`                                                            | To Do       | consumes `aws/codepipeline` — wrapped on `feat/aws-codepipeline` (see [AWS getter reality table](./plans/IMPLEMENTATION.md#aws-getter-reality)); `M3LCodePipelineOperations`, ADR-0027; name per ADR-0028                                                                                                                                                             |
 | **W4** | `api-gateway-client`                                                          | Done        | **PR:** #157. W0 ✓; consumes `aws/signing` — wrapped (see AWS getter reality table); SigV4, ADR-0029                                                                                                                                                                                                                                                                  |
 | **W4** | `athena-query` (Athena-only, `pg`/`mongodb` dropped per ADR-0031)             | Done        | **PR:** #166. W0 ✓; consumes `aws/athena` — wrapped (see AWS getter reality table); `M3LAthenaClient`, ADR-0029                                                                                                                                                                                                                                                       |
 | **W4** | `eks-ops` (EKS control-plane only)                                            | Blocked     | getter reality: `eks` is raw — no wrapper yet (see AWS getter reality table); do not assume the existing `eks` getter is sufficient — verify wrapper-vs-getter status before starting; ADR-0029                                                                                                                                                                       |

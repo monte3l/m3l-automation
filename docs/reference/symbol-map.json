@@ -1965,6 +1965,181 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/errors.ts"
   },
+  "M3LCodePipelineOperations": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/client.ts"
+  },
+  "M3LCodePipelineListPipelinesOptions": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/client.ts"
+  },
+  "M3LCodePipelineListExecutionsOptions": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/client.ts"
+  },
+  "M3LCodePipelineGetPipelineOptions": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/client.ts"
+  },
+  "M3LCodePipelineStartExecutionOptions": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/client.ts"
+  },
+  "M3LCodePipelineOperationError": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/error.ts"
+  },
+  "M3LCodePipelineListPipelinesResult": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineSummary": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineDefinition": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineMetadata": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineDeclaration": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineStageDeclaration": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineActionDeclaration": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineActionTypeId": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineArtifactStore": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineEncryptionKey": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineVariableDeclaration": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineTag": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineCreatePipelineInput": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineState": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineStageState": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineTransitionState": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineStageExecution": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineActionState": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineActionExecution": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineExecution": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineExecutionTrigger": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineListExecutionsResult": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineExecutionSummary": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineStartExecutionResult": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineStopExecutionInput": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineStopExecutionResult": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineStageTransitionType": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineEnableStageTransitionInput": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
+  "M3LCodePipelineDisableStageTransitionInput": {
+    "submodule": "codepipeline",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/codepipeline/types.ts"
+  },
   "M3LAWSCredentialsManager": {
     "submodule": "credentials",
     "namespace": "aws",

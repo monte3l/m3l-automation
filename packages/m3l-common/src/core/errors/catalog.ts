@@ -124,6 +124,7 @@ export const M3L_ERROR_CATALOG: Readonly<
   ERR_CHECKPOINT_MISSING: { origin: "caller", retryable: false },
   ERR_CHECKPOINT_PARSE: { origin: "external", retryable: false },
   ERR_CLOUDFORMATION_OPERATION: { origin: "external", retryable: true },
+  ERR_CODEPIPELINE_OPERATION: { origin: "external", retryable: true },
   ERR_CONFIG_COERCION: { origin: "caller", retryable: false },
   ERR_CONFIG_MISSING: { origin: "caller", retryable: false },
   ERR_CONFIG_PARSE: { origin: "caller", retryable: false },
