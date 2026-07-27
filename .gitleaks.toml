@@ -1,6 +1,9 @@
 # Extends gitleaks' default ruleset with repo-specific credential shapes.
 # CI runs gitleaks-action (ci.yml "Secret scan"); it auto-loads this file from
 # the repo root. Write-time counterpart: .claude/hooks/guard-secret-writes.mjs.
+# Known-false-positive findings (real secrets look nothing like these) are
+# ignored via .gitleaksignore at the repo root, keyed by fingerprint — not a
+# TOML allowlist block; gitleaks has no `fingerprints` field in [allowlist].
 [extend]
 useDefault = true
 

@@ -1,0 +1,360 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "aws/codepipeline.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/client.ts",
+          "symbol": "M3LCodePipelineOperations",
+          "blob": "0ae0859d4e7b2d1d6a43922710b9ea8847b1159a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/client.ts",
+          "symbol": "M3LCodePipelineListPipelinesOptions",
+          "blob": "0ae0859d4e7b2d1d6a43922710b9ea8847b1159a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/client.ts",
+          "symbol": "M3LCodePipelineListExecutionsOptions",
+          "blob": "0ae0859d4e7b2d1d6a43922710b9ea8847b1159a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/client.ts",
+          "symbol": "M3LCodePipelineGetPipelineOptions",
+          "blob": "0ae0859d4e7b2d1d6a43922710b9ea8847b1159a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/client.ts",
+          "symbol": "M3LCodePipelineStartExecutionOptions",
+          "blob": "0ae0859d4e7b2d1d6a43922710b9ea8847b1159a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/error.ts",
+          "symbol": "M3LCodePipelineOperationError",
+          "blob": "4e95fb1eec16368611d3070feca9a6b8b54f3b33"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineListPipelinesResult",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineSummary",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineDefinition",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineMetadata",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineDeclaration",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineStageDeclaration",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineActionDeclaration",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineActionTypeId",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineArtifactStore",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineEncryptionKey",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineVariableDeclaration",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineTag",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineCreatePipelineInput",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineState",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineStageState",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineTransitionState",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineStageExecution",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineActionState",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineActionExecution",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineExecution",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineExecutionTrigger",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineListExecutionsResult",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineExecutionSummary",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineStartExecutionResult",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineStopExecutionInput",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineStopExecutionResult",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineStageTransitionType",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineEnableStageTransitionInput",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineDisableStageTransitionInput",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        }
+      ],
+      "retrieved": "2026-07-27"
+    },
+    {
+      "heading": "`M3LCodePipelineOperations`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/client.ts",
+          "symbol": "M3LCodePipelineOperations",
+          "blob": "0ae0859d4e7b2d1d6a43922710b9ea8847b1159a"
+        }
+      ],
+      "retrieved": "2026-07-27"
+    },
+    {
+      "heading": "Plain types (field-by-field)",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineListPipelinesResult",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineSummary",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineDefinition",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineMetadata",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineDeclaration",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineStageDeclaration",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineActionDeclaration",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineActionTypeId",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineArtifactStore",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineEncryptionKey",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineVariableDeclaration",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineTag",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineCreatePipelineInput",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineState",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineStageState",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineTransitionState",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineStageExecution",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineActionState",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineActionExecution",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineExecution",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineExecutionTrigger",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineListExecutionsResult",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineExecutionSummary",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineStartExecutionResult",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineStopExecutionInput",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineStopExecutionResult",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineStageTransitionType",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineEnableStageTransitionInput",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
+          "symbol": "M3LCodePipelineDisableStageTransitionInput",
+          "blob": "1b524074440643c76e06b928163f0429bb36368f"
+        }
+      ],
+      "retrieved": "2026-07-27"
+    },
+    {
+      "heading": "`M3LCodePipelineOperationError`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/codepipeline/error.ts",
+          "symbol": "M3LCodePipelineOperationError",
+          "blob": "4e95fb1eec16368611d3070feca9a6b8b54f3b33"
+        }
+      ],
+      "retrieved": "2026-07-27"
+    }
+  ]
+}
