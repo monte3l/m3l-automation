@@ -310,6 +310,9 @@ export interface M3LCodePipelineListExecutionsResult {
  * A single execution summary entry from
  * {@link M3LCodePipelineListExecutionsResult}. `pipelineExecutionId`/
  * `status` are always present (defaulted to `""` when the SDK omits them).
+ * `stopTriggerReason` flattens the SDK's nested `stopTrigger: { reason? }`
+ * down to a single field, the same flattening move applied to
+ * `M3LCodePipelineActionExecution`'s `errorCode`/`errorMessage`.
  */
 export interface M3LCodePipelineExecutionSummary {
   readonly pipelineExecutionId: string;
