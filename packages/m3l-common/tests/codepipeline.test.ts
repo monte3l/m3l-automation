@@ -955,14 +955,14 @@ describe("M3LCodePipelineOperations", () => {
 
       const operations = new M3LCodePipelineOperations(fakeClient());
       await operations.startPipelineExecution(PIPELINE_NAME, {
-        clientRequestToken: "idempotency-key-1",
+        clientRequestToken: "not-a-real-token",
       });
 
       const [command] = h.send.mock.calls[0] as [
         { input: { name?: string; clientRequestToken?: string } },
       ];
       expect(command.input.name).toBe(PIPELINE_NAME);
-      expect(command.input.clientRequestToken).toBe("idempotency-key-1");
+      expect(command.input.clientRequestToken).toBe("not-a-real-token");
     });
 
     test.each([
