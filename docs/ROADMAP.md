@@ -4,7 +4,7 @@ The **living, prioritized view of pending program work**. It is the coarse
 companion to two other trackers:
 
 - [`docs/implementation-status.md`](./implementation-status.md) — the _done_
-  library ledger (35/35 submodules, count-enforced).
+  library ledger (36/36 submodules, count-enforced).
 - [`docs/plans/IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md) — the _detailed_
   per-item backlog this file summarizes.
 
@@ -17,7 +17,7 @@ _Maintenance_ at the bottom. Completed dated plans live under
 
 Per-item status lives in the tables below (Priority 0/1/2) and in
 [`docs/implementation-status.md`](./implementation-status.md) — the
-count-enforced library ledger (35/35 submodules, shipped at v1.1.0 + the
+count-enforced library ledger (36/36 submodules, shipped at v1.1.0 + the
 ad-hoc `aws/dynamodb`, `aws/sqs`, and `aws/cloudwatch-logs-insights` additions,
 ADR-0026/ADR-0027).
 
@@ -78,17 +78,18 @@ from its name alone (ADR-0027/ADR-0029).
 | **W3** | `codepipeline-ops`                                                            | Done        | **PR:** #251 (`aws/codepipeline` wrapper, 2-PR chain) + script on `feat/codepipeline-ops`. W0 ✓; consumes `aws/codepipeline` — wrapped (see [AWS getter reality table](./plans/IMPLEMENTATION.md#aws-getter-reality)); `M3LCodePipelineOperations`, ADR-0027; 13 operations (list/describe/create/update/delete-pipeline + get-pipeline-state + list/describe-execution + start/stop-execution + enable/disable-stage-transition + watch-execution), 185 tests |
 | **W4** | `api-gateway-client`                                                          | Done        | **PR:** #157. W0 ✓; consumes `aws/signing` — wrapped (see AWS getter reality table); SigV4, ADR-0029                                                                                                                                                                                                                                                                                                                                                           |
 | **W4** | `athena-query` (Athena-only, `pg`/`mongodb` dropped per ADR-0031)             | Done        | **PR:** #166. W0 ✓; consumes `aws/athena` — wrapped (see AWS getter reality table); `M3LAthenaClient`, ADR-0029                                                                                                                                                                                                                                                                                                                                                |
-| **W4** | `eks-ops` (EKS control-plane only)                                            | Blocked     | getter reality: `eks` is raw — no wrapper yet (see AWS getter reality table); do not assume the existing `eks` getter is sufficient — verify wrapper-vs-getter status before starting; ADR-0029                                                                                                                                                                                                                                                                |
+| **W4** | `eks-ops` (EKS control-plane only)                                            | To Do       | getter reality: `eks` now wrapped (see AWS getter reality table) — `aws/eks` (`M3LEKSOperations`) landed as PR 1 of the 2-PR chain; the script itself (PR 2) is unblocked; ADR-0029                                                                                                                                                                                                                                                                            |
 | **W5** | Promotion pass — steps duplicated across ≥2 scripts graduate into the library | In progress | destructive-gate promoted to `Core.confirmDestructive` (5 scripts retrofitted); checkpoint/resume (§1.2) promoted to `Core.M3LCheckpointStore` and adopted by `athena-query`/`cloudwatch-logs-insights`/`dynamodb-crud` — no further W5 candidate named yet                                                                                                                                                                                                    |
 
 Sequencing: W2 proves the scale architecture; W3 and W4 both turned out to
 require a new `aws/<service>` operations wrapper before a script could start
-(s3, lambda, eventbridge, cloudFormation, codePipeline for W3; athena, signing
-for W4) — the original premise that W3 was "mechanical over existing clients"
-was wrong for 5 of its 6 shipped items. W3 is now closed (6 of 6); the same
-caution must not be assumed for W4's remaining `eks-ops` (check the [AWS
-getter reality table](./plans/IMPLEMENTATION.md#aws-getter-reality) before
-scoping/starting it); W5 is the standing F4 loop.
+(s3, lambda, eventbridge, cloudFormation, codePipeline for W3; athena, signing,
+eks for W4) — the original premise that W3 was "mechanical over existing
+clients" was wrong for 5 of its 6 shipped items, and the same caution held for
+`eks-ops` (its `aws/eks` wrapper landed first, per the [AWS getter reality
+table](./plans/IMPLEMENTATION.md#aws-getter-reality)). W3 is now closed (6 of
+6); W4's remaining item is `eks-ops` itself, now unblocked; W5 is the standing
+F4 loop.
 
 ## Priority 2 — Gated / deferred
 
