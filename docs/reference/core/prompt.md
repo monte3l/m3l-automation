@@ -92,8 +92,9 @@ A rejection from `prompt.confirm` (e.g. the adapter throws on a cancelled prompt
 channels — the bypass warning and the `Confirm: …?` prompt — but
 **deliberately not** in the thrown `aborted: …` `M3LError` message. That
 message is a data value, not a render target: it flows downstream into
-`core/diagnostics`'s name-based secret redaction (`redactSensitiveLogText`),
-which locates `key=value`-shaped secrets by matching on surrounding word
+`core/logging`'s name-based secret redaction (`redactSensitiveLogText`),
+applied here by `core/diagnostics`'s error-chain serialization, which
+locates `key=value`-shaped secrets by matching on surrounding word
 boundaries. Escaping the description first would introduce alphanumeric
 escape text (`\x09`, `\u{202e}`) that merges into those boundaries and can
 suppress a secret's redaction in a persisted run report — a worse outcome

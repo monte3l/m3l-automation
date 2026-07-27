@@ -8,12 +8,12 @@
         {
           "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
           "symbol": "confirmDestructive",
-          "blob": "d66fc9a1668f96a3851725d8cfa0c8ddd5c533c4"
+          "blob": "ff64fe6d48a532364e74672e970b6e3cb08ab509"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
           "symbol": "M3LConfirmDestructiveOptions",
-          "blob": "d66fc9a1668f96a3851725d8cfa0c8ddd5c533c4"
+          "blob": "ff64fe6d48a532364e74672e970b6e3cb08ab509"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
