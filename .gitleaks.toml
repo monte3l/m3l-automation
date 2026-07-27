@@ -1,6 +1,9 @@
 # Extends gitleaks' default ruleset with repo-specific credential shapes.
 # CI runs gitleaks-action (ci.yml "Secret scan"); it auto-loads this file from
 # the repo root. Write-time counterpart: .claude/hooks/guard-secret-writes.mjs.
+# Known-false-positive findings (real secrets look nothing like these) are
+# ignored via .gitleaksignore at the repo root, keyed by fingerprint — not a
+# TOML allowlist block; gitleaks has no `fingerprints` field in [allowlist].
 [extend]
 useDefault = true
 
@@ -9,12 +12,3 @@ id = "context7-api-key"
 description = "Context7 API key (MCP server config — must stay in the user env, never committed; ADR-0030)"
 regex = '''\bctx7sk-[A-Za-z0-9-]{20,}\b'''
 keywords = ["ctx7sk-"]
-
-[allowlist]
-description = "Known false positives — test fixtures matched by the default generic-api-key heuristic, not real secrets"
-fingerprints = [
-  # aws/codepipeline's startPipelineExecution test: a fake StartPipelineExecutionInput.clientRequestToken
-  # idempotency-key fixture value, flagged only because the field name contains "token" and the value's
-  # entropy sat near the rule's threshold. See docs/logs/2026-07-27-aws-codepipeline.md.
-  "bddc0ea87529142cd562d1724522940190096f70:packages/m3l-common/tests/codepipeline.test.ts:generic-api-key:605",
-]
