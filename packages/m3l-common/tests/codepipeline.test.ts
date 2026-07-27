@@ -384,6 +384,44 @@ describe("M3LCodePipelineOperations", () => {
         M3LCodePipelineOperationError,
       );
     });
+
+    test("maps pipelineType/executionMode/created/updated when the SDK PipelineSummary includes them", async () => {
+      h.send.mockResolvedValueOnce({
+        pipelines: [
+          {
+            name: PIPELINE_NAME,
+            version: 5,
+            pipelineType: "V2",
+            executionMode: "PARALLEL",
+            created: new Date("2026-02-01T00:00:00.000Z"),
+            updated: new Date("2026-02-02T00:00:00.000Z"),
+          },
+        ],
+      });
+
+      const operations = new M3LCodePipelineOperations(fakeClient());
+      const result = await operations.listPipelines();
+
+      expect(result.pipelines).toEqual<readonly M3LCodePipelineSummary[]>([
+        {
+          name: PIPELINE_NAME,
+          version: 5,
+          pipelineType: "V2",
+          executionMode: "PARALLEL",
+          created: "2026-02-01T00:00:00.000Z",
+          updated: "2026-02-02T00:00:00.000Z",
+        },
+      ]);
+    });
+
+    test("defaults name to '' when a PipelineSummary omits it", async () => {
+      h.send.mockResolvedValueOnce({ pipelines: [{}] });
+
+      const operations = new M3LCodePipelineOperations(fakeClient());
+      const result = await operations.listPipelines();
+
+      expect(result.pipelines).toEqual([{ name: "" }]);
+    });
   });
 
   describe("getPipelineState", () => {
@@ -445,6 +483,156 @@ describe("M3LCodePipelineOperations", () => {
 
       expect(thrown).toBeInstanceOf(M3LCodePipelineOperationError);
       expect((thrown as M3LCodePipelineOperationError).cause).toBe(cause);
+    });
+
+    test("maps stageStates[].actionStates[].latestExecution (every field, including errorDetails flattening), entityUrl/revisionUrl, inboundTransitionState, and stageStates[].latestExecution when the SDK response is fully populated", async () => {
+      h.send.mockResolvedValueOnce({
+        pipelineName: PIPELINE_NAME,
+        stageStates: [
+          {
+            stageName: "Deploy",
+            actionStates: [
+              {
+                actionName: "DeployAction",
+                latestExecution: {
+                  status: "Succeeded",
+                  actionExecutionId: "action-exec-1",
+                  summary: "Deployment succeeded",
+                  lastStatusChange: new Date("2026-01-05T00:00:00.000Z"),
+                  lastUpdatedBy: "codepipeline-service",
+                  externalExecutionId: "ext-exec-1",
+                  externalExecutionUrl: "https://example.com/ext-exec-1",
+                  percentComplete: 100,
+                  errorDetails: {
+                    code: "JobFailed",
+                    message: "deployment failed",
+                  },
+                },
+                entityUrl: "https://example.com/entity",
+                revisionUrl: "https://example.com/revision",
+              },
+            ],
+            inboundTransitionState: {
+              enabled: true,
+              lastChangedBy: "user@example.com",
+              lastChangedAt: new Date("2026-01-04T00:00:00.000Z"),
+              disabledReason: "maintenance window",
+            },
+            latestExecution: {
+              pipelineExecutionId: EXECUTION_ID,
+              status: "InProgress",
+              type: "STANDARD",
+            },
+          },
+        ],
+      });
+
+      const operations = new M3LCodePipelineOperations(fakeClient());
+      const result = await operations.getPipelineState(PIPELINE_NAME);
+
+      expect(result).toEqual<M3LCodePipelineState>({
+        pipelineName: PIPELINE_NAME,
+        stageStates: [
+          {
+            stageName: "Deploy",
+            actionStates: [
+              {
+                actionName: "DeployAction",
+                latestExecution: {
+                  status: "Succeeded",
+                  actionExecutionId: "action-exec-1",
+                  summary: "Deployment succeeded",
+                  lastStatusChange: "2026-01-05T00:00:00.000Z",
+                  lastUpdatedBy: "codepipeline-service",
+                  externalExecutionId: "ext-exec-1",
+                  externalExecutionUrl: "https://example.com/ext-exec-1",
+                  percentComplete: 100,
+                  errorCode: "JobFailed",
+                  errorMessage: "deployment failed",
+                },
+                entityUrl: "https://example.com/entity",
+                revisionUrl: "https://example.com/revision",
+              },
+            ],
+            inboundTransitionState: {
+              enabled: true,
+              lastChangedBy: "user@example.com",
+              lastChangedAt: "2026-01-04T00:00:00.000Z",
+              disabledReason: "maintenance window",
+            },
+            latestExecution: {
+              pipelineExecutionId: EXECUTION_ID,
+              status: "InProgress",
+              type: "STANDARD",
+            },
+          },
+        ],
+      });
+    });
+
+    test("defaults pipelineName/stageName and omits actionStates[]/inboundTransitionState/latestExecution when the SDK response is maximally sparse", async () => {
+      h.send.mockResolvedValueOnce({
+        stageStates: [{}],
+      });
+
+      const operations = new M3LCodePipelineOperations(fakeClient());
+      const result = await operations.getPipelineState(PIPELINE_NAME);
+
+      expect(result).toEqual<M3LCodePipelineState>({
+        pipelineName: "",
+        stageStates: [{ stageName: "", actionStates: [] }],
+      });
+    });
+
+    test("defaults actionStates[].actionName and stageStates[].latestExecution's pipelineExecutionId/status when nested sub-objects are present but empty, omitting entityUrl/revisionUrl/inboundTransitionState fields and StageExecution.type", async () => {
+      h.send.mockResolvedValueOnce({
+        pipelineName: PIPELINE_NAME,
+        stageStates: [
+          {
+            stageName: "Source",
+            actionStates: [{}],
+            inboundTransitionState: {},
+            latestExecution: {},
+          },
+        ],
+      });
+
+      const operations = new M3LCodePipelineOperations(fakeClient());
+      const result = await operations.getPipelineState(PIPELINE_NAME);
+
+      expect(result).toEqual<M3LCodePipelineState>({
+        pipelineName: PIPELINE_NAME,
+        stageStates: [
+          {
+            stageName: "Source",
+            actionStates: [{ actionName: "" }],
+            inboundTransitionState: {},
+            latestExecution: { pipelineExecutionId: "", status: "" },
+          },
+        ],
+      });
+    });
+
+    test("maps an ActionState's latestExecution as {} when the SDK's ActionExecution has every optional field omitted", async () => {
+      h.send.mockResolvedValueOnce({
+        pipelineName: PIPELINE_NAME,
+        stageStates: [
+          {
+            stageName: "Source",
+            actionStates: [{ actionName: "SourceAction", latestExecution: {} }],
+          },
+        ],
+      });
+
+      const operations = new M3LCodePipelineOperations(fakeClient());
+      const result = await operations.getPipelineState(PIPELINE_NAME);
+
+      expect(
+        result?.stageStates[0]?.actionStates[0],
+      ).toEqual<M3LCodePipelineActionState>({
+        actionName: "SourceAction",
+        latestExecution: {},
+      });
     });
   });
 
@@ -519,6 +707,62 @@ describe("M3LCodePipelineOperations", () => {
         operations.listPipelineExecutions(PIPELINE_NAME),
       ).rejects.toBeInstanceOf(M3LCodePipelineOperationError);
     });
+
+    test("maps statusSummary/startTime/lastUpdateTime/executionMode/executionType/trigger/stopTriggerReason when the SDK PipelineExecutionSummary includes them", async () => {
+      h.send.mockResolvedValueOnce({
+        pipelineExecutionSummaries: [
+          {
+            pipelineExecutionId: EXECUTION_ID,
+            status: "Failed",
+            statusSummary: "Stage Deploy failed",
+            startTime: new Date("2026-01-10T00:00:00.000Z"),
+            lastUpdateTime: new Date("2026-01-10T01:00:00.000Z"),
+            executionMode: "SUPERSEDED",
+            executionType: "ROLLBACK",
+            trigger: {
+              triggerType: "StartPipelineExecution",
+              triggerDetail: "manual-trigger",
+            },
+            stopTrigger: { reason: "operator requested stop" },
+          },
+        ],
+      });
+
+      const operations = new M3LCodePipelineOperations(fakeClient());
+      const result = await operations.listPipelineExecutions(PIPELINE_NAME);
+
+      expect(result.executionSummaries).toEqual<
+        readonly M3LCodePipelineExecutionSummary[]
+      >([
+        {
+          pipelineExecutionId: EXECUTION_ID,
+          status: "Failed",
+          statusSummary: "Stage Deploy failed",
+          startTime: "2026-01-10T00:00:00.000Z",
+          lastUpdateTime: "2026-01-10T01:00:00.000Z",
+          executionMode: "SUPERSEDED",
+          executionType: "ROLLBACK",
+          trigger: {
+            triggerType: "StartPipelineExecution",
+            triggerDetail: "manual-trigger",
+          },
+          stopTriggerReason: "operator requested stop",
+        },
+      ]);
+    });
+
+    test("defaults pipelineExecutionId/status to '' when a PipelineExecutionSummary omits the required-nullable strings", async () => {
+      h.send.mockResolvedValueOnce({
+        pipelineExecutionSummaries: [{}],
+      });
+
+      const operations = new M3LCodePipelineOperations(fakeClient());
+      const result = await operations.listPipelineExecutions(PIPELINE_NAME);
+
+      expect(result.executionSummaries).toEqual([
+        { pipelineExecutionId: "", status: "" },
+      ]);
+    });
   });
 
   describe("getPipelineExecution", () => {
@@ -582,6 +826,81 @@ describe("M3LCodePipelineOperations", () => {
 
       expect(thrown).toBeInstanceOf(M3LCodePipelineOperationError);
       expect((thrown as M3LCodePipelineOperationError).cause).toBe(cause);
+    });
+
+    test("maps statusSummary/pipelineVersion/executionMode/executionType/trigger when the SDK GetPipelineExecution response includes them", async () => {
+      h.send.mockResolvedValueOnce({
+        pipelineExecution: {
+          pipelineExecutionId: EXECUTION_ID,
+          pipelineName: PIPELINE_NAME,
+          status: "Succeeded",
+          statusSummary: "Deployment complete",
+          pipelineVersion: 4,
+          executionMode: "QUEUED",
+          executionType: "STANDARD",
+          trigger: {
+            triggerType: "Webhook",
+            triggerDetail:
+              "arn:aws:codepipeline:us-east-1:123456789012:webhook/abc",
+          },
+        },
+      });
+
+      const operations = new M3LCodePipelineOperations(fakeClient());
+      const result = await operations.getPipelineExecution(
+        PIPELINE_NAME,
+        EXECUTION_ID,
+      );
+
+      expect(result).toEqual<M3LCodePipelineExecution>({
+        pipelineExecutionId: EXECUTION_ID,
+        pipelineName: PIPELINE_NAME,
+        status: "Succeeded",
+        statusSummary: "Deployment complete",
+        pipelineVersion: 4,
+        executionMode: "QUEUED",
+        executionType: "STANDARD",
+        trigger: {
+          triggerType: "Webhook",
+          triggerDetail:
+            "arn:aws:codepipeline:us-east-1:123456789012:webhook/abc",
+        },
+      });
+    });
+
+    test("defaults pipelineExecutionId/pipelineName/status to '' when the SDK response omits the required-nullable strings", async () => {
+      h.send.mockResolvedValueOnce({ pipelineExecution: {} });
+
+      const operations = new M3LCodePipelineOperations(fakeClient());
+      const result = await operations.getPipelineExecution(
+        PIPELINE_NAME,
+        EXECUTION_ID,
+      );
+
+      expect(result).toEqual<M3LCodePipelineExecution>({
+        pipelineExecutionId: "",
+        pipelineName: "",
+        status: "",
+      });
+    });
+
+    test("maps trigger as {} when the SDK's ExecutionTrigger has neither triggerType nor triggerDetail", async () => {
+      h.send.mockResolvedValueOnce({
+        pipelineExecution: {
+          pipelineExecutionId: EXECUTION_ID,
+          pipelineName: PIPELINE_NAME,
+          status: "InProgress",
+          trigger: {},
+        },
+      });
+
+      const operations = new M3LCodePipelineOperations(fakeClient());
+      const result = await operations.getPipelineExecution(
+        PIPELINE_NAME,
+        EXECUTION_ID,
+      );
+
+      expect(result?.trigger).toEqual({});
     });
   });
 
@@ -687,6 +1006,24 @@ describe("M3LCodePipelineOperations", () => {
           pipelineExecutionId: EXECUTION_ID,
         }),
       ).rejects.toBeInstanceOf(M3LCodePipelineOperationError);
+    });
+
+    test("forwards the caller's abandon and reason onto the constructed StopPipelineExecutionCommand", async () => {
+      h.send.mockResolvedValueOnce({ pipelineExecutionId: EXECUTION_ID });
+
+      const operations = new M3LCodePipelineOperations(fakeClient());
+      await operations.stopPipelineExecution({
+        pipelineName: PIPELINE_NAME,
+        pipelineExecutionId: EXECUTION_ID,
+        abandon: true,
+        reason: "rolling back a bad deploy",
+      });
+
+      const [command] = h.send.mock.calls[0] as [
+        { input: { abandon?: boolean; reason?: string } },
+      ];
+      expect(command.input.abandon).toBe(true);
+      expect(command.input.reason).toBe("rolling back a bad deploy");
     });
   });
 
@@ -1141,6 +1478,83 @@ describe("M3LCodePipelineOperations", () => {
       expect(result?.declaration.stages[1]?.actions[0]?.inputArtifacts).toEqual(
         ["SourceOutput"],
       );
+    });
+
+    test("defaults declaration.stages to [] and artifactStore/encryptionKey/variable fields to '' when the SDK response's declaration is sparse", async () => {
+      h.send.mockResolvedValueOnce({
+        pipeline: {
+          name: PIPELINE_NAME,
+          roleArn: "arn:aws:iam::123456789012:role/codepipeline-role",
+          // stages entirely omitted -> defaults to []
+          artifactStore: {
+            // type/location omitted -> default ""
+            encryptionKey: {
+              // id/type omitted -> default ""
+            },
+          },
+          variables: [{/* name omitted -> default "" */}],
+        },
+      });
+
+      const operations = new M3LCodePipelineOperations(fakeClient());
+      const result = await operations.getPipeline(PIPELINE_NAME);
+
+      expect(result?.declaration.stages).toEqual([]);
+      expect(result?.declaration.artifactStore).toEqual({
+        type: "",
+        location: "",
+        encryptionKey: { id: "", type: "" },
+      });
+      expect(result?.declaration.variables).toEqual([{ name: "" }]);
+    });
+
+    test("defaults stage name/actions, action name/actionTypeId fields, and artifact wrapper name to '' or [] when the SDK response's stages/actions/artifacts are sparse", async () => {
+      h.send.mockResolvedValueOnce({
+        pipeline: {
+          name: PIPELINE_NAME,
+          roleArn: "arn:aws:iam::123456789012:role/codepipeline-role",
+          stages: [
+            {
+              // name omitted -> default ""
+              // actions omitted -> default []
+            },
+            {
+              name: "Deploy",
+              actions: [
+                {
+                  // name omitted -> default ""
+                  // actionTypeId omitted -> mapActionTypeId(undefined), every field ""
+                  inputArtifacts: [{/* name omitted -> default "" */}],
+                  outputArtifacts: [{/* name omitted -> default "" */}],
+                },
+              ],
+            },
+          ],
+        },
+      });
+
+      const operations = new M3LCodePipelineOperations(fakeClient());
+      const result = await operations.getPipeline(PIPELINE_NAME);
+
+      expect(result?.declaration.stages).toEqual([
+        { name: "", actions: [] },
+        {
+          name: "Deploy",
+          actions: [
+            {
+              name: "",
+              actionTypeId: {
+                category: "",
+                owner: "",
+                provider: "",
+                version: "",
+              },
+              inputArtifacts: [""],
+              outputArtifacts: [""],
+            },
+          ],
+        },
+      ]);
     });
   });
 
