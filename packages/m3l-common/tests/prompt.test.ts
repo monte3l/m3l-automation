@@ -33,6 +33,11 @@
  *  - B10: no import-time or construction-time side effects.
  *  - D3: autocomplete suggest fn signature is (term) => ... (no signal arg).
  *  - D8: LoadingBar.update(NaN)/update(Infinity) clamp to 0, don't throw.
+ *  - F9: M3LPrompt message and confirmDestructive description are passed
+ *    through internal escapeTerminalControls before reaching the adapter/log/
+ *    error — Cc/Cf/Zl/Zp code points become visible \x../\u{..} literals;
+ *    clean ASCII input is byte-identical (regression-locked against the
+ *    existing confirmDestructive assertions).
  */
 
 import { PassThrough } from "node:stream";
@@ -55,6 +60,7 @@ const inquirerMocks = vi.hoisted(() => ({
 
 vi.mock("@inquirer/prompts", () => inquirerMocks);
 
+import { formatErrorChain } from "../src/core/diagnostics/index.js";
 import { M3LError } from "../src/core/errors/index.js";
 import { M3LLogger } from "../src/core/logging/index.js";
 import {
@@ -69,6 +75,7 @@ import {
   resolveInteractive,
   resolveRenderTarget,
 } from "../src/internal/prompt/ansi.js";
+import { escapeTerminalControls } from "../src/internal/prompt/sanitize.js";
 
 import type {
   M3LChoice,
@@ -827,6 +834,106 @@ describe("M3LPrompt.autocomplete", () => {
 });
 
 // ---------------------------------------------------------------------------
+// F9: M3LPrompt message escaping — every prompt method's `message` is passed
+// through internal escapeTerminalControls before reaching the adapter.
+// ---------------------------------------------------------------------------
+describe("M3LPrompt: message escaping", () => {
+  const HOSTILE = "prod\u001b[2K\u202estaging";
+  const RENDERED = "prod\\x1b[2K\\u{202e}staging";
+
+  test("text(): adapter.input receives the escaped message", async () => {
+    const adapter = makeMockAdapter();
+    adapter.input.mockResolvedValue("value");
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.text(HOSTILE);
+    expect(adapter.input.mock.calls[0]?.[0]).toMatchObject({
+      message: RENDERED,
+    });
+  });
+
+  test("password(): adapter.password receives the escaped message", async () => {
+    const adapter = makeMockAdapter();
+    adapter.password.mockResolvedValue("secret");
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.password(HOSTILE);
+    expect(adapter.password.mock.calls[0]?.[0]).toMatchObject({
+      message: RENDERED,
+    });
+  });
+
+  test("number(): adapter.number receives the escaped message", async () => {
+    const adapter = makeMockAdapter();
+    adapter.number.mockResolvedValue(5);
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.number(HOSTILE, { min: 0, max: 10 });
+    expect(adapter.number.mock.calls[0]?.[0]).toMatchObject({
+      message: RENDERED,
+    });
+  });
+
+  test("confirm(): adapter.confirm receives the escaped message", async () => {
+    const adapter = makeMockAdapter();
+    adapter.confirm.mockResolvedValue(true);
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.confirm(HOSTILE);
+    expect(adapter.confirm.mock.calls[0]?.[0]).toMatchObject({
+      message: RENDERED,
+    });
+  });
+
+  test("select(): adapter.select receives the escaped message", async () => {
+    const adapter = makeMockAdapter();
+    adapter.select.mockResolvedValue("a");
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.select(HOSTILE, ["a"]);
+    expect(adapter.select.mock.calls[0]?.[0]).toMatchObject({
+      message: RENDERED,
+    });
+  });
+
+  test("multiselect(): adapter.checkbox receives the escaped message", async () => {
+    const adapter = makeMockAdapter();
+    adapter.checkbox.mockResolvedValue(["a"]);
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.multiselect(HOSTILE, ["a"]);
+    expect(adapter.checkbox.mock.calls[0]?.[0]).toMatchObject({
+      message: RENDERED,
+    });
+  });
+
+  test("autocomplete(): adapter.search receives the escaped message", async () => {
+    const adapter = makeMockAdapter();
+    adapter.search.mockResolvedValue("a");
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.autocomplete(HOSTILE, () => ["a"]);
+    expect(adapter.search.mock.calls[0]?.[0]).toMatchObject({
+      message: RENDERED,
+    });
+  });
+
+  test("password(): escaping the message never adds a mask key — config key-set is exactly ['message']", async () => {
+    const adapter = makeMockAdapter();
+    adapter.password.mockResolvedValue("secret");
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.password(HOSTILE);
+    const [config] = adapter.password.mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+    expect(Object.keys(config)).toEqual(["message"]);
+  });
+
+  test("select(): choice labels are NOT escaped — the choices array reference is passed through unchanged (documented gap)", async () => {
+    const adapter = makeMockAdapter();
+    adapter.select.mockResolvedValue("a");
+    const prompt = new M3LPrompt({ adapter });
+    const choices = ["a", "b"] as const;
+    await prompt.select(HOSTILE, choices);
+    const [config] = adapter.select.mock.calls[0] as [Record<string, unknown>];
+    expect(config.choices).toBe(choices);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // confirmDestructive — promoted from the identical script-local step
 // duplicated across 5 consumer scripts (e.g.
 // scripts/lambda-ops/src/steps/destructive-gate.ts). M3LPrompt/M3LLogger are
@@ -834,6 +941,11 @@ describe("M3LPrompt.autocomplete", () => {
 // structurally satisfy either type — real instances are constructed and
 // their public methods are `vi.spyOn`-wrapped, mirroring the pattern already
 // established at the script-step-test layer this function is promoted from.
+//
+// F9: the "delete bucket my-bucket" literal used by the bypass/confirmed
+// assertions below is intentionally left unchanged — it contains no
+// Cc/Cf/Zl/Zp code point, so it is the regression proof that escaping is a
+// no-op on clean ASCII input.
 // ---------------------------------------------------------------------------
 describe("confirmDestructive", () => {
   test("bypass (yes:true): logs a single warning with the bypass message and never calls prompt.confirm", async () => {
@@ -925,6 +1037,122 @@ describe("confirmDestructive", () => {
         code: "ERR_TEST_ABORTED",
       }),
     ).rejects.toBe(cancellation);
+  });
+
+  test("F9: bypass (yes:true) logs the escaped description in the bypass warning", async () => {
+    const prompt = new M3LPrompt();
+    vi.spyOn(prompt, "confirm");
+    const logger = new M3LLogger([]);
+    const warning = vi.spyOn(logger, "warning");
+    const description = "delete stack prod\u001b[2K\u202estaging";
+    const RENDERED = "delete stack prod\\x1b[2K\\u{202e}staging";
+
+    await confirmDestructive({
+      prompt,
+      logger,
+      description,
+      yes: true,
+      code: "ERR_TEST_ABORTED",
+    });
+
+    expect(warning.mock.calls[0]?.[0]).toBe(
+      `destructive confirmation bypassed (yes=true): ${RENDERED}`,
+    );
+  });
+
+  test("F9: confirmed (yes:false) prompts with the escaped description", async () => {
+    const prompt = new M3LPrompt();
+    const confirm = vi.spyOn(prompt, "confirm").mockResolvedValue(true);
+    const logger = new M3LLogger([]);
+    const description = "delete stack prod\u001b[2K\u202estaging";
+    const RENDERED = "delete stack prod\\x1b[2K\\u{202e}staging";
+
+    await confirmDestructive({
+      prompt,
+      logger,
+      description,
+      yes: false,
+      code: "ERR_TEST_ABORTED",
+    });
+
+    expect(confirm.mock.calls[0]?.[0]).toBe(`Confirm: ${RENDERED}?`);
+  });
+
+  test("F9: declined (yes:false) throws with the RAW, unescaped description in the aborted message — redaction downstream needs unescaped text", async () => {
+    const prompt = new M3LPrompt();
+    vi.spyOn(prompt, "confirm").mockResolvedValue(false);
+    const logger = new M3LLogger([]);
+    const description = "delete stack prod\u001b[2K\u202estaging";
+
+    let thrown: unknown;
+    try {
+      await confirmDestructive({
+        prompt,
+        logger,
+        description,
+        yes: false,
+        code: "ERR_TEST_ABORTED",
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    // The thrown message is a data value, not a render target: it flows into
+    // core/diagnostics's name-based secret redaction downstream, which matches
+    // on `key=value` word boundaries. Escaping first would introduce
+    // alphanumeric escape text (`\\x1b`, `\\u{202e}`) that merges into those
+    // boundaries and can suppress a secret's redaction, so this channel stays
+    // raw/unescaped unlike the bypass warning and confirm prompt.
+    expect((thrown as M3LError).message).toBe(`aborted: ${description}`);
+  });
+
+  test("F9: the thrown aborted message stays raw so downstream secret redaction still matches key=value boundaries", async () => {
+    const prompt = new M3LPrompt();
+    vi.spyOn(prompt, "confirm").mockResolvedValue(false);
+    const logger = new M3LLogger([]);
+    // The control character sits immediately BEFORE the `token=` key, not
+    // mid-value: `redactSensitiveLogText`'s bare-key-value pattern uses a key
+    // class of `[A-Za-z0-9_-]+` with no required boundary before it, so it
+    // simply scans forward past a raw (non-alphanumeric) ESC byte and
+    // matches "token" cleanly. But `escapeTerminalControls` renders ESC as
+    // the literal text `\x1b` — itself all alphanumeric (`x`, `1`, `b`) —
+    // which merges directly into the following "token" run, producing the
+    // single key "x1btoken". That merged key fails `isSensitiveKey`:
+    // `splitWords` has no letter/digit boundary to split on, and the
+    // concatenated-name fallback set only contains names like "token"/
+    // "apikey", not "x1btoken". So an escape-first bug would leave
+    // `SEKRET123` unredacted, while the raw (unescaped) channel this test
+    // guards lets the redactor find "token=" and mask it. A vector with the
+    // control character embedded mid-value (after the secret, as in a prior
+    // version of this test) does not discriminate: it never touches the key
+    // boundary either way, so both raw and escape-first redact identically.
+    const description = "rotate \u001btoken=SEKRET123";
+
+    let thrown: unknown;
+    try {
+      await confirmDestructive({
+        prompt,
+        logger,
+        description,
+        yes: false,
+        code: "ERR_TEST_ABORTED",
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    // Byte-identity on the raw thrown message: the precondition for
+    // redaction to work is that this channel never escapes the text first.
+    expect((thrown as M3LError).message).toBe(`aborted: ${description}`);
+
+    // The actual security property: running the thrown error through the
+    // real redaction pipeline masks the secret, since the `token=` key
+    // boundary is still intact for the redactor to find.
+    const rendered = formatErrorChain(thrown, { redact: true });
+    expect(rendered).toContain("token=[REDACTED]");
+    expect(rendered).not.toContain("SEKRET123");
   });
 
   describe("type-level contract", () => {
@@ -1191,6 +1419,81 @@ describe("internal: resolveRenderTarget", () => {
     expect(result.stream).toBe(ttyStream);
     expect(result.live).toBe(true);
   });
+});
+
+// ---------------------------------------------------------------------------
+// F9: internal/prompt/sanitize — escapeTerminalControls()
+//
+// Escapes Cc (C0/C1 controls incl. ESC/CR/LF/TAB/BEL/NUL/DEL/CSI) ∪ Cf (bidi
+// overrides/isolates, ZW*, BOM, astral tag chars) ∪ Zl/Zp code points into a
+// visible literal: \xHH (<=0xFF) or \u{H+} (>0xFF), while leaving everything
+// else — including the backslash itself, NBSP, and ordinary letters/CJK/
+// emoji — byte-identical. All control-character fixtures below are written
+// as \u escape sequences, never raw bytes, per the no-control-regex-adjacent
+// house convention already established by the ESC/NO_ANSI constants above.
+// ---------------------------------------------------------------------------
+describe("internal: escapeTerminalControls", () => {
+  const cases: [name: string, input: string, expected: string][] = [
+    [
+      "clean ASCII passthrough",
+      "delete bucket my-bucket",
+      "delete bucket my-bucket",
+    ],
+    ["empty string", "", ""],
+    ["ESC (F9 vector)", "prod\u001b[2Kstaging", "prod\\x1b[2Kstaging"],
+    ["CR", "prod\rstaging", "prod\\x0dstaging"],
+    ["LF", "line1\nline2", "line1\\x0aline2"],
+    ["TAB", "col\tval", "col\\x09val"],
+    ["NUL (zero-padded)", "a\u0000b", "a\\x00b"],
+    ["BEL", "bell\u0007", "bell\\x07"],
+    ["DEL", "del\u007f", "del\\x7f"],
+    ["C1 CSI (U+009B)", "csi\u009b", "csi\\x9b"],
+    [
+      "bidi RLO (U+202E, \\u{} branch)",
+      "prod\u202egnitseT",
+      "prod\\u{202e}gnitseT",
+    ],
+    [
+      "ZWSP/ZWNJ/ZWJ run",
+      "a\u200bb\u200cc\u200dd",
+      "a\\u{200b}b\\u{200c}c\\u{200d}d",
+    ],
+    ["BOM", "\ufeffname", "\\u{feff}name"],
+    ["bidi isolates", "a\u2066b\u2069c", "a\\u{2066}b\\u{2069}c"],
+    ["Zl/Zp", "a\u2028b\u2029c", "a\\u{2028}b\\u{2029}c"],
+    [
+      "astral tag char (U+E0041, surrogate-pair branch)",
+      "tag\u{e0041}",
+      "tag\\u{e0041}",
+    ],
+    [
+      "letters/CJK/emoji pass through unchanged",
+      "café ü 中文 🚀",
+      "café ü 中文 🚀",
+    ],
+    ["NBSP passes through unchanged (Zs, not escaped)", "a\u00a0b", "a\u00a0b"],
+    ["backslash passes through unchanged", "C:\\Users\\ops", "C:\\Users\\ops"],
+  ];
+
+  test.each(cases)("%s", (_name, input, expected) => {
+    expect(escapeTerminalControls(input)).toBe(expected);
+  });
+
+  test.each(cases)(
+    "idempotence: escaping twice equals escaping once (%s)",
+    (_name, input) => {
+      const once = escapeTerminalControls(input);
+      expect(escapeTerminalControls(once)).toBe(once);
+    },
+  );
+
+  test.each(cases)(
+    "closure: output contains no Cc/Cf/Zl/Zp code point (%s)",
+    (_name, input) => {
+      const output = escapeTerminalControls(input);
+      expect(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(output)).toBe(false);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------

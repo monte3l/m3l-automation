@@ -8,22 +8,22 @@
         {
           "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
           "symbol": "confirmDestructive",
-          "blob": "89b187babef4d0f20d3ff6f9673d79ff4e0fd004"
+          "blob": "ff64fe6d48a532364e74672e970b6e3cb08ab509"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
           "symbol": "M3LConfirmDestructiveOptions",
-          "blob": "89b187babef4d0f20d3ff6f9673d79ff4e0fd004"
+          "blob": "ff64fe6d48a532364e74672e970b6e3cb08ab509"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
           "symbol": "M3LPrompt",
-          "blob": "30d7c494eaec85baddf4fbeba501143ef7432f0b"
+          "blob": "7ccf5fe0e44aecf7bb771c662b3ced4758c448e7"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
           "symbol": "M3LPromptOptions",
-          "blob": "30d7c494eaec85baddf4fbeba501143ef7432f0b"
+          "blob": "7ccf5fe0e44aecf7bb771c662b3ced4758c448e7"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts",
@@ -76,7 +76,7 @@
           "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-07-27"
     },
     {
       "heading": "`M3LPrompt`",
@@ -84,12 +84,12 @@
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
           "symbol": "M3LPrompt",
-          "blob": "30d7c494eaec85baddf4fbeba501143ef7432f0b"
+          "blob": "7ccf5fe0e44aecf7bb771c662b3ced4758c448e7"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
           "symbol": "M3LPromptOptions",
-          "blob": "30d7c494eaec85baddf4fbeba501143ef7432f0b"
+          "blob": "7ccf5fe0e44aecf7bb771c662b3ced4758c448e7"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
@@ -117,7 +117,7 @@
           "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-07-27"
     },
     {
       "heading": "`M3LMultiSpinner`",
@@ -157,7 +157,7 @@
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
           "symbol": "M3LPrompt",
-          "blob": "30d7c494eaec85baddf4fbeba501143ef7432f0b"
+          "blob": "7ccf5fe0e44aecf7bb771c662b3ced4758c448e7"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts",
@@ -175,7 +175,7 @@
           "blob": "ebb893f958f0362cea2dccc5dd315a1ecc4c7683"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-07-27"
     }
   ]
 }
