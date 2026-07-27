@@ -53,20 +53,20 @@ webhooks, custom action types, third-party jobs, and `PutApprovalResult` — see
 **Constructor** — `new M3LCodePipelineOperations(client)`, where `client` is
 a raw `CodePipelineClient` (e.g. `script.aws.clients.codePipeline`).
 
-| Method                                           | Returns                                           | Throws                          |
-| ------------------------------------------------ | ------------------------------------------------- | ------------------------------- |
-| `listPipelines(options?)`                        | `Promise<M3LCodePipelineListPipelinesResult>`     | `M3LCodePipelineOperationError` |
-| `getPipeline(name, options?)`                    | `Promise<M3LCodePipelineDefinition \| undefined>` | `M3LCodePipelineOperationError` |
-| `getPipelineState(name)`                         | `Promise<M3LCodePipelineState \| undefined>`      | `M3LCodePipelineOperationError` |
-| `listPipelineExecutions(pipelineName, options?)` | `Promise<M3LCodePipelineListExecutionsResult>`    | `M3LCodePipelineOperationError` |
-| `getPipelineExecution(pipelineName, id)`         | `Promise<M3LCodePipelineExecution \| undefined>`  | `M3LCodePipelineOperationError` |
-| `createPipeline(input)`                          | `Promise<M3LCodePipelineDeclaration>`             | `M3LCodePipelineOperationError` |
-| `updatePipeline(declaration)`                    | `Promise<M3LCodePipelineDeclaration>`             | `M3LCodePipelineOperationError` |
-| `deletePipeline(name)`                           | `Promise<void>`                                   | `M3LCodePipelineOperationError` |
-| `startPipelineExecution(name, options?)`         | `Promise<M3LCodePipelineStartExecutionResult>`    | `M3LCodePipelineOperationError` |
-| `stopPipelineExecution(input)`                   | `Promise<M3LCodePipelineStopExecutionResult>`     | `M3LCodePipelineOperationError` |
-| `enableStageTransition(input)`                   | `Promise<void>`                                   | `M3LCodePipelineOperationError` |
-| `disableStageTransition(input)`                  | `Promise<void>`                                   | `M3LCodePipelineOperationError` |
+| Method                                                    | Returns                                           | Throws                          |
+| --------------------------------------------------------- | ------------------------------------------------- | ------------------------------- |
+| `listPipelines(options?)`                                 | `Promise<M3LCodePipelineListPipelinesResult>`     | `M3LCodePipelineOperationError` |
+| `getPipeline(name, options?)`                             | `Promise<M3LCodePipelineDefinition \| undefined>` | `M3LCodePipelineOperationError` |
+| `getPipelineState(name)`                                  | `Promise<M3LCodePipelineState \| undefined>`      | `M3LCodePipelineOperationError` |
+| `listPipelineExecutions(pipelineName, options?)`          | `Promise<M3LCodePipelineListExecutionsResult>`    | `M3LCodePipelineOperationError` |
+| `getPipelineExecution(pipelineName, pipelineExecutionId)` | `Promise<M3LCodePipelineExecution \| undefined>`  | `M3LCodePipelineOperationError` |
+| `createPipeline(input)`                                   | `Promise<M3LCodePipelineDeclaration>`             | `M3LCodePipelineOperationError` |
+| `updatePipeline(declaration)`                             | `Promise<M3LCodePipelineDeclaration>`             | `M3LCodePipelineOperationError` |
+| `deletePipeline(name)`                                    | `Promise<void>`                                   | `M3LCodePipelineOperationError` |
+| `startPipelineExecution(name, options?)`                  | `Promise<M3LCodePipelineStartExecutionResult>`    | `M3LCodePipelineOperationError` |
+| `stopPipelineExecution(input)`                            | `Promise<M3LCodePipelineStopExecutionResult>`     | `M3LCodePipelineOperationError` |
+| `enableStageTransition(input)`                            | `Promise<void>`                                   | `M3LCodePipelineOperationError` |
+| `disableStageTransition(input)`                           | `Promise<void>`                                   | `M3LCodePipelineOperationError` |
 
 `listPipelines`/`listPipelineExecutions` page via `nextToken` (mirrors the
 SDK's own `nextToken` pagination — one page per call, no auto-pagination, per
@@ -183,7 +183,11 @@ caller error, not an absence to resolve).
 success** — the SDK's `DeletePipeline` command declares no
 `PipelineNotFoundException` in its exception list, only
 `ConcurrentModificationException`/`ValidationException` — so this wrapper
-passes that resolution straight through as `void`, mirroring
+passes that resolution straight through as `void`. `deletePipeline` is
+**destructive**; this wrapper performs no confirmation gate of its own — the
+caller (`scripts/codepipeline-ops`) is responsible for its own
+destructive-operation confirmation via `Core.confirmDestructive`, matching
+every other AWS-consumer script's convention and
 `M3LCloudFormationOperations.deleteStack`'s identical contract.
 
 `stopPipelineExecution` is **not** similarly forgiving: it declares
@@ -445,10 +449,23 @@ SDK's `DisableStageTransitionInput` declares it as such — while
 - `M3LCodePipelineDisableStageTransitionInput` — the same three fields, plus
   a **required** `reason`.
 
-There are no pre-flight validation guards in this module (contrast
-`M3LSQSOperations`'s batch-size/duplicate-id guards) — every method's only
-failure mode is a rejected `.send()` call, or the named exception
-classifications described above.
+There are no pre-flight validation guards in this module beyond one narrow
+exception (contrast `M3LSQSOperations`'s batch-size/duplicate-id guards):
+`createPipeline`/`updatePipeline` validate six write-path enum-backed fields
+(`actionTypeId.category`/`.owner`, `artifactStore.type`,
+`artifactStore.encryptionKey.type`, `declaration.pipelineType`/
+`.executionMode`) against the SDK's known enum members **before** ever
+calling `.send()`, throwing `M3LCodePipelineOperationError` on an unknown
+value. This module's read-path rule keeps these fields plain `string` on
+`M3LCodePipelineDeclaration` (see the enum-asymmetry note above) to avoid a
+future-server-value lie — but the SDK's own write-path input type requires
+the real closed enum, so an unvalidated `as`-cast into it would silently
+accept a caller typo (`"Buld"` for `"Build"`) all the way to a network round
+trip before CodePipeline itself rejects it with an opaque
+`ValidationException`. Validating client-side against the known member set
+gives a clearer, faster failure for exactly these six fields; every other
+method's only failure mode remains a rejected `.send()` call or the named
+exception classifications described above.
 
 ### `M3LCodePipelineOperationError`
 

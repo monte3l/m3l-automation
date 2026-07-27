@@ -7,27 +7,17 @@
  * module has no `waitUntil*` method (see
  * `docs/reference/aws/codepipeline.md`).
  *
- * SCAFFOLD STATUS: every method below is a signature-only placeholder that
- * rejects with `M3LCodePipelineOperationError("... not yet implemented")`.
- * `implementing-submodules` turns these GREEN against the settled contract in
- * `docs/reference/aws/codepipeline.md`.
- *
  * @packageDocumentation
  */
 
 import type {
-  ActionCategory,
   ActionDeclaration,
   ActionExecution,
-  ActionOwner,
   ActionState,
   ActionTypeId,
   ArtifactStore,
-  ArtifactStoreType,
   CodePipelineClient,
   EncryptionKey,
-  EncryptionKeyType,
-  ExecutionMode,
   ExecutionTrigger,
   GetPipelineStateOutput,
   InputArtifact,
@@ -37,7 +27,6 @@ import type {
   PipelineExecutionSummary,
   PipelineMetadata,
   PipelineSummary,
-  PipelineType,
   PipelineVariableDeclaration,
   StageDeclaration,
   StageExecution,
@@ -46,15 +35,21 @@ import type {
   TransitionState,
 } from "@aws-sdk/client-codepipeline";
 import {
+  ActionCategory,
+  ActionOwner,
+  ArtifactStoreType,
   CreatePipelineCommand,
   DeletePipelineCommand,
   DisableStageTransitionCommand,
   EnableStageTransitionCommand,
+  EncryptionKeyType,
+  ExecutionMode,
   GetPipelineCommand,
   GetPipelineExecutionCommand,
   GetPipelineStateCommand,
   ListPipelineExecutionsCommand,
   ListPipelinesCommand,
+  PipelineType,
   StartPipelineExecutionCommand,
   StopPipelineExecutionCommand,
   UpdatePipelineCommand,
@@ -376,22 +371,73 @@ function mapMetadata(metadata: PipelineMetadata): M3LCodePipelineMetadata {
 // ---------------------------------------------------------------------------
 
 /**
+ * Narrows a caller-supplied `string` into one of the SDK's closed enum
+ * members, "earning" the narrowing rather than asserting it blindly with
+ * `as`. This module's read-path rule keeps enum-backed fields plain `string`
+ * (see the spec page's enum-asymmetry note) — but on the *write* path, the
+ * SDK's own `PipelineDeclaration` input type requires the real closed enum,
+ * so an invalid caller value is validated and rejected here, client-side,
+ * rather than surfacing only as a `ValidationException` from CodePipeline
+ * after a network round-trip.
+ *
+ * @param value - The caller-supplied string to validate.
+ * @param knownValues - The SDK enum's full member set.
+ * @param fieldLabel - The field name, folded into the thrown error.
+ * @returns `value`, narrowed to `T`.
+ * @throws {@link M3LCodePipelineOperationError} when `value` is not a member
+ *   of `knownValues`.
+ */
+function assertKnownEnumValue<T extends string>(
+  value: string,
+  knownValues: readonly T[],
+  fieldLabel: string,
+): T {
+  if ((knownValues as readonly string[]).includes(value)) {
+    return value as T;
+  }
+  throw new M3LCodePipelineOperationError(
+    `M3LCodePipelineOperations: invalid ${fieldLabel}=${value} (expected one of: ${knownValues.join(", ")})`,
+  );
+}
+
+/** The full member set of the SDK's closed `ActionCategory` enum. */
+const ACTION_CATEGORY_VALUES = Object.values(ActionCategory);
+/** The full member set of the SDK's closed `ActionOwner` enum. */
+const ACTION_OWNER_VALUES = Object.values(ActionOwner);
+/** The full member set of the SDK's closed `EncryptionKeyType` enum. */
+const ENCRYPTION_KEY_TYPE_VALUES = Object.values(EncryptionKeyType);
+/** The full member set of the SDK's closed `ArtifactStoreType` enum. */
+const ARTIFACT_STORE_TYPE_VALUES = Object.values(ArtifactStoreType);
+/** The full member set of the SDK's closed `PipelineType` enum. */
+const PIPELINE_TYPE_VALUES = Object.values(PipelineType);
+/** The full member set of the SDK's closed `ExecutionMode` enum. */
+const EXECUTION_MODE_VALUES = Object.values(ExecutionMode);
+
+/**
  * Builds an SDK `ActionTypeId`-shaped object from the plain
- * {@link M3LCodePipelineActionTypeId}. `category`/`owner` are cast to the
- * SDK's closed enums — this module's read-path rule keeps them plain
- * `string` (see the spec page's enum-asymmetry note), so a caller-supplied
- * value that isn't a real category/owner surfaces as a `ValidationException`
- * from CodePipeline rather than a compile error here.
+ * {@link M3LCodePipelineActionTypeId}. `category`/`owner` are validated
+ * against the SDK's closed enums before narrowing (see
+ * {@link assertKnownEnumValue}).
  *
  * @param actionTypeId - The caller's plain action-type-id shape.
  * @returns The SDK command-input `ActionTypeId` shape.
+ * @throws {@link M3LCodePipelineOperationError} when `category`/`owner`
+ *   isn't a known SDK enum member.
  */
 function buildActionTypeId(
   actionTypeId: M3LCodePipelineActionTypeId,
 ): ActionTypeId {
   return {
-    category: actionTypeId.category as ActionCategory,
-    owner: actionTypeId.owner as ActionOwner,
+    category: assertKnownEnumValue(
+      actionTypeId.category,
+      ACTION_CATEGORY_VALUES,
+      "actionTypeId.category",
+    ),
+    owner: assertKnownEnumValue(
+      actionTypeId.owner,
+      ACTION_OWNER_VALUES,
+      "actionTypeId.owner",
+    ),
     provider: actionTypeId.provider,
     version: actionTypeId.version,
   };
@@ -399,30 +445,44 @@ function buildActionTypeId(
 
 /**
  * Builds an SDK `EncryptionKey`-shaped object from the plain
- * {@link M3LCodePipelineEncryptionKey}.
+ * {@link M3LCodePipelineEncryptionKey}. `type` is validated against the
+ * SDK's closed enum before narrowing (see {@link assertKnownEnumValue}).
  *
  * @param key - The caller's plain encryption-key shape.
  * @returns The SDK command-input `EncryptionKey` shape.
+ * @throws {@link M3LCodePipelineOperationError} when `type` isn't a known
+ *   SDK enum member.
  */
 function buildEncryptionKey(key: M3LCodePipelineEncryptionKey): EncryptionKey {
   return {
     id: key.id,
-    type: key.type as EncryptionKeyType,
+    type: assertKnownEnumValue(
+      key.type,
+      ENCRYPTION_KEY_TYPE_VALUES,
+      "artifactStore.encryptionKey.type",
+    ),
   };
 }
 
 /**
  * Builds an SDK `ArtifactStore`-shaped object from the plain
- * {@link M3LCodePipelineArtifactStore}.
+ * {@link M3LCodePipelineArtifactStore}. `type` is validated against the
+ * SDK's closed enum before narrowing (see {@link assertKnownEnumValue}).
  *
  * @param artifactStore - The caller's plain artifact-store shape.
  * @returns The SDK command-input `ArtifactStore` shape.
+ * @throws {@link M3LCodePipelineOperationError} when `type` isn't a known
+ *   SDK enum member.
  */
 function buildArtifactStore(
   artifactStore: M3LCodePipelineArtifactStore,
 ): ArtifactStore {
   return {
-    type: artifactStore.type as ArtifactStoreType,
+    type: assertKnownEnumValue(
+      artifactStore.type,
+      ARTIFACT_STORE_TYPE_VALUES,
+      "artifactStore.type",
+    ),
     location: artifactStore.location,
     ...(artifactStore.encryptionKey !== undefined && {
       encryptionKey: buildEncryptionKey(artifactStore.encryptionKey),
@@ -557,11 +617,15 @@ function buildStageDeclaration(
 /**
  * The `artifactStore`/`version`/`pipelineType`/`executionMode`/`variables`
  * subset of the SDK's `PipelineDeclaration`, built from the caller's plain
- * {@link M3LCodePipelineDeclaration}. Split out of {@link buildDeclaration}
- * to keep that function's cyclomatic complexity within the lint budget.
+ * {@link M3LCodePipelineDeclaration}. `pipelineType`/`executionMode` are
+ * validated against their SDK closed enums before narrowing (see
+ * {@link assertKnownEnumValue}). Split out of {@link buildDeclaration} to
+ * keep that function's cyclomatic complexity within the lint budget.
  *
  * @param declaration - The caller's plain declaration shape.
  * @returns The optional-field subset of the SDK command-input shape.
+ * @throws {@link M3LCodePipelineOperationError} when `pipelineType`/
+ *   `executionMode` isn't a known SDK enum member.
  */
 function buildDeclarationOptionalFields(
   declaration: M3LCodePipelineDeclaration,
@@ -580,10 +644,18 @@ function buildDeclarationOptionalFields(
       version: declaration.version,
     }),
     ...(declaration.pipelineType !== undefined && {
-      pipelineType: declaration.pipelineType as PipelineType,
+      pipelineType: assertKnownEnumValue(
+        declaration.pipelineType,
+        PIPELINE_TYPE_VALUES,
+        "declaration.pipelineType",
+      ),
     }),
     ...(declaration.executionMode !== undefined && {
-      executionMode: declaration.executionMode as ExecutionMode,
+      executionMode: assertKnownEnumValue(
+        declaration.executionMode,
+        EXECUTION_MODE_VALUES,
+        "declaration.executionMode",
+      ),
     }),
     ...(declaration.variables !== undefined && {
       variables: declaration.variables.map(buildVariableDeclaration),
@@ -996,6 +1068,21 @@ export interface M3LCodePipelineGetPipelineOptions {
 }
 
 /**
+ * Formats the `, version=<n>` suffix appended to {@link
+ * M3LCodePipelineOperations.getPipeline}'s error messages when the caller
+ * supplied `options.version` — empty string otherwise. Split out to keep
+ * `getPipeline`'s cyclomatic complexity within the lint budget.
+ *
+ * @param options - The caller's `getPipeline` options, if any.
+ * @returns The suffix to append to a `getPipeline` error message.
+ */
+function formatGetPipelineVersionSuffix(
+  options: M3LCodePipelineGetPipelineOptions | undefined,
+): string {
+  return options?.version !== undefined ? `, version=${options.version}` : "";
+}
+
+/**
  * Options for {@link M3LCodePipelineOperations.startPipelineExecution}.
  */
 export interface M3LCodePipelineStartExecutionOptions {
@@ -1079,6 +1166,7 @@ export class M3LCodePipelineOperations {
     name: string,
     options?: M3LCodePipelineGetPipelineOptions,
   ): Promise<M3LCodePipelineDefinition | undefined> {
+    const versionSuffix = formatGetPipelineVersionSuffix(options);
     let response;
     try {
       response = await this.#client.send(
@@ -1095,14 +1183,14 @@ export class M3LCodePipelineOperations {
         return undefined;
       }
       throw new M3LCodePipelineOperationError(
-        `M3LCodePipelineOperations.getPipeline: GetPipeline failed for name=${name}`,
+        `M3LCodePipelineOperations.getPipeline: GetPipeline failed for name=${name}${versionSuffix}`,
         { cause },
       );
     }
 
     if (response.pipeline === undefined) {
       throw new M3LCodePipelineOperationError(
-        `M3LCodePipelineOperations.getPipeline: GetPipeline succeeded but returned no pipeline for name=${name}`,
+        `M3LCodePipelineOperations.getPipeline: GetPipeline succeeded but returned no pipeline for name=${name}${versionSuffix}`,
       );
     }
 

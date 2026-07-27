@@ -34,6 +34,7 @@
  * GREEN.
  */
 
+import type * as CodePipelineSdkModule from "@aws-sdk/client-codepipeline";
 import { beforeEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
 // vi.hoisted: mutable spies + a fake constructible client class referenced by
@@ -106,21 +107,34 @@ const h = vi.hoisted(() => {
   };
 });
 
-vi.mock("@aws-sdk/client-codepipeline", () => ({
-  CodePipelineClient: h.CodePipelineClient,
-  ListPipelinesCommand: h.ListPipelinesCommand,
-  GetPipelineStateCommand: h.GetPipelineStateCommand,
-  ListPipelineExecutionsCommand: h.ListPipelineExecutionsCommand,
-  GetPipelineExecutionCommand: h.GetPipelineExecutionCommand,
-  StartPipelineExecutionCommand: h.StartPipelineExecutionCommand,
-  StopPipelineExecutionCommand: h.StopPipelineExecutionCommand,
-  EnableStageTransitionCommand: h.EnableStageTransitionCommand,
-  DisableStageTransitionCommand: h.DisableStageTransitionCommand,
-  DeletePipelineCommand: h.DeletePipelineCommand,
-  GetPipelineCommand: h.GetPipelineCommand,
-  CreatePipelineCommand: h.CreatePipelineCommand,
-  UpdatePipelineCommand: h.UpdatePipelineCommand,
-}));
+vi.mock("@aws-sdk/client-codepipeline", async (importOriginal) => {
+  // Preserve the real (data-only) enum objects — client.ts validates
+  // caller-supplied write-path enum fields against these at runtime
+  // (`assertKnownEnumValue`); only the command classes and client need the
+  // hoisted mock/stub treatment.
+  const actual = await importOriginal<typeof CodePipelineSdkModule>();
+  return {
+    ActionCategory: actual.ActionCategory,
+    ActionOwner: actual.ActionOwner,
+    ArtifactStoreType: actual.ArtifactStoreType,
+    EncryptionKeyType: actual.EncryptionKeyType,
+    ExecutionMode: actual.ExecutionMode,
+    PipelineType: actual.PipelineType,
+    CodePipelineClient: h.CodePipelineClient,
+    ListPipelinesCommand: h.ListPipelinesCommand,
+    GetPipelineStateCommand: h.GetPipelineStateCommand,
+    ListPipelineExecutionsCommand: h.ListPipelineExecutionsCommand,
+    GetPipelineExecutionCommand: h.GetPipelineExecutionCommand,
+    StartPipelineExecutionCommand: h.StartPipelineExecutionCommand,
+    StopPipelineExecutionCommand: h.StopPipelineExecutionCommand,
+    EnableStageTransitionCommand: h.EnableStageTransitionCommand,
+    DisableStageTransitionCommand: h.DisableStageTransitionCommand,
+    DeletePipelineCommand: h.DeletePipelineCommand,
+    GetPipelineCommand: h.GetPipelineCommand,
+    CreatePipelineCommand: h.CreatePipelineCommand,
+    UpdatePipelineCommand: h.UpdatePipelineCommand,
+  };
+});
 
 import type { CodePipelineClient } from "@aws-sdk/client-codepipeline";
 
@@ -507,6 +521,13 @@ describe("M3LCodePipelineOperations", () => {
                     code: "JobFailed",
                     message: "deployment failed",
                   },
+                  // A live SDK response includes the manual-approval token —
+                  // this fixture proves the mapper drops it, not just that
+                  // the type doesn't declare it (a future `{ ...execution }`
+                  // mapper regression would type-check but fail this
+                  // toEqual, since token is absent from the expected value
+                  // below).
+                  token: "approval-token-should-never-surface",
                 },
                 entityUrl: "https://example.com/entity",
                 revisionUrl: "https://example.com/revision",
@@ -843,6 +864,19 @@ describe("M3LCodePipelineOperations", () => {
             triggerDetail:
               "arn:aws:codepipeline:us-east-1:123456789012:webhook/abc",
           },
+          // A live SDK response includes resolved pipeline-variable values
+          // and artifact revisions — this fixture proves the mapper drops
+          // both, not just that the type doesn't declare them (a future
+          // `{ ...execution }` mapper regression would type-check but fail
+          // this toEqual, since neither is in the expected value below).
+          variables: [{ name: "env", resolvedValue: "production-secret" }],
+          artifactRevisions: [
+            {
+              name: "SourceArtifact",
+              revisionId: "abc123",
+              revisionSummary: "fix: patch CVE-2026-0001 in prod credentials",
+            },
+          ],
         },
       });
 
@@ -1637,6 +1671,60 @@ describe("M3LCodePipelineOperations", () => {
 
       expect(thrown).toBeInstanceOf(M3LCodePipelineOperationError);
       expect((thrown as M3LCodePipelineOperationError).cause).toBe(cause);
+    });
+
+    test("rejects an unknown actionTypeId.category before ever calling .send() (earned cast, not a blind `as`)", async () => {
+      const operations = new M3LCodePipelineOperations(fakeClient());
+      const invalid: M3LCodePipelineDeclaration = {
+        ...FULL_DECLARATION,
+        stages: [
+          {
+            name: "Source",
+            actions: [
+              {
+                name: "SourceAction",
+                actionTypeId: {
+                  category: "NotARealCategory",
+                  owner: "AWS",
+                  provider: "CodeStarSourceConnection",
+                  version: "1",
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      await expect(
+        operations.createPipeline({ declaration: invalid }),
+      ).rejects.toBeInstanceOf(M3LCodePipelineOperationError);
+      expect(h.send).not.toHaveBeenCalled();
+    });
+
+    test("rejects an unknown artifactStore.type before ever calling .send()", async () => {
+      const operations = new M3LCodePipelineOperations(fakeClient());
+      const invalid: M3LCodePipelineDeclaration = {
+        ...FULL_DECLARATION,
+        artifactStore: { type: "NotARealStoreType", location: "some-bucket" },
+      };
+
+      await expect(
+        operations.createPipeline({ declaration: invalid }),
+      ).rejects.toBeInstanceOf(M3LCodePipelineOperationError);
+      expect(h.send).not.toHaveBeenCalled();
+    });
+
+    test("rejects an unknown declaration.pipelineType before ever calling .send()", async () => {
+      const operations = new M3LCodePipelineOperations(fakeClient());
+      const invalid: M3LCodePipelineDeclaration = {
+        ...FULL_DECLARATION,
+        pipelineType: "V3",
+      };
+
+      await expect(
+        operations.createPipeline({ declaration: invalid }),
+      ).rejects.toBeInstanceOf(M3LCodePipelineOperationError);
+      expect(h.send).not.toHaveBeenCalled();
     });
 
     test("expands plain string[] inputArtifacts/outputArtifacts to the SDK's {name}[] wrapper on the write path", async () => {

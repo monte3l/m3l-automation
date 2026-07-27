@@ -3,9 +3,10 @@
  * {@link M3LCodePipelineOperations}, translated from the raw
  * `@aws-sdk/client-codepipeline` request/response types. See
  * `docs/reference/aws/codepipeline.md` for the full field-by-field contract,
- * including the intentionally-dropped declaration fields and the two fields
- * (`ActionExecution.token`, `PipelineExecution.variables[].resolvedValue`)
- * this module deliberately never maps.
+ * including the intentionally-dropped declaration fields and the
+ * security-relevant fields this module deliberately never maps
+ * (`ActionExecution.token`, and `PipelineExecution.variables`/
+ * `.artifactRevisions` in full — not just `variables[].resolvedValue`).
  *
  * @packageDocumentation
  */
@@ -158,9 +159,11 @@ export interface M3LCodePipelineVariableDeclaration {
 }
 
 /**
- * A plain `{ key, value }` tag pair, collapsing the SDK's separate
- * `key`/`value` fields down to one form (mirrors
- * `M3LCloudFormationKeyValue`).
+ * A plain `{ key, value }` tag pair. **No collapsing transformation** here —
+ * unlike `M3LCloudFormationKeyValue`, which merges CloudFormation's separate
+ * `Parameter`/`Tag` shapes with different field names into one, the SDK's
+ * `Tag` is already `{ key, value }`, so this is a 1:1 map (required-nullable
+ * → required).
  */
 export interface M3LCodePipelineTag {
   readonly key: string;
@@ -222,6 +225,10 @@ export interface M3LCodePipelineTransitionState {
  * A stage's latest execution summary, within
  * {@link M3LCodePipelineStageState.latestExecution}. `pipelineExecutionId`/
  * `status` are always present (defaulted to `""` when the SDK omits them).
+ * `status` is sourced from the SDK's `StageExecutionStatus` — a distinct
+ * 7-value set from {@link M3LCodePipelineExecution}'s `status` (which has
+ * `Superseded` but no `Skipped`); see
+ * `docs/reference/aws/codepipeline.md`'s "Watching an execution" section.
  */
 export interface M3LCodePipelineStageExecution {
   readonly pipelineExecutionId: string;
@@ -250,6 +257,7 @@ export interface M3LCodePipelineActionState {
  * (see the spec page's security section).
  */
 export interface M3LCodePipelineActionExecution {
+  /** Sourced from the SDK's `ActionExecutionStatus` — a 4-value set, distinct from {@link M3LCodePipelineExecution}'s `status`/{@link M3LCodePipelineStageExecution}'s `status`. */
   readonly status?: string;
   readonly actionExecutionId?: string;
   readonly summary?: string;
@@ -279,6 +287,7 @@ export interface M3LCodePipelineActionExecution {
 export interface M3LCodePipelineExecution {
   readonly pipelineExecutionId: string;
   readonly pipelineName: string;
+  /** Sourced from the SDK's `PipelineExecutionStatus` — see `docs/reference/aws/codepipeline.md`'s "Watching an execution" section for the full 7-value set (incl. `Superseded`). */
   readonly status: string;
   readonly statusSummary?: string;
   readonly pipelineVersion?: number;
