@@ -66,6 +66,23 @@ paths:
   constants/enums through unchanged, keep only the classes/functions that
   need mock behavior replaced (`aws/codepipeline`, 2026-07-27: adding runtime
   enum validation broke a mock written when only types were imported).
+- **A step module reached only via dynamic `import()` in production code can
+  mock with a plain `const stepMock = vi.fn()`; the moment any production code
+  adds a _static_ import of anything from that same module — even just a
+  shared constant, not the mocked function itself — its `vi.mock` factory
+  starts running eagerly at module-eval time and the backing mock must move to
+  `vi.hoisted(() => vi.fn())`.** A plain `const` initializes after `vi.mock`
+  calls are hoisted, so an eagerly-evaluated factory referencing it throws
+  `Cannot access '<name>' before initialization`. This is the same rule that
+  already applies to a statically-imported package (e.g. `@m3l-automation/m3l-common`)
+  — it just isn't obvious that promoting a shared constant out of a
+  dynamic-import-only step module retroactively applies it to that step's mock
+  too (`scripts/codepipeline-ops`, 2026-07-27: exporting `FAILED_STATUSES` out
+  of `watch-execution.ts` for the dispatcher to statically import broke
+  `run-codepipeline-ops.test.ts`'s previously-fine plain-`const`
+  `watchExecutionMock`). When you add a static import from a step module,
+  check whether that step's own test mock needs the same promotion in the same
+  change.
 - **Mock a port with generic methods by inference, not `extends`.** A structural
   port whose methods are generic (`select<Value>(...)`) can't be mocked via
   `interface Mock extends Port { select: ReturnType<typeof vi.fn> }` — a
