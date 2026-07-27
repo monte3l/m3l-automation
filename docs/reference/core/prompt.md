@@ -48,6 +48,24 @@ Prompt methods:
 - `multiselect` — checkbox multi-choice.
 - `autocomplete` — input with a custom suggest function.
 
+**Prompt-message rendering.** Every prompt method's `message` is passed through
+a best-effort display escape before it reaches the adapter: Unicode control
+(`Cc`), format (`Cf`), line-separator (`Zl`), and paragraph-separator (`Zp`)
+code points are replaced with a visible literal escape — `\x1b` for ESC,
+`\u{202e}` for a right-to-left override — rather than removed. Escaping rather
+than stripping is deliberate: stripping would render `prod<ESC>[2Kstaging` as
+`prodstaging`, a quieter version of the divergence this closes. A message
+containing none of those code points is passed through byte-for-byte.
+
+This is a **rendering aid, not a guarantee that a terminal cannot be
+manipulated.** It does not address homoglyph or confusable substitution,
+combining-mark stacking, or right-to-left reordering produced by
+strongly-directional _letters_ (which carry no format character at all). It
+does **not** apply to `select` / `multiselect` / `autocomplete` **choice
+labels**, nor to spinner or loading-bar text — those still reach the terminal
+verbatim; do not build them from untrusted input. The escaped output is
+human-readable, not a reversible encoding: never parse it back.
+
 ### `M3LMultiSpinner`
 
 Operates in two modes:
@@ -68,6 +86,26 @@ A standalone function (not a method on `M3LPrompt`) that gates a destructive act
 - **Declined** (`yes: false`, `prompt.confirm` resolves `false`) — throws an `M3LError` (`aborted: <description>`) carrying the caller-supplied `code` verbatim.
 
 A rejection from `prompt.confirm` (e.g. the adapter throws on a cancelled prompt) propagates unchanged and is never converted into the `aborted` error — callers that need to distinguish an explicit decline from a cancelled/failed prompt can rely on this passthrough.
+
+`description` is escaped, through the same best-effort display escape
+`M3LPrompt`'s prompt messages use, in **two** of the three observable
+channels — the bypass warning and the `Confirm: …?` prompt — but
+**deliberately not** in the thrown `aborted: …` `M3LError` message. That
+message is a data value, not a render target: it flows downstream into
+`core/logging`'s name-based secret redaction (`redactSensitiveLogText`),
+applied here by `core/diagnostics`'s error-chain serialization, which
+locates `key=value`-shaped secrets by matching on surrounding word
+boundaries. Escaping the description first would introduce alphanumeric
+escape text (`\x09`, `\u{202e}`) that merges into those boundaries and can
+suppress a secret's redaction in a persisted run report — a worse outcome
+than the display issue this escape exists to close. The thrown message
+therefore carries `description` unchanged, exactly as before this escape was
+introduced, so redaction keeps operating on unmodified text. A `description`
+containing no control or format code points renders identically across all
+three channels regardless. The escape used in the other two channels is
+idempotent — passing an already-escaped value through it again is a no-op —
+and deliberately not reversible: a `description` containing the literal
+characters `\x1b` renders the same as one containing a real ESC byte.
 
 ## Usage examples
 
@@ -120,6 +158,7 @@ bar.update(100, "Done");
 - **Environment-aware rendering.** `M3LMultiSpinner` consults `M3LExecutionEnvironment.isInteractive()` and `process.stdout.isTTY` to choose between live ANSI-redrawn output (interactive terminal) and plain-text line output (Lambda, CI, pipe). In non-interactive mode ANSI color codes are stripped, keeping logs machine-readable.
 - **Single vs. multi spinner.** The single-spinner methods are a backward-compatible subset; the multi-spinner methods track several named tasks concurrently by ID.
 - **Testability.** Because the `@inquirer/prompts` adapter is injected via the constructor, prompt behavior can be mocked in unit tests without touching a real terminal.
+- **Control-character escaping is display-only and best effort.** Prompt messages and `confirmDestructive` descriptions are routinely built from external, file-sourced data (a stack or service name read from an input record). Escaping `Cc`/`Cf`/`Zl`/`Zp` closes the specific failure where the prompt an operator reads and the action actually dispatched differ because the value moved the cursor or reversed the text. It is not an authorization control, and it does not sanitize the value for any other sink.
 
 ## See also
 
