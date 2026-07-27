@@ -8,7 +8,7 @@
       "files": [],
       "assertions": [
         {
-          "text": "Fetches the claude[bot] comment from the PR's issue thread via gh api",
+          "text": "Fetches the most recent claude[bot] review comment from the PR's issue thread",
           "passed": false,
           "evidence": ""
         },
@@ -80,11 +80,11 @@
     {
       "id": 3,
       "prompt": "Fix the reviewer's comments on this branch.",
-      "expected_output": "The skill runs `gh pr view` and discovers there is no open PR for the current branch. It prints an error like 'No open PR found for the current branch' and stops without making any changes.",
+      "expected_output": "The skill attempts to detect the open PR for the current branch and discovers there is none. It prints an error like 'No open PR found for the current branch' and stops without making any changes.",
       "files": [],
       "assertions": [
         {
-          "text": "Attempts to detect an open PR via gh pr view",
+          "text": "Attempts to detect an open PR for the current branch",
           "passed": false,
           "evidence": ""
         },

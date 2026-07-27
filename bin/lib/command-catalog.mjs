@@ -181,6 +181,11 @@ export const COMMAND_CATALOG = [
       "Verifies every .claude/settings.json hook command resolves to a real .claude/hooks/*.mjs file, every event name is a real Claude Code lifecycle event, and no hook file is left unwired. Run after editing hooks or settings.json.",
   },
   {
+    name: "check:github-stance",
+    description:
+      "Verifies every GitHub-talking .claude/skills/*/SKILL.md carries an ADR-0030 stance reference, contains no retired policy claim, and names the mechanism (gh CLI vs GitHub MCP) it actually uses. Run after editing a GitHub-facing skill.",
+  },
+  {
     name: "check:zones",
     description:
       "Verifies the ADR-0009 dependency-direction zones (import-x/no-restricted-paths) are still present and correctly shaped in eslint.config.js — a deleted zone would otherwise pass `pnpm lint` silently. Run after editing eslint.config.js.",

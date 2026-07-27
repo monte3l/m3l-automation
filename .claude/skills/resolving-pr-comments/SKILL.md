@@ -22,6 +22,10 @@ description: >
 
   Skip for: manual code reviews, general CI/build failures without a review bot,
   creating PRs.
+
+  GitHub-integration stance: ADR-0030 (amended 2026-07-27) — this skill runs
+  hub-only, in-process, never inside a spoke or headless CI, so it has full
+  GitHub MCP coverage and uses `mcp__github__*` tools rather than the gh CLI.
 ---
 
 # resolving-pr-comments
@@ -38,7 +42,11 @@ zero time on mechanical review-driven edits.
 - If a finding requires a structural change you cannot make as a targeted line fix
   (e.g., redesigning an entire type hierarchy, splitting a test suite), describe what is
   needed and ask the user to handle it before continuing.
-- The skill runs in-process as a single agent — no hub-and-spoke needed.
+- The skill runs in-process as a single agent — no hub-and-spoke needed. This is
+  precisely what makes the GitHub MCP tools below usable here: MCP is hub-only
+  (no spoke holds an `mcp__*` grant) and unavailable in headless CI, but this
+  skill is invoked directly by the hub, never delegated (see ADR-0030's
+  2026-07-27 amendment).
 
 ---
 
@@ -46,41 +54,43 @@ zero time on mechanical review-driven edits.
 
 ### 1 — Detect the PR
 
-Run:
+Resolve `{owner}/{repo}` from the local remote (no API call needed — MCP tools
+take `owner`/`repo` as parameters):
 
 ```bash
-gh pr view --json number,headRefName,url
+git remote get-url origin
 ```
 
-If the command fails or returns no PR, tell the user: "No open PR found for the current
-branch" and stop.
+Parse the owner/repo out of that URL, then find the open PR for the current branch:
 
-Store the PR number for use in the subsequent API calls.
+```
+mcp__github__list_pull_requests({ owner, repo, state: "open", head: "{owner}:{branch}" })
+```
+
+where `{branch}` is `git rev-parse --abbrev-ref HEAD`. If the result is empty, tell the
+user: "No open PR found for the current branch" and stop.
+
+Store the PR number for use in the subsequent calls.
 
 ### 2 — Fetch the bot comment
 
-Determine the GitHub `{owner}/{repo}` from the remote:
-
-```bash
-gh repo view --json nameWithOwner --jq '.nameWithOwner'
-```
-
 Fetch the most recent bot review comment on the PR's issue thread. The
 `claude-pr-review.yml` workflow authenticates via `CLAUDE_CODE_OAUTH_TOKEN` (OAuth app),
-so the action always posts as `claude[bot]`. Use `--paginate` so comments beyond the
-first page (>30 items) are not silently missed:
+so the action always posts as `claude[bot]`:
 
-```bash
-gh api repos/{owner}/{repo}/issues/{pr_number}/comments \
-  --paginate \
-  --jq '.[] | select(.user.login == "claude[bot]")' \
-  | jq -s 'last'
+```
+mcp__github__pull_request_read({
+  method: "get_comments", owner, repo, pullNumber, perPage: 100
+})
 ```
 
-`--jq` streams one JSON object per line across all pages; `jq -s 'last'` collects them
-into an array and returns the most recent one.
+`get_comments` is paginated (`page`/`perPage`) the same way `gh api --paginate` was —
+keep paging (increment `page`) until a page returns fewer than `perPage` results, so a
+thread with more than 100 comments isn't silently truncated. Across all pages, filter to
+comments where the author is `claude[bot]` and take the most recent one (highest
+`created_at` / last in creation order).
 
-- If the output is empty, tell the user "No bot review comment found" and stop.
+- If no `claude[bot]` comment is found, tell the user "No bot review comment found" and stop.
 - Check whether the bot's **Verdict** section says PASS by anchoring the grep to the
   heading so a passing sub-check mentioned elsewhere in the comment body cannot trigger
   a false early-exit:
@@ -254,11 +264,10 @@ The body should itemize every Must-fix finding that was resolved, and list any
 Should-fix / Nits that remain open so the re-reviewer knows what to expect. Omit
 the "Not addressed" section if Should-fix and Nits are both empty.
 
-```bash
-gh api repos/{owner}/{repo}/issues/{pr_number}/comments \
-  --method POST \
-  --field body="$(cat <<'EOF'
-Fixed in {commit_sha}:
+```
+mcp__github__add_issue_comment({
+  owner, repo, issue_number: pr_number,
+  body: `Fixed in {commit_sha}:
 
 **Must-fix items resolved:**
 - \`path/to/file.ts:line\` — <one-line description of what was changed>
@@ -266,9 +275,8 @@ Fixed in {commit_sha}:
 
 **Not addressed (non-blocking):**
 - Should-fix: \`path/to/file.ts:line\` — <violation>
-- Nits: \`path/to/file.ts:line\` — <violation>
-EOF
-)"
+- Nits: \`path/to/file.ts:line\` — <violation>`
+})
 ```
 
 Print a confirmation to the user: "Done — posted a follow-up comment with commit
