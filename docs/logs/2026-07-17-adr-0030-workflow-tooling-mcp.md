@@ -20,6 +20,12 @@ Six phases, six PRs, all review-gated:
 | 5     | In-repo `m3l` MCP server (stdio) — `catalog_query` and five sibling tools                   | #150 |
 | 6     | `bin/spoke-recovery.mjs` + seventh tool `mcp__m3l__spoke_recover`                           | #151 |
 
+> **Correction (2026-07-27):** the Phase 2 row above records GitHub MCP auth
+> as OAuth. The shipped `.mcp.json` actually authenticates via a static PAT
+> (`Authorization: Bearer ${GITHUB_MCP_PAT}`) — still secretless, but a
+> different and broader-scope credential than logged here. See the
+> [ADR-0030 amendment](../adr/0030-targeted-workflow-tooling-and-mcp.md#amendment-2026-07-27).
+
 Research ran as five parallel Explore agents restricted to official Anthropic
 domains; the audit as four repo-facet agents. Net new machinery: a shared
 structured-output contract (`{ ok, summary, errors, warnings, updated,

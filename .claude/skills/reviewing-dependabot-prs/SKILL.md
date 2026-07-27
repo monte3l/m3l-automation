@@ -18,6 +18,11 @@ description: >-
   runs on its own — it only acts when explicitly invoked, and never touches
   a PR without first showing its proposed verdicts and getting one batch
   confirmation.
+
+  GitHub-integration stance: ADR-0030 (amended 2026-07-27) — uses the gh CLI
+  because `gh pr merge --auto --squash` has no GitHub MCP equivalent
+  (`mcp__github__merge_pull_request` merges immediately, with no auto-merge
+  option).
 ---
 
 # reviewing-dependabot-prs

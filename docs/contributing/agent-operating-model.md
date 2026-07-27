@@ -13,6 +13,18 @@ that reviews it" structural, and keeps the hub's context lean.
   only the hub dispatches subagents (each carries `disallowedTools: Agent`), so
   the graph stays flat at depth 1. `pnpm check:agents` enforces this and that
   every `subagent_type` resolves to a real agent or known built-in.
+- **MCP is hub-only.** Every agent's `tools:` grant in `.claude/agents/*.md` is
+  a closed list with no `mcp__*` entry, so no spoke can call an MCP tool —
+  `bin/check-agents.mjs` has no tool-name whitelist and would permit adding one,
+  this is a standing choice, not a technical limit. A skill whose work is
+  delegated to a spoke cannot depend on MCP regardless of what's configured in
+  `.mcp.json`; only a hub-invoked, in-process skill (e.g.
+  `resolving-pr-comments`) can use it. See
+  `docs/adr/0030-targeted-workflow-tooling-and-mcp.md`'s 2026-07-27 amendment
+  for the full GitHub-integration stance, including the parallel constraint
+  that `claude-pr-review.yml` pins `--allowedTools Bash,Read` — so a skill that
+  must also run headless in that workflow stays gh-CLI-based even when it runs
+  hub-only locally.
 - **Model tiering**: which Claude model runs which task category is documented
   in `docs/contributing/model-selection.md`; `pnpm check:agents` also enforces
   its MODEL-MATRIX block against agent `model:` frontmatter and workflow
