@@ -11,8 +11,9 @@ description: >-
   #12345 failed", "https://github.com/.../actions/runs/12345"). Also invoke when
   the user asks "what's wrong with CI" or "the build is broken" — any time the
   goal is to understand why a GitHub Actions run failed rather than to fix it.
-  Uses the gh CLI (GitHub-integration stance: ADR-0030 — GitHub MCP is
-  available; skills migrate incrementally when next edited).
+  Uses the gh CLI (GitHub-integration stance: ADR-0030, amended 2026-07-27 —
+  the configured GitHub MCP default toolset has no Actions tools, so this
+  skill stays gh-CLI-based).
 ---
 
 Diagnose why a GitHub Actions CI run failed by fetching its logs via `gh` and
