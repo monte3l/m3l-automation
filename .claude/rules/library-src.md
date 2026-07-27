@@ -144,6 +144,19 @@ number>` already relies on (found A4b: `LOG_LEVEL_FLOORS`).
   `DescribeStacksCommand` response — including caller-supplied parameter/output
   values — into the thrown error's `cause` on the `FAILURE` path, which the
   wrapper then chains straight through).
+- **Execute, don't just read, when characterizing what an SDK error's message
+  contains.** Reading a generated waiter's source is necessary to find the
+  code path but not sufficient to prove a claim like "the common case is
+  safe" — run a fixture carrying a planted secret through the real SDK and
+  inspect the actual thrown/resolved value. `aws/eks`'s waiter doc reasoned
+  from `@smithy/core`'s source that a `TimeoutError`/`AbortError`'s message
+  stays a short literal string except when `$metadata` is absent from the
+  observed response — true for the branch it traced, but a separate
+  `$responseBodyText` deserialization-failure branch (reachable independent
+  of `$metadata` presence) also serializes the full response into the
+  message, leaking a cluster-registration secret the FAILURE path had
+  already been correctly guarded against. Only the security review's
+  execution-based check caught it.
 - **TSDoc on every exported symbol**, with an `@example` on primary entry points.
   Comment the _why_, not the _what_.
 - **`internal/` is private.** Never re-export it through a public barrel; it has
