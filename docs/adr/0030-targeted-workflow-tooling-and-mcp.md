@@ -129,12 +129,94 @@ gitignored as a stopgap (it briefly held a literal API key).
 - **Semver impact:** none — repo tooling and documentation only; the public
   `exports` contract is untouched.
 
+## Amendment (2026-07-27)
+
+An `/auditing` pass over gh CLI usage across the five GitHub-facing skills
+found that decision item 4's "migrate incrementally when next edited" promise
+had produced zero migrations in the 11 days since acceptance — not from
+neglect, but because GitHub MCP as configured cannot cover most of what those
+skills do. This amendment supersedes item 4 with the coverage evidence and a
+falsifiable trigger; the rest of the ADR is unchanged.
+
+**Correction to the Context section:** the claim that "five skills hand-roll
+`gh api --paginate` + `jq` choreography" (original context, above) overstates
+the jq surface. Live count: three skills use `gh api --paginate`
+(`resolving-pr-comments:74`, `reviewing-dependabot-prs:79`,
+`triaging-scan-alerts:55`); `creating-prs:191` uses `gh api` without
+`--paginate`; `triaging-ci` uses no `gh api` and no jq at all. "Five" was the
+count of GitHub-facing skills, not of `gh api --paginate` + jq call sites.
+
+**Coverage matrix** — why migration stalled:
+
+| Skill                      | gh ops | MCP coverage | Blocker                                           |
+| -------------------------- | ------ | ------------ | ------------------------------------------------- |
+| `resolving-pr-comments`    | 4      | full         | none — migrated                                   |
+| `creating-prs`             | 4      | partial      | no code-scanning tool for the CodeQL probe        |
+| `reviewing-dependabot-prs` | 8      | partial      | `merge_pull_request` has no auto-merge equivalent |
+| `triaging-scan-alerts`     | 6      | ~2 of 6      | no code-scanning tool in the default toolset      |
+| `triaging-ci`              | 4      | none         | no Actions tools in the default toolset           |
+
+**Toolset decision:** `.mcp.json`'s `github` entry stays on the default
+toolset URL (`https://api.githubcopilot.com/mcp`). GitHub's remote server does
+offer `/x/actions` and `/x/code_security` toolsets (each with a `/readonly`
+variant) that would cover the two zero/near-zero rows above, but enabling them
+loads roughly 20 more tool schemas against the degradation threshold recorded
+in
+[`docs/research/writing-custom-tools-and-mcp.md`](../research/writing-custom-tools-and-mcp.md)
+(~30–50 loaded tools). `triaging-ci` and `triaging-scan-alerts` stay on the gh
+CLI **by decision, not by omission**.
+
+**Structural blockers**, previously undocumented, that cap MCP adoption
+independent of toolset coverage:
+
+- MCP is hub-only. Every agent in `.claude/agents/*.md` declares a closed
+  `tools:` list with no `mcp__*` entry — no spoke can call an MCP tool at all.
+  A skill whose work is delegated to a spoke cannot depend on MCP regardless of
+  toolset coverage.
+- MCP is unavailable in headless CI. `.github/workflows/claude-pr-review.yml`
+  pins `--allowedTools Bash,Read` with no `--mcp-config` for that run. A skill
+  that must execute inside that workflow must stay gh-runnable.
+
+**Replacement for the "when next edited" trigger** — the original wording was
+un-falsifiable: it named no condition under which migration was warranted or
+complete, unlike the code-index deferral's sharpened two-part trigger
+elsewhere in this ADR. Revisit a given skill's mechanism when **both** hold:
+
+> (a) the default GitHub MCP toolset gains an Actions or code-scanning tool,
+> **or** a logged incident in `docs/logs/` records concrete gh-CLI friction
+> (auth failure, rate-limit, or a jq-parsing break); **and** (b) the affected
+> skill can still run headless under `claude-pr-review.yml`'s tool allowlist.
+
+Until a skill meets this trigger, the gh CLI is its default mechanism — a
+migration requires meeting the trigger, not merely touching the file.
+`resolving-pr-comments` met an equivalent bar on its own (full coverage, hub-
+only invocation) and has migrated; see
+[`.claude/skills/resolving-pr-comments/SKILL.md`](../../.claude/skills/resolving-pr-comments/SKILL.md).
+
+**Evidence-driven-adoption check:** a sweep of all `docs/logs/*.md` found
+zero logged gh-CLI friction (auth, rate-limit, or jq-parsing failure) in the
+11 days since acceptance — this ADR's own decision driver has not yet
+produced evidence that would justify migrating any of the remaining four
+skills ahead of the trigger above.
+
+**Secrets-posture correction:** `.mcp.json`'s `github` entry authenticates via
+a static PAT (`Authorization: Bearer ${GITHUB_MCP_PAT}`), not the OAuth flow
+recorded in the Phase 2 delivery log (see Links). Still secretless and
+compliant with this ADR's posture requirement (`${VAR}` expansion, no literal
+key) — but a PAT carries broader standing scope than OAuth would, and the
+delivery record should be read with that correction in mind.
+
 ## Links
 
-- Supersedes / superseded by: none. Retires the "GitHub MCP blocked by
-  enterprise policy" claim formerly stated in
-  `.claude/skills/triaging-ci/SKILL.md` and
+- Supersedes / superseded by: the 2026-07-27 amendment above supersedes
+  decision item 4's migration trigger; nothing supersedes this ADR as a whole.
+  Retires the "GitHub MCP blocked by enterprise policy" claim formerly stated
+  in `.claude/skills/triaging-ci/SKILL.md` and
   `.claude/skills/triaging-scan-alerts/SKILL.md`.
+- Delivery record:
+  [`docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md`](../logs/2026-07-17-adr-0030-workflow-tooling-mcp.md)
+  (Phase 2 row records GitHub MCP auth as OAuth; corrected above — the shipped
+  config uses a static PAT).
 - Related: [ADR-0001](./0001-toolchain-choices.md) (toolchain ethos),
   [ADR-0012](./0012-defer-external-code-index-mcp.md) /
   [ADR-0023](./0023-reaffirm-code-index-mcp-deferral.md) (code-index deferral,

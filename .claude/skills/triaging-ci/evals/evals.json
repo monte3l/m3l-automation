@@ -9,7 +9,7 @@
       "assertions": [
         {
           "name": "gh_cli_used",
-          "description": "gh CLI commands were used to interact with GitHub (not MCP or web browsing)"
+          "description": "GitHub Actions run data was fetched via a real API call (not fabricated or guessed), not via ad-hoc web browsing"
         },
         {
           "name": "run_resolved",

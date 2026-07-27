@@ -106,6 +106,29 @@ check whether it's already accounted for above:
   `vitest-coverage-types-mocks`) auto-load silently — a low mention count in
   `docs/logs` reflects narration habits, not actual load frequency.
 
+## GitHub integration
+
+Five skills talk to GitHub: `creating-prs`, `resolving-pr-comments`,
+`reviewing-dependabot-prs`, `triaging-ci`, `triaging-scan-alerts`. The
+governing decision is `docs/adr/0030-targeted-workflow-tooling-and-mcp.md`'s
+2026-07-27 amendment — read it before changing any of the mechanisms below.
+
+| Skill                      | Mechanism                     | Why                                                                                                                 |
+| -------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `resolving-pr-comments`    | GitHub MCP (`mcp__github__*`) | Hub-only, in-process, never a spoke or headless CI — full MCP coverage applies                                      |
+| `creating-prs`             | gh CLI                        | Needs the code-scanning-alerts endpoint; not in the configured default toolset                                      |
+| `reviewing-dependabot-prs` | gh CLI                        | Needs `gh pr merge --auto --squash`; `mcp__github__merge_pull_request` merges immediately, no auto-merge equivalent |
+| `triaging-scan-alerts`     | gh CLI                        | Needs the code-scanning-alerts endpoint; not in the configured default toolset                                      |
+| `triaging-ci`              | gh CLI                        | Needs Actions run/log tools; not in the configured default toolset                                                  |
+
+Two structural constraints apply to all five, independent of per-skill
+coverage (see `docs/contributing/agent-operating-model.md`): **MCP is
+hub-only** (no spoke holds an `mcp__*` tool grant), and **MCP is unavailable
+in headless CI** (`claude-pr-review.yml` pins `--allowedTools Bash,Read`). A
+skill that must run inside either context stays gh-CLI-based regardless of
+toolset coverage. Don't migrate a skill's mechanism without re-reading the
+ADR-0030 amendment's revisit trigger first.
+
 ## How to re-check usage
 
 The commands this audit used, so a future check is a repeat of these instead
@@ -127,6 +150,12 @@ git log --oneline -- tsconfig.base.json
 git log --oneline -- eslint.config.js
 git log --oneline -- packages/m3l-common/vitest.config.ts
 ```
+
+These re-check commands intentionally stay on the gh CLI even though
+`resolving-pr-comments` has migrated to MCP — they're one-off ad-hoc lookups
+run interactively, not a skill's steady-state mechanism, which is exactly the
+"plain Bash/CLI for ad-hoc work" case in
+`docs/research/writing-custom-tools-and-mcp.md`.
 
 A skill-name grep alone undercounts real usage (see `resolving-pr-comments`
 above) — cross-check against what the skill actually _produces_ (a specific

@@ -8,6 +8,10 @@ description: >-
   review", or has just finished implementing a feature or fix and wants it
   reviewed. Also invoke when the user asks to "submit my changes" or "get this
   merged" — even without the words "pull request". Requires gh CLI authentication.
+
+  GitHub-integration stance: ADR-0030 (amended 2026-07-27) — uses the gh CLI
+  because the CodeQL pre-push probe needs the code-scanning-alerts endpoint,
+  which is outside the configured GitHub MCP default toolset.
 ---
 
 # creating-prs
@@ -187,8 +191,11 @@ pushing, surface any **open error-severity CodeQL alert that already touches a
 file this branch changes** — so you learn about a blocker now, not after the PR
 is open.
 
+`--paginate` is required — without it, alerts past the first page (>30) are
+silently missed:
+
 ```bash
-gh api --method GET repos/{owner}/{repo}/code-scanning/alerts \
+gh api --method GET repos/{owner}/{repo}/code-scanning/alerts --paginate \
   -f state=open -f tool_name=CodeQL \
   --jq '.[] | select(.rule.severity=="error")
         | "\(.rule.id) \(.most_recent_instance.location.path)"'
