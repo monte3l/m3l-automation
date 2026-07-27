@@ -1,0 +1,256 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "aws/eks.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/eks/client.ts",
+          "symbol": "M3LEKSOperations",
+          "blob": "35cb6d30b2af308266b5dcb58e3dc1a8e7e319af"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/client.ts",
+          "symbol": "M3LEKSListClustersOptions",
+          "blob": "35cb6d30b2af308266b5dcb58e3dc1a8e7e319af"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/client.ts",
+          "symbol": "M3LEKSListNodegroupsOptions",
+          "blob": "35cb6d30b2af308266b5dcb58e3dc1a8e7e319af"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/error.ts",
+          "symbol": "M3LEKSOperationError",
+          "blob": "f797b2661b495cb9ceec8fe3faf70701082b7a6f"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSVpcConfig",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSVpcConfigInput",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSClusterSummary",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSListClustersResult",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSCreateClusterInput",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSUpdateClusterConfigInput",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSUpdateClusterVersionInput",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSNodegroupSummary",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSNodegroupScalingConfig",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSListNodegroupsResult",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSCreateNodegroupInput",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSUpdateLabelsPayload",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSUpdateNodegroupConfigInput",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSUpdateNodegroupVersionInput",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSUpdateError",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSUpdate",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSWaiterResult",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSWaiterOptions",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        }
+      ],
+      "retrieved": "2026-07-27"
+    },
+    {
+      "heading": "`M3LEKSOperations`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/eks/client.ts",
+          "symbol": "M3LEKSOperations",
+          "blob": "35cb6d30b2af308266b5dcb58e3dc1a8e7e319af"
+        }
+      ],
+      "retrieved": "2026-07-27"
+    },
+    {
+      "heading": "Options types (field-by-field)",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/eks/client.ts",
+          "symbol": "M3LEKSListClustersOptions",
+          "blob": "35cb6d30b2af308266b5dcb58e3dc1a8e7e319af"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/client.ts",
+          "symbol": "M3LEKSListNodegroupsOptions",
+          "blob": "35cb6d30b2af308266b5dcb58e3dc1a8e7e319af"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSWaiterOptions",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        }
+      ],
+      "retrieved": "2026-07-27"
+    },
+    {
+      "heading": "Plain types (field-by-field)",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSClusterSummary",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSListClustersResult",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSCreateClusterInput",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSUpdateClusterConfigInput",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSUpdateClusterVersionInput",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSNodegroupSummary",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSListNodegroupsResult",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSCreateNodegroupInput",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSUpdateNodegroupConfigInput",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSUpdateNodegroupVersionInput",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSUpdate",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSUpdateError",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSUpdateLabelsPayload",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSVpcConfig",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSVpcConfigInput",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSNodegroupScalingConfig",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/eks/types.ts",
+          "symbol": "M3LEKSWaiterResult",
+          "blob": "1a0cb2143210630dea0c395c5fedd8f11b62186a"
+        }
+      ],
+      "retrieved": "2026-07-27"
+    },
+    {
+      "heading": "`M3LEKSOperationError`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/eks/error.ts",
+          "symbol": "M3LEKSOperationError",
+          "blob": "f797b2661b495cb9ceec8fe3faf70701082b7a6f"
+        }
+      ],
+      "retrieved": "2026-07-27"
+    }
+  ]
+}

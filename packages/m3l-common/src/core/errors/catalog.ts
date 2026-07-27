@@ -133,6 +133,7 @@ export const M3L_ERROR_CATALOG: Readonly<
   ERR_CSV_EXPORT: { origin: "external", retryable: false },
   ERR_DYNAMODB_OPERATION: { origin: "external", retryable: true },
   ERR_ECS_OPERATION: { origin: "external", retryable: true },
+  ERR_EKS_OPERATION: { origin: "external", retryable: true },
   ERR_ENVIRONMENT_DETECTION: { origin: "external", retryable: false },
   ERR_EVENTBRIDGE_OPERATION: { origin: "external", retryable: true },
   ERR_FILE_COPY: { origin: "external", retryable: false },
