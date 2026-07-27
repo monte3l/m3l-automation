@@ -5,6 +5,7 @@
  */
 
 import { createInquirerAdapter } from "../../internal/prompt/inquirerAdapter.js";
+import { escapeTerminalControls } from "../../internal/prompt/sanitize.js";
 
 import { M3LLoadingBar } from "./M3LLoadingBar.js";
 import type { M3LLoadingBarOptions } from "./M3LLoadingBar.js";
@@ -114,6 +115,16 @@ function resolveLoadingBar(
  * Adapter rejections (e.g. the user cancelling a prompt) propagate to the
  * caller unchanged — `M3LPrompt` never swallows them.
  *
+ * @remarks
+ * Every method's `message` argument is passed through the same internal
+ * display-escape helper used by `confirmDestructive` before it reaches the
+ * adapter, so `Cc`/`Cf`/`Zl`/`Zp` code points (terminal control sequences,
+ * bidi overrides, zero-width characters) render as visible literals instead
+ * of manipulating the terminal. This does **not** extend to the `choices`
+ * passed to `select`/`multiselect`/`autocomplete` — choice labels are passed
+ * through unescaped. That gap is documented and deliberate (tracked as
+ * backlog item F9b), not an oversight.
+ *
  * @example
  * ```ts
  * import { M3LPrompt } from "@m3l-automation/m3l-common/core";
@@ -159,7 +170,7 @@ export class M3LPrompt {
    */
   async text(message: string, options?: { default?: string }): Promise<string> {
     return this.adapter.input({
-      message,
+      message: escapeTerminalControls(message),
       ...(options?.default !== undefined && { default: options.default }),
     });
   }
@@ -177,7 +188,7 @@ export class M3LPrompt {
     // production @inquirer/password adapter — passing `mask: "*"` would
     // echo one `*` per keystroke instead. Adding a mask for "nicer UX" is a
     // security-relevant regression, not a cosmetic tweak.
-    return this.adapter.password({ message });
+    return this.adapter.password({ message: escapeTerminalControls(message) });
   }
 
   /**
@@ -202,7 +213,7 @@ export class M3LPrompt {
     assertValidRange(min, max);
 
     const value = await this.adapter.number({
-      message,
+      message: escapeTerminalControls(message),
       ...(options?.default !== undefined && { default: options.default }),
       ...(min !== undefined && { min }),
       ...(max !== undefined && { max }),
@@ -225,7 +236,7 @@ export class M3LPrompt {
     options?: { default?: boolean },
   ): Promise<boolean> {
     return this.adapter.confirm({
-      message,
+      message: escapeTerminalControls(message),
       ...(options?.default !== undefined && { default: options.default }),
     });
   }
@@ -245,7 +256,7 @@ export class M3LPrompt {
     options?: { default?: Value },
   ): Promise<Value> {
     return this.adapter.select<Value>({
-      message,
+      message: escapeTerminalControls(message),
       choices,
       ...(options?.default !== undefined && { default: options.default }),
     });
@@ -266,7 +277,7 @@ export class M3LPrompt {
     options?: { required?: boolean },
   ): Promise<Value[]> {
     return this.adapter.checkbox<Value>({
-      message,
+      message: escapeTerminalControls(message),
       choices,
       ...(options?.required !== undefined && { required: options.required }),
     });
@@ -289,7 +300,7 @@ export class M3LPrompt {
     options?: { default?: Value },
   ): Promise<Value> {
     return this.adapter.search<Value>({
-      message,
+      message: escapeTerminalControls(message),
       source: (term) => suggest(term),
       ...(options?.default !== undefined && { default: options.default }),
     });
