@@ -7,6 +7,7 @@
  */
 
 import { M3LError } from "../errors/index.js";
+import { escapeTerminalControls } from "../../internal/prompt/sanitize.js";
 
 import type { M3LLogger } from "../logging/index.js";
 
@@ -52,6 +53,26 @@ export interface M3LConfirmDestructiveOptions {
  * on a cancelled prompt) propagates unchanged — it is never converted into
  * the `aborted` {@link M3LError}.
  *
+ * @remarks
+ * `deps.description` is passed through the internal display-escape helper in
+ * **two** of the three channels above — the bypass warning log and the
+ * `Confirm: ...?` message sent to `deps.prompt.confirm` — but **deliberately
+ * not** in the thrown `aborted: ...` {@link M3LError}'s message. That message
+ * is a data value, not a render target: it flows downstream into
+ * `core/logging`'s name-based secret redaction (`redactSensitiveLogText`),
+ * applied here by `core/diagnostics`'s error-chain serialization, which
+ * locates `key=value`-shaped secrets by matching on surrounding word
+ * boundaries. Escaping the description first would introduce alphanumeric
+ * escape text (`\x09`, `\u{202e}`) that merges into those boundaries and can
+ * suppress a secret's redaction in a persisted run report — a worse outcome
+ * than the display issue this escape exists to close. The thrown message
+ * therefore carries `deps.description` unchanged, exactly as before this
+ * escape was introduced, so downstream redaction keeps operating on
+ * unmodified text. This is a display-integrity fix for the two escaped
+ * channels (it keeps a hostile description from manipulating the terminal or
+ * the log line) — it is not an authorization control and does not otherwise
+ * change confirmation semantics.
+ *
  * @param deps - The prompt, logger, description, bypass flag, and error code
  *   described above.
  * @returns A promise that resolves once the action is confirmed (or bypassed).
@@ -81,14 +102,21 @@ export interface M3LConfirmDestructiveOptions {
 export async function confirmDestructive(
   deps: M3LConfirmDestructiveOptions,
 ): Promise<void> {
+  // Escaped for the two display channels only — the bypass-warning log and
+  // the confirm prompt. The thrown M3LError below deliberately uses
+  // deps.description raw; see the @remarks above for why.
+  const displayDescription = escapeTerminalControls(deps.description);
+
   if (deps.yes) {
     deps.logger.warning(
-      `destructive confirmation bypassed (yes=true): ${deps.description}`,
+      `destructive confirmation bypassed (yes=true): ${displayDescription}`,
     );
     return;
   }
 
-  const confirmed = await deps.prompt.confirm(`Confirm: ${deps.description}?`);
+  const confirmed = await deps.prompt.confirm(
+    `Confirm: ${displayDescription}?`,
+  );
 
   if (!confirmed) {
     throw new M3LError(`aborted: ${deps.description}`, { code: deps.code });
