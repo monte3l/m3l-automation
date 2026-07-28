@@ -85,7 +85,10 @@ Script-local error codes are plain `M3LError.code` strings (the field is an open
 - `ERR_API_GATEWAY_CLIENT_CONFIG` — a guard-checked config/auth requirement was
   unmet (missing `path` for `request`, missing `input` for `batch`, missing
   `apiKey` for `api-key`, unavailable signer/`aws.profile` for `iam`, or an
-  unrecognized `command`).
+  unrecognized `command`) — or a declared parameter present but stored with the
+  wrong type (`method`/`path`/`input` non-string, `body`/`baseUrl`/`output`
+  non-string, `maxInFlight` non-number), via `Core.M3LConfigAccessor`'s
+  fail-loud reads (see [`core/config`](../core/config.md)).
 - `ERR_API_GATEWAY_CLIENT_ABORTED` — the destructive-gate confirmation was
   declined.
 - `ERR_API_GATEWAY_CLIENT_NO_CORRELATION_ID` — thrown by `getCorrelationId()`

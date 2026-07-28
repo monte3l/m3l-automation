@@ -191,6 +191,30 @@ describe("runJsonEtl", () => {
     expect(fsp.readFile).not.toHaveBeenCalled();
   });
 
+  test("throws before reading any record when 'fields' is stored as a non-string-array (required-variant wrong-type rejection)", async () => {
+    stubPipeline("");
+    const config = buildConfig({ ...REQUIRED_BASE, fields: 42 });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+
+    await expect(
+      runJsonEtl({ config, paths, logger, correlationId: "run-2d" }),
+    ).rejects.toMatchObject({ code: "ERR_JSON_ETL_CONFIG" });
+    expect(fsp.readFile).not.toHaveBeenCalled();
+  });
+
+  test("throws before reading any record when 'input' is stored as an empty string (required-variant empty rejection)", async () => {
+    stubPipeline("");
+    const config = buildConfig({ ...REQUIRED_BASE, input: "" });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+
+    await expect(
+      runJsonEtl({ config, paths, logger, correlationId: "run-2e" }),
+    ).rejects.toMatchObject({ code: "ERR_JSON_ETL_CONFIG" });
+    expect(fsp.readFile).not.toHaveBeenCalled();
+  });
+
   test("runs the full pipeline and reports read/written/skipped counts", async () => {
     const content = ['{"id":1}', "not-json", '{"id":2}', '{"id":3}'].join("\n");
     const output = stubPipeline(content);

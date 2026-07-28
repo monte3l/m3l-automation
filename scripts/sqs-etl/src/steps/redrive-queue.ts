@@ -25,66 +25,20 @@ interface RedriveSettings {
   readonly yes: boolean;
 }
 
-/**
- * Reads a required string parameter (`queueUrl`/`dlqUrl`), throwing when it
- * is missing (never declared `required: true` — F1b — so per-command
- * requiredness is guard-checked here) or was stored as a non-string.
- *
- * @throws {@link Core.M3LError} coded `"ERR_SQS_ETL_CONFIG"`.
- */
-function readRequiredString(config: Core.M3LConfig, name: string): string {
-  const value: unknown = config.get(name);
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Core.M3LError(`'${name}' is required for 'redrive'`, {
-      code: "ERR_SQS_ETL_CONFIG",
-      context: { name },
-    });
-  }
-  return value;
-}
-
-/** Reads the optional `visibilityTimeoutSeconds` parameter. */
-function readOptionalNumber(
-  config: Core.M3LConfig,
-  name: string,
-): number | undefined {
-  const value: unknown = config.get(name);
-  if (value === undefined) return undefined;
-  if (typeof value !== "number") {
-    throw new Core.M3LError(`'${name}' must be a number`, {
-      code: "ERR_SQS_ETL_CONFIG",
-      context: { name },
-    });
-  }
-  return value;
-}
-
-/** Reads a `BOOL` parameter, defaulting to `false` when unset. */
-function readBool(config: Core.M3LConfig, name: string): boolean {
-  const value: unknown = config.get(name);
-  if (value === undefined) return false;
-  if (typeof value !== "boolean") {
-    throw new Core.M3LError(`'${name}' must be a boolean`, {
-      code: "ERR_SQS_ETL_CONFIG",
-      context: { name },
-    });
-  }
-  return value;
-}
-
 /** Resolves and guard-checks every declared parameter `redriveQueue` needs. */
 function resolveSettings(config: Core.M3LConfig): RedriveSettings {
-  const batchSizeRaw = config.get("batchSize");
+  const accessor = new Core.M3LConfigAccessor({
+    config,
+    code: "ERR_SQS_ETL_CONFIG",
+  });
   return {
-    queueUrl: readRequiredString(config, "queueUrl"),
-    dlqUrl: readRequiredString(config, "dlqUrl"),
-    batchSize:
-      typeof batchSizeRaw === "number" ? batchSizeRaw : DEFAULT_BATCH_SIZE,
-    visibilityTimeoutSeconds: readOptionalNumber(
-      config,
+    queueUrl: accessor.requiredString("queueUrl", "redrive"),
+    dlqUrl: accessor.requiredString("dlqUrl", "redrive"),
+    batchSize: accessor.numberWithDefault("batchSize", DEFAULT_BATCH_SIZE),
+    visibilityTimeoutSeconds: accessor.optionalNumber(
       "visibilityTimeoutSeconds",
     ),
-    yes: readBool(config, "yes"),
+    yes: accessor.booleanWithDefault("yes", false),
   };
 }
 

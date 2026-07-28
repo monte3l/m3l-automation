@@ -149,4 +149,28 @@ describe("purgeQueue", () => {
 
     expect(thrown).toBeInstanceOf(AWS.M3LSQSOperationError);
   });
+
+  test("throws ERR_SQS_ETL_CONFIG when 'yes' is stored as a non-boolean (required-variant wrong-type rejection)", async () => {
+    const sqsOperations = createFakeSqsOperations();
+    const config = buildConfig({
+      queueUrl: "https://sqs.example/q",
+      yes: "yep",
+    });
+    const prompt = new Core.M3LPrompt();
+    const confirm = vi.spyOn(prompt, "confirm");
+    const logger = new Core.M3LLogger([]);
+
+    await expect(
+      purgeQueue({
+        config,
+        logger,
+        correlationId: "run-6",
+        sqsOperations,
+        prompt,
+      }),
+    ).rejects.toMatchObject({ code: "ERR_SQS_ETL_CONFIG" });
+    expect(confirm).not.toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to AWS.M3LSQSOperations; property is a vi.fn(), never called unbound
+    expect(sqsOperations.purgeQueue).not.toHaveBeenCalled();
+  });
 });

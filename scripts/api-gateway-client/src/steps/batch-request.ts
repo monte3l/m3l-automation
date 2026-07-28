@@ -32,40 +32,6 @@ const MUTATING_METHODS: readonly string[] = ["POST", "PUT", "PATCH", "DELETE"];
 /** Falls back to the declared `maxInFlight` default (`config.ts`) when unset. */
 const DEFAULT_MAX_IN_FLIGHT = 4;
 
-/**
- * Reads a required string parameter (`method`/`input`), throwing when it is
- * missing (never declared `required: true` for `input` — F1b — so
- * per-command requiredness is guard-checked here) or was stored as a
- * non-string.
- *
- * @throws {@link Core.M3LError} coded `"ERR_API_GATEWAY_CLIENT_CONFIG"`.
- */
-function readRequiredString(config: Core.M3LConfig, name: string): string {
-  const value: unknown = config.get(name);
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Core.M3LError(`'${name}' is required for 'batch'`, {
-      code: "ERR_API_GATEWAY_CLIENT_CONFIG",
-      context: { name },
-    });
-  }
-  return value;
-}
-
-/** Reads an optional string parameter, treating an empty string as unset. */
-function readOptionalString(
-  config: Core.M3LConfig,
-  name: string,
-): string | undefined {
-  const value: unknown = config.get(name);
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-/** Reads the `maxInFlight` parameter, falling back to the declared default. */
-function readMaxInFlight(config: Core.M3LConfig): number {
-  const raw = config.get("maxInFlight");
-  return typeof raw === "number" ? raw : DEFAULT_MAX_IN_FLIGHT;
-}
-
 /** Narrows `value` to a non-null, non-array plain object. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -90,15 +56,22 @@ interface BatchSettings {
 
 /** Resolves and guard-checks every declared parameter `batchRequest` needs. */
 function resolveBatchSettings(config: Core.M3LConfig): BatchSettings {
-  const baseUrl = readOptionalString(config, "baseUrl");
+  const accessor = new Core.M3LConfigAccessor({
+    config,
+    code: "ERR_API_GATEWAY_CLIENT_CONFIG",
+  });
+  const baseUrl = accessor.optionalNonEmptyString("baseUrl");
   return {
-    method: readRequiredString(config, "method") as Core.M3LHttpMethod,
-    input: readRequiredString(config, "input"),
+    method: accessor.requiredString("method", "batch") as Core.M3LHttpMethod,
+    input: accessor.requiredString("input", "batch"),
     yes: config.get("yes") === true,
     baseUrl,
     baseOrigin: baseUrl === undefined ? undefined : new URL(baseUrl).origin,
-    outputName: readOptionalString(config, "output"),
-    maxInFlight: readMaxInFlight(config),
+    outputName: accessor.optionalNonEmptyString("output"),
+    maxInFlight: accessor.numberWithDefault(
+      "maxInFlight",
+      DEFAULT_MAX_IN_FLIGHT,
+    ),
   };
 }
 

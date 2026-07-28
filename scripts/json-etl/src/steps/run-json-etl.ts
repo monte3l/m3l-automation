@@ -5,8 +5,14 @@ import { extractFields } from "./extract-fields.js";
 import { filterRecords } from "./filter-records.js";
 import { importRecords } from "./import-records.js";
 
+/** The declared literal set of output formats `json-etl` supports, for `Core.M3LConfigAccessor.oneOf`. */
+const EXPORT_FORMATS = ["json", "jsonl", "csv", "html"] as const;
+
 /** The finite set of output formats `json-etl` supports. */
-type ExportFormat = "json" | "jsonl" | "csv" | "html";
+type ExportFormat = (typeof EXPORT_FORMATS)[number];
+
+/** The declared literal set for the `multiValue` parameter, for `Core.M3LConfigAccessor.oneOf`. */
+const MULTI_VALUE_MODES = ["join", "explode"] as const;
 
 /** The resolved, guard-checked settings a run needs. */
 interface RunSettings {
@@ -18,115 +24,15 @@ interface RunSettings {
   readonly limit: number | undefined;
   readonly sort:
     { readonly name: string; readonly direction: "asc" | "desc" } | undefined;
-  readonly multiValue: "join" | "explode";
-}
-
-/** Narrows `value` to `string[]` by checking every element's type. */
-function isStringArray(value: readonly unknown[]): value is string[] {
-  return value.every((item) => typeof item === "string");
-}
-
-/**
- * Reads a string parameter from `config` (`input`/`output`). Presence and
- * non-emptiness are enforced by the declared `M3LConfigParameter`
- * (`required: true` + `Core.M3LConfigValidators.nonEmpty`) before `config` is
- * ever built, so the only thing left to check here is the coerced type.
- *
- * @throws {@link Core.M3LError} When `name`'s stored value is not a string —
- *   a defensive check, since a config built through the declared schema
- *   never reaches this branch.
- */
-function readRequiredString(config: Core.M3LConfig, name: string): string {
-  const value: unknown = config.get(name);
-  if (typeof value !== "string") {
-    throw new Core.M3LError(`'${name}' must be a string`, {
-      code: "ERR_JSON_ETL_CONFIG",
-      context: { name },
-    });
-  }
-  return value;
-}
-
-/**
- * Reads the `fields` string-array parameter from `config`. Presence and
- * non-emptiness are enforced by the declared `M3LConfigParameter`
- * (`required: true` + `Core.M3LConfigValidators.nonEmpty`) before `config` is
- * ever built, so the only thing left to check here is the coerced type.
- *
- * @throws {@link Core.M3LError} When `fields`'s stored value is not a string
- *   array — a defensive check, since a config built through the declared
- *   schema never reaches this branch.
- */
-function readFields(config: Core.M3LConfig): readonly string[] {
-  const value: unknown = config.get("fields");
-  if (!Array.isArray(value) || !isStringArray(value)) {
-    throw new Core.M3LError("'fields' must be a string array", {
-      code: "ERR_JSON_ETL_CONFIG",
-    });
-  }
-  return value;
-}
-
-/** Reads the optional `filters` string array, defaulting to `[]`. */
-function readFilters(config: Core.M3LConfig): readonly string[] {
-  const value: unknown = config.get("filters");
-  if (value === undefined) return [];
-  if (!Array.isArray(value) || !isStringArray(value)) {
-    throw new Core.M3LError("'filters' must be a string array", {
-      code: "ERR_JSON_ETL_CONFIG",
-    });
-  }
-  return value;
-}
-
-/** Reads the `format` parameter, validating it against the declared set. */
-function readFormat(config: Core.M3LConfig): ExportFormat {
-  const value: unknown = config.get("format");
-  if (
-    value === "json" ||
-    value === "jsonl" ||
-    value === "csv" ||
-    value === "html"
-  ) {
-    return value;
-  }
-  throw new Core.M3LError("'format' must be one of json, jsonl, csv, html", {
-    code: "ERR_JSON_ETL_CONFIG",
-  });
-}
-
-/** Reads the `multiValue` parameter, validating it against the declared set. */
-function readMultiValue(config: Core.M3LConfig): "join" | "explode" {
-  const value: unknown = config.get("multiValue");
-  if (value === "join" || value === "explode") return value;
-  throw new Core.M3LError("'multiValue' must be 'join' or 'explode'", {
-    code: "ERR_JSON_ETL_CONFIG",
-  });
-}
-
-/** Reads the optional `limit` parameter. */
-function readLimit(config: Core.M3LConfig): number | undefined {
-  const value: unknown = config.get("limit");
-  if (value === undefined) return undefined;
-  if (typeof value !== "number") {
-    throw new Core.M3LError("'limit' must be a number", {
-      code: "ERR_JSON_ETL_CONFIG",
-    });
-  }
-  return value;
+  readonly multiValue: (typeof MULTI_VALUE_MODES)[number];
 }
 
 /** Reads and parses the optional `sort` parameter (`"name:asc"`/`"name:desc"`). */
 function readSort(
-  config: Core.M3LConfig,
+  accessor: Core.M3LConfigAccessor,
 ): { readonly name: string; readonly direction: "asc" | "desc" } | undefined {
-  const value: unknown = config.get("sort");
+  const value = accessor.optionalString("sort");
   if (value === undefined) return undefined;
-  if (typeof value !== "string") {
-    throw new Core.M3LError("'sort' must be a string", {
-      code: "ERR_JSON_ETL_CONFIG",
-    });
-  }
   const [name, direction] = value.split(":");
   if (name === undefined || (direction !== "asc" && direction !== "desc")) {
     throw new Core.M3LError(`invalid 'sort' value: '${value}'`, {
@@ -150,11 +56,15 @@ function readSort(
  *   or a `sort` name outside the declared `fields` output columns.
  */
 function resolveSettings(config: Core.M3LConfig): RunSettings {
-  const input = readRequiredString(config, "input");
-  const fields = readFields(config);
-  const output = readRequiredString(config, "output");
-  const sort = readSort(config);
-  const limit = readLimit(config);
+  const accessor = new Core.M3LConfigAccessor({
+    config,
+    code: "ERR_JSON_ETL_CONFIG",
+  });
+  const input = accessor.requiredString("input", "run");
+  const fields = accessor.requiredStringArray("fields", "run");
+  const output = accessor.requiredString("output", "run");
+  const sort = readSort(accessor);
+  const limit = accessor.optionalNumber("limit");
 
   if (sort !== undefined && limit === undefined) {
     throw new Core.M3LError("'sort' requires 'limit' to be set", {
@@ -178,12 +88,12 @@ function resolveSettings(config: Core.M3LConfig): RunSettings {
   return {
     input,
     fields,
-    filters: readFilters(config),
-    format: readFormat(config),
+    filters: accessor.optionalStringArray("filters") ?? [],
+    format: accessor.oneOf("format", EXPORT_FORMATS),
     output,
     limit,
     sort,
-    multiValue: readMultiValue(config),
+    multiValue: accessor.oneOf("multiValue", MULTI_VALUE_MODES),
   };
 }
 

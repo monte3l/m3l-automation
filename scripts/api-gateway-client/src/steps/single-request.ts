@@ -11,33 +11,6 @@ import { resolveAuthHeaders } from "./resolve-auth-headers.js";
 /** HTTP verbs `Core.confirmDestructive` confirms before dispatch; GET/HEAD are never gated. */
 const MUTATING_METHODS: readonly string[] = ["POST", "PUT", "PATCH", "DELETE"];
 
-/**
- * Reads a required string parameter (`path`/`method`), throwing when it is
- * missing (never declared `required: true` for `path` — F1b — so per-command
- * requiredness is guard-checked here) or was stored as a non-string.
- *
- * @throws {@link Core.M3LError} coded `"ERR_API_GATEWAY_CLIENT_CONFIG"`.
- */
-function readRequiredString(config: Core.M3LConfig, name: string): string {
-  const value: unknown = config.get(name);
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Core.M3LError(`'${name}' is required for 'request'`, {
-      code: "ERR_API_GATEWAY_CLIENT_CONFIG",
-      context: { name },
-    });
-  }
-  return value;
-}
-
-/** Reads an optional string parameter, treating an empty string as unset. */
-function readOptionalString(
-  config: Core.M3LConfig,
-  name: string,
-): string | undefined {
-  const value: unknown = config.get(name);
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
 /** Narrows `value` to a non-null, non-array plain object. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -63,7 +36,11 @@ async function writeResponseIfConfigured(
   paths: Core.M3LPaths,
   response: unknown,
 ): Promise<void> {
-  const output = readOptionalString(config, "output");
+  const accessor = new Core.M3LConfigAccessor({
+    config,
+    code: "ERR_API_GATEWAY_CLIENT_CONFIG",
+  });
+  const output = accessor.optionalNonEmptyString("output");
   if (output === undefined) return;
 
   const exporter = new Core.M3LJSONListExporter<Record<string, unknown>>({
@@ -128,13 +105,17 @@ export async function singleRequest(deps: {
   readonly signer: AWS.M3LRequestSigner | undefined;
   readonly prompt: Core.M3LPrompt;
 }): Promise<void> {
-  const method = readRequiredString(
-    deps.config,
+  const accessor = new Core.M3LConfigAccessor({
+    config: deps.config,
+    code: "ERR_API_GATEWAY_CLIENT_CONFIG",
+  });
+  const method = accessor.requiredString(
     "method",
+    "request",
   ) as Core.M3LHttpMethod;
-  const path = readRequiredString(deps.config, "path");
-  const body = readOptionalString(deps.config, "body");
-  const baseUrl = readOptionalString(deps.config, "baseUrl");
+  const path = accessor.requiredString("path", "request");
+  const body = accessor.optionalNonEmptyString("body");
+  const baseUrl = accessor.optionalNonEmptyString("baseUrl");
   const yes = deps.config.get("yes") === true;
 
   const url = buildRequestUrl(path, baseUrl);
