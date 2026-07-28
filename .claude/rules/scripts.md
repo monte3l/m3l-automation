@@ -88,6 +88,15 @@ paths:
   schema-time validators with `Core.M3LConfigValidators` (`range` / `regex` /
   `oneOf`) instead of hand-rolled checks. Never read `process.env` directly —
   config is the only input seam.
+- **When promoting a script's local config-read helper onto
+  `Core.M3LConfigAccessor`, grep the whole file for `config.get(` afterward —
+  not just for callers of the helper being deleted.** A boolean/string field
+  that was always inlined at its call site (never routed through the shared
+  helper) is invisible to a "find every caller of `readX`" sweep and can carry
+  the exact silent-wrong-type-default bug the promotion exists to fix (e.g. a
+  confirm-gate's `yes`/`force` flag read as `config.get(name) === true`,
+  silently resolving `false` for any non-boolean value instead of throwing).
+  Found during the W5 config-accessor completion pass, 2026-07-28.
 - **Read the per-run correlation id from the hook context** (`ctx.correlationId`,
   always a non-empty string) and thread it through your own logs; set
   `M3LScriptOptions.correlationId` only to inherit an upstream trace. It is
