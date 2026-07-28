@@ -71,7 +71,8 @@ Resilience
 - [`polling`](reference/core/polling.md) — `M3LPoller`, `M3LRetryRunner`, `M3LBackoff`, classifiers
 - [`errors`](reference/core/errors.md) — `M3LError`, `M3LResult<T, E>`
 - [`events`](reference/core/events.md) — type-safe event emitter
-- [`diagnostics`](reference/core/diagnostics.md) — run reports, exit codes, cause-chain formatting (_spec-only, ADR-0035_)
+- [`diagnostics`](reference/core/diagnostics.md) — run reports, exit codes, cause-chain formatting
+- [`checkpoint`](reference/core/checkpoint.md) — `M3LCheckpointStore`: atomic JSON checkpoint/resume for long-running scripts
 
 Utilities
 
@@ -90,6 +91,12 @@ Utilities
 - [`signing`](reference/aws/signing.md) — `M3LRequestSigner`
 - [`s3`](reference/aws/s3.md) — high-level S3 object operations
 - [`athena`](reference/aws/athena.md) — `M3LAthenaClient`
+- [`eventbridge`](reference/aws/eventbridge.md) — `M3LEventBridgeOperations`
+- [`lambda`](reference/aws/lambda.md) — `M3LLambdaOperations`
+- [`ecs`](reference/aws/ecs.md) — `M3LECSOperations`
+- [`codepipeline`](reference/aws/codepipeline.md) — `M3LCodePipelineOperations`
+- [`cloudformation`](reference/aws/cloudformation.md) — `M3LCloudFormationOperations`
+- [`eks`](reference/aws/eks.md) — `M3LEKSOperations`
 
 ### Contributing
 
