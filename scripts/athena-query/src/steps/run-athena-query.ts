@@ -66,8 +66,9 @@ export interface AthenaRunSummary {
  * @param deps - The resolved `config`, a `logger`, the injected
  *   `AWS.M3LAthenaClient`, and `M3LPaths` for checkpoint/output resolution.
  * @returns The run summary (rows exported, query execution id).
- * @throws `AthenaSettingsError` (see `./resolve-settings.js`) When a declared
- *   config value resolves to an unexpected type.
+ * @throws {@link Core.M3LError} coded `"ERR_ATHENA_SETTINGS"` (see
+ *   `./resolve-settings.js`) When a declared config value resolves to an
+ *   unexpected type.
  * @throws {@link AWS.M3LAthenaStartQueryError} When `startQuery` fails —
  *   before any checkpoint write, so the checkpoint stays untouched.
  * @throws {@link AWS.M3LAthenaQueryFailedError} When the query reaches a

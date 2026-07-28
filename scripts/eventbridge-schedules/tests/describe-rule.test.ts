@@ -21,7 +21,7 @@ import { describeRule } from "../src/steps/describe-rule.js";
  * whole-file JSON document, not an array). `describeRule(deps)`:
  *  - guard-requires `ruleName` (a non-empty string), else throws
  *    `Core.M3LError` coded `ERR_EVENTBRIDGE_SCHEDULES_CONFIG` with message
- *    `'ruleName' is required for 'describe'`;
+ *    `'ruleName' is required for operation 'describe'`;
  *  - reads optional `eventBusName`; calls
  *    `eventBridgeOperations.describeRule(ruleName, {...})`;
  *  - when `output` is configured, writes the resolved detail via
@@ -99,7 +99,7 @@ describe("describeRule", () => {
       "ERR_EVENTBRIDGE_SCHEDULES_CONFIG",
     );
     expect((thrown as Core.M3LError).message).toBe(
-      "'ruleName' is required for 'describe'",
+      "'ruleName' is required for operation 'describe'",
     );
     expect(describeRuleMock).not.toHaveBeenCalled();
   });
@@ -130,6 +130,51 @@ describe("describeRule", () => {
     expect((thrown as Core.M3LError).code).toBe(
       "ERR_EVENTBRIDGE_SCHEDULES_CONFIG",
     );
+    expect(describeRuleMock).not.toHaveBeenCalled();
+  });
+
+  test("throws ERR_EVENTBRIDGE_SCHEDULES_CONFIG when 'ruleName' is stored as a non-string (required-variant wrong-type rejection)", async () => {
+    const describeRuleMock = vi.fn();
+    const eventBridgeOperations = createFakeEventBridgeOperations({
+      describeRule: describeRuleMock,
+    });
+    const config = buildConfig({ ruleName: 42 });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+
+    await expect(
+      describeRule({
+        config,
+        paths,
+        logger,
+        correlationId: "run-2b",
+        eventBridgeOperations,
+      }),
+    ).rejects.toMatchObject({ code: "ERR_EVENTBRIDGE_SCHEDULES_CONFIG" });
+    expect(describeRuleMock).not.toHaveBeenCalled();
+  });
+
+  test("throws ERR_EVENTBRIDGE_SCHEDULES_CONFIG when 'eventBusName' is stored as a non-string (required-variant wrong-type rejection)", async () => {
+    const describeRuleMock = vi.fn();
+    const eventBridgeOperations = createFakeEventBridgeOperations({
+      describeRule: describeRuleMock,
+    });
+    const config = buildConfig({
+      ruleName: "nightly-report",
+      eventBusName: 42,
+    });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+
+    await expect(
+      describeRule({
+        config,
+        paths,
+        logger,
+        correlationId: "run-2c",
+        eventBridgeOperations,
+      }),
+    ).rejects.toMatchObject({ code: "ERR_EVENTBRIDGE_SCHEDULES_CONFIG" });
     expect(describeRuleMock).not.toHaveBeenCalled();
   });
 

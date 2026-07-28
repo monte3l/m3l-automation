@@ -11,7 +11,7 @@ import { putRuleStep } from "../src/steps/put-rule.js";
  * helper, which:
  *  - guard-requires `ruleName`, else throws `Core.M3LError` coded
  *    `ERR_EVENTBRIDGE_SCHEDULES_CONFIG` with message
- *    `'ruleName' is required for '${operation}'`;
+ *    `'ruleName' is required for operation '${operation}'`;
  *  - guard-requires EXACTLY ONE of `eventPattern`/`scheduleExpression` (empty
  *    string treated as unset), else throws the same code with message
  *    `exactly one of 'eventPattern' or 'scheduleExpression' is required for
@@ -111,7 +111,7 @@ describe("putRuleStep — guard-required ruleName", () => {
         "ERR_EVENTBRIDGE_SCHEDULES_CONFIG",
       );
       expect((thrown as Core.M3LError).message).toBe(
-        `'ruleName' is required for '${operation}'`,
+        `'ruleName' is required for operation '${operation}'`,
       );
       expect(putRuleMock).not.toHaveBeenCalled();
     },

@@ -168,6 +168,27 @@ describe("listRules", () => {
     expect(callArgs).not.toHaveProperty("eventBusName");
   });
 
+  test("throws ERR_EVENTBRIDGE_SCHEDULES_CONFIG when 'namePrefix' is stored as a non-string (required-variant wrong-type rejection)", async () => {
+    const listRulesMock = vi.fn().mockResolvedValue({ rules: [] });
+    const eventBridgeOperations = createFakeEventBridgeOperations({
+      listRules: listRulesMock,
+    });
+    const config = buildConfig({ namePrefix: 42 });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+
+    await expect(
+      listRules({
+        config,
+        paths,
+        logger,
+        correlationId: "run-2b",
+        eventBridgeOperations,
+      }),
+    ).rejects.toMatchObject({ code: "ERR_EVENTBRIDGE_SCHEDULES_CONFIG" });
+    expect(listRulesMock).not.toHaveBeenCalled();
+  });
+
   test("passes namePrefix/eventBusName through to listRules() when non-empty", async () => {
     stubWriteStream();
     const listRulesMock = vi.fn().mockResolvedValue({ rules: [] });

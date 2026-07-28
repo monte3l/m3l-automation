@@ -60,7 +60,7 @@ describe("disableRule", () => {
       "ERR_EVENTBRIDGE_SCHEDULES_CONFIG",
     );
     expect((thrown as Core.M3LError).message).toContain(
-      "'ruleName' is required for 'disable'",
+      "'ruleName' is required for operation 'disable'",
     );
     // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to AWS.M3LEventBridgeOperations; property is a vi.fn(), never called unbound
     expect(eventBridgeOperations.disableRule).not.toHaveBeenCalled();

@@ -103,7 +103,7 @@ describe("createRule", () => {
       "ERR_EVENTBRIDGE_SCHEDULES_CONFIG",
     );
     expect((thrown as Core.M3LError).message).toContain(
-      "'ruleName' is required for 'create'",
+      "'ruleName' is required for operation 'create'",
     );
   });
 

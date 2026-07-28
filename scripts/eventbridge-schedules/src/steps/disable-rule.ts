@@ -1,9 +1,7 @@
-import type { AWS, Core } from "@m3l-automation/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
+import type { AWS } from "@m3l-automation/m3l-common";
 
-import {
-  readOptionalEventBusName,
-  readRequiredRuleName,
-} from "./config-helpers.js";
+import { CONFIG_ERROR_CODE } from "./config-helpers.js";
 
 /**
  * `disable-rule` — disables the EventBridge rule named by the
@@ -48,8 +46,12 @@ export async function disableRule(deps: {
   readonly correlationId: string;
   readonly eventBridgeOperations: AWS.M3LEventBridgeOperations;
 }): Promise<void> {
-  const ruleName = readRequiredRuleName(deps.config, "disable");
-  const eventBusName = readOptionalEventBusName(deps.config);
+  const accessor = new Core.M3LConfigAccessor({
+    config: deps.config,
+    code: CONFIG_ERROR_CODE,
+  });
+  const ruleName = accessor.requiredString("ruleName", "disable");
+  const eventBusName = accessor.optionalNonEmptyString("eventBusName");
 
   await deps.eventBridgeOperations.disableRule(ruleName, {
     ...(eventBusName !== undefined && { eventBusName }),
