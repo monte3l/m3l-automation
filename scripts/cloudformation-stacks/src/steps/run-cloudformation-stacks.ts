@@ -280,6 +280,7 @@ async function dispatchWrite(
   const { writeStack } = await import("./write-stack.js");
   return writeStack({
     operations: deps.operations,
+    reader: deps.reader,
     operation,
     input: plan.input,
     templateText: plan.templateText,

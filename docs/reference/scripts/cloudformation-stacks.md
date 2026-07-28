@@ -106,7 +106,7 @@ Every step takes a single `readonly`-field deps object (never raw
 - `runCloudformationStacks(deps: { config: Core.M3LConfig; paths: Core.M3LPaths; logger: Core.M3LLogger; correlationId: string; operations: AWS.M3LCloudFormationOperations; prompt: Core.M3LPrompt }): Promise<void>`
 - `readStacks(deps: { operations: AWS.M3LCloudFormationOperations; operation: "list-stacks" | "describe-stack"; stackName: string | undefined; stackStatusFilter: readonly string[] | undefined; nextToken: string | undefined }): Promise<M3LCloudFormationListStacksResult | M3LCloudFormationStack | undefined>`
 - `readStackEvents(deps: { operations: AWS.M3LCloudFormationOperations; stackName: string; nextToken: string | undefined }): Promise<M3LCloudFormationDescribeStackEventsResult>`
-- `writeStack(deps: { operations: AWS.M3LCloudFormationOperations; operation: "create-stack" | "update-stack" | "delete-stack"; input: Record<string, unknown> | undefined; templateText: string | undefined; stackName: string | undefined; retainResources: readonly string[] | undefined; roleArn: string | undefined }): Promise<M3LCloudFormationCreateStackResult | M3LCloudFormationUpdateStackResult | void>`
+- `writeStack(deps: { operations: AWS.M3LCloudFormationOperations; reader: Core.M3LInputFileReader; operation: "create-stack" | "update-stack" | "delete-stack"; input: Record<string, unknown> | undefined; templateText: string | undefined; stackName: string | undefined; retainResources: readonly string[] | undefined; roleArn: string | undefined }): Promise<M3LCloudFormationCreateStackResult | M3LCloudFormationUpdateStackResult | void>`
 - `waitStack(deps: { operations: AWS.M3LCloudFormationOperations; operation: "wait-stack-create-complete" | "wait-stack-update-complete" | "wait-stack-delete-complete"; stackName: string; maxWaitTime: number | undefined }): Promise<M3LCloudFormationWaiterResult>`
 
 Script-local error codes are plain `M3LError.code` strings (the field is an
@@ -127,7 +127,15 @@ all prefixed `ERR_CLOUDFORMATION_STACKS_`:
   split+trim+drop-empty, an unrecognized `operation` (unreachable through the
   declared `oneOf` validator, guarded defensively)), or `script.aws` was not
   provisioned despite declaring `aws.profile` (guarded in `main.ts`, the same
-  composition-root pattern `ecs-ops`/`lambda-ops` use). **Not** included here:
+  composition-root pattern `ecs-ops`/`lambda-ops` use). Also thrown by
+  `writeStack`'s record-field reads (`Core.M3LInputFileReader`'s
+  `requiredStringField`/`optionalStringField`/`optionalNumberField`/
+  `optionalBooleanField`/`optionalArrayField`) when a _present_ optional
+  `input` field is the wrong type — `templateBody`, `templateUrl`,
+  `parameters`, `capabilities`, `roleArn`, `tags`, `timeoutInMinutes`,
+  `disableRollback`, `enableTerminationProtection` (`create-stack`) and
+  `usePreviousTemplate` (`update-stack`) are never silently dropped for being
+  mistyped. **Not** included here:
   an empty-but-present string parameter or an out-of-range `maxWaitTime` —
   those fail earlier at config-load with `M3LConfigValidationError` (see the
   Configuration schema section above).

@@ -22,6 +22,11 @@ import { createFakeCloudFormationOperations } from "./support/cloudformationFake
  * `input` record involved) and returns `void`.
  */
 
+const reader = new Core.M3LInputFileReader({
+  paths: new Core.M3LPaths(),
+  code: "ERR_CLOUDFORMATION_STACKS_CONFIG",
+});
+
 afterEach(() => {
   vi.clearAllMocks();
 });
@@ -36,6 +41,7 @@ describe("writeStack — create-stack", () => {
 
     const returned = await writeStack({
       operations,
+      reader,
       operation: "create-stack",
       input,
       templateText: "Resources: {}",
@@ -64,6 +70,7 @@ describe("writeStack — create-stack", () => {
 
     await writeStack({
       operations,
+      reader,
       operation: "create-stack",
       input,
       templateText: "should-not-be-used",
@@ -89,6 +96,7 @@ describe("writeStack — create-stack", () => {
 
     await writeStack({
       operations,
+      reader,
       operation: "create-stack",
       input,
       templateText: "should-not-be-used",
@@ -112,6 +120,7 @@ describe("writeStack — create-stack", () => {
     try {
       await writeStack({
         operations,
+        reader,
         operation: "create-stack",
         input: undefined,
         templateText: undefined,
@@ -138,6 +147,7 @@ describe("writeStack — create-stack", () => {
     await expect(
       writeStack({
         operations,
+        reader,
         operation: "create-stack",
         input,
         templateText: undefined,
@@ -145,6 +155,26 @@ describe("writeStack — create-stack", () => {
         // missing record field — create-stack sources stackName from the
         // record only.
         stackName: "should-not-be-used",
+        retainResources: undefined,
+        roleArn: undefined,
+      }),
+    ).rejects.toMatchObject({ code: "ERR_CLOUDFORMATION_STACKS_CONFIG" });
+    expect(createStack).not.toHaveBeenCalled();
+  });
+
+  test("throws ERR_CLOUDFORMATION_STACKS_CONFIG when the parsed input's optional 'timeoutInMinutes' is present but the wrong type, never calling createStack", async () => {
+    const createStack = vi.fn();
+    const operations = createFakeCloudFormationOperations({ createStack });
+    const input = { stackName: "my-stack", timeoutInMinutes: "30" };
+
+    await expect(
+      writeStack({
+        operations,
+        reader,
+        operation: "create-stack",
+        input,
+        templateText: undefined,
+        stackName: undefined,
         retainResources: undefined,
         roleArn: undefined,
       }),
@@ -164,6 +194,7 @@ describe("writeStack — update-stack", () => {
 
     const returned = await writeStack({
       operations,
+      reader,
       operation: "update-stack",
       input,
       templateText: undefined,
@@ -192,6 +223,7 @@ describe("writeStack — update-stack", () => {
     await expect(
       writeStack({
         operations,
+        reader,
         operation: "update-stack",
         input,
         templateText: undefined,
@@ -209,6 +241,7 @@ describe("writeStack — update-stack", () => {
     await expect(
       writeStack({
         operations,
+        reader,
         operation: "update-stack",
         input: undefined,
         templateText: undefined,
@@ -228,6 +261,27 @@ describe("writeStack — update-stack", () => {
     await expect(
       writeStack({
         operations,
+        reader,
+        operation: "update-stack",
+        input,
+        templateText: undefined,
+        stackName: undefined,
+        retainResources: undefined,
+        roleArn: undefined,
+      }),
+    ).rejects.toMatchObject({ code: "ERR_CLOUDFORMATION_STACKS_CONFIG" });
+    expect(updateStack).not.toHaveBeenCalled();
+  });
+
+  test("throws ERR_CLOUDFORMATION_STACKS_CONFIG when the parsed input's optional 'usePreviousTemplate' is present but the wrong type, never calling updateStack", async () => {
+    const updateStack = vi.fn();
+    const operations = createFakeCloudFormationOperations({ updateStack });
+    const input = { stackName: "my-stack", usePreviousTemplate: "true" };
+
+    await expect(
+      writeStack({
+        operations,
+        reader,
         operation: "update-stack",
         input,
         templateText: undefined,
@@ -247,6 +301,7 @@ describe("writeStack — delete-stack", () => {
 
     const returned = await writeStack({
       operations,
+      reader,
       operation: "delete-stack",
       input: undefined,
       templateText: undefined,
@@ -272,6 +327,7 @@ describe("writeStack — delete-stack", () => {
     await expect(
       writeStack({
         operations,
+        reader,
         operation: "delete-stack",
         input: undefined,
         templateText: undefined,

@@ -137,31 +137,6 @@ async function gateOperation(
   });
 }
 
-/**
- * Throws `ERR_EKS_OPS_CONFIG` naming `field` when `input[field]` fails
- * `isValid` — the shared required-field guard behind
- * {@link resolveClusterInput}/{@link resolveNodegroupInput}'s `create-*`
- * validation (security-review finding: a malformed `input` must fail fast
- * with this documented error rather than reach the AWS operations wrapper).
- */
-function requireInputField(
-  input: Readonly<Record<string, unknown>>,
-  field: string,
-  isValid: (value: unknown) => boolean,
-  operation: string,
-): void {
-  if (isValid(input[field])) return;
-  throw new Core.M3LError(
-    `'input.${field}' is required for operation '${operation}'`,
-    { code: "ERR_EKS_OPS_CONFIG" },
-  );
-}
-
-/** Narrows `value` to a non-empty array — the array-presence predicate shared by both `create-*` field guards below. */
-function isNonEmptyArray(value: unknown): boolean {
-  return Array.isArray(value) && value.length > 0;
-}
-
 /** Reads+parses `input` for `create-cluster`/`update-cluster-config`; `undefined` for the other two cluster-write operations. `create-cluster`'s parsed `input` is additionally checked for the two fields `AWS.M3LEKSCreateClusterInput` requires. */
 async function resolveClusterInput(
   operation: ClusterOperation,
@@ -174,21 +149,13 @@ async function resolveClusterInput(
   const inputName = deps.accessor.requiredFor(raw.input, "input", operation);
   const input = await deps.reader.readJSONRecord(inputName);
   if (operation === "create-cluster") {
-    requireInputField(
-      input,
-      "roleArn",
-      (value) => typeof value === "string",
-      operation,
-    );
-    requireInputField(
-      input,
+    deps.reader.requiredStringField(input, "roleArn", operation);
+    const vpcConfig = deps.reader.requireRecord(
+      deps.reader.optionalRecordField(input, "resourcesVpcConfig"),
       "resourcesVpcConfig",
-      (value) =>
-        typeof value === "object" &&
-        value !== null &&
-        isNonEmptyArray((value as Record<string, unknown>).subnetIds),
       operation,
     );
+    deps.reader.requiredArrayField(vpcConfig, "subnetIds", operation);
   }
   return input;
 }
@@ -208,13 +175,8 @@ async function resolveNodegroupInput(
   const inputName = deps.accessor.requiredFor(raw.input, "input", operation);
   const input = await deps.reader.readJSONRecord(inputName);
   if (operation === "create-nodegroup") {
-    requireInputField(
-      input,
-      "nodeRole",
-      (value) => typeof value === "string",
-      operation,
-    );
-    requireInputField(input, "subnets", isNonEmptyArray, operation);
+    deps.reader.requiredStringField(input, "nodeRole", operation);
+    deps.reader.requiredArrayField(input, "subnets", operation);
   }
   return input;
 }
