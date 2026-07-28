@@ -16,8 +16,10 @@ const OWNER = "monte3l";
 // ---------------------------------------------------------------------------
 // Minimal tracker fixtures — every section extractRoadmap/extractImplementation
 // require is present (so extraction never errors) but each table carries
-// exactly one row, keeping the resulting plans small and predictable. Shapes
-// copied from bin/tests/hub-sync.test.ts.
+// exactly one row (ADR-0035 rollout is deliberately zero-row, to keep this
+// file's hardcoded item/milestone counts below unchanged), keeping the
+// resulting plans small and predictable. Shapes copied from
+// bin/tests/hub-sync.test.ts.
 // ---------------------------------------------------------------------------
 
 const ROADMAP_FIXTURE = `# Roadmap — m3l-automation
@@ -54,6 +56,11 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 | ID     | Priority | Status | Title & change    | Source / call-site |
 | ------ | -------- | ------ | -------------------- | --------------------- |
 | **F1** | P1       | To Do  | friction change       | site                   |
+
+## ADR-0035 rollout — failure reporting & diagnostics
+
+| Phase | Priority | Status | Change | Source / notes |
+| ----- | -------- | ------ | ------ | ----------------- |
 
 ## AWS getter reality
 

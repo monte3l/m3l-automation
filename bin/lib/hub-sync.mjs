@@ -79,6 +79,7 @@ const ROADMAP_ANCHORS = {
 
 const IMPLEMENTATION_ANCHORS = {
   friction: "#library-friction-f-series",
+  adr0035Rollout: "#adr-0035-rollout--failure-reporting--diagnostics",
   gated: "#gated-library-modules--deferred-decisions-p2",
 };
 
@@ -189,9 +190,13 @@ export function parseHubMarker(body) {
  * flat, actionable {@link Item} list the sync planners operate on.
  *
  * Emits ROADMAP Priority 0, Priority 1, and Governance follow-ups rows, plus
- * IMPLEMENTATION's Library friction (F-series) and Gated modules (P2) rows.
- * ROADMAP Priority 2 is never emitted — the IMPLEMENTATION gated table is
- * that content's item source, to avoid duplicate issues. Done rows ARE
+ * IMPLEMENTATION's Library friction (F-series), ADR-0035 rollout, and Gated
+ * modules (P2) rows. ROADMAP Priority 2 is never emitted — the IMPLEMENTATION
+ * gated table is that content's item source, to avoid duplicate issues.
+ * ROADMAP's own nested "ADR-0035 rollout" subsection (under Priority 0) is
+ * skipped for the same reason: it is a coarse A1-A5 subset of
+ * IMPLEMENTATION's fuller A1-A9 table, which is this content's item source.
+ * Done rows ARE
  * emitted (closes downstream are driven by them). Rows that produce the same
  * key are deduped: the first row's fields win, and later rows only
  * contribute additional detail lines. A `null` section (extractor found no
@@ -306,6 +311,26 @@ export function actionableItems(roadmap, implementation) {
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.friction,
         detail: buildDetail(header, row, new Set([idIndex, statusIndex])),
+      });
+    }
+  }
+
+  if (implementation.adr0035Rollout) {
+    const { header, rows } = implementation.adr0035Rollout;
+    const phaseIndex = columnIndex(header, "Phase");
+    const priorityIndex = columnIndex(header, "Priority");
+    const statusIndex = columnIndex(header, "Status");
+    const changeIndex = columnIndex(header, "Change");
+    for (const row of rows) {
+      const strippedPhase = stripMarkdown(row[phaseIndex] ?? "");
+      addItem({
+        key: `impl:${strippedPhase}`,
+        title: `${strippedPhase} — ${row[changeIndex] ?? ""}`,
+        status: classifyStatus(row[statusIndex] ?? ""),
+        priority: mapFrictionPriority(row[priorityIndex] ?? ""),
+        sourcePath: IMPLEMENTATION_PATH,
+        sourceAnchor: IMPLEMENTATION_ANCHORS.adr0035Rollout,
+        detail: buildDetail(header, row, new Set([phaseIndex, statusIndex])),
       });
     }
   }
