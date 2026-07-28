@@ -123,6 +123,24 @@ paths:
   `Object.keys(MEMBERS)` it — the compiler then rejects both a missing and an
   excess key, the same guarantee `CATEGORY_RANK: Record<M3LLogEventCategory,
 number>` already relies on (found A4b: `LOG_LEVEL_FLOORS`).
+- **Reuse `core/utils/guards.ts`'s exported type predicates** (`isString`/
+  `isNumber`/`isBoolean`/`isArray`/`isPlainObject`/etc.) instead of writing a
+  local module-level reimplementation. A local copy is a smell even when a
+  sibling class (e.g. `M3LConfigAccessor`) already has one of its own — that's
+  pre-existing debt to fix, not precedent to repeat (found promoting
+  `M3LInputFileReader`'s record-field readers, 2026-07-28: a fresh
+  `isString`/`isNumber`/`isBoolean`/`isArray` quartet duplicated the exported
+  utility this same file already imports from).
+- **`Object.hasOwn(record, field)`, not `record[field] !== undefined`, when
+  reading a field off untrusted or partially-trusted input.** Bracket access
+  walks the prototype chain, so a record with no own `field` (e.g. one
+  literally named `"__proto__"`) can silently resolve an inherited —
+  or, if `Object.prototype` is ever polluted elsewhere, attacker-controlled —
+  value instead of the "absent" the caller expects. Default to the
+  `Object.hasOwn` guard first unless own-vs-inherited is proven irrelevant for
+  that specific field (found in `M3LInputFileReader`'s record-field readers,
+  2026-07-28 security review: `optionalRecordField` returned `Object.prototype`
+  itself for a non-own `"__proto__"` field before the fix).
 - **Allowlist, never denylist, for a redaction or sanitization boundary.**
   Enumerate the fields you keep; drop everything else. A pattern that tries to
   _recognize_ what is unsafe (a regex over URLs, key-name heuristics) is a
