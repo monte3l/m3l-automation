@@ -320,6 +320,34 @@ describe("runS3Objects — config guards (fire before any AWS call)", () => {
     });
     expect(listObjectsMock).not.toHaveBeenCalled();
   });
+
+  test("throws ERR_S3_OBJECTS_CONFIG when 'bucket' is stored as a non-string (required-variant wrong-type rejection)", async () => {
+    const deps = buildDeps({
+      ...BASE_CONFIG,
+      bucket: 42,
+      operation: "list",
+      output: "out.jsonl",
+    });
+
+    await expect(runS3Objects(deps)).rejects.toMatchObject({
+      code: "ERR_S3_OBJECTS_CONFIG",
+    });
+    expect(listObjectsMock).not.toHaveBeenCalled();
+  });
+
+  test("throws ERR_S3_OBJECTS_CONFIG when 'yes' is stored as a non-boolean (required-variant wrong-type rejection)", async () => {
+    const deps = buildDeps({
+      ...BASE_CONFIG,
+      yes: "yep",
+      operation: "list",
+      output: "out.jsonl",
+    });
+
+    await expect(runS3Objects(deps)).rejects.toMatchObject({
+      code: "ERR_S3_OBJECTS_CONFIG",
+    });
+    expect(listObjectsMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("runS3Objects — destructive-gate routing", () => {

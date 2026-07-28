@@ -421,6 +421,60 @@ describe("runDynamodbCrud — config guards (fire before any AWS call)", () => {
     expect(getItemMock).not.toHaveBeenCalled();
     expect(putItemMock).not.toHaveBeenCalled();
   });
+
+  test("throws ERR_DYNAMO_CRUD_CONFIG when 'tableName' is stored as an empty string (required-variant empty rejection)", async () => {
+    const deps = buildDeps({
+      ...BASE_CONFIG,
+      tableName: "",
+      operation: "get",
+      key: JSON.stringify({ id: "42" }),
+      output: "out.jsonl",
+    });
+
+    await expect(runDynamodbCrud(deps)).rejects.toMatchObject({
+      code: "ERR_DYNAMO_CRUD_CONFIG",
+    });
+    expect(getItemMock).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    "batchSize",
+    "totalSegments",
+    "maxInFlightBatches",
+    "checkpointEveryPages",
+    "progressEveryRecords",
+  ])(
+    "throws ERR_DYNAMO_CRUD_CONFIG when '%s' is stored as a non-number (defensive)",
+    async (field) => {
+      const deps = buildDeps({
+        ...BASE_CONFIG,
+        [field]: "not-a-number",
+        operation: "get",
+        key: JSON.stringify({ id: "42" }),
+        output: "out.jsonl",
+      });
+
+      await expect(runDynamodbCrud(deps)).rejects.toMatchObject({
+        code: "ERR_DYNAMO_CRUD_CONFIG",
+      });
+      expect(getItemMock).not.toHaveBeenCalled();
+    },
+  );
+
+  test("throws ERR_DYNAMO_CRUD_CONFIG when 'resume' is stored as a non-boolean (defensive)", async () => {
+    const deps = buildDeps({
+      ...BASE_CONFIG,
+      resume: "yes",
+      operation: "get",
+      key: JSON.stringify({ id: "42" }),
+      output: "out.jsonl",
+    });
+
+    await expect(runDynamodbCrud(deps)).rejects.toMatchObject({
+      code: "ERR_DYNAMO_CRUD_CONFIG",
+    });
+    expect(getItemMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("runDynamodbCrud — destructive-operation gate", () => {

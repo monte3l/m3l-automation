@@ -21,32 +21,16 @@ interface SendSettings {
   readonly batchSize: number;
 }
 
-/**
- * Reads a required string parameter (`queueUrl`/`input`), throwing when it
- * is missing (never declared `required: true` — F1b — so per-command
- * requiredness is guard-checked here) or was stored as a non-string.
- *
- * @throws {@link Core.M3LError} coded `"ERR_SQS_ETL_CONFIG"`.
- */
-function readRequiredString(config: Core.M3LConfig, name: string): string {
-  const value: unknown = config.get(name);
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Core.M3LError(`'${name}' is required for 'send'`, {
-      code: "ERR_SQS_ETL_CONFIG",
-      context: { name },
-    });
-  }
-  return value;
-}
-
 /** Resolves and guard-checks every declared parameter `sendBatch` needs. */
 function resolveSettings(config: Core.M3LConfig): SendSettings {
-  const batchSizeRaw = config.get("batchSize");
+  const accessor = new Core.M3LConfigAccessor({
+    config,
+    code: "ERR_SQS_ETL_CONFIG",
+  });
   return {
-    queueUrl: readRequiredString(config, "queueUrl"),
-    input: readRequiredString(config, "input"),
-    batchSize:
-      typeof batchSizeRaw === "number" ? batchSizeRaw : DEFAULT_BATCH_SIZE,
+    queueUrl: accessor.requiredString("queueUrl", "send"),
+    input: accessor.requiredString("input", "send"),
+    batchSize: accessor.numberWithDefault("batchSize", DEFAULT_BATCH_SIZE),
   };
 }
 

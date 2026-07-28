@@ -44,28 +44,6 @@ interface RunSettings {
   readonly yes: boolean;
 }
 
-/** Reads a required non-empty string parameter, defensively re-checking its type. */
-function readString(config: Core.M3LConfig, name: string): string {
-  const value: unknown = config.get(name);
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Core.M3LError(`'${name}' must be a non-empty string`, {
-      code: "ERR_S3_OBJECTS_CONFIG",
-    });
-  }
-  return value;
-}
-
-/** Reads a required boolean parameter, defensively re-checking its type. */
-function readBool(config: Core.M3LConfig, name: string): boolean {
-  const value: unknown = config.get(name);
-  if (typeof value !== "boolean") {
-    throw new Core.M3LError(`'${name}' must be a boolean`, {
-      code: "ERR_S3_OBJECTS_CONFIG",
-    });
-  }
-  return value;
-}
-
 /** The five cross-parameter fields an operation's requirements are drawn from. */
 type GuardedFieldName =
   "key" | "output" | "input" | "sourceBucket" | "sourceKey";
@@ -123,7 +101,7 @@ function resolveSettings(config: Core.M3LConfig): RunSettings {
   });
 
   const operation = accessor.oneOf("operation", S3_OBJECTS_OPERATIONS);
-  const bucket = readString(config, "bucket");
+  const bucket = accessor.requiredString("bucket", operation);
   const key = accessor.optionalString("key");
   const prefix = accessor.optionalString("prefix");
   const pageSize = accessor.optionalNumber("pageSize");
@@ -132,7 +110,7 @@ function resolveSettings(config: Core.M3LConfig): RunSettings {
   const contentType = accessor.optionalString("contentType");
   const input = accessor.optionalString("input");
   const output = accessor.optionalString("output");
-  const yes = readBool(config, "yes");
+  const yes = accessor.requiredBoolean("yes", operation);
 
   applyOperationGuards(operation, {
     key,

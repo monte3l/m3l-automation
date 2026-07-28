@@ -470,4 +470,31 @@ describe("redriveQueue", () => {
       expect(receive).not.toHaveBeenCalled();
     },
   );
+
+  test("throws ERR_SQS_ETL_CONFIG when 'batchSize' is stored as a non-number (required-variant wrong-type rejection)", async () => {
+    stubOutputStreams();
+    const receive = vi.fn().mockResolvedValue([]);
+    const sqsOperations = createFakeSqsOperations({ receive });
+    const config = buildConfig({
+      queueUrl: "https://sqs.example/q",
+      dlqUrl: "https://sqs.example/dlq",
+      yes: true,
+      batchSize: "one-hundred",
+    });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+    const prompt = bypassPrompt();
+
+    await expect(
+      redriveQueue({
+        config,
+        paths,
+        logger,
+        correlationId: "run-batchsize-wrong-type",
+        sqsOperations,
+        prompt,
+      }),
+    ).rejects.toMatchObject({ code: "ERR_SQS_ETL_CONFIG" });
+    expect(receive).not.toHaveBeenCalled();
+  });
 });

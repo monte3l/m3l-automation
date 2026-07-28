@@ -211,4 +211,27 @@ describe("transformRecords", () => {
       expect(fsp.readFile).not.toHaveBeenCalled();
     },
   );
+
+  test("throws ERR_SQS_ETL_CONFIG when 'fields' is stored as a non-array (required-variant wrong-type rejection)", async () => {
+    stubInput("");
+    stubOutputStreams();
+    const config = buildConfig({
+      input: "in.jsonl",
+      output: "out.jsonl",
+      fields: 42,
+      filters: [],
+    });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+
+    await expect(
+      transformRecords({
+        config,
+        paths,
+        logger,
+        correlationId: "run-fields-wrong-type",
+      }),
+    ).rejects.toMatchObject({ code: "ERR_SQS_ETL_CONFIG" });
+    expect(fsp.readFile).not.toHaveBeenCalled();
+  });
 });

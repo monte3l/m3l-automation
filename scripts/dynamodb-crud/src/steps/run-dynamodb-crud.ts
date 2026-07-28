@@ -65,90 +65,6 @@ interface RunDynamodbCrudDeps {
 }
 
 /**
- * Reads the `operation` parameter, validating it against the declared set.
- * The declared `M3LConfigParameter`'s `oneOf` validator already enforces this
- * at config-load time in the real script; this defensive re-check protects a
- * caller (e.g. a test) that builds a `Core.M3LConfig` directly, bypassing
- * that validation.
- */
-function readOperation(config: Core.M3LConfig): DynamoOperation {
-  const value: unknown = config.get("operation");
-  if (
-    typeof value === "string" &&
-    (DYNAMO_OPERATIONS as readonly string[]).includes(value)
-  ) {
-    return value as DynamoOperation;
-  }
-  throw new Core.M3LError(
-    `'operation' must be one of: ${DYNAMO_OPERATIONS.join(", ")}`,
-    { code: "ERR_DYNAMO_CRUD_CONFIG" },
-  );
-}
-
-/** Reads the required `tableName` string parameter, defensively re-checking its type. */
-function readTableName(config: Core.M3LConfig): string {
-  const value: unknown = config.get("tableName");
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Core.M3LError("'tableName' must be a non-empty string", {
-      code: "ERR_DYNAMO_CRUD_CONFIG",
-    });
-  }
-  return value;
-}
-
-/** Reads a required numeric parameter, defensively re-checking its type. */
-function readNumber(config: Core.M3LConfig, name: string): number {
-  const value: unknown = config.get(name);
-  if (typeof value !== "number") {
-    throw new Core.M3LError(`'${name}' must be a number`, {
-      code: "ERR_DYNAMO_CRUD_CONFIG",
-    });
-  }
-  return value;
-}
-
-/** Reads an optional numeric parameter (`undefined` when unset). */
-function readOptionalNumber(
-  config: Core.M3LConfig,
-  name: string,
-): number | undefined {
-  const value: unknown = config.get(name);
-  if (value === undefined) return undefined;
-  if (typeof value !== "number") {
-    throw new Core.M3LError(`'${name}' must be a number`, {
-      code: "ERR_DYNAMO_CRUD_CONFIG",
-    });
-  }
-  return value;
-}
-
-/** Reads a required boolean parameter, defensively re-checking its type. */
-function readBool(config: Core.M3LConfig, name: string): boolean {
-  const value: unknown = config.get(name);
-  if (typeof value !== "boolean") {
-    throw new Core.M3LError(`'${name}' must be a boolean`, {
-      code: "ERR_DYNAMO_CRUD_CONFIG",
-    });
-  }
-  return value;
-}
-
-/** Reads an optional string parameter (`undefined` when unset). */
-function readOptionalString(
-  config: Core.M3LConfig,
-  name: string,
-): string | undefined {
-  const value: unknown = config.get(name);
-  if (value === undefined) return undefined;
-  if (typeof value !== "string") {
-    throw new Core.M3LError(`'${name}' must be a string`, {
-      code: "ERR_DYNAMO_CRUD_CONFIG",
-    });
-  }
-  return value;
-}
-
-/**
  * Parses a JSON-encoded `key`/`item` config string into a plain object. This
  * is the one place either field is ever parsed — every downstream step
  * receives an already-parsed object.
@@ -236,31 +152,44 @@ function applyOperationGuards(
  * checkable here.
  */
 function resolveSettings(config: Core.M3LConfig): RunSettings {
-  const operation = readOperation(config);
-  const tableName = readTableName(config);
-  const key = parseJSONField(readOptionalString(config, "key"), "key");
-  const item = parseJSONField(readOptionalString(config, "item"), "item");
-  const input = readOptionalString(config, "input");
-  const output = readOptionalString(config, "output");
+  const accessor = new Core.M3LConfigAccessor({
+    config,
+    code: "ERR_DYNAMO_CRUD_CONFIG",
+  });
+  const operation = accessor.oneOf("operation", DYNAMO_OPERATIONS);
+  const tableName = accessor.requiredString("tableName", operation);
+  const key = parseJSONField(accessor.optionalString("key"), "key");
+  const item = parseJSONField(accessor.optionalString("item"), "item");
+  const input = accessor.optionalString("input");
+  const output = accessor.optionalString("output");
 
   applyOperationGuards(operation, { key, item, input, output });
 
   return {
     operation,
     tableName,
-    batchSize: readNumber(config, "batchSize"),
-    totalSegments: readNumber(config, "totalSegments"),
-    maxPagesPerSecond: readOptionalNumber(config, "maxPagesPerSecond"),
-    maxInFlightBatches: readNumber(config, "maxInFlightBatches"),
-    checkpointEveryPages: readNumber(config, "checkpointEveryPages"),
-    runName: readOptionalString(config, "runName"),
-    resume: readBool(config, "resume"),
+    batchSize: accessor.requiredNumber("batchSize", operation),
+    totalSegments: accessor.requiredNumber("totalSegments", operation),
+    maxPagesPerSecond: accessor.optionalNumber("maxPagesPerSecond"),
+    maxInFlightBatches: accessor.requiredNumber(
+      "maxInFlightBatches",
+      operation,
+    ),
+    checkpointEveryPages: accessor.requiredNumber(
+      "checkpointEveryPages",
+      operation,
+    ),
+    runName: accessor.optionalString("runName"),
+    resume: accessor.requiredBoolean("resume", operation),
     key,
     item,
-    indexName: readOptionalString(config, "indexName"),
+    indexName: accessor.optionalString("indexName"),
     input,
     output,
-    progressEveryRecords: readNumber(config, "progressEveryRecords"),
+    progressEveryRecords: accessor.requiredNumber(
+      "progressEveryRecords",
+      operation,
+    ),
   };
 }
 
