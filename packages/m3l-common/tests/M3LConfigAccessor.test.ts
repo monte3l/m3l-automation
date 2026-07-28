@@ -20,6 +20,13 @@
  *  - `oneOf` narrows its return type to the literal union of `allowed`.
  *  - `requiredFor` only throws on `undefined` — `false`/`0`/`""`/`null` must
  *    all pass through unchanged (the classic falsiness-vs-undefined bug).
+ *  - `optionalNonEmptyString` treats an empty string the same as unset, but
+ *    still throws on a wrong-typed value (unlike a silent-drop local helper).
+ *  - `required*` methods (`requiredString`/`requiredNumber`/`requiredBoolean`/
+ *    `requiredStringArray`) compose the corresponding `optional*` reader with
+ *    `requiredFor`, so absent, wrong-typed, and (for string/array) empty
+ *    values all throw; `requiredStringArray` additionally rejects an empty
+ *    array.
  */
 
 import { describe, expect, expectTypeOf, test } from "vitest";
@@ -218,6 +225,43 @@ describe("optionalStringArray", () => {
 });
 
 // ---------------------------------------------------------------------------
+// optionalNonEmptyString
+// ---------------------------------------------------------------------------
+describe("optionalNonEmptyString", () => {
+  test("returns undefined when unset", () => {
+    const accessor = makeAccessor();
+    expect(accessor.optionalNonEmptyString("namePrefix")).toBeUndefined();
+  });
+
+  test("returns the string when set to a non-empty string", () => {
+    const config = new M3LConfig();
+    config.set("namePrefix", "svc-");
+    const accessor = makeAccessor(config);
+    expect(accessor.optionalNonEmptyString("namePrefix")).toBe("svc-");
+  });
+
+  test("returns undefined when set to an empty string (folded, not thrown)", () => {
+    const config = new M3LConfig();
+    config.set("namePrefix", "");
+    const accessor = makeAccessor(config);
+    expect(accessor.optionalNonEmptyString("namePrefix")).toBeUndefined();
+  });
+
+  test.each([42, true, null, [1, 2], { a: 1 }])(
+    "throws when set to %j (wrong type)",
+    (value) => {
+      const config = new M3LConfig();
+      config.set("namePrefix", value);
+      const accessor = makeAccessor(config);
+      expectM3LError(
+        () => accessor.optionalNonEmptyString("namePrefix"),
+        "'namePrefix' must be a string",
+      );
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
 // numberWithDefault
 // ---------------------------------------------------------------------------
 describe("numberWithDefault", () => {
@@ -384,5 +428,170 @@ describe("requiredFor", () => {
         accessor.requiredFor<string | undefined>(maybe, "n", "op"),
       ).toEqualTypeOf<string>();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// requiredString
+// ---------------------------------------------------------------------------
+describe("requiredString", () => {
+  test("returns the string when set to a non-empty string", () => {
+    const config = new M3LConfig();
+    config.set("queueUrl", "https://example.test/q");
+    const accessor = makeAccessor(config);
+    expect(accessor.requiredString("queueUrl", "dump")).toBe(
+      "https://example.test/q",
+    );
+  });
+
+  test("throws when unset", () => {
+    const accessor = makeAccessor();
+    expectM3LError(
+      () => accessor.requiredString("queueUrl", "dump"),
+      "'queueUrl' is required for operation 'dump'",
+    );
+  });
+
+  test("throws when set to an empty string", () => {
+    const config = new M3LConfig();
+    config.set("queueUrl", "");
+    const accessor = makeAccessor(config);
+    expectM3LError(
+      () => accessor.requiredString("queueUrl", "dump"),
+      "'queueUrl' is required for operation 'dump'",
+    );
+  });
+
+  test("throws when set to a non-string", () => {
+    const config = new M3LConfig();
+    config.set("queueUrl", 42);
+    const accessor = makeAccessor(config);
+    expectM3LError(
+      () => accessor.requiredString("queueUrl", "dump"),
+      "'queueUrl' must be a string",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// requiredNumber
+// ---------------------------------------------------------------------------
+describe("requiredNumber", () => {
+  test("returns the number when set, including 0", () => {
+    const config = new M3LConfig();
+    config.set("windowMinutes", 0);
+    const accessor = makeAccessor(config);
+    expect(accessor.requiredNumber("windowMinutes", "query")).toBe(0);
+  });
+
+  test("throws when unset", () => {
+    const accessor = makeAccessor();
+    expectM3LError(
+      () => accessor.requiredNumber("windowMinutes", "query"),
+      "'windowMinutes' is required for operation 'query'",
+    );
+  });
+
+  test("throws when set to a non-number", () => {
+    const config = new M3LConfig();
+    config.set("windowMinutes", "5");
+    const accessor = makeAccessor(config);
+    expectM3LError(
+      () => accessor.requiredNumber("windowMinutes", "query"),
+      "'windowMinutes' must be a number",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// requiredBoolean
+// ---------------------------------------------------------------------------
+describe("requiredBoolean", () => {
+  test("returns the boolean when set, including false", () => {
+    const config = new M3LConfig();
+    config.set("confirmed", false);
+    const accessor = makeAccessor(config);
+    expect(accessor.requiredBoolean("confirmed", "delete")).toBe(false);
+  });
+
+  test("throws when unset", () => {
+    const accessor = makeAccessor();
+    expectM3LError(
+      () => accessor.requiredBoolean("confirmed", "delete"),
+      "'confirmed' is required for operation 'delete'",
+    );
+  });
+
+  test("throws when set to a non-boolean", () => {
+    const config = new M3LConfig();
+    config.set("confirmed", "yes");
+    const accessor = makeAccessor(config);
+    expectM3LError(
+      () => accessor.requiredBoolean("confirmed", "delete"),
+      "'confirmed' must be a boolean",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// requiredStringArray
+// ---------------------------------------------------------------------------
+describe("requiredStringArray", () => {
+  test("returns the array when set to a non-empty string array", () => {
+    const config = new M3LConfig();
+    config.set("logGroups", ["a", "b"]);
+    const accessor = makeAccessor(config);
+    expect(accessor.requiredStringArray("logGroups", "query")).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  test("throws when unset", () => {
+    const accessor = makeAccessor();
+    expectM3LError(
+      () => accessor.requiredStringArray("logGroups", "query"),
+      "'logGroups' is required for operation 'query'",
+    );
+  });
+
+  test("throws when set to an empty array", () => {
+    const config = new M3LConfig();
+    config.set("logGroups", []);
+    const accessor = makeAccessor(config);
+    expectM3LError(
+      () => accessor.requiredStringArray("logGroups", "query"),
+      "'logGroups' is required for operation 'query'",
+    );
+  });
+
+  test("throws when set to an empty comma-separated string (folds to an empty array)", () => {
+    const config = new M3LConfig();
+    config.set("logGroups", "");
+    const accessor = makeAccessor(config);
+    expectM3LError(
+      () => accessor.requiredStringArray("logGroups", "query"),
+      "'logGroups' is required for operation 'query'",
+    );
+  });
+
+  test("throws when set to a non-string-array", () => {
+    const config = new M3LConfig();
+    config.set("logGroups", 42);
+    const accessor = makeAccessor(config);
+    expectM3LError(
+      () => accessor.requiredStringArray("logGroups", "query"),
+      "'logGroups' must be a string array",
+    );
+  });
+
+  test("throws when set to an array with a non-string element", () => {
+    const config = new M3LConfig();
+    config.set("logGroups", [1, 2]);
+    const accessor = makeAccessor(config);
+    expectM3LError(
+      () => accessor.requiredStringArray("logGroups", "query"),
+      "'logGroups' must be a string array",
+    );
   });
 });
