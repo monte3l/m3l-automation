@@ -87,6 +87,13 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 | **F8** | P0       | Done     | Preset seam: \`M3LScriptOptions.preset\` is wired at precedence level 6                                            | **PR:** #106. json-etl log F8 |
 | **F7** | P2       | Deferred | Opt-in \`onUnknownFormat: "throw" \\| "skip"\` tolerant per-record import on \`M3LJSONListImporter\`                  | json-etl log F7       |
 
+## ADR-0035 rollout — failure reporting & diagnostics
+
+| Phase  | Priority | Status   | Change                          | Source / notes    |
+| ------ | -------- | -------- | -------------------------------- | -------------------- |
+| **A1** | P0       | Done     | \`core/diagnostics\` submodule    | **PR:** #212.         |
+| **A7** | P2       | Rejected | Residual free-text redaction gaps | Accepted per ADR update |
+
 ## AWS getter reality
 
 | Provider getter | AWS service (ADR-0028 name) | Status | Wrapper submodule       | Consuming script(s)  | ADR / precedent                 |
@@ -534,6 +541,20 @@ describe("extractImplementation", () => {
     expect(result.gated?.rows).toHaveLength(2);
     expect(result.errors).toEqual([]);
   });
+
+  test("adr0035Rollout rows are accessible by columnIndex", () => {
+    const result = extractImplementation(IMPLEMENTATION_FIXTURE);
+    expect(result.adr0035Rollout).not.toBeNull();
+    const header = result.adr0035Rollout?.header ?? [];
+    const phaseIndex = columnIndex(header, "Phase");
+    const statusIndex = columnIndex(header, "Status");
+    expect(result.adr0035Rollout?.rows).toHaveLength(2);
+    const a7Row = result.adr0035Rollout?.rows.find(
+      (row) => row[phaseIndex] === "**A7**",
+    );
+    expect(a7Row).toBeDefined();
+    expect(a7Row?.[statusIndex]).toBe("Rejected");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -730,6 +751,7 @@ describe("renderHubPage", () => {
           ],
         ],
       },
+      adr0035Rollout: { header: [], rows: [] },
       getterReality: { header: [], rows: [] },
       gated: { header: [], rows: [] },
       errors: [],
