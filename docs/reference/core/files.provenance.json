@@ -49,9 +49,14 @@
           "file": "packages/m3l-common/src/core/files/M3LFileCopyError.ts",
           "symbol": "M3LFileCopyError",
           "blob": "8603d0a905add5662c50ce2d670ba95673e64898"
+        },
+        {
+          "file": "packages/m3l-common/src/core/files/M3LInputFileReader.ts",
+          "symbol": "M3LInputFileReader",
+          "blob": "7fa0406eb43120f2b0ef5db7a2fb2e80f242f659"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-07-28"
     },
     {
       "heading": "Methods",
@@ -63,6 +68,22 @@
         }
       ],
       "retrieved": "2026-07-11"
+    },
+    {
+      "heading": "Reading an input file (`M3LInputFileReader`)",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/files/M3LInputFileReader.ts",
+          "symbol": "M3LInputFileReader",
+          "blob": "7fa0406eb43120f2b0ef5db7a2fb2e80f242f659"
+        },
+        {
+          "file": "packages/m3l-common/src/core/files/M3LInputFileReader.ts",
+          "symbol": "M3LInputFileReaderOptions",
+          "blob": "7fa0406eb43120f2b0ef5db7a2fb2e80f242f659"
+        }
+      ],
+      "retrieved": "2026-07-28"
     },
     {
       "heading": "Default subdirectory for a path type",

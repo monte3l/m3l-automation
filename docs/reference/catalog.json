@@ -65,7 +65,9 @@
       "M3LConfigValidator",
       "M3LConfigValidators",
       "M3LConfigValidationError",
-      "M3LConfigMissingError"
+      "M3LConfigMissingError",
+      "M3LConfigAccessor",
+      "M3LConfigAccessorOptions"
     ]
   },
   {
@@ -225,7 +227,9 @@
       "M3LFileCopySkipReason",
       "M3LFileCopyReport",
       "M3LFileCopyReportSummary",
-      "M3LFileCopyError"
+      "M3LFileCopyError",
+      "M3LInputFileReader",
+      "M3LInputFileReaderOptions"
     ]
   },
   {

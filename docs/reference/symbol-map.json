@@ -194,6 +194,16 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/config/M3LConfigMissingError.ts"
   },
+  "M3LConfigAccessor": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigAccessor.ts"
+  },
+  "M3LConfigAccessorOptions": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigAccessor.ts"
+  },
   "M3L_EXIT_CODES": {
     "submodule": "diagnostics",
     "namespace": "core",
@@ -786,6 +796,16 @@
     "submodule": "files",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/files/M3LFileCopyError.ts"
+  },
+  "M3LInputFileReader": {
+    "submodule": "files",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/files/M3LInputFileReader.ts"
+  },
+  "M3LInputFileReaderOptions": {
+    "submodule": "files",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/files/M3LInputFileReader.ts"
   },
   "M3LFileImporter": {
     "submodule": "importers",
