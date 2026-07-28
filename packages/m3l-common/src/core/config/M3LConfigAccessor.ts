@@ -196,6 +196,26 @@ export class M3LConfigAccessor {
   }
 
   /**
+   * Reads an optional string parameter, treating an empty string the same
+   * as unset. Unlike {@link optionalString}, an empty string never survives
+   * as a value — this is the seam for scripts whose config schema cannot
+   * express "non-empty when present" declaratively.
+   *
+   * @param name - The parameter name.
+   * @returns The non-empty string, or `undefined` when unset or empty.
+   * @throws {@link M3LError} When `name` is set to a non-string value.
+   *
+   * @example
+   * ```ts
+   * accessor.optionalNonEmptyString("namePrefix"); // "svc-" | undefined
+   * ```
+   */
+  optionalNonEmptyString(name: string): string | undefined {
+    const value = this.optionalString(name);
+    return value === undefined || value.length === 0 ? undefined : value;
+  }
+
+  /**
    * Reads a number parameter, falling back to `defaultValue` when unset.
    * Uses `??` semantics — a set value of `0` wins over the default.
    *
@@ -295,5 +315,91 @@ export class M3LConfigAccessor {
       });
     }
     return value as Exclude<T, undefined>;
+  }
+
+  /**
+   * Reads a required string parameter. Composes {@link optionalNonEmptyString}
+   * with {@link requiredFor}, so absent, empty, and wrong-typed values all
+   * throw — replacing every script-local `readRequiredString`/`requireString`
+   * helper.
+   *
+   * @param name - The parameter name.
+   * @param operation - The operation requiring this value, for the thrown
+   *   message.
+   * @returns The non-empty stored string.
+   * @throws {@link M3LError} When `name` is unset, empty, or not a string.
+   *
+   * @example
+   * ```ts
+   * accessor.requiredString("queueUrl", "dump"); // throws if unset/empty
+   * ```
+   */
+  requiredString(name: string, operation: string): string {
+    return this.requiredFor(this.optionalNonEmptyString(name), name, operation);
+  }
+
+  /**
+   * Reads a required number parameter. Composes {@link optionalNumber} with
+   * {@link requiredFor}.
+   *
+   * @param name - The parameter name.
+   * @param operation - The operation requiring this value, for the thrown
+   *   message.
+   * @returns The stored number.
+   * @throws {@link M3LError} When `name` is unset or not a number.
+   *
+   * @example
+   * ```ts
+   * accessor.requiredNumber("windowMinutes", "query"); // throws if unset
+   * ```
+   */
+  requiredNumber(name: string, operation: string): number {
+    return this.requiredFor(this.optionalNumber(name), name, operation);
+  }
+
+  /**
+   * Reads a required boolean parameter. Composes {@link optionalBoolean}
+   * with {@link requiredFor}.
+   *
+   * @param name - The parameter name.
+   * @param operation - The operation requiring this value, for the thrown
+   *   message.
+   * @returns The stored boolean.
+   * @throws {@link M3LError} When `name` is unset or not a boolean.
+   *
+   * @example
+   * ```ts
+   * accessor.requiredBoolean("confirmed", "delete"); // throws if unset
+   * ```
+   */
+  requiredBoolean(name: string, operation: string): boolean {
+    return this.requiredFor(this.optionalBoolean(name), name, operation);
+  }
+
+  /**
+   * Reads a required string-array parameter. Composes
+   * {@link optionalStringArray} with {@link requiredFor}, and additionally
+   * rejects an empty array — an array parameter that is required but empty
+   * is treated the same as unset.
+   *
+   * @param name - The parameter name.
+   * @param operation - The operation requiring this value, for the thrown
+   *   message.
+   * @returns The non-empty stored string array.
+   * @throws {@link M3LError} When `name` is unset, empty, or not a string
+   *   array.
+   *
+   * @example
+   * ```ts
+   * accessor.requiredStringArray("logGroups", "query"); // throws if unset/empty
+   * ```
+   */
+  requiredStringArray(name: string, operation: string): readonly string[] {
+    const value = this.optionalStringArray(name);
+    return this.requiredFor(
+      value !== undefined && value.length > 0 ? value : undefined,
+      name,
+      operation,
+    );
   }
 }

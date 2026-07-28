@@ -270,6 +270,7 @@ export class M3LConfigAccessor {
   optionalNumber(name: string): number | undefined;
   optionalBoolean(name: string): boolean | undefined;
   optionalStringArray(name: string): readonly string[] | undefined;
+  optionalNonEmptyString(name: string): string | undefined;
   numberWithDefault(name: string, defaultValue: number): number;
   booleanWithDefault(name: string, defaultValue: boolean): boolean;
   oneOf<T extends string>(name: string, allowed: readonly T[]): T;
@@ -278,6 +279,10 @@ export class M3LConfigAccessor {
     name: string,
     operation: string,
   ): Exclude<T, undefined>;
+  requiredString(name: string, operation: string): string;
+  requiredNumber(name: string, operation: string): number;
+  requiredBoolean(name: string, operation: string): boolean;
+  requiredStringArray(name: string, operation: string): readonly string[];
 }
 ```
 
@@ -311,6 +316,10 @@ export class M3LConfigAccessor {
   this at config-load time in a script driven through
   `M3LScript.getConfiguration()`; `oneOf` here protects a caller that builds
   an `M3LConfig` directly, bypassing that validation.
+- **`optionalNonEmptyString(name)`** — like `optionalString`, but also folds
+  an empty string to `undefined` (an empty string is treated the same as
+  unset). Still throws `M3LError` on a wrong-typed value — it never silently
+  drops a non-string the way a hand-written local helper might.
 - **`requiredFor(value, name, operation)`** — the per-operation
   cross-parameter guard: returns `value` unchanged, narrowed to
   `Exclude<T, undefined>` (so `null`/`false`/`0`/`""` all pass through and
@@ -319,6 +328,27 @@ export class M3LConfigAccessor {
   `'${name}' is required for operation '${operation}'`) when `value` is
   `undefined`. Generic over `value`'s type, so it composes after any of the
   readers above (a required string, a required already-parsed record, etc.).
+- **`requiredString` / `requiredNumber` / `requiredBoolean` /
+  `requiredStringArray`** — the required-variant family, each composing its
+  corresponding `optional*` reader with `requiredFor` so a single call covers
+  absent, wrong-typed, and (for the string and array variants) empty values:
+  - `requiredString(name, operation)` — `requiredFor(optionalNonEmptyString(name), name, operation)`.
+    Throws on unset, empty, or non-string.
+  - `requiredNumber(name, operation)` — `requiredFor(optionalNumber(name), name, operation)`.
+    Throws on unset or non-number.
+  - `requiredBoolean(name, operation)` — `requiredFor(optionalBoolean(name), name, operation)`.
+    Throws on unset or non-boolean.
+  - `requiredStringArray(name, operation)` — reads via `optionalStringArray`,
+    folding an empty array to `undefined` before a single `requiredFor` call
+    (mirroring `requiredString`'s empty-folding shape) — an empty array is
+    treated the same as unset, throwing the same
+    `'${name}' is required for operation '${operation}'` message. Throws on
+    unset, empty, or a value that is not a string array.
+
+  These replace the `readRequiredString`/`readBool`/`readNumber`-shaped
+  per-script helpers the W5 promotion pass found duplicated across
+  `dynamodb-crud`/`api-gateway-client`/`sqs-etl`/`s3-objects`/`json-etl` and
+  the `athena-query`/`cloudwatch-logs-insights` `as*(value, name)` narrowers.
 
 Every method throws the base `M3LError` class with `options.code` — there is
 no dedicated `M3LConfigAccessor`-specific error subclass, since the caller
