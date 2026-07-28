@@ -1,7 +1,7 @@
 # W5 — config-accessor / input-file-reader fleet retrofit (2026-07-28)
 
 **Status: shipped** — PR 1 (`feat/core-config-read-helpers`, #260) and PR 2
-(`refactor/config-accessor-fleet-retrofit`, this PR)
+(`refactor/config-accessor-fleet-retrofit`, #261)
 
 ## Context
 
