@@ -273,7 +273,11 @@ export class M3LConfigAccessor {
   numberWithDefault(name: string, defaultValue: number): number;
   booleanWithDefault(name: string, defaultValue: boolean): boolean;
   oneOf<T extends string>(name: string, allowed: readonly T[]): T;
-  requiredFor<T>(value: T | undefined, name: string, operation: string): T;
+  requiredFor<T>(
+    value: T | undefined,
+    name: string,
+    operation: string,
+  ): Exclude<T, undefined>;
 }
 ```
 
@@ -308,11 +312,13 @@ export class M3LConfigAccessor {
   `M3LScript.getConfiguration()`; `oneOf` here protects a caller that builds
   an `M3LConfig` directly, bypassing that validation.
 - **`requiredFor(value, name, operation)`** — the per-operation
-  cross-parameter guard: returns `value` unchanged, or throws `M3LError`
-  (message `'${name}' is required for operation '${operation}'`) when
-  `value` is `undefined`. Generic over `value`'s type, so it composes after
-  any of the readers above (a required string, a required already-parsed
-  record, etc.).
+  cross-parameter guard: returns `value` unchanged, narrowed to
+  `Exclude<T, undefined>` (so `null`/`false`/`0`/`""` all pass through and
+  narrow correctly — only `undefined` is excluded, `NonNullable` would wrongly
+  also strip `null`), or throws `M3LError` (message
+  `'${name}' is required for operation '${operation}'`) when `value` is
+  `undefined`. Generic over `value`'s type, so it composes after any of the
+  readers above (a required string, a required already-parsed record, etc.).
 
 Every method throws the base `M3LError` class with `options.code` — there is
 no dedicated `M3LConfigAccessor`-specific error subclass, since the caller

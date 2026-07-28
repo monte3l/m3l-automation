@@ -124,9 +124,30 @@
           "file": "packages/m3l-common/src/core/config/M3LConfigMissingError.ts",
           "symbol": "M3LConfigMissingError",
           "blob": "d2c6486bb9c6e7c0051bbceee332c05f19cb522b"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigAccessor.ts",
+          "symbol": "M3LConfigAccessor",
+          "blob": "c1eda36cc20e4c2b9e23eef97f9d9cc54a397d48"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-07-28"
+    },
+    {
+      "heading": "Defensive typed reads (`M3LConfigAccessor`)",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigAccessor.ts",
+          "symbol": "M3LConfigAccessor",
+          "blob": "c1eda36cc20e4c2b9e23eef97f9d9cc54a397d48"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigAccessor.ts",
+          "symbol": "M3LConfigAccessorOptions",
+          "blob": "c1eda36cc20e4c2b9e23eef97f9d9cc54a397d48"
+        }
+      ],
+      "retrieved": "2026-07-28"
     },
     {
       "heading": "Schema-time validation",

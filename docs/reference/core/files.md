@@ -87,8 +87,8 @@ export class M3LInputFileReader {
   constructor(options: M3LInputFileReaderOptions);
   readText(name: string): Promise<string>;
   readJSON(name: string): Promise<unknown>;
-  readJSONRecord(name: string): Promise<Record<string, unknown>>;
-  asRecord(value: unknown, name: string): Record<string, unknown>;
+  readJSONRecord(name: string): Promise<Readonly<Record<string, unknown>>>;
+  asRecord(value: unknown, name: string): Readonly<Record<string, unknown>>;
 }
 ```
 
@@ -115,9 +115,18 @@ export class M3LInputFileReader {
   `asRecord`; the common case for a config file that must decode to a
   top-level JSON object.
 - **`asRecord(value, name)`** — narrows an already-parsed JSON value to a
-  plain object, throwing `M3LError` (`options.code`, message
-  `'${name}' must decode to a JSON object`) for `null`, an array, or any
-  non-object value.
+  `Readonly<Record<string, unknown>>`, throwing `M3LError` (`options.code`,
+  message `'${name}' must decode to a JSON object`) for `null`, an array, or
+  any non-object value. Also screens every **top-level** key with the same
+  prototype-pollution guard `core/config`'s providers use
+  (`isDangerousKey` — see [security](./security.md)): a `__proto__`,
+  `constructor`, or `prototype` own key throws `M3LError` (`options.code`,
+  message `'${name}' contains an unsafe key`) rather than being returned,
+  since the caller could otherwise pollute `Object.prototype` via a later
+  `Object.assign`/deep-merge over the returned record. Only the first level
+  of keys is screened — a dangerous key nested inside a safe top-level value
+  is not detected, the same documented limitation as
+  `internal/config/buildSafeValueMap`.
 
 ### Example
 
@@ -149,3 +158,4 @@ const record = await input.readJSONRecord("input");
 - [environment](./environment.md) — deployment mode drives the directory layout.
 - [importers](./importers.md) / [exporters](./exporters.md) — the files typically archived after a run.
 - [config](./config.md) — `M3LConfigAccessor` pairs with `M3LInputFileReader` for input-file `name` parameters resolved through config.
+- [security](./security.md) — `isDangerousKey`, the prototype-pollution guard `asRecord` screens with.
