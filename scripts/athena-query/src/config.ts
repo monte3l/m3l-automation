@@ -15,8 +15,8 @@ import { Core } from "@m3l-automation/m3l-common";
  * non-windowed query, so there are no cross-parameter/format checks beyond
  * what the per-parameter validators already express. `steps/resolve-settings.ts`
  * still narrows the resolved `M3LConfig` into a typed `AthenaQuerySettings`
- * (via `resolveAthenaSettings`), throwing `AthenaSettingsError`
- * (`ERR_ATHENA_SETTINGS`) if a declared value resolves to an unexpected type.
+ * (via `resolveAthenaSettings`), throwing a bare `Core.M3LError` coded
+ * `ERR_ATHENA_SETTINGS` if a declared value resolves to an unexpected type.
  *
  * Declaring `Core.AWS_PROFILE_PARAM_NAME` (`aws.profile`) is the sole
  * trigger for `M3LScript` to provision `script.aws` (stage 5), exposing

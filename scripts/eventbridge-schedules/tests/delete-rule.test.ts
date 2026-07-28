@@ -8,7 +8,8 @@ import { deleteRule } from "../src/steps/delete-rule.js";
 /**
  * Contract: docs/reference/scripts/eventbridge-schedules.md `delete-rule`
  * row. Guard-resolves `ruleName`; reads optional `eventBusName`; reads
- * `force` as `config.get("force") === true` (defaults to `false`); calls
+ * `force` via `Core.M3LConfigAccessor.booleanWithDefault("force", false)`
+ * (throws on a wrong-typed value); calls
  * `eventBridgeOperations.deleteRule(ruleName, { eventBusName?, force })`.
  * A rejection from `deleteRule` propagates unchanged.
  */
@@ -61,7 +62,7 @@ describe("deleteRule", () => {
       "ERR_EVENTBRIDGE_SCHEDULES_CONFIG",
     );
     expect((thrown as Core.M3LError).message).toContain(
-      "'ruleName' is required for 'delete'",
+      "'ruleName' is required for operation 'delete'",
     );
     // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to AWS.M3LEventBridgeOperations; property is a vi.fn(), never called unbound
     expect(eventBridgeOperations.deleteRule).not.toHaveBeenCalled();
@@ -145,5 +146,26 @@ describe("deleteRule", () => {
     }
 
     expect(thrown).toBe(operationError);
+  });
+
+  test("throws ERR_EVENTBRIDGE_SCHEDULES_CONFIG when 'force' is stored as a non-boolean (silent-default-to-false regression)", async () => {
+    const deleteRuleMock = vi.fn();
+    const eventBridgeOperations = createFakeEventBridgeOperations({
+      deleteRule: deleteRuleMock,
+    });
+    const config = buildConfig({ ruleName: "nightly-report", force: "yes" });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+
+    await expect(
+      deleteRule({
+        config,
+        paths,
+        logger,
+        correlationId: "run-5",
+        eventBridgeOperations,
+      }),
+    ).rejects.toMatchObject({ code: "ERR_EVENTBRIDGE_SCHEDULES_CONFIG" });
+    expect(deleteRuleMock).not.toHaveBeenCalled();
   });
 });

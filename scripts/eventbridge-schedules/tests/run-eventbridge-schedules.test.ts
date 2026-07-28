@@ -244,6 +244,31 @@ describe("runEventbridgeSchedules dispatch", () => {
     },
   );
 
+  test("throws ERR_EVENTBRIDGE_SCHEDULES_CONFIG when 'yes' is stored as a non-boolean (silent-default-to-false regression)", async () => {
+    const config = buildConfig({
+      operation: "delete",
+      ruleName: "nightly-cleanup",
+      yes: "yep",
+    });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+    const eventBridgeOperations = createFakeEventBridgeOperations();
+    const prompt = new Core.M3LPrompt();
+
+    await expect(
+      runEventbridgeSchedules({
+        config,
+        paths,
+        logger,
+        correlationId: "run-4b",
+        eventBridgeOperations,
+        prompt,
+      }),
+    ).rejects.toMatchObject({ code: "ERR_EVENTBRIDGE_SCHEDULES_CONFIG" });
+    expect(destructiveGateMock).not.toHaveBeenCalled();
+    expect(deleteRuleMock).not.toHaveBeenCalled();
+  });
+
   test.each([
     ["list", listRulesMock],
     ["describe", describeRuleMock],

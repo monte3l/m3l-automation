@@ -86,7 +86,11 @@ open `string`, not a closed union — exactly like `api-gateway-client`'s
 - `ERR_EVENTBRIDGE_SCHEDULES_CONFIG` — a guard-checked config requirement was
   unmet (missing `ruleName`, missing/both-set `eventPattern`/
   `scheduleExpression`, malformed `targets` JSON, or an unrecognized
-  `operation`).
+  `operation`) — or a declared parameter present but stored with the wrong
+  type (`ruleName`/`eventBusName`/`namePrefix`/`output`/`eventPattern`/
+  `scheduleExpression`/`state`/`description`/`roleArn`/`targets`/`force`/`yes`
+  non-string or non-boolean, as applicable), via `Core.M3LConfigAccessor`'s
+  fail-loud reads (see [`core/config`](../core/config.md)).
 - `ERR_EVENTBRIDGE_SCHEDULES_ABORTED` — the destructive-gate confirmation was
   declined.
 - `ERR_EVENTBRIDGE_SCHEDULES_NO_CORRELATION_ID` — thrown by

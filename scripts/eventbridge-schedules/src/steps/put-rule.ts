@@ -1,11 +1,7 @@
 import type { AWS } from "@m3l-automation/m3l-common";
 import { Core } from "@m3l-automation/m3l-common";
 
-import {
-  CONFIG_ERROR_CODE,
-  readOptionalString,
-  readRequiredRuleName,
-} from "./config-helpers.js";
+import { CONFIG_ERROR_CODE } from "./config-helpers.js";
 
 /** The two `putRuleStep` operations, echoed into every guard's error message. */
 type PutRuleOperation = "create" | "update";
@@ -26,11 +22,12 @@ type RuleDiscriminant =
  *   both or neither is set.
  */
 function readRuleDiscriminant(
-  config: Core.M3LConfig,
+  accessor: Core.M3LConfigAccessor,
   operation: PutRuleOperation,
 ): RuleDiscriminant {
-  const eventPattern = readOptionalString(config, "eventPattern");
-  const scheduleExpression = readOptionalString(config, "scheduleExpression");
+  const eventPattern = accessor.optionalNonEmptyString("eventPattern");
+  const scheduleExpression =
+    accessor.optionalNonEmptyString("scheduleExpression");
 
   if ((eventPattern === undefined) === (scheduleExpression === undefined)) {
     throw new Core.M3LError(
@@ -53,13 +50,15 @@ interface RuleOptionalFields {
 }
 
 /** Reads the optional `state`/`description`/`roleArn`/`eventBusName` fields shared by both `putRule` discriminant branches. */
-function readOptionalRuleFields(config: Core.M3LConfig): RuleOptionalFields {
-  const state = readOptionalString(config, "state");
+function readOptionalRuleFields(
+  accessor: Core.M3LConfigAccessor,
+): RuleOptionalFields {
+  const state = accessor.optionalNonEmptyString("state");
   return {
     state: state as AWS.M3LEventBridgeRuleState | undefined,
-    description: readOptionalString(config, "description"),
-    roleArn: readOptionalString(config, "roleArn"),
-    eventBusName: readOptionalString(config, "eventBusName"),
+    description: accessor.optionalNonEmptyString("description"),
+    roleArn: accessor.optionalNonEmptyString("roleArn"),
+    eventBusName: accessor.optionalNonEmptyString("eventBusName"),
   };
 }
 
@@ -159,14 +158,14 @@ function parseTargets(raw: string): readonly AWS.M3LEventBridgeTarget[] {
  */
 async function attachTargetsIfConfigured(
   deps: {
-    readonly config: Core.M3LConfig;
     readonly logger: Core.M3LLogger;
     readonly eventBridgeOperations: AWS.M3LEventBridgeOperations;
   },
+  accessor: Core.M3LConfigAccessor,
   ruleName: string,
   eventBusName: string | undefined,
 ): Promise<void> {
-  const rawTargets = readOptionalString(deps.config, "targets");
+  const rawTargets = accessor.optionalNonEmptyString("targets");
   if (rawTargets === undefined) return;
 
   const targets = parseTargets(rawTargets);
@@ -230,14 +229,23 @@ export async function putRuleStep(
   },
   operation: PutRuleOperation,
 ): Promise<void> {
-  const ruleName = readRequiredRuleName(deps.config, operation);
-  const discriminant = readRuleDiscriminant(deps.config, operation);
-  const optional = readOptionalRuleFields(deps.config);
+  const accessor = new Core.M3LConfigAccessor({
+    config: deps.config,
+    code: CONFIG_ERROR_CODE,
+  });
+  const ruleName = accessor.requiredString("ruleName", operation);
+  const discriminant = readRuleDiscriminant(accessor, operation);
+  const optional = readOptionalRuleFields(accessor);
 
   const input = buildPutRuleInput(ruleName, discriminant, optional);
   const { ruleArn } = await deps.eventBridgeOperations.putRule(input);
 
-  await attachTargetsIfConfigured(deps, ruleName, optional.eventBusName);
+  await attachTargetsIfConfigured(
+    deps,
+    accessor,
+    ruleName,
+    optional.eventBusName,
+  );
 
   deps.logger.step(
     `eventbridge-schedules run ${deps.correlationId} '${operation}'d rule '${ruleName}'`,

@@ -1,7 +1,7 @@
 import type { AWS } from "@m3l-automation/m3l-common";
 import { Core } from "@m3l-automation/m3l-common";
 
-import { readOptionalString, readRequiredRuleName } from "./config-helpers.js";
+import { CONFIG_ERROR_CODE } from "./config-helpers.js";
 
 /**
  * `eventbridge-schedules`'s `describe` operation: fetches one rule's full
@@ -37,9 +37,13 @@ export async function describeRule(deps: {
   readonly correlationId: string;
   readonly eventBridgeOperations: AWS.M3LEventBridgeOperations;
 }): Promise<void> {
-  const ruleName = readRequiredRuleName(deps.config, "describe");
-  const eventBusName = readOptionalString(deps.config, "eventBusName");
-  const output = readOptionalString(deps.config, "output");
+  const accessor = new Core.M3LConfigAccessor({
+    config: deps.config,
+    code: CONFIG_ERROR_CODE,
+  });
+  const ruleName = accessor.requiredString("ruleName", "describe");
+  const eventBusName = accessor.optionalNonEmptyString("eventBusName");
+  const output = accessor.optionalNonEmptyString("output");
 
   const detail = await deps.eventBridgeOperations.describeRule(ruleName, {
     ...(eventBusName !== undefined && { eventBusName }),

@@ -1,9 +1,7 @@
-import type { AWS, Core } from "@m3l-automation/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
+import type { AWS } from "@m3l-automation/m3l-common";
 
-import {
-  readOptionalEventBusName,
-  readRequiredRuleName,
-} from "./config-helpers.js";
+import { CONFIG_ERROR_CODE } from "./config-helpers.js";
 
 /**
  * `delete-rule` — deletes the EventBridge rule named by the config-declared
@@ -47,9 +45,13 @@ export async function deleteRule(deps: {
   readonly correlationId: string;
   readonly eventBridgeOperations: AWS.M3LEventBridgeOperations;
 }): Promise<void> {
-  const ruleName = readRequiredRuleName(deps.config, "delete");
-  const eventBusName = readOptionalEventBusName(deps.config);
-  const force = deps.config.get("force") === true;
+  const accessor = new Core.M3LConfigAccessor({
+    config: deps.config,
+    code: CONFIG_ERROR_CODE,
+  });
+  const ruleName = accessor.requiredString("ruleName", "delete");
+  const eventBusName = accessor.optionalNonEmptyString("eventBusName");
+  const force = accessor.booleanWithDefault("force", false);
 
   await deps.eventBridgeOperations.deleteRule(ruleName, {
     ...(eventBusName !== undefined && { eventBusName }),

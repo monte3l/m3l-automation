@@ -85,6 +85,19 @@ describe("resolveAthenaSettings", () => {
     expect((thrown as Core.M3LError).code).toBe("ERR_ATHENA_SETTINGS");
   });
 
+  it("throws ERR_ATHENA_SETTINGS when 'queryString' is stored as an empty string (required-variant empty rejection)", () => {
+    const config = buildConfig({ ...VALID_VALUES, queryString: "" });
+
+    let thrown: unknown;
+    try {
+      resolveAthenaSettings(config);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    expect((thrown as Core.M3LError).code).toBe("ERR_ATHENA_SETTINGS");
+  });
+
   it("throws ERR_ATHENA_SETTINGS when an optional string field resolves to a non-string value", () => {
     const config = buildConfig({ ...VALID_VALUES, database: 42 });
 
@@ -98,13 +111,21 @@ describe("resolveAthenaSettings", () => {
     expect((thrown as Core.M3LError).code).toBe("ERR_ATHENA_SETTINGS");
   });
 
-  it("throws ERR_ATHENA_SETTINGS when 'executionParameters' resolves to a non-array value", () => {
+  it("throws ERR_ATHENA_SETTINGS when 'executionParameters' resolves to a non-array, non-string value", () => {
     const config = buildConfig({
       ...VALID_VALUES,
-      executionParameters: "not-an-array",
+      executionParameters: 42,
     });
 
     expect(() => resolveAthenaSettings(config)).toThrowError(Core.M3LError);
+  });
+
+  it("tolerates a comma-separated string for 'executionParameters' (Core.M3LConfigAccessor.optionalStringArray's coercion path)", () => {
+    const settings = resolveAthenaSettings(
+      buildConfig({ ...VALID_VALUES, executionParameters: "a, b" }),
+    );
+
+    expect(settings.startInput.executionParameters).toEqual(["a", "b"]);
   });
 
   it("throws ERR_ATHENA_SETTINGS when 'executionParameters' contains a non-string element", () => {
