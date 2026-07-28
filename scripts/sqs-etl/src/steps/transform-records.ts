@@ -202,52 +202,17 @@ interface TransformSettings {
   readonly filters: readonly string[];
 }
 
-/** Narrows `value` to `string[]` by checking every element's type. */
-function isStringArray(value: readonly unknown[]): value is string[] {
-  return value.every((item) => typeof item === "string");
-}
-
-/**
- * Reads a required string parameter (`input`/`output`), throwing when it is
- * missing (never declared with `required: true` — F1b — so per-command
- * requiredness is guard-checked here) or was stored as a non-string.
- *
- * @throws {@link Core.M3LError} coded `"ERR_SQS_ETL_CONFIG"`.
- */
-function readRequiredString(config: Core.M3LConfig, name: string): string {
-  const value: unknown = config.get(name);
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Core.M3LError(`'${name}' is required for 'transform'`, {
-      code: "ERR_SQS_ETL_CONFIG",
-      context: { name },
-    });
-  }
-  return value;
-}
-
-/** Reads the `fields`/`filters` string-array parameter, defaulting to `[]`. */
-function readStringArray(
-  config: Core.M3LConfig,
-  name: string,
-): readonly string[] {
-  const value: unknown = config.get(name);
-  if (value === undefined) return [];
-  if (!Array.isArray(value) || !isStringArray(value)) {
-    throw new Core.M3LError(`'${name}' must be a string array`, {
-      code: "ERR_SQS_ETL_CONFIG",
-      context: { name },
-    });
-  }
-  return value;
-}
-
 /** Resolves and guard-checks every declared parameter `transformRecords` needs. */
 function resolveSettings(config: Core.M3LConfig): TransformSettings {
+  const accessor = new Core.M3LConfigAccessor({
+    config,
+    code: "ERR_SQS_ETL_CONFIG",
+  });
   return {
-    input: readRequiredString(config, "input"),
-    output: readRequiredString(config, "output"),
-    fields: readStringArray(config, "fields"),
-    filters: readStringArray(config, "filters"),
+    input: accessor.requiredString("input", "transform"),
+    output: accessor.requiredString("output", "transform"),
+    fields: accessor.optionalStringArray("fields") ?? [],
+    filters: accessor.optionalStringArray("filters") ?? [],
   };
 }
 

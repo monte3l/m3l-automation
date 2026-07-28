@@ -311,4 +311,34 @@ describe("deleteMessages", () => {
       expect(fsp.readFile).not.toHaveBeenCalled();
     },
   );
+
+  test("throws ERR_SQS_ETL_CONFIG when 'batchSize' is stored as a non-number (required-variant wrong-type rejection)", async () => {
+    stubInput("");
+    stubOutputStreams();
+    const sqsOperations = createFakeSqsOperations();
+    const config = buildConfig({
+      queueUrl: "https://sqs.example/q",
+      input: "in.jsonl",
+      yes: true,
+      batchSize: "one-hundred",
+    });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+    const prompt = new Core.M3LPrompt();
+    const confirm = vi.spyOn(prompt, "confirm");
+
+    await expect(
+      deleteMessages({
+        config,
+        paths,
+        logger,
+        correlationId: "run-batchsize-wrong-type",
+        sqsOperations,
+        prompt,
+      }),
+    ).rejects.toMatchObject({ code: "ERR_SQS_ETL_CONFIG" });
+    expect(confirm).not.toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to AWS.M3LSQSOperations; property is a vi.fn(), never called unbound
+    expect(sqsOperations.deleteBatch).not.toHaveBeenCalled();
+  });
 });

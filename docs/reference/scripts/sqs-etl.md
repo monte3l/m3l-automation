@@ -77,6 +77,21 @@ ready to re-drive with no id bookkeeping). Queue identity (`queueUrl`,
 `dlqUrl`) and the `command` selector come from config, never from input-file
 content.
 
+## Error codes
+
+Script-local error codes are plain `M3LError.code` strings, all prefixed
+`ERR_SQS_ETL_`:
+
+- `ERR_SQS_ETL_CONFIG` — a guard-checked config requirement was unmet (missing
+  `queueUrl`/`dlqUrl`/`input`/`output` for the selected command) — or a
+  declared parameter present but stored with the wrong type (`batchSize`/
+  `visibilityTimeoutSeconds` non-number, `deleteAfterDump`/`yes` non-boolean,
+  `fields`/`filters` non-string-array), via `Core.M3LConfigAccessor`'s
+  fail-loud reads (see [`core/config`](../core/config.md)). `batchSize` in
+  particular used to fall back to its default of `100` for any wrong-typed
+  value; it now throws.
+- `ERR_SQS_ETL_ABORTED` — the destructive-gate confirmation was declined.
+
 ## Out of scope for this iteration
 
 - **Checkpoint/resume** for `dump`/`redrive` (the general fleet convention

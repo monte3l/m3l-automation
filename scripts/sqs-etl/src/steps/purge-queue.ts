@@ -10,37 +10,6 @@ import type { AWS } from "@m3l-automation/m3l-common";
  */
 
 /**
- * Reads the required `queueUrl` string parameter, throwing when it is
- * missing (never declared `required: true` — F1b — so per-command
- * requiredness is guard-checked here) or was stored as a non-string.
- *
- * @throws {@link Core.M3LError} coded `"ERR_SQS_ETL_CONFIG"`.
- */
-function readQueueUrl(config: Core.M3LConfig): string {
-  const value: unknown = config.get("queueUrl");
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Core.M3LError("'queueUrl' is required for 'purge'", {
-      code: "ERR_SQS_ETL_CONFIG",
-      context: { name: "queueUrl" },
-    });
-  }
-  return value;
-}
-
-/** Reads the `yes` `BOOL` parameter, defaulting to `false` when unset. */
-function readYes(config: Core.M3LConfig): boolean {
-  const value: unknown = config.get("yes");
-  if (value === undefined) return false;
-  if (typeof value !== "boolean") {
-    throw new Core.M3LError("'yes' must be a boolean", {
-      code: "ERR_SQS_ETL_CONFIG",
-      context: { name: "yes" },
-    });
-  }
-  return value;
-}
-
-/**
  * Runs the `purge` command: clears `queueUrl` once the
  * `Core.confirmDestructive` confirmation has cleared.
  *
@@ -79,8 +48,12 @@ export async function purgeQueue(deps: {
   readonly sqsOperations: AWS.M3LSQSOperations;
   readonly prompt: Core.M3LPrompt;
 }): Promise<void> {
-  const queueUrl = readQueueUrl(deps.config);
-  const yes = readYes(deps.config);
+  const accessor = new Core.M3LConfigAccessor({
+    config: deps.config,
+    code: "ERR_SQS_ETL_CONFIG",
+  });
+  const queueUrl = accessor.requiredString("queueUrl", "purge");
+  const yes = accessor.booleanWithDefault("yes", false);
 
   await Core.confirmDestructive({
     prompt: deps.prompt,

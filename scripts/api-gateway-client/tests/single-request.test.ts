@@ -284,4 +284,32 @@ describe("singleRequest", () => {
     // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to Core.M3LHttpClient; property is a vi.fn(), never called unbound
     expect(httpClient.request).not.toHaveBeenCalled();
   });
+
+  test("throws ERR_API_GATEWAY_CLIENT_CONFIG when 'body' is stored as a non-string (required-variant wrong-type rejection)", async () => {
+    stubOutputStreams();
+    const httpClient = createFakeHttpClient();
+    const config = buildConfig({
+      method: "GET",
+      path: "/items",
+      auth: "none",
+      body: 42,
+    });
+    const paths = new Core.M3LPaths();
+    const logger = new Core.M3LLogger([]);
+    const prompt = new Core.M3LPrompt();
+
+    await expect(
+      singleRequest({
+        config,
+        paths,
+        logger,
+        correlationId: "run-9",
+        httpClient,
+        signer: undefined,
+        prompt,
+      }),
+    ).rejects.toMatchObject({ code: "ERR_API_GATEWAY_CLIENT_CONFIG" });
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- structural fake cast to Core.M3LHttpClient; property is a vi.fn(), never called unbound
+    expect(httpClient.request).not.toHaveBeenCalled();
+  });
 });
