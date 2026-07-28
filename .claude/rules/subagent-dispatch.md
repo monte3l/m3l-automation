@@ -101,3 +101,19 @@ status`/`git diff`, re-run `tsc`/`eslint`/`vitest`/coverage) before deciding
   first** when recovering a truncated/ambiguous spoke — it automates the
   journal-parse + on-disk-verification step so you judge from a structured
   recommendation instead of re-deriving state by hand.
+- **A templated dispatch prompt needs a per-target assumption check, not just
+  a per-target file-list check.** Reusing one prompt shape across N similar
+  targets (e.g. "retrofit script X onto library class Y") is efficient, but
+  the template's implicit assumptions can be false for one target even when
+  true for the rest — verify the assumption itself (e.g. "this script uses
+  exactly one error code") against each target's own docs/tests before
+  dispatch, not just the file scope. `codepipeline-ops`'s two-code split
+  (`ERR_CODEPIPELINE_OPS_CONFIG`/`_INPUT`) was collapsed into one code by a
+  spoke correctly following a template written for its 5 single-code
+  siblings; the hub's post-dispatch `grep` across all 6 scripts' reference
+  docs caught it, but a pre-dispatch check would have prevented it entirely
+  (`docs/logs/2026-07-28-w5-config-accessor-fleet-retrofit.md`). This is
+  distinct from — and a supplement to — "never trust a final report at face
+  value" above: the defect here was semantically wrong but syntactically
+  valid, so `typecheck`/`lint`/`build` all passed clean; only a check against
+  the _documented contract_ caught it.

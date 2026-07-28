@@ -299,6 +299,48 @@ describe("runEksOps — per-operation config guards (fire before any AWS call or
     expect(writeClusterMock).not.toHaveBeenCalled();
   });
 
+  test("F10: malformed JSON parse failure does not chain the raw SyntaxError as cause", async () => {
+    const inputPath = PATHS.resolveInput("create.json");
+    stubReadFileByPath({ [inputPath]: "{not json" });
+    const deps = buildDeps({
+      operation: "create-cluster",
+      cluster: "my-cluster",
+      input: "create.json",
+      yes: true,
+    });
+
+    let thrown: unknown;
+    try {
+      await runEksOps(deps);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    expect((thrown as Core.M3LError).cause).toBeUndefined();
+    expect((thrown as Core.M3LError).message).toMatch(
+      /must be valid JSON \(\w+Error\)/,
+    );
+  });
+
+  test("throws ERR_EKS_OPS_CONFIG ('contains an unsafe key') when the parsed input has a top-level __proto__ key", async () => {
+    const inputPath = PATHS.resolveInput("create.json");
+    stubReadFileByPath({
+      [inputPath]: '{"__proto__":{"polluted":true}}',
+    });
+    const deps = buildDeps({
+      operation: "create-cluster",
+      cluster: "my-cluster",
+      input: "create.json",
+      yes: true,
+    });
+
+    await expect(runEksOps(deps)).rejects.toMatchObject({
+      code: "ERR_EKS_OPS_CONFIG",
+    });
+    expect(writeClusterMock).not.toHaveBeenCalled();
+  });
+
   test("throws ERR_EKS_OPS_CONFIG ('must decode to a JSON object') when the parsed input is a JSON array", async () => {
     const inputPath = PATHS.resolveInput("update.json");
     stubReadFileByPath({ [inputPath]: JSON.stringify([1, 2, 3]) });
@@ -959,11 +1001,11 @@ describe("runEksOps — required-input-field validation on create (fires before 
   });
 });
 
-describe("runEksOps — config-helpers type-mismatch guards (readTypedConfigValue / readOptionalStringArray)", () => {
-  // Coverage gap (code-reviewer finding): readTypedConfigValue's "must be a
-  // ${typeName}" throw and readOptionalStringArray's "must be a string array"
-  // throw already exist in config-helpers.ts but were never exercised by any
-  // test that builds a Core.M3LConfig directly with a wrong-typed raw value.
+describe("runEksOps — M3LConfigAccessor type-mismatch guards", () => {
+  // Coverage gap (code-reviewer finding): Core.M3LConfigAccessor's "must be a
+  // ${typeName}" throw and its `optionalStringArray`'s "must be a string
+  // array" throw were never exercised by any test that builds a
+  // Core.M3LConfig directly with a wrong-typed raw value.
   test("throws ERR_EKS_OPS_CONFIG when 'cluster' (STRING) is stored as a number", async () => {
     const deps = buildDeps({
       operation: "describe-cluster",

@@ -27,6 +27,8 @@ interface DispatchDeps {
   readonly logger: Core.M3LLogger;
   readonly operations: AWS.M3LCloudFormationOperations;
   readonly prompt: Core.M3LPrompt;
+  readonly accessor: Core.M3LConfigAccessor;
+  readonly reader: Core.M3LInputFileReader;
 }
 
 /** The union of result shapes any dispatched operation can resolve. */
@@ -39,93 +41,6 @@ type DispatchResult =
   | AWS.M3LCloudFormationUpdateStackResult
   | void
   | AWS.M3LCloudFormationWaiterResult;
-
-/**
- * Reads the `operation` parameter, validating it against the declared set.
- * The declared `M3LConfigParameter`'s `oneOf` validator already enforces this
- * at config-load time in the real script; this defensive re-check protects a
- * caller (e.g. a test) that builds a `Core.M3LConfig` directly, bypassing
- * that validation.
- */
-function readOperation(config: Core.M3LConfig): Operation {
-  const value: unknown = config.get("operation");
-  if (
-    typeof value === "string" &&
-    (CLOUDFORMATION_STACKS_OPERATIONS as readonly string[]).includes(value)
-  ) {
-    return value as Operation;
-  }
-  throw new Core.M3LError(
-    `'operation' must be one of: ${CLOUDFORMATION_STACKS_OPERATIONS.join(", ")}`,
-    { code: "ERR_CLOUDFORMATION_STACKS_CONFIG" },
-  );
-}
-
-/** Reads an optional string parameter, defensively re-checking its type (`undefined` when unset). */
-function readOptionalString(
-  config: Core.M3LConfig,
-  name: string,
-): string | undefined {
-  const value: unknown = config.get(name);
-  if (value === undefined) return undefined;
-  if (typeof value !== "string") {
-    throw new Core.M3LError(`'${name}' must be a string`, {
-      code: "ERR_CLOUDFORMATION_STACKS_CONFIG",
-    });
-  }
-  return value;
-}
-
-/** Reads an optional number parameter, defensively re-checking its type (`undefined` when unset). */
-function readOptionalNumber(
-  config: Core.M3LConfig,
-  name: string,
-): number | undefined {
-  const value: unknown = config.get(name);
-  if (value === undefined) return undefined;
-  if (typeof value !== "number") {
-    throw new Core.M3LError(`'${name}' must be a number`, {
-      code: "ERR_CLOUDFORMATION_STACKS_CONFIG",
-    });
-  }
-  return value;
-}
-
-/**
- * Reads a boolean parameter, falling back to `defaultValue` when unset. A
- * `Core.M3LConfig` built directly (as tests do) never applies a declared
- * parameter's `defaultValue` — only `M3LScript.getConfiguration()` does — so
- * this reproduces that default at the read site.
- */
-function readBoolWithDefault(
-  config: Core.M3LConfig,
-  name: string,
-  defaultValue: boolean,
-): boolean {
-  const value: unknown = config.get(name);
-  if (value === undefined) return defaultValue;
-  if (typeof value !== "boolean") {
-    throw new Core.M3LError(`'${name}' must be a boolean`, {
-      code: "ERR_CLOUDFORMATION_STACKS_CONFIG",
-    });
-  }
-  return value;
-}
-
-/** Returns `value`, throwing `ERR_CLOUDFORMATION_STACKS_CONFIG` when it is `undefined` — the per-operation cross-parameter guard. */
-function requireString(
-  value: string | undefined,
-  name: string,
-  operation: Operation,
-): string {
-  if (value === undefined) {
-    throw new Core.M3LError(
-      `'${name}' is required for operation '${operation}'`,
-      { code: "ERR_CLOUDFORMATION_STACKS_CONFIG" },
-    );
-  }
-  return value;
-}
 
 /** Splits `raw` on `,`, trims each segment, drops empty segments, and requires at least one remaining segment. */
 function splitNonEmpty(raw: string, name: string): readonly string[] {
@@ -142,53 +57,21 @@ function splitNonEmpty(raw: string, name: string): readonly string[] {
   return segments;
 }
 
-/** Reads the file at `paths.resolveInput(name)` as raw text — the one place `input`/`template` are ever read. */
+/** Reads the file at `paths.resolveInput(name)` as raw text — the one place `template` is ever read. */
 async function readTextFile(
   paths: Core.M3LPaths,
   name: string,
-  kind: "input" | "template",
 ): Promise<string> {
   const resolved = paths.resolveInput(name);
   try {
     return (await fsp.readFile(resolved)).toString("utf8");
   } catch (cause) {
     if (cause instanceof Core.M3LError) throw cause;
-    throw new Core.M3LError(`failed reading ${kind} file '${name}'`, {
+    throw new Core.M3LError(`failed reading template file '${name}'`, {
       code: "ERR_CLOUDFORMATION_STACKS_CONFIG",
       cause,
     });
   }
-}
-
-/**
- * Reads and JSON-parses `input` under `M3L_INPUT_DIR`, for
- * `create-stack`/`update-stack`. The read and the parse are two genuinely
- * distinct fallible operations (a missing file vs. malformed JSON), so each
- * is wrapped in its own narrow `try`/`catch`.
- */
-async function readJSONFile(
-  paths: Core.M3LPaths,
-  name: string,
-): Promise<unknown> {
-  const raw = await readTextFile(paths, name, "input");
-  try {
-    return JSON.parse(raw);
-  } catch (cause) {
-    throw new Core.M3LError(`'${name}' must be valid JSON`, {
-      code: "ERR_CLOUDFORMATION_STACKS_CONFIG",
-      cause,
-    });
-  }
-}
-
-/** Narrows an already-parsed JSON value to a plain object, for `create-stack`/`update-stack`'s `input`. */
-function asInputRecord(value: unknown, name: string): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Core.M3LError(`'${name}' must decode to a JSON object`, {
-      code: "ERR_CLOUDFORMATION_STACKS_CONFIG",
-    });
-  }
-  return value as Record<string, unknown>;
 }
 
 /**
@@ -212,7 +95,7 @@ async function resolveTemplateText(
       { code: "ERR_CLOUDFORMATION_STACKS_CONFIG" },
     );
   }
-  return readTextFile(paths, template, "template");
+  return readTextFile(paths, template);
 }
 
 /** Builds `create-stack`/`update-stack`'s gate description from the parsed input record's `stackName` field, best-effort. */
@@ -237,11 +120,16 @@ interface CreateOrUpdatePlan {
 async function planCreateOrUpdate(
   operation: "create-stack" | "update-stack",
   raw: RawSettings,
-  paths: Core.M3LPaths,
+  deps: Pick<DispatchDeps, "paths" | "accessor" | "reader">,
 ): Promise<CreateOrUpdatePlan> {
-  const inputName = requireString(raw.input, "input", operation);
-  const parsed = asInputRecord(await readJSONFile(paths, inputName), inputName);
-  const templateText = await resolveTemplateText(raw.template, parsed, paths);
+  const inputName = deps.accessor.requiredFor(raw.input, "input", operation);
+  const parsed: Record<string, unknown> =
+    await deps.reader.readJSONRecord(inputName);
+  const templateText = await resolveTemplateText(
+    raw.template,
+    parsed,
+    deps.paths,
+  );
   return {
     description: buildRecordGateDescription(operation, parsed),
     input: parsed,
@@ -263,10 +151,14 @@ interface WriteDispatchPlan {
 async function planWriteDispatch(
   operation: "create-stack" | "update-stack" | "delete-stack",
   raw: RawSettings,
-  paths: Core.M3LPaths,
+  deps: Pick<DispatchDeps, "paths" | "accessor" | "reader">,
 ): Promise<WriteDispatchPlan> {
   if (operation === "delete-stack") {
-    const stackName = requireString(raw.stackName, "stackName", operation);
+    const stackName = deps.accessor.requiredFor(
+      raw.stackName,
+      "stackName",
+      operation,
+    );
     const retainResources =
       raw.retainResources !== undefined
         ? splitNonEmpty(raw.retainResources, "retainResources")
@@ -281,7 +173,7 @@ async function planWriteDispatch(
     };
   }
 
-  const plan = await planCreateOrUpdate(operation, raw, paths);
+  const plan = await planCreateOrUpdate(operation, raw, deps);
   return {
     description: plan.description,
     input: plan.input,
@@ -315,7 +207,7 @@ async function dispatchReadStacks(
 ): Promise<DispatchResult> {
   const stackName =
     operation === "describe-stack"
-      ? requireString(raw.stackName, "stackName", operation)
+      ? deps.accessor.requiredFor(raw.stackName, "stackName", operation)
       : undefined;
   const stackStatusFilter =
     raw.stackStatusFilter !== undefined
@@ -337,7 +229,7 @@ async function dispatchReadStackEvents(
   raw: RawSettings,
   deps: DispatchDeps,
 ): Promise<DispatchResult> {
-  const stackName = requireString(
+  const stackName = deps.accessor.requiredFor(
     raw.stackName,
     "stackName",
     "describe-stack-events",
@@ -362,7 +254,11 @@ async function dispatchWait(
   raw: RawSettings,
   deps: DispatchDeps,
 ): Promise<DispatchResult> {
-  const stackName = requireString(raw.stackName, "stackName", operation);
+  const stackName = deps.accessor.requiredFor(
+    raw.stackName,
+    "stackName",
+    operation,
+  );
   const { waitStack } = await import("./wait-stack.js");
   return waitStack({
     operations: deps.operations,
@@ -378,7 +274,7 @@ async function dispatchWrite(
   raw: RawSettings,
   deps: DispatchDeps,
 ): Promise<DispatchResult> {
-  const plan = await planWriteDispatch(operation, raw, deps.paths);
+  const plan = await planWriteDispatch(operation, raw, deps);
   await runGate(plan.description, raw.yes, deps);
 
   const { writeStack } = await import("./write-stack.js");
@@ -497,17 +393,17 @@ async function dispatchOperation(
 }
 
 /** Resolves the raw, per-operation-optional config values `run-cloudformation-stacks` reads once, up front. */
-function readRawSettings(config: Core.M3LConfig): RawSettings {
+function readRawSettings(accessor: Core.M3LConfigAccessor): RawSettings {
   return {
-    stackName: readOptionalString(config, "stackName"),
-    input: readOptionalString(config, "input"),
-    template: readOptionalString(config, "template"),
-    stackStatusFilter: readOptionalString(config, "stackStatusFilter"),
-    retainResources: readOptionalString(config, "retainResources"),
-    roleArn: readOptionalString(config, "roleArn"),
-    nextToken: readOptionalString(config, "nextToken"),
-    maxWaitTime: readOptionalNumber(config, "maxWaitTime"),
-    yes: readBoolWithDefault(config, "yes", YES_DEFAULT),
+    stackName: accessor.optionalString("stackName"),
+    input: accessor.optionalString("input"),
+    template: accessor.optionalString("template"),
+    stackStatusFilter: accessor.optionalString("stackStatusFilter"),
+    retainResources: accessor.optionalString("retainResources"),
+    roleArn: accessor.optionalString("roleArn"),
+    nextToken: accessor.optionalString("nextToken"),
+    maxWaitTime: accessor.optionalNumber("maxWaitTime"),
+    yes: accessor.booleanWithDefault("yes", YES_DEFAULT),
   };
 }
 
@@ -637,15 +533,29 @@ export async function runCloudformationStacks(deps: {
   readonly operations: AWS.M3LCloudFormationOperations;
   readonly prompt: Core.M3LPrompt;
 }): Promise<void> {
-  const operation = readOperation(deps.config);
-  const raw = readRawSettings(deps.config);
-  const output = readOptionalString(deps.config, "output");
+  const accessor = new Core.M3LConfigAccessor({
+    config: deps.config,
+    code: "ERR_CLOUDFORMATION_STACKS_CONFIG",
+  });
+  const reader = new Core.M3LInputFileReader({
+    paths: deps.paths,
+    code: "ERR_CLOUDFORMATION_STACKS_CONFIG",
+  });
+
+  const operation = accessor.oneOf(
+    "operation",
+    CLOUDFORMATION_STACKS_OPERATIONS,
+  );
+  const raw = readRawSettings(accessor);
+  const output = accessor.optionalString("output");
 
   const result = await dispatchOperation(operation, raw, {
     paths: deps.paths,
     logger: deps.logger,
     operations: deps.operations,
     prompt: deps.prompt,
+    accessor,
+    reader,
   });
 
   assertDescribeStackFound(operation, result, raw.stackName);
