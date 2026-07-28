@@ -202,6 +202,7 @@ async function dispatchWriteService(
   const { writeService } = await import("./write-service.js");
   return writeService({
     operations: deps.operations,
+    reader: deps.reader,
     operation,
     input: plan.input,
     cluster: raw.cluster,

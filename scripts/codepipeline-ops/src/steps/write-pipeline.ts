@@ -8,30 +8,19 @@ type WriteOperation = "create-pipeline" | "update-pipeline" | "delete-pipeline";
  * The dependencies `writePipeline` needs, already resolved by
  * `run-codepipeline-ops` — `declaration` arrives as the already-JSON-parsed
  * record for `create-pipeline`/`update-pipeline` (`undefined` for
- * `delete-pipeline`, which reads `pipeline` from config instead). This step
- * takes no raw `Core.M3LConfig` and never touches `destructive-gate`/
+ * `delete-pipeline`, which reads `pipeline` from config instead). `reader` is
+ * bound to `ERR_CODEPIPELINE_OPS_INPUT` (not the `ERR_CODEPIPELINE_OPS_CONFIG`
+ * `requireString` below throws), preserving the pre-existing code split. This
+ * step takes no raw `Core.M3LConfig` and never touches `destructive-gate`/
  * `prompt` itself (`run-codepipeline-ops` gates before ever dispatching
  * here).
  */
 interface WritePipelineDeps {
   readonly operations: AWS.M3LCodePipelineOperations;
+  readonly reader: Core.M3LInputFileReader;
   readonly operation: WriteOperation;
   readonly declaration: Record<string, unknown> | undefined;
   readonly pipeline: string | undefined;
-}
-
-/** Guard-checks `declaration` present, for `create-pipeline`/`update-pipeline`. */
-function requireDeclarationRecord(
-  declaration: Record<string, unknown> | undefined,
-  operation: WriteOperation,
-): Record<string, unknown> {
-  if (declaration === undefined) {
-    throw new Core.M3LError(
-      `writePipeline: 'input' is required for '${operation}'`,
-      { code: "ERR_CODEPIPELINE_OPS_INPUT" },
-    );
-  }
-  return declaration;
 }
 
 /** Guard-checks `value` present, for `delete-pipeline`'s `pipeline` config value. */
@@ -44,38 +33,6 @@ function requireString(
     throw new Core.M3LError(
       `writePipeline: '${name}' is required for '${operation}'`,
       { code: "ERR_CODEPIPELINE_OPS_CONFIG" },
-    );
-  }
-  return value;
-}
-
-/** Reads a required, non-empty string field off an already-parsed declaration object. */
-function readRequiredStringField(
-  record: Record<string, unknown>,
-  fieldName: string,
-  operation: WriteOperation,
-): string {
-  const value = record[fieldName];
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Core.M3LError(
-      `writePipeline: 'input.${fieldName}' must be a non-empty string for '${operation}'`,
-      { code: "ERR_CODEPIPELINE_OPS_INPUT" },
-    );
-  }
-  return value;
-}
-
-/** Reads a required, non-empty array field off an already-parsed declaration object. */
-function readRequiredArrayField(
-  record: Record<string, unknown>,
-  fieldName: string,
-  operation: WriteOperation,
-): readonly unknown[] {
-  const value = record[fieldName];
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new Core.M3LError(
-      `writePipeline: 'input.${fieldName}' must be a non-empty array for '${operation}'`,
-      { code: "ERR_CODEPIPELINE_OPS_INPUT" },
     );
   }
   return value;
@@ -111,12 +68,13 @@ function readRequiredArrayField(
  * external input.
  */
 function asDeclaration(
+  reader: Core.M3LInputFileReader,
   record: Record<string, unknown>,
   operation: WriteOperation,
 ): AWS.M3LCodePipelineDeclaration {
-  readRequiredStringField(record, "name", operation);
-  readRequiredStringField(record, "roleArn", operation);
-  readRequiredArrayField(record, "stages", operation);
+  reader.requiredStringField(record, "name", operation);
+  reader.requiredStringField(record, "roleArn", operation);
+  reader.requiredArrayField(record, "stages", operation);
   return record as unknown as AWS.M3LCodePipelineDeclaration;
 }
 
@@ -128,10 +86,11 @@ function asDeclaration(
  * through `destructive-gate` before dispatching here — this step performs no
  * confirmation of its own.
  *
- * @param deps - The injected `AWS.M3LCodePipelineOperations`, which
- *   mutating operation to run, the already-parsed declaration record (for
- *   `create-pipeline`/`update-pipeline`), and the `pipeline` config value
- *   (for `delete-pipeline`).
+ * @param deps - The injected `AWS.M3LCodePipelineOperations`, the shared
+ *   `Core.M3LInputFileReader`, which mutating operation to run, the
+ *   already-parsed declaration record (for `create-pipeline`/
+ *   `update-pipeline`), and the `pipeline` config value (for
+ *   `delete-pipeline`).
  * @returns The `M3LCodePipelineDeclaration` (as returned by CodePipeline)
  *   for `create-pipeline`/`update-pipeline`; `undefined` for
  *   `delete-pipeline`.
@@ -144,14 +103,17 @@ function asDeclaration(
  * @example
  * ```typescript
  * import type { AWS } from "@m3l-automation/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { writePipeline } from "./write-pipeline.js";
  *
- * // `operations` is injected by the caller, e.g.
+ * // `operations`/`reader` are injected by the caller, e.g.
  * // `new AWS.M3LCodePipelineOperations(script.aws.clients.codePipeline)`.
  * declare const operations: AWS.M3LCodePipelineOperations;
+ * declare const reader: Core.M3LInputFileReader;
  *
  * await writePipeline({
  *   operations,
+ *   reader,
  *   operation: "delete-pipeline",
  *   declaration: undefined,
  *   pipeline: "my-pipeline",
@@ -163,13 +125,21 @@ export async function writePipeline(
 ): Promise<AWS.M3LCodePipelineDeclaration | undefined> {
   switch (deps.operation) {
     case "create-pipeline": {
-      const record = requireDeclarationRecord(deps.declaration, deps.operation);
-      const declaration = asDeclaration(record, deps.operation);
+      const record = deps.reader.requireRecord(
+        deps.declaration,
+        "input",
+        deps.operation,
+      );
+      const declaration = asDeclaration(deps.reader, record, deps.operation);
       return deps.operations.createPipeline({ declaration });
     }
     case "update-pipeline": {
-      const record = requireDeclarationRecord(deps.declaration, deps.operation);
-      const declaration = asDeclaration(record, deps.operation);
+      const record = deps.reader.requireRecord(
+        deps.declaration,
+        "input",
+        deps.operation,
+      );
+      const declaration = asDeclaration(deps.reader, record, deps.operation);
       return deps.operations.updatePipeline(declaration);
     }
     case "delete-pipeline": {

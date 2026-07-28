@@ -18,6 +18,11 @@ import { createFakeLambdaOperations } from "./support/lambdaFakes.js";
 const ZIP_BYTES = new Uint8Array([1, 2, 3, 4]);
 const FUNCTION_NAME = "my-function";
 
+const reader = new Core.M3LInputFileReader({
+  paths: new Core.M3LPaths(),
+  code: "ERR_LAMBDA_OPS_CONFIG",
+});
+
 afterEach(() => {
   vi.clearAllMocks();
 });
@@ -43,6 +48,7 @@ describe("writeFunction — create", () => {
 
     const returned = await writeFunction({
       operations,
+      reader,
       operation: "create",
       functionName: FUNCTION_NAME,
       zipFile: ZIP_BYTES,
@@ -71,6 +77,7 @@ describe("writeFunction — create", () => {
     try {
       await writeFunction({
         operations,
+        reader,
         operation: "create",
         functionName: FUNCTION_NAME,
         zipFile: ZIP_BYTES,
@@ -101,6 +108,7 @@ describe("writeFunction — create", () => {
       try {
         await writeFunction({
           operations,
+          reader,
           operation: "create",
           functionName: FUNCTION_NAME,
           zipFile: ZIP_BYTES,
@@ -131,6 +139,7 @@ describe("writeFunction — create", () => {
       await expect(
         writeFunction({
           operations,
+          reader,
           operation: "create",
           functionName: FUNCTION_NAME,
           zipFile: ZIP_BYTES,
@@ -140,6 +149,29 @@ describe("writeFunction — create", () => {
       expect(createFunction).not.toHaveBeenCalled();
     },
   );
+
+  test("throws ERR_LAMBDA_OPS_CONFIG when the parsed input's optional 'timeout' is present but the wrong type, never calling createFunction", async () => {
+    const createFunction = vi.fn();
+    const operations = createFakeLambdaOperations({ createFunction });
+    const input = {
+      runtime: "nodejs20.x",
+      role: "arn:aws:iam::123456789012:role/my-role",
+      handler: "index.handler",
+      timeout: "30",
+    };
+
+    await expect(
+      writeFunction({
+        operations,
+        reader,
+        operation: "create",
+        functionName: FUNCTION_NAME,
+        zipFile: ZIP_BYTES,
+        input,
+      }),
+    ).rejects.toMatchObject({ code: "ERR_LAMBDA_OPS_CONFIG" });
+    expect(createFunction).not.toHaveBeenCalled();
+  });
 });
 
 describe("writeFunction — update-code", () => {
@@ -154,6 +186,7 @@ describe("writeFunction — update-code", () => {
 
     const returned = await writeFunction({
       operations,
+      reader,
       operation: "update-code",
       functionName: FUNCTION_NAME,
       zipFile: ZIP_BYTES,
@@ -174,6 +207,7 @@ describe("writeFunction — update-code", () => {
     await expect(
       writeFunction({
         operations,
+        reader,
         operation: "update-code",
         functionName: FUNCTION_NAME,
         zipFile: undefined,
@@ -207,6 +241,7 @@ describe("writeFunction — update-configuration", () => {
 
     const returned = await writeFunction({
       operations,
+      reader,
       operation: "update-configuration",
       functionName: FUNCTION_NAME,
       zipFile: undefined,
@@ -233,10 +268,31 @@ describe("writeFunction — update-configuration", () => {
     await expect(
       writeFunction({
         operations,
+        reader,
         operation: "update-configuration",
         functionName: FUNCTION_NAME,
         zipFile: undefined,
         input: undefined,
+      }),
+    ).rejects.toMatchObject({ code: "ERR_LAMBDA_OPS_CONFIG" });
+    expect(updateFunctionConfiguration).not.toHaveBeenCalled();
+  });
+
+  test("throws ERR_LAMBDA_OPS_CONFIG when the parsed input's optional 'environment' is present but the wrong type, never calling updateFunctionConfiguration", async () => {
+    const updateFunctionConfiguration = vi.fn();
+    const operations = createFakeLambdaOperations({
+      updateFunctionConfiguration,
+    });
+    const input = { environment: "not-an-object" };
+
+    await expect(
+      writeFunction({
+        operations,
+        reader,
+        operation: "update-configuration",
+        functionName: FUNCTION_NAME,
+        zipFile: undefined,
+        input,
       }),
     ).rejects.toMatchObject({ code: "ERR_LAMBDA_OPS_CONFIG" });
     expect(updateFunctionConfiguration).not.toHaveBeenCalled();
@@ -250,6 +306,7 @@ describe("writeFunction — delete", () => {
 
     const returned = await writeFunction({
       operations,
+      reader,
       operation: "delete",
       functionName: FUNCTION_NAME,
       zipFile: undefined,

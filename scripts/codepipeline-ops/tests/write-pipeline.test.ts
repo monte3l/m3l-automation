@@ -26,6 +26,11 @@ const DECLARATION: AWS.M3LCodePipelineDeclaration = {
   stages: [{ name: "Source", actions: [] }],
 };
 
+const reader = new Core.M3LInputFileReader({
+  paths: new Core.M3LPaths(),
+  code: "ERR_CODEPIPELINE_OPS_INPUT",
+});
+
 afterEach(() => {
   vi.clearAllMocks();
 });
@@ -42,6 +47,7 @@ describe("writePipeline — create-pipeline", () => {
 
     const returned = await writePipeline({
       operations,
+      reader,
       operation: "create-pipeline",
       declaration,
       pipeline: undefined,
@@ -59,6 +65,7 @@ describe("writePipeline — create-pipeline", () => {
     try {
       await writePipeline({
         operations,
+        reader,
         operation: "create-pipeline",
         declaration: undefined,
         pipeline: undefined,
@@ -87,6 +94,7 @@ describe("writePipeline — create-pipeline", () => {
       await expect(
         writePipeline({
           operations,
+          reader,
           operation: "create-pipeline",
           declaration,
           pipeline: undefined,
@@ -108,6 +116,28 @@ describe("writePipeline — create-pipeline", () => {
     await expect(
       writePipeline({
         operations,
+        reader,
+        operation: "create-pipeline",
+        declaration,
+        pipeline: undefined,
+      }),
+    ).rejects.toMatchObject({ code: "ERR_CODEPIPELINE_OPS_INPUT" });
+    expect(createPipeline).not.toHaveBeenCalled();
+  });
+
+  test("throws ERR_CODEPIPELINE_OPS_INPUT when 'stages' is present but the wrong type, never calling createPipeline", async () => {
+    const createPipeline = vi.fn();
+    const operations = createFakeCodePipelineOperations({ createPipeline });
+    const declaration = {
+      name: "my-pipeline",
+      roleArn: "arn:aws:iam::123456789012:role/codepipeline-role",
+      stages: "not-an-array",
+    };
+
+    await expect(
+      writePipeline({
+        operations,
+        reader,
         operation: "create-pipeline",
         declaration,
         pipeline: undefined,
@@ -129,6 +159,7 @@ describe("writePipeline — update-pipeline", () => {
 
     const returned = await writePipeline({
       operations,
+      reader,
       operation: "update-pipeline",
       declaration,
       pipeline: undefined,
@@ -147,6 +178,7 @@ describe("writePipeline — update-pipeline", () => {
     await expect(
       writePipeline({
         operations,
+        reader,
         operation: "update-pipeline",
         declaration: undefined,
         pipeline: undefined,
@@ -170,6 +202,7 @@ describe("writePipeline — update-pipeline", () => {
       await expect(
         writePipeline({
           operations,
+          reader,
           operation: "update-pipeline",
           declaration,
           pipeline: undefined,
@@ -187,6 +220,7 @@ describe("writePipeline — delete-pipeline", () => {
 
     const returned = await writePipeline({
       operations,
+      reader,
       operation: "delete-pipeline",
       declaration: undefined,
       pipeline: "my-pipeline",
@@ -204,6 +238,7 @@ describe("writePipeline — delete-pipeline", () => {
     try {
       await writePipeline({
         operations,
+        reader,
         operation: "delete-pipeline",
         declaration: undefined,
         pipeline: undefined,
@@ -219,9 +254,10 @@ describe("writePipeline — delete-pipeline", () => {
 });
 
 describe("type contract", () => {
-  test("writePipeline's deps shape is exactly operations/operation/declaration/pipeline", () => {
+  test("writePipeline's deps shape is exactly operations/reader/operation/declaration/pipeline", () => {
     expectTypeOf<Parameters<typeof writePipeline>[0]>().toEqualTypeOf<{
       readonly operations: AWS.M3LCodePipelineOperations;
+      readonly reader: Core.M3LInputFileReader;
       readonly operation:
         "create-pipeline" | "update-pipeline" | "delete-pipeline";
       readonly declaration: Record<string, unknown> | undefined;

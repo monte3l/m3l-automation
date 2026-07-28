@@ -14,6 +14,7 @@ type WriteOperation =
  */
 interface WriteFunctionDeps {
   readonly operations: AWS.M3LLambdaOperations;
+  readonly reader: Core.M3LInputFileReader;
   readonly operation: WriteOperation;
   readonly functionName: string;
   readonly zipFile: Uint8Array | undefined;
@@ -22,26 +23,6 @@ interface WriteFunctionDeps {
 
 /** The `create`-only fields guard-checked present as non-empty strings. */
 const CREATE_REQUIRED_FIELDS = ["runtime", "role", "handler"] as const;
-
-/**
- * Reads a required, non-empty string field off an already-parsed `input`
- * object, for `create`'s `runtime`/`role`/`handler` fields — the only parts
- * of `input` this module validates; every other field is trusted as-is,
- * matching `M3LLambdaOperations`'s own no-pre-flight-validation stance.
- */
-function readRequiredStringField(
-  input: Record<string, unknown>,
-  fieldName: (typeof CREATE_REQUIRED_FIELDS)[number],
-): string {
-  const value = input[fieldName];
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Core.M3LError(
-      `writeFunction: 'input.${fieldName}' must be a non-empty string for 'create'`,
-      { code: "ERR_LAMBDA_OPS_CONFIG" },
-    );
-  }
-  return value;
-}
 
 /** The `description`/`timeout`/`memorySize`/`environment` subset shared by `create` and `update-configuration`. */
 interface OptionalFunctionFields {
@@ -53,36 +34,26 @@ interface OptionalFunctionFields {
 
 /**
  * Builds the `description`/`timeout`/`memorySize`/`environment` subset from
- * an already-parsed `input` object, trusting each field's shape as-is
- * (`exactOptionalPropertyTypes`-safe: a field is included only when the
- * caller's `input` supplied a plausibly-typed value).
+ * an already-parsed `input` object (`exactOptionalPropertyTypes`-safe: a
+ * field is included only when present). `environment`'s value type is
+ * trusted as-is beyond the object-shape check — matching
+ * `M3LLambdaOperations`'s own no-pre-flight-validation stance.
  */
 function readOptionalFunctionFields(
+  reader: Core.M3LInputFileReader,
   input: Record<string, unknown>,
 ): OptionalFunctionFields {
-  const description = input["description"];
-  const timeout = input["timeout"];
-  const memorySize = input["memorySize"];
-  const environment = input["environment"];
+  const description = reader.optionalStringField(input, "description");
+  const timeout = reader.optionalNumberField(input, "timeout");
+  const memorySize = reader.optionalNumberField(input, "memorySize");
+  const environment = reader.optionalRecordField(input, "environment") as
+    Readonly<Record<string, string>> | undefined;
   return {
-    ...(typeof description === "string" && { description }),
-    ...(typeof timeout === "number" && { timeout }),
-    ...(typeof memorySize === "number" && { memorySize }),
-    ...(environment !== null &&
-      typeof environment === "object" &&
-      !Array.isArray(environment) && {
-        environment: environment as Readonly<Record<string, string>>,
-      }),
+    ...(description !== undefined && { description }),
+    ...(timeout !== undefined && { timeout }),
+    ...(memorySize !== undefined && { memorySize }),
+    ...(environment !== undefined && { environment }),
   };
-}
-
-/** Reads an optional string field off an already-parsed `input` object (`undefined` when absent/wrong type). */
-function readOptionalStringField(
-  input: Record<string, unknown>,
-  fieldName: string,
-): string | undefined {
-  const value = input[fieldName];
-  return typeof value === "string" ? value : undefined;
 }
 
 /** Guard-checks `zipFile` present, for `create`/`update-code`. */
@@ -99,36 +70,25 @@ function requireZipFile(
   return zipFile;
 }
 
-/** Guard-checks `input` present, for `create`/`update-configuration`. */
-function requireInput(
-  input: Record<string, unknown> | undefined,
-  operation: WriteOperation,
-): Record<string, unknown> {
-  if (input === undefined) {
-    throw new Core.M3LError(
-      `writeFunction: 'input' is required for '${operation}'`,
-      { code: "ERR_LAMBDA_OPS_CONFIG" },
-    );
-  }
-  return input;
-}
-
 /**
  * Reads and guard-checks `create`'s `runtime`/`role`/`handler` fields off an
  * already-parsed `input` object, destructuring {@link CREATE_REQUIRED_FIELDS}
  * so the declared tuple is the single source of truth for both the field
  * names and this function's return shape.
  */
-function readCreateFields(input: Record<string, unknown>): {
+function readCreateFields(
+  reader: Core.M3LInputFileReader,
+  input: Record<string, unknown>,
+): {
   readonly runtime: string;
   readonly role: string;
   readonly handler: string;
 } {
   const [runtimeField, roleField, handlerField] = CREATE_REQUIRED_FIELDS;
   return {
-    runtime: readRequiredStringField(input, runtimeField),
-    role: readRequiredStringField(input, roleField),
-    handler: readRequiredStringField(input, handlerField),
+    runtime: reader.requiredStringField(input, runtimeField, "create"),
+    role: reader.requiredStringField(input, roleField, "create"),
+    handler: reader.requiredStringField(input, handlerField, "create"),
   };
 }
 
@@ -140,9 +100,10 @@ function readCreateFields(input: Record<string, unknown>): {
  * `run-lambda-ops` always routes through `destructive-gate` before
  * dispatching here — this step performs no confirmation of its own.
  *
- * @param deps - The injected `AWS.M3LLambdaOperations`, which mutating
- *   operation to run, the target `functionName`, and the (per-operation)
- *   already-read `zipFile` bytes / already-parsed `input` fields.
+ * @param deps - The injected `AWS.M3LLambdaOperations`, the shared
+ *   `Core.M3LInputFileReader`, which mutating operation to run, the target
+ *   `functionName`, and the (per-operation) already-read `zipFile` bytes /
+ *   already-parsed `input` fields.
  * @returns The updated `M3LLambdaFunctionConfiguration` for
  *   `create`/`update-code`/`update-configuration`, or `undefined` for
  *   `delete` (nothing to persist).
@@ -155,14 +116,17 @@ function readCreateFields(input: Record<string, unknown>): {
  * @example
  * ```typescript
  * import type { AWS } from "@m3l-automation/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { writeFunction } from "./write-function.js";
  *
- * // `operations` is injected by the caller, e.g.
+ * // `operations`/`reader` are injected by the caller, e.g.
  * // `new AWS.M3LLambdaOperations(script.aws.clients.lambda)`.
  * declare const operations: AWS.M3LLambdaOperations;
+ * declare const reader: Core.M3LInputFileReader;
  *
  * await writeFunction({
  *   operations,
+ *   reader,
  *   operation: "delete",
  *   functionName: "my-function",
  *   zipFile: undefined,
@@ -176,15 +140,19 @@ export async function writeFunction(
   switch (deps.operation) {
     case "create": {
       const zipFile = requireZipFile(deps.zipFile, deps.operation);
-      const input = requireInput(deps.input, deps.operation);
-      const { runtime, role, handler } = readCreateFields(input);
+      const input = deps.reader.requireRecord(
+        deps.input,
+        "input",
+        deps.operation,
+      );
+      const { runtime, role, handler } = readCreateFields(deps.reader, input);
       return deps.operations.createFunction({
         functionName: deps.functionName,
         zipFile,
         runtime,
         role,
         handler,
-        ...readOptionalFunctionFields(input),
+        ...readOptionalFunctionFields(deps.reader, input),
       });
     }
     case "update-code": {
@@ -195,12 +163,16 @@ export async function writeFunction(
       });
     }
     case "update-configuration": {
-      const input = requireInput(deps.input, deps.operation);
-      const handler = readOptionalStringField(input, "handler");
+      const input = deps.reader.requireRecord(
+        deps.input,
+        "input",
+        deps.operation,
+      );
+      const handler = deps.reader.optionalStringField(input, "handler");
       return deps.operations.updateFunctionConfiguration({
         functionName: deps.functionName,
         ...(handler !== undefined && { handler }),
-        ...readOptionalFunctionFields(input),
+        ...readOptionalFunctionFields(deps.reader, input),
       });
     }
     case "delete":
