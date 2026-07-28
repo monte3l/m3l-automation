@@ -23,6 +23,7 @@ Exported from `@m3l-automation/m3l-common/core` (the `config` sub-module):
 - `M3LUnknownParameterDetector`
 - `M3LConfigValidator` (type: a `(value) => true | string` schema-time validator)
 - `M3LConfigValidators` (stock validators: `range`, `regex`, `oneOf`, `nonEmpty`, `minLength`)
+- `M3LConfigAccessor` (defensive typed re-reads of an already-resolved `M3LConfig` value, plus `M3LConfigAccessorOptions`)
 - Errors: `M3LConfigCoercionError`, `M3LConfigParseError`, `M3LUnsafeConfigKeyError`, `M3LConfigValidationError`, `M3LConfigMissingError`
 
 ## Provider priority chain
@@ -245,6 +246,106 @@ try {
 }
 ```
 
+## Defensive typed reads (`M3LConfigAccessor`)
+
+`M3LConfig.get(name)` returns `unknown` — by design, since `M3LConfig` stores
+values from any provider without re-asserting the declaring parameter's type.
+A caller reading it back (most commonly a consumer script's operation
+dispatcher, re-checking a value that was already coerced and validated at
+`getValueAsync()` time, or defending against a directly-constructed
+`M3LConfig` — as tests do — that bypassed that coercion) otherwise re-writes
+the same defensive `typeof` check and thrown error at every call site.
+`M3LConfigAccessor` centralizes that pattern: it binds one `M3LConfig` and one
+caller-supplied `M3LError` `code` so every read only needs a parameter name.
+
+```typescript
+export interface M3LConfigAccessorOptions {
+  readonly config: M3LConfig;
+  readonly code: string;
+}
+
+export class M3LConfigAccessor {
+  constructor(options: M3LConfigAccessorOptions);
+  optionalString(name: string): string | undefined;
+  optionalNumber(name: string): number | undefined;
+  optionalBoolean(name: string): boolean | undefined;
+  optionalStringArray(name: string): readonly string[] | undefined;
+  numberWithDefault(name: string, defaultValue: number): number;
+  booleanWithDefault(name: string, defaultValue: boolean): boolean;
+  oneOf<T extends string>(name: string, allowed: readonly T[]): T;
+  requiredFor<T>(
+    value: T | undefined,
+    name: string,
+    operation: string,
+  ): Exclude<T, undefined>;
+}
+```
+
+- **`optionalString` / `optionalNumber` / `optionalBoolean`** — return
+  `undefined` when `name` is unset; throw `M3LError` (`options.code`, message
+  `'${name}' must be a ${typeName}`) when set to a value of the wrong type.
+- **`optionalStringArray`** — tolerates both an already-coerced
+  `readonly string[]` (the shape `get()` returns once
+  `M3LScript.getConfiguration()` has coerced a declared `STRING_ARRAY`
+  parameter — every element must itself be a `string`, or this falls through
+  to the throw below) and a raw comma-separated `string` (the shape a
+  directly-constructed `M3LConfig` stores verbatim, bypassing that
+  coercion): a string value is split on `,`, each segment trimmed, and empty
+  segments dropped (so `""`/`","` resolve to `[]`, not `undefined` — only an
+  unset key returns `undefined`). Any other type — including an array with a
+  non-string element — throws `M3LError` (message
+  `'${name}' must be a string array`).
+- **`numberWithDefault` / `booleanWithDefault`** — read like the `optional*`
+  counterpart (same wrong-type throw), falling back to `defaultValue` via
+  `??` — not `||` — when unset, so a stored `0`/`false` is returned as-is
+  and never replaced by `defaultValue` (reproducing the parameter's declared
+  default at the read site, since a directly-constructed `M3LConfig` never
+  applies it).
+- **`oneOf(name, allowed)`** — validates an already-resolved string value
+  against a declared literal-union set, narrowing the return type to `T`.
+  Throws `M3LError` (message
+  `'${name}' must be one of: ${allowed.join(", ")}`) on an unset,
+  non-string, or out-of-set value. This is a defensive re-check: the
+  declaring `M3LConfigParameter`'s `oneOf` validator (see [Stock
+  validators](#stock-validators-m3lconfigvalidators) above) already enforces
+  this at config-load time in a script driven through
+  `M3LScript.getConfiguration()`; `oneOf` here protects a caller that builds
+  an `M3LConfig` directly, bypassing that validation.
+- **`requiredFor(value, name, operation)`** — the per-operation
+  cross-parameter guard: returns `value` unchanged, narrowed to
+  `Exclude<T, undefined>` (so `null`/`false`/`0`/`""` all pass through and
+  narrow correctly — only `undefined` is excluded, `NonNullable` would wrongly
+  also strip `null`), or throws `M3LError` (message
+  `'${name}' is required for operation '${operation}'`) when `value` is
+  `undefined`. Generic over `value`'s type, so it composes after any of the
+  readers above (a required string, a required already-parsed record, etc.).
+
+Every method throws the base `M3LError` class with `options.code` — there is
+no dedicated `M3LConfigAccessor`-specific error subclass, since the caller
+already owns the `code` its consumers expect (mirrors
+[`Core.confirmDestructive`](./prompt.md)'s caller-supplied `code`).
+
+### Example
+
+```typescript
+import { Core } from "@m3l-automation/m3l-common";
+
+const read = new Core.M3LConfigAccessor({
+  config,
+  code: "ERR_ECS_OPS_CONFIG",
+});
+
+const operation = read.oneOf("operation", [
+  "list-services",
+  "describe-service",
+] as const);
+const cluster = read.requiredFor(
+  read.optionalString("cluster"),
+  "cluster",
+  operation,
+);
+```
+
 ## `asyncFallback`
 
 `asyncFallback` enables lazy I/O defaults: load a local file, call an API, or read from a secret manager — but only when no provider and no static default supply a value. It is invoked as an async function, which is why `getValueAsync()` (and parameter resolution generally) is asynchronous.
@@ -287,5 +388,7 @@ The example is illustrative of the documented resolution behavior; exact constru
 - [script](./script.md)
 - [environment](./environment.md)
 - [security](./security.md)
+- [files](./files.md) — `M3LInputFileReader` pairs with `M3LConfigAccessor` for
+  input-file `name` parameters resolved through config
 - [Guide: Configuration](../../guides/configuration.md)
 - [Architecture overview](../../m3l-common-architecture.md)

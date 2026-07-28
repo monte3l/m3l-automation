@@ -58,6 +58,27 @@ occurrences. The checklist:
   benign quirk — verify on-disk state yourself (the spoke's journal, `git
 status`/`git diff`, re-run `tsc`/`eslint`/`vitest`/coverage) before deciding
   what's actually done.
+- **A coherent-looking report can still be wrong — this is a separate failure
+  mode from truncation.** A fix-round `code-implementer` once returned a
+  clean, complete-sounding summary claiming all 4 requested items were done
+  and verified; re-reading the actual diff and re-running `tsc` found only 2
+  of the 4 had landed, with zero truncation signal (`docs/logs/2026-07-28-core-config-files-w5-promote.md`).
+  Re-verify a fix round's completion the same way regardless of how confident
+  the report reads.
+- **A harness SECURITY WARNING on a subagent's action is a hard stop, not a
+  data point to weigh.** Investigate real repository state (`git status`,
+  file timestamps, tracked-vs-untracked counts) before taking or trusting any
+  further action from that dispatch — including its own claimed results —
+  and never let a fresh remediation compound the risk (list the exact files
+  affected and act on that literal list, never a glob/`find`/`git clean`
+  re-sweep). Same incident as above: the same dispatch had also mass-deleted
+  ~450 unrelated untracked build artifacts outside its scoped file list.
+- **Scope a fix-round dispatch defensively, not just precisely.** Naming the
+  exact files to touch is necessary but not sufficient — also forbid the
+  specific dangerous command classes for that task (bulk delete, raw compiler
+  invocations bypassing the project's build config) and instruct the spoke to
+  stop-and-report on any unexpected repository state rather than
+  self-remediating it.
 - **Resume the SAME spoke via `SendMessage`**, never a fresh `Agent`/`Task`
   dispatch — a fresh agent has no memory of the prior exploration and restarts
   the whole budget from zero. Hand it a scoped punch-list of exactly what's
