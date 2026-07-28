@@ -1,6 +1,8 @@
 import { Core } from "@m3l-automation/m3l-common";
 import type { AWS } from "@m3l-automation/m3l-common";
 
+import { CONFIG_ERROR_CODE } from "./config-helpers.js";
+
 /**
  * `run-eventbridge-schedules` — the thin composition step: reads the already
  * `oneOf`-validated `operation` config parameter, runs
@@ -33,10 +35,11 @@ const MUTATING_OPERATIONS: ReadonlySet<string> = new Set([
  * `Core.confirmDestructive` description, falling back to `"(unspecified)"`
  * when unset or empty.
  *
- * Deliberately distinct from `config-helpers.ts`'s `readRequiredRuleName`:
- * this reader is display-only and must never throw — the gate still needs a
- * description even for `create`, where `ruleName` may legitimately be unset
- * (rejected later by `putRuleStep`'s own guard, not here).
+ * Deliberately distinct from `Core.M3LConfigAccessor.requiredString` (the
+ * call each step itself makes, e.g. `delete-rule.ts`): this reader is
+ * display-only and must never throw — the gate still needs a description
+ * even for `create`, where `ruleName` may legitimately be unset (rejected
+ * later by `putRuleStep`'s own guard, not here).
  */
 function readRuleNameForDisplay(config: Core.M3LConfig): string {
   const raw = config.get("ruleName");
@@ -97,11 +100,15 @@ export async function runEventbridgeSchedules(
   // exist. `Core.confirmDestructive` is a stable library function, not
   // locally mockable this way, so it is imported statically alongside `Core`.
   if (typeof operation === "string" && MUTATING_OPERATIONS.has(operation)) {
+    const accessor = new Core.M3LConfigAccessor({
+      config: deps.config,
+      code: CONFIG_ERROR_CODE,
+    });
     await Core.confirmDestructive({
       prompt: deps.prompt,
       logger: deps.logger,
       description: `${operation} rule '${readRuleNameForDisplay(deps.config)}'`,
-      yes: deps.config.get("yes") === true,
+      yes: accessor.booleanWithDefault("yes", false),
       code: "ERR_EVENTBRIDGE_SCHEDULES_ABORTED",
     });
   }

@@ -111,6 +111,32 @@ describe("resolveSettings", () => {
     expect((thrown as Core.M3LError).code).toEqual(expect.any(String));
   });
 
+  it("throws an M3LError coded ERR_LOGS_INSIGHTS_SETTINGS when 'logGroups' is an empty array (required-variant empty rejection)", () => {
+    const config = buildConfig({ ...VALID_VALUES, logGroups: [] });
+
+    let thrown: unknown;
+    try {
+      resolveSettings(config);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    expect((thrown as Core.M3LError).code).toBe("ERR_LOGS_INSIGHTS_SETTINGS");
+  });
+
+  it("throws an M3LError coded ERR_LOGS_INSIGHTS_SETTINGS when 'windowMinutes' is stored as a non-number (required-variant wrong-type rejection)", () => {
+    const config = buildConfig({ ...VALID_VALUES, windowMinutes: "60" });
+
+    let thrown: unknown;
+    try {
+      resolveSettings(config);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    expect((thrown as Core.M3LError).code).toBe("ERR_LOGS_INSIGHTS_SETTINGS");
+  });
+
   it("returns the LogsInsightsRunSettings shape (type contract)", () => {
     expectTypeOf<LogsInsightsRunSettings>().toMatchTypeOf<{
       logGroups: readonly string[];

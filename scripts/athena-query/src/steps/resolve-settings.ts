@@ -12,38 +12,11 @@
 
 import { Core, type AWS } from "@m3l-automation/m3l-common";
 
-/**
- * Thrown by {@link resolveAthenaSettings} when a declared config value
- * resolves to a type other than the one `config.ts` declared. A
- * config-wiring bug — not a runtime condition a caller can recover from.
- * Local to this script — never re-exported from the library.
- *
- * @example
- * ```ts
- * import { M3LError } from "@m3l-automation/m3l-common/core";
- *
- * try {
- *   // resolveAthenaSettings(config)
- * } catch (error) {
- *   if (error instanceof M3LError) {
- *     console.error(error.code, error.message);
- *   }
- * }
- * ```
- */
-class AthenaSettingsError extends Core.M3LError {
-  /** Narrows the inherited `code` property to the literal `"ERR_ATHENA_SETTINGS"`. */
-  override readonly code = "ERR_ATHENA_SETTINGS" as const;
+/** The `M3LError` code every `resolveAthenaSettings` guard throws with. */
+const ATHENA_SETTINGS_CODE = "ERR_ATHENA_SETTINGS";
 
-  /**
-   * Creates a new `AthenaSettingsError`.
-   *
-   * @param message - Human-readable description of the failure.
-   */
-  constructor(message: string) {
-    super(message, { code: "ERR_ATHENA_SETTINGS" });
-  }
-}
+/** The declared literal set backing `AthenaQuerySettings.format`, for `Core.M3LConfigAccessor.oneOf`. */
+const ATHENA_OUTPUT_FORMATS = ["json", "csv"] as const;
 
 /**
  * The typed, run-ready settings `run-athena-query.ts` composes against — the
@@ -61,74 +34,19 @@ export interface AthenaQuerySettings {
   readonly resume: boolean;
 }
 
-/** Narrows an unknown config value to a `string`. See {@link AthenaSettingsError}. */
-function asString(value: unknown, name: string): string {
-  if (typeof value !== "string") {
-    throw new AthenaSettingsError(
-      `configuration parameter '${name}' resolved to a non-string value`,
-    );
-  }
-  return value;
-}
-
-/** Narrows an unknown, possibly-`undefined` config value to an optional `string`. */
-function asOptionalString(value: unknown, name: string): string | undefined {
-  return value === undefined ? undefined : asString(value, name);
-}
-
-/** Narrows an unknown, possibly-`undefined` config value to an optional `readonly string[]`. */
-function asOptionalStringArray(
-  value: unknown,
-  name: string,
-): readonly string[] | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
-    throw new AthenaSettingsError(
-      `configuration parameter '${name}' resolved to a non-string-array value`,
-    );
-  }
-  // `Array.isArray` narrows to `any[]` (a known lib.es5.d.ts quirk), and the
-  // guard above has already verified every element is a `string`.
-  return value as readonly string[];
-}
-
-/** Narrows an unknown config value to a `boolean`. See {@link AthenaSettingsError}. */
-function asBoolean(value: unknown, name: string): boolean {
-  if (typeof value !== "boolean") {
-    throw new AthenaSettingsError(
-      `configuration parameter '${name}' resolved to a non-boolean value`,
-    );
-  }
-  return value;
-}
-
-/** Narrows an unknown config value to the declared `format` union. See {@link AthenaSettingsError}. */
-function asFormat(value: unknown): "json" | "csv" {
-  if (value !== "json" && value !== "csv") {
-    throw new AthenaSettingsError(
-      `configuration parameter 'format' resolved to an unsupported value`,
-    );
-  }
-  return value;
-}
-
 /**
  * Builds the `StartAthenaQueryInput` from the resolved config, omitting any
  * unset optional field rather than passing it through as `undefined`.
  */
-function buildStartInput(config: Core.M3LConfig): AWS.StartAthenaQueryInput {
-  const queryString = asString(config.get("queryString"), "queryString");
-  const database = asOptionalString(config.get("database"), "database");
-  const catalog = asOptionalString(config.get("catalog"), "catalog");
-  const outputLocation = asOptionalString(
-    config.get("outputLocation"),
-    "outputLocation",
-  );
-  const workGroup = asOptionalString(config.get("workGroup"), "workGroup");
-  const executionParameters = asOptionalStringArray(
-    config.get("executionParameters"),
+function buildStartInput(
+  accessor: Core.M3LConfigAccessor,
+): AWS.StartAthenaQueryInput {
+  const queryString = accessor.requiredString("queryString", "run");
+  const database = accessor.optionalString("database");
+  const catalog = accessor.optionalString("catalog");
+  const outputLocation = accessor.optionalString("outputLocation");
+  const workGroup = accessor.optionalString("workGroup");
+  const executionParameters = accessor.optionalStringArray(
     "executionParameters",
   );
 
@@ -151,8 +69,8 @@ function buildStartInput(config: Core.M3LConfig): AWS.StartAthenaQueryInput {
  *   config-load stage has already enforced presence/non-emptiness of every
  *   required parameter).
  * @returns The typed run settings.
- * @throws {@link AthenaSettingsError} When a declared config value resolves
- *   to an unexpected type.
+ * @throws {@link Core.M3LError} coded `"ERR_ATHENA_SETTINGS"` when a declared
+ *   config value resolves to an unexpected type.
  *
  * @example
  * ```ts
@@ -168,10 +86,14 @@ function buildStartInput(config: Core.M3LConfig): AWS.StartAthenaQueryInput {
 export function resolveAthenaSettings(
   config: Core.M3LConfig,
 ): AthenaQuerySettings {
-  const output = asString(config.get("output"), "output");
-  const format = asFormat(config.get("format"));
-  const resume = asBoolean(config.get("resume"), "resume");
-  const startInput = buildStartInput(config);
+  const accessor = new Core.M3LConfigAccessor({
+    config,
+    code: ATHENA_SETTINGS_CODE,
+  });
+  const output = accessor.requiredString("output", "run");
+  const format = accessor.oneOf("format", ATHENA_OUTPUT_FORMATS);
+  const resume = accessor.requiredBoolean("resume", "run");
+  const startInput = buildStartInput(accessor);
 
   return { startInput, format, output, resume };
 }
