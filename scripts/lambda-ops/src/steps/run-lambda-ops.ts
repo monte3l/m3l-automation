@@ -23,95 +23,8 @@ interface DispatchDeps {
   readonly logger: Core.M3LLogger;
   readonly operations: AWS.M3LLambdaOperations;
   readonly prompt: Core.M3LPrompt;
-}
-
-/**
- * Reads the `operation` parameter, validating it against the declared set.
- * The declared `M3LConfigParameter`'s `oneOf` validator already enforces this
- * at config-load time in the real script; this defensive re-check protects a
- * caller (e.g. a test) that builds a `Core.M3LConfig` directly, bypassing
- * that validation.
- */
-function readOperation(config: Core.M3LConfig): LambdaOperation {
-  const value: unknown = config.get("operation");
-  if (
-    typeof value === "string" &&
-    (LAMBDA_OPERATIONS as readonly string[]).includes(value)
-  ) {
-    return value as LambdaOperation;
-  }
-  throw new Core.M3LError(
-    `'operation' must be one of: ${LAMBDA_OPERATIONS.join(", ")}`,
-    { code: "ERR_LAMBDA_OPS_CONFIG" },
-  );
-}
-
-/** Reads an optional string parameter, defensively re-checking its type (`undefined` when unset). */
-function readOptionalString(
-  config: Core.M3LConfig,
-  name: string,
-): string | undefined {
-  const value: unknown = config.get(name);
-  if (value === undefined) return undefined;
-  if (typeof value !== "string") {
-    throw new Core.M3LError(`'${name}' must be a string`, {
-      code: "ERR_LAMBDA_OPS_CONFIG",
-    });
-  }
-  return value;
-}
-
-/**
- * Reads a boolean parameter, falling back to `defaultValue` when unset. A
- * `Core.M3LConfig` built directly (as tests do) never applies a declared
- * parameter's `defaultValue` — only `M3LScript.getConfiguration()` does — so
- * this reproduces that default at the read site.
- */
-function readBoolWithDefault(
-  config: Core.M3LConfig,
-  name: string,
-  defaultValue: boolean,
-): boolean {
-  const value: unknown = config.get(name);
-  if (value === undefined) return defaultValue;
-  if (typeof value !== "boolean") {
-    throw new Core.M3LError(`'${name}' must be a boolean`, {
-      code: "ERR_LAMBDA_OPS_CONFIG",
-    });
-  }
-  return value;
-}
-
-/** Returns `value`, throwing `ERR_LAMBDA_OPS_CONFIG` when it is `undefined` — the per-operation cross-parameter guard. */
-function requireString(
-  value: string | undefined,
-  name: string,
-  operation: LambdaOperation,
-): string {
-  if (value === undefined) {
-    throw new Core.M3LError(
-      `'${name}' is required for operation '${operation}'`,
-      { code: "ERR_LAMBDA_OPS_CONFIG" },
-    );
-  }
-  return value;
-}
-
-/** Reads the file at `paths.resolveInput(name)` as raw text — the one place either `zipFilePath` or `input` is ever read. */
-async function readInputFileText(
-  paths: Core.M3LPaths,
-  name: string,
-): Promise<string> {
-  const resolved = paths.resolveInput(name);
-  try {
-    return (await fsp.readFile(resolved)).toString("utf8");
-  } catch (cause) {
-    if (cause instanceof Core.M3LError) throw cause;
-    throw new Core.M3LError(`failed reading input file '${name}'`, {
-      code: "ERR_LAMBDA_OPS_CONFIG",
-      cause,
-    });
-  }
+  readonly accessor: Core.M3LConfigAccessor;
+  readonly reader: Core.M3LInputFileReader;
 }
 
 /** Reads `zipFilePath` under `M3L_INPUT_DIR` as raw bytes, for `create`/`update-code`. */
@@ -129,37 +42,6 @@ async function readZipFileBytes(
       cause,
     });
   }
-}
-
-/**
- * Reads and JSON-parses `input` under `M3L_INPUT_DIR`, for
- * `create`/`update-configuration`/`invoke`. The read and the parse are two
- * genuinely distinct fallible operations (a missing file vs. malformed JSON),
- * so each is wrapped in its own narrow `try`/`catch`.
- */
-async function readJSONFile(
-  paths: Core.M3LPaths,
-  name: string,
-): Promise<unknown> {
-  const raw = await readInputFileText(paths, name);
-  try {
-    return JSON.parse(raw);
-  } catch (cause) {
-    throw new Core.M3LError(`'${name}' must be valid JSON`, {
-      code: "ERR_LAMBDA_OPS_CONFIG",
-      cause,
-    });
-  }
-}
-
-/** Narrows an already-parsed JSON value to a plain object, for `create`/`update-configuration`'s `input`. */
-function asInputRecord(value: unknown, name: string): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Core.M3LError(`'${name}' must decode to a JSON object`, {
-      code: "ERR_LAMBDA_OPS_CONFIG",
-    });
-  }
-  return value as Record<string, unknown>;
 }
 
 /** Builds the human-readable description `destructive-gate` prints/prompts with. */
@@ -244,7 +126,7 @@ async function dispatchRead(
       functionName: undefined,
     });
   }
-  const functionName = requireString(
+  const functionName = deps.accessor.requiredFor(
     raw.functionName,
     "functionName",
     operation,
@@ -262,16 +144,14 @@ async function dispatchInvoke(
   raw: RawSettings,
   deps: DispatchDeps,
 ): Promise<unknown> {
-  const functionName = requireString(
+  const functionName = deps.accessor.requiredFor(
     raw.functionName,
     "functionName",
     "invoke",
   );
   await runGate("invoke", functionName, raw.yes, deps);
   const payload =
-    raw.input === undefined
-      ? undefined
-      : await readJSONFile(deps.paths, raw.input);
+    raw.input === undefined ? undefined : await deps.reader.readJSON(raw.input);
   const { invokeFunction } = await import("./invoke-function.js");
   return invokeFunction({ operations: deps.operations, functionName, payload });
 }
@@ -291,19 +171,20 @@ interface WriteFields {
 function requireWriteFields(
   operation: WriteOperation,
   raw: RawSettings,
+  accessor: Core.M3LConfigAccessor,
 ): WriteFields {
-  const functionName = requireString(
+  const functionName = accessor.requiredFor(
     raw.functionName,
     "functionName",
     operation,
   );
   const zipFilePath =
     operation === "create" || operation === "update-code"
-      ? requireString(raw.zipFilePath, "zipFilePath", operation)
+      ? accessor.requiredFor(raw.zipFilePath, "zipFilePath", operation)
       : undefined;
   const inputName =
     operation === "create" || operation === "update-configuration"
-      ? requireString(raw.input, "input", operation)
+      ? accessor.requiredFor(raw.input, "input", operation)
       : undefined;
   return { functionName, zipFilePath, inputName };
 }
@@ -319,7 +200,7 @@ async function dispatchWrite(
   raw: RawSettings,
   deps: DispatchDeps,
 ): Promise<unknown> {
-  const fields = requireWriteFields(operation, raw);
+  const fields = requireWriteFields(operation, raw, deps.accessor);
   await runGate(operation, fields.functionName, raw.yes, deps);
 
   const zipFile =
@@ -329,10 +210,7 @@ async function dispatchWrite(
   const input =
     fields.inputName === undefined
       ? undefined
-      : asInputRecord(
-          await readJSONFile(deps.paths, fields.inputName),
-          fields.inputName,
-        );
+      : await deps.reader.readJSONRecord(fields.inputName);
 
   const { writeFunction } = await import("./write-function.js");
   return writeFunction({
@@ -440,21 +318,32 @@ export async function runLambdaOps(deps: {
   readonly operations: AWS.M3LLambdaOperations;
   readonly prompt: Core.M3LPrompt;
 }): Promise<void> {
-  const operation = readOperation(deps.config);
+  const accessor = new Core.M3LConfigAccessor({
+    config: deps.config,
+    code: "ERR_LAMBDA_OPS_CONFIG",
+  });
+  const reader = new Core.M3LInputFileReader({
+    paths: deps.paths,
+    code: "ERR_LAMBDA_OPS_CONFIG",
+  });
+
+  const operation = accessor.oneOf("operation", LAMBDA_OPERATIONS);
   const raw: RawSettings = {
-    functionName: readOptionalString(deps.config, "functionName"),
-    marker: readOptionalString(deps.config, "marker"),
-    zipFilePath: readOptionalString(deps.config, "zipFilePath"),
-    input: readOptionalString(deps.config, "input"),
-    yes: readBoolWithDefault(deps.config, "yes", YES_DEFAULT),
+    functionName: accessor.optionalString("functionName"),
+    marker: accessor.optionalString("marker"),
+    zipFilePath: accessor.optionalString("zipFilePath"),
+    input: accessor.optionalString("input"),
+    yes: accessor.booleanWithDefault("yes", YES_DEFAULT),
   };
-  const output = readOptionalString(deps.config, "output");
+  const output = accessor.optionalString("output");
 
   const result = await dispatchOperation(operation, raw, {
     paths: deps.paths,
     logger: deps.logger,
     operations: deps.operations,
     prompt: deps.prompt,
+    accessor,
+    reader,
   });
 
   if (output !== undefined && result !== undefined) {

@@ -1,5 +1,3 @@
-import * as fsp from "node:fs/promises";
-
 import { Core } from "@m3l-automation/m3l-common";
 import type { AWS } from "@m3l-automation/m3l-common";
 
@@ -39,6 +37,8 @@ interface DispatchDeps {
   readonly logger: Core.M3LLogger;
   readonly operations: AWS.M3LCodePipelineOperations;
   readonly prompt: Core.M3LPrompt;
+  readonly accessor: Core.M3LConfigAccessor;
+  readonly reader: Core.M3LInputFileReader;
 }
 
 /** The union of result shapes any dispatched operation can resolve. `void` for `delete-pipeline`/both stage-transition operations. */
@@ -53,115 +53,13 @@ type DispatchResult =
   | AWS.M3LCodePipelineStopExecutionResult
   | undefined;
 
-/**
- * Reads the `operation` parameter, validating it against the declared set.
- * The declared `M3LConfigParameter`'s `oneOf` validator already enforces this
- * at config-load time in the real script; this defensive re-check protects a
- * caller (e.g. a test) that builds a `Core.M3LConfig` directly, bypassing
- * that validation.
- */
-function readOperation(config: Core.M3LConfig): CodepipelineOperation {
-  const value: unknown = config.get("operation");
-  if (
-    typeof value === "string" &&
-    (CODEPIPELINE_OPS_OPERATIONS as readonly string[]).includes(value)
-  ) {
-    return value as CodepipelineOperation;
-  }
-  throw new Core.M3LError(
-    `'operation' must be one of: ${CODEPIPELINE_OPS_OPERATIONS.join(", ")}`,
-    { code: "ERR_CODEPIPELINE_OPS_CONFIG" },
-  );
-}
-
-/** Reads an optional string parameter, defensively re-checking its type (`undefined` when unset). */
-function readOptionalString(
-  config: Core.M3LConfig,
-  name: string,
-): string | undefined {
-  const value: unknown = config.get(name);
-  if (value === undefined) return undefined;
-  if (typeof value !== "string") {
-    throw new Core.M3LError(`'${name}' must be a string`, {
-      code: "ERR_CODEPIPELINE_OPS_CONFIG",
-    });
-  }
-  return value;
-}
-
-/** Reads an optional number parameter, defensively re-checking its type (`undefined` when unset). */
-function readOptionalNumber(
-  config: Core.M3LConfig,
-  name: string,
-): number | undefined {
-  const value: unknown = config.get(name);
-  if (value === undefined) return undefined;
-  if (typeof value !== "number") {
-    throw new Core.M3LError(`'${name}' must be a number`, {
-      code: "ERR_CODEPIPELINE_OPS_CONFIG",
-    });
-  }
-  return value;
-}
-
-/**
- * Reads a boolean parameter, falling back to `defaultValue` when unset. A
- * `Core.M3LConfig` built directly (as tests do) never applies a declared
- * parameter's `defaultValue` — only `M3LScript.getConfiguration()` does — so
- * this reproduces that default at the read site.
- */
-function readBoolWithDefault(
-  config: Core.M3LConfig,
-  name: string,
-  defaultValue: boolean,
-): boolean {
-  const value: unknown = config.get(name);
-  if (value === undefined) return defaultValue;
-  if (typeof value !== "boolean") {
-    throw new Core.M3LError(`'${name}' must be a boolean`, {
-      code: "ERR_CODEPIPELINE_OPS_CONFIG",
-    });
-  }
-  return value;
-}
-
-/** Reads a number parameter, falling back to `defaultValue` when unset — the numeric counterpart to {@link readBoolWithDefault}. */
-function readNumberWithDefault(
-  config: Core.M3LConfig,
-  name: string,
-  defaultValue: number,
-): number {
-  const value: unknown = config.get(name);
-  if (value === undefined) return defaultValue;
-  if (typeof value !== "number") {
-    throw new Core.M3LError(`'${name}' must be a number`, {
-      code: "ERR_CODEPIPELINE_OPS_CONFIG",
-    });
-  }
-  return value;
-}
-
-/** Returns `value`, throwing `ERR_CODEPIPELINE_OPS_CONFIG` when it is `undefined` — the per-operation cross-parameter guard. */
-function requireString(
-  value: string | undefined,
-  name: string,
-  operation: CodepipelineOperation,
-): string {
-  if (value === undefined) {
-    throw new Core.M3LError(
-      `'${name}' is required for operation '${operation}'`,
-      { code: "ERR_CODEPIPELINE_OPS_CONFIG" },
-    );
-  }
-  return value;
-}
-
 /** Guard-checks and narrows `transitionType` to the wrapper's closed `"Inbound" | "Outbound"` union. */
 function requireTransitionType(
+  accessor: Core.M3LConfigAccessor,
   value: string | undefined,
   operation: CodepipelineOperation,
 ): AWS.M3LCodePipelineStageTransitionType {
-  const raw = requireString(value, "transitionType", operation);
+  const raw = accessor.requiredFor(value, "transitionType", operation);
   if ((STAGE_TRANSITION_TYPES as readonly string[]).includes(raw) === false) {
     throw new Core.M3LError(
       `'transitionType' must be one of: ${STAGE_TRANSITION_TYPES.join(", ")}`,
@@ -169,54 +67,6 @@ function requireTransitionType(
     );
   }
   return raw as AWS.M3LCodePipelineStageTransitionType;
-}
-
-/** Reads the file at `paths.resolveInput(name)` as raw text — the one place `input` is ever read. */
-async function readInputFileText(
-  paths: Core.M3LPaths,
-  name: string,
-): Promise<string> {
-  const resolved = paths.resolveInput(name);
-  try {
-    return (await fsp.readFile(resolved)).toString("utf8");
-  } catch (cause) {
-    if (cause instanceof Core.M3LError) throw cause;
-    throw new Core.M3LError(`failed reading input file '${name}'`, {
-      code: "ERR_CODEPIPELINE_OPS_INPUT",
-      cause,
-    });
-  }
-}
-
-/**
- * Reads and JSON-parses `input` under `M3L_INPUT_DIR`, for
- * `create-pipeline`/`update-pipeline`. The read and the parse are two
- * genuinely distinct fallible operations (a missing file vs. malformed
- * JSON), so each is wrapped in its own narrow `try`/`catch`.
- */
-async function readJSONFile(
-  paths: Core.M3LPaths,
-  name: string,
-): Promise<unknown> {
-  const raw = await readInputFileText(paths, name);
-  try {
-    return JSON.parse(raw);
-  } catch (cause) {
-    throw new Core.M3LError(`'${name}' must be valid JSON`, {
-      code: "ERR_CODEPIPELINE_OPS_INPUT",
-      cause,
-    });
-  }
-}
-
-/** Narrows an already-parsed JSON value to a plain object, for `create-pipeline`/`update-pipeline`'s `input`. */
-function asInputRecord(value: unknown, name: string): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Core.M3LError(`'${name}' must decode to a JSON object`, {
-      code: "ERR_CODEPIPELINE_OPS_INPUT",
-    });
-  }
-  return value as Record<string, unknown>;
 }
 
 /** Runs `Core.confirmDestructive` — every mutating pipeline operation routes through this before dispatch. */
@@ -275,7 +125,7 @@ async function dispatchReadPipelines(
   deps: DispatchDeps,
 ): Promise<DispatchResult> {
   if (operation === "describe-pipeline") {
-    requireString(raw.pipeline, "pipeline", operation);
+    deps.accessor.requiredFor(raw.pipeline, "pipeline", operation);
   }
   const { readPipelines } = await import("./read-pipelines.js");
   return readPipelines({
@@ -293,7 +143,7 @@ async function dispatchReadState(
   raw: RawSettings,
   deps: DispatchDeps,
 ): Promise<DispatchResult> {
-  const pipeline = requireString(
+  const pipeline = deps.accessor.requiredFor(
     raw.pipeline,
     "pipeline",
     "get-pipeline-state",
@@ -308,9 +158,13 @@ async function dispatchReadExecutions(
   raw: RawSettings,
   deps: DispatchDeps,
 ): Promise<DispatchResult> {
-  const pipeline = requireString(raw.pipeline, "pipeline", operation);
+  const pipeline = deps.accessor.requiredFor(
+    raw.pipeline,
+    "pipeline",
+    operation,
+  );
   if (operation === "describe-execution") {
-    requireString(raw.executionId, "executionId", operation);
+    deps.accessor.requiredFor(raw.executionId, "executionId", operation);
   }
   const { readExecutions } = await import("./read-executions.js");
   return readExecutions({
@@ -333,18 +187,22 @@ interface WriteDispatchPlan {
 async function planWriteDispatch(
   operation: "create-pipeline" | "update-pipeline" | "delete-pipeline",
   raw: RawSettings,
-  paths: Core.M3LPaths,
+  deps: DispatchDeps,
 ): Promise<WriteDispatchPlan> {
   if (operation === "delete-pipeline") {
-    const pipeline = requireString(raw.pipeline, "pipeline", operation);
+    const pipeline = deps.accessor.requiredFor(
+      raw.pipeline,
+      "pipeline",
+      operation,
+    );
     return {
       description: buildDeleteGateDescription(pipeline),
       declaration: undefined,
     };
   }
 
-  const inputName = requireString(raw.input, "input", operation);
-  const parsed = asInputRecord(await readJSONFile(paths, inputName), inputName);
+  const inputName = deps.accessor.requiredFor(raw.input, "input", operation);
+  const parsed = await deps.reader.readJSONRecord(inputName);
   return {
     description: buildRecordGateDescription(operation, parsed),
     declaration: parsed,
@@ -357,7 +215,7 @@ async function dispatchWritePipeline(
   raw: RawSettings,
   deps: DispatchDeps,
 ): Promise<DispatchResult> {
-  const plan = await planWriteDispatch(operation, raw, deps.paths);
+  const plan = await planWriteDispatch(operation, raw, deps);
   await runGate(plan.description, raw.yes, deps);
 
   const { writePipeline } = await import("./write-pipeline.js");
@@ -375,9 +233,13 @@ async function dispatchExecute(
   raw: RawSettings,
   deps: DispatchDeps,
 ): Promise<DispatchResult> {
-  const pipeline = requireString(raw.pipeline, "pipeline", operation);
+  const pipeline = deps.accessor.requiredFor(
+    raw.pipeline,
+    "pipeline",
+    operation,
+  );
   if (operation === "stop-execution") {
-    requireString(raw.executionId, "executionId", operation);
+    deps.accessor.requiredFor(raw.executionId, "executionId", operation);
   }
   const { execute } = await import("./execute.js");
   return execute({
@@ -397,11 +259,19 @@ async function dispatchTransitions(
   raw: RawSettings,
   deps: DispatchDeps,
 ): Promise<DispatchResult> {
-  const pipeline = requireString(raw.pipeline, "pipeline", operation);
-  const stage = requireString(raw.stage, "stage", operation);
-  const transitionType = requireTransitionType(raw.transitionType, operation);
+  const pipeline = deps.accessor.requiredFor(
+    raw.pipeline,
+    "pipeline",
+    operation,
+  );
+  const stage = deps.accessor.requiredFor(raw.stage, "stage", operation);
+  const transitionType = requireTransitionType(
+    deps.accessor,
+    raw.transitionType,
+    operation,
+  );
   if (operation === "disable-stage-transition") {
-    requireString(raw.reason, "reason", operation);
+    deps.accessor.requiredFor(raw.reason, "reason", operation);
   }
   const { transitions } = await import("./transitions.js");
   await transitions({
@@ -420,8 +290,12 @@ async function dispatchWatch(
   raw: RawSettings,
   deps: DispatchDeps,
 ): Promise<DispatchResult> {
-  const pipeline = requireString(raw.pipeline, "pipeline", "watch-execution");
-  const executionId = requireString(
+  const pipeline = deps.accessor.requiredFor(
+    raw.pipeline,
+    "pipeline",
+    "watch-execution",
+  );
+  const executionId = deps.accessor.requiredFor(
     raw.executionId,
     "executionId",
     "watch-execution",
@@ -559,26 +433,24 @@ async function dispatchOperation(
 }
 
 /** Resolves the raw, per-operation-optional config values `run-codepipeline-ops` reads once, up front. */
-function readRawSettings(config: Core.M3LConfig): RawSettings {
+function readRawSettings(accessor: Core.M3LConfigAccessor): RawSettings {
   return {
-    pipeline: readOptionalString(config, "pipeline"),
-    executionId: readOptionalString(config, "executionId"),
-    stage: readOptionalString(config, "stage"),
-    transitionType: readOptionalString(config, "transitionType"),
-    reason: readOptionalString(config, "reason"),
-    input: readOptionalString(config, "input"),
-    version: readOptionalNumber(config, "version"),
-    maxResults: readOptionalNumber(config, "maxResults"),
-    clientRequestToken: readOptionalString(config, "clientRequestToken"),
-    abandon: readBoolWithDefault(config, "abandon", ABANDON_DEFAULT),
-    yes: readBoolWithDefault(config, "yes", YES_DEFAULT),
-    waitMaxAttempts: readNumberWithDefault(
-      config,
+    pipeline: accessor.optionalString("pipeline"),
+    executionId: accessor.optionalString("executionId"),
+    stage: accessor.optionalString("stage"),
+    transitionType: accessor.optionalString("transitionType"),
+    reason: accessor.optionalString("reason"),
+    input: accessor.optionalString("input"),
+    version: accessor.optionalNumber("version"),
+    maxResults: accessor.optionalNumber("maxResults"),
+    clientRequestToken: accessor.optionalString("clientRequestToken"),
+    abandon: accessor.booleanWithDefault("abandon", ABANDON_DEFAULT),
+    yes: accessor.booleanWithDefault("yes", YES_DEFAULT),
+    waitMaxAttempts: accessor.numberWithDefault(
       "waitMaxAttempts",
       WAIT_MAX_ATTEMPTS_DEFAULT,
     ),
-    waitIntervalSeconds: readNumberWithDefault(
-      config,
+    waitIntervalSeconds: accessor.numberWithDefault(
       "waitIntervalSeconds",
       WAIT_INTERVAL_SECONDS_DEFAULT,
     ),
@@ -681,15 +553,26 @@ export async function runCodepipelineOps(deps: {
   readonly operations: AWS.M3LCodePipelineOperations;
   readonly prompt: Core.M3LPrompt;
 }): Promise<void> {
-  const operation = readOperation(deps.config);
-  const raw = readRawSettings(deps.config);
-  const output = readOptionalString(deps.config, "output");
+  const accessor = new Core.M3LConfigAccessor({
+    config: deps.config,
+    code: "ERR_CODEPIPELINE_OPS_CONFIG",
+  });
+  const reader = new Core.M3LInputFileReader({
+    paths: deps.paths,
+    code: "ERR_CODEPIPELINE_OPS_INPUT",
+  });
+
+  const operation = accessor.oneOf("operation", CODEPIPELINE_OPS_OPERATIONS);
+  const raw = readRawSettings(accessor);
+  const output = accessor.optionalString("output");
 
   const result = await dispatchOperation(operation, raw, {
     paths: deps.paths,
     logger: deps.logger,
     operations: deps.operations,
     prompt: deps.prompt,
+    accessor,
+    reader,
   });
 
   await persistOutput(deps.paths, output, result);

@@ -1,5 +1,3 @@
-import * as fsp from "node:fs/promises";
-
 import { Core } from "@m3l-automation/m3l-common";
 import type { AWS } from "@m3l-automation/m3l-common";
 
@@ -12,7 +10,7 @@ type EcsOperation = (typeof ECS_OPERATIONS)[number];
 interface RawSettings {
   readonly cluster: string | undefined;
   readonly service: string | undefined;
-  readonly services: string | undefined;
+  readonly services: readonly string[] | undefined;
   readonly input: string | undefined;
   readonly nextToken: string | undefined;
   readonly force: boolean;
@@ -22,10 +20,11 @@ interface RawSettings {
 
 /** The dependencies every dispatched operation needs, once `config` has resolved. */
 interface DispatchDeps {
-  readonly paths: Core.M3LPaths;
   readonly logger: Core.M3LLogger;
   readonly operations: AWS.M3LECSOperations;
   readonly prompt: Core.M3LPrompt;
+  readonly accessor: Core.M3LConfigAccessor;
+  readonly reader: Core.M3LInputFileReader;
 }
 
 /** The union of result shapes any dispatched operation can resolve. */
@@ -35,149 +34,6 @@ type DispatchResult =
   | AWS.M3LECSWaiterResult
   | AWS.M3LECSListClustersResult
   | AWS.M3LECSClusterSummary;
-
-/**
- * Reads the `operation` parameter, validating it against the declared set.
- * The declared `M3LConfigParameter`'s `oneOf` validator already enforces this
- * at config-load time in the real script; this defensive re-check protects a
- * caller (e.g. a test) that builds a `Core.M3LConfig` directly, bypassing
- * that validation.
- */
-function readOperation(config: Core.M3LConfig): EcsOperation {
-  const value: unknown = config.get("operation");
-  if (
-    typeof value === "string" &&
-    (ECS_OPERATIONS as readonly string[]).includes(value)
-  ) {
-    return value as EcsOperation;
-  }
-  throw new Core.M3LError(
-    `'operation' must be one of: ${ECS_OPERATIONS.join(", ")}`,
-    { code: "ERR_ECS_OPS_CONFIG" },
-  );
-}
-
-/** Reads an optional string parameter, defensively re-checking its type (`undefined` when unset). */
-function readOptionalString(
-  config: Core.M3LConfig,
-  name: string,
-): string | undefined {
-  const value: unknown = config.get(name);
-  if (value === undefined) return undefined;
-  if (typeof value !== "string") {
-    throw new Core.M3LError(`'${name}' must be a string`, {
-      code: "ERR_ECS_OPS_CONFIG",
-    });
-  }
-  return value;
-}
-
-/** Reads an optional number parameter, defensively re-checking its type (`undefined` when unset). */
-function readOptionalNumber(
-  config: Core.M3LConfig,
-  name: string,
-): number | undefined {
-  const value: unknown = config.get(name);
-  if (value === undefined) return undefined;
-  if (typeof value !== "number") {
-    throw new Core.M3LError(`'${name}' must be a number`, {
-      code: "ERR_ECS_OPS_CONFIG",
-    });
-  }
-  return value;
-}
-
-/**
- * Reads a boolean parameter, falling back to `defaultValue` when unset. A
- * `Core.M3LConfig` built directly (as tests do) never applies a declared
- * parameter's `defaultValue` — only `M3LScript.getConfiguration()` does — so
- * this reproduces that default at the read site.
- */
-function readBoolWithDefault(
-  config: Core.M3LConfig,
-  name: string,
-  defaultValue: boolean,
-): boolean {
-  const value: unknown = config.get(name);
-  if (value === undefined) return defaultValue;
-  if (typeof value !== "boolean") {
-    throw new Core.M3LError(`'${name}' must be a boolean`, {
-      code: "ERR_ECS_OPS_CONFIG",
-    });
-  }
-  return value;
-}
-
-/** Returns `value`, throwing `ERR_ECS_OPS_CONFIG` when it is `undefined` — the per-operation cross-parameter guard. */
-function requireString(
-  value: string | undefined,
-  name: string,
-  operation: EcsOperation,
-): string {
-  if (value === undefined) {
-    throw new Core.M3LError(
-      `'${name}' is required for operation '${operation}'`,
-      { code: "ERR_ECS_OPS_CONFIG" },
-    );
-  }
-  return value;
-}
-
-/** Reads the file at `paths.resolveInput(name)` as raw text — the one place `input` is ever read. */
-async function readInputFileText(
-  paths: Core.M3LPaths,
-  name: string,
-): Promise<string> {
-  const resolved = paths.resolveInput(name);
-  try {
-    return (await fsp.readFile(resolved)).toString("utf8");
-  } catch (cause) {
-    if (cause instanceof Core.M3LError) throw cause;
-    throw new Core.M3LError(`failed reading input file '${name}'`, {
-      code: "ERR_ECS_OPS_CONFIG",
-      cause,
-    });
-  }
-}
-
-/**
- * Reads and JSON-parses `input` under `M3L_INPUT_DIR`, for
- * `create-service`/`update-service`. The read and the parse are two genuinely
- * distinct fallible operations (a missing file vs. malformed JSON), so each
- * is wrapped in its own narrow `try`/`catch`.
- */
-async function readJSONFile(
-  paths: Core.M3LPaths,
-  name: string,
-): Promise<unknown> {
-  const raw = await readInputFileText(paths, name);
-  try {
-    return JSON.parse(raw);
-  } catch (cause) {
-    throw new Core.M3LError(`'${name}' must be valid JSON`, {
-      code: "ERR_ECS_OPS_CONFIG",
-      cause,
-    });
-  }
-}
-
-/** Narrows an already-parsed JSON value to a plain object, for `create-service`/`update-service`'s `input`. */
-function asInputRecord(value: unknown, name: string): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Core.M3LError(`'${name}' must decode to a JSON object`, {
-      code: "ERR_ECS_OPS_CONFIG",
-    });
-  }
-  return value as Record<string, unknown>;
-}
-
-/** Splits `raw` on `,`, trims each segment, and drops empty segments — the `services` cross-parameter shape `wait-services-stable` needs. */
-function splitServices(raw: string): readonly string[] {
-  return raw
-    .split(",")
-    .map((segment) => segment.trim())
-    .filter((segment) => segment.length > 0);
-}
 
 /** Runs `Core.confirmDestructive` — every mutating operation routes through this before dispatch. */
 async function runGate(
@@ -214,7 +70,7 @@ const UNKNOWN_TARGET_PHRASE = "(see input file)";
  */
 function buildRecordGateDescription(
   operation: "create-service" | "update-service",
-  record: Record<string, unknown>,
+  record: Readonly<Record<string, unknown>>,
 ): string {
   const serviceNameValue = record["serviceName"] ?? record["service"];
   const serviceName =
@@ -235,8 +91,8 @@ async function dispatchReadServices(
   deps: DispatchDeps,
 ): Promise<DispatchResult> {
   if (operation === "describe-service") {
-    requireString(raw.cluster, "cluster", operation);
-    requireString(raw.service, "service", operation);
+    deps.accessor.requiredFor(raw.cluster, "cluster", operation);
+    deps.accessor.requiredFor(raw.service, "service", operation);
   }
   const { readServices } = await import("./read-services.js");
   return readServices({
@@ -255,7 +111,7 @@ async function dispatchReadClusters(
   deps: DispatchDeps,
 ): Promise<DispatchResult> {
   if (operation === "describe-cluster") {
-    requireString(raw.cluster, "cluster", operation);
+    deps.accessor.requiredFor(raw.cluster, "cluster", operation);
   }
   const { readClusters } = await import("./read-clusters.js");
   return readClusters({
@@ -266,18 +122,21 @@ async function dispatchReadClusters(
   });
 }
 
-/** `wait-services-stable`: guard-checks `cluster`/`services`, splits `services`, then dispatches to `wait-services`. Never gated. */
+/** `wait-services-stable`: guard-checks `cluster`/`services`, then dispatches to `wait-services`. Never gated. */
 async function dispatchWait(
   raw: RawSettings,
   deps: DispatchDeps,
 ): Promise<DispatchResult> {
-  const cluster = requireString(raw.cluster, "cluster", "wait-services-stable");
-  const servicesRaw = requireString(
+  const cluster = deps.accessor.requiredFor(
+    raw.cluster,
+    "cluster",
+    "wait-services-stable",
+  );
+  const services = deps.accessor.requiredFor(
     raw.services,
     "services",
     "wait-services-stable",
   );
-  const services = splitServices(servicesRaw);
   if (services.length === 0) {
     throw new Core.M3LError(
       "'services' must contain at least one non-empty segment after splitting on ','",
@@ -304,22 +163,30 @@ interface WriteDispatchPlan {
 async function planWriteDispatch(
   operation: "create-service" | "update-service" | "delete-service",
   raw: RawSettings,
-  paths: Core.M3LPaths,
+  deps: Pick<DispatchDeps, "accessor" | "reader">,
 ): Promise<WriteDispatchPlan> {
   if (operation === "delete-service") {
-    const cluster = requireString(raw.cluster, "cluster", operation);
-    const service = requireString(raw.service, "service", operation);
+    const cluster = deps.accessor.requiredFor(
+      raw.cluster,
+      "cluster",
+      operation,
+    );
+    const service = deps.accessor.requiredFor(
+      raw.service,
+      "service",
+      operation,
+    );
     return {
       description: buildDeleteGateDescription(cluster, service),
       input: undefined,
     };
   }
 
-  const inputName = requireString(raw.input, "input", operation);
-  const parsed = asInputRecord(await readJSONFile(paths, inputName), inputName);
+  const inputName = deps.accessor.requiredFor(raw.input, "input", operation);
+  const parsed = await deps.reader.readJSONRecord(inputName);
   return {
     description: buildRecordGateDescription(operation, parsed),
-    input: parsed,
+    input: { ...parsed },
   };
 }
 
@@ -329,7 +196,7 @@ async function dispatchWriteService(
   raw: RawSettings,
   deps: DispatchDeps,
 ): Promise<DispatchResult> {
-  const plan = await planWriteDispatch(operation, raw, deps.paths);
+  const plan = await planWriteDispatch(operation, raw, deps);
   await runGate(plan.description, raw.yes, deps);
 
   const { writeService } = await import("./write-service.js");
@@ -443,16 +310,16 @@ async function dispatchOperation(
 }
 
 /** Resolves the raw, per-operation-optional config values `run-ecs-ops` reads once, up front. */
-function readRawSettings(config: Core.M3LConfig): RawSettings {
+function readRawSettings(accessor: Core.M3LConfigAccessor): RawSettings {
   return {
-    cluster: readOptionalString(config, "cluster"),
-    service: readOptionalString(config, "service"),
-    services: readOptionalString(config, "services"),
-    input: readOptionalString(config, "input"),
-    nextToken: readOptionalString(config, "nextToken"),
-    force: readBoolWithDefault(config, "force", FORCE_DEFAULT),
-    maxWaitTime: readOptionalNumber(config, "maxWaitTime"),
-    yes: readBoolWithDefault(config, "yes", YES_DEFAULT),
+    cluster: accessor.optionalString("cluster"),
+    service: accessor.optionalString("service"),
+    services: accessor.optionalStringArray("services"),
+    input: accessor.optionalString("input"),
+    nextToken: accessor.optionalString("nextToken"),
+    force: accessor.booleanWithDefault("force", FORCE_DEFAULT),
+    maxWaitTime: accessor.optionalNumber("maxWaitTime"),
+    yes: accessor.booleanWithDefault("yes", YES_DEFAULT),
   };
 }
 
@@ -549,15 +416,25 @@ export async function runEcsOps(deps: {
   readonly operations: AWS.M3LECSOperations;
   readonly prompt: Core.M3LPrompt;
 }): Promise<void> {
-  const operation = readOperation(deps.config);
-  const raw = readRawSettings(deps.config);
-  const output = readOptionalString(deps.config, "output");
+  const accessor = new Core.M3LConfigAccessor({
+    config: deps.config,
+    code: "ERR_ECS_OPS_CONFIG",
+  });
+  const reader = new Core.M3LInputFileReader({
+    paths: deps.paths,
+    code: "ERR_ECS_OPS_CONFIG",
+  });
+
+  const operation = accessor.oneOf("operation", ECS_OPERATIONS);
+  const raw = readRawSettings(accessor);
+  const output = accessor.optionalString("output");
 
   const result = await dispatchOperation(operation, raw, {
-    paths: deps.paths,
     logger: deps.logger,
     operations: deps.operations,
     prompt: deps.prompt,
+    accessor,
+    reader,
   });
 
   await persistOutput(deps.paths, output, result);
@@ -567,6 +444,6 @@ export async function runEcsOps(deps: {
     operation,
     ...(raw.cluster !== undefined && { cluster: raw.cluster }),
     ...(raw.service !== undefined && { service: raw.service }),
-    ...(raw.services !== undefined && { services: raw.services }),
+    ...(raw.services !== undefined && { services: raw.services.join(",") }),
   });
 }
