@@ -283,19 +283,25 @@ export class M3LConfigAccessor {
 - **`optionalStringArray`** — tolerates both an already-coerced
   `readonly string[]` (the shape `get()` returns once
   `M3LScript.getConfiguration()` has coerced a declared `STRING_ARRAY`
-  parameter) and a raw comma-separated `string` (the shape a
+  parameter — every element must itself be a `string`, or this falls through
+  to the throw below) and a raw comma-separated `string` (the shape a
   directly-constructed `M3LConfig` stores verbatim, bypassing that
   coercion): a string value is split on `,`, each segment trimmed, and empty
-  segments dropped. Any other type throws `M3LError` (message
+  segments dropped (so `""`/`","` resolve to `[]`, not `undefined` — only an
+  unset key returns `undefined`). Any other type — including an array with a
+  non-string element — throws `M3LError` (message
   `'${name}' must be a string array`).
 - **`numberWithDefault` / `booleanWithDefault`** — read like the `optional*`
-  counterpart, falling back to `defaultValue` when unset (reproducing the
-  parameter's declared default at the read site, since a directly-constructed
-  `M3LConfig` never applies it).
+  counterpart (same wrong-type throw), falling back to `defaultValue` via
+  `??` — not `||` — when unset, so a stored `0`/`false` is returned as-is
+  and never replaced by `defaultValue` (reproducing the parameter's declared
+  default at the read site, since a directly-constructed `M3LConfig` never
+  applies it).
 - **`oneOf(name, allowed)`** — validates an already-resolved string value
   against a declared literal-union set, narrowing the return type to `T`.
-  Throws `M3LError` (message `'name' must be one of: ${allowed.join(", ")}`)
-  on an unset or out-of-set value. This is a defensive re-check: the
+  Throws `M3LError` (message
+  `'${name}' must be one of: ${allowed.join(", ")}`) on an unset,
+  non-string, or out-of-set value. This is a defensive re-check: the
   declaring `M3LConfigParameter`'s `oneOf` validator (see [Stock
   validators](#stock-validators-m3lconfigvalidators) above) already enforces
   this at config-load time in a script driven through

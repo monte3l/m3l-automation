@@ -106,8 +106,10 @@ export class M3LInputFileReader {
   that snippet — and, worst case, a secret sitting at that exact offset —
   survive into a persisted `run-report.json` (`core/diagnostics`'
   name-based redaction does not match unstructured free text). On a parse
-  failure, only the failing error's `name` (e.g. `"SyntaxError"`) is folded
-  into the thrown message: `M3LError` (`options.code`, message
+  failure, only the failing error's `name` is folded into the thrown
+  message — `"SyntaxError"` for `JSON.parse`'s own throw, the only value
+  reachable in practice, with `"SyntaxError"` itself as the fallback should a
+  non-`Error` ever be thrown: `M3LError` (`options.code`, message
   `'${name}' must be valid JSON (${errorName})`), with **no `cause`**.
 - **`readJSONRecord(name)`** — `readJSON(name)` narrowed through
   `asRecord`; the common case for a config file that must decode to a
