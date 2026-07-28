@@ -661,6 +661,47 @@ describe("runLambdaOps — malformed/unreadable input-file failure paths", () =>
     expect(invokeFunctionMock).not.toHaveBeenCalled();
   });
 
+  test("F10: malformed JSON parse failure does not chain the raw SyntaxError as cause", async () => {
+    const inputPath = PATHS.resolveInput("payload.json");
+    stubReadFileByPath({ [inputPath]: "{not json" });
+    const deps = buildDeps({
+      operation: "invoke",
+      functionName: "my-function",
+      input: "payload.json",
+    });
+
+    let thrown: unknown;
+    try {
+      await runLambdaOps(deps);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    expect((thrown as Core.M3LError).cause).toBeUndefined();
+    expect((thrown as Core.M3LError).message).toMatch(
+      /must be valid JSON \(\w+Error\)/,
+    );
+    expect(invokeFunctionMock).not.toHaveBeenCalled();
+  });
+
+  test("throws ERR_LAMBDA_OPS_CONFIG ('contains an unsafe key') when the parsed input has a top-level __proto__ key", async () => {
+    const inputPath = PATHS.resolveInput("def.json");
+    stubReadFileByPath({
+      [inputPath]: '{"__proto__":{"polluted":true}}',
+    });
+    const deps = buildDeps({
+      operation: "update-configuration",
+      functionName: "my-function",
+      input: "def.json",
+    });
+
+    await expect(runLambdaOps(deps)).rejects.toMatchObject({
+      code: "ERR_LAMBDA_OPS_CONFIG",
+    });
+    expect(writeFunctionMock).not.toHaveBeenCalled();
+  });
+
   test("throws ERR_LAMBDA_OPS_CONFIG ('must decode to a JSON object') when the parsed input is a JSON array", async () => {
     const inputPath = PATHS.resolveInput("def.json");
     stubReadFileByPath({ [inputPath]: JSON.stringify([1, 2, 3]) });

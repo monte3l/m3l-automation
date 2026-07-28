@@ -44,62 +44,11 @@ interface RunSettings {
   readonly yes: boolean;
 }
 
-/**
- * Reads the `operation` parameter, validating it against the declared set.
- * The declared `M3LConfigParameter`'s `oneOf` validator already enforces this
- * at config-load time in the real script; this defensive re-check protects a
- * caller (e.g. a test) that builds a `Core.M3LConfig` directly, bypassing
- * that validation.
- */
-function readOperation(config: Core.M3LConfig): S3ObjectsOperation {
-  const value: unknown = config.get("operation");
-  if (
-    typeof value === "string" &&
-    (S3_OBJECTS_OPERATIONS as readonly string[]).includes(value)
-  ) {
-    return value as S3ObjectsOperation;
-  }
-  throw new Core.M3LError(
-    `'operation' must be one of: ${S3_OBJECTS_OPERATIONS.join(", ")}`,
-    { code: "ERR_S3_OBJECTS_CONFIG" },
-  );
-}
-
 /** Reads a required non-empty string parameter, defensively re-checking its type. */
 function readString(config: Core.M3LConfig, name: string): string {
   const value: unknown = config.get(name);
   if (typeof value !== "string" || value.length === 0) {
     throw new Core.M3LError(`'${name}' must be a non-empty string`, {
-      code: "ERR_S3_OBJECTS_CONFIG",
-    });
-  }
-  return value;
-}
-
-/** Reads an optional string parameter (`undefined` when unset). */
-function readOptionalString(
-  config: Core.M3LConfig,
-  name: string,
-): string | undefined {
-  const value: unknown = config.get(name);
-  if (value === undefined) return undefined;
-  if (typeof value !== "string") {
-    throw new Core.M3LError(`'${name}' must be a string`, {
-      code: "ERR_S3_OBJECTS_CONFIG",
-    });
-  }
-  return value;
-}
-
-/** Reads an optional numeric parameter (`undefined` when unset). */
-function readOptionalNumber(
-  config: Core.M3LConfig,
-  name: string,
-): number | undefined {
-  const value: unknown = config.get(name);
-  if (value === undefined) return undefined;
-  if (typeof value !== "number") {
-    throw new Core.M3LError(`'${name}' must be a number`, {
       code: "ERR_S3_OBJECTS_CONFIG",
     });
   }
@@ -168,16 +117,21 @@ function applyOperationGuards(
  * only checkable here.
  */
 function resolveSettings(config: Core.M3LConfig): RunSettings {
-  const operation = readOperation(config);
+  const accessor = new Core.M3LConfigAccessor({
+    config,
+    code: "ERR_S3_OBJECTS_CONFIG",
+  });
+
+  const operation = accessor.oneOf("operation", S3_OBJECTS_OPERATIONS);
   const bucket = readString(config, "bucket");
-  const key = readOptionalString(config, "key");
-  const prefix = readOptionalString(config, "prefix");
-  const pageSize = readOptionalNumber(config, "pageSize");
-  const sourceBucket = readOptionalString(config, "sourceBucket");
-  const sourceKey = readOptionalString(config, "sourceKey");
-  const contentType = readOptionalString(config, "contentType");
-  const input = readOptionalString(config, "input");
-  const output = readOptionalString(config, "output");
+  const key = accessor.optionalString("key");
+  const prefix = accessor.optionalString("prefix");
+  const pageSize = accessor.optionalNumber("pageSize");
+  const sourceBucket = accessor.optionalString("sourceBucket");
+  const sourceKey = accessor.optionalString("sourceKey");
+  const contentType = accessor.optionalString("contentType");
+  const input = accessor.optionalString("input");
+  const output = accessor.optionalString("output");
   const yes = readBool(config, "yes");
 
   applyOperationGuards(operation, {

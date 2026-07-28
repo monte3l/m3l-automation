@@ -7,16 +7,6 @@ import {
   MAX_WAIT_TIME_DEFAULT,
   YES_DEFAULT,
 } from "../config.js";
-import {
-  asInputRecord,
-  readBoolWithDefault,
-  readJSONFile,
-  readNumberWithDefault,
-  readOptionalNumber,
-  readOptionalString,
-  readOptionalStringArray,
-  requireString,
-} from "./config-helpers.js";
 import { readClusters } from "./read-clusters.js";
 import { readNodegroups } from "./read-nodegroups.js";
 import { waitCluster } from "./wait-cluster.js";
@@ -73,10 +63,11 @@ interface RawSettings {
 
 /** The dependencies every dispatched operation needs, once `config` has resolved. */
 interface DispatchDeps {
-  readonly paths: Core.M3LPaths;
   readonly logger: Core.M3LLogger;
   readonly operations: AWS.M3LEKSOperations;
   readonly prompt: Core.M3LPrompt;
+  readonly accessor: Core.M3LConfigAccessor;
+  readonly reader: Core.M3LInputFileReader;
 }
 
 /** The union of result shapes any dispatched operation can resolve. */
@@ -96,39 +87,28 @@ type DispatchResult =
  * protects a caller (e.g. a test) that builds a `Core.M3LConfig` directly,
  * bypassing that validation.
  */
-function readOperation(config: Core.M3LConfig): EksOperation {
-  const value: unknown = config.get("operation");
-  if (
-    typeof value === "string" &&
-    (EKS_OPS_OPERATIONS as readonly string[]).includes(value)
-  ) {
-    return value as EksOperation;
-  }
-  throw new Core.M3LError(
-    `'operation' must be one of: ${EKS_OPS_OPERATIONS.join(", ")}`,
-    { code: "ERR_EKS_OPS_CONFIG" },
-  );
+function readOperation(accessor: Core.M3LConfigAccessor): EksOperation {
+  return accessor.oneOf("operation", EKS_OPS_OPERATIONS);
 }
 
 /** Resolves the raw, per-operation-optional config values `run-eks-ops` reads once, up front. */
-function readRawSettings(config: Core.M3LConfig): RawSettings {
+function readRawSettings(accessor: Core.M3LConfigAccessor): RawSettings {
   return {
-    cluster: readOptionalString(config, "cluster"),
-    nodegroup: readOptionalString(config, "nodegroup"),
-    input: readOptionalString(config, "input"),
-    output: readOptionalString(config, "output"),
-    kubernetesVersion: readOptionalString(config, "kubernetesVersion"),
-    releaseVersion: readOptionalString(config, "releaseVersion"),
-    force: readBoolWithDefault(config, "force", FORCE_DEFAULT),
-    maxResults: readOptionalNumber(config, "maxResults"),
-    nextToken: readOptionalString(config, "nextToken"),
-    include: readOptionalStringArray(config, "include"),
-    maxWaitTime: readNumberWithDefault(
-      config,
+    cluster: accessor.optionalString("cluster"),
+    nodegroup: accessor.optionalString("nodegroup"),
+    input: accessor.optionalString("input"),
+    output: accessor.optionalString("output"),
+    kubernetesVersion: accessor.optionalString("kubernetesVersion"),
+    releaseVersion: accessor.optionalString("releaseVersion"),
+    force: accessor.booleanWithDefault("force", FORCE_DEFAULT),
+    maxResults: accessor.optionalNumber("maxResults"),
+    nextToken: accessor.optionalString("nextToken"),
+    include: accessor.optionalStringArray("include"),
+    maxWaitTime: accessor.numberWithDefault(
       "maxWaitTime",
       MAX_WAIT_TIME_DEFAULT,
     ),
-    yes: readBoolWithDefault(config, "yes", YES_DEFAULT),
+    yes: accessor.booleanWithDefault("yes", YES_DEFAULT),
   };
 }
 
@@ -165,7 +145,7 @@ async function gateOperation(
  * with this documented error rather than reach the AWS operations wrapper).
  */
 function requireInputField(
-  input: Record<string, unknown>,
+  input: Readonly<Record<string, unknown>>,
   field: string,
   isValid: (value: unknown) => boolean,
   operation: string,
@@ -186,13 +166,13 @@ function isNonEmptyArray(value: unknown): boolean {
 async function resolveClusterInput(
   operation: ClusterOperation,
   raw: RawSettings,
-  paths: Core.M3LPaths,
-): Promise<Record<string, unknown> | undefined> {
+  deps: Pick<DispatchDeps, "accessor" | "reader">,
+): Promise<Readonly<Record<string, unknown>> | undefined> {
   if (operation !== "create-cluster" && operation !== "update-cluster-config") {
     return undefined;
   }
-  const inputName = requireString(raw.input, "input", operation);
-  const input = asInputRecord(await readJSONFile(paths, inputName), inputName);
+  const inputName = deps.accessor.requiredFor(raw.input, "input", operation);
+  const input = await deps.reader.readJSONRecord(inputName);
   if (operation === "create-cluster") {
     requireInputField(
       input,
@@ -217,16 +197,16 @@ async function resolveClusterInput(
 async function resolveNodegroupInput(
   operation: NodegroupOperation,
   raw: RawSettings,
-  paths: Core.M3LPaths,
-): Promise<Record<string, unknown> | undefined> {
+  deps: Pick<DispatchDeps, "accessor" | "reader">,
+): Promise<Readonly<Record<string, unknown>> | undefined> {
   if (
     operation !== "create-nodegroup" &&
     operation !== "update-nodegroup-config"
   ) {
     return undefined;
   }
-  const inputName = requireString(raw.input, "input", operation);
-  const input = asInputRecord(await readJSONFile(paths, inputName), inputName);
+  const inputName = deps.accessor.requiredFor(raw.input, "input", operation);
+  const input = await deps.reader.readJSONRecord(inputName);
   if (operation === "create-nodegroup") {
     requireInputField(
       input,
@@ -248,7 +228,7 @@ function dispatchReadCluster(
   AWS.M3LEKSListClustersResult | AWS.M3LEKSClusterSummary | undefined
 > {
   if (operation === "describe-cluster") {
-    requireString(raw.cluster, "cluster", operation);
+    deps.accessor.requiredFor(raw.cluster, "cluster", operation);
   }
   return readClusters({
     operations: deps.operations,
@@ -266,7 +246,7 @@ function dispatchWaitCluster(
   raw: RawSettings,
   deps: DispatchDeps,
 ): Promise<AWS.M3LEKSWaiterResult> {
-  const cluster = requireString(raw.cluster, "cluster", operation);
+  const cluster = deps.accessor.requiredFor(raw.cluster, "cluster", operation);
   return waitCluster({
     operations: deps.operations,
     operation,
@@ -290,10 +270,14 @@ async function dispatchWriteCluster(
   raw: RawSettings,
   deps: DispatchDeps,
 ): Promise<AWS.M3LEKSClusterSummary | AWS.M3LEKSUpdate> {
-  const cluster = requireString(raw.cluster, "cluster", operation);
-  const input = await resolveClusterInput(operation, raw, deps.paths);
+  const cluster = deps.accessor.requiredFor(raw.cluster, "cluster", operation);
+  const input = await resolveClusterInput(operation, raw, deps);
   if (operation === "update-cluster-version") {
-    requireString(raw.kubernetesVersion, "kubernetesVersion", operation);
+    deps.accessor.requiredFor(
+      raw.kubernetesVersion,
+      "kubernetesVersion",
+      operation,
+    );
   }
 
   await gateOperation(operation, raw, deps);
@@ -316,9 +300,9 @@ function dispatchReadNodegroup(
 ): Promise<
   AWS.M3LEKSListNodegroupsResult | AWS.M3LEKSNodegroupSummary | undefined
 > {
-  const cluster = requireString(raw.cluster, "cluster", operation);
+  const cluster = deps.accessor.requiredFor(raw.cluster, "cluster", operation);
   if (operation === "describe-nodegroup") {
-    requireString(raw.nodegroup, "nodegroup", operation);
+    deps.accessor.requiredFor(raw.nodegroup, "nodegroup", operation);
   }
   return readNodegroups({
     operations: deps.operations,
@@ -336,8 +320,12 @@ function dispatchWaitNodegroup(
   raw: RawSettings,
   deps: DispatchDeps,
 ): Promise<AWS.M3LEKSWaiterResult> {
-  const cluster = requireString(raw.cluster, "cluster", operation);
-  const nodegroup = requireString(raw.nodegroup, "nodegroup", operation);
+  const cluster = deps.accessor.requiredFor(raw.cluster, "cluster", operation);
+  const nodegroup = deps.accessor.requiredFor(
+    raw.nodegroup,
+    "nodegroup",
+    operation,
+  );
   return waitNodegroup({
     operations: deps.operations,
     operation,
@@ -361,9 +349,13 @@ async function dispatchWriteNodegroup(
   raw: RawSettings,
   deps: DispatchDeps,
 ): Promise<AWS.M3LEKSNodegroupSummary | AWS.M3LEKSUpdate> {
-  const cluster = requireString(raw.cluster, "cluster", operation);
-  const nodegroup = requireString(raw.nodegroup, "nodegroup", operation);
-  const input = await resolveNodegroupInput(operation, raw, deps.paths);
+  const cluster = deps.accessor.requiredFor(raw.cluster, "cluster", operation);
+  const nodegroup = deps.accessor.requiredFor(
+    raw.nodegroup,
+    "nodegroup",
+    operation,
+  );
+  const input = await resolveNodegroupInput(operation, raw, deps);
 
   await gateOperation(operation, raw, deps);
 
@@ -664,14 +656,24 @@ export async function runEksOps(deps: {
   readonly operations: AWS.M3LEKSOperations;
   readonly prompt: Core.M3LPrompt;
 }): Promise<void> {
-  const operation = readOperation(deps.config);
-  const raw = readRawSettings(deps.config);
+  const accessor = new Core.M3LConfigAccessor({
+    config: deps.config,
+    code: "ERR_EKS_OPS_CONFIG",
+  });
+  const reader = new Core.M3LInputFileReader({
+    paths: deps.paths,
+    code: "ERR_EKS_OPS_CONFIG",
+  });
+
+  const operation = readOperation(accessor);
+  const raw = readRawSettings(accessor);
 
   const dispatchDeps: DispatchDeps = {
-    paths: deps.paths,
     logger: deps.logger,
     operations: deps.operations,
     prompt: deps.prompt,
+    accessor,
+    reader,
   };
   const result = await dispatchOperation(operation, raw, dispatchDeps);
 

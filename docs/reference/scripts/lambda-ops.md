@@ -71,7 +71,16 @@ and `api-gateway-client`'s `ERR_API_GATEWAY_CLIENT_*`), all prefixed
   unmet (missing `functionName` for anything but `list`; missing `zipFilePath`
   for `create`/`update-code`; missing `input`, or a missing `runtime`/`role`/
   `handler` field within it, for `create`; missing `input` for
-  `update-configuration`), an unrecognized `operation` (unreachable through the
+  `update-configuration`; an `input` that is not valid JSON, for any of
+  `invoke`/`create`/`update-configuration` (via
+  `Core.M3LInputFileReader.readJSON` — deliberately never chains the raw
+  `SyntaxError` as `cause`, closing fleet-wide finding F10: V8's
+  `SyntaxError.message` can embed a snippet of the malformed content); an
+  `input` that does not decode to a JSON object, or contains a top-level
+  prototype-pollution vector key (`__proto__`/`constructor`/`prototype`),
+  for `create`/`update-configuration` only — `invoke`'s optional payload is
+  read via `readJSON` alone, with no object-shape or unsafe-key screen, since
+  a valid Lambda invoke payload need not be an object), an unrecognized `operation` (unreachable through the
   declared `oneOf` validator, guarded defensively), or `script.aws` was not
   provisioned despite declaring `aws.profile` (guarded in `main.ts`, the same
   composition-root pattern `dynamodb-crud`/`sqs-etl` use).
