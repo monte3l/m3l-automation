@@ -11,6 +11,26 @@ import { M3LError } from "../errors/index.js";
 import { isDangerousKey } from "../security/index.js";
 import type { M3LPaths } from "../utils/index.js";
 
+/** Narrows `value` to `string`. */
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+/** Narrows `value` to `number`. Does not reject `NaN` — `typeof NaN === "number"`. */
+function isNumber(value: unknown): value is number {
+  return typeof value === "number";
+}
+
+/** Narrows `value` to `boolean`. A string `"true"`/`"false"` is deliberately not coerced. */
+function isBoolean(value: unknown): value is boolean {
+  return typeof value === "boolean";
+}
+
+/** Narrows `value` to a plain array (element type left as `unknown`). */
+function isArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
 /**
  * Constructor options for {@link M3LInputFileReader}.
  *
@@ -72,6 +92,30 @@ export class M3LInputFileReader {
   constructor(options: M3LInputFileReaderOptions) {
     this.#paths = options.paths;
     this.#code = options.code;
+  }
+
+  /**
+   * Shared skeleton behind every optional field reader: reads `field` off
+   * `record`, returns `undefined` when absent, and throws a bare
+   * {@link M3LError} when present but rejected by `isValid`. A present field
+   * is never silently dropped for being the wrong type — that would mask a
+   * caller/config mistake as "unset" (see `.claude/rules/library-src.md` §
+   * "Fail loud on caller/config errors").
+   */
+  #readOptionalField<T>(
+    record: Readonly<Record<string, unknown>>,
+    field: string,
+    isValid: (value: unknown) => value is T,
+    typeName: string,
+  ): T | undefined {
+    const value = record[field];
+    if (value === undefined) return undefined;
+    if (!isValid(value)) {
+      throw new M3LError(`'${field}' must be a ${typeName}`, {
+        code: this.#code,
+      });
+    }
+    return value;
   }
 
   /**
@@ -194,5 +238,220 @@ export class M3LInputFileReader {
       }
     }
     return record;
+  }
+
+  /**
+   * Returns `record`, throwing when it is `undefined`. Promotes the
+   * `requireInput`/`requireDeclarationRecord`-style guard duplicated across
+   * consumer scripts' write steps (e.g. `scripts/ecs-ops/src/steps/write-service.ts`),
+   * each gating an already-JSON-parsed `input` record before reading its
+   * fields.
+   *
+   * @param record - The candidate record, typically an already-parsed
+   *   `input` from {@link readJSONRecord} threaded through as an optional
+   *   config value.
+   * @param name - The record's name, for the thrown message.
+   * @param operation - The operation requiring `record`, for the thrown
+   *   message.
+   * @returns `record`, narrowed to exclude `undefined`.
+   * @throws {@link M3LError} When `record` is `undefined`.
+   *
+   * @example
+   * ```ts
+   * const input = reader.requireRecord(maybeInput, "input", "create-service");
+   * ```
+   */
+  requireRecord(
+    record: Readonly<Record<string, unknown>> | undefined,
+    name: string,
+    operation: string,
+  ): Readonly<Record<string, unknown>> {
+    if (record === undefined) {
+      throw new M3LError(`'${name}' is required for '${operation}'`, {
+        code: this.#code,
+      });
+    }
+    return record;
+  }
+
+  /**
+   * Reads a required, non-empty string field off an already-parsed record.
+   *
+   * @param record - The already-parsed record (typically from
+   *   {@link readJSONRecord} / {@link requireRecord}).
+   * @param field - The field name to read.
+   * @param operation - The operation requiring `field`, for the thrown
+   *   message.
+   * @returns The field's string value.
+   * @throws {@link M3LError} When `field` is absent, not a string, or an
+   *   empty string.
+   *
+   * @example
+   * ```ts
+   * const taskDefinition =
+   *   reader.requiredStringField(input, "taskDefinition", "create-service");
+   * ```
+   */
+  requiredStringField(
+    record: Readonly<Record<string, unknown>>,
+    field: string,
+    operation: string,
+  ): string {
+    const value = record[field];
+    if (typeof value !== "string" || value.length === 0) {
+      throw new M3LError(
+        `'${field}' must be a non-empty string for '${operation}'`,
+        { code: this.#code },
+      );
+    }
+    return value;
+  }
+
+  /**
+   * Reads a required, non-empty array field off an already-parsed record.
+   *
+   * @param record - The already-parsed record (typically from
+   *   {@link readJSONRecord} / {@link requireRecord}).
+   * @param field - The field name to read.
+   * @param operation - The operation requiring `field`, for the thrown
+   *   message.
+   * @returns The field's array value (element type left as `unknown` — cast
+   *   at the call site, where the concrete shape is known).
+   * @throws {@link M3LError} When `field` is absent, not an array, or an
+   *   empty array.
+   *
+   * @example
+   * ```ts
+   * const stages = reader.requiredArrayField(input, "stages", "create-pipeline");
+   * ```
+   */
+  requiredArrayField(
+    record: Readonly<Record<string, unknown>>,
+    field: string,
+    operation: string,
+  ): readonly unknown[] {
+    const value = record[field];
+    if (!Array.isArray(value) || value.length === 0) {
+      throw new M3LError(
+        `'${field}' must be a non-empty array for '${operation}'`,
+        { code: this.#code },
+      );
+    }
+    return value;
+  }
+
+  /**
+   * Reads an optional string field off an already-parsed record, defensively
+   * re-checking its type.
+   *
+   * @param record - The already-parsed record.
+   * @param field - The field name to read.
+   * @returns The field's string value, or `undefined` when absent.
+   * @throws {@link M3LError} When `field` is present but not a string.
+   *
+   * @example
+   * ```ts
+   * const launchType = reader.optionalStringField(input, "launchType");
+   * ```
+   */
+  optionalStringField(
+    record: Readonly<Record<string, unknown>>,
+    field: string,
+  ): string | undefined {
+    return this.#readOptionalField(record, field, isString, "string");
+  }
+
+  /**
+   * Reads an optional number field off an already-parsed record, defensively
+   * re-checking its type. `NaN` passes through unrejected, since
+   * `typeof NaN === "number"`.
+   *
+   * @param record - The already-parsed record.
+   * @param field - The field name to read.
+   * @returns The field's number value, or `undefined` when absent.
+   * @throws {@link M3LError} When `field` is present but not a number.
+   *
+   * @example
+   * ```ts
+   * const desiredCount = reader.optionalNumberField(input, "desiredCount");
+   * ```
+   */
+  optionalNumberField(
+    record: Readonly<Record<string, unknown>>,
+    field: string,
+  ): number | undefined {
+    return this.#readOptionalField(record, field, isNumber, "number");
+  }
+
+  /**
+   * Reads an optional boolean field off an already-parsed record, defensively
+   * re-checking its type. A string `"true"`/`"false"` is deliberately not
+   * coerced — it throws.
+   *
+   * @param record - The already-parsed record.
+   * @param field - The field name to read.
+   * @returns The field's boolean value, or `undefined` when absent.
+   * @throws {@link M3LError} When `field` is present but not a boolean.
+   *
+   * @example
+   * ```ts
+   * const forceNewDeployment =
+   *   reader.optionalBooleanField(input, "forceNewDeployment");
+   * ```
+   */
+  optionalBooleanField(
+    record: Readonly<Record<string, unknown>>,
+    field: string,
+  ): boolean | undefined {
+    return this.#readOptionalField(record, field, isBoolean, "boolean");
+  }
+
+  /**
+   * Reads an optional array field off an already-parsed record, defensively
+   * re-checking its type.
+   *
+   * @param record - The already-parsed record.
+   * @param field - The field name to read.
+   * @returns The field's array value (element type left as `unknown` — cast
+   *   at the call site), or `undefined` when absent.
+   * @throws {@link M3LError} When `field` is present but not an array.
+   *
+   * @example
+   * ```ts
+   * const loadBalancers = reader.optionalArrayField(input, "loadBalancers");
+   * ```
+   */
+  optionalArrayField(
+    record: Readonly<Record<string, unknown>>,
+    field: string,
+  ): readonly unknown[] | undefined {
+    return this.#readOptionalField(record, field, isArray, "array");
+  }
+
+  /**
+   * Reads an optional plain-object field off an already-parsed record. Reuses
+   * {@link asRecord} once `field` is known to be present, so a present field
+   * gets the same object-shape check and top-level prototype-pollution key
+   * screen as any other decoded JSON object.
+   *
+   * @param record - The already-parsed record.
+   * @param field - The field name to read.
+   * @returns The field's record value, or `undefined` when absent.
+   * @throws {@link M3LError} When `field` is present but not a plain object,
+   *   or contains a top-level prototype-pollution vector key.
+   *
+   * @example
+   * ```ts
+   * const networkConfiguration =
+   *   reader.optionalRecordField(input, "networkConfiguration");
+   * ```
+   */
+  optionalRecordField(
+    record: Readonly<Record<string, unknown>>,
+    field: string,
+  ): Readonly<Record<string, unknown>> | undefined {
+    const value = record[field];
+    if (value === undefined) return undefined;
+    return this.asRecord(value, field);
   }
 }

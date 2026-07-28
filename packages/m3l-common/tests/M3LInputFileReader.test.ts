@@ -22,6 +22,11 @@
  *  - readJSONRecord / asRecord reject non-object JSON values (arrays,
  *    primitives, null) with a dedicated message, distinct from the
  *    malformed-JSON message.
+ *  - The record-field readers (requireRecord/required*Field/optional*Field)
+ *    distinguish "absent" (returns `undefined` for the optional* family) from
+ *    "present but wrong type" (always throws, even for the optional* family
+ *    — a present-but-mistyped field is a caller/config error, never silently
+ *    dropped).
  */
 
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -320,5 +325,260 @@ describe("asRecord", () => {
         Readonly<Record<string, unknown>>
       >();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// requireRecord
+// ---------------------------------------------------------------------------
+describe("requireRecord", () => {
+  test("returns the SAME reference when present", () => {
+    const reader = makeReader();
+    const record = { a: 1 };
+    expect(reader.requireRecord(record, "input", "create")).toBe(record);
+  });
+
+  test("throws a bare M3LError when undefined", () => {
+    const reader = makeReader();
+    let thrown: unknown;
+    try {
+      reader.requireRecord(undefined, "input", "create");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe(CODE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// requiredStringField
+// ---------------------------------------------------------------------------
+describe("requiredStringField", () => {
+  test("returns the string value when present and non-empty", () => {
+    const reader = makeReader();
+    expect(reader.requiredStringField({ name: "svc" }, "name", "create")).toBe(
+      "svc",
+    );
+  });
+
+  test.each([
+    ["absent", {}],
+    ["an empty string", { name: "" }],
+    ["a non-string", { name: 42 }],
+  ])("throws a bare M3LError when %s", (_label, record) => {
+    const reader = makeReader();
+    let thrown: unknown;
+    try {
+      reader.requiredStringField(record, "name", "create");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe(CODE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// requiredArrayField
+// ---------------------------------------------------------------------------
+describe("requiredArrayField", () => {
+  test("returns the array value when present and non-empty", () => {
+    const reader = makeReader();
+    expect(
+      reader.requiredArrayField({ stages: [1, 2] }, "stages", "create"),
+    ).toEqual([1, 2]);
+  });
+
+  test.each([
+    ["absent", {}],
+    ["an empty array", { stages: [] }],
+    ["a non-array", { stages: "x" }],
+  ])("throws a bare M3LError when %s", (_label, record) => {
+    const reader = makeReader();
+    let thrown: unknown;
+    try {
+      reader.requiredArrayField(record, "stages", "create");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe(CODE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// optionalStringField
+// ---------------------------------------------------------------------------
+describe("optionalStringField", () => {
+  test("returns the string value when present", () => {
+    const reader = makeReader();
+    expect(
+      reader.optionalStringField({ launchType: "FARGATE" }, "launchType"),
+    ).toBe("FARGATE");
+  });
+
+  test("returns undefined when absent", () => {
+    const reader = makeReader();
+    expect(reader.optionalStringField({}, "launchType")).toBeUndefined();
+  });
+
+  test("throws a bare M3LError when present but not a string (does NOT silently drop it)", () => {
+    const reader = makeReader();
+    let thrown: unknown;
+    try {
+      reader.optionalStringField({ launchType: 42 }, "launchType");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe(CODE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// optionalNumberField
+// ---------------------------------------------------------------------------
+describe("optionalNumberField", () => {
+  test("returns the number value when present", () => {
+    const reader = makeReader();
+    expect(
+      reader.optionalNumberField({ desiredCount: 3 }, "desiredCount"),
+    ).toBe(3);
+  });
+
+  test("returns undefined when absent", () => {
+    const reader = makeReader();
+    expect(reader.optionalNumberField({}, "desiredCount")).toBeUndefined();
+  });
+
+  test("throws a bare M3LError when present but not a number (does NOT silently drop it)", () => {
+    const reader = makeReader();
+    let thrown: unknown;
+    try {
+      reader.optionalNumberField({ desiredCount: "3" }, "desiredCount");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe(CODE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// optionalBooleanField
+// ---------------------------------------------------------------------------
+describe("optionalBooleanField", () => {
+  test("returns the boolean value when present", () => {
+    const reader = makeReader();
+    expect(
+      reader.optionalBooleanField(
+        { forceNewDeployment: true },
+        "forceNewDeployment",
+      ),
+    ).toBe(true);
+  });
+
+  test("returns undefined when absent", () => {
+    const reader = makeReader();
+    expect(
+      reader.optionalBooleanField({}, "forceNewDeployment"),
+    ).toBeUndefined();
+  });
+
+  test("throws a bare M3LError when present but not a boolean (does NOT coerce 'true'/'false' strings)", () => {
+    const reader = makeReader();
+    let thrown: unknown;
+    try {
+      reader.optionalBooleanField(
+        { forceNewDeployment: "true" },
+        "forceNewDeployment",
+      );
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe(CODE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// optionalArrayField
+// ---------------------------------------------------------------------------
+describe("optionalArrayField", () => {
+  test("returns the array value when present", () => {
+    const reader = makeReader();
+    expect(
+      reader.optionalArrayField({ loadBalancers: [{ x: 1 }] }, "loadBalancers"),
+    ).toEqual([{ x: 1 }]);
+  });
+
+  test("returns undefined when absent", () => {
+    const reader = makeReader();
+    expect(reader.optionalArrayField({}, "loadBalancers")).toBeUndefined();
+  });
+
+  test("throws a bare M3LError when present but not an array", () => {
+    const reader = makeReader();
+    let thrown: unknown;
+    try {
+      reader.optionalArrayField({ loadBalancers: "x" }, "loadBalancers");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe(CODE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// optionalRecordField
+// ---------------------------------------------------------------------------
+describe("optionalRecordField", () => {
+  test("returns the record value when present", () => {
+    const reader = makeReader();
+    expect(
+      reader.optionalRecordField(
+        { networkConfiguration: { awsvpcConfiguration: { subnets: ["a"] } } },
+        "networkConfiguration",
+      ),
+    ).toEqual({ awsvpcConfiguration: { subnets: ["a"] } });
+  });
+
+  test("returns undefined when absent", () => {
+    const reader = makeReader();
+    expect(
+      reader.optionalRecordField({}, "networkConfiguration"),
+    ).toBeUndefined();
+  });
+
+  test.each([
+    ["an array", { networkConfiguration: [1] }],
+    ["a non-object", { networkConfiguration: "x" }],
+  ])("throws a bare M3LError when present but %s", (_label, record) => {
+    const reader = makeReader();
+    let thrown: unknown;
+    try {
+      reader.optionalRecordField(record, "networkConfiguration");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe(CODE);
+  });
+
+  test("throws for a top-level '__proto__' key, reusing asRecord's prototype-pollution guard", () => {
+    const reader = makeReader();
+    const value = JSON.parse(
+      '{"networkConfiguration":{"__proto__":{"polluted":true}}}',
+    ) as Record<string, unknown>;
+    let thrown: unknown;
+    try {
+      reader.optionalRecordField(value, "networkConfiguration");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe(CODE);
   });
 });
