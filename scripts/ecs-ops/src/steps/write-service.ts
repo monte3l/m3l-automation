@@ -14,25 +14,12 @@ type WriteOperation = "create-service" | "update-service" | "delete-service";
  */
 interface WriteServiceDeps {
   readonly operations: AWS.M3LECSOperations;
+  readonly reader: Core.M3LInputFileReader;
   readonly operation: WriteOperation;
   readonly input: Record<string, unknown> | undefined;
   readonly cluster: string | undefined;
   readonly service: string | undefined;
   readonly force: boolean;
-}
-
-/** Guard-checks `input` present, for `create-service`/`update-service`. */
-function requireInput(
-  input: Record<string, unknown> | undefined,
-  operation: WriteOperation,
-): Record<string, unknown> {
-  if (input === undefined) {
-    throw new Core.M3LError(
-      `writeService: 'input' is required for '${operation}'`,
-      { code: "ERR_ECS_OPS_CONFIG" },
-    );
-  }
-  return input;
 }
 
 /** Guard-checks `value` present, for `delete-service`'s `cluster`/`service` config values. */
@@ -50,76 +37,6 @@ function requireString(
   return value;
 }
 
-/** Reads a required, non-empty string field off an already-parsed `input` object. */
-function readRequiredStringField(
-  input: Record<string, unknown>,
-  fieldName: string,
-  operation: WriteOperation,
-): string {
-  const value = input[fieldName];
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Core.M3LError(
-      `writeService: 'input.${fieldName}' must be a non-empty string for '${operation}'`,
-      { code: "ERR_ECS_OPS_CONFIG" },
-    );
-  }
-  return value;
-}
-
-/** Reads an optional string field off an already-parsed `input` object (`undefined` when absent/wrong type). */
-function readOptionalStringField(
-  input: Record<string, unknown>,
-  fieldName: string,
-): string | undefined {
-  const value = input[fieldName];
-  return typeof value === "string" ? value : undefined;
-}
-
-/** Reads an optional number field off an already-parsed `input` object (`undefined` when absent/wrong type). */
-function readOptionalNumberField(
-  input: Record<string, unknown>,
-  fieldName: string,
-): number | undefined {
-  const value = input[fieldName];
-  return typeof value === "number" ? value : undefined;
-}
-
-/** Reads an optional boolean field off an already-parsed `input` object (`undefined` when absent/wrong type). */
-function readOptionalBooleanField(
-  input: Record<string, unknown>,
-  fieldName: string,
-): boolean | undefined {
-  const value = input[fieldName];
-  return typeof value === "boolean" ? value : undefined;
-}
-
-/**
- * Reads the optional `loadBalancers` field off an already-parsed `input`
- * object, trusting each entry's shape as-is (matching
- * `M3LECSOperations.createService`'s own no-pre-flight-validation stance).
- */
-function readOptionalLoadBalancers(
-  input: Record<string, unknown>,
-): readonly AWS.M3LECSLoadBalancer[] | undefined {
-  const value = input["loadBalancers"];
-  return Array.isArray(value)
-    ? (value as readonly AWS.M3LECSLoadBalancer[])
-    : undefined;
-}
-
-/**
- * Reads the optional `networkConfiguration` field off an already-parsed
- * `input` object, trusting its shape as-is.
- */
-function readOptionalNetworkConfiguration(
-  input: Record<string, unknown>,
-): AWS.M3LECSNetworkConfiguration | undefined {
-  const value = input["networkConfiguration"];
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as AWS.M3LECSNetworkConfiguration)
-    : undefined;
-}
-
 /**
  * Narrows an already-parsed `input` record into `M3LECSCreateServiceInput`,
  * guard-checking `cluster`/`serviceName`/`taskDefinition` present and
@@ -127,23 +44,32 @@ function readOptionalNetworkConfiguration(
  * field is trusted as-is).
  */
 function buildCreateInput(
+  reader: Core.M3LInputFileReader,
   input: Record<string, unknown>,
 ): AWS.M3LECSCreateServiceInput {
-  const cluster = readRequiredStringField(input, "cluster", "create-service");
-  const serviceName = readRequiredStringField(
+  const cluster = reader.requiredStringField(
+    input,
+    "cluster",
+    "create-service",
+  );
+  const serviceName = reader.requiredStringField(
     input,
     "serviceName",
     "create-service",
   );
-  const taskDefinition = readRequiredStringField(
+  const taskDefinition = reader.requiredStringField(
     input,
     "taskDefinition",
     "create-service",
   );
-  const desiredCount = readOptionalNumberField(input, "desiredCount");
-  const launchType = readOptionalStringField(input, "launchType");
-  const loadBalancers = readOptionalLoadBalancers(input);
-  const networkConfiguration = readOptionalNetworkConfiguration(input);
+  const desiredCount = reader.optionalNumberField(input, "desiredCount");
+  const launchType = reader.optionalStringField(input, "launchType");
+  const loadBalancers = reader.optionalArrayField(input, "loadBalancers") as
+    readonly AWS.M3LECSLoadBalancer[] | undefined;
+  const networkConfiguration = reader.optionalRecordField(
+    input,
+    "networkConfiguration",
+  ) as AWS.M3LECSNetworkConfiguration | undefined;
 
   return {
     cluster,
@@ -162,17 +88,29 @@ function buildCreateInput(
  * of `input` this module validates; every other field is trusted as-is).
  */
 function buildUpdateInput(
+  reader: Core.M3LInputFileReader,
   input: Record<string, unknown>,
 ): AWS.M3LECSUpdateServiceInput {
-  const cluster = readRequiredStringField(input, "cluster", "update-service");
-  const service = readRequiredStringField(input, "service", "update-service");
-  const desiredCount = readOptionalNumberField(input, "desiredCount");
-  const taskDefinition = readOptionalStringField(input, "taskDefinition");
-  const forceNewDeployment = readOptionalBooleanField(
+  const cluster = reader.requiredStringField(
+    input,
+    "cluster",
+    "update-service",
+  );
+  const service = reader.requiredStringField(
+    input,
+    "service",
+    "update-service",
+  );
+  const desiredCount = reader.optionalNumberField(input, "desiredCount");
+  const taskDefinition = reader.optionalStringField(input, "taskDefinition");
+  const forceNewDeployment = reader.optionalBooleanField(
     input,
     "forceNewDeployment",
   );
-  const networkConfiguration = readOptionalNetworkConfiguration(input);
+  const networkConfiguration = reader.optionalRecordField(
+    input,
+    "networkConfiguration",
+  ) as AWS.M3LECSNetworkConfiguration | undefined;
 
   return {
     cluster,
@@ -191,29 +129,35 @@ function buildUpdateInput(
  * routes through `destructive-gate` before dispatching here — this step
  * performs no confirmation of its own.
  *
- * @param deps - The injected `AWS.M3LECSOperations`, which mutating
- *   operation to run, the already-parsed `input` record (for
- *   `create-service`/`update-service`), and the `cluster`/`service`/`force`
- *   config values (for `delete-service`).
+ * @param deps - The injected `AWS.M3LECSOperations`, the shared
+ *   `Core.M3LInputFileReader`, which mutating operation to run, the
+ *   already-parsed `input` record (for `create-service`/`update-service`),
+ *   and the `cluster`/`service`/`force` config values (for `delete-service`).
  * @returns The updated `M3LECSServiceDescription` for all three operations.
  * @throws {@link Core.M3LError} coded `"ERR_ECS_OPS_CONFIG"` when a required
  *   field for the requested operation is missing: `input` for
  *   `create-service`/`update-service`; within the parsed `input`,
  *   `cluster`/`serviceName`/`taskDefinition` for `create-service` or
  *   `cluster`/`service` for `update-service`; or `cluster`/`service` for
- *   `delete-service`.
+ *   `delete-service`. Also thrown when a *present* optional `input` field
+ *   (`desiredCount`/`launchType`/`loadBalancers`/`networkConfiguration` for
+ *   `create-service`, plus `taskDefinition`/`forceNewDeployment` for
+ *   `update-service`) is the wrong type — never silently dropped.
  *
  * @example
  * ```typescript
  * import type { AWS } from "@m3l-automation/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { writeService } from "./write-service.js";
  *
- * // `operations` is injected by the caller, e.g.
+ * // `operations`/`reader` are injected by the caller, e.g.
  * // `new AWS.M3LECSOperations(script.aws.clients.ecs)`.
  * declare const operations: AWS.M3LECSOperations;
+ * declare const reader: Core.M3LInputFileReader;
  *
  * await writeService({
  *   operations,
+ *   reader,
  *   operation: "delete-service",
  *   input: undefined,
  *   cluster: "my-cluster",
@@ -227,12 +171,24 @@ export async function writeService(
 ): Promise<AWS.M3LECSServiceDescription> {
   switch (deps.operation) {
     case "create-service": {
-      const input = requireInput(deps.input, deps.operation);
-      return deps.operations.createService(buildCreateInput(input));
+      const input = deps.reader.requireRecord(
+        deps.input,
+        "input",
+        deps.operation,
+      );
+      return deps.operations.createService(
+        buildCreateInput(deps.reader, input),
+      );
     }
     case "update-service": {
-      const input = requireInput(deps.input, deps.operation);
-      return deps.operations.updateService(buildUpdateInput(input));
+      const input = deps.reader.requireRecord(
+        deps.input,
+        "input",
+        deps.operation,
+      );
+      return deps.operations.updateService(
+        buildUpdateInput(deps.reader, input),
+      );
     }
     case "delete-service": {
       const cluster = requireString(deps.cluster, "cluster", deps.operation);

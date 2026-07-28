@@ -220,6 +220,7 @@ async function dispatchWritePipeline(
   const { writePipeline } = await import("./write-pipeline.js");
   return writePipeline({
     operations: deps.operations,
+    reader: deps.reader,
     operation,
     declaration: plan.declaration,
     pipeline: raw.pipeline,

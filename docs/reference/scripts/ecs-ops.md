@@ -97,7 +97,7 @@ Every step takes a single `readonly`-field deps object (never raw
 - `runEcsOps(deps: { config: Core.M3LConfig; paths: Core.M3LPaths; logger: Core.M3LLogger; correlationId: string; operations: AWS.M3LECSOperations; prompt: Core.M3LPrompt }): Promise<void>`
 - `destructiveGate(deps: { prompt: Core.M3LPrompt; logger: Core.M3LLogger; description: string; yes: boolean }): Promise<void>`
 - `readServices(deps: { operations: AWS.M3LECSOperations; operation: "list-services" | "describe-service"; cluster: string | undefined; service: string | undefined; nextToken: string | undefined }): Promise<M3LECSListServicesResult | M3LECSServiceDescription>`
-- `writeService(deps: { operations: AWS.M3LECSOperations; operation: "create-service" | "update-service" | "delete-service"; input: Record<string, unknown> | undefined; cluster: string | undefined; service: string | undefined; force: boolean }): Promise<M3LECSServiceDescription>`
+- `writeService(deps: { operations: AWS.M3LECSOperations; reader: Core.M3LInputFileReader; operation: "create-service" | "update-service" | "delete-service"; input: Record<string, unknown> | undefined; cluster: string | undefined; service: string | undefined; force: boolean }): Promise<M3LECSServiceDescription>`
 - `waitServices(deps: { operations: AWS.M3LECSOperations; cluster: string; services: readonly string[]; maxWaitTime: number | undefined }): Promise<M3LECSWaiterResult>`
 - `readClusters(deps: { operations: AWS.M3LECSOperations; operation: "list-clusters" | "describe-cluster"; cluster: string | undefined; nextToken: string | undefined }): Promise<M3LECSListClustersResult | M3LECSClusterSummary>`
 
@@ -120,7 +120,17 @@ open `string`, not a closed union — exactly like `lambda-ops`'s
   split+trim+drop-empty), an unrecognized `operation` (unreachable through the
   declared `oneOf` validator, guarded defensively), or `script.aws` was not
   provisioned despite declaring `aws.profile` (guarded in `main.ts`, the same
-  composition-root pattern `lambda-ops`/`dynamodb-crud` use). **Not** included
+  composition-root pattern `lambda-ops`/`dynamodb-crud` use). Also thrown by
+  `writeService`'s record-field reads (`Core.M3LInputFileReader`'s
+  `requiredStringField`/`optionalNumberField`/`optionalStringField`/
+  `optionalArrayField`/`optionalRecordField`) when a _present_ optional
+  `input` field is the wrong type — `desiredCount`, `launchType`,
+  `loadBalancers`, `networkConfiguration` (`create-service`/`update-service`),
+  `taskDefinition`, `forceNewDeployment` (`update-service`) are never
+  silently dropped for being mistyped. `networkConfiguration`'s own keys are
+  additionally screened for the same top-level prototype-pollution vectors as
+  a top-level `input` object (via `optionalRecordField`'s reuse of `asRecord`).
+  **Not** included
   here: an empty-but-present string parameter or an out-of-range `maxWaitTime`
   — those fail earlier at config-load with `M3LConfigValidationError` (see
   the Configuration schema section above).

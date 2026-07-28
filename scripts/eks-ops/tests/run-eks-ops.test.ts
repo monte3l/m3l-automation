@@ -951,6 +951,110 @@ describe("runEksOps — required-input-field validation on create (fires before 
     expect(writeNodegroupMock).not.toHaveBeenCalled();
   });
 
+  test("throws ERR_EKS_OPS_CONFIG when create-cluster's 'roleArn' is present but an empty string", async () => {
+    const inputPath = PATHS.resolveInput("create.json");
+    stubReadFileByPath({
+      [inputPath]: JSON.stringify({
+        roleArn: "",
+        resourcesVpcConfig: { subnetIds: ["s1"] },
+      }),
+    });
+    const deps = buildDeps({
+      operation: "create-cluster",
+      cluster: "my-cluster",
+      input: "create.json",
+      yes: true,
+    });
+
+    await expect(runEksOps(deps)).rejects.toMatchObject({
+      code: "ERR_EKS_OPS_CONFIG",
+    });
+    expect(writeClusterMock).not.toHaveBeenCalled();
+  });
+
+  test("throws ERR_EKS_OPS_CONFIG when create-cluster's 'resourcesVpcConfig' is present but the wrong type (a string)", async () => {
+    const inputPath = PATHS.resolveInput("create.json");
+    stubReadFileByPath({
+      [inputPath]: JSON.stringify({
+        roleArn: "arn:aws:iam::123:role/eks",
+        resourcesVpcConfig: "not-an-object",
+      }),
+    });
+    const deps = buildDeps({
+      operation: "create-cluster",
+      cluster: "my-cluster",
+      input: "create.json",
+      yes: true,
+    });
+
+    await expect(runEksOps(deps)).rejects.toMatchObject({
+      code: "ERR_EKS_OPS_CONFIG",
+    });
+    expect(writeClusterMock).not.toHaveBeenCalled();
+  });
+
+  test("throws ERR_EKS_OPS_CONFIG when create-cluster's 'resourcesVpcConfig.subnetIds' is present but the wrong type (not an array)", async () => {
+    const inputPath = PATHS.resolveInput("create.json");
+    stubReadFileByPath({
+      [inputPath]: JSON.stringify({
+        roleArn: "arn:aws:iam::123:role/eks",
+        resourcesVpcConfig: { subnetIds: "not-an-array" },
+      }),
+    });
+    const deps = buildDeps({
+      operation: "create-cluster",
+      cluster: "my-cluster",
+      input: "create.json",
+      yes: true,
+    });
+
+    await expect(runEksOps(deps)).rejects.toMatchObject({
+      code: "ERR_EKS_OPS_CONFIG",
+    });
+    expect(writeClusterMock).not.toHaveBeenCalled();
+  });
+
+  test("throws ERR_EKS_OPS_CONFIG when create-nodegroup's 'nodeRole' is present but an empty string", async () => {
+    const inputPath = PATHS.resolveInput("create-ng.json");
+    stubReadFileByPath({
+      [inputPath]: JSON.stringify({ nodeRole: "", subnets: ["s1"] }),
+    });
+    const deps = buildDeps({
+      operation: "create-nodegroup",
+      cluster: "my-cluster",
+      nodegroup: "my-nodegroup",
+      input: "create-ng.json",
+      yes: true,
+    });
+
+    await expect(runEksOps(deps)).rejects.toMatchObject({
+      code: "ERR_EKS_OPS_CONFIG",
+    });
+    expect(writeNodegroupMock).not.toHaveBeenCalled();
+  });
+
+  test("throws ERR_EKS_OPS_CONFIG when create-nodegroup's 'subnets' is present but the wrong type (not an array)", async () => {
+    const inputPath = PATHS.resolveInput("create-ng.json");
+    stubReadFileByPath({
+      [inputPath]: JSON.stringify({
+        nodeRole: "arn:aws:iam::123:role/node",
+        subnets: "not-an-array",
+      }),
+    });
+    const deps = buildDeps({
+      operation: "create-nodegroup",
+      cluster: "my-cluster",
+      nodegroup: "my-nodegroup",
+      input: "create-ng.json",
+      yes: true,
+    });
+
+    await expect(runEksOps(deps)).rejects.toMatchObject({
+      code: "ERR_EKS_OPS_CONFIG",
+    });
+    expect(writeNodegroupMock).not.toHaveBeenCalled();
+  });
+
   test("a complete create-cluster input (roleArn + resourcesVpcConfig) still dispatches normally", async () => {
     const inputPath = PATHS.resolveInput("create.json");
     stubReadFileByPath({

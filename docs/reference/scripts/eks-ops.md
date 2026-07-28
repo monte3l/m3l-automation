@@ -129,8 +129,13 @@ all prefixed `ERR_EKS_OPS_`:
   in `main.ts`, the same composition-root pattern the rest of the fleet uses).
   `create-cluster`/`create-nodegroup` additionally validate `input`'s
   required fields (`roleArn`/`resourcesVpcConfig.subnetIds` for a cluster,
-  `nodeRole`/`subnets` for a nodegroup) before any AWS call, throwing this
-  same code rather than letting a malformed payload reach the wrapper.
+  `nodeRole`/`subnets` for a nodegroup) before any AWS call, via
+  `Core.M3LInputFileReader`'s `requiredStringField`/`requiredArrayField`/
+  `optionalRecordField`/`requireRecord`, throwing this
+  same code rather than letting a malformed payload reach the wrapper —
+  `resourcesVpcConfig`'s own keys are additionally screened for the same
+  top-level prototype-pollution vectors as the outer `input` object (via
+  `optionalRecordField`'s reuse of `asRecord`).
   **Not** included here: an empty-but-present string parameter or an
   out-of-range `maxResults`/`maxWaitTime` — those fail earlier at config-load
   with `M3LConfigValidationError` (see § Configuration schema above).

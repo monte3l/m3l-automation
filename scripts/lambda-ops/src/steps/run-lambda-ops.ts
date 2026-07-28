@@ -215,6 +215,7 @@ async function dispatchWrite(
   const { writeFunction } = await import("./write-function.js");
   return writeFunction({
     operations: deps.operations,
+    reader: deps.reader,
     operation,
     functionName: fields.functionName,
     zipFile,

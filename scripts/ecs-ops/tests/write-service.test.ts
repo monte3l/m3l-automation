@@ -28,6 +28,11 @@ const SERVICE_DESCRIPTION: AWS.M3LECSServiceDescription = {
   pendingCount: 2,
 };
 
+const reader = new Core.M3LInputFileReader({
+  paths: new Core.M3LPaths(),
+  code: "ERR_ECS_OPS_CONFIG",
+});
+
 afterEach(() => {
   vi.clearAllMocks();
 });
@@ -45,6 +50,7 @@ describe("writeService — create-service", () => {
 
     const returned = await writeService({
       operations,
+      reader,
       operation: "create-service",
       input,
       cluster: undefined,
@@ -71,6 +77,7 @@ describe("writeService — create-service", () => {
     try {
       await writeService({
         operations,
+        reader,
         operation: "create-service",
         input: undefined,
         cluster: undefined,
@@ -83,6 +90,30 @@ describe("writeService — create-service", () => {
 
     expect(thrown).toBeInstanceOf(Core.M3LError);
     expect((thrown as Core.M3LError).code).toBe("ERR_ECS_OPS_CONFIG");
+    expect(createService).not.toHaveBeenCalled();
+  });
+
+  test("throws ERR_ECS_OPS_CONFIG when the parsed input's optional 'desiredCount' is present but the wrong type, never calling createService", async () => {
+    const createService = vi.fn();
+    const operations = createFakeEcsOperations({ createService });
+    const input = {
+      cluster: "my-cluster",
+      serviceName: "my-svc",
+      taskDefinition: "my-task:1",
+      desiredCount: "2",
+    };
+
+    await expect(
+      writeService({
+        operations,
+        reader,
+        operation: "create-service",
+        input,
+        cluster: undefined,
+        service: undefined,
+        force: false,
+      }),
+    ).rejects.toMatchObject({ code: "ERR_ECS_OPS_CONFIG" });
     expect(createService).not.toHaveBeenCalled();
   });
 
@@ -101,6 +132,7 @@ describe("writeService — create-service", () => {
       await expect(
         writeService({
           operations,
+          reader,
           operation: "create-service",
           input,
           cluster: undefined,
@@ -126,6 +158,7 @@ describe("writeService — update-service", () => {
 
     const returned = await writeService({
       operations,
+      reader,
       operation: "update-service",
       input,
       cluster: undefined,
@@ -151,8 +184,32 @@ describe("writeService — update-service", () => {
     await expect(
       writeService({
         operations,
+        reader,
         operation: "update-service",
         input: undefined,
+        cluster: undefined,
+        service: undefined,
+        force: false,
+      }),
+    ).rejects.toMatchObject({ code: "ERR_ECS_OPS_CONFIG" });
+    expect(updateService).not.toHaveBeenCalled();
+  });
+
+  test("throws ERR_ECS_OPS_CONFIG when the parsed input's optional 'forceNewDeployment' is present but the wrong type, never calling updateService", async () => {
+    const updateService = vi.fn();
+    const operations = createFakeEcsOperations({ updateService });
+    const input = {
+      cluster: "my-cluster",
+      service: "my-svc",
+      forceNewDeployment: "true",
+    };
+
+    await expect(
+      writeService({
+        operations,
+        reader,
+        operation: "update-service",
+        input,
         cluster: undefined,
         service: undefined,
         force: false,
@@ -175,6 +232,7 @@ describe("writeService — update-service", () => {
       await expect(
         writeService({
           operations,
+          reader,
           operation: "update-service",
           input,
           cluster: undefined,
@@ -194,6 +252,7 @@ describe("writeService — delete-service", () => {
 
     const returned = await writeService({
       operations,
+      reader,
       operation: "delete-service",
       input: undefined,
       cluster: "my-cluster",
