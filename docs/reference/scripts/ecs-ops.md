@@ -109,7 +109,12 @@ open `string`, not a closed union — exactly like `lambda-ops`'s
   (missing `cluster`/`service`/`services`/`input` for an operation that
   requires it, an `input` file that fails to read (mirrors `lambda-ops`'s
   `readInputFileText` treatment of a missing file), an `input` that is not
-  valid JSON or does not decode to a JSON object, an `input` missing a
+  valid JSON (via `Core.M3LInputFileReader.readJSON` — deliberately never
+  chains the raw `SyntaxError` as `cause`, closing fleet-wide finding F10:
+  V8's `SyntaxError.message` can embed a snippet of the malformed content),
+  does not decode to a JSON object, or contains a top-level
+  prototype-pollution vector key (`__proto__`/`constructor`/`prototype`), an
+  `input` missing a
   required create/update field, or a `services` value that is empty after
   split+trim+drop-empty), an unrecognized `operation` (unreachable through the
   declared `oneOf` validator, guarded defensively), or `script.aws` was not

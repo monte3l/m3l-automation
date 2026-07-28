@@ -115,8 +115,12 @@ all prefixed `ERR_CLOUDFORMATION_STACKS_`:
 
 - `ERR_CLOUDFORMATION_STACKS_CONFIG` — a guard-checked per-operation
   requirement was unmet (missing `stackName`/`input` for an operation that
-  requires it, an `input` file that fails to read or is not valid JSON /
-  does not decode to a JSON object, an `input` missing a required create/update
+  requires it, an `input` file that fails to read, is not valid JSON (via
+  `Core.M3LInputFileReader.readJSON` — deliberately never chains the raw
+  `SyntaxError` as `cause`, closing fleet-wide finding F10: V8's
+  `SyntaxError.message` can embed a snippet of the malformed content), does
+  not decode to a JSON object, or contains a top-level prototype-pollution
+  vector key (`__proto__`/`constructor`/`prototype`), an `input` missing a required create/update
   field, a `template` config set alongside an `input` record that already sets
   `templateBody`/`templateUrl` (conflict), a `template` file that fails to
   read, a `stackStatusFilter`/`retainResources` value that is empty after

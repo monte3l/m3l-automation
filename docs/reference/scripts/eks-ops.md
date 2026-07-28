@@ -118,7 +118,10 @@ all prefixed `ERR_EKS_OPS_`:
 - `ERR_EKS_OPS_CONFIG` — a guard-checked per-operation requirement was unmet
   (missing `cluster`/`nodegroup`/`input`/`kubernetesVersion` for an operation
   that requires it, an `input` file that fails to read, an `input` that is not
-  valid JSON or does not decode to a JSON object, an unrecognized `operation`
+  valid JSON, does not decode to a JSON object, or contains a top-level
+  prototype-pollution vector key (`__proto__`/`constructor`/`prototype` —
+  screened via `Core.M3LInputFileReader.asRecord`'s `isDangerousKey` guard),
+  an unrecognized `operation`
   (unreachable through the declared `oneOf` validator, guarded defensively),
   a resolved config value whose runtime type doesn't match its declared type
   (unreachable through normal config resolution, guarded defensively — the

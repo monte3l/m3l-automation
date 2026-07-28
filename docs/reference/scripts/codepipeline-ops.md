@@ -153,9 +153,16 @@ open `string`, not a closed union — exactly like `ecs-ops`'s
   those fail earlier at config-load with `M3LConfigValidationError` (see the
   Configuration schema section above).
 - `ERR_CODEPIPELINE_OPS_INPUT` — `create-pipeline`/`update-pipeline`'s
-  `input` file failed to read, was not valid JSON, did not decode to a JSON
-  object, or the parsed declaration was missing `name`/`roleArn`/a
-  non-empty `stages` array.
+  `input` file failed to read, was not valid JSON (via
+  `Core.M3LInputFileReader.readJSON` — deliberately never chains the raw
+  `SyntaxError` as `cause`, closing fleet-wide finding F10: V8's
+  `SyntaxError.message` can embed a snippet of the malformed content), did
+  not decode to a JSON object, contained a top-level prototype-pollution
+  vector key (`__proto__`/`constructor`/`prototype`), or the parsed
+  declaration was missing `name`/`roleArn`/a non-empty `stages` array. The
+  reader is constructed with this code specifically (not
+  `ERR_CODEPIPELINE_OPS_CONFIG`), preserving the pre-existing CONFIG/INPUT
+  split.
 - `ERR_CODEPIPELINE_OPS_NOT_FOUND` — a read operation's wrapper call
   resolved `undefined` (`describe-pipeline`, `get-pipeline-state`,
   `describe-execution`) — the wrapper's signal that the modeled
