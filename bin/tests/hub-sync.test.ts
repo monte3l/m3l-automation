@@ -88,6 +88,12 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 | **F7** | P2       | Deferred | Opt-in \`onUnknownFormat\` tolerant a \\| b handling           | json-etl log F7        |
 | **F9** | P1       | Done     | Some other change entirely                                 | some other log         |
 
+## ADR-0035 rollout — failure reporting & diagnostics
+
+| Phase  | Priority | Status   | Change                            | Source / notes         |
+| ------ | -------- | -------- | ----------------------------------- | --------------------------- |
+| **A7** | P2       | Rejected | Residual free-text redaction gaps    | Accepted per ADR update      |
+
 ## AWS getter reality
 
 | Provider getter | AWS service | Status | Wrapper submodule | Consuming script(s) | ADR / precedent |
@@ -342,6 +348,19 @@ describe("actionableItems", () => {
     expect(f7?.priority).toBe("p2");
     expect(f7?.status).toBe("deferred");
     expect(f7?.sourcePath).toBe("docs/plans/IMPLEMENTATION.md");
+  });
+
+  test("ADR-0035 rollout row is keyed 'impl:<Phase>', titled '<Phase> — <Change>', priority/status from its own columns", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
+    const items = actionableItems(roadmap, implementation) as TestItem[];
+
+    const a7 = items.find((item) => item.key === "impl:A7");
+    expect(a7).toBeDefined();
+    expect(a7?.title).toBe("A7 — Residual free-text redaction gaps");
+    expect(a7?.priority).toBe("p2");
+    expect(a7?.status).toBe("rejected");
+    expect(a7?.sourcePath).toBe("docs/plans/IMPLEMENTATION.md");
   });
 
   test("P1 key is 'roadmap:<Wave>:<slug(Scripts)>' and title is '<Wave> — <Scripts>'", () => {

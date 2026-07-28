@@ -499,3 +499,36 @@ implementation doesn't silently diverge from the decision record:
 As the addendum predicted, `pages.yml` now supersedes
 `pages-commit-stats.yml`: one build job runs both generators (hub at the site
 root, badges under `/commit-stats/`) and deploys a single `dist/` artifact.
+
+## Update (2026-07-28): the tracker's 6-value status vocabulary maps onto the Project board's 3-value Status field
+
+`ROADMAP.md`'s Maintenance section and `IMPLEMENTATION.md`'s status legend
+document the hub's six-value badge vocabulary — Done · To Do · In Progress ·
+Deferred · Blocked · Rejected — matching `classifyStatus()`
+(`bin/lib/project-hub.mjs`) and the HTML dashboard's six `.badge-*` CSS
+classes. The GitHub Projects (v2) board's single-select "Status" field,
+however, carries only three options: **Pending**, **In review**, and
+**Done**. This was an intentional implementation choice made while building
+`bin/sync-hub-projects.mjs` — not documented here at the time, which read as
+an accidental drift during a later audit. The mapping
+(`PROJECT_STATUS_OPTIONS` in `bin/lib/hub-sync.mjs`) is:
+
+| Tracker status (6-value) | Board Status option (3-value) |
+| ------------------------ | ----------------------------- |
+| To Do                    | Pending                       |
+| Deferred                 | Pending                       |
+| Blocked                  | Pending                       |
+| In Progress              | In review                     |
+| Done                     | Done                          |
+| Rejected                 | Done                          |
+
+Rationale: the board is a coarse "what's moving" view for GitHub's native
+Projects UI, not a full-fidelity mirror of the tracker vocabulary — a fourth
+distinct GitHub-issue-close outcome for "rejected" vs. "done" adds no
+board-navigable value (both resolve to "off the active board" once
+`planIssueSync` closes the underlying issue), and Deferred/Blocked/To Do are
+all equally "not yet actionable" from the board's perspective. Extending the
+board to a full six-option field remains possible later (a board schema
+change plus a `PROJECT_STATUS_OPTIONS` update) but is not needed today; this
+Update exists so the collapse is a stated decision instead of one
+discoverable only by reading `hub-sync.mjs`'s source.

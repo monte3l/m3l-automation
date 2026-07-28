@@ -290,6 +290,10 @@ const IMPLEMENTATION_SECTION_HEADINGS = {
     label: "Library friction (F-series)",
     regex: /^## Library friction \(F-series\)(?=[\s(]|$)/m,
   },
+  adr0035Rollout: {
+    label: "ADR-0035 rollout — failure reporting & diagnostics",
+    regex: /^## ADR-0035 rollout(?=[\s(]|$)/m,
+  },
   getterReality: {
     label: "AWS getter reality",
     regex: /^## AWS getter reality(?=[\s(]|$)/m,
@@ -301,12 +305,12 @@ const IMPLEMENTATION_SECTION_HEADINGS = {
 };
 
 /**
- * Extract the three `docs/plans/IMPLEMENTATION.md` sections (library friction,
- * AWS getter reality, gated/deferred) as parsed tables. Same missing-section
- * -> `errors` contract as {@link extractRoadmap}; never throws.
+ * Extract the four `docs/plans/IMPLEMENTATION.md` sections (library friction,
+ * ADR-0035 rollout, AWS getter reality, gated/deferred) as parsed tables. Same
+ * missing-section -> `errors` contract as {@link extractRoadmap}; never throws.
  *
  * @param {string} content `docs/plans/IMPLEMENTATION.md` contents
- * @returns {{ friction: ReturnType<typeof parseMarkdownTable>, getterReality: ReturnType<typeof parseMarkdownTable>, gated: ReturnType<typeof parseMarkdownTable>, errors: string[] }}
+ * @returns {{ friction: ReturnType<typeof parseMarkdownTable>, adr0035Rollout: ReturnType<typeof parseMarkdownTable>, getterReality: ReturnType<typeof parseMarkdownTable>, gated: ReturnType<typeof parseMarkdownTable>, errors: string[] }}
  * @example
  * ```js
  * import { extractImplementation } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
@@ -762,7 +766,7 @@ footer { margin-top: 3rem; color: var(--muted); font-size: 0.85rem; }
  *   commitSha: string,
  *   summary: { implemented: number, total: number },
  *   roadmap: { priority0: unknown, priority1: unknown, priority2: unknown, governance: unknown, errors: string[] },
- *   backlog: { friction: unknown, getterReality: unknown, gated: unknown, errors: string[] },
+ *   backlog: { friction: unknown, adr0035Rollout: unknown, getterReality: unknown, gated: unknown, errors: string[] },
  *   ledger: { implemented: number, total: number, barrels: unknown, core: unknown, aws: unknown, errors: string[] },
  *   corpus: ReturnType<typeof buildCorpusSections>,
  * }} model
@@ -776,7 +780,7 @@ footer { margin-top: 3rem; color: var(--muted); font-size: 0.85rem; }
  *   commitSha: "abc1234",
  *   summary: { implemented: 30, total: 31 },
  *   roadmap: { priority0: null, priority1: null, priority2: null, governance: null, errors: [] },
- *   backlog: { friction: null, getterReality: null, gated: null, errors: [] },
+ *   backlog: { friction: null, adr0035Rollout: null, getterReality: null, gated: null, errors: [] },
  *   ledger: { implemented: 30, total: 31, barrels: null, core: null, aws: null, errors: [] },
  *   corpus: { adrs: [], logs: [], archive: [], plans: [], reference: { core: [], aws: [], scripts: [] }, readmes: [] },
  * });
@@ -818,6 +822,12 @@ export function renderHubPage(model) {
       "backlog-friction",
       "Library friction (F-series)",
       backlog.friction,
+      "docs/plans",
+    ),
+    renderOptionalTable(
+      "backlog-adr-0035-rollout",
+      "ADR-0035 rollout — failure reporting & diagnostics",
+      backlog.adr0035Rollout,
       "docs/plans",
     ),
     renderOptionalTable(
