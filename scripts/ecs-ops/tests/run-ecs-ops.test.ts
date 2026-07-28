@@ -644,6 +644,42 @@ describe("runEcsOps — malformed/unreadable input-file failure paths", () => {
     expect(writeServiceMock).not.toHaveBeenCalled();
   });
 
+  test("F10: malformed JSON parse failure does not chain the raw SyntaxError as cause", async () => {
+    const inputPath = PATHS.resolveInput("create.json");
+    stubReadFileByPath({ [inputPath]: "{not json" });
+    const deps = buildDeps({
+      operation: "create-service",
+      input: "create.json",
+    });
+
+    let thrown: unknown;
+    try {
+      await runEcsOps(deps);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    expect((thrown as Core.M3LError).cause).toBeUndefined();
+    expect((thrown as Core.M3LError).message).toMatch(
+      /must be valid JSON \(\w+Error\)/,
+    );
+  });
+
+  test("throws ERR_ECS_OPS_CONFIG ('contains an unsafe key') when the parsed input has a top-level __proto__ key", async () => {
+    const inputPath = PATHS.resolveInput("create.json");
+    stubReadFileByPath({ [inputPath]: '{"__proto__":{"polluted":true}}' });
+    const deps = buildDeps({
+      operation: "create-service",
+      input: "create.json",
+    });
+
+    await expect(runEcsOps(deps)).rejects.toMatchObject({
+      code: "ERR_ECS_OPS_CONFIG",
+    });
+    expect(writeServiceMock).not.toHaveBeenCalled();
+  });
+
   test("throws ERR_ECS_OPS_CONFIG ('must decode to a JSON object') when the parsed input is a JSON array", async () => {
     const inputPath = PATHS.resolveInput("update.json");
     stubReadFileByPath({ [inputPath]: JSON.stringify([1, 2, 3]) });
