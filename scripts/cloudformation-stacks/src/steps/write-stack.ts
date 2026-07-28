@@ -170,7 +170,11 @@ function buildUpdateStackInput(
  * @throws {@link Core.M3LError} coded `"ERR_CLOUDFORMATION_STACKS_CONFIG"`
  *   when `input` is missing for `create-stack`/`update-stack`, the parsed
  *   `input` record is missing `stackName`, or `stackName` is missing for
- *   `delete-stack`.
+ *   `delete-stack`. Also thrown when a *present* optional `input` field
+ *   (`templateBody`/`templateUrl`/`parameters`/`capabilities`/`roleArn`/
+ *   `tags`/`timeoutInMinutes`/`disableRollback`/`enableTerminationProtection`
+ *   for `create-stack`, plus `usePreviousTemplate` for `update-stack`) is the
+ *   wrong type — never silently dropped.
  *
  * @example
  * ```typescript

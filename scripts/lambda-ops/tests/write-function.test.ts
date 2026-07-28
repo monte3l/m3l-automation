@@ -150,14 +150,40 @@ describe("writeFunction — create", () => {
     },
   );
 
-  test("throws ERR_LAMBDA_OPS_CONFIG when the parsed input's optional 'timeout' is present but the wrong type, never calling createFunction", async () => {
+  test.each(["timeout", "memorySize"] as const)(
+    "throws ERR_LAMBDA_OPS_CONFIG when the parsed input's optional '%s' is present but the wrong type, never calling createFunction",
+    async (fieldName) => {
+      const createFunction = vi.fn();
+      const operations = createFakeLambdaOperations({ createFunction });
+      const input = {
+        runtime: "nodejs20.x",
+        role: "arn:aws:iam::123456789012:role/my-role",
+        handler: "index.handler",
+        [fieldName]: "30",
+      };
+
+      await expect(
+        writeFunction({
+          operations,
+          reader,
+          operation: "create",
+          functionName: FUNCTION_NAME,
+          zipFile: ZIP_BYTES,
+          input,
+        }),
+      ).rejects.toMatchObject({ code: "ERR_LAMBDA_OPS_CONFIG" });
+      expect(createFunction).not.toHaveBeenCalled();
+    },
+  );
+
+  test("throws ERR_LAMBDA_OPS_CONFIG when the parsed input's optional 'description' is present but the wrong type, never calling createFunction", async () => {
     const createFunction = vi.fn();
     const operations = createFakeLambdaOperations({ createFunction });
     const input = {
       runtime: "nodejs20.x",
       role: "arn:aws:iam::123456789012:role/my-role",
       handler: "index.handler",
-      timeout: "30",
+      description: 42,
     };
 
     await expect(

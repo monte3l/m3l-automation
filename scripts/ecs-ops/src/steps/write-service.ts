@@ -139,7 +139,10 @@ function buildUpdateInput(
  *   `create-service`/`update-service`; within the parsed `input`,
  *   `cluster`/`serviceName`/`taskDefinition` for `create-service` or
  *   `cluster`/`service` for `update-service`; or `cluster`/`service` for
- *   `delete-service`.
+ *   `delete-service`. Also thrown when a *present* optional `input` field
+ *   (`desiredCount`/`launchType`/`loadBalancers`/`networkConfiguration` for
+ *   `create-service`, plus `taskDefinition`/`forceNewDeployment` for
+ *   `update-service`) is the wrong type — never silently dropped.
  *
  * @example
  * ```typescript

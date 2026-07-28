@@ -111,7 +111,10 @@ function readCreateFields(
  *   required field for the requested operation is missing: `zipFile` for
  *   `create`/`update-code`; `input` for `create`/`update-configuration`; or,
  *   for `create`, a missing/empty `runtime`/`role`/`handler` field within the
- *   parsed `input`.
+ *   parsed `input`. Also thrown when a *present* optional `input` field
+ *   (`description`/`timeout`/`memorySize`/`environment` for `create`/
+ *   `update-configuration`, plus `handler` for `update-configuration`) is the
+ *   wrong type — never silently dropped.
  *
  * @example
  * ```typescript
