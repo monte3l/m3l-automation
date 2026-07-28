@@ -57,18 +57,17 @@ function splitNonEmpty(raw: string, name: string): readonly string[] {
   return segments;
 }
 
-/** Reads the file at `paths.resolveInput(name)` as raw text — the one place `input`/`template` are ever read. */
+/** Reads the file at `paths.resolveInput(name)` as raw text — the one place `template` is ever read. */
 async function readTextFile(
   paths: Core.M3LPaths,
   name: string,
-  kind: "input" | "template",
 ): Promise<string> {
   const resolved = paths.resolveInput(name);
   try {
     return (await fsp.readFile(resolved)).toString("utf8");
   } catch (cause) {
     if (cause instanceof Core.M3LError) throw cause;
-    throw new Core.M3LError(`failed reading ${kind} file '${name}'`, {
+    throw new Core.M3LError(`failed reading template file '${name}'`, {
       code: "ERR_CLOUDFORMATION_STACKS_CONFIG",
       cause,
     });
@@ -96,7 +95,7 @@ async function resolveTemplateText(
       { code: "ERR_CLOUDFORMATION_STACKS_CONFIG" },
     );
   }
-  return readTextFile(paths, template, "template");
+  return readTextFile(paths, template);
 }
 
 /** Builds `create-stack`/`update-stack`'s gate description from the parsed input record's `stackName` field, best-effort. */

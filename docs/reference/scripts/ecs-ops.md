@@ -107,8 +107,9 @@ open `string`, not a closed union — exactly like `lambda-ops`'s
 
 - `ERR_ECS_OPS_CONFIG` — a guard-checked per-operation requirement was unmet
   (missing `cluster`/`service`/`services`/`input` for an operation that
-  requires it, an `input` file that fails to read (mirrors `lambda-ops`'s
-  `readInputFileText` treatment of a missing file), an `input` that is not
+  requires it, an `input` file that fails to read (via
+  `Core.M3LInputFileReader.readText`, chaining the raw filesystem error as
+  `cause`), an `input` that is not
   valid JSON (via `Core.M3LInputFileReader.readJSON` — deliberately never
   chains the raw `SyntaxError` as `cause`, closing fleet-wide finding F10:
   V8's `SyntaxError.message` can embed a snippet of the malformed content),

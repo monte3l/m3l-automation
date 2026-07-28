@@ -33,7 +33,6 @@ interface RawSettings {
 
 /** The dependencies every dispatched operation needs, once `config` has resolved. */
 interface DispatchDeps {
-  readonly paths: Core.M3LPaths;
   readonly logger: Core.M3LLogger;
   readonly operations: AWS.M3LCodePipelineOperations;
   readonly prompt: Core.M3LPrompt;
@@ -567,7 +566,6 @@ export async function runCodepipelineOps(deps: {
   const output = accessor.optionalString("output");
 
   const result = await dispatchOperation(operation, raw, {
-    paths: deps.paths,
     logger: deps.logger,
     operations: deps.operations,
     prompt: deps.prompt,

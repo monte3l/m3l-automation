@@ -63,7 +63,6 @@ interface RawSettings {
 
 /** The dependencies every dispatched operation needs, once `config` has resolved. */
 interface DispatchDeps {
-  readonly paths: Core.M3LPaths;
   readonly logger: Core.M3LLogger;
   readonly operations: AWS.M3LEKSOperations;
   readonly prompt: Core.M3LPrompt;
@@ -670,7 +669,6 @@ export async function runEksOps(deps: {
   const raw = readRawSettings(accessor);
 
   const dispatchDeps: DispatchDeps = {
-    paths: deps.paths,
     logger: deps.logger,
     operations: deps.operations,
     prompt: deps.prompt,
