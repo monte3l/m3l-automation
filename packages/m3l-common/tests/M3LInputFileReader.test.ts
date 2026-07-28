@@ -377,6 +377,18 @@ describe("requiredStringField", () => {
     expect(thrown).toBeInstanceOf(M3LError);
     expect((thrown as M3LError).code).toBe(CODE);
   });
+
+  test("field '__proto__' with no own property throws (does NOT resolve the inherited Object.prototype)", () => {
+    const reader = makeReader();
+    let thrown: unknown;
+    try {
+      reader.requiredStringField({ name: "svc" }, "__proto__", "create");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe(CODE);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -434,6 +446,13 @@ describe("optionalStringField", () => {
     expect(thrown).toBeInstanceOf(M3LError);
     expect((thrown as M3LError).code).toBe(CODE);
   });
+
+  test("returns undefined for field '__proto__' when it is NOT an own property (does NOT resolve the inherited Object.prototype)", () => {
+    const reader = makeReader();
+    expect(
+      reader.optionalStringField({ launchType: "FARGATE" }, "__proto__"),
+    ).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -462,6 +481,13 @@ describe("optionalNumberField", () => {
     }
     expect(thrown).toBeInstanceOf(M3LError);
     expect((thrown as M3LError).code).toBe(CODE);
+  });
+
+  test("passes NaN through unrejected, since typeof NaN === 'number'", () => {
+    const reader = makeReader();
+    expect(
+      reader.optionalNumberField({ desiredCount: Number.NaN }, "desiredCount"),
+    ).toBeNaN();
   });
 });
 
@@ -580,5 +606,10 @@ describe("optionalRecordField", () => {
     }
     expect(thrown).toBeInstanceOf(M3LError);
     expect((thrown as M3LError).code).toBe(CODE);
+  });
+
+  test("returns undefined for field '__proto__' when it is NOT an own property (does NOT resolve the inherited Object.prototype)", () => {
+    const reader = makeReader();
+    expect(reader.optionalRecordField({ a: 1 }, "__proto__")).toBeUndefined();
   });
 });

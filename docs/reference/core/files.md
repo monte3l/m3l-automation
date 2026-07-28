@@ -172,16 +172,25 @@ dispatching a mutating AWS call. Every read distinguishes "absent" from "set
 to the wrong type": an absent optional field resolves `undefined`, but a
 **present, wrong-typed** field always throws `M3LError` (`options.code`) —
 it is never silently coerced or dropped, matching `M3LConfigAccessor`'s
-config-read semantics ([config](./config.md)).
+config-read semantics ([config](./config.md)). "Absent" is checked with
+`Object.hasOwn`, not bracket access — reading `record[field]` directly would
+walk the prototype chain, so a record with no own `field` (e.g. `field`
+literally named `"__proto__"`) would otherwise silently resolve an inherited
+`Object.prototype` value instead of `undefined`.
 
 - **`requireRecord(record, name, operation)`** — returns `record`, throwing
-  `M3LError` (message `'${name}' is required for '${operation}'`) when
-  `undefined`. Promotes the `requireInput`/`requireDeclarationRecord` guard
-  scripts ran before reading any field off a maybe-absent `input`.
+  `M3LError` (message `'${name}' is required for operation '${operation}'`)
+  when `undefined`. Promotes the `requireInput`/`requireDeclarationRecord`
+  guard scripts ran before reading any field off a maybe-absent `input`.
+  **Presence-only** — it does not re-run `asRecord`'s object-shape/
+  prototype-pollution screen, so callers are expected to pass a record that
+  already went through it (e.g. from `readJSONRecord`).
 - **`requiredStringField(record, field, operation)`** /
   **`requiredArrayField(record, field, operation)`** — read a required field,
   throwing `M3LError` when absent, wrong-typed, **or empty** (an empty string
-  or empty array is rejected the same as absence).
+  or empty array is rejected the same as absence). Neither screens array
+  elements for a nested prototype-pollution key — only `asRecord`'s existing
+  top-level-of-a-record guarantee applies.
 - **`optionalStringField(record, field)`** / **`optionalNumberField`** /
   **`optionalBooleanField`** / **`optionalArrayField`** / **`optionalRecordField`**
   — read an optional field, returning `undefined` when absent and throwing
@@ -189,9 +198,10 @@ config-read semantics ([config](./config.md)).
   `optionalNumberField` does not reject `NaN`; `optionalBooleanField` does not
   coerce a `"true"`/`"false"` string; `optionalArrayField`/`optionalRecordField`
   leave element/value types as `unknown` (cast at the call site, where the
-  concrete shape is known). `optionalRecordField` reuses `asRecord`'s
-  object-shape check and top-level prototype-pollution key screen once the
-  field is known to be present.
+  concrete shape is known) and `optionalArrayField` applies no key screening
+  to elements. `optionalRecordField` reuses `asRecord`'s object-shape check
+  and top-level prototype-pollution key screen once the field is known to be
+  present.
 
 ### Example
 

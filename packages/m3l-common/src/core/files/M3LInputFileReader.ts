@@ -9,27 +9,8 @@ import * as fsp from "node:fs/promises";
 
 import { M3LError } from "../errors/index.js";
 import { isDangerousKey } from "../security/index.js";
+import { isArray, isBoolean, isNumber, isString } from "../utils/index.js";
 import type { M3LPaths } from "../utils/index.js";
-
-/** Narrows `value` to `string`. */
-function isString(value: unknown): value is string {
-  return typeof value === "string";
-}
-
-/** Narrows `value` to `number`. Does not reject `NaN` — `typeof NaN === "number"`. */
-function isNumber(value: unknown): value is number {
-  return typeof value === "number";
-}
-
-/** Narrows `value` to `boolean`. A string `"true"`/`"false"` is deliberately not coerced. */
-function isBoolean(value: unknown): value is boolean {
-  return typeof value === "boolean";
-}
-
-/** Narrows `value` to a plain array (element type left as `unknown`). */
-function isArray(value: unknown): value is unknown[] {
-  return Array.isArray(value);
-}
 
 /**
  * Constructor options for {@link M3LInputFileReader}.
@@ -95,12 +76,19 @@ export class M3LInputFileReader {
   }
 
   /**
-   * Shared skeleton behind every optional field reader: reads `field` off
-   * `record`, returns `undefined` when absent, and throws a bare
-   * {@link M3LError} when present but rejected by `isValid`. A present field
-   * is never silently dropped for being the wrong type — that would mask a
-   * caller/config mistake as "unset" (see `.claude/rules/library-src.md` §
-   * "Fail loud on caller/config errors").
+   * Shared skeleton behind every _primitive_ optional field reader
+   * (`optionalStringField`/`optionalNumberField`/`optionalBooleanField`/
+   * `optionalArrayField` — {@link optionalRecordField} is the deliberate
+   * exception, since it delegates to {@link asRecord} instead for the
+   * prototype-pollution key screen): reads `field` off `record` **as an own
+   * property only** (`Object.hasOwn`, not bracket access — a bracket read
+   * walks the prototype chain, so a record with no own `field` would
+   * otherwise silently resolve an inherited `Object.prototype` value),
+   * returns `undefined` when absent, and throws a bare {@link M3LError} when
+   * present but rejected by `isValid`. A present field is never silently
+   * dropped for being the wrong type — that would mask a caller/config
+   * mistake as "unset" (see `.claude/rules/library-src.md` § "Fail loud on
+   * caller/config errors").
    */
   #readOptionalField<T>(
     record: Readonly<Record<string, unknown>>,
@@ -108,8 +96,8 @@ export class M3LInputFileReader {
     isValid: (value: unknown) => value is T,
     typeName: string,
   ): T | undefined {
+    if (!Object.hasOwn(record, field)) return undefined;
     const value = record[field];
-    if (value === undefined) return undefined;
     if (!isValid(value)) {
       throw new M3LError(`'${field}' must be a ${typeName}`, {
         code: this.#code,
@@ -245,7 +233,10 @@ export class M3LInputFileReader {
    * `requireInput`/`requireDeclarationRecord`-style guard duplicated across
    * consumer scripts' write steps (e.g. `scripts/ecs-ops/src/steps/write-service.ts`),
    * each gating an already-JSON-parsed `input` record before reading its
-   * fields.
+   * fields. **Presence-only** — it does not re-run {@link asRecord}'s
+   * object-shape/prototype-pollution screen. Callers are expected to pass a
+   * record that already went through that screen (e.g. from
+   * {@link readJSONRecord}), not arbitrary unvalidated input.
    *
    * @param record - The candidate record, typically an already-parsed
    *   `input` from {@link readJSONRecord} threaded through as an optional
@@ -267,7 +258,7 @@ export class M3LInputFileReader {
     operation: string,
   ): Readonly<Record<string, unknown>> {
     if (record === undefined) {
-      throw new M3LError(`'${name}' is required for '${operation}'`, {
+      throw new M3LError(`'${name}' is required for operation '${operation}'`, {
         code: this.#code,
       });
     }
@@ -297,7 +288,7 @@ export class M3LInputFileReader {
     field: string,
     operation: string,
   ): string {
-    const value = record[field];
+    const value = Object.hasOwn(record, field) ? record[field] : undefined;
     if (typeof value !== "string" || value.length === 0) {
       throw new M3LError(
         `'${field}' must be a non-empty string for '${operation}'`,
@@ -316,7 +307,11 @@ export class M3LInputFileReader {
    * @param operation - The operation requiring `field`, for the thrown
    *   message.
    * @returns The field's array value (element type left as `unknown` — cast
-   *   at the call site, where the concrete shape is known).
+   *   at the call site, where the concrete shape is known). **No key
+   *   screening is applied to elements** — unlike {@link asRecord} /
+   *   {@link optionalRecordField}, a nested prototype-pollution vector key
+   *   inside an element is not detected; only {@link asRecord}'s existing
+   *   top-level-of-a-record guarantee applies.
    * @throws {@link M3LError} When `field` is absent, not an array, or an
    *   empty array.
    *
@@ -330,7 +325,7 @@ export class M3LInputFileReader {
     field: string,
     operation: string,
   ): readonly unknown[] {
-    const value = record[field];
+    const value = Object.hasOwn(record, field) ? record[field] : undefined;
     if (!Array.isArray(value) || value.length === 0) {
       throw new M3LError(
         `'${field}' must be a non-empty array for '${operation}'`,
@@ -413,7 +408,9 @@ export class M3LInputFileReader {
    * @param record - The already-parsed record.
    * @param field - The field name to read.
    * @returns The field's array value (element type left as `unknown` — cast
-   *   at the call site), or `undefined` when absent.
+   *   at the call site), or `undefined` when absent. **No key screening is
+   *   applied to elements** — a nested prototype-pollution vector key inside
+   *   an element is not detected.
    * @throws {@link M3LError} When `field` is present but not an array.
    *
    * @example
@@ -450,8 +447,7 @@ export class M3LInputFileReader {
     record: Readonly<Record<string, unknown>>,
     field: string,
   ): Readonly<Record<string, unknown>> | undefined {
-    const value = record[field];
-    if (value === undefined) return undefined;
-    return this.asRecord(value, field);
+    if (!Object.hasOwn(record, field)) return undefined;
+    return this.asRecord(record[field], field);
   }
 }
