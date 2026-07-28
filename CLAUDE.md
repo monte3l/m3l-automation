@@ -457,8 +457,9 @@ in `docs/contributing/agent-operating-model.md`.
 
 **The hub itself writing to a guarded path is a recurring violation, not a
 one-off** (`docs/logs/2026-07-24-w5-promote-destructive-gate.md`,
-`2026-07-26-w5-promote-checkpoint-store.md`, `2026-07-27-scripts-codepipeline-ops.md`
-— three separate sessions). The test is a path check with zero exceptions:
+`docs/logs/2026-07-26-w5-promote-checkpoint-store.md`,
+`docs/logs/2026-07-27-scripts-codepipeline-ops.md` — three separate
+sessions). The test is a path check with zero exceptions:
 "is this `Write`/`Edit` call touching `packages/*/src/**`, `scripts/*/src/**`,
 or `**/tests/**`?" A "yes" always means dispatch `code-implementer`/
 `test-author` — never a judgment call about the edit's size, an already-approved
