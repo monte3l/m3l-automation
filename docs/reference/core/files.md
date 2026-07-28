@@ -24,7 +24,7 @@ Exported symbols:
 - `M3LFileCopyReport` — the full report returned by `finalizeRegisteredFiles()`
 - `M3LFileCopyReportSummary` — the aggregate portion of the report
 - `M3LFileCopyError` — thrown on a batch-fatal copy failure or invalid copier options (chains the underlying cause)
-- `M3LInputFileReader` — reads and JSON-parses a caller-named input file under `M3LPaths`' input directory, plus `M3LInputFileReaderOptions`
+- `M3LInputFileReader` — reads and JSON-parses a caller-named input file under `M3LPaths`' input directory, plus defensive record-field readers over the parsed result and `M3LInputFileReaderOptions`
 
 ### Methods
 
@@ -89,6 +89,41 @@ export class M3LInputFileReader {
   readJSON(name: string): Promise<unknown>;
   readJSONRecord(name: string): Promise<Readonly<Record<string, unknown>>>;
   asRecord(value: unknown, name: string): Readonly<Record<string, unknown>>;
+  requireRecord(
+    record: Readonly<Record<string, unknown>> | undefined,
+    name: string,
+    operation: string,
+  ): Readonly<Record<string, unknown>>;
+  requiredStringField(
+    record: Readonly<Record<string, unknown>>,
+    field: string,
+    operation: string,
+  ): string;
+  requiredArrayField(
+    record: Readonly<Record<string, unknown>>,
+    field: string,
+    operation: string,
+  ): readonly unknown[];
+  optionalStringField(
+    record: Readonly<Record<string, unknown>>,
+    field: string,
+  ): string | undefined;
+  optionalNumberField(
+    record: Readonly<Record<string, unknown>>,
+    field: string,
+  ): number | undefined;
+  optionalBooleanField(
+    record: Readonly<Record<string, unknown>>,
+    field: string,
+  ): boolean | undefined;
+  optionalArrayField(
+    record: Readonly<Record<string, unknown>>,
+    field: string,
+  ): readonly unknown[] | undefined;
+  optionalRecordField(
+    record: Readonly<Record<string, unknown>>,
+    field: string,
+  ): Readonly<Record<string, unknown>> | undefined;
 }
 ```
 
@@ -128,6 +163,46 @@ export class M3LInputFileReader {
   is not detected, the same documented limitation as
   `internal/config/buildSafeValueMap`.
 
+### Reading fields off an already-parsed record
+
+These promote the record-field reader cluster hand-duplicated across
+consumer scripts' write steps (e.g. `scripts/ecs-ops/src/steps/write-service.ts`)
+— each gating an already-`readJSONRecord`-parsed `input` object before
+dispatching a mutating AWS call. Every read distinguishes "absent" from "set
+to the wrong type": an absent optional field resolves `undefined`, but a
+**present, wrong-typed** field always throws `M3LError` (`options.code`) —
+it is never silently coerced or dropped, matching `M3LConfigAccessor`'s
+config-read semantics ([config](./config.md)). "Absent" is checked with
+`Object.hasOwn`, not bracket access — reading `record[field]` directly would
+walk the prototype chain, so a record with no own `field` (e.g. `field`
+literally named `"__proto__"`) would otherwise silently resolve an inherited
+`Object.prototype` value instead of `undefined`.
+
+- **`requireRecord(record, name, operation)`** — returns `record`, throwing
+  `M3LError` (message `'${name}' is required for operation '${operation}'`)
+  when `undefined`. Promotes the `requireInput`/`requireDeclarationRecord`
+  guard scripts ran before reading any field off a maybe-absent `input`.
+  **Presence-only** — it does not re-run `asRecord`'s object-shape/
+  prototype-pollution screen, so callers are expected to pass a record that
+  already went through it (e.g. from `readJSONRecord`).
+- **`requiredStringField(record, field, operation)`** /
+  **`requiredArrayField(record, field, operation)`** — read a required field,
+  throwing `M3LError` when absent, wrong-typed, **or empty** (an empty string
+  or empty array is rejected the same as absence). Neither screens array
+  elements for a nested prototype-pollution key — only `asRecord`'s existing
+  top-level-of-a-record guarantee applies.
+- **`optionalStringField(record, field)`** / **`optionalNumberField`** /
+  **`optionalBooleanField`** / **`optionalArrayField`** / **`optionalRecordField`**
+  — read an optional field, returning `undefined` when absent and throwing
+  `M3LError` when the field is present but the wrong type.
+  `optionalNumberField` does not reject `NaN`; `optionalBooleanField` does not
+  coerce a `"true"`/`"false"` string; `optionalArrayField`/`optionalRecordField`
+  leave element/value types as `unknown` (cast at the call site, where the
+  concrete shape is known) and `optionalArrayField` applies no key screening
+  to elements. `optionalRecordField` reuses `asRecord`'s object-shape check
+  and top-level prototype-pollution key screen once the field is known to be
+  present.
+
 ### Example
 
 ```typescript
@@ -139,6 +214,13 @@ const input = new Core.M3LInputFileReader({
 });
 
 const record = await input.readJSONRecord("input");
+
+const taskDefinition = input.requiredStringField(
+  record,
+  "taskDefinition",
+  "create-service",
+);
+const desiredCount = input.optionalNumberField(record, "desiredCount");
 ```
 
 ## Notes and behavior
