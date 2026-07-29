@@ -40,17 +40,39 @@ export const EMPTY_CHECKPOINT: LogsInsightsCheckpoint = {
 };
 
 /**
+ * Narrows a value to {@link LogsInsightsRow}: a non-null, non-array plain
+ * object whose every own value is a `string`.
+ */
+function isLogsInsightsRow(value: unknown): value is LogsInsightsRow {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  return Object.values(value).every((entry) => typeof entry === "string");
+}
+
+/**
  * Narrows a JSON-parsed value to {@link LogsInsightsCheckpoint}. Passed to
  * `Core.M3LCheckpointStore` as its required `validate` predicate (via
- * {@link buildCheckpointStore}).
+ * {@link buildCheckpointStore}). Requires `completedWindows` to be a
+ * non-negative integer and `rows` to be an array of {@link LogsInsightsRow}
+ * (plain objects with only `string` own values) — guarding against a
+ * hand-edited or partially-written checkpoint file on disk.
  */
 export function isLogsInsightsCheckpoint(
   value: unknown,
 ): value is LogsInsightsCheckpoint {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  if (typeof candidate["completedWindows"] !== "number") return false;
+  const completedWindows = candidate["completedWindows"];
+  if (
+    typeof completedWindows !== "number" ||
+    !Number.isInteger(completedWindows) ||
+    completedWindows < 0
+  ) {
+    return false;
+  }
   if (!Array.isArray(candidate["rows"])) return false;
+  if (!candidate["rows"].every(isLogsInsightsRow)) return false;
   const inFlightQueryId = candidate["inFlightQueryId"];
   return inFlightQueryId === undefined || typeof inFlightQueryId === "string";
 }
