@@ -92,6 +92,15 @@ serialized level for a plain `Error` has no `origin` property at all, so the
 written run report contains no `"origin": null` entries and `"origin" in level`
 is a reliable presence check.
 
+`serializeErrorChain` shares the exact same walk as `formatErrorChain`,
+including its two truncation cases: a `cause` cycle or a chain past the
+32-level cap appends one synthetic trailing entry —
+`{ name: "Error", message: "[circular]" }` or
+`{ name: "Error", message: "[max cause depth reached]" }` — mirroring the
+`[circular]`/`[max cause depth reached]` markers `formatErrorChain` renders
+into its text output. Without it, a truncated chain in `run-report.json` or an
+`errorFrom` log line would be indistinguishable from a complete one.
+
 - `scrubUrlsInText` — rewrites `http(s)` URLs in free text to
   `origin + pathname`, dropping userinfo, query, and fragment.
 
