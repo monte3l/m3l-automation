@@ -498,8 +498,16 @@ export function serializeErrorChain(
   try {
     const stacks = options.stacks ?? true;
     const redact = options.redact ?? true;
-    const { levels } = walkErrorChain(error);
-    return levels.map((level) => serializeLevel(level, redact, stacks));
+    const { levels, circular, maxDepthReached } = walkErrorChain(error);
+    const serialized = levels.map((level) =>
+      serializeLevel(level, redact, stacks),
+    );
+    if (circular) {
+      serialized.push({ name: "Error", message: CIRCULAR_MARKER });
+    } else if (maxDepthReached) {
+      serialized.push({ name: "Error", message: MAX_DEPTH_MARKER });
+    }
+    return serialized;
   } catch {
     return [{ name: "Error", message: "[unrepresentable error chain]" }];
   }

@@ -478,7 +478,7 @@ describe("formatErrorChain()", () => {
     expect(output).not.toContain("caused by");
   });
 
-  test("a mutual cause cycle terminates, emits [circular], and stays finite (<= 32 levels)", () => {
+  test("a mutual cause cycle terminates, emits [circular], and stays finite (<= 32 levels + marker)", () => {
     const a = new Error("a");
     const b = new Error("b", { cause: a });
     (a as { cause?: unknown }).cause = b;
@@ -487,10 +487,11 @@ describe("formatErrorChain()", () => {
     expect(output).toContain("[circular]");
 
     const levels = serializeErrorChain(a);
-    expect(levels.length).toBeLessThanOrEqual(32);
+    expect(levels.length).toBeLessThanOrEqual(33);
+    expect(levels.at(-1)).toEqual({ name: "Error", message: "[circular]" });
   });
 
-  test("a self-referential cause terminates at one level plus [circular]", () => {
+  test("a self-referential cause terminates at one level plus a [circular] marker entry", () => {
     const self = new Error("self");
     (self as { cause?: unknown }).cause = self;
 
@@ -498,10 +499,11 @@ describe("formatErrorChain()", () => {
     expect(output).toContain("[circular]");
 
     const levels = serializeErrorChain(self);
-    expect(levels).toHaveLength(1);
+    expect(levels).toHaveLength(2);
+    expect(levels[1]).toEqual({ name: "Error", message: "[circular]" });
   });
 
-  test("a 100-deep cause chain is capped at exactly 32 levels plus the max-depth marker", () => {
+  test("a 100-deep cause chain is capped at exactly 32 levels plus a max-depth marker entry", () => {
     let current = new Error("level-0");
     for (let index = 1; index < 100; index += 1) {
       current = new Error(`level-${index}`, { cause: current });
@@ -511,7 +513,11 @@ describe("formatErrorChain()", () => {
     expect(output).toContain("[max cause depth reached]");
 
     const levels = serializeErrorChain(current);
-    expect(levels).toHaveLength(32);
+    expect(levels).toHaveLength(33);
+    expect(levels.at(-1)).toEqual({
+      name: "Error",
+      message: "[max cause depth reached]",
+    });
   });
 
   test("redacts a sensitive message by default", () => {
