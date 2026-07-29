@@ -8,10 +8,12 @@
 import {
   M3L_EXIT_CODES,
   M3LRunReporter,
+  collectDiagnostics,
   mapErrorToExitCode,
 } from "../diagnostics/index.js";
 import type {
   M3LBreadcrumbTrail,
+  M3LConfigSchemaPort,
   M3LRunReportInput,
 } from "../diagnostics/index.js";
 
@@ -119,6 +121,37 @@ function timelineEntry(
  */
 const UNRESOLVED_CORRELATION_ID = "unknown";
 
+/**
+ * The `environment` entry, present only when `script.configSchema` is
+ * declared — omitted entirely otherwise so `M3LRunReporter.build` falls back
+ * to its own bare `collectDiagnostics()` with no ports (preserving the
+ * pre-A6 behavior for a script with no config schema).
+ *
+ * The schema adapter's `declaredNames` deliberately maps
+ * `script.configSchema.parameters` to `.getName()` only — NOT
+ * `M3LConfigSchema.declaredNames()`, which also includes aliases. Aliases
+ * are alternate lookup keys, not distinct declared parameters, so including
+ * them here would duplicate a single parameter's fingerprint entry under
+ * multiple names.
+ */
+function environmentEntry(
+  script: M3LScript,
+): Pick<M3LRunReportInput, "environment"> | Record<string, never> {
+  const schema = script.configSchema;
+  if (schema === undefined) return {};
+
+  const schemaPort: M3LConfigSchemaPort = {
+    declaredNames: () =>
+      schema.parameters.map((parameter) => parameter.getName()),
+  };
+  return {
+    environment: collectDiagnostics({
+      schema: schemaPort,
+      config: script.currentConfig,
+    }),
+  };
+}
+
 /** Builds the persisted report input for a successful (or dry-run) outcome. */
 function buildSuccessInput(
   script: M3LScript,
@@ -138,6 +171,7 @@ function buildSuccessInput(
     outcome: dryRun ? "dry-run" : "success",
     ...timelineEntry(options?.trail),
     ...(archive !== undefined && { archive }),
+    ...environmentEntry(script),
   };
 }
 
@@ -156,6 +190,7 @@ function buildFailureInput(
     stage: script.getLastFailureStage() ?? "unknown",
     error,
     ...timelineEntry(options?.trail),
+    ...environmentEntry(script),
   };
 }
 

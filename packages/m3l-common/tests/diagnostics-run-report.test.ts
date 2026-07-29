@@ -1048,6 +1048,21 @@ describe("collectDiagnostics — sanitizeSourceLabel allowlist (security Must-fi
 
     expect(snapshot.config).toEqual([{ name: "apiKey", source: undefined }]);
   });
+
+  // A6: KNOWN_SOURCE_LABELS gains "async-fallback" as its 9th allowlisted
+  // entry (M3LConfigParameter.resolveAsync's branch-3 label). Added as its
+  // own test rather than folded into the `test.each(["cli", ...])` case
+  // above, so the existing two labels' assertions stay untouched.
+  test("a known source label ('async-fallback', the 9th allowlisted entry) is stored verbatim", () => {
+    const schema: M3LConfigSchemaPort = { declaredNames: () => ["apiKey"] };
+    const config: M3LConfigSourcePort = { sourceOf: () => "async-fallback" };
+
+    const snapshot = collectDiagnostics({ schema, config });
+
+    expect(snapshot.config).toEqual([
+      { name: "apiKey", source: "async-fallback" },
+    ]);
+  });
 });
 
 describe("collectDiagnostics — tryCollectConfig catch: a broken schema vs. no schema wired", () => {

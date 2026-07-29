@@ -36,4 +36,19 @@ export abstract class M3LConfigProvider {
    * @returns The raw value, or `undefined` when absent.
    */
   abstract getRawValue(key: string): unknown;
+
+  /**
+   * Returns the human-readable source label identifying this provider (e.g.
+   * `"cli"`, `"environment-variable"`). Deliberately a concrete method with a
+   * default implementation, not `abstract` — this class documents external
+   * subclassing (see the class-level `@example`), and adding an abstract
+   * member would be a source-breaking change for any existing subclass. A
+   * subclass overrides this to report its own canonical label; a subclass
+   * that does not override it falls back to `"other"`.
+   *
+   * @returns The provider's source label; `"other"` unless overridden.
+   */
+  getSourceLabel(): string {
+    return "other";
+  }
 }

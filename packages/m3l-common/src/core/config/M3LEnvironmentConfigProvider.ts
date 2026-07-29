@@ -86,4 +86,9 @@ export class M3LEnvironmentConfigProvider extends M3LConfigProvider {
     const envKey = toEnvKey(key);
     return this.env[key] ?? this.env[envKey] ?? this.dotenv.get(envKey);
   }
+
+  /** {@inheritDoc M3LConfigProvider.getSourceLabel} */
+  override getSourceLabel(): string {
+    return "environment-variable";
+  }
 }
