@@ -21,9 +21,17 @@ rule baked in (it prettier-writes exactly the artifacts `gen:index`
 regenerated), plus a machine check for the step-8 trap (every barrel export
 must appear in a sidecar `sections[].sources[]`). `--json` emits one
 aggregated payload; the human mode prints the summary block below. When it
-passes, this skill is done — report its summary. Fall back to the manual
-steps only when the composite itself is broken or you need to isolate a
-single failing step.
+passes, this skill is done — report its summary.
+
+**Known gap (recurred 3+ times):** the composite's own step 1 can exit 1 on
+mere staleness warnings, contradicting step 1's own manual-fallback text below
+("fine here, cleared in step 2"). If a documented source file changed since
+the last provenance stamp, run `node bin/check-doc-provenance.mjs --update`
+proactively **before** `pnpm sync:docs` rather than waiting for the composite
+to fail on it.
+
+Fall back to the manual steps only when the composite itself is broken or you
+need to isolate a single failing step.
 
 ### Manual sequence (fallback / reference)
 

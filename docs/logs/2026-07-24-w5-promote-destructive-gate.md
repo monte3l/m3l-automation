@@ -130,7 +130,7 @@ already complete when the truncation hit — but the general lesson from
 the actual gate command before deciding whether a resume is required, never
 from the spoke's final text alone.
 
-### 2. The hub briefly wrote to `src/` directly instead of routing through code-implementer
+### 2. The hub briefly wrote to `src/` directly instead of routing through code-implementer _(promoted → CLAUDE.md § Agent Operating Model)_
 
 While fixing a code-reviewer should-fix (2 stale `destructive-gate` TSDoc
 references in `scripts/lambda-ops/src/steps/run-lambda-ops.ts` that an earlier

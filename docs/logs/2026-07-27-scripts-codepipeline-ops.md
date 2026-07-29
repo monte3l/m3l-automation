@@ -79,7 +79,7 @@ across either the two `test-author` dispatches or the five review spokes).
 
 ## What didn't go as planned, and why
 
-### 1. The hub wrote all `src/` implementation code directly, instead of delegating to `code-implementer`
+### 1. The hub wrote all `src/` implementation code directly, instead of delegating to `code-implementer` _(promoted → CLAUDE.md § Agent Operating Model)_
 
 CLAUDE.md's "Agent Operating Model" section is explicit: this repo runs
 hub-and-spoke, where "the main agent (hub) plans and dispatches to isolated
