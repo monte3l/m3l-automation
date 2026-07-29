@@ -492,6 +492,135 @@ describe("buildIssuePayload", () => {
 });
 
 // ---------------------------------------------------------------------------
+// buildIssuePayload — title normalization (stripTitleMarkdown, private,
+// exercised indirectly via payload.title)
+// ---------------------------------------------------------------------------
+
+describe("buildIssuePayload title normalization", () => {
+  test("resolves a markdown link to its label", () => {
+    const item = makeItem({
+      title: "See [the doc](https://example.com/docs) for details",
+    });
+    const payload = buildIssuePayload(item) as { title: string };
+    expect(payload.title).toBe("See the doc for details");
+  });
+
+  test("strips backticks around inline code, keeping the inner text", () => {
+    const item = makeItem({ title: "Fix `onUnknownFormat` handling" });
+    const payload = buildIssuePayload(item) as { title: string };
+    expect(payload.title).toBe("Fix onUnknownFormat handling");
+  });
+
+  test("strips paired **bold** emphasis, keeping the inner text", () => {
+    const item = makeItem({ title: "**F7** — Opt-in tolerant handling" });
+    const payload = buildIssuePayload(item) as { title: string };
+    expect(payload.title).toBe("F7 — Opt-in tolerant handling");
+  });
+
+  test("strips paired __bold__ emphasis, keeping the inner text", () => {
+    const item = makeItem({ title: "__F9__ — Some other change" });
+    const payload = buildIssuePayload(item) as { title: string };
+    expect(payload.title).toBe("F9 — Some other change");
+  });
+
+  test("preserves bare underscores in an identifier (not a paired emphasis marker)", () => {
+    const item = makeItem({
+      title: "Rename M3L_EXIT_CODES and SENSITIVE_KEY_NAMES",
+    });
+    const payload = buildIssuePayload(item) as { title: string };
+    expect(payload.title).toBe("Rename M3L_EXIT_CODES and SENSITIVE_KEY_NAMES");
+  });
+
+  test("preserves a bare single asterisk not part of a paired emphasis marker", () => {
+    const item = makeItem({
+      title: "Compute a*b before applying the C pointer syntax int* value",
+    });
+    const payload = buildIssuePayload(item) as { title: string };
+    expect(payload.title).toBe(
+      "Compute a*b before applying the C pointer syntax int* value",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildIssuePayload — title truncation (truncateTitle/MAX_TITLE_LENGTH,
+// private, exercised indirectly via payload.title)
+// ---------------------------------------------------------------------------
+
+describe("buildIssuePayload title truncation", () => {
+  test("is a no-op when the title is exactly at the 120-char cap", () => {
+    const exactly120 = "A".repeat(120);
+    const item = makeItem({ title: exactly120 });
+    const payload = buildIssuePayload(item) as { title: string };
+    expect(payload.title).toBe(exactly120);
+    expect(payload.title).not.toContain("…");
+  });
+
+  test("truncates a long title at a word boundary, never mid-word", () => {
+    const words = Array.from({ length: 30 }, () => "lorem");
+    const longTitle = words.join(" ");
+    const item = makeItem({ title: longTitle });
+    const payload = buildIssuePayload(item) as { title: string };
+
+    expect(payload.title.length).toBeLessThanOrEqual(120);
+    expect(payload.title.endsWith("…")).toBe(true);
+    const core = payload.title.slice(0, -1);
+    expect(core).toBe(words.slice(0, 20).join(" "));
+  });
+
+  test("trims trailing punctuation right before the truncation point before appending the ellipsis", () => {
+    const prefix = `${"A".repeat(118)},`;
+    const rest =
+      "and a long tail of words that push this well past the one hundred twenty character title cap for sure";
+    const item = makeItem({ title: `${prefix} ${rest}` });
+    const payload = buildIssuePayload(item) as { title: string };
+
+    expect(payload.title).toBe(`${"A".repeat(118)}…`);
+    expect(payload.title).not.toContain(",…");
+  });
+
+  test("truncates a realistic long tracker-row title (issue #249 style) without mangling it", () => {
+    const item = makeItem({
+      title:
+        "Opt-in `onUnknownFormat` tolerant handling for unparseable rows so a single malformed record no longer aborts the entire batch import run silently",
+    });
+    const payload = buildIssuePayload(item) as { title: string };
+
+    expect(payload.title.length).toBeLessThanOrEqual(120);
+    expect(payload.title.endsWith("…")).toBe(true);
+    expect(payload.title).not.toContain("`");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildIssuePayload — idempotency and title/body independence
+// ---------------------------------------------------------------------------
+
+describe("buildIssuePayload determinism", () => {
+  test("is idempotent: repeated calls on the same Item produce the identical title", () => {
+    const item = makeItem({
+      title:
+        "**F7** — `onUnknownFormat` tolerant handling for a very long row of prose that exceeds the one hundred twenty character title cap by a wide margin",
+    });
+    const first = buildIssuePayload(item) as { title: string };
+    const second = buildIssuePayload(item) as { title: string };
+    expect(second.title).toBe(first.title);
+  });
+
+  test("truncating the title does not affect the body: item.detail still appears verbatim and untruncated", () => {
+    const longDetail = `**What:** ${"word ".repeat(40).trim()}`;
+    const item = makeItem({
+      title: "A".repeat(200),
+      detail: longDetail,
+    });
+    const payload = buildIssuePayload(item) as { title: string; body: string };
+
+    expect(payload.title.length).toBeLessThan(200);
+    expect(payload.body).toContain(longDetail);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // planMilestones
 // ---------------------------------------------------------------------------
 
