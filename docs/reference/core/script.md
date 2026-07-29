@@ -31,11 +31,18 @@ Exported from `@m3l-automation/m3l-common/core` (the `script` sub-module):
 - `setProcessGuardRequestId`
 - `AWS_PROFILE_PARAM_NAME` / `AWS_REGION_PARAM_NAME` — the canonical config parameter names (`"aws.profile"` / `"aws.region"`) the AWS-provisioning seam looks up
 
-`M3LScript` additionally exposes three read accessors the wrapper uses to build
+`M3LScript` additionally exposes five read accessors the wrapper uses to build
 a run report, all safe to call from consumer code: `metadata`, `correlationId`
-(`undefined` before the first run), and `getLastFailureStage()` (the stage that
+(`undefined` before the first run), `getLastFailureStage()` (the stage that
 was in progress when the most recent run threw; `undefined` on a fresh script
-and after a success).
+and after a success), `configSchema` (the constructor-supplied
+`M3LConfigSchema`, or `undefined` when no schema was declared), and
+`currentConfig` (the live `M3LConfig` store — the same instance
+`getConfiguration()` returns once loaded, but readable synchronously; empty
+before the first load, reset per Lambda invocation).
+`runScript()` uses `configSchema`/`currentConfig` to populate the persisted
+report's config fingerprint — see [diagnostics →
+`collectDiagnostics`](./diagnostics.md#collectdiagnostics).
 
 ## Execution flow
 
@@ -139,6 +146,13 @@ function runScript(
    writes the failure run report.
 4. **On success:** writes the success run report and leaves `exitCode` at `0`.
 5. `dryRun: true` stops after stage 5 — see [Dry runs](#dry-runs).
+
+On both outcomes, when `script.configSchema` is defined, the persisted report's
+`environment.config` fingerprint is populated from `script.currentConfig` — the
+declared parameter names paired with their real resolved source labels (see
+[config → Source tracking](./config.md#source-tracking)). A script with no
+declared schema gets no `config` section, same as a bare `collectDiagnostics()`
+call with no ports.
 
 **It never re-throws, and never calls `process.exit()`.** Both are deliberate.
 Re-throwing would surface as an unhandled rejection, and Node then exits `1`

@@ -84,6 +84,11 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/config/M3LConfigReader.ts"
   },
+  "M3LConfigResolution": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigReader.ts"
+  },
   "M3LConfigProvider": {
     "submodule": "config",
     "namespace": "core",

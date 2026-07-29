@@ -159,17 +159,22 @@ defaults.
 ## Source tracking with `sourceOf`
 
 `M3LConfig` records where every resolved value came from.
-`M3LConfig.set(name, value, source?)` stores the source label (for
-example `'cli'`, `'env'`, `'file'`), and `sourceOf(name)` returns it
-later. Use this to print a configuration summary or to audit which layer
-won for a given parameter — invaluable when a value is not what you
-expect and you need to know whether the CLI, a file, or a default
-supplied it.
+`M3LConfig.set(name, value, source?)` stores the source label, and
+`sourceOf(name)` returns it later. Use this to print a configuration summary
+or to audit which layer won for a given parameter — invaluable when a value
+is not what you expect and you need to know whether the CLI, a file, or a
+default supplied it.
 
 ```typescript
 // After resolution, report where each value originated.
-const where = config.sourceOf("region"); // e.g. "cli" | "env" | "file"
+const where = config.sourceOf("region"); // e.g. "cli" | "environment-variable" | "default"
 ```
+
+`M3LScript`'s built-in config-load stage populates a real label for every
+resolved parameter — one of `"cli"`, `"json-file"`, `"yaml-file"`,
+`"environment-variable"`, `"lambda-event"`, `"preset"`, `"default"`, or
+`"async-fallback"` (see the [config reference](../reference/core/config.md#source-tracking)
+for the full vocabulary).
 
 `M3LScript` performs this resolution for you during its config-load
 stage, so within a script you typically read already-resolved,

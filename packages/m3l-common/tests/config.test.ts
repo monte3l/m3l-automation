@@ -99,6 +99,7 @@ import {
 } from "../src/core/config/index.js";
 import type {
   M3LCoercedValue,
+  M3LConfigResolution,
   M3LConfigValidator,
 } from "../src/core/config/index.js";
 
@@ -227,6 +228,34 @@ describe("M3LConfigProvider", () => {
       expectTypeOf<M3LConfigProvider["getRawValue"]>().returns.toBeUnknown();
     });
   });
+
+  // ---------------------------------------------------------------------
+  // A6: getSourceLabel() — a concrete (non-abstract) method every provider
+  // inherits, so a bare subclass overriding only getRawValue still gets a
+  // usable default label.
+  // ---------------------------------------------------------------------
+  describe("getSourceLabel() (A6)", () => {
+    test("a minimal subclass that does not override getSourceLabel defaults to 'other'", () => {
+      class TestProvider extends M3LConfigProvider {
+        override getRawValue(key: string): unknown {
+          return key === "known" ? "value" : undefined;
+        }
+      }
+      const provider = new TestProvider();
+      expect(provider.getSourceLabel()).toBe("other");
+    });
+
+    describe("type-level contract", () => {
+      test("getSourceLabel takes no arguments and returns string", () => {
+        expectTypeOf<
+          M3LConfigProvider["getSourceLabel"]
+        >().parameters.toEqualTypeOf<[]>();
+        expectTypeOf<
+          M3LConfigProvider["getSourceLabel"]
+        >().returns.toBeString();
+      });
+    });
+  });
 });
 
 // =============================================================================
@@ -259,6 +288,11 @@ describe("M3LInMemoryConfigProvider", () => {
     );
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
+
+  test("getSourceLabel() returns 'in-memory' (A6)", () => {
+    const provider = new M3LInMemoryConfigProvider({});
+    expect(provider.getSourceLabel()).toBe("in-memory");
+  });
 });
 
 // =============================================================================
@@ -283,6 +317,11 @@ describe("M3LPresetConfigProvider", () => {
       M3LUnsafeConfigKeyError,
     );
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  test("getSourceLabel() returns 'preset' (A6)", () => {
+    const provider = new M3LPresetConfigProvider({});
+    expect(provider.getSourceLabel()).toBe("preset");
   });
 });
 
@@ -313,6 +352,11 @@ describe("M3LLambdaEventConfigProvider", () => {
       M3LUnsafeConfigKeyError,
     );
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  test("getSourceLabel() returns 'lambda-event' (A6)", () => {
+    const provider = new M3LLambdaEventConfigProvider({});
+    expect(provider.getSourceLabel()).toBe("lambda-event");
   });
 
   describe("type-level contract", () => {
@@ -382,6 +426,11 @@ describe("M3LCommandLineConfigProvider", () => {
     expect(provider.getRawValue("a")).toBe("1");
     expect(provider.getRawValue("b")).toBe("2");
     expect(provider.getRawValue("flag")).toBe(true);
+  });
+
+  test("getSourceLabel() returns 'cli' (A6)", () => {
+    const provider = new M3LCommandLineConfigProvider([]);
+    expect(provider.getSourceLabel()).toBe("cli");
   });
 });
 
@@ -536,6 +585,11 @@ describe("M3LEnvironmentConfigProvider", () => {
         }),
     ).not.toThrow();
   });
+
+  test("getSourceLabel() returns 'environment-variable' (A6)", () => {
+    const provider = new M3LEnvironmentConfigProvider({ env: {} });
+    expect(provider.getSourceLabel()).toBe("environment-variable");
+  });
 });
 
 // =============================================================================
@@ -615,6 +669,12 @@ describe("M3LJSONConfigProvider", () => {
     );
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
+
+  test("getSourceLabel() returns 'json-file' (A6)", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    const provider = new M3LJSONConfigProvider("/fixtures/does-not-exist.json");
+    expect(provider.getSourceLabel()).toBe("json-file");
+  });
 });
 
 // =============================================================================
@@ -692,6 +752,12 @@ describe("M3LYAMLConfigProvider", () => {
     );
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
+
+  test("getSourceLabel() returns 'yaml-file' (A6)", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    const provider = new M3LYAMLConfigProvider("/fixtures/does-not-exist.yaml");
+    expect(provider.getSourceLabel()).toBe("yaml-file");
+  });
 });
 
 // =============================================================================
@@ -752,6 +818,69 @@ describe("M3LConfigReader", () => {
       expectTypeOf(M3LConfigReader).constructorParameters.toEqualTypeOf<
         [ReadonlyArray<M3LConfigProvider>]
       >();
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // A6: resolveForKeys — same providers-outer/keys-inner traversal as
+  // getRawValueForKeys, but returns { value, source } tagging the WINNING
+  // provider's label. getRawValueForKeys itself keeps its exact existing
+  // signature/behavior (regression-covered above, unchanged).
+  // ---------------------------------------------------------------------
+  describe("resolveForKeys() (A6)", () => {
+    test("an alias hit on the higher-priority provider wins over a canonical-key hit on a lower-priority provider, and source reflects the WINNING provider's label", () => {
+      // Two distinct provider types (distinct getSourceLabel() values) so the
+      // assertion cannot be satisfied by accident when both providers would
+      // otherwise report the same label.
+      const higherPriority = new M3LInMemoryConfigProvider({
+        "alias-name": "from-in-memory",
+      });
+      const lowerPriority = new M3LPresetConfigProvider({
+        "canonical.name": "from-preset",
+      });
+      const reader = new M3LConfigReader([higherPriority, lowerPriority]);
+
+      const resolution = reader.resolveForKeys([
+        "canonical.name",
+        "alias-name",
+      ]);
+
+      expect(resolution).toEqual({
+        value: "from-in-memory",
+        source: "in-memory",
+      });
+    });
+
+    test("falls through to a lower-priority provider's value and label when the higher-priority provider has neither key", () => {
+      const higherPriority = new M3LInMemoryConfigProvider({});
+      const lowerPriority = new M3LPresetConfigProvider({
+        "canonical.name": "from-preset",
+      });
+      const reader = new M3LConfigReader([higherPriority, lowerPriority]);
+
+      const resolution = reader.resolveForKeys([
+        "canonical.name",
+        "alias-name",
+      ]);
+
+      expect(resolution).toEqual({ value: "from-preset", source: "preset" });
+    });
+
+    test("returns undefined when no provider has any of the keys", () => {
+      const reader = new M3LConfigReader([
+        new M3LInMemoryConfigProvider({}),
+        new M3LPresetConfigProvider({}),
+      ]);
+
+      expect(reader.resolveForKeys(["missing"])).toBeUndefined();
+    });
+
+    test("getRawValueForKeys keeps returning only the raw value (unchanged) once resolveForKeys exists", () => {
+      const reader = new M3LConfigReader([
+        new M3LInMemoryConfigProvider({ region: "eu-west-1" }),
+      ]);
+
+      expect(reader.getRawValueForKeys(["region"])).toBe("eu-west-1");
     });
   });
 });
@@ -1158,6 +1287,157 @@ describe("M3LConfigParameter", () => {
           }),
       ).not.toThrow();
     });
+  });
+});
+
+// =============================================================================
+// M3LConfigParameter.resolveAsync (A6) — mirrors getValueAsync's 4-branch
+// chain, additionally tagging the source per branch. getValueAsync's own
+// signature/behavior is unchanged (regression-covered by the whole
+// "M3LConfigParameter" describe block above, none of which was touched).
+// =============================================================================
+describe("M3LConfigParameter.resolveAsync (A6)", () => {
+  test("branch 1 (provider hit): resolves { value, source } where source is the resolved provider's label", async () => {
+    const reader = new M3LConfigReader([
+      new M3LInMemoryConfigProvider({ port: "8080" }),
+    ]);
+    const parameter = new M3LConfigParameter({
+      name: "port",
+      type: M3LConfigParameterType.INT,
+    });
+
+    await expect(parameter.resolveAsync(reader)).resolves.toEqual({
+      value: 8080,
+      source: "in-memory",
+    });
+  });
+
+  test("branch 2 (defaultValue): resolves { value: defaultValue, source: 'default' }", async () => {
+    const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
+    const parameter = new M3LConfigParameter({
+      name: "port",
+      type: M3LConfigParameterType.INT,
+      defaultValue: 3000,
+    });
+
+    await expect(parameter.resolveAsync(reader)).resolves.toEqual({
+      value: 3000,
+      source: "default",
+    });
+  });
+
+  test("branch 3 (asyncFallback): resolves { value: resolved fallback, source: 'async-fallback' }", async () => {
+    const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
+    const asyncFallback = vi.fn(() => Promise.resolve("fallback-value"));
+    const parameter = new M3LConfigParameter({
+      name: "widget",
+      type: M3LConfigParameterType.STRING,
+      asyncFallback,
+    });
+
+    await expect(parameter.resolveAsync(reader)).resolves.toEqual({
+      value: "fallback-value",
+      source: "async-fallback",
+    });
+    expect(asyncFallback).toHaveBeenCalledTimes(1);
+  });
+
+  test("branch 4 (true fall-through): resolves to undefined when not required", async () => {
+    const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
+    const parameter = new M3LConfigParameter({
+      name: "missing",
+      type: M3LConfigParameterType.STRING,
+    });
+
+    await expect(parameter.resolveAsync(reader)).resolves.toBeUndefined();
+  });
+
+  test("branch 4 (true fall-through): rejects with M3LConfigMissingError when required and nothing supplies a value", async () => {
+    const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
+    const parameter = new M3LConfigParameter({
+      name: "apiKey",
+      type: M3LConfigParameterType.STRING,
+      required: true,
+    });
+
+    await expect(parameter.resolveAsync(reader)).rejects.toBeInstanceOf(
+      M3LConfigMissingError,
+    );
+  });
+
+  test("rejects with M3LConfigCoercionError when the raw provider value cannot be coerced (mirrors getValueAsync)", async () => {
+    const reader = new M3LConfigReader([
+      new M3LInMemoryConfigProvider({ port: "not-a-number" }),
+    ]);
+    const parameter = new M3LConfigParameter({
+      name: "port",
+      type: M3LConfigParameterType.INT,
+    });
+
+    await expect(parameter.resolveAsync(reader)).rejects.toBeInstanceOf(
+      M3LConfigCoercionError,
+    );
+  });
+
+  describe("type-level contract", () => {
+    test("an INT-typed parameter's resolveAsync resolves a value/source pair typed as M3LConfigResolution<number>", async () => {
+      const intParameter = new M3LConfigParameter({
+        name: "port",
+        type: M3LConfigParameterType.INT,
+        defaultValue: 1,
+      });
+      const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
+
+      const resolved = await intParameter.resolveAsync(reader);
+      if (resolved === undefined) {
+        throw new Error("expected resolveAsync to resolve a value");
+      }
+      expectTypeOf(resolved).toMatchTypeOf<M3LConfigResolution<number>>();
+      expect(resolved.value).toBe(1);
+    });
+  });
+});
+
+// =============================================================================
+// M3LConfigParameter — getValueAsync regression coverage after resolveAsync
+// (A6). Ensures the pre-existing method's signature/behavior did not change
+// once resolveAsync was added alongside it.
+// =============================================================================
+describe("M3LConfigParameter.getValueAsync — regression after resolveAsync (A6)", () => {
+  test("still returns the bare coerced value (not a resolution object) from a provider hit", async () => {
+    const reader = new M3LConfigReader([
+      new M3LInMemoryConfigProvider({ port: "8080" }),
+    ]);
+    const parameter = new M3LConfigParameter({
+      name: "port",
+      type: M3LConfigParameterType.INT,
+    });
+
+    await expect(parameter.getValueAsync(reader)).resolves.toBe(8080);
+  });
+
+  test("still returns defaultValue unmodified when the provider has no value", async () => {
+    const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
+    const parameter = new M3LConfigParameter({
+      name: "port",
+      type: M3LConfigParameterType.INT,
+      defaultValue: 3000,
+    });
+
+    await expect(parameter.getValueAsync(reader)).resolves.toBe(3000);
+  });
+
+  test("still throws M3LConfigMissingError when required and no value is supplied anywhere", async () => {
+    const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
+    const parameter = new M3LConfigParameter({
+      name: "apiKey",
+      type: M3LConfigParameterType.STRING,
+      required: true,
+    });
+
+    await expect(parameter.getValueAsync(reader)).rejects.toBeInstanceOf(
+      M3LConfigMissingError,
+    );
   });
 });
 
