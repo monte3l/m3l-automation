@@ -185,9 +185,39 @@ const BASE_CONFIG: Record<string, unknown> = {
   progressEveryRecords: 10_000,
 };
 
+/**
+ * Builds a mock `M3LPromptAdapter` as an object of `vi.fn()`s — mirrors
+ * `packages/m3l-common/tests/prompt.test.ts`'s `makeMockAdapter`. Left
+ * inferred (not annotated as `M3LPromptAdapter`): several adapter methods are
+ * generic over `Value`, and a non-generic `vi.fn()` mock is not a valid
+ * override of a generic method signature under an explicit interface
+ * annotation.
+ */
+function makeMockPromptAdapter() {
+  return {
+    input: vi.fn(),
+    password: vi.fn(),
+    number: vi.fn(),
+    confirm: vi.fn(),
+    select: vi.fn(),
+    checkbox: vi.fn(),
+    search: vi.fn(),
+  };
+}
+
+/** Builds a real `Core.M3LPrompt` over a mock adapter whose `confirm` resolves `outcome`. */
+function buildPrompt(outcome = true): {
+  readonly prompt: Core.M3LPrompt;
+  readonly adapter: ReturnType<typeof makeMockPromptAdapter>;
+} {
+  const adapter = makeMockPromptAdapter();
+  adapter.confirm.mockResolvedValue(outcome);
+  return { prompt: new Core.M3LPrompt({ adapter }), adapter };
+}
+
 function buildDeps(
   configValues: Record<string, unknown>,
-  overrides?: { readonly confirm?: (message: string) => Promise<boolean> },
+  overrides?: { readonly prompt?: Core.M3LPrompt },
 ): Parameters<typeof runDynamodbCrud>[0] {
   return {
     config: buildConfig(configValues),
@@ -196,7 +226,7 @@ function buildDeps(
     correlationId: "run-1",
     dynamoDBDocument: fakeDynamoDBDocument,
     dynamoDB: fakeDynamoDB,
-    confirm: overrides?.confirm ?? vi.fn().mockResolvedValue(true),
+    prompt: overrides?.prompt ?? buildPrompt(true).prompt,
   };
 }
 
@@ -483,14 +513,14 @@ describe("runDynamodbCrud — destructive-operation gate", () => {
       itemCount: 10,
       tableStatus: "ACTIVE",
     });
-    const confirm = vi.fn().mockResolvedValue(false);
+    const { prompt } = buildPrompt(false);
     const deps = buildDeps(
       {
         ...BASE_CONFIG,
         operation: "delete",
         key: JSON.stringify({ id: "42" }),
       },
-      { confirm },
+      { prompt },
     );
     const warningSpy = vi.spyOn(deps.logger, "warning");
 
@@ -507,7 +537,7 @@ describe("runDynamodbCrud — destructive-operation gate", () => {
       { context: { tableName: "orders" } },
     );
     describeTableMock.mockRejectedValue(describeError);
-    const confirm = vi.fn().mockResolvedValue(true);
+    const { prompt } = buildPrompt(true);
     const deps = buildDeps(
       {
         ...BASE_CONFIG,
@@ -515,7 +545,7 @@ describe("runDynamodbCrud — destructive-operation gate", () => {
         key: JSON.stringify({ id: "42" }),
         item: JSON.stringify({ status: "shipped" }),
       },
-      { confirm },
+      { prompt },
     );
 
     await expect(runDynamodbCrud(deps)).rejects.toThrow();
@@ -571,7 +601,7 @@ describe("runDynamodbCrud — operation dispatch routing", () => {
       tableStatus: "ACTIVE",
     });
     updateItemMock.mockResolvedValue({ id: "42", status: "shipped" });
-    const confirm = vi.fn().mockResolvedValue(true);
+    const { prompt, adapter } = buildPrompt(true);
     const key = { id: "42" };
     const patch = { status: "shipped" };
     const deps = buildDeps(
@@ -581,13 +611,13 @@ describe("runDynamodbCrud — operation dispatch routing", () => {
         key: JSON.stringify(key),
         item: JSON.stringify(patch),
       },
-      { confirm },
+      { prompt },
     );
 
     const summary = await runDynamodbCrud(deps);
 
     expect(describeTableMock).toHaveBeenCalledWith(fakeDynamoDB, "orders");
-    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(adapter.confirm).toHaveBeenCalledTimes(1);
     expect(updateItemMock).toHaveBeenCalledWith(
       fakeDynamoDBDocument,
       "orders",
@@ -603,16 +633,16 @@ describe("runDynamodbCrud — operation dispatch routing", () => {
       tableStatus: "ACTIVE",
     });
     deleteItemMock.mockResolvedValue(undefined);
-    const confirm = vi.fn().mockResolvedValue(true);
+    const { prompt, adapter } = buildPrompt(true);
     const key = { id: "42" };
     const deps = buildDeps(
       { ...BASE_CONFIG, operation: "delete", key: JSON.stringify(key) },
-      { confirm },
+      { prompt },
     );
 
     const summary = await runDynamodbCrud(deps);
 
-    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(adapter.confirm).toHaveBeenCalledTimes(1);
     expect(deleteItemMock).toHaveBeenCalledWith(
       fakeDynamoDBDocument,
       "orders",
@@ -725,15 +755,15 @@ describe("runDynamodbCrud — operation dispatch routing", () => {
     batchDeleteItemsMock.mockImplementation((_client, _table, keys) =>
       Promise.resolve({ deleted: keys.length, unprocessed: [] }),
     );
-    const confirm = vi.fn().mockResolvedValue(true);
+    const { prompt, adapter } = buildPrompt(true);
     const deps = buildDeps(
       { ...BASE_CONFIG, operation: "batch-delete", input: "in.jsonl" },
-      { confirm },
+      { prompt },
     );
 
     const summary = await runDynamodbCrud(deps);
 
-    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(adapter.confirm).toHaveBeenCalledTimes(1);
     expect(batchDeleteItemsMock).toHaveBeenCalled();
     expect(batchWriteItemsMock).not.toHaveBeenCalled();
     expect(summary).toEqual({ read: 2, written: 2, failed: 0, skipped: 0 });
@@ -748,15 +778,15 @@ describe("runDynamodbCrud — operation dispatch routing", () => {
     batchWriteItemsMock.mockImplementation((_client, _table, items) =>
       Promise.resolve({ written: items.length, unprocessed: [] }),
     );
-    const confirm = vi.fn().mockResolvedValue(true);
+    const { prompt, adapter } = buildPrompt(true);
     const deps = buildDeps(
       { ...BASE_CONFIG, operation: "import", input: "in.jsonl" },
-      { confirm },
+      { prompt },
     );
 
     const summary = await runDynamodbCrud(deps);
 
-    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(adapter.confirm).toHaveBeenCalledTimes(1);
     expect(batchWriteItemsMock).toHaveBeenCalled();
     expect(summary).toEqual({ read: 2, written: 2, failed: 0, skipped: 0 });
   });
@@ -992,5 +1022,11 @@ describe("type contract", () => {
     expectTypeOf<
       Parameters<typeof runDynamodbCrud>[0]["dynamoDB"]
     >().toEqualTypeOf<Parameters<typeof AWS.describeTable>[0]>();
+  });
+
+  test("runDynamodbCrud's deps.prompt is a Core.M3LPrompt, not a bare confirm callback", () => {
+    expectTypeOf<
+      Parameters<typeof runDynamodbCrud>[0]["prompt"]
+    >().toEqualTypeOf<Core.M3LPrompt>();
   });
 });

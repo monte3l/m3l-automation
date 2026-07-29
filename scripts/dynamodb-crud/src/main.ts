@@ -54,7 +54,7 @@ await Core.runScript(
       correlationId: getCorrelationId(),
       dynamoDBDocument: aws.clients.dynamoDBDocument,
       dynamoDB: aws.clients.dynamoDB,
-      confirm: (message) => script.prompt.confirm(message),
+      prompt: script.prompt,
     });
   },
   { dryRun },

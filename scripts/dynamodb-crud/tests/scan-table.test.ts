@@ -415,6 +415,17 @@ describe("scanTable — type contract", () => {
 
   test("ScanCheckpoint.segments accepts null per-segment values", () => {
     expectTypeOf<ScanCheckpoint["segments"]>().toEqualTypeOf<
+      Readonly<Record<string, Record<string, unknown> | null>>
+    >();
+  });
+
+  test("ScanCheckpoint.segments is readonly — a caller cannot mutate the returned checkpoint's segments map", () => {
+    // toEqualTypeOf is strict about the readonly modifier: a mutable
+    // Record<...> is NOT equal to Readonly<Record<...>>, so this assertion
+    // only passes once ScanCheckpoint.segments is genuinely readonly (a
+    // caller holding a ScanCheckpoint can read but not assign into
+    // `.segments[key]` — that would be a compile error, TS2542).
+    expectTypeOf<ScanCheckpoint["segments"]>().not.toEqualTypeOf<
       Record<string, Record<string, unknown> | null>
     >();
   });
