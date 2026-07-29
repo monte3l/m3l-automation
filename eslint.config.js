@@ -343,30 +343,33 @@ export default tseslint.config(
     },
   },
   {
-    // core/logging <-> core/diagnostics must stay acyclic (ADR-0035 phase 3).
-    // The two modules genuinely depend on each other's *files*: M3LLogger
-    // imports serializeErrorChain from diagnostics/format-error.js, while the
-    // diagnostics files import the redaction helpers from logging/redact.js.
-    // That is a DAG only because the diagnostics side imports the redact module
-    // directly — routing it through `../logging/index.js` (the barrel, which
-    // re-exports M3LLogger) closes the loop
-    // `M3LLogger -> format-error -> logging/index -> M3LLogger`.
+    // The whole library must stay acyclic (ADR-0035 phase 3, widened repo-wide
+    // by A8). core/logging <-> core/diagnostics genuinely depend on each
+    // other's *files*: M3LLogger imports serializeErrorChain from
+    // diagnostics/format-error.js, while the diagnostics files import the
+    // redaction helpers from logging/redact.js. That is a DAG only because the
+    // diagnostics side imports the redact module directly — routing it through
+    // `../logging/index.js` (the barrel, which re-exports M3LLogger) closes
+    // the loop `M3LLogger -> format-error -> logging/index -> M3LLogger`.
     //
-    // Nothing about those import lines advertises how load-bearing they are, so
-    // this rule pins the invariant. Deliberately scoped to these modules
-    // rather than repo-wide: core/environment <-> core/utils (via M3LPaths)
-    // carries three pre-existing cycles, and unpicking those is its own change.
+    // core/script has the same shape (ADR-0035 phase 4a): `runScript`
+    // introduces a core/script -> core/diagnostics edge (the composition
+    // root's only permitted cross-module import, ADR-0009 Zone B), which is a
+    // DAG only because it imports diagnostics files directly rather than
+    // through a barrel that would loop back.
     //
-    // core/script is also covered here (ADR-0035 phase 4a): `runScript`
-    // introduces a new core/script -> core/diagnostics edge (the composition
-    // root's only permitted cross-module import, ADR-0009 Zone B), and
-    // nothing else catches a cycle on that edge unless this rule covers the
-    // file too.
-    files: [
-      "packages/m3l-common/src/core/logging/**/*.ts",
-      "packages/m3l-common/src/core/diagnostics/**/*.ts",
-      "packages/m3l-common/src/core/script/**/*.ts",
-    ],
+    // core/environment <-> core/utils (via M3LPaths) carried the same failure
+    // mode until A8: `environment/index.ts` imported `isNodeError`/
+    // `isNonEmptyString` through the `../utils/index.js` barrel, which
+    // re-exports M3LPaths, which imports M3LExecutionEnvironment back from
+    // `environment/index.ts`. Retargeting that import at
+    // `../utils/guards.js` directly (the module the two symbols actually live
+    // in, with no imports of its own) broke the loop, so the rule now covers
+    // every `.ts` file under the package rather than an allowlist of modules
+    // known to be clean — nothing about an import line advertises how
+    // load-bearing it is, so the standing invariant is "the whole library is
+    // a DAG," not "these three modules happen to be."
+    files: ["packages/m3l-common/src/**/*.ts"],
     rules: {
       "import-x/no-cycle": ["error", { maxDepth: Infinity }],
     },
