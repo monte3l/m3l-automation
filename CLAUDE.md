@@ -455,6 +455,16 @@ spoke is in `docs/contributing/model-selection.md`. Full detail — the spoke
 roster, TDD loop, live-status trackers, and submodule/script pipelines — lives
 in `docs/contributing/agent-operating-model.md`.
 
+**The hub itself writing to a guarded path is a recurring violation, not a
+one-off** (`docs/logs/2026-07-24-w5-promote-destructive-gate.md`,
+`docs/logs/2026-07-26-w5-promote-checkpoint-store.md`,
+`docs/logs/2026-07-27-scripts-codepipeline-ops.md` — three separate
+sessions). The test is a path check with zero exceptions:
+"is this `Write`/`Edit` call touching `packages/*/src/**`, `scripts/*/src/**`,
+or `**/tests/**`?" A "yes" always means dispatch `code-implementer`/
+`test-author` — never a judgment call about the edit's size, an already-approved
+plan, a followed scaffold, or momentum coming out of plan mode.
+
 **Claude Code hooks** (`.claude/settings.json`) add deterministic enforcement
 on top of this advisory file — the full 20-hook inventory is
 `docs/contributing/hooks-reference.md`; `check:hooks` validates the wiring.

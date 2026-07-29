@@ -149,7 +149,7 @@ hits.
 spoke's journal as a hint about _intent_, not a record of _completion_ (a stale
 TODO can under-report what actually landed).
 
-### 4. `sync:docs` step 1 tripped on staleness its own step 2 clears (recurring)
+### 4. `sync:docs` step 1 tripped on staleness its own step 2 clears (recurring) _(promoted → .claude/skills/syncing-docs/SKILL.md)_
 
 `pnpm sync:docs` again failed at step 1 (`check:doc-provenance`) on the two
 sidecars (`script`, `diagnostics`) whose source files this change touched; the

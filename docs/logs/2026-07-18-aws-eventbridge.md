@@ -129,7 +129,7 @@ hundred lines, split the review into scoped sub-dispatches (by concern —
 core module vs. integration/tests — or by file group) from the start,
 rather than waiting for a stall to force a retroactive split.
 
-### 2. `pnpm sync:docs` (the composite doc-reconciliation entry point) failed on pre-existing staleness warnings it should have deferred to step 2
+### 2. `pnpm sync:docs` (the composite doc-reconciliation entry point) failed on pre-existing staleness warnings it should have deferred to step 2 _(promoted → .claude/skills/syncing-docs/SKILL.md)_
 
 Running the preferred composite entry point (`pnpm sync:docs`) on the
 `fix/stale-sqs-test-header` branch and again on `feat/aws-eventbridge`

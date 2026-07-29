@@ -134,7 +134,7 @@ ranked findings list, resume it with `SendMessage` rather than either
 re-dispatching a fresh agent (loses context) or inferring findings from the
 partial text.
 
-### 2. The hub made two direct `src/` edits, repeating a documented anti-pattern
+### 2. The hub made two direct `src/` edits, repeating a documented anti-pattern _(promoted → CLAUDE.md § Agent Operating Model)_
 
 The `--resume`-with-no-checkpoint conformance fix (B3) was applied directly by
 the hub via the `Edit` tool on `scripts/athena-query/src/steps/run-athena-query.ts`

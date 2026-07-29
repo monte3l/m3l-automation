@@ -138,7 +138,7 @@ compiler both missing-key and excess-key enforcement.
 drift, key it off a `Record<TheUnion, true>` and `Object.keys` it — never a
 hand-set plus an `is`-predicate filter.
 
-### 4. `sync:docs` step 1 tripped on staleness its own step 2 clears (recurring)
+### 4. `sync:docs` step 1 tripped on staleness its own step 2 clears (recurring) _(promoted → .claude/skills/syncing-docs/SKILL.md)_
 
 `pnpm sync:docs` failed at step 1 (`check:doc-provenance`) on
 `script.provenance.json` staleness warnings — the same known sequencing quirk

@@ -90,6 +90,14 @@ flips to green — but the rest of the discipline below is identical.)
      either the success or failure bucket — is a repeatable failure class in
      join-back code, not something the happy-path/documented-failure cases
      catch on their own (`aws/sqs`, 2026-07-13).
+   - **Minimal fixture** for any AWS wrapper method that maps an SDK response
+     into a nested object graph with optional fields: add one test whose
+     fixture omits every optional field (not just the usual "fully populated"
+     fixture). Branch-coverage gaps in AWS wrappers cluster specifically in
+     optional-field mappers whose test fixtures are always "full" — a single
+     minimal-fixture test per top-level method closes most of the gap in one
+     pass, rather than a dedicated coverage-completion round after the fact
+     (`aws/codepipeline`, `aws/eks`, 2026-07-27).
    - **`expectTypeOf`** assertions where the type IS the contract (branded types,
      generic containers, discriminated unions like `M3LResult`).
 4. Keep tests deterministic and isolated: no real network or filesystem; mock

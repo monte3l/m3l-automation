@@ -206,7 +206,7 @@ graph — not just "happy path + failure path" per field.
   parallel dispatch would have needed a merge step this approach avoids
   entirely.
 - **Budget a coverage-gap pass into every AWS wrapper module's plan, not just
-  when the gate fails.** Three modules in a row (`ecs`, `cloudformation`, now
+  when the gate fails.** _(promoted → .claude/agents/test-author.md)_ Three modules in a row (`ecs`, `cloudformation`, now
   `codepipeline`) have needed a dedicated coverage-gap `test-author` dispatch
   after GREEN. It is cheap (one focused dispatch, no source changes) and
   entirely predictable once a module crosses roughly ten methods /
