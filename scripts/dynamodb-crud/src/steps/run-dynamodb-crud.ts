@@ -613,7 +613,7 @@ async function dispatch(
  *
  * @param deps - The resolved config, `M3LPaths`, logger, per-run correlation
  *   id, the provisioned `dynamoDBDocument`/`dynamoDB` clients, and an
- *   injected `confirm` callback (mirrors `script.prompt.confirm`).
+ *   injected `Core.M3LPrompt` (mirrors `script.prompt`).
  * @returns The run summary: items read, written, failed (after retry), and
  *   skipped (malformed input records).
  * @throws {@link Core.M3LError} with code `ERR_DYNAMO_CRUD_CONFIG` when a
@@ -637,7 +637,7 @@ async function dispatch(
  *   correlationId: "run-1",
  *   dynamoDBDocument: script.aws.clients.dynamoDBDocument,
  *   dynamoDB: script.aws.clients.dynamoDB,
- *   confirm: (message) => script.prompt.confirm(message),
+ *   prompt: script.prompt,
  * });
  * console.log(summary.read, summary.written, summary.failed, summary.skipped);
  * ```
@@ -649,7 +649,7 @@ export async function runDynamodbCrud(deps: {
   readonly correlationId: string;
   readonly dynamoDBDocument: Parameters<typeof AWS.getItem>[0];
   readonly dynamoDB: Parameters<typeof AWS.describeTable>[0];
-  readonly confirm: (message: string) => Promise<boolean>;
+  readonly prompt: Core.M3LPrompt;
 }): Promise<RunDynamodbCrudSummary> {
   const settings = resolveSettings(deps.config);
 
@@ -660,7 +660,7 @@ export async function runDynamodbCrud(deps: {
         tableName: settings.tableName,
         operation: settings.operation,
         logger: deps.logger,
-        confirm: deps.confirm,
+        prompt: deps.prompt,
       });
     } catch (cause) {
       if (
