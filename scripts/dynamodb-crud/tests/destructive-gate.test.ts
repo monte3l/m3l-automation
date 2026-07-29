@@ -13,12 +13,34 @@ import { runDestructiveGate } from "../src/steps/destructive-gate.js";
 
 /**
  * Contract: docs/reference/scripts/dynamodb-crud.md, `destructive-gate` row.
- * Shared confirm-gate for `delete`/`update`/`batch-delete`/`import`: prints
- * the target table + an approximate item-count estimate (`AWS.describeTable`)
- * and requires confirmation before proceeding. `confirm` is an injected
- * callback (mirrors `script.prompt.confirm`) so the step is unit-testable
- * without the `M3LScript` lifecycle.
+ * Shared confirm-gate for `delete`/`update`/`batch-delete`/`import`: describes
+ * the target table's approximate size (`AWS.describeTable`) and delegates the
+ * actual confirm/abort decision to the library's `Core.confirmDestructive`
+ * (`packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts`), injecting a
+ * real `Core.M3LPrompt` backed by a mock `M3LPromptAdapter` so the step is
+ * unit-testable without a real TTY.
  */
+
+/**
+ * Builds a mock `M3LPromptAdapter` as an object of `vi.fn()`s.
+ *
+ * Left inferred (not annotated as `M3LPromptAdapter`) — mirrors
+ * `packages/m3l-common/tests/prompt.test.ts`'s `makeMockAdapter`: several
+ * adapter methods are generic over `Value`, and a non-generic `vi.fn()` mock
+ * is not a valid override of a generic method signature under an explicit
+ * interface annotation.
+ */
+function makeMockAdapter() {
+  return {
+    input: vi.fn(),
+    password: vi.fn(),
+    number: vi.fn(),
+    confirm: vi.fn(),
+    select: vi.fn(),
+    checkbox: vi.fn(),
+    search: vi.fn(),
+  };
+}
 
 const describeTableMock = vi.mocked(AWS.describeTable);
 
@@ -28,17 +50,19 @@ const fakeClient = {} as Parameters<typeof AWS.describeTable>[0];
 
 afterEach(() => {
   vi.restoreAllMocks();
+  describeTableMock.mockReset();
 });
 
 describe("runDestructiveGate", () => {
-  test("resolves without throwing when confirm resolves true", async () => {
+  test("resolves without throwing when the adapter's confirm resolves true", async () => {
     describeTableMock.mockResolvedValue({
       itemCount: 42,
       tableStatus: "ACTIVE",
     });
     const logger = new Core.M3LLogger([]);
-    const warningSpy = vi.spyOn(logger, "warning");
-    const confirm = vi.fn().mockResolvedValue(true);
+    const adapter = makeMockAdapter();
+    adapter.confirm.mockResolvedValue(true);
+    const prompt = new Core.M3LPrompt({ adapter });
 
     await expect(
       runDestructiveGate({
@@ -46,25 +70,53 @@ describe("runDestructiveGate", () => {
         tableName: "orders",
         operation: "delete",
         logger,
-        confirm,
+        prompt,
       }),
     ).resolves.toBeUndefined();
 
     expect(describeTableMock).toHaveBeenCalledWith(fakeClient, "orders");
-    expect(confirm).toHaveBeenCalledTimes(1);
-    expect(warningSpy).toHaveBeenCalled();
-    const [message] = warningSpy.mock.calls[0] ?? [];
-    expect(message).toEqual(expect.stringContaining("orders"));
-    expect(message).toEqual(expect.stringContaining("delete"));
+    expect(adapter.confirm).toHaveBeenCalledTimes(1);
+    const [config] = adapter.confirm.mock.calls[0] as [{ message: string }];
+    expect(config.message).toEqual(expect.stringContaining("orders"));
+    expect(config.message).toEqual(expect.stringContaining("delete"));
+    expect(config.message).toEqual(expect.stringContaining("42"));
   });
 
-  test("throws ERR_DYNAMO_CRUD_ABORTED when confirm resolves false", async () => {
+  test("never calls a standalone logger.warning before confirming (yes is always false here)", async () => {
+    describeTableMock.mockResolvedValue({
+      itemCount: 10,
+      tableStatus: "ACTIVE",
+    });
+    const logger = new Core.M3LLogger([]);
+    const warningSpy = vi.spyOn(logger, "warning");
+    const adapter = makeMockAdapter();
+    adapter.confirm.mockResolvedValue(true);
+    const prompt = new Core.M3LPrompt({ adapter });
+
+    await runDestructiveGate({
+      dynamoDB: fakeClient,
+      tableName: "orders",
+      operation: "delete",
+      logger,
+      prompt,
+    });
+
+    // Core.confirmDestructive only warns on the yes=true bypass channel;
+    // runDestructiveGate always passes yes: false, so no warning is logged
+    // here (unlike the old standalone `logger.warning` this step used to
+    // issue itself before calling confirm).
+    expect(warningSpy).not.toHaveBeenCalled();
+  });
+
+  test("throws M3LError with code ERR_DYNAMO_CRUD_ABORTED when the adapter's confirm resolves false", async () => {
     describeTableMock.mockResolvedValue({
       itemCount: 100,
       tableStatus: "ACTIVE",
     });
     const logger = new Core.M3LLogger([]);
-    const confirm = vi.fn().mockResolvedValue(false);
+    const adapter = makeMockAdapter();
+    adapter.confirm.mockResolvedValue(false);
+    const prompt = new Core.M3LPrompt({ adapter });
 
     let thrown: unknown;
     try {
@@ -73,7 +125,7 @@ describe("runDestructiveGate", () => {
         tableName: "orders",
         operation: "batch-delete",
         logger,
-        confirm,
+        prompt,
       });
     } catch (error) {
       thrown = error;
@@ -81,7 +133,7 @@ describe("runDestructiveGate", () => {
 
     expect(thrown).toBeInstanceOf(Core.M3LError);
     expect((thrown as Core.M3LError).code).toBe("ERR_DYNAMO_CRUD_ABORTED");
-    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(adapter.confirm).toHaveBeenCalledTimes(1);
   });
 
   test("still prompts for confirmation when itemCount is 0 (approximate count, not proof of emptiness)", async () => {
@@ -90,27 +142,31 @@ describe("runDestructiveGate", () => {
       tableStatus: "ACTIVE",
     });
     const logger = new Core.M3LLogger([]);
-    const confirm = vi.fn().mockResolvedValue(true);
+    const adapter = makeMockAdapter();
+    adapter.confirm.mockResolvedValue(true);
+    const prompt = new Core.M3LPrompt({ adapter });
 
     await runDestructiveGate({
       dynamoDB: fakeClient,
       tableName: "empty-looking-table",
       operation: "import",
       logger,
-      confirm,
+      prompt,
     });
 
-    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(adapter.confirm).toHaveBeenCalledTimes(1);
   });
 
-  test("propagates a describeTable failure unmodified and never calls confirm", async () => {
+  test("propagates a describeTable failure unmodified and never calls the prompt's confirm", async () => {
     const describeError = new AWS.M3LDynamoDBOperationError(
       "describeTable failed",
       { context: { tableName: "orders" } },
     );
     describeTableMock.mockRejectedValue(describeError);
     const logger = new Core.M3LLogger([]);
-    const confirm = vi.fn().mockResolvedValue(true);
+    const adapter = makeMockAdapter();
+    adapter.confirm.mockResolvedValue(true);
+    const prompt = new Core.M3LPrompt({ adapter });
 
     let thrown: unknown;
     try {
@@ -119,14 +175,14 @@ describe("runDestructiveGate", () => {
         tableName: "orders",
         operation: "update",
         logger,
-        confirm,
+        prompt,
       });
     } catch (error) {
       thrown = error;
     }
 
     expect(thrown).toBe(describeError);
-    expect(confirm).not.toHaveBeenCalled();
+    expect(adapter.confirm).not.toHaveBeenCalled();
   });
 
   test("passes the exact tableName through to describeTable for every documented operation", async () => {
@@ -135,24 +191,26 @@ describe("runDestructiveGate", () => {
       tableStatus: "ACTIVE",
     });
     const logger = new Core.M3LLogger([]);
-    const confirm = vi.fn().mockResolvedValue(true);
+    const adapter = makeMockAdapter();
+    adapter.confirm.mockResolvedValue(true);
+    const prompt = new Core.M3LPrompt({ adapter });
 
     await runDestructiveGate({
       dynamoDB: fakeClient,
       tableName: "widgets",
       operation: "update",
       logger,
-      confirm,
+      prompt,
     });
 
     expect(describeTableMock).toHaveBeenCalledWith(fakeClient, "widgets");
   });
 
-  test("type contract: runDestructiveGate resolves void and confirm is a string->Promise<boolean> callback", () => {
+  test("type contract: runDestructiveGate resolves void and takes a Core.M3LPrompt, not a bare confirm callback", () => {
     expectTypeOf(runDestructiveGate).returns.toEqualTypeOf<Promise<void>>();
     expectTypeOf<
-      Parameters<typeof runDestructiveGate>[0]["confirm"]
-    >().toEqualTypeOf<(message: string) => Promise<boolean>>();
+      Parameters<typeof runDestructiveGate>[0]["prompt"]
+    >().toEqualTypeOf<Core.M3LPrompt>();
     expectTypeOf<
       Parameters<typeof runDestructiveGate>[0]["dynamoDB"]
     >().toEqualTypeOf<Parameters<typeof AWS.describeTable>[0]>();

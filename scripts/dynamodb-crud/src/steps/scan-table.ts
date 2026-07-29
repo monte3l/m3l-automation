@@ -6,7 +6,7 @@ import { AWS, Core } from "@m3l-automation/m3l-common";
  * `lastEvaluatedKey` seen, or `null` once that segment has fully drained.
  */
 export interface ScanCheckpoint {
-  readonly segments: Record<string, Record<string, unknown> | null>;
+  readonly segments: Readonly<Record<string, Record<string, unknown> | null>>;
 }
 
 /** Injected dependencies and resolved config for {@link scanTable}. */
@@ -240,7 +240,7 @@ async function* mergeAsync(
     if (source === undefined) {
       throw new Core.M3LError(
         "scanTable: internal error — missing segment source for merge",
-        { code: "ERR_DYNAMO_CRUD_CHECKPOINT" },
+        { code: "ERR_DYNAMO_CRUD_INTERNAL" },
       );
     }
     pending.set(
@@ -328,7 +328,7 @@ export async function* scanTable(
   );
 
   const state = new SegmentCheckpointState(
-    opts.resume ? (await opts.checkpointStore.read()).segments : {},
+    opts.resume ? { ...(await opts.checkpointStore.read()).segments } : {},
   );
 
   const activeSegments = new Map<
