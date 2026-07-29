@@ -102,6 +102,37 @@ function slug(text) {
     .replace(/^-+|-+$/g, "");
 }
 
+// Strip markdown from a GitHub issue *title* specifically: links (keeping
+// the label), backticks, and paired **bold**/__bold__ emphasis. Deliberately
+// narrower than stripMarkdown above — that helper also deletes bare `*`/`_`
+// characters, which would mangle identifiers that commonly appear in a
+// tracker title (e.g. `M3L_EXIT_CODES`, `SENSITIVE_KEY_NAMES`).
+function stripTitleMarkdown(text) {
+  const linkless = text.replace(/\[([^[\]]+)\]\([^()]+\)/g, "$1");
+  const unbolded = linkless
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/__(.+?)__/g, "$1");
+  return unbolded.replace(/`/g, "").trim();
+}
+
+// GitHub's own issue-title cap is 256 characters; this stays well under it
+// so a title reads as a label, not the row's full "Title & change" cell.
+const MAX_TITLE_LENGTH = 120;
+
+// Truncate a stripped title to MAX_TITLE_LENGTH at the last word boundary at
+// or before the limit (never mid-word), trimming trailing punctuation before
+// appending an ellipsis. A no-op when the title already fits. Deterministic
+// — required for planIssueSync's idempotency law (re-running over synced
+// state must plan zero changes).
+function truncateTitle(text) {
+  if (text.length <= MAX_TITLE_LENGTH) return text;
+  const sliced = text.slice(0, MAX_TITLE_LENGTH);
+  const lastSpaceIndex = sliced.lastIndexOf(" ");
+  const boundary =
+    lastSpaceIndex > 0 ? sliced.slice(0, lastSpaceIndex) : sliced;
+  return `${boundary.replace(/[\s.,;:!?—–-]+$/, "")}…`;
+}
+
 // Build the "**<Header>:** <cell>" detail lines for every header column
 // index NOT in `excludeIndices` (the columns already consumed for identity
 // or status), joined with a blank line between entries.
@@ -360,7 +391,12 @@ export function actionableItems(roadmap, implementation) {
  * Build the desired GitHub issue payload for one {@link Item}: the body
  * opens with the {@link hubMarker} (so {@link parseHubMarker} can recover the
  * item's key from a fetched issue), then a "Derived — do not edit" banner
- * linking back to the authored source via `blobUrl`, then `item.detail`.
+ * linking back to the authored source via `blobUrl`, then `item.detail`. The
+ * title is normalized via {@link stripTitleMarkdown} then capped at
+ * `MAX_TITLE_LENGTH` — a tracker row's "Title & change" cell can run to
+ * several sentences, and GitHub issue titles are meant to be scanned as
+ * labels, not read as prose; the untruncated detail always survives in the
+ * body.
  *
  * @param {Item} item
  * @returns {{ title: string, body: string, labels: string[], milestoneTitle: string | null }}
@@ -384,9 +420,10 @@ export function buildIssuePayload(item) {
   const body = [hubMarker(item.key), "", banner, "", item.detail].join("\n");
   const milestoneTitle =
     item.priority === "governance" ? null : MILESTONE_TITLES[item.priority];
+  const title = truncateTitle(stripTitleMarkdown(item.title));
 
   return {
-    title: item.title,
+    title,
     body,
     labels: [HUB_LABEL, PRIORITY_LABELS[item.priority]],
     milestoneTitle,
