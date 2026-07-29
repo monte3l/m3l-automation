@@ -87,6 +87,14 @@ and is unit-testable with plain mocks — no `M3LScript` lifecycle.
   A present-but-corrupt checkpoint throws `ERR_CHECKPOINT_PARSE`; any other
   read/write/delete failure throws `ERR_CHECKPOINT_IO`. A non-resume run
   never reads the checkpoint file at all.
+- **Checkpoint shape validation is strict, not just structural:** the `validate`
+  predicate (`isLogsInsightsCheckpoint`) requires `completedWindows` to be a
+  non-negative integer (rejects negative, non-integer, `NaN`, and `Infinity`
+  values) and every `rows` element to be a plain object whose every value is a
+  `string` (matching the declared `LogsInsightsRow` shape) — not merely an
+  array of arbitrary JSON. A truncated or hand-edited checkpoint that would
+  otherwise resume into a wrong window offset instead fails loud with
+  `ERR_CHECKPOINT_PARSE`.
 - **`startQuery` + `awaitResults`, not `runQuery`:** the orchestrator calls
   the two-step form so it can checkpoint `inFlightQueryId` the moment a
   query starts, before waiting on it — `runQuery()` alone never surfaces a
