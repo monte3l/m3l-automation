@@ -12,6 +12,7 @@ Exported from `@m3l-automation/m3l-common/core` (the `config` sub-module):
 
 - `M3LConfig`
 - `M3LConfigReader`
+- `M3LConfigResolution` (a resolved value paired with the source label that supplied it — returned by `M3LConfigReader.resolveForKeys` and `M3LConfigParameter.resolveAsync`)
 - `M3LConfigProvider`
 - `M3LConfigParameter`
 - `M3LConfigParameterType`
@@ -30,14 +31,16 @@ Exported from `@m3l-automation/m3l-common/core` (the `config` sub-module):
 
 `M3LConfigReader` walks the provided array in declared priority order, returning the first value found. The standard ordering for a parameter is:
 
-1. CLI args (`M3LCommandLineConfigProvider`)
-2. JSON config file (`M3LJSONConfigProvider`)
-3. YAML config file (`M3LYAMLConfigProvider`)
-4. Environment variables and `.env` (`M3LEnvironmentConfigProvider`)
-5. Lambda event payload (`M3LLambdaEventConfigProvider`, Lambda only)
-6. Preset file (`M3LPresetConfigProvider`)
+1. CLI args (`M3LCommandLineConfigProvider`) — source label `"cli"`
+2. JSON config file (`M3LJSONConfigProvider`) — source label `"json-file"`
+3. YAML config file (`M3LYAMLConfigProvider`) — source label `"yaml-file"`
+4. Environment variables and `.env` (`M3LEnvironmentConfigProvider`) — source label `"environment-variable"`
+5. Lambda event payload (`M3LLambdaEventConfigProvider`, Lambda only) — source label `"lambda-event"`
+6. Preset file (`M3LPresetConfigProvider`) — source label `"preset"`
 
 When no provider supplies a value, resolution continues to the static default, then the async fallback (see below).
+
+Every provider declares its label via `getSourceLabel()`, an overridable method on the `M3LConfigProvider` base class (default `"other"`). `M3LConfigReader.resolveForKeys(keys)` returns the winning provider's value paired with that label as an `M3LConfigResolution`; `getRawValueForKeys(keys)` delegates to it and returns just the value, unchanged from before. `M3LInMemoryConfigProvider` reports `"in-memory"`.
 
 ## Alias resolution
 
@@ -382,7 +385,16 @@ const cluster = read.requiredFor(
 
 ## Source tracking
 
-`M3LConfig.set(name, value, source?)` records the source of each resolved value (for example, `'cli'`, `'env'`, `'file'`). Query it later with `sourceOf(name)` to report or audit where a value originated.
+`M3LConfig.set(name, value, source?)` records the source of each resolved value. Query it later with `sourceOf(name)` to report or audit where a value originated.
+
+`M3LScriptConfigLoader.load()` populates a real label for every resolved parameter, via `M3LConfigParameter.resolveAsync(reader)` — the same 4-branch chain `getValueAsync` uses, but returning an `M3LConfigResolution` (`{ value, source }`) instead of just the value. The label is one of the provider labels above, or:
+
+- `"default"` — the parameter's static `defaultValue` supplied it.
+- `"async-fallback"` — the parameter's `asyncFallback()` resolved it.
+
+A parameter that resolves to `undefined` (no provider value, no `defaultValue`, no `asyncFallback`, and not `required`) gets no `M3LConfig` entry at all, so `sourceOf(name)` returns `undefined` for it — same as before this label vocabulary existed.
+
+These are also the exact labels `core/diagnostics`' config fingerprint accepts (see [diagnostics → structural ports](./diagnostics.md#structural-ports-and-why-they-are-not-m3lscript)); a `sourceOf` return outside this set is replaced with the fixed `"other"` marker at that boundary, never stored verbatim.
 
 ## Usage example
 

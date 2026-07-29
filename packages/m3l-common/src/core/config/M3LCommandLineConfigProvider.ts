@@ -42,4 +42,9 @@ export class M3LCommandLineConfigProvider extends M3LConfigProvider {
   override getRawValue(key: string): unknown {
     return this.values.get(key);
   }
+
+  /** {@inheritDoc M3LConfigProvider.getSourceLabel} */
+  override getSourceLabel(): string {
+    return "cli";
+  }
 }

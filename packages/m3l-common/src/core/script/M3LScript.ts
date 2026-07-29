@@ -384,6 +384,49 @@ export class M3LScript {
   }
 
   /**
+   * The declared config schema, exactly as constructed from the
+   * constructor's `options.config.params`, or `undefined` when no schema was
+   * declared at all — e.g. so a `runScript` composition root can build a
+   * config-fingerprint diagnostics port only when there is a schema to
+   * enumerate names from.
+   *
+   * @returns This script's {@link M3LConfigSchema}, or `undefined`.
+   *
+   * @example
+   * ```ts
+   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   *
+   * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
+   * console.log(script.configSchema); // undefined — no config declared
+   * ```
+   */
+  get configSchema(): M3LConfigSchema | undefined {
+    return this.schema;
+  }
+
+  /**
+   * The current run's/invocation's live resolved-configuration store — the
+   * exact same instance {@link M3LScript.getConfiguration} returns once
+   * loaded, but readable synchronously without triggering a load. Reset to a
+   * fresh, empty store on every Lambda invocation (see
+   * {@link M3LScript.resetForInvocation}), same as `getConfiguration`.
+   *
+   * @returns The live {@link M3LConfig} store.
+   *
+   * @example
+   * ```ts
+   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   *
+   * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
+   * await script.getConfiguration();
+   * console.log(script.currentConfig.get("region"));
+   * ```
+   */
+  get currentConfig(): M3LConfig {
+    return this.config;
+  }
+
+  /**
    * The script's identifying metadata, exactly as supplied to the
    * constructor's `options.metadata` — e.g. so a `runScript` composition
    * root can label a persisted run report with the script's name/version

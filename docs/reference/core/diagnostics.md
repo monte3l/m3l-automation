@@ -367,7 +367,9 @@ interface M3LCollectDiagnosticsOptions {
 An on-demand, redacted snapshot: package version, Node version, platform, arch,
 capture timestamp, execution environment (mode, monorepo root when detected),
 resolved `M3LPaths` directories, and — when the ports are supplied — the config
-fingerprint (names + sources, no values) and `correlationId`. Callable
+fingerprint (declared names, each paired with its resolved source label — see
+[config → Source tracking](./config.md#source-tracking) for the label
+vocabulary) and `correlationId`. Callable
 anywhere: an `onError` hook, a `--diagnostics` CLI flag a script chooses to
 expose, or a support request ("run with `--diagnostics` and paste the output").
 
@@ -391,10 +393,14 @@ signature is not implementable, for two independent reasons:
    makes `core/script` the composition root that no other `core` module may
    import. `core/diagnostics` importing it would be a lint failure — and would
    become a genuine import cycle once `runScript()` needs
-   diagnostics.
-2. **Encapsulation.** `M3LScript`'s config schema is a private field with no
-   public accessor, so a script instance could not supply declared parameter
-   names even if the import were permitted.
+   diagnostics. This alone still blocks a `collectDiagnostics(script)`
+   signature today.
+2. **Encapsulation (historical).** At the time this was written, `M3LScript`'s
+   config schema was a private field with no public accessor. `M3LScript` now
+   exposes `configSchema`/`currentConfig` getters (added for A6) precisely so
+   `runScript()` can build the ports below itself — but reason 1 means
+   `collectDiagnostics` still cannot take an `M3LScript` directly; `runScript`
+   adapts it into the ports at the call site instead.
 
 So the snapshot reads through three minimal structural ports instead:
 
@@ -435,22 +441,20 @@ object carrying a `value` would assign in cleanly and — since the reporter
 serializes the snapshot verbatim — land in `run-report.json`. It is a
 **compile-time** guard only; the runtime enforcement is a fresh-object
 projection in `collectDiagnostics`, which builds every entry field-by-field and
-never passes a caller-supplied object through. A `sourceOf` return that does
-not look like a source label (short, lowercase, hyphen-joined) is dropped
-rather than stored, so a misimplemented port cannot smuggle a value through the
-`source` field.
+never passes a caller-supplied object through. A `sourceOf` return that is not
+a member of the finite known-label set (see below) is replaced with the fixed
+`"other"` marker rather than stored, so a misimplemented port cannot smuggle a
+value through the `source` field.
 
-> **`source` is `undefined` for every parameter today.**
-> `M3LScriptConfigLoader.load()` calls `config.set(name, value)` with no third
-> argument (`M3LScriptConfigLoader.ts:81`), and nothing else in the library
-> populates one — so `M3LConfig.sourceOf()` returns `undefined` for every
-> parameter a script resolves through the normal chain. The fingerprint
-> therefore records **names only** in practice. Populating a real source label
-> requires `M3LConfigReader` to report which provider won a lookup, which is a
-> `core/config` change outside ADR-0035 phase 1 — tracked in
-> [`IMPLEMENTATION.md`](../../plans/IMPLEMENTATION.md#adr-0035-rollout--failure-reporting--diagnostics).
-> The `source` field and its validation are in place so adding it later is
-> additive.
+**`source` is populated for real.** `M3LScriptConfigLoader.load()` resolves
+each parameter via `M3LConfigParameter.resolveAsync()` and calls
+`config.set(name, value, source)` with the winning branch's label — see
+[config → Source tracking](./config.md#source-tracking) for the full label
+vocabulary (the same 9 labels `KNOWN_SOURCE_LABELS` allowlists above).
+`runScript()` also wires the ports themselves: when a script declares a config
+schema, its persisted `run-report.json` carries a real `environment.config`
+fingerprint on both the success and the failure path; a script with no
+declared schema gets no `config` section, same as before.
 
 ### `runScript`
 

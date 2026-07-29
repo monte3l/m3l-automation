@@ -13,17 +13,22 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigReader.ts",
           "symbol": "M3LConfigReader",
-          "blob": "292b9696aef8790e870a1739ff39b8986d2c0dac"
+          "blob": "2f22135f503cb66e79531e3c4b80dbd957e2bea5"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigReader.ts",
+          "symbol": "M3LConfigResolution",
+          "blob": "2f22135f503cb66e79531e3c4b80dbd957e2bea5"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigProvider.ts",
           "symbol": "M3LConfigProvider",
-          "blob": "348170643e9e85aba58d7ae0b19771cbc34aa927"
+          "blob": "2d557c14f93b0a443c1c62b738e9a4b57690619a"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameter.ts",
           "symbol": "M3LConfigParameter",
-          "blob": "efdef775f99952f46afeff7a903af3995e748b30"
+          "blob": "432a510e81c26611a2fc7242d56d9a54fa9157c8"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameterType.ts",
@@ -43,37 +48,37 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LCommandLineConfigProvider.ts",
           "symbol": "M3LCommandLineConfigProvider",
-          "blob": "4f968f65cda684eee360c1c0e35d0b91f39ded8a"
+          "blob": "fbb9e64412233d1174aeddb07af2bf412faa740a"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LJSONConfigProvider.ts",
           "symbol": "M3LJSONConfigProvider",
-          "blob": "c2bda6b6030ceb21cbfa27fe37241b2e6986cffb"
+          "blob": "7ea3a3ecde92485f5db027849372de1caf62ce7b"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LYAMLConfigProvider.ts",
           "symbol": "M3LYAMLConfigProvider",
-          "blob": "8382ad2d4bf29c12c651f6c0172b98a8c6f3db2b"
+          "blob": "d82a3bbff2c58cca7508fa9be00e8b20957a717d"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LEnvironmentConfigProvider.ts",
           "symbol": "M3LEnvironmentConfigProvider",
-          "blob": "6cf6b154cea049d40d1de97e97f573c65a06b91f"
+          "blob": "22ca5dccc855e5c972b6f4e497438572fdd0cb75"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LInMemoryConfigProvider.ts",
           "symbol": "M3LInMemoryConfigProvider",
-          "blob": "9e7103ab5ad2bcad9935f1b3602d6da09f839eb1"
+          "blob": "c6364b56892fa9911d0f6eb47c1bf92fa7c2e5c6"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LLambdaEventConfigProvider.ts",
           "symbol": "M3LLambdaEventConfigProvider",
-          "blob": "33c9d57edb1088845140248ad27beced2bea93b5"
+          "blob": "8daed12940ec6f61188ece9531981cb08049e019"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LPresetConfigProvider.ts",
           "symbol": "M3LPresetConfigProvider",
-          "blob": "72f00e35f9524e2f6be61e20bcfa0aa6eb9b4bc0"
+          "blob": "e7dcdaab968abdd9dcb2091aca2369d3d7f89862"
         },
         {
           "file": "packages/m3l-common/src/core/config/coerceConfigValue.ts",
@@ -131,7 +136,7 @@
           "blob": "a180f8a36159b37014bc48ef993af037fc2d47bc"
         }
       ],
-      "retrieved": "2026-07-28"
+      "retrieved": "2026-07-29"
     },
     {
       "heading": "Defensive typed reads (`M3LConfigAccessor`)",
@@ -170,7 +175,7 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameter.ts",
           "symbol": "M3LConfigParameter",
-          "blob": "efdef775f99952f46afeff7a903af3995e748b30"
+          "blob": "432a510e81c26611a2fc7242d56d9a54fa9157c8"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigMissingError.ts",
@@ -178,7 +183,7 @@
           "blob": "d2c6486bb9c6e7c0051bbceee332c05f19cb522b"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-07-29"
     },
     {
       "heading": "Source tracking",

@@ -396,6 +396,7 @@ const KNOWN_SOURCE_LABELS: ReadonlySet<string> = new Set([
   "in-memory",
   "lambda-event",
   "default",
+  "async-fallback",
 ]);
 
 /**

@@ -76,9 +76,9 @@ export class M3LScriptConfigLoader {
     const config = new M3LConfig();
 
     for (const parameter of options.params) {
-      const value = await parameter.getValueAsync(reader);
-      if (value !== undefined) {
-        config.set(parameter.getName(), value);
+      const resolved = await parameter.resolveAsync(reader);
+      if (resolved !== undefined) {
+        config.set(parameter.getName(), resolved.value, resolved.source);
       }
     }
 

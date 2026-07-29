@@ -92,7 +92,7 @@ packages/m3l-common/src/
 
 `config/M3LConfigParameter.ts`: `M3LConfigParameterType` includes `STRING`, `INT`, `DOUBLE`, `BOOL`, `STRING_ARRAY`, `INT_ARRAY`, `DOUBLE_ARRAY`, `BUFFER`.
 
-`config/M3LConfig.ts`: `M3LConfig.set(name, value, source?)` tracks the source of each resolved value (e.g., `'cli'`, `'env'`, `'file'`), exposed via `sourceOf(name)`.
+`config/M3LConfig.ts`: `M3LConfig.set(name, value, source?)` tracks the source of each resolved value (e.g., `'cli'`, `'environment-variable'`, `'default'`), exposed via `sourceOf(name)`. `M3LScriptConfigLoader` populates a real label for every parameter it resolves, via `M3LConfigParameter.resolveAsync()`/`M3LConfigReader.resolveForKeys()`.
 
 Available providers: `M3LCommandLineConfigProvider`, `M3LJSONConfigProvider`, `M3LYAMLConfigProvider`, `M3LEnvironmentConfigProvider`, `M3LInMemoryConfigProvider`, `M3LLambdaEventConfigProvider`, and `M3LPresetConfigProvider`. (from `config/providers/` directory listing and `config/index.ts` re-exports).
 

@@ -109,6 +109,7 @@ import {
 } from "../src/aws/index.js";
 import { M3LError } from "../src/core/errors/index.js";
 import {
+  M3LConfig,
   M3LConfigParameter,
   M3LConfigParameterType,
   M3LConfigSchema,
@@ -383,6 +384,83 @@ describe("M3LScript — construction", () => {
     const script = new M3LScript({ metadata });
     const result: unknown = script.getConfiguration();
     expect(typeof (result as { then?: unknown }).then).toBe("function");
+  });
+});
+
+// =============================================================================
+// M3LScript — configSchema / currentConfig accessors (A6)
+// =============================================================================
+describe("M3LScript — configSchema / currentConfig accessors (A6)", () => {
+  beforeEach(() => {
+    stubNonAwsEnvironment();
+  });
+
+  describe("configSchema", () => {
+    test("is undefined when no config schema was declared", () => {
+      const script = new M3LScript({ metadata });
+      expect(script.configSchema).toBeUndefined();
+    });
+
+    test("reflects the constructor-supplied config.params, verbatim", () => {
+      const region = new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+      });
+      const script = new M3LScript({
+        metadata,
+        config: { params: [region] },
+      });
+
+      expect(script.configSchema).toBeInstanceOf(M3LConfigSchema);
+      expect(script.configSchema?.parameters).toEqual([region]);
+    });
+
+    test("type-level: configSchema getter returns M3LConfigSchema | undefined", () => {
+      expectTypeOf<M3LScript["configSchema"]>().toEqualTypeOf<
+        M3LConfigSchema | undefined
+      >();
+    });
+  });
+
+  describe("currentConfig", () => {
+    test("is a fresh, empty M3LConfig before any load", () => {
+      const script = new M3LScript({ metadata });
+      expect(script.currentConfig).toBeInstanceOf(M3LConfig);
+      expect(script.currentConfig.has("anything")).toBe(false);
+    });
+
+    test("reflects the loaded store after getConfiguration()", async () => {
+      const region = new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+        defaultValue: "eu-south-1",
+      });
+      const script = new M3LScript({
+        metadata,
+        config: { params: [region] },
+      });
+
+      await script.getConfiguration();
+
+      expect(script.currentConfig.get("region")).toBe("eu-south-1");
+    });
+
+    test("a Lambda handler invocation resets currentConfig to a fresh store on each invocation", async () => {
+      stubAwsLambdaEnvironment();
+      const script = new M3LScript({ metadata });
+      const handler = script.createLambdaHandler(() => Promise.resolve());
+
+      await handler({}, {});
+      const firstConfig = script.currentConfig;
+      await handler({}, {});
+      const secondConfig = script.currentConfig;
+
+      expect(secondConfig).not.toBe(firstConfig);
+    });
+
+    test("type-level: currentConfig getter returns M3LConfig", () => {
+      expectTypeOf<M3LScript["currentConfig"]>().toEqualTypeOf<M3LConfig>();
+    });
   });
 });
 
@@ -2066,6 +2144,72 @@ describe("M3LScriptConfigLoader", () => {
     const config = await loader.load({ params: [unset] });
 
     expect(config.has("totallyUnset")).toBe(false);
+  });
+
+  // ---------------------------------------------------------------------
+  // A6: load() now calls parameter.resolveAsync(reader) and threads the
+  // resolved source into config.set(name, value, source), so sourceOf()
+  // returns a real label instead of always undefined.
+  // ---------------------------------------------------------------------
+  describe("sourceOf() population (A6)", () => {
+    test("populates sourceOf() with the winning provider's label for a provider-resolved value", async () => {
+      const loader = new M3LScriptConfigLoader();
+      const region = new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+      });
+
+      const config = await loader.load({
+        params: [region],
+        extraProviders: [
+          new M3LInMemoryConfigProvider({ region: "extra-region" }),
+        ],
+      });
+
+      expect(config.get("region")).toBe("extra-region");
+      expect(config.sourceOf("region")).toBe("in-memory");
+    });
+
+    test("populates sourceOf() as 'default' for a parameter resolved via defaultValue", async () => {
+      const loader = new M3LScriptConfigLoader();
+      const region = new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+        defaultValue: "default-region",
+      });
+
+      const config = await loader.load({ params: [region] });
+
+      expect(config.get("region")).toBe("default-region");
+      expect(config.sourceOf("region")).toBe("default");
+    });
+
+    test("populates sourceOf() as 'async-fallback' for a parameter resolved via asyncFallback", async () => {
+      const loader = new M3LScriptConfigLoader();
+      const widget = new M3LConfigParameter({
+        name: "widget",
+        type: M3LConfigParameterType.STRING,
+        asyncFallback: () => Promise.resolve("fallback-value"),
+      });
+
+      const config = await loader.load({ params: [widget] });
+
+      expect(config.get("widget")).toBe("fallback-value");
+      expect(config.sourceOf("widget")).toBe("async-fallback");
+    });
+
+    test("a parameter resolving to undefined still has no entry at all: has() false, sourceOf() undefined", async () => {
+      const loader = new M3LScriptConfigLoader();
+      const unset = new M3LConfigParameter({
+        name: "totallyUnset",
+        type: M3LConfigParameterType.STRING,
+      });
+
+      const config = await loader.load({ params: [unset] });
+
+      expect(config.has("totallyUnset")).toBe(false);
+      expect(config.sourceOf("totallyUnset")).toBeUndefined();
+    });
   });
 });
 
@@ -3855,6 +3999,80 @@ describe("runScript() — composition-root wrapper", () => {
         Pick<M3LBreadcrumbTrail, "entries"> | undefined
       >();
     });
+  });
+});
+
+// =============================================================================
+// runScript() — environment.config fingerprint (A6)
+//
+// buildSuccessInput/buildFailureInput set `environment: collectDiagnostics({
+// schema, config })` when `script.configSchema` is defined, using ONLY
+// canonical parameter names (never aliases) — `schema.declaredNames` is built
+// from `script.configSchema.parameters.map(p => p.getName())`, not
+// `M3LConfigSchema.declaredNames()` (which includes aliases). When
+// `script.configSchema` is undefined, `environment` is omitted entirely.
+// =============================================================================
+describe("runScript() — environment.config fingerprint (A6)", () => {
+  beforeEach(() => {
+    stubNonAwsEnvironment();
+  });
+
+  afterEach(() => {
+    process.exitCode = undefined;
+  });
+
+  test("a script WITH a declared config schema produces a populated environment.config on a successful run, using canonical names only (no alias duplicates)", async () => {
+    const persistSpy = vi
+      .spyOn(M3LRunReporter.prototype, "persist")
+      .mockResolvedValue("/fake/report.json");
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+      defaultValue: "eu-south-1",
+      aliases: ["r"],
+    });
+    const script = new M3LScript({ metadata, config: { params: [region] } });
+
+    await runScript(script, () => {});
+
+    const [input] = persistSpy.mock.calls[0] as [M3LRunReportInput];
+    expect(input.environment?.config).toEqual([
+      { name: "region", source: "default" },
+    ]);
+  });
+
+  test("a script WITH a declared config schema produces a populated environment.config on a failed run too", async () => {
+    const persistSpy = vi
+      .spyOn(M3LRunReporter.prototype, "persist")
+      .mockResolvedValue("/fake/report.json");
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+      defaultValue: "eu-south-1",
+    });
+    const script = new M3LScript({ metadata, config: { params: [region] } });
+
+    await runScript(script, () => {
+      throw new Error("boom");
+    });
+
+    const [input] = persistSpy.mock.calls[0] as [M3LRunReportInput];
+    expect(input.outcome).toBe("failure");
+    expect(input.environment?.config).toEqual([
+      { name: "region", source: "default" },
+    ]);
+  });
+
+  test("a script with NO declared config schema produces a report with environment omitted entirely (no regression)", async () => {
+    const persistSpy = vi
+      .spyOn(M3LRunReporter.prototype, "persist")
+      .mockResolvedValue("/fake/report.json");
+    const script = new M3LScript({ metadata });
+
+    await runScript(script, () => {});
+
+    const [input] = persistSpy.mock.calls[0] as [M3LRunReportInput];
+    expect(input.environment).toBeUndefined();
   });
 });
 
