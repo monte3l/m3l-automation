@@ -20,7 +20,11 @@ import * as fs from "fs";
 import * as path from "path";
 
 import { M3LError } from "../errors/index.js";
-import { isNodeError, isNonEmptyString } from "../utils/index.js";
+// Imports the module directly, not the `../utils/index.js` barrel: the barrel
+// re-exports M3LPaths, which imports M3LExecutionEnvironment from this file,
+// closing an `environment -> utils -> environment` cycle (A8). Same technique
+// core/diagnostics uses for `../logging/redact.js`.
+import { isNodeError, isNonEmptyString } from "../utils/guards.js";
 
 // ---------------------------------------------------------------------------
 // Const-object enums (no runtime enum overhead; full literal inference)
