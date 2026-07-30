@@ -10,6 +10,12 @@ import type { AWS } from "@m3l-automation/m3l-common";
  * classification-only and not wired into `M3LScript`), so this is enforced
  * by discipline in this step, not a library guarantee.
  *
+ * `apiKey`-required-for-`auth: api-key` and `aws.profile`-required-for-
+ * `auth: iam` are also enforced earlier, at config-load time, by
+ * `config.ts`'s `configValidators` (F1b) — the checks here stay because a
+ * still-unprovisioned `signer` (this step's actual dependency) is a distinct
+ * failure mode from an unset `aws.profile` config value.
+ *
  * @param deps - The resolved config, the optional injected
  *   `AWS.M3LRequestSigner` (present only when `auth: iam` provisioned
  *   `script.aws`), and the request's `method`/`url` (plus optional

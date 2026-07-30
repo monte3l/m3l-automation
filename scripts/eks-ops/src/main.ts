@@ -1,6 +1,6 @@
 import { AWS, Core } from "@m3l-automation/m3l-common";
 
-import { configParameters } from "./config.js";
+import { configParameters, configValidators } from "./config.js";
 import { hooks } from "./hooks.js";
 import { runEksOps } from "./steps/run-eks-ops.js";
 
@@ -17,7 +17,7 @@ import { runEksOps } from "./steps/run-eks-ops.js";
 // without executing the main function.
 const script = new Core.M3LScript({
   metadata: { name: "eks-ops", version: "0.0.0" },
-  config: { params: configParameters },
+  config: { params: configParameters, validate: configValidators },
   hooks,
 });
 

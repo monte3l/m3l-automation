@@ -32,30 +32,35 @@ Declared in `src/config.ts` (`configParameters`); config is the script's only
 input seam. Per-operation requiredness (the "Required for" column) is **not**
 expressed by `M3LConfigParameter({ required: true })` beyond `aws.profile`/
 `operation` — a single parameter's `validate:` callback cannot express a
-cross-parameter constraint. F1b's `Core.M3LConfigSchema` `configValidators`
-seam ([shipped](../../plans/IMPLEMENTATION.md)) could express these presence
-checks as config-load-time checks instead; `run-cloudformation-stacks.ts`
-guard-checks **presence** per operation before any AWS call (mirroring
-`ecs-ops`'s per-command guard) pending this script's fleet retrofit. The
-separate `template`-vs-`input`-record `templateBody`/`templateUrl` conflict
-check (also in that file) is a different class of guard — it compares a
-config parameter against a **parsed input file's contents**, not another
-config parameter, so `configValidators` cannot express it and it stays a
-permanent run-start guard regardless of F1b.
+cross-parameter constraint. The `stackName`/`input` presence requirements are
+declared instead as `Core.M3LConfigSchemaValidator`s in `config.ts`
+(`configValidators`, F1b) and enforced at **config-load time**, throwing
+`Core.M3LConfigValidationError` (`ERR_CONFIG_VALIDATION`) before
+`run-cloudformation-stacks.ts` runs; that file's `accessor.requiredFor(...)`
+guards are kept as defense-in-depth and to narrow `string | undefined` to
+`string`. The separate `template`-vs-`input`-record `templateBody`/
+`templateUrl` conflict check (also in that file) is a different class of
+guard — it compares a config parameter against a **parsed input file's
+contents**, not another config parameter, so `configValidators` (a
+config-only seam with no filesystem access) structurally cannot express it
+and it **remains a permanent run-start guard** regardless of F1b.
 
 **Two distinct validation mechanisms are in play — do not conflate them:** the
 "Declarative `validate:`" column below is attached in `config.ts` and evaluated
 by `M3LConfigParameter` at `getConfiguration()` time — it fires only when the
 provider resolves a raw value for that parameter (an `undefined`/absent
-optional parameter never runs its validator). An **empty-but-present**
-`stackName`/`input`/etc. or an **out-of-range** `maxWaitTime` therefore fails at
-config-load with `M3LConfigValidationError` — **not**
-`ERR_CLOUDFORMATION_STACKS_CONFIG`. The dispatcher's own guard (the "Required
-for" column) checks only **absence** (`undefined`) of a parameter a given
-operation needs. A test building `Core.M3LConfig` directly (bypassing
-declarative validation, as `ecs-ops`'s tests do) can still pass an empty
-string through to the guard, which only re-checks type/presence, not
-emptiness — match that behavior.
+optional parameter never runs its validator). The "Required for" column
+(`stackName`/`input`) is now enforced by `configValidators` on **absence**.
+Both mechanisms fire at config-load time and both throw
+`Core.M3LConfigValidationError` (`ERR_CONFIG_VALIDATION`) — **not**
+`ERR_CLOUDFORMATION_STACKS_CONFIG`. The dispatcher's own run-start guard
+re-checks the same absence and still throws
+`ERR_CLOUDFORMATION_STACKS_CONFIG`, but under `M3LScript` that path is now
+unreachable: it is observable only when a step is invoked directly in a unit
+test that bypasses the schema (as this script's own tests do). A test
+building `Core.M3LConfig` directly (bypassing declarative validation) can
+still pass an empty string through to the guard, which only re-checks
+type/presence, not emptiness — match that behavior.
 
 **`stackName` sourcing differs by operation**, mirroring `ecs-ops`'s `cluster`/
 `service` split: for `describe-stack`, `delete-stack`,
@@ -122,8 +127,11 @@ open `string`, not a closed union — exactly like `ecs-ops`'s `ERR_ECS_OPS_*`),
 all prefixed `ERR_CLOUDFORMATION_STACKS_`:
 
 - `ERR_CLOUDFORMATION_STACKS_CONFIG` — a guard-checked per-operation
-  requirement was unmet (missing `stackName`/`input` for an operation that
-  requires it, an `input` file that fails to read, is not valid JSON (via
+  requirement was unmet. The missing-parameter cases (`stackName`/`input` for
+  an operation that requires it) are now caught earlier by `configValidators`
+  (`M3LConfigValidationError`); this code remains reachable for the
+  `template`/`templateBody`/`templateUrl` conflict, an `input` file that
+  fails to read, is not valid JSON (via
   `Core.M3LInputFileReader.readJSON` — deliberately never chains the raw
   `SyntaxError` as `cause`, closing fleet-wide finding F10: V8's
   `SyntaxError.message` can embed a snippet of the malformed content), does

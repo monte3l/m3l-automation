@@ -33,36 +33,40 @@ Declared in `src/config.ts` (`configParameters`); config is the script's only
 input seam. Per-operation requiredness (the "Required for" column) is **not**
 expressed by `M3LConfigParameter({ required: true })` beyond `aws.profile`/
 `operation` — a single parameter's `validate:` callback cannot express a
-cross-parameter constraint. F1b's `Core.M3LConfigSchema` `configValidators`
-seam ([shipped](../../plans/IMPLEMENTATION.md)) could express these as
-config-load-time checks instead; `run-ecs-ops.ts` guard-checks **presence**
-per operation before any AWS call (mirroring `lambda-ops`'s per-command
-guard) pending this script's fleet retrofit.
+cross-parameter constraint. These are declared instead as
+`Core.M3LConfigSchemaValidator`s in `config.ts` (`configValidators`, F1b) and
+enforced at **config-load time** — before `run-ecs-ops.ts` is ever invoked —
+throwing `Core.M3LConfigValidationError` (`ERR_CONFIG_VALIDATION`).
+`run-ecs-ops.ts` still guard-checks the same parameters at run start: those
+`accessor.requiredFor(...)` calls are kept as defense-in-depth and,
+load-bearingly, narrow `string | undefined` to `string` for typed downstream
+use.
 
 **Two distinct validation mechanisms are in play — do not conflate them:**
 the "Validation" column below is a **declarative `validate:` factory
 attached in `config.ts`**, evaluated by `M3LConfigParameter` at
 `getConfiguration()` time — it fires only when the provider resolves a raw
 value for that parameter (an `undefined`/absent optional parameter never runs
-its validator, confirmed against
-`M3LConfigParameter.getValueAsync`). An **empty-but-present** `cluster`/
-`service`/etc. or an **out-of-range** `maxWaitTime` therefore fails at
-config-load with `M3LConfigValidationError` — **not** `ERR_ECS_OPS_CONFIG`.
-`run-ecs-ops.ts`'s own guard (the "Required for" column) checks only
-**absence** (`undefined`) of a parameter a given operation needs, and throws
-`ERR_ECS_OPS_CONFIG` for that. A test building `Core.M3LConfig` directly
-(bypassing declarative validation, as `lambda-ops`'s tests do) can still pass
-an empty string through to the guard, which only re-checks type/presence, not
-emptiness — match that behavior.
+its validator, confirmed against `M3LConfigParameter.getValueAsync`). The
+"Required for" column is now enforced by `configValidators` on **absence**.
+Both mechanisms fire at config-load time and both throw
+`Core.M3LConfigValidationError` (`ERR_CONFIG_VALIDATION`) — **not**
+`ERR_ECS_OPS_CONFIG`. `run-ecs-ops.ts`'s run-start guard re-checks the same
+absence and still throws `ERR_ECS_OPS_CONFIG`, but under `M3LScript` that
+path is now unreachable: it is observable only when a step is invoked
+directly in a unit test that bypasses the schema (as this script's own tests
+do). A test building `Core.M3LConfig` directly (bypassing declarative
+validation) can still pass an empty string through to the guard, which only
+re-checks type/presence, not emptiness — match that behavior.
 
 | Parameter     | Type     | Default | Declarative `validate:`                                                                                                                                           | Required for                                                                     | Description                                                                                                                                                               |
 | ------------- | -------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `aws.profile` | `STRING` | —       | `required: true`, `nonEmpty`                                                                                                                                      | all                                                                              | AWS profile name; declaring it enables the `script.aws` dynamic-provisioning seam (`Core.AWS_PROFILE_PARAM_NAME`)                                                         |
 | `operation`   | `STRING` | —       | `required: true`, `oneOf(list-services, describe-service, create-service, update-service, delete-service, wait-services-stable, list-clusters, describe-cluster)` | all                                                                              | Selects which of the 8 `M3LECSOperations` methods this run dispatches                                                                                                     |
-| `cluster`     | `STRING` | —       | `nonEmpty`                                                                                                                                                        | `describe-service`, `delete-service`, `wait-services-stable`, `describe-cluster` | Cluster name or ARN scoping the target service(s)/cluster; presence guard-checked by `run-ecs-ops`                                                                        |
-| `service`     | `STRING` | —       | `nonEmpty`                                                                                                                                                        | `describe-service`, `delete-service`                                             | The single target service's name or ARN; presence guard-checked by `run-ecs-ops`                                                                                          |
+| `cluster`     | `STRING` | —       | `nonEmpty`; presence enforced at config-load (`configValidators`)                                                                                                 | `describe-service`, `delete-service`, `wait-services-stable`, `describe-cluster` | Cluster name or ARN scoping the target service(s)/cluster                                                                                                                 |
+| `service`     | `STRING` | —       | `nonEmpty`; presence enforced at config-load (`configValidators`)                                                                                                 | `describe-service`, `delete-service`                                             | The single target service's name or ARN                                                                                                                                   |
 | `services`    | `STRING` | —       | `nonEmpty`; comma-separated                                                                                                                                       | `wait-services-stable`                                                           | One or more service names/ARNs to wait on. `run-ecs-ops` splits on `,`, trims each segment, and drops empty segments; if the result is empty, throws `ERR_ECS_OPS_CONFIG` |
-| `input`       | `STRING` | —       | `nonEmpty`                                                                                                                                                        | `create-service`, `update-service`                                               | Path resolved via `M3LPaths.resolveInput` to a JSON file: the `M3LECSCreateServiceInput`/`M3LECSUpdateServiceInput` fields                                                |
+| `input`       | `STRING` | —       | `nonEmpty`; presence enforced at config-load (`configValidators`)                                                                                                 | `create-service`, `update-service`                                               | Path resolved via `M3LPaths.resolveInput` to a JSON file: the `M3LECSCreateServiceInput`/`M3LECSUpdateServiceInput` fields                                                |
 | `nextToken`   | `STRING` | —       | `nonEmpty`                                                                                                                                                        | `list-services`, `list-clusters` (optional)                                      | Continuation token from a previous page's `nextToken`, forwarded to `listServices({ nextToken })`/`listClusters({ nextToken })`                                           |
 | `force`       | `BOOL`   | `false` | —                                                                                                                                                                 | `delete-service` (optional)                                                      | Forwarded to `deleteService(cluster, service, force)` — forces deletion without scaling to 0 first                                                                        |
 | `maxWaitTime` | `INT`    | —       | `range(1, 3600)` — fires only when the caller sets a value (no `defaultValue`); safe on an optional field that seven of eight operations leave unset              | `wait-services-stable` (optional)                                                | Forwarded to `waitUntilServicesStable`'s `options.maxWaitTime`; the wrapper itself defaults to 600s when omitted, so this script only forwards an explicit override       |
@@ -108,9 +112,12 @@ Script-local error codes are plain `M3LError.code` strings (the field is an
 open `string`, not a closed union — exactly like `lambda-ops`'s
 `ERR_LAMBDA_OPS_*`), all prefixed `ERR_ECS_OPS_`:
 
-- `ERR_ECS_OPS_CONFIG` — a guard-checked per-operation requirement was unmet
-  (missing `cluster`/`service`/`services`/`input` for an operation that
-  requires it, an `input` file that fails to read (via
+- `ERR_ECS_OPS_CONFIG` — a guard-checked per-operation requirement was unmet.
+  The missing-parameter cases (`cluster`/`service`/`services`/`input` for an
+  operation that requires it) are now caught earlier by `configValidators`
+  (`M3LConfigValidationError`); this code remains reachable for the
+  `services`-empty-after-split case (splitting on `,` leaves nothing), an
+  `input` file that fails to read (via
   `Core.M3LInputFileReader.readText`, chaining the raw filesystem error as
   `cause`), an `input` that is not
   valid JSON (via `Core.M3LInputFileReader.readJSON` — deliberately never

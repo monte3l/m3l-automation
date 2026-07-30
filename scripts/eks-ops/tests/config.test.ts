@@ -8,6 +8,7 @@ import {
   MAX_WAIT_TIME_DEFAULT,
   YES_DEFAULT,
   configParameters,
+  configValidators,
 } from "../src/config.js";
 
 /**
@@ -282,6 +283,230 @@ describe("eks-ops config declaration", () => {
       await expect(
         resolveWith(paramNamed("maxWaitTime"), "3601"),
       ).rejects.toBeInstanceOf(Core.M3LConfigValidationError);
+    });
+  });
+});
+
+/**
+ * F1b: `eks-ops`'s per-operation "Required for" cross-parameter constraints
+ * (docs/reference/scripts/eks-ops.md § Configuration schema), retrofitted as
+ * declarative `configValidators` (`Core.M3LConfigSchemaValidator[]`) instead
+ * of `steps/run-eks-ops.ts`'s hand-rolled `accessor.requiredFor(...)` guards
+ * (mirrors the `json-etl`/`cloudwatch-logs-insights` F1b retrofit). Rules
+ * verified directly against `run-eks-ops.ts`'s `accessor.requiredFor(...)`
+ * call sites, not just the doc table:
+ *
+ * - `cluster` — required for every operation EXCEPT `list-clusters`.
+ * - `nodegroup` — required for `describe-nodegroup`, `create-nodegroup`,
+ *   `update-nodegroup-config`, `update-nodegroup-version`, `delete-nodegroup`,
+ *   `wait-nodegroup-active`, `wait-nodegroup-deleted`.
+ * - `input` — required for `create-cluster`, `update-cluster-config`,
+ *   `create-nodegroup`, `update-nodegroup-config`.
+ * - `kubernetesVersion` — required for `update-cluster-version` (optional
+ *   for every other operation, including `update-nodegroup-version`, per
+ *   `run-eks-ops.ts:239-240`'s `accessor.requiredFor(...)` call, only
+ *   reached when `operation === "update-cluster-version"`).
+ */
+describe("configValidators (F1b — cross-parameter validation)", () => {
+  /** Builds a raw `M3LConfig` store directly, one `.set(name, value)` per key. */
+  function buildConfig(values: Record<string, unknown>): Core.M3LConfig {
+    const config = new Core.M3LConfig();
+    for (const [key, value] of Object.entries(values)) {
+      config.set(key, value);
+    }
+    return config;
+  }
+
+  /**
+   * Runs every declared `configValidators` entry against `config`, in
+   * declaration order, mirroring `Core.M3LConfigSchema.validate`'s fail-fast
+   * iteration: returns the first non-`true` result, or `undefined` when every
+   * validator passes.
+   */
+  function firstFailure(config: Core.M3LConfig): string | undefined {
+    for (const validator of configValidators) {
+      const result = validator(config);
+      if (result !== true) return result;
+    }
+    return undefined;
+  }
+
+  const NODEGROUP_REQUIRING_OPERATIONS = [
+    "describe-nodegroup",
+    "create-nodegroup",
+    "update-nodegroup-config",
+    "update-nodegroup-version",
+    "delete-nodegroup",
+    "wait-nodegroup-active",
+    "wait-nodegroup-deleted",
+  ] as const;
+  const INPUT_REQUIRING_OPERATIONS = [
+    "create-cluster",
+    "update-cluster-config",
+    "create-nodegroup",
+    "update-nodegroup-config",
+  ] as const;
+  const CLUSTER_REQUIRING_OPERATIONS = EKS_OPS_OPERATIONS.filter(
+    (operation) => operation !== "list-clusters",
+  );
+
+  /** The non-tested "Required for" params an operation also needs, so a test can isolate a single validator's failure. */
+  function otherRequiredFieldsFor(
+    operation: (typeof EKS_OPS_OPERATIONS)[number],
+  ): Record<string, unknown> {
+    const fields: Record<string, unknown> = {};
+    if (operation !== "list-clusters") {
+      fields["cluster"] = "my-cluster";
+    }
+    if (
+      (NODEGROUP_REQUIRING_OPERATIONS as readonly string[]).includes(operation)
+    ) {
+      fields["nodegroup"] = "my-nodegroup";
+    }
+    if ((INPUT_REQUIRING_OPERATIONS as readonly string[]).includes(operation)) {
+      fields["input"] = "payload.json";
+    }
+    if (operation === "update-cluster-version") {
+      fields["kubernetesVersion"] = "1.30";
+    }
+    return fields;
+  }
+
+  describe("'cluster' — required for every operation except list-clusters", () => {
+    it.each(CLUSTER_REQUIRING_OPERATIONS)(
+      "returns a failure reason describing 'cluster' when operation is '%s' and 'cluster' is unset",
+      (operation) => {
+        const fields = otherRequiredFieldsFor(operation);
+        const { cluster: _omitted, ...withoutCluster } = fields;
+        const config = buildConfig({ operation, ...withoutCluster });
+
+        const result = firstFailure(config);
+        expect(typeof result).toBe("string");
+        expect(result).toContain("'cluster'");
+      },
+    );
+
+    it.each(CLUSTER_REQUIRING_OPERATIONS)(
+      "passes every validator when operation is '%s' and every required field (including 'cluster') is set",
+      (operation) => {
+        const config = buildConfig({
+          operation,
+          ...otherRequiredFieldsFor(operation),
+        });
+
+        expect(firstFailure(config)).toBeUndefined();
+      },
+    );
+
+    it("passes every validator when the non-requiring operation ('list-clusters') is set without 'cluster'", () => {
+      const config = buildConfig({ operation: "list-clusters" });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'nodegroup' — required for the seven nodegroup-scoped operations", () => {
+    it.each(NODEGROUP_REQUIRING_OPERATIONS)(
+      "returns a failure reason describing 'nodegroup' when operation is '%s' and 'nodegroup' is unset",
+      (operation) => {
+        const fields = otherRequiredFieldsFor(operation);
+        const { nodegroup: _omitted, ...withoutNodegroup } = fields;
+        const config = buildConfig({ operation, ...withoutNodegroup });
+
+        const result = firstFailure(config);
+        expect(typeof result).toBe("string");
+        expect(result).toContain("'nodegroup'");
+      },
+    );
+
+    it.each(NODEGROUP_REQUIRING_OPERATIONS)(
+      "passes every validator when operation is '%s' and every required field (including 'nodegroup') is set",
+      (operation) => {
+        const config = buildConfig({
+          operation,
+          ...otherRequiredFieldsFor(operation),
+        });
+
+        expect(firstFailure(config)).toBeUndefined();
+      },
+    );
+
+    it("passes every validator when a non-requiring operation ('list-nodegroups') is set without 'nodegroup'", () => {
+      const config = buildConfig({
+        operation: "list-nodegroups",
+        cluster: "my-cluster",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'input' — required for create-cluster/update-cluster-config/create-nodegroup/update-nodegroup-config", () => {
+    it.each(INPUT_REQUIRING_OPERATIONS)(
+      "returns a failure reason describing 'input' when operation is '%s' and 'input' is unset",
+      (operation) => {
+        const fields = otherRequiredFieldsFor(operation);
+        const { input: _omitted, ...withoutInput } = fields;
+        const config = buildConfig({ operation, ...withoutInput });
+
+        const result = firstFailure(config);
+        expect(typeof result).toBe("string");
+        expect(result).toContain("'input'");
+      },
+    );
+
+    it.each(INPUT_REQUIRING_OPERATIONS)(
+      "passes every validator when operation is '%s' and every required field (including 'input') is set",
+      (operation) => {
+        const config = buildConfig({
+          operation,
+          ...otherRequiredFieldsFor(operation),
+        });
+
+        expect(firstFailure(config)).toBeUndefined();
+      },
+    );
+
+    it("passes every validator when a non-requiring operation ('describe-cluster') is set without 'input'", () => {
+      const config = buildConfig({
+        operation: "describe-cluster",
+        cluster: "my-cluster",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'kubernetesVersion' — required for update-cluster-version", () => {
+    it("returns a failure reason describing 'kubernetesVersion' when operation is 'update-cluster-version' and 'kubernetesVersion' is unset", () => {
+      const config = buildConfig({
+        operation: "update-cluster-version",
+        cluster: "my-cluster",
+      });
+
+      const result = firstFailure(config);
+      expect(typeof result).toBe("string");
+      expect(result).toContain("'kubernetesVersion'");
+    });
+
+    it("passes every validator when operation is 'update-cluster-version' and every required field (including 'kubernetesVersion') is set", () => {
+      const config = buildConfig({
+        operation: "update-cluster-version",
+        cluster: "my-cluster",
+        kubernetesVersion: "1.30",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes every validator when a non-requiring operation ('update-nodegroup-version') is set without 'kubernetesVersion'", () => {
+      const config = buildConfig({
+        operation: "update-nodegroup-version",
+        cluster: "my-cluster",
+        nodegroup: "my-nodegroup",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
     });
   });
 });
