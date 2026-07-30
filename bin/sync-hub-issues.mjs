@@ -261,8 +261,18 @@ function editIssue(runGhFn, number, payload, currentIssue) {
   runGhFn(args);
 }
 
-function closeIssue(runGhFn, number, comment) {
-  runGhFn(["issue", "close", String(number), "-R", REPO, "--comment", comment]);
+function closeIssue(runGhFn, number, comment, reason) {
+  runGhFn([
+    "issue",
+    "close",
+    String(number),
+    "-R",
+    REPO,
+    "--comment",
+    comment,
+    "--reason",
+    reason,
+  ]);
 }
 
 function reopenIssue(runGhFn, number) {
@@ -284,8 +294,8 @@ function printPlan(reporter, milestonePlan, issuePlan) {
   }
 
   reporter.info(`Issues to close (${issuePlan.close.length}):`);
-  for (const { number, key, comment } of issuePlan.close) {
-    reporter.info(`  - #${number} [${key}] (${comment})`);
+  for (const { number, key, comment, reason } of issuePlan.close) {
+    reporter.info(`  - #${number} [${key}] (${reason}: ${comment})`);
   }
 
   reporter.info(`Issues to reopen (${issuePlan.reopen.length}):`);
@@ -408,11 +418,11 @@ export function runIssueSync({
       reporter.change("updated", `issue #${number} [${key}]`);
     }
 
-    for (const { number, key, comment } of issuePlan.close) {
-      closeIssue(runGhFn, number, comment);
+    for (const { number, key, comment, reason } of issuePlan.close) {
+      closeIssue(runGhFn, number, comment, reason);
       reporter.change(
         "removed",
-        `issue #${number} [${key}] closed (${comment})`,
+        `issue #${number} [${key}] closed (${reason}: ${comment})`,
       );
     }
 

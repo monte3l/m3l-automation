@@ -680,7 +680,12 @@ interface TestIssue {
 interface IssueSyncResult {
   create: { key: string; payload: unknown }[];
   update: { number: number; key: string; payload: unknown }[];
-  close: { number: number; key: string; comment: string }[];
+  close: {
+    number: number;
+    key: string;
+    comment: string;
+    reason: "completed" | "not planned";
+  }[];
   reopen: { number: number; key: string; payload: unknown }[];
   untouched: { number: number; reason: string }[];
 }
@@ -791,6 +796,7 @@ describe("planIssueSync", () => {
     expect(result.close[0]?.number).toBe(11);
     expect(result.close[0]?.key).toBe("roadmap:p0:c");
     expect(result.close[0]?.comment).toMatch(/done/i);
+    expect(result.close[0]?.reason).toBe("completed");
     expect(result.update).toEqual([]);
     expect(result.reopen).toEqual([]);
   });
@@ -812,6 +818,7 @@ describe("planIssueSync", () => {
     expect(result.close[0]?.number).toBe(16);
     expect(result.close[0]?.key).toBe("roadmap:p0:rej");
     expect(result.close[0]?.comment).toMatch(/rejected/i);
+    expect(result.close[0]?.reason).toBe("not planned");
     expect(result.update).toEqual([]);
     expect(result.reopen).toEqual([]);
   });
@@ -829,6 +836,7 @@ describe("planIssueSync", () => {
     expect(result.close[0]?.number).toBe(12);
     expect(result.close[0]?.key).toBe("roadmap:p0:vanished");
     expect(result.close[0]?.comment).toMatch(/remov/i);
+    expect(result.close[0]?.reason).toBe("not planned");
     expect(result.create).toEqual([]);
   });
 
