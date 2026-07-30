@@ -51,13 +51,13 @@ All list importers extend `M3LEventEmitterBase` and implement `M3LListImporter<T
 
 List importers emit the following events, each carrying a structured payload (item, index, processed count, duration, and similar):
 
-| Event              | Emitted when                    |
-| ------------------ | ------------------------------- |
-| `import:started`   | Parsing begins                  |
-| `import:item`      | A single item has been parsed   |
-| `import:progress`  | Periodic progress update        |
-| `import:error`     | A record (or the source) failed |
-| `import:completed` | Parsing finished                |
+| Event              | Emitted when                                         |
+| ------------------ | ---------------------------------------------------- |
+| `import:started`   | Parsing begins                                       |
+| `import:item`      | A single item has been parsed                        |
+| `import:progress`  | Periodic progress update                             |
+| `import:error`     | A record (or the source) failed                      |
+| `import:completed` | Parsing finished (see per-method firing rules below) |
 
 ## Usage
 
@@ -133,6 +133,7 @@ console.log(
 - **JSON format dispatch** — `M3LJSONListImporter` dispatches to JSON-array parsing or JSONL (newline-delimited JSON) line-by-line streaming based on the detected format. Nested values are extracted with dot-notation **field paths** (for example, `metadata.author`).
 - **Format detection** — detection (via `M3LJSONFormatDetector`) supports four depth levels — `extension`, `shallow` (first byte), `standard` (first N lines), and `deep` (sample of middle/end) — returning `{ format: 'json' | 'jsonl' | 'unknown', confidence, method }`. See [json](./json.md).
 - **Handler isolation** — because list importers extend `M3LEventEmitterBase`, an error thrown by one event handler does not prevent the other handlers from running.
+- **`import:completed` firing rules differ between the batch and streaming methods.** `import()` emits it once, after every record has been processed (or skipped) — never on a thrown source/parse error, since the method aborts before reaching the emit. `importStream()` emits it on graceful exit only: a full drain, or a consumer abandoning the generator early (`break`ing a `for await` loop, or calling `.return()` on the generator handle) — carrying the `processed`/`durationMs` counts as they stood at that point. It is deliberately **not** emitted when `importStream()`'s internal parsing throws (an unreadable source, a format-detection failure, a malformed JSON-array document): the underlying `Promise` rejects and the event is withheld, so a failed streaming run is never misreported as completed.
 
 ## See also
 
