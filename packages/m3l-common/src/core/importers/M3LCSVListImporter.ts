@@ -213,22 +213,45 @@ export class M3LCSVListImporter<TItem>
 
     let index = 0;
     let skipped = 0;
-    for await (const outcome of this.#parseRows(resolved)) {
-      if (outcome.ok) {
-        this.emit("import:item", { item: outcome.item, index });
-        index += 1;
-        this.emit("import:progress", { processed: index });
-        yield outcome.item;
-      } else {
-        this.emit("import:error", { error: outcome.error, index });
-        index += 1;
-        skipped += 1;
-        this.emit("import:progress", { processed: index });
+    let failed = false;
+    try {
+      for await (const outcome of this.#parseRows(resolved)) {
+        if (outcome.ok) {
+          this.emit("import:item", { item: outcome.item, index });
+          index += 1;
+          this.emit("import:progress", { processed: index });
+          yield outcome.item;
+        } else {
+          this.emit("import:error", { error: outcome.error, index });
+          index += 1;
+          skipped += 1;
+          this.emit("import:progress", { processed: index });
+        }
+      }
+      return { processed: index, skipped, durationMs: Date.now() - startedAt };
+    } catch (cause) {
+      // A genuine internal failure (unreadable source, parser error) reaches
+      // here via a *throw* completion; mark it so the `finally` block below
+      // knows to withhold `import:completed` before re-throwing unchanged.
+      failed = true;
+      throw cause;
+    } finally {
+      // Runs on both normal completion and early abandonment (a consumer
+      // `break`ing its own `for await` or calling `.return()` directly on
+      // this generator resumes here via the async-generator-return protocol,
+      // skipping the `return` statement above and never entering the `catch`
+      // block, since a `.return()` unwind is a *return* completion, not a
+      // *throw* one) — either way `import:completed` must fire with the
+      // counts as they stood at the point of exit, and is deliberately
+      // skipped when the loop throws (see the `catch` above), so a failed
+      // run is never misreported as completed.
+      if (!failed) {
+        this.emit("import:completed", {
+          processed: index,
+          durationMs: Date.now() - startedAt,
+        });
       }
     }
-    const durationMs = Date.now() - startedAt;
-    this.emit("import:completed", { processed: index, durationMs });
-    return { processed: index, skipped, durationMs };
   }
 
   /**
