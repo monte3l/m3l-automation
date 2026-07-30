@@ -60,11 +60,19 @@ containing none of those code points is passed through byte-for-byte.
 This is a **rendering aid, not a guarantee that a terminal cannot be
 manipulated.** It does not address homoglyph or confusable substitution,
 combining-mark stacking, or right-to-left reordering produced by
-strongly-directional _letters_ (which carry no format character at all). It
-does **not** apply to `select` / `multiselect` / `autocomplete` **choice
-labels**, nor to spinner or loading-bar text — those still reach the terminal
-verbatim; do not build them from untrusted input. The escaped output is
-human-readable, not a reversible encoding: never parse it back.
+strongly-directional _letters_ (which carry no format character at all). This
+**does** apply to `select` / `multiselect` / `autocomplete` **choice labels**:
+every element of the `choices` list is escaped individually, whether the
+caller passed a bare `Value[]` or an `M3LChoice<Value>[]`. A bare element is
+wrapped into a choice object whose escaped display label is derived from
+`String(value)`; an object-form choice's `name`/`description`/string
+`disabled` reason are escaped the same way. In both cases the resolved
+`value` a caller receives on selection is always the original, unescaped
+value — escaping only ever touches what is displayed, never what is
+returned. It does **not** apply to spinner or loading-bar text — those still
+reach the terminal verbatim; do not build them from untrusted input. The
+escaped output is human-readable, not a reversible encoding: never parse it
+back.
 
 ### `M3LMultiSpinner`
 
