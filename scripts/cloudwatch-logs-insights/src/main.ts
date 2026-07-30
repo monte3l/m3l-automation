@@ -1,6 +1,6 @@
 import { AWS, Core } from "@m3l-automation/m3l-common";
 
-import { configParameters } from "./config.js";
+import { configParameters, configValidators } from "./config.js";
 import { buildHooks } from "./hooks.js";
 import { runCloudwatchLogsInsights } from "./steps/run-cloudwatch-logs-insights.js";
 
@@ -21,7 +21,7 @@ const paths = new Core.M3LPaths();
 
 const script = new Core.M3LScript({
   metadata: { name: "cloudwatch-logs-insights", version: "0.0.0" },
-  config: { params: configParameters },
+  config: { params: configParameters, validate: configValidators },
   hooks: buildHooks(paths),
 });
 

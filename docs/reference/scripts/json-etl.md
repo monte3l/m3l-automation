@@ -28,16 +28,16 @@ Declared in `src/config.ts` (`configParameters`); config is the script's only
 input seam (never `process.env`). Resolution order is CLI > JSON > YAML >
 env/.env > preset > default.
 
-| Parameter    | Type           | Default   | Validation                                     | Description                                                                                                                    |
-| ------------ | -------------- | --------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `input`      | `STRING`       | _(req.)_  | non-empty                                      | Input file name, resolved under `M3L_INPUT_DIR`. JSON array or JSONL — dispatched by the format detector.                      |
-| `fields`     | `STRING_ARRAY` | _(req.)_  | non-empty                                      | Extraction specs `name=path` (e.g. `id=metadata.id`, `tags=items.*.tag`). **List order is the output column order.**           |
-| `filters`    | `STRING_ARRAY` | `[]`      | —                                              | Filter rules `path op value`; ops: `eq ne contains regex gt lt exists`. A record must satisfy **every** rule.                  |
-| `format`     | `STRING`       | `json`    | `oneOf(json, jsonl, csv, html)`                | Output format; selects the exporter (`M3LJSONListExporter` / `M3LCSVListExporter` / `M3LHTMLListExporter`).                    |
-| `output`     | `STRING`       | _(req.)_  | non-empty                                      | Output file name, resolved under `M3L_OUTPUT_DIR`.                                                                             |
-| `limit`      | `INT`          | _(unset)_ | `range(1, …)`; **required when `sort` is set** | Maximum records written. Enforced during the streamed pass; when `sort` is set, bounds the buffered set.                       |
-| `sort`       | `STRING`       | _(unset)_ | `regex ^[^:]+:(asc\|desc)$`                    | `name:asc` or `name:desc` over an extracted field. The **only** buffering operation — fails config validation without `limit`. |
-| `multiValue` | `STRING`       | `join`    | `oneOf(join, explode)`                         | How a multi-match (wildcard) extraction path collapses: `join` into one field, or `explode` into one record per match.         |
+| Parameter    | Type           | Default   | Validation                                     | Description                                                                                                                                      |
+| ------------ | -------------- | --------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `input`      | `STRING`       | _(req.)_  | non-empty                                      | Input file name, resolved under `M3L_INPUT_DIR`. JSON array or JSONL — dispatched by the format detector.                                        |
+| `fields`     | `STRING_ARRAY` | _(req.)_  | non-empty                                      | Extraction specs `name=path` (e.g. `id=metadata.id`, `tags=items.*.tag`). **List order is the output column order.**                             |
+| `filters`    | `STRING_ARRAY` | `[]`      | —                                              | Filter rules `path op value`; ops: `eq ne contains regex gt lt exists`. A record must satisfy **every** rule.                                    |
+| `format`     | `STRING`       | `json`    | `oneOf(json, jsonl, csv, html)`                | Output format; selects the exporter (`M3LJSONListExporter` / `M3LCSVListExporter` / `M3LHTMLListExporter`).                                      |
+| `output`     | `STRING`       | _(req.)_  | non-empty                                      | Output file name, resolved under `M3L_OUTPUT_DIR`.                                                                                               |
+| `limit`      | `INT`          | _(unset)_ | `range(1, …)`; **required when `sort` is set** | Maximum records written. Enforced during the streamed pass; when `sort` is set, bounds the buffered set.                                         |
+| `sort`       | `STRING`       | _(unset)_ | `regex ^[^:]+:(asc\|desc)$`                    | `name:asc` or `name:desc` over an extracted field. The **only** buffering operation — requires `limit` (config-load-time cross-parameter check). |
+| `multiValue` | `STRING`       | `join`    | `oneOf(join, explode)`                         | How a multi-match (wildcard) extraction path collapses: `join` into one field, or `explode` into one record per match.                           |
 
 Required parameters (`input`, `fields`, `output`) are declared `required: true`
 with `Core.M3LConfigValidators.nonEmpty`, so presence and non-emptiness are
@@ -46,11 +46,12 @@ enforced by the library at **config-load time** — a missing value throws
 body executes.
 
 `sort` requiring `limit`, and `sort`'s name being one of the `fields` output
-columns, are **cross-parameter** constraints the per-parameter validators cannot
-express, so they remain guards at **run start** (top of `run-json-etl`). The
-check runs before any record is read, so a preset that asks to sort an unbounded
-stream fails up front, not mid-stream. (A first-class cross-parameter validation
-seam is tracked as F1b in the backlog.)
+columns, are **cross-parameter** constraints a single parameter's own
+`validate` cannot express. Both are declared as `Core.M3LConfigSchemaValidator`s
+in `config.ts` (`configValidators`, F1b) and enforced at **config-load time** —
+before `main.ts`'s `runJsonEtl` is ever invoked — throwing
+`Core.M3LConfigValidationError` (`ERR_CONFIG_VALIDATION`). A preset that asks to
+sort an unbounded stream fails at config load, not mid-stream.
 
 ## Steps
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters } from "../src/config.js";
+import { configParameters, configValidators } from "../src/config.js";
 
 /**
  * Contract: docs/reference/scripts/cloudwatch-logs-insights.md "Configuration schema"
@@ -61,6 +61,47 @@ function paramNamed(name: string): Core.M3LConfigParameter {
     );
   }
   return found;
+}
+
+/** Builds a raw `Core.M3LConfig` store directly, bypassing provider resolution. */
+function buildConfig(values: Record<string, unknown>): Core.M3LConfig {
+  const config = new Core.M3LConfig();
+  for (const [key, value] of Object.entries(values)) {
+    config.set(key, value);
+  }
+  return config;
+}
+
+/** A full, valid config record — vary just `start`/`end` per test. */
+const VALID_VALUES: Record<string, unknown> = {
+  "aws.profile": "my-profile",
+  logGroups: ["/aws/lambda/a", "/aws/lambda/b"],
+  query: "fields @timestamp, @message",
+  start: "2026-07-01T00:00:00Z",
+  end: "2026-07-01T01:00:00Z",
+  windowMinutes: 60,
+  format: "json",
+  output: "results.json",
+  resume: false,
+};
+
+/**
+ * Runs `validators` against `config` in declaration order, returning the
+ * first non-`true` result (or `true` if every validator passes) — mirroring
+ * `M3LConfigSchema.validate()`'s own fail-fast iteration semantics without
+ * throwing, so a single call can assert either outcome.
+ */
+function firstFailure(
+  validators: readonly Core.M3LConfigSchemaValidator[],
+  config: Core.M3LConfig,
+): true | string {
+  for (const validator of validators) {
+    const result = validator(config);
+    if (result !== true) {
+      return result;
+    }
+  }
+  return true;
 }
 
 describe("cloudwatch-logs-insights config declaration", () => {
@@ -215,5 +256,89 @@ describe("cloudwatch-logs-insights config declaration", () => {
         false,
       );
     });
+  });
+});
+
+describe("configValidators (F1b — cross-parameter validation)", () => {
+  it("declares at least one schema-level validator", () => {
+    expect(configValidators.length).toBeGreaterThan(0);
+  });
+
+  it("returns true for every validator when 'start' is strictly before 'end'", () => {
+    const config = buildConfig(VALID_VALUES);
+    expect(firstFailure(configValidators, config)).toBe(true);
+  });
+
+  it("fails with the exact 'start' must be strictly before 'end' message when 'start' equals 'end'", () => {
+    const config = buildConfig({
+      ...VALID_VALUES,
+      start: "2026-07-01T00:00:00Z",
+      end: "2026-07-01T00:00:00Z",
+    });
+    expect(firstFailure(configValidators, config)).toBe(
+      "'start' must be strictly before 'end'",
+    );
+  });
+
+  it("fails with the exact 'start' must be strictly before 'end' message when 'start' is after 'end'", () => {
+    const config = buildConfig({
+      ...VALID_VALUES,
+      start: "2026-07-01T02:00:00Z",
+      end: "2026-07-01T01:00:00Z",
+    });
+    expect(firstFailure(configValidators, config)).toBe(
+      "'start' must be strictly before 'end'",
+    );
+  });
+
+  it("fails with the exact 'start' must be strictly before 'end' message when 'start' and 'end' land in the same floored second (sub-second difference)", () => {
+    // 'start' and 'end' differ by 800ms at millisecond resolution but floor to
+    // the SAME epoch second (1782864000) once `resolve-settings.ts`'s
+    // `parseEpochSeconds` truncates via `Math.floor(millis / 1000)` — the
+    // validator must compare at that same floored-seconds granularity, not
+    // raw `Date.parse()` milliseconds, or this effectively-equal range slips
+    // through as valid.
+    const config = buildConfig({
+      ...VALID_VALUES,
+      start: "2026-07-01T00:00:00.100Z",
+      end: "2026-07-01T00:00:00.900Z",
+    });
+    expect(firstFailure(configValidators, config)).toBe(
+      "'start' must be strictly before 'end'",
+    );
+  });
+
+  it("returns true for every validator when 'start' and 'end' are exactly 1 second apart, spanning a second boundary", () => {
+    const config = buildConfig({
+      ...VALID_VALUES,
+      start: "2026-07-01T00:00:00.100Z",
+      end: "2026-07-01T00:00:01.100Z",
+    });
+    expect(firstFailure(configValidators, config)).toBe(true);
+  });
+
+  it("returns true for every validator when 'start' is not a parseable ISO-8601 date (deferred to resolveSettings)", () => {
+    const config = buildConfig({
+      ...VALID_VALUES,
+      start: "not-a-date",
+    });
+    expect(firstFailure(configValidators, config)).toBe(true);
+  });
+
+  it("returns true for every validator when 'end' is not a parseable ISO-8601 date (deferred to resolveSettings)", () => {
+    const config = buildConfig({
+      ...VALID_VALUES,
+      end: "not-a-date",
+    });
+    expect(firstFailure(configValidators, config)).toBe(true);
+  });
+
+  it("returns true for every validator when both 'start' and 'end' are unparseable (deferred to resolveSettings)", () => {
+    const config = buildConfig({
+      ...VALID_VALUES,
+      start: "not-a-date",
+      end: "also-not-a-date",
+    });
+    expect(firstFailure(configValidators, config)).toBe(true);
   });
 });

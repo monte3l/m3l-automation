@@ -211,7 +211,8 @@ async function runRemainingWindows(args: {
  *   resolution.
  * @returns The run summary (windows completed, rows exported).
  * @throws {@link Core.M3LError} (via {@link resolveSettings}) when `start`/
- *   `end` fail to parse or `start >= end`.
+ *   `end` fail to parse (the `start < end` ordering constraint is enforced
+ *   earlier, at config-load time, by `config.ts`'s `configValidators`).
  * @throws {@link AWS.M3LLogsInsightsQueryFailedError} When a query reaches a
  *   terminal non-`Complete` status; a plain `M3LError` coded
  *   `"ERR_POLL_EXHAUSTED"` when the poll attempt bound is reached. Either

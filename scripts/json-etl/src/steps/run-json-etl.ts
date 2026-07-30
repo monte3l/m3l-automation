@@ -1,5 +1,6 @@
 import { Core } from "@m3l-automation/m3l-common";
 
+import { fieldName } from "../lib/field-spec.js";
 import { exportResults } from "./export-results.js";
 import { extractFields } from "./extract-fields.js";
 import { filterRecords } from "./filter-records.js";
@@ -43,17 +44,17 @@ function readSort(
 }
 
 /**
- * Resolves and guard-checks every declared parameter this run needs,
- * throwing before any record is read. `input`/`fields`/`output` presence and
- * non-emptiness are already enforced by the declared config schema
+ * Resolves every declared parameter this run needs, throwing before any
+ * record is read. `input`/`fields`/`output` presence and non-emptiness are
+ * already enforced by the declared config schema
  * (`M3LConfigParameter({ required: true, validate: nonEmpty })`) before this
- * function ever runs; what remains here is the `sort`-requires-`limit`
- * constraint and `sort`'s name having to be one of the output columns
- * declared by `fields` (a typo'd sort name would otherwise silently no-op
- * the sort instead of failing fast).
+ * function ever runs; the `sort`-requires-`limit` and `sort`-name-must-be-a-
+ * `fields`-column cross-parameter constraints are also enforced before this
+ * point, by `configValidators` (schema-level, config-load time — see
+ * `config.ts`), so what remains here is plain per-parameter resolution.
  *
- * @throws {@link Core.M3LError} On an unbounded `sort` (set without `limit`)
- *   or a `sort` name outside the declared `fields` output columns.
+ * @throws {@link Core.M3LError} When a required parameter's stored value has
+ *   the wrong type.
  */
 function resolveSettings(config: Core.M3LConfig): RunSettings {
   const accessor = new Core.M3LConfigAccessor({
@@ -66,25 +67,6 @@ function resolveSettings(config: Core.M3LConfig): RunSettings {
   const sort = readSort(accessor);
   const limit = accessor.optionalNumber("limit");
 
-  if (sort !== undefined && limit === undefined) {
-    throw new Core.M3LError("'sort' requires 'limit' to be set", {
-      code: "ERR_JSON_ETL_CONFIG",
-    });
-  }
-
-  if (sort !== undefined) {
-    const columns = fields.map(fieldName);
-    if (!columns.includes(sort.name)) {
-      throw new Core.M3LError(
-        `'sort' name '${sort.name}' is not one of the 'fields' output columns`,
-        {
-          code: "ERR_JSON_ETL_CONFIG",
-          context: { sortName: sort.name, columns },
-        },
-      );
-    }
-  }
-
   return {
     input,
     fields,
@@ -95,12 +77,6 @@ function resolveSettings(config: Core.M3LConfig): RunSettings {
     sort,
     multiValue: accessor.oneOf("multiValue", MULTI_VALUE_MODES),
   };
-}
-
-/** Extracts the output column name (`"name"` of `"name=path"`) from a field spec. */
-function fieldName(spec: string): string {
-  const separatorIndex = spec.indexOf("=");
-  return separatorIndex < 0 ? spec : spec.slice(0, separatorIndex);
 }
 
 /**
@@ -206,10 +182,11 @@ function buildImportedRecords(
 /**
  * Composes the `json-etl` pipeline end to end — the only module that knows
  * the stage order: import -\> extract -\> filter -\> (sort -\> limit) -\> export.
- * `input`/`fields`/`output` presence and non-emptiness are enforced by the
- * declared config schema before `config` reaches this function; the
- * `sort`-requires-`limit` constraint is guard-checked here, before any
- * record is read.
+ * `input`/`fields`/`output` presence and non-emptiness, and the
+ * `sort`-requires-`limit`/`sort`-name-must-be-a-`fields`-column
+ * cross-parameter constraints, are all enforced by the declared config
+ * schema (see `config.ts`'s `configParameters`/`configValidators`) before
+ * `config` reaches this function.
  *
  * @param deps - The resolved config, `M3LPaths`, logger, and the per-run
  *   correlation id to log against.
@@ -217,8 +194,8 @@ function buildImportedRecords(
  *   skips), written (actually exported), and skipped (malformed/unparseable
  *   input records).
  * @throws {@link Core.M3LError} When a required parameter's stored value has
- *   the wrong type, `sort` is set without `limit`, the input cannot be
- *   parsed as a whole-document JSON array, or the output cannot be written.
+ *   the wrong type, the input cannot be parsed as a whole-document JSON
+ *   array, or the output cannot be written.
  *
  * @example
  * ```typescript
