@@ -33,10 +33,13 @@ script inherits unchanged.
 Declared in `src/config.ts` (`configParameters`); config is the script's only
 input seam. Per-operation requiredness (the "Required for" column) is **not**
 expressed by `M3LConfigParameter({ required: true })` beyond `operation`/
-`aws.profile` themselves — the library has no cross-parameter/conditional-required
-seam yet (F1b, deferred). Every other parameter is declared optional, and the
-selected step guard-checks presence before any AWS call (mirroring
-`dynamodb-crud`'s per-operation guard). Declaring `aws.profile` (via
+`aws.profile` themselves — a single parameter's `validate:` callback cannot
+express a cross-parameter constraint. F1b's `Core.M3LConfigSchema`
+`configValidators` seam ([shipped](../../plans/IMPLEMENTATION.md)) could
+express these as config-load-time checks instead; every other parameter
+remains declared optional, and the selected step guard-checks presence
+before any AWS call (mirroring `dynamodb-crud`'s per-operation guard),
+pending this script's fleet retrofit. Declaring `aws.profile` (via
 `Core.AWS_PROFILE_PARAM_NAME`) is what enables the `script.aws`
 dynamic-provisioning seam, populating `script.aws.clients.eventBridgeOperations`.
 

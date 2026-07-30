@@ -22,12 +22,17 @@ infrastructure (creation, redrive-policy configuration, DLQ wiring) — that is
 
 Declared in `src/config.ts` (`configParameters`); config is the script's only
 input seam. Per-command requiredness (the "Required for" column) is **not**
-expressed by `M3LConfigParameter({ required: true })` — the library has no
-cross-parameter/conditional-required seam yet (F1b, deferred). Instead each
-parameter besides `command`/`aws.profile` is declared optional, and
-`run-sqs-etl.ts`'s settings resolver guard-checks presence for the selected
-command before any SQS call, mirroring `json-etl`'s `sort`-requires-`limit`
-guard.
+expressed by `M3LConfigParameter({ required: true })` — a single parameter's
+`validate:` callback cannot express a cross-parameter constraint. F1b's
+`Core.M3LConfigSchema` `configValidators` seam
+([shipped](../../plans/IMPLEMENTATION.md)) could express these as
+config-load-time checks instead; every parameter besides
+`command`/`aws.profile` remains declared optional, and each command's step
+module (`run-sqs-etl.ts` dispatches to `steps/dump-queue.ts` etc.)
+guard-checks presence for the selected command before any SQS call, pending
+this script's fleet retrofit. Contrast `json-etl`'s `sort`-requires-`limit`
+guard, which **was** retrofitted onto `configValidators` (config-load-time,
+not run-start) — see [`json-etl`](./json-etl.md#configuration-schema).
 
 | Parameter                  | Type           | Default | Validation                                                          | Required for                                 | Description                                                                                                                                                            |
 | -------------------------- | -------------- | ------- | ------------------------------------------------------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

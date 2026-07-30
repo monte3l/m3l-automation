@@ -30,8 +30,13 @@ const API_KEY_ALIAS = "api-gateway-api-key";
  * validation, and redaction all flow through the library.
  *
  * Per-mode / per-auth requiredness (e.g. `path` for `request` but not
- * `batch`, `apiKey` for `auth: api-key`) is not expressed here — the library
- * has no cross-parameter/conditional-required seam yet (F1b, deferred).
+ * `batch`, `apiKey` for `auth: api-key`) is not expressed here as a
+ * declarative `M3LConfigParameter({ required: true })` — a single parameter's
+ * `validate:` callback cannot express a cross-parameter constraint. F1b's
+ * `Core.M3LConfigSchema` `configValidators` seam (shipped — see
+ * `docs/plans/IMPLEMENTATION.md`'s F1b row) could express these as
+ * config-load-time checks instead; they remain guard-checked at run start
+ * pending this script's fleet retrofit.
  * Every parameter besides `command`/`auth`/`baseUrl`/`method` is declared
  * optional; the selected step guard-checks presence before any HTTP call.
  * See `docs/reference/scripts/api-gateway-client.md` for the full

@@ -48,10 +48,13 @@ const MAX_WAIT_TIME_MAX = 3600;
  * redaction all flow through the library.
  *
  * Only `aws.profile` and `operation` are `required: true`: per-operation
- * cross-parameter requirements (e.g. `cluster` for every operation but
+ * presence requirements (e.g. `cluster` for every operation but
  * `list-clusters`, `input` for the four create/update-config operations) are
- * not expressible by a single parameter's validator (F1b, deferred), so they
- * are guard-checked at run start instead — see `steps/run-eks-ops.ts`.
+ * not expressible by a single parameter's `validate:` callback. F1b's
+ * `Core.M3LConfigSchema` `configValidators` seam (shipped) could express
+ * these as config-load-time checks instead; they remain guard-checked at
+ * run start pending this script's fleet retrofit — see
+ * `steps/run-eks-ops.ts`.
  */
 export const configParameters: readonly Core.M3LConfigParameter[] = [
   new Core.M3LConfigParameter({
