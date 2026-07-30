@@ -5,7 +5,11 @@
  * @packageDocumentation
  */
 
-import type { M3LConfig, M3LConfigParameter } from "../config/index.js";
+import type {
+  M3LConfig,
+  M3LConfigParameter,
+  M3LConfigSchemaValidator,
+} from "../config/index.js";
 import type { M3LLogger } from "../logging/index.js";
 import type { M3LPrompt } from "../prompt/index.js";
 
@@ -45,6 +49,16 @@ export interface M3LScriptMetadata {
 interface M3LScriptConfigDeclaration {
   /** The declared configuration parameters for this script. */
   readonly params: readonly M3LConfigParameter[];
+
+  /**
+   * Schema-level cross-parameter validators, run once after every declared
+   * parameter in `params` has resolved — so a per-parameter `required`/
+   * `validate` failure always surfaces first. Runs in declaration order,
+   * fail-fast: the first validator to return a failure reason throws
+   * immediately. See {@link M3LConfigSchemaValidator} and
+   * `docs/reference/core/config.md`'s "Cross-parameter validation" section.
+   */
+  readonly validate?: readonly M3LConfigSchemaValidator[];
 }
 
 /**

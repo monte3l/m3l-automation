@@ -325,7 +325,7 @@ export class M3LScript {
     this.hooks = options.hooks ?? {};
     this.schema =
       options.config !== undefined
-        ? new M3LConfigSchema(options.config.params)
+        ? new M3LConfigSchema(options.config.params, options.config.validate)
         : undefined;
 
     this.configuredCorrelationId = options.correlationId;
@@ -779,8 +779,11 @@ export class M3LScript {
    * first, and its values are wired in as a lowest-priority
    * `presetProviders` entry. Any throw from the preset loader (e.g.
    * `M3LPresetUnknownKeysError`, or an `M3LError` coded `"ERR_PRESET_LOAD"`
-   * for a missing/malformed file) propagates unchanged — F8 introduces no
-   * new error types and this method does not catch/swallow it.
+   * for a missing/malformed file), or from the subsequent
+   * {@link M3LConfigSchema.validate} call (an `M3LConfigValidationError`
+   * coded `"ERR_CONFIG_VALIDATION"` when a schema-level validator rejects
+   * the resolved store), propagates unchanged — this method does not
+   * catch/swallow either.
    */
   private async loadConfig(): Promise<void> {
     const presetProviders = this.buildPresetProviders();
@@ -789,6 +792,7 @@ export class M3LScript {
       params: this.schema?.parameters ?? [],
       ...(presetProviders !== undefined ? { presetProviders } : {}),
     });
+    this.schema?.validate(this.config);
     this.configLoaded = true;
   }
 

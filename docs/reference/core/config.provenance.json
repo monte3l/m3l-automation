@@ -43,7 +43,7 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigSchema.ts",
           "symbol": "M3LConfigSchema",
-          "blob": "b68dc96f9dd1f4f03bcd973c96349a2c5e4f5640"
+          "blob": "6192cf5f6738fd10bbb6e61867ce8e8139137680"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LCommandLineConfigProvider.ts",
@@ -123,7 +123,7 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigValidationError.ts",
           "symbol": "M3LConfigValidationError",
-          "blob": "d4bbd8d7f2bc3641586ac74be597f160fdb4fa92"
+          "blob": "fb6c05c7990b40d02ad26d7938665bab9afbaf6e"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigMissingError.ts",
@@ -134,9 +134,14 @@
           "file": "packages/m3l-common/src/core/config/M3LConfigAccessor.ts",
           "symbol": "M3LConfigAccessor",
           "blob": "a180f8a36159b37014bc48ef993af037fc2d47bc"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigSchemaValidator.ts",
+          "symbol": "M3LConfigSchemaValidator",
+          "blob": "40b440cfba38d667ddfe1888b9547b342a4004f0"
         }
       ],
-      "retrieved": "2026-07-29"
+      "retrieved": "2026-07-30"
     },
     {
       "heading": "Defensive typed reads (`M3LConfigAccessor`)",
@@ -170,7 +175,7 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigValidationError.ts",
           "symbol": "M3LConfigValidationError",
-          "blob": "d4bbd8d7f2bc3641586ac74be597f160fdb4fa92"
+          "blob": "fb6c05c7990b40d02ad26d7938665bab9afbaf6e"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameter.ts",
@@ -181,9 +186,19 @@
           "file": "packages/m3l-common/src/core/config/M3LConfigMissingError.ts",
           "symbol": "M3LConfigMissingError",
           "blob": "d2c6486bb9c6e7c0051bbceee332c05f19cb522b"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigSchemaValidator.ts",
+          "symbol": "M3LConfigSchemaValidator",
+          "blob": "40b440cfba38d667ddfe1888b9547b342a4004f0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigSchema.ts",
+          "symbol": "M3LConfigSchema",
+          "blob": "6192cf5f6738fd10bbb6e61867ce8e8139137680"
         }
       ],
-      "retrieved": "2026-07-29"
+      "retrieved": "2026-07-30"
     },
     {
       "heading": "Source tracking",

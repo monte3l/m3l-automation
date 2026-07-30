@@ -113,6 +113,7 @@ import {
   M3LConfigParameter,
   M3LConfigParameterType,
   M3LConfigSchema,
+  M3LConfigValidationError,
   M3LInMemoryConfigProvider,
   M3LPresetConfigProvider,
   M3LUnsafeConfigKeyError,
@@ -1093,6 +1094,91 @@ describe("M3LScript.run() — AWS provisioning seam", () => {
     // resetForInvocation clears initialized/configLoaded/config but must NOT
     // clear the provisioned AWSProvider — a warm Lambda invocation reuses it.
     expect(secondAws).toBe(firstAws);
+  });
+});
+
+// =============================================================================
+// M3LScript — schema-level cross-parameter validation (F1b)
+//
+// docs/reference/core/config.md "### When schema-level validation runs":
+// a `M3LScriptConfigDeclaration.validate?: readonly M3LConfigSchemaValidator[]`
+// field builds the schema's second constructor argument; schema-level
+// validation runs ONCE, after every declared parameter has been resolved by
+// `M3LScriptConfigLoader.load()` — so per-parameter `required`/`validate`
+// failures always surface first — and a failing validator throws the SAME
+// `M3LConfigValidationError` (code ERR_CONFIG_VALIDATION) discriminated by
+// `context: { validatorIndex, reason }` (not the per-parameter
+// `{ parameter, reason, valueType }` shape).
+// =============================================================================
+describe("M3LScript — schema-level cross-parameter validation (F1b)", () => {
+  beforeEach(() => {
+    stubNonAwsEnvironment();
+  });
+
+  /**
+   * A single "sort" parameter whose own per-parameter constraints are all
+   * trivially satisfied (no `required`, no `validate`, a `defaultValue`
+   * always resolves it) — isolating the failure to the schema-level
+   * validator, per the doc's own canonical "'sort' requires 'limit'" example.
+   */
+  function makeSortParam(): M3LConfigParameter {
+    return new M3LConfigParameter({
+      name: "sort",
+      type: M3LConfigParameterType.STRING,
+      required: true,
+      defaultValue: "asc",
+    });
+  }
+
+  test("a failing schema-level validator rejects run() with M3LConfigValidationError (ERR_CONFIG_VALIDATION) evaluated after per-parameter validation, and mainFn never runs", async () => {
+    const options: M3LScriptOptions = {
+      metadata,
+      config: {
+        params: [makeSortParam()],
+        // Only "sort" is declared, so "limit" never resolves -> fails.
+        validate: [
+          (config: M3LConfig): true | string =>
+            config.get("sort") === undefined ||
+            config.get("limit") !== undefined
+              ? true
+              : "'sort' requires 'limit' to be set",
+        ],
+      },
+    };
+    const script = new M3LScript(options);
+    const mainFn = vi.fn();
+
+    let thrown: unknown;
+    try {
+      await script.run(mainFn);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConfigValidationError);
+    expect((thrown as M3LConfigValidationError).code).toBe(
+      "ERR_CONFIG_VALIDATION",
+    );
+    expect((thrown as M3LConfigValidationError).context).toEqual({
+      validatorIndex: 0,
+      reason: "'sort' requires 'limit' to be set",
+    });
+    // Per-parameter validation/required-checks on "sort" ran and passed
+    // (it resolved via defaultValue); mainFn never ran because the
+    // schema-level validator rejected the run before stage 6.
+    expect(mainFn).not.toHaveBeenCalled();
+  });
+
+  test("no `validate` field declared: schema-level check is skipped entirely — run() resolves normally (regression)", async () => {
+    const options: M3LScriptOptions = {
+      metadata,
+      config: { params: [makeSortParam()] },
+    };
+    const script = new M3LScript(options);
+    const mainFn = vi.fn();
+
+    await expect(script.run(mainFn)).resolves.toBeUndefined();
+    expect(mainFn).toHaveBeenCalledTimes(1);
   });
 });
 
