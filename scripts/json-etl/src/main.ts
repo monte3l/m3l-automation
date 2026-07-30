@@ -1,6 +1,6 @@
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters } from "./config.js";
+import { configParameters, configValidators } from "./config.js";
 import { getCorrelationId, hooks } from "./hooks.js";
 import { resolvePresetOption } from "./steps/resolve-preset.js";
 import { runJsonEtl } from "./steps/run-json-etl.js";
@@ -16,7 +16,7 @@ import { runJsonEtl } from "./steps/run-json-etl.js";
 // (mainFn itself receives no `ctx`) and read back via `getCorrelationId()`.
 const script = new Core.M3LScript({
   metadata: { name: "json-etl", version: "0.0.0" },
-  config: { params: configParameters },
+  config: { params: configParameters, validate: configValidators },
   hooks,
   ...resolvePresetOption(),
 });

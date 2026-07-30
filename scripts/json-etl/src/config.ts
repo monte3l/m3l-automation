@@ -1,5 +1,7 @@
 import { Core } from "@m3l-automation/m3l-common";
 
+import { fieldName } from "./lib/field-spec.js";
+
 const LIMIT_MIN = 1;
 const LIMIT_MAX = Number.MAX_SAFE_INTEGER;
 
@@ -60,4 +62,59 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     defaultValue: "join",
     validate: Core.M3LConfigValidators.oneOf(["join", "explode"]),
   }),
+];
+
+/** Extracts the field name from an already-validated `"name:asc"`/`"name:desc"` sort value. */
+function sortName(value: string): string {
+  return value.split(":")[0] ?? value;
+}
+
+/**
+ * The `json-etl` schema-level cross-parameter validators (F1b) — the
+ * declared config schema's second validation layer, run once by
+ * `Core.M3LConfigSchema.validate` after every parameter in `configParameters`
+ * has resolved. Per-parameter `required`/`validate` checks (see
+ * `configParameters` above) already guard each value in isolation; what
+ * these validators guard is the relationship BETWEEN values, which no single
+ * `M3LConfigParameter` can express on its own:
+ *
+ * 1. `sort` is only meaningful bounded — an unbounded sort would force
+ *    buffering the entire input, so `sort` requires `limit` to be set.
+ * 2. `sort`'s name must be one of the output columns declared by `fields` —
+ *    a typo'd sort name would otherwise silently no-op the sort instead of
+ *    failing fast.
+ *
+ * Both replace what used to be hand-rolled run-start guards in
+ * `steps/run-json-etl.ts`; declaring them here instead moves the failure to
+ * config-load time (before `steps/run-json-etl.ts` ever runs) and unifies
+ * the error code under the library's `ERR_CONFIG_VALIDATION`. See
+ * `docs/reference/core/config.md`'s "Cross-parameter validation" section for
+ * the `M3LConfigSchemaValidator` contract these functions satisfy.
+ *
+ * @example
+ * ```typescript
+ * import { Core } from "@m3l-automation/m3l-common";
+ * import { configParameters, configValidators } from "./config.js";
+ *
+ * const schema = new Core.M3LConfigSchema(configParameters, configValidators);
+ * ```
+ */
+export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
+  (config: Core.M3LConfig): true | string =>
+    config.get("sort") === undefined || config.get("limit") !== undefined
+      ? true
+      : "'sort' requires 'limit' to be set",
+  (config: Core.M3LConfig): true | string => {
+    const sortRaw = config.get("sort");
+    if (typeof sortRaw !== "string") return true;
+
+    const fieldsRaw = config.get("fields");
+    if (!Array.isArray(fieldsRaw)) return true;
+
+    const name = sortName(sortRaw);
+    const columns = fieldsRaw.map((spec: unknown) => fieldName(String(spec)));
+    return columns.includes(name)
+      ? true
+      : "'sort' name must be one of the 'fields' output columns";
+  },
 ];

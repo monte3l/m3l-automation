@@ -23,7 +23,10 @@ import { runJsonEtl } from "../src/steps/run-json-etl.js";
 
 /**
  * Contract: docs/reference/scripts/json-etl.md, `run-json-etl` row + the
- * "sort requires limit" / required-parameter run-start guards. Composes
+ * required-parameter run-start guards ("sort requires limit" and "sort's name
+ * must be one of fields' output columns" are schema-level cross-parameter
+ * validators declared in `config.ts`, exercised at config-load time — see
+ * `config.test.ts`'s `configValidators` block — not here). Composes
  * import -> extract -> filter -> (sort -> limit) -> export and returns
  * `{ read, written, skipped }`. `paths`/`config`/`logger` are injected real
  * instances (M3LConfig/M3LPaths/M3LLogger are concrete, mockable-by-injection
@@ -125,18 +128,6 @@ afterEach(() => {
 });
 
 describe("runJsonEtl", () => {
-  test("throws before reading any record when sort is set without limit", async () => {
-    stubPipeline("");
-    const config = buildConfig({ ...REQUIRED_BASE, sort: "id:asc" });
-    const paths = new Core.M3LPaths();
-    const logger = new Core.M3LLogger([]);
-
-    await expect(
-      runJsonEtl({ config, paths, logger, correlationId: "run-1" }),
-    ).rejects.toBeInstanceOf(Core.M3LError);
-    expect(fsp.readFile).not.toHaveBeenCalled();
-  });
-
   test("throws before reading any record when 'input' is missing", async () => {
     stubPipeline("");
     const config = buildConfig({
@@ -317,26 +308,5 @@ describe("runJsonEtl", () => {
     );
     expect(fsp.readFile).not.toHaveBeenCalled();
     expect(fsp.open).not.toHaveBeenCalled();
-  });
-
-  test("throws before reading any record when 'sort' names a field outside 'fields' output columns", async () => {
-    stubPipeline("");
-    const config = buildConfig({
-      ...REQUIRED_BASE,
-      sort: "unknownfield:asc",
-      limit: 2,
-    });
-    const paths = new Core.M3LPaths();
-    const logger = new Core.M3LLogger([]);
-
-    let thrown: unknown;
-    try {
-      await runJsonEtl({ config, paths, logger, correlationId: "run-7" });
-    } catch (error) {
-      thrown = error;
-    }
-    expect(thrown).toBeInstanceOf(Core.M3LError);
-    expect((thrown as Core.M3LError).code).toBe("ERR_JSON_ETL_CONFIG");
-    expect(fsp.readFile).not.toHaveBeenCalled();
   });
 });

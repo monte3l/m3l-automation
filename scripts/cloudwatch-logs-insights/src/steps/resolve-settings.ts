@@ -3,10 +3,11 @@
  * config into a typed run-settings object.
  *
  * Business logic lives here — never in `main.ts`. Presence/non-emptiness of
- * `start`/`end` (and every other required parameter) is already enforced by
- * the declared config schema (`config.ts`) at config-load time; this module
- * owns only the cross-parameter/format guard the per-parameter validators
- * cannot express — ISO-8601 parsing and `start < end`.
+ * `start`/`end` (and every other required parameter), plus the
+ * cross-parameter `start < end` ordering constraint, are already enforced by
+ * the declared config schema (`config.ts`'s `configParameters` and
+ * `configValidators`) at config-load time; this module owns only the
+ * ISO-8601 parse the per-parameter validators cannot express.
  */
 
 import { Core } from "@m3l-automation/m3l-common";
@@ -71,16 +72,15 @@ function parseEpochSeconds(
 
 /**
  * Parses the resolved `cloudwatch-logs-insights` config into a typed
- * {@link LogsInsightsRunSettings}, converting `start`/`end` to epoch seconds
- * and guarding the cross-parameter constraint `start < end`.
+ * {@link LogsInsightsRunSettings}, converting `start`/`end` to epoch seconds.
  *
  * @param config - The resolved configuration store (after `M3LScript`'s
  *   config-load stage has already enforced presence/non-emptiness of every
- *   required parameter).
+ *   required parameter, and the schema-level `start < end` ordering
+ *   constraint via `config.ts`'s `configValidators`).
  * @returns The typed run settings.
  * @throws {@link Core.M3LError} coded `"ERR_LOGS_INSIGHTS_SETTINGS"` when
- *   `start`/`end` is not a parseable ISO-8601 date, or when the resolved
- *   range is empty or inverted (`start >= end`).
+ *   `start`/`end` is not a parseable ISO-8601 date.
  *
  * @example
  * ```ts
@@ -102,12 +102,6 @@ export function resolveSettings(
   });
   const startEpochSeconds = parseEpochSeconds(accessor, "start");
   const endEpochSeconds = parseEpochSeconds(accessor, "end");
-
-  if (startEpochSeconds >= endEpochSeconds) {
-    throw new Core.M3LError("'start' must be strictly before 'end'", {
-      code: LOGS_INSIGHTS_SETTINGS_CODE,
-    });
-  }
 
   return {
     logGroups: accessor.requiredStringArray("logGroups", "run"),
