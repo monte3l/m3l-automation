@@ -115,6 +115,6 @@ export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
     const columns = fieldsRaw.map((spec: unknown) => fieldName(String(spec)));
     return columns.includes(name)
       ? true
-      : `'sort' name must be one of the 'fields' output columns: ${columns.join(", ")}`;
+      : "'sort' name must be one of the 'fields' output columns";
   },
 ];

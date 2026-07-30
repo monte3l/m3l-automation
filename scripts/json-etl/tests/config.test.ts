@@ -276,10 +276,9 @@ describe("configValidators (F1b — cross-parameter validation)", () => {
         limit: 2,
       });
 
-      const result = firstFailure(config);
-      expect(result).not.toContain("unknownfield");
-      expect(result).toMatch(/'sort'/);
-      expect(result).toContain("fields");
+      expect(firstFailure(config)).toBe(
+        "'sort' name must be one of the 'fields' output columns",
+      );
     });
 
     it("passes every validator when the sort name is a declared output column", () => {
