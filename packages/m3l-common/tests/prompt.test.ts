@@ -922,14 +922,320 @@ describe("M3LPrompt: message escaping", () => {
     expect(Object.keys(config)).toEqual(["message"]);
   });
 
-  test("select(): choice labels are NOT escaped — the choices array reference is passed through unchanged (documented gap)", async () => {
+  test("select(): a bare choices array is wrapped into escaped choice objects, with value preserved by reference", async () => {
+    const adapter = makeMockAdapter();
+    const first = ["a"];
+    const second = ["b"];
+    adapter.select.mockResolvedValue(first);
+    const prompt = new M3LPrompt({ adapter });
+    const choices = [first, second] as const;
+    await prompt.select(HOSTILE, choices);
+    const [config] = adapter.select.mock.calls[0] as [
+      { choices: ReadonlyArray<M3LChoice<readonly string[]>> },
+    ];
+    expect(config.choices).toEqual([
+      { value: first, name: escapeTerminalControls(String(first)) },
+      { value: second, name: escapeTerminalControls(String(second)) },
+    ]);
+    expect(config.choices[0]?.value).toBe(choices[0]);
+    expect(config.choices[1]?.value).toBe(choices[1]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F9b: M3LPrompt choice label escaping — select/multiselect/autocomplete
+// escape M3LChoice `name`/`description`/(string) `disabled` via the private
+// `escapeChoices` helper before choices reach the adapter. Classification is
+// per-element (matching `@inquirer/prompts`' own `"value" in element`
+// discrimination, not `isPlainObject` + `Object.hasOwn`): a choice-like
+// element (an object, not null, carrying a `value` key — regardless of its
+// prototype) is escaped in place, with `name` always populated (falling back
+// to `escapeTerminalControls(String(value))` when omitted); a genuinely bare
+// element is wrapped as
+// `{ value: element, name: escapeTerminalControls(String(element)) }`. This
+// closes the previously-documented bare-`Value[]` gap and the
+// first-element-only arm-detection bug found by adversarial review
+// (2026-07-30).
+// ---------------------------------------------------------------------------
+describe("M3LPrompt: choice label escaping", () => {
+  const HOSTILE = "prod\u001b[2K\u202estaging";
+  const RENDERED = "prod\\x1b[2K\\u{202e}staging";
+
+  /** Narrowed shape of the `search` config so the bridged `source` is callable without an `any`/unsafe cast. */
+  interface SearchConfig {
+    source: (
+      term: string | undefined,
+      opt: { readonly signal: AbortSignal },
+    ) => unknown;
+  }
+
+  test("select(): a hostile control character in a choice's `name` is escaped", async () => {
     const adapter = makeMockAdapter();
     adapter.select.mockResolvedValue("a");
     const prompt = new M3LPrompt({ adapter });
-    const choices = ["a", "b"] as const;
-    await prompt.select(HOSTILE, choices);
-    const [config] = adapter.select.mock.calls[0] as [Record<string, unknown>];
-    expect(config.choices).toBe(choices);
+    const choices: M3LChoices<string> = [{ name: HOSTILE, value: "a" }];
+    await prompt.select("Pick", choices);
+    const [config] = adapter.select.mock.calls[0] as [
+      { choices: ReadonlyArray<M3LChoice<string>> },
+    ];
+    expect(config.choices[0]?.name).toBe(RENDERED);
+  });
+
+  test("select(): a hostile control character in a choice's `description` is escaped", async () => {
+    const adapter = makeMockAdapter();
+    adapter.select.mockResolvedValue("a");
+    const prompt = new M3LPrompt({ adapter });
+    const choices: M3LChoices<string> = [
+      { name: "Option A", value: "a", description: HOSTILE },
+    ];
+    await prompt.select("Pick", choices);
+    const [config] = adapter.select.mock.calls[0] as [
+      { choices: ReadonlyArray<M3LChoice<string>> },
+    ];
+    expect(config.choices[0]?.description).toBe(RENDERED);
+  });
+
+  test("select(): a hostile control character in a STRING `disabled` reason is escaped", async () => {
+    const adapter = makeMockAdapter();
+    adapter.select.mockResolvedValue("a");
+    const prompt = new M3LPrompt({ adapter });
+    const choices: M3LChoices<string> = [
+      { name: "Option A", value: "a", disabled: HOSTILE },
+    ];
+    await prompt.select("Pick", choices);
+    const [config] = adapter.select.mock.calls[0] as [
+      { choices: ReadonlyArray<M3LChoice<string>> },
+    ];
+    expect(config.choices[0]?.disabled).toBe(RENDERED);
+  });
+
+  test("select(): a BOOLEAN `disabled: true` passes through unchanged, never run through string escaping", async () => {
+    const adapter = makeMockAdapter();
+    adapter.select.mockResolvedValue("a");
+    const prompt = new M3LPrompt({ adapter });
+    const choices: M3LChoices<string> = [
+      { name: "Option A", value: "a", disabled: true },
+    ];
+    await prompt.select("Pick", choices);
+    const [config] = adapter.select.mock.calls[0] as [
+      { choices: ReadonlyArray<M3LChoice<string>> },
+    ];
+    expect(config.choices[0]?.disabled).toBe(true);
+  });
+
+  test("select(): `value` and `checked` reach the adapter unchanged by reference, even though `name` is escaped", async () => {
+    const adapter = makeMockAdapter();
+    const valueRef = { id: "eu-south-1" };
+    adapter.select.mockResolvedValue(valueRef);
+    const prompt = new M3LPrompt({ adapter });
+    const choices: M3LChoices<{ id: string }> = [
+      { name: HOSTILE, value: valueRef, checked: true },
+    ];
+    await prompt.select("Region?", choices);
+    const [config] = adapter.select.mock.calls[0] as [
+      { choices: ReadonlyArray<M3LChoice<{ id: string }>> },
+    ];
+    const [received] = config.choices;
+    expect(received?.name).toBe(RENDERED);
+    expect(received?.value).toBe(valueRef);
+    expect(received?.checked).toBe(true);
+  });
+
+  test("select(): a bare string[] choices list — including a hostile element — is wrapped into M3LChoice objects, preserving each element as `value` and escaping String(element) as `name`", async () => {
+    const adapter = makeMockAdapter();
+    adapter.select.mockResolvedValue(HOSTILE);
+    const prompt = new M3LPrompt({ adapter });
+    const choices = ["a", HOSTILE] as const;
+    await prompt.select("Pick", choices);
+    const [config] = adapter.select.mock.calls[0] as [
+      { choices: ReadonlyArray<M3LChoice<string>> },
+    ];
+    expect(config.choices).toEqual([
+      { value: "a", name: "a" },
+      { value: HOSTILE, name: RENDERED },
+    ]);
+  });
+
+  test("select(): a choice with `value` but no `name` property falls back to escaping String(value) instead of leaking it raw", async () => {
+    const adapter = makeMockAdapter();
+    adapter.select.mockResolvedValue(HOSTILE);
+    const prompt = new M3LPrompt({ adapter });
+    const choices: M3LChoices<string> = [{ value: HOSTILE }];
+    await prompt.select("Pick", choices);
+    const [config] = adapter.select.mock.calls[0] as [
+      { choices: ReadonlyArray<M3LChoice<string>> },
+    ];
+    expect(config.choices[0]?.name).toBe(RENDERED);
+    expect(config.choices[0]?.value).toBe(HOSTILE);
+  });
+
+  test("select(): a choice-like value constructed via a class (not a plain object literal) is still escaped, not skipped by the discrimination check", async () => {
+    class TestChoice {
+      constructor(
+        public readonly name: string,
+        public readonly value: string,
+      ) {}
+    }
+    const adapter = makeMockAdapter();
+    adapter.select.mockResolvedValue("a");
+    const prompt = new M3LPrompt({ adapter });
+    const choices: M3LChoices<string> = [new TestChoice(HOSTILE, "a")];
+    await prompt.select("Pick", choices);
+    const [config] = adapter.select.mock.calls[0] as [
+      { choices: ReadonlyArray<M3LChoice<string>> },
+    ];
+    expect(config.choices[0]?.name).toBe(RENDERED);
+  });
+
+  test("select(): a mixed array (bare element followed by a choice-shaped element) classifies each element independently — the choice-shaped element's hostile `name` is escaped regardless of position", async () => {
+    const adapter = makeMockAdapter();
+    adapter.select.mockResolvedValue("a");
+    const prompt = new M3LPrompt({ adapter });
+    const mixed = ["plain", { name: HOSTILE, value: "a" }];
+    const choices = mixed as unknown as M3LChoices<string>;
+    await prompt.select("Pick", choices);
+    const [config] = adapter.select.mock.calls[0] as [
+      { choices: ReadonlyArray<M3LChoice<string>> },
+    ];
+    expect(config.choices[0]?.value).toBe("plain");
+    expect(config.choices[0]?.name).toBe("plain");
+    expect(config.choices[1]?.value).toBe("a");
+    expect(config.choices[1]?.name).toBe(RENDERED);
+  });
+
+  test("select(): an empty choices array resolves without throwing and the adapter receives an empty array", async () => {
+    const adapter = makeMockAdapter();
+    adapter.select.mockResolvedValue("n/a");
+    const prompt = new M3LPrompt({ adapter });
+    await expect(prompt.select<string>("Pick", [])).resolves.toBe("n/a");
+    const [config] = adapter.select.mock.calls[0] as [{ choices: unknown }];
+    expect(config.choices).toEqual([]);
+  });
+
+  test("multiselect(): a hostile control character in a choice's `name` is escaped", async () => {
+    const adapter = makeMockAdapter();
+    adapter.checkbox.mockResolvedValue(["a"]);
+    const prompt = new M3LPrompt({ adapter });
+    const choices: M3LChoices<string> = [{ name: HOSTILE, value: "a" }];
+    await prompt.multiselect("Pick", choices);
+    const [config] = adapter.checkbox.mock.calls[0] as [
+      { choices: ReadonlyArray<M3LChoice<string>> },
+    ];
+    expect(config.choices[0]?.name).toBe(RENDERED);
+  });
+
+  test("autocomplete(): a hostile control character in a choice's `name` is escaped when suggest returns synchronously", async () => {
+    const adapter = makeMockAdapter();
+    const suggest: M3LSuggestFn<string> = () => [{ name: HOSTILE, value: "a" }];
+    let captured: ReadonlyArray<M3LChoice<string>> | undefined;
+    adapter.search.mockImplementation(async (config: SearchConfig) => {
+      captured = (await config.source(undefined, {
+        signal: new AbortController().signal,
+      })) as ReadonlyArray<M3LChoice<string>>;
+      return captured[0]?.value;
+    });
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.autocomplete("Region?", suggest);
+    expect(captured?.[0]?.name).toBe(RENDERED);
+  });
+
+  test("autocomplete(): a hostile control character in a choice's `name` is escaped when suggest returns a Promise", async () => {
+    const adapter = makeMockAdapter();
+    const suggest: M3LSuggestFn<string> = async () => {
+      await Promise.resolve();
+      return [{ name: HOSTILE, value: "a" }];
+    };
+    let captured: ReadonlyArray<M3LChoice<string>> | undefined;
+    adapter.search.mockImplementation(async (config: SearchConfig) => {
+      captured = (await config.source(undefined, {
+        signal: new AbortController().signal,
+      })) as ReadonlyArray<M3LChoice<string>>;
+      return captured[0]?.value;
+    });
+    const prompt = new M3LPrompt({ adapter });
+    await prompt.autocomplete("Region?", suggest);
+    expect(captured?.[0]?.name).toBe(RENDERED);
+  });
+
+  // F9b follow-up (2026-07-30 adversarial round 2): a classification/
+  // reconstruction MISMATCH. `isChoiceLike` classifies via `"value" in item`
+  // (walks the prototype chain — matches inherited/getter `value`), but the
+  // reconstruction spread `{...item}` copies only OWN ENUMERABLE properties.
+  // When `value`/`name` are inherited rather than own, the rebuilt object
+  // ends up missing its own `value` (and can carry a stray own property
+  // through, e.g. a hostile `toString`) — the fix is an explicit allowlist
+  // reconstruction that reads exactly the five declared `M3LChoice` fields
+  // via property access instead of spreading unknown own keys through.
+  test("select(): a choice-like item with an INHERITED `value` and an own hostile `toString` preserves the real value and never leaks the raw toString onto the rebuilt choice", async () => {
+    const adapter = makeMockAdapter();
+    adapter.select.mockResolvedValue("real-value");
+    const prompt = new M3LPrompt({ adapter });
+    const item = Object.create({ value: "real-value" }) as {
+      value: string;
+      toString: () => string;
+    };
+    item.toString = () => HOSTILE;
+    const choices = [item] as unknown as M3LChoices<string>;
+    await prompt.select("Pick", choices);
+    const [config] = adapter.select.mock.calls[0] as [
+      { choices: ReadonlyArray<M3LChoice<string>> },
+    ];
+    const [received] = config.choices;
+    expect(received?.value).toBe("real-value");
+    expect(received?.name).not.toBe(HOSTILE);
+    expect(Object.hasOwn(received ?? {}, "toString")).toBe(false);
+  });
+
+  test("select(): a choice-like item exposing `value`/`name` via prototype getters (a class instance) resolves to the real getter value, not the class instance itself, with `name` escaped", async () => {
+    class GetterChoice {
+      get value(): string {
+        return "real-value";
+      }
+      get name(): string {
+        return HOSTILE;
+      }
+    }
+    const adapter = makeMockAdapter();
+    adapter.select.mockResolvedValue("real-value");
+    const prompt = new M3LPrompt({ adapter });
+    const choices = [new GetterChoice()] as unknown as M3LChoices<string>;
+    await prompt.select("Pick", choices);
+    const [config] = adapter.select.mock.calls[0] as [
+      { choices: ReadonlyArray<M3LChoice<string>> },
+    ];
+    const [received] = config.choices;
+    expect(received?.value).toBe("real-value");
+    expect(received?.name).toBe(RENDERED);
+  });
+
+  test("select(): an unknown/undeclared field on a choice object (e.g. `short`) does not survive reconstruction into the adapter's config", async () => {
+    const adapter = makeMockAdapter();
+    adapter.select.mockResolvedValue("a");
+    const prompt = new M3LPrompt({ adapter });
+    const choice = { value: "a", name: "Label", short: HOSTILE };
+    const choices = [choice] as unknown as M3LChoices<string>;
+    await prompt.select("Pick", choices);
+    const [config] = adapter.select.mock.calls[0] as [
+      { choices: ReadonlyArray<M3LChoice<string>> },
+    ];
+    const [received] = config.choices;
+    expect(
+      (received as Record<string, unknown> | undefined)?.["short"],
+    ).toBeUndefined();
+  });
+
+  test("multiselect(): a `checked` field on a choice survives reconstruction unchanged (regression guard)", async () => {
+    const adapter = makeMockAdapter();
+    adapter.checkbox.mockResolvedValue(["a"]);
+    const prompt = new M3LPrompt({ adapter });
+    const choices: M3LChoices<string> = [
+      { value: "a", name: "Label", checked: true },
+    ];
+    await prompt.multiselect("Pick", choices);
+    const [config] = adapter.checkbox.mock.calls[0] as [
+      { choices: ReadonlyArray<M3LChoice<string>> },
+    ];
+    expect(config.choices[0]?.checked).toBe(true);
   });
 });
 
