@@ -473,12 +473,12 @@ const CLOSE_REASON = {
 // GitHub's `gh issue close --reason` value for each of the same three
 // closes. "done" is genuinely completed work; "rejected" and "removed" are
 // both a decision that the item will not be built, so both close as
-// "not_planned" — leaving them at the `gh` CLI default ("completed") would
+// "not planned" — leaving them at the `gh` CLI default ("completed") would
 // misrepresent a deliberate rejection as delivered work.
 const CLOSE_STATE_REASON = {
   done: "completed",
-  rejected: "not_planned",
-  removed: "not_planned",
+  rejected: "not planned",
+  removed: "not planned",
 };
 
 // An Item whose status is "done" or "rejected" is resolved: it should never
@@ -504,7 +504,7 @@ function isResolved(status) {
  * @returns {{
  *   create: { key: string, payload: ReturnType<typeof buildIssuePayload> }[],
  *   update: { number: number, key: string, payload: ReturnType<typeof buildIssuePayload> }[],
- *   close: { number: number, key: string, comment: string, reason: "completed" | "not_planned" }[],
+ *   close: { number: number, key: string, comment: string, reason: "completed" | "not planned" }[],
  *   reopen: { number: number, key: string, payload: ReturnType<typeof buildIssuePayload> }[],
  *   untouched: { number: number, reason: string }[],
  * }}
