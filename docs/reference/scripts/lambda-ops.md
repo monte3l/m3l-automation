@@ -26,10 +26,14 @@ does not add a new library wrapper.
 Declared in `src/config.ts` (`configParameters`); config is the script's only
 input seam. Per-operation requiredness (the "Required for" column) is **not**
 expressed by `M3LConfigParameter({ required: true })` beyond `operation` itself
-— the library has no cross-parameter/conditional-required seam yet (F1b,
-deferred). Every parameter besides `aws.profile`/`operation` is declared
-optional, and `run-lambda-ops.ts` guard-checks presence per operation before
-any AWS call (mirroring `api-gateway-client`'s per-command guard).
+— a single parameter's `validate:` callback cannot express a cross-parameter
+constraint. F1b's `Core.M3LConfigSchema` `configValidators` seam
+([shipped](../../plans/IMPLEMENTATION.md)) could express these as
+config-load-time checks instead; every parameter besides
+`aws.profile`/`operation` remains declared optional, and `run-lambda-ops.ts`
+guard-checks presence per operation before any AWS call (mirroring
+`api-gateway-client`'s per-command guard), pending this script's fleet
+retrofit.
 
 | Parameter      | Type     | Default | Validation                                                                                           | Required for                                            | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | -------------- | -------- | ------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

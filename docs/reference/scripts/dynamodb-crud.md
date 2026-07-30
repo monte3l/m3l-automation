@@ -60,9 +60,13 @@ env/.env > preset > default.
 `Core.M3LConfigValidators.nonEmpty`/`oneOf`, so presence is enforced by the
 library at **config-load time**. The remaining per-operation requirements
 (e.g. `key` for `get`, `input` for `batch-write`) are **cross-parameter**
-constraints the per-parameter validators cannot express, so they stay guards
-at **run start** (top of `run-dynamodb-crud`), the same pattern as `json-etl`'s
-`sort`⇒`limit` guard (F1b backlog item).
+constraints a single parameter's `validate:` callback cannot express, so they
+stay guards at **run start** (top of `run-dynamodb-crud`) — the same
+retrofit-eligible pattern `ecs-ops`/`lambda-ops`/etc. carry via F1b's
+`Core.M3LConfigSchema` `configValidators` seam
+([shipped](../../plans/IMPLEMENTATION.md)), not yet retrofitted here. Contrast
+`json-etl`'s `sort`⇒`limit` guard, which **was** retrofitted onto
+`configValidators` (config-load-time, not run-start).
 
 ## Steps
 

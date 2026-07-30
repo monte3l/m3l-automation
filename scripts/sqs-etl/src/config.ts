@@ -23,10 +23,14 @@ export const SQS_ETL_COMMANDS = [
  * and redaction all flow through the library.
  *
  * Per-command requiredness (e.g. `queueUrl` for `dump` but not `transform`)
- * is not expressed here — the library has no cross-parameter/conditional-
- * required seam yet (F1b, deferred). Every parameter besides `command` and
- * `aws.profile` is declared optional; `run-sqs-etl.ts`'s settings resolver
- * guard-checks presence for the selected command before any SQS call. See
+ * is not expressed here as a declarative `M3LConfigParameter({ required: true })`
+ * — a single parameter's `validate:` callback cannot express a
+ * cross-parameter constraint. F1b's `Core.M3LConfigSchema` `configValidators`
+ * seam (shipped) could express these as config-load-time checks instead;
+ * every parameter besides `command` and `aws.profile` remains declared
+ * optional, and each command's step module (`run-sqs-etl.ts` dispatches to
+ * `steps/dump-queue.ts` etc.) guard-checks presence for the selected command
+ * before any SQS call, pending this script's fleet retrofit. See
  * `docs/reference/scripts/sqs-etl.md` for the full per-command requirement
  * table.
  *

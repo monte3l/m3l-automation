@@ -55,10 +55,13 @@ const MAX_RESULTS_MAX = 1000;
  * validation, and redaction all flow through the library.
  *
  * Only `aws.profile` and `operation` are `required: true`: per-operation
- * cross-parameter requirements (e.g. `pipeline` for every operation but
+ * presence requirements (e.g. `pipeline` for every operation but
  * `list-pipelines`, `input` for `create-pipeline`/`update-pipeline`) are not
- * expressible by a single parameter's validator (F1b, deferred), so they are
- * guard-checked at run start instead — see `steps/run-codepipeline-ops.ts`.
+ * expressible by a single parameter's `validate:` callback. F1b's
+ * `Core.M3LConfigSchema` `configValidators` seam (shipped) could express
+ * these as config-load-time checks instead; they remain guard-checked at
+ * run start pending this script's fleet retrofit — see
+ * `steps/run-codepipeline-ops.ts`.
  */
 export const configParameters: readonly Core.M3LConfigParameter[] = [
   new Core.M3LConfigParameter({
