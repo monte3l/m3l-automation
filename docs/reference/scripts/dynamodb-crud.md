@@ -26,7 +26,7 @@ instead of restarting.
 
 **In scope:** single-table, item-level operations, including full-table scan
 and bulk batch write/delete/import/export at ≥ 10⁶-record scale. **Out of
-scope:** table/index creation or schema changes (a future `cfn-stacks`
+scope:** table/index creation or schema changes ([`cloudformation-stacks`](./cloudformation-stacks.md)'s
 concern), cross-table joins, and record-shape transformation — `export`'s
 output is Task-1 JSONL; filtering, field extraction, and reformatting are
 `json-etl`'s job, not duplicated here.
