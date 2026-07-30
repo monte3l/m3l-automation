@@ -32,21 +32,26 @@ Declared in `src/config.ts` (`configParameters`); config is the script's only
 input seam. Per-operation requiredness (the "Required for" column) is **not**
 expressed by `M3LConfigParameter({ required: true })` beyond `aws.profile`/
 `operation` — a single parameter's `validate:` callback cannot express a
-cross-parameter constraint. F1b's `Core.M3LConfigSchema` `configValidators`
-seam ([shipped](../../plans/IMPLEMENTATION.md)) could express these as
-config-load-time checks instead; `run-eks-ops.ts` guard-checks **presence**
-per operation before any AWS call (mirroring `ecs-ops`'s per-command guard)
-pending this script's fleet retrofit.
+cross-parameter constraint. These are declared instead as
+`Core.M3LConfigSchemaValidator`s in `config.ts` (`configValidators`, F1b) —
+including `kubernetesVersion`'s `update-cluster-version` requirement — and
+enforced at **config-load time**, throwing `Core.M3LConfigValidationError`
+(`ERR_CONFIG_VALIDATION`) before `run-eks-ops.ts` runs; that file's
+`accessor.requiredFor(...)` guards are kept as defense-in-depth and to
+narrow `string | undefined` to `string`.
 
 **Two distinct validation mechanisms are in play — do not conflate them:**
 the "Declarative `validate:`" column is a **factory attached in `config.ts`**,
 evaluated by `M3LConfigParameter` at `getConfiguration()` time — it fires only
 when the provider resolves a raw value for that parameter (an `undefined`/
-absent optional parameter never runs its validator). An **empty-but-present**
-`cluster`/`nodegroup`/etc. or an **out-of-range** `maxResults`/`maxWaitTime`
-therefore fails at config-load with `M3LConfigValidationError` — **not**
-`ERR_EKS_OPS_CONFIG`. `run-eks-ops.ts`'s own guard checks only **absence**
-(`undefined`) of a parameter a given operation needs.
+absent optional parameter never runs its validator). The "Required for"
+column is now enforced by `configValidators` on **absence**. Both mechanisms
+fire at config-load time and both throw `Core.M3LConfigValidationError`
+(`ERR_CONFIG_VALIDATION`) — **not** `ERR_EKS_OPS_CONFIG`. `run-eks-ops.ts`'s
+run-start guard re-checks the same absence and still throws
+`ERR_EKS_OPS_CONFIG`, but under `M3LScript` that path is now unreachable: it
+is observable only when a step is invoked directly in a unit test that
+bypasses the schema (as this script's own tests do).
 
 Only `create-cluster`/`update-cluster-config`/`create-nodegroup`/
 `update-nodegroup-config` read an `input` JSON file (the resource identity —
@@ -57,22 +62,22 @@ build their (small) request entirely from flat config parameters
 (`kubernetesVersion`/`releaseVersion`/`force`) rather than requiring an input
 file for a one- or two-field change.
 
-| Parameter           | Type           | Default | Declarative `validate:`                                   | Required for                                                                                                                                                           | Description                                                                                                                              |
-| ------------------- | -------------- | ------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `aws.profile`       | `STRING`       | —       | `required: true`, `nonEmpty`                              | all                                                                                                                                                                    | AWS profile name; declaring it enables the `script.aws` dynamic-provisioning seam (`Core.AWS_PROFILE_PARAM_NAME`)                        |
-| `operation`         | `STRING`       | —       | `required: true`, `oneOf(EKS_OPS_OPERATIONS)` (16 values) | all                                                                                                                                                                    | Selects which of the 16 `M3LEKSOperations` methods this run dispatches                                                                   |
-| `cluster`           | `STRING`       | —       | `nonEmpty`                                                | every operation **except** `list-clusters`                                                                                                                             | Cluster name; the sole identity source for every cluster/nodegroup operation — never read from `input`                                   |
-| `nodegroup`         | `STRING`       | —       | `nonEmpty`                                                | `describe-nodegroup`, `create-nodegroup`, `update-nodegroup-config`, `update-nodegroup-version`, `delete-nodegroup`, `wait-nodegroup-active`, `wait-nodegroup-deleted` | Nodegroup name, scoped to `cluster`                                                                                                      |
-| `input`             | `STRING`       | —       | `nonEmpty`                                                | `create-cluster`, `update-cluster-config`, `create-nodegroup`, `update-nodegroup-config`                                                                               | Path resolved via `M3LPaths.resolveInput` to a JSON file carrying the operation's mutable payload fields (never the resource identity)   |
-| `output`            | `STRING`       | —       | `nonEmpty`                                                | all (optional)                                                                                                                                                         | Path resolved via `M3LPaths.resolveOutput`; when set, the operation's result is persisted as a single JSON document                      |
-| `kubernetesVersion` | `STRING`       | —       | `nonEmpty`                                                | `update-cluster-version` (required); `update-nodegroup-version` (optional — may bump `releaseVersion` alone)                                                           | Target Kubernetes version, forwarded as `version` on the wrapper's `M3LEKSUpdateClusterVersionInput`/`M3LEKSUpdateNodegroupVersionInput` |
-| `releaseVersion`    | `STRING`       | —       | `nonEmpty`                                                | `update-nodegroup-version` (optional)                                                                                                                                  | Target AMI release version                                                                                                               |
-| `force`             | `BOOL`         | `false` | —                                                         | `update-cluster-version`, `update-nodegroup-version` (optional)                                                                                                        | Forces the update past an EKS-reported health-issue block                                                                                |
-| `maxResults`        | `INT`          | —       | `range(1, 100)`                                           | `list-clusters`, `list-nodegroups` (optional)                                                                                                                          | Page size, forwarded to `listClusters`/`listNodegroups`                                                                                  |
-| `nextToken`         | `STRING`       | —       | `nonEmpty`                                                | `list-clusters`, `list-nodegroups` (optional)                                                                                                                          | Continuation token from a previous page's `nextToken`                                                                                    |
-| `include`           | `STRING_ARRAY` | —       | `nonEmpty`                                                | `list-clusters` (optional)                                                                                                                                             | Cluster-kind filter, forwarded to `listClusters({ include })`                                                                            |
-| `maxWaitTime`       | `INT`          | `1200`  | `range(1, 3600)`                                          | `wait-cluster-active`, `wait-cluster-deleted`, `wait-nodegroup-active`, `wait-nodegroup-deleted` (optional)                                                            | Seconds bounding the wait; the wrapper's own waiters poll at `{minDelay: 30, maxDelay: 120}`, so the default allows several intervals    |
-| `yes`               | `BOOL`         | `false` | —                                                         | any mutating operation (optional)                                                                                                                                      | Bypasses the destructive-operation confirmation prompt for unattended runs; the bypass is logged as a warning                            |
+| Parameter           | Type           | Default | Declarative `validate:`                                                                        | Required for                                                                                                                                                           | Description                                                                                                                              |
+| ------------------- | -------------- | ------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `aws.profile`       | `STRING`       | —       | `required: true`, `nonEmpty`                                                                   | all                                                                                                                                                                    | AWS profile name; declaring it enables the `script.aws` dynamic-provisioning seam (`Core.AWS_PROFILE_PARAM_NAME`)                        |
+| `operation`         | `STRING`       | —       | `required: true`, `oneOf(EKS_OPS_OPERATIONS)` (16 values)                                      | all                                                                                                                                                                    | Selects which of the 16 `M3LEKSOperations` methods this run dispatches                                                                   |
+| `cluster`           | `STRING`       | —       | `nonEmpty`; presence enforced at config-load (`configValidators`)                              | every operation **except** `list-clusters`                                                                                                                             | Cluster name; the sole identity source for every cluster/nodegroup operation — never read from `input`                                   |
+| `nodegroup`         | `STRING`       | —       | `nonEmpty`; presence enforced at config-load (`configValidators`)                              | `describe-nodegroup`, `create-nodegroup`, `update-nodegroup-config`, `update-nodegroup-version`, `delete-nodegroup`, `wait-nodegroup-active`, `wait-nodegroup-deleted` | Nodegroup name, scoped to `cluster`                                                                                                      |
+| `input`             | `STRING`       | —       | `nonEmpty`; presence enforced at config-load (`configValidators`)                              | `create-cluster`, `update-cluster-config`, `create-nodegroup`, `update-nodegroup-config`                                                                               | Path resolved via `M3LPaths.resolveInput` to a JSON file carrying the operation's mutable payload fields (never the resource identity)   |
+| `output`            | `STRING`       | —       | `nonEmpty`                                                                                     | all (optional)                                                                                                                                                         | Path resolved via `M3LPaths.resolveOutput`; when set, the operation's result is persisted as a single JSON document                      |
+| `kubernetesVersion` | `STRING`       | —       | `nonEmpty`; presence enforced at config-load (`configValidators`) for `update-cluster-version` | `update-cluster-version` (required); `update-nodegroup-version` (optional — may bump `releaseVersion` alone)                                                           | Target Kubernetes version, forwarded as `version` on the wrapper's `M3LEKSUpdateClusterVersionInput`/`M3LEKSUpdateNodegroupVersionInput` |
+| `releaseVersion`    | `STRING`       | —       | `nonEmpty`                                                                                     | `update-nodegroup-version` (optional)                                                                                                                                  | Target AMI release version                                                                                                               |
+| `force`             | `BOOL`         | `false` | —                                                                                              | `update-cluster-version`, `update-nodegroup-version` (optional)                                                                                                        | Forces the update past an EKS-reported health-issue block                                                                                |
+| `maxResults`        | `INT`          | —       | `range(1, 100)`                                                                                | `list-clusters`, `list-nodegroups` (optional)                                                                                                                          | Page size, forwarded to `listClusters`/`listNodegroups`                                                                                  |
+| `nextToken`         | `STRING`       | —       | `nonEmpty`                                                                                     | `list-clusters`, `list-nodegroups` (optional)                                                                                                                          | Continuation token from a previous page's `nextToken`                                                                                    |
+| `include`           | `STRING_ARRAY` | —       | `nonEmpty`                                                                                     | `list-clusters` (optional)                                                                                                                                             | Cluster-kind filter, forwarded to `listClusters({ include })`                                                                            |
+| `maxWaitTime`       | `INT`          | `1200`  | `range(1, 3600)`                                                                               | `wait-cluster-active`, `wait-cluster-deleted`, `wait-nodegroup-active`, `wait-nodegroup-deleted` (optional)                                                            | Seconds bounding the wait; the wrapper's own waiters poll at `{minDelay: 30, maxDelay: 120}`, so the default allows several intervals    |
+| `yes`               | `BOOL`         | `false` | —                                                                                              | any mutating operation (optional)                                                                                                                                      | Bypasses the destructive-operation confirmation prompt for unattended runs; the bypass is logged as a warning                            |
 
 ## Steps
 
@@ -117,9 +122,11 @@ Script-local error codes are plain `M3LError.code` strings (the field is an
 open `string`, not a closed union — exactly like `ecs-ops`'s `ERR_ECS_OPS_*`),
 all prefixed `ERR_EKS_OPS_`:
 
-- `ERR_EKS_OPS_CONFIG` — a guard-checked per-operation requirement was unmet
-  (missing `cluster`/`nodegroup`/`input`/`kubernetesVersion` for an operation
-  that requires it, an `input` file that fails to read, an `input` that is not
+- `ERR_EKS_OPS_CONFIG` — a guard-checked per-operation requirement was unmet.
+  The missing-parameter cases (`cluster`/`nodegroup`/`input`/
+  `kubernetesVersion` for an operation that requires it) are now caught
+  earlier by `configValidators` (`M3LConfigValidationError`); this code
+  remains reachable for an `input` file that fails to read, an `input` that is not
   valid JSON, does not decode to a JSON object, or contains a top-level
   prototype-pollution vector key (`__proto__`/`constructor`/`prototype` —
   screened via `Core.M3LInputFileReader.asRecord`'s `isDangerousKey` guard),

@@ -413,7 +413,12 @@ async function dispatchMutatingOperation(
  * into the seven per-family dispatchers, each of which guard-checks its own
  * per-operation cross-parameter requirements before any gate or AWS call,
  * then — for every mutating pipeline operation — runs
- * `Core.confirmDestructive`.
+ * `Core.confirmDestructive`. Each dispatcher's `accessor.requiredFor(...)`
+ * calls are also enforced earlier, at config-load time, by `config.ts`'s
+ * `configValidators` (F1b) — they stay here because they additionally narrow
+ * `string | undefined` into `string` for typed downstream use, which
+ * TypeScript still needs even though presence is now guaranteed before this
+ * function ever runs.
  */
 async function dispatchOperation(
   operation: CodepipelineOperation,

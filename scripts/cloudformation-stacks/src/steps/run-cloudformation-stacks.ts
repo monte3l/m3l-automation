@@ -345,7 +345,15 @@ function isWaitOperation(operation: Operation): operation is WaitOperation {
  * {@link DISPATCH_GROUP} into the four per-family dispatchers, each of which
  * guard-checks its own per-operation cross-parameter requirements before any
  * gate or AWS call, then — for every mutating operation — runs
- * `Core.confirmDestructive`.
+ * `Core.confirmDestructive`. Each dispatcher's `accessor.requiredFor(...)`
+ * calls for `stackName`/`input` are also enforced earlier, at config-load
+ * time, by `config.ts`'s `configValidators` (F1b) — they stay here because
+ * they additionally narrow `string | undefined` into `string` for typed
+ * downstream use, which TypeScript still needs even though presence is now
+ * guaranteed before this function ever runs. The `template`-vs-`input`-
+ * record `templateBody`/`templateUrl` conflict check (`resolveTemplateText`)
+ * is a different class of guard, outside `configValidators`' reach — see
+ * `config.ts` for why.
  */
 async function dispatchOperation(
   operation: Operation,

@@ -23,25 +23,27 @@ infrastructure (creation, redrive-policy configuration, DLQ wiring) — that is
 Declared in `src/config.ts` (`configParameters`); config is the script's only
 input seam. Per-command requiredness (the "Required for" column) is **not**
 expressed by `M3LConfigParameter({ required: true })` — a single parameter's
-`validate:` callback cannot express a cross-parameter constraint. F1b's
-`Core.M3LConfigSchema` `configValidators` seam
-([shipped](../../plans/IMPLEMENTATION.md)) could express these as
-config-load-time checks instead; every parameter besides
-`command`/`aws.profile` remains declared optional, and each command's step
-module (`run-sqs-etl.ts` dispatches to `steps/dump-queue.ts` etc.)
-guard-checks presence for the selected command before any SQS call, pending
-this script's fleet retrofit. Contrast `json-etl`'s `sort`-requires-`limit`
-guard, which **was** retrofitted onto `configValidators` (config-load-time,
-not run-start) — see [`json-etl`](./json-etl.md#configuration-schema).
+`validate:` callback cannot express a cross-parameter constraint. These are
+declared instead as `Core.M3LConfigSchemaValidator`s in `config.ts`
+(`configValidators`, F1b) and enforced at **config-load time**, throwing
+`Core.M3LConfigValidationError` (`ERR_CONFIG_VALIDATION`) before any step
+module runs: `queueUrl` for `dump`/`send`/`redrive`/`delete`/`purge`,
+`dlqUrl` for `redrive`, `input` for `send`/`delete`/`transform`, and `output`
+for `dump`/`transform`. Every parameter besides `command`/`aws.profile`
+remains _declared_ optional; each command's step module (`run-sqs-etl.ts`
+dispatches to `steps/dump-queue.ts` etc.) keeps its own
+`accessor.requiredString(...)` guard as defense-in-depth and to narrow
+`string | undefined` to `string`. Same seam as [`json-etl`](./json-etl.md#configuration-schema)'s
+`sort`-requires-`limit` check.
 
 | Parameter                  | Type           | Default | Validation                                                          | Required for                                 | Description                                                                                                                                                            |
 | -------------------------- | -------------- | ------- | ------------------------------------------------------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `aws.profile`              | `STRING`       | —       | `required: true`                                                    | all                                          | AWS SSO/credential profile name; declaring this parameter (via `Core.AWS_PROFILE_PARAM_NAME`) triggers `M3LScript`'s AWS-provisioning stage and populates `script.aws` |
 | `command`                  | `STRING`       | —       | `required: true`, `oneOf(dump,send,redrive,delete,purge,transform)` | all                                          | Selects the operation mode                                                                                                                                             |
-| `queueUrl`                 | `STRING`       | —       | `nonEmpty` (guard-checked per command)                              | `dump`, `send`, `redrive`, `delete`, `purge` | Target queue URL (for `redrive`, the queue messages are redriven **back to**)                                                                                          |
-| `dlqUrl`                   | `STRING`       | —       | `nonEmpty` (guard-checked per command)                              | `redrive`                                    | Dead-letter queue URL messages are redriven **from**                                                                                                                   |
-| `input`                    | `STRING`       | —       | `nonEmpty` (guard-checked per command)                              | `send`, `delete`, `transform`                | JSONL source file, resolved via `M3LPaths.resolveInput`                                                                                                                |
-| `output`                   | `STRING`       | —       | `nonEmpty` (guard-checked per command)                              | `dump`, `transform`                          | JSONL destination file, resolved via `M3LPaths.resolveOutput`                                                                                                          |
+| `queueUrl`                 | `STRING`       | —       | `nonEmpty`; presence enforced at config-load (`configValidators`)   | `dump`, `send`, `redrive`, `delete`, `purge` | Target queue URL (for `redrive`, the queue messages are redriven **back to**)                                                                                          |
+| `dlqUrl`                   | `STRING`       | —       | `nonEmpty`; presence enforced at config-load (`configValidators`)   | `redrive`                                    | Dead-letter queue URL messages are redriven **from**                                                                                                                   |
+| `input`                    | `STRING`       | —       | `nonEmpty`; presence enforced at config-load (`configValidators`)   | `send`, `delete`, `transform`                | JSONL source file, resolved via `M3LPaths.resolveInput`                                                                                                                |
+| `output`                   | `STRING`       | —       | `nonEmpty`; presence enforced at config-load (`configValidators`)   | `dump`, `transform`                          | JSONL destination file, resolved via `M3LPaths.resolveOutput`                                                                                                          |
 | `batchSize`                | `INT`          | `100`   | `range(1, 10_000)`                                                  | `dump`, `send`, `redrive`, `delete`          | Total message budget for the run; internally chunked at SQS's 10-message-per-call cap                                                                                  |
 | `visibilityTimeoutSeconds` | `INT`          | —       | `range(0, 43_200)`                                                  | `dump`, `redrive` (optional)                 | Passed through to `receive()`'s `visibilityTimeout`; unset uses the queue's own default                                                                                |
 | `deleteAfterDump`          | `BOOL`         | `false` | —                                                                   | `dump` (optional)                            | Turns a non-destructive dump into a drain: deletes each page after it is durably appended to `output`. Destructive — confirm-gated (see Steps) when `true`             |
@@ -87,9 +89,11 @@ content.
 Script-local error codes are plain `M3LError.code` strings, all prefixed
 `ERR_SQS_ETL_`:
 
-- `ERR_SQS_ETL_CONFIG` — a guard-checked config requirement was unmet (missing
-  `queueUrl`/`dlqUrl`/`input`/`output` for the selected command) — or a
-  declared parameter present but stored with the wrong type (`batchSize`/
+- `ERR_SQS_ETL_CONFIG` — a guard-checked config requirement was unmet. The
+  missing-parameter cases (`queueUrl`/`dlqUrl`/`input`/`output` for the
+  selected command) are now caught earlier by `configValidators`
+  (`M3LConfigValidationError`); this code remains reachable for a declared
+  parameter present but stored with the wrong type (`batchSize`/
   `visibilityTimeoutSeconds` non-number, `deleteAfterDump`/`yes` non-boolean,
   `fields`/`filters` non-string-array), via `Core.M3LConfigAccessor`'s
   fail-loud reads (see [`core/config`](../core/config.md)). `batchSize` in
