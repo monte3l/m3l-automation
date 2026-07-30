@@ -31,9 +31,12 @@ this wrapper and script serve.
 Declared in `src/config.ts` (`configParameters`); config is the script's only
 input seam. Per-operation requiredness (the "Required for" column) is **not**
 expressed by `M3LConfigParameter({ required: true })` beyond `aws.profile`/
-`operation` — the library has no cross-parameter/conditional-required seam
-yet (F1b, deferred) — so `run-eks-ops.ts` guard-checks **presence** per
-operation before any AWS call (mirroring `ecs-ops`'s per-command guard).
+`operation` — a single parameter's `validate:` callback cannot express a
+cross-parameter constraint. F1b's `Core.M3LConfigSchema` `configValidators`
+seam ([shipped](../../plans/IMPLEMENTATION.md)) could express these as
+config-load-time checks instead; `run-eks-ops.ts` guard-checks **presence**
+per operation before any AWS call (mirroring `ecs-ops`'s per-command guard)
+pending this script's fleet retrofit.
 
 **Two distinct validation mechanisms are in play — do not conflate them:**
 the "Declarative `validate:`" column is a **factory attached in `config.ts`**,

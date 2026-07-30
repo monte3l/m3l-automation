@@ -64,9 +64,11 @@ env/.env > preset > default.
 `Core.M3LConfigValidators.nonEmpty`/`oneOf`, so presence is enforced by the
 library at **config-load time**. The remaining per-operation requirements
 (e.g. `key` for `describe`, `input` for `put`) are **cross-parameter**
-constraints the per-parameter validators cannot express, so they stay guards
-at **run start** (top of `run-s3-objects`), the same pattern as
-`dynamodb-crud`'s per-operation guard table (F1b backlog item).
+constraints a single parameter's `validate:` callback cannot express, so they
+stay guards at **run start** (top of `run-s3-objects`) — the same
+retrofit-eligible pattern `dynamodb-crud`'s per-operation guard table carries
+via F1b's `Core.M3LConfigSchema` `configValidators` seam
+([shipped](../../plans/IMPLEMENTATION.md)), not yet retrofitted here.
 
 | Operation      | Requires                                         |
 | -------------- | ------------------------------------------------ |

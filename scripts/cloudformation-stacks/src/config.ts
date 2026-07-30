@@ -34,10 +34,17 @@ const MAX_WAIT_TIME_MAX_SECONDS = 3600;
  * coercion, validation, and redaction all flow through the library.
  *
  * Only `aws.profile` and `operation` are `required: true`: per-operation
- * cross-parameter requirements (e.g. `stackName` for `describe-stack`,
- * `input` for `create-stack`/`update-stack`) are not expressible by a single
- * parameter's validator (F1b, deferred), so they are guard-checked at run
- * start instead — see `steps/run-cloudformation-stacks.ts`.
+ * presence requirements (e.g. `stackName` for `describe-stack`, `input` for
+ * `create-stack`/`update-stack`) are not expressible by a single parameter's
+ * `validate:` callback. F1b's `Core.M3LConfigSchema` `configValidators` seam
+ * (shipped) could express these presence checks as config-load-time checks
+ * instead; they remain guard-checked at run start pending this script's
+ * fleet retrofit — see `steps/run-cloudformation-stacks.ts`. The separate
+ * `template`-vs-`input`-record `templateBody`/`templateUrl` conflict check
+ * (also in that file) is a different class of guard — it compares a config
+ * parameter against a *parsed input file's contents*, not another config
+ * parameter, so `configValidators` cannot express it and it stays a
+ * permanent run-start guard regardless of F1b (see `docs/plans/IMPLEMENTATION.md`'s F1b row).
  */
 export const configParameters: readonly Core.M3LConfigParameter[] = [
   new Core.M3LConfigParameter({

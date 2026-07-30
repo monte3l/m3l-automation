@@ -31,9 +31,17 @@ those waits for a future revision of the wrapper this script dispatches over.
 Declared in `src/config.ts` (`configParameters`); config is the script's only
 input seam. Per-operation requiredness (the "Required for" column) is **not**
 expressed by `M3LConfigParameter({ required: true })` beyond `aws.profile`/
-`operation` — the library has no cross-parameter/conditional-required seam yet
-(F1b, deferred) — so `run-cloudformation-stacks.ts` guard-checks **presence**
-per operation before any AWS call (mirroring `ecs-ops`'s per-command guard).
+`operation` — a single parameter's `validate:` callback cannot express a
+cross-parameter constraint. F1b's `Core.M3LConfigSchema` `configValidators`
+seam ([shipped](../../plans/IMPLEMENTATION.md)) could express these presence
+checks as config-load-time checks instead; `run-cloudformation-stacks.ts`
+guard-checks **presence** per operation before any AWS call (mirroring
+`ecs-ops`'s per-command guard) pending this script's fleet retrofit. The
+separate `template`-vs-`input`-record `templateBody`/`templateUrl` conflict
+check (also in that file) is a different class of guard — it compares a
+config parameter against a **parsed input file's contents**, not another
+config parameter, so `configValidators` cannot express it and it stays a
+permanent run-start guard regardless of F1b.
 
 **Two distinct validation mechanisms are in play — do not conflate them:** the
 "Declarative `validate:`" column below is attached in `config.ts` and evaluated

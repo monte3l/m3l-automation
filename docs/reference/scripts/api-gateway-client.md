@@ -32,11 +32,15 @@ request body and headers is the caller's responsibility.
 
 Declared in `src/config.ts` (`configParameters`); config is the script's only
 input seam. Per-mode / per-auth requiredness (the "Required for" column) is
-**not** expressed by `M3LConfigParameter({ required: true })` — the library has
-no cross-parameter/conditional-required seam yet (F1b, deferred). Instead each
-parameter besides `command`/`auth`/`baseUrl`/`method` is declared optional, and
-the selected step guard-checks presence before any HTTP call (mirroring
-`sqs-etl`'s per-command guard). Declaring `aws.profile` (via
+**not** expressed by `M3LConfigParameter({ required: true })` — a single
+parameter's `validate:` callback cannot express a cross-parameter constraint.
+F1b's `Core.M3LConfigSchema` `configValidators` seam
+([shipped](../../plans/IMPLEMENTATION.md)) could express these as
+config-load-time checks instead; every parameter besides
+`command`/`auth`/`baseUrl`/`method` remains declared optional, and the
+selected step guard-checks presence before any HTTP call (mirroring
+`sqs-etl`'s per-command guard), pending this script's fleet retrofit.
+Declaring `aws.profile` (via
 `Core.AWS_PROFILE_PARAM_NAME`) is what enables the `script.aws`
 dynamic-provisioning seam — it is declared globally optional and guard-required
 only for `auth: iam`.
