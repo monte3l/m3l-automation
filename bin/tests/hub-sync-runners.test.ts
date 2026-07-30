@@ -533,9 +533,20 @@ describe("runIssueSync", () => {
     // UA's stale body/title (1) + UC's reopen-triggered re-edit (1).
     expect(editCalls).toHaveLength(2);
     expect(closeCalls).toEqual([
-      ["issue", "close", "302", "-R", REPO, "--comment", expect.any(String)],
+      [
+        "issue",
+        "close",
+        "302",
+        "-R",
+        REPO,
+        "--comment",
+        expect.any(String),
+        "--reason",
+        "completed",
+      ],
     ]);
     expect(closeCalls[0]?.[6]).toMatch(/done/i);
+    expect(closeCalls[0]?.[8]).toBe("completed");
     expect(reopenCalls).toEqual([["issue", "reopen", "303", "-R", REPO]]);
 
     const firstCreateIndex = calls.findIndex(

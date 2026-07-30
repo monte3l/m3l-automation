@@ -470,6 +470,17 @@ const CLOSE_REASON = {
   removed: "Item removed from source trackers.",
 };
 
+// GitHub's `gh issue close --reason` value for each of the same three
+// closes. "done" is genuinely completed work; "rejected" and "removed" are
+// both a decision that the item will not be built, so both close as
+// "not_planned" — leaving them at the `gh` CLI default ("completed") would
+// misrepresent a deliberate rejection as delivered work.
+const CLOSE_STATE_REASON = {
+  done: "completed",
+  rejected: "not_planned",
+  removed: "not_planned",
+};
+
 // An Item whose status is "done" or "rejected" is resolved: it should never
 // have an open issue, and never gets a new one created — the "done" half was
 // always true; "rejected" (explicitly decided against, not merely deferred)
@@ -493,7 +504,7 @@ function isResolved(status) {
  * @returns {{
  *   create: { key: string, payload: ReturnType<typeof buildIssuePayload> }[],
  *   update: { number: number, key: string, payload: ReturnType<typeof buildIssuePayload> }[],
- *   close: { number: number, key: string, comment: string }[],
+ *   close: { number: number, key: string, comment: string, reason: "completed" | "not_planned" }[],
  *   reopen: { number: number, key: string, payload: ReturnType<typeof buildIssuePayload> }[],
  *   untouched: { number: number, reason: string }[],
  * }}
@@ -529,6 +540,7 @@ export function planIssueSync(items, existingIssues) {
           number: issue.number,
           key,
           comment: CLOSE_REASON.removed,
+          reason: CLOSE_STATE_REASON.removed,
         });
       } else {
         untouched.push({ number: issue.number, reason: "in sync" });
@@ -555,6 +567,7 @@ export function planIssueSync(items, existingIssues) {
         number: issue.number,
         key,
         comment: CLOSE_REASON[item.status],
+        reason: CLOSE_STATE_REASON[item.status],
       });
     } else if (isDirty) {
       update.push({ number: issue.number, key, payload });
