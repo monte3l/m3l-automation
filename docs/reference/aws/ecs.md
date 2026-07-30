@@ -5,11 +5,6 @@ import `@aws-sdk/client-ecs` command classes directly. Surfaced by
 `scripts/ecs-ops` (roadmap W3) needing to avoid importing the SDK directly
 (ADR-0029 — scripts depend only on `@m3l-automation/m3l-common`).
 
-> **Scaffold status:** this submodule is scaffolded — signatures, TSDoc, and
-> this spec are final, but every `M3LECSOperations` method currently returns a
-> `Promise` rejected with `M3LECSOperationError("... not yet implemented")`.
-> `implementing-submodules` fills the bodies in against this contract.
-
 ## Overview
 
 Every AWS client getter on `AWSClientProvider` exposes a raw AWS SDK v3
