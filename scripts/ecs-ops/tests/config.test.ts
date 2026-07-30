@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters, ECS_OPERATIONS } from "../src/config.js";
+import {
+  configParameters,
+  configValidators,
+  ECS_OPERATIONS,
+} from "../src/config.js";
 
 /**
  * Contract: docs/reference/scripts/ecs-ops.md "Configuration schema" table +
@@ -216,6 +220,207 @@ describe("ecs-ops config declaration", () => {
 
     it("accepts an explicit true", async () => {
       await expect(resolveWith(paramNamed("yes"), "true")).resolves.toBe(true);
+    });
+  });
+});
+
+/**
+ * F1b: `ecs-ops`'s per-operation "Required for" cross-parameter constraints
+ * (docs/reference/scripts/ecs-ops.md § Configuration schema), retrofitted as
+ * declarative `configValidators` (`Core.M3LConfigSchemaValidator[]`) instead
+ * of `steps/run-ecs-ops.ts`'s hand-rolled `accessor.requiredFor(...)` guards
+ * (mirrors the `json-etl`/`cloudwatch-logs-insights` F1b retrofit). Rules
+ * verified directly against `run-ecs-ops.ts`'s `accessor.requiredFor(...)`
+ * call sites, not just the doc table:
+ *
+ * - `cluster` — required for `describe-service`, `delete-service`,
+ *   `wait-services-stable`, `describe-cluster`.
+ * - `service` — required for `describe-service`, `delete-service`.
+ * - `services` — required for `wait-services-stable`.
+ * - `input` — required for `create-service`, `update-service`.
+ */
+describe("configValidators (F1b — cross-parameter validation)", () => {
+  /** Builds a raw `M3LConfig` store directly, one `.set(name, value)` per key. */
+  function buildConfig(values: Record<string, unknown>): Core.M3LConfig {
+    const config = new Core.M3LConfig();
+    for (const [key, value] of Object.entries(values)) {
+      config.set(key, value);
+    }
+    return config;
+  }
+
+  /**
+   * Runs every declared `configValidators` entry against `config`, in
+   * declaration order, mirroring `Core.M3LConfigSchema.validate`'s fail-fast
+   * iteration: returns the first non-`true` result, or `undefined` when every
+   * validator passes.
+   */
+  function firstFailure(config: Core.M3LConfig): string | undefined {
+    for (const validator of configValidators) {
+      const result = validator(config);
+      if (result !== true) return result;
+    }
+    return undefined;
+  }
+
+  const CLUSTER_REQUIRING_OPERATIONS = [
+    "describe-service",
+    "delete-service",
+    "wait-services-stable",
+    "describe-cluster",
+  ] as const;
+  const SERVICE_REQUIRING_OPERATIONS = [
+    "describe-service",
+    "delete-service",
+  ] as const;
+
+  /** The non-tested "Required for" params an operation also needs, so a test can isolate a single validator's failure. */
+  function otherRequiredFieldsFor(
+    operation: (typeof ECS_OPERATIONS)[number],
+  ): Record<string, unknown> {
+    switch (operation) {
+      case "describe-service":
+      case "delete-service":
+        return { cluster: "my-cluster", service: "my-service" };
+      case "wait-services-stable":
+        return { cluster: "my-cluster", services: "svc-a,svc-b" };
+      case "describe-cluster":
+        return { cluster: "my-cluster" };
+      case "create-service":
+      case "update-service":
+        return { input: "payload.json" };
+      case "list-services":
+      case "list-clusters":
+        return {};
+    }
+  }
+
+  describe("'cluster' — required for describe-service/delete-service/wait-services-stable/describe-cluster", () => {
+    it.each(CLUSTER_REQUIRING_OPERATIONS)(
+      "returns a failure reason describing 'cluster' when operation is '%s' and 'cluster' is unset",
+      (operation) => {
+        const fields = otherRequiredFieldsFor(operation);
+        const { cluster: _omitted, ...withoutCluster } = fields;
+        const config = buildConfig({ operation, ...withoutCluster });
+
+        const result = firstFailure(config);
+        expect(typeof result).toBe("string");
+        expect(result).toContain("'cluster'");
+      },
+    );
+
+    it.each(CLUSTER_REQUIRING_OPERATIONS)(
+      "passes every validator when operation is '%s' and every required field (including 'cluster') is set",
+      (operation) => {
+        const config = buildConfig({
+          operation,
+          ...otherRequiredFieldsFor(operation),
+        });
+
+        expect(firstFailure(config)).toBeUndefined();
+      },
+    );
+
+    it("passes every validator when a non-requiring operation ('list-services') is set without 'cluster'", () => {
+      const config = buildConfig({ operation: "list-services" });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'service' — required for describe-service/delete-service", () => {
+    it.each(SERVICE_REQUIRING_OPERATIONS)(
+      "returns a failure reason describing 'service' when operation is '%s' and 'service' is unset",
+      (operation) => {
+        const config = buildConfig({ operation, cluster: "my-cluster" });
+
+        const result = firstFailure(config);
+        expect(typeof result).toBe("string");
+        expect(result).toContain("'service'");
+      },
+    );
+
+    it.each(SERVICE_REQUIRING_OPERATIONS)(
+      "passes every validator when operation is '%s' and both 'cluster'/'service' are set",
+      (operation) => {
+        const config = buildConfig({
+          operation,
+          cluster: "my-cluster",
+          service: "my-service",
+        });
+
+        expect(firstFailure(config)).toBeUndefined();
+      },
+    );
+
+    it("passes every validator when a non-requiring operation ('wait-services-stable') is set without 'service'", () => {
+      const config = buildConfig({
+        operation: "wait-services-stable",
+        cluster: "my-cluster",
+        services: "svc-a",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'services' — required for wait-services-stable", () => {
+    it("returns a failure reason describing 'services' when operation is 'wait-services-stable' and 'services' is unset", () => {
+      const config = buildConfig({
+        operation: "wait-services-stable",
+        cluster: "my-cluster",
+      });
+
+      const result = firstFailure(config);
+      expect(typeof result).toBe("string");
+      expect(result).toContain("'services'");
+    });
+
+    it("passes every validator when operation is 'wait-services-stable' and 'cluster'/'services' are both set", () => {
+      const config = buildConfig({
+        operation: "wait-services-stable",
+        cluster: "my-cluster",
+        services: "svc-a,svc-b",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes every validator when a non-requiring operation ('list-clusters') is set without 'services'", () => {
+      const config = buildConfig({ operation: "list-clusters" });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'input' — required for create-service/update-service", () => {
+    it.each(["create-service", "update-service"] as const)(
+      "returns a failure reason describing 'input' when operation is '%s' and 'input' is unset",
+      (operation) => {
+        const config = buildConfig({ operation });
+
+        const result = firstFailure(config);
+        expect(typeof result).toBe("string");
+        expect(result).toContain("'input'");
+      },
+    );
+
+    it.each(["create-service", "update-service"] as const)(
+      "passes every validator when operation is '%s' and 'input' is set",
+      (operation) => {
+        const config = buildConfig({ operation, input: "payload.json" });
+
+        expect(firstFailure(config)).toBeUndefined();
+      },
+    );
+
+    it("passes every validator when a non-requiring operation ('describe-cluster') is set without 'input'", () => {
+      const config = buildConfig({
+        operation: "describe-cluster",
+        cluster: "my-cluster",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
     });
   });
 });

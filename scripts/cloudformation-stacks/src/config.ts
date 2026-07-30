@@ -36,15 +36,14 @@ const MAX_WAIT_TIME_MAX_SECONDS = 3600;
  * Only `aws.profile` and `operation` are `required: true`: per-operation
  * presence requirements (e.g. `stackName` for `describe-stack`, `input` for
  * `create-stack`/`update-stack`) are not expressible by a single parameter's
- * `validate:` callback. F1b's `Core.M3LConfigSchema` `configValidators` seam
- * (shipped) could express these presence checks as config-load-time checks
- * instead; they remain guard-checked at run start pending this script's
- * fleet retrofit — see `steps/run-cloudformation-stacks.ts`. The separate
- * `template`-vs-`input`-record `templateBody`/`templateUrl` conflict check
- * (also in that file) is a different class of guard — it compares a config
- * parameter against a *parsed input file's contents*, not another config
- * parameter, so `configValidators` cannot express it and it stays a
- * permanent run-start guard regardless of F1b (see `docs/plans/IMPLEMENTATION.md`'s F1b row).
+ * `validate:` callback — see `configValidators` below, which enforces these
+ * presence checks at config-load time. The separate `template`-vs-`input`-
+ * record `templateBody`/`templateUrl` conflict check
+ * (`steps/run-cloudformation-stacks.ts`'s `resolveTemplateText`) is a
+ * different class of guard — it compares a config parameter against a
+ * *parsed input file's contents*, not another config parameter, so
+ * `configValidators` (a config-only seam with no filesystem access)
+ * structurally cannot express it and it stays a permanent run-start guard.
  */
 export const configParameters: readonly Core.M3LConfigParameter[] = [
   new Core.M3LConfigParameter({
@@ -114,4 +113,103 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
     type: Core.M3LConfigParameterType.BOOL,
     defaultValue: YES_DEFAULT,
   }),
+];
+
+/** `stackName` is required for every operation except these three. */
+const STACK_NAME_NOT_REQUIRED_OPERATIONS = [
+  "list-stacks",
+  "create-stack",
+  "update-stack",
+] as const;
+
+/** `input` is required for both mutating-declaration operations. */
+const INPUT_REQUIRED_OPERATIONS = ["create-stack", "update-stack"] as const;
+
+const OXFORD_COMMA_MIN_LENGTH = 3;
+
+/**
+ * Joins `operations` into a human-readable, individually-quoted,
+ * Oxford-comma list: `'a'`, `'a' and 'b'`, or `'a', 'b', and 'c'`. Used only
+ * to describe the fixed, closed set of operations a constraint applies to —
+ * never a caller-supplied value.
+ */
+function quotedList(operations: readonly string[]): string {
+  const quoted = operations.map((operation) => `'${operation}'`);
+  return quoted.reduce((joined, item, index) => {
+    if (index === 0) return item;
+    if (index === quoted.length - 1) {
+      return quoted.length >= OXFORD_COMMA_MIN_LENGTH
+        ? `${joined}, and ${item}`
+        : `${joined} and ${item}`;
+    }
+    return `${joined}, ${item}`;
+  }, "");
+}
+
+/**
+ * Builds an F1b cross-parameter validator enforcing that `paramName` is set
+ * whenever `operation` resolves to a member of `operations` — or, when
+ * `mode` is `"except"`, whenever it resolves to anything OUTSIDE
+ * `operations` (used for `stackName`, whose exclusion set is smaller than
+ * its requirement set). Skips (returns `true`) when `operation` itself has
+ * not resolved to a string — the `operation` parameter's own `required` +
+ * `oneOf` validation already guards that shape before schema-level
+ * validators ever run, so this is defensive, not load-bearing.
+ */
+function requiredWhenOperation(
+  paramName: string,
+  operations: readonly string[],
+  mode: "for" | "except" = "for",
+): Core.M3LConfigSchemaValidator {
+  return (config: Core.M3LConfig): true | string => {
+    const operation = config.get("operation");
+    if (typeof operation !== "string") return true;
+
+    const listed = operations.includes(operation);
+    const applies = mode === "for" ? listed : !listed;
+    if (!applies || config.get(paramName) !== undefined) return true;
+
+    return mode === "for"
+      ? `'${paramName}' is required for ${quotedList(operations)}`
+      : `'${paramName}' is required for every operation except ${quotedList(operations)}`;
+  };
+}
+
+/**
+ * The `cloudformation-stacks` schema-level cross-parameter validators
+ * (F1b) — the declared config schema's second validation layer, run once by
+ * `Core.M3LConfigSchema.validate` after every parameter in `configParameters`
+ * has resolved. Per-parameter `required`/`validate` checks (see
+ * `configParameters` above) already guard each value in isolation; what
+ * these validators guard is the relationship BETWEEN `operation` and the
+ * parameter(s) it conditionally requires, which no single
+ * `M3LConfigParameter` can express on its own — the "Required for" column of
+ * `docs/reference/scripts/cloudformation-stacks.md`'s configuration table.
+ *
+ * This SUPPLEMENTS, rather than replaces, the existing run-start
+ * `accessor.requiredFor(...)` guards in `steps/run-cloudformation-stacks.ts`:
+ * those calls also narrow `string | undefined` into `string` for typed
+ * downstream use, which TypeScript still needs even though presence is now
+ * guaranteed earlier by these validators. The separate `template`-vs-
+ * `input`-record `templateBody`/`templateUrl` conflict check
+ * (`resolveTemplateText`) is deliberately **not** covered here — see the
+ * `configParameters` TSDoc above for why. See
+ * `docs/reference/core/config.md`'s "Cross-parameter validation" section for
+ * the `M3LConfigSchemaValidator` contract these functions satisfy.
+ *
+ * @example
+ * ```typescript
+ * import { Core } from "@m3l-automation/m3l-common";
+ * import { configParameters, configValidators } from "./config.js";
+ *
+ * const schema = new Core.M3LConfigSchema(configParameters, configValidators);
+ * ```
+ */
+export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
+  requiredWhenOperation(
+    "stackName",
+    STACK_NAME_NOT_REQUIRED_OPERATIONS,
+    "except",
+  ),
+  requiredWhenOperation("input", INPUT_REQUIRED_OPERATIONS),
 ];

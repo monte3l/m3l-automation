@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters, SQS_ETL_COMMANDS } from "../src/config.js";
+import {
+  configParameters,
+  configValidators,
+  SQS_ETL_COMMANDS,
+} from "../src/config.js";
 
 /**
  * Contract: docs/reference/scripts/sqs-etl.md "Configuration schema" table +
@@ -232,6 +236,224 @@ describe("sqs-etl config declaration", () => {
       await expect(
         resolveWith(paramNamed(Core.AWS_PROFILE_PARAM_NAME), "default"),
       ).resolves.toBe("default");
+    });
+  });
+});
+
+/**
+ * F1b: `sqs-etl`'s per-command "Required for" cross-parameter constraints
+ * (docs/reference/scripts/sqs-etl.md § Configuration schema), retrofitted as
+ * declarative `configValidators` (`Core.M3LConfigSchemaValidator[]`) instead
+ * of each command's own step module (`steps/dump-queue.ts`,
+ * `steps/send-batch.ts`, `steps/redrive-queue.ts`, `steps/delete-messages.ts`,
+ * `steps/purge-queue.ts`, `steps/transform-records.ts`) hand-rolling its own
+ * `accessor.requiredString(name, command)` guard (mirrors the
+ * `json-etl`/`cloudwatch-logs-insights` F1b retrofit). Unlike the other
+ * three fleet scripts, `sqs-etl` has no central dispatcher — the guard for
+ * each command lives inside that command's own step module. Rules verified
+ * directly against all six step modules' `accessor.requiredString(...)` call
+ * sites, not just the doc table:
+ *
+ * - `queueUrl` — required for `dump`, `send`, `redrive`, `delete`, `purge`
+ *   (NOT `transform`, which never touches SQS).
+ * - `dlqUrl` — required for `redrive` only.
+ * - `input` — required for `send`, `delete`, `transform`.
+ * - `output` — required for `dump`, `transform`.
+ */
+describe("configValidators (F1b — cross-parameter validation)", () => {
+  /** Builds a raw `M3LConfig` store directly, one `.set(name, value)` per key. */
+  function buildConfig(values: Record<string, unknown>): Core.M3LConfig {
+    const config = new Core.M3LConfig();
+    for (const [key, value] of Object.entries(values)) {
+      config.set(key, value);
+    }
+    return config;
+  }
+
+  /**
+   * Runs every declared `configValidators` entry against `config`, in
+   * declaration order, mirroring `Core.M3LConfigSchema.validate`'s fail-fast
+   * iteration: returns the first non-`true` result, or `undefined` when every
+   * validator passes.
+   */
+  function firstFailure(config: Core.M3LConfig): string | undefined {
+    for (const validator of configValidators) {
+      const result = validator(config);
+      if (result !== true) return result;
+    }
+    return undefined;
+  }
+
+  const QUEUE_URL_REQUIRING_COMMANDS = [
+    "dump",
+    "send",
+    "redrive",
+    "delete",
+    "purge",
+  ] as const;
+  const INPUT_REQUIRING_COMMANDS = ["send", "delete", "transform"] as const;
+  const OUTPUT_REQUIRING_COMMANDS = ["dump", "transform"] as const;
+
+  /** The non-tested "Required for" params a command also needs, so a test can isolate a single validator's failure. */
+  function otherRequiredFieldsFor(
+    command: (typeof SQS_ETL_COMMANDS)[number],
+  ): Record<string, unknown> {
+    const fields: Record<string, unknown> = {};
+    if ((QUEUE_URL_REQUIRING_COMMANDS as readonly string[]).includes(command)) {
+      fields["queueUrl"] = "https://sqs.example/queue";
+    }
+    if (command === "redrive") {
+      fields["dlqUrl"] = "https://sqs.example/dlq";
+    }
+    if ((INPUT_REQUIRING_COMMANDS as readonly string[]).includes(command)) {
+      fields["input"] = "records.jsonl";
+    }
+    if ((OUTPUT_REQUIRING_COMMANDS as readonly string[]).includes(command)) {
+      fields["output"] = "records-out.jsonl";
+    }
+    return fields;
+  }
+
+  describe("'queueUrl' — required for dump/send/redrive/delete/purge", () => {
+    it.each(QUEUE_URL_REQUIRING_COMMANDS)(
+      "returns a failure reason describing 'queueUrl' when command is '%s' and 'queueUrl' is unset",
+      (command) => {
+        const fields = otherRequiredFieldsFor(command);
+        const { queueUrl: _omitted, ...withoutQueueUrl } = fields;
+        const config = buildConfig({ command, ...withoutQueueUrl });
+
+        const result = firstFailure(config);
+        expect(typeof result).toBe("string");
+        expect(result).toContain("'queueUrl'");
+      },
+    );
+
+    it.each(QUEUE_URL_REQUIRING_COMMANDS)(
+      "passes every validator when command is '%s' and every required field (including 'queueUrl') is set",
+      (command) => {
+        const config = buildConfig({
+          command,
+          ...otherRequiredFieldsFor(command),
+        });
+
+        expect(firstFailure(config)).toBeUndefined();
+      },
+    );
+
+    it("passes every validator when the non-requiring command ('transform') is set without 'queueUrl'", () => {
+      const config = buildConfig({
+        command: "transform",
+        input: "records.jsonl",
+        output: "records-out.jsonl",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'dlqUrl' — required for redrive", () => {
+    it("returns a failure reason describing 'dlqUrl' when command is 'redrive' and 'dlqUrl' is unset", () => {
+      const config = buildConfig({
+        command: "redrive",
+        queueUrl: "https://sqs.example/queue",
+      });
+
+      const result = firstFailure(config);
+      expect(typeof result).toBe("string");
+      expect(result).toContain("'dlqUrl'");
+    });
+
+    it("passes every validator when command is 'redrive' and both 'queueUrl'/'dlqUrl' are set", () => {
+      const config = buildConfig({
+        command: "redrive",
+        queueUrl: "https://sqs.example/queue",
+        dlqUrl: "https://sqs.example/dlq",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes every validator when a non-requiring command ('dump') is set without 'dlqUrl'", () => {
+      const config = buildConfig({
+        command: "dump",
+        queueUrl: "https://sqs.example/queue",
+        output: "records-out.jsonl",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'input' — required for send/delete/transform", () => {
+    it.each(INPUT_REQUIRING_COMMANDS)(
+      "returns a failure reason describing 'input' when command is '%s' and 'input' is unset",
+      (command) => {
+        const fields = otherRequiredFieldsFor(command);
+        const { input: _omitted, ...withoutInput } = fields;
+        const config = buildConfig({ command, ...withoutInput });
+
+        const result = firstFailure(config);
+        expect(typeof result).toBe("string");
+        expect(result).toContain("'input'");
+      },
+    );
+
+    it.each(INPUT_REQUIRING_COMMANDS)(
+      "passes every validator when command is '%s' and every required field (including 'input') is set",
+      (command) => {
+        const config = buildConfig({
+          command,
+          ...otherRequiredFieldsFor(command),
+        });
+
+        expect(firstFailure(config)).toBeUndefined();
+      },
+    );
+
+    it("passes every validator when a non-requiring command ('purge') is set without 'input'", () => {
+      const config = buildConfig({
+        command: "purge",
+        queueUrl: "https://sqs.example/queue",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'output' — required for dump/transform", () => {
+    it.each(OUTPUT_REQUIRING_COMMANDS)(
+      "returns a failure reason describing 'output' when command is '%s' and 'output' is unset",
+      (command) => {
+        const fields = otherRequiredFieldsFor(command);
+        const { output: _omitted, ...withoutOutput } = fields;
+        const config = buildConfig({ command, ...withoutOutput });
+
+        const result = firstFailure(config);
+        expect(typeof result).toBe("string");
+        expect(result).toContain("'output'");
+      },
+    );
+
+    it.each(OUTPUT_REQUIRING_COMMANDS)(
+      "passes every validator when command is '%s' and every required field (including 'output') is set",
+      (command) => {
+        const config = buildConfig({
+          command,
+          ...otherRequiredFieldsFor(command),
+        });
+
+        expect(firstFailure(config)).toBeUndefined();
+      },
+    );
+
+    it("passes every validator when a non-requiring command ('send') is set without 'output'", () => {
+      const config = buildConfig({
+        command: "send",
+        queueUrl: "https://sqs.example/queue",
+        input: "records.jsonl",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
     });
   });
 });

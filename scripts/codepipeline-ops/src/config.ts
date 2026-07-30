@@ -57,11 +57,8 @@ const MAX_RESULTS_MAX = 1000;
  * Only `aws.profile` and `operation` are `required: true`: per-operation
  * presence requirements (e.g. `pipeline` for every operation but
  * `list-pipelines`, `input` for `create-pipeline`/`update-pipeline`) are not
- * expressible by a single parameter's `validate:` callback. F1b's
- * `Core.M3LConfigSchema` `configValidators` seam (shipped) could express
- * these as config-load-time checks instead; they remain guard-checked at
- * run start pending this script's fleet retrofit — see
- * `steps/run-codepipeline-ops.ts`.
+ * expressible by a single parameter's `validate:` callback — see
+ * `configValidators` below, which enforces them at config-load time.
  */
 export const configParameters: readonly Core.M3LConfigParameter[] = [
   new Core.M3LConfigParameter({
@@ -156,4 +153,119 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
       WAIT_INTERVAL_SECONDS_MAX,
     ),
   }),
+];
+
+/** `pipeline` is required for every operation except these three. */
+const PIPELINE_NOT_REQUIRED_OPERATIONS = [
+  "list-pipelines",
+  "create-pipeline",
+  "update-pipeline",
+] as const;
+
+/** `executionId` is required for these three operations. */
+const EXECUTION_ID_REQUIRED_OPERATIONS = [
+  "describe-execution",
+  "stop-execution",
+  "watch-execution",
+] as const;
+
+/** `stage`/`transitionType` are required for both stage-transition operations. */
+const STAGE_TRANSITION_REQUIRED_OPERATIONS = [
+  "enable-stage-transition",
+  "disable-stage-transition",
+] as const;
+
+/** `reason` is required ONLY for `disable-stage-transition` — `stop-execution` forwards it but never requires it. */
+const REASON_REQUIRED_OPERATIONS = ["disable-stage-transition"] as const;
+
+/** `input` is required for both mutating-declaration operations. */
+const INPUT_REQUIRED_OPERATIONS = [
+  "create-pipeline",
+  "update-pipeline",
+] as const;
+
+/**
+ * Joins `operations` into a human-readable, individually-quoted,
+ * Oxford-comma list: `'a'`, `'a' and 'b'`, or `'a', 'b', and 'c'`. Used only
+ * to describe the fixed, closed set of operations a constraint applies to —
+ * never a caller-supplied value.
+ */
+const OXFORD_COMMA_MIN_LENGTH = 3;
+
+function quotedList(operations: readonly string[]): string {
+  const quoted = operations.map((operation) => `'${operation}'`);
+  return quoted.reduce((joined, item, index) => {
+    if (index === 0) return item;
+    if (index === quoted.length - 1) {
+      return quoted.length >= OXFORD_COMMA_MIN_LENGTH
+        ? `${joined}, and ${item}`
+        : `${joined} and ${item}`;
+    }
+    return `${joined}, ${item}`;
+  }, "");
+}
+
+/**
+ * Builds an F1b cross-parameter validator enforcing that `paramName` is set
+ * whenever `operation` resolves to a member of `operations` — or, when
+ * `mode` is `"except"`, whenever it resolves to anything OUTSIDE
+ * `operations` (used for `pipeline`, whose exclusion set is smaller than its
+ * requirement set). Skips (returns `true`) when `operation` itself has not
+ * resolved to a string — the `operation` parameter's own `required` +
+ * `oneOf` validation already guards that shape before schema-level
+ * validators ever run, so this is defensive, not load-bearing.
+ */
+function requiredWhenOperation(
+  paramName: string,
+  operations: readonly string[],
+  mode: "for" | "except" = "for",
+): Core.M3LConfigSchemaValidator {
+  return (config: Core.M3LConfig): true | string => {
+    const operation = config.get("operation");
+    if (typeof operation !== "string") return true;
+
+    const listed = operations.includes(operation);
+    const applies = mode === "for" ? listed : !listed;
+    if (!applies || config.get(paramName) !== undefined) return true;
+
+    return mode === "for"
+      ? `'${paramName}' is required for ${quotedList(operations)}`
+      : `'${paramName}' is required for every operation except ${quotedList(operations)}`;
+  };
+}
+
+/**
+ * The `codepipeline-ops` schema-level cross-parameter validators (F1b) — the
+ * declared config schema's second validation layer, run once by
+ * `Core.M3LConfigSchema.validate` after every parameter in `configParameters`
+ * has resolved. Per-parameter `required`/`validate` checks (see
+ * `configParameters` above) already guard each value in isolation; what
+ * these validators guard is the relationship BETWEEN `operation` and the
+ * parameter(s) it conditionally requires, which no single
+ * `M3LConfigParameter` can express on its own — the "Required for" column of
+ * `docs/reference/scripts/codepipeline-ops.md`'s configuration table.
+ *
+ * This SUPPLEMENTS, rather than replaces, the existing run-start
+ * `accessor.requiredFor(...)` guards in `steps/run-codepipeline-ops.ts`:
+ * those calls also narrow `string | undefined` into `string` for typed
+ * downstream use, which TypeScript still needs even though presence is now
+ * guaranteed earlier by these validators. See
+ * `docs/reference/core/config.md`'s "Cross-parameter validation" section for
+ * the `M3LConfigSchemaValidator` contract these functions satisfy.
+ *
+ * @example
+ * ```typescript
+ * import { Core } from "@m3l-automation/m3l-common";
+ * import { configParameters, configValidators } from "./config.js";
+ *
+ * const schema = new Core.M3LConfigSchema(configParameters, configValidators);
+ * ```
+ */
+export const configValidators: readonly Core.M3LConfigSchemaValidator[] = [
+  requiredWhenOperation("pipeline", PIPELINE_NOT_REQUIRED_OPERATIONS, "except"),
+  requiredWhenOperation("executionId", EXECUTION_ID_REQUIRED_OPERATIONS),
+  requiredWhenOperation("stage", STAGE_TRANSITION_REQUIRED_OPERATIONS),
+  requiredWhenOperation("transitionType", STAGE_TRANSITION_REQUIRED_OPERATIONS),
+  requiredWhenOperation("reason", REASON_REQUIRED_OPERATIONS),
+  requiredWhenOperation("input", INPUT_REQUIRED_OPERATIONS),
 ];

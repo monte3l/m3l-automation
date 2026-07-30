@@ -1,6 +1,6 @@
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters } from "./config.js";
+import { configParameters, configValidators } from "./config.js";
 import { getCorrelationId, hooks } from "./hooks.js";
 import { runApiGatewayClient } from "./steps/run-api-gateway-client.js";
 
@@ -18,7 +18,7 @@ import { runApiGatewayClient } from "./steps/run-api-gateway-client.js";
 // `tests/resolve-auth-headers.test.ts`) — not duplicated here.
 const script = new Core.M3LScript({
   metadata: { name: "api-gateway-client", version: "0.0.0" },
-  config: { params: configParameters },
+  config: { params: configParameters, validate: configValidators },
   hooks,
 });
 

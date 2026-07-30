@@ -2,7 +2,11 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters, LAMBDA_OPERATIONS } from "../src/config.js";
+import {
+  configParameters,
+  configValidators,
+  LAMBDA_OPERATIONS,
+} from "../src/config.js";
 
 /**
  * Contract: docs/reference/scripts/lambda-ops.md, "Configuration schema"
@@ -86,5 +90,190 @@ describe("LAMBDA_OPERATIONS — the operation parameter's oneOf set", () => {
       | "update-configuration"
       | "delete"
     >();
+  });
+});
+
+/**
+ * F1b: `lambda-ops`'s per-operation "Required for" cross-parameter
+ * constraints (docs/reference/scripts/lambda-ops.md § Configuration schema),
+ * retrofitted as declarative `configValidators`
+ * (`Core.M3LConfigSchemaValidator[]`) instead of `steps/run-lambda-ops.ts`'s
+ * hand-rolled `accessor.requiredFor(...)` guards (mirrors the
+ * `json-etl`/`cloudwatch-logs-insights` F1b retrofit). Rules verified
+ * directly against `run-lambda-ops.ts`'s `accessor.requiredFor(...)` call
+ * sites, not just the doc table:
+ *
+ * - `functionName` — required for every operation EXCEPT `list`.
+ * - `zipFilePath` — required for `create`, `update-code`.
+ * - `input` — required for `create`, `update-configuration` (optional for
+ *   `invoke`, per `dispatchInvoke`'s unconditional `raw.input === undefined`
+ *   branch rather than a `requiredFor` call).
+ */
+describe("configValidators (F1b — cross-parameter validation)", () => {
+  /** Builds a raw `M3LConfig` store directly, one `.set(name, value)` per key. */
+  function buildConfig(values: Record<string, unknown>): Core.M3LConfig {
+    const config = new Core.M3LConfig();
+    for (const [key, value] of Object.entries(values)) {
+      config.set(key, value);
+    }
+    return config;
+  }
+
+  /**
+   * Runs every declared `configValidators` entry against `config`, in
+   * declaration order, mirroring `Core.M3LConfigSchema.validate`'s fail-fast
+   * iteration: returns the first non-`true` result, or `undefined` when every
+   * validator passes.
+   */
+  function firstFailure(config: Core.M3LConfig): string | undefined {
+    for (const validator of configValidators) {
+      const result = validator(config);
+      if (result !== true) return result;
+    }
+    return undefined;
+  }
+
+  const FUNCTION_NAME_REQUIRING_OPERATIONS = [
+    "describe",
+    "invoke",
+    "create",
+    "update-code",
+    "update-configuration",
+    "delete",
+  ] as const;
+  const ZIP_FILE_PATH_REQUIRING_OPERATIONS = ["create", "update-code"] as const;
+  const INPUT_REQUIRING_OPERATIONS = [
+    "create",
+    "update-configuration",
+  ] as const;
+
+  /** The non-tested "Required for" params an operation also needs, so a test can isolate a single validator's failure. */
+  function otherRequiredFieldsFor(
+    operation: (typeof LAMBDA_OPERATIONS)[number],
+  ): Record<string, unknown> {
+    const fields: Record<string, unknown> = {};
+    if (
+      (FUNCTION_NAME_REQUIRING_OPERATIONS as readonly string[]).includes(
+        operation,
+      )
+    ) {
+      fields["functionName"] = "my-function";
+    }
+    if (
+      (ZIP_FILE_PATH_REQUIRING_OPERATIONS as readonly string[]).includes(
+        operation,
+      )
+    ) {
+      fields["zipFilePath"] = "package.zip";
+    }
+    if ((INPUT_REQUIRING_OPERATIONS as readonly string[]).includes(operation)) {
+      fields["input"] = "payload.json";
+    }
+    return fields;
+  }
+
+  describe("'functionName' — required for every operation except list", () => {
+    it.each(FUNCTION_NAME_REQUIRING_OPERATIONS)(
+      "returns a failure reason describing 'functionName' when operation is '%s' and 'functionName' is unset",
+      (operation) => {
+        const fields = otherRequiredFieldsFor(operation);
+        const { functionName: _omitted, ...withoutFunctionName } = fields;
+        const config = buildConfig({ operation, ...withoutFunctionName });
+
+        const result = firstFailure(config);
+        expect(typeof result).toBe("string");
+        expect(result).toContain("'functionName'");
+      },
+    );
+
+    it.each(FUNCTION_NAME_REQUIRING_OPERATIONS)(
+      "passes every validator when operation is '%s' and every required field (including 'functionName') is set",
+      (operation) => {
+        const config = buildConfig({
+          operation,
+          ...otherRequiredFieldsFor(operation),
+        });
+
+        expect(firstFailure(config)).toBeUndefined();
+      },
+    );
+
+    it("passes every validator when the non-requiring operation ('list') is set without 'functionName'", () => {
+      const config = buildConfig({ operation: "list" });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'zipFilePath' — required for create/update-code", () => {
+    it.each(ZIP_FILE_PATH_REQUIRING_OPERATIONS)(
+      "returns a failure reason describing 'zipFilePath' when operation is '%s' and 'zipFilePath' is unset",
+      (operation) => {
+        const fields = otherRequiredFieldsFor(operation);
+        const { zipFilePath: _omitted, ...withoutZipFilePath } = fields;
+        const config = buildConfig({ operation, ...withoutZipFilePath });
+
+        const result = firstFailure(config);
+        expect(typeof result).toBe("string");
+        expect(result).toContain("'zipFilePath'");
+      },
+    );
+
+    it.each(ZIP_FILE_PATH_REQUIRING_OPERATIONS)(
+      "passes every validator when operation is '%s' and every required field (including 'zipFilePath') is set",
+      (operation) => {
+        const config = buildConfig({
+          operation,
+          ...otherRequiredFieldsFor(operation),
+        });
+
+        expect(firstFailure(config)).toBeUndefined();
+      },
+    );
+
+    it("passes every validator when a non-requiring operation ('describe') is set without 'zipFilePath'", () => {
+      const config = buildConfig({
+        operation: "describe",
+        functionName: "my-function",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'input' — required for create/update-configuration", () => {
+    it.each(INPUT_REQUIRING_OPERATIONS)(
+      "returns a failure reason describing 'input' when operation is '%s' and 'input' is unset",
+      (operation) => {
+        const fields = otherRequiredFieldsFor(operation);
+        const { input: _omitted, ...withoutInput } = fields;
+        const config = buildConfig({ operation, ...withoutInput });
+
+        const result = firstFailure(config);
+        expect(typeof result).toBe("string");
+        expect(result).toContain("'input'");
+      },
+    );
+
+    it.each(INPUT_REQUIRING_OPERATIONS)(
+      "passes every validator when operation is '%s' and every required field (including 'input') is set",
+      (operation) => {
+        const config = buildConfig({
+          operation,
+          ...otherRequiredFieldsFor(operation),
+        });
+
+        expect(firstFailure(config)).toBeUndefined();
+      },
+    );
+
+    it("passes every validator when 'invoke' is set without 'input' (optional for invoke)", () => {
+      const config = buildConfig({
+        operation: "invoke",
+        functionName: "my-function",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
   });
 });

@@ -1,6 +1,6 @@
 import { AWS, Core } from "@m3l-automation/m3l-common";
 
-import { configParameters } from "./config.js";
+import { configParameters, configValidators } from "./config.js";
 import { getCorrelationId, hooks } from "./hooks.js";
 import { runCodepipelineOps } from "./steps/run-codepipeline-ops.js";
 
@@ -17,7 +17,7 @@ import { runCodepipelineOps } from "./steps/run-codepipeline-ops.js";
 // without executing the main function.
 const script = new Core.M3LScript({
   metadata: { name: "codepipeline-ops", version: "0.0.0" },
-  config: { params: configParameters },
+  config: { params: configParameters, validate: configValidators },
   hooks,
 });
 

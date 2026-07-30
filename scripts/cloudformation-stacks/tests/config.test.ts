@@ -5,6 +5,7 @@ import { Core } from "@m3l-automation/m3l-common";
 import {
   CLOUDFORMATION_STACKS_OPERATIONS,
   configParameters,
+  configValidators,
   YES_DEFAULT,
 } from "../src/config.js";
 
@@ -224,6 +225,154 @@ describe("cloudformation-stacks config declaration", () => {
 
     it("accepts an explicit true", async () => {
       await expect(resolveWith(paramNamed("yes"), "true")).resolves.toBe(true);
+    });
+  });
+});
+
+/** Builds a raw `M3LConfig` store directly, one `.set(name, value)` per key. */
+function buildConfig(values: Record<string, unknown>): Core.M3LConfig {
+  const config = new Core.M3LConfig();
+  for (const [key, value] of Object.entries(values)) {
+    config.set(key, value);
+  }
+  return config;
+}
+
+/**
+ * Runs every declared `configValidators` entry against `config`, in
+ * declaration order, mirroring `Core.M3LConfigSchema.validate`'s fail-fast
+ * iteration: returns the first non-`true` result, or `undefined` when every
+ * validator passes.
+ */
+function firstFailure(config: Core.M3LConfig): string | undefined {
+  for (const validator of configValidators) {
+    const result = validator(config);
+    if (result !== true) return result;
+  }
+  return undefined;
+}
+
+/**
+ * F1b — cross-parameter validation, per
+ * docs/reference/scripts/cloudformation-stacks.md's "Configuration schema"
+ * section: per-operation requiredness (the "Required for" column) is
+ * guard-checked at run start today (`run-cloudformation-stacks.ts`'s
+ * `accessor.requiredFor(...)` calls) pending this script's fleet retrofit
+ * onto `configValidators`. Each rule below is verified against both the doc
+ * table and the guard code:
+ *
+ * - `stackName` — required for `describe-stack`, `delete-stack`,
+ *   `describe-stack-events`, and the three `wait-stack-*-complete`
+ *   operations — i.e. every operation except `list-stacks`, `create-stack`,
+ *   `update-stack` (verified: `dispatchReadStacks`'s `describe-stack`
+ *   branch, `planWriteDispatch`'s `delete-stack` branch,
+ *   `dispatchReadStackEvents`, `dispatchWait`, each calling
+ *   `accessor.requiredFor(raw.stackName, "stackName", operation)`).
+ * - `input` — required for `create-stack`/`update-stack` (verified:
+ *   `planCreateOrUpdate`'s `accessor.requiredFor(raw.input, "input",
+ *   operation)`).
+ *
+ * The `template`-vs-`templateBody`/`templateUrl` conflict check
+ * (`resolveTemplateText`) is deliberately **not** retrofitted here — it
+ * compares a config parameter against a parsed `input` file's contents read
+ * from disk, which `configValidators` (a config-only seam with no
+ * filesystem access) structurally cannot express; it stays a run-start-only
+ * guard per the doc's "Configuration schema" section and
+ * `docs/plans/IMPLEMENTATION.md`'s F1b row.
+ *
+ * Each validator's failure reason names the fixed set of operations the
+ * constraint applies to — never a caller-supplied value — matching the
+ * contract in `docs/reference/core/config.md`'s "Cross-parameter
+ * validation" section.
+ */
+describe("configValidators (F1b — cross-parameter validation)", () => {
+  describe("'stackName' — required for every operation except list-stacks/create-stack/update-stack", () => {
+    const stackNameRequiredOperations = [
+      "describe-stack",
+      "delete-stack",
+      "describe-stack-events",
+      "wait-stack-create-complete",
+      "wait-stack-update-complete",
+      "wait-stack-delete-complete",
+    ] as const;
+
+    it.each(stackNameRequiredOperations)(
+      "returns the documented failure reason when 'stackName' is missing for '%s'",
+      (operation) => {
+        const config = buildConfig({
+          [Core.AWS_PROFILE_PARAM_NAME]: "default",
+          operation,
+        });
+
+        expect(firstFailure(config)).toBe(
+          "'stackName' is required for every operation except 'list-stacks', 'create-stack', and 'update-stack'",
+        );
+      },
+    );
+
+    it.each(stackNameRequiredOperations)(
+      "passes when 'stackName' is set for '%s'",
+      (operation) => {
+        const config = buildConfig({
+          [Core.AWS_PROFILE_PARAM_NAME]: "default",
+          operation,
+          stackName: "my-stack",
+        });
+
+        expect(firstFailure(config)).toBeUndefined();
+      },
+    );
+
+    it("passes when 'stackName' is unset but the operation is 'list-stacks' (does not require it)", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "list-stacks",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("does not embed a received/rejected value in the failure reason", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "delete-stack",
+      });
+
+      const result = firstFailure(config);
+      expect(result).toMatch(/'stackName'/);
+      expect(result).not.toContain("delete-stack");
+    });
+  });
+
+  describe("'input' — required for create-stack/update-stack", () => {
+    it("returns the documented failure reason when 'input' is missing for 'create-stack'", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "create-stack",
+      });
+
+      expect(firstFailure(config)).toBe(
+        "'input' is required for 'create-stack' and 'update-stack'",
+      );
+    });
+
+    it("passes when 'input' is set for 'update-stack'", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "update-stack",
+        input: "stack-input.json",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes when 'input' is unset but the operation is 'list-stacks' (does not require it)", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "list-stacks",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
     });
   });
 });

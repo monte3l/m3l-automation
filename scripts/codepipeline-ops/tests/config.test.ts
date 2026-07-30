@@ -6,6 +6,7 @@ import {
   ABANDON_DEFAULT,
   CODEPIPELINE_OPS_OPERATIONS,
   configParameters,
+  configValidators,
   STAGE_TRANSITION_TYPES,
   WAIT_INTERVAL_SECONDS_DEFAULT,
   WAIT_MAX_ATTEMPTS_DEFAULT,
@@ -340,6 +341,301 @@ describe("codepipeline-ops config declaration", () => {
       await expect(
         resolveWith(paramNamed("waitIntervalSeconds"), "301"),
       ).rejects.toBeInstanceOf(Core.M3LConfigValidationError);
+    });
+  });
+});
+
+/** Builds a raw `M3LConfig` store directly, one `.set(name, value)` per key. */
+function buildConfig(values: Record<string, unknown>): Core.M3LConfig {
+  const config = new Core.M3LConfig();
+  for (const [key, value] of Object.entries(values)) {
+    config.set(key, value);
+  }
+  return config;
+}
+
+/**
+ * Runs every declared `configValidators` entry against `config`, in
+ * declaration order, mirroring `Core.M3LConfigSchema.validate`'s fail-fast
+ * iteration: returns the first non-`true` result, or `undefined` when every
+ * validator passes.
+ */
+function firstFailure(config: Core.M3LConfig): string | undefined {
+  for (const validator of configValidators) {
+    const result = validator(config);
+    if (result !== true) return result;
+  }
+  return undefined;
+}
+
+/**
+ * F1b — cross-parameter validation, per docs/reference/scripts/codepipeline-ops.md's
+ * "Configuration schema" section: per-operation requiredness (the "Required
+ * for" column) is guard-checked at run start today (`run-codepipeline-ops.ts`'s
+ * `accessor.requiredFor(...)` calls) pending this script's fleet retrofit
+ * onto `configValidators`. Each block below verifies the exact per-parameter
+ * rule against the doc table AND the guard code before asserting it as a
+ * config-load-time constraint:
+ *
+ * - `pipeline` — required for every operation except `list-pipelines`,
+ *   `create-pipeline`, `update-pipeline` (verified: every `dispatch*`
+ *   function but `dispatchReadPipelines`'s `list-pipelines` branch and
+ *   `dispatchWritePipeline`'s create/update branch calls
+ *   `accessor.requiredFor(raw.pipeline, "pipeline", operation)`).
+ * - `executionId` — required for `describe-execution`, `stop-execution`,
+ *   `watch-execution` (verified: `dispatchReadExecutions`,
+ *   `dispatchExecute`, `dispatchWatch`).
+ * - `stage`/`transitionType` — required for `enable-stage-transition` and
+ *   `disable-stage-transition` (verified: `dispatchTransitions`).
+ * - `reason` — required ONLY for `disable-stage-transition` (verified:
+ *   `dispatchTransitions`'s `if (operation === "disable-stage-transition")`
+ *   guard); `stop-execution` forwards `reason` but never guard-checks it
+ *   (`dispatchExecute` never calls `requiredFor` on `raw.reason`), matching
+ *   the doc table's "optional" annotation for that operation.
+ * - `input` — required for `create-pipeline`/`update-pipeline` (verified:
+ *   `planWriteDispatch`'s non-`delete-pipeline` branch).
+ *
+ * Each validator's failure reason names the fixed, closed set of
+ * operations the constraint applies to (from `CODEPIPELINE_OPS_OPERATIONS`)
+ * — never a caller-supplied value — matching the contract in
+ * `docs/reference/core/config.md`'s "Cross-parameter validation" section.
+ */
+describe("configValidators (F1b — cross-parameter validation)", () => {
+  describe("'pipeline' — required for every operation except list-pipelines/create-pipeline/update-pipeline", () => {
+    it("returns the documented failure reason when 'pipeline' is missing for an operation that requires it", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "get-pipeline-state",
+      });
+
+      expect(firstFailure(config)).toBe(
+        "'pipeline' is required for every operation except 'list-pipelines', 'create-pipeline', and 'update-pipeline'",
+      );
+    });
+
+    it("passes when 'pipeline' is set for an operation that requires it", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "get-pipeline-state",
+        pipeline: "my-pipeline",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes when 'pipeline' is unset but the operation is 'list-pipelines' (does not require it)", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "list-pipelines",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("does not embed a received/rejected value in the failure reason", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "delete-pipeline",
+      });
+
+      const result = firstFailure(config);
+      expect(result).toMatch(/'pipeline'/);
+      expect(result).not.toContain("delete-pipeline");
+    });
+  });
+
+  describe("'executionId' — required for describe-execution/stop-execution/watch-execution", () => {
+    it("returns the documented failure reason when 'executionId' is missing for an operation that requires it", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "describe-execution",
+        pipeline: "my-pipeline",
+      });
+
+      expect(firstFailure(config)).toBe(
+        "'executionId' is required for 'describe-execution', 'stop-execution', and 'watch-execution'",
+      );
+    });
+
+    it("passes when both 'executionId' and 'pipeline' are set", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "describe-execution",
+        pipeline: "my-pipeline",
+        executionId: "exec-1",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes when 'executionId' is unset but the operation is 'list-executions' (does not require it)", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "list-executions",
+        pipeline: "my-pipeline",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'stage' — required for enable-stage-transition/disable-stage-transition", () => {
+    it("returns the documented failure reason when 'stage' is missing for 'enable-stage-transition'", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "enable-stage-transition",
+        pipeline: "my-pipeline",
+        transitionType: "Inbound",
+      });
+
+      expect(firstFailure(config)).toBe(
+        "'stage' is required for 'enable-stage-transition' and 'disable-stage-transition'",
+      );
+    });
+
+    it("passes when 'stage' is set alongside the other required fields", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "enable-stage-transition",
+        pipeline: "my-pipeline",
+        transitionType: "Inbound",
+        stage: "Prod",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes when 'stage' is unset but the operation is 'get-pipeline-state' (does not require it)", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "get-pipeline-state",
+        pipeline: "my-pipeline",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'transitionType' — required for enable-stage-transition/disable-stage-transition", () => {
+    it("returns the documented failure reason when 'transitionType' is missing for 'enable-stage-transition'", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "enable-stage-transition",
+        pipeline: "my-pipeline",
+        stage: "Prod",
+      });
+
+      expect(firstFailure(config)).toBe(
+        "'transitionType' is required for 'enable-stage-transition' and 'disable-stage-transition'",
+      );
+    });
+
+    it("passes when 'transitionType' is set alongside the other required fields", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "enable-stage-transition",
+        pipeline: "my-pipeline",
+        stage: "Prod",
+        transitionType: "Outbound",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes when 'transitionType' is unset but the operation is 'watch-execution' (does not require it)", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "watch-execution",
+        pipeline: "my-pipeline",
+        executionId: "exec-1",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'reason' — required ONLY for disable-stage-transition (stop-execution's 'reason' stays optional)", () => {
+    it("returns the documented failure reason when 'reason' is missing for 'disable-stage-transition'", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "disable-stage-transition",
+        pipeline: "my-pipeline",
+        stage: "Prod",
+        transitionType: "Inbound",
+      });
+
+      expect(firstFailure(config)).toBe(
+        "'reason' is required for 'disable-stage-transition'",
+      );
+    });
+
+    it("passes when 'reason' is set alongside the other required fields", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "disable-stage-transition",
+        pipeline: "my-pipeline",
+        stage: "Prod",
+        transitionType: "Inbound",
+        reason: "rollback in progress",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes when 'reason' is unset and the operation is 'enable-stage-transition' (never requires it)", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "enable-stage-transition",
+        pipeline: "my-pipeline",
+        stage: "Prod",
+        transitionType: "Inbound",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes when 'reason' is unset and the operation is 'stop-execution' (documented optional, not guard-required)", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "stop-execution",
+        pipeline: "my-pipeline",
+        executionId: "exec-1",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'input' — required for create-pipeline/update-pipeline", () => {
+    it("returns the documented failure reason when 'input' is missing for 'create-pipeline'", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "create-pipeline",
+      });
+
+      expect(firstFailure(config)).toBe(
+        "'input' is required for 'create-pipeline' and 'update-pipeline'",
+      );
+    });
+
+    it("passes when 'input' is set for 'update-pipeline'", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "update-pipeline",
+        input: "declaration.json",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes when 'input' is unset but the operation is 'delete-pipeline' (does not require it)", () => {
+      const config = buildConfig({
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+        operation: "delete-pipeline",
+        pipeline: "my-pipeline",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
     });
   });
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters } from "../src/config.js";
+import { configParameters, configValidators } from "../src/config.js";
 
 /**
  * Contract: docs/reference/scripts/api-gateway-client.md "Configuration
@@ -292,6 +292,248 @@ describe("api-gateway-client config declaration", () => {
       await expect(
         resolveWith(paramNamed(Core.AWS_PROFILE_PARAM_NAME), "default"),
       ).resolves.toBe("default");
+    });
+  });
+});
+
+/** Builds a raw `M3LConfig` store directly, one `.set(name, value)` per key. */
+function buildConfig(values: Record<string, unknown>): Core.M3LConfig {
+  const config = new Core.M3LConfig();
+  for (const [key, value] of Object.entries(values)) {
+    config.set(key, value);
+  }
+  return config;
+}
+
+/**
+ * Runs every declared `configValidators` entry against `config`, in
+ * declaration order, mirroring `Core.M3LConfigSchema.validate`'s fail-fast
+ * iteration: returns the first non-`true` result, or `undefined` when every
+ * validator passes.
+ */
+function firstFailure(config: Core.M3LConfig): string | undefined {
+  for (const validator of configValidators) {
+    const result = validator(config);
+    if (result !== true) return result;
+  }
+  return undefined;
+}
+
+/**
+ * F1b — cross-parameter validation, per
+ * docs/reference/scripts/api-gateway-client.md's "Configuration schema"
+ * section: per-mode/per-auth requiredness is guard-checked at run start
+ * today pending this script's fleet retrofit onto `configValidators`. Each
+ * rule below is verified against both the doc table and the guard code:
+ *
+ * - `path` — required when `command` is `request` (verified:
+ *   `single-request.ts`'s `accessor.requiredString("path", "request")`).
+ * - `input` — required when `command` is `batch` (verified:
+ *   `batch-request.ts`'s `resolveBatchSettings`'s
+ *   `accessor.requiredString("input", "batch")`).
+ * - `apiKey` — required when `auth` is `api-key` (verified:
+ *   `resolve-auth-headers.ts`'s `"api-key"` case throwing when `apiKey` is
+ *   unresolved).
+ * - `aws.profile` — required when `auth` is `iam` (verified:
+ *   `resolve-auth-headers.ts`'s `"iam"` case throwing when `deps.signer` is
+ *   `undefined`; `script.aws`'s `requestSigner` is only provisioned when
+ *   `Core.AWS_PROFILE_PARAM_NAME` resolves, so the config-level equivalent of
+ *   "no signer" is "`aws.profile` unset").
+ *
+ * Each validator's failure reason names the fixed set of `command`/`auth`
+ * values the constraint applies to — never a caller-supplied value —
+ * matching the contract in `docs/reference/core/config.md`'s
+ * "Cross-parameter validation" section.
+ */
+describe("configValidators (F1b — cross-parameter validation)", () => {
+  describe("'path' — required when 'command' is 'request'", () => {
+    it("returns the documented failure reason when 'path' is missing for 'command: request'", () => {
+      const config = buildConfig({
+        command: "request",
+        auth: "none",
+        baseUrl: "https://api.example.test",
+        method: "GET",
+      });
+
+      expect(firstFailure(config)).toBe(
+        "'path' is required when 'command' is 'request'",
+      );
+    });
+
+    it("passes when 'path' is set for 'command: request'", () => {
+      const config = buildConfig({
+        command: "request",
+        auth: "none",
+        baseUrl: "https://api.example.test",
+        method: "GET",
+        path: "/health",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes when 'path' is unset but 'command' is 'batch' (does not require it)", () => {
+      const config = buildConfig({
+        command: "batch",
+        auth: "none",
+        baseUrl: "https://api.example.test",
+        method: "GET",
+        input: "records.jsonl",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("does not embed a received/rejected value in the failure reason", () => {
+      const config = buildConfig({
+        command: "request",
+        auth: "none",
+        baseUrl: "https://api.example.test",
+        method: "POST",
+      });
+
+      const result = firstFailure(config);
+      expect(result).toMatch(/'path'/);
+      expect(result).not.toContain("POST");
+    });
+  });
+
+  describe("'input' — required when 'command' is 'batch'", () => {
+    it("returns the documented failure reason when 'input' is missing for 'command: batch'", () => {
+      const config = buildConfig({
+        command: "batch",
+        auth: "none",
+        baseUrl: "https://api.example.test",
+        method: "GET",
+      });
+
+      expect(firstFailure(config)).toBe(
+        "'input' is required when 'command' is 'batch'",
+      );
+    });
+
+    it("passes when 'input' is set for 'command: batch'", () => {
+      const config = buildConfig({
+        command: "batch",
+        auth: "none",
+        baseUrl: "https://api.example.test",
+        method: "GET",
+        input: "records.jsonl",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes when 'input' is unset but 'command' is 'request' (does not require it)", () => {
+      const config = buildConfig({
+        command: "request",
+        auth: "none",
+        baseUrl: "https://api.example.test",
+        method: "GET",
+        path: "/health",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'apiKey' — required when 'auth' is 'api-key'", () => {
+    it("returns the documented failure reason when 'apiKey' is missing for 'auth: api-key'", () => {
+      const config = buildConfig({
+        command: "request",
+        auth: "api-key",
+        baseUrl: "https://api.example.test",
+        method: "GET",
+        path: "/health",
+      });
+
+      expect(firstFailure(config)).toBe(
+        "'apiKey' is required when 'auth' is 'api-key'",
+      );
+    });
+
+    it("passes when 'apiKey' is set for 'auth: api-key'", () => {
+      const config = buildConfig({
+        command: "request",
+        auth: "api-key",
+        baseUrl: "https://api.example.test",
+        method: "GET",
+        path: "/health",
+        apiKey: "secret-value",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes when 'apiKey' is unset but 'auth' is 'none' (does not require it)", () => {
+      const config = buildConfig({
+        command: "request",
+        auth: "none",
+        baseUrl: "https://api.example.test",
+        method: "GET",
+        path: "/health",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("does not echo a caller-supplied 'apiKey' secret into an unrelated validator's failure reason", () => {
+      const config = buildConfig({
+        command: "request",
+        auth: "api-key",
+        baseUrl: "https://api.example.test",
+        method: "GET",
+        apiKey: "planted-secret-DO-NOT-LEAK",
+        // 'path' deliberately left unset so the 'path' validator (declared
+        // before 'apiKey' in configValidators) fails first, proving the
+        // planted apiKey secret never leaks into a DIFFERENT validator's
+        // failure message.
+      });
+
+      const result = firstFailure(config);
+      expect(result).toMatch(/'path'/);
+      expect(result).not.toContain("planted-secret-DO-NOT-LEAK");
+    });
+  });
+
+  describe(`'${Core.AWS_PROFILE_PARAM_NAME}' — required when 'auth' is 'iam'`, () => {
+    it("returns the documented failure reason when 'aws.profile' is missing for 'auth: iam'", () => {
+      const config = buildConfig({
+        command: "request",
+        auth: "iam",
+        baseUrl: "https://api.example.test",
+        method: "GET",
+        path: "/health",
+      });
+
+      expect(firstFailure(config)).toBe(
+        `'${Core.AWS_PROFILE_PARAM_NAME}' is required when 'auth' is 'iam'`,
+      );
+    });
+
+    it("passes when 'aws.profile' is set for 'auth: iam'", () => {
+      const config = buildConfig({
+        command: "request",
+        auth: "iam",
+        baseUrl: "https://api.example.test",
+        method: "GET",
+        path: "/health",
+        [Core.AWS_PROFILE_PARAM_NAME]: "default",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes when 'aws.profile' is unset but 'auth' is 'none' (does not require it)", () => {
+      const config = buildConfig({
+        command: "request",
+        auth: "none",
+        baseUrl: "https://api.example.test",
+        method: "GET",
+        path: "/health",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
     });
   });
 });

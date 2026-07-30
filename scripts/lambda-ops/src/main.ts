@@ -1,6 +1,6 @@
 import { AWS, Core } from "@m3l-automation/m3l-common";
 
-import { configParameters } from "./config.js";
+import { configParameters, configValidators } from "./config.js";
 import { getCorrelationId, hooks } from "./hooks.js";
 import { runLambdaOps } from "./steps/run-lambda-ops.js";
 
@@ -16,7 +16,7 @@ import { runLambdaOps } from "./steps/run-lambda-ops.js";
 // `getCorrelationId()`.
 const script = new Core.M3LScript({
   metadata: { name: "lambda-ops", version: "0.0.0" },
-  config: { params: configParameters },
+  config: { params: configParameters, validate: configValidators },
   hooks,
 });
 
