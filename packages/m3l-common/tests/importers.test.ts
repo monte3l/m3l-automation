@@ -753,6 +753,87 @@ describe("M3LCSVListImporter", () => {
     });
   });
 
+  describe("import:completed fires on early consumer exit (silent-failure defect)", () => {
+    const THREE_ROW_CSV_CONTENT = [
+      CSV_HEADER,
+      "1,Ada",
+      "2,Grace",
+      "3,Turing",
+    ].join("\n");
+
+    test("import:completed fires exactly once, with the processed count at the point of exit, when a consumer breaks out of the for-await loop early", async () => {
+      const importer = new Core.M3LCSVListImporter<UserRow>({});
+      const completed = vi.fn();
+      importer.on("import:completed", completed);
+
+      const seen: UserRow[] = [];
+      for await (const row of importer.importStream(
+        Buffer.from(THREE_ROW_CSV_CONTENT, "utf8"),
+      )) {
+        seen.push(row);
+        break;
+      }
+
+      expect(seen).toHaveLength(1);
+      expect(completed).toHaveBeenCalledTimes(1);
+      expect(completed).toHaveBeenCalledWith(
+        expect.objectContaining({ processed: 1 }),
+      );
+    });
+
+    test("import:completed fires exactly once, with the processed count at the point of exit, when a consumer explicitly calls .return() on the generator handle", async () => {
+      const importer = new Core.M3LCSVListImporter<UserRow>({});
+      const completed = vi.fn();
+      importer.on("import:completed", completed);
+
+      const stream = importer.importStream(
+        Buffer.from(THREE_ROW_CSV_CONTENT, "utf8"),
+      );
+      const first = await stream.next();
+      expect(first.done).toBe(false);
+
+      // `await stream.return(value)` resolves to `{ value, done: true }`
+      // exactly: the generator's `finally` block has no `return` statement of
+      // its own to override it — only a side-effecting `emit()` call runs
+      // before control resumes at the `.return()` call site — so the caller
+      // DOES observe the exact value passed in.
+      const abandonedSummary: M3LImportStreamSummary = {
+        processed: -1,
+        skipped: -1,
+        durationMs: -1,
+      };
+      const returned = await stream.return(abandonedSummary);
+
+      expect(returned).toEqual({ value: abandonedSummary, done: true });
+      expect(completed).toHaveBeenCalledTimes(1);
+      expect(completed).toHaveBeenCalledWith(
+        expect.objectContaining({ processed: 1 }),
+      );
+    });
+  });
+
+  describe("import:completed must NOT fire when importStream()'s internal loop throws (over-widening fix, code-review)", () => {
+    test("import:completed is never emitted when the source cannot be read (a throw, not a graceful exit)", async () => {
+      const fsError = Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      vi.spyOn(fs, "readFile").mockRejectedValue(fsError);
+
+      const importer = new Core.M3LCSVListImporter<UserRow>({});
+      const completed = vi.fn();
+      importer.on("import:completed", completed);
+
+      const consume = async (): Promise<void> => {
+        for await (const _row of importer.importStream(
+          "/fixtures/unreadable.csv",
+        )) {
+          // draining is enough to trigger the source-read failure
+        }
+      };
+
+      await expect(consume()).rejects.toBeInstanceOf(Core.M3LError);
+      expect(completed).not.toHaveBeenCalled();
+    });
+  });
+
   describe("M3LCSVListImporter type-level contract", () => {
     test("implements M3LListImporter<TItem>", () => {
       expectTypeOf<Core.M3LCSVListImporter<UserRow>>().toMatchTypeOf<
@@ -1076,6 +1157,70 @@ describe("M3LJSONListImporter", () => {
     });
   });
 
+  describe("import:completed fires on early consumer exit (silent-failure defect)", () => {
+    const THREE_LINE_JSONL_CONTENT = [
+      JSON.stringify({ id: 1, name: "Ada" }),
+      JSON.stringify({ id: 2, name: "Grace" }),
+      JSON.stringify({ id: 3, name: "Turing" }),
+    ].join("\n");
+
+    test("import:completed fires exactly once, with the processed count at the point of exit, when a consumer breaks out of the for-await loop early", async () => {
+      const importer = new Core.M3LJSONListImporter<{
+        readonly id: number;
+        readonly name: string;
+      }>({});
+      const completed = vi.fn();
+      importer.on("import:completed", completed);
+
+      const seen: { readonly id: number; readonly name: string }[] = [];
+      for await (const item of importer.importStream(
+        Buffer.from(THREE_LINE_JSONL_CONTENT, "utf8"),
+      )) {
+        seen.push(item);
+        break;
+      }
+
+      expect(seen).toHaveLength(1);
+      expect(completed).toHaveBeenCalledTimes(1);
+      expect(completed).toHaveBeenCalledWith(
+        expect.objectContaining({ processed: 1 }),
+      );
+    });
+
+    test("import:completed fires exactly once, with the processed count at the point of exit, when a consumer explicitly calls .return() on the generator handle", async () => {
+      const importer = new Core.M3LJSONListImporter<{
+        readonly id: number;
+        readonly name: string;
+      }>({});
+      const completed = vi.fn();
+      importer.on("import:completed", completed);
+
+      const stream = importer.importStream(
+        Buffer.from(THREE_LINE_JSONL_CONTENT, "utf8"),
+      );
+      const first = await stream.next();
+      expect(first.done).toBe(false);
+
+      // `await stream.return(value)` resolves to `{ value, done: true }`
+      // exactly: the generator's `finally` block has no `return` statement of
+      // its own to override it — only a side-effecting `emit()` call runs
+      // before control resumes at the `.return()` call site — so the caller
+      // DOES observe the exact value passed in.
+      const abandonedSummary: M3LImportStreamSummary = {
+        processed: -1,
+        skipped: -1,
+        durationMs: -1,
+      };
+      const returned = await stream.return(abandonedSummary);
+
+      expect(returned).toEqual({ value: abandonedSummary, done: true });
+      expect(completed).toHaveBeenCalledTimes(1);
+      expect(completed).toHaveBeenCalledWith(
+        expect.objectContaining({ processed: 1 }),
+      );
+    });
+  });
+
   describe("file-path format-detection failure propagates unwrapped (code-review #4)", () => {
     test("import() surfaces the reused detector's M3LJSONFormatDetectionError directly, not re-wrapped", async () => {
       const readError = Object.assign(new Error("EIO: i/o error, read"), {
@@ -1131,6 +1276,33 @@ describe("M3LJSONListImporter", () => {
       await expect(consume()).rejects.toBeInstanceOf(
         Core.M3LJSONFormatDetectionError,
       );
+    });
+
+    test("import:completed is never emitted when importStream()'s internal loop throws (over-widening fix, code-review)", async () => {
+      const readError = Object.assign(new Error("EIO: i/o error, read"), {
+        code: "EIO",
+      });
+      vi.spyOn(fs, "readFile").mockResolvedValue(JSON_ARRAY_CONTENT);
+      vi.spyOn(fs, "open").mockImplementation(() =>
+        Promise.resolve(fakeFailingJSONFileHandle(readError)),
+      );
+
+      const importer = new Core.M3LJSONListImporter<unknown>({});
+      const completed = vi.fn();
+      importer.on("import:completed", completed);
+
+      const consume = async (): Promise<void> => {
+        for await (const _item of importer.importStream(
+          "/fixtures/unreadable.json",
+        )) {
+          // draining is enough to trigger the detection failure
+        }
+      };
+
+      await expect(consume()).rejects.toBeInstanceOf(
+        Core.M3LJSONFormatDetectionError,
+      );
+      expect(completed).not.toHaveBeenCalled();
     });
   });
 

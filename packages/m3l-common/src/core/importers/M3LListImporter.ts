@@ -36,7 +36,13 @@ export interface M3LListImporterEvents<TItem> {
    * attributable to a specific record.
    */
   "import:error": { readonly error: unknown; readonly index?: number };
-  /** Emitted once, after every record has been processed (or skipped). */
+  /**
+   * Emitted once per import run. For `import()`, after every record has been
+   * processed (or skipped) — never emitted if the batch import throws. For
+   * `importStream()`, on graceful exit only — full drain, or early
+   * abandonment via a consumer `break`/`.return()` — carrying the counts as
+   * they stood at the point of exit; never emitted if the stream throws.
+   */
   "import:completed": {
     readonly processed: number;
     readonly durationMs: number;
