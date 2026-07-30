@@ -16,9 +16,20 @@ import { M3LError } from "../errors/index.js";
  */
 interface M3LConfigValidationErrorOptions {
   /**
-   * Structured detail identifying the failing parameter and constraint.
-   * Carries `{ parameter, reason, valueType }` only — never the value itself,
-   * so a validation failure is safe to log for any parameter, secret or not.
+   * Structured detail identifying the failing parameter/validator and
+   * constraint. The shape depends on which producer threw:
+   * `{ parameter, reason, valueType }` for a per-parameter
+   * {@link M3LConfigParameter} `validate` failure, or
+   * `{ validatorIndex, reason }` for a schema-level
+   * {@link M3LConfigSchema.validate} failure.
+   *
+   * In both shapes, the library itself never places a config value into
+   * `context`. But `reason` is author-controlled free text — the string a
+   * custom `validate` function or schema-level validator returns — and it is
+   * not redacted downstream (nor is the thrown `message`, which echoes the
+   * same text). An author who embeds a secret's actual value in their
+   * returned reason defeats this: do not assume `context`/`message` is
+   * automatically safe to log for a secret-bearing parameter.
    */
   readonly context?: Record<string, unknown>;
   /** The underlying cause, if this validation failure wraps another error. */
@@ -26,9 +37,13 @@ interface M3LConfigValidationErrorOptions {
 }
 
 /**
- * Thrown by {@link M3LConfigParameter} when a coerced value (from a provider,
- * a static `defaultValue`, or an `asyncFallback`) fails its declared
- * `validate` function.
+ * Thrown by two producers of schema-time validation failure:
+ * {@link M3LConfigParameter}, when a coerced value (from a provider, a static
+ * `defaultValue`, or an `asyncFallback`) fails its declared `validate`
+ * function; and {@link M3LConfigSchema.validate}, when a schema-level
+ * cross-parameter validator rejects the fully-resolved config store. The two
+ * producers populate `context` with different shapes — see
+ * {@link M3LConfigValidationErrorOptions.context}.
  *
  * Callers that need to distinguish a validation failure (the value parsed to
  * the right type but broke an application constraint) from a coercion
@@ -36,6 +51,9 @@ interface M3LConfigValidationErrorOptions {
  * type specifically.
  *
  * @example
+ * This shows the per-parameter producer; a schema-level
+ * {@link M3LConfigSchema.validate} failure throws the same class with a
+ * `{ validatorIndex, reason }` context instead.
  * ```ts
  * import {
  *   M3LConfigParameter,
@@ -53,7 +71,7 @@ interface M3LConfigValidationErrorOptions {
  *   });
  * } catch (e) {
  *   if (e instanceof M3LConfigValidationError) {
- *     // e.context carries { parameter, reason, valueType } — never the value
+ *     // e.context carries { parameter, reason, valueType } for this producer
  *   }
  *   throw e;
  * }

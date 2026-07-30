@@ -100,6 +100,7 @@ import {
 import type {
   M3LCoercedValue,
   M3LConfigResolution,
+  M3LConfigSchemaValidator,
   M3LConfigValidator,
 } from "../src/core/config/index.js";
 
@@ -1548,6 +1549,178 @@ describe("M3LConfigSchema", () => {
     });
     const schema = new M3LConfigSchema([parameter]);
     expect(schema.parameters).toEqual([parameter]);
+  });
+
+  // ---------------------------------------------------------------------
+  // F1b: cross-parameter validation — a second, optional constructor
+  // argument carrying a list of M3LConfigSchemaValidator functions, plus
+  // the schema.validate(config) method that runs them once, fail-fast, in
+  // declaration order. docs/reference/core/config.md
+  // "### Cross-parameter validation" / "### When schema-level validation runs".
+  // ---------------------------------------------------------------------
+  describe("validators (F1b — cross-parameter validation)", () => {
+    test("defaults to an empty array when no second constructor argument is supplied", () => {
+      const schema = new M3LConfigSchema([]);
+      expect(schema.validators).toEqual([]);
+    });
+
+    test("exposes the constructor-supplied validator list verbatim", () => {
+      const validator: M3LConfigSchemaValidator = () => true;
+      const schema = new M3LConfigSchema([], [validator]);
+      expect(schema.validators).toEqual([validator]);
+    });
+
+    test("a single-argument construction still works exactly as today (no regression)", () => {
+      const parameter = new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+      });
+      const schema = new M3LConfigSchema([parameter]);
+      expect(schema.parameters).toEqual([parameter]);
+      expect(schema.validators).toEqual([]);
+    });
+
+    describe("validate()", () => {
+      test("does nothing (no throw) when the schema has no validators", () => {
+        const schema = new M3LConfigSchema([]);
+        const config = new M3LConfig();
+        expect(() => {
+          schema.validate(config);
+        }).not.toThrow();
+      });
+
+      test("does not throw when every validator returns true", () => {
+        const schema = new M3LConfigSchema(
+          [],
+          [(): true | string => true, (): true | string => true],
+        );
+        const config = new M3LConfig();
+        expect(() => {
+          schema.validate(config);
+        }).not.toThrow();
+      });
+
+      test("throws M3LConfigValidationError coded ERR_CONFIG_VALIDATION when a validator returns a failure reason", () => {
+        const schema = new M3LConfigSchema(
+          [],
+          [(): true | string => "sort requires limit"],
+        );
+        const config = new M3LConfig();
+
+        let thrown: unknown;
+        try {
+          schema.validate(config);
+        } catch (error) {
+          thrown = error;
+        }
+
+        expect(thrown).toBeInstanceOf(M3LConfigValidationError);
+        expect((thrown as M3LConfigValidationError).code).toBe(
+          "ERR_CONFIG_VALIDATION",
+        );
+        expect((thrown as M3LConfigValidationError).context).toEqual({
+          validatorIndex: 0,
+          reason: "sort requires limit",
+        });
+      });
+
+      test("fail-fast: the first failing validator throws immediately (validatorIndex 0) and a later validator never runs", () => {
+        const secondValidator = vi.fn(
+          (_cfg: M3LConfig): true | string => "should never run",
+        );
+        const schema = new M3LConfigSchema(
+          [],
+          [(): true | string => "first failure", secondValidator],
+        );
+        const config = new M3LConfig();
+
+        let thrown: unknown;
+        try {
+          schema.validate(config);
+        } catch (error) {
+          thrown = error;
+        }
+
+        expect(thrown).toBeInstanceOf(M3LConfigValidationError);
+        expect((thrown as M3LConfigValidationError).context).toEqual({
+          validatorIndex: 0,
+          reason: "first failure",
+        });
+        expect(secondValidator).not.toHaveBeenCalled();
+      });
+
+      test("a later validator's failure (not the first) reports its own index", () => {
+        const schema = new M3LConfigSchema(
+          [],
+          [(): true | string => true, (): true | string => "second failure"],
+        );
+        const config = new M3LConfig();
+
+        let thrown: unknown;
+        try {
+          schema.validate(config);
+        } catch (error) {
+          thrown = error;
+        }
+
+        expect(thrown).toBeInstanceOf(M3LConfigValidationError);
+        expect((thrown as M3LConfigValidationError).context).toEqual({
+          validatorIndex: 1,
+          reason: "second failure",
+        });
+      });
+
+      test("passes the exact M3LConfig instance handed to validate() through to each validator", () => {
+        const config = new M3LConfig();
+        const validator = vi.fn((_cfg: M3LConfig): true | string => true);
+        const schema = new M3LConfigSchema([], [validator]);
+
+        schema.validate(config);
+
+        expect(validator).toHaveBeenCalledTimes(1);
+        expect(validator.mock.calls[0]?.[0]).toBe(config);
+      });
+    });
+  });
+});
+
+// =============================================================================
+// M3LConfigSchemaValidator (F1b) — type: (config: M3LConfig) => true | string
+// =============================================================================
+describe("M3LConfigSchemaValidator (F1b)", () => {
+  test("a validator returning true is callable directly and returns true", () => {
+    const config = new M3LConfig();
+    const validator: M3LConfigSchemaValidator = () => true;
+    expect(validator(config)).toBe(true);
+  });
+
+  test("a validator returning a string reason is callable directly and returns that string", () => {
+    const config = new M3LConfig();
+    const validator: M3LConfigSchemaValidator = (cfg: M3LConfig) =>
+      cfg.has("sort") ? true : "'sort' requires 'limit' to be set";
+    expect(validator(config)).toBe("'sort' requires 'limit' to be set");
+  });
+
+  test("receives the M3LConfig instance passed to it (can read via get/has/sourceOf)", () => {
+    const config = new M3LConfig();
+    config.set("sort", "asc", "cli");
+    const validator: M3LConfigSchemaValidator = (cfg: M3LConfig) =>
+      cfg.get("sort") === "asc" ? true : "unexpected sort value";
+    expect(validator(config)).toBe(true);
+  });
+
+  describe("type-level contract", () => {
+    test("is (config: M3LConfig) => true | string", () => {
+      expectTypeOf<M3LConfigSchemaValidator>().toEqualTypeOf<
+        (config: M3LConfig) => true | string
+      >();
+    });
+
+    test("a boolean-returning function is NOT assignable (return must be true | string, not boolean)", () => {
+      expectTypeOf<
+        (config: M3LConfig) => boolean
+      >().not.toMatchTypeOf<M3LConfigSchemaValidator>();
+    });
   });
 });
 

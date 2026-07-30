@@ -68,6 +68,7 @@
       "M3LConfigValidationError",
       "M3LConfigMissingError",
       "M3LConfigAccessor",
+      "M3LConfigSchemaValidator",
       "M3LConfigAccessorOptions"
     ]
   },

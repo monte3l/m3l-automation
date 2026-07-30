@@ -24,6 +24,7 @@ Exported from `@m3l-automation/m3l-common/core` (the `config` sub-module):
 - `M3LUnknownParameterDetector`
 - `M3LConfigValidator` (type: a `(value) => true | string` schema-time validator)
 - `M3LConfigValidators` (stock validators: `range`, `regex`, `oneOf`, `nonEmpty`, `minLength`)
+- `M3LConfigSchemaValidator` (type: a `(config) => true | string` cross-parameter, schema-level validator)
 - `M3LConfigAccessor` (defensive typed re-reads of an already-resolved `M3LConfig` value, plus `M3LConfigAccessorOptions`)
 - Errors: `M3LConfigCoercionError`, `M3LConfigParseError`, `M3LUnsafeConfigKeyError`, `M3LConfigValidationError`, `M3LConfigMissingError`
 
@@ -216,10 +217,13 @@ received value — so a stock validator applied to a secret parameter cannot lea
 the value through the reason.
 
 > **Secret values.** A validator receives the real coerced value (it must, to
-> validate it). The error `context` never carries the value, but a **custom**
-> validator's returned reason string is author-controlled — do not embed the
-> value in the reason for a secret parameter (e.g. a `secretNames` entry), or it
-> will surface in the thrown error's message. The stock validators above are
+> validate it). The library itself never places that value into `context` —
+> but a **custom** validator's returned reason string is author-controlled and
+> becomes both the thrown error's `message` and its `context.reason`. Neither
+> is redacted downstream (name-based redaction only matches `key=value`-shaped
+> text, not an arbitrary reason string), so do not embed the value in the
+> reason for a secret parameter (e.g. a `secretNames` entry) — it will survive
+> verbatim into a persisted `run-report.json`. The stock validators above are
 > already safe.
 
 ### Example
@@ -248,6 +252,82 @@ try {
   throw error;
 }
 ```
+
+### Cross-parameter validation
+
+A `validate` function attached to an individual `M3LConfigParameter` only ever
+sees that one parameter's own coerced value — it has no way to express a
+constraint spanning two or more parameters (e.g. "`sort` requires `limit` to
+also be set", or "`start` must be strictly before `end`"). `M3LConfigSchema`
+carries a second, optional layer for exactly that: a list of schema-level
+validators that run once, after every declared parameter has resolved.
+
+```typescript
+export type M3LConfigSchemaValidator = (config: M3LConfig) => true | string;
+```
+
+The `true | string` return follows the same reasoning as `M3LConfigValidator<T>`
+above: `true` is the only passing result, so a `boolean`-returning predicate is
+not assignable and can never be mistaken for "valid" through a stray truthy
+`false`. A schema-level validator receives the fully-resolved `M3LConfig` store
+so it can read any combination of parameters via `get`/`has`/`sourceOf` — most
+usefully through `M3LConfigAccessor` for typed reads. **A validator must not
+call `M3LConfig.set()`** — it is handed the live store for reading, not for
+mutation; this is a documented contract, not a type-enforced one.
+
+`M3LConfigSchema`'s constructor takes the validator list as an optional second
+positional parameter:
+
+```typescript
+const schema = new M3LConfigSchema(
+  [sortParam, limitParam],
+  [
+    (config) =>
+      config.get("sort") === undefined || config.get("limit") !== undefined
+        ? true
+        : "'sort' requires 'limit' to be set",
+  ],
+);
+```
+
+### When schema-level validation runs
+
+Schema-level validation runs **once**, after every declared parameter has been
+resolved by `M3LScriptConfigLoader.load()` — so any per-parameter `required` or
+`validate` failure always surfaces first, before a cross-parameter constraint
+is ever evaluated. Validators run in declaration order; the first one to return
+a string reason throws immediately (fail-fast), and no later validator runs.
+
+A script declares its schema-level validators alongside its parameters:
+
+```typescript
+new M3LScript({
+  metadata,
+  config: {
+    params: [sortParam, limitParam],
+    validate: [
+      (config) =>
+        config.get("sort") === undefined || config.get("limit") !== undefined
+          ? true
+          : "'sort' requires 'limit' to be set",
+    ],
+  },
+});
+```
+
+A failing schema-level validator throws the same `M3LConfigValidationError`
+(`code: "ERR_CONFIG_VALIDATION"`) documented above, discriminated by its
+`context` shape: `{ validatorIndex, reason }` rather than the per-parameter
+`{ parameter, reason, valueType }`. As with the per-parameter path, the library
+itself never places a config value into `context` — but `reason` is entirely
+author-controlled free text, and it reaches both `message` and `context.reason`
+with no redaction applied downstream. A schema-level validator's blast radius
+is wider than a per-parameter one, too: it can read the **whole** resolved
+store rather than one already-typed value, and there is no `M3LConfigValidators`
+equivalent at the schema level to fall back on — every schema-level validator
+is hand-written. The same secret-values caveat above applies with equal force
+here: don't embed a value in the reason string, for any parameter the
+validator reads, not only the ones it is nominally checking.
 
 ## Defensive typed reads (`M3LConfigAccessor`)
 
