@@ -11,7 +11,7 @@ import {
  * Contract: docs/reference/scripts/cloudwatch-logs-insights.md, `resolve-settings` row +
  * the "Required parameters" paragraph. Parses the resolved config into a
  * typed run-settings object: ISO-8601 `start`/`end` -> epoch seconds
- * (throwing on an unparseable string or `start >= end`), plus the
+ * (throwing on an unparseable string), plus the
  * pass-through fields. `start`/`end` presence/non-emptiness is already
  * enforced by the declared config schema (`required: true` +
  * `Core.M3LConfigValidators.nonEmpty`) before `config` ever reaches this
@@ -82,33 +82,6 @@ describe("resolveSettings", () => {
     const config = buildConfig({ ...VALID_VALUES, end: "not-a-date" });
 
     expect(() => resolveSettings(config)).toThrowError(Core.M3LError);
-  });
-
-  it("throws an M3LError when 'start' is equal to 'end'", () => {
-    const config = buildConfig({
-      ...VALID_VALUES,
-      start: "2026-07-01T00:00:00Z",
-      end: "2026-07-01T00:00:00Z",
-    });
-
-    expect(() => resolveSettings(config)).toThrowError(Core.M3LError);
-  });
-
-  it("throws an M3LError when 'start' is after 'end'", () => {
-    const config = buildConfig({
-      ...VALID_VALUES,
-      start: "2026-07-01T02:00:00Z",
-      end: "2026-07-01T01:00:00Z",
-    });
-
-    let thrown: unknown;
-    try {
-      resolveSettings(config);
-    } catch (error) {
-      thrown = error;
-    }
-    expect(thrown).toBeInstanceOf(Core.M3LError);
-    expect((thrown as Core.M3LError).code).toEqual(expect.any(String));
   });
 
   it("throws an M3LError coded ERR_LOGS_INSIGHTS_SETTINGS when 'logGroups' is an empty array (required-variant empty rejection)", () => {

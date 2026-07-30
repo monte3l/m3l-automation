@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters } from "../src/config.js";
+import { configParameters, configValidators } from "../src/config.js";
 
 /**
  * Contract: docs/reference/scripts/json-etl.md "Configuration schema" table.
@@ -11,6 +11,13 @@ import { configParameters } from "../src/config.js";
  * instance types, and each parameter's own validator/default — never the
  * library's 8-level provider-resolution order (that's the library's own
  * test suite's job).
+ *
+ * F1b: cross-parameter constraints ("sort requires limit", "sort's name must
+ * be one of fields' output columns") are declared as `configValidators`
+ * (`Core.M3LConfigSchemaValidator[]`) instead of hand-rolled run-start guards
+ * in `steps/run-json-etl.ts`. Per docs/reference/core/config.md's "Cross-parameter
+ * validation" section, each validator is `(config: Core.M3LConfig) => true | string`
+ * and is run fail-fast, in declaration order, by `Core.M3LConfigSchema.validate`.
  */
 
 const EXPECTED_NAMES = [
@@ -53,6 +60,29 @@ function paramNamed(name: string): Core.M3LConfigParameter {
     );
   }
   return found;
+}
+
+/** Builds a raw `M3LConfig` store directly, one `.set(name, value)` per key. */
+function buildConfig(values: Record<string, unknown>): Core.M3LConfig {
+  const config = new Core.M3LConfig();
+  for (const [key, value] of Object.entries(values)) {
+    config.set(key, value);
+  }
+  return config;
+}
+
+/**
+ * Runs every declared `configValidators` entry against `config`, in
+ * declaration order, mirroring `Core.M3LConfigSchema.validate`'s fail-fast
+ * iteration: returns the first non-`true` result, or `undefined` when every
+ * validator passes.
+ */
+function firstFailure(config: Core.M3LConfig): string | undefined {
+  for (const validator of configValidators) {
+    const result = validator(config);
+    if (result !== true) return result;
+  }
+  return undefined;
 }
 
 describe("json-etl config declaration", () => {
@@ -191,6 +221,99 @@ describe("json-etl config declaration", () => {
       await expect(
         resolveWith(paramNamed("sort"), "name"),
       ).rejects.toBeInstanceOf(Core.M3LConfigValidationError);
+    });
+  });
+});
+
+describe("configValidators (F1b — cross-parameter validation)", () => {
+  describe("'sort' requires 'limit'", () => {
+    it("returns the documented failure reason when 'sort' is set without 'limit'", () => {
+      const config = buildConfig({
+        input: "in.jsonl",
+        fields: ["id=id"],
+        output: "out.jsonl",
+        sort: "id:asc",
+      });
+
+      expect(firstFailure(config)).toBe("'sort' requires 'limit' to be set");
+    });
+
+    it("passes every validator when both 'sort' and 'limit' are set", () => {
+      const config = buildConfig({
+        input: "in.jsonl",
+        fields: ["id=id"],
+        output: "out.jsonl",
+        sort: "id:asc",
+        limit: 2,
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes every validator when neither 'sort' nor 'limit' is set", () => {
+      const config = buildConfig({
+        input: "in.jsonl",
+        fields: ["id=id"],
+        output: "out.jsonl",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+  });
+
+  describe("'sort' name must be one of 'fields' output columns", () => {
+    it("returns a failure reason describing the constraint WITHOUT embedding the received 'sort' value", () => {
+      // `M3LConfigSchemaValidator`'s TSDoc and docs/reference/core/config.md's
+      // "Cross-parameter validation" section both require a validator's
+      // reason to describe the CONSTRAINT, never the received value — mirroring
+      // the stock `M3LConfigValidators` factories (range/regex/oneOf/minLength),
+      // none of which embed the operator-supplied value in their message.
+      const config = buildConfig({
+        input: "in.jsonl",
+        fields: ["id=id", "name=metadata.name"],
+        output: "out.jsonl",
+        sort: "unknownfield:asc",
+        limit: 2,
+      });
+
+      const result = firstFailure(config);
+      expect(result).not.toContain("unknownfield");
+      expect(result).toMatch(/'sort'/);
+      expect(result).toContain("fields");
+    });
+
+    it("passes every validator when the sort name is a declared output column", () => {
+      const config = buildConfig({
+        input: "in.jsonl",
+        fields: ["id=id"],
+        output: "out.jsonl",
+        sort: "id:desc",
+        limit: 2,
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("passes every validator when 'sort' is unset, regardless of 'fields'", () => {
+      const config = buildConfig({
+        input: "in.jsonl",
+        fields: ["id=id"],
+        output: "out.jsonl",
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
+    });
+
+    it("accepts the column name before '=' for a 'name=path' extraction-spec field", () => {
+      const config = buildConfig({
+        input: "in.jsonl",
+        fields: ["id=id", "tags=items.*.tag"],
+        output: "out.jsonl",
+        sort: "tags:asc",
+        limit: 2,
+      });
+
+      expect(firstFailure(config)).toBeUndefined();
     });
   });
 });
