@@ -231,6 +231,52 @@ export function packageManifestErrors(pkg, name) {
   return problems;
 }
 
+/** The scaffold placeholder left behind when a README's Examples section is never filled in — see `templates/script/README.md.tmpl`. */
+const EXAMPLES_PLACEHOLDER_RE = /<!--\s*Add[^>]*-->/;
+
+/** An "### Examples" heading — always H3 in the fleet shape. */
+const EXAMPLES_HEADING_RE = /^### Examples\s*$/m;
+
+/** A fenced bash block invoking the script — evidence of a real, runnable example, not just prose. */
+const RUNNABLE_EXAMPLE_RE = /```bash\n[^`]*node dist\/main\.js[^`]*```/;
+
+/**
+ * Validate a script README's Examples section against the fleet convention
+ * (`templates/script/README.md.tmpl`): a populated `### Examples` heading, no
+ * leftover scaffold placeholder, and at least one runnable
+ * `node dist/main.js` invocation somewhere after that heading. "Somewhere
+ * after" (not "immediately inside") is deliberate: the fleet shape puts the
+ * fence directly under the heading, but `json-etl`'s teaching-oriented layout
+ * puts its worked examples under numbered sibling headings instead — both
+ * satisfy this check without an allowlist. Content only, not example count or
+ * the Minimal/Common/Production/Edge-case labels — those stay reviewer-judged.
+ * Returns human-readable problem strings (empty array = conformant).
+ */
+export function readmeExamplesErrors(readmeText) {
+  const problems = [];
+  const headingMatch = EXAMPLES_HEADING_RE.exec(readmeText);
+  if (!headingMatch) {
+    problems.push(
+      'must have an "### Examples" heading with 2-4 runnable examples (ADR-0022 fleet convention).',
+    );
+    return problems;
+  }
+  if (EXAMPLES_PLACEHOLDER_RE.test(readmeText)) {
+    problems.push(
+      'still carries the scaffold placeholder comment under "### Examples" — fill in 2-4 real examples.',
+    );
+  }
+  const afterHeading = readmeText.slice(
+    headingMatch.index + headingMatch[0].length,
+  );
+  if (!RUNNABLE_EXAMPLE_RE.test(afterHeading)) {
+    problems.push(
+      '"### Examples" section has no runnable ```bash fence invoking `node dist/main.js`.',
+    );
+  }
+  return problems;
+}
+
 /**
  * Directory names under `scripts/` that contain a package.json — the set of
  * script packages the checker validates. Artifact-only ghosts (a leftover
