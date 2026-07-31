@@ -44,6 +44,17 @@ node dist/main.js --operation delete-service --cluster my-cluster \
 `input` file carries `M3LECSCreateServiceInput` instead (requires an
 already-registered task definition — this script does not register one).
 
+### Operations at a glance
+
+| Operation                                             | Demonstrated by                                                    |
+| ----------------------------------------------------- | ------------------------------------------------------------------ |
+| `list-services`                                       | Minimal                                                            |
+| `describe-service`                                    | Common                                                             |
+| `update-service`                                      | Production                                                         |
+| `wait-services-stable`                                | Production                                                         |
+| `delete-service`                                      | Edge case                                                          |
+| `create-service`, `list-clusters`, `describe-cluster` | — see the [contract page](../../docs/reference/scripts/ecs-ops.md) |
+
 ### Operational flags
 
 Every script composes through `Core.runScript` (ADR-0035), so these work uniformly:

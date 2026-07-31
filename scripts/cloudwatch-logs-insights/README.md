@@ -23,7 +23,6 @@ per-run configuration on the command line:
 ```bash
 # Minimal — one log group, default 60-minute window, default JSON output
 node dist/main.js \
-  --aws.profile my-sso-profile \
   --logGroups "/aws/lambda/checkout" \
   --query 'fields @timestamp, @message | filter @message like /ERROR/' \
   --start 2026-07-01T00:00:00Z --end 2026-07-01T01:00:00Z \
@@ -31,32 +30,30 @@ node dist/main.js \
 
 # Common — two log groups, 15-minute windows, CSV output
 node dist/main.js \
-  --aws.profile my-sso-profile \
   --logGroups "/aws/lambda/checkout,/aws/lambda/payments" \
   --query 'fields @timestamp, @message | filter @message like /ERROR/' \
   --start 2026-07-01T00:00:00Z --end 2026-07-01T01:00:00Z \
   --windowMinutes 15 \
   --format csv --output errors.csv
 
-# Production — 24h range across three log groups, per-window row cap
+# Production — 7-day range across three log groups, fine-grained windows to
+# stay under the per-window row cap at this volume, unattended
 node dist/main.js \
-  --aws.profile my-sso-profile \
   --logGroups "/aws/lambda/checkout,/aws/lambda/payments,/aws/lambda/fulfillment" \
   --query 'fields @timestamp, @message | filter @message like /ERROR/' \
-  --start 2026-07-01T00:00:00Z --end 2026-07-02T00:00:00Z \
-  --windowMinutes 15 --limit 5000 \
+  --start 2026-07-01T00:00:00Z --end 2026-07-08T00:00:00Z \
+  --windowMinutes 5 --limit 10000 \
   --format csv --output errors.csv
 
-# Edge case — reattach to the production run above after it was interrupted
-# (re-invoke the exact same command with --resume true appended)
+# Edge case — reattach to the minimal run above after it was interrupted
+# (resume requires the exact same invocation that was interrupted, so only
+# --resume true is added; a different --output is used here to distinguish
+# it from the production run's checkpoint)
 node dist/main.js \
-  --aws.profile my-sso-profile \
-  --logGroups "/aws/lambda/checkout,/aws/lambda/payments,/aws/lambda/fulfillment" \
+  --logGroups "/aws/lambda/checkout" \
   --query 'fields @timestamp, @message | filter @message like /ERROR/' \
-  --start 2026-07-01T00:00:00Z --end 2026-07-02T00:00:00Z \
-  --windowMinutes 15 --limit 5000 \
-  --format csv --output errors.csv \
-  --resume true
+  --start 2026-07-01T00:00:00Z --end 2026-07-01T01:00:00Z \
+  --output errors.json --resume true
 ```
 
 Writes the output file to `M3L_OUTPUT_DIR`, plus a `<output>.checkpoint.json`

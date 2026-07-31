@@ -94,11 +94,9 @@ and the library's `extends` inheritance (`M3LScriptPresetLoader`):
 - `report-active.yaml` — `extends: ./report.yaml`, overriding `filters` to a
   narrower subset (only active records) and the `output` name.
 
-Pass one by explicit path with `--preset`:
-
-```bash
-node dist/main.js --preset ../../data/config/presets/report.yaml
-```
+Pass one by explicit path with the `--preset` CLI flag (run instructions,
+including that flag's exact invocation, live in the
+[README](../../../scripts/json-etl/README.md#presets), not here).
 
 `main.ts` resolves `--preset` (`src/steps/resolve-preset.ts`) into
 `M3LScriptOptions.preset`, so the loaded preset's values drive the run at

@@ -46,6 +46,16 @@ JSONL file locally, with no SQS calls. Every command still requires
 skips AWS provisioning — see the contract page's "Out of scope for this
 iteration" note.
 
+### Operations at a glance
+
+| Command               | Demonstrated by                                                    |
+| --------------------- | ------------------------------------------------------------------ |
+| `dump`                | Minimal                                                            |
+| `send`                | Common                                                             |
+| `redrive`             | Production                                                         |
+| `purge`               | Edge case                                                          |
+| `delete`, `transform` | — see the [contract page](../../docs/reference/scripts/sqs-etl.md) |
+
 ### Operational flags
 
 Every script composes through `Core.runScript` (ADR-0035), so these work uniformly:
@@ -77,6 +87,7 @@ Per-script data isolation (ADR-0022): the library shares one flat
 a per-script subtree:
 
 ```dotenv
+AWS_PROFILE=my-sso-profile
 M3L_CONFIG_DIR=<absolute-repo-path>/data/sqs-etl/config
 M3L_INPUT_DIR=<absolute-repo-path>/data/sqs-etl/input
 M3L_OUTPUT_DIR=<absolute-repo-path>/data/sqs-etl/output

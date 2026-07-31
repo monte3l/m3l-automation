@@ -23,13 +23,11 @@ per-run configuration on the command line:
 ```bash
 # Minimal — run a query, default JSON output
 node dist/main.js \
-  --aws.profile my-sso-profile \
   --queryString "SELECT * FROM orders LIMIT 10" \
   --output preview.json
 
 # Common — named database, S3 results location, CSV output
 node dist/main.js \
-  --aws.profile my-sso-profile \
   --queryString "SELECT * FROM orders WHERE order_date >= DATE '2026-07-01'" \
   --database analytics \
   --outputLocation s3://my-athena-results-bucket/query-results/ \
@@ -37,20 +35,19 @@ node dist/main.js \
 
 # Production — parameterized query against a dedicated workgroup/catalog
 node dist/main.js \
-  --aws.profile my-sso-profile \
   --queryString "SELECT * FROM orders WHERE region = ? AND status = ?" \
   --database analytics --catalog AwsDataCatalog --workGroup analytics-batch \
   --executionParameters "us-east-1,shipped" \
   --outputLocation s3://my-athena-results-bucket/query-results/ \
   --format csv --output orders.csv
 
-# Edge case — reattach to the production run above after it was interrupted
-# (re-invoke the exact same command with --resume true appended)
+# Edge case — reattach to the common run above after it was interrupted
+# (resume requires the exact same invocation that was interrupted, so only
+# --resume true is added — never re-invoke the production run above: a
+# resumed run with different parameters reattaches to the wrong query)
 node dist/main.js \
-  --aws.profile my-sso-profile \
-  --queryString "SELECT * FROM orders WHERE region = ? AND status = ?" \
-  --database analytics --catalog AwsDataCatalog --workGroup analytics-batch \
-  --executionParameters "us-east-1,shipped" \
+  --queryString "SELECT * FROM orders WHERE order_date >= DATE '2026-07-01'" \
+  --database analytics \
   --outputLocation s3://my-athena-results-bucket/query-results/ \
   --format csv --output orders.csv \
   --resume true
