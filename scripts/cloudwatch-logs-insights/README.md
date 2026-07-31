@@ -93,6 +93,7 @@ Per-script data isolation (ADR-0022): the library shares one flat
 a per-script subtree:
 
 ```dotenv
+AWS_PROFILE=my-sso-profile
 M3L_CONFIG_DIR=<absolute-repo-path>/data/cloudwatch-logs-insights/config
 M3L_INPUT_DIR=<absolute-repo-path>/data/cloudwatch-logs-insights/input
 M3L_OUTPUT_DIR=<absolute-repo-path>/data/cloudwatch-logs-insights/output
