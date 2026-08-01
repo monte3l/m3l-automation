@@ -71,6 +71,9 @@ The `.env` file is gitignored (and listed in `.worktreeinclude` so worktrees
 inherit it). Secrets go **only** here or in config `secretNames` — never in
 source or fixtures.
 
+- `API_BASE_URL` — required for every example below (the `$API_BASE_URL`
+  they reference); the API Gateway invoke URL, e.g.
+  `https://abc123xyz.execute-api.us-east-1.amazonaws.com/prod`.
 - `AWS_PROFILE` — required **only** for `auth: iam` (the profile the
   `aws.profile` config parameter resolves to; SigV4 credentials resolve via
   `fromIni`). Unused for `auth: none`/`api-key`.
@@ -84,6 +87,8 @@ Per-script data isolation (ADR-0022): the library shares one flat
 a per-script subtree:
 
 ```dotenv
+API_BASE_URL=https://abc123xyz.execute-api.us-east-1.amazonaws.com/prod
+
 # auth: iam only
 AWS_PROFILE=my-sso-profile
 

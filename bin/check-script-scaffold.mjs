@@ -10,6 +10,8 @@
 // artifact-only ghosts are ignored):
 //   - every required file exists (main.ts/config.ts/hooks.ts, tsconfigs,
 //     README) plus at least one steps/ module and at least one test file
+//   - README.md's "### Examples" section is populated: no leftover scaffold
+//     placeholder, at least one runnable `node dist/main.js` invocation
 //   - package.json satisfies the fleet package contract
 //   - the root tsconfig.json carries the project reference
 //   - the contract page docs/reference/scripts/<name>.md exists
@@ -31,6 +33,7 @@ import {
   SCRIPT_DOCS_DIR,
   docPagePath,
   packageManifestErrors,
+  readmeExamplesErrors,
   rootTsconfigRef,
   scriptPackageDirs,
   serviceNameErrors,
@@ -65,6 +68,15 @@ for (const name of scriptNames) {
   for (const file of REQUIRED_EXACT_FILES) {
     if (!existsSync(join(packageDir, file))) {
       report(`scripts/${name}/${file} is missing (required by ADR-0022).`);
+    }
+  }
+
+  const readmePath = join(packageDir, "README.md");
+  if (existsSync(readmePath)) {
+    for (const problem of readmeExamplesErrors(
+      readFileSync(readmePath, "utf8"),
+    )) {
+      report(`scripts/${name}/README.md: ${problem}`);
     }
   }
 

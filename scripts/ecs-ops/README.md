@@ -44,6 +44,17 @@ node dist/main.js --operation delete-service --cluster my-cluster \
 `input` file carries `M3LECSCreateServiceInput` instead (requires an
 already-registered task definition — this script does not register one).
 
+### Operations at a glance
+
+| Operation                                             | Demonstrated by                                                    |
+| ----------------------------------------------------- | ------------------------------------------------------------------ |
+| `list-services`                                       | Minimal                                                            |
+| `describe-service`                                    | Common                                                             |
+| `update-service`                                      | Production                                                         |
+| `wait-services-stable`                                | Production                                                         |
+| `delete-service`                                      | Edge case                                                          |
+| `create-service`, `list-clusters`, `describe-cluster` | — see the [contract page](../../docs/reference/scripts/ecs-ops.md) |
+
 ### Operational flags
 
 Every script composes through `Core.runScript` (ADR-0035), so these work uniformly:
@@ -70,6 +81,7 @@ Per-script data isolation (ADR-0022): the library shares one flat
 a per-script subtree:
 
 ```dotenv
+AWS_PROFILE=my-sso-profile
 M3L_CONFIG_DIR=<absolute-repo-path>/data/ecs-ops/config
 M3L_INPUT_DIR=<absolute-repo-path>/data/ecs-ops/input
 M3L_OUTPUT_DIR=<absolute-repo-path>/data/ecs-ops/output

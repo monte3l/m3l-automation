@@ -40,6 +40,7 @@ import {
   packageManifestErrors,
   pascalCase,
   purposeErrors,
+  readmeExamplesErrors,
   rootTsconfigRef,
   scriptPackageDirs,
   scriptTokens,
@@ -430,5 +431,104 @@ describe("serviceNameErrors", () => {
     // BANNED_EXACT_NAMES is an exact whole-name Map lookup, not substring search.
     expect(serviceNameErrors("foo-logs-insights")).toEqual([]);
     expect(serviceNameErrors("logs-insights-extra")).toEqual([]);
+  });
+});
+
+describe("readmeExamplesErrors", () => {
+  test("returns no errors for a heading immediately followed by a runnable bash fence", () => {
+    const readme = [
+      "### Examples",
+      "",
+      "```bash",
+      "node dist/main.js --foo",
+      "```",
+      "",
+    ].join("\n");
+    expect(readmeExamplesErrors(readme)).toEqual([]);
+  });
+
+  test("returns no errors when the runnable fence appears later, under a different heading (sibling-headings shape)", () => {
+    const readme = [
+      "### Examples",
+      "",
+      "Some introductory prose about the examples below.",
+      "",
+      "### 1. Something",
+      "",
+      "```bash",
+      "node dist/main.js --foo",
+      "```",
+      "",
+    ].join("\n");
+    expect(readmeExamplesErrors(readme)).toEqual([]);
+  });
+
+  test("returns exactly the missing-heading message and returns early when there is no Examples heading at all", () => {
+    const readme = ["## Something Else", "", "No examples here.", ""].join(
+      "\n",
+    );
+    expect(readmeExamplesErrors(readme)).toEqual([
+      'must have an "### Examples" heading with 2-4 runnable examples (ADR-0022 fleet convention).',
+    ]);
+  });
+
+  test("returns exactly the no-runnable-fence message when the heading exists but only prose follows it", () => {
+    const readme = [
+      "### Examples",
+      "",
+      "Just prose here, no code fence at all.",
+      "",
+    ].join("\n");
+    expect(readmeExamplesErrors(readme)).toEqual([
+      '"### Examples" section has no runnable ```bash fence invoking `node dist/main.js`.',
+    ]);
+  });
+
+  test("returns exactly the no-runnable-fence message when a bash fence exists but never invokes node dist/main.js", () => {
+    const readme = [
+      "### Examples",
+      "",
+      "```bash",
+      "pnpm build",
+      "```",
+      "",
+    ].join("\n");
+    expect(readmeExamplesErrors(readme)).toEqual([
+      '"### Examples" section has no runnable ```bash fence invoking `node dist/main.js`.',
+    ]);
+  });
+
+  test("returns both the placeholder and no-runnable-fence messages, in that order, for the literal scaffold placeholder", () => {
+    const readme = [
+      "### Examples",
+      "",
+      "<!-- Add 2-4 examples here: Minimal / Common / Production / Edge case -->",
+      "",
+      "## Environment",
+    ].join("\n");
+    expect(readmeExamplesErrors(readme)).toEqual([
+      'still carries the scaffold placeholder comment under "### Examples" — fill in 2-4 real examples.',
+      '"### Examples" section has no runnable ```bash fence invoking `node dist/main.js`.',
+    ]);
+  });
+
+  test("flags a placeholder-shaped comment anywhere in the file, even outside the Examples section, because the placeholder scan is not heading-scoped", () => {
+    // EXAMPLES_PLACEHOLDER_RE.test(readmeText) runs against the FULL text,
+    // not just the slice after the heading — so a stray placeholder-shaped
+    // comment in unrelated front-matter still trips the placeholder check
+    // even though the Examples section itself is fully and correctly filled in.
+    const readme = [
+      "<!-- Add later: revisit this front-matter note -->",
+      "",
+      "### Examples",
+      "",
+      "```bash",
+      "node dist/main.js --foo",
+      "```",
+      "",
+    ].join("\n");
+    expect(readmeExamplesErrors(readme)).toEqual([
+      'still carries the scaffold placeholder comment under "### Examples" — fill in 2-4 real examples.',
+    ]);
   });
 });

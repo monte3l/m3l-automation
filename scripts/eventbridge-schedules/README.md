@@ -34,7 +34,7 @@ node dist/main.js --operation describe --ruleName nightly-cleanup \
 node dist/main.js --operation create --ruleName nightly-cleanup \
   --scheduleExpression "rate(1 day)" --state ENABLED \
   --description "Nightly cleanup job" \
-  --targets '[{"id":"lambda-target","arn":"arn:aws:lambda:...:function:cleanup"}]'
+  --targets '[{"id":"lambda-target","arn":"arn:aws:lambda:us-east-1:123456789012:function:cleanup"}]'
 
 # Edge case — delete an AWS-managed rule (requires --force) unattended (--yes)
 node dist/main.js --operation delete --ruleName legacy-rule --force --yes
@@ -46,6 +46,16 @@ and `enable`/`disable` take only `--ruleName`). Mutating operations
 (`create`/`update`/`delete`/`enable`/`disable`) prompt for confirmation before
 dispatch — add `--yes` for unattended runs (the bypass is logged). `list`/
 `describe` are never gated.
+
+### Operations at a glance
+
+| Operation                     | Demonstrated by                                                                  |
+| ----------------------------- | -------------------------------------------------------------------------------- |
+| `list`                        | Minimal                                                                          |
+| `describe`                    | Common                                                                           |
+| `create`                      | Production                                                                       |
+| `delete`                      | Edge case                                                                        |
+| `update`, `enable`, `disable` | — see the [contract page](../../docs/reference/scripts/eventbridge-schedules.md) |
 
 ### Operational flags
 

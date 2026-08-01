@@ -44,6 +44,17 @@ node dist/main.js --operation delete-stack --stackName decommissioned-stack
 instead. `--template` is optional: when set and the input file sets neither
 `templateBody` nor `templateUrl`, its contents become `templateBody`.
 
+### Operations at a glance
+
+| Operation                                                                                           | Demonstrated by                                                                  |
+| --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `list-stacks`                                                                                       | Minimal                                                                          |
+| `describe-stack`                                                                                    | Common                                                                           |
+| `create-stack`                                                                                      | Production                                                                       |
+| `wait-stack-create-complete`                                                                        | Production                                                                       |
+| `delete-stack`                                                                                      | Edge case                                                                        |
+| `describe-stack-events`, `update-stack`, `wait-stack-update-complete`, `wait-stack-delete-complete` | — see the [contract page](../../docs/reference/scripts/cloudformation-stacks.md) |
+
 ### Operational flags
 
 Every script composes through `Core.runScript` (ADR-0035), so these work uniformly:
@@ -70,6 +81,7 @@ Per-script data isolation (ADR-0022): the library shares one flat
 a per-script subtree:
 
 ```dotenv
+AWS_PROFILE=my-sso-profile
 M3L_CONFIG_DIR=<absolute-repo-path>/data/cloudformation-stacks/config
 M3L_INPUT_DIR=<absolute-repo-path>/data/cloudformation-stacks/input
 M3L_OUTPUT_DIR=<absolute-repo-path>/data/cloudformation-stacks/output
