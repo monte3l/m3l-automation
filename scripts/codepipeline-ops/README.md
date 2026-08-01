@@ -33,10 +33,12 @@ node dist/main.js --operation get-pipeline-state --pipeline my-pipeline \
   --output state.json
 
 # Production — trigger a run, then watch it to a terminal status, unattended
+# (the executionId below comes from start.json's own "pipelineExecutionId"
+# field, written by the start-execution call just above)
 node dist/main.js --operation start-execution --pipeline my-pipeline \
   --clientRequestToken my-pipeline-2026-07-27-01 --output start.json
 node dist/main.js --operation watch-execution --pipeline my-pipeline \
-  --executionId <id-from-start.json> --waitMaxAttempts 120 \
+  --executionId a1b2c3d4-5678-90ab-cdef-1234567890ab --waitMaxAttempts 120 \
   --waitIntervalSeconds 15 --output execution.json
 
 # Edge case — update without --yes: the default interactive prompt warns
@@ -52,6 +54,18 @@ node dist/main.js --operation update-pipeline \
 never a mutated `describe-pipeline` result. See
 [the contract page](../../docs/reference/scripts/codepipeline-ops.md#purpose-and-scope)
 for why a partial declaration silently deletes fields from the live pipeline.
+
+### Operations at a glance
+
+| Operation                                                                                                                                              | Demonstrated by                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| `list-pipelines`                                                                                                                                       | Minimal                                                                     |
+| `describe-pipeline`                                                                                                                                    | Common                                                                      |
+| `get-pipeline-state`                                                                                                                                   | Common                                                                      |
+| `start-execution`                                                                                                                                      | Production                                                                  |
+| `watch-execution`                                                                                                                                      | Production                                                                  |
+| `update-pipeline`                                                                                                                                      | Edge case                                                                   |
+| `list-executions`, `describe-execution`, `create-pipeline`, `delete-pipeline`, `stop-execution`, `enable-stage-transition`, `disable-stage-transition` | — see the [contract page](../../docs/reference/scripts/codepipeline-ops.md) |
 
 ### Operational flags
 
@@ -79,6 +93,7 @@ Per-script data isolation (ADR-0022): the library shares one flat
 a per-script subtree:
 
 ```dotenv
+AWS_PROFILE=my-sso-profile
 M3L_CONFIG_DIR=<absolute-repo-path>/data/codepipeline-ops/config
 M3L_INPUT_DIR=<absolute-repo-path>/data/codepipeline-ops/input
 M3L_OUTPUT_DIR=<absolute-repo-path>/data/codepipeline-ops/output

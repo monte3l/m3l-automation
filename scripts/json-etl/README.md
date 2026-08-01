@@ -89,7 +89,7 @@ The everyday report: rename three fields, drop archived people, sort by id.
 
 `people.ndjson`:
 
-```json
+```jsonl
 {"id": 3, "metadata": {"name": "Linus"}, "status": "active"}
 {"id": 1, "metadata": {"name": "Ada"},   "status": "active"}
 {"id": 2, "metadata": {"name": "Grace"}, "status": "archived"}
@@ -117,7 +117,7 @@ id,name,status
 
 `orders.ndjson`:
 
-```json
+```jsonl
 {"order": "A-100", "total": 1299, "customer": {"tier": "gold"}}
 {"order": "A-101", "total": 42,   "customer": {"tier": "silver"}}
 {"order": "A-102", "total": 350,  "customer": {"tier": "gold"}}
@@ -146,7 +146,7 @@ per match.
 
 `posts.ndjson`:
 
-```json
+```jsonl
 {"id": "p1", "tags": [{"label": "eng"}, {"label": "ai"}]}
 {"id": "p2", "tags": [{"label": "ops"}]}
 ```
@@ -160,7 +160,7 @@ node dist/main.js --input posts.ndjson \
 
 `tags.jsonl` — p1 fans into two rows:
 
-```json
+```jsonl
 {"id":"p1","tag":"eng"}
 {"id":"p1","tag":"ai"}
 {"id":"p2","tag":"ops"}
@@ -180,9 +180,85 @@ node dist/main.js --input posts.ndjson \
 
 `tags.jsonl`:
 
-```json
+```jsonl
 {"id":"p1","tags":["eng","ai"]}
 {"id":"p2","tags":"ops"}
+```
+
+### 5. Production — a shareable report → HTML
+
+`--format html` (the fourth exporter, alongside `json`/`jsonl`/`csv`) writes
+an `M3LHTMLListExporter` table — pick this tier when the output is read by a
+person rather than piped into another tool.
+
+`incidents.ndjson`:
+
+```jsonl
+{"id": "INC-40", "severity": "high", "owner": {"team": "payments"}}
+{"id": "INC-41", "severity": "low",  "owner": {"team": "checkout"}}
+```
+
+```bash
+node dist/main.js --input incidents.ndjson \
+  --fields "id=id,severity=severity,team=owner.team" \
+  --sort severity:desc --limit 500 \
+  --format html --output incidents.html
+```
+
+`incidents.html` — one `<table>` row per record, columns in `--fields` order:
+
+```html
+<table>
+  <thead>
+    <tr>
+      <th>id</th>
+      <th>severity</th>
+      <th>team</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>INC-40</td>
+      <td>high</td>
+      <td>payments</td>
+    </tr>
+    <tr>
+      <td>INC-41</td>
+      <td>low</td>
+      <td>checkout</td>
+    </tr>
+  </tbody>
+</table>
+```
+
+### 6. Edge case — malformed lines are skipped, not fatal
+
+A malformed **JSONL line** (unparseable JSON on one line) is tolerated: the
+importer omits it from the stream, logs a `skipped malformed record` warning
+with its index, and the run summary reports it under `skipped` — the run
+still succeeds. A malformed **whole-document JSON array** is not tolerated —
+that aborts the run with `ERR_IMPORT_PARSE` instead.
+
+`mixed.ndjson` — line 2 is not valid JSON:
+
+```text
+{"id": 1, "status": "active"}
+not valid json
+{"id": 2, "status": "active"}
+```
+
+```bash
+node dist/main.js --input mixed.ndjson \
+  --fields "id=id,status=status" \
+  --format jsonl --output clean.jsonl
+```
+
+`clean.jsonl` — two records written, one skipped; the run logs
+`read: 3, written: 2, skipped: 1` via the correlated logger:
+
+```jsonl
+{"id":1,"status":"active"}
+{"id":2,"status":"active"}
 ```
 
 ## Environment (`.env`)

@@ -46,6 +46,21 @@ node dist/main.js --operation export --tableName orders \
   --runName orders-export --output orders-export.jsonl --resume true
 ```
 
+`--key` (a JSON-encoded `DynamoDBKey`) and `--item` (a JSON-encoded
+`DynamoDBItem`) carry the primary key and the item payload respectively;
+`--key` is also reused as `query`'s equality key condition. See the
+[contract page](../../docs/reference/scripts/dynamodb-crud.md) for `put`,
+`batch-write`/`batch-delete`, and `import`'s input-file shapes.
+
+### Operations at a glance
+
+| Operation                                                                 | Demonstrated by                                                          |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `get`                                                                     | Minimal                                                                  |
+| `update`                                                                  | Common                                                                   |
+| `export`                                                                  | Production, Edge case                                                    |
+| `put`, `delete`, `query`, `scan`, `batch-write`, `batch-delete`, `import` | — see the [contract page](../../docs/reference/scripts/dynamodb-crud.md) |
+
 ### Operational flags
 
 Every script composes through `Core.runScript` (ADR-0035), so these work uniformly:
@@ -72,6 +87,7 @@ Per-script data isolation (ADR-0022): the library shares one flat
 a per-script subtree:
 
 ```dotenv
+AWS_PROFILE=my-sso-profile
 M3L_CONFIG_DIR=<absolute-repo-path>/data/dynamodb-crud/config
 M3L_INPUT_DIR=<absolute-repo-path>/data/dynamodb-crud/input
 M3L_OUTPUT_DIR=<absolute-repo-path>/data/dynamodb-crud/output

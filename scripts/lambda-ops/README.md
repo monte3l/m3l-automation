@@ -40,6 +40,16 @@ node dist/main.js --operation delete --functionName decommissioned-worker
 `function-def.json` must carry at least `runtime`, `role`, and `handler` for
 `create` — those three fields are guard-checked present before the call.
 
+### Operations at a glance
+
+| Operation                                         | Demonstrated by                                                       |
+| ------------------------------------------------- | --------------------------------------------------------------------- |
+| `list`                                            | Minimal                                                               |
+| `invoke`                                          | Common                                                                |
+| `create`                                          | Production                                                            |
+| `delete`                                          | Edge case                                                             |
+| `describe`, `update-code`, `update-configuration` | — see the [contract page](../../docs/reference/scripts/lambda-ops.md) |
+
 ### Operational flags
 
 Every script composes through `Core.runScript` (ADR-0035), so these work uniformly:
@@ -66,6 +76,7 @@ Per-script data isolation (ADR-0022): the library shares one flat
 a per-script subtree:
 
 ```dotenv
+AWS_PROFILE=my-sso-profile
 M3L_CONFIG_DIR=<absolute-repo-path>/data/lambda-ops/config
 M3L_INPUT_DIR=<absolute-repo-path>/data/lambda-ops/input
 M3L_OUTPUT_DIR=<absolute-repo-path>/data/lambda-ops/output

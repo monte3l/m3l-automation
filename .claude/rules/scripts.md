@@ -69,6 +69,15 @@ paths:
   emits the whole shape from `templates/script/`; to evolve the shape, change
   the templates + manifest together — a hand-added or hand-dropped file fails
   `check:script-scaffold` in CI.
+- **Fill in the README's `### Examples` section before calling a script
+  done:** 2–4 runnable examples in one ` ```bash ` fence, labelled in-fence
+  `# Minimal —` / `# Common —` / `# Production —` / `# Edge case —`, spanning
+  read-only → mutating → destructive/interactive. Enforcement:
+  `check:script-scaffold` (via `readmeExamplesErrors`,
+  `bin/lib/script-scaffold.mjs`) fails on a leftover scaffold placeholder or
+  no runnable `node dist/main.js` invocation after the heading — it does not
+  check example count or the tier labels, so a thin or unlabelled section
+  still passes and needs reviewer judgment.
 
 ## Library usage
 

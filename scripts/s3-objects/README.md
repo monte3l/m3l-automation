@@ -46,6 +46,16 @@ node dist/main.js --operation put --bucket reports \
 `get`'s/`put`'s single-object shape. Every operation still requires
 `aws.profile` (`AWS_PROFILE` in `.env`).
 
+### Operations at a glance
+
+| Operation                    | Demonstrated by                                                       |
+| ---------------------------- | --------------------------------------------------------------------- |
+| `list`                       | Minimal                                                               |
+| `get`                        | Common                                                                |
+| `delete-batch`               | Production                                                            |
+| `put`                        | Edge case                                                             |
+| `describe`, `copy`, `delete` | — see the [contract page](../../docs/reference/scripts/s3-objects.md) |
+
 ### Operational flags
 
 Every script composes through `Core.runScript` (ADR-0035), so these work uniformly:
@@ -72,6 +82,7 @@ Per-script data isolation (ADR-0022): the library shares one flat
 a per-script subtree:
 
 ```dotenv
+AWS_PROFILE=my-sso-profile
 M3L_CONFIG_DIR=<absolute-repo-path>/data/s3-objects/config
 M3L_INPUT_DIR=<absolute-repo-path>/data/s3-objects/input
 M3L_OUTPUT_DIR=<absolute-repo-path>/data/s3-objects/output
