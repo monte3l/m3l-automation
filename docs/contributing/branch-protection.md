@@ -58,12 +58,22 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     against the cap, wall/API duration, cost, prompt-cache read/write tokens,
     and diff size) to the run's step summary and annotations — purely for
     tuning the turn cap over time, with no effect on the verdict.
-  - **CodeQL code scanning** — added as required checks under ADR-0015 so a
-    high-severity SAST finding blocks the merge. CodeQL runs via GitHub **default
-    setup**, whose check runs surface as `Analyze (javascript-typescript)` and
-    `Analyze (actions)` (both on PRs and on `main` pushes) — both are marked
-    required. Confirm the exact check-run names on a live PR before wiring the
-    rule, in case default-setup naming changes:
+  - **CodeQL code scanning** — added as a required check under ADR-0015 so a
+    high-severity SAST finding blocks the merge. CodeQL runs via GitHub
+    **default setup**; on human PRs and direct `main` pushes it still surfaces
+    per-language as `Analyze (javascript-typescript)` and `Analyze (actions)`,
+    but as of 2026-08 it reports a single consolidated `CodeQL` check on
+    Dependabot-actor PRs instead — the per-language contexts never appear
+    there, which permanently blocked merge until this was caught (2026-08-06).
+    The required context is therefore the single `CodeQL` check, which is
+    observed reporting reliably across both PR classes; `success` and
+    `neutral` (a clean scan with zero findings) both count as passing. On
+    Dependabot PRs specifically, `CodeQL` can report `neutral` without a real
+    scan having run (a manifest/lockfile-only diff gives it nothing to
+    analyze) — `Dependency Review` (`fail-on-severity: high`) and `pnpm audit`
+    in `verify` are the actual SAST/dependency backstop for that PR class.
+    Confirm the exact check-run name on a live PR before re-wiring this rule,
+    in case default-setup naming changes again:
     `gh api repos/monte3l/m3l-automation/commits/<pr-head-sha>/check-runs --jq '.check_runs[].name'`.
   - **Dependency Review** — the job in `.github/workflows/dependency-review.yml`
     (`fail-on-severity: high`). Required under ADR-0015; it runs on PRs only.
@@ -116,9 +126,8 @@ enforces, independently of the classic rule above:
 - `required_signatures` — mirrors the classic "Require signed commits" rule.
 - `pull_request` — requires a PR (no approval count / CODEOWNERS gate, matching
   the scoping decision above).
-- `required_status_checks` — the same five contexts as classic protection:
-  `verify`, `review`, `Analyze (javascript-typescript)`, `Analyze (actions)`,
-  `Dependency Review`.
+- `required_status_checks` — the same four contexts as classic protection:
+  `verify`, `review`, `CodeQL`, `Dependency Review`.
 
 **This is intentionally overlapping, not a replacement.** GitHub enforces
 whichever of classic protection and an applicable ruleset is more restrictive
