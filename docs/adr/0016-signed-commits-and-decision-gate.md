@@ -40,6 +40,14 @@
 > layer is ever again disabled or misconfigured, the other still blocks.
 > Human-approval / CODEOWNERS gating was deliberately left out of both layers
 > in this pass; see `branch-protection.md` for current detail.
+>
+> **Update (2026-08-06).** The "five required status checks" above is now
+> four: GitHub's CodeQL default setup stopped emitting the per-language
+> `Analyze (javascript-typescript)` / `Analyze (actions)` contexts on
+> Dependabot-actor PRs, so both enforcement layers were repointed at the
+> single consolidated `CodeQL` context instead
+> ([ADR-0015](./0015-code-scanning-tooling-evaluation.md) Update
+> (2026-08-06)). See `branch-protection.md` for the current list.
 
 ## Context and problem statement
 

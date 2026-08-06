@@ -8,15 +8,28 @@ overrides:
   "@typescript-eslint/tsconfig-utils": "^8.62.0"
   # Security-advisory pins for vulnerable transitive ranges (2026-07-22,
   # widened 2026-07-25 for GHSA-mh99-v99m-4gvg — a second brace-expansion DoS
-  # advisory covering 5.0.7 itself, patched in 5.0.8):
-  # GHSA brace-expansion DoS x2, linkify-it mailto DoS, fast-uri host
-  # confusion x2, @hono/node-server path traversal. Scoped to the vulnerable
-  # ranges so unaffected majors resolve untouched; drop once the direct deps
-  # catch up. Caret (not >=) so the pin cannot jump a major (linkify-it@6 is
-  # ESM-only and breaks mailparser's require chain).
-  "brace-expansion@>=3.0.0 <5.0.8": "^5.0.8"
+  # advisory covering 5.0.7 itself, patched in 5.0.8; widened again 2026-08-06
+  # for a third brace-expansion DoS bypassing the 5.0.8 mitigation, plus a
+  # fast-uri host-confusion follow-up and a new ip-address SSRF advisory):
+  # GHSA brace-expansion DoS x3, linkify-it mailto DoS, fast-uri host
+  # confusion x2, ip-address octal/decimal SSRF, @hono/node-server path
+  # traversal. Scoped to the vulnerable ranges so unaffected majors resolve
+  # untouched; drop once the direct deps catch up. Caret (not >=) so the pin
+  # cannot jump a major (linkify-it@6 is ESM-only and breaks mailparser's
+  # require chain).
+  "brace-expansion@>=3.0.0 <5.0.9": "^5.0.9"
   "linkify-it@<=5.0.1": "^5.0.2"
-  "fast-uri@>=3.0.0 <=3.1.3": "^3.1.4"
+  "fast-uri@>=3.0.0 <3.1.5": "^3.1.5"
+  "ip-address@<=10.3.0": "^10.3.1"
+  # cheerio (test-only devDependency) pins undici in the 7.x line.
+  "undici@>=7.0.0 <7.29.0": "^7.29.0"
+  # packages/m3l-common's own direct `undici` 8.7.0 is also bumped in its own
+  # package.json (Dependabot PR #292), but that fix and this file's other
+  # overrides land in separate PRs that both gate on a clean `pnpm audit`,
+  # creating a merge deadlock — pinned here too so this file's PR can merge
+  # on its own; harmless overlap with #292 once it lands. Drop once #292 (or
+  # any direct-dependency bump covering it) merges.
+  "undici@>=8.0.0 <8.9.0": "^8.9.0"
   "@hono/node-server@<2.0.5": "^2.0.5"
 allowBuilds:
   unrs-resolver: false
