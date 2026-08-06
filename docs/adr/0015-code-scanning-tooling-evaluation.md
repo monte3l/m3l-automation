@@ -9,6 +9,21 @@
 > ([ADR-0020](./0020-drop-release-automation.md)). The package is no longer
 > published, so SBOM-at-release and npm provenance no longer apply. Everything
 > else in this ADR (CodeQL, Scorecard, SHA-pinned Actions, Dependabot) stands.
+>
+> **Update (2026-08-06).** GitHub's CodeQL default setup began reporting a
+> single consolidated `CodeQL` check on Dependabot-actor PRs instead of the
+> per-language `Analyze (javascript-typescript)` / `Analyze (actions)` checks
+> this ADR originally wired as required. Because those two contexts never
+> appeared on Dependabot PRs, every one of them sat permanently blocked
+> despite passing every check that did run. Branch protection and the
+> `main-dual-layer-protection` ruleset were repointed at the single `CodeQL`
+> context, which reports reliably on both PR classes; human PRs are otherwise
+> unaffected, still triggering full per-language analysis. Accepted tradeoff:
+> `CodeQL` can report `neutral` on Dependabot PRs without a scan actually
+> running (nothing to analyze in a manifest/lockfile-only diff) —
+> `Dependency Review` and `pnpm audit` remain the substantive gate for that PR
+> class. See `docs/contributing/branch-protection.md` for the current
+> required-context list.
 
 ## Context and problem statement
 
