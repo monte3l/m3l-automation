@@ -198,7 +198,7 @@ export const COMMAND_CATALOG = [
   {
     name: "check:zones",
     description:
-      "Verifies the ADR-0009 dependency-direction zones (import-x/no-restricted-paths) are still present and correctly shaped in eslint.config.js — a deleted zone would otherwise pass `pnpm lint` silently. Run after editing eslint.config.js.",
+      "Verifies the ADR-0009 dependency-direction zones (import-x/no-restricted-paths) and the ADR-0035 repo-wide import-x/no-cycle rule are still present and correctly shaped in eslint.config.js — a deleted zone or rule would otherwise pass `pnpm lint` silently. Run after editing eslint.config.js.",
   },
   {
     name: "check:deps",

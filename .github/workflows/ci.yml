@@ -191,9 +191,11 @@ jobs:
       - name: Check GitHub-integration stance (github-stance)
         run: pnpm check:github-stance
 
-      # ADR-0009 dependency zones: the import-x/no-restricted-paths layering
-      # zones (internal sealing, aws island, core/script root) are still present
-      # and shaped in eslint.config.js — a deleted zone would pass lint silently.
+      # ADR-0009/ADR-0035 dependency direction: the import-x/no-restricted-paths
+      # layering zones (internal sealing, aws island, core/script root) plus the
+      # repo-wide import-x/no-cycle rule are still present and shaped in
+      # eslint.config.js — a deleted zone or a deleted no-cycle rule would pass
+      # lint silently.
       - name: Check dependency-direction zones (zones)
         run: pnpm check:zones
 
