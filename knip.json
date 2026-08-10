@@ -14,8 +14,9 @@
       "entry": [
         ".claude/hooks/**/*.mjs",
         ".claude/workflows/**/*.js",
-        "bin/mcp-server.mjs"
-      ]
+        "bin/*.mjs"
+      ],
+      "project": ["bin/**/*.mjs"]
     },
     "packages/m3l-common": {
       "entry": "src/index.ts",

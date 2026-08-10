@@ -1,0 +1,45 @@
+# Scheduled dependency security audit. ci.yml already runs `pnpm audit
+# --audit-level=high` and `pnpm check:licenses` on every push/PR to main, but
+# only against the dependency tree as it exists at that commit — a repo that
+# goes quiet sits on an advisory published later against an unchanged
+# lockfile until the next push. This workflow re-runs the same two checks on
+# a schedule so a newly published HIGH/CRITICAL advisory or a license change
+# surfaces even without new commits.
+name: Security Audit (Scheduled)
+
+on:
+  schedule:
+    - cron: "0 9 * * 1" # Mon 09:00 UTC — same cadence as Scorecard.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Dependency audit + license check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      # Same gate as ci.yml's "Security audit" step — re-run here on a
+      # schedule so a newly published advisory against an unchanged lockfile
+      # is caught between pushes.
+      - name: Security audit
+        run: pnpm audit --audit-level=high
+
+      # ADR-0036: same license-compliance gate as ci.yml's "Check dependency
+      # licenses" step.
+      - name: Check dependency licenses
+        run: pnpm check:licenses

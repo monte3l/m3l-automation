@@ -506,6 +506,7 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
   /** Writes a structured debug line when `debug: true` was configured; otherwise a no-op. */
   #logDebug(payload: Record<string, unknown>): void {
     if (!this.#debug) return;
+    // eslint-disable-next-line no-console -- opt-in debug: true diagnostic path, not default logging; the "no logging by default" guarantee holds because this is gated on caller-supplied debug: true
     console.debug(payload);
   }
 }
