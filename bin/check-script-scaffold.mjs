@@ -12,7 +12,10 @@
 //     README) plus at least one steps/ module and at least one test file
 //   - README.md's "### Examples" section is populated: no leftover scaffold
 //     placeholder, at least one runnable `node dist/main.js` invocation
-//   - package.json satisfies the fleet package contract
+//   - package.json satisfies the fleet package contract (including the
+//     scripts.{build,typecheck,start} command VALUES, not just presence)
+//   - tsconfig.json and tsconfig.build.json each `extends` the base config
+//     and carry the project reference back to m3l-common
 //   - the root tsconfig.json carries the project reference
 //   - the contract page docs/reference/scripts/<name>.md exists
 // Reverse direction:
@@ -37,6 +40,7 @@ import {
   rootTsconfigRef,
   scriptPackageDirs,
   serviceNameErrors,
+  tsconfigShapeErrors,
 } from "./lib/script-scaffold.mjs";
 import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 
@@ -46,8 +50,8 @@ const reporter = createReporter(json);
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 let errors = 0;
-function report(message) {
-  reporter.error(message);
+function report(message, file) {
+  reporter.error(message, file ? { file } : undefined);
   errors++;
 }
 
@@ -60,23 +64,28 @@ const rootRefs = (rootTsconfig.references ?? []).map((entry) => entry.path);
 // --- Forward: each script package conforms to the manifest -------------------
 for (const name of scriptNames) {
   const packageDir = join(root, "scripts", name);
+  const packageDirRel = `scripts/${name}`;
 
   for (const problem of serviceNameErrors(name)) {
-    report(`scripts/${name}: ${problem}`);
+    report(`scripts/${name}: ${problem}`, packageDirRel);
   }
 
   for (const file of REQUIRED_EXACT_FILES) {
     if (!existsSync(join(packageDir, file))) {
-      report(`scripts/${name}/${file} is missing (required by ADR-0022).`);
+      report(
+        `scripts/${name}/${file} is missing (required by ADR-0022).`,
+        `${packageDirRel}/${file}`,
+      );
     }
   }
 
+  const readmeRel = `${packageDirRel}/README.md`;
   const readmePath = join(packageDir, "README.md");
   if (existsSync(readmePath)) {
     for (const problem of readmeExamplesErrors(
       readFileSync(readmePath, "utf8"),
     )) {
-      report(`scripts/${name}/README.md: ${problem}`);
+      report(`scripts/${name}/README.md: ${problem}`, readmeRel);
     }
   }
 
@@ -92,22 +101,49 @@ for (const name of scriptNames) {
     if (matches.length === 0) {
       report(
         `scripts/${name}/${dir}/ has no ${suffix} file — ${what} is required (ADR-0022 §8).`,
+        `${packageDirRel}/${dir}`,
       );
     }
   }
 
+  const manifestRel = `${packageDirRel}/package.json`;
   const manifestPath = join(packageDir, "package.json");
   if (existsSync(manifestPath)) {
     let pkg;
     try {
       pkg = JSON.parse(readFileSync(manifestPath, "utf8"));
     } catch (cause) {
-      report(`scripts/${name}/package.json is not valid JSON: ${cause}`);
+      report(
+        `scripts/${name}/package.json is not valid JSON: ${cause}`,
+        manifestRel,
+      );
     }
     if (pkg) {
       for (const problem of packageManifestErrors(pkg, name)) {
-        report(`scripts/${name}/package.json: ${problem}`);
+        report(`scripts/${name}/package.json: ${problem}`, manifestRel);
       }
+    }
+  }
+
+  for (const [tsconfigFile, templateName] of [
+    ["tsconfig.json", "tsconfig.json.tmpl"],
+    ["tsconfig.build.json", "tsconfig.build.json.tmpl"],
+  ]) {
+    const tsconfigRel = `${packageDirRel}/${tsconfigFile}`;
+    const tsconfigPath = join(packageDir, tsconfigFile);
+    if (!existsSync(tsconfigPath)) continue; // reported above via REQUIRED_EXACT_FILES
+    let parsedTsconfig;
+    try {
+      parsedTsconfig = JSON.parse(readFileSync(tsconfigPath, "utf8"));
+    } catch (cause) {
+      report(
+        `scripts/${name}/${tsconfigFile} is not valid JSON: ${cause}`,
+        tsconfigRel,
+      );
+      continue;
+    }
+    for (const problem of tsconfigShapeErrors(parsedTsconfig, templateName)) {
+      report(`scripts/${name}/${tsconfigFile}: ${problem}`, tsconfigRel);
     }
   }
 
@@ -115,12 +151,15 @@ for (const name of scriptNames) {
   if (!rootRefs.includes(ref)) {
     report(
       `tsconfig.json is missing the project reference { "path": "${ref}" } — tsc -b will not build scripts/${name}.`,
+      "tsconfig.json",
     );
   }
 
-  if (!existsSync(join(root, docPagePath(name)))) {
+  const pageRel = docPagePath(name);
+  if (!existsSync(join(root, pageRel))) {
     report(
-      `${docPagePath(name)} is missing — every script ships a contract page (run pnpm scaffold:script or add it).`,
+      `${pageRel} is missing — every script ships a contract page (run pnpm scaffold:script or add it).`,
+      pageRel,
     );
   }
 }
@@ -136,6 +175,7 @@ if (existsSync(docsDir)) {
     if (!scriptNames.includes(name)) {
       report(
         `${SCRIPT_DOCS_DIR}/${page} documents "${name}" but scripts/${name}/ does not exist (orphan contract page).`,
+        `${SCRIPT_DOCS_DIR}/${page}`,
       );
     }
   }
@@ -146,6 +186,7 @@ for (const ref of rootRefs.filter((path) => path.startsWith("./scripts/"))) {
   if (!scriptNames.includes(name)) {
     report(
       `tsconfig.json references "${ref}" but scripts/${name}/ is not a script package (stale reference).`,
+      "tsconfig.json",
     );
   }
 }
