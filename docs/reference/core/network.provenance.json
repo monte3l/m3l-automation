@@ -8,22 +8,22 @@
         {
           "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
           "symbol": "M3LHttpClient",
-          "blob": "1588753b5d3ba7dcd53a637e95c11ebf730cdae7"
+          "blob": "e790aed4a5622a3ea820e6ee53eeb730082db66c"
         },
         {
           "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
           "symbol": "M3LHttpClientOptions",
-          "blob": "1588753b5d3ba7dcd53a637e95c11ebf730cdae7"
+          "blob": "e790aed4a5622a3ea820e6ee53eeb730082db66c"
         },
         {
           "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
           "symbol": "M3LHttpMethod",
-          "blob": "1588753b5d3ba7dcd53a637e95c11ebf730cdae7"
+          "blob": "e790aed4a5622a3ea820e6ee53eeb730082db66c"
         },
         {
           "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
           "symbol": "M3LHttpRequestOptions",
-          "blob": "1588753b5d3ba7dcd53a637e95c11ebf730cdae7"
+          "blob": "e790aed4a5622a3ea820e6ee53eeb730082db66c"
         },
         {
           "file": "packages/m3l-common/src/core/network/M3LHttpClientError.ts",
@@ -38,27 +38,27 @@
         {
           "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
           "symbol": "M3LHttpAbortableRequest",
-          "blob": "1588753b5d3ba7dcd53a637e95c11ebf730cdae7"
+          "blob": "e790aed4a5622a3ea820e6ee53eeb730082db66c"
         },
         {
           "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
           "symbol": "M3LHttpRequestEvent",
-          "blob": "1588753b5d3ba7dcd53a637e95c11ebf730cdae7"
+          "blob": "e790aed4a5622a3ea820e6ee53eeb730082db66c"
         },
         {
           "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
           "symbol": "M3LHttpResponseEvent",
-          "blob": "1588753b5d3ba7dcd53a637e95c11ebf730cdae7"
+          "blob": "e790aed4a5622a3ea820e6ee53eeb730082db66c"
         },
         {
           "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
           "symbol": "M3LHttpErrorEvent",
-          "blob": "1588753b5d3ba7dcd53a637e95c11ebf730cdae7"
+          "blob": "e790aed4a5622a3ea820e6ee53eeb730082db66c"
         },
         {
           "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
           "symbol": "M3LHttpClientEventMap",
-          "blob": "1588753b5d3ba7dcd53a637e95c11ebf730cdae7"
+          "blob": "e790aed4a5622a3ea820e6ee53eeb730082db66c"
         },
         {
           "file": "packages/m3l-common/src/core/network/M3LHttpClientError.ts",
@@ -66,7 +66,7 @@
           "blob": "5276910bcb29001242673be74312d15c05635471"
         }
       ],
-      "retrieved": "2026-07-16"
+      "retrieved": "2026-08-10"
     },
     {
       "heading": "Notes & behavior",
@@ -74,17 +74,17 @@
         {
           "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
           "symbol": "M3LHttpClient",
-          "blob": "1588753b5d3ba7dcd53a637e95c11ebf730cdae7"
+          "blob": "e790aed4a5622a3ea820e6ee53eeb730082db66c"
         },
         {
           "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
           "symbol": "M3LHttpMethod",
-          "blob": "1588753b5d3ba7dcd53a637e95c11ebf730cdae7"
+          "blob": "e790aed4a5622a3ea820e6ee53eeb730082db66c"
         },
         {
           "file": "packages/m3l-common/src/core/network/M3LHttpClient.ts",
           "symbol": "M3LHttpRequestOptions",
-          "blob": "1588753b5d3ba7dcd53a637e95c11ebf730cdae7"
+          "blob": "e790aed4a5622a3ea820e6ee53eeb730082db66c"
         },
         {
           "file": "packages/m3l-common/src/core/network/M3LHttpClientError.ts",
@@ -97,7 +97,7 @@
           "blob": "5276910bcb29001242673be74312d15c05635471"
         }
       ],
-      "retrieved": "2026-07-16"
+      "retrieved": "2026-08-10"
     }
   ]
 }

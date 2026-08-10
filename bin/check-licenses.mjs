@@ -45,6 +45,69 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const { json } = parseJsonFlag();
 const reporter = createReporter(json);
 
+// dependency-review.yml's `allow-licenses:` input is a hand-maintained,
+// textually-identical copy of ALLOWED_LICENSES (ADR-0036 — the two gate the
+// same policy at two different points: PR-diff time there, resolved-tree
+// time here). Nothing else binds them together, so a change to one that
+// forgets the other drifts silently until a PR happens to exercise the gap.
+// Parse the workflow's own `allow-licenses:` line and assert set equality
+// before doing any of the (slower) `pnpm licenses list` work below.
+const dependencyReviewPath = join(
+  root,
+  ".github",
+  "workflows",
+  "dependency-review.yml",
+);
+/**
+ * @param {string} filePath
+ * @returns {Set<string>}
+ */
+function parseAllowLicenses(filePath) {
+  const text = readFileSync(filePath, "utf8");
+  const match = /^\s*allow-licenses:\s*(.+)$/m.exec(text);
+  if (!match) {
+    reporter.error(
+      `Could not find an "allow-licenses:" line in ${filePath} — has the ` +
+        "dependency-review-action config moved or been renamed?",
+    );
+    reporter.finish();
+    process.exit(1);
+  }
+  return new Set(
+    match[1]
+      .split(",")
+      .map((license) => license.trim())
+      .filter((license) => license.length > 0),
+  );
+}
+
+const workflowAllowList = parseAllowLicenses(dependencyReviewPath);
+const workflowOnly = [...workflowAllowList].filter(
+  (license) => !ALLOWED_LICENSES.has(license),
+);
+const localOnly = [...ALLOWED_LICENSES].filter(
+  (license) => !workflowAllowList.has(license),
+);
+if (workflowOnly.length > 0 || localOnly.length > 0) {
+  reporter.error(
+    "dependency-review.yml's allow-licenses list has drifted from " +
+      "bin/lib/licenses.mjs's ALLOWED_LICENSES (ADR-0036 — keep them " +
+      "textually identical): " +
+      [
+        workflowOnly.length > 0
+          ? `only in dependency-review.yml: ${workflowOnly.sort().join(", ")}`
+          : null,
+        localOnly.length > 0
+          ? `only in ALLOWED_LICENSES: ${localOnly.sort().join(", ")}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join("; "),
+  );
+  reporter.finish();
+  process.exit(1);
+}
+
 /**
  * @param {string[]} args
  * @returns {Record<string, { name: string, versions: string[], license: string }[]>}

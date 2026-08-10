@@ -179,7 +179,6 @@ export function registerShutdownSignals(
   const handleSignal = (): void => {
     if (signaled) {
       process.exit(forcedSignalExitCode);
-      return;
     }
     signaled = true;
     // Fire-and-forget: a hanging or rejecting shutdown must not prevent the
