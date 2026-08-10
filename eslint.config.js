@@ -1,4 +1,6 @@
 // @ts-check
+import { readdirSync } from "node:fs";
+import { URL } from "node:url";
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import { importX } from "eslint-plugin-import-x";
@@ -6,6 +8,16 @@ import { createTypeScriptImportResolver } from "eslint-import-resolver-typescrip
 import tsdoc from "eslint-plugin-tsdoc";
 import sonarjs from "eslint-plugin-sonarjs";
 import globals from "globals";
+
+// Generated from the scripts/ directory listing (not hand-maintained) so a
+// new script package is automatically covered by the cross-import zone below
+// without an eslint.config.js edit.
+const scriptPackageNames = readdirSync(new URL("./scripts/", import.meta.url), {
+  withFileTypes: true,
+})
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .sort();
 
 export default tseslint.config(
   {
@@ -183,6 +195,18 @@ export default tseslint.config(
     },
   },
   {
+    // The library does not log by default and never logs secrets/caller data
+    // (CLAUDE.md § Security) — logging is opt-in through `M3LLogger`, which a
+    // caller wires to its own sink. A stray `console.*` in library source
+    // would bypass that seam (and any redaction it applies) entirely. Scoped
+    // to the library only: scripts are CLI entrypoints and legitimately print
+    // (progress, prompts, `--dry-run` summaries).
+    files: ["packages/m3l-common/src/**/*.ts"],
+    rules: {
+      "no-console": "error",
+    },
+  },
+  {
     // Scripts must never read `process.env` directly — configuration flows
     // through `M3LConfigParameter` and is read from the resolved config
     // (scripts.md / ADR-0022). This is the mechanically-checkable half of that
@@ -243,6 +267,92 @@ export default tseslint.config(
               allowTypeImports: false,
               message:
                 "Scripts may only import @m3l-automation/m3l-common (or a subpath) and node: builtins — ADR-0029 bans script-local dependencies; a new capability becomes a library wrapper first.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // ADR-0029 boundary, source-level backstop 2: the no-restricted-imports
+    // block above only visits BARE (non-relative) specifiers, so a relative
+    // reach into a sibling script — `../../other-script/src/x.js` — slips
+    // past both the static and dynamic checks there, and past
+    // check:script-deps (which only inspects package.json manifests, not
+    // import statements). Each script depends only on
+    // @m3l-automation/m3l-common; anything shared across scripts belongs in
+    // the library, not a relative import of another script's src. One zone
+    // per script directory, generated from the scripts/ directory listing
+    // (see scriptPackageNames above) so a new script is covered automatically.
+    files: ["scripts/*/src/**/*.ts"],
+    rules: {
+      "import-x/no-restricted-paths": [
+        "error",
+        {
+          zones: scriptPackageNames.map((name) => ({
+            target: `./scripts/${name}`,
+            from: "./scripts",
+            except: [name],
+            message: `scripts/${name} may not import another script package directly — each script depends only on @m3l-automation/m3l-common (ADR-0029); shared logic belongs in the library.`,
+          })),
+        },
+      ],
+    },
+  },
+  {
+    // ADR-0022 / scripts.md: "`main.ts` is a composition root only … any
+    // conditional, loop, or I/O beyond wiring belongs in a step module —
+    // reviewers reject business logic here." That was reviewer-checked only
+    // until now. Mechanize the shape (not the judgment call of "is this
+    // wiring or logic"): no named function declaration other than `main`
+    // itself, no top-level function-valued variable (either belongs in
+    // steps/), and a line cap generous enough that real composition roots
+    // (currently ~50-60 lines each) never come close.
+    files: ["scripts/*/src/main.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "FunctionDeclaration[id.name!='main']",
+          message:
+            "main.ts is a composition root — the only named function it may declare is main() itself; move this to a steps/ module (ADR-0022).",
+        },
+        {
+          selector:
+            "Program > VariableDeclaration > VariableDeclarator[init.type=/^(FunctionExpression|ArrowFunctionExpression)$/]",
+          message:
+            "main.ts is a composition root — a top-level function-valued variable belongs in a steps/ module, not here (ADR-0022). An inline callback passed directly to script.run(...)/Core.runScript(...) is fine.",
+        },
+      ],
+      "max-lines": [
+        "error",
+        { max: 200, skipBlankLines: true, skipComments: true },
+      ],
+    },
+  },
+  {
+    // Production source must never import from a tests/ tree. A src module
+    // reaching into tests/ for a fixture or helper is a smell that also
+    // breaks tsconfig.build.json's `exclude: ["tests"]` at build time; the
+    // fix is always to move the shared helper into src/ (or internal/) if
+    // it's genuinely needed at runtime.
+    files: ["packages/*/src/**/*.ts", "scripts/*/src/**/*.ts"],
+    rules: {
+      "import-x/no-restricted-paths": [
+        "error",
+        {
+          zones: [
+            {
+              target: "./packages/m3l-common/src",
+              from: "./packages/m3l-common/tests",
+              message:
+                "Production source must not import from tests/ — move shared fixtures/helpers into src/ if they're needed at runtime.",
+            },
+            {
+              target: "./scripts/*/src",
+              from: "./scripts/*/tests",
+              message:
+                "Production source must not import from tests/ — move shared fixtures/helpers into src/ if they're needed at runtime.",
             },
           ],
         },
@@ -369,7 +479,12 @@ export default tseslint.config(
     // known to be clean — nothing about an import line advertises how
     // load-bearing it is, so the standing invariant is "the whole library is
     // a DAG," not "these three modules happen to be."
-    files: ["packages/m3l-common/src/**/*.ts"],
+    //
+    // Widened to scripts/*/src (toolchain-hardening follow-up): a cycle
+    // between a script's steps/ modules is the same failure mode and was
+    // previously uncovered — the rule's scope is "every module that ships",
+    // not "the library specifically".
+    files: ["packages/m3l-common/src/**/*.ts", "scripts/*/src/**/*.ts"],
     rules: {
       "import-x/no-cycle": ["error", { maxDepth: Infinity }],
     },

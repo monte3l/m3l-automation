@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Validates that the ADR-0009 dependency-direction guards in eslint.config.js
-// are present and correctly shaped: three `import-x/no-restricted-paths` zones
+// are present and correctly shaped: the `import-x/no-restricted-paths` zones
 // plus the repo-wide `import-x/no-cycle` rule (ADR-0035 A8). Both are
 // self-enforcing via `pnpm lint`, but only when they exist: if a zone block or
 // the cycle rule is accidentally deleted or weakened, `pnpm lint` still passes
@@ -9,18 +9,25 @@
 // instead.
 //
 // It inspects the RESOLVED config (imported, not text-matched) for:
-//   1. internal/ sealing — the public barrels may not import src/internal (ADR-0004).
-//   2. aws island        — aws/** may import only core/errors, core/prompt,
-//                           and core/polling (ADR-0009).
-//   3. core/script root   — no other core module may import core/script (ADR-0009).
-//   4. no-cycle           — packages/m3l-common/src/**/*.ts is a DAG, `maxDepth:
-//                           Infinity` (ADR-0035 A8) — see eslint.config.js's
-//                           own comment on why this covers the whole package
-//                           rather than an allowlist of modules known to be clean.
+//   1. internal/ sealing   — the public barrels may not import src/internal (ADR-0004).
+//   2. aws island          — aws/** may import only core/errors, core/prompt,
+//                            and core/polling (ADR-0009).
+//   3. core/script root    — no other core module may import core/script (ADR-0009).
+//   4. no-cycle            — packages/m3l-common/src/**/*.ts AND scripts/*/src/**/*.ts
+//                            are a DAG, `maxDepth: Infinity` (ADR-0035 A8) — see
+//                            eslint.config.js's own comment on why this covers
+//                            every shipped module rather than an allowlist of
+//                            modules known to be clean.
+//   5. script cross-import — one zone per scripts/ directory entry; a script may
+//                            import only itself and @m3l-automation/m3l-common,
+//                            never a sibling script's src (ADR-0029 backstop).
+//   6. prod-not-to-test    — packages/m3l-common/src and scripts/*/src may not
+//                            import from a tests/ tree.
 //
 // Usage:
 //   node bin/check-eslint-zones.mjs   # exits 0 on success, 1 on any violation
 import process from "node:process";
+import { readdirSync } from "node:fs";
 import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 
 const { json } = parseJsonFlag();
@@ -94,26 +101,69 @@ requireZone(
 );
 
 // The no-cycle rule isn't a `no-restricted-paths` zone, so it needs its own
-// scan: find a config block whose `files` covers the library's src/** and
-// whose `import-x/no-cycle` rule is set to error with `maxDepth: Infinity`.
+// scan: find a config block whose `files` covers both the library's src/**
+// and scripts/*/src/** and whose `import-x/no-cycle` rule is set to error
+// with `maxDepth: Infinity`.
 const hasNoCycleGuard = config.some((block) => {
   const files = Array.isArray(block?.files) ? block.files : [];
-  const scoped = files.some((f) =>
+  const coversLibrary = files.some((f) =>
     norm(f).endsWith("packages/m3l-common/src/**/*.ts"),
+  );
+  const coversScripts = files.some((f) =>
+    norm(f).endsWith("scripts/*/src/**/*.ts"),
   );
   const rule = block?.rules?.["import-x/no-cycle"];
   const [severity, options] = Array.isArray(rule) ? rule : [rule];
   const isError = severity === "error" || severity === 2;
   const isInfiniteDepth = options?.maxDepth === Infinity;
-  return scoped && isError && isInfiniteDepth;
+  return coversLibrary && coversScripts && isError && isInfiniteDepth;
 });
 if (!hasNoCycleGuard) {
   reporter.error(
-    "missing or malformed ADR-0035 guard: import-x/no-cycle over packages/m3l-common/src/**/*.ts (maxDepth: Infinity)",
+    "missing or malformed ADR-0035 guard: import-x/no-cycle over packages/m3l-common/src/**/*.ts and scripts/*/src/**/*.ts (maxDepth: Infinity)",
     { file: "eslint.config.js" },
   );
   errors++;
 }
+
+// Toolchain-hardening follow-up: one `no-restricted-paths` zone per
+// scripts/ directory entry, forbidding a script from importing any sibling
+// script's src via a relative path (ADR-0029 backstop 2). Derived from the
+// live scripts/ listing so a newly scaffolded script is required to have its
+// own zone rather than silently inheriting none.
+const scriptNames = readdirSync(new URL("../scripts/", import.meta.url), {
+  withFileTypes: true,
+})
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name);
+
+for (const name of scriptNames) {
+  requireZone(
+    `script cross-import guard for scripts/${name} (may import only itself + @m3l-automation/m3l-common)`,
+    (zone) =>
+      norm(zone.target).endsWith(`/scripts/${name}`) &&
+      norm(zone.from).endsWith("/scripts") &&
+      Array.isArray(zone.except) &&
+      zone.except.length === 1 &&
+      zone.except[0] === name,
+  );
+}
+
+// Toolchain-hardening follow-up: production source must not import from a
+// tests/ tree — one zone for the library, one for scripts/*.
+requireZone(
+  "prod-not-to-test guard for packages/m3l-common/src (must not import packages/m3l-common/tests)",
+  (zone) =>
+    norm(zone.target).endsWith("packages/m3l-common/src") &&
+    norm(zone.from).endsWith("packages/m3l-common/tests"),
+);
+
+requireZone(
+  "prod-not-to-test guard for scripts/*/src (must not import scripts/*/tests)",
+  (zone) =>
+    norm(zone.target).endsWith("scripts/*/src") &&
+    norm(zone.from).endsWith("scripts/*/tests"),
+);
 
 if (errors > 0) {
   if (!json) {
