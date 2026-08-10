@@ -21,14 +21,20 @@
 // Usage:
 //   node bin/check-eslint-zones.mjs   # exits 0 on success, 1 on any violation
 import process from "node:process";
+import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 
+const { json } = parseJsonFlag();
+const reporter = createReporter(json);
 const configUrl = new URL("../eslint.config.js", import.meta.url);
 
 const configModule = await import(configUrl);
 const config = configModule.default;
 
 if (!Array.isArray(config)) {
-  console.error("✗  eslint.config.js default export is not a config array.");
+  reporter.error("eslint.config.js default export is not a config array.", {
+    file: "eslint.config.js",
+  });
+  reporter.finish();
   process.exit(1);
 }
 
@@ -49,7 +55,9 @@ const norm = (value) =>
 let errors = 0;
 const requireZone = (label, predicate) => {
   if (!zones.some(predicate)) {
-    console.error(`✗  missing or malformed ADR-0009 zone: ${label}`);
+    reporter.error(`missing or malformed ADR-0009 zone: ${label}`, {
+      file: "eslint.config.js",
+    });
     errors++;
   }
 };
@@ -100,19 +108,24 @@ const hasNoCycleGuard = config.some((block) => {
   return scoped && isError && isInfiniteDepth;
 });
 if (!hasNoCycleGuard) {
-  console.error(
-    "✗  missing or malformed ADR-0035 guard: import-x/no-cycle over packages/m3l-common/src/**/*.ts (maxDepth: Infinity)",
+  reporter.error(
+    "missing or malformed ADR-0035 guard: import-x/no-cycle over packages/m3l-common/src/**/*.ts (maxDepth: Infinity)",
+    { file: "eslint.config.js" },
   );
   errors++;
 }
 
 if (errors > 0) {
-  console.error(
-    `\n✗  ${errors} ADR-0009/ADR-0035 dependency-direction check(s) failed — a zone or the no-cycle rule was removed or reshaped in eslint.config.js.`,
-  );
+  if (!json) {
+    console.error(
+      `\n✗  ${errors} ADR-0009/ADR-0035 dependency-direction check(s) failed — a zone or the no-cycle rule was removed or reshaped in eslint.config.js.`,
+    );
+  }
+  reporter.finish();
   process.exit(1);
 }
 
-console.log(
-  `✓  ADR-0009/ADR-0035 dependency-direction guards intact: internal sealing, aws island, core/script root, no-cycle (${zones.length} zone(s) + no-cycle).`,
+reporter.succeed(
+  `ADR-0009/ADR-0035 dependency-direction guards intact: internal sealing, aws island, core/script root, no-cycle (${zones.length} zone(s) + no-cycle).`,
 );
+reporter.finish();

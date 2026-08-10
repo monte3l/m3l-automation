@@ -29,14 +29,17 @@ const { scripts } = JSON.parse(
 const { missingFromCatalog, staleInCatalog } =
   deriveCommandCatalogDiff(scripts);
 
+const catalogFile = "bin/lib/command-catalog.mjs";
 for (const name of missingFromCatalog) {
   reporter.error(
     `"${name}" is a package.json script with no bin/lib/command-catalog.mjs entry. Add a { name: "${name}", description: "..." } row.`,
+    { file: catalogFile },
   );
 }
 for (const name of staleInCatalog) {
   reporter.error(
     `"${name}" has a bin/lib/command-catalog.mjs entry but package.json no longer defines it. Remove its row.`,
+    { file: catalogFile },
   );
 }
 

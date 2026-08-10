@@ -14,12 +14,15 @@
 //   node bin/check-exports-snapshot.mjs --update   # rewrite the snapshot
 import process from "node:process";
 import { readFileSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const root = repoRoot(import.meta.url);
 const pkgPath = join(root, "packages/m3l-common/package.json");
-const snapshotPath = join(root, "packages/m3l-common/api-exports.json");
+const snapshotRel = "packages/m3l-common/api-exports.json";
+const snapshotPath = join(root, snapshotRel);
+const { json, argv } = parseJsonFlag();
+const reporter = createReporter(json);
 
 // Deterministic, key-sorted serialization so the snapshot is stable regardless
 // of authoring order in package.json.
@@ -40,9 +43,10 @@ function stableStringify(value) {
 const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
 const actual = `${JSON.stringify(JSON.parse(stableStringify(pkg.exports ?? {})), null, 2)}\n`;
 
-if (process.argv.includes("--update")) {
+if (argv.includes("--update")) {
   writeFileSync(snapshotPath, actual);
-  console.log(`Updated exports snapshot: ${snapshotPath}`);
+  reporter.change("updated", snapshotRel);
+  reporter.finish();
   process.exit(0);
 }
 
@@ -50,23 +54,27 @@ let expected;
 try {
   expected = readFileSync(snapshotPath, "utf8");
 } catch {
-  console.error(
-    `✗  Missing exports snapshot at ${snapshotPath}.\n` +
-      `   Run \`node bin/check-exports-snapshot.mjs --update\` to create it.`,
+  reporter.error(
+    `Missing exports snapshot at ${snapshotRel}. Run ` +
+      `\`node bin/check-exports-snapshot.mjs --update\` to create it.`,
+    { file: snapshotRel },
   );
+  reporter.finish();
   process.exit(1);
 }
 
 if (actual !== expected) {
-  console.error(
-    `✗  The public \`exports\` map of @m3l-automation/m3l-common changed but the\n` +
-      `   committed snapshot (packages/m3l-common/api-exports.json) was not updated.\n` +
-      `   This is a SEMVER event (it must ship as \`feat!:\` / carry a\n` +
-      `   \`BREAKING CHANGE:\` footer). If the change is intentional, run:\n` +
-      `       node bin/check-exports-snapshot.mjs --update\n` +
-      `   and commit the updated snapshot alongside the change.`,
+  reporter.error(
+    `The public \`exports\` map of @m3l-automation/m3l-common changed but the ` +
+      `committed snapshot (${snapshotRel}) was not updated. This is a SEMVER ` +
+      `event (it must ship as \`feat!:\` / carry a \`BREAKING CHANGE:\` footer). ` +
+      `If the change is intentional, run \`node bin/check-exports-snapshot.mjs ` +
+      `--update\` and commit the updated snapshot alongside the change.`,
+    { file: snapshotRel },
   );
+  reporter.finish();
   process.exit(1);
 }
 
-console.log("✓  exports map matches the committed snapshot.");
+reporter.succeed("exports map matches the committed snapshot.");
+reporter.finish();

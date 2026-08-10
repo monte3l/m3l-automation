@@ -15,44 +15,57 @@
 //   node bin/check-verify-parity.mjs   # exits 0 on match, 1 on drift
 import process from "node:process";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import {
   parseCiVerifyStepNames,
   diffVerifySteps,
 } from "./lib/verify-steps.mjs";
+import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
-const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const root = repoRoot(import.meta.url);
+const { json } = parseJsonFlag();
+const reporter = createReporter(json);
+const ciYamlRel = ".github/workflows/ci.yml";
+const verifyStepsRel = "bin/lib/verify-steps.mjs";
 
 let ciStepNames;
 try {
   ciStepNames = parseCiVerifyStepNames(
-    readFileSync(join(root, ".github/workflows/ci.yml"), "utf8"),
+    readFileSync(join(root, ciYamlRel), "utf8"),
   );
 } catch (error) {
-  console.error(`✗  ${error instanceof Error ? error.message : error}`);
+  reporter.error(error instanceof Error ? error.message : String(error), {
+    file: ciYamlRel,
+  });
+  reporter.finish();
   process.exit(1);
 }
 
 const { missingFromList, staleInList } = diffVerifySteps(ciStepNames);
 
 if (missingFromList.length > 0 || staleInList.length > 0) {
-  console.error(
-    "✗  bin/lib/verify-steps.mjs drifted from ci.yml's verify job:",
-  );
-  for (const name of missingFromList) {
+  if (!json) {
     console.error(
-      `   - ci.yml runs "${name}" but VERIFY_STEPS has no matching entry.`,
+      "✗  bin/lib/verify-steps.mjs drifted from ci.yml's verify job:",
+    );
+  }
+  for (const name of missingFromList) {
+    reporter.error(
+      `ci.yml runs "${name}" but VERIFY_STEPS has no matching entry.`,
+      { file: verifyStepsRel },
     );
   }
   for (const name of staleInList) {
-    console.error(
-      `   - VERIFY_STEPS lists "${name}" but ci.yml's verify job no longer runs it.`,
+    reporter.error(
+      `VERIFY_STEPS lists "${name}" but ci.yml's verify job no longer runs it.`,
+      { file: verifyStepsRel },
     );
   }
+  reporter.finish();
   process.exit(1);
 }
 
-console.log(
-  `✓  bin/lib/verify-steps.mjs matches ci.yml's verify job (${ciStepNames.length} step(s)).`,
+reporter.succeed(
+  `bin/lib/verify-steps.mjs matches ci.yml's verify job (${ciStepNames.length} step(s)).`,
 );
+reporter.finish();

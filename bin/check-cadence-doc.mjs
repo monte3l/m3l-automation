@@ -29,9 +29,10 @@
 import process from "node:process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
-const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const root = repoRoot(import.meta.url);
 
 // The lefthook stages the CLAUDE.md table is expected to document, keyed by the
 // stage name that appears (in backticks) in the table's first column.
@@ -180,6 +181,8 @@ export function diffCadence(fromHook, fromDoc) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const { json } = parseJsonFlag();
+  const reporter = createReporter(json);
   let errors;
   try {
     const fromHook = parseLefthookStages(
@@ -190,15 +193,18 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     );
     errors = diffCadence(fromHook, fromDoc);
   } catch (error) {
-    console.error(`✗  ${error instanceof Error ? error.message : error}`);
+    reporter.error(error instanceof Error ? error.message : String(error));
+    reporter.finish();
     process.exit(1);
   }
   if (errors.length > 0) {
-    console.error(`✗  ${errors.length} cadence-doc mismatch(es):`);
-    for (const e of errors) console.error(`   - ${e}`);
+    if (!json) console.error(`✗  ${errors.length} cadence-doc mismatch(es):`);
+    for (const e of errors) reporter.error(e, { file: "CLAUDE.md" });
+    reporter.finish();
     process.exit(1);
   }
-  console.log(
-    `✓  CLAUDE.md cadence table matches lefthook.yml for ${TRACKED_STAGES.length} stage(s).`,
+  reporter.succeed(
+    `CLAUDE.md cadence table matches lefthook.yml for ${TRACKED_STAGES.length} stage(s).`,
   );
+  reporter.finish();
 }
