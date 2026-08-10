@@ -25,17 +25,20 @@
 import process from "node:process";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { parseWorktreeInclude } from "./lib/worktree-include.mjs";
+import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
-const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const root = repoRoot(import.meta.url);
 const includeFile = join(root, ".worktreeinclude");
+const { json } = parseJsonFlag();
+const reporter = createReporter(json);
 
 if (!existsSync(includeFile)) {
-  console.log(
-    "✓  check:worktree — no .worktreeinclude file; nothing to validate.",
+  reporter.succeed(
+    "check:worktree — no .worktreeinclude file; nothing to validate.",
   );
+  reporter.finish();
   process.exit(0);
 }
 
@@ -60,44 +63,45 @@ function isGitIgnored(rel) {
   }
 }
 
-/** @type {string[]} */
-const errors = [];
-/** @type {string[]} */
-const warnings = [];
+let errorCount = 0;
 
 for (const rel of patterns) {
-  warnings.push(
-    `glob/negation pattern is not copied by worktree-setup.mjs ` +
+  reporter.warn(
+    `check:worktree — glob/negation pattern is not copied by worktree-setup.mjs ` +
       `(literal paths only): ${rel}`,
+    { file: ".worktreeinclude" },
   );
 }
 
 for (const rel of literals) {
   if (!isGitIgnored(rel)) {
-    errors.push(
-      `tracked file listed (not gitignored) — copying it is a no-op: ${rel}`,
+    reporter.error(
+      `check:worktree — tracked file listed (not gitignored) — copying it is a no-op: ${rel}`,
+      { file: ".worktreeinclude" },
     );
+    errorCount++;
   } else if (!existsSync(join(root, rel))) {
-    warnings.push(
-      `listed file is absent from the main checkout — nothing will be copied: ${rel}`,
+    reporter.warn(
+      `check:worktree — listed file is absent from the main checkout — nothing will be copied: ${rel}`,
+      { file: ".worktreeinclude" },
     );
   }
 }
 
-for (const w of warnings) process.stderr.write(`⚠  check:worktree — ${w}\n`);
-
-if (errors.length > 0) {
-  process.stderr.write(
-    `\ncheck:worktree — policy violations found:\n` +
-      errors.map((e) => `  ✗  ${e}`).join("\n") +
-      `\n\nRemove tracked entries from .worktreeinclude (worktrees already ` +
-      `contain tracked files).\n`,
-  );
+if (errorCount > 0) {
+  if (!json) {
+    console.error(
+      `\ncheck:worktree — policy violations found above.\n\nRemove tracked ` +
+        `entries from .worktreeinclude (worktrees already contain tracked files).`,
+    );
+  }
+  reporter.finish();
   process.exit(1);
 }
 
-console.log(
-  `✓  check:worktree — ${String(literals.length)} literal entr` +
+reporter.succeed(
+  `check:worktree — ${String(literals.length)} literal entr` +
     `${literals.length === 1 ? "y" : "ies"} gitignored (see any warnings above).`,
 );
+reporter.finish();
 process.exit(0);

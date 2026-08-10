@@ -18,12 +18,14 @@
 //   node bin/check-workflows-doc.mjs   # verify (fails on mismatch)
 import process from "node:process";
 import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const root = repoRoot(import.meta.url);
 const workflowsRel = ".github/workflows";
 const claudeMdRel = "CLAUDE.md";
+const { json } = parseJsonFlag();
+const reporter = createReporter(json);
 
 // Number words for the spelled-out count in the section header sentence.
 const NUMBER_WORDS = [
@@ -51,7 +53,8 @@ try {
     .filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"))
     .sort();
 } catch {
-  console.error(`✗  Cannot read ${workflowsRel}/`);
+  reporter.error(`Cannot read ${workflowsRel}/`);
+  reporter.finish();
   process.exit(1);
 }
 const workflowFiles = new Set(files);
@@ -63,7 +66,10 @@ const content = readFileSync(join(root, claudeMdRel), "utf8");
 // *.yml mentions (lefthook.yml, dependabot.yml, pnpm-workspace.yaml, …).
 const sectionMatch = /## CI\/CD\n([\s\S]*?)(?:\n## |\n?$)/.exec(content);
 if (!sectionMatch) {
-  console.error(`✗  ${claudeMdRel}: could not locate the "## CI/CD" section.`);
+  reporter.error(`${claudeMdRel}: could not locate the "## CI/CD" section.`, {
+    file: claudeMdRel,
+  });
+  reporter.finish();
   process.exit(1);
 }
 const section = sectionMatch[1];
@@ -115,11 +121,13 @@ for (const name of documented) {
 }
 
 if (errors.length > 0) {
-  console.error(`✗  ${errors.length} workflow-doc mismatch(es):`);
-  for (const e of errors) console.error(`   - ${e}`);
+  if (!json) console.error(`✗  ${errors.length} workflow-doc mismatch(es):`);
+  for (const e of errors) reporter.error(e, { file: claudeMdRel });
+  reporter.finish();
   process.exit(1);
 }
 
-console.log(
-  `✓  CLAUDE.md CI/CD table matches ${count} workflow file(s) in ${workflowsRel}/.`,
+reporter.succeed(
+  `CLAUDE.md CI/CD table matches ${count} workflow file(s) in ${workflowsRel}/.`,
 );
+reporter.finish();

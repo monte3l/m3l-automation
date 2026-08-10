@@ -15,10 +15,11 @@
 import process from "node:process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { scriptPackageDirs } from "./lib/script-scaffold.mjs";
+import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const root = repoRoot(import.meta.url);
 
 /**
  * Validate a script package.json's dependency declarations against ADR-0029:
@@ -53,37 +54,44 @@ export function scriptDependencyErrors(pkg) {
 
 // Main execution — only run when invoked directly, not when imported for testing.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const { json } = parseJsonFlag();
+  const reporter = createReporter(json);
   let errors = 0;
-  function report(message) {
-    console.error(`✗  ${message}`);
+  function report(message, file) {
+    reporter.error(message, file ? { file } : undefined);
     errors++;
   }
 
   const scriptNames = scriptPackageDirs(root);
   for (const name of scriptNames) {
     const manifestPath = join(root, "scripts", name, "package.json");
+    const manifestRel = `scripts/${name}/package.json`;
     let pkg;
     try {
       pkg = JSON.parse(readFileSync(manifestPath, "utf8"));
     } catch (cause) {
-      report(`scripts/${name}/package.json is not valid JSON: ${cause}`);
+      report(`${manifestRel} is not valid JSON: ${cause}`, manifestRel);
       continue;
     }
     for (const problem of scriptDependencyErrors(pkg)) {
-      report(`scripts/${name}/package.json: ${problem}`);
+      report(`${manifestRel}: ${problem}`, manifestRel);
     }
   }
 
   if (errors > 0) {
-    console.error(
-      `\n✗  ${errors} script-dependency mismatch(es). ADR-0029: scripts depend only on @m3l-automation/m3l-common.`,
-    );
+    if (!json) {
+      console.error(
+        `\n✗  ${errors} script-dependency mismatch(es). ADR-0029: scripts depend only on @m3l-automation/m3l-common.`,
+      );
+    }
+    reporter.finish();
     process.exit(1);
   }
 
-  console.log(
+  reporter.succeed(
     scriptNames.length === 0
-      ? "✓  No script packages under scripts/ — nothing to check."
-      : `✓  ${scriptNames.length} script package(s) declare exactly the ADR-0029 dependency boundary.`,
+      ? "No script packages under scripts/ — nothing to check."
+      : `${scriptNames.length} script package(s) declare exactly the ADR-0029 dependency boundary.`,
   );
+  reporter.finish();
 }

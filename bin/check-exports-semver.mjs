@@ -23,9 +23,10 @@ import process from "node:process";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const root = repoRoot(import.meta.url);
 // Built by concatenation so the source has no contiguous `<word>.<word>` literal
 // that the write-time guard-no-commonjs hook mistakes for an `exports.<name>` access.
 const snapshotRel = "packages/m3l-common/api-exports" + ".json";
@@ -136,11 +137,12 @@ function readBaseSnapshot(base) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const { base, head } = parseArgs(process.argv.slice(2));
+  const { json, argv } = parseJsonFlag();
+  const reporter = createReporter(json);
+  const { base, head } = parseArgs(argv);
   if (!base || !head) {
-    console.error(
-      "✗  Usage: check-exports-semver.mjs --base <sha> --head <sha>",
-    );
+    reporter.error("Usage: check-exports-semver.mjs --base <sha> --head <sha>");
+    reporter.finish();
     process.exit(1);
   }
   try {
@@ -153,7 +155,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const baseMap = baseSnapshot === null ? null : JSON.parse(baseSnapshot);
     const { breaking } = classifyExportsDelta(baseMap, headMap);
     if (breaking.length === 0) {
-      console.log("✓  No breaking exports-map delta in this PR.");
+      reporter.succeed("No breaking exports-map delta in this PR.");
+      reporter.finish();
       process.exit(0);
     }
     const commitLog = execFileSync(
@@ -162,20 +165,24 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       { cwd: root, encoding: "utf8" },
     );
     if (hasBreakingMarker(commitLog)) {
-      console.log(
-        `✓  Breaking exports delta (${breaking.join(", ")}) is marked BREAKING.`,
+      reporter.succeed(
+        `Breaking exports delta (${breaking.join(", ")}) is marked BREAKING.`,
       );
+      reporter.finish();
       process.exit(0);
     }
-    console.error(
-      `✗  The public exports map changed in a BREAKING way (${breaking.join(", ")})\n` +
-        `   but no commit in this PR carries a breaking marker. Add a\n` +
-        `   \`BREAKING CHANGE:\` footer to a commit in this PR so the semver impact\n` +
-        `   is explicit. See CLAUDE.md "Architecture & Decisions".`,
+    reporter.error(
+      `The public exports map changed in a BREAKING way (${breaking.join(", ")}) ` +
+        `but no commit in this PR carries a breaking marker. Add a ` +
+        `\`BREAKING CHANGE:\` footer to a commit in this PR so the semver impact ` +
+        `is explicit. See CLAUDE.md "Architecture & Decisions".`,
+      { file: snapshotRel },
     );
+    reporter.finish();
     process.exit(1);
   } catch (error) {
-    console.error(`✗  ${error instanceof Error ? error.message : error}`);
+    reporter.error(error instanceof Error ? error.message : String(error));
+    reporter.finish();
     process.exit(1);
   }
 }

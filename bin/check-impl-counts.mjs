@@ -26,6 +26,7 @@ import {
   root,
   deriveCounts,
   locateSite,
+  lineOf,
   buildImplementedListBlock,
   IMPLEMENTED_COUNT_SITES,
   IMPLEMENTED_LIST_BEGIN_MARKER,
@@ -43,7 +44,7 @@ function read(file) {
   try {
     return readFileSync(join(root, file), "utf8");
   } catch {
-    reporter.error(`Cannot read ${file}`);
+    reporter.error(`Cannot read ${file}`, { file });
     errors++;
     return null;
   }
@@ -55,7 +56,12 @@ for (const site of IMPLEMENTED_COUNT_SITES) {
 
   const result = locateSite(content, site, counts);
   if (!result.found) {
-    reporter.error(`${site.file}: expected pattern not found: ${site.pattern}`);
+    reporter.error(
+      `${site.file}: expected pattern not found: ${site.pattern}`,
+      {
+        file: site.file,
+      },
+    );
     errors++;
     continue;
   }
@@ -70,18 +76,21 @@ for (const site of IMPLEMENTED_COUNT_SITES) {
     reporter.error(
       `${site.file}: ${site.label} says ${result.actual} but derived count is ${result.expected}\n` +
         `   Context: "...${ctx}..."`,
+      { file: site.file, line: lineOf(content, result.matchIndex) },
     );
     errors++;
   }
 }
 
-const statusContent = read("docs/implementation-status.md");
+const statusFile = "docs/implementation-status.md";
+const statusContent = read(statusFile);
 if (statusContent !== null) {
   const start = statusContent.indexOf(IMPLEMENTED_LIST_BEGIN_MARKER);
   const end = statusContent.indexOf(IMPLEMENTED_LIST_END_MARKER);
   if (start === -1 || end === -1) {
     reporter.error(
       "docs/implementation-status.md is missing the GENERATED IMPLEMENTED-LIST markers — run pnpm gen:counts.",
+      { file: statusFile },
     );
     errors++;
   } else {
@@ -93,6 +102,7 @@ if (statusContent !== null) {
     if (committedBlock !== freshBlock) {
       reporter.error(
         "docs/implementation-status.md implemented-list block is out of date — run pnpm gen:counts.",
+        { file: statusFile, line: lineOf(statusContent, start) },
       );
       errors++;
     }

@@ -1,5 +1,17 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createReporter, parseJsonFlag } from "../lib/report.mjs";
+import { createReporter, parseJsonFlag, repoRoot } from "../lib/report.mjs";
+
+describe("repoRoot", () => {
+  test("resolves two levels above a bin/*.mjs script's own import.meta.url (string)", () => {
+    expect(repoRoot("file:///home/x/repo/bin/foo.mjs")).toBe("/home/x/repo");
+  });
+
+  test("resolves the repo root given a URL instance", () => {
+    expect(repoRoot(new URL("file:///home/x/repo/bin/foo.mjs"))).toBe(
+      "/home/x/repo",
+    );
+  });
+});
 
 describe("parseJsonFlag", () => {
   test("detects and strips --json", () => {
@@ -151,6 +163,141 @@ describe("createReporter — human mode", () => {
       created: [],
       removed: [],
     });
+  });
+});
+
+describe("createReporter — GitHub Actions workflow annotations", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  test.each([
+    ["error", "✗"],
+    ["warn", "⚠"],
+  ] as const)(
+    "%s() without a loc behaves exactly as before when GITHUB_ACTIONS is unset",
+    (method, prefix) => {
+      vi.stubEnv("GITHUB_ACTIONS", undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const reporter = createReporter(false);
+
+      reporter[method]("boom");
+
+      expect(errorSpy).toHaveBeenCalledWith(`${prefix}  boom`);
+      expect(logSpy).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each([
+    ["error", "::error"],
+    ["warn", "::warning"],
+  ] as const)(
+    "%s(message) with GITHUB_ACTIONS=true and no loc emits a bare %s:: annotation",
+    (method, tag) => {
+      vi.stubEnv("GITHUB_ACTIONS", "true");
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const reporter = createReporter(false);
+
+      reporter[method]("boom");
+
+      expect(logSpy).toHaveBeenCalledWith(`${tag}::boom`);
+    },
+  );
+
+  test.each([
+    ["error", "::error"],
+    ["warn", "::warning"],
+  ] as const)(
+    "%s(message, {file, line}) emits '%s file=...,line=...::message'",
+    (method, tag) => {
+      vi.stubEnv("GITHUB_ACTIONS", "true");
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const reporter = createReporter(false);
+
+      reporter[method]("boom", { file: "src/foo.ts", line: 42 });
+
+      expect(logSpy).toHaveBeenCalledWith(
+        `${tag} file=src/foo.ts,line=42::boom`,
+      );
+    },
+  );
+
+  test.each([
+    ["error", "::error"],
+    ["warn", "::warning"],
+  ] as const)(
+    "%s(message, {file}) with no line omits the line property ('%s file=...::message')",
+    (method, tag) => {
+      vi.stubEnv("GITHUB_ACTIONS", "true");
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const reporter = createReporter(false);
+
+      reporter[method]("boom", { file: "src/foo.ts" });
+
+      expect(logSpy).toHaveBeenCalledWith(`${tag} file=src/foo.ts::boom`);
+    },
+  );
+
+  test("annotation is suppressed when GITHUB_ACTIONS is 'false' even with a loc provided", () => {
+    vi.stubEnv("GITHUB_ACTIONS", "false");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const reporter = createReporter(false);
+
+    reporter.error("boom", { file: "src/foo.ts", line: 1 });
+
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  test("annotation is suppressed in --json mode even when GITHUB_ACTIONS=true and a loc is provided", () => {
+    vi.stubEnv("GITHUB_ACTIONS", "true");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const reporter = createReporter(true);
+
+    reporter.error("boom", { file: "src/foo.ts", line: 1 });
+
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  test("escapes % before CR/LF in the annotation message, without double-escaping", () => {
+    vi.stubEnv("GITHUB_ACTIONS", "true");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const reporter = createReporter(false);
+
+    reporter.error("100% done\r\n");
+
+    expect(logSpy).toHaveBeenCalledWith("::error::100%25 done%0D%0A");
+  });
+
+  test("escapes , and : in loc.file, more strictly than the message body", () => {
+    vi.stubEnv("GITHUB_ACTIONS", "true");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const reporter = createReporter(false);
+
+    reporter.error("boom", { file: "src/foo,bar:baz.ts", line: 1 });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      "::error file=src/foo%2Cbar%3Abaz.ts,line=1::boom",
+    );
+  });
+
+  test("the human-mode ✗/⚠ console.error line still fires alongside the annotation", () => {
+    vi.stubEnv("GITHUB_ACTIONS", "true");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const reporter = createReporter(false);
+
+    reporter.error("boom", { file: "src/foo.ts", line: 1 });
+
+    expect(errorSpy).toHaveBeenCalledWith("✗  boom");
+    expect(logSpy).toHaveBeenCalledWith("::error file=src/foo.ts,line=1::boom");
   });
 });
 

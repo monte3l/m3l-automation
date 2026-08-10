@@ -28,9 +28,10 @@ import process from "node:process";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
-const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const root = repoRoot(import.meta.url);
 
 function run(cmd, args) {
   const res = spawnSync(cmd, args, {
@@ -227,7 +228,11 @@ export function findPeerMetaInconsistencies(pkg) {
 
 // Main execution — only run when invoked directly, not when imported for testing.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const sections = [];
+  const { json } = parseJsonFlag();
+  const reporter = createReporter(json);
+  const libPkgRel = "packages/m3l-common/package.json";
+  const rootPkgRel = "package.json";
+  let violationCount = 0;
 
   // ── 1. Outdated major versions ───────────────────────────────────────────────
 
@@ -237,8 +242,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     outdatedEntries = parseOutdated(outdatedRes.stdout || "");
   } catch (err) {
-    process.stderr.write(
-      `check:deps: warning — could not parse pnpm outdated output; skipping outdated-major check. (${/** @type {Error} */ (err).message})\n`,
+    reporter.warn(
+      `check:deps: could not parse pnpm outdated output; skipping outdated-major check. (${/** @type {Error} */ (err).message})`,
     );
     outdatedEntries = [];
   }
@@ -254,8 +259,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
           `  ${e.name.padEnd(50)} ${e.current} → ${e.latest}\n      hold: ${e.reason}`,
       )
       .join("\n");
-    process.stdout.write(
-      `check:deps — ${held.length} major update(s) on deliberate hold (not blocking):\n${rows}\n\n`,
+    reporter.warn(
+      `check:deps — ${held.length} major update(s) on deliberate hold (not blocking):\n${rows}`,
     );
   }
 
@@ -263,9 +268,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const rows = active
       .map((e) => `  ${e.name.padEnd(50)} ${e.current} → ${e.latest}`)
       .join("\n");
-    sections.push(
+    reporter.error(
       `MAJOR VERSION UPDATES AVAILABLE (${active.length}):\n${rows}`,
     );
+    violationCount++;
   }
 
   // ── 2. Deprecated packages ───────────────────────────────────────────────────
@@ -277,8 +283,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const raw = (listRes.stdout || "").trim();
     listData = raw ? JSON.parse(raw) : [];
   } catch (err) {
-    process.stderr.write(
-      `check:deps: warning — could not parse pnpm list output; skipping deprecated-package check. (${/** @type {Error} */ (err).message})\n`,
+    reporter.warn(
+      `check:deps: could not parse pnpm list output; skipping deprecated-package check. (${/** @type {Error} */ (err).message})`,
     );
     listData = [];
   }
@@ -303,7 +309,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const rows = deprecated
       .map(([name, info]) => `  ${name.padEnd(50)} ${info.deprecated}`)
       .join("\n");
-    sections.push(`DEPRECATED PACKAGES (${deprecated.length}):\n${rows}`);
+    reporter.error(`DEPRECATED PACKAGES (${deprecated.length}):\n${rows}`);
+    violationCount++;
   }
 
   // ── 3. Peer-dependency mismatches ────────────────────────────────────────────
@@ -312,8 +319,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   // will emit peer warnings to stderr without changing anything on disk.
   const installRes = run("pnpm", ["install", "--frozen-lockfile"]);
   if (installRes.status !== 0) {
-    process.stderr.write(
-      `check:deps: warning — pnpm install --frozen-lockfile exited with status ${String(installRes.status)}; peer-dependency check may be incomplete.\n`,
+    reporter.warn(
+      `check:deps: pnpm install --frozen-lockfile exited with status ${String(installRes.status)}; peer-dependency check may be incomplete.`,
     );
   }
   const peerLines = (installRes.stderr || "")
@@ -328,12 +335,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     );
 
   if (peerLines.length > 0) {
-    sections.push(
+    reporter.error(
       `PEER DEPENDENCY ISSUES (${peerLines.length} warning(s)):\n${peerLines
         .slice(0, 20)
         .map((l) => `  ${l.trim()}`)
         .join("\n")}`,
     );
+    violationCount++;
   }
 
   // ── 4. Dependency-declaration conformance (ADR-0017) ─────────────────────────
@@ -345,8 +353,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     libPkg = JSON.parse(readFileSync(libPkgPath, "utf8"));
   } catch (err) {
-    process.stderr.write(
-      `check:deps: warning — could not read/parse ${libPkgPath}; skipping declaration-conformance checks. (${/** @type {Error} */ (err).message})\n`,
+    reporter.warn(
+      `check:deps: could not read/parse ${libPkgRel}; skipping declaration-conformance checks. (${/** @type {Error} */ (err).message})`,
+      { file: libPkgRel },
     );
   }
 
@@ -355,9 +364,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const rows = rangedDeps
       .map((e) => `  ${e.name.padEnd(50)} ${e.range}`)
       .join("\n");
-    sections.push(
+    reporter.error(
       `NON-EXACT RUNTIME DEPENDENCIES (${rangedDeps.length}) — ADR-0017 requires exact pins in \`dependencies\`:\n${rows}`,
+      { file: libPkgRel },
     );
+    violationCount++;
   }
 
   const peerIssues = findPeerMetaInconsistencies(libPkg);
@@ -365,9 +376,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const rows = peerIssues
       .map((e) => `  ${e.name.padEnd(40)} ${e.issue}`)
       .join("\n");
-    sections.push(
+    reporter.error(
       `OPTIONAL-PEER DECLARATION ISSUES (${peerIssues.length}) — ADR-0017 requires every optional peer in both peerDependencies and peerDependenciesMeta.optional:\n${rows}`,
+      { file: libPkgRel },
     );
+    violationCount++;
   }
 
   // ── 5. Root devDependency pinning convention ─────────────────────────────────
@@ -380,8 +393,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     rootPkg = JSON.parse(readFileSync(rootPkgPath, "utf8"));
   } catch (err) {
-    process.stderr.write(
-      `check:deps: warning — could not read/parse ${rootPkgPath}; skipping root devDependency pinning check. (${/** @type {Error} */ (err).message})\n`,
+    reporter.warn(
+      `check:deps: could not read/parse ${rootPkgRel}; skipping root devDependency pinning check. (${/** @type {Error} */ (err).message})`,
+      { file: rootPkgRel },
     );
   }
 
@@ -390,25 +404,30 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const rows = rangedDevDeps
       .map((e) => `  ${e.name.padEnd(50)} ${e.range}`)
       .join("\n");
-    sections.push(
+    reporter.error(
       `NON-EXACT ROOT DEV DEPENDENCIES (${rangedDevDeps.length}) — every dev dependency is exact-pinned by convention (ADR-0010):\n${rows}`,
+      { file: rootPkgRel },
     );
+    violationCount++;
   }
 
   // ── Report ───────────────────────────────────────────────────────────────────
 
-  if (sections.length > 0) {
-    process.stderr.write(
-      `check:deps — policy violations found:\n\n` +
-        sections.join("\n\n") +
-        `\n\nFix these before merging. Vulnerability advisories are gated ` +
-        `separately by \`pnpm audit --audit-level=high\`.\n`,
-    );
+  if (violationCount > 0) {
+    if (!json) {
+      console.error(
+        `\ncheck:deps — ${violationCount} polic${violationCount === 1 ? "y" : "ies"} violation section(s) above. ` +
+          `Fix these before merging. Vulnerability advisories are gated ` +
+          `separately by \`pnpm audit --audit-level=high\`.`,
+      );
+    }
+    reporter.finish();
     process.exit(1);
   }
 
-  console.log(
-    "✓  check:deps — no blocking major bumps, deprecated packages, or peer issues found.",
+  reporter.succeed(
+    "check:deps — no blocking major bumps, deprecated packages, or peer issues found.",
   );
+  reporter.finish();
   process.exit(0);
 }

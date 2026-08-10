@@ -231,6 +231,19 @@ export const IMPLEMENTED_COUNT_SITES = [
  * @param {ReturnType<typeof deriveCounts>} counts
  * @returns {{ found: boolean, actual?: number, expected?: number, matchIndex?: number, matchText?: string, capturedIndex?: number, capturedText?: string }}
  */
+/**
+ * 1-indexed line number of a character offset into `content` — used to give
+ * a {@link locateSite} match a `{file, line}` location for the reporter's
+ * GitHub Actions annotation support.
+ *
+ * @param {string} content
+ * @param {number} index
+ * @returns {number}
+ */
+export function lineOf(content, index) {
+  return content.slice(0, index).split("\n").length;
+}
+
 export function locateSite(content, site, counts) {
   const flags = site.pattern.flags.includes("d")
     ? site.pattern.flags

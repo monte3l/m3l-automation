@@ -418,7 +418,7 @@ export function worktreeManage(args) {
  * Scaffold a brand-new scripts/<name>/ consumer-script package by wrapping
  * bin/scaffold-script.mjs, returning its own JSON payload verbatim.
  *
- * @param {{ name?: unknown, purpose?: unknown }} args
+ * @param {{ name?: unknown, purpose?: unknown, dryRun?: unknown, force?: unknown }} args
  * @returns {{ content: { type: "text", text: string }[], isError: boolean }}
  * @example
  * ```js
@@ -439,9 +439,23 @@ export function scaffoldScript(args) {
       "scaffold_script: 'purpose' must be a string when provided.",
     );
   }
+  const dryRun = args?.dryRun;
+  if (dryRun !== undefined && typeof dryRun !== "boolean") {
+    return errorResult(
+      "scaffold_script: 'dryRun' must be a boolean when provided.",
+    );
+  }
+  const force = args?.force;
+  if (force !== undefined && typeof force !== "boolean") {
+    return errorResult(
+      "scaffold_script: 'force' must be a boolean when provided.",
+    );
+  }
   const cliArgs = [
     name,
     ...(typeof purpose === "string" ? ["--purpose", purpose] : []),
+    ...(dryRun === true ? ["--dry-run"] : []),
+    ...(force === true ? ["--force"] : []),
   ];
   const { exitCode, payload, error } = spawnJson(
     "bin/scaffold-script.mjs",
@@ -723,17 +737,34 @@ export const TOOLS = [
         "script; it is NOT for adding a new library submodule under " +
         "packages/m3l-common/src/ (use the scaffolding-submodules skill for that). " +
         "`name` must be kebab-case and must not already exist as a script package " +
-        "— re-running it against an existing name fails rather than overwriting. " +
+        "— re-running it against an existing name fails unless `force` is set. " +
         "`purpose` is an optional one-line description written into the generated " +
-        "files and docs.",
+        "files and docs. `dryRun` renders every file and reports what would be " +
+        "created/updated without writing anything. `force` overwrites the " +
+        "manifest's known files under an existing scripts/<name>/ — it leaves " +
+        "anything else already there untouched, and a failure mid-run under " +
+        "`force` is NOT rolled back (only a fresh, non-`force` scaffold gets the " +
+        "atomic rollback).",
       inputSchema: {
         name: z.string().describe('Kebab-case script name, e.g. "data-sync".'),
         purpose: z
           .string()
           .optional()
           .describe("One-line description of what the script automates."),
+        dryRun: z
+          .boolean()
+          .optional()
+          .describe(
+            "Preview only: render every file and report what would be created/updated, without writing anything.",
+          ),
+        force: z
+          .boolean()
+          .optional()
+          .describe(
+            "Overwrite the manifest's known files if scripts/<name>/ (or its contract page) already exists. Does not roll back on a mid-run failure.",
+          ),
       },
-      annotations: { readOnlyHint: false, destructiveHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true },
     },
     handler: scaffoldScript,
   },

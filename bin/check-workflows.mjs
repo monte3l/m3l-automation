@@ -47,10 +47,11 @@
 import process from "node:process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { isValidEffort, isValidWorkflowModel } from "./lib/claude-models.mjs";
+import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
-const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const root = repoRoot(import.meta.url);
 
 /**
  * Ceiling for a workflow script's declared `// max-agents:` budget — the
@@ -277,6 +278,8 @@ export function validateWorkflowSurface(scripts, rows) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const { json } = parseJsonFlag();
+  const reporter = createReporter(json);
   let errors;
   let scripts;
   let rows;
@@ -295,16 +298,21 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }
     errors = validateWorkflowSurface(scripts, rows);
   } catch (error) {
-    console.error(`✗  ${error instanceof Error ? error.message : error}`);
+    reporter.error(error instanceof Error ? error.message : String(error));
+    reporter.finish();
     process.exit(1);
   }
   if (errors.length > 0) {
-    console.error(`✗  ${errors.length} workflow-surface violation(s):`);
-    for (const e of errors) console.error(`   - ${e}`);
+    if (!json) {
+      console.error(`✗  ${errors.length} workflow-surface violation(s):`);
+    }
+    for (const e of errors) reporter.error(e);
+    reporter.finish();
     process.exit(1);
   }
-  console.log(
-    `✓  .claude/workflows surface valid (${scripts.size} script(s), ` +
+  reporter.succeed(
+    `.claude/workflows surface valid (${scripts.size} script(s), ` +
       `${rows.length} workflow-script matrix row(s)).`,
   );
+  reporter.finish();
 }

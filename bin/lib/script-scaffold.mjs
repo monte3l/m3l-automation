@@ -3,8 +3,9 @@
 // and the conformance checker (bin/check-script-scaffold.mjs) consume this
 // manifest, so the two cannot drift apart: a file added here is emitted by
 // the generator AND required by the checker in the same change.
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { root } from "./reference-index.mjs";
 
 /** Kebab-case script names only: `data-sync`, `report-builder`, `probe`. */
 export const SCRIPT_NAME_RE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
@@ -126,11 +127,33 @@ export function scriptTokens(name, purpose) {
   };
 }
 
-/** Replace every known token in `text`. */
+/**
+ * A `__TOKEN__`-shaped span: two leading underscores, one or more
+ * uppercase/digit/underscore characters, two trailing underscores.
+ */
+const UNREPLACED_TOKEN_RE = /__[A-Z][A-Z0-9_]*__/;
+
+/**
+ * Replace every known token in `text`, then assert none survive. A
+ * surviving `__TOKEN__`-shaped span after every known substitution means a
+ * template uses a token this manifest's map doesn't know about — a typo, or
+ * `scriptTokens()` wasn't updated for a new template. Throwing here (rather
+ * than letting it ship into generated source silently) is what makes the
+ * scaffolder's atomic rollback (bin/scaffold-script.mjs's try/catch) useful
+ * for this failure mode: the half-written package gets removed instead of
+ * shipping a literal `__TOKEN__` string a user only discovers later as a
+ * `tsc` error in a file they never wrote.
+ */
 export function substituteTokens(text, tokens) {
   let result = text;
   for (const [token, value] of Object.entries(tokens)) {
     result = result.replaceAll(token, value);
+  }
+  const leftover = UNREPLACED_TOKEN_RE.exec(result);
+  if (leftover) {
+    throw new Error(
+      `substituteTokens: unreplaced token "${leftover[0]}" survived substitution — add it to scriptTokens() in bin/lib/script-scaffold.mjs.`,
+    );
   }
   return result;
 }
@@ -223,9 +246,89 @@ export function packageManifestErrors(pkg, name) {
       `dependencies must include "@m3l-automation/m3l-common": "workspace:*"`,
     );
   }
-  for (const script of ["build", "typecheck", "start"]) {
-    if (typeof pkg.scripts?.[script] !== "string" || !pkg.scripts[script]) {
+  const expectedScripts = expectedPackageScripts();
+  for (const script of Object.keys(expectedScripts)) {
+    const actual = pkg.scripts?.[script];
+    if (typeof actual !== "string" || !actual) {
       problems.push(`"scripts.${script}" must be declared`);
+    } else if (actual !== expectedScripts[script]) {
+      // Value, not just presence — previously a script could declare
+      // `"typecheck": "echo nope"` and this loop would pass, since it only
+      // checked the key was a non-empty string.
+      problems.push(
+        `"scripts.${script}" must be ${JSON.stringify(expectedScripts[script])} (got ${JSON.stringify(actual)})`,
+      );
+    }
+  }
+  return problems;
+}
+
+/**
+ * The `scripts.{build,typecheck,start}` command values every scaffolded
+ * script's package.json must carry — read from package.json.tmpl rather than
+ * hand-duplicated as string literals. Its `scripts` values carry no
+ * `__TOKEN__`s (unlike `name`/`description`), so its committed text IS every
+ * script's expected value verbatim; this is the same shared-manifest
+ * discipline the rest of this module already follows (one source, generator
+ * and checker both read it), applied to a field this manifest previously
+ * only checked for presence. Reads lazily (per call, not at module load) so
+ * this module carries no import-time fs side effect.
+ *
+ * @returns {Record<string, string>}
+ */
+function expectedPackageScripts() {
+  const parsed = JSON.parse(
+    readFileSync(join(root, TEMPLATE_DIR, "package.json.tmpl"), "utf8"),
+  );
+  return parsed.scripts ?? {};
+}
+
+/**
+ * Read tsconfig.json.tmpl / tsconfig.build.json.tmpl's `extends` and
+ * `references` shape directly from the template — neither template
+ * substitutes any token, so their committed text IS every scaffolded
+ * script's expected value verbatim. Reads lazily, matching
+ * {@link expectedPackageScripts}.
+ *
+ * @param {"tsconfig.json.tmpl" | "tsconfig.build.json.tmpl"} templateName
+ * @returns {{ extends: unknown, references: { path?: unknown }[] }}
+ */
+function expectedTsconfigShape(templateName) {
+  const parsed = JSON.parse(
+    readFileSync(join(root, TEMPLATE_DIR, templateName), "utf8"),
+  );
+  return { extends: parsed.extends, references: parsed.references ?? [] };
+}
+
+/**
+ * Validate a scaffolded script's tsconfig.json or tsconfig.build.json against
+ * the invariants the matching template encodes: `extends` the base config,
+ * and a project `references` entry back to m3l-common (so `tsc -b` and
+ * editor tooling resolve `@m3l-automation/m3l-common`'s types). Previously
+ * only file EXISTENCE was checked (`REQUIRED_EXACT_FILES`), so a script whose
+ * tsconfig lost `extends` or its m3l-common reference passed silently.
+ * Returns human-readable problem strings (empty array = conformant).
+ *
+ * @param {{ extends?: unknown, references?: { path?: unknown }[] }} tsconfig parsed tsconfig.json or tsconfig.build.json
+ * @param {"tsconfig.json.tmpl" | "tsconfig.build.json.tmpl"} templateName which template's shape to check against
+ * @returns {string[]}
+ */
+export function tsconfigShapeErrors(tsconfig, templateName) {
+  const expected = expectedTsconfigShape(templateName);
+  const problems = [];
+  if (tsconfig.extends !== expected.extends) {
+    problems.push(
+      `"extends" must be ${JSON.stringify(expected.extends)} (got ${JSON.stringify(tsconfig.extends)})`,
+    );
+  }
+  const actualRefPaths = (
+    Array.isArray(tsconfig.references) ? tsconfig.references : []
+  ).map((entry) => entry?.path);
+  for (const entry of expected.references) {
+    if (!actualRefPaths.includes(entry.path)) {
+      problems.push(
+        `"references" must include { "path": ${JSON.stringify(entry.path)} } (from ${templateName}) so tsc -b resolves the library`,
+      );
     }
   }
   return problems;
@@ -282,8 +385,8 @@ export function readmeExamplesErrors(readmeText) {
  * script packages the checker validates. Artifact-only ghosts (a leftover
  * dist/ with no manifest) are ignored.
  */
-export function scriptPackageDirs(root) {
-  const scriptsDir = join(root, "scripts");
+export function scriptPackageDirs(repoRoot) {
+  const scriptsDir = join(repoRoot, "scripts");
   if (!existsSync(scriptsDir)) {
     return [];
   }
