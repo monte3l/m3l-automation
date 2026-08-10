@@ -276,7 +276,9 @@
       "M3LJSONDetectorOptions",
       "M3LJSONDetectionResult",
       "M3LConfidence",
-      "M3LJSONFormatDetectionError"
+      "M3LJSONFormatDetectionError",
+      "canonicalJsonStringify",
+      "canonicalJsonHash"
     ]
   },
   {
@@ -345,7 +347,9 @@
       "M3LHttpResponseEvent",
       "M3LHttpErrorEvent",
       "M3LHttpClientEventMap",
-      "M3LHttpClientError"
+      "M3LHttpClientError",
+      "M3LFileDownloader",
+      "M3LFileDownloaderOptions"
     ]
   },
   {
@@ -496,6 +500,7 @@
       "safeJsonStringify",
       "valueToString",
       "M3LConcurrencyPool",
+      "M3LSingleFlight",
       "M3LDateTokens",
       "formatBytes",
       "smartTruncate",

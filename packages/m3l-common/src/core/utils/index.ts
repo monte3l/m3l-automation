@@ -15,3 +15,4 @@ export * from "./formatting.js";
 export * from "./numbers.js";
 export * from "./M3LConcurrencyPool.js";
 export * from "./M3LPaths.js";
+export * from "./M3LSingleFlight.js";

@@ -1,16 +1,16 @@
 # Core: `utils`
 
-General-purpose utilities used across the library: deployment-aware path resolution, a bounded concurrency pool, safe serialization, string/value formatting helpers, and a complete set of runtime type guards.
+General-purpose utilities used across the library: deployment-aware path resolution, a bounded concurrency pool, single-flight async call coalescing, safe serialization, string/value formatting helpers, and a complete set of runtime type guards.
 
 ## Overview
 
-The `utils` module gathers the cross-cutting helpers that other Core modules depend on. It provides `M3LPaths` for resolving data, config, input, output, and cache directories based on the detected deployment mode; `M3LConcurrencyPool` for running async work with a fixed slot count and natural backpressure; `safeJsonStringify` and `valueToString` for serializing arbitrary values without throwing; `M3LDateTokens` for expanding date tokens in path templates; and a large family of single-purpose type guards.
+The `utils` module gathers the cross-cutting helpers that other Core modules depend on. It provides `M3LPaths` for resolving data, config, input, output, and cache directories based on the detected deployment mode; `M3LConcurrencyPool` for running async work with a fixed slot count and natural backpressure; `M3LSingleFlight` for deduplicating concurrent async calls that share a key; `safeJsonStringify` and `valueToString` for serializing arbitrary values without throwing; `M3LDateTokens` for expanding date tokens in path templates; and a large family of single-purpose type guards.
 
 ## Public API
 
 Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
 
-- Paths and concurrency: `M3LPaths`, `M3LPathType`, `M3LPathEnvironmentVariables`, `M3LPathResolutionError`, `M3LConcurrencyPool`
+- Paths and concurrency: `M3LPaths`, `M3LPathType`, `M3LPathEnvironmentVariables`, `M3LPathResolutionError`, `M3LConcurrencyPool`, `M3LSingleFlight`
 - Serialization and formatting: `safeJsonStringify`, `valueToString`, `M3LDateTokens`, `formatBytes`, `smartTruncate`, `truncatePath`, `truncateText`, `isPath`, `formatConfigValueDisplay`, `formatConfigSourceDisplay`
 - Numeric parsing: `parseLocaleNumber`
 - Type guards: `isNullish`, `isPrimitive`, `isError`, `isNodeError`, `isEnoentError`, `isPlainObject`, `isObject`, `isArray`, `isString`, `isNumber`, `isBoolean`, `isFunction`, `isDate`, `isValidDate`, `isBuffer`, `isMap`, `isSet`, `isRegExp`, `isSymbol`, `isBigInt`, `isPromise`, `isNonEmptyString`, `isNonEmptyArray`, `hasProperty`, `hasMessage`
@@ -94,6 +94,23 @@ await pool.runEach(itemIds, async (id) => {
 });
 ```
 
+## Single-flight async coalescing with `M3LSingleFlight`
+
+`M3LSingleFlight` deduplicates concurrent async calls by key: while a call for a given key is in flight, every additional `run()` for the same key returns the SAME promise instead of invoking the function again. Once the in-flight call settles (resolve or reject), the key's entry clears, so a later `run()` for that key starts a fresh invocation. Calls for different keys never coalesce.
+
+```typescript
+import { Core } from "@m3l-automation/m3l-common";
+
+const single = new Core.M3LSingleFlight();
+
+// Two concurrent callers for the same key share one underlying fetch.
+const [a, b] = await Promise.all([
+  single.run("user:42", () => fetchUser("42")),
+  single.run("user:42", () => fetchUser("42")),
+]);
+// a === b, and fetchUser was invoked exactly once
+```
+
 ## Date tokens with `M3LDateTokens`
 
 `M3LDateTokens` expands date tokens such as `{YYYY}`, `{MM}`, and `{DD}` inside path templates, producing time-stamped output directories. It is the mechanism behind the `output/{timestamp}/` layout used by `M3LPaths`.
@@ -148,6 +165,7 @@ function describe(value: unknown): string {
 - `getProjectRoot()` is the one `M3LPaths` method that throws by design; treat it as monorepo-only.
 - `safeJsonStringify` never throws — unsupported inputs degrade to the placeholder strings above rather than raising.
 - `M3LConcurrencyPool` preserves FIFO order of task starts; results are returned per the pool's contract, but task scheduling is bounded by the slot count.
+- `M3LSingleFlight` shares a rejection with every coalesced caller — all callers for the same in-flight key hold the literal same promise, so a reject propagates to all of them, not just the first.
 
 ## See also
 

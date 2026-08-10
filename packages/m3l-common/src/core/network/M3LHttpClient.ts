@@ -319,6 +319,78 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
   }
 
   /**
+   * Performs a request for any {@link M3LHttpMethod} and resolves with the
+   * RAW, unbuffered response — status plus the web `ReadableStream<Uint8Array>`
+   * body — instead of a parsed body. Intended for callers that need to pipe a
+   * response directly to another destination (e.g. a file) without buffering
+   * it in memory first, such as {@link M3LFileDownloader}.
+   *
+   * Shares the same URL resolution, header merging, timeout/abort handling,
+   * proxy dispatcher forwarding, status-acceptance, and failure-normalization
+   * logic as {@link request} — the only difference is what happens with an
+   * accepted response: this method skips body parsing entirely and resolves
+   * with the stream itself. Always accepts any 2xx status (there is no
+   * `expectedStatus` option here, matching `get()`'s default behavior).
+   *
+   * @param options - `method` and `path` are required; `headers` is optional
+   *   and shallow-merges over `defaultHeaders` exactly like {@link request}.
+   * @returns A promise resolving to `{ status, body }`, where `body` is the
+   *   response's raw byte stream.
+   * @throws {@link M3LHttpClientError} on a non-2xx response, a network
+   *   failure, a timeout, or a 2xx response with no body at all.
+   * @example
+   * ```ts
+   * import { M3LHttpClient } from "@m3l-automation/m3l-common/core";
+   * import { createWriteStream } from "node:fs";
+   * import { Readable } from "node:stream";
+   * import { pipeline } from "node:stream/promises";
+   *
+   * const client = new M3LHttpClient();
+   * const { body } = await client.requestStream({
+   *   method: "GET",
+   *   path: "https://example.com/large-file.bin",
+   * });
+   * await pipeline(Readable.fromWeb(body), createWriteStream("./out.bin"));
+   * ```
+   */
+  requestStream(options: {
+    readonly method: M3LHttpMethod;
+    readonly path: string;
+    readonly headers?: Record<string, string>;
+  }): Promise<{
+    readonly status: number;
+    readonly body: ReadableStream<Uint8Array>;
+  }> {
+    const { method, path, headers: requestHeaders } = options;
+    const url = this.#resolveUrl(path);
+    const headers = { ...this.#defaultHeaders, ...requestHeaders };
+    const { controller, timer, getFailureReason } =
+      this.#createRequestContext();
+
+    return this.#performRequest(
+      {
+        method,
+        url,
+        headers,
+        body: undefined,
+        expectedStatus: undefined,
+        controller,
+        timer,
+        getFailureReason,
+      },
+      (response, timer) =>
+        this.#readStreamBody(url, response, timer, (cause) =>
+          this.#normalizeFailure({
+            cause,
+            method,
+            url,
+            reason: getFailureReason(),
+          }),
+        ),
+    );
+  }
+
+  /**
    * Resolves `path` against `baseUrl` when configured; otherwise `path` is
    * treated as the full request URL.
    */
@@ -344,24 +416,19 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
   }
 
   /**
-   * Core request engine shared by {@link get}, {@link getAbortable},
-   * {@link request}, and {@link requestAbortable}. Owns the
-   * `AbortController` lifecycle (timeout + manual abort), header merging,
-   * dispatch, response parsing, failure normalization, event emission, and
-   * debug logging.
+   * Creates a fresh `AbortController` plus its timeout timer and a matching
+   * `abort()` handle, shared by every request-issuing method (`#dispatchRequest`,
+   * {@link requestStream}). Only one of the timer or a manual `abort()` call
+   * ever fires per request; whichever fires first records its reason in the
+   * returned `getFailureReason` closure so `#normalizeFailure` can classify
+   * the resulting `AbortError` correctly.
    */
-  #dispatchRequest<T>(
-    options: M3LHttpRequestOptions,
-  ): M3LHttpAbortableRequest<T> {
-    const {
-      method,
-      path,
-      headers: requestHeaders,
-      body,
-      expectedStatus,
-    } = options;
-    const url = this.#resolveUrl(path);
-    const headers = { ...this.#defaultHeaders, ...requestHeaders };
+  #createRequestContext(): {
+    readonly controller: AbortController;
+    readonly timer: ReturnType<typeof setTimeout>;
+    readonly getFailureReason: () => "timeout" | "abort" | undefined;
+    readonly abort: () => void;
+  } {
     const controller = new AbortController();
     let failureReason: "timeout" | "abort" | undefined;
 
@@ -375,77 +442,128 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
       controller.abort(new DOMException("request aborted", "AbortError"));
     };
 
-    const promise = this.#dispatch<T>({
+    return { controller, timer, getFailureReason: () => failureReason, abort };
+  }
+
+  /**
+   * Core request engine shared by {@link get}, {@link getAbortable},
+   * {@link request}, and {@link requestAbortable}. Owns header merging,
+   * dispatch, failure normalization, event emission, and debug logging on
+   * top of the `AbortController` lifecycle from `#createRequestContext`.
+   */
+  #dispatchRequest<T>(
+    options: M3LHttpRequestOptions,
+  ): M3LHttpAbortableRequest<T> {
+    const {
       method,
-      url,
-      headers,
+      path,
+      headers: requestHeaders,
       body,
       expectedStatus,
-      controller,
-      timer,
-      getFailureReason: () => failureReason,
-    });
+    } = options;
+    const url = this.#resolveUrl(path);
+    const headers = { ...this.#defaultHeaders, ...requestHeaders };
+    const { controller, timer, getFailureReason, abort } =
+      this.#createRequestContext();
+
+    const promise = this.#performRequest<T>(
+      {
+        method,
+        url,
+        headers,
+        body,
+        expectedStatus,
+        controller,
+        timer,
+        getFailureReason,
+      },
+      (response, timer) => this.#readBody<T>(response, timer),
+    );
 
     return { promise, abort };
   }
 
   /**
-   * Dispatches the request via `undici`'s `fetch`, reads and normalizes the
-   * response, and emits the lifecycle events. Always clears the timeout
-   * timer via `finally`.
+   * Fetches the response for `input`, then applies status-acceptance and
+   * emits the `"response"` event/debug log. Throws {@link M3LHttpClientError}
+   * (`failure.reason === "status"`) when the response is not accepted.
+   * Extracted from `#performRequest` so both it and the failure-normalization
+   * `catch` around it stay small and single-purpose.
    */
-  async #dispatch<T>(input: {
+  async #fetchAccepted(input: {
     readonly method: M3LHttpMethod;
     readonly url: string;
     readonly headers: Record<string, string>;
     readonly body: string | Uint8Array | undefined;
     readonly expectedStatus: number | readonly number[] | undefined;
     readonly controller: AbortController;
-    readonly timer: ReturnType<typeof setTimeout>;
-    readonly getFailureReason: () => "timeout" | "abort" | undefined;
-  }): Promise<T> {
-    const {
+  }): Promise<Awaited<ReturnType<typeof fetch>>> {
+    const { method, url, headers, body, expectedStatus, controller } = input;
+    const startedAt = Date.now();
+
+    const response = await fetch(url, {
       method,
-      url,
       headers,
-      body,
-      expectedStatus,
-      controller,
-      timer,
-      getFailureReason,
-    } = input;
+      ...(body !== undefined && { body }),
+      signal: controller.signal,
+      ...(this.#dispatcher !== undefined && { dispatcher: this.#dispatcher }),
+    });
+
+    const durationMs = Date.now() - startedAt;
+    const { status, ok } = response;
+
+    this.#logDebug({ method, url, status });
+    this.emit("response", { method, url, status, ok, durationMs });
+
+    if (!this.#isAccepted(status, ok, expectedStatus)) {
+      throw new M3LHttpClientError(
+        `request to ${url} failed with status ${String(status)}`,
+        { failure: { reason: "status", status }, context: { url } },
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Dispatches the request via `#fetchAccepted` and applies failure
+   * normalization and the `"request"`/`"error"` lifecycle events — shared by
+   * every public request method, including {@link requestStream}.
+   *
+   * Timer-clearing is NOT owned centrally here: only `readOutput` itself
+   * knows when it is genuinely done with the response. For the parsed-body
+   * path (`#readBody`), that is the instant the full body has been read; for
+   * the stream path (`#readStreamBody`), `readOutput` returns as soon as
+   * headers are accepted, so its own wrapped stream clears the timer only
+   * once consumption finishes. Either way, a fetch failure or a `readOutput`
+   * throw/rejection is caught here and clears the timer unconditionally, so
+   * it never fires late or leaks.
+   */
+  async #performRequest<TOut>(
+    input: {
+      readonly method: M3LHttpMethod;
+      readonly url: string;
+      readonly headers: Record<string, string>;
+      readonly body: string | Uint8Array | undefined;
+      readonly expectedStatus: number | readonly number[] | undefined;
+      readonly controller: AbortController;
+      readonly timer: ReturnType<typeof setTimeout>;
+      readonly getFailureReason: () => "timeout" | "abort" | undefined;
+    },
+    readOutput: (
+      response: Awaited<ReturnType<typeof fetch>>,
+      timer: ReturnType<typeof setTimeout>,
+    ) => TOut | Promise<TOut>,
+  ): Promise<TOut> {
+    const { method, url, headers, timer, getFailureReason } = input;
 
     this.emit("request", { method, url, headers: { ...headers } });
 
-    const startedAt = Date.now();
-
     try {
-      const response = await fetch(url, {
-        method,
-        headers,
-        ...(body !== undefined && { body }),
-        signal: controller.signal,
-        ...(this.#dispatcher !== undefined && { dispatcher: this.#dispatcher }),
-      });
-
-      const durationMs = Date.now() - startedAt;
-      const { status, ok } = response;
-
-      this.#logDebug({ method, url, status });
-      this.emit("response", { method, url, status, ok, durationMs });
-
-      if (!this.#isAccepted(status, ok, expectedStatus)) {
-        throw new M3LHttpClientError(
-          `request to ${url} failed with status ${String(status)}`,
-          {
-            failure: { reason: "status", status },
-            context: { url },
-          },
-        );
-      }
-
-      return await this.#readBody<T>(response);
+      const response = await this.#fetchAccepted(input);
+      return await readOutput(response, timer);
     } catch (cause) {
+      clearTimeout(timer);
       const error = this.#normalizeFailure({
         cause,
         method,
@@ -455,22 +573,116 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
       this.#logDebug({ method, url, error: error.message });
       this.emit("error", { method, url, error });
       throw error;
-    } finally {
-      clearTimeout(timer);
     }
   }
 
-  /** Reads the response body, parsing it as JSON when the content type matches. */
-  async #readBody<T>(response: {
-    readonly headers: { get(name: string): string | null };
-    json(): Promise<unknown>;
-    text(): Promise<string>;
-  }): Promise<T> {
+  /**
+   * Reads the response body, parsing it as JSON when the content type
+   * matches. Clears `timer` only once the FULL body has been read — the
+   * `#performRequest` catch already covers this method's failure path (e.g.
+   * a `json()` parse error).
+   */
+  async #readBody<T>(
+    response: {
+      readonly headers: { get(name: string): string | null };
+      json(): Promise<unknown>;
+      text(): Promise<string>;
+    },
+    timer: ReturnType<typeof setTimeout>,
+  ): Promise<T> {
     const contentType = response.headers.get("content-type");
     const isJson =
       contentType !== null && JSON_CONTENT_TYPE_PATTERN.test(contentType);
     const body = isJson ? await response.json() : await response.text();
+    clearTimeout(timer);
     return body as T;
+  }
+
+  /**
+   * Extracts `{ status, body }` from an accepted response for
+   * {@link requestStream}, without buffering the body. The null-body branch
+   * throws directly (unaffected by `timer` — `#performRequest`'s catch
+   * clears it); the success branch wraps the stream via
+   * `#wrapStreamWithTimeoutCleanup` so `timer` stays live for the entire
+   * transfer instead of clearing the instant headers are accepted.
+   * `normalizeStreamError` classifies a later read failure (e.g. the abort
+   * raised when `timer` fires mid-transfer) into a typed
+   * {@link M3LHttpClientError} the same way `#performRequest`'s own catch
+   * would, so a caller consuming the stream after this method returns still
+   * observes a correctly-classified `reason` (`"timeout"`, `"abort"`, or
+   * `"network"`) instead of the raw underlying stream error.
+   */
+  #readStreamBody(
+    url: string,
+    response: {
+      readonly status: number;
+      readonly body: ReadableStream<Uint8Array> | null;
+    },
+    timer: ReturnType<typeof setTimeout>,
+    normalizeStreamError: (cause: unknown) => M3LHttpClientError,
+  ): { readonly status: number; readonly body: ReadableStream<Uint8Array> } {
+    if (response.body === null) {
+      throw new M3LHttpClientError(
+        `request to ${url} succeeded but returned no response body`,
+        { failure: { reason: "network" }, context: { url } },
+      );
+    }
+    return {
+      status: response.status,
+      body: this.#wrapStreamWithTimeoutCleanup(
+        response.body,
+        timer,
+        normalizeStreamError,
+      ),
+    };
+  }
+
+  /**
+   * Wraps `source` so the request's timeout timer clears only once the
+   * stream is fully consumed, errors, or is cancelled by the downstream
+   * consumer — never immediately on return, unlike the parsed-body path.
+   * Until then, the original timeout (and its `AbortController`) stays live
+   * for the entire transfer: if it fires mid-stream, the underlying reader's
+   * `read()` rejects with the resulting `AbortError`, which this wrapper
+   * surfaces by erroring the returned stream with the result of
+   * `normalizeStreamError` — a typed {@link M3LHttpClientError} instead of
+   * the raw rejection — so a downstream consumer (e.g.
+   * {@link M3LFileDownloader}) can re-throw it unchanged rather than wrap it
+   * a second time.
+   */
+  #wrapStreamWithTimeoutCleanup(
+    source: ReadableStream<Uint8Array>,
+    timer: ReturnType<typeof setTimeout>,
+    normalizeStreamError: (cause: unknown) => M3LHttpClientError,
+  ): ReadableStream<Uint8Array> {
+    const reader = source.getReader();
+    let cleared = false;
+    const clearOnce = (): void => {
+      if (cleared) return;
+      cleared = true;
+      clearTimeout(timer);
+    };
+
+    return new ReadableStream<Uint8Array>({
+      async pull(controller): Promise<void> {
+        try {
+          const { done, value } = await reader.read();
+          if (done) {
+            clearOnce();
+            controller.close();
+            return;
+          }
+          controller.enqueue(value);
+        } catch (error) {
+          clearOnce();
+          controller.error(normalizeStreamError(error));
+        }
+      },
+      cancel(reason): Promise<void> {
+        clearOnce();
+        return reader.cancel(reason);
+      },
+    });
   }
 
   /**

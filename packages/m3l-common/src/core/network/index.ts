@@ -9,5 +9,6 @@
  * @packageDocumentation
  */
 
+export * from "./M3LFileDownloader.js";
 export * from "./M3LHttpClient.js";
 export * from "./M3LHttpClientError.js";

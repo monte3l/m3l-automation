@@ -942,6 +942,16 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/json/M3LJSONFormatDetectionError.ts"
   },
+  "canonicalJsonStringify": {
+    "submodule": "json",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/json/canonicalJson.ts"
+  },
+  "canonicalJsonHash": {
+    "submodule": "json",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/json/canonicalJson.ts"
+  },
   "M3LLogger": {
     "submodule": "logging",
     "namespace": "core",
@@ -1136,6 +1146,16 @@
     "submodule": "network",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/network/M3LHttpClientError.ts"
+  },
+  "M3LFileDownloader": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LFileDownloader.ts"
+  },
+  "M3LFileDownloaderOptions": {
+    "submodule": "network",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/network/M3LFileDownloader.ts"
   },
   "M3LPoller": {
     "submodule": "polling",
@@ -1556,6 +1576,12 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/utils/M3LConcurrencyPool.ts",
     "lines": "33-86"
+  },
+  "M3LSingleFlight": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/M3LSingleFlight.ts",
+    "lines": "35-69"
   },
   "M3LDateTokens": {
     "submodule": "utils",

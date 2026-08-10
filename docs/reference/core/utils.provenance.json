@@ -33,6 +33,18 @@
       "retrieved": "2026-07-11"
     },
     {
+      "heading": "Single-flight async coalescing with `M3LSingleFlight`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/utils/M3LSingleFlight.ts",
+          "symbol": "M3LSingleFlight",
+          "lines": "35-69",
+          "blob": "b05c2ea029de546b32dc7158d2a7e408fb541f1a"
+        }
+      ],
+      "retrieved": "2026-08-10"
+    },
+    {
       "heading": "Date tokens with `M3LDateTokens`",
       "sources": [
         {
