@@ -67,6 +67,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:deps",
   },
   {
+    ciStepName: "Check dependency licenses",
+    id: "check-licenses",
+    cmd: () => "pnpm check:licenses",
+  },
+  {
     ciStepName: "Check verify parity",
     id: "check-verify-parity",
     cmd: () => "pnpm check:verify-parity",
