@@ -13,8 +13,10 @@
 // Flags:
 //   --continue   Run every step regardless of earlier failures; summarise at
 //                the end instead of stopping at the first red step.
-//   --full       Also run steps that declare a `skipReason` (e.g. re-install
-//                with a frozen lockfile).
+//   --full       Also run skip-by-default steps that DO have a local command
+//                (e.g. re-install with a frozen lockfile). A step with no
+//                local command at all (e.g. gitleaks) has nothing to run and
+//                stays skipped regardless of this flag.
 //
 // Usage:
 //   node bin/verify-all.mjs [--continue] [--full]
@@ -58,6 +60,16 @@ let stopped = false;
 for (const step of VERIFY_STEPS) {
   if (stopped) break;
 
+  if (!step.cmd) {
+    // No local command exists at all (e.g. gitleaks) — unconditionally
+    // skipped, regardless of --full. --full only widens which
+    // has-a-command-but-skipped-by-default steps run (e.g. "install").
+    console.log(
+      `⏭  ${step.ciStepName} — skipped (${step.skipReason ?? "no local command"})`,
+    );
+    results.push({ id: step.id, ciStepName: step.ciStepName, status: "skip" });
+    continue;
+  }
   if (step.skipReason && !runFull) {
     console.log(`⏭  ${step.ciStepName} — skipped (${step.skipReason})`);
     results.push({ id: step.id, ciStepName: step.ciStepName, status: "skip" });
