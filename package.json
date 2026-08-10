@@ -86,7 +86,7 @@
     "eslint-plugin-import-x": "4.17.1",
     "eslint-plugin-sonarjs": "4.2.0",
     "eslint-plugin-tsdoc": "0.5.2",
-    "globals": "^17.9.0",
+    "globals": "17.9.0",
     "jscpd": "5.0.12",
     "knip": "6.25.0",
     "lefthook": "2.1.9",
