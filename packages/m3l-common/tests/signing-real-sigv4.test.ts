@@ -123,7 +123,7 @@ describe("M3LRequestSigner — real @smithy/signature-v4 (NodeCryptoSha256 adapt
       FAKE_SESSION_CREDENTIALS.sessionToken,
     );
     const signatureMatch = /Signature=([0-9a-f]+)$/.exec(
-      headers.authorization ?? "",
+      headers["authorization"] ?? "",
     );
     expect(signatureMatch?.[1]).toMatch(HEX_64);
   });
@@ -156,7 +156,7 @@ describe("M3LRequestSigner — real @smithy/signature-v4 (NodeCryptoSha256 adapt
     expect(h.fromIni).toHaveBeenCalledWith({ profile: "my-profile" });
     expect(h.fromNodeProviderChain).not.toHaveBeenCalled();
     const signatureMatch = /Signature=([0-9a-f]+)$/.exec(
-      headers.authorization ?? "",
+      headers["authorization"] ?? "",
     );
     expect(signatureMatch?.[1]).toMatch(HEX_64);
   });
@@ -177,10 +177,10 @@ describe("M3LRequestSigner — real @smithy/signature-v4 (NodeCryptoSha256 adapt
       body: JSON.stringify({ another: "payload" }),
     });
 
-    expect(first.authorization).not.toBe(second.authorization);
-    expect(second.authorization).toMatch(/^AWS4-HMAC-SHA256 Credential=/);
+    expect(first["authorization"]).not.toBe(second["authorization"]);
+    expect(second["authorization"]).toMatch(/^AWS4-HMAC-SHA256 Credential=/);
     const secondSignatureMatch = /Signature=([0-9a-f]+)$/.exec(
-      second.authorization ?? "",
+      second["authorization"] ?? "",
     );
     expect(secondSignatureMatch?.[1]).toMatch(HEX_64);
   });

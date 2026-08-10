@@ -71,7 +71,7 @@ describe("AWS SDK package load failure", () => {
     const err = thrown as InstanceType<typeof mod.M3LAWSCredentialsError>;
     expect(err.cause).toBeDefined();
     expect(err.cause).not.toBe(thrown);
-    expect(err.context.type).toBe("UNKNOWN");
+    expect(err.context["type"]).toBe("UNKNOWN");
   });
 
   test("absent @aws-sdk/credential-providers surfaces as M3LAWSCredentialsError naming the package, cause chained", async () => {

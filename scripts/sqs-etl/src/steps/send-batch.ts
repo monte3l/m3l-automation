@@ -93,14 +93,16 @@ function readSendEntryOptionalFields(
   record: Record<string, unknown>,
 ): SendEntryOptionalFields {
   const delaySeconds =
-    typeof record.delaySeconds === "number" ? record.delaySeconds : undefined;
+    typeof record["delaySeconds"] === "number"
+      ? record["delaySeconds"]
+      : undefined;
   const messageGroupId =
-    typeof record.messageGroupId === "string"
-      ? record.messageGroupId
+    typeof record["messageGroupId"] === "string"
+      ? record["messageGroupId"]
       : undefined;
   const messageDeduplicationId =
-    typeof record.messageDeduplicationId === "string"
-      ? record.messageDeduplicationId
+    typeof record["messageDeduplicationId"] === "string"
+      ? record["messageDeduplicationId"]
       : undefined;
   return {
     ...(delaySeconds !== undefined && { delaySeconds }),
@@ -129,7 +131,7 @@ function toSendEntryFields(
   if (typeof record === "string") return { body: record };
 
   if (isPlainObject(record) && "body" in record) {
-    const bodyValue = record.body;
+    const bodyValue = record["body"];
     const body =
       typeof bodyValue === "string" ? bodyValue : JSON.stringify(bodyValue);
     return { body, ...readSendEntryOptionalFields(record) };

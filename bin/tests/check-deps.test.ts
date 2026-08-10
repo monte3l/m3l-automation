@@ -4,6 +4,7 @@ import {
   findMajorBumps,
   findPeerMetaInconsistencies,
   findRangedDependencies,
+  findRangedDevDependencies,
   parseOutdated,
   partitionHolds,
 } from "../../bin/check-deps.mjs";
@@ -220,6 +221,33 @@ describe("findRangedDependencies", () => {
 
   test("missing dependencies block returns empty array", () => {
     expect(findRangedDependencies({})).toEqual([]);
+  });
+});
+
+describe("findRangedDevDependencies", () => {
+  test("exact-pinned devDependencies pass (empty result)", () => {
+    const pkg = { devDependencies: { typescript: "6.0.3", eslint: "10.6.0" } };
+    expect(findRangedDevDependencies(pkg)).toEqual([]);
+  });
+
+  test("a caret range is flagged", () => {
+    const pkg = { devDependencies: { globals: "^17.9.0" } };
+    expect(findRangedDevDependencies(pkg)).toEqual([
+      { name: "globals", range: "^17.9.0" },
+    ]);
+  });
+
+  test("only the ranged entries are returned from a mixed set", () => {
+    const pkg = {
+      devDependencies: { exact: "1.0.0", ranged: "^1.0.0" },
+    };
+    expect(findRangedDevDependencies(pkg)).toEqual([
+      { name: "ranged", range: "^1.0.0" },
+    ]);
+  });
+
+  test("missing devDependencies block returns empty array", () => {
+    expect(findRangedDevDependencies({})).toEqual([]);
   });
 });
 

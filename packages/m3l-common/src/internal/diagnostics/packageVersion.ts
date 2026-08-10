@@ -38,7 +38,7 @@ function computeVersion(): string {
     const parsed: unknown = JSON.parse(raw);
 
     if (typeof parsed !== "object" || parsed === null) return "unknown";
-    const version = (parsed as Record<string, unknown>).version;
+    const version = (parsed as Record<string, unknown>)["version"];
     return typeof version === "string" && version.length > 0
       ? version
       : "unknown";

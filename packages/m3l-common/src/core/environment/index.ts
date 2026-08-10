@@ -867,4 +867,4 @@ export class M3LExecutionEnvironment {
  * }
  * ```
  */
-export const M3LEnv = M3LExecutionEnvironment;
+export const M3LEnv: typeof M3LExecutionEnvironment = M3LExecutionEnvironment;
