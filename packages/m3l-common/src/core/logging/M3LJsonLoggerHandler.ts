@@ -47,12 +47,12 @@ function buildEnvelope(event: M3LLogEvent): Record<string, unknown> {
     category: event.category,
     message: event.message,
   };
-  if (event.indent !== undefined) payload.indent = event.indent;
+  if (event.indent !== undefined) payload["indent"] = event.indent;
   if (event.timestamp !== undefined) {
-    payload.timestamp = event.timestamp.toISOString();
+    payload["timestamp"] = event.timestamp.toISOString();
   }
   if (event.correlationId !== undefined) {
-    payload.correlationId = event.correlationId;
+    payload["correlationId"] = event.correlationId;
   }
   return payload;
 }

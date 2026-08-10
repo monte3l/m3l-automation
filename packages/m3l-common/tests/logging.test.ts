@@ -874,8 +874,8 @@ describe("M3LJsonLoggerHandler", () => {
     const written = String(stdoutSpy.mock.calls[0]?.[0]);
     expect(written.endsWith("\n")).toBe(true);
     const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
-    expect(parsed.category).toBe(M3LLogEventCategory.INFO);
-    expect(parsed.message).toBe("hi");
+    expect(parsed["category"]).toBe(M3LLogEventCategory.INFO);
+    expect(parsed["message"]).toBe("hi");
   });
 
   test("promotes scalar fields from data to the top level of the JSON payload", () => {
@@ -890,7 +890,7 @@ describe("M3LJsonLoggerHandler", () => {
 
     const written = String(stdoutSpy.mock.calls[0]?.[0]);
     const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
-    expect(parsed.rows).toBe(1200);
+    expect(parsed["rows"]).toBe(1200);
   });
 
   test.each([
@@ -912,7 +912,7 @@ describe("M3LJsonLoggerHandler", () => {
 
       const written = String(stdoutSpy.mock.calls[0]?.[0]);
       const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
-      expect(parsed.field).toEqual(value);
+      expect(parsed["field"]).toEqual(value);
     },
   );
 
@@ -937,7 +937,7 @@ describe("M3LJsonLoggerHandler", () => {
 
     const written = String(stdoutSpy.mock.calls[0]?.[0]);
     const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
-    expect(parsed.indent).toBe(2);
+    expect(parsed["indent"]).toBe(2);
   });
 
   test("an event with timestamp set carries the ISO string at the top level of the JSON payload", () => {
@@ -953,7 +953,7 @@ describe("M3LJsonLoggerHandler", () => {
 
     const written = String(stdoutSpy.mock.calls[0]?.[0]);
     const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
-    expect(parsed.timestamp).toBe("2020-01-01T00:00:00.000Z");
+    expect(parsed["timestamp"]).toBe("2020-01-01T00:00:00.000Z");
   });
 
   test("a non-scalar data field stays nested under a top-level data object alongside promoted scalars", () => {
@@ -968,8 +968,8 @@ describe("M3LJsonLoggerHandler", () => {
 
     const written = String(stdoutSpy.mock.calls[0]?.[0]);
     const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
-    expect(parsed.rows).toBe(1200);
-    expect(parsed.data).toEqual({ meta: { a: 1 } });
+    expect(parsed["rows"]).toBe(1200);
+    expect(parsed["data"]).toEqual({ meta: { a: 1 } });
   });
 
   // WS-D: a logger constructed with a correlationId stamps it onto every
@@ -985,7 +985,7 @@ describe("M3LJsonLoggerHandler", () => {
 
     const written = String(stdoutSpy.mock.calls[0]?.[0]);
     const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
-    expect(parsed.correlationId).toBe("abc");
+    expect(parsed["correlationId"]).toBe("abc");
   });
 
   // exactOptionalPropertyTypes note: this must drive the implementer toward a
@@ -1021,12 +1021,12 @@ describe("M3LJsonLoggerHandler", () => {
 
     const written = String(stdoutSpy.mock.calls[0]?.[0]);
     const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
-    expect(parsed.category).toBe(M3LLogEventCategory.SUCCESS);
-    expect(parsed.message).toBe("ok");
+    expect(parsed["category"]).toBe(M3LLogEventCategory.SUCCESS);
+    expect(parsed["message"]).toBe("ok");
     // The colliding keys are routed under the nested `data` object instead
     // of promoted, while the non-colliding scalar `rows` is still promoted.
-    expect(parsed.rows).toBe(1200);
-    expect(parsed.data).toEqual({ category: "SPOOFED", message: "pwned" });
+    expect(parsed["rows"]).toBe(1200);
+    expect(parsed["data"]).toEqual({ category: "SPOOFED", message: "pwned" });
   });
 
   test("regression (M2): a __proto__ key in data never reaches the global Object.prototype and is not emitted", () => {
@@ -1044,10 +1044,10 @@ describe("M3LJsonLoggerHandler", () => {
     });
 
     const probe = {} as Record<string, unknown>;
-    expect(probe.polluted).toBeUndefined();
+    expect(probe["polluted"]).toBeUndefined();
     const written = String(stdoutSpy.mock.calls[0]?.[0]);
     const parsed = JSON.parse(written.trimEnd()) as Record<string, unknown>;
-    expect(parsed.ok).toBe(1);
+    expect(parsed["ok"]).toBe(1);
     expect(Object.prototype.hasOwnProperty.call(parsed, "__proto__")).toBe(
       false,
     );
@@ -1448,7 +1448,7 @@ describe("redactSensitiveLogValue", () => {
 
     const result = redactSensitiveLogValue(input) as Record<string, unknown>;
 
-    expect(result.apiKey).toBe("[REDACTED]");
+    expect(result["apiKey"]).toBe("[REDACTED]");
   });
 
   test("returns a new object — the original input is not mutated", () => {
@@ -1556,11 +1556,11 @@ describe("redactSensitiveLogValue", () => {
     const out = redactSensitiveLogValue(input) as Record<string, unknown>;
 
     const probe = {} as Record<string, unknown>;
-    expect(probe.polluted).toBeUndefined();
+    expect(probe["polluted"]).toBeUndefined();
     expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
-    expect(out.apiKey).toBe("[REDACTED]");
+    expect(out["apiKey"]).toBe("[REDACTED]");
     // Non-destructive: the original input's apiKey is untouched.
-    expect(input.apiKey).toBe("secret");
+    expect(input["apiKey"]).toBe("secret");
   });
 
   // WS-D: `correlationId` is documented as a tracing value, never a secret —
@@ -1956,11 +1956,11 @@ describe("logger.errorFrom() (ADR-0035 phase 3)", () => {
     expect(expectedChain).toHaveLength(3);
 
     const data = event.data as Record<string, unknown>;
-    expect(data.chain).toEqual(expectedChain);
-    expect(data.code).toBe(expectedChain[0]?.code);
-    expect(data.context).toEqual(expectedChain[0]?.context);
+    expect(data["chain"]).toEqual(expectedChain);
+    expect(data["code"]).toBe(expectedChain[0]?.code);
+    expect(data["context"]).toEqual(expectedChain[0]?.context);
 
-    const chain = data.chain as typeof expectedChain;
+    const chain = data["chain"] as typeof expectedChain;
     expect(chain[0]?.code).toBe("ERR_CONFIG_MISSING");
     expect(chain[0]?.origin).toBe("caller");
     expect(chain[0]?.retryable).toBe(false);
@@ -2001,8 +2001,8 @@ describe("logger.errorFrom() (ADR-0035 phase 3)", () => {
     const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
     expect(event.category).toBe(M3LLogEventCategory.ERROR);
     const data = event.data as Record<string, unknown>;
-    expect(Array.isArray(data.chain)).toBe(true);
-    expect((data.chain as unknown[]).length).toBeGreaterThan(0);
+    expect(Array.isArray(data["chain"])).toBe(true);
+    expect((data["chain"] as unknown[]).length).toBeGreaterThan(0);
   });
 
   test("emits an ERROR event, which a FATAL floor suppresses", () => {
@@ -2065,8 +2065,8 @@ describe("logger.errorFrom() (ADR-0035 phase 3)", () => {
     const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
     expect(event.category).toBe(M3LLogEventCategory.ERROR);
     const data = event.data as Record<string, unknown>;
-    expect(Array.isArray(data.chain)).toBe(true);
-    expect((data.chain as unknown[]).length).toBeGreaterThan(0);
+    expect(Array.isArray(data["chain"])).toBe(true);
+    expect((data["chain"] as unknown[]).length).toBeGreaterThan(0);
   });
 
   test("does not throw when the error's own stack getter throws, and still emits an ERROR event carrying a chain", () => {
@@ -2087,8 +2087,8 @@ describe("logger.errorFrom() (ADR-0035 phase 3)", () => {
     const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
     expect(event.category).toBe(M3LLogEventCategory.ERROR);
     const data = event.data as Record<string, unknown>;
-    expect(Array.isArray(data.chain)).toBe(true);
-    expect((data.chain as unknown[]).length).toBeGreaterThan(0);
+    expect(Array.isArray(data["chain"])).toBe(true);
+    expect((data["chain"] as unknown[]).length).toBeGreaterThan(0);
   });
 
   test("does not throw when a NESTED cause's message getter throws, and still emits an ERROR event carrying a chain", () => {
@@ -2110,8 +2110,8 @@ describe("logger.errorFrom() (ADR-0035 phase 3)", () => {
     const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
     expect(event.category).toBe(M3LLogEventCategory.ERROR);
     const data = event.data as Record<string, unknown>;
-    expect(Array.isArray(data.chain)).toBe(true);
-    expect((data.chain as unknown[]).length).toBeGreaterThan(0);
+    expect(Array.isArray(data["chain"])).toBe(true);
+    expect((data["chain"] as unknown[]).length).toBeGreaterThan(0);
   });
 });
 
@@ -2129,9 +2129,9 @@ describe("logger.time() (ADR-0035 phase 3)", () => {
     const event = handler.handle.mock.calls[0]?.[0] as M3LLogEvent;
     expect(event.category).toBe(M3LLogEventCategory.DEBUG);
     const data = event.data as Record<string, unknown>;
-    expect(data.label).toBe("import-step");
-    expect(typeof data.durationMs).toBe("number");
-    expect(data.durationMs as number).toBeGreaterThanOrEqual(0);
+    expect(data["label"]).toBe("import-step");
+    expect(typeof data["durationMs"]).toBe("number");
+    expect(data["durationMs"] as number).toBeGreaterThanOrEqual(0);
   });
 
   test("is suppressed by any floor above DEBUG", () => {

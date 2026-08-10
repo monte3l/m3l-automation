@@ -2840,7 +2840,7 @@ describe("M3LScriptPresetLoader — extends inheritance", () => {
     expect(thrown).toBeInstanceOf(M3LPresetCycleError);
     const error = thrown as M3LPresetCycleError;
     expect(error.code).toBe("ERR_PRESET_CYCLE");
-    expect(error.chain).toBe(error.context.chain);
+    expect(error.chain).toBe(error.context["chain"]);
     expect(Array.isArray(error.chain)).toBe(true);
     expect(error.chain.length).toBeGreaterThan(0);
     const resolvedA = nodePath.resolve(aPath);

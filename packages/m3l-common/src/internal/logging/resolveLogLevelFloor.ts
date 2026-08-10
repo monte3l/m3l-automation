@@ -58,11 +58,11 @@ function resolveFromArgv(
  * `M3L_DEBUG` truthiness toggle, else `undefined` when neither is set.
  */
 function resolveFromEnv(env: NodeJS.ProcessEnv): M3LLogLevelFloor | undefined {
-  const envLogLevel = env.M3L_LOG_LEVEL;
+  const envLogLevel = env["M3L_LOG_LEVEL"];
   if (envLogLevel !== undefined && envLogLevel !== "") {
     return parseLogLevelFloor(envLogLevel, "M3L_LOG_LEVEL");
   }
-  const envDebug = env.M3L_DEBUG;
+  const envDebug = env["M3L_DEBUG"];
   if (
     envDebug !== undefined &&
     TRUTHY_M3L_DEBUG_VALUES.has(envDebug.trim().toLowerCase())

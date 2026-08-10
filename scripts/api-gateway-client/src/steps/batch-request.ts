@@ -141,15 +141,15 @@ interface BatchRecordFields {
 function toRequestFields(record: unknown): BatchRecordFields {
   if (
     !isPlainObject(record) ||
-    typeof record.path !== "string" ||
-    record.path.length === 0
+    typeof record["path"] !== "string" ||
+    record["path"].length === 0
   ) {
     throw new Core.M3LError("batch record is missing a valid 'path' field", {
       code: "ERR_API_GATEWAY_CLIENT_CONFIG",
     });
   }
-  const body = typeof record.body === "string" ? record.body : undefined;
-  return { path: record.path, ...(body !== undefined && { body }) };
+  const body = typeof record["body"] === "string" ? record["body"] : undefined;
+  return { path: record["path"], ...(body !== undefined && { body }) };
 }
 
 /** Resolves `path` against `settings.baseUrl` (per `new URL(path, baseUrl)`) when configured. */

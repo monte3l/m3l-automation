@@ -444,8 +444,8 @@ describe("M3LBreadcrumbTrail — import:started / import:item / import:error", (
     const [entry] = trail.entries();
     const payload = entry?.payload ?? {};
 
-    expect(payload.index).toBe(4);
-    expect(payload.errorName).toBe("Error");
+    expect(payload["index"]).toBe(4);
+    expect(payload["errorName"]).toBe("Error");
     expect(payload).not.toHaveProperty("error");
     expect(payload).not.toHaveProperty("stack");
     expect(payload).not.toHaveProperty("errorMessage");
@@ -459,7 +459,7 @@ describe("M3LBreadcrumbTrail — import:started / import:item / import:error", (
     const [entry] = trail.entries();
     const payload = entry?.payload ?? {};
 
-    expect(payload.errorCode).toBe("ERR_IMPORT_PARSE");
+    expect(payload["errorCode"]).toBe("ERR_IMPORT_PARSE");
     expect(payload).not.toHaveProperty("errorMessage");
   });
 
@@ -468,7 +468,7 @@ describe("M3LBreadcrumbTrail — import:started / import:item / import:error", (
     trail.record("importer", "import:error", { error: new Error("no index") });
     const [entry] = trail.entries();
     expect(entry?.payload).not.toHaveProperty("index");
-    expect(entry?.payload?.errorName).toBe("Error");
+    expect(entry?.payload?.["errorName"]).toBe("Error");
   });
 });
 
@@ -518,7 +518,7 @@ describe("M3LBreadcrumbTrail — network event family via a real M3LHttpClient",
       status: 200,
       ok: true,
     });
-    const durationMs = responseEntry?.payload?.durationMs;
+    const durationMs = responseEntry?.payload?.["durationMs"];
     expect(typeof durationMs).toBe("number");
   });
 
@@ -538,11 +538,11 @@ describe("M3LBreadcrumbTrail — network event family via a real M3LHttpClient",
     expect(errorEntry).toBeDefined();
     const payload = errorEntry?.payload ?? {};
 
-    expect(payload.errorName).toBe("M3LHttpClientError");
-    expect(payload.errorCode).toBe("ERR_HTTP_REQUEST");
+    expect(payload["errorName"]).toBe("M3LHttpClientError");
+    expect(payload["errorCode"]).toBe("ERR_HTTP_REQUEST");
     expect(payload).not.toHaveProperty("error");
     expect(payload).not.toHaveProperty("stack");
-    expect(typeof payload.errorMessage).toBe("string");
+    expect(typeof payload["errorMessage"]).toBe("string");
     expect(JSON.stringify(payload)).not.toContain("sk-secret");
   });
 });
@@ -589,7 +589,7 @@ describe("M3LBreadcrumbTrail — URL sanitization (security Must-fix)", () => {
         error: new Error("boom"),
       });
       const [entry] = trail.entries();
-      expect(entry?.payload.url).toBe(expectedUrl);
+      expect(entry?.payload["url"]).toBe(expectedUrl);
       expect(JSON.stringify(entry?.payload)).not.toContain(leakedValue);
     },
   );
@@ -601,7 +601,7 @@ describe("M3LBreadcrumbTrail — URL sanitization (security Must-fix)", () => {
       url: "https://s3.example.com/k?X-Amz-Signature=deadbeef&X-Amz-Credential=AKIAEXAMPLE",
     });
     const [entry] = trail.entries();
-    expect(entry?.payload.url).toBe("https://s3.example.com/k");
+    expect(entry?.payload["url"]).toBe("https://s3.example.com/k");
     const serialized = JSON.stringify(entry?.payload);
     expect(serialized).not.toContain("deadbeef");
     expect(serialized).not.toContain("AKIAEXAMPLE");
@@ -642,8 +642,8 @@ describe("M3LBreadcrumbTrail — URL sanitization (security Must-fix)", () => {
     });
 
     const [entry] = trail.entries();
-    expect(entry?.payload.url).toBe("https://api.example.com/v1/data");
-    expect(typeof entry?.payload.errorMessage).toBe("string");
+    expect(entry?.payload["url"]).toBe("https://api.example.com/v1/data");
+    expect(typeof entry?.payload["errorMessage"]).toBe("string");
 
     const serialized = JSON.stringify(entry?.payload);
     expect(serialized).not.toContain("hunter2SUPERPASS");
@@ -1458,7 +1458,7 @@ describe("M3LRunReporter.build()", () => {
     ).not.toThrow();
 
     const circular: Record<string, unknown> = {};
-    circular.self = circular;
+    circular["self"] = circular;
     expect(() =>
       reporter.build({
         ...baseInput,
@@ -1893,7 +1893,7 @@ describe("M3LRunReporter — sanitizeValue security regressions (security Must-f
     "a cyclic %s value does not bypass redaction — the secret never lands in the written report",
     async (field) => {
       const cyclic: Record<string, unknown> = { apiKey: "sk-live-CIRCSECRET" };
-      cyclic.self = cyclic;
+      cyclic["self"] = cyclic;
       const input = reportInputWith({ [field]: cyclic });
 
       const raw = await persistAndReadBack(input);
@@ -2153,7 +2153,7 @@ describe("M3LRunReporter — round-3 security fix regressions (lock-in, must not
   // cycle-breaking pre-pass this test locks in.
   test("a cyclic environment value never leaks its secret into the written report", async () => {
     const cyclic: Record<string, unknown> = { apiKey: "sk-CYC" };
-    cyclic.self = cyclic;
+    cyclic["self"] = cyclic;
     const raw = await persistAndReadBack(
       reportInputWith({ environment: environmentWith(cyclic) }),
     );
@@ -2918,7 +2918,7 @@ describe("M3LRunReporter — round-4 (shared acyclic subgraph must not OOM, lock
 
   test("a genuine cycle is still detected (must not have regressed)", async () => {
     const cyclic: Record<string, unknown> = { apiKey: "sk-CYCLE4" };
-    cyclic.self = cyclic;
+    cyclic["self"] = cyclic;
 
     const reporter = new M3LRunReporter({
       paths: { getOutputDir: () => outDir },
@@ -3366,7 +3366,7 @@ describe("M3LRunReporter — object-KEY URL scrubbing (new fix, no coverage yet)
     const payload = parsed.timeline?.[0]?.payload ?? {};
     expect(Object.keys(payload)).toContain("https://bkt.s3.amazonaws.com/o");
     expect(payload["https://bkt.s3.amazonaws.com/o"]).toBe("ok");
-    expect(payload.valueControl).toBe("https://bkt.s3.amazonaws.com/o");
+    expect(payload["valueControl"]).toBe("https://bkt.s3.amazonaws.com/o");
   });
 
   test("a URL used as a Map key, nested several levels deep, is scrubbed", async () => {

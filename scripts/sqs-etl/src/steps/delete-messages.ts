@@ -62,8 +62,11 @@ async function* readReceiptHandles(
   for (const line of lines) {
     try {
       const record: unknown = JSON.parse(line);
-      if (isPlainObject(record) && typeof record.receiptHandle === "string") {
-        yield record.receiptHandle;
+      if (
+        isPlainObject(record) &&
+        typeof record["receiptHandle"] === "string"
+      ) {
+        yield record["receiptHandle"];
       } else {
         onSkip(index, "missing or mistyped 'receiptHandle'");
       }

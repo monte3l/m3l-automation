@@ -101,7 +101,7 @@ async function runHook(
 function extractAwsRequestId(context: unknown): string | undefined {
   if (typeof context !== "object" || context === null) return undefined;
   if (!("awsRequestId" in context)) return undefined;
-  const candidate = (context as Record<string, unknown>).awsRequestId;
+  const candidate = (context as Record<string, unknown>)["awsRequestId"];
   return typeof candidate === "string" && candidate.length > 0
     ? candidate
     : undefined;
