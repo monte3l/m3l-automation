@@ -13,6 +13,7 @@
     "exactOptionalPropertyTypes": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
+    "noUncheckedSideEffectImports": true,
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,

@@ -29,7 +29,11 @@ const SUPERSEDED_STATUS = "Superseded";
  * one set rather than hand-maintaining a second, independently-drifting
  * copy of the same domain fact.
  */
-export const FAILED_STATUSES = new Set(["Failed", "Stopped", "Cancelled"]);
+export const FAILED_STATUSES: Set<string> = new Set([
+  "Failed",
+  "Stopped",
+  "Cancelled",
+]);
 
 /**
  * The dependencies `watchExecution` needs, already resolved and
