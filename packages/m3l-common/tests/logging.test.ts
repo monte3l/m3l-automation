@@ -67,6 +67,7 @@ import type {
   M3LFileLoggerHandlerOptions,
   M3LJsonLoggerHandlerOptions,
   M3LLogEvent,
+  M3LLoggerHandler,
   M3LLogLevelFloor,
   M3LLoggerOptions,
   M3LTableColumn,
@@ -105,13 +106,17 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Test doubles — a fake handler implementing the internal M3LLoggerHandler
-// shape structurally (handle + reset). The interface itself is internal and
-// not imported here. Mocks are given explicit function-type parameters (the
-// vitest 4 typed-mock form) so they carry the concrete `(event: M3LLogEvent)
-// => void` / `() => void` signatures instead of the bare `vi.fn()` inferred
-// `Mock<Procedure | Constructable>`, which is not structurally assignable to
-// `M3LLoggerHandler` under strict mode.
+// Test doubles — a fake handler implementing the M3LLoggerHandler shape
+// structurally (handle + reset). `M3LLoggerHandler` is now barrel-exported
+// (see the "M3LLoggerHandler — barrel export" describe block below) but the
+// structural double is kept here rather than importing the real type,
+// because these tests only need something assignable to
+// `ConstructorParameters<typeof M3LLogger>[0]`'s element type, not a
+// dependency on the interface's name. Mocks are given explicit function-type
+// parameters (the vitest 4 typed-mock form) so they carry the concrete
+// `(event: M3LLogEvent) => void` / `() => void` signatures instead of the
+// bare `vi.fn()` inferred `Mock<Procedure | Constructable>`, which is not
+// structurally assignable to `M3LLoggerHandler` under strict mode.
 // ---------------------------------------------------------------------------
 interface FakeHandler {
   handle: ReturnType<typeof vi.fn<(event: M3LLogEvent) => void>>;
@@ -252,14 +257,17 @@ describe("M3LLoggerOptions — type-level contract", () => {
   });
 
   test("the constructor widens additively: its second parameter accepts M3LLoggerOptions", () => {
-    // `M3LLoggerHandler` (the first parameter's element type) is an internal,
-    // non-barrel-exported interface (see the FakeHandler comment above), so
-    // the constructor's SECOND parameter is asserted directly rather than
-    // the whole parameter tuple. The parameter is OPTIONAL (see the
-    // one-arg-still-constructs runtime test below), so `M3LLoggerOptions`
-    // must be a valid value for it — asserted via `toMatchTypeOf` rather than
-    // `toEqualTypeOf` against a `| undefined` union, which is redundant while
-    // the not-yet-implemented `M3LLoggerOptions` is an error/`any` type in RED.
+    // `M3LLoggerHandler` (the first parameter's element type) is now a
+    // barrel-exported interface (see the "M3LLoggerHandler — barrel export"
+    // describe block below), but this test still asserts the constructor's
+    // SECOND parameter directly rather than the whole parameter tuple, since
+    // its only concern is `M3LLoggerOptions` widening — the first parameter's
+    // shape is exercised by the FakeHandler-based fan-out tests elsewhere in
+    // this file. The parameter is OPTIONAL (see the one-arg-still-constructs
+    // runtime test below), so `M3LLoggerOptions` must be a valid value for
+    // it — asserted via `toMatchTypeOf` rather than `toEqualTypeOf` against a
+    // `| undefined` union, which is redundant while the not-yet-implemented
+    // `M3LLoggerOptions` is an error/`any` type in RED.
     expectTypeOf(M3LLogger).constructorParameters.toHaveProperty("1");
     const options: M3LLoggerOptions = { correlationId: "x" };
     expectTypeOf(options).toMatchTypeOf<
@@ -272,6 +280,22 @@ describe("M3LLoggerOptions — type-level contract", () => {
     expect(
       () => new M3LLogger([], { correlationId: "ctor-widen-check" }),
     ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LLoggerHandler — barrel export (promotion from internal to public)
+// ---------------------------------------------------------------------------
+describe("M3LLoggerHandler — barrel export", () => {
+  test("M3LLoggerHandler is importable as a type from the logging barrel and equals { handle(event: M3LLogEvent): void; reset(): void }", () => {
+    // Importing `M3LLoggerHandler` from `../src/core/logging/index.js` (not
+    // `M3LLogEvent.js` directly) is the point of this test: it proves the
+    // port interface is now re-exported through the public barrel rather
+    // than remaining an internal, non-exported type.
+    expectTypeOf<M3LLoggerHandler>().toEqualTypeOf<{
+      handle(event: M3LLogEvent): void;
+      reset(): void;
+    }>();
   });
 });
 

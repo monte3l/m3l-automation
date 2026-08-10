@@ -224,7 +224,9 @@ export class M3LLogger {
    * invoked, emits a `DEBUG` event carrying `label` and the elapsed duration
    * in milliseconds as `durationMs` (ADR-0035 phase 3). Deliberately a plain
    * `() => void` — **not** a `Disposable` — since `Symbol.dispose` is
-   * unavailable under this project's `lib: ["es2024"]` target.
+   * unavailable under this project's configured `lib` target (the disposable
+   * types live in `lib.esnext.disposable.d.ts`, not yet folded into a stable
+   * `esYYYY` lib).
    *
    * @param label - A human-readable name for the measured span.
    * @returns A callable that emits the `DEBUG` timing event when invoked.

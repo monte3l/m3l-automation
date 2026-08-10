@@ -302,7 +302,8 @@
       "M3LLoggerOptions",
       "M3LLogLevelFloor",
       "M3LConsoleLoggerHandlerOptions",
-      "M3LJsonLoggerHandlerOptions"
+      "M3LJsonLoggerHandlerOptions",
+      "M3LLoggerHandler"
     ]
   },
   {

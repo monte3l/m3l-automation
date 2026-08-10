@@ -15,6 +15,9 @@ Public surface (`logging/index.ts`):
 - `M3LLogger` — the logger facade over an ordered handler array.
 - `M3LLoggerOptions` — optional logger construction options (`correlationId`, `minLevel`).
 - `M3LLogEvent` — the per-message event object (carries an optional `correlationId`).
+- `M3LLoggerHandler` — the handler port (`handle(event): void` / `reset(): void`)
+  implemented by the three built-in handlers, exported so consumers can write
+  their own custom handlers.
 - `M3LLogEventCategory` — the event category enum (ten categories).
 - `M3LLogLevelFloor` — the categories accepted as a severity floor (see
   [Log levels](#log-levels-and-debug-mode)).
@@ -81,8 +84,9 @@ The ranking itself is internal and not exported.
   `DEBUG` event carrying `label` and `durationMs` — the shared replacement for
   the inline `Date.now()` deltas the importer/network/credentials modules
   currently duplicate. It is deliberately **not** a `Disposable`: `Symbol.dispose`
-  is unavailable under this project's `lib: ["es2024"]`, so `using` is not
-  supported.
+  is unavailable under this project's configured `lib` target (the disposable
+  types live in `lib.esnext.disposable.d.ts`, not yet folded into a stable
+  `esYYYY` lib), so `using` is not supported.
 
 #### Resolving `minLevel` from CLI / environment ([`M3LScript`])
 
