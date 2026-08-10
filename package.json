@@ -28,6 +28,8 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "knip": "knip",
+    "verify": "node bin/verify-all.mjs",
+    "check:verify-parity": "node bin/check-verify-parity.mjs",
     "commands": "node bin/list-commands.mjs",
     "check:command-catalog": "node bin/check-command-catalog.mjs",
     "check:api": "node bin/check-exports-snapshot.mjs",

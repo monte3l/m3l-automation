@@ -50,6 +50,12 @@ jobs:
       - name: Check dependencies
         run: pnpm check:deps
 
+      # bin/lib/verify-steps.mjs (the `pnpm verify` aggregate local gate) must
+      # track this job's step list exactly, or `pnpm verify` silently stops
+      # reproducing what CI actually gates.
+      - name: Check verify parity
+        run: pnpm check:verify-parity
+
       - name: Validate commit messages
         if: github.event_name == 'pull_request'
         run: node bin/lint-commit.mjs --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }}
