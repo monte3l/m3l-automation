@@ -1222,7 +1222,9 @@ describe("M3LFileExporter", () => {
 
   test("does not expose on/off (no export:* events)", () => {
     const exporter = new M3LFileExporter({ filePath: "/exports/doc.txt" });
-    expect((exporter as unknown as Record<string, unknown>).on).toBeUndefined();
+    expect(
+      (exporter as unknown as Record<string, unknown>)["on"],
+    ).toBeUndefined();
   });
 });
 

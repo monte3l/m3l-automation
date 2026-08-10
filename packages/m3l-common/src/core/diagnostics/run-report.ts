@@ -739,9 +739,9 @@ function projectSkipReason(value: unknown): FileCopySkipReason | undefined {
 function projectFileCopyOutcome(entry: unknown): FileCopyOutcome | undefined {
   if (typeof entry !== "object" || entry === null) return undefined;
   const record = entry as Record<string, unknown>;
-  const source = projectString(record.source);
-  const destination = projectString(record.destination);
-  const timestamp = projectString(record.timestamp);
+  const source = projectString(record["source"]);
+  const destination = projectString(record["destination"]);
+  const timestamp = projectString(record["timestamp"]);
   if (
     source === undefined ||
     destination === undefined ||
@@ -750,14 +750,14 @@ function projectFileCopyOutcome(entry: unknown): FileCopyOutcome | undefined {
     return undefined;
   }
 
-  if (record.skipped === false) {
-    const size = projectFiniteNumber(record.size);
+  if (record["skipped"] === false) {
+    const size = projectFiniteNumber(record["size"]);
     return size === undefined
       ? undefined
       : { skipped: false, source, destination, size, timestamp };
   }
-  if (record.skipped === true) {
-    const reason = projectSkipReason(record.reason);
+  if (record["skipped"] === true) {
+    const reason = projectSkipReason(record["reason"]);
     return reason === undefined
       ? undefined
       : { skipped: true, source, destination, reason, timestamp };
@@ -813,11 +813,11 @@ function projectCopyReportSummary(
 ): ProjectedArchiveReport["summary"] {
   if (typeof value !== "object" || value === null) return undefined;
   const record = value as Record<string, unknown>;
-  const totalRegistered = projectFiniteNumber(record.totalRegistered);
-  const copied = projectFiniteNumber(record.copied);
-  const skipped = projectFiniteNumber(record.skipped);
-  const totalBytesCopied = projectFiniteNumber(record.totalBytesCopied);
-  const skippedByReason = projectSkippedByReason(record.skippedByReason);
+  const totalRegistered = projectFiniteNumber(record["totalRegistered"]);
+  const copied = projectFiniteNumber(record["copied"]);
+  const skipped = projectFiniteNumber(record["skipped"]);
+  const totalBytesCopied = projectFiniteNumber(record["totalBytesCopied"]);
+  const skippedByReason = projectSkippedByReason(record["skippedByReason"]);
 
   return {
     ...(totalRegistered !== undefined && { totalRegistered }),
@@ -860,8 +860,8 @@ function projectArchiveReport(
 ): ProjectedArchiveReport | undefined {
   if (typeof archive !== "object" || archive === null) return undefined;
   const record = archive as Record<string, unknown>;
-  const results = projectFileCopyResults(record.results);
-  const summary = projectCopyReportSummary(record.summary);
+  const results = projectFileCopyResults(record["results"]);
+  const summary = projectCopyReportSummary(record["summary"]);
   if (results === undefined && summary === undefined) return undefined;
 
   return {

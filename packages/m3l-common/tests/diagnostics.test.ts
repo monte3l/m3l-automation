@@ -258,7 +258,7 @@ describe("mapErrorToExitCode()", () => {
 
   test("returns UNCLASSIFIED (1) for a circular object", () => {
     const circular: Record<string, unknown> = {};
-    circular.self = circular;
+    circular["self"] = circular;
     expect(mapErrorToExitCode(circular)).toBe(1);
   });
 
@@ -711,7 +711,7 @@ describe("formatErrorChain / serializeErrorChain — raw URL scrubbing (security
     const [level] = serializeErrorChain(buildErrorWithRawUrl());
     const serialized = JSON.stringify(level);
     for (const secret of SECRETS) expect(serialized).not.toContain(secret);
-    expect(level?.context?.url).toBe(SCRUBBED);
+    expect(level?.context?.["url"]).toBe(SCRUBBED);
     expect(serialized).toContain(SCRUBBED);
   });
 });

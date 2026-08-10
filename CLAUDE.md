@@ -227,18 +227,21 @@ by `pnpm check:command-catalog`). The table below is the source of truth for
 the git-hook cadence, machine-verified against `lefthook.yml` by
 `pnpm check:cadence`.
 
-| Stage                      | Checks run                                                                                                                                                                                  | Scope                     |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| `pre-commit` (lefthook)    | `eslint --fix`, `prettier --write`                                                                                                                                                          | staged files only         |
-| `commit-msg` (lefthook)    | `lint-commit`                                                                                                                                                                               | the commit message        |
-| `pre-push` (lefthook)      | `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test:coverage`, `pnpm build`, `pnpm check:exports`, `verify-signed-range`, `pnpm check:agents`                                    | whole repo                |
-| CI `verify` job (`ci.yml`) | everything the pre-push row runs, **plus** every `check:*` script, `pnpm build`, `pnpm knip`, `pnpm lint:md`, `gitleaks`, and `pnpm audit` — see the `verify` job for the full ordered list | whole repo, authoritative |
+| Stage                      | Checks run                                                                                                                                                                                                                                                                                 | Scope                     |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- |
+| `pre-commit` (lefthook)    | `eslint --fix`, `prettier --write`                                                                                                                                                                                                                                                         | staged files only         |
+| `commit-msg` (lefthook)    | `lint-commit`                                                                                                                                                                                                                                                                              | the commit message        |
+| `pre-push` (lefthook)      | `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test:coverage`, `pnpm build`, `pnpm check:exports`, `verify-signed-range`, `pnpm check:agents`                                                                                                                                   | whole repo                |
+| CI `verify` job (`ci.yml`) | every pre-push check **except** `verify-signed-range` (branch protection enforces signed commits at the platform level instead), **plus** every `check:*` script, `pnpm build`, `pnpm knip`, `pnpm lint:md`, `gitleaks`, and `pnpm audit` — see the `verify` job for the full ordered list | whole repo, authoritative |
 
 There is no pre-publish hook (package is internal/unpublished, ADR-0020); every
 gate beyond pre-push runs only in CI. `pre-push` runs in parallel but still
 takes minutes (`test:coverage`/`lint` are the slowest lanes) — budget for it
 (background or a longer timeout) rather than `--no-verify`, since CI re-runs
-everything anyway.
+everything anyway. `pnpm verify` reproduces the CI `verify` job's step list
+locally in one command (fail-fast by default); `pnpm check:verify-parity`
+keeps its step list (`bin/lib/verify-steps.mjs`) from drifting out of sync
+with `ci.yml`.
 
 ## CI/CD
 

@@ -522,7 +522,7 @@ describe("batchRequest", () => {
         (entry) =>
           typeof entry === "object" &&
           entry !== null &&
-          (entry as Record<string, unknown>).path === "/items/2",
+          (entry as Record<string, unknown>)["path"] === "/items/2",
       ),
     ).toBe(false);
   });
@@ -670,7 +670,7 @@ describe("batchRequest", () => {
           path: "https://attacker.example/exfiltrate",
         }),
       );
-      const error = (failedRecord as Record<string, unknown>).error;
+      const error = (failedRecord as Record<string, unknown>)["error"];
       expect(error).toEqual(
         expect.objectContaining({ reason: "path-origin-mismatch" }),
       );
@@ -712,7 +712,7 @@ describe("batchRequest", () => {
     stubInput(JSON.stringify({ path: "/items/1" }));
     const { streams } = stubOutputStreams();
     const circularResponse: Record<string, unknown> = { id: "1" };
-    circularResponse.self = circularResponse;
+    circularResponse["self"] = circularResponse;
     const request = vi.fn().mockResolvedValue(circularResponse);
     const httpClient = createFakeHttpClient({ request });
     const config = buildConfig({
@@ -742,7 +742,7 @@ describe("batchRequest", () => {
     expect(failedStream).toBeDefined();
     if (failedStream !== undefined) {
       const [failedRecord] = writtenJsonlRecords(failedStream);
-      const error = (failedRecord as Record<string, unknown>).error;
+      const error = (failedRecord as Record<string, unknown>)["error"];
       expect(error).toEqual(
         expect.objectContaining({ reason: "output-write-failed" }),
       );

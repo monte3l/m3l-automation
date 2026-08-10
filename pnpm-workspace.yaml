@@ -23,13 +23,6 @@ overrides:
   "ip-address@<=10.3.0": "^10.3.1"
   # cheerio (test-only devDependency) pins undici in the 7.x line.
   "undici@>=7.0.0 <7.29.0": "^7.29.0"
-  # packages/m3l-common's own direct `undici` 8.7.0 is also bumped in its own
-  # package.json (Dependabot PR #292), but that fix and this file's other
-  # overrides land in separate PRs that both gate on a clean `pnpm audit`,
-  # creating a merge deadlock — pinned here too so this file's PR can merge
-  # on its own; harmless overlap with #292 once it lands. Drop once #292 (or
-  # any direct-dependency bump covering it) merges.
-  "undici@>=8.0.0 <8.9.0": "^8.9.0"
   "@hono/node-server@<2.0.5": "^2.0.5"
   # @aws-sdk/core 3.977.1 and 3.977.4 are deprecated upstream for a JSON
   # Document number-parsing bug (aws-sdk-js-v3#8246); 3.977.6 carries the fix

@@ -30,6 +30,9 @@ updates:
         patterns:
           - commitlint
           - "@commitlint/*"
+      aws-sdk:
+        patterns:
+          - "@aws-sdk/*"
     labels:
       - dependencies
     open-pull-requests-limit: 5

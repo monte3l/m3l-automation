@@ -287,7 +287,7 @@ describe("ensureValidCredentials", () => {
       thrown = error;
     }
     expect(thrown).toBeInstanceOf(M3LAWSCredentialsError);
-    expect((thrown as M3LAWSCredentialsError).context.profile).toBe(
+    expect((thrown as M3LAWSCredentialsError).context["profile"]).toBe(
       "my-profile",
     );
   });
@@ -427,7 +427,7 @@ describe("ensureValidCredentialsMultiple", () => {
       thrown = error;
     }
     expect(thrown).toBeInstanceOf(M3LAWSCredentialsError);
-    expect((thrown as M3LAWSCredentialsError).context.profile).toBeDefined();
+    expect((thrown as M3LAWSCredentialsError).context["profile"]).toBeDefined();
   });
 
   test("duplicate profile names each carry their OWN settlement — regression for indexOf mis-attribution", async () => {
@@ -462,7 +462,7 @@ describe("ensureValidCredentialsMultiple", () => {
       thrown = error;
     }
     expect(thrown).toBeInstanceOf(M3LAWSCredentialsError);
-    expect((thrown as M3LAWSCredentialsError).context.type).toBe(
+    expect((thrown as M3LAWSCredentialsError).context["type"]).toBe(
       "PROFILE_NOT_FOUND",
     );
   });
@@ -766,8 +766,8 @@ describe("M3LAWSCredentialsError", () => {
       type: M3LAWSCredentialsErrorType.SSO_SESSION_EXPIRED,
       profile: "my-profile",
     });
-    expect(error.context.type).toBe("SSO_SESSION_EXPIRED");
-    expect(error.context.profile).toBe("my-profile");
+    expect(error.context["type"]).toBe("SSO_SESSION_EXPIRED");
+    expect(error.context["profile"]).toBe("my-profile");
     expect(
       (error as unknown as Record<string, unknown>)["type"],
     ).toBeUndefined();

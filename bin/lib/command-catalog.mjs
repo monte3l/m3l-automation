@@ -81,6 +81,11 @@ export const COMMAND_CATALOG = [
       "Detects unused files, exports, and dependencies across the workspace. CI-only dead-code gate; run locally after removing a symbol or dependency.",
   },
   {
+    name: "verify",
+    description:
+      "Runs the CI `verify` job's step list locally in one command (bin/lib/verify-steps.mjs), fail-fast by default. `-- --continue` runs every step and summarises; `-- --full` also runs steps with no local equivalent by default (e.g. a frozen-lockfile reinstall). Use before opening a PR to reproduce the CI gate ahead of time.",
+  },
+  {
     name: "commands",
     description:
       "Lists every pnpm command in this file, grouped by family, with its description — this catalog, rendered. Add `-- --json` for a structured payload.",
@@ -89,6 +94,11 @@ export const COMMAND_CATALOG = [
     name: "check:command-catalog",
     description:
       "Verifies every `package.json` script has exactly one row in bin/lib/command-catalog.mjs and vice versa — the non-drift gate for `pnpm commands`'s data. Run after adding/removing/renaming a script.",
+  },
+  {
+    name: "check:verify-parity",
+    description:
+      "Verifies bin/lib/verify-steps.mjs (the `pnpm verify` aggregate gate's step list) matches the CI verify job in .github/workflows/ci.yml exactly, in both directions. Run after adding/removing/renaming a step in ci.yml's verify job.",
   },
   {
     name: "check:api",
@@ -188,7 +198,7 @@ export const COMMAND_CATALOG = [
   {
     name: "check:zones",
     description:
-      "Verifies the ADR-0009 dependency-direction zones (import-x/no-restricted-paths) are still present and correctly shaped in eslint.config.js — a deleted zone would otherwise pass `pnpm lint` silently. Run after editing eslint.config.js.",
+      "Verifies the ADR-0009 dependency-direction zones (import-x/no-restricted-paths) and the ADR-0035 repo-wide import-x/no-cycle rule are still present and correctly shaped in eslint.config.js — a deleted zone or rule would otherwise pass `pnpm lint` silently. Run after editing eslint.config.js.",
   },
   {
     name: "check:deps",

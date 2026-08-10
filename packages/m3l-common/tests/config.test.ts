@@ -287,7 +287,7 @@ describe("M3LInMemoryConfigProvider", () => {
     expect(() => new M3LInMemoryConfigProvider(dangerousPayload)).toThrow(
       M3LUnsafeConfigKeyError,
     );
-    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();
   });
 
   test("getSourceLabel() returns 'in-memory' (A6)", () => {
@@ -317,7 +317,7 @@ describe("M3LPresetConfigProvider", () => {
     expect(() => new M3LPresetConfigProvider(dangerousPayload)).toThrow(
       M3LUnsafeConfigKeyError,
     );
-    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();
   });
 
   test("getSourceLabel() returns 'preset' (A6)", () => {
@@ -352,7 +352,7 @@ describe("M3LLambdaEventConfigProvider", () => {
     expect(() => new M3LLambdaEventConfigProvider(dangerousEvent)).toThrow(
       M3LUnsafeConfigKeyError,
     );
-    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();
   });
 
   test("getSourceLabel() returns 'lambda-event' (A6)", () => {
@@ -668,7 +668,7 @@ describe("M3LJSONConfigProvider", () => {
     expect(() => new M3LJSONConfigProvider("/fixtures/dangerous.json")).toThrow(
       M3LUnsafeConfigKeyError,
     );
-    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();
   });
 
   test("getSourceLabel() returns 'json-file' (A6)", () => {
@@ -751,7 +751,7 @@ describe("M3LYAMLConfigProvider", () => {
     expect(() => new M3LYAMLConfigProvider("/fixtures/dangerous.yaml")).toThrow(
       M3LUnsafeConfigKeyError,
     );
-    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();
   });
 
   test("getSourceLabel() returns 'yaml-file' (A6)", () => {
@@ -2018,7 +2018,7 @@ describe("prototype-pollution guard across dangerous-key entry points", () => {
     "%s: constructing throws M3LUnsafeConfigKeyError",
     (_label, build) => {
       expect(() => build()).toThrow(M3LUnsafeConfigKeyError);
-      expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+      expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();
     },
   );
 });
@@ -2530,10 +2530,10 @@ describe("M3LConfigValidationError", () => {
 
     expect(thrown).toBeInstanceOf(M3LConfigValidationError);
     const validationError = thrown as M3LConfigValidationError;
-    expect(validationError.context.parameter).toBe("port");
-    expect(typeof validationError.context.reason).toBe("string");
-    expect(validationError.context.reason as string).toContain("65535");
-    expect(validationError.context.valueType).toBe("number");
+    expect(validationError.context["parameter"]).toBe("port");
+    expect(typeof validationError.context["reason"]).toBe("string");
+    expect(validationError.context["reason"] as string).toContain("65535");
+    expect(validationError.context["valueType"]).toBe("number");
   });
 
   test("a custom validator's failure reason surfaces via context.reason", () => {
@@ -2554,7 +2554,7 @@ describe("M3LConfigValidationError", () => {
 
     expect(thrown).toBeInstanceOf(M3LConfigValidationError);
     const validationError = thrown as M3LConfigValidationError;
-    expect(validationError.context.reason).toBe("must be an even number");
+    expect(validationError.context["reason"]).toBe("must be an even number");
   });
 
   test("chains an underlying cause when provided", () => {

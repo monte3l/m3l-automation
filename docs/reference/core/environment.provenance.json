@@ -9,52 +9,52 @@
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LExecutionEnvironment",
           "lines": "731-824",
-          "blob": "8836b7f126d25f57f1dff8089285dd51ab2be1d3"
+          "blob": "ad078b279d888f42374d8e0467d458e403905f59"
         },
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LEnv",
           "lines": "824-824",
-          "blob": "8836b7f126d25f57f1dff8089285dd51ab2be1d3"
+          "blob": "ad078b279d888f42374d8e0467d458e403905f59"
         },
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LExecutionEnvironmentType",
           "lines": "48-80",
-          "blob": "8836b7f126d25f57f1dff8089285dd51ab2be1d3"
+          "blob": "ad078b279d888f42374d8e0467d458e403905f59"
         },
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LDeploymentMode",
           "lines": "102-125",
-          "blob": "8836b7f126d25f57f1dff8089285dd51ab2be1d3"
+          "blob": "ad078b279d888f42374d8e0467d458e403905f59"
         },
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LCredentialSource",
           "lines": "147-180",
-          "blob": "8836b7f126d25f57f1dff8089285dd51ab2be1d3"
+          "blob": "ad078b279d888f42374d8e0467d458e403905f59"
         },
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LExecutionEnvironmentInfo",
           "lines": "347-395",
-          "blob": "8836b7f126d25f57f1dff8089285dd51ab2be1d3"
+          "blob": "ad078b279d888f42374d8e0467d458e403905f59"
         },
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LEnvironmentDetectionDetails",
           "lines": "273-296",
-          "blob": "8836b7f126d25f57f1dff8089285dd51ab2be1d3"
+          "blob": "ad078b279d888f42374d8e0467d458e403905f59"
         },
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LEnvironmentDetectionError",
           "lines": "232-252",
-          "blob": "8836b7f126d25f57f1dff8089285dd51ab2be1d3"
+          "blob": "ad078b279d888f42374d8e0467d458e403905f59"
         }
       ],
-      "retrieved": "2026-07-29"
+      "retrieved": "2026-08-10"
     },
     {
       "heading": "Detection and caching",
@@ -63,10 +63,10 @@
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LExecutionEnvironment",
           "lines": "752-803",
-          "blob": "8836b7f126d25f57f1dff8089285dd51ab2be1d3"
+          "blob": "ad078b279d888f42374d8e0467d458e403905f59"
         }
       ],
-      "retrieved": "2026-07-29"
+      "retrieved": "2026-08-10"
     },
     {
       "heading": "Monorepo vs. standalone detection",
@@ -75,16 +75,16 @@
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LDeploymentMode",
           "lines": "102-125",
-          "blob": "8836b7f126d25f57f1dff8089285dd51ab2be1d3"
+          "blob": "ad078b279d888f42374d8e0467d458e403905f59"
         },
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LExecutionEnvironmentInfo",
           "lines": "347-395",
-          "blob": "8836b7f126d25f57f1dff8089285dd51ab2be1d3"
+          "blob": "ad078b279d888f42374d8e0467d458e403905f59"
         }
       ],
-      "retrieved": "2026-07-29"
+      "retrieved": "2026-08-10"
     },
     {
       "heading": "Environment types",
@@ -93,10 +93,10 @@
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LExecutionEnvironmentType",
           "lines": "48-80",
-          "blob": "8836b7f126d25f57f1dff8089285dd51ab2be1d3"
+          "blob": "ad078b279d888f42374d8e0467d458e403905f59"
         }
       ],
-      "retrieved": "2026-07-29"
+      "retrieved": "2026-08-10"
     },
     {
       "heading": "Credential sources",
@@ -105,10 +105,10 @@
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LCredentialSource",
           "lines": "147-180",
-          "blob": "8836b7f126d25f57f1dff8089285dd51ab2be1d3"
+          "blob": "ad078b279d888f42374d8e0467d458e403905f59"
         }
       ],
-      "retrieved": "2026-07-29"
+      "retrieved": "2026-08-10"
     },
     {
       "heading": "Environment info and detection details",
@@ -117,16 +117,16 @@
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LExecutionEnvironmentInfo",
           "lines": "347-395",
-          "blob": "8836b7f126d25f57f1dff8089285dd51ab2be1d3"
+          "blob": "ad078b279d888f42374d8e0467d458e403905f59"
         },
         {
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LEnvironmentDetectionDetails",
           "lines": "273-296",
-          "blob": "8836b7f126d25f57f1dff8089285dd51ab2be1d3"
+          "blob": "ad078b279d888f42374d8e0467d458e403905f59"
         }
       ],
-      "retrieved": "2026-07-29"
+      "retrieved": "2026-08-10"
     },
     {
       "heading": "Error handling",
@@ -135,10 +135,10 @@
           "file": "packages/m3l-common/src/core/environment/index.ts",
           "symbol": "M3LEnvironmentDetectionError",
           "lines": "232-252",
-          "blob": "8836b7f126d25f57f1dff8089285dd51ab2be1d3"
+          "blob": "ad078b279d888f42374d8e0467d458e403905f59"
         }
       ],
-      "retrieved": "2026-07-29"
+      "retrieved": "2026-08-10"
     }
   ]
 }

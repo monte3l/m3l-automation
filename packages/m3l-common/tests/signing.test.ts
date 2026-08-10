@@ -292,7 +292,7 @@ describe("M3LRequestSigner", () => {
     const [httpRequest] = h.sign.mock.calls[0] as [
       { headers: Record<string, unknown> },
     ];
-    expect(httpRequest.headers.host).toBe("real-host.example.com");
+    expect(httpRequest.headers["host"]).toBe("real-host.example.com");
   });
 
   test("signedHeaders() rejects M3LSigningError (code ERR_SIGNING_FAILURE) when the resolved signature is missing authorization", async () => {

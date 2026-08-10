@@ -191,7 +191,7 @@ function readErrorReason(error: unknown): string | undefined {
  */
 function readErrorStatus(error: unknown): number | undefined {
   if (!isPlainRecord(error)) return undefined;
-  const failure = error.failure;
+  const failure = error["failure"];
   if (!isPlainRecord(failure)) return undefined;
   return readNumber(failure, "status");
 }
@@ -325,7 +325,7 @@ function summarizeImportError(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
   const index = readNumber(payload, "index");
-  const error = payload.error;
+  const error = payload["error"];
   const errorName = readErrorName(error);
   const errorCode = readErrorCode(error);
   // No errorMessage: importer error messages routinely embed the offending
@@ -359,8 +359,8 @@ function summarizeRequest(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
   const method = readString(payload, "method");
-  const url = safeUrl(payload.url);
-  const headers = payload.headers;
+  const url = safeUrl(payload["url"]);
+  const headers = payload["headers"];
   // Header VALUES are never captured — only the sorted list of names.
   const headerNames = isPlainRecord(headers)
     ? Object.keys(headers).sort()
@@ -383,7 +383,7 @@ function summarizeResponse(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
   const method = readString(payload, "method");
-  const url = safeUrl(payload.url);
+  const url = safeUrl(payload["url"]);
   const status = readNumber(payload, "status");
   const ok = readBoolean(payload, "ok");
   const durationMs = readNumber(payload, "durationMs");
@@ -412,8 +412,8 @@ function summarizeHttpError(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
   const method = readString(payload, "method");
-  const url = safeUrl(payload.url);
-  const error = payload.error;
+  const url = safeUrl(payload["url"]);
+  const error = payload["error"];
   const errorName = readErrorName(error);
   const errorCode = readErrorCode(error);
   const reason = readErrorReason(error);

@@ -261,7 +261,7 @@ export class M3LRequestSigner {
 
       const signed = await signer.sign(httpRequest);
       const headers = extractSigningHeaders(signed.headers);
-      if (headers.authorization === undefined) {
+      if (headers["authorization"] === undefined) {
         throw new M3LSigningError(
           `signedHeaders: SigV4 signing resolved without an authorization header for ${request.method} ${request.url}`,
         );

@@ -145,9 +145,9 @@ describe("M3LSQSOperations", () => {
       MaxNumberOfMessages: 10,
       WaitTimeSeconds: 20,
     });
-    expect(command.input.VisibilityTimeout).toBeUndefined();
-    expect(command.input.MessageAttributeNames).toBeUndefined();
-    expect(command.input.MessageSystemAttributeNames).toBeUndefined();
+    expect(command.input["VisibilityTimeout"]).toBeUndefined();
+    expect(command.input["MessageAttributeNames"]).toBeUndefined();
+    expect(command.input["MessageSystemAttributeNames"]).toBeUndefined();
   });
 
   test("receive() maps explicit options onto the command input, honoring waitTimeSeconds: 0 (not coerced back to the default)", async () => {
@@ -176,7 +176,7 @@ describe("M3LSQSOperations", () => {
     });
     // Explicit guard: waitTimeSeconds: 0 must be honored (`??`), not
     // silently coerced back to the 20-second default (`||` would do that).
-    expect(command.input.WaitTimeSeconds).toBe(0);
+    expect(command.input["WaitTimeSeconds"]).toBe(0);
   });
 
   test("receive() maps a full Message onto M3LSQSReceivedMessage, extracting StringValue-only message attributes", async () => {

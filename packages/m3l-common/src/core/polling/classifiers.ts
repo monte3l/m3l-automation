@@ -118,7 +118,7 @@ function readHttpStatus(value: unknown): number | undefined {
   const direct = readNumber(value, "status") ?? readNumber(value, "statusCode");
   if (direct !== undefined) return direct;
   if (typeof value === "object" && value !== null) {
-    const metadata = (value as Record<string, unknown>).$metadata;
+    const metadata = (value as Record<string, unknown>)["$metadata"];
     return readNumber(metadata, "httpStatusCode");
   }
   return undefined;
