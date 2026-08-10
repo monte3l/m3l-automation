@@ -15,6 +15,20 @@
     "isolatedModules": true,
     "noUncheckedSideEffectImports": true,
     "noPropertyAccessFromIndexSignature": true,
+    "noImplicitReturns": true,
+    "allowUnreachableCode": false,
+    // isolatedDeclarations stays out of the base config deliberately: the
+    // *.build.json projects (which actually emit) set it individually, but
+    // the tooling projects (editor/typed-lint/test typecheck) set
+    // `declaration: false` and include tests/, which isolatedDeclarations
+    // does not tolerate. Promoting it here would fail typecheck on every
+    // test file rather than catch a real declaration-emit gap.
+    //
+    // noUnusedLocals / noUnusedParameters are deliberately NOT set:
+    // @typescript-eslint/no-unused-vars already covers both at error level
+    // (eslint.config.js) with an `^_`-prefix escape hatch the codebase
+    // relies on; tsc's flags honor no such pattern for locals, so adding
+    // them would duplicate an existing gate while breaking that convention.
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
