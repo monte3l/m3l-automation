@@ -18,6 +18,11 @@ jobs:
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude'))
     runs-on: ubuntu-latest
+    # This job carries the broadest token in the repo (contents/PRs/issues
+    # write) and is triggered by any @claude mention — without a cap it
+    # inherits GitHub's 360-minute default, effectively no limit. Matches
+    # claude-pr-review.yml's budget for the same class of on-demand task.
+    timeout-minutes: 45
     permissions:
       contents: write
       pull-requests: write
