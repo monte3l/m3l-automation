@@ -64,7 +64,7 @@ importers:
         specifier: 0.5.2
         version: 0.5.2(eslint@10.6.0(jiti@2.7.0))(typescript@6.0.3)
       globals:
-        specifier: ^17.9.0
+        specifier: 17.9.0
         version: 17.9.0
       jscpd:
         specifier: 5.0.12
