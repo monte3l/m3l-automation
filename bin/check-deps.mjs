@@ -10,6 +10,11 @@
  *      (majors deliberately deferred in MAJOR_HOLDS are surfaced, not failed).
  *   2. Deprecated packages — npm marks the installed version as deprecated.
  *   3. Peer-dependency mismatches — pnpm reports unmet peers on install.
+ *   4. ADR-0017 declaration conformance — the published library's runtime
+ *      `dependencies` are exact-pinned and optional peers carry matching
+ *      `peerDependenciesMeta`.
+ *   5. Root devDependency pinning convention (ADR-0010) — every workspace-root
+ *      dev dependency is exact-pinned, independent of ADR-0017's library scope.
  *
  * Exit codes:
  *   0  All checks passed.
@@ -161,6 +166,24 @@ const EXACT_VERSION =
  */
 export function findRangedDependencies(pkg) {
   const deps = pkg.dependencies ?? {};
+  return Object.entries(deps)
+    .filter(([, range]) => !EXACT_VERSION.test(range))
+    .map(([name, range]) => ({ name, range }));
+}
+
+/**
+ * Returns the `devDependencies` entries whose version specifier is not an
+ * exact pin. Every dev dependency repo-wide is exact-pinned by convention
+ * (ADR-0010's rumdl entry: "matching every other dev dependency") — unlike
+ * {@link findRangedDependencies}, this is not an ADR-0017 rule scoped to the
+ * published library; it applies to the workspace root's own `devDependencies`.
+ * Pure — operates on a parsed `package.json` object.
+ *
+ * @param {{ devDependencies?: Record<string, string> }} pkg
+ * @returns {{ name: string, range: string }[]}
+ */
+export function findRangedDevDependencies(pkg) {
+  const deps = pkg.devDependencies ?? {};
   return Object.entries(deps)
     .filter(([, range]) => !EXACT_VERSION.test(range))
     .map(([name, range]) => ({ name, range }));
@@ -344,6 +367,31 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       .join("\n");
     sections.push(
       `OPTIONAL-PEER DECLARATION ISSUES (${peerIssues.length}) — ADR-0017 requires every optional peer in both peerDependencies and peerDependenciesMeta.optional:\n${rows}`,
+    );
+  }
+
+  // ── 5. Root devDependency pinning convention ─────────────────────────────────
+
+  // Every dev dependency repo-wide is exact-pinned by convention (ADR-0010's
+  // rumdl entry) — distinct from ADR-0017, which governs only the published
+  // library's runtime `dependencies`/`peerDependencies` above.
+  const rootPkgPath = join(root, "package.json");
+  let rootPkg = {};
+  try {
+    rootPkg = JSON.parse(readFileSync(rootPkgPath, "utf8"));
+  } catch (err) {
+    process.stderr.write(
+      `check:deps: warning — could not read/parse ${rootPkgPath}; skipping root devDependency pinning check. (${/** @type {Error} */ (err).message})\n`,
+    );
+  }
+
+  const rangedDevDeps = findRangedDevDependencies(rootPkg);
+  if (rangedDevDeps.length > 0) {
+    const rows = rangedDevDeps
+      .map((e) => `  ${e.name.padEnd(50)} ${e.range}`)
+      .join("\n");
+    sections.push(
+      `NON-EXACT ROOT DEV DEPENDENCIES (${rangedDevDeps.length}) — every dev dependency is exact-pinned by convention (ADR-0010):\n${rows}`,
     );
   }
 

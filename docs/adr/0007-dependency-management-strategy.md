@@ -44,7 +44,9 @@ as a CI gate step, and `dependency-review-action` for PR-level lockfile diff vis
 Three new files:
 
 - `.github/dependabot.yml` — weekly grouped version-update PRs (`toolchain` +
-  `release-tooling` groups); advisory-triggered security PRs run independently.
+  `commit-tooling` + `aws-sdk` groups — the last added once `m3l-common` grew a
+  runtime dependency on the full `@aws-sdk/client-*` suite); advisory-triggered
+  security PRs run independently.
 - `.github/workflows/ci.yml` — `pnpm audit --audit-level=high` step inserted after
   `pnpm install` so a vulnerable dep fails the job before lint/test/build run.
 - `.github/workflows/dependency-review.yml` — GitHub's `dependency-review-action@v4`
