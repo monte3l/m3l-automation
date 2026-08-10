@@ -42,9 +42,3 @@ allowBuilds:
 # temporary per-version exemption re-added only when a fresh, must-have bump
 # falls inside the window, not a standing list.
 minimumReleaseAge: 1440
-# Temporary exemption: read-excel-file@9.3.9 (published 2026-08-09) fixes a
-# confirmed regression in 9.3.0-9.3.8 that breaks M3LXlsxTextExtractor
-# (`readFiles(...).then is not a function`, upstream issue #124). Remove this
-# entry once 9.3.9 naturally clears the 24h cooldown (~2026-08-10T21:49 UTC).
-minimumReleaseAgeExclude:
-  - read-excel-file@9.3.9

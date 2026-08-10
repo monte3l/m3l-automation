@@ -1022,6 +1022,11 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/logging/M3LJsonLoggerHandler.ts"
   },
+  "M3LLoggerHandler": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/M3LLogEvent.ts"
+  },
   "M3LMessenger": {
     "submodule": "messaging",
     "namespace": "core",

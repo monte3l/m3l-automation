@@ -1,6 +1,7 @@
 /**
  * `core/logging/M3LLogEvent` — the per-message event object fanned out to
- * every configured handler, plus the internal handler port.
+ * every configured handler, plus the handler port third parties implement to
+ * write a custom handler.
  *
  * @packageDocumentation
  */
@@ -46,14 +47,20 @@ export interface M3LLogEvent {
 }
 
 /**
- * Internal handler port consumed by {@link M3LLogger}. Not part of the
- * public API — implementations ({@link M3LConsoleLoggerHandler},
- * {@link M3LFileLoggerHandler}, {@link M3LJsonLoggerHandler}) are exported
- * individually; this shape exists so `M3LLogger` can depend on a minimal
- * structural contract instead of a concrete handler class.
+ * The public contract for a log handler consumed by {@link M3LLogger}. The
+ * three built-in handlers ({@link M3LConsoleLoggerHandler},
+ * {@link M3LFileLoggerHandler}, {@link M3LJsonLoggerHandler}) implement it,
+ * and it is exported so third parties can write their own handler and pass
+ * it into `M3LLogger`'s handler list.
+ *
+ * `handle` must be synchronous: its `void` return type is satisfied by an
+ * `async` function under TypeScript's assignability rules, but `M3LLogger`
+ * neither awaits nor isolates a returned `Promise` — a rejection from an
+ * `async handle` implementation escapes uncaught instead of being caught by
+ * `M3LLogger`'s per-handler error isolation.
  */
 export interface M3LLoggerHandler {
-  /** Renders or routes a single log event. */
+  /** Renders or routes a single log event. Must be synchronous. */
   handle(event: M3LLogEvent): void;
   /** Resets any handler-internal state (semantics are handler-specific). */
   reset(): void;
