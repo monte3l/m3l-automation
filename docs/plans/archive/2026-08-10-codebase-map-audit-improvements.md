@@ -6,7 +6,7 @@
 ## Context
 
 An `/auditing` pass compared `m3l-automation` against a codebase map of a
-different, larger pnpm monorepo ("REDACTED": CLI tools + Lambdas + IaC)
+different, larger pnpm monorepo (CLI tools + Lambdas + IaC)
 to surface transferable practices and incidental drift. Most of the map's
 distinctive features were already rejected on the record here (Renovate →
 ADR-0007, dependency-cruiser → ADR-0009, Sonar/Codecov-class type metrics →
