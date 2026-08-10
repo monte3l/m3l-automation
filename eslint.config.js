@@ -323,8 +323,18 @@ export default tseslint.config(
               message: `scripts/${name} may not import another script package directly — each script depends only on @m3l-automation/m3l-common (ADR-0029); shared logic belongs in the library.`,
             })),
             {
-              target: "./scripts/*/src",
-              from: "./scripts/*/tests",
+              // A `target`/`from` containing a glob character is routed
+              // through minimatch instead of prefix-containment
+              // (eslint-plugin-import-x's no-restricted-paths), and plain
+              // `*` never crosses `/` — `./scripts/*/src` matches only the
+              // literal shape `scripts/<name>/src` with nothing after it,
+              // never a nested file like `scripts/<name>/src/steps/x.ts`.
+              // The trailing `/**` is required for the pattern to match any
+              // real file (found by the toolchain-hardening PR review; the
+              // 13 literal-path zones above are unaffected since `${name}`
+              // has no glob characters).
+              target: "./scripts/*/src/**",
+              from: "./scripts/*/tests/**",
               message:
                 "Production source must not import from tests/ — move shared fixtures/helpers into src/ if they're needed at runtime.",
             },

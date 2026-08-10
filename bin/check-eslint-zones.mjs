@@ -160,9 +160,14 @@ requireZone(
 
 requireZone(
   "prod-not-to-test guard for scripts/*/src (must not import scripts/*/tests)",
+  // `target`/`from` must carry a trailing `/**` here — a bare `scripts/*/src`
+  // contains a glob character (`*`), which routes eslint-plugin-import-x's
+  // no-restricted-paths through minimatch instead of prefix-containment, and
+  // plain `*` never crosses `/`; without `/**` the zone matches zero real
+  // files (found by the toolchain-hardening PR review).
   (zone) =>
-    norm(zone.target).endsWith("scripts/*/src") &&
-    norm(zone.from).endsWith("scripts/*/tests"),
+    norm(zone.target).endsWith("scripts/*/src/**") &&
+    norm(zone.from).endsWith("scripts/*/tests/**"),
 );
 
 if (errors > 0) {
