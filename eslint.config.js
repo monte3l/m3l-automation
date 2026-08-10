@@ -212,11 +212,18 @@ export default tseslint.config(
     // (scripts.md / ADR-0022). This is the mechanically-checkable half of that
     // rule; the composition-root / injected-deps guidance stays advisory.
     //
-    // Scripts must also never import the AWS SDK directly — all AWS SDK
-    // usage is mediated through @m3l-automation/m3l-common/aws (ADR-0027).
-    // packages/m3l-common/src/** is intentionally NOT covered by this block:
-    // the library itself legitimately imports the SDK.
+    // `main.ts` is excluded here and gets these same two selectors folded
+    // into its own block below instead of being covered by this one. Flat
+    // config REPLACES a rule's value entirely for whichever block matching a
+    // given file comes last — options are never merged across blocks for the
+    // same rule key — so a file matched by two blocks that both set
+    // `no-restricted-syntax` would silently lose one block's selectors
+    // (found by the toolchain-hardening PR review: this is exactly what was
+    // happening to `main.ts` before this split). Every `no-restricted-syntax`
+    // block in this file now has non-overlapping `files`/`ignores` for
+    // exactly this reason.
     files: ["scripts/*/src/**/*.ts"],
+    ignores: ["scripts/*/src/main.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -240,6 +247,18 @@ export default tseslint.config(
             "Scripts may only dynamically import @m3l-automation/m3l-common (or a subpath), node: builtins, or a relative module — ADR-0029 bans script-local dependencies.",
         },
       ],
+    },
+  },
+  {
+    // Scripts must never import the AWS SDK directly — all AWS SDK usage is
+    // mediated through @m3l-automation/m3l-common/aws (ADR-0027).
+    // packages/m3l-common/src/** is intentionally NOT covered by this block:
+    // the library itself legitimately imports the SDK. Kept in its own block
+    // (not merged with the no-restricted-syntax block above): this rule key
+    // isn't set anywhere else for scripts/*/src, so a single block covering
+    // every script file including main.ts has no overlap risk.
+    files: ["scripts/*/src/**/*.ts"],
+    rules: {
       "@typescript-eslint/no-restricted-imports": [
         "error",
         {
@@ -284,17 +303,32 @@ export default tseslint.config(
     // the library, not a relative import of another script's src. One zone
     // per script directory, generated from the scripts/ directory listing
     // (see scriptPackageNames above) so a new script is covered automatically.
+    //
+    // The prod-not-to-test zone for scripts/*/src (below) is folded into this
+    // same block's `zones` array rather than living in its own block: both
+    // would otherwise set `import-x/no-restricted-paths` for the same files,
+    // and flat config only keeps whichever block matches a file LAST — the
+    // exact bug this comment block's zones were originally silently losing to
+    // (found by the toolchain-hardening PR review).
     files: ["scripts/*/src/**/*.ts"],
     rules: {
       "import-x/no-restricted-paths": [
         "error",
         {
-          zones: scriptPackageNames.map((name) => ({
-            target: `./scripts/${name}`,
-            from: "./scripts",
-            except: [name],
-            message: `scripts/${name} may not import another script package directly — each script depends only on @m3l-automation/m3l-common (ADR-0029); shared logic belongs in the library.`,
-          })),
+          zones: [
+            ...scriptPackageNames.map((name) => ({
+              target: `./scripts/${name}`,
+              from: "./scripts",
+              except: [name],
+              message: `scripts/${name} may not import another script package directly — each script depends only on @m3l-automation/m3l-common (ADR-0029); shared logic belongs in the library.`,
+            })),
+            {
+              target: "./scripts/*/src",
+              from: "./scripts/*/tests",
+              message:
+                "Production source must not import from tests/ — move shared fixtures/helpers into src/ if they're needed at runtime.",
+            },
+          ],
         },
       ],
     },
@@ -308,10 +342,28 @@ export default tseslint.config(
     // itself, no top-level function-valued variable (either belongs in
     // steps/), and a line cap generous enough that real composition roots
     // (currently ~50-60 lines each) never come close.
+    //
+    // Also carries the two general scripts/*/src selectors (process.env ban,
+    // dynamic-import ADR-0029 backstop) from the block above, which
+    // explicitly `ignores` this file — `main.ts` needs BOTH sets of
+    // selectors, and flat config replaces rather than merges a rule's value
+    // across blocks, so the union has to live in one block, not two.
     files: ["scripts/*/src/main.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
+        {
+          selector:
+            "MemberExpression[object.name='process'][property.name='env']",
+          message:
+            "Scripts must not read process.env directly — declare config via M3LConfigParameter and read it from the resolved config (scripts.md).",
+        },
+        {
+          selector:
+            "ImportExpression[source.type='Literal'][source.value=/^(?!\\.)(?!node:)(?!@m3l-automation\\/m3l-common($|\\/)).+$/]",
+          message:
+            "Scripts may only dynamically import @m3l-automation/m3l-common (or a subpath), node: builtins, or a relative module — ADR-0029 bans script-local dependencies.",
+        },
         {
           selector: "FunctionDeclaration[id.name!='main']",
           message:
@@ -331,38 +383,21 @@ export default tseslint.config(
     },
   },
   {
-    // Production source must never import from a tests/ tree. A src module
-    // reaching into tests/ for a fixture or helper is a smell that also
-    // breaks tsconfig.build.json's `exclude: ["tests"]` at build time; the
-    // fix is always to move the shared helper into src/ (or internal/) if
-    // it's genuinely needed at runtime.
-    files: ["packages/*/src/**/*.ts", "scripts/*/src/**/*.ts"],
-    rules: {
-      "import-x/no-restricted-paths": [
-        "error",
-        {
-          zones: [
-            {
-              target: "./packages/m3l-common/src",
-              from: "./packages/m3l-common/tests",
-              message:
-                "Production source must not import from tests/ — move shared fixtures/helpers into src/ if they're needed at runtime.",
-            },
-            {
-              target: "./scripts/*/src",
-              from: "./scripts/*/tests",
-              message:
-                "Production source must not import from tests/ — move shared fixtures/helpers into src/ if they're needed at runtime.",
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
     // `internal/` is private and MUST NOT be re-exported through a public
     // barrel (rules 04 / ADR 0004 — the exports map stays at three entries).
     // Forbid the public entry points from importing it at all.
+    //
+    // Also carries the library-wide prod-not-to-test zone (production source
+    // must never import from tests/ — a src module reaching into tests/ for a
+    // fixture or helper is a smell that also breaks tsconfig.build.json's
+    // `exclude: ["tests"]` at build time). That zone is duplicated into every
+    // block below that partitions packages/m3l-common/src (this one, the aws
+    // island, the core zone, and the two single-purpose core/script and
+    // internal/ blocks further down) rather than living in one broad block,
+    // because flat config replaces — not merges — a rule's value for
+    // whichever block matching a file comes last, and every one of those
+    // blocks already sets `import-x/no-restricted-paths` for overlapping
+    // files (found by the toolchain-hardening PR review).
     files: [
       "packages/m3l-common/src/index.ts",
       "packages/m3l-common/src/core/index.ts",
@@ -378,6 +413,12 @@ export default tseslint.config(
               from: "./packages/m3l-common/src/internal",
               message:
                 "internal/ is private; never re-export it through a public barrel (ADR 0004).",
+            },
+            {
+              target: "./packages/m3l-common/src",
+              from: "./packages/m3l-common/tests",
+              message:
+                "Production source must not import from tests/ — move shared fixtures/helpers into src/ if they're needed at runtime.",
             },
           ],
         },
@@ -421,6 +462,12 @@ export default tseslint.config(
               message:
                 "aws/* may import only core/errors, core/prompt, and core/polling — no other core module (ADR-0009 layering).",
             },
+            {
+              target: "./packages/m3l-common/src",
+              from: "./packages/m3l-common/tests",
+              message:
+                "Production source must not import from tests/ — move shared fixtures/helpers into src/ if they're needed at runtime.",
+            },
           ],
         },
       ],
@@ -446,6 +493,55 @@ export default tseslint.config(
               from: "./packages/m3l-common/src/core/script",
               message:
                 "core/script is the composition root; no other core module may import it (ADR-0009 layering).",
+            },
+            {
+              target: "./packages/m3l-common/src",
+              from: "./packages/m3l-common/tests",
+              message:
+                "Production source must not import from tests/ — move shared fixtures/helpers into src/ if they're needed at runtime.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // core/script itself has no zone above (it's excluded from Zone B, which
+    // protects OTHER core modules against importing it) but still needs the
+    // library-wide prod-not-to-test zone — it's the one packages/m3l-common
+    // subtree not otherwise covered by the barrel/aws/core blocks.
+    files: ["packages/m3l-common/src/core/script/**/*.ts"],
+    rules: {
+      "import-x/no-restricted-paths": [
+        "error",
+        {
+          zones: [
+            {
+              target: "./packages/m3l-common/src",
+              from: "./packages/m3l-common/tests",
+              message:
+                "Production source must not import from tests/ — move shared fixtures/helpers into src/ if they're needed at runtime.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // internal/ is likewise not covered by any of the barrel/aws/core blocks
+    // above (it's a sibling of core/ and aws/, not nested under either) and
+    // needs the same library-wide prod-not-to-test zone.
+    files: ["packages/m3l-common/src/internal/**/*.ts"],
+    rules: {
+      "import-x/no-restricted-paths": [
+        "error",
+        {
+          zones: [
+            {
+              target: "./packages/m3l-common/src",
+              from: "./packages/m3l-common/tests",
+              message:
+                "Production source must not import from tests/ — move shared fixtures/helpers into src/ if they're needed at runtime.",
             },
           ],
         },
