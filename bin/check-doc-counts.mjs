@@ -17,6 +17,7 @@ import {
   root,
   deriveCounts,
   locateSite,
+  lineOf,
   TOTAL_COUNT_SITES,
 } from "./lib/count-sites.mjs";
 import { parseJsonFlag, createReporter } from "./lib/report.mjs";
@@ -32,14 +33,19 @@ for (const site of TOTAL_COUNT_SITES) {
   try {
     content = readFileSync(filePath, "utf8");
   } catch {
-    reporter.error(`Cannot read ${site.file}`);
+    reporter.error(`Cannot read ${site.file}`, { file: site.file });
     errors++;
     continue;
   }
 
   const result = locateSite(content, site, counts);
   if (!result.found) {
-    reporter.error(`${site.file}: expected pattern not found: ${site.pattern}`);
+    reporter.error(
+      `${site.file}: expected pattern not found: ${site.pattern}`,
+      {
+        file: site.file,
+      },
+    );
     errors++;
     continue;
   }
@@ -55,6 +61,7 @@ for (const site of TOTAL_COUNT_SITES) {
       `${site.file}: ${site.label} says ${result.actual} but derived count is ${result.expected}\n` +
         `   Derived: Core=${counts.coreCount} + AWS=${counts.awsCount} = ${counts.total}\n` +
         `   Context: "...${ctx}..."`,
+      { file: site.file, line: lineOf(content, result.matchIndex) },
     );
     errors++;
   }

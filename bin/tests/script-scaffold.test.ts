@@ -18,7 +18,8 @@
  */
 import { describe, expect, test, vi } from "vitest";
 import * as fs from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Make 'node:fs' configurable so vi.spyOn can intercept individual functions
 // (ESM namespace objects are non-writable) — mirrors packages/m3l-common's
@@ -31,11 +32,13 @@ vi.mock("node:fs", async () => {
 import {
   BANNED_EXACT_NAMES,
   BANNED_LEADING_SEGMENTS,
+  DOC_PAGE_TEMPLATE,
   PACKAGE_TEMPLATE_FILES,
   PURPOSE_MAX_LENGTH,
   REQUIRED_EXACT_FILES,
   REQUIRED_GLOBS,
   SCRIPT_NAME_RE,
+  TEMPLATE_DIR,
   docPagePath,
   packageManifestErrors,
   pascalCase,
@@ -46,7 +49,17 @@ import {
   scriptTokens,
   serviceNameErrors,
   substituteTokens,
+  tsconfigShapeErrors,
 } from "../lib/script-scaffold.mjs";
+
+/**
+ * Repo root, resolved from this test file's own location
+ * (bin/tests/script-scaffold.test.ts is two directories below the repo
+ * root — one more level of nesting than a bin/*.mjs script, which is why
+ * this needs three `dirname` calls where `bin/lib/report.mjs`'s own
+ * `repoRoot` helper only needs two).
+ */
+const repoRootDir = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 
 /** A minimal fake fs.Dirent — just enough for scriptPackageDirs' own `entry.isDirectory()`/`entry.name` usage. */
 function fakeDirent(name: string, isDirectory: boolean): fs.Dirent {
@@ -63,8 +76,8 @@ function conformantManifest(name: string) {
     dependencies: { "@m3l-automation/m3l-common": "workspace:*" },
     scripts: {
       build: "tsc -b tsconfig.build.json",
-      typecheck: "tsc -b",
-      start: "node dist/main.js",
+      typecheck: "tsc -p tsconfig.json",
+      start: "node --env-file-if-exists=.env dist/main.js",
     },
   };
 }
@@ -130,6 +143,79 @@ describe("substituteTokens", () => {
       "no tokens here",
     );
   });
+
+  test("returns the substituted text unchanged when every token in the map is replaced (happy path)", () => {
+    expect(substituteTokens("Hello __NAME__", { __NAME__: "World" })).toBe(
+      "Hello World",
+    );
+  });
+
+  // Pins the real, exhaustive 3-token set: if a 4th token is ever added to a
+  // template without a matching entry in scriptTokens(), this test (and the
+  // real-template read-through tests below) is exactly what needs updating —
+  // and what would catch the omission if it weren't.
+  test("substitutes cleanly against the real scriptTokens() map with all three tokens present", () => {
+    const tokens = scriptTokens("data-sync", "Sync things");
+    const text = "__SCRIPT_NAME__ __SCRIPT_NAME_PASCAL__ __PURPOSE__";
+    expect(substituteTokens(text, tokens)).toBe(
+      "data-sync DataSync Sync things",
+    );
+  });
+
+  test("throws when a token-shaped span survives substitution because it is absent from the tokens map", () => {
+    expect(() => {
+      substituteTokens("Hello __UNKNOWN__", { __NAME__: "World" });
+    }).toThrow(
+      'substituteTokens: unreplaced token "__UNKNOWN__" survived substitution — add it to scriptTokens() in bin/lib/script-scaffold.mjs.',
+    );
+  });
+
+  test("returns an empty tokens map's input unchanged (nothing token-shaped to trip the guard)", () => {
+    expect(substituteTokens("plain text, no tokens here", {})).toBe(
+      "plain text, no tokens here",
+    );
+  });
+
+  test("does not throw when a mapped token is simply unused — the guard only fires on a surviving token-shaped span in the text, not an unused map entry", () => {
+    expect(substituteTokens("plain text", { __UNUSED__: "x" })).toBe(
+      "plain text",
+    );
+  });
+
+  test.each([
+    ["a_b__c", "double underscore not preceded by two leading underscores"],
+    ["__lowercase__", "lowercase character right after the leading __"],
+  ])(
+    "does not throw on the near-miss %j (%s), since it does not match the __[A-Z][A-Z0-9_]*__ shape",
+    (text) => {
+      expect(substituteTokens(text, {})).toBe(text);
+    },
+  );
+});
+
+describe("substituteTokens against the real templates/script/*.tmpl files", () => {
+  const templateRelativePaths = [
+    ...PACKAGE_TEMPLATE_FILES.map(
+      (entry: { template: string }) => entry.template,
+    ),
+    DOC_PAGE_TEMPLATE,
+  ];
+
+  test.each(templateRelativePaths)(
+    "substitutes %s's content cleanly with a realistic scriptTokens() map (no unreplaced token)",
+    (templateRelativePath: string) => {
+      const templatePath = join(
+        repoRootDir,
+        TEMPLATE_DIR,
+        templateRelativePath,
+      );
+      const templateText = fs.readFileSync(templatePath, "utf8");
+      const tokens = scriptTokens("test-script-name", "A test purpose.");
+      expect(() => {
+        substituteTokens(templateText, tokens);
+      }).not.toThrow();
+    },
+  );
 });
 
 describe("docPagePath", () => {
@@ -265,6 +351,74 @@ describe("packageManifestErrors", () => {
       '"scripts.build" must be declared',
       '"scripts.typecheck" must be declared',
       '"scripts.start" must be declared',
+    ]);
+  });
+});
+
+describe("tsconfigShapeErrors", () => {
+  // Matches templates/script/tsconfig.json.tmpl and
+  // tsconfig.build.json.tmpl verbatim: both templates share the same
+  // `extends` and `references` shape.
+  const EXPECTED_EXTENDS = "../../tsconfig.base.json";
+  const EXPECTED_REFERENCE_PATH =
+    "../../packages/m3l-common/tsconfig.build.json";
+
+  function conformantTsconfig(): {
+    extends: string;
+    references: { path: string }[];
+  } {
+    return {
+      extends: EXPECTED_EXTENDS,
+      references: [{ path: EXPECTED_REFERENCE_PATH }],
+    };
+  }
+
+  test.each(["tsconfig.json.tmpl", "tsconfig.build.json.tmpl"] as const)(
+    "returns no errors for a conformant tsconfig checked against %s",
+    (templateName) => {
+      expect(tsconfigShapeErrors(conformantTsconfig(), templateName)).toEqual(
+        [],
+      );
+    },
+  );
+
+  test("flags a wrong extends value, naming the expected value", () => {
+    const tsconfig = { ...conformantTsconfig(), extends: "../wrong/base.json" };
+    expect(tsconfigShapeErrors(tsconfig, "tsconfig.json.tmpl")).toEqual([
+      `"extends" must be ${JSON.stringify(EXPECTED_EXTENDS)} (got ${JSON.stringify("../wrong/base.json")})`,
+    ]);
+  });
+
+  test("flags an empty references array, naming the expected reference path", () => {
+    const tsconfig = { ...conformantTsconfig(), references: [] };
+    expect(tsconfigShapeErrors(tsconfig, "tsconfig.json.tmpl")).toEqual([
+      `"references" must include { "path": ${JSON.stringify(EXPECTED_REFERENCE_PATH)} } (from tsconfig.json.tmpl) so tsc -b resolves the library`,
+    ]);
+  });
+
+  test("flags a references array whose only entry points at a different path", () => {
+    const tsconfig = {
+      ...conformantTsconfig(),
+      references: [{ path: "../wrong/tsconfig.build.json" }],
+    };
+    expect(tsconfigShapeErrors(tsconfig, "tsconfig.build.json.tmpl")).toEqual([
+      `"references" must include { "path": ${JSON.stringify(EXPECTED_REFERENCE_PATH)} } (from tsconfig.build.json.tmpl) so tsc -b resolves the library`,
+    ]);
+  });
+
+  test("does not throw when references is entirely absent, treating it as empty and reporting the missing-reference error", () => {
+    const { references: _references, ...rest } = conformantTsconfig();
+    expect(() => tsconfigShapeErrors(rest, "tsconfig.json.tmpl")).not.toThrow();
+    expect(tsconfigShapeErrors(rest, "tsconfig.json.tmpl")).toEqual([
+      `"references" must include { "path": ${JSON.stringify(EXPECTED_REFERENCE_PATH)} } (from tsconfig.json.tmpl) so tsc -b resolves the library`,
+    ]);
+  });
+
+  test("collects both the extends and references errors when both are wrong at once", () => {
+    const tsconfig = { extends: "wrong", references: [] };
+    expect(tsconfigShapeErrors(tsconfig, "tsconfig.build.json.tmpl")).toEqual([
+      `"extends" must be ${JSON.stringify(EXPECTED_EXTENDS)} (got ${JSON.stringify("wrong")})`,
+      `"references" must include { "path": ${JSON.stringify(EXPECTED_REFERENCE_PATH)} } (from tsconfig.build.json.tmpl) so tsc -b resolves the library`,
     ]);
   });
 });

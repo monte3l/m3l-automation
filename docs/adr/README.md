@@ -80,3 +80,4 @@ surface).
 | 0033 | [Typed S3 operations wrapper over the raw SDK client](./0033-aws-s3-operations-wrapper.md)                                                       | Accepted                      |
 | 0034 | [Sonar/Act-Podman re-assessment: OSS complexity/duplication gates, Act/Podman declined](./0034-sonar-act-podman-reassessment.md)                 | Accepted                      |
 | 0035 | [Failure reporting and diagnostics architecture](./0035-failure-reporting-and-diagnostics.md)                                                    | Accepted                      |
+| 0036 | [Inbound dependency license policy](./0036-dependency-license-policy.md)                                                                         | Accepted                      |

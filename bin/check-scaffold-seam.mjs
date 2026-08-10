@@ -14,12 +14,14 @@
 //   node bin/check-scaffold-seam.mjs   # exits 0 on success, 1 on any mismatch
 import process from "node:process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const root = repoRoot(import.meta.url);
 const pkg = join(root, "packages/m3l-common");
 const statusPath = join(root, "docs/implementation-status.md");
+const { json } = parseJsonFlag();
+const reporter = createReporter(json);
 
 /** Return subdirectory names under `dir` that contain an index.ts. */
 function implementedModules(dir) {
@@ -50,7 +52,9 @@ const statusText = (() => {
 let errors = 0;
 
 if (statusText === "") {
-  console.error(`✗  Could not read docs/implementation-status.md`);
+  reporter.error(`Could not read docs/implementation-status.md`, {
+    file: "docs/implementation-status.md",
+  });
   errors++;
 }
 
@@ -58,14 +62,16 @@ for (const ns of namespaces) {
   for (const mod of implementedModules(join(pkg, "src", ns))) {
     const testFile = join(pkg, "tests", `${mod}.test.ts`);
     if (!existsSync(testFile)) {
-      console.error(
-        `✗  src/${ns}/${mod}/index.ts exists but tests/${mod}.test.ts is missing (scaffold seam broken)`,
+      reporter.error(
+        `src/${ns}/${mod}/index.ts exists but tests/${mod}.test.ts is missing (scaffold seam broken)`,
+        { file: `packages/m3l-common/src/${ns}/${mod}/index.ts` },
       );
       errors++;
     }
     if (statusText !== "" && !hasStatusRow(statusText, mod)) {
-      console.error(
-        `✗  src/${ns}/${mod}/index.ts exists but has no row in docs/implementation-status.md`,
+      reporter.error(
+        `src/${ns}/${mod}/index.ts exists but has no row in docs/implementation-status.md`,
+        { file: "docs/implementation-status.md" },
       );
       errors++;
     }
@@ -73,12 +79,16 @@ for (const ns of namespaces) {
 }
 
 if (errors > 0) {
-  console.error(
-    `\n✗  ${errors} scaffold-seam gap(s). Every src submodule needs a test file and a status row.`,
-  );
+  if (!json) {
+    console.error(
+      `\n✗  ${errors} scaffold-seam gap(s). Every src submodule needs a test file and a status row.`,
+    );
+  }
+  reporter.finish();
   process.exit(1);
 }
 
-console.log(
-  "✓  Every src submodule has a matching test file and status-tracker row.",
+reporter.succeed(
+  "Every src submodule has a matching test file and status-tracker row.",
 );
+reporter.finish();

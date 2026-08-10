@@ -20,7 +20,8 @@
 import process from "node:process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, basename } from "node:path";
+import { join, basename } from "node:path";
+import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
 // The full set of Claude Code hook lifecycle events, per the official hooks
 // reference: https://code.claude.com/docs/en/hooks
@@ -117,9 +118,11 @@ export function validateHooksConfig(
 
 // Main execution — only run when invoked directly, not when imported for testing.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const root = repoRoot(import.meta.url);
   const settingsPath = join(root, ".claude/settings.json");
   const hooksDir = join(root, ".claude/hooks");
+  const { json } = parseJsonFlag();
+  const reporter = createReporter(json);
 
   const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
   const onDiskHookNames = existsSync(hooksDir)
@@ -131,15 +134,21 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     onDiskHookNames,
   });
 
-  for (const warning of warnings) console.warn(`⚠  ${warning}`);
-  for (const error of errors) console.error(`✗  ${error}`);
+  for (const warning of warnings) {
+    reporter.warn(warning, { file: ".claude/settings.json" });
+  }
+  for (const error of errors) {
+    reporter.error(error, { file: ".claude/settings.json" });
+  }
 
   if (errors.length > 0) {
-    console.error(`\n✗  ${errors.length} hook wiring violation(s).`);
+    if (!json) console.error(`\n✗  ${errors.length} hook wiring violation(s).`);
+    reporter.finish();
     process.exit(1);
   }
 
-  console.log(
-    `✓  ${referenced.size} wired hooks valid: every referenced script exists.`,
+  reporter.succeed(
+    `${referenced.size} wired hooks valid: every referenced script exists.`,
   );
+  reporter.finish();
 }

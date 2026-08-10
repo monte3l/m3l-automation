@@ -68,7 +68,7 @@ export const COMMAND_CATALOG = [
   {
     name: "test:coverage",
     description:
-      "Runs the full suite with the v8 coverage gate from vitest.config.ts evaluated. `test` alone never evaluates the thresholds — CI and pre-push both use this one.",
+      "Runs the full suite with the v8 coverage gate evaluated: vitest.config.ts (packages/*/src, 80% perFile) then vitest.bin.config.ts (bin/**/*.mjs, aggregate). `test` alone never evaluates the thresholds — CI and pre-push both use this one.",
   },
   {
     name: "test:watch",
@@ -158,7 +158,7 @@ export const COMMAND_CATALOG = [
   {
     name: "check:scaffold",
     description:
-      "Verifies every src/{core,aws}/<module>/index.ts is re-exported from its namespace barrel and that no barrel line points to a deleted directory. Run after scaffolding or removing a submodule.",
+      "Verifies every src/{core,aws}/<module>/index.ts is re-exported from its namespace barrel (and that no barrel line points to a deleted directory), plus that every packages/* workspace has a root tsconfig.json project reference. Run after scaffolding or removing a submodule, or adding a new packages/* workspace.",
   },
   {
     name: "check:scaffold-seam",
@@ -168,7 +168,7 @@ export const COMMAND_CATALOG = [
   {
     name: "check:script-scaffold",
     description:
-      "Verifies every scripts/<name>/ package matches the ADR-0022 shape (modular src/, contract page, README, root tsconfig ref, smoke test). Run after scaffolding or editing a consumer script's structure.",
+      "Verifies every scripts/<name>/ package matches the ADR-0022 shape (modular src/, contract page, README, package.json script values, tsconfig extends/references shape, root tsconfig ref, smoke test). Run after scaffolding or editing a consumer script's structure.",
   },
   {
     name: "check:script-deps",
@@ -204,6 +204,11 @@ export const COMMAND_CATALOG = [
     name: "check:deps",
     description:
       "Dependency hygiene gate covering what `pnpm audit` misses: outdated majors, deprecated packages, and peer mismatches. Run periodically or after a dependency bump.",
+  },
+  {
+    name: "check:licenses",
+    description:
+      "Dependency license-policy gate (ADR-0036): fails on a non-allow-listed license among packages/m3l-common's runtime dependencies or optional peerDependencies, warns for dev-only tooling. Run after a dependency bump.",
   },
   {
     name: "check:test-counts",
