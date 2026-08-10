@@ -1,6 +1,6 @@
 {
   "path": ["."],
-  "pattern": "{packages,scripts}/*/src/**/*.ts",
+  "pattern": "{packages/*/src/**/*.ts,scripts/*/src/**/*.ts,bin/**/*.mjs}",
   "ignore": ["**/dist/**", "**/node_modules/**", "**/coverage/**"],
   "gitignore": true,
   "reporters": ["console-full"],
