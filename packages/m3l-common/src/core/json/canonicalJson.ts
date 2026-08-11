@@ -76,6 +76,46 @@ function assertNotCircular(value: object, path: WeakSet<object>): void {
 }
 
 /**
+ * Narrows `value` to an object exposing a callable `toJSON` method, mirroring
+ * the check `JSON.stringify` itself performs before deciding how to serialize
+ * a non-null object.
+ */
+function hasToJSON(value: object): value is { toJSON(): unknown } {
+  return typeof (value as { toJSON?: unknown }).toJSON === "function";
+}
+
+/** Serializes an array, preserving element order — arrays are never sorted. */
+function canonicalizeArray(
+  value: readonly unknown[],
+  path: WeakSet<object>,
+): string {
+  assertNotCircular(value, path);
+  path.add(value);
+  const items = value.map((item) => canonicalizeValue(item, path) ?? "null");
+  path.delete(value);
+  return `[${items.join(",")}]`;
+}
+
+/** Serializes a plain object, sorting its keys by Unicode code point. */
+function canonicalizeObject(
+  value: Record<string, unknown>,
+  path: WeakSet<object>,
+): string {
+  assertNotCircular(value, path);
+  path.add(value);
+  const keys = Object.keys(value).sort(compareByCodePoint);
+  const entries: string[] = [];
+  for (const key of keys) {
+    const serialized = canonicalizeValue(value[key], path);
+    if (serialized !== undefined) {
+      entries.push(`${JSON.stringify(key)}:${serialized}`);
+    }
+  }
+  path.delete(value);
+  return `{${entries.join(",")}}`;
+}
+
+/**
  * Recursively serializes `value` to its canonical JSON form. Returns
  * `undefined` for a value with no JSON representation (`undefined`, a
  * function, or a symbol) so the caller can decide whether to omit it (object
@@ -100,28 +140,23 @@ function canonicalizeValue(
     assertNotBigInt(value);
   }
 
+  // Mirrors JSON.stringify's own precedence: a non-null object with a
+  // callable toJSON is serialized from its toJSON() RESULT, checked before
+  // any array/object shape decision — so a Date (toJSON, no own enumerable
+  // keys) is never mistaken for a plain object walked via Object.keys. The
+  // result is a freshly produced value, not the original object re-entering
+  // its own recursion path, but `path` is still threaded through so a cycle
+  // reachable from within that result is caught the same way.
+  if (value !== null && typeof value === "object" && hasToJSON(value)) {
+    return canonicalizeValue(value.toJSON(), path);
+  }
+
   if (Array.isArray(value)) {
-    assertNotCircular(value, path);
-    path.add(value);
-    const items = value.map((item) => canonicalizeValue(item, path) ?? "null");
-    path.delete(value);
-    return `[${items.join(",")}]`;
+    return canonicalizeArray(value, path);
   }
 
   if (value !== null && typeof value === "object") {
-    assertNotCircular(value, path);
-    path.add(value);
-    const record = value as Record<string, unknown>;
-    const keys = Object.keys(record).sort(compareByCodePoint);
-    const entries: string[] = [];
-    for (const key of keys) {
-      const serialized = canonicalizeValue(record[key], path);
-      if (serialized !== undefined) {
-        entries.push(`${JSON.stringify(key)}:${serialized}`);
-      }
-    }
-    path.delete(value);
-    return `{${entries.join(",")}}`;
+    return canonicalizeObject(value as Record<string, unknown>, path);
   }
 
   // null, string, boolean, undefined, function, symbol — JSON.stringify
@@ -134,6 +169,13 @@ function canonicalizeValue(
  * Serializes `value` to a compact, deterministic JSON string: object keys at
  * every nesting level are sorted by Unicode code point, and array element
  * order is preserved exactly as given.
+ *
+ * A non-null object exposing a callable `toJSON` method (e.g. a `Date`) is
+ * serialized from the RESULT of calling that method, matching
+ * `JSON.stringify`'s own precedence — the `toJSON()` check runs before any
+ * array/object shape decision, at every nesting level. The returned value is
+ * itself recursively canonicalized (its own object keys, if any, are sorted
+ * too), not passed through raw.
  *
  * @param value - Any value to serialize.
  * @returns The compact canonical JSON string. A top-level value with no JSON
@@ -153,6 +195,9 @@ function canonicalizeValue(
  *
  * canonicalJsonStringify({ list: [3, 1, 2] });
  * // '{"list":[3,1,2]}' — array order preserved, never sorted
+ *
+ * canonicalJsonStringify(new Date("2020-01-01T00:00:00.000Z"));
+ * // '"2020-01-01T00:00:00.000Z"' — serialized via Date.prototype.toJSON()
  * ```
  */
 export function canonicalJsonStringify(value: unknown): string {
@@ -163,9 +208,11 @@ export function canonicalJsonStringify(value: unknown): string {
  * Hashes the canonical JSON form of `value` with SHA-256, via `node:crypto`.
  *
  * Because the input is first canonicalized (sorted keys, preserved array
- * order), two values that are equivalent under key-order permutation always
- * hash identically — a stable content-addressable fingerprint independent of
- * how the value was constructed.
+ * order, and a `toJSON`-bearing value such as a `Date` serialized via its
+ * `toJSON()` result — see {@link canonicalJsonStringify}), two values that
+ * are equivalent under key-order permutation always hash identically — a
+ * stable content-addressable fingerprint independent of how the value was
+ * constructed.
  *
  * @param value - Any value to hash.
  * @returns The lowercase hex-encoded SHA-256 digest of

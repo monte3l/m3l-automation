@@ -161,6 +161,56 @@ describe("canonicalJsonStringify", () => {
     expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
   });
 
+  test("serializes a Date via its toJSON() method, matching JSON.stringify's own behavior", () => {
+    const value = new Date("2020-01-01T00:00:00.000Z");
+
+    const result = canonicalJsonStringify(value);
+
+    expect(result).toBe('"2020-01-01T00:00:00.000Z"');
+    expect(result).toBe(JSON.stringify(value));
+  });
+
+  test("produces different canonical strings for different Date instances — regression for the toJSON-ignoring collision", () => {
+    const first = canonicalJsonStringify(new Date("2020-01-01T00:00:00.000Z"));
+    const second = canonicalJsonStringify(new Date("2026-01-01T00:00:00.000Z"));
+
+    expect(first).not.toBe(second);
+    expect(first).not.toBe("{}");
+    expect(second).not.toBe("{}");
+  });
+
+  test("serializes a Date nested inside an object via its toJSON(), not as an empty object", () => {
+    const value = { createdAt: new Date("2020-01-01T00:00:00.000Z") };
+
+    const result = canonicalJsonStringify(value);
+
+    expect(result).toBe('{"createdAt":"2020-01-01T00:00:00.000Z"}');
+  });
+
+  test("serializes a Date nested inside an array via its toJSON(), not as an empty object", () => {
+    const value = [new Date("2020-01-01T00:00:00.000Z"), 1];
+
+    const result = canonicalJsonStringify(value);
+
+    expect(result).toBe('["2020-01-01T00:00:00.000Z",1]');
+  });
+
+  test("honors a custom toJSON() method on a plain object, not just Date", () => {
+    const value = { toJSON: () => "custom" };
+
+    const result = canonicalJsonStringify(value);
+
+    expect(result).toBe('"custom"');
+  });
+
+  test("recursively canonicalizes the value returned by toJSON()", () => {
+    const value = { toJSON: () => ({ zebra: 1, apple: 2 }) };
+
+    const result = canonicalJsonStringify(value);
+
+    expect(result).toBe('{"apple":2,"zebra":1}');
+  });
+
   test("has a string-returning signature", () => {
     expectTypeOf(canonicalJsonStringify).returns.toBeString();
   });

@@ -93,6 +93,11 @@ Core.canonicalJsonStringify({ list: [3, 1, 2] });
 Core.canonicalJsonHash({ a: 1, b: 2 }) ===
   Core.canonicalJsonHash({ b: 2, a: 1 });
 // true — key order does not affect the hash
+
+Core.canonicalJsonStringify(new Date("2020-01-01T00:00:00.000Z"));
+// '"2020-01-01T00:00:00.000Z"' — a toJSON-bearing value (e.g. Date) is
+// serialized from its toJSON() result, matching JSON.stringify's own
+// precedence, instead of its own (often empty) enumerable keys
 ```
 
 ## Notes and behavior
@@ -117,6 +122,7 @@ Core.canonicalJsonHash({ a: 1, b: 2 }) ===
 - The detector underpins the JSON importer's array-vs-JSONL dispatch; see [importers](./importers.md).
 - **Canonical JSON key ordering** — object keys are sorted by Unicode **code point**, not `Array.prototype.sort`'s default UTF-16 code-unit comparator, which orders an astral-plane surrogate pair before a higher-valued BMP character (the opposite of true code-point order). Array element order is never touched.
 - **Canonical JSON failure mode** — `canonicalJsonStringify`/`canonicalJsonHash` throw `M3LError` (code `ERR_INVALID_ARGUMENT`) when the input contains, anywhere in the tree, a non-finite number (`NaN`, `Infinity`, `-Infinity`), a `BigInt`, or a circular object/array reference — canonical JSON has no representation for any of the three. A circular reference is rejected rather than replaced with a placeholder (unlike `safeJsonStringify`'s `"[Circular]"` marker, meant for safe debug output): two different circular structures silently hashing identically would be a correctness bug worse than throwing. A top-level or array-element value with no JSON representation (`undefined`, a function, a symbol) serializes to `null`, matching `JSON.stringify`'s own array-position behavior; the same case on an object property is omitted entirely, also matching `JSON.stringify`.
+- **`toJSON` is honored, at every nesting level** — a non-null object exposing a callable `toJSON` method (e.g. `Date`) is serialized from the RESULT of calling that method, matching `JSON.stringify`'s own precedence: the `toJSON()` check runs before any array/object shape decision. The returned value is itself recursively canonicalized (its own keys, if any, are sorted too), not passed through raw — so `canonicalJsonStringify(new Date(...))` never collapses to `"{}"`, which would otherwise silently hash two different `Date`s identically.
 
 ## See also
 
