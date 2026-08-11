@@ -139,8 +139,10 @@ export interface M3LSQSRedriveOptions {
   /**
    * Caps the total number of messages `redrive` receives across every page
    * combined; omit to drain until a `receive` call returns an empty page. A
-   * value `<= 0` (or `NaN`) returns immediately with an all-zero-count
-   * {@link M3LSQSRedriveResult} and issues no calls at all.
+   * value `<= 0` (or `NaN`) is a caller/config error, not a legitimate
+   * "do nothing" request — `redrive` throws {@link M3LSQSOperationError}
+   * before issuing any call, rather than silently returning an all-zero-count
+   * {@link M3LSQSRedriveResult}.
    */
   readonly messageLimit?: number;
   /**

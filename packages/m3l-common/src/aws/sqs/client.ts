@@ -609,10 +609,14 @@ export class M3LSQSOperations {
    * @param destinationQueueUrl - The queue `"move"`-decided entries are sent to.
    * @param processMessage - Decides each received message's outcome; see {@link M3LSQSRedriveProcessor}.
    * @param options - Paging/limit/deduplication tuning; see {@link M3LSQSRedriveOptions}.
-   * @throws {@link M3LSQSOperationError} whatever `receive`/`sendBatch`/
-   *   `deleteBatch` throw, propagated unchanged — `redrive` adds no new
-   *   error handling of its own. A throw from `processMessage` (of any
-   *   value, not just an `Error`) is also not caught here; it propagates
+   * @throws {@link M3LSQSOperationError} — either propagated unchanged from
+   *   `receive`/`sendBatch`/`deleteBatch`, or constructed by `redrive` itself
+   *   (with no `cause` chained) for a condition those methods can't detect:
+   *   an invalid `messageLimit` (`<= 0` or `NaN`), or — unreachable under the
+   *   typed {@link M3LSQSRedriveDecision} contract, but possible if a caller
+   *   bypasses types — an unrecognized `processMessage` decision. `redrive`
+   *   performs no raw SDK call of its own. A throw from `processMessage` (of
+   *   any value, not just an `Error`) is also not caught here; it propagates
    *   out of `redrive` immediately, unwrapped.
    */
   async redrive(
