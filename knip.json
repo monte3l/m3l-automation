@@ -7,7 +7,9 @@
   ],
   "ignoreBinaries": ["gh"],
   "ignoreIssues": {
-    "packages/m3l-common/src/core/environment/index.ts": ["duplicates"]
+    "packages/m3l-common/src/core/environment/index.ts": ["duplicates"],
+    "packages/m3l-common/src/aws/cloudwatch-metrics/index.ts": ["types"],
+    "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts": ["types"]
   },
   "workspaces": {
     ".": {

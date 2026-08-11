@@ -1996,6 +1996,61 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/cloudformation/types.ts"
   },
+  "M3LCloudWatchAlarmsOperations": {
+    "submodule": "cloudwatch-alarms",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-alarms/client.ts"
+  },
+  "M3LCloudWatchAlarmsOperationError": {
+    "submodule": "cloudwatch-alarms",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-alarms/error.ts"
+  },
+  "M3LPutMetricAlarmInput": {
+    "submodule": "cloudwatch-alarms",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts"
+  },
+  "M3LCloudWatchAlarm": {
+    "submodule": "cloudwatch-alarms",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts"
+  },
+  "M3LCloudWatchDescribeAlarmsOptions": {
+    "submodule": "cloudwatch-alarms",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts"
+  },
+  "M3LCloudWatchDescribeAlarmsResult": {
+    "submodule": "cloudwatch-alarms",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts"
+  },
+  "M3LCloudWatchDimension": {
+    "submodule": "cloudwatch-alarms",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts"
+  },
+  "M3LCloudWatchStatistic": {
+    "submodule": "cloudwatch-alarms",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts"
+  },
+  "M3LCloudWatchComparisonOperator": {
+    "submodule": "cloudwatch-alarms",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts"
+  },
+  "M3LCloudWatchTreatMissingData": {
+    "submodule": "cloudwatch-alarms",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts"
+  },
+  "M3LCloudWatchAlarmState": {
+    "submodule": "cloudwatch-alarms",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts"
+  },
   "M3LLogsInsightsClient": {
     "submodule": "cloudwatch-logs-insights",
     "namespace": "aws",
@@ -2040,6 +2095,56 @@
     "submodule": "cloudwatch-logs-insights",
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/errors.ts"
+  },
+  "M3LCloudWatchMetricsOperations": {
+    "submodule": "cloudwatch-metrics",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-metrics/client.ts"
+  },
+  "M3LCloudWatchMetricsOperationError": {
+    "submodule": "cloudwatch-metrics",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-metrics/error.ts"
+  },
+  "M3LPutMetricDataInput": {
+    "submodule": "cloudwatch-metrics",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts"
+  },
+  "M3LCloudWatchMetricDatum": {
+    "submodule": "cloudwatch-metrics",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts"
+  },
+  "M3LCloudWatchStatisticSet": {
+    "submodule": "cloudwatch-metrics",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts"
+  },
+  "M3LGetMetricStatisticsInput": {
+    "submodule": "cloudwatch-metrics",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts"
+  },
+  "M3LGetMetricStatisticsResult": {
+    "submodule": "cloudwatch-metrics",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts"
+  },
+  "M3LCloudWatchDatapoint": {
+    "submodule": "cloudwatch-metrics",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts"
+  },
+  "M3LCloudWatchStandardUnit": {
+    "submodule": "cloudwatch-metrics",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts"
+  },
+  "M3LCloudWatchMetricStatistic": {
+    "submodule": "cloudwatch-metrics",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts"
   },
   "M3LCodePipelineOperations": {
     "submodule": "codepipeline",
