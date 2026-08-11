@@ -28,12 +28,17 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameter.ts",
           "symbol": "M3LConfigParameter",
-          "blob": "432a510e81c26611a2fc7242d56d9a54fa9157c8"
+          "blob": "e63a3d5c6447dbfd27597cad1aca7618a0d83475"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameterType.ts",
           "symbol": "M3LConfigParameterType",
           "blob": "851afd725425003f938e1b53167e12f0438dbe6f"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigHelpFormatter.ts",
+          "symbol": "M3LConfigHelpFormatter",
+          "blob": "ed739eff482a10ced2429b4591f9bd865496e807"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameterType.ts",
@@ -93,7 +98,17 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts",
           "symbol": "M3LUnknownParameterDetector",
-          "blob": "958ddb5126f7cd6dddf2cc180c32aed561129d11"
+          "blob": "c0027909605b1350e697c4e69fe939f1e5947be7"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts",
+          "symbol": "M3LUnknownParameterSuggestion",
+          "blob": "c0027909605b1350e697c4e69fe939f1e5947be7"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts",
+          "symbol": "M3LUnknownParameterSuggestOptions",
+          "blob": "c0027909605b1350e697c4e69fe939f1e5947be7"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigCoercionError.ts",
@@ -180,7 +195,7 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameter.ts",
           "symbol": "M3LConfigParameter",
-          "blob": "432a510e81c26611a2fc7242d56d9a54fa9157c8"
+          "blob": "e63a3d5c6447dbfd27597cad1aca7618a0d83475"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigMissingError.ts",
@@ -199,6 +214,43 @@
         }
       ],
       "retrieved": "2026-07-30"
+    },
+    {
+      "heading": "Descriptions and `--help` rendering",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigParameter.ts",
+          "symbol": "M3LConfigParameter",
+          "blob": "e63a3d5c6447dbfd27597cad1aca7618a0d83475"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigHelpFormatter.ts",
+          "symbol": "M3LConfigHelpFormatter",
+          "blob": "ed739eff482a10ced2429b4591f9bd865496e807"
+        }
+      ],
+      "retrieved": "2026-08-11"
+    },
+    {
+      "heading": "Typo suggestions",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts",
+          "symbol": "M3LUnknownParameterDetector",
+          "blob": "c0027909605b1350e697c4e69fe939f1e5947be7"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts",
+          "symbol": "M3LUnknownParameterSuggestion",
+          "blob": "c0027909605b1350e697c4e69fe939f1e5947be7"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts",
+          "symbol": "M3LUnknownParameterSuggestOptions",
+          "blob": "c0027909605b1350e697c4e69fe939f1e5947be7"
+        }
+      ],
+      "retrieved": "2026-08-11"
     },
     {
       "heading": "Source tracking",
@@ -222,10 +274,15 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts",
           "symbol": "M3LUnknownParameterDetector",
-          "blob": "958ddb5126f7cd6dddf2cc180c32aed561129d11"
+          "blob": "c0027909605b1350e697c4e69fe939f1e5947be7"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/M3LConfigHelpFormatter.ts",
+          "symbol": "M3LConfigHelpFormatter",
+          "blob": "ed739eff482a10ced2429b4591f9bd865496e807"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-08-11"
     }
   ]
 }
