@@ -177,6 +177,7 @@ export const M3L_ERROR_CATALOG: Readonly<
   ERR_PRESET_UNKNOWN_KEYS: { origin: "caller", retryable: false },
   ERR_PROMPT_VALIDATION: { origin: "caller", retryable: false },
   ERR_S3_OPERATION: { origin: "external", retryable: true },
+  ERR_SECRETS_MANAGER_OPERATION: { origin: "external", retryable: true },
   ERR_SIGNING_FAILURE: { origin: "external", retryable: false },
   ERR_SQS_OPERATION: { origin: "external", retryable: true },
   ERR_TEXT_EXTRACTION: { origin: "external", retryable: false },

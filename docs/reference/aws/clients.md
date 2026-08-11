@@ -56,6 +56,7 @@ For a single profile, `AWSClientProvider` creates and lazily caches AWS SDK v3 c
 | `athena`           | `AthenaClient`           | `@aws-sdk/client-athena`          |
 | `ssm`              | `SSMClient`              | `@aws-sdk/client-ssm`             |
 | `sqs`              | `SQSClient`              | `@aws-sdk/client-sqs`             |
+| `secretsManager`   | `SecretsManagerClient`   | `@aws-sdk/client-secrets-manager` |
 
 Most getters construct a fresh SDK client from the resolved region and
 credentials. Two behave specially:

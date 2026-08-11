@@ -906,6 +906,28 @@
   },
   {
     "namespace": "aws",
+    "name": "secrets-manager",
+    "importPath": "@m3l-automation/m3l-common/aws",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/aws/secrets-manager.md",
+    "symbols": [
+      "M3LSecretsManagerOperations",
+      "M3LSecretsManagerOperationError",
+      "M3LSecretValue",
+      "M3LGetSecretValueOptions",
+      "M3LCreateSecretInput",
+      "M3LCreateSecretResult",
+      "M3LPutSecretValueInput",
+      "M3LPutSecretValueResult",
+      "M3LSecretMetadata",
+      "M3LDeleteSecretOptions",
+      "M3LDeleteSecretResult",
+      "M3LSecretsManagerTag"
+    ]
+  },
+  {
+    "namespace": "aws",
     "name": "signing",
     "importPath": "@m3l-automation/m3l-common/aws",
     "status": "✅",
