@@ -18,6 +18,7 @@ import { EKSClient } from "@aws-sdk/client-eks";
 import { EventBridgeClient } from "@aws-sdk/client-eventbridge";
 import { LambdaClient } from "@aws-sdk/client-lambda";
 import { S3Client } from "@aws-sdk/client-s3";
+import { SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
 import { SQSClient } from "@aws-sdk/client-sqs";
 import { SSMClient } from "@aws-sdk/client-ssm";
 import { STSClient } from "@aws-sdk/client-sts";
@@ -70,7 +71,8 @@ type AWSServiceName =
   | "cloudWatchLogs"
   | "athena"
   | "ssm"
-  | "sqs";
+  | "sqs"
+  | "secretsManager";
 
 /** The subset of an AWS SDK v3 client's shape this provider relies on. */
 interface DestroyableClient {
@@ -251,6 +253,14 @@ export class AWSClientProvider {
   /** The `AthenaClient` for this provider's profile, constructed on first access. */
   get athena(): AthenaClient {
     return this.getOrConstruct("athena", (config) => new AthenaClient(config));
+  }
+
+  /** The `SecretsManagerClient` for this provider's profile, constructed on first access. */
+  get secretsManager(): SecretsManagerClient {
+    return this.getOrConstruct(
+      "secretsManager",
+      (config) => new SecretsManagerClient(config),
+    );
   }
 
   /**

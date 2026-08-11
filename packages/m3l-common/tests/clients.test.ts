@@ -58,6 +58,7 @@ const h = vi.hoisted(() => {
     sqsCtor: vi.fn(),
     cloudWatchLogsCtor: vi.fn(),
     athenaCtor: vi.fn(),
+    secretsManagerCtor: vi.fn(),
     docFrom: vi.fn(),
     docDestroy: vi.fn(),
     makeClientClass,
@@ -115,6 +116,9 @@ vi.mock("@aws-sdk/client-cloudwatch-logs", () => ({
 vi.mock("@aws-sdk/client-athena", () => ({
   AthenaClient: h.makeClientClass(h.athenaCtor),
 }));
+vi.mock("@aws-sdk/client-secrets-manager", () => ({
+  SecretsManagerClient: h.makeClientClass(h.secretsManagerCtor),
+}));
 vi.mock("@aws-sdk/lib-dynamodb", () => ({
   // DynamoDBDocumentClient.from(rawClient) returns a wrapper with its OWN
   // destroy spy, so a test can assert the wrapper is NOT destroyed by close().
@@ -139,6 +143,7 @@ import { M3LRequestSigner } from "../src/aws/signing/index.js";
 import type { S3Client } from "@aws-sdk/client-s3";
 import type { CloudWatchLogsClient } from "@aws-sdk/client-cloudwatch-logs";
 import type { AthenaClient } from "@aws-sdk/client-athena";
+import type { SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 
 // ---------------------------------------------------------------------------
@@ -170,6 +175,7 @@ const GETTER_MATRIX = [
   ["sqs", h.sqsCtor] as const,
   ["cloudWatchLogs", h.cloudWatchLogsCtor] as const,
   ["athena", h.athenaCtor] as const,
+  ["secretsManager", h.secretsManagerCtor] as const,
 ] satisfies readonly (readonly [
   keyof AWSClientProvider,
   ReturnType<typeof vi.fn>,
@@ -966,6 +972,12 @@ describe("type-level contracts", () => {
 
   test("provider.athena is typed AthenaClient", () => {
     expectTypeOf<AWSClientProvider["athena"]>().toEqualTypeOf<AthenaClient>();
+  });
+
+  test("provider.secretsManager is typed SecretsManagerClient", () => {
+    expectTypeOf<
+      AWSClientProvider["secretsManager"]
+    >().toEqualTypeOf<SecretsManagerClient>();
   });
 
   test("provider.dynamoDBDocument is typed DynamoDBDocumentClient", () => {

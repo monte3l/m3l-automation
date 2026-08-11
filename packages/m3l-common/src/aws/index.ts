@@ -6,7 +6,7 @@
  * here as they are implemented, in dependency order: `models`, `credentials`,
  * `clients`, `dynamodb`, `cloudwatch-logs-insights`, `sqs`, `signing`, `s3`,
  * `athena`, `eventbridge`, `lambda`, `ecs`, `cloudformation`, `codepipeline`,
- * `eks`, `cloudwatch-alarms`, `cloudwatch-metrics`.
+ * `eks`, `cloudwatch-alarms`, `cloudwatch-metrics`, `secrets-manager`.
  *
  * @packageDocumentation
  */
@@ -60,3 +60,4 @@ export type {
   M3LGetMetricStatisticsResult,
   M3LPutMetricDataInput,
 } from "./cloudwatch-metrics/index.js";
+export * from "./secrets-manager/index.js";

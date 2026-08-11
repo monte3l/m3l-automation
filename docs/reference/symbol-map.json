@@ -2891,6 +2891,66 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/s3/uri.ts"
   },
+  "M3LSecretsManagerOperations": {
+    "submodule": "secrets-manager",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/secrets-manager/client.ts"
+  },
+  "M3LSecretsManagerOperationError": {
+    "submodule": "secrets-manager",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/secrets-manager/error.ts"
+  },
+  "M3LSecretValue": {
+    "submodule": "secrets-manager",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/secrets-manager/types.ts"
+  },
+  "M3LGetSecretValueOptions": {
+    "submodule": "secrets-manager",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/secrets-manager/types.ts"
+  },
+  "M3LCreateSecretInput": {
+    "submodule": "secrets-manager",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/secrets-manager/types.ts"
+  },
+  "M3LCreateSecretResult": {
+    "submodule": "secrets-manager",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/secrets-manager/types.ts"
+  },
+  "M3LPutSecretValueInput": {
+    "submodule": "secrets-manager",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/secrets-manager/types.ts"
+  },
+  "M3LPutSecretValueResult": {
+    "submodule": "secrets-manager",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/secrets-manager/types.ts"
+  },
+  "M3LSecretMetadata": {
+    "submodule": "secrets-manager",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/secrets-manager/types.ts"
+  },
+  "M3LDeleteSecretOptions": {
+    "submodule": "secrets-manager",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/secrets-manager/types.ts"
+  },
+  "M3LDeleteSecretResult": {
+    "submodule": "secrets-manager",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/secrets-manager/types.ts"
+  },
+  "M3LSecretsManagerTag": {
+    "submodule": "secrets-manager",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/secrets-manager/types.ts"
+  },
   "M3LRequestSigner": {
     "submodule": "signing",
     "namespace": "aws",
