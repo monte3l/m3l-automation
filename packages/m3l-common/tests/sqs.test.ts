@@ -66,6 +66,10 @@ import type {
   M3LSQSDeleteEntry,
   M3LSQSReceiveOptions,
   M3LSQSReceivedMessage,
+  M3LSQSRedriveDecision,
+  M3LSQSRedriveOptions,
+  M3LSQSRedriveProcessor,
+  M3LSQSRedriveResult,
   M3LSQSSendEntry,
 } from "../src/aws/sqs/index.js";
 import {
@@ -647,6 +651,681 @@ describe("M3LSQSOperations", () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  describe("redrive()", () => {
+    /** Builds a raw SDK `Message` shape for a `ReceiveMessage` mock response. */
+    function sdkMessage(id: string): {
+      MessageId: string;
+      ReceiptHandle: string;
+      Body: string;
+    } {
+      return {
+        MessageId: id,
+        ReceiptHandle: `receipt-${id}`,
+        Body: `body-${id}`,
+      };
+    }
+
+    /** All calls made to the mock client, cast to their command instances. */
+    function calls(): unknown[] {
+      return h.send.mock.calls.map(
+        (callArgs: unknown[]) => (callArgs as [unknown])[0],
+      );
+    }
+
+    test("issues no raw SDK call beyond ReceiveMessage/SendMessageBatch/DeleteMessageBatch commands", async () => {
+      h.send
+        .mockResolvedValueOnce({
+          Messages: [sdkMessage("m1"), sdkMessage("m2")],
+        })
+        .mockResolvedValueOnce({ Successful: [{ Id: "m1" }], Failed: [] })
+        .mockResolvedValueOnce({ Successful: [{ Id: "m1" }], Failed: [] })
+        .mockResolvedValueOnce({ Successful: [{ Id: "0" }], Failed: [] })
+        .mockResolvedValueOnce({ Messages: [] });
+
+      const processMessage: M3LSQSRedriveProcessor = (
+        message: M3LSQSReceivedMessage,
+      ) =>
+        message.messageId === "m1"
+          ? { action: "move", entry: { id: "m1", body: message.body } }
+          : { action: "drop" };
+
+      const operations = new M3LSQSOperations(fakeClient());
+      await operations.redrive(QUEUE_URL, "https://dest", processMessage);
+
+      for (const command of calls()) {
+        expect(
+          command instanceof h.ReceiveMessageCommand ||
+            command instanceof h.SendMessageBatchCommand ||
+            command instanceof h.DeleteMessageBatchCommand,
+        ).toBe(true);
+      }
+    });
+
+    test("pages the source queue, clamping the last page's receive cap to the remaining messageLimit budget", async () => {
+      const page1 = Array.from({ length: 10 }, (_unused, index) =>
+        sdkMessage(`p1-${String(index)}`),
+      );
+      const page2 = Array.from({ length: 5 }, (_unused, index) =>
+        sdkMessage(`p2-${String(index)}`),
+      );
+      h.send
+        .mockResolvedValueOnce({ Messages: page1 })
+        .mockResolvedValueOnce({ Messages: page2 });
+
+      const processMessage: M3LSQSRedriveProcessor = () => ({
+        action: "retry",
+      });
+      const operations = new M3LSQSOperations(fakeClient());
+
+      const result = await operations.redrive(
+        QUEUE_URL,
+        "https://dest",
+        processMessage,
+        { messageLimit: 15 },
+      );
+
+      expect(result.received).toBe(15);
+      expect(result.retried).toBe(15);
+
+      const [firstReceive, secondReceive] = calls() as [
+        { input: Record<string, unknown> },
+        { input: Record<string, unknown> },
+      ];
+      expect(firstReceive.input["MaxNumberOfMessages"]).toBe(10);
+      expect(secondReceive.input["MaxNumberOfMessages"]).toBe(5);
+    });
+
+    test("per-page receive cap defaults to 10, or honors options.receiveOptions.maxMessages", async () => {
+      h.send.mockResolvedValueOnce({ Messages: [] });
+      const operations = new M3LSQSOperations(fakeClient());
+
+      await operations.redrive(QUEUE_URL, "https://dest", () => ({
+        action: "retry",
+      }));
+
+      const [command] = calls() as [{ input: Record<string, unknown> }];
+      expect(command.input["MaxNumberOfMessages"]).toBe(10);
+    });
+
+    test("honors an explicit receiveOptions.maxMessages as the per-page cap", async () => {
+      h.send.mockResolvedValueOnce({ Messages: [] });
+      const operations = new M3LSQSOperations(fakeClient());
+
+      await operations.redrive(
+        QUEUE_URL,
+        "https://dest",
+        () => ({ action: "retry" }),
+        { receiveOptions: { maxMessages: 3 } },
+      );
+
+      const [command] = calls() as [{ input: Record<string, unknown> }];
+      expect(command.input["MaxNumberOfMessages"]).toBe(3);
+    });
+
+    test.each([0, -1, Number.NaN])(
+      "messageLimit %s throws M3LSQSOperationError before issuing any call",
+      async (messageLimit) => {
+        const operations = new M3LSQSOperations(fakeClient());
+
+        await expect(
+          operations.redrive(
+            QUEUE_URL,
+            "https://dest",
+            () => ({ action: "retry" }),
+            { messageLimit },
+          ),
+        ).rejects.toMatchObject({ code: "ERR_SQS_OPERATION" });
+        await expect(
+          operations.redrive(
+            QUEUE_URL,
+            "https://dest",
+            () => ({ action: "retry" }),
+            { messageLimit },
+          ),
+        ).rejects.toBeInstanceOf(M3LSQSOperationError);
+        expect(h.send).not.toHaveBeenCalled();
+      },
+    );
+
+    test("awaits processMessage once per message, sequentially, in receive order", async () => {
+      h.send
+        .mockResolvedValueOnce({
+          Messages: [sdkMessage("first"), sdkMessage("second")],
+        })
+        .mockResolvedValueOnce({ Messages: [] });
+
+      const order: string[] = [];
+      const processMessage: M3LSQSRedriveProcessor = async (
+        message: M3LSQSReceivedMessage,
+      ) => {
+        order.push(message.messageId);
+        await Promise.resolve();
+        return { action: "retry" };
+      };
+
+      const operations = new M3LSQSOperations(fakeClient());
+      await operations.redrive(QUEUE_URL, "https://dest", processMessage);
+
+      expect(order).toEqual(["first", "second"]);
+    });
+
+    test("processMessage may return a decision synchronously (not just a Promise)", async () => {
+      h.send
+        .mockResolvedValueOnce({ Messages: [sdkMessage("sync-1")] })
+        .mockResolvedValueOnce({ Messages: [] });
+
+      const processMessage: M3LSQSRedriveProcessor =
+        (): M3LSQSRedriveDecision => ({
+          action: "retry",
+        });
+
+      const operations = new M3LSQSOperations(fakeClient());
+      const result = await operations.redrive(
+        QUEUE_URL,
+        "https://dest",
+        processMessage,
+      );
+
+      expect(result.retried).toBe(1);
+    });
+
+    test('"move": a successfully sent-then-deleted entry increments moved, and the delete is matched back to receiptHandle via entry.id', async () => {
+      h.send
+        .mockResolvedValueOnce({ Messages: [sdkMessage("m1")] })
+        .mockResolvedValueOnce({ Successful: [{ Id: "m1" }], Failed: [] })
+        .mockResolvedValueOnce({ Successful: [{ Id: "m1" }], Failed: [] })
+        .mockResolvedValueOnce({ Messages: [] });
+
+      const processMessage: M3LSQSRedriveProcessor = (
+        message: M3LSQSReceivedMessage,
+      ) => ({
+        action: "move",
+        entry: { id: "m1", body: message.body },
+      });
+
+      const operations = new M3LSQSOperations(fakeClient());
+      const result = await operations.redrive(
+        QUEUE_URL,
+        "https://dest",
+        processMessage,
+      );
+
+      expect(result.moved).toBe(1);
+      expect(result.moveFailed).toEqual([]);
+      expect(result.deleteFailed).toEqual([]);
+
+      const [, sendCommand, deleteCommand] = calls() as [
+        unknown,
+        { input: Record<string, unknown> },
+        { input: Record<string, unknown> },
+      ];
+      expect(sendCommand.input).toMatchObject({ QueueUrl: "https://dest" });
+      expect(deleteCommand.input).toMatchObject({
+        QueueUrl: QUEUE_URL,
+        Entries: [{ Id: "m1", ReceiptHandle: "receipt-m1" }],
+      });
+    });
+
+    test('"move": a sendBatch per-entry failure leaves the message untouched, attempts no delete, and is appended to moveFailed', async () => {
+      h.send
+        .mockResolvedValueOnce({ Messages: [sdkMessage("m1")] })
+        .mockResolvedValueOnce({
+          Successful: [],
+          Failed: [
+            { Id: "m1", SenderFault: true, Code: "Bad", Message: "nope" },
+          ],
+        })
+        .mockResolvedValueOnce({ Messages: [] });
+
+      const processMessage: M3LSQSRedriveProcessor = (
+        message: M3LSQSReceivedMessage,
+      ) => ({
+        action: "move",
+        entry: { id: "m1", body: message.body },
+      });
+
+      const operations = new M3LSQSOperations(fakeClient());
+      const result = await operations.redrive(
+        QUEUE_URL,
+        "https://dest",
+        processMessage,
+      );
+
+      expect(result.moved).toBe(0);
+      expect(result.moveFailed).toHaveLength(1);
+      expect(result.moveFailed[0]).toMatchObject({
+        code: "Bad",
+        senderFault: true,
+        message: "nope",
+      });
+      expect(result.moveFailed[0]?.entry).toEqual({
+        id: "m1",
+        body: "body-m1",
+      });
+
+      for (const command of calls()) {
+        expect(command instanceof h.DeleteMessageBatchCommand).toBe(false);
+      }
+    });
+
+    test('"move": a delete failure after a successful send is appended to deleteFailed, counted in neither moved nor dropped', async () => {
+      h.send
+        .mockResolvedValueOnce({ Messages: [sdkMessage("m1")] })
+        .mockResolvedValueOnce({ Successful: [{ Id: "m1" }], Failed: [] })
+        .mockResolvedValueOnce({
+          Successful: [],
+          Failed: [
+            {
+              Id: "m1",
+              SenderFault: false,
+              Code: "ReceiptHandleIsInvalid",
+              Message: "stale",
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ Messages: [] });
+
+      const processMessage: M3LSQSRedriveProcessor = (
+        message: M3LSQSReceivedMessage,
+      ) => ({
+        action: "move",
+        entry: { id: "m1", body: message.body },
+      });
+
+      const operations = new M3LSQSOperations(fakeClient());
+      const result = await operations.redrive(
+        QUEUE_URL,
+        "https://dest",
+        processMessage,
+      );
+
+      // Canonical per docs/reference/aws/sqs.md and this contract's own
+      // point 8: a send-succeeded-but-delete-failed entry counts in
+      // NEITHER `moved` nor `dropped` — it is reported only via
+      // `deleteFailed`, since it now lives (duplicated) in both queues.
+      expect(result.moved).toBe(0);
+      expect(result.dropped).toBe(0);
+      expect(result.deleteFailed).toHaveLength(1);
+      expect(result.deleteFailed[0]).toMatchObject({
+        code: "ReceiptHandleIsInvalid",
+        senderFault: false,
+      });
+      expect(result.moveFailed).toEqual([]);
+    });
+
+    test('"drop": deletes the message directly, no send, using a redrive-synthesized id', async () => {
+      h.send
+        .mockResolvedValueOnce({ Messages: [sdkMessage("d1")] })
+        .mockResolvedValueOnce({ Successful: [{ Id: "0" }], Failed: [] })
+        .mockResolvedValueOnce({ Messages: [] });
+
+      const operations = new M3LSQSOperations(fakeClient());
+      const result = await operations.redrive(
+        QUEUE_URL,
+        "https://dest",
+        () => ({ action: "drop" }),
+      );
+
+      expect(result.dropped).toBe(1);
+      for (const command of calls()) {
+        expect(command instanceof h.SendMessageBatchCommand).toBe(false);
+      }
+
+      const deleteCommand = calls().find(
+        (command) => command instanceof h.DeleteMessageBatchCommand,
+      ) as { input: Record<string, unknown> } | undefined;
+      expect(deleteCommand?.input).toMatchObject({
+        QueueUrl: QUEUE_URL,
+        Entries: [{ ReceiptHandle: "receipt-d1" }],
+      });
+    });
+
+    test('"drop": a delete failure leaves the message in place and is appended to deleteFailed', async () => {
+      h.send
+        .mockResolvedValueOnce({ Messages: [sdkMessage("d1")] })
+        .mockResolvedValueOnce({
+          Successful: [],
+          Failed: [{ Id: "0", SenderFault: false, Code: "X", Message: "boom" }],
+        })
+        .mockResolvedValueOnce({ Messages: [] });
+
+      const operations = new M3LSQSOperations(fakeClient());
+      const result = await operations.redrive(
+        QUEUE_URL,
+        "https://dest",
+        () => ({ action: "drop" }),
+      );
+
+      expect(result.dropped).toBe(0);
+      expect(result.deleteFailed).toHaveLength(1);
+      expect(result.deleteFailed[0]).toMatchObject({ code: "X" });
+    });
+
+    test("a page mixing move and drop decisions issues two separate deleteBatch calls without id collision", async () => {
+      h.send
+        .mockResolvedValueOnce({
+          Messages: [sdkMessage("moved-1"), sdkMessage("dropped-1")],
+        })
+        .mockResolvedValueOnce({ Successful: [{ Id: "0" }], Failed: [] }) // sendBatch for the move entry, id "0"
+        .mockResolvedValueOnce({ Successful: [{ Id: "0" }], Failed: [] }) // post-move deleteBatch, matched by entry.id "0"
+        .mockResolvedValueOnce({ Successful: [{ Id: "0" }], Failed: [] }) // drop-path deleteBatch, synthesized id "0"
+        .mockResolvedValueOnce({ Messages: [] });
+
+      const processMessage: M3LSQSRedriveProcessor = (
+        message: M3LSQSReceivedMessage,
+      ) =>
+        message.messageId === "moved-1"
+          ? { action: "move", entry: { id: "0", body: message.body } }
+          : { action: "drop" };
+
+      const operations = new M3LSQSOperations(fakeClient());
+      const result = await operations.redrive(
+        QUEUE_URL,
+        "https://dest",
+        processMessage,
+      );
+
+      expect(result.moved).toBe(1);
+      expect(result.dropped).toBe(1);
+
+      const deleteCommands = calls().filter(
+        (command) => command instanceof h.DeleteMessageBatchCommand,
+      ) as { input: { Entries: readonly { ReceiptHandle: string }[] } }[];
+      expect(deleteCommands).toHaveLength(2);
+      const receiptHandles = deleteCommands
+        .flatMap((command) => command.input.Entries)
+        .map((entry) => entry.ReceiptHandle)
+        .toSorted();
+      expect(receiptHandles).toEqual(["receipt-dropped-1", "receipt-moved-1"]);
+    });
+
+    test('"retry": performs no send/delete for that message', async () => {
+      h.send.mockResolvedValueOnce({ Messages: [sdkMessage("r1")] });
+
+      const operations = new M3LSQSOperations(fakeClient());
+      const result = await operations.redrive(
+        QUEUE_URL,
+        "https://dest",
+        () => ({ action: "retry" }),
+        { messageLimit: 1 },
+      );
+
+      expect(result.retried).toBe(1);
+      expect(h.send).toHaveBeenCalledTimes(1);
+      const [onlyCall] = calls();
+      expect(onlyCall instanceof h.ReceiveMessageCommand).toBe(true);
+    });
+
+    test("received === moved + dropped + retried + deduplicated is NOT a general invariant when moveFailed is non-empty", async () => {
+      h.send
+        .mockResolvedValueOnce({
+          Messages: [sdkMessage("ok"), sdkMessage("bad")],
+        })
+        .mockResolvedValueOnce({
+          Successful: [{ Id: "ok" }],
+          Failed: [
+            { Id: "bad", SenderFault: true, Code: "X", Message: "nope" },
+          ],
+        })
+        .mockResolvedValueOnce({ Successful: [{ Id: "ok" }], Failed: [] })
+        .mockResolvedValueOnce({ Messages: [] });
+
+      const processMessage: M3LSQSRedriveProcessor = (
+        message: M3LSQSReceivedMessage,
+      ) => ({
+        action: "move",
+        entry: { id: message.messageId, body: message.body },
+      });
+
+      const operations = new M3LSQSOperations(fakeClient());
+      const result = await operations.redrive(
+        QUEUE_URL,
+        "https://dest",
+        processMessage,
+      );
+
+      expect(result.received).toBe(2);
+      expect(result.moveFailed).toHaveLength(1);
+      const sum =
+        result.moved + result.dropped + result.retried + result.deduplicated;
+      expect(sum).not.toBe(result.received);
+    });
+
+    test('deduplication defaults to "none": a repeated messageId is processed twice, deduplicated stays 0', async () => {
+      h.send
+        .mockResolvedValueOnce({
+          Messages: [sdkMessage("dup"), sdkMessage("dup")],
+        })
+        .mockResolvedValueOnce({ Messages: [] });
+
+      const processMessage = vi.fn<M3LSQSRedriveProcessor>(() => ({
+        action: "retry",
+      }));
+
+      const operations = new M3LSQSOperations(fakeClient());
+      const result = await operations.redrive(
+        QUEUE_URL,
+        "https://dest",
+        processMessage,
+      );
+
+      expect(processMessage).toHaveBeenCalledTimes(2);
+      expect(result.deduplicated).toBe(0);
+      expect(result.retried).toBe(2);
+    });
+
+    test('deduplication "messageId": a repeated messageId within the same call skips processMessage and increments deduplicated', async () => {
+      h.send
+        .mockResolvedValueOnce({
+          Messages: [sdkMessage("dup"), sdkMessage("dup")],
+        })
+        .mockResolvedValueOnce({ Messages: [] });
+
+      const processMessage = vi.fn<M3LSQSRedriveProcessor>(() => ({
+        action: "retry",
+      }));
+
+      const operations = new M3LSQSOperations(fakeClient());
+      const result = await operations.redrive(
+        QUEUE_URL,
+        "https://dest",
+        processMessage,
+        { deduplication: "messageId" },
+      );
+
+      expect(processMessage).toHaveBeenCalledTimes(1);
+      expect(result.deduplicated).toBe(1);
+      expect(result.retried).toBe(1);
+      expect(result.received).toBe(2);
+    });
+
+    test('deduplication "messageId": an empty-string messageId is never treated as a duplicate of another empty-id message', async () => {
+      h.send
+        .mockResolvedValueOnce({
+          Messages: [
+            { MessageId: "", ReceiptHandle: "r-a", Body: "a" },
+            { MessageId: "", ReceiptHandle: "r-b", Body: "b" },
+          ],
+        })
+        .mockResolvedValueOnce({ Messages: [] });
+
+      const processMessage = vi.fn<M3LSQSRedriveProcessor>(() => ({
+        action: "retry",
+      }));
+
+      const operations = new M3LSQSOperations(fakeClient());
+      const result = await operations.redrive(
+        QUEUE_URL,
+        "https://dest",
+        processMessage,
+        { deduplication: "messageId" },
+      );
+
+      expect(processMessage).toHaveBeenCalledTimes(2);
+      expect(result.deduplicated).toBe(0);
+      expect(result.retried).toBe(2);
+    });
+
+    test("a receive failure propagates as M3LSQSOperationError with cause chained, aborting the whole call with no partial result", async () => {
+      const sdkError = new Error("network blip");
+      h.send.mockRejectedValueOnce(sdkError);
+
+      const operations = new M3LSQSOperations(fakeClient());
+
+      let thrown: unknown;
+      let resolved = false;
+      try {
+        await operations.redrive(QUEUE_URL, "https://dest", () => ({
+          action: "retry",
+        }));
+        resolved = true;
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(resolved).toBe(false);
+      expect(thrown).toBeInstanceOf(M3LSQSOperationError);
+      expect((thrown as M3LSQSOperationError).cause).toBe(sdkError);
+    });
+
+    test("a sendBatch request-level failure propagates as M3LSQSOperationError, same identity as sendBatch's own throw", async () => {
+      const sdkError = Object.assign(new Error("denied"), {
+        name: "AccessDenied",
+      });
+      h.send
+        .mockResolvedValueOnce({ Messages: [sdkMessage("m1")] })
+        .mockRejectedValueOnce(sdkError);
+
+      const operations = new M3LSQSOperations(fakeClient());
+
+      await expect(
+        operations.redrive(
+          QUEUE_URL,
+          "https://dest",
+          (message: M3LSQSReceivedMessage) => ({
+            action: "move",
+            entry: { id: "m1", body: message.body },
+          }),
+        ),
+      ).rejects.toBeInstanceOf(M3LSQSOperationError);
+    });
+
+    test("a processMessage throw (including a non-Error value) propagates out of redrive uncaught and unwrapped", async () => {
+      h.send.mockResolvedValueOnce({ Messages: [sdkMessage("m1")] });
+
+      const operations = new M3LSQSOperations(fakeClient());
+
+      let thrown: unknown;
+      try {
+        await operations.redrive(QUEUE_URL, "https://dest", () => {
+          // eslint-disable-next-line @typescript-eslint/only-throw-error -- intentional non-Error to verify redrive propagates processMessage's throw unwrapped
+          throw "boom";
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBe("boom");
+      expect(thrown).not.toBeInstanceOf(M3LSQSOperationError);
+    });
+
+    test("a processMessage throw of a real Error propagates the same instance, not wrapped in M3LSQSOperationError", async () => {
+      h.send.mockResolvedValueOnce({ Messages: [sdkMessage("m1")] });
+      const processorError = new Error("processor exploded");
+
+      const operations = new M3LSQSOperations(fakeClient());
+
+      let thrown: unknown;
+      try {
+        await operations.redrive(QUEUE_URL, "https://dest", () => {
+          throw processorError;
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBe(processorError);
+      expect(thrown).not.toBeInstanceOf(M3LSQSOperationError);
+    });
+
+    test("the defensive error for an unrecognized decision.action names only the action, never the whole decision value (a bare string decision must not leak into the message or cause)", async () => {
+      h.send.mockResolvedValueOnce({ Messages: [sdkMessage("m1")] });
+
+      // Deliberately not a real credential: split so no literal token/key
+      // pattern appears in source, matching AWS's own documentation-example
+      // access key id — this test only proves the value never reaches the
+      // thrown message/cause, not that it is a live secret.
+      const leaked =
+        ["AKIA", "IOSFODNN7EXAMPLE"].join("") + "-should-not-appear-in-error";
+
+      // A bare string bypasses the type system entirely (cast through
+      // `unknown`, matching the file's established runtime-bypass pattern).
+      // `String(decision)` on a string primitive returns it verbatim, so
+      // a pre-fix implementation that stringified the whole decision would
+      // leak `leaked` into the message; the fixed implementation reads only
+      // `(decision as { action?: unknown }).action`, and a string primitive
+      // has no `.action` property, so it reads `undefined`.
+      const malformedProcessMessage = ((): unknown =>
+        leaked) as unknown as M3LSQSRedriveProcessor;
+
+      const operations = new M3LSQSOperations(fakeClient());
+
+      let thrown: unknown;
+      try {
+        await operations.redrive(
+          QUEUE_URL,
+          "https://dest",
+          malformedProcessMessage,
+        );
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LSQSOperationError);
+      const operationError = thrown as M3LSQSOperationError;
+      expect(operationError.message).toContain("undefined");
+      expect(operationError.message).not.toContain(leaked);
+      // The malformed decision is a locally-detected invalid-input
+      // condition, not a genuine underlying exception — it must not be
+      // chained as `cause` (which would leak it via `error.toJSON()` or
+      // `console.error(error)` even with a safe `.message`).
+      expect(operationError.cause).toBeUndefined();
+    });
+
+    test("M3LSQSRedriveDecision is a 3-arm discriminated union on action", () => {
+      expectTypeOf<M3LSQSRedriveDecision>().toEqualTypeOf<
+        | { readonly action: "move"; readonly entry: M3LSQSSendEntry }
+        | { readonly action: "drop" }
+        | { readonly action: "retry" }
+      >();
+    });
+
+    test("M3LSQSRedriveProcessor accepts both a sync-returning and an async-returning callback", () => {
+      const sync: M3LSQSRedriveProcessor = () => ({ action: "retry" });
+      const asynchronous: M3LSQSRedriveProcessor = async () =>
+        Promise.resolve({ action: "retry" } as const);
+      expectTypeOf(sync).toMatchTypeOf<M3LSQSRedriveProcessor>();
+      expectTypeOf(asynchronous).toMatchTypeOf<M3LSQSRedriveProcessor>();
+    });
+
+    test("M3LSQSRedriveOptions and M3LSQSRedriveResult fields are all readonly", () => {
+      expectTypeOf<M3LSQSRedriveOptions>().toEqualTypeOf<{
+        readonly messageLimit?: number;
+        readonly receiveOptions?: M3LSQSReceiveOptions;
+        readonly deduplication?: "none" | "messageId";
+      }>();
+      expectTypeOf<M3LSQSRedriveResult>().toEqualTypeOf<{
+        readonly received: number;
+        readonly moved: number;
+        readonly dropped: number;
+        readonly retried: number;
+        readonly deduplicated: number;
+        readonly moveFailed: readonly M3LSQSBatchFailure<M3LSQSSendEntry>[];
+        readonly deleteFailed: readonly M3LSQSBatchFailure<M3LSQSDeleteEntry>[];
+      }>();
     });
   });
 

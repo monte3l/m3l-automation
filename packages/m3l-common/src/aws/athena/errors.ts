@@ -125,3 +125,71 @@ export class M3LAthenaQueryFailedError extends M3LError {
     });
   }
 }
+
+/**
+ * Constructor options for {@link M3LAthenaTemplateError}.
+ *
+ * Not exported — callers _catch_ this error, they don't construct it.
+ */
+interface M3LAthenaTemplateErrorOptions {
+  /** Names referenced by `:name` in the template with no matching key in `parameters`. */
+  readonly missingParameters: readonly string[];
+  /** Keys in `parameters` never referenced by a `:name` in the template. */
+  readonly unusedParameters: readonly string[];
+}
+
+/**
+ * Thrown by {@link compileAthenaQueryTemplate} when a template's `:name`
+ * placeholders and its `parameters` record don't match 1:1 in both
+ * directions, or when the template contains a literal `?` outside a string
+ * literal. Unlike its sibling error classes, this one carries no `cause` —
+ * the mismatch is detected locally by the compiler, with no underlying
+ * exception to chain.
+ *
+ * Exposes `missingParameters`/`unusedParameters` as typed, readonly
+ * instance properties (the preferred access path) and, for
+ * structured-logging convenience, inside the inherited `context` bag under
+ * the same names.
+ *
+ * @example
+ * ```ts
+ * import { M3LAthenaTemplateError } from "@m3l-automation/m3l-common/aws";
+ *
+ * try {
+ *   compileAthenaQueryTemplate("SELECT * FROM t WHERE a = :a", {});
+ * } catch (error) {
+ *   if (error instanceof M3LAthenaTemplateError) {
+ *     console.error(error.missingParameters);
+ *   }
+ * }
+ * ```
+ */
+export class M3LAthenaTemplateError extends M3LError {
+  /** Narrows the inherited `code` property to the literal `"ERR_ATHENA_TEMPLATE_COMPILE"`. */
+  override readonly code = "ERR_ATHENA_TEMPLATE_COMPILE" as const;
+
+  /** Names referenced by `:name` in the template with no matching key in `parameters`. */
+  readonly missingParameters: readonly string[];
+
+  /** Keys in `parameters` never referenced by a `:name` in the template. */
+  readonly unusedParameters: readonly string[];
+
+  /**
+   * Creates a new `M3LAthenaTemplateError`.
+   *
+   * @param message - Human-readable description of the failure.
+   * @param options - `missingParameters` and `unusedParameters` (both carried
+   *   in `context` and exposed directly as typed instance properties).
+   */
+  constructor(message: string, options: M3LAthenaTemplateErrorOptions) {
+    super(message, {
+      code: "ERR_ATHENA_TEMPLATE_COMPILE",
+      context: {
+        missingParameters: options.missingParameters,
+        unusedParameters: options.unusedParameters,
+      },
+    });
+    this.missingParameters = options.missingParameters;
+    this.unusedParameters = options.unusedParameters;
+  }
+}

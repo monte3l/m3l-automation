@@ -28,8 +28,13 @@ import type {
   M3LSQSBatchFailure,
   M3LSQSBatchResult,
   M3LSQSDeleteEntry,
+  M3LSQSReceiveDeduplicationMode,
   M3LSQSReceiveOptions,
   M3LSQSReceivedMessage,
+  M3LSQSRedriveDecision,
+  M3LSQSRedriveOptions,
+  M3LSQSRedriveProcessor,
+  M3LSQSRedriveResult,
   M3LSQSSendEntry,
 } from "./types.js";
 import {
@@ -253,6 +258,167 @@ function joinBatchResult<T extends { readonly id: string }>(
   return { successful, failed: failures };
 }
 
+/** The outcome of partitioning one received page's per-message {@link M3LSQSRedriveDecision}s. */
+interface RedrivePagePartition {
+  /** Entries queued for `sendBatch` from `"move"` decisions, in receive order. */
+  readonly moveEntries: M3LSQSSendEntry[];
+  /** Maps each move entry's `id` back to its originating received message (for `receiptHandle` lookup). */
+  readonly entryIdToMessage: ReadonlyMap<string, M3LSQSReceivedMessage>;
+  /** Messages with a `"drop"` decision, in receive order. */
+  readonly dropMessages: M3LSQSReceivedMessage[];
+  /** Count of `"retry"` decisions on this page. */
+  readonly retried: number;
+  /** Count of messages skipped by deduplication on this page. */
+  readonly deduplicated: number;
+}
+
+/**
+ * Awaits `processMessage` once per message in `page`, in receive order, and
+ * partitions the resulting decisions into move/drop/retry groups. Skips
+ * `processMessage` entirely (counting `deduplicated` instead) for a message
+ * whose non-empty `messageId` is already present in `seenMessageIds`
+ * (deduplication `"messageId"` only) — an empty `messageId` is never treated
+ * as a duplicate.
+ *
+ * @param page - One page of received messages, in order.
+ * @param processMessage - The caller's per-message decision callback.
+ * @param deduplication - The deduplication mode; see {@link M3LSQSReceiveDeduplicationMode}.
+ * @param seenMessageIds - The `Set` of non-empty message ids already processed this `redrive` call (mutated in place).
+ * @returns The partitioned decisions for this page.
+ */
+async function partitionRedrivePage(
+  page: readonly M3LSQSReceivedMessage[],
+  processMessage: M3LSQSRedriveProcessor,
+  deduplication: M3LSQSReceiveDeduplicationMode | undefined,
+  seenMessageIds: Set<string>,
+): Promise<RedrivePagePartition> {
+  const moveEntries: M3LSQSSendEntry[] = [];
+  const entryIdToMessage = new Map<string, M3LSQSReceivedMessage>();
+  const dropMessages: M3LSQSReceivedMessage[] = [];
+  let retried = 0;
+  let deduplicated = 0;
+
+  for (const message of page) {
+    if (deduplication === "messageId" && message.messageId !== "") {
+      if (seenMessageIds.has(message.messageId)) {
+        deduplicated += 1;
+        continue;
+      }
+      seenMessageIds.add(message.messageId);
+    }
+
+    const decision: M3LSQSRedriveDecision = await processMessage(message);
+    switch (decision.action) {
+      case "move": {
+        moveEntries.push(decision.entry);
+        entryIdToMessage.set(decision.entry.id, message);
+        break;
+      }
+      case "drop": {
+        dropMessages.push(message);
+        break;
+      }
+      case "retry": {
+        retried += 1;
+        break;
+      }
+      default: {
+        // Read only `action` for the message — never the whole `decision`
+        // object, which may carry caller-smuggled fields at runtime if a
+        // caller bypasses the M3LSQSRedriveDecision type. This cast is a
+        // separate read of the same value purely for message construction;
+        // it does not affect the exhaustiveness check below.
+        const action = (decision as { readonly action?: unknown }).action;
+        // Exhaustiveness check only — never chain `decision` (or `cause`)
+        // through this throw. The type system already guarantees this
+        // branch is unreachable for a well-typed caller; it only fires when
+        // a caller bypasses `M3LSQSRedriveDecision` at runtime, so there is
+        // no genuine underlying exception to chain, and doing so would leak
+        // whatever fields the malformed value carried (e.g. a smuggled
+        // message body) through anything that serializes the error.
+        const _exhaustive: never = decision;
+        throw new M3LSQSOperationError(
+          `redrive: unhandled decision action ${String(action)}`,
+        );
+      }
+    }
+  }
+
+  return { moveEntries, entryIdToMessage, dropMessages, retried, deduplicated };
+}
+
+/**
+ * Builds the drop-path `deleteBatch` entries for a page's `"drop"`
+ * decisions, synthesizing each entry's `id` from its page-local array index
+ * rather than the message's `messageId` (which may be empty) — kept in a
+ * separate id space from the move-path delete entries so the two never
+ * collide within one `redrive` page.
+ *
+ * @param dropMessages - Messages with a `"drop"` decision, in order.
+ * @returns The `deleteBatch` entries for the drop path.
+ */
+function buildDropDeleteEntries(
+  dropMessages: readonly M3LSQSReceivedMessage[],
+): M3LSQSDeleteEntry[] {
+  return dropMessages.map((message, index) => ({
+    id: String(index),
+    receiptHandle: message.receiptHandle,
+  }));
+}
+
+/**
+ * Builds the post-move `deleteBatch` entries for a `sendBatch` response's
+ * successful entries, matching each back to its originating received
+ * message's `receiptHandle` via `entryIdToMessage`.
+ *
+ * @param successful - The `sendBatch` response's successfully-sent entries.
+ * @param entryIdToMessage - Maps each move entry's `id` to its originating message.
+ * @returns The `deleteBatch` entries for the post-move delete.
+ * @throws {@link M3LSQSOperationError} if a successful entry's `id` has no
+ *   matching message — unreachable in practice, since every id in
+ *   `successful` originates from the same page's `moveEntries`, which is
+ *   what populated `entryIdToMessage` in the first place.
+ */
+function buildMoveDeleteEntries(
+  successful: readonly M3LSQSSendEntry[],
+  entryIdToMessage: ReadonlyMap<string, M3LSQSReceivedMessage>,
+): M3LSQSDeleteEntry[] {
+  return successful.map((entry) => {
+    const message = entryIdToMessage.get(entry.id);
+    if (message === undefined) {
+      /* istanbul ignore next -- unreachable: entry.id always originates
+         from this same page's moveEntries, whose ids were just used to
+         populate entryIdToMessage. */
+      throw new M3LSQSOperationError(
+        `redrive: sendBatch successful entry id "${entry.id}" has no matching received message`,
+      );
+    }
+    return { id: entry.id, receiptHandle: message.receiptHandle };
+  });
+}
+
+/**
+ * Clamps one page's `receive` request to at most the remaining
+ * `messageLimit` budget, leaving the caller-supplied (or default) per-page
+ * cap untouched when no `messageLimit` applies or the budget is not yet
+ * exhausted.
+ *
+ * @param perPageMax - The per-page cap from `receiveOptions.maxMessages` (or the `receive` default).
+ * @param messageLimit - The overall `redrive` budget, if set.
+ * @param received - Messages already received this `redrive` call.
+ * @returns The clamped `maxMessages` for this page's `receive` call.
+ */
+function clampPageMaxMessages(
+  perPageMax: number,
+  messageLimit: number | undefined,
+  received: number,
+): number {
+  if (messageLimit === undefined) {
+    return perPageMax;
+  }
+  return Math.min(perPageMax, messageLimit - received);
+}
+
 /**
  * Typed operations over a raw SQS `SQSClient`: receive, batch-send,
  * batch-delete, and purge — translating SDK request/response shapes into
@@ -425,5 +591,271 @@ export class M3LSQSOperations {
         { cause },
       );
     }
+  }
+
+  /**
+   * Drains `sourceQueueUrl` page by page (via {@link receive}), invoking
+   * `processMessage` once per received message to decide its
+   * {@link M3LSQSRedriveDecision}, and applies that decision via
+   * {@link sendBatch}/{@link deleteBatch} — see the `redrive` section of
+   * `docs/reference/aws/sqs.md` for the full per-decision contract.
+   *
+   * Composed entirely from this class's own `receive`/`sendBatch`/
+   * `deleteBatch` methods: it issues no raw SDK call of its own, so it
+   * inherits their retry/mapping/error-wrapping behavior rather than
+   * duplicating it.
+   *
+   * @param sourceQueueUrl - The queue to drain.
+   * @param destinationQueueUrl - The queue `"move"`-decided entries are sent to.
+   * @param processMessage - Decides each received message's outcome; see {@link M3LSQSRedriveProcessor}.
+   * @param options - Paging/limit/deduplication tuning; see {@link M3LSQSRedriveOptions}.
+   * @throws {@link M3LSQSOperationError} — either propagated unchanged from
+   *   `receive`/`sendBatch`/`deleteBatch`, or constructed by `redrive` itself
+   *   (with no `cause` chained) for a condition those methods can't detect:
+   *   an invalid `messageLimit` (`<= 0` or `NaN`), or — unreachable under the
+   *   typed {@link M3LSQSRedriveDecision} contract, but possible if a caller
+   *   bypasses types — an unrecognized `processMessage` decision. `redrive`
+   *   performs no raw SDK call of its own. A throw from `processMessage` (of
+   *   any value, not just an `Error`) is also not caught here; it propagates
+   *   out of `redrive` immediately, unwrapped.
+   */
+  async redrive(
+    sourceQueueUrl: string,
+    destinationQueueUrl: string,
+    processMessage: M3LSQSRedriveProcessor,
+    options?: M3LSQSRedriveOptions,
+  ): Promise<M3LSQSRedriveResult> {
+    const messageLimit = options?.messageLimit;
+    if (
+      messageLimit !== undefined &&
+      (messageLimit <= 0 || Number.isNaN(messageLimit))
+    ) {
+      throw new M3LSQSOperationError(
+        `redrive: messageLimit must be a positive number, got ${String(messageLimit)}`,
+      );
+    }
+
+    let received = 0;
+    let moved = 0;
+    let dropped = 0;
+    let retried = 0;
+    let deduplicated = 0;
+    const moveFailed: M3LSQSBatchFailure<M3LSQSSendEntry>[] = [];
+    const deleteFailed: M3LSQSBatchFailure<M3LSQSDeleteEntry>[] = [];
+    const seenMessageIds = new Set<string>();
+
+    for (;;) {
+      const outcome = await this.#redrivePage(
+        sourceQueueUrl,
+        destinationQueueUrl,
+        processMessage,
+        options,
+        messageLimit,
+        received,
+        seenMessageIds,
+      );
+      if (outcome.page.length === 0) {
+        break;
+      }
+      received += outcome.page.length;
+      moved += outcome.moved;
+      dropped += outcome.dropped;
+      retried += outcome.retried;
+      deduplicated += outcome.deduplicated;
+      moveFailed.push(...outcome.moveFailed);
+      deleteFailed.push(...outcome.deleteFailed);
+
+      if (messageLimit !== undefined && received >= messageLimit) {
+        break;
+      }
+    }
+
+    return {
+      received,
+      moved,
+      dropped,
+      retried,
+      deduplicated,
+      moveFailed,
+      deleteFailed,
+    };
+  }
+
+  /**
+   * Receives one `redrive` page from `sourceQueueUrl`, capping `maxMessages`
+   * at the smaller of the caller's per-page cap and the remaining
+   * `messageLimit` budget (via {@link clampPageMaxMessages}).
+   *
+   * @param sourceQueueUrl - The queue to drain.
+   * @param options - The caller's {@link M3LSQSRedriveOptions}.
+   * @param messageLimit - The overall `redrive` budget, if set (mirrors `options?.messageLimit`).
+   * @param received - Messages already received this `redrive` call, for clamping this page's cap.
+   */
+  async #receiveRedrivePage(
+    sourceQueueUrl: string,
+    options: M3LSQSRedriveOptions | undefined,
+    messageLimit: number | undefined,
+    received: number,
+  ): Promise<readonly M3LSQSReceivedMessage[]> {
+    return this.receive(sourceQueueUrl, {
+      ...options?.receiveOptions,
+      maxMessages: clampPageMaxMessages(
+        options?.receiveOptions?.maxMessages ?? DEFAULT_MAX_MESSAGES,
+        messageLimit,
+        received,
+      ),
+    });
+  }
+
+  /**
+   * Receives and fully processes one `redrive` page: a `receive` call via
+   * `#receiveRedrivePage`, partitioned via `partitionRedrivePage`, then
+   * applied via `#applyMoveDecisions`/`#applyDropDecisions`. An empty page
+   * (`page.length === 0`) short-circuits with an all-zero outcome, signaling
+   * drain-complete to the caller's loop.
+   *
+   * @param sourceQueueUrl - The queue to drain.
+   * @param destinationQueueUrl - The queue `"move"`-decided entries are sent to.
+   * @param processMessage - Decides each received message's outcome.
+   * @param options - The caller's {@link M3LSQSRedriveOptions}.
+   * @param messageLimit - The overall `redrive` budget, if set (mirrors `options?.messageLimit`).
+   * @param received - Messages already received this `redrive` call, for clamping this page's cap.
+   * @param seenMessageIds - The deduplication `Set`, scoped to and mutated across the whole `redrive` call.
+   */
+  async #redrivePage(
+    sourceQueueUrl: string,
+    destinationQueueUrl: string,
+    processMessage: M3LSQSRedriveProcessor,
+    options: M3LSQSRedriveOptions | undefined,
+    messageLimit: number | undefined,
+    received: number,
+    seenMessageIds: Set<string>,
+  ): Promise<{
+    readonly page: readonly M3LSQSReceivedMessage[];
+    readonly moved: number;
+    readonly dropped: number;
+    readonly retried: number;
+    readonly deduplicated: number;
+    readonly moveFailed: readonly M3LSQSBatchFailure<M3LSQSSendEntry>[];
+    readonly deleteFailed: readonly M3LSQSBatchFailure<M3LSQSDeleteEntry>[];
+  }> {
+    const page = await this.#receiveRedrivePage(
+      sourceQueueUrl,
+      options,
+      messageLimit,
+      received,
+    );
+    if (page.length === 0) {
+      return {
+        page,
+        moved: 0,
+        dropped: 0,
+        retried: 0,
+        deduplicated: 0,
+        moveFailed: [],
+        deleteFailed: [],
+      };
+    }
+
+    const partition = await partitionRedrivePage(
+      page,
+      processMessage,
+      options?.deduplication,
+      seenMessageIds,
+    );
+    const moveOutcome = await this.#applyMoveDecisions(
+      sourceQueueUrl,
+      destinationQueueUrl,
+      partition.moveEntries,
+      partition.entryIdToMessage,
+    );
+    const dropOutcome = await this.#applyDropDecisions(
+      sourceQueueUrl,
+      partition.dropMessages,
+    );
+
+    return {
+      page,
+      moved: moveOutcome.moved,
+      dropped: dropOutcome.dropped,
+      retried: partition.retried,
+      deduplicated: partition.deduplicated,
+      moveFailed: moveOutcome.moveFailed,
+      deleteFailed: [...moveOutcome.deleteFailed, ...dropOutcome.deleteFailed],
+    };
+  }
+
+  /**
+   * Sends a page's `"move"`-decided entries to `destinationQueueUrl`, then
+   * deletes each successfully-sent entry's originating message from
+   * `sourceQueueUrl` (matched back via {@link RedrivePagePartition.entryIdToMessage}).
+   * A no-op (all-zero outcome) when `moveEntries` is empty.
+   *
+   * @param sourceQueueUrl - The queue to delete a successfully-moved message from.
+   * @param destinationQueueUrl - The queue to send `moveEntries` to.
+   * @param moveEntries - This page's `"move"`-decided send entries.
+   * @param entryIdToMessage - Maps each move entry's `id` to its originating message.
+   */
+  async #applyMoveDecisions(
+    sourceQueueUrl: string,
+    destinationQueueUrl: string,
+    moveEntries: readonly M3LSQSSendEntry[],
+    entryIdToMessage: ReadonlyMap<string, M3LSQSReceivedMessage>,
+  ): Promise<{
+    readonly moved: number;
+    readonly moveFailed: readonly M3LSQSBatchFailure<M3LSQSSendEntry>[];
+    readonly deleteFailed: readonly M3LSQSBatchFailure<M3LSQSDeleteEntry>[];
+  }> {
+    if (moveEntries.length === 0) {
+      return { moved: 0, moveFailed: [], deleteFailed: [] };
+    }
+
+    const sendResult = await this.sendBatch(destinationQueueUrl, moveEntries);
+    const moveDeleteEntries = buildMoveDeleteEntries(
+      sendResult.successful,
+      entryIdToMessage,
+    );
+    if (moveDeleteEntries.length === 0) {
+      return { moved: 0, moveFailed: sendResult.failed, deleteFailed: [] };
+    }
+
+    const deleteResult = await this.deleteBatch(
+      sourceQueueUrl,
+      moveDeleteEntries,
+    );
+    return {
+      moved: deleteResult.successful.length,
+      moveFailed: sendResult.failed,
+      deleteFailed: deleteResult.failed,
+    };
+  }
+
+  /**
+   * Deletes a page's `"drop"`-decided messages directly from
+   * `sourceQueueUrl`, no send. A no-op (all-zero outcome) when
+   * `dropMessages` is empty.
+   *
+   * @param sourceQueueUrl - The queue to delete the dropped messages from.
+   * @param dropMessages - This page's `"drop"`-decided messages, in order.
+   */
+  async #applyDropDecisions(
+    sourceQueueUrl: string,
+    dropMessages: readonly M3LSQSReceivedMessage[],
+  ): Promise<{
+    readonly dropped: number;
+    readonly deleteFailed: readonly M3LSQSBatchFailure<M3LSQSDeleteEntry>[];
+  }> {
+    if (dropMessages.length === 0) {
+      return { dropped: 0, deleteFailed: [] };
+    }
+
+    const deleteResult = await this.deleteBatch(
+      sourceQueueUrl,
+      buildDropDeleteEntries(dropMessages),
+    );
+    return {
+      dropped: deleteResult.successful.length,
+      deleteFailed: deleteResult.failed,
+    };
   }
 }

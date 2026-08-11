@@ -561,7 +561,10 @@
       "AthenaRow",
       "AthenaColumnInfo",
       "M3LAthenaStartQueryError",
-      "M3LAthenaQueryFailedError"
+      "M3LAthenaQueryFailedError",
+      "compileAthenaQueryTemplate",
+      "M3LAthenaCompiledQuery",
+      "M3LAthenaTemplateError"
     ]
   },
   {
@@ -955,7 +958,12 @@
       "M3LSQSDeleteEntry",
       "M3LSQSBatchFailure",
       "M3LSQSBatchResult",
-      "M3LSQSReceiveOptions"
+      "M3LSQSReceiveOptions",
+      "M3LSQSRedriveDecision",
+      "M3LSQSRedriveProcessor",
+      "M3LSQSReceiveDeduplicationMode",
+      "M3LSQSRedriveOptions",
+      "M3LSQSRedriveResult"
     ]
   }
 ]

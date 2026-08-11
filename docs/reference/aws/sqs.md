@@ -17,7 +17,9 @@ library-owned types so a caller never touches an `@aws-sdk/client-sqs` type.
 - `M3LSQSOperationError` — thrown on a request-level SQS failure.
 - Plain types: `M3LSQSReceivedMessage`, `M3LSQSSendEntry`,
   `M3LSQSDeleteEntry`, `M3LSQSBatchFailure<T>`, `M3LSQSBatchResult<T>`,
-  `M3LSQSReceiveOptions`.
+  `M3LSQSReceiveOptions`, `M3LSQSRedriveDecision`, `M3LSQSRedriveProcessor`,
+  `M3LSQSReceiveDeduplicationMode`, `M3LSQSRedriveOptions`,
+  `M3LSQSRedriveResult`.
 
 ## Public API
 
@@ -28,12 +30,17 @@ library-owned types so a caller never touches an `@aws-sdk/client-sqs` type.
 `script.aws.clients.sqsOperations` convenience getter which constructs one
 for you, sharing the underlying `sqs` client's lifecycle).
 
-| Method                           | Retried? | Returns                                         | Throws                 |
-| -------------------------------- | -------- | ----------------------------------------------- | ---------------------- |
-| `receive(queueUrl, options?)`    | No       | `Promise<readonly M3LSQSReceivedMessage[]>`     | `M3LSQSOperationError` |
-| `sendBatch(queueUrl, entries)`   | Yes      | `Promise<M3LSQSBatchResult<M3LSQSSendEntry>>`   | `M3LSQSOperationError` |
-| `deleteBatch(queueUrl, entries)` | Yes      | `Promise<M3LSQSBatchResult<M3LSQSDeleteEntry>>` | `M3LSQSOperationError` |
-| `purgeQueue(queueUrl)`           | No       | `Promise<void>`                                 | `M3LSQSOperationError` |
+| Method                                                                   | Retried?  | Returns                                         | Throws                 |
+| ------------------------------------------------------------------------ | --------- | ----------------------------------------------- | ---------------------- |
+| `receive(queueUrl, options?)`                                            | No        | `Promise<readonly M3LSQSReceivedMessage[]>`     | `M3LSQSOperationError` |
+| `sendBatch(queueUrl, entries)`                                           | Yes       | `Promise<M3LSQSBatchResult<M3LSQSSendEntry>>`   | `M3LSQSOperationError` |
+| `deleteBatch(queueUrl, entries)`                                         | Yes       | `Promise<M3LSQSBatchResult<M3LSQSDeleteEntry>>` | `M3LSQSOperationError` |
+| `purgeQueue(queueUrl)`                                                   | No        | `Promise<void>`                                 | `M3LSQSOperationError` |
+| `redrive(sourceQueueUrl, destinationQueueUrl, processMessage, options?)` | Composed¹ | `Promise<M3LSQSRedriveResult>`                  | `M3LSQSOperationError` |
+
+¹ `redrive` issues no raw SDK call of its own — it composes `receive` /
+`sendBatch` / `deleteBatch`, so retry behavior is exactly the union of theirs
+(see below).
 
 **Retry:** `sendBatch`/`deleteBatch` wrap the raw SDK `.send()` call in
 `M3LRetryRunner` configured by `M3LPollingPolicies.sqsBatchSend()`
@@ -49,11 +56,91 @@ transient fault.
 call (the SQS API cap) with unique `id`s; a violation throws
 `M3LSQSOperationError` before any AWS call is made.
 
-**One-shot `receive`, no drain loop:** the class exposes a single
-`ReceiveMessage` call, not a draining generator. Loop policy (delete-after-
-read, a message-count budget, when to stop) is a caller/script decision, kept
-out of the library so it stays a reusable primitive rather than encoding one
-consumer's termination policy.
+**One-shot `receive`, no drain loop — with one first-class exception.** The
+`receive` method itself remains a single `ReceiveMessage` call, not a
+draining generator: an ad-hoc receive→process loop is still a caller/script
+decision. `redrive` is the one composed, multi-page operation the library
+promotes to a first-class method — it exists because the same
+receive→process→move shape had already been hand-duplicated once
+(`scripts/sqs-etl/src/steps/redrive-queue.ts`), which is precisely the
+second-consumer-duplication signal an internal capability audit treats as
+justification for promoting a pattern into the wrapper. It is still built
+entirely from `receive`/`sendBatch`/`deleteBatch` — no new raw SDK call, no
+new Zone A edge.
+
+### `redrive` — the receive→process→move flow
+
+`redrive(sourceQueueUrl, destinationQueueUrl, processMessage, options?)`
+drains `sourceQueueUrl` page by page (via `receive`, capped per page at
+`options.receiveOptions?.maxMessages ?? 10`), and for every received message
+in a page invokes the caller's `processMessage` callback to decide that
+message's `M3LSQSRedriveDecision`:
+
+- **`{ action: "move", entry }`** — `entry` (an `M3LSQSSendEntry`, caller
+  assigns `id`) is queued for `sendBatch(destinationQueueUrl, …)`. Only once
+  that entry's send succeeds is the original message `deleteBatch`'d from
+  `sourceQueueUrl` (matched back to its `receiptHandle` by `entry.id`, which
+  must be unique within the page — the same uniqueness `sendBatch` already
+  enforces). A send failure leaves the message in `sourceQueueUrl`
+  untouched (it becomes visible again after its visibility timeout, so it is
+  naturally retried on this or a later `redrive` call) and is reported via
+  `M3LSQSRedriveResult.moveFailed`. A delete failure **after** a successful
+  send leaves the message published to `destinationQueueUrl` **and** still
+  present in `sourceQueueUrl` (a duplicate) — reported via
+  `M3LSQSRedriveResult.deleteFailed`; this module does not attempt to
+  compensate for a partially-succeeded move.
+- **`{ action: "drop" }`** — the message is `deleteBatch`'d from
+  `sourceQueueUrl` directly, no send. This delete uses a `redrive`-synthesized
+  id (a page-local index), never the caller's `entry.id` space, so a page
+  mixing `"move"` and `"drop"` decisions always issues two separate
+  `deleteBatch` calls rather than risking an id collision between the two
+  groups. A delete failure leaves the message in place and is reported via
+  `deleteFailed`.
+- **`{ action: "retry" }`** — no operation is performed on the message at
+  all; it is left exactly as `receive` returned it (still in flight, subject
+  to its own visibility timeout).
+
+**Counters are not a partition of `received`.** `moved` counts only sends
+that _also_ deleted successfully; a send that succeeded but whose follow-up
+delete failed counts in neither `moved` nor `dropped` — it is reported only
+via `deleteFailed` (and the resulting duplicate). Likewise a failed drop-delete
+counts nowhere but `deleteFailed`. `received === moved + dropped + retried +
+deduplicated` therefore holds only on a run with no `moveFailed`/`deleteFailed`
+entries at all — callers that need an exact accounting should inspect the
+failure arrays, not assume the counters sum.
+
+`processMessage` may be async; it is awaited once per message, in receive
+order, before that message's decision is applied. If `processMessage` throws,
+`redrive` does not catch it — the throw propagates out of `redrive`
+immediately, ending the run; any pages already fully processed before the
+throw keep their committed sends/deletes (partial progress is not rolled
+back).
+
+**Deduplication (`options.deduplication`, default `"none"`):** when set to
+`"messageId"`, `redrive` tracks every non-empty `messageId` it has already
+processed within this single `redrive` call (a `Set`, scoped to the call —
+not persisted across calls) and skips `processMessage` entirely for a
+message whose `messageId` repeats, counting it in
+`M3LSQSRedriveResult.deduplicated` instead. This guards against SQS
+occasionally redelivering the same message across pages of one long-running
+`redrive` call before its visibility timeout has fully elapsed. A message
+whose `messageId` defaults to `""` (the SDK omitted it) is never treated as
+a duplicate of another empty-id message, since that would be unprovable.
+
+**`options.messageLimit`** caps the total number of messages `redrive`
+receives across every page combined; omit it to drain until a `receive` call
+returns an empty page. A `messageLimit` of `0` or less (including `NaN`) is a
+caller/config error, not a legitimate "do nothing" request — `redrive` throws
+`M3LSQSOperationError` before issuing any call, rather than silently
+returning an all-zero-count result.
+
+**No new error class.** Every throw from `redrive` is a plain
+`M3LSQSOperationError` — either propagated unchanged from `receive`/
+`sendBatch`/`deleteBatch`, or constructed by `redrive` itself for a condition
+those methods can't detect (an invalid `messageLimit`, or — unreachable under
+the typed `M3LSQSRedriveDecision` contract, but possible if a caller bypasses
+types — an unrecognized `processMessage` decision). `redrive` performs no raw
+SDK call of its own.
 
 ### `M3LSQSOperationError`
 
@@ -84,6 +171,30 @@ visibilityTimeout?, messageAttributeNames?, systemAttributeNames? }`.
   `maxMessages` defaults to `10`, `waitTimeSeconds` defaults to `20`
   (mapped with `??`, not `||`, so an explicit `waitTimeSeconds: 0` — a
   short poll — is honored rather than coerced back to the default).
+- **`M3LSQSRedriveDecision`** — a discriminated union on `action`:
+  `{ action: "move", entry: M3LSQSSendEntry }` (send `entry` to the
+  destination, then delete the source message once the send succeeds),
+  `{ action: "drop" }` (delete the source message, no send), or
+  `{ action: "retry" }` (leave the source message untouched).
+- **`M3LSQSRedriveProcessor`** — `(message: M3LSQSReceivedMessage) =>
+M3LSQSRedriveDecision | Promise<M3LSQSRedriveDecision>`, the per-message
+  callback passed to `redrive`.
+- **`M3LSQSReceiveDeduplicationMode`** — `"none" | "messageId"`, passed as
+  `M3LSQSRedriveOptions.deduplication`.
+- **`M3LSQSRedriveOptions`** — `{ messageLimit?, receiveOptions?,
+deduplication? }`. `messageLimit` caps the total messages processed across
+  the whole `redrive` call (omit to drain until an empty page);
+  `receiveOptions` tunes each page's underlying `receive` call (its own
+  `maxMessages` bounds one page, capped at the SQS per-call limit of 10);
+  `deduplication` defaults to `"none"`.
+- **`M3LSQSRedriveResult`** — `{ received, moved, dropped, retried,
+deduplicated, moveFailed, deleteFailed }`. `received` is the total messages
+  pulled across every page; `moved`/`dropped`/`retried`/`deduplicated` are
+  disjoint per-message outcome counts; `moveFailed` is
+  `readonly M3LSQSBatchFailure<M3LSQSSendEntry>[]` (failed `sendBatch`
+  entries — messages left in the source queue) and `deleteFailed` is
+  `readonly M3LSQSBatchFailure<M3LSQSDeleteEntry>[]` (failed `deleteBatch`
+  entries, from either the post-move or the drop path).
 
 ### Field-mapping details (`receive`)
 
@@ -115,6 +226,17 @@ const result = await sqsOperations.sendBatch(queueUrl, [
 ]);
 // result.failed[].entry is the original M3LSQSSendEntry, ready to write
 // straight to a failed.jsonl file with no extra bookkeeping.
+
+// Redrive every message from a DLQ back to its source queue.
+const redriveResult = await sqsOperations.redrive(
+  dlqUrl,
+  queueUrl,
+  (message) => ({
+    action: "move",
+    entry: { id: message.messageId, body: message.body },
+  }),
+);
+// redriveResult.moved / .moveFailed / .deleteFailed report the outcome.
 ```
 
 ### Standalone construction

@@ -40,11 +40,16 @@ import { M3LError } from "../src/core/errors/index.js";
 import { M3LBackoff } from "../src/core/polling/index.js";
 
 import {
+  compileAthenaQueryTemplate,
   M3LAthenaClient,
   M3LAthenaQueryFailedError,
   M3LAthenaStartQueryError,
+  M3LAthenaTemplateError,
 } from "../src/aws/athena/index.js";
-import type { AthenaQueryResult } from "../src/aws/athena/index.js";
+import type {
+  AthenaQueryResult,
+  M3LAthenaCompiledQuery,
+} from "../src/aws/athena/index.js";
 
 function fakeClient(send: (command: unknown) => unknown): AthenaClient {
   return { send } as unknown as AthenaClient;
@@ -531,5 +536,225 @@ describe("M3LAthenaClient types", () => {
         status: "FAILED",
       }),
     ).toBeInstanceOf(M3LError);
+  });
+});
+
+describe("compileAthenaQueryTemplate", () => {
+  test("compiles a single named placeholder into a positional ? with its value in executionParameters", () => {
+    const compiled = compileAthenaQueryTemplate(
+      "SELECT * FROM t WHERE region = :region",
+      { region: "us-east-1" },
+    );
+
+    expect(compiled).toEqual({
+      queryString: "SELECT * FROM t WHERE region = ?",
+      executionParameters: ["us-east-1"],
+    });
+  });
+
+  test("a placeholder referenced twice compiles to two ?s and two duplicated executionParameters entries, in source order", () => {
+    const compiled = compileAthenaQueryTemplate(
+      "SELECT * FROM logs WHERE day = :day AND updated = :day",
+      { day: "2026-08-11" },
+    );
+
+    expect(compiled).toEqual({
+      queryString: "SELECT * FROM logs WHERE day = ? AND updated = ?",
+      executionParameters: ["2026-08-11", "2026-08-11"],
+    });
+  });
+
+  test("a placeholder-shaped token inside a single-quoted string literal is left untouched, not replaced or counted", () => {
+    const compiled = compileAthenaQueryTemplate(
+      "SELECT * FROM t WHERE ts = '12:30:00'",
+      {},
+    );
+
+    expect(compiled).toEqual({
+      queryString: "SELECT * FROM t WHERE ts = '12:30:00'",
+      executionParameters: [],
+    });
+  });
+
+  test("a '' escaped quote inside a literal does not close the string, so a placeholder-shaped token after it stays literal", () => {
+    const compiled = compileAthenaQueryTemplate(
+      "SELECT * FROM t WHERE note = 'it''s :30'",
+      {},
+    );
+
+    expect(compiled).toEqual({
+      queryString: "SELECT * FROM t WHERE note = 'it''s :30'",
+      executionParameters: [],
+    });
+  });
+
+  test("the :: cast operator is never treated as a placeholder start", () => {
+    const compiled = compileAthenaQueryTemplate("SELECT x::date FROM t", {});
+
+    expect(compiled).toEqual({
+      queryString: "SELECT x::date FROM t",
+      executionParameters: [],
+    });
+  });
+
+  test("a placeholder-shaped token inside a SQL line comment is NOT recognized as a comment and still throws if unmatched", () => {
+    expect(() =>
+      compileAthenaQueryTemplate("SELECT 1 -- :region", {}),
+    ).toThrowError(M3LAthenaTemplateError);
+    let thrown: unknown;
+    try {
+      compileAthenaQueryTemplate("SELECT 1 -- :region", {});
+    } catch (error) {
+      thrown = error;
+    }
+    expect((thrown as M3LAthenaTemplateError).context).toMatchObject({
+      missingParameters: ["region"],
+    });
+  });
+
+  test("a placeholder-shaped token inside a double-quoted identifier gets no literal protection and still throws if unmatched", () => {
+    let thrown: unknown;
+    try {
+      compileAthenaQueryTemplate('SELECT "col:region" FROM t', {});
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LAthenaTemplateError);
+    expect((thrown as M3LAthenaTemplateError).context).toMatchObject({
+      missingParameters: ["region"],
+    });
+  });
+
+  test("throws a single M3LAthenaTemplateError carrying both missingParameters and unusedParameters when the mismatch is bidirectional", () => {
+    let thrown: unknown;
+    try {
+      compileAthenaQueryTemplate("SELECT * FROM t WHERE a = :a", { b: "x" });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LAthenaTemplateError);
+    expect((thrown as M3LAthenaTemplateError).context).toMatchObject({
+      missingParameters: ["a"],
+      unusedParameters: ["b"],
+    });
+  });
+
+  test("an empty template with no parameters compiles to an empty queryString and no executionParameters", () => {
+    const compiled = compileAthenaQueryTemplate("", {});
+
+    expect(compiled).toEqual({ queryString: "", executionParameters: [] });
+  });
+
+  test("a parameter referenced ONLY inside a protected literal is not considered referenced, and throws unusedParameters", () => {
+    let thrown: unknown;
+    try {
+      compileAthenaQueryTemplate("SELECT * FROM t WHERE t = ':region'", {
+        region: "x",
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LAthenaTemplateError);
+    expect((thrown as M3LAthenaTemplateError).context).toMatchObject({
+      unusedParameters: ["region"],
+    });
+  });
+
+  test("a placeholder named after a prototype property (:constructor) is not silently resolved from Object.prototype", () => {
+    let thrown: unknown;
+    try {
+      compileAthenaQueryTemplate("SELECT * FROM t WHERE a = :constructor", {});
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LAthenaTemplateError);
+    expect((thrown as M3LAthenaTemplateError).context).toMatchObject({
+      missingParameters: ["constructor"],
+    });
+  });
+
+  test("M3LAthenaTemplateError is an M3LError subclass with code ERR_ATHENA_TEMPLATE_COMPILE and no cause", () => {
+    let thrown: unknown;
+    try {
+      compileAthenaQueryTemplate("SELECT * FROM t WHERE a = :a", {});
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect(thrown).toBeInstanceOf(M3LAthenaTemplateError);
+    expect((thrown as M3LAthenaTemplateError).code).toBe(
+      "ERR_ATHENA_TEMPLATE_COMPILE",
+    );
+    expect((thrown as M3LAthenaTemplateError).cause).toBeUndefined();
+    expectTypeOf<
+      M3LAthenaTemplateError["code"]
+    >().toEqualTypeOf<"ERR_ATHENA_TEMPLATE_COMPILE">();
+  });
+
+  test("a literal ? outside a string literal is rejected with both mismatch context arrays empty", () => {
+    let thrown: unknown;
+    try {
+      compileAthenaQueryTemplate("SELECT * FROM t WHERE a = ?", {});
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LAthenaTemplateError);
+    expect((thrown as M3LAthenaTemplateError).context).toMatchObject({
+      missingParameters: [],
+      unusedParameters: [],
+    });
+  });
+
+  test("a ? inside a single-quoted literal is inert and does not throw", () => {
+    const compiled = compileAthenaQueryTemplate("WHERE q = 'is this ok?'", {});
+
+    expect(compiled).toEqual({
+      queryString: "WHERE q = 'is this ok?'",
+      executionParameters: [],
+    });
+  });
+
+  test("a literal ? is rejected even alongside a valid named placeholder that would otherwise validate fine", () => {
+    expect(() =>
+      compileAthenaQueryTemplate("SELECT * FROM t WHERE a = :a AND b = ?", {
+        a: "x",
+      }),
+    ).toThrowError(M3LAthenaTemplateError);
+  });
+
+  test("M3LAthenaTemplateError exposes missingParameters/unusedParameters as direct typed instance fields, not just via context", () => {
+    let thrown: unknown;
+    try {
+      compileAthenaQueryTemplate("SELECT * FROM t WHERE a = :a", { b: "x" });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LAthenaTemplateError);
+    expect((thrown as M3LAthenaTemplateError).missingParameters).toEqual(["a"]);
+    expect((thrown as M3LAthenaTemplateError).unusedParameters).toEqual(["b"]);
+
+    expectTypeOf<M3LAthenaTemplateError["missingParameters"]>().toEqualTypeOf<
+      readonly string[]
+    >();
+    expectTypeOf<M3LAthenaTemplateError["unusedParameters"]>().toEqualTypeOf<
+      readonly string[]
+    >();
+  });
+
+  test("M3LAthenaCompiledQuery fields are readonly, and the function returns synchronously (not a Promise)", () => {
+    expectTypeOf<M3LAthenaCompiledQuery>().toEqualTypeOf<{
+      readonly queryString: string;
+      readonly executionParameters: readonly string[];
+    }>();
+    expectTypeOf(
+      compileAthenaQueryTemplate,
+    ).returns.toEqualTypeOf<M3LAthenaCompiledQuery>();
   });
 });
