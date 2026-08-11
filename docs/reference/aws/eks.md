@@ -384,3 +384,9 @@ including `connectorConfig.activationCode`, into its own error; see
 
 These are candidate follow-on wrapper PRs, filed under the ADR-0021 D4 intake
 rule — unblock on a consumer actually needing one.
+
+## See also
+
+- [AWS Clients](./clients.md) — `AWSClientProvider.eks`, the raw client
+  getter this wrapper is constructed from; also reachable as
+  `AWSServiceProvider.eks` (`script.aws.services.eks`).

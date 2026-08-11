@@ -1,6 +1,6 @@
 # AWS Clients
 
-`AWSClientProvider` and `AWSMultiClientProvider` create and lazily cache raw AWS SDK v3 clients, resolving credentials per profile: they expose the underlying SDK clients directly.
+`AWSClientProvider` and `AWSMultiClientProvider` create and lazily cache raw AWS SDK v3 clients, resolving credentials per profile: `AWSClientProvider`'s primary getters expose the underlying SDK clients directly, plus four deprecated pre-`.services` convenience wrappers kept for compatibility (see [`AWSServiceProvider`](#awsserviceprovider) below, [ADR-0038](../../adr/0038-sqs-dlq-redrive-and-aws-services-tier.md)).
 
 ## Overview
 
@@ -8,7 +8,7 @@ The client layer hands callers ready-to-use AWS SDK v3 clients with credentials 
 
 - `AWSClientProvider` manages SDK clients for a **single** profile, caching each client lazily on first access.
 - `AWSMultiClientProvider` manages a map of `AWSClientProvider` instances keyed by profile name, with helpers to run an operation across all profiles.
-- `AWSProvider` is the facade exposed on `M3LScript` instances as `script.aws`.
+- `AWSProvider` is the facade exposed on `M3LScript` instances as `script.aws`, exposing both a `clients` getter (raw SDK clients, `AWSClientProvider`) and a `services` getter (library-owned wrapper objects, `AWSServiceProvider`).
 
 Credential resolution is profile-aware: when a profile name is supplied it uses `fromIni()` (SSO-aware) from `@aws-sdk/credential-provider-ini`; otherwise it falls back to the AWS SDK default credential chain.
 
@@ -21,6 +21,7 @@ Exported from `@m3l-automation/m3l-common/aws` (and re-exported under the `AWS` 
 - `AWSClientProvider` — single-profile, lazily-cached SDK client provider.
 - `AWSMultiClientProvider` — multi-profile provider with parallel-map helpers.
 - `AWSProvider` — facade exposed via `script.aws`.
+- `AWSServiceProvider` — single-profile, lazily-cached library-owned wrapper-object provider; exposed via `AWSProvider.services`.
 - `AWS_REGION` — default region constant, a pre-validated [`M3LAWSRegion`](./models.md); `'eu-south-1'` (Milan) when unspecified.
 - `M3LAWSClientError` — typed error (`code: "ERR_AWS_CLIENT"`) thrown when SDK client construction or credential resolution fails.
 
@@ -79,12 +80,19 @@ credentials. Two behave specially:
 
 **Convenience getters** — unlike the service-client getters above, these
 return a library-owned wrapper object rather than a raw AWS SDK client, but
-are cached the same lazy-on-first-access way:
+are cached the same lazy-on-first-access way. **All four are `@deprecated`**
+(TSDoc tag only, not a runtime warning) in favor of their
+[`AWSServiceProvider`](#awsserviceprovider) equivalent — kept functional
+indefinitely, not scheduled for removal (removing them would source-break the
+four consumer scripts already built against `.clients.<name>`; see
+[ADR-0038](../../adr/0038-sqs-dlq-redrive-and-aws-services-tier.md)):
 
-| Getter          | Returns                            | Notes                                                                                                                                                                   |
-| --------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sqsOperations` | [`M3LSQSOperations`](./sqs.md)     | Constructed from this provider's `sqs` client (`new M3LSQSOperations(this.sqs)`). Shares the underlying `sqs` client's connection lifecycle — see below.                |
-| `requestSigner` | [`M3LRequestSigner`](./signing.md) | Built from this provider's own resolved `profile`/`region`. Holds no destroyable resource of its own — its cache is cleared, not independently destroyed, by `close()`. |
+| Getter                  | Returns                                        | `.services` equivalent           | Notes                                                                                                                                                                                    |
+| ----------------------- | ---------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sqsOperations`         | [`M3LSQSOperations`](./sqs.md)                 | `services.sqsOperations`         | Constructed from this provider's `sqs` client (`new M3LSQSOperations(this.sqs)`). Shares the underlying `sqs` client's connection lifecycle — see below.                                 |
+| `eventBridgeOperations` | [`M3LEventBridgeOperations`](./eventbridge.md) | `services.eventBridgeOperations` | Constructed from this provider's `eventBridge` client (`new M3LEventBridgeOperations(this.eventBridge)`). Shares the underlying `eventBridge` client's connection lifecycle — see below. |
+| `requestSigner`         | [`M3LRequestSigner`](./signing.md)             | `services.requestSigner`         | Built from this provider's own resolved `profile`/`region`. Holds no destroyable resource of its own — its cache is cleared, not independently destroyed, by `close()`.                  |
+| `dynamoDBDocument`      | `DynamoDBDocumentClient` (see above)           | `services.dynamoDBDocument`      | Documented above with the service-client getters — it is a raw (document-layer) SDK client, not a library-owned wrapper, but is grouped here per ADR-0038's four-getter accounting.      |
 
 Other members:
 
@@ -104,9 +112,90 @@ Manages a map of `AWSClientProvider` instances keyed by profile name.
 
 ### `AWSProvider`
 
-The facade exposed by `M3LScript` via `script.aws`. It lazily instantiates its sub-provider from a shared configuration and exposes it through a `clients` getter (a single-profile `AWSClientProvider`).
+The facade exposed by `M3LScript` via `script.aws`. It lazily instantiates its sub-provider(s) from a shared configuration and exposes two independent, independently-cached facades: a `clients` getter (raw SDK clients, a single-profile `AWSClientProvider`) and a `services` getter (library-owned wrapper objects, a single-profile `AWSServiceProvider`). Both share the same underlying `AWSClientProvider` instance — `services` is constructed with a reference to the already-lazily-built `clients` provider, so a raw client and its `.services` wrapper equivalent (e.g. `.clients.sqs` and the `SQSClient` underlying `.services.sqsOperations`) always resolve credentials once and share one connection, never two.
 
 `AWSProvider` is a standalone facade; `M3LScript` constructs it and assigns it to `script.aws` during the AWS stage of its lifecycle (see [Script](../core/script.md)).
+
+### `AWSServiceProvider`
+
+For a single profile, `AWSServiceProvider` lazily constructs and caches
+**library-owned wrapper objects** — the typed `M3L*Operations`/`M3L*Client`
+classes each AWS submodule exports — over the raw SDK clients an
+`AWSClientProvider` already provides. It is the consistent, single access
+path ADR-0038 introduces: every wrapper submodule is reachable as
+`provider.services.<name>` without the caller constructing it by hand.
+
+**Constructor** — `new AWSServiceProvider(clientProvider, options?)`, where
+`clientProvider` is the `AWSClientProvider` this provider pulls raw clients
+from (never constructed independently — always the same instance
+`AWSProvider.clients` already lazily built, so no client is ever
+double-constructed), and `options` is the same
+[`AWSClientProviderOptions`](#awsclientprovider) shape (`profile`/`region`),
+needed only by the two getters below that are **not** built from a raw client.
+
+**Service getters** — each is synchronous, constructs its wrapper on first
+access, and caches it for the provider's lifetime. Every entry except
+`dynamoDBDocument` is a **new** wrapper instance distinct from its
+`.clients.<name>` equivalent (a fresh, lightweight object wrapping the same
+underlying, still-shared SDK client — see `AWSProvider` above):
+
+| Getter                   | Returns                                                     | Built from                                                                                                                                                        |
+| ------------------------ | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sqsOperations`          | [`M3LSQSOperations`](./sqs.md)                              | `clientProvider.sqs`                                                                                                                                              |
+| `eventBridgeOperations`  | [`M3LEventBridgeOperations`](./eventbridge.md)              | `clientProvider.eventBridge`                                                                                                                                      |
+| `requestSigner`          | [`M3LRequestSigner`](./signing.md)                          | this provider's own `profile`/`region` (not a raw client)                                                                                                         |
+| `dynamoDBDocument`       | `DynamoDBDocumentClient`                                    | **passthrough** — returns `clientProvider.dynamoDBDocument` directly; no separate library-owned wrapper class exists for it, so there is nothing new to construct |
+| `athena`                 | [`M3LAthenaClient`](./athena.md)                            | `clientProvider.athena`                                                                                                                                           |
+| `cloudFormation`         | [`M3LCloudFormationOperations`](./cloudformation.md)        | `clientProvider.cloudFormation`                                                                                                                                   |
+| `cloudWatchAlarms`       | [`M3LCloudWatchAlarmsOperations`](./cloudwatch-alarms.md)   | `clientProvider.cloudWatch`                                                                                                                                       |
+| `cloudWatchLogsInsights` | [`M3LLogsInsightsClient`](./cloudwatch-logs-insights.md)    | `clientProvider.cloudWatchLogs`                                                                                                                                   |
+| `cloudWatchMetrics`      | [`M3LCloudWatchMetricsOperations`](./cloudwatch-metrics.md) | `clientProvider.cloudWatch`                                                                                                                                       |
+| `codePipeline`           | [`M3LCodePipelineOperations`](./codepipeline.md)            | `clientProvider.codePipeline`                                                                                                                                     |
+| `ecs`                    | [`M3LECSOperations`](./ecs.md)                              | `clientProvider.ecs`                                                                                                                                              |
+| `eks`                    | [`M3LEKSOperations`](./eks.md)                              | `clientProvider.eks`                                                                                                                                              |
+| `lambda`                 | [`M3LLambdaOperations`](./lambda.md)                        | `clientProvider.lambda`                                                                                                                                           |
+| `secretsManager`         | [`M3LSecretsManagerOperations`](./secrets-manager.md)       | `clientProvider.secretsManager`                                                                                                                                   |
+| `credentials`            | [`M3LAWSCredentialsManager`](./credentials.md)              | this provider's own `profile`/`region` (not a raw client)                                                                                                         |
+
+`cloudWatchAlarms` and `cloudWatchMetrics` both wrap the same underlying
+`cloudWatch` raw client (two independent M3L wrapper classes over one SDK
+client — the raw client is still constructed and connected exactly once,
+since `clientProvider.cloudWatch` is itself memoized on `clientProvider`).
+
+**Not exposed via `.services`:** [`aws/s3`](./s3.md) and
+[`aws/dynamodb`](./dynamodb.md) are deliberately **function-based**
+(ADR-0033 for S3; the same shape for DynamoDB item operations) — every
+export is a free function taking an already-provisioned client as its first
+parameter, not a class. There is no wrapper object to construct or cache, so
+neither has a `.services` entry; call the functions directly with
+`.clients.s3` / `.clients.dynamoDBDocument`, exactly as before this ADR.
+Likewise, the `s3://` URI parser (`aws/s3`'s `parseS3Uri`/`formatS3Uri`) is
+pure string logic with no client dependency at all, so it has no `.services`
+entry either.
+
+Other members:
+
+- Credential resolution for `requestSigner`/`credentials` — same
+  `fromIni({ profile })` vs. SDK-default-chain rule as `AWSClientProvider`
+  (see above); every other getter delegates credential resolution entirely
+  to `clientProvider`.
+- `close()` — clears this provider's own cache so a later getter access
+  constructs fresh wrapper instances. Unlike `AWSClientProvider.close()`,
+  this **never calls `.destroy()`** on anything: none of the fifteen getters
+  above holds a destroyable resource of its own — each either wraps a client
+  `clientProvider` owns (and destroys), or (for `requestSigner`/
+  `credentials`) holds no destroyable resource at all. Calling
+  `clientProvider.close()` does **not** cascade into this provider's cache —
+  a caller that closes the underlying client provider and wants fresh
+  `.services` wrappers afterward must also call `services.close()`
+  explicitly (mirrors the pre-existing risk of holding a stale `.clients.*`
+  wrapper reference across a `close()`).
+
+When constructing a wrapper fails for a reason unrelated to raw-client
+construction (there is none currently — every wrapper's constructor is a
+synchronous, non-throwing field assignment), the underlying
+`clientProvider` getter's own `M3LAWSClientError` propagates unchanged;
+`AWSServiceProvider` adds no error handling of its own.
 
 ### `M3LAWSClientError`
 
@@ -170,6 +259,28 @@ const settled = await multi.mapParallelSettled((p) => p.s3 /* ... */);
 const s3 = script.aws.clients.s3;
 ```
 
+### Use a library-owned wrapper via `.services`
+
+```typescript
+import { AWS } from "@m3l-automation/m3l-common";
+
+const provider = new AWS.AWSProvider({
+  profile: AWS.parseAWSProfile("my-profile"),
+});
+
+// Each wrapper is constructed lazily on first access and cached thereafter,
+// built from the same underlying AWSClientProvider `provider.clients` uses.
+const athena = provider.services.athena;
+const sqsOperations = provider.services.sqsOperations;
+
+// aws/s3 and aws/dynamodb are function-based (ADR-0033) — call the exported
+// functions directly with the raw/document client instead.
+import { getItem } from "@m3l-automation/m3l-common/aws";
+const item = await getItem(provider.services.dynamoDBDocument, "orders", {
+  id: "42",
+});
+```
+
 ## Notes and behavior
 
 - **Lazy caching:** each SDK client is created on first access and reused on subsequent access within the same `AWSClientProvider`.
@@ -180,6 +291,8 @@ const s3 = script.aws.clients.s3;
 - **Lifecycle in Lambda:** the SDK client cache is intentionally persisted across Lambda invocations to reuse connections. Per-invocation state reset does not tear down the client providers.
 - **`close()`** destroys all cached clients on an `AWSClientProvider` (best-effort — it destroys the rest even if one `.destroy()` throws, always clears the cache, then throws an aggregated `M3LAWSClientError` if any failed).
 - **Deduplication:** `AWSMultiClientProvider` deduplicates profile names on construction.
+- **`.services` shares `.clients`' connections:** `AWSProvider.services` (an `AWSServiceProvider`) is always built from the same `AWSClientProvider` instance `AWSProvider.clients` already lazily constructed — using both facades for the same service never resolves credentials twice or opens two connections.
+- **`.services.close()` does not cascade from `.clients.close()`:** the two caches are cleared independently; call both if you want a full reset.
 
 ## See also
 
@@ -187,3 +300,4 @@ const s3 = script.aws.clients.s3;
 - [AWS models](./models.md) — shared AWS model types.
 - [Lambda handlers](../../guides/lambda-handlers.md) — connection reuse across invocations.
 - [Script](../core/script.md) — the `script.aws` facade.
+- [ADR-0038](../../adr/0038-sqs-dlq-redrive-and-aws-services-tier.md) — why `AWSServiceProvider`/`.services` exists and why the four `.clients` convenience getters are deprecated in place rather than removed.

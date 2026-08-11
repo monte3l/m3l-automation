@@ -175,7 +175,8 @@ const cloudWatchAlarmsOperations = new AWS.M3LCloudWatchAlarmsOperations(
 ## See also
 
 - [AWS Clients](./clients.md) — the raw `cloudWatch` client getter and
-  `AWSClientProvider`/`AWSProvider` this module builds on.
+  `AWSClientProvider`/`AWSProvider` this module builds on; also reachable as
+  `AWSServiceProvider.cloudWatchAlarms` (`script.aws.services.cloudWatchAlarms`).
 - [CloudWatch Metrics](./cloudwatch-metrics.md) — the sibling wrapper over
   the same `cloudWatch` client, for custom-metric publishing and statistics
   retrieval; shares this module's `M3LCloudWatchDimension` type.

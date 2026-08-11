@@ -270,7 +270,9 @@ const sqsOperations = new AWS.M3LSQSOperations(provider.sqs);
 ## See also
 
 - [AWS Clients](./clients.md) — the raw `sqs` client getter and
-  `AWSClientProvider`/`AWSProvider` this module builds on.
+  `AWSClientProvider`/`AWSProvider` this module builds on; the
+  `sqsOperations` convenience getter is `@deprecated` in favor of
+  `AWSServiceProvider.sqsOperations` (`script.aws.services.sqsOperations`).
 - [ADR-0026](../../adr/0026-sqs-operations-wrapper.md) — why this pattern
   exists and the Zone A amendment.
 - [Polling](../core/polling.md) — `M3LRetryRunner` / `M3LPollingPolicies` /

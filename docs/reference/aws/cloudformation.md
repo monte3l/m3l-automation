@@ -396,7 +396,8 @@ starting point instead of rediscovering the boundary:
 ## See also
 
 - [AWS Clients](./clients.md) — `AWSClientProvider.cloudFormation`, the raw
-  client getter this wrapper is constructed from.
+  client getter this wrapper is constructed from; also reachable as
+  `AWSServiceProvider.cloudFormation` (`script.aws.services.cloudFormation`).
 - [ECS Operations](./ecs.md) — the closest sibling wrapper in shape (a
   standalone-waiter, name-classified terminal-state pattern) and the direct
   precedent for this module's waiter contract.

@@ -182,7 +182,7 @@ Poll-attempt exhaustion (the attempt bound reached while the query is still `QUE
 
 ## See also
 
-- [`aws/clients`](./clients.md) — the `script.aws.clients.athena` seam this submodule's client is injected from.
+- [`aws/clients`](./clients.md) — the `script.aws.clients.athena` seam this submodule's client is injected from; also reachable as `script.aws.services.athena` (`AWSServiceProvider`).
 - [`aws/cloudwatch-logs-insights`](./cloudwatch-logs-insights.md) — the async start/await decomposition and row-normalization precedent this submodule mirrors.
 - [`core/polling`](../core/polling.md) — `M3LPoller`, `M3LRetryRunner`, `M3LPollingPolicies.athenaQuery()`/`.awsThrottling()`.
 - [ADR-0029](../../adr/0029-script-dependency-boundary.md) — the script-dependency-boundary decision this submodule unblocks (`athena-query`, W4).

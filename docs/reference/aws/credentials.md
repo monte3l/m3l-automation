@@ -103,7 +103,7 @@ SSO login is run sequentially for invalid profiles because parallel browser wind
 
 ## See also
 
-- [AWS clients](./clients.md) — raw SDK client providers that consume resolved credentials.
+- [AWS clients](./clients.md) — raw SDK client providers that consume resolved credentials; `M3LAWSCredentialsManager` is also reachable as `AWSServiceProvider.credentials` (`script.aws.services.credentials`).
 - [AWS models](./models.md) — shared AWS model types used by the credentials manager.
 - [Configuration](../../guides/configuration.md) — how the `aws.profile` parameter is resolved.
 - [Errors](../core/errors.md) — the library's typed error hierarchy.

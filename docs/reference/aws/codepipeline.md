@@ -526,7 +526,8 @@ starting point instead of rediscovering the boundary:
 ## See also
 
 - [AWS Clients](./clients.md) — `AWSClientProvider.codePipeline`, the raw
-  client getter this wrapper is constructed from.
+  client getter this wrapper is constructed from; also reachable as
+  `AWSServiceProvider.codePipeline` (`script.aws.services.codePipeline`).
 - [CloudFormation Operations](./cloudformation.md) — the nearest sibling
   wrapper in shape, and the direct contrast on modeled-vs-unmodeled
   not-found classification.
