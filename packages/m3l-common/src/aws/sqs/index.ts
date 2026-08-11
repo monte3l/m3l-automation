@@ -12,7 +12,12 @@ export type {
   M3LSQSBatchFailure,
   M3LSQSBatchResult,
   M3LSQSDeleteEntry,
+  M3LSQSReceiveDeduplicationMode,
   M3LSQSReceiveOptions,
   M3LSQSReceivedMessage,
+  M3LSQSRedriveDecision,
+  M3LSQSRedriveOptions,
+  M3LSQSRedriveProcessor,
+  M3LSQSRedriveResult,
   M3LSQSSendEntry,
 } from "./types.js";

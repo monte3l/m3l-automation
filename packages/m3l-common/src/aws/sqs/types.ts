@@ -105,3 +105,73 @@ export interface M3LSQSReceiveOptions {
   /** SQS system attribute names to return; omit for none. */
   readonly systemAttributeNames?: readonly string[];
 }
+
+/**
+ * The outcome {@link M3LSQSRedriveProcessor} returns for one message: send it
+ * on to the destination queue (`"move"`), delete it from the source queue
+ * with no send (`"drop"`), or leave it untouched (`"retry"`).
+ */
+export type M3LSQSRedriveDecision =
+  | { readonly action: "move"; readonly entry: M3LSQSSendEntry }
+  | { readonly action: "drop" }
+  | { readonly action: "retry" };
+
+/**
+ * The per-message callback passed to {@link M3LSQSOperations.redrive},
+ * deciding a {@link M3LSQSRedriveDecision} for one
+ * {@link M3LSQSReceivedMessage}. May return synchronously or as a `Promise`;
+ * `redrive` awaits it once per message, in receive order.
+ */
+export type M3LSQSRedriveProcessor = (
+  message: M3LSQSReceivedMessage,
+) => M3LSQSRedriveDecision | Promise<M3LSQSRedriveDecision>;
+
+/**
+ * The deduplication strategy for {@link M3LSQSOperations.redrive}, set via
+ * {@link M3LSQSRedriveOptions.deduplication}. `"none"` (the default) applies
+ * no deduplication; `"messageId"` skips a message whose non-empty
+ * `messageId` has already been seen within the same `redrive` call.
+ */
+export type M3LSQSReceiveDeduplicationMode = "none" | "messageId";
+
+/** Options for {@link M3LSQSOperations.redrive}. */
+export interface M3LSQSRedriveOptions {
+  /**
+   * Caps the total number of messages `redrive` receives across every page
+   * combined; omit to drain until a `receive` call returns an empty page. A
+   * value `<= 0` (or `NaN`) returns immediately with an all-zero-count
+   * {@link M3LSQSRedriveResult} and issues no calls at all.
+   */
+  readonly messageLimit?: number;
+  /**
+   * Tunes each page's underlying {@link M3LSQSOperations.receive} call; its
+   * own `maxMessages` bounds one page (further clamped to the remaining
+   * {@link messageLimit} budget on the final page).
+   */
+  readonly receiveOptions?: M3LSQSReceiveOptions;
+  /** Deduplication strategy; see {@link M3LSQSReceiveDeduplicationMode}. Defaults to `"none"`. */
+  readonly deduplication?: M3LSQSReceiveDeduplicationMode;
+}
+
+/**
+ * The outcome of one {@link M3LSQSOperations.redrive} call. Counters are not
+ * guaranteed to be a partition of `received` — see the `redrive` TSDoc for
+ * why a send-succeeded-but-delete-failed message counts in neither `moved`
+ * nor `dropped`.
+ */
+export interface M3LSQSRedriveResult {
+  /** Total messages pulled across every page. */
+  readonly received: number;
+  /** Messages whose `"move"` decision both sent and deleted successfully. */
+  readonly moved: number;
+  /** Messages whose `"drop"` decision deleted successfully. */
+  readonly dropped: number;
+  /** Messages whose decision was `"retry"` (left untouched). */
+  readonly retried: number;
+  /** Messages skipped because of a repeated `messageId` (see {@link M3LSQSReceiveDeduplicationMode}). */
+  readonly deduplicated: number;
+  /** Failed `sendBatch` entries from `"move"` decisions — messages left in the source queue. */
+  readonly moveFailed: readonly M3LSQSBatchFailure<M3LSQSSendEntry>[];
+  /** Failed `deleteBatch` entries, from either the post-move or the drop path. */
+  readonly deleteFailed: readonly M3LSQSBatchFailure<M3LSQSDeleteEntry>[];
+}

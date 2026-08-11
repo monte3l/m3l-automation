@@ -48,15 +48,30 @@
         {
           "file": "packages/m3l-common/src/aws/athena/errors.ts",
           "symbol": "M3LAthenaStartQueryError",
-          "blob": "d66f7b6efd4a9471249005813d06c854bb371e1c"
+          "blob": "b93b4761ae6ce6539429d71376d04cad1fda63f7"
         },
         {
           "file": "packages/m3l-common/src/aws/athena/errors.ts",
           "symbol": "M3LAthenaQueryFailedError",
-          "blob": "d66f7b6efd4a9471249005813d06c854bb371e1c"
+          "blob": "b93b4761ae6ce6539429d71376d04cad1fda63f7"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/athena/template.ts",
+          "symbol": "compileAthenaQueryTemplate",
+          "blob": "5736f10b0f2dec290b29b1c91b4ce6e9e683eb02"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/athena/template.ts",
+          "symbol": "M3LAthenaCompiledQuery",
+          "blob": "5736f10b0f2dec290b29b1c91b4ce6e9e683eb02"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/athena/errors.ts",
+          "symbol": "M3LAthenaTemplateError",
+          "blob": "b93b4761ae6ce6539429d71376d04cad1fda63f7"
         }
       ],
-      "retrieved": "2026-07-18"
+      "retrieved": "2026-08-11"
     },
     {
       "heading": "`M3LAthenaClient`",
@@ -81,20 +96,41 @@
       "retrieved": "2026-07-18"
     },
     {
+      "heading": "Named-placeholder query templating",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/athena/template.ts",
+          "symbol": "compileAthenaQueryTemplate",
+          "blob": "5736f10b0f2dec290b29b1c91b4ce6e9e683eb02"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/athena/template.ts",
+          "symbol": "M3LAthenaCompiledQuery",
+          "blob": "5736f10b0f2dec290b29b1c91b4ce6e9e683eb02"
+        }
+      ],
+      "retrieved": "2026-08-11"
+    },
+    {
       "heading": "Error handling",
       "sources": [
         {
           "file": "packages/m3l-common/src/aws/athena/errors.ts",
           "symbol": "M3LAthenaStartQueryError",
-          "blob": "d66f7b6efd4a9471249005813d06c854bb371e1c"
+          "blob": "b93b4761ae6ce6539429d71376d04cad1fda63f7"
         },
         {
           "file": "packages/m3l-common/src/aws/athena/errors.ts",
           "symbol": "M3LAthenaQueryFailedError",
-          "blob": "d66f7b6efd4a9471249005813d06c854bb371e1c"
+          "blob": "b93b4761ae6ce6539429d71376d04cad1fda63f7"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/athena/errors.ts",
+          "symbol": "M3LAthenaTemplateError",
+          "blob": "b93b4761ae6ce6539429d71376d04cad1fda63f7"
         }
       ],
-      "retrieved": "2026-07-18"
+      "retrieved": "2026-08-11"
     }
   ]
 }

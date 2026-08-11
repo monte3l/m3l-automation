@@ -114,6 +114,7 @@ export const M3L_ERROR_CATALOG: Readonly<
   ERR_ANALYSIS_INVALID_RULE: { origin: "caller", retryable: false },
   ERR_ATHENA_QUERY_FAILED: { origin: "external", retryable: "situational" },
   ERR_ATHENA_START_QUERY: { origin: "external", retryable: true },
+  ERR_ATHENA_TEMPLATE_COMPILE: { origin: "caller", retryable: false },
   ERR_AWS_CLIENT: { origin: "external", retryable: true },
   ERR_AWS_CREDENTIALS: { origin: "external", retryable: false },
   ERR_AWS_INVALID_PROFILE: { origin: "caller", retryable: false },

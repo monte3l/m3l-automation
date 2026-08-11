@@ -154,6 +154,7 @@ carries a recognised `code` but no `origin`.
 | `ERR_ANALYSIS_INVALID_RULE`       | `core/analysis` (`M3LThresholdRuleValidationError`) | Threshold rule has an unknown operator/aggregation/missing field         | caller   | false       |
 | `ERR_ATHENA_QUERY_FAILED`         | `aws/athena` (`M3LAthenaQueryFailedError`)          | Query reached terminal FAILED/CANCELLED, or status/result call failed    | external | situational |
 | `ERR_ATHENA_START_QUERY`          | `aws/athena` (`M3LAthenaStartQueryError`)           | `StartQueryExecution` yielded no execution id after retries              | external | true        |
+| `ERR_ATHENA_TEMPLATE_COMPILE`     | `aws/athena` (`M3LAthenaTemplateError`)             | Named-placeholder template and parameters don't match 1:1                | caller   | false       |
 | `ERR_AWS_CLIENT`                  | `aws/clients` (`M3LAWSClientError`)                 | SDK client construction / credential resolution failed                   | external | true        |
 | `ERR_AWS_CREDENTIALS`             | `aws/credentials` (`M3LAWSCredentialsError`)        | Credentials unrecoverable by re-auth, login declined, or SDK load failed | external | false       |
 | `ERR_AWS_INVALID_PROFILE`         | `aws/models` (`parseAWSProfile`)                    | Configured AWS profile name is not a valid identifier                    | caller   | false       |

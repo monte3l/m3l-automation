@@ -21,6 +21,9 @@ Exported from `@m3l-automation/m3l-common/aws` (and re-exported under the `AWS` 
 - `AthenaQueryStatistics`, `AthenaQueryStatus`, `AthenaRow`, `AthenaColumnInfo` — supporting types.
 - `M3LAthenaStartQueryError` (`code: "ERR_ATHENA_START_QUERY"`) — thrown when `StartQueryExecution` returns no `QueryExecutionId`.
 - `M3LAthenaQueryFailedError` (`code: "ERR_ATHENA_QUERY_FAILED"`) — thrown when a query reaches a terminal non-`SUCCEEDED` status.
+- `compileAthenaQueryTemplate` — compiles a SQL string with named `:placeholder`s into a `queryString`/`executionParameters` pair for `StartAthenaQueryInput`.
+- `M3LAthenaCompiledQuery` — the `compileAthenaQueryTemplate` result shape.
+- `M3LAthenaTemplateError` (`code: "ERR_ATHENA_TEMPLATE_COMPILE"`) — thrown when a template/parameters pair doesn't match 1:1, or the template contains a literal `?`. Exposes `missingParameters`/`unusedParameters` as typed `readonly string[]` fields (in addition to `context`), each empty for the literal-`?` case.
 
 ### `M3LAthenaClient`
 
@@ -79,12 +82,97 @@ statement types, which return no rows). The implementation **must**:
    accumulating rows across every page into the single `AthenaQueryResult`
    returned by `awaitResults`.
 
+## Named-placeholder query templating
+
+Athena/Trino's `ExecutionParameters` are **positional** (`?` markers, values
+supplied in order) — awkward for a query with several parameters, since
+reordering a `?` in the SQL text silently misaligns the values array.
+`compileAthenaQueryTemplate(template, parameters)` compiles a template
+written with named `:identifier` placeholders into that positional shape:
+
+```typescript
+import { AWS } from "@m3l-automation/m3l-common";
+
+const compiled = AWS.compileAthenaQueryTemplate(
+  "SELECT * FROM logs WHERE region = :region AND day = :day AND day = :day",
+  { region: "us-east-1", day: "2026-08-11" },
+);
+// compiled.queryString ===
+//   "SELECT * FROM logs WHERE region = ? AND day = ? AND day = ?"
+// compiled.executionParameters === ["us-east-1", "2026-08-11", "2026-08-11"]
+
+const result = await athenaClient.runQuery({
+  queryString: compiled.queryString,
+  executionParameters: compiled.executionParameters,
+  database: "my_database",
+});
+```
+
+**`M3LAthenaCompiledQuery`** — `{ queryString: string, executionParameters:
+readonly string[] }`.
+
+**Trust boundary:** `template` is trusted, developer-authored SQL — the same
+trust level as any hand-written query string passed to `startQuery`/
+`runQuery` directly. Only `parameters`' **values** are the untrusted-input
+seam this compiler protects: a value never appears anywhere in `queryString`,
+only in the positional `executionParameters` array, so an attacker-controlled
+value cannot alter the query's structure regardless of its content (quotes,
+placeholders, SQL keywords). Do not construct `template` itself from
+untrusted input — the compiler gives that string no protection at all.
+
+**Placeholder syntax and scanning rules:**
+
+- A placeholder is `:` immediately followed by an identifier matching
+  `[A-Za-z_][A-Za-z0-9_]*` (e.g. `:region`, `:day_2`).
+- A placeholder appearing **inside a single-quoted SQL string literal** is
+  left untouched — not replaced, not counted — so a literal value like
+  `'12:30:00'` is never mistaken for a parameter. Literal-string scanning
+  understands the standard SQL `''` escaped-quote convention.
+- `::` (the Presto/Trino cast operator, e.g. `x::date`) is never treated as
+  a placeholder start, inside or outside a string literal.
+- A placeholder repeated multiple times in the template (as in the example
+  above) compiles to one `?`/parameter-value pair **per occurrence**, in
+  source order — this is a direct, unavoidable consequence of
+  `ExecutionParameters` being positional, not a template-compiler choice.
+- **A literal `?` scanned outside single-quote state is rejected.** A `?` the
+  scanner sees while it is not inside a single-quoted region throws
+  `M3LAthenaTemplateError` immediately, with `missingParameters`/
+  `unusedParameters` both empty (the message text names the actual problem in
+  this case — a bare `?`, not a name mismatch) — this closes the common case
+  of a stray `?` silently misaligning every positional value after it (Athena
+  has no way to tell a pre-existing `?` apart from a compiler-generated one).
+  This is a scanner-state guard, not a full SQL-structural guarantee: per the
+  "out of scope" bullet below, the scanner's only state is "inside vs. outside
+  a single-quoted region," so a `?` inside a comment or a double-quoted
+  identifier is _also_ rejected (comments/double-quotes get no protection,
+  consistent with their own out-of-scope status) — and, conversely, an
+  apostrophe inside a comment or double-quoted identifier can flip the scanner
+  into single-quote state early, making a genuinely-outside `?` after it look
+  "inside a literal" and pass through unrejected. Do not treat this guard as
+  a proof that `queryString` is free of stray `?`s in every input; it closes
+  the straightforward case, not an adversarially-crafted one.
+- **Out of scope:** SQL comments (`--`/`/* */`) are not specially
+  recognized — a `:name`-shaped token (or a literal `?`) inside a comment is
+  still scanned and treated as real. Double-quoted identifiers are not given
+  the same string-literal protection as single-quoted literals — including an
+  apostrophe inside one, which is still read as a literal-string delimiter by
+  the scanner's single state machine. This is a lightweight template
+  compiler, not a SQL tokenizer.
+
+**Validation (fail loud, no partial compile):** every `:name` referenced in
+`template` must have a matching key in `parameters`, and every key in
+`parameters` must be referenced at least once in `template` — both
+directions are checked. A mismatch in either direction throws
+`M3LAthenaTemplateError` before returning anything; it never returns a
+partially-compiled result.
+
 ## Error handling
 
-| Error                       | Code                      | Thrown by      | Context                                                                                               |
-| --------------------------- | ------------------------- | -------------- | ----------------------------------------------------------------------------------------------------- |
-| `M3LAthenaStartQueryError`  | `ERR_ATHENA_START_QUERY`  | `startQuery`   | `{ queryString }`                                                                                     |
-| `M3LAthenaQueryFailedError` | `ERR_ATHENA_QUERY_FAILED` | `awaitResults` | `{ queryExecutionId, status }` — carries `queryExecutionId` so a caller can log/checkpoint against it |
+| Error                       | Code                          | Thrown by                    | Context                                                                                               |
+| --------------------------- | ----------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `M3LAthenaStartQueryError`  | `ERR_ATHENA_START_QUERY`      | `startQuery`                 | `{ queryString }`                                                                                     |
+| `M3LAthenaQueryFailedError` | `ERR_ATHENA_QUERY_FAILED`     | `awaitResults`               | `{ queryExecutionId, status }` — carries `queryExecutionId` so a caller can log/checkpoint against it |
+| `M3LAthenaTemplateError`    | `ERR_ATHENA_TEMPLATE_COMPILE` | `compileAthenaQueryTemplate` | `{ missingParameters, unusedParameters }` — both `readonly string[]`, either may be empty             |
 
 `M3LAthenaStartQueryError` is also thrown when the `StartQueryExecution` SDK call itself fails — after any throttling retries (via `M3LRetryRunner` + `M3LPollingPolicies.awsThrottling()`) are exhausted or the failure is classified fatal — chaining the underlying SDK/network error via `cause`. This is in addition to its existing no-`QueryExecutionId`-in-response case, which carries no `cause` (a successful response with a bad shape has no exception to chain).
 

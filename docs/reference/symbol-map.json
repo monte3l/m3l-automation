@@ -1876,6 +1876,21 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/athena/errors.ts"
   },
+  "compileAthenaQueryTemplate": {
+    "submodule": "athena",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/athena/template.ts"
+  },
+  "M3LAthenaCompiledQuery": {
+    "submodule": "athena",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/athena/template.ts"
+  },
+  "M3LAthenaTemplateError": {
+    "submodule": "athena",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/athena/errors.ts"
+  },
   "AWSClientProvider": {
     "submodule": "clients",
     "namespace": "aws",
@@ -3007,6 +3022,31 @@
     "file": "packages/m3l-common/src/aws/sqs/types.ts"
   },
   "M3LSQSReceiveOptions": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSRedriveDecision": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSRedriveProcessor": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSReceiveDeduplicationMode": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSRedriveOptions": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSRedriveResult": {
     "submodule": "sqs",
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/sqs/types.ts"
