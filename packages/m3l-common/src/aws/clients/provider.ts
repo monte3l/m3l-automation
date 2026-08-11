@@ -119,8 +119,8 @@ interface BaseClientConfig {
  * ```
  */
 export class AWSClientProvider {
-  private readonly profile: M3LAWSProfile | undefined;
-  private readonly region: M3LAWSRegion;
+  private readonly resolvedProfile: M3LAWSProfile | undefined;
+  private readonly resolvedRegion: M3LAWSRegion;
   private readonly cache = new Map<AWSServiceName, DestroyableClient>();
   // Invariant: when set, `dynamoDB` is already in `cache` (the getter reads
   // `this.dynamoDB` before memoizing this wrapper) — close() must clear both
@@ -150,8 +150,24 @@ export class AWSClientProvider {
    *   chain when omitted.
    */
   constructor(options: AWSClientProviderOptions = {}) {
-    this.profile = options.profile;
-    this.region = options.region ?? AWS_REGION;
+    this.resolvedProfile = options.profile;
+    this.resolvedRegion = options.region ?? AWS_REGION;
+  }
+
+  /**
+   * This provider's resolved profile, or `undefined` if none was supplied
+   * (the SDK default credential chain applies in that case).
+   */
+  get profile(): M3LAWSProfile | undefined {
+    return this.resolvedProfile;
+  }
+
+  /**
+   * This provider's resolved region — {@link AWS_REGION} when none was
+   * supplied at construction.
+   */
+  get region(): M3LAWSRegion {
+    return this.resolvedRegion;
   }
 
   /** The `S3Client` for this provider's profile, constructed on first access. */
@@ -269,6 +285,8 @@ export class AWSClientProvider {
    * instead of raw AttributeValue shapes. Shares the underlying `dynamoDB`
    * client's connection lifecycle: it is torn down when `close()` destroys
    * that client, never destroyed independently.
+   *
+   * @deprecated — use `.services.dynamoDBDocument` instead
    */
   get dynamoDBDocument(): DynamoDBDocumentClient {
     const cached = this.dynamoDBDocumentClient;
@@ -293,6 +311,8 @@ export class AWSClientProvider {
    * connection lifecycle: it is torn down when `close()` destroys that
    * client, never destroyed independently (it holds no destroyable resource
    * of its own).
+   *
+   * @deprecated — use `.services.sqsOperations` instead
    */
   get sqsOperations(): M3LSQSOperations {
     const cached = this.sqsOperationsClient;
@@ -310,6 +330,8 @@ export class AWSClientProvider {
    * `eventBridge` client's connection lifecycle: it is torn down when
    * `close()` destroys that client, never destroyed independently (it holds
    * no destroyable resource of its own).
+   *
+   * @deprecated — use `.services.eventBridgeOperations` instead
    */
   get eventBridgeOperations(): M3LEventBridgeOperations {
     const cached = this.eventBridgeOperationsClient;
@@ -326,6 +348,8 @@ export class AWSClientProvider {
    * constructed on first access from the provider's own `profile`/`region`
    * (not a raw SDK client). It holds no destroyable resource of its own and
    * is cleared — not independently destroyed — by `close()`.
+   *
+   * @deprecated — use `.services.requestSigner` instead
    */
   get requestSigner(): M3LRequestSigner {
     const cached = this.requestSignerClient;

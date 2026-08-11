@@ -8,7 +8,7 @@
         {
           "file": "packages/m3l-common/src/aws/clients/provider.ts",
           "symbol": "AWSClientProvider",
-          "blob": "3bcad0ecbf06a1319abca2140cab9beac08a81f1"
+          "blob": "b237b2b2bcce8bcbd45abe8941129076344c6107"
         },
         {
           "file": "packages/m3l-common/src/aws/clients/multi-provider.ts",
@@ -18,7 +18,7 @@
         {
           "file": "packages/m3l-common/src/aws/clients/aws-provider.ts",
           "symbol": "AWSProvider",
-          "blob": "7a24e01c1fdf28b3692951be12f7cf16f0820866"
+          "blob": "9ebad8509b0cf0e344f9b6d94265391dd28a2720"
         },
         {
           "file": "packages/m3l-common/src/aws/clients/region.ts",
@@ -29,6 +29,11 @@
           "file": "packages/m3l-common/src/aws/clients/error.ts",
           "symbol": "M3LAWSClientError",
           "blob": "3f0bc7819dda0629b8c979a66965725d47505574"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/clients/service-provider.ts",
+          "symbol": "AWSServiceProvider",
+          "blob": "ae65a565b36797a809b27e6e8d359f36cbf03d2b"
         }
       ],
       "retrieved": "2026-08-11"
@@ -39,7 +44,7 @@
         {
           "file": "packages/m3l-common/src/aws/clients/provider.ts",
           "symbol": "AWSClientProvider",
-          "blob": "3bcad0ecbf06a1319abca2140cab9beac08a81f1"
+          "blob": "b237b2b2bcce8bcbd45abe8941129076344c6107"
         }
       ],
       "retrieved": "2026-08-11"
@@ -61,10 +66,21 @@
         {
           "file": "packages/m3l-common/src/aws/clients/aws-provider.ts",
           "symbol": "AWSProvider",
-          "blob": "7a24e01c1fdf28b3692951be12f7cf16f0820866"
+          "blob": "9ebad8509b0cf0e344f9b6d94265391dd28a2720"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-08-11"
+    },
+    {
+      "heading": "`AWSServiceProvider`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/clients/service-provider.ts",
+          "symbol": "AWSServiceProvider",
+          "blob": "ae65a565b36797a809b27e6e8d359f36cbf03d2b"
+        }
+      ],
+      "retrieved": "2026-08-11"
     },
     {
       "heading": "`M3LAWSClientError`",
@@ -83,7 +99,7 @@
         {
           "file": "packages/m3l-common/src/aws/clients/provider.ts",
           "symbol": "AWSClientProvider",
-          "blob": "3bcad0ecbf06a1319abca2140cab9beac08a81f1"
+          "blob": "b237b2b2bcce8bcbd45abe8941129076344c6107"
         }
       ],
       "retrieved": "2026-08-11"

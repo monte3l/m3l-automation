@@ -1916,6 +1916,11 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/clients/error.ts"
   },
+  "AWSServiceProvider": {
+    "submodule": "clients",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/clients/service-provider.ts"
+  },
   "M3LCloudFormationOperations": {
     "submodule": "cloudformation",
     "namespace": "aws",

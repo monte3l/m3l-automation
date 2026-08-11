@@ -36,6 +36,14 @@ For a single profile, `AWSClientProvider` creates and lazily caches AWS SDK v3 c
 | `profile` | [`M3LAWSProfile`](./models.md) | _(none)_     | Named AWS profile; when set, credentials resolve via `fromIni({ profile })`. When omitted, the SDK default credential chain is used. |
 | `region`  | [`M3LAWSRegion`](./models.md)  | `AWS_REGION` | Region passed to every client this provider constructs. Overrides the `AWS_REGION` default.                                          |
 
+The constructor's `profile`/`region` are also readable back afterward as
+public readonly getters of the same name (`provider.profile`,
+`provider.region`) — not just constructor inputs. This makes the provider
+itself the single source of truth for its resolved identity: any other class
+holding a reference to an `AWSClientProvider` (e.g. `AWSServiceProvider`, see
+below) can read `profile`/`region` off it directly instead of needing a
+second, independently-supplied copy.
+
 **Service-client getters** — each is synchronous, constructs its client on first access, and caches it for the provider's lifetime:
 
 | Getter             | SDK client class         | Package                           |
@@ -125,13 +133,20 @@ classes each AWS submodule exports — over the raw SDK clients an
 path ADR-0038 introduces: every wrapper submodule is reachable as
 `provider.services.<name>` without the caller constructing it by hand.
 
-**Constructor** — `new AWSServiceProvider(clientProvider, options?)`, where
+**Constructor** — `new AWSServiceProvider(clientProvider)`, where
 `clientProvider` is the `AWSClientProvider` this provider pulls raw clients
 from (never constructed independently — always the same instance
 `AWSProvider.clients` already lazily built, so no client is ever
-double-constructed), and `options` is the same
-[`AWSClientProviderOptions`](#awsclientprovider) shape (`profile`/`region`),
-needed only by the two getters below that are **not** built from a raw client.
+double-constructed). There is no separate `options` parameter: the two
+getters below that are **not** built from a raw client (`requestSigner`,
+`credentials`) read `clientProvider.profile`/`clientProvider.region`
+directly instead of taking their own independently-supplied
+`profile`/`region`. This closes off a divergence the earlier two-parameter
+constructor allowed — a caller passing a `clientProvider` for one profile and
+`options` for a different profile would produce one `AWSServiceProvider`
+instance whose getters silently authenticated as two different identities;
+`clientProvider` is now the single source of truth for every getter on this
+class.
 
 **Service getters** — each is synchronous, constructs its wrapper on first
 access, and caches it for the provider's lifetime. Every entry except
@@ -143,7 +158,7 @@ underlying, still-shared SDK client — see `AWSProvider` above):
 | ------------------------ | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sqsOperations`          | [`M3LSQSOperations`](./sqs.md)                              | `clientProvider.sqs`                                                                                                                                              |
 | `eventBridgeOperations`  | [`M3LEventBridgeOperations`](./eventbridge.md)              | `clientProvider.eventBridge`                                                                                                                                      |
-| `requestSigner`          | [`M3LRequestSigner`](./signing.md)                          | this provider's own `profile`/`region` (not a raw client)                                                                                                         |
+| `requestSigner`          | [`M3LRequestSigner`](./signing.md)                          | `clientProvider.profile`/`clientProvider.region` (not a raw client)                                                                                               |
 | `dynamoDBDocument`       | `DynamoDBDocumentClient`                                    | **passthrough** — returns `clientProvider.dynamoDBDocument` directly; no separate library-owned wrapper class exists for it, so there is nothing new to construct |
 | `athena`                 | [`M3LAthenaClient`](./athena.md)                            | `clientProvider.athena`                                                                                                                                           |
 | `cloudFormation`         | [`M3LCloudFormationOperations`](./cloudformation.md)        | `clientProvider.cloudFormation`                                                                                                                                   |
@@ -155,7 +170,7 @@ underlying, still-shared SDK client — see `AWSProvider` above):
 | `eks`                    | [`M3LEKSOperations`](./eks.md)                              | `clientProvider.eks`                                                                                                                                              |
 | `lambda`                 | [`M3LLambdaOperations`](./lambda.md)                        | `clientProvider.lambda`                                                                                                                                           |
 | `secretsManager`         | [`M3LSecretsManagerOperations`](./secrets-manager.md)       | `clientProvider.secretsManager`                                                                                                                                   |
-| `credentials`            | [`M3LAWSCredentialsManager`](./credentials.md)              | this provider's own `profile`/`region` (not a raw client)                                                                                                         |
+| `credentials`            | [`M3LAWSCredentialsManager`](./credentials.md)              | `clientProvider.profile`/`clientProvider.region` (not a raw client)                                                                                               |
 
 `cloudWatchAlarms` and `cloudWatchMetrics` both wrap the same underlying
 `cloudWatch` raw client (two independent M3L wrapper classes over one SDK

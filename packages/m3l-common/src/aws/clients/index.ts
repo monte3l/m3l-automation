@@ -9,5 +9,6 @@
 export { AWSClientProvider } from "./provider.js";
 export { AWSMultiClientProvider } from "./multi-provider.js";
 export { AWSProvider } from "./aws-provider.js";
+export { AWSServiceProvider } from "./service-provider.js";
 export { AWS_REGION } from "./region.js";
 export { M3LAWSClientError } from "./error.js";
