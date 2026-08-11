@@ -30,7 +30,16 @@ function implementedModules(dir) {
   }
 }
 
-/** Return module names cited in `export * from "./<name>/index.js"` lines. */
+/**
+ * Return module names cited in a barrel's re-export lines — either a full
+ * `export * from "./<name>/index.js"` line, or a named `export {...}` /
+ * `export type {...}` block whose `from` clause targets the module's own
+ * index.ts. The named-export shape is a submodule barrel's fallback when
+ * `export *` would create an ambiguous duplicate-export collision with a
+ * sibling submodule (e.g. two identically-named local types) — matching on
+ * the `from` clause alone (not anchoring to `export *`) recognizes both
+ * shapes as proof the module is re-exported.
+ */
 function barrelExports(barrelPath) {
   let content;
   try {
@@ -38,7 +47,7 @@ function barrelExports(barrelPath) {
   } catch {
     return [];
   }
-  const re = /^export \* from "\.\/([^/]+)\/index\.js";/gm;
+  const re = /from "\.\/([^/]+)\/index\.js";/gm;
   const names = [];
   let m;
   while ((m = re.exec(content)) !== null) {
