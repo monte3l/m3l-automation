@@ -53,6 +53,11 @@ interface M3LConfigParameterOptions<TType extends M3LConfigParameterType> {
    * Defaults to `false`.
    */
   readonly required?: boolean;
+  /**
+   * A human-readable description of the parameter, purely presentational —
+   * never consulted by resolution. Consumed by {@link M3LConfigHelpFormatter}.
+   */
+  readonly description?: string;
 }
 
 /**
@@ -104,6 +109,7 @@ export class M3LConfigParameter<
   private readonly validate:
     M3LConfigValidator<M3LCoercedValue<TType>> | undefined;
   private readonly required: boolean;
+  private readonly description: string | undefined;
 
   /**
    * Creates a new `M3LConfigParameter`.
@@ -121,6 +127,7 @@ export class M3LConfigParameter<
     this.asyncFallback = options.asyncFallback;
     this.validate = options.validate;
     this.required = options.required ?? false;
+    this.description = options.description;
 
     if (this.defaultValue !== undefined) {
       this.runValidation(this.defaultValue);
@@ -161,6 +168,26 @@ export class M3LConfigParameter<
   /** The parameter's declared aliases. */
   getAliases(): readonly string[] {
     return this.aliases;
+  }
+
+  /** The parameter's declared coercion target type. */
+  getType(): TType {
+    return this.type;
+  }
+
+  /** Whether resolution throws {@link M3LConfigMissingError} instead of resolving `undefined` at the true fall-through. */
+  isRequired(): boolean {
+    return this.required;
+  }
+
+  /** The parameter's declared default value, or `undefined` when none was declared. */
+  getDefaultValue(): M3LCoercedValue<TType> | undefined {
+    return this.defaultValue;
+  }
+
+  /** The parameter's declared human-readable description, or `undefined` when none was declared. */
+  getDescription(): string | undefined {
+    return this.description;
   }
 
   /**

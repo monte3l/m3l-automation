@@ -104,6 +104,11 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/config/M3LConfigParameterType.ts"
   },
+  "M3LConfigHelpFormatter": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigHelpFormatter.ts"
+  },
   "M3LCoercedValue": {
     "submodule": "config",
     "namespace": "core",
@@ -160,6 +165,16 @@
     "file": "packages/m3l-common/src/core/config/M3LSecretsSpecifier.ts"
   },
   "M3LUnknownParameterDetector": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts"
+  },
+  "M3LUnknownParameterSuggestion": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts"
+  },
+  "M3LUnknownParameterSuggestOptions": {
     "submodule": "config",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts"

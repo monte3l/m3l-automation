@@ -18,10 +18,12 @@ Exported from `@m3l-automation/m3l-common/core` (the `config` sub-module):
 - `M3LConfigParameterType`
 - `M3LCoercedValue` (type-level map from a `M3LConfigParameterType` member to its coerced result type)
 - `M3LConfigSchema`
+- `M3LConfigHelpFormatter` (renders a `--help`-style usage listing from a declared `M3LConfigSchema`)
 - Provider classes: `M3LCommandLineConfigProvider`, `M3LJSONConfigProvider`, `M3LYAMLConfigProvider`, `M3LEnvironmentConfigProvider`, `M3LInMemoryConfigProvider`, `M3LLambdaEventConfigProvider`, `M3LPresetConfigProvider`
 - `coerceConfigValue` (the value parser: coerces a raw provider value to its declared `M3LConfigParameterType`, throwing on a type mismatch; generic over the target type so its return is `M3LCoercedValue<T>`, not `unknown`)
 - `M3LSecretsSpecifier`
 - `M3LUnknownParameterDetector`
+- `M3LUnknownParameterSuggestion`, `M3LUnknownParameterSuggestOptions` (the typed result/options pair for `M3LUnknownParameterDetector.detectWithSuggestions`)
 - `M3LConfigValidator` (type: a `(value) => true | string` schema-time validator)
 - `M3LConfigValidators` (stock validators: `range`, `regex`, `oneOf`, `nonEmpty`, `minLength`)
 - `M3LConfigSchemaValidator` (type: a `(config) => true | string` cross-parameter, schema-level validator)
@@ -101,6 +103,67 @@ from its `type`, not declared independently:
 `getValueAsync()` resolves to `M3LCoercedValue<typeof type> | undefined`. For
 example, `new M3LConfigParameter({ type: M3LConfigParameterType.INT, defaultValue: "3000" })`
 does not compile — `defaultValue` must be a `number`.
+
+## Descriptions and `--help` rendering
+
+A parameter may declare a human-readable `description`:
+
+```typescript
+const region = new Core.M3LConfigParameter({
+  name: "region",
+  type: Core.M3LConfigParameterType.STRING,
+  aliases: ["aws-region"],
+  defaultValue: "eu-south-1",
+  description: "AWS region to operate in",
+});
+```
+
+`description` is purely presentational — it is never consulted by resolution.
+`M3LConfigParameter` exposes it, alongside the other declared fields, via
+getters mirroring the existing `getName()`/`getAliases()` style:
+`getType()`, `isRequired()`, `getDefaultValue()`, and `getDescription()`.
+
+`M3LConfigHelpFormatter` renders a plain-text usage listing from a declared
+`M3LConfigSchema`, one block per parameter in declaration order, separated by
+a blank line:
+
+```typescript
+const formatter = new Core.M3LConfigHelpFormatter();
+console.log(formatter.format(schema));
+// --region, --aws-region <STRING>
+//     AWS region to operate in
+//     default: eu-south-1
+```
+
+Each block's header line lists the canonical name and every alias as
+`--name`-style flags, then the declared type in angle brackets, then a
+trailing `(required)` marker when the parameter declares `required: true`.
+A description line and a `default: <value>` line follow when declared —
+either, both, or neither, in that order. An array-typed default renders
+comma-joined (`default: a, b, c`); every other declared type renders via
+`String(value)`. `format()` never throws and never resolves a value; an empty
+schema renders `""`.
+
+## Typo suggestions
+
+`M3LUnknownParameterDetector.detectWithSuggestions(suppliedKeys, options?)` is
+an additive alternative to `detect()` — `detect()` itself is unchanged — that
+pairs each undeclared key with its nearest declared name/alias candidates:
+
+```typescript
+const detector = new Core.M3LUnknownParameterDetector(schema);
+detector.detectWithSuggestions(["regoin"]);
+// [{ key: "regoin", suggestions: ["region"] }]
+```
+
+Candidates are ranked by ascending restricted Damerau–Levenshtein distance —
+insertions, deletions, substitutions, and adjacent transpositions each cost
+one edit — against every name in `schema.declaredNames()`, filtered to
+`options.maxDistance` (default `2`), capped at `options.maxSuggestions`
+(default `3`), with ties broken by `declaredNames()` order. A key with no
+candidate within `maxDistance` still appears in the result, with an empty
+`suggestions` array — the returned array covers exactly the same keys
+`detect()` would flag, in the same `suppliedKeys` order.
 
 ## Schema-time validation
 
@@ -502,7 +565,8 @@ The example is illustrative of the documented resolution behavior; exact constru
 ## Notes and behavior
 
 - `M3LSecretsSpecifier` marks parameters as secrets so resolved values can be handled accordingly.
-- `M3LUnknownParameterDetector` flags parameters that are supplied but not declared in the schema.
+- `M3LUnknownParameterDetector` flags parameters that are supplied but not declared in the schema; `detectWithSuggestions` is an additive alternative that also ranks nearest-name typo candidates (see [Typo suggestions](#typo-suggestions)) — `detect()` itself is unchanged.
+- `M3LConfigHelpFormatter` is presentation-only: it never resolves a value and never throws (see [Descriptions and `--help` rendering](#descriptions-and---help-rendering)).
 - Alias resolution is exhaustive within a provider before falling through to lower-priority providers.
 
 ## See also

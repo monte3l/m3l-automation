@@ -78,6 +78,7 @@ import {
   M3LCommandLineConfigProvider,
   M3LConfig,
   M3LConfigCoercionError,
+  M3LConfigHelpFormatter,
   M3LConfigMissingError,
   M3LConfigParameter,
   M3LConfigParameterType,
@@ -102,7 +103,10 @@ import type {
   M3LConfigResolution,
   M3LConfigSchemaValidator,
   M3LConfigValidator,
+  M3LUnknownParameterSuggestion,
+  M3LUnknownParameterSuggestOptions,
 } from "../src/core/config/index.js";
+import { damerauLevenshteinDistance } from "../src/internal/config/damerauLevenshtein.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -1289,6 +1293,99 @@ describe("M3LConfigParameter", () => {
       ).not.toThrow();
     });
   });
+
+  // PR4: description option + getType/isRequired/getDefaultValue/
+  // getDescription getters (RED until implemented).
+  describe("declaration-introspection getters (PR4)", () => {
+    test("getDescription() returns the declared description verbatim", () => {
+      const parameter = new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+        description: "The AWS region to target.",
+      });
+
+      expect(parameter.getDescription()).toBe("The AWS region to target.");
+    });
+
+    test("getDescription() returns undefined when no description was declared", () => {
+      const parameter = new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+      });
+
+      expect(parameter.getDescription()).toBeUndefined();
+    });
+
+    test("getType() returns the declared coercion target type", () => {
+      const parameter = new M3LConfigParameter({
+        name: "port",
+        type: M3LConfigParameterType.INT,
+      });
+
+      expect(parameter.getType()).toBe(M3LConfigParameterType.INT);
+    });
+
+    test("isRequired() is false by default", () => {
+      const parameter = new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+      });
+
+      expect(parameter.isRequired()).toBe(false);
+    });
+
+    test("isRequired() is true when `required: true` was declared", () => {
+      const parameter = new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+        required: true,
+      });
+
+      expect(parameter.isRequired()).toBe(true);
+    });
+
+    test("getDefaultValue() returns the declared defaultValue", () => {
+      const parameter = new M3LConfigParameter({
+        name: "port",
+        type: M3LConfigParameterType.INT,
+        defaultValue: 3000,
+      });
+
+      expect(parameter.getDefaultValue()).toBe(3000);
+    });
+
+    test("getDefaultValue() returns undefined when no defaultValue was declared", () => {
+      const parameter = new M3LConfigParameter({
+        name: "port",
+        type: M3LConfigParameterType.INT,
+      });
+
+      expect(parameter.getDefaultValue()).toBeUndefined();
+    });
+
+    test("type-level: getDescription() returns string | undefined", () => {
+      const parameter = new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+      });
+
+      expectTypeOf(parameter.getDescription()).toEqualTypeOf<
+        string | undefined
+      >();
+    });
+
+    test("type-level: an INT-typed parameter's getDefaultValue() returns number | undefined", () => {
+      const parameter = new M3LConfigParameter({
+        name: "port",
+        type: M3LConfigParameterType.INT,
+        defaultValue: 3000,
+      });
+
+      expectTypeOf(parameter.getDefaultValue()).toEqualTypeOf<
+        number | undefined
+      >();
+    });
+  });
 });
 
 // =============================================================================
@@ -1770,6 +1867,203 @@ describe("M3LUnknownParameterDetector", () => {
     const schema = new M3LConfigSchema([]);
     const detector = new M3LUnknownParameterDetector(schema);
     expect(() => detector.detect(["anything", "else"])).not.toThrow();
+  });
+
+  // PR4: detectWithSuggestions — additive, does not touch detect() above
+  // (RED until implemented).
+  describe("detectWithSuggestions", () => {
+    test("ranks candidates by ascending Damerau-Levenshtein distance, closest first", () => {
+      const schema = new M3LConfigSchema([
+        new M3LConfigParameter({
+          name: "region",
+          type: M3LConfigParameterType.STRING,
+        }),
+      ]);
+      const detector = new M3LUnknownParameterDetector(schema);
+
+      const result = detector.detectWithSuggestions(["regoin"]);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.key).toBe("regoin");
+      expect(result[0]?.suggestions[0]).toBe("region");
+    });
+
+    test("a declared key is excluded entirely from the returned array", () => {
+      const schema = new M3LConfigSchema([
+        new M3LConfigParameter({
+          name: "region",
+          type: M3LConfigParameterType.STRING,
+        }),
+      ]);
+      const detector = new M3LUnknownParameterDetector(schema);
+
+      const result = detector.detectWithSuggestions(["region", "regoin"]);
+
+      expect(result).toHaveLength(1);
+      expect(result.some((entry) => entry.key === "region")).toBe(false);
+    });
+
+    test("a supplied key with nothing close returns an empty suggestions array (not omitted)", () => {
+      const schema = new M3LConfigSchema([
+        new M3LConfigParameter({
+          name: "region",
+          type: M3LConfigParameterType.STRING,
+        }),
+      ]);
+      const detector = new M3LUnknownParameterDetector(schema);
+
+      const result = detector.detectWithSuggestions(["zzzzzzzzzzzzzzz"]);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.key).toBe("zzzzzzzzzzzzzzz");
+      expect(result[0]?.suggestions).toEqual([]);
+    });
+
+    test("maxDistance boundary: a key exactly maxDistance+1 away is excluded at the default, included when maxDistance is raised", () => {
+      // "abc" -> "abcxyz" is 3 insertions away (distance 3), one past the
+      // default maxDistance of 2.
+      const schema = new M3LConfigSchema([
+        new M3LConfigParameter({
+          name: "abc",
+          type: M3LConfigParameterType.STRING,
+        }),
+      ]);
+      const detector = new M3LUnknownParameterDetector(schema);
+
+      const atDefault = detector.detectWithSuggestions(["abcxyz"]);
+      expect(atDefault[0]?.suggestions).toEqual([]);
+
+      const raised = detector.detectWithSuggestions(["abcxyz"], {
+        maxDistance: 3,
+      });
+      expect(raised[0]?.suggestions).toContain("abc");
+    });
+
+    test("maxSuggestions caps the number of candidates: default 3, overridable", () => {
+      const schema = new M3LConfigSchema([
+        new M3LConfigParameter({
+          name: "aaaaa",
+          type: M3LConfigParameterType.STRING,
+        }),
+        new M3LConfigParameter({
+          name: "aaaab",
+          type: M3LConfigParameterType.STRING,
+        }),
+        new M3LConfigParameter({
+          name: "aaaac",
+          type: M3LConfigParameterType.STRING,
+        }),
+        new M3LConfigParameter({
+          name: "aaaad",
+          type: M3LConfigParameterType.STRING,
+        }),
+      ]);
+      const detector = new M3LUnknownParameterDetector(schema);
+
+      const atDefault = detector.detectWithSuggestions(["aaaae"]);
+      expect(atDefault[0]?.suggestions).toHaveLength(3);
+
+      const capped = detector.detectWithSuggestions(["aaaae"], {
+        maxSuggestions: 1,
+      });
+      expect(capped[0]?.suggestions).toHaveLength(1);
+    });
+
+    test("ties are broken by schema.declaredNames() order", () => {
+      const schema = new M3LConfigSchema([
+        new M3LConfigParameter({
+          name: "cat",
+          type: M3LConfigParameterType.STRING,
+        }),
+        new M3LConfigParameter({
+          name: "car",
+          type: M3LConfigParameterType.STRING,
+        }),
+      ]);
+      const detector = new M3LUnknownParameterDetector(schema);
+      const declaredOrder = schema.declaredNames();
+
+      const result = detector.detectWithSuggestions(["cab"]);
+
+      const suggestionsInDeclaredOrder = declaredOrder.filter((name) =>
+        result[0]?.suggestions.includes(name),
+      );
+      expect(result[0]?.suggestions).toEqual(suggestionsInDeclaredOrder);
+    });
+
+    test("the overall array order mirrors suppliedKeys input order", () => {
+      const schema = new M3LConfigSchema([
+        new M3LConfigParameter({
+          name: "region",
+          type: M3LConfigParameterType.STRING,
+        }),
+      ]);
+      const detector = new M3LUnknownParameterDetector(schema);
+
+      const result = detector.detectWithSuggestions(["zzz1", "zzz2", "zzz3"]);
+
+      expect(result.map((entry) => entry.key)).toEqual([
+        "zzz1",
+        "zzz2",
+        "zzz3",
+      ]);
+    });
+
+    test("type-level: return type shape is readonly M3LUnknownParameterSuggestion[]", () => {
+      expectTypeOf<
+        ReturnType<M3LUnknownParameterDetector["detectWithSuggestions"]>
+      >().toEqualTypeOf<readonly M3LUnknownParameterSuggestion[]>();
+      expectTypeOf<M3LUnknownParameterSuggestion>().toEqualTypeOf<{
+        readonly key: string;
+        readonly suggestions: readonly string[];
+      }>();
+      expectTypeOf<M3LUnknownParameterSuggestOptions>().toEqualTypeOf<{
+        readonly maxDistance?: number;
+        readonly maxSuggestions?: number;
+      }>();
+    });
+  });
+});
+
+// =============================================================================
+// damerauLevenshteinDistance (internal) — used by
+// M3LUnknownParameterDetector.detectWithSuggestions above; imported directly
+// per the internal-helper test convention (see polling.test.ts's
+// M3LPollFailureError (internal) describe block).
+// =============================================================================
+describe("damerauLevenshteinDistance (internal)", () => {
+  test("identical strings have distance 0", () => {
+    expect(damerauLevenshteinDistance("region", "region")).toBe(0);
+  });
+
+  test("a single substitution has distance 1", () => {
+    expect(damerauLevenshteinDistance("cat", "cot")).toBe(1);
+  });
+
+  test("a single insertion has distance 1", () => {
+    expect(damerauLevenshteinDistance("cat", "cats")).toBe(1);
+  });
+
+  test("a single deletion has distance 1", () => {
+    expect(damerauLevenshteinDistance("cats", "cat")).toBe(1);
+  });
+
+  test("an adjacent transposition has distance 1 — the OSA-variant behavior that distinguishes this from plain Levenshtein (which would score it 2)", () => {
+    expect(damerauLevenshteinDistance("region", "regoin")).toBe(1);
+  });
+
+  test("completely different short strings return some non-zero distance (not over-asserted)", () => {
+    expect(damerauLevenshteinDistance("abc", "xyz")).toBeGreaterThan(0);
+  });
+
+  test("empty-string edges", () => {
+    expect(damerauLevenshteinDistance("", "abc")).toBe(3);
+    expect(damerauLevenshteinDistance("abc", "")).toBe(3);
+    expect(damerauLevenshteinDistance("", "")).toBe(0);
+  });
+
+  test("is case-sensitive — no implicit lower-casing", () => {
+    expect(damerauLevenshteinDistance("Region", "region")).toBe(1);
   });
 });
 
@@ -2735,5 +3029,122 @@ describe("M3LConfigValidationError redaction safety", () => {
     expect(Object.keys(validationError.context).sort()).toEqual(
       ["parameter", "reason", "valueType"].sort(),
     );
+  });
+});
+
+// =============================================================================
+// M3LConfigHelpFormatter (PR4 — additive, RED until implemented)
+// =============================================================================
+describe("M3LConfigHelpFormatter", () => {
+  test("a required STRING param with an alias and a description renders header + description, no default line", () => {
+    const schema = new M3LConfigSchema([
+      new M3LConfigParameter({
+        name: "name",
+        type: M3LConfigParameterType.STRING,
+        aliases: ["alias"],
+        description: "A human name.",
+        required: true,
+      }),
+    ]);
+    const formatter = new M3LConfigHelpFormatter();
+
+    const output = formatter.format(schema);
+    const lines = output.split("\n");
+
+    expect(lines[0]).toBe("--name, --alias <STRING> (required)");
+    expect(lines[1]).toBe("    A human name.");
+    expect(output).not.toContain("default:");
+  });
+
+  test("a param with a defaultValue but no description renders a default: line, no description line", () => {
+    const schema = new M3LConfigSchema([
+      new M3LConfigParameter({
+        name: "port",
+        type: M3LConfigParameterType.INT,
+        defaultValue: 3000,
+      }),
+    ]);
+    const formatter = new M3LConfigHelpFormatter();
+
+    const output = formatter.format(schema);
+
+    expect(output).toContain("default: 3000");
+    expect(output.split("\n")).toHaveLength(2);
+  });
+
+  test("a param with neither description nor default renders only the header line", () => {
+    const schema = new M3LConfigSchema([
+      new M3LConfigParameter({
+        name: "port",
+        type: M3LConfigParameterType.INT,
+      }),
+    ]);
+    const formatter = new M3LConfigHelpFormatter();
+
+    const output = formatter.format(schema);
+
+    expect(output.split("\n")).toHaveLength(1);
+    expect(output).toBe("--port <INT>");
+  });
+
+  test("a STRING_ARRAY param's default array renders comma-joined", () => {
+    const schema = new M3LConfigSchema([
+      new M3LConfigParameter({
+        name: "tags",
+        type: M3LConfigParameterType.STRING_ARRAY,
+        defaultValue: ["a", "b", "c"],
+      }),
+    ]);
+    const formatter = new M3LConfigHelpFormatter();
+
+    const output = formatter.format(schema);
+
+    expect(output).toContain("default: a, b, c");
+  });
+
+  test("multiple parameters are separated by a blank line and appear in schema order", () => {
+    const schema = new M3LConfigSchema([
+      new M3LConfigParameter({
+        name: "first",
+        type: M3LConfigParameterType.STRING,
+      }),
+      new M3LConfigParameter({
+        name: "second",
+        type: M3LConfigParameterType.STRING,
+      }),
+    ]);
+    const formatter = new M3LConfigHelpFormatter();
+
+    const output = formatter.format(schema);
+
+    expect(output).toBe("--first <STRING>\n\n--second <STRING>");
+  });
+
+  test("no aliases means no trailing comma in the header", () => {
+    const schema = new M3LConfigSchema([
+      new M3LConfigParameter({
+        name: "solo",
+        type: M3LConfigParameterType.STRING,
+      }),
+    ]);
+    const formatter = new M3LConfigHelpFormatter();
+
+    const output = formatter.format(schema);
+
+    expect(output).toBe("--solo <STRING>");
+    expect(output).not.toContain(",");
+  });
+
+  test("an empty schema formats to an empty string", () => {
+    const schema = new M3LConfigSchema([]);
+    const formatter = new M3LConfigHelpFormatter();
+
+    expect(formatter.format(schema)).toBe("");
+  });
+
+  test("type-level: format() returns string", () => {
+    expectTypeOf(
+      new M3LConfigHelpFormatter().format,
+    ).returns.toEqualTypeOf<string>();
   });
 });
