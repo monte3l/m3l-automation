@@ -1,0 +1,151 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "aws/cloudwatch-alarms.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/client.ts",
+          "symbol": "M3LCloudWatchAlarmsOperations",
+          "blob": "5d970db28733b57ac8295b810468df21f16b6c5d"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/error.ts",
+          "symbol": "M3LCloudWatchAlarmsOperationError",
+          "blob": "0da23111d5e81904ae6e3fcf393f0f445112cb9e"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts",
+          "symbol": "M3LPutMetricAlarmInput",
+          "blob": "d20c91d19367e26769543484f4702307847b8a89"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts",
+          "symbol": "M3LCloudWatchAlarm",
+          "blob": "d20c91d19367e26769543484f4702307847b8a89"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts",
+          "symbol": "M3LCloudWatchDescribeAlarmsOptions",
+          "blob": "d20c91d19367e26769543484f4702307847b8a89"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts",
+          "symbol": "M3LCloudWatchDescribeAlarmsResult",
+          "blob": "d20c91d19367e26769543484f4702307847b8a89"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts",
+          "symbol": "M3LCloudWatchDimension",
+          "blob": "d20c91d19367e26769543484f4702307847b8a89"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts",
+          "symbol": "M3LCloudWatchStatistic",
+          "blob": "d20c91d19367e26769543484f4702307847b8a89"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts",
+          "symbol": "M3LCloudWatchComparisonOperator",
+          "blob": "d20c91d19367e26769543484f4702307847b8a89"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts",
+          "symbol": "M3LCloudWatchTreatMissingData",
+          "blob": "d20c91d19367e26769543484f4702307847b8a89"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts",
+          "symbol": "M3LCloudWatchAlarmState",
+          "blob": "d20c91d19367e26769543484f4702307847b8a89"
+        }
+      ],
+      "retrieved": "2026-08-11"
+    },
+    {
+      "heading": "`M3LCloudWatchAlarmsOperations`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/client.ts",
+          "symbol": "M3LCloudWatchAlarmsOperations",
+          "blob": "5d970db28733b57ac8295b810468df21f16b6c5d"
+        }
+      ],
+      "retrieved": "2026-08-11"
+    },
+    {
+      "heading": "`M3LCloudWatchAlarmsOperationError`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/error.ts",
+          "symbol": "M3LCloudWatchAlarmsOperationError",
+          "blob": "0da23111d5e81904ae6e3fcf393f0f445112cb9e"
+        }
+      ],
+      "retrieved": "2026-08-11"
+    },
+    {
+      "heading": "Plain types",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts",
+          "symbol": "M3LPutMetricAlarmInput",
+          "blob": "d20c91d19367e26769543484f4702307847b8a89"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts",
+          "symbol": "M3LCloudWatchAlarm",
+          "blob": "d20c91d19367e26769543484f4702307847b8a89"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts",
+          "symbol": "M3LCloudWatchDescribeAlarmsOptions",
+          "blob": "d20c91d19367e26769543484f4702307847b8a89"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts",
+          "symbol": "M3LCloudWatchDescribeAlarmsResult",
+          "blob": "d20c91d19367e26769543484f4702307847b8a89"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts",
+          "symbol": "M3LCloudWatchDimension",
+          "blob": "d20c91d19367e26769543484f4702307847b8a89"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts",
+          "symbol": "M3LCloudWatchStatistic",
+          "blob": "d20c91d19367e26769543484f4702307847b8a89"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts",
+          "symbol": "M3LCloudWatchComparisonOperator",
+          "blob": "d20c91d19367e26769543484f4702307847b8a89"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts",
+          "symbol": "M3LCloudWatchTreatMissingData",
+          "blob": "d20c91d19367e26769543484f4702307847b8a89"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/types.ts",
+          "symbol": "M3LCloudWatchAlarmState",
+          "blob": "d20c91d19367e26769543484f4702307847b8a89"
+        }
+      ],
+      "retrieved": "2026-08-11"
+    },
+    {
+      "heading": "Notes and behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-alarms/client.ts",
+          "symbol": "M3LCloudWatchAlarmsOperations",
+          "blob": "5d970db28733b57ac8295b810468df21f16b6c5d"
+        }
+      ],
+      "retrieved": "2026-08-11"
+    }
+  ]
+}

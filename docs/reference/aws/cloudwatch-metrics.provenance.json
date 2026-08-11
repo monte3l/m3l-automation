@@ -1,0 +1,141 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "aws/cloudwatch-metrics.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/client.ts",
+          "symbol": "M3LCloudWatchMetricsOperations",
+          "blob": "ed49612c83032006e7250c036ceb97ea3f4607de"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/error.ts",
+          "symbol": "M3LCloudWatchMetricsOperationError",
+          "blob": "14e2407eec57c2224cef4116ce155145471772ae"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts",
+          "symbol": "M3LPutMetricDataInput",
+          "blob": "ab2d7f30c63ed2d19571c14a1f570533978be487"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts",
+          "symbol": "M3LCloudWatchMetricDatum",
+          "blob": "ab2d7f30c63ed2d19571c14a1f570533978be487"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts",
+          "symbol": "M3LCloudWatchStatisticSet",
+          "blob": "ab2d7f30c63ed2d19571c14a1f570533978be487"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts",
+          "symbol": "M3LGetMetricStatisticsInput",
+          "blob": "ab2d7f30c63ed2d19571c14a1f570533978be487"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts",
+          "symbol": "M3LGetMetricStatisticsResult",
+          "blob": "ab2d7f30c63ed2d19571c14a1f570533978be487"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts",
+          "symbol": "M3LCloudWatchDatapoint",
+          "blob": "ab2d7f30c63ed2d19571c14a1f570533978be487"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts",
+          "symbol": "M3LCloudWatchStandardUnit",
+          "blob": "ab2d7f30c63ed2d19571c14a1f570533978be487"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts",
+          "symbol": "M3LCloudWatchMetricStatistic",
+          "blob": "ab2d7f30c63ed2d19571c14a1f570533978be487"
+        }
+      ],
+      "retrieved": "2026-08-11"
+    },
+    {
+      "heading": "`M3LCloudWatchMetricsOperations`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/client.ts",
+          "symbol": "M3LCloudWatchMetricsOperations",
+          "blob": "ed49612c83032006e7250c036ceb97ea3f4607de"
+        }
+      ],
+      "retrieved": "2026-08-11"
+    },
+    {
+      "heading": "`M3LCloudWatchMetricsOperationError`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/error.ts",
+          "symbol": "M3LCloudWatchMetricsOperationError",
+          "blob": "14e2407eec57c2224cef4116ce155145471772ae"
+        }
+      ],
+      "retrieved": "2026-08-11"
+    },
+    {
+      "heading": "Plain types",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts",
+          "symbol": "M3LPutMetricDataInput",
+          "blob": "ab2d7f30c63ed2d19571c14a1f570533978be487"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts",
+          "symbol": "M3LCloudWatchMetricDatum",
+          "blob": "ab2d7f30c63ed2d19571c14a1f570533978be487"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts",
+          "symbol": "M3LCloudWatchStatisticSet",
+          "blob": "ab2d7f30c63ed2d19571c14a1f570533978be487"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts",
+          "symbol": "M3LGetMetricStatisticsInput",
+          "blob": "ab2d7f30c63ed2d19571c14a1f570533978be487"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts",
+          "symbol": "M3LGetMetricStatisticsResult",
+          "blob": "ab2d7f30c63ed2d19571c14a1f570533978be487"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts",
+          "symbol": "M3LCloudWatchDatapoint",
+          "blob": "ab2d7f30c63ed2d19571c14a1f570533978be487"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts",
+          "symbol": "M3LCloudWatchStandardUnit",
+          "blob": "ab2d7f30c63ed2d19571c14a1f570533978be487"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts",
+          "symbol": "M3LCloudWatchMetricStatistic",
+          "blob": "ab2d7f30c63ed2d19571c14a1f570533978be487"
+        }
+      ],
+      "retrieved": "2026-08-11"
+    },
+    {
+      "heading": "Notes and behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/cloudwatch-metrics/client.ts",
+          "symbol": "M3LCloudWatchMetricsOperations",
+          "blob": "ed49612c83032006e7250c036ceb97ea3f4607de"
+        }
+      ],
+      "retrieved": "2026-08-11"
+    }
+  ]
+}

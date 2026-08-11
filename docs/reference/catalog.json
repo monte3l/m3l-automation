@@ -610,6 +610,27 @@
   },
   {
     "namespace": "aws",
+    "name": "cloudwatch-alarms",
+    "importPath": "@m3l-automation/m3l-common/aws",
+    "status": "✅",
+    "wired": false,
+    "docPath": "docs/reference/aws/cloudwatch-alarms.md",
+    "symbols": [
+      "M3LCloudWatchAlarmsOperations",
+      "M3LCloudWatchAlarmsOperationError",
+      "M3LPutMetricAlarmInput",
+      "M3LCloudWatchAlarm",
+      "M3LCloudWatchDescribeAlarmsOptions",
+      "M3LCloudWatchDescribeAlarmsResult",
+      "M3LCloudWatchDimension",
+      "M3LCloudWatchStatistic",
+      "M3LCloudWatchComparisonOperator",
+      "M3LCloudWatchTreatMissingData",
+      "M3LCloudWatchAlarmState"
+    ]
+  },
+  {
+    "namespace": "aws",
     "name": "cloudwatch-logs-insights",
     "importPath": "@m3l-automation/m3l-common/aws",
     "status": "✅",
@@ -625,6 +646,26 @@
       "LogsInsightsRow",
       "M3LLogsInsightsStartQueryError",
       "M3LLogsInsightsQueryFailedError"
+    ]
+  },
+  {
+    "namespace": "aws",
+    "name": "cloudwatch-metrics",
+    "importPath": "@m3l-automation/m3l-common/aws",
+    "status": "✅",
+    "wired": false,
+    "docPath": "docs/reference/aws/cloudwatch-metrics.md",
+    "symbols": [
+      "M3LCloudWatchMetricsOperations",
+      "M3LCloudWatchMetricsOperationError",
+      "M3LPutMetricDataInput",
+      "M3LCloudWatchMetricDatum",
+      "M3LCloudWatchStatisticSet",
+      "M3LGetMetricStatisticsInput",
+      "M3LGetMetricStatisticsResult",
+      "M3LCloudWatchDatapoint",
+      "M3LCloudWatchStandardUnit",
+      "M3LCloudWatchMetricStatistic"
     ]
   },
   {
