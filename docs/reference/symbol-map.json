@@ -2771,6 +2771,21 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/s3/error.ts"
   },
+  "parseS3Uri": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/uri.ts"
+  },
+  "formatS3Uri": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/uri.ts"
+  },
+  "M3LS3Uri": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/uri.ts"
+  },
   "M3LRequestSigner": {
     "submodule": "signing",
     "namespace": "aws",

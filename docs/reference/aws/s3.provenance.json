@@ -89,9 +89,24 @@
           "file": "packages/m3l-common/src/aws/s3/error.ts",
           "symbol": "M3LS3OperationError",
           "blob": "c10908aa8807b8546d824459a62943c6bc3834b2"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/uri.ts",
+          "symbol": "parseS3Uri",
+          "blob": "d07f19c63edfb3baf6687023211c1133cf36d49b"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/uri.ts",
+          "symbol": "formatS3Uri",
+          "blob": "d07f19c63edfb3baf6687023211c1133cf36d49b"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/uri.ts",
+          "symbol": "M3LS3Uri",
+          "blob": "d07f19c63edfb3baf6687023211c1133cf36d49b"
         }
       ],
-      "retrieved": "2026-07-18"
+      "retrieved": "2026-08-11"
     },
     {
       "heading": "Design choices",
@@ -129,6 +144,22 @@
         }
       ],
       "retrieved": "2026-07-18"
+    },
+    {
+      "heading": "URI parsing",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/s3/uri.ts",
+          "symbol": "parseS3Uri",
+          "blob": "d07f19c63edfb3baf6687023211c1133cf36d49b"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/uri.ts",
+          "symbol": "formatS3Uri",
+          "blob": "d07f19c63edfb3baf6687023211c1133cf36d49b"
+        }
+      ],
+      "retrieved": "2026-08-11"
     }
   ]
 }
