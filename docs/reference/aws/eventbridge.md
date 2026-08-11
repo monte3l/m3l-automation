@@ -176,7 +176,9 @@ const eventBridgeOperations = new AWS.M3LEventBridgeOperations(
 ## See also
 
 - [AWS Clients](./clients.md) — the raw `eventBridge` client getter and
-  `AWSClientProvider`/`AWSProvider` this module builds on.
+  `AWSClientProvider`/`AWSProvider` this module builds on; the
+  `eventBridgeOperations` convenience getter is `@deprecated` in favor of
+  `AWSServiceProvider.eventBridgeOperations` (`script.aws.services.eventBridgeOperations`).
 - [SQS Operations](./sqs.md) — the sibling wrapper this module's shape mirrors,
   and [ADR-0026](../../adr/0026-sqs-operations-wrapper.md) for the pattern's
   origin.

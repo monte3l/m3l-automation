@@ -198,7 +198,8 @@ const secretsManagerOperations = new AWS.M3LSecretsManagerOperations(
 ## See also
 
 - [AWS Clients](./clients.md) — the raw `secretsManager` client getter and
-  `AWSClientProvider`/`AWSProvider` this module builds on.
+  `AWSClientProvider`/`AWSProvider` this module builds on; also reachable as
+  `AWSServiceProvider.secretsManager` (`script.aws.services.secretsManager`).
 - [EventBridge Operations](./eventbridge.md) and
   [CloudWatch Alarms](./cloudwatch-alarms.md) — sibling wrappers this
   module's shape mirrors, and [ADR-0027](../../adr/0027-aws-sdk-boundary-typed-wrappers.md)

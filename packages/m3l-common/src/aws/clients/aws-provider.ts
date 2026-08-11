@@ -9,6 +9,7 @@ import {
   AWSClientProvider,
   type AWSClientProviderOptions,
 } from "./provider.js";
+import { AWSServiceProvider } from "./service-provider.js";
 
 /**
  * Constructor options for {@link AWSProvider}. Not exported.
@@ -38,6 +39,7 @@ type AWSProviderOptions = AWSClientProviderOptions;
 export class AWSProvider {
   private readonly options: AWSProviderOptions;
   private cachedClients: AWSClientProvider | undefined;
+  private cachedServices: AWSServiceProvider | undefined;
 
   /**
    * Creates a new `AWSProvider`.
@@ -60,5 +62,20 @@ export class AWSProvider {
   get clients(): AWSClientProvider {
     this.cachedClients ??= new AWSClientProvider(this.options);
     return this.cachedClients;
+  }
+
+  /**
+   * The single-profile `AWSServiceProvider` for this facade, lazily
+   * instantiated on first access and cached for the facade's lifetime.
+   * Always built from `this.clients` — the same `AWSClientProvider`
+   * instance `clients` already lazily constructed — so a raw client is
+   * never constructed twice, regardless of whether `services` or `clients`
+   * is accessed first, and so `services`'s `requestSigner`/`credentials`
+   * always resolve `profile`/`region` from that same instance rather than a
+   * second, independently-supplied options bag.
+   */
+  get services(): AWSServiceProvider {
+    this.cachedServices ??= new AWSServiceProvider(this.clients);
+    return this.cachedServices;
   }
 }

@@ -21,6 +21,8 @@
  */
 
 import { beforeEach, describe, expect, expectTypeOf, test, vi } from "vitest";
+import type * as CodePipelineModule from "@aws-sdk/client-codepipeline";
+import type * as EKSModule from "@aws-sdk/client-eks";
 
 // vi.hoisted: mutable spies referenced by the hoisted `vi.mock` factories
 // below (those factories cannot close over ordinary file-scope variables).
@@ -89,15 +91,31 @@ vi.mock("@aws-sdk/client-ecs", () => ({
 vi.mock("@aws-sdk/client-cloudformation", () => ({
   CloudFormationClient: h.makeClientClass(h.cloudFormationCtor),
 }));
-vi.mock("@aws-sdk/client-codepipeline", () => ({
-  CodePipelineClient: h.makeClientClass(h.codePipelineCtor),
-}));
+// `M3LCodePipelineOperations` reads `ActionCategory`/`ActionOwner`/etc. (data
+// exports, not just types) at module top level via `Object.values(...)`, so
+// this mock must preserve the real module's other exports via
+// `importOriginal` — a plain object-literal factory would leave those
+// `undefined` and crash on import (see tests.md's mixed class-and-data
+// export-surface gotcha).
+vi.mock("@aws-sdk/client-codepipeline", async (importOriginal) => {
+  const actual = await importOriginal<typeof CodePipelineModule>();
+  return {
+    ...actual,
+    CodePipelineClient: h.makeClientClass(h.codePipelineCtor),
+  };
+});
 vi.mock("@aws-sdk/client-api-gateway", () => ({
   APIGatewayClient: h.makeClientClass(h.apiGatewayCtor),
 }));
-vi.mock("@aws-sdk/client-eks", () => ({
-  EKSClient: h.makeClientClass(h.eksCtor),
-}));
+// `M3LEKSOperations` reads `AMITypes`/`CapacityTypes` (data exports) at
+// module top level the same way — see the `client-codepipeline` mock above.
+vi.mock("@aws-sdk/client-eks", async (importOriginal) => {
+  const actual = await importOriginal<typeof EKSModule>();
+  return {
+    ...actual,
+    EKSClient: h.makeClientClass(h.eksCtor),
+  };
+});
 vi.mock("@aws-sdk/client-cloudwatch", () => ({
   CloudWatchClient: h.makeClientClass(h.cloudWatchCtor),
 }));
@@ -134,12 +152,25 @@ import {
   AWSClientProvider,
   AWSMultiClientProvider,
   AWSProvider,
+  AWSServiceProvider,
   M3LAWSClientError,
 } from "../src/aws/clients/index.js";
 import { M3LEventBridgeOperations } from "../src/aws/eventbridge/index.js";
 import { parseAWSProfile, parseAWSRegion } from "../src/aws/models/index.js";
 import type { M3LAWSProfile, M3LAWSRegion } from "../src/aws/models/index.js";
 import { M3LRequestSigner } from "../src/aws/signing/index.js";
+import { M3LAthenaClient } from "../src/aws/athena/index.js";
+import { M3LCloudFormationOperations } from "../src/aws/cloudformation/index.js";
+import { M3LCloudWatchAlarmsOperations } from "../src/aws/cloudwatch-alarms/index.js";
+import { M3LLogsInsightsClient } from "../src/aws/cloudwatch-logs-insights/index.js";
+import { M3LCloudWatchMetricsOperations } from "../src/aws/cloudwatch-metrics/index.js";
+import { M3LCodePipelineOperations } from "../src/aws/codepipeline/index.js";
+import { M3LECSOperations } from "../src/aws/ecs/index.js";
+import { M3LEKSOperations } from "../src/aws/eks/index.js";
+import { M3LLambdaOperations } from "../src/aws/lambda/index.js";
+import { M3LSecretsManagerOperations } from "../src/aws/secrets-manager/index.js";
+import { M3LSQSOperations } from "../src/aws/sqs/index.js";
+import { M3LAWSCredentialsManager } from "../src/aws/credentials/index.js";
 import type { S3Client } from "@aws-sdk/client-s3";
 import type { CloudWatchLogsClient } from "@aws-sdk/client-cloudwatch-logs";
 import type { AthenaClient } from "@aws-sdk/client-athena";
@@ -223,6 +254,32 @@ describe("AWSClientProvider construction", () => {
           region: parseAWSRegion("us-east-1"),
         }),
     ).not.toThrow();
+  });
+
+  test("`profile` getter is undefined when no `profile` option is supplied", () => {
+    const provider = new AWSClientProvider();
+
+    expect(provider.profile).toBeUndefined();
+  });
+
+  test("`profile` getter returns the exact M3LAWSProfile supplied at construction", () => {
+    const profile = parseAWSProfile("my-profile");
+    const provider = new AWSClientProvider({ profile });
+
+    expect(provider.profile).toBe(profile);
+  });
+
+  test("`region` getter returns AWS_REGION when no `region` option is supplied", () => {
+    const provider = new AWSClientProvider();
+
+    expect(provider.region).toBe(AWS_REGION);
+  });
+
+  test("`region` getter returns the exact M3LAWSRegion supplied at construction", () => {
+    const region = parseAWSRegion("us-east-1");
+    const provider = new AWSClientProvider({ region });
+
+    expect(provider.region).toBe(region);
   });
 });
 
@@ -834,6 +891,348 @@ describe("AWSMultiClientProvider.mapParallelSettled", () => {
 });
 
 // =============================================================================
+// AWSServiceProvider — construction
+// =============================================================================
+describe("AWSServiceProvider construction", () => {
+  test("constructs with a clientProvider and no options — no throw", () => {
+    const clientProvider = new AWSClientProvider();
+
+    expect(() => new AWSServiceProvider(clientProvider)).not.toThrow();
+  });
+
+  test("constructs from a clientProvider built with a full options bag — no throw", () => {
+    const clientProvider = new AWSClientProvider({
+      profile: parseAWSProfile("svc-profile"),
+      region: parseAWSRegion("us-east-1"),
+    });
+
+    expect(() => new AWSServiceProvider(clientProvider)).not.toThrow();
+  });
+
+  test("no longer accepts a second `options` argument — divergence made unrepresentable at the type level", () => {
+    const clientProvider = new AWSClientProvider();
+
+    // @ts-expect-error — AWSServiceProvider no longer accepts a second
+    // `options` argument (Must-fix from type-design review: divergence made
+    // unrepresentable; requestSigner/credentials now read profile/region
+    // exclusively from `clientProvider`).
+    new AWSServiceProvider(clientProvider, {
+      profile: parseAWSProfile("other"),
+    });
+  });
+});
+
+// =============================================================================
+// AWSServiceProvider — the 12 "fresh instance" getters built from a raw
+// client on `clientProvider` (mirrors AWSClientProvider's GETTER_MATRIX
+// pattern above). requestSigner/credentials/dynamoDBDocument are covered
+// separately below since they are not built the same way.
+// =============================================================================
+const SERVICE_GETTER_MATRIX = [
+  ["sqsOperations", M3LSQSOperations, h.sqsCtor] as const,
+  [
+    "eventBridgeOperations",
+    M3LEventBridgeOperations,
+    h.eventBridgeCtor,
+  ] as const,
+  ["athena", M3LAthenaClient, h.athenaCtor] as const,
+  [
+    "cloudFormation",
+    M3LCloudFormationOperations,
+    h.cloudFormationCtor,
+  ] as const,
+  [
+    "cloudWatchAlarms",
+    M3LCloudWatchAlarmsOperations,
+    h.cloudWatchCtor,
+  ] as const,
+  [
+    "cloudWatchLogsInsights",
+    M3LLogsInsightsClient,
+    h.cloudWatchLogsCtor,
+  ] as const,
+  [
+    "cloudWatchMetrics",
+    M3LCloudWatchMetricsOperations,
+    h.cloudWatchCtor,
+  ] as const,
+  ["codePipeline", M3LCodePipelineOperations, h.codePipelineCtor] as const,
+  ["ecs", M3LECSOperations, h.ecsCtor] as const,
+  ["eks", M3LEKSOperations, h.eksCtor] as const,
+  ["lambda", M3LLambdaOperations, h.lambdaCtor] as const,
+  [
+    "secretsManager",
+    M3LSecretsManagerOperations,
+    h.secretsManagerCtor,
+  ] as const,
+] satisfies readonly (readonly [
+  keyof AWSServiceProvider,
+  unknown,
+  ReturnType<typeof vi.fn>,
+])[];
+
+describe.each(SERVICE_GETTER_MATRIX)(
+  "AWSServiceProvider getter: %s",
+  (getterName, WrapperClass, ctorSpy) => {
+    void ctorSpy;
+
+    test("is an instance of the documented wrapper class", () => {
+      const clientProvider = new AWSClientProvider({
+        profile: parseAWSProfile("svc-profile"),
+      });
+      const services = new AWSServiceProvider(clientProvider);
+
+      expect(services[getterName]).toBeInstanceOf(WrapperClass);
+    });
+
+    test("memoizes — repeat access returns the SAME instance", () => {
+      const clientProvider = new AWSClientProvider();
+      const services = new AWSServiceProvider(clientProvider);
+
+      const first = services[getterName];
+      const second = services[getterName];
+
+      expect(second).toBe(first);
+    });
+
+    test("a fresh AWSServiceProvider wrapping the same clientProvider produces a DIFFERENT wrapper instance — no global cache", () => {
+      const clientProvider = new AWSClientProvider();
+      const servicesA = new AWSServiceProvider(clientProvider);
+      const servicesB = new AWSServiceProvider(clientProvider);
+
+      expect(servicesB[getterName]).not.toBe(servicesA[getterName]);
+    });
+  },
+);
+
+// =============================================================================
+// AWSServiceProvider — cloudWatchAlarms / cloudWatchMetrics share one
+// underlying `cloudWatch` raw client (one CloudWatchClient construction
+// total across both wrapper getters).
+// =============================================================================
+describe("AWSServiceProvider — cloudWatchAlarms / cloudWatchMetrics share the raw cloudWatch client", () => {
+  test("each is its documented wrapper class, distinct from each other, but the raw CloudWatchClient is constructed exactly once", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    const alarms = services.cloudWatchAlarms;
+    const metrics = services.cloudWatchMetrics;
+
+    expect(alarms).toBeInstanceOf(M3LCloudWatchAlarmsOperations);
+    expect(metrics).toBeInstanceOf(M3LCloudWatchMetricsOperations);
+    expect(metrics).not.toBe(alarms);
+    expect(h.cloudWatchCtor).toHaveBeenCalledTimes(1);
+  });
+});
+
+// =============================================================================
+// AWSServiceProvider — cross-provider client sharing: `.services.sqsOperations`
+// and `.clients.sqsOperations` wrap the same underlying SQSClient, never
+// double-constructing it.
+// =============================================================================
+describe("AWSServiceProvider — shares the raw client with AWSClientProvider's own convenience getter", () => {
+  test("services.sqsOperations is a different object from clientProvider.sqsOperations, but SQSClient is constructed exactly once", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    const fromServices = services.sqsOperations;
+    const fromClients = clientProvider.sqsOperations;
+
+    expect(fromServices).not.toBe(fromClients);
+    expect(h.sqsCtor).toHaveBeenCalledTimes(1);
+  });
+});
+
+// =============================================================================
+// AWSServiceProvider — dynamoDBDocument (passthrough, NOT a fresh instance)
+// =============================================================================
+describe("AWSServiceProvider getter: dynamoDBDocument", () => {
+  test("is identical to clientProvider.dynamoDBDocument — a passthrough, not a new wrapper", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    expect(services.dynamoDBDocument).toBe(clientProvider.dynamoDBDocument);
+  });
+});
+
+// =============================================================================
+// AWSServiceProvider — requestSigner (built from this provider's own
+// profile/region, not from any clientProvider getter)
+// =============================================================================
+describe("AWSServiceProvider getter: requestSigner", () => {
+  test("constructs an M3LRequestSigner on first access", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    expect(services.requestSigner).toBeInstanceOf(M3LRequestSigner);
+  });
+
+  test("memoizes — repeat access returns the SAME instance", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    const first = services.requestSigner;
+    const second = services.requestSigner;
+
+    expect(second).toBe(first);
+  });
+
+  test("built from a clientProvider constructed with a specific profile, accessing requestSigner does not throw", () => {
+    const clientProvider = new AWSClientProvider({
+      profile: parseAWSProfile("profile-a"),
+    });
+    const services = new AWSServiceProvider(clientProvider);
+
+    expect(() => services.requestSigner).not.toThrow();
+  });
+
+  test("with no `options` argument at all, accessing requestSigner does not throw (default-region path)", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    expect(() => services.requestSigner).not.toThrow();
+  });
+});
+
+// =============================================================================
+// AWSServiceProvider — credentials (built from this provider's own
+// profile/region; constructing it must never touch any AWS SDK client)
+// =============================================================================
+describe("AWSServiceProvider getter: credentials", () => {
+  test("constructs an M3LAWSCredentialsManager on first access", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    expect(services.credentials).toBeInstanceOf(M3LAWSCredentialsManager);
+  });
+
+  test("memoizes — repeat access returns the SAME instance", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    const first = services.credentials;
+    const second = services.credentials;
+
+    expect(second).toBe(first);
+  });
+
+  test("never calls any AWS SDK client constructor — construction alone does not touch a raw client", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    void services.credentials;
+
+    for (const [, , ctorSpy] of SERVICE_GETTER_MATRIX) {
+      expect(ctorSpy).not.toHaveBeenCalled();
+    }
+    expect(h.dynamoDBCtor).not.toHaveBeenCalled();
+    expect(h.s3Ctor).not.toHaveBeenCalled();
+    expect(h.stsCtor).not.toHaveBeenCalled();
+  });
+
+  test("with no `options` argument at all, accessing credentials does not throw (default-region path)", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    expect(() => services.credentials).not.toThrow();
+  });
+});
+
+// =============================================================================
+// AWSServiceProvider — error propagation: a throwing clientProvider getter
+// propagates unchanged (AWSServiceProvider adds no error handling of its
+// own), and the cache is not poisoned by the failure.
+// =============================================================================
+describe("AWSServiceProvider error propagation", () => {
+  test("a clientProvider getter failure propagates unchanged (same error instance, not re-wrapped)", () => {
+    const original = new Error("boom from Athena constructor");
+    h.athenaCtor.mockImplementation(() => {
+      throw original;
+    });
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    let thrown: unknown;
+    try {
+      void services.athena;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LAWSClientError);
+    expect((thrown as M3LAWSClientError).cause).toBe(original);
+  });
+
+  test("the cache is not poisoned by a failed access — a later successful access returns a working instance", () => {
+    const original = new Error("boom from Athena constructor");
+    h.athenaCtor.mockImplementationOnce(() => {
+      throw original;
+    });
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    expect(() => services.athena).toThrow();
+
+    const athena = services.athena;
+    expect(athena).toBeInstanceOf(M3LAthenaClient);
+  });
+});
+
+// =============================================================================
+// AWSServiceProvider.close()
+// =============================================================================
+describe("AWSServiceProvider.close", () => {
+  test("close with no getters ever accessed is a no-op — no throw", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    expect(() => services.close()).not.toThrow();
+  });
+
+  test("clears its own cache — a subsequent access after close() constructs a fresh instance", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    const a = services.athena;
+    services.close();
+    const b = services.athena;
+
+    expect(b).not.toBe(a);
+  });
+
+  test("never calls `.destroy()` on the underlying raw SDK client", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    void services.athena;
+    services.close();
+
+    expect(h.destroy).not.toHaveBeenCalled();
+  });
+
+  test("never calls `clientProvider.close()`", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+    const closeSpy = vi.spyOn(clientProvider, "close");
+
+    services.close();
+
+    expect(closeSpy).not.toHaveBeenCalled();
+  });
+
+  test("no cascade inbound: calling clientProvider.close() does not clear the services cache", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    const a = services.athena;
+    clientProvider.close();
+    const stillA = services.athena;
+
+    expect(stillA).toBe(a);
+  });
+});
+
+// =============================================================================
 // AWSProvider
 // =============================================================================
 describe("AWSProvider", () => {
@@ -875,12 +1274,49 @@ describe("AWSProvider", () => {
     expect(h.s3Ctor).not.toHaveBeenCalled();
   });
 
-  test("has no `services` getter", () => {
+  test("`services` getter returns an AWSServiceProvider instance", () => {
+    const provider = new AWSProvider({
+      profile: parseAWSProfile("my-profile"),
+    });
+
+    expect(provider.services).toBeInstanceOf(AWSServiceProvider);
+  });
+
+  test("`services` getter is lazily instantiated and reused — same instance on repeat access", () => {
     const provider = new AWSProvider();
 
-    expect(
-      (provider as unknown as Record<string, unknown>)["services"],
-    ).toBeUndefined();
+    const first = provider.services;
+    const second = provider.services;
+
+    expect(second).toBe(first);
+  });
+
+  test("`services` shares the same underlying AWSClientProvider as `clients` — services-first access order", () => {
+    const provider = new AWSProvider();
+
+    void provider.services.athena;
+    expect(h.athenaCtor).toHaveBeenCalledTimes(1);
+
+    void provider.clients.athena;
+    expect(h.athenaCtor).toHaveBeenCalledTimes(1);
+  });
+
+  test("`services` shares the same underlying AWSClientProvider as `clients` — clients-first access order", () => {
+    const provider = new AWSProvider();
+
+    void provider.clients.athena;
+    expect(h.athenaCtor).toHaveBeenCalledTimes(1);
+
+    void provider.services.athena;
+    expect(h.athenaCtor).toHaveBeenCalledTimes(1);
+  });
+
+  test("`services` forwards the same options the AWSProvider was constructed with — no throw", () => {
+    const provider = new AWSProvider({
+      profile: parseAWSProfile("my-profile"),
+    });
+
+    expect(() => provider.services.requestSigner).not.toThrow();
   });
 });
 
@@ -999,8 +1435,99 @@ describe("type-level contracts", () => {
     >();
   });
 
-  test("AWSProvider has no `services` property in its type", () => {
-    expectTypeOf<AWSProvider>().not.toHaveProperty("services");
+  test("AWSProvider['services'] is typed AWSServiceProvider", () => {
+    expectTypeOf<AWSProvider["services"]>().toEqualTypeOf<AWSServiceProvider>();
+  });
+});
+
+// =============================================================================
+// Type-level contracts — AWSServiceProvider getters
+// =============================================================================
+describe("type-level contracts: AWSServiceProvider getters", () => {
+  test("sqsOperations is typed M3LSQSOperations", () => {
+    expectTypeOf<
+      AWSServiceProvider["sqsOperations"]
+    >().toEqualTypeOf<M3LSQSOperations>();
+  });
+
+  test("eventBridgeOperations is typed M3LEventBridgeOperations", () => {
+    expectTypeOf<
+      AWSServiceProvider["eventBridgeOperations"]
+    >().toEqualTypeOf<M3LEventBridgeOperations>();
+  });
+
+  test("requestSigner is typed M3LRequestSigner", () => {
+    expectTypeOf<
+      AWSServiceProvider["requestSigner"]
+    >().toEqualTypeOf<M3LRequestSigner>();
+  });
+
+  test("dynamoDBDocument is typed DynamoDBDocumentClient", () => {
+    expectTypeOf<
+      AWSServiceProvider["dynamoDBDocument"]
+    >().toEqualTypeOf<DynamoDBDocumentClient>();
+  });
+
+  test("athena is typed M3LAthenaClient", () => {
+    expectTypeOf<
+      AWSServiceProvider["athena"]
+    >().toEqualTypeOf<M3LAthenaClient>();
+  });
+
+  test("cloudFormation is typed M3LCloudFormationOperations", () => {
+    expectTypeOf<
+      AWSServiceProvider["cloudFormation"]
+    >().toEqualTypeOf<M3LCloudFormationOperations>();
+  });
+
+  test("cloudWatchAlarms is typed M3LCloudWatchAlarmsOperations", () => {
+    expectTypeOf<
+      AWSServiceProvider["cloudWatchAlarms"]
+    >().toEqualTypeOf<M3LCloudWatchAlarmsOperations>();
+  });
+
+  test("cloudWatchLogsInsights is typed M3LLogsInsightsClient", () => {
+    expectTypeOf<
+      AWSServiceProvider["cloudWatchLogsInsights"]
+    >().toEqualTypeOf<M3LLogsInsightsClient>();
+  });
+
+  test("cloudWatchMetrics is typed M3LCloudWatchMetricsOperations", () => {
+    expectTypeOf<
+      AWSServiceProvider["cloudWatchMetrics"]
+    >().toEqualTypeOf<M3LCloudWatchMetricsOperations>();
+  });
+
+  test("codePipeline is typed M3LCodePipelineOperations", () => {
+    expectTypeOf<
+      AWSServiceProvider["codePipeline"]
+    >().toEqualTypeOf<M3LCodePipelineOperations>();
+  });
+
+  test("ecs is typed M3LECSOperations", () => {
+    expectTypeOf<AWSServiceProvider["ecs"]>().toEqualTypeOf<M3LECSOperations>();
+  });
+
+  test("eks is typed M3LEKSOperations", () => {
+    expectTypeOf<AWSServiceProvider["eks"]>().toEqualTypeOf<M3LEKSOperations>();
+  });
+
+  test("lambda is typed M3LLambdaOperations", () => {
+    expectTypeOf<
+      AWSServiceProvider["lambda"]
+    >().toEqualTypeOf<M3LLambdaOperations>();
+  });
+
+  test("secretsManager is typed M3LSecretsManagerOperations", () => {
+    expectTypeOf<
+      AWSServiceProvider["secretsManager"]
+    >().toEqualTypeOf<M3LSecretsManagerOperations>();
+  });
+
+  test("credentials is typed M3LAWSCredentialsManager", () => {
+    expectTypeOf<
+      AWSServiceProvider["credentials"]
+    >().toEqualTypeOf<M3LAWSCredentialsManager>();
   });
 });
 

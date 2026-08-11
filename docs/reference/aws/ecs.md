@@ -180,7 +180,8 @@ starting point instead of rediscovering the boundary:
 ## See also
 
 - [AWS Clients](./clients.md) — `AWSClientProvider.ecs`, the raw client
-  getter this wrapper is constructed from.
+  getter this wrapper is constructed from; also reachable as
+  `AWSServiceProvider.ecs` (`script.aws.services.ecs`).
 - [Lambda Operations](./lambda.md) — the closest sibling wrapper in shape
   (control-plane CRUD over a single resource type), followed here for
   shape/error-handling consistency.

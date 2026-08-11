@@ -96,7 +96,8 @@ rejects, chaining the SDK rejection as `cause`.
 ## See also
 
 - [AWS Clients](./clients.md) — `AWSClientProvider.lambda`, the raw client
-  getter this wrapper is constructed from.
+  getter this wrapper is constructed from; also reachable as
+  `AWSServiceProvider.lambda` (`script.aws.services.lambda`).
 - [SQS Operations](./sqs.md) — the closest sibling wrapper (ADR-0026),
   followed here for shape/error-handling consistency.
 - [`scripts/lambda-ops` contract](../scripts/lambda-ops.md) — the consumer

@@ -87,6 +87,6 @@ the 25-item batch cap). Callers narrow via `code === "ERR_DYNAMODB_OPERATION"`.
 
 ## See also
 
-- [`aws/clients`](./clients.md) — the `dynamoDBDocument`/`dynamoDB` clients this module wraps.
+- [`aws/clients`](./clients.md) — the `dynamoDBDocument`/`dynamoDB` clients this module wraps. This module is deliberately **function-based** (mirroring `aws/s3`'s ADR-0033 shape), so it has no `AWSServiceProvider`/`.services` entry — call these functions directly with `script.aws.clients.dynamoDBDocument`.
 - [`core/errors`](../core/errors.md) — the `M3LError` hierarchy `M3LDynamoDBOperationError` extends.
 - `scripts/dynamodb-crud` — the first consumer of this module (in review on a separate branch).

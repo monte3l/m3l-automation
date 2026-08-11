@@ -136,7 +136,9 @@ const headers = await signer.signedHeaders({
 ## See also
 
 - [AWS Clients](./clients.md) — `AWSClientProvider` and the cached
-  `requestSigner` convenience getter this module is reached through.
+  `requestSigner` convenience getter this module is reached through
+  (`@deprecated` in favor of `AWSServiceProvider.requestSigner`,
+  `script.aws.services.requestSigner`).
 - [AWS Models](./models.md) — `M3LAWSRegion` / `M3LAWSProfile` and their
   parsers, reused for this signer's options.
 - [Network](../core/network.md) — `M3LHttpClient`, into whose request headers

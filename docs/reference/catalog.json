@@ -579,7 +579,8 @@
       "AWSMultiClientProvider",
       "AWSProvider",
       "AWS_REGION",
-      "M3LAWSClientError"
+      "M3LAWSClientError",
+      "AWSServiceProvider"
     ]
   },
   {
