@@ -14,3 +14,4 @@
 
 export * from "./operations.js";
 export { M3LS3OperationError } from "./error.js";
+export * from "./uri.js";

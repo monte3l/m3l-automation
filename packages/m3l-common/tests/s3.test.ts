@@ -10,9 +10,13 @@ import {
   deleteObject,
   deleteObjects,
   M3LS3OperationError,
+  parseS3Uri,
+  formatS3Uri,
   type S3Page,
   type DeleteObjectsResult,
+  type M3LS3Uri,
 } from "../src/aws/s3/index.js";
+import { M3LError } from "../src/core/errors/index.js";
 
 /**
  * TDD seam for `aws/s3` (ADR-0033: `s3-objects` W3 script needs object
@@ -597,6 +601,118 @@ describe("aws/s3", () => {
 
       expect(thrown).toBe(inner);
       expect((thrown as M3LS3OperationError).message).toBe("inner");
+    });
+  });
+});
+
+/**
+ * TDD seam for `aws/s3`'s `parseS3Uri`/`formatS3Uri` (`src/aws/s3/uri.ts`),
+ * per `docs/reference/aws/s3.md`.
+ *
+ * Scaffold stage: `src/aws/s3/uri.ts` does not exist yet, so the import above
+ * fails module resolution (TS2305) until `implementing-submodules` adds it
+ * and re-exports it from `src/aws/s3/index.ts`.
+ */
+describe("parseS3Uri / formatS3Uri", () => {
+  describe("parseS3Uri", () => {
+    test("parses a bucket and a nested-prefix key (happy path)", () => {
+      expect(parseS3Uri("s3://reports/2026/07/summary.json")).toEqual({
+        bucket: "reports",
+        key: "2026/07/summary.json",
+      });
+    });
+
+    test("parses a bucket and a single-segment key (happy path)", () => {
+      expect(parseS3Uri("s3://bucket/single-key")).toEqual({
+        bucket: "bucket",
+        key: "single-key",
+      });
+    });
+
+    test.each([
+      ["wrong scheme", "http://bucket/key"],
+      ["no scheme at all", "bucket/key"],
+      ["missing key entirely", "s3://bucket"],
+      ["empty key (trailing slash)", "s3://bucket/"],
+      ["empty bucket", "s3:///key"],
+      ["empty string", ""],
+    ])(
+      "throws M3LError(ERR_INVALID_ARGUMENT) on %s",
+      (_label, malformedUri) => {
+        expect(() => parseS3Uri(malformedUri)).toThrowError(M3LError);
+        let thrown: unknown;
+        try {
+          parseS3Uri(malformedUri);
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown).toBeInstanceOf(M3LError);
+        expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+      },
+    );
+
+    test("returns an M3LS3Uri (type contract)", () => {
+      expectTypeOf(parseS3Uri).returns.toEqualTypeOf<M3LS3Uri>();
+    });
+
+    test("bounds both the thrown message and context.uri for an oversized malformed uri", () => {
+      const malformedUri = "not-s3://" + "a".repeat(300);
+      expect(malformedUri.length).toBeGreaterThan(200);
+
+      let thrown: unknown;
+      try {
+        parseS3Uri(malformedUri);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LError);
+      const error = thrown as M3LError;
+
+      expect(error.message.length).toBeLessThan(250);
+      expect(error.message).not.toContain("a".repeat(250));
+
+      const context = error.context as Record<string, unknown> | undefined;
+      expect(context).toBeDefined();
+      const uri = context?.["uri"];
+      expect(typeof uri).toBe("string");
+      expect((uri as string).length).toBeLessThanOrEqual(200);
+    });
+  });
+
+  describe("formatS3Uri", () => {
+    test("formats a bucket and a nested-prefix key (happy path)", () => {
+      expect(
+        formatS3Uri({ bucket: "reports", key: "2026/07/summary.json" }),
+      ).toBe("s3://reports/2026/07/summary.json");
+    });
+
+    test.each([
+      "s3://reports/2026/07/summary.json",
+      "s3://bucket/key",
+      "s3://bucket/single-key",
+    ])("round-trips %s through parseS3Uri and back", (uri) => {
+      expect(formatS3Uri(parseS3Uri(uri))).toBe(uri);
+    });
+
+    test("returns a string (type contract)", () => {
+      expectTypeOf(formatS3Uri).returns.toEqualTypeOf<string>();
+    });
+
+    test.each([
+      ["empty bucket", { bucket: "", key: "key" }],
+      ["bucket containing /", { bucket: "a/b", key: "key" }],
+      ["empty key", { bucket: "bucket", key: "" }],
+    ])("throws M3LError(ERR_INVALID_ARGUMENT) on %s", (_label, input) => {
+      expect(() => formatS3Uri(input)).toThrow(M3LError);
+      let thrown: unknown;
+      try {
+        formatS3Uri(input);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
     });
   });
 });

@@ -857,7 +857,10 @@
       "CopyObjectSource",
       "S3DeleteError",
       "DeleteObjectsResult",
-      "M3LS3OperationError"
+      "M3LS3OperationError",
+      "parseS3Uri",
+      "formatS3Uri",
+      "M3LS3Uri"
     ]
   },
   {
