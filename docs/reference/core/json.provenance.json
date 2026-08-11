@@ -59,9 +59,19 @@
           "file": "packages/m3l-common/src/core/json/M3LJSONFormatDetectionError.ts",
           "symbol": "M3LJSONFormatDetectionError",
           "blob": "a2412f24167ea3bfcf07e542f85ca258882ea2f3"
+        },
+        {
+          "file": "packages/m3l-common/src/core/json/canonicalJson.ts",
+          "symbol": "canonicalJsonStringify",
+          "blob": "b93e7adca9c91eae80355a2e35f3ad41269ada34"
+        },
+        {
+          "file": "packages/m3l-common/src/core/json/canonicalJson.ts",
+          "symbol": "canonicalJsonHash",
+          "blob": "b93e7adca9c91eae80355a2e35f3ad41269ada34"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-08-11"
     },
     {
       "heading": "Notes and behavior",

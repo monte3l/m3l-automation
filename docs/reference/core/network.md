@@ -1,35 +1,40 @@
 # `network` — HTTP Client
 
-The `network` module provides `M3LHttpClient`, an event-emitting HTTP client wrapping `undici` with sensible defaults for automation scripts. It offers `get()`/`getAbortable()` GET convenience methods plus a general `request()`/`requestAbortable()` pair for issuing any HTTP method with per-request headers and a body.
+The `network` module provides `M3LHttpClient`, an event-emitting HTTP client wrapping `undici` with sensible defaults for automation scripts, plus `M3LFileDownloader`, which streams a response body directly to disk. `M3LHttpClient` offers `get()`/`getAbortable()` GET convenience methods, a general `request()`/`requestAbortable()` pair for issuing any HTTP method with per-request headers and a body, and `requestStream()` for consuming the raw, unbuffered response body.
 
 ## Overview
 
 `M3LHttpClient` extends the library's event emitter base, so requests and responses can be observed through typed events. It wraps `undici`'s `fetch`, parses JSON responses automatically, enforces a request timeout via `AbortController`, and turns an unexpected response status into a typed error. An optional proxy URL routes traffic through local debugging proxies such as Charles or Proxyman.
 
-The client exposes two request surfaces:
+The client exposes three request surfaces:
 
 - `get<T>(path)` / `getAbortable<T>(path)` — GET convenience methods taking a single `path`. Their signatures and behavior are unchanged; internally they now delegate to `request()`/`requestAbortable()` with `method: "GET"`.
 - `request<T>(options)` / `requestAbortable<T>(options)` — a general method for any of the six supported HTTP verbs (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`) with optional per-request `headers`, a `body`, and an `expectedStatus` allow-list. The client stays transport-only: it does not serialize the body or infer a `Content-Type`.
+- `requestStream(options)` — resolves with the raw `{ status, body }` (a web `ReadableStream<Uint8Array>`), skipping body parsing entirely. Intended for a streaming consumer such as `M3LFileDownloader` that pipes the body to another destination without buffering it in memory.
+
+`M3LFileDownloader` composes with an injected `M3LHttpClient` (via `requestStream()`) to download a URL straight to a file, streaming through `node:stream/promises`'s `pipeline` rather than buffering the whole response.
 
 ## Public API
 
 Exported from `@m3l-automation/m3l-common/core` (surfaced through the `Core`
 namespace barrel):
 
-| Symbol                    | Kind  | Purpose                                                                                                                                                               |
-| ------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `M3LHttpClient`           | class | Event-emitting HTTP client over `undici` (GET convenience plus a general `request()` for any method).                                                                 |
-| `M3LHttpClientOptions`    | type  | Constructor configuration.                                                                                                                                            |
-| `M3LHttpMethod`           | type  | Union of supported HTTP methods (`"GET" \| "POST" \| "PUT" \| "PATCH" \| "DELETE" \| "HEAD"`).                                                                        |
-| `M3LHttpRequestOptions`   | type  | Options for `request()`/`requestAbortable()` — `{ method, path, headers?, body?, expectedStatus? }`.                                                                  |
-| `M3LHttpClientError`      | class | Typed error thrown for every request failure (code `ERR_HTTP_REQUEST`).                                                                                               |
-| `M3LHttpFailureReason`    | type  | The failure discriminator (`"status" \| "network" \| "timeout" \| "abort"`), exposed as `M3LHttpClientError.reason` and used as the discriminant of `M3LHttpFailure`. |
-| `M3LHttpFailure`          | type  | Discriminated failure payload on `M3LHttpClientError.failure`; the `status` code is present **only** on the `"status"` arm.                                           |
-| `M3LHttpAbortableRequest` | type  | Return shape of `getAbortable()`/`requestAbortable()` — `{ readonly promise, readonly abort() }`.                                                                     |
-| `M3LHttpRequestEvent`     | type  | Payload of the `request` event (`{ method, url, headers }`).                                                                                                          |
-| `M3LHttpResponseEvent`    | type  | Payload of the `response` event (`{ method, url, status, ok, durationMs }`).                                                                                          |
-| `M3LHttpErrorEvent`       | type  | Payload of the `error` event (`{ method, url, error }`).                                                                                                              |
-| `M3LHttpClientEventMap`   | type  | Maps each event name to its payload type.                                                                                                                             |
+| Symbol                     | Kind  | Purpose                                                                                                                                                               |
+| -------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `M3LHttpClient`            | class | Event-emitting HTTP client over `undici` (GET convenience plus a general `request()` for any method).                                                                 |
+| `M3LHttpClientOptions`     | type  | Constructor configuration.                                                                                                                                            |
+| `M3LHttpMethod`            | type  | Union of supported HTTP methods (`"GET" \| "POST" \| "PUT" \| "PATCH" \| "DELETE" \| "HEAD"`).                                                                        |
+| `M3LHttpRequestOptions`    | type  | Options for `request()`/`requestAbortable()` — `{ method, path, headers?, body?, expectedStatus? }`.                                                                  |
+| `M3LHttpClientError`       | class | Typed error thrown for every request failure (code `ERR_HTTP_REQUEST`).                                                                                               |
+| `M3LHttpFailureReason`     | type  | The failure discriminator (`"status" \| "network" \| "timeout" \| "abort"`), exposed as `M3LHttpClientError.reason` and used as the discriminant of `M3LHttpFailure`. |
+| `M3LHttpFailure`           | type  | Discriminated failure payload on `M3LHttpClientError.failure`; the `status` code is present **only** on the `"status"` arm.                                           |
+| `M3LHttpAbortableRequest`  | type  | Return shape of `getAbortable()`/`requestAbortable()` — `{ readonly promise, readonly abort() }`.                                                                     |
+| `M3LHttpRequestEvent`      | type  | Payload of the `request` event (`{ method, url, headers }`).                                                                                                          |
+| `M3LHttpResponseEvent`     | type  | Payload of the `response` event (`{ method, url, status, ok, durationMs }`).                                                                                          |
+| `M3LHttpErrorEvent`        | type  | Payload of the `error` event (`{ method, url, error }`).                                                                                                              |
+| `M3LHttpClientEventMap`    | type  | Maps each event name to its payload type.                                                                                                                             |
+| `M3LFileDownloader`        | class | Streams an HTTP response body directly to a file on disk via an injected `M3LHttpClient`.                                                                             |
+| `M3LFileDownloaderOptions` | type  | Constructor options for `M3LFileDownloader` — `{ httpClient: M3LHttpClient }`.                                                                                        |
 
 ### Configuration (`M3LHttpClientOptions`)
 
@@ -75,6 +80,21 @@ It emits exactly three events around each request lifecycle, for every method:
 ### Cancellable requests
 
 `getAbortable<T>()` and `requestAbortable<T>()` return `{ promise, abort() }`, letting a caller cancel an in-flight request before it settles.
+
+### Streaming requests (`requestStream`) and `M3LFileDownloader`
+
+`requestStream(options)` shares the same URL resolution, header merging, timeout/abort handling, proxy dispatcher forwarding, status-acceptance, and failure-normalization logic as `request()` — the only difference is that an accepted response skips body parsing and resolves with the raw stream instead:
+
+- `requestStream(options: { method, path, headers? }): Promise<{ status: number; body: ReadableStream<Uint8Array> }>`
+
+It always accepts any 2xx status (there is no `expectedStatus` option here, matching `get()`'s default behavior), and throws `M3LHttpClientError` on a non-2xx response, a network failure, a timeout, or a 2xx response with no body at all. **The timeout genuinely bounds the entire transfer, not just header acquisition**: the returned `body` stream stays wired to the same underlying timeout/`AbortController` for as long as it is being read, so a connection that goes quiet mid-transfer still times out — the stream errors with the same normalized `M3LHttpClientError` a caller would get from `request()`, instead of hanging forever.
+
+`M3LFileDownloader` is the streaming-to-disk consumer built on top of it:
+
+- `new M3LFileDownloader({ httpClient: M3LHttpClient })`
+- `download(url: string, destinationPath: string): Promise<void>`
+
+`download()` calls `requestStream({ method: "GET", path: url })` and pipes the resolved body to `destinationPath` via `node:stream/promises`'s `pipeline`, never buffering the full response in memory. A failed download — whether the failure happens before the first byte (non-2xx status, network failure, timeout), mid-transfer (a stalled or dropped connection), or on the write side (a bad `destinationPath`) — always surfaces as `M3LHttpClientError` and never leaves a partial file behind: `download()` best-effort deletes the destination path on any `pipeline()` failure, in addition to the pre-write case where nothing was ever written at all.
 
 ## Usage
 
@@ -154,6 +174,21 @@ const client = new Core.M3LHttpClient({
 });
 ```
 
+Downloading a file straight to disk without buffering the response in memory:
+
+```typescript
+import { Core } from "@m3l-automation/m3l-common";
+
+const downloader = new Core.M3LFileDownloader({
+  httpClient: new Core.M3LHttpClient(),
+});
+
+await downloader.download(
+  "https://example.com/report.csv",
+  "./data/output/report.csv",
+);
+```
+
 ## Notes & behavior
 
 - **GET convenience + general requests.** `get()`/`getAbortable()` issue `GET` and take a single `path`; their signatures and behavior are unchanged. `request()`/`requestAbortable()` issue any `M3LHttpMethod` from an options object, and the GET methods are thin delegations to them (`get(path)` ≡ `request({ method: "GET", path })`).
@@ -167,6 +202,8 @@ const client = new Core.M3LHttpClient({
 - **Observable.** Because the client extends the event emitter base, requests can be traced via typed events for every method; one failing handler does not disrupt the others.
 - **Proxy debugging.** `proxyUrl` wires up an `undici` `ProxyAgent` (constructed once per client and reused) for inspection in tools like Charles or Proxyman.
 - **Logging & sensitive data.** The client never logs by default. When `debug: true`, it writes structured `{ method, url, status }` lines to `console.debug` — it never logs request/response bodies or headers. Note that the resolved `url` (in debug output, in `M3LHttpClientError.context.url`, and in the error `message`) reflects whatever the caller supplied: if a URL embeds credentials (userinfo or a token in the query string), those can surface through debug logs or a serialized error. Likewise, the `request` event payload's `headers` may include `Authorization`/API keys from `defaultHeaders` or per-request `headers`; avoid logging event payloads verbatim in handlers. Inputs (`baseUrl`, `proxyUrl`, `path`, `body`) are trusted — the client applies no SSRF/URL validation.
+- **`M3LFileDownloader` composes, never opens its own connection.** It is constructed with an injected `M3LHttpClient` and issues its request through that client's `requestStream()`, inheriting the injected client's `baseUrl`, `defaultHeaders`, `timeout`, and `proxyUrl` configuration rather than opening a separate `undici` dispatcher. An existing file at `destinationPath` is overwritten.
+- **`M3LFileDownloader`'s write-side failures also surface as `M3LHttpClientError`.** A filesystem-side failure (e.g. a `destinationPath` whose parent directory does not exist) is wrapped the same way a mid-transfer body failure is — `cause` carries the underlying Node error, `failure.reason` is `"network"` — so callers never have to distinguish an HTTP-layer failure from a disk-layer one by error type.
 
 ## See also
 

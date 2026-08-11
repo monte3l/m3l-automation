@@ -1,10 +1,10 @@
 # Core `json`
 
-JSON utilities: dot-notation field-path navigation and JSON/JSONL format detection with configurable depth.
+JSON utilities: dot-notation field-path navigation, JSON/JSONL format detection with configurable depth, and deterministic canonical JSON serialization/hashing.
 
 ## Overview
 
-The `json` module provides two capabilities. **Field paths** parse a dot-notation string into segments and traverse nested data — objects by key, arrays by numeric index, and `*` wildcards that fan out over array elements and object values — to retrieve either a single value (`navigateFieldPath`) or every match (`extractAll`). **Format detection** inspects a file and reports whether it is JSON or JSONL, with four depth levels that trade speed for accuracy. These primitives back the JSON importers and exporters but are also usable directly.
+The `json` module provides three capabilities. **Field paths** parse a dot-notation string into segments and traverse nested data — objects by key, arrays by numeric index, and `*` wildcards that fan out over array elements and object values — to retrieve either a single value (`navigateFieldPath`) or every match (`extractAll`). **Format detection** inspects a file and reports whether it is JSON or JSONL, with four depth levels that trade speed for accuracy. **Canonical JSON** produces a deterministic, key-order-independent serialization (and a SHA-256 hash of it) for content-addressing or equality-under-permutation checks. These primitives back the JSON importers and exporters but are also usable directly.
 
 ## Public API
 
@@ -26,6 +26,8 @@ Exported symbols:
 - `M3LJSONDetectionResult` — the `{ format, confidence, method, details }` result
 - `M3LConfidence` — a detection confidence constrained to the range `0`–`1`
 - `M3LJSONFormatDetectionError` — thrown by `detect()` when the file cannot be read
+- `canonicalJsonStringify` — serialize a value to compact JSON with object keys sorted by Unicode code point at every nesting level; array order is preserved
+- `canonicalJsonHash` — SHA-256 hex digest of `canonicalJsonStringify`'s output
 
 ## Usage
 
@@ -77,6 +79,27 @@ if (result.format === "json") {
 }
 ```
 
+### Canonical JSON
+
+```typescript
+import { Core } from "@m3l-automation/m3l-common";
+
+Core.canonicalJsonStringify({ zebra: 1, apple: 2 });
+// '{"apple":2,"zebra":1}' — keys sorted, insertion order ignored
+
+Core.canonicalJsonStringify({ list: [3, 1, 2] });
+// '{"list":[3,1,2]}' — array order preserved, never sorted
+
+Core.canonicalJsonHash({ a: 1, b: 2 }) ===
+  Core.canonicalJsonHash({ b: 2, a: 1 });
+// true — key order does not affect the hash
+
+Core.canonicalJsonStringify(new Date("2020-01-01T00:00:00.000Z"));
+// '"2020-01-01T00:00:00.000Z"' — a toJSON-bearing value (e.g. Date) is
+// serialized from its toJSON() result, matching JSON.stringify's own
+// precedence, instead of its own (often empty) enumerable keys
+```
+
 ## Notes and behavior
 
 - **Dot-notation field paths** — `parseFieldPath(path)` parses a dot-notation string (for example, `metadata.author`) into path segments; `navigateFieldPath(obj, path)` traverses the nested value and returns a single value, or `undefined` when a segment cannot be resolved; `extractAll(record, path)` returns every value matching the path. `M3LJSONFieldExtractor` binds a path at construction and offers both a single-value `extract` and a multi-value `extractAll`.
@@ -97,6 +120,9 @@ if (result.format === "json") {
   | `deep`      | A sample drawn from the middle and end (most accurate) |
 
 - The detector underpins the JSON importer's array-vs-JSONL dispatch; see [importers](./importers.md).
+- **Canonical JSON key ordering** — object keys are sorted by Unicode **code point**, not `Array.prototype.sort`'s default UTF-16 code-unit comparator, which orders an astral-plane surrogate pair before a higher-valued BMP character (the opposite of true code-point order). Array element order is never touched.
+- **Canonical JSON failure mode** — `canonicalJsonStringify`/`canonicalJsonHash` throw `M3LError` (code `ERR_INVALID_ARGUMENT`) when the input contains, anywhere in the tree, a non-finite number (`NaN`, `Infinity`, `-Infinity`), a `BigInt`, or a circular object/array reference — canonical JSON has no representation for any of the three. A circular reference is rejected rather than replaced with a placeholder (unlike `safeJsonStringify`'s `"[Circular]"` marker, meant for safe debug output): two different circular structures silently hashing identically would be a correctness bug worse than throwing. A top-level or array-element value with no JSON representation (`undefined`, a function, a symbol) serializes to `null`, matching `JSON.stringify`'s own array-position behavior; the same case on an object property is omitted entirely, also matching `JSON.stringify`.
+- **`toJSON` is honored, at every nesting level** — a non-null object exposing a callable `toJSON` method (e.g. `Date`) is serialized from the RESULT of calling that method, matching `JSON.stringify`'s own precedence: the `toJSON()` check runs before any array/object shape decision. The returned value is itself recursively canonicalized (its own keys, if any, are sorted too), not passed through raw — so `canonicalJsonStringify(new Date(...))` never collapses to `"{}"`, which would otherwise silently hash two different `Date`s identically.
 
 ## See also
 

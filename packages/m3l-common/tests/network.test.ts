@@ -993,6 +993,85 @@ describe("M3LHttpClient — events carry the resolved method for non-GET request
 });
 
 // ---------------------------------------------------------------------------
+// 19 — requestStream() (previously zero coverage in this file/suite)
+// ---------------------------------------------------------------------------
+describe("M3LHttpClient.requestStream", () => {
+  /**
+   * Minimal streaming-response fake, separate from `makeResponse` above
+   * (which has no `body` field at all — that helper only ever backs the
+   * parsed-body request paths).
+   */
+  function makeStreamingFakeResponse(options: {
+    readonly status: number;
+    readonly body: ReadableStream<Uint8Array> | null;
+  }): UndiciResponse {
+    const { status, body } = options;
+    const fake = {
+      status,
+      ok: status >= 200 && status < 300,
+      headers: {
+        get(): string | null {
+          return null;
+        },
+      },
+      body,
+      json(): Promise<unknown> {
+        return Promise.resolve(undefined);
+      },
+      text(): Promise<string> {
+        return Promise.resolve("");
+      },
+    };
+    return fake as unknown as UndiciResponse;
+  }
+
+  test("resolves with { status, body } for an accepted 2xx response, without buffering or parsing the body", async () => {
+    const bodyStream = new ReadableStream<Uint8Array>({
+      start(controller): void {
+        controller.enqueue(new TextEncoder().encode("raw-bytes"));
+        controller.close();
+      },
+    });
+    mockFetch.mockResolvedValue(
+      makeStreamingFakeResponse({ status: 200, body: bodyStream }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    const result = await client.requestStream({
+      method: "GET",
+      path: "/large-file.bin",
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.body).not.toBeNull();
+    const text = await new Response(result.body).text();
+    expect(text).toBe("raw-bytes");
+  });
+
+  // Bug 3 (should-fix, code-reviewer): #readStreamBody's "2xx with a null
+  // body" branch is documented in requestStream()'s own @throws TSDoc but
+  // was, until this test, the sole uncovered line in M3LHttpClient.ts. This
+  // is a coverage gap, not a behavior gap — the branch is expected to
+  // already throw correctly.
+  test("rejects with M3LHttpClientError when an accepted 2xx response carries no body at all", async () => {
+    mockFetch.mockResolvedValue(
+      makeStreamingFakeResponse({ status: 204, body: null }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.requestStream({ method: "GET", path: "/empty" });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    expect((thrown as M3LHttpClientError).failure.reason).toBe("network");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Type-level tests
 // ---------------------------------------------------------------------------
 describe("M3LHttpClient — type-level contract", () => {

@@ -8,6 +8,7 @@
  * @packageDocumentation
  */
 
+export * from "./canonicalJson.js";
 export * from "./fieldPath.js";
 export * from "./M3LJSONFieldExtractor.js";
 export * from "./M3LJSONFormatDetectionError.js";
