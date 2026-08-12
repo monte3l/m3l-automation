@@ -10,6 +10,7 @@ import {
   deleteObject,
   deleteObjects,
   M3LS3OperationError,
+  M3LS3Operations,
   parseS3Uri,
   formatS3Uri,
   type S3Page,
@@ -601,6 +602,232 @@ describe("aws/s3", () => {
 
       expect(thrown).toBe(inner);
       expect((thrown as M3LS3OperationError).message).toBe("inner");
+    });
+  });
+});
+
+/**
+ * TDD seam for `aws/s3`'s `M3LS3Operations` class (ADR-0038 AWS service
+ * tier), per the hub's contract message: a thin wrapper delegating to the
+ * free functions above, one `S3Client` per instance. Reuses the same mock
+ * fixtures the free-function tests above already established.
+ *
+ * Scaffold stage: `M3LS3Operations` does not exist yet in
+ * `src/aws/s3/client.ts`, so the import above fails module resolution
+ * (TS2724) until `code-implementer` adds it and re-exports it from
+ * `src/aws/s3/index.ts`.
+ */
+describe("M3LS3Operations", () => {
+  test("constructs with a single S3Client — no throw", () => {
+    const client = { send: vi.fn() } as unknown as S3Client;
+
+    expect(() => new M3LS3Operations(client)).not.toThrow();
+  });
+
+  describe("listObjects", () => {
+    test("yields one page of object summaries (happy path)", async () => {
+      const client = {
+        send: vi.fn().mockResolvedValue({
+          Contents: [{ Key: "2026/07/summary.json", Size: 42, ETag: '"abc"' }],
+          NextContinuationToken: undefined,
+        }),
+      } as unknown as S3Client;
+      const operations = new M3LS3Operations(client);
+
+      const pages: S3Page[] = [];
+      for await (const page of operations.listObjects("reports")) {
+        pages.push(page);
+      }
+
+      expect(pages).toEqual([
+        {
+          objects: [
+            {
+              key: "2026/07/summary.json",
+              size: 42,
+              eTag: '"abc"',
+              lastModified: undefined,
+            },
+          ],
+          nextContinuationToken: undefined,
+        },
+      ]);
+    });
+
+    test("is a genuine async generator — exposes Symbol.asyncIterator and drains via for-await", async () => {
+      const client = {
+        send: vi.fn().mockResolvedValue({
+          Contents: [{ Key: "a.json", Size: 1 }],
+          NextContinuationToken: undefined,
+        }),
+      } as unknown as S3Client;
+      const operations = new M3LS3Operations(client);
+
+      const generator = operations.listObjects("reports");
+
+      expect(typeof generator[Symbol.asyncIterator]).toBe("function");
+      const pages: S3Page[] = [];
+      for await (const page of generator) {
+        pages.push(page);
+      }
+      expect(pages).toHaveLength(1);
+    });
+
+    test("forwards options and continuationToken to the underlying free function", async () => {
+      const send = vi.fn().mockResolvedValue({
+        Contents: [],
+        NextContinuationToken: undefined,
+      });
+      const client = { send } as unknown as S3Client;
+      const operations = new M3LS3Operations(client);
+
+      const pages: S3Page[] = [];
+      for await (const page of operations.listObjects(
+        "reports",
+        { prefix: "2026/07/", pageSize: 10 },
+        "resume-token",
+      )) {
+        pages.push(page);
+      }
+
+      expect(send).toHaveBeenCalledTimes(1);
+      const command = send.mock.calls[0]?.[0] as ListObjectsV2Command;
+      expect(command.input).toMatchObject({
+        Bucket: "reports",
+        Prefix: "2026/07/",
+        MaxKeys: 10,
+        ContinuationToken: "resume-token",
+      });
+    });
+  });
+
+  describe("headObject", () => {
+    test("returns object metadata (happy path)", async () => {
+      const client = {
+        send: vi.fn().mockResolvedValue({
+          ContentLength: 42,
+          ContentType: "application/json",
+          ETag: '"abc"',
+          LastModified: undefined,
+        }),
+      } as unknown as S3Client;
+      const operations = new M3LS3Operations(client);
+
+      const result = await operations.headObject(
+        "reports",
+        "2026/07/summary.json",
+      );
+
+      expect(result).toEqual({
+        contentLength: 42,
+        contentType: "application/json",
+        eTag: '"abc"',
+        lastModified: undefined,
+      });
+    });
+  });
+
+  describe("getObject", () => {
+    test("returns the object body and metadata (happy path)", async () => {
+      const body = new Uint8Array([1, 2, 3]);
+      const client = {
+        send: vi.fn().mockResolvedValue({
+          Body: { transformToByteArray: () => Promise.resolve(body) },
+          ContentLength: 3,
+          ContentType: "application/octet-stream",
+          ETag: '"abc"',
+          LastModified: undefined,
+        }),
+      } as unknown as S3Client;
+      const operations = new M3LS3Operations(client);
+
+      const result = await operations.getObject(
+        "reports",
+        "2026/07/summary.json",
+      );
+
+      expect(result.body).toEqual(body);
+      expect(result.metadata.contentLength).toBe(3);
+    });
+
+    test("propagates M3LS3OperationError with code ERR_S3_OPERATION on SDK rejection (failure path)", async () => {
+      const client = {
+        send: vi.fn().mockRejectedValue(new Error("boom")),
+      } as unknown as S3Client;
+      const operations = new M3LS3Operations(client);
+
+      let thrown: unknown;
+      try {
+        await operations.getObject("reports", "missing.json");
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LS3OperationError);
+      expect((thrown as M3LS3OperationError).code).toBe("ERR_S3_OPERATION");
+    });
+  });
+
+  describe("putObject", () => {
+    test("writes an object (happy path)", async () => {
+      const client = {
+        send: vi.fn().mockResolvedValue({}),
+      } as unknown as S3Client;
+      const operations = new M3LS3Operations(client);
+
+      await expect(
+        operations.putObject("reports", "2026/07/summary.json", "{}", {
+          contentType: "application/json",
+        }),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe("copyObject", () => {
+    test("copies an object (happy path)", async () => {
+      const client = {
+        send: vi.fn().mockResolvedValue({}),
+      } as unknown as S3Client;
+      const operations = new M3LS3Operations(client);
+
+      await expect(
+        operations.copyObject("archive", "2026/07/summary.json", {
+          bucket: "reports",
+          key: "2026/07/summary.json",
+        }),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe("deleteObject", () => {
+    test("deletes a single object (happy path)", async () => {
+      const client = {
+        send: vi.fn().mockResolvedValue({}),
+      } as unknown as S3Client;
+      const operations = new M3LS3Operations(client);
+
+      await expect(
+        operations.deleteObject("reports", "2026/07/summary.json"),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe("deleteObjects", () => {
+    test("deletes a batch of keys (happy path)", async () => {
+      const client = {
+        send: vi.fn().mockResolvedValue({
+          Deleted: [{ Key: "a.json" }, { Key: "b.json" }],
+          Errors: [],
+        }),
+      } as unknown as S3Client;
+      const operations = new M3LS3Operations(client);
+
+      const result = await operations.deleteObjects("reports", [
+        "a.json",
+        "b.json",
+      ]);
+
+      expect(result).toEqual({ deleted: 2, errors: [] });
     });
   });
 });

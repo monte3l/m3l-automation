@@ -22,6 +22,7 @@ import {
   batchDeleteItems,
   describeTable,
   M3LDynamoDBOperationError,
+  M3LDynamoDBOperations,
   type DynamoDBPage,
 } from "../src/aws/dynamodb/index.js";
 
@@ -889,6 +890,307 @@ describe("aws/dynamodb", () => {
       }
 
       expect(thrown).toBe(alreadyWrapped);
+    });
+  });
+});
+
+/**
+ * TDD seam for `aws/dynamodb`'s `M3LDynamoDBOperations` class (ADR-0038 AWS
+ * service tier), per the hub's contract message: a thin wrapper delegating
+ * to the free functions above, constructed from TWO clients — a
+ * `DynamoDBDocumentClient` for item-level methods and a raw `DynamoDBClient`
+ * for `describeTable` only. Reuses the same mock fixtures the free-function
+ * tests above already established.
+ *
+ * Scaffold stage: `M3LDynamoDBOperations` does not exist yet in
+ * `src/aws/dynamodb/client.ts`, so the import above fails module resolution
+ * (TS2724) until `code-implementer` adds it and re-exports it from
+ * `src/aws/dynamodb/index.ts`.
+ */
+describe("M3LDynamoDBOperations", () => {
+  test("constructs with a DynamoDBDocumentClient and a raw DynamoDBClient — no throw", () => {
+    const documentClient = {
+      send: vi.fn(),
+    } as unknown as DynamoDBDocumentClient;
+    const rawClient = { send: vi.fn() } as unknown as DynamoDBClient;
+
+    expect(
+      () => new M3LDynamoDBOperations(documentClient, rawClient),
+    ).not.toThrow();
+  });
+
+  describe("getItem", () => {
+    test("returns the stored item (happy path)", async () => {
+      const documentClient = {
+        send: vi.fn().mockResolvedValue({ Item: { id: "42", status: "paid" } }),
+      } as unknown as DynamoDBDocumentClient;
+      const rawClient = { send: vi.fn() } as unknown as DynamoDBClient;
+      const operations = new M3LDynamoDBOperations(documentClient, rawClient);
+
+      const result = await operations.getItem("orders", { id: "42" });
+
+      expect(result).toEqual({ id: "42", status: "paid" });
+    });
+
+    test("propagates M3LDynamoDBOperationError with code ERR_DYNAMODB_OPERATION on SDK rejection (failure path)", async () => {
+      const documentClient = {
+        send: vi.fn().mockRejectedValue(new Error("boom")),
+      } as unknown as DynamoDBDocumentClient;
+      const rawClient = { send: vi.fn() } as unknown as DynamoDBClient;
+      const operations = new M3LDynamoDBOperations(documentClient, rawClient);
+
+      let thrown: unknown;
+      try {
+        await operations.getItem("orders", { id: "42" });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LDynamoDBOperationError);
+      expect((thrown as M3LDynamoDBOperationError).code).toBe(
+        "ERR_DYNAMODB_OPERATION",
+      );
+    });
+  });
+
+  describe("putItem", () => {
+    test("writes an item (happy path)", async () => {
+      const documentClient = {
+        send: vi.fn().mockResolvedValue({}),
+      } as unknown as DynamoDBDocumentClient;
+      const rawClient = { send: vi.fn() } as unknown as DynamoDBClient;
+      const operations = new M3LDynamoDBOperations(documentClient, rawClient);
+
+      await expect(
+        operations.putItem("orders", { id: "42", status: "paid" }),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe("updateItem", () => {
+    test("merge-patches an item and returns its post-update attributes (happy path)", async () => {
+      const documentClient = {
+        send: vi
+          .fn()
+          .mockResolvedValue({ Attributes: { id: "42", status: "shipped" } }),
+      } as unknown as DynamoDBDocumentClient;
+      const rawClient = { send: vi.fn() } as unknown as DynamoDBClient;
+      const operations = new M3LDynamoDBOperations(documentClient, rawClient);
+
+      const result = await operations.updateItem(
+        "orders",
+        { id: "42" },
+        { status: "shipped" },
+      );
+
+      expect(result).toEqual({ id: "42", status: "shipped" });
+    });
+  });
+
+  describe("deleteItem", () => {
+    test("deletes a single item by key (happy path)", async () => {
+      const documentClient = {
+        send: vi.fn().mockResolvedValue({}),
+      } as unknown as DynamoDBDocumentClient;
+      const rawClient = { send: vi.fn() } as unknown as DynamoDBClient;
+      const operations = new M3LDynamoDBOperations(documentClient, rawClient);
+
+      await expect(
+        operations.deleteItem("orders", { id: "42" }),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe("queryItems", () => {
+    test("yields pages of matching items (happy path)", async () => {
+      const documentClient = {
+        send: vi.fn().mockResolvedValue({
+          Items: [{ userId: "42", status: "paid" }],
+          LastEvaluatedKey: undefined,
+        }),
+      } as unknown as DynamoDBDocumentClient;
+      const rawClient = { send: vi.fn() } as unknown as DynamoDBClient;
+      const operations = new M3LDynamoDBOperations(documentClient, rawClient);
+
+      const pages: DynamoDBPage[] = [];
+      for await (const page of operations.queryItems({
+        tableName: "orders",
+        keyCondition: { userId: "42" },
+      })) {
+        pages.push(page);
+      }
+
+      expect(pages).toEqual([
+        {
+          items: [{ userId: "42", status: "paid" }],
+          lastEvaluatedKey: undefined,
+        },
+      ]);
+    });
+
+    test("is a genuine async generator — exposes Symbol.asyncIterator and drains via for-await", async () => {
+      const documentClient = {
+        send: vi.fn().mockResolvedValue({
+          Items: [{ userId: "42" }],
+          LastEvaluatedKey: undefined,
+        }),
+      } as unknown as DynamoDBDocumentClient;
+      const rawClient = { send: vi.fn() } as unknown as DynamoDBClient;
+      const operations = new M3LDynamoDBOperations(documentClient, rawClient);
+
+      const generator = operations.queryItems({
+        tableName: "orders",
+        keyCondition: { userId: "42" },
+      });
+
+      expect(typeof generator[Symbol.asyncIterator]).toBe("function");
+      const pages: DynamoDBPage[] = [];
+      for await (const page of generator) {
+        pages.push(page);
+      }
+      expect(pages).toHaveLength(1);
+    });
+  });
+
+  describe("scanSegment", () => {
+    test("yields pages of scanned items (happy path)", async () => {
+      const documentClient = {
+        send: vi.fn().mockResolvedValue({
+          Items: [{ id: "1" }],
+          LastEvaluatedKey: undefined,
+        }),
+      } as unknown as DynamoDBDocumentClient;
+      const rawClient = { send: vi.fn() } as unknown as DynamoDBClient;
+      const operations = new M3LDynamoDBOperations(documentClient, rawClient);
+
+      const pages: DynamoDBPage[] = [];
+      for await (const page of operations.scanSegment({
+        tableName: "orders",
+      })) {
+        pages.push(page);
+      }
+
+      expect(pages).toEqual([
+        { items: [{ id: "1" }], lastEvaluatedKey: undefined },
+      ]);
+    });
+
+    test("is a genuine async generator — exposes Symbol.asyncIterator and drains via for-await", async () => {
+      const documentClient = {
+        send: vi.fn().mockResolvedValue({
+          Items: [{ id: "1" }],
+          LastEvaluatedKey: undefined,
+        }),
+      } as unknown as DynamoDBDocumentClient;
+      const rawClient = { send: vi.fn() } as unknown as DynamoDBClient;
+      const operations = new M3LDynamoDBOperations(documentClient, rawClient);
+
+      const generator = operations.scanSegment({ tableName: "orders" });
+
+      expect(typeof generator[Symbol.asyncIterator]).toBe("function");
+      const pages: DynamoDBPage[] = [];
+      for await (const page of generator) {
+        pages.push(page);
+      }
+      expect(pages).toHaveLength(1);
+    });
+  });
+
+  describe("batchWriteItems", () => {
+    test("writes a batch of items (happy path)", async () => {
+      const documentClient = {
+        send: vi.fn().mockResolvedValue({}),
+      } as unknown as DynamoDBDocumentClient;
+      const rawClient = { send: vi.fn() } as unknown as DynamoDBClient;
+      const operations = new M3LDynamoDBOperations(documentClient, rawClient);
+
+      const result = await operations.batchWriteItems("orders", [
+        { id: "1" },
+        { id: "2" },
+      ]);
+
+      expect(result).toEqual({ written: 2, unprocessed: [] });
+    });
+  });
+
+  describe("batchDeleteItems", () => {
+    test("deletes a batch of keys (happy path)", async () => {
+      const documentClient = {
+        send: vi.fn().mockResolvedValue({}),
+      } as unknown as DynamoDBDocumentClient;
+      const rawClient = { send: vi.fn() } as unknown as DynamoDBClient;
+      const operations = new M3LDynamoDBOperations(documentClient, rawClient);
+
+      const result = await operations.batchDeleteItems("orders", [
+        { id: "1" },
+        { id: "2" },
+      ]);
+
+      expect(result).toEqual({ deleted: 2, unprocessed: [] });
+    });
+  });
+
+  describe("describeTable", () => {
+    test("maps itemCount/tableStatus (happy path)", async () => {
+      const documentClient = {
+        send: vi.fn().mockResolvedValue({}),
+      } as unknown as DynamoDBDocumentClient;
+      const rawClient = {
+        send: vi.fn().mockResolvedValue({
+          Table: { ItemCount: 1234, TableStatus: "ACTIVE" },
+        }),
+      } as unknown as DynamoDBClient;
+      const operations = new M3LDynamoDBOperations(documentClient, rawClient);
+
+      const result = await operations.describeTable("orders");
+
+      expect(result).toEqual({ itemCount: 1234, tableStatus: "ACTIVE" });
+    });
+
+    test("routes through the raw DynamoDBClient constructor argument, NOT the document client — the document client's send is never called", async () => {
+      const documentSend = vi
+        .fn()
+        .mockRejectedValue(
+          new Error("describeTable must not use the document client's send"),
+        );
+      const documentClient = {
+        send: documentSend,
+      } as unknown as DynamoDBDocumentClient;
+      const rawSend = vi
+        .fn()
+        .mockResolvedValue({ Table: { ItemCount: 7, TableStatus: "ACTIVE" } });
+      const rawClient = { send: rawSend } as unknown as DynamoDBClient;
+      const operations = new M3LDynamoDBOperations(documentClient, rawClient);
+
+      const result = await operations.describeTable("orders");
+
+      expect(result).toEqual({ itemCount: 7, tableStatus: "ACTIVE" });
+      expect(rawSend).toHaveBeenCalledTimes(1);
+      const command = rawSend.mock.calls[0]?.[0] as DescribeTableCommand;
+      expect(command).toBeInstanceOf(DescribeTableCommand);
+      expect(documentSend).not.toHaveBeenCalled();
+    });
+
+    test("propagates M3LDynamoDBOperationError with code ERR_DYNAMODB_OPERATION on SDK rejection (failure path)", async () => {
+      const documentClient = {
+        send: vi.fn(),
+      } as unknown as DynamoDBDocumentClient;
+      const rawClient = {
+        send: vi.fn().mockRejectedValue(new Error("boom")),
+      } as unknown as DynamoDBClient;
+      const operations = new M3LDynamoDBOperations(documentClient, rawClient);
+
+      let thrown: unknown;
+      try {
+        await operations.describeTable("orders");
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LDynamoDBOperationError);
+      expect((thrown as M3LDynamoDBOperationError).code).toBe(
+        "ERR_DYNAMODB_OPERATION",
+      );
     });
   });
 });

@@ -14,4 +14,5 @@
 
 export * from "./operations.js";
 export { M3LS3OperationError } from "./error.js";
+export { M3LS3Operations } from "./client.js";
 export * from "./uri.js";

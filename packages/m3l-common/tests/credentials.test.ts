@@ -85,6 +85,11 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { M3LError } from "../src/core/errors/index.js";
+import { M3LLogEventCategory } from "../src/core/logging/M3LLogEventCategory.js";
+import type {
+  M3LLogEvent,
+  M3LLoggerHandler,
+} from "../src/core/logging/M3LLogEvent.js";
 import { M3LPrompt } from "../src/core/prompt/index.js";
 import type { M3LPromptAdapter } from "../src/core/prompt/index.js";
 import {
@@ -96,7 +101,10 @@ import {
   parseAWSProfile,
   parseAWSRegion,
 } from "../src/aws/models/index.js";
-import type { M3LAWSLoginResult } from "../src/aws/models/index.js";
+import type {
+  M3LAWSCredentialsManagerOptions,
+  M3LAWSLoginResult,
+} from "../src/aws/models/index.js";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -169,6 +177,52 @@ function configureSpawnError(cause: Error): void {
     });
     return child;
   });
+}
+
+/**
+ * A minimal fake implementing {@link M3LLoggerHandler}: records every
+ * dispatched event in order and offers `reset()` to clear history — mirrors
+ * how `M3LPrompt` injection is faked elsewhere in this file (a small object
+ * literal satisfying the structural interface, not a real handler).
+ */
+class FakeLoggerHandler implements M3LLoggerHandler {
+  readonly events: M3LLogEvent[] = [];
+  handle(event: M3LLogEvent): void {
+    this.events.push(event);
+  }
+  reset(): void {
+    this.events.length = 0;
+  }
+}
+
+/**
+ * A logger handler whose `handle()` throws synchronously, either
+ * unconditionally (the default) or only for events matching `shouldThrow` —
+ * proves whether the manager isolates a misbehaving handler the way
+ * `M3LLogger.dispatch` does (`core/logging/M3LLogger.ts`: try/catch around
+ * each `handler.handle(event)` call, diagnosed to stderr, never rethrown),
+ * rather than letting the throw escape into caller-owned control flow (a
+ * `child.on("exit"/"error", ...)` listener, or the pre-spawn synchronous
+ * `STEP` dispatch).
+ */
+class ThrowingLoggerHandler implements M3LLoggerHandler {
+  readonly events: M3LLogEvent[] = [];
+  private readonly shouldThrow: (event: M3LLogEvent) => boolean;
+
+  constructor(shouldThrow: (event: M3LLogEvent) => boolean = () => true) {
+    this.shouldThrow = shouldThrow;
+  }
+
+  handle(event: M3LLogEvent): void {
+    this.events.push(event);
+    if (this.shouldThrow(event)) {
+      throw new Error("boom from a buggy handler");
+    }
+  }
+
+  reset(): void {
+    this.events.length = 0;
+  }
 }
 
 /** Representative error messages mapped to the documented classification. */
@@ -699,6 +753,207 @@ describe("SSO login process seam", () => {
 });
 
 // =============================================================================
+// Injected log handler: SSO-login-lifecycle events dispatched to
+// `options.logger` (a no-op when omitted).
+// =============================================================================
+describe("injected logger — SSO login lifecycle events", () => {
+  test("logger.handle is a safe no-op when logger is omitted: a successful login still resolves normally without throwing", async () => {
+    h.stsSend.mockRejectedValue(
+      new Error("Token has expired and refresh failed"),
+    );
+    configureSpawn(0, null);
+
+    const manager = new M3LAWSCredentialsManager({
+      profile: parseAWSProfile("my-profile"),
+      interactive: false,
+    });
+
+    await expect(manager.ensureValidCredentials()).resolves.toMatchObject({
+      outcome: "success",
+    });
+  });
+
+  test("when supplied and login succeeds, dispatches a start event and a SUCCESS event", async () => {
+    h.stsSend.mockRejectedValue(
+      new Error("Token has expired and refresh failed"),
+    );
+    configureSpawn(0, null);
+    const logger = new FakeLoggerHandler();
+
+    const manager = new M3LAWSCredentialsManager({
+      profile: parseAWSProfile("my-profile"),
+      interactive: false,
+      logger,
+    });
+
+    await manager.ensureValidCredentials();
+
+    expect(logger.events.length).toBeGreaterThanOrEqual(2);
+    expect(
+      logger.events.some(
+        (event) => event.category === M3LLogEventCategory.SUCCESS,
+      ),
+    ).toBe(true);
+    expect(
+      logger.events.some((event) => event.message.includes("my-profile")),
+    ).toBe(true);
+  });
+
+  test("when supplied and login fails (non-zero exit), dispatches an ERROR event", async () => {
+    h.stsSend.mockRejectedValue(
+      new Error("Token has expired and refresh failed"),
+    );
+    configureSpawn(1, null);
+    const logger = new FakeLoggerHandler();
+
+    const manager = new M3LAWSCredentialsManager({
+      profile: parseAWSProfile("my-profile"),
+      interactive: false,
+      logger,
+    });
+
+    await manager.ensureValidCredentials();
+
+    expect(
+      logger.events.some(
+        (event) => event.category === M3LLogEventCategory.ERROR,
+      ),
+    ).toBe(true);
+  });
+
+  test("when supplied and login times out, dispatches a WARNING event", async () => {
+    vi.useFakeTimers();
+    h.stsSend.mockRejectedValue(
+      new Error("Token has expired and refresh failed"),
+    );
+
+    // No auto-emit: the child only exits when its `kill()` (invoked by the
+    // implementation's timeout) fires — see FakeChildProcess.kill().
+    const child = new FakeChildProcess();
+    h.spawn.mockImplementation(() => child);
+    const logger = new FakeLoggerHandler();
+
+    const manager = new M3LAWSCredentialsManager({
+      profile: parseAWSProfile("my-profile"),
+      interactive: false,
+      loginTimeoutMs: 1000,
+      logger,
+    });
+
+    const pending = manager.ensureValidCredentials();
+    await vi.advanceTimersByTimeAsync(1000);
+    await pending;
+
+    expect(
+      logger.events.some(
+        (event) => event.category === M3LLogEventCategory.WARNING,
+      ),
+    ).toBe(true);
+  });
+});
+
+// =============================================================================
+// Injected log handler: error isolation (regression).
+//
+// `M3LLogger.dispatch` (core/logging/M3LLogger.ts) wraps every
+// `handler.handle(event)` call in try/catch so "a handler that throws cannot
+// crash the caller." `spawnSsoLogin`/`finalizeSsoLogin` call
+// `this.injectedLogger?.handle(event)` directly, with no equivalent
+// isolation — these tests prove that gap.
+// =============================================================================
+describe("injected logger — handler error isolation (regression)", () => {
+  test("a logger whose handle() throws on the terminal SUCCESS event does not crash or leave the login promise unsettled", async () => {
+    h.stsSend.mockRejectedValue(
+      new Error("Token has expired and refresh failed"),
+    );
+    configureSpawn(0, null);
+    const logger = new ThrowingLoggerHandler(
+      (event) => event.category === M3LLogEventCategory.SUCCESS,
+    );
+
+    const manager = new M3LAWSCredentialsManager({
+      profile: parseAWSProfile("my-profile"),
+      interactive: false,
+      logger,
+    });
+
+    await expect(manager.ensureValidCredentials()).resolves.toMatchObject({
+      outcome: "success",
+    });
+  }, 3000);
+
+  test("a logger whose handle() throws unconditionally (including the pre-spawn STEP event) does not prevent a login that would otherwise succeed from completing", async () => {
+    h.stsSend.mockRejectedValue(
+      new Error("Token has expired and refresh failed"),
+    );
+    configureSpawn(0, null);
+    const logger = new ThrowingLoggerHandler();
+
+    const manager = new M3LAWSCredentialsManager({
+      profile: parseAWSProfile("my-profile"),
+      interactive: false,
+      logger,
+    });
+
+    await expect(manager.ensureValidCredentials()).resolves.toMatchObject({
+      outcome: "success",
+    });
+  }, 3000);
+
+  test("a spawn failure (aws CLI missing) still dispatches an ERROR event to the injected logger (ADR-0041 lifecycle: start/success/failure/timeout)", async () => {
+    h.stsSend.mockRejectedValue(
+      new Error("Token has expired and refresh failed"),
+    );
+    const spawnError = Object.assign(new Error("spawn aws ENOENT"), {
+      code: "ENOENT",
+    });
+    configureSpawnError(spawnError);
+    const logger = new FakeLoggerHandler();
+
+    const manager = new M3LAWSCredentialsManager({
+      profile: parseAWSProfile("my-profile"),
+      interactive: false,
+      logger,
+    });
+
+    let thrown: unknown;
+    try {
+      await manager.ensureValidCredentials();
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LAWSCredentialsError);
+    expect(
+      logger.events.some(
+        (event) => event.category === M3LLogEventCategory.ERROR,
+      ),
+    ).toBe(true);
+  });
+});
+
+// =============================================================================
+// M3LAWSCredentialsManagerOptions — type-level contract for the injected
+// `logger` field (optional; accepts an M3LLoggerHandler when supplied).
+// =============================================================================
+describe("M3LAWSCredentialsManagerOptions — logger field type-level contract", () => {
+  test("logger is optional: a profile-only options literal still typechecks", () => {
+    const options: M3LAWSCredentialsManagerOptions = {
+      profile: parseAWSProfile("x"),
+    };
+    expect(options.profile).toBeDefined();
+  });
+
+  test("logger accepts an M3LLoggerHandler when supplied", () => {
+    const logger = new FakeLoggerHandler();
+    const options: M3LAWSCredentialsManagerOptions = {
+      profile: parseAWSProfile("x"),
+      logger,
+    };
+    expect(options.logger).toBe(logger);
+  });
+});
+
+// =============================================================================
 // SSO login concurrency coalescing (M3LSingleFlight regression)
 //
 // Two independent callers hitting a recoverable credential error for the
@@ -837,6 +1092,60 @@ describe("analyzeError", () => {
     // OLD unbounded pattern measured on the same input — a clean separation
     // between linear-time behavior and catastrophic backtracking.
     expect(elapsed).toBeLessThan(2000);
+  });
+
+  // ===========================================================================
+  // Fast-path classification by `error.name` (AWS SDK exception identity),
+  // checked BEFORE the regex chain against `error.message`.
+  // ===========================================================================
+  describe("classifies by error.name before falling back to the message regex chain", () => {
+    test("Error named 'ExpiredTokenException' with a non-matching message classifies as SSO_SESSION_EXPIRED, recoverable", () => {
+      const manager = new M3LAWSCredentialsManager();
+      const error = new Error("Please re-authenticate.");
+      error.name = "ExpiredTokenException";
+
+      const analysis = manager.analyzeError(error);
+      expect(analysis.type).toBe(
+        M3LAWSCredentialsErrorType.SSO_SESSION_EXPIRED,
+      );
+      expect(analysis.recoverable).toBe(true);
+    });
+
+    test("Error named 'SSOTokenProviderFailure' with a non-matching message classifies as SSO_SESSION_INVALID, recoverable", () => {
+      const manager = new M3LAWSCredentialsManager();
+      const error = new Error("Please re-authenticate.");
+      error.name = "SSOTokenProviderFailure";
+
+      const analysis = manager.analyzeError(error);
+      expect(analysis.type).toBe(
+        M3LAWSCredentialsErrorType.SSO_SESSION_INVALID,
+      );
+      expect(analysis.recoverable).toBe(true);
+    });
+
+    test("name-based identity wins over message content: 'ExpiredTokenException' still classifies as SSO_SESSION_EXPIRED even when the message matches the invalid-session regex", () => {
+      const manager = new M3LAWSCredentialsManager();
+      const error = new Error("session is invalid");
+      error.name = "ExpiredTokenException";
+
+      const analysis = manager.analyzeError(error);
+      expect(analysis.type).toBe(
+        M3LAWSCredentialsErrorType.SSO_SESSION_EXPIRED,
+      );
+      expect(analysis.recoverable).toBe(true);
+    });
+
+    test("regression: a plain Error (default name) with an 'expired' message still classifies via the pre-existing regex path", () => {
+      const manager = new M3LAWSCredentialsManager();
+      const error = new Error("Token has expired and refresh failed");
+
+      const analysis = manager.analyzeError(error);
+      expect(error.name).toBe("Error");
+      expect(analysis.type).toBe(
+        M3LAWSCredentialsErrorType.SSO_SESSION_EXPIRED,
+      );
+      expect(analysis.recoverable).toBe(true);
+    });
   });
 });
 

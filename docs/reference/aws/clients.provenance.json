@@ -33,10 +33,10 @@
         {
           "file": "packages/m3l-common/src/aws/clients/service-provider.ts",
           "symbol": "AWSServiceProvider",
-          "blob": "ae65a565b36797a809b27e6e8d359f36cbf03d2b"
+          "blob": "620b5070243490e1061adedd4cac01c4d6e70432"
         }
       ],
-      "retrieved": "2026-08-11"
+      "retrieved": "2026-08-12"
     },
     {
       "heading": "`AWSClientProvider`",
@@ -77,10 +77,10 @@
         {
           "file": "packages/m3l-common/src/aws/clients/service-provider.ts",
           "symbol": "AWSServiceProvider",
-          "blob": "ae65a565b36797a809b27e6e8d359f36cbf03d2b"
+          "blob": "620b5070243490e1061adedd4cac01c4d6e70432"
         }
       ],
-      "retrieved": "2026-08-11"
+      "retrieved": "2026-08-12"
     },
     {
       "heading": "`M3LAWSClientError`",

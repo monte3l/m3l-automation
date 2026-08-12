@@ -170,6 +170,8 @@ underlying, still-shared SDK client — see `AWSProvider` above):
 | `eks`                    | [`M3LEKSOperations`](./eks.md)                              | `clientProvider.eks`                                                                                                                                              |
 | `lambda`                 | [`M3LLambdaOperations`](./lambda.md)                        | `clientProvider.lambda`                                                                                                                                           |
 | `secretsManager`         | [`M3LSecretsManagerOperations`](./secrets-manager.md)       | `clientProvider.secretsManager`                                                                                                                                   |
+| `s3Operations`           | [`M3LS3Operations`](./s3.md)                                | `clientProvider.s3`                                                                                                                                               |
+| `dynamoDBOperations`     | [`M3LDynamoDBOperations`](./dynamodb.md)                    | `clientProvider.dynamoDBDocument` + `clientProvider.dynamoDB` (two clients — see below)                                                                           |
 | `credentials`            | [`M3LAWSCredentialsManager`](./credentials.md)              | `clientProvider.profile`/`clientProvider.region` (not a raw client)                                                                                               |
 
 `cloudWatchAlarms` and `cloudWatchMetrics` both wrap the same underlying
@@ -177,16 +179,21 @@ underlying, still-shared SDK client — see `AWSProvider` above):
 client — the raw client is still constructed and connected exactly once,
 since `clientProvider.cloudWatch` is itself memoized on `clientProvider`).
 
-**Not exposed via `.services`:** [`aws/s3`](./s3.md) and
-[`aws/dynamodb`](./dynamodb.md) are deliberately **function-based**
-(ADR-0033 for S3; the same shape for DynamoDB item operations) — every
-export is a free function taking an already-provisioned client as its first
-parameter, not a class. There is no wrapper object to construct or cache, so
-neither has a `.services` entry; call the functions directly with
-`.clients.s3` / `.clients.dynamoDBDocument`, exactly as before this ADR.
-Likewise, the `s3://` URI parser (`aws/s3`'s `parseS3Uri`/`formatS3Uri`) is
-pure string logic with no client dependency at all, so it has no `.services`
-entry either.
+**`aws/s3` and `aws/dynamodb` remain primarily function-based**
+([`aws/s3`](./s3.md): ADR-0033; [`aws/dynamodb`](./dynamodb.md): the same
+shape for DynamoDB item operations) — every free function still takes an
+already-provisioned client as its first parameter, unchanged. `s3Operations`/
+`dynamoDBOperations` above are thin `M3LS3Operations`/`M3LDynamoDBOperations`
+wrapper classes added over those same functions purely for `.services`
+access-path consistency with every other wrapped service; they add no new
+behavior. `dynamoDBOperations` is built from **two** clients —
+`clientProvider.dynamoDBDocument` for every method except `describeTable`,
+and `clientProvider.dynamoDB` for `describeTable` alone — mirroring the split
+`aws/dynamodb/operations.ts` itself already has. Calling the free functions
+directly with `.clients.s3` / `.clients.dynamoDBDocument` / `.clients.dynamoDB`
+remains equally valid; neither access path is deprecated. The `s3://` URI
+parser (`aws/s3`'s `parseS3Uri`/`formatS3Uri`) is pure string logic with no
+client dependency at all, so it has no `.services` entry.
 
 Other members:
 
@@ -196,7 +203,7 @@ Other members:
   to `clientProvider`.
 - `close()` — clears this provider's own cache so a later getter access
   constructs fresh wrapper instances. Unlike `AWSClientProvider.close()`,
-  this **never calls `.destroy()`** on anything: none of the fifteen getters
+  this **never calls `.destroy()`** on anything: none of the seventeen getters
   above holds a destroyable resource of its own — each either wraps a client
   `clientProvider` owns (and destroys), or (for `requestSigner`/
   `credentials`) holds no destroyable resource at all. Calling

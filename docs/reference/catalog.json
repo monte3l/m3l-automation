@@ -753,7 +753,8 @@
       "BatchWriteResult",
       "BatchDeleteResult",
       "TableDescription",
-      "M3LDynamoDBOperationError"
+      "M3LDynamoDBOperationError",
+      "M3LDynamoDBOperations"
     ]
   },
   {
@@ -907,7 +908,8 @@
       "M3LS3OperationError",
       "parseS3Uri",
       "formatS3Uri",
-      "M3LS3Uri"
+      "M3LS3Uri",
+      "M3LS3Operations"
     ]
   },
   {

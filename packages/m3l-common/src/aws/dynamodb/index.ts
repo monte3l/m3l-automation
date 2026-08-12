@@ -15,3 +15,4 @@
 
 export * from "./operations.js";
 export { M3LDynamoDBOperationError } from "./error.js";
+export { M3LDynamoDBOperations } from "./client.js";
