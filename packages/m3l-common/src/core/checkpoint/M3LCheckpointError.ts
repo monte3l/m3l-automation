@@ -10,6 +10,15 @@ import { M3LError } from "../errors/index.js";
 /**
  * The set of machine-readable codes carried by an {@link M3LCheckpointError}.
  *
+ * - `"ERR_CHECKPOINT_CORRUPT"` — `read()` found a well-formed
+ *   content-addressed envelope (see {@link M3LCheckpointStore.write}) whose
+ *   stored `checksum` does not match the recomputed `canonicalJsonHash` of
+ *   its `payload` — the file was hand-edited or corrupted after being
+ *   written, even though it remains valid JSON and its payload would
+ *   otherwise pass `validate`. Does **not** chain a `cause`: there is no
+ *   underlying thrown error to chain, unlike `"ERR_CHECKPOINT_IO"` and
+ *   `"ERR_CHECKPOINT_MISSING"` above. Only the resolved `path` reaches
+ *   `context`; `message` never includes file content.
  * - `"ERR_CHECKPOINT_IO"` — a read, write, or delete failed for a reason
  *   other than the file being absent (`EACCES`, `EPERM`, `ENOSPC`, a
  *   rejected `rename`, an `ENOENT` from a missing *parent* directory on
@@ -26,7 +35,10 @@ import { M3LError } from "../errors/index.js";
  *   includes a snippet of the raw content.
  */
 export type M3LCheckpointErrorCode =
-  "ERR_CHECKPOINT_IO" | "ERR_CHECKPOINT_MISSING" | "ERR_CHECKPOINT_PARSE";
+  | "ERR_CHECKPOINT_CORRUPT"
+  | "ERR_CHECKPOINT_IO"
+  | "ERR_CHECKPOINT_MISSING"
+  | "ERR_CHECKPOINT_PARSE";
 
 /**
  * Constructor options for {@link M3LCheckpointError}.
