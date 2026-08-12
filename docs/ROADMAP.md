@@ -78,6 +78,27 @@ table](./plans/IMPLEMENTATION.md#aws-getter-reality) instead.
 | **Config help + typo suggestions**         | Done   | `M3LConfigHelpFormatter`, Damerau–Levenshtein typo suggestions on `M3LUnknownParameterDetector`. **PR:** #317.                                                                             |
 | **`AWSServiceProvider` `.services` tier**  | Done   | 15 lazily-cached getters on `AWSProvider.services`. Lands last per ADR-0038. **PR:** #323.                                                                                                 |
 
+### Post-comparison hardening wave — ADR-0040/0041/0042/0043
+
+A second external comparison found an unredacted-credential leak in
+`M3LHttpClient`, dead retry/response-size code paths, and two shipped
+primitives (`M3LSingleFlight`, `canonicalJsonHash`) with zero consumers. Detail
+
+- source call-sites in
+  [`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#post-comparison-hardening-wave--adr-0040004100420043).
+
+| Item                                   | Status   | Why now / Notes                                                                                                                                                                  |
+| -------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Doc drift — coverage gate claim**    | Done     | Corrected the stale "80% coverage gate" prose to the enforced per-file thresholds. **PR:** #325.                                                                                 |
+| **Credential leak in `M3LHttpClient`** | Done     | `"request"` event headers and error-context URLs now go through the shared redactor. **PR:** #326.                                                                               |
+| **HTTP dead branches reachable**       | Done     | `Retry-After` parsing, 408 added to the retriable set, opt-in `maxResponseBytes`. **PR:** #327.                                                                                  |
+| **Bounded input on the import path**   | Done     | Opt-in `maxBytes`/`maxRows` on `resolveSource`, default unbounded. **PR:** #328.                                                                                                 |
+| **ReDoS regression coverage**          | Done     | Adversarial-padding regression tests for `redact.ts` and the credentials-manager classifiers. **PR:** #329.                                                                      |
+| **Wire the unwired islands**           | Done     | `M3LSingleFlight` coalesces concurrent SSO logins; `canonicalJsonHash` content-addresses checkpoint payloads. **PR:** #330.                                                      |
+| **AWS depth**                          | Done     | Identity-based credential-failure classification, an injected credentials-manager logger seam, `M3LS3Operations`/`M3LDynamoDBOperations` `.services`-tier getters. **PR:** #331. |
+| **Script-facing CLI package**          | Deferred | Zero-dependency design accepted and recorded; build gated on a named consumer call-site. See [ADR-0042](./adr/0042-script-cli-package-deferred.md).                              |
+| **Step-pipeline engine**               | Deferred | 4,867 lines of repeated dispatch shape across 13 scripts; deferred, gated on a named consumer. See [ADR-0043](./adr/0043-step-pipeline-engine-deferred.md).                      |
+
 ## Priority 1 — Consumer fleet
 
 Before scoping or starting any AWS-consumer-script item below, check its

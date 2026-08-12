@@ -1,0 +1,157 @@
+# 0042. Defer the script-facing `packages/m3l-cli` package
+
+- **Status:** Accepted
+- **Date:** 2026-08-13
+- **Deciders:** Enrico Lionello (maintainer); Claude (audit synthesis)
+
+## Context and problem statement
+
+The post-comparison hardening-wave plan (`docs/plans/archive/2026-08-13-post-comparison-hardening-wave.md`,
+§8) evaluated a script-facing interactive CLI — `packages/m3l-cli` — that
+would discover the 13 packages under `scripts/*`, read their declared
+`configParameters`, and offer `list`/`inspect`/`run`/`doctor` commands plus a
+later interactive wizard with presets and history.
+
+The evaluation concluded the design is genuinely viable: a zero-dependency
+build (`node:util` `parseArgs`, native TS type-stripping for
+`scripts/*/src/config.ts` imports, `Core.M3LPrompt`/`M3LMultiSpinner` for
+interaction, `M3LUnknownParameterDetector`'s Damerau–Levenshtein matching for
+fuzzy search) removes the minimal-dependency objection entirely, and the
+`configParameters` seam every script already declares is unconsumed by any
+existing tool (`grep -rln "configParameters" bin/` returns nothing). Root
+`bin/` already covers static scaffolding/checking; the gap is genuinely
+interactive, per-script introspection and guided execution.
+
+That viability is not, by itself, a reason to build it now. This ADR records
+the decision to defer implementation while keeping the evaluation on record,
+so a future revisit starts from "here is the accepted design" rather than
+re-deriving it.
+
+## Decision drivers
+
+- **Gated broadening** (ADR-0021, carried forward by ADR-0037): new capability
+  surface — and `packages/m3l-cli` would be an entirely new workspace
+  package, not a submodule — is gated on a named consumer need, not built
+  speculatively ahead of one.
+- **No named consumer pull today.** The 13 existing scripts are run directly
+  (`pnpm --filter <script> start`); nothing in this repo's current usage
+  pattern is blocked on the absence of a discovery/wizard layer. The plan's
+  own phased build-out (8a–8g) is sized for a real, felt need, not a
+  hypothetical one.
+- **Scope and governance cost are non-trivial even at zero runtime
+  dependencies.** A new workspace package touches `bin/check-deps.mjs`,
+  `knip.json`, root `tsconfig` references, and coverage-config inclusion
+  (the plan's own risk register, row 2) — real surface area to add and then
+  maintain, independent of the dependency count.
+- **This wave is additive-minor and closing, not opening new fronts.** §7
+  (AWS depth) already shipped the wave's substantive additions; layering a
+  new package on top would extend the wave indefinitely rather than close it.
+
+## Considered options
+
+1. **Build `packages/m3l-cli` now, following the plan's 8a–8g phasing.**
+   Rejected: no named consumer call-site exists yet; this is exactly the
+   speculative-broadening pattern ADR-0021/ADR-0037 already declined for
+   other capabilities (e.g. an SSM config provider, a Bedrock invoker in
+   ADR-0039).
+2. **Record the evaluation as an accepted design and defer the build,
+   revisiting when a concrete trigger appears.** Preserves the design work
+   (zero-dependency table, phased build-out, risk register with per-row
+   mitigations) so a future session does not re-run the same audit, while not
+   committing to the governance and maintenance cost until a real need
+   exists.
+3. **Discard the evaluation entirely and let the question resurface from
+   scratch next time.** Rejected: throws away verified, non-obvious findings
+   (native TS type-stripping works with zero deps on Node 24; the
+   `configParameters` seam is unconsumed) that took real investigation to
+   establish.
+
+## Decision
+
+We chose **option 2**.
+
+`packages/m3l-cli` is **not** being implemented as part of this wave. The
+design remains accepted on paper: a private, unpublished package depending
+only on `@m3l-automation/m3l-common` via `workspace:*`, phased 8a
+(ADR — this document, retroactively) through 8g (interactive wizard), with
+the zero-dependency replacement table and the seven-row risk register from
+the source plan carried forward unchanged below.
+
+**Revisit trigger.** Build phase 8a (discovery + introspection: `list` and
+`inspect`) only once one of the following becomes true:
+
+- A user or script maintainer explicitly asks to browse/inspect the 13
+  scripts' declared parameters without opening each `config.ts` by hand, or
+- A second wave of consumer scripts (beyond the current 13) makes manual
+  discovery-by-directory-scan genuinely painful, or
+- The `configParameters` seam grows a second consumer need (e.g. a
+  documentation generator) that would make a shared discovery module pay for
+  itself independent of the CLI.
+
+None of these has occurred as of this ADR.
+
+### Carried-forward design record
+
+**Zero-dependency replacement table** (verified, not assumed):
+
+| Need                             | Conventional dep    | In-house replacement                                 | Status                                                                |
+| -------------------------------- | ------------------- | ---------------------------------------------------- | --------------------------------------------------------------------- |
+| Arg parsing                      | `commander`         | `node:util` `parseArgs`                              | Built-in, verified present                                            |
+| Import `scripts/*/src/config.ts` | `tsx` loader        | Node native type-stripping                           | Verified: `await import("./cfg.ts")` succeeds with no loader, no deps |
+| Interactive prompts              | `@inquirer/prompts` | `Core.M3LPrompt`, `M3LMultiSpinner`, `M3LLoadingBar` | Already public                                                        |
+| Fuzzy search                     | `fuse.js`           | `M3LUnknownParameterDetector` (Damerau–Levenshtein)  | Already public                                                        |
+| Spawn / mtime cache              | —                   | `node:child_process`, `node:fs`                      | Built-in                                                              |
+
+**Phasing** (unchanged from the source plan, retained for a future
+implementer): 8a ADR (this document) → 8b discovery + introspection (`list`,
+`inspect`) → 8c execution (`run <script> -- [args]`) → 8d runtime-registered
+per-script subcommands → 8e `doctor` → 8f presets + history (blocked on the
+`M3LConfigParameter.secret` prerequisite below) → 8g interactive wizard.
+
+**Library prerequisite for 8f.** `M3LConfigParameter` has no `secret` flag,
+and `core/config/M3LSecretsSpecifier.ts` is a standalone name-set with no
+producer. Presets/history cannot be built safely until an additive
+`secret?: boolean` is added to `M3LConfigParameter` and the CLI builds its
+`M3LSecretsSpecifier` from each script's declared parameters — this must ship
+before 8f, not as part of it.
+
+**Risk register** (every risk keeps its mitigation on record for whenever
+implementation resumes):
+
+| Risk                                                                                                       | Mitigation                                                                                                                                                                                                                |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native type-stripping cannot execute type-directed emit (`enum`, `namespace`, decorators) in a `config.ts` | Verified zero occurrences today; add an ESLint zone banning them under `scripts/*/src/config.ts`, and have the CLI fail with a named error rather than a stack trace.                                                     |
+| A new workspace package escapes existing governance                                                        | `bin/check-deps.mjs`, `knip.json`, root `tsconfig` references, and coverage-config inclusion must all gain an `m3l-cli` entry.                                                                                            |
+| Presets/history persist secret values                                                                      | The `secret` flag prerequisite above; the preset writer refuses to persist any parameter marked secret; history stores parameter names and outcomes, never values; displayed values go through `redactSensitiveLogValue`. |
+| A script name shadows a static command (`list`, `inspect`, `run`, `doctor`, `new`, `help`)                 | Verified no current collision; `run <script>` is the always-unambiguous canonical form; add the reserved-name list to `bin/scaffold-script.mjs` and `check-script-scaffold.mjs`.                                          |
+| Importing 13 config modules on every invocation slows startup                                              | mtime-keyed cache in `Core.M3LPaths.getCacheDir()`; discovery is lazy so `--help`/`--version`/static commands never pay for it.                                                                                           |
+| History file grows unbounded                                                                               | Bounded ring buffer with an explicit cap, mirroring `core/diagnostics/breadcrumbs.ts`'s pattern.                                                                                                                          |
+| Best-effort persistence fails (read-only FS, permissions)                                                  | Never fatal — degrade to in-memory for the session, surfaced through `doctor`.                                                                                                                                            |
+
+## Consequences
+
+- **Positive:** the design work is preserved and reviewable rather than
+  living only in a plan-mode scratch file; a future "should we build a script
+  CLI" question has an immediate, correct default (the design above, gated
+  on the revisit trigger) instead of requiring a fresh audit; the wave closes
+  without open-ended scope creep.
+- **Negative / trade-offs:** the `configParameters` introspection gap
+  identified during the audit remains unaddressed until the trigger fires —
+  a consumer wanting programmatic access to a script's declared parameters
+  still has to read `config.ts` by hand.
+- **Semver impact:** none. No code, export, or `exports`-map entry changes;
+  this ADR records a design decision and a deferred build, not an
+  implementation.
+
+## Links
+
+- Related: [ADR-0021 (post-1.0 deepen-first strategy — the broadening intake
+  gate this decision applies)](./0021-post-1.0-deepen-first-strategy.md),
+  [ADR-0037 (deepen-first re-read — carries the intake gate
+  forward)](./0037-deepen-first-re-read-against-consumer-pull.md),
+  [ADR-0029 (script dependency boundary — unaffected; the CLI depends on
+  scripts' presence, not the reverse)](./0029-script-dependency-boundary.md),
+  [ADR-0039 (LLM/Bedrock deferral — same gated-broadening
+  pattern)](./0039-llm-integration-out-of-scope.md).
+- Source evaluation: `docs/plans/archive/2026-08-13-post-comparison-hardening-wave.md`
+  §8.
