@@ -380,8 +380,10 @@ expectTypeOf<M3LResult<number, Error>>().toEqualTypeOf<
 
 ### Coverage
 
-- **80% per-file** on lines, functions, branches, and statements. **[enforced]**
-  (`vitest.config.ts` thresholds; `pnpm test:coverage` in pre-push + CI)
+- **Per-file thresholds** — lines 90%, functions 83%, branches 80%, statements
+  89% (`perFile: true`, so each file must individually clear its threshold, not
+  just the aggregate). **[enforced]** (`vitest.config.ts` thresholds;
+  `pnpm test:coverage` in pre-push + CI)
 - **v8 text-reporter caveat:** the terminal table _hides files at 100%_, so a
   missing row is not a missing gate. `coverage/coverage-final.json` is the
   authoritative source when auditing what is covered.

@@ -137,7 +137,7 @@ paths:
 
 ## Testing & style
 
-- **Scripts are exempt from the 80% coverage gate** (coverage is scoped to
+- **Scripts are exempt from the per-file coverage gate** (coverage is scoped to
   `packages/*/src`), but each ships **at least a config-declaration smoke test**;
   unit-test `steps/` modules with plain mocks where it earns its keep.
 - **ESM `.js` extensions, named exports, no `any`** apply here too — see

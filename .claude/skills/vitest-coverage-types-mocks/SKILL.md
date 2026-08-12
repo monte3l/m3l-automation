@@ -40,9 +40,9 @@ the mechanics.
     `coverage-final.json` — trust it as the per-file source of truth, because the
     v8 **text table hides files that are 100% on every metric**, which makes a
     real gap look absent.
-  - `thresholds`: 80% `lines`/`functions`/`branches`/`statements`, with
-    **`perFile: true`** so each file must clear 80% individually (not just the
-    aggregate).
+  - `thresholds`: lines 90% / functions 83% / branches 80% / statements 89%,
+    with **`perFile: true`** so each file must individually clear its own
+    threshold (not just the aggregate).
   - `coverage.all` defaults to **false** in v8, so only files that appear in the
     report (i.e. have at least one test) are gated — a not-yet-implemented module
     simply doesn't show up and won't trip the gate. Turning `all` on would gate

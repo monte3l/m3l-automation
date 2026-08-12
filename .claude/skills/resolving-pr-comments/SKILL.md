@@ -164,7 +164,7 @@ findings. Should-fix and Nits are not touched.
 | Throwing bare string                       | Throw an `M3LError` subclass with the `cause` option if wrapping |
 | Missing TSDoc                              | Add a `/** ... */` block with `@example` on primary entry points |
 | Hardcoded secret / credential              | Remove; if needed for tests, use environment variables           |
-| Coverage below 80%                         | Add the missing tests (happy-path and failure-path)              |
+| Coverage below the per-file threshold      | Add the missing tests (happy-path and failure-path)              |
 
 If you are unsure what the correct fix is for a finding, describe the issue and ask the
 user rather than guessing.
