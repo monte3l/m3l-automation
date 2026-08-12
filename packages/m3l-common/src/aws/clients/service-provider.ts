@@ -14,10 +14,12 @@ import { M3LLogsInsightsClient } from "../cloudwatch-logs-insights/client.js";
 import { M3LCloudWatchMetricsOperations } from "../cloudwatch-metrics/client.js";
 import { M3LCodePipelineOperations } from "../codepipeline/client.js";
 import { M3LAWSCredentialsManager } from "../credentials/manager.js";
+import { M3LDynamoDBOperations } from "../dynamodb/client.js";
 import { M3LECSOperations } from "../ecs/client.js";
 import { M3LEKSOperations } from "../eks/client.js";
 import { M3LEventBridgeOperations } from "../eventbridge/client.js";
 import { M3LLambdaOperations } from "../lambda/client.js";
+import { M3LS3Operations } from "../s3/client.js";
 import { M3LSecretsManagerOperations } from "../secrets-manager/client.js";
 import { M3LRequestSigner } from "../signing/client.js";
 import { M3LSQSOperations } from "../sqs/client.js";
@@ -71,6 +73,8 @@ export class AWSServiceProvider {
   private secretsManagerWrapper: M3LSecretsManagerOperations | undefined;
   private requestSignerClient: M3LRequestSigner | undefined;
   private credentialsManager: M3LAWSCredentialsManager | undefined;
+  private s3OperationsWrapper: M3LS3Operations | undefined;
+  private dynamoDBOperationsWrapper: M3LDynamoDBOperations | undefined;
 
   /**
    * Creates a new `AWSServiceProvider`.
@@ -322,14 +326,49 @@ export class AWSServiceProvider {
   }
 
   /**
+   * The {@link M3LS3Operations} wrapper over `clientProvider.s3`, constructed
+   * on first access. A fresh instance distinct from any convenience getter on
+   * `AWSClientProvider` (which has none for `s3`), though it wraps the same
+   * underlying, shared `S3Client`.
+   */
+  get s3Operations(): M3LS3Operations {
+    const cached = this.s3OperationsWrapper;
+    if (cached !== undefined) return cached;
+
+    const client = this.clientProvider.s3; // may throw — let it propagate
+    const operations = new M3LS3Operations(client);
+    this.s3OperationsWrapper = operations;
+    return operations;
+  }
+
+  /**
+   * The {@link M3LDynamoDBOperations} wrapper over
+   * `clientProvider.dynamoDBDocument`/`clientProvider.dynamoDB`, constructed
+   * on first access. Reading `clientProvider.dynamoDBDocument` internally
+   * resolves `clientProvider.dynamoDB` too (both already memoized on
+   * `clientProvider`), so accessing this getter alongside `dynamoDBDocument`
+   * never double-constructs the underlying `DynamoDBClient` or its document
+   * wrapper.
+   */
+  get dynamoDBOperations(): M3LDynamoDBOperations {
+    const cached = this.dynamoDBOperationsWrapper;
+    if (cached !== undefined) return cached;
+
+    const documentClient = this.clientProvider.dynamoDBDocument; // may throw — let it propagate
+    const rawClient = this.clientProvider.dynamoDB;
+    const operations = new M3LDynamoDBOperations(documentClient, rawClient);
+    this.dynamoDBOperationsWrapper = operations;
+    return operations;
+  }
+
+  /**
    * Clears every cached wrapper so a later getter access constructs a fresh
    * instance. Unlike `AWSClientProvider.close()`, this **never** calls
    * `.destroy()` on anything and **never** calls `clientProvider.close()`:
-   * none of the fifteen getters above holds a destroyable resource of its
-   * own — each either wraps a client `clientProvider` owns (and destroys),
-   * or (for `requestSigner`/`credentials`) holds no destroyable resource at
-   * all. `dynamoDBDocument` has no cache of its own to clear, being a
-   * passthrough.
+   * none of the getters above holds a destroyable resource of its own — each
+   * either wraps a client `clientProvider` owns (and destroys), or (for
+   * `requestSigner`/`credentials`) holds no destroyable resource at all.
+   * `dynamoDBDocument` has no cache of its own to clear, being a passthrough.
    *
    * @example
    * ```ts
@@ -355,5 +394,7 @@ export class AWSServiceProvider {
     this.secretsManagerWrapper = undefined;
     this.requestSignerClient = undefined;
     this.credentialsManager = undefined;
+    this.s3OperationsWrapper = undefined;
+    this.dynamoDBOperationsWrapper = undefined;
   }
 }

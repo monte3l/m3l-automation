@@ -171,6 +171,8 @@ import { M3LLambdaOperations } from "../src/aws/lambda/index.js";
 import { M3LSecretsManagerOperations } from "../src/aws/secrets-manager/index.js";
 import { M3LSQSOperations } from "../src/aws/sqs/index.js";
 import { M3LAWSCredentialsManager } from "../src/aws/credentials/index.js";
+import { M3LS3Operations } from "../src/aws/s3/index.js";
+import { M3LDynamoDBOperations } from "../src/aws/dynamodb/index.js";
 import type { S3Client } from "@aws-sdk/client-s3";
 import type { CloudWatchLogsClient } from "@aws-sdk/client-cloudwatch-logs";
 import type { AthenaClient } from "@aws-sdk/client-athena";
@@ -965,6 +967,8 @@ const SERVICE_GETTER_MATRIX = [
     M3LSecretsManagerOperations,
     h.secretsManagerCtor,
   ] as const,
+  ["s3Operations", M3LS3Operations, h.s3Ctor] as const,
+  ["dynamoDBOperations", M3LDynamoDBOperations, h.dynamoDBCtor] as const,
 ] satisfies readonly (readonly [
   keyof AWSServiceProvider,
   unknown,
@@ -1040,6 +1044,36 @@ describe("AWSServiceProvider — shares the raw client with AWSClientProvider's 
 
     expect(fromServices).not.toBe(fromClients);
     expect(h.sqsCtor).toHaveBeenCalledTimes(1);
+  });
+});
+
+// =============================================================================
+// AWSServiceProvider — dynamoDBOperations shares its underlying raw
+// DynamoDBClient/DynamoDBDocumentClient construction with the existing
+// dynamoDBDocument passthrough getter: accessing both never constructs the
+// DynamoDB client (or its document wrapper) twice.
+// =============================================================================
+describe("AWSServiceProvider — dynamoDBOperations shares construction with dynamoDBDocument", () => {
+  test("accessing both dynamoDBOperations and dynamoDBDocument results in exactly one DynamoDBClient construction and one DynamoDBDocumentClient.from call", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    void services.dynamoDBOperations;
+    void services.dynamoDBDocument;
+
+    expect(h.dynamoDBCtor).toHaveBeenCalledTimes(1);
+    expect(h.docFrom).toHaveBeenCalledTimes(1);
+  });
+
+  test("accessing dynamoDBDocument first, then dynamoDBOperations, still results in exactly one construction each", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    void services.dynamoDBDocument;
+    void services.dynamoDBOperations;
+
+    expect(h.dynamoDBCtor).toHaveBeenCalledTimes(1);
+    expect(h.docFrom).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1229,6 +1263,28 @@ describe("AWSServiceProvider.close", () => {
     const stillA = services.athena;
 
     expect(stillA).toBe(a);
+  });
+
+  test("clears the s3Operations cache — a subsequent access after close() constructs a fresh instance", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    const a = services.s3Operations;
+    services.close();
+    const b = services.s3Operations;
+
+    expect(b).not.toBe(a);
+  });
+
+  test("clears the dynamoDBOperations cache — a subsequent access after close() constructs a fresh instance", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    const a = services.dynamoDBOperations;
+    services.close();
+    const b = services.dynamoDBOperations;
+
+    expect(b).not.toBe(a);
   });
 });
 
@@ -1528,6 +1584,18 @@ describe("type-level contracts: AWSServiceProvider getters", () => {
     expectTypeOf<
       AWSServiceProvider["credentials"]
     >().toEqualTypeOf<M3LAWSCredentialsManager>();
+  });
+
+  test("s3Operations is typed M3LS3Operations", () => {
+    expectTypeOf<
+      AWSServiceProvider["s3Operations"]
+    >().toEqualTypeOf<M3LS3Operations>();
+  });
+
+  test("dynamoDBOperations is typed M3LDynamoDBOperations", () => {
+    expectTypeOf<
+      AWSServiceProvider["dynamoDBOperations"]
+    >().toEqualTypeOf<M3LDynamoDBOperations>();
   });
 });
 
