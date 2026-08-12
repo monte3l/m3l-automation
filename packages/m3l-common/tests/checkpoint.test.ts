@@ -95,6 +95,21 @@ function isTestCheckpoint(value: unknown): value is TestCheckpoint {
 
 const EMPTY_CHECKPOINT: TestCheckpoint = {};
 
+/**
+ * A checkpoint shape that additionally permits a self-referential `self`
+ * field, so a test can construct a genuinely circular value that still
+ * satisfies its own `validate` predicate — used only to prove
+ * `canonicalJsonHash` rejects a circular checkpoint.
+ */
+interface CircularCheckpoint {
+  readonly queryId?: string;
+  self?: CircularCheckpoint;
+}
+
+function isCircularCheckpoint(value: unknown): value is CircularCheckpoint {
+  return typeof value === "object" && value !== null;
+}
+
 function makePathsPort(dir: string): M3LCheckpointPathsPort {
   return {
     resolveOutput: (name: string) => path.join(dir, name),
@@ -401,6 +416,33 @@ describe("M3LCheckpointStore.write()", () => {
       "ERR_CHECKPOINT_MISSING",
     );
   });
+
+  test("regression: write() wraps a canonicalJsonHash failure (e.g. a circular checkpoint) as M3LCheckpointError, not a bare M3LError", async () => {
+    // write() computes `canonicalJsonHash(checkpoint)` to build the envelope
+    // checksum BEFORE entering its try/catch — a circular checkpoint value
+    // makes canonicalJsonHash throw a bare M3LError (ERR_INVALID_ARGUMENT),
+    // which today escapes write() unwrapped instead of being reported as the
+    // documented M3LCheckpointError ERR_CHECKPOINT_IO.
+    const circular: CircularCheckpoint = { queryId: "q-circular" };
+    circular.self = circular;
+
+    const store = new M3LCheckpointStore<CircularCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-circular-checksum",
+      validate: isCircularCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write(circular);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -491,6 +533,44 @@ describe("M3LCheckpointStore — content-addressed envelope", () => {
     });
 
     await expect(store.read()).resolves.toEqual(payload);
+  });
+
+  test("regression: read() wraps a stack-overflow from a deeply-nested external checkpoint as M3LCheckpointError, not a raw RangeError", async () => {
+    // read() recomputes canonicalJsonHash(parsed.payload) to verify the
+    // envelope checksum; canonicalJsonHash recurses per nesting level, so a
+    // deeply-nested (attacker/corruption-controlled) checkpoint file blows
+    // the call stack. The raw JSON text is built via string concatenation
+    // (never via a recursive JSON.stringify(deepObject) or by constructing
+    // the nested value as a real JS object) so *fixture setup* itself never
+    // recurses — only Node's iterative JSON.parse touches this string before
+    // the store's own canonicalJsonHash call recurses over the parsed value.
+    const DEPTH = 20_000;
+    let nestedPayloadJson = "0";
+    for (let index = 0; index < DEPTH; index += 1) {
+      nestedPayloadJson = `{"nested":${nestedPayloadJson}}`;
+    }
+    const envelopeJson = `{"__m3lCheckpointFormat":1,"checksum":"irrelevant-fails-before-comparison","payload":${nestedPayloadJson}}`;
+
+    const filePath = path.join(dir, "run-deeply-nested.checkpoint.json");
+    await writeFile(filePath, envelopeJson, "utf8");
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-deeply-nested",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.read();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).not.toBeInstanceOf(RangeError);
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_PARSE");
   });
 });
 
