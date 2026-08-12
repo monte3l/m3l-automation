@@ -56,6 +56,28 @@ F-series friction did. Per-phase detail:
 | **A4b** | `core/script` — log-level precedence chain                                                         | Done   | **PR:** #218. Split out of A4. Resolves `--log-level`/`--debug` > `M3L_LOG_LEVEL`/`M3L_DEBUG=1` > default into an `M3LLogLevelFloor` for the default logger, in the `M3LScript` constructor (a caller-supplied `options.logger` opts out). **The config-file tier was dropped, not deferred** — it can't affect config-load-time logs, and reaching the already-built default logger would need a public `M3LLogger` mutator or a rebuild that breaks `script.logger` identity; CLI+env cover the need (see the [ADR §2.5 carve-out](./adr/0035-failure-reporting-and-diagnostics.md#25-log-levels-and-the-debug-toggle-logging)). Zero new exports. |
 | **A5**  | Template + consumer-script refresh — scaffold adopts `runScript()`                                 | Done   | **PR:** #220. Template + all nine scripts migrated to `Core.runScript(script, fn, { dryRun })` (+ a `--dry-run` switch), so origin-specific exit codes and the run report reach every consumer. Reconciled the A1 directory split: a per-run `M3LScript.runStartedAt` drives both stage-9 archival and the run report, co-locating `inputs/`/`configs/`/`run-report.json` under one `data/output/<timestamp>/`. Zero new exports; one behavioral delta (archival is now per-run-timestamped, not flat).                                                                                                                                              |
 
+### Capability-deepening wave — ADR-0037/0038/0039
+
+The post-1.0 deepening wave, sequenced by [ADR-0037](./adr/0037-deepen-first-re-read-against-consumer-pull.md). These rows were
+missing from this file and `IMPLEMENTATION.md` until this reconciliation — the
+wave shipped PR-by-PR against the ADR's priority order but neither tracker was
+updated as each item landed. Detail + source call-sites in
+[`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#capability-deepening-wave--adr-003700380039);
+AWS-surface items (CloudWatch Alarms/Metrics, Secrets Manager, the s3 URI
+parser, SQS DLQ redrive, Athena SQL templating) are in the [AWS getter reality
+table](./plans/IMPLEMENTATION.md#aws-getter-reality) instead.
+
+| Item                                       | Status | Why now / Notes                                                                                                                                                                            |
+| ------------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Decision wave**                          | Done   | ADR-0037 (priority order) + ADR-0038 (SQS DLQ redrive & `.services` tier design) + ADR-0039 (LLM/Bedrock out of scope). **PR:** #322.                                                      |
+| **Script README Examples gate**            | Done   | `check-script-scaffold.mjs` enforces an Examples section per declared `configParameters` entry. **PR:** #289.                                                                              |
+| **Toolchain & CI hardening**               | Done   | `pnpm verify` gate + compiler strictness (#305); `bin/` license/reporter/coverage/scaffold hardening (#311); lint zones + tsconfig flags + CI hardening (#313). **PRs:** #305, #311, #313. |
+| **`M3LLoggerHandler` export**              | Done   | Logging handler interface promoted to a documented public export. **PR:** #315.                                                                                                            |
+| **`read-excel-file` fix + peer narrowing** | Done   | Moved off a regressed 9.3.0–9.3.8 range to the upstream-fixed 9.3.9; breaking peer-range narrowing bumped the package to **2.0.0**. **PR:** #312 (`feat(m3l-common)!:`).                   |
+| **Zero-dependency primitives**             | Done   | Canonical JSON, `M3LSingleFlight`, `M3LFileDownloader`. **PR:** #316.                                                                                                                      |
+| **Config help + typo suggestions**         | Done   | `M3LConfigHelpFormatter`, Damerau–Levenshtein typo suggestions on `M3LUnknownParameterDetector`. **PR:** #317.                                                                             |
+| **`AWSServiceProvider` `.services` tier**  | Done   | 15 lazily-cached getters on `AWSProvider.services`. Lands last per ADR-0038. **PR:** #323.                                                                                                 |
+
 ## Priority 1 — Consumer fleet
 
 Before scoping or starting any AWS-consumer-script item below, check its
