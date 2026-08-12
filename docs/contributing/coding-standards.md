@@ -14,7 +14,7 @@ Jump straight to the section you need:
   TSDoc, the `exports` contract, complexity limits.
 - [Writing new tests](./style-guide.md#part-2--writing-new-tests) — Vitest,
   the unit-only policy, Arrange–Act–Assert, `expectTypeOf`, mocking, fixtures,
-  parameterization, determinism, the 80% coverage gate.
+  parameterization, determinism, the per-file coverage gate.
 - [Refactoring existing code & tests](./style-guide.md#part-3--refactoring-existing-code--tests)
   — the test safety net, small isolated steps, opportunistic/Boy-Scout refactoring,
   scope boundaries, and the semver hazard of touching the public surface.

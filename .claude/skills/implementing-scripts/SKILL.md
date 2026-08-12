@@ -183,8 +183,8 @@ commit`. Don't fight this: either scaffold a throwing placeholder per
    for, and it has flagged real drift introduced by fix rounds three times
    (`docs/logs/2026-07-18-eventbridge-schedules.md`,
    `2026-07-18-scripts-athena-query.md`,
-   `2026-07-17-adr-0030-workflow-tooling-mcp.md`). Deliberately absent: the 80%
-   coverage gate (scripts are exempt by ADR-0022 §8), exports-map checks, and
+   `2026-07-17-adr-0030-workflow-tooling-mcp.md`). Deliberately absent: the
+   per-file coverage gate (scripts are exempt by ADR-0022 §8), exports-map checks, and
    provenance stamping — do not import them from the submodule pipeline.
 
 8. **Docs and close.** Update the two documentation artifacts to match what

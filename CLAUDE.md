@@ -287,7 +287,7 @@ files (so they cost nothing in unrelated sessions):
   contract.
 - `**/tests/**`, `*.test.ts` → `.claude/rules/tests.md` — Vitest, a happy +
   failure path per export, `expectTypeOf` where the type is the contract, the
-  80 % coverage gate.
+  per-file coverage gate (lines 90 / functions 83 / branches 80 / statements 89).
 - source/scripts/tests → `.claude/rules/refactoring.md` — behavior-preserving
   changes: test-safety-net first, small isolated `refactor:` commits, the
   Boy-Scout rule, and the semver hazard of touching the public surface.

@@ -55,7 +55,7 @@ separation intact here by handing off rather than implementing inline.
    `operations.ts`, `provider.ts`). `vitest.config.ts`'s coverage config
    excludes **every** `**/index.ts` project-wide (barrels are assumed to carry
    no logic worth measuring); a module scaffolded with its real functions
-   directly inside `index.ts` silently drops out of the 80% coverage gate
+   directly inside `index.ts` silently drops out of the per-file coverage gate
    entirely (found on `aws/dynamodb`, which needed a mid-implementation split
    into `operations.ts` + a thin `index.ts` to get its coverage measured at
    all — see `docs/logs/2026-07-13-aws-dynamodb.md`).
