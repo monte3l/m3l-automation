@@ -38,6 +38,12 @@ import {
   M3LHttpClient,
   M3LHttpClientError,
 } from "../src/core/network/index.js";
+// Cross-module integration: `httpRetryAfterClassifier` (core/polling) is the
+// consumer of `M3LHttpClientError`'s top-level `status`/`retryAfterMs`
+// fields — see the "httpRetryAfterClassifier integration" describe block
+// below. Import path mirrors `tests/polling.test.ts`'s own convention for
+// importing this barrel.
+import { httpRetryAfterClassifier } from "../src/core/polling/index.js";
 import type {
   M3LHttpAbortableRequest,
   M3LHttpClientEventMap,
@@ -79,14 +85,23 @@ function makeResponse(options: {
   readonly status: number;
   readonly contentType: string | null;
   readonly body: unknown;
+  /**
+   * Value returned by `headers.get("retry-after")` (case-insensitive).
+   * Defaults to `null` — every pre-existing `makeResponse({...})` call site
+   * that never passes this field keeps working unchanged.
+   */
+  readonly retryAfter?: string | null;
 }): UndiciResponse {
-  const { status, contentType, body } = options;
+  const { status, contentType, body, retryAfter = null } = options;
   const fake: FakeResponse = {
     status,
     ok: status >= 200 && status < 300,
     headers: {
       get(name: string): string | null {
-        return name.toLowerCase() === "content-type" ? contentType : null;
+        const lowerName = name.toLowerCase();
+        if (lowerName === "content-type") return contentType;
+        if (lowerName === "retry-after") return retryAfter;
+        return null;
       },
     },
     json(): Promise<unknown> {
@@ -94,6 +109,60 @@ function makeResponse(options: {
     },
     text(): Promise<string> {
       return Promise.resolve(typeof body === "string" ? body : String(body));
+    },
+  };
+  return fake as unknown as UndiciResponse;
+}
+
+/** Decodes and concatenates a list of byte chunks into a single string. */
+function decodeChunks(chunks: readonly Uint8Array[]): string {
+  const decoder = new TextDecoder();
+  return chunks.map((chunk) => decoder.decode(chunk)).join("");
+}
+
+/**
+ * Builds a fake fetch `Response` whose `body` is a real
+ * `ReadableStream<Uint8Array>`, for exercising the `maxResponseBytes`
+ * streaming-bytes path (which only activates once that option is set).
+ * `json()`/`text()` exist only to satisfy the structural contract other
+ * helpers rely on — they decode the same chunks and are never exercised by
+ * the bounded-buffering path itself, which reads `body` directly.
+ */
+function makeStreamResponse(options: {
+  readonly status: number;
+  readonly ok?: boolean;
+  readonly contentType: string | null;
+  readonly retryAfter?: string | null;
+  readonly chunks: readonly Uint8Array[];
+}): UndiciResponse {
+  const { status, ok, contentType, retryAfter = null, chunks } = options;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller): void {
+      for (const chunk of chunks) controller.enqueue(chunk);
+      controller.close();
+    },
+  });
+  const fake = {
+    status,
+    ok: ok ?? (status >= 200 && status < 300),
+    headers: {
+      get(name: string): string | null {
+        const lowerName = name.toLowerCase();
+        if (lowerName === "content-type") return contentType;
+        if (lowerName === "retry-after") return retryAfter;
+        return null;
+      },
+    },
+    body,
+    json(): Promise<unknown> {
+      try {
+        return Promise.resolve(JSON.parse(decodeChunks(chunks)) as unknown);
+      } catch {
+        return Promise.resolve(undefined);
+      }
+    },
+    text(): Promise<string> {
+      return Promise.resolve(decodeChunks(chunks));
     },
   };
   return fake as unknown as UndiciResponse;
@@ -633,6 +702,171 @@ describe("M3LHttpClient — non-2xx responses", () => {
 });
 
 // ---------------------------------------------------------------------------
+// 5b — M3LHttpClientError.status mirrors failure.status (top-level
+// convenience field, same pattern as `reason` mirroring `failure.reason`).
+// ---------------------------------------------------------------------------
+describe("M3LHttpClientError — status mirrors failure.status", () => {
+  test("a 'status' failure (non-2xx response) sets the top-level status field to the response's status code", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 503,
+        contentType: "application/json",
+        body: { message: "unavailable" },
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/broken");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.failure.reason).toBe("status");
+    expect(httpError.status).toBe(503);
+  });
+
+  test("a 'network' failure leaves the top-level status field undefined", async () => {
+    const networkFailure = new Error("ECONNRESET");
+    mockFetch.mockRejectedValue(networkFailure);
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/down");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.reason).toBe("network");
+    expect(httpError.status).toBeUndefined();
+  });
+
+  test("a 'timeout' failure leaves the top-level status field undefined", async () => {
+    vi.useFakeTimers();
+    fetchRespectsAbort();
+    const client = new M3LHttpClient({
+      baseUrl: "https://api.example.com",
+      timeout: 100,
+    });
+
+    let thrown: unknown;
+    const pending = client.get("/slow").catch((error: unknown) => {
+      thrown = error;
+    });
+
+    await vi.advanceTimersByTimeAsync(100);
+    await pending;
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.reason).toBe("timeout");
+    expect(httpError.status).toBeUndefined();
+  });
+
+  test("an 'abort' failure leaves the top-level status field undefined", async () => {
+    fetchRespectsAbort();
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    const { promise, abort } = client.getAbortable("/slow");
+
+    let thrown: unknown;
+    const settlement = promise.catch((error: unknown) => {
+      thrown = error;
+    });
+
+    abort();
+    await settlement;
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.reason).toBe("abort");
+    expect(httpError.status).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6d — httpRetryAfterClassifier integration: the actual bug being fixed.
+// `httpRetryAfterClassifier` (core/polling/classifiers.ts) reads an HTTP
+// status via `readHttpStatus`, which only looks at a top-level `status` /
+// `statusCode` / `$metadata.httpStatusCode`. A real thrown
+// `M3LHttpClientError` must expose `status` at that top level (see 5b above)
+// for the classifier to ever see anything but "unknown" for it — and once it
+// does, the classifier must also pick up the sibling `retryAfterMs` field to
+// honor a server's Retry-After header as the delay override.
+// ---------------------------------------------------------------------------
+describe("M3LHttpClient — a thrown M3LHttpClientError actually reaches httpRetryAfterClassifier", () => {
+  test("a 429 response with Retry-After: '120' throws an M3LHttpClientError that httpRetryAfterClassifier classifies as retriable with delayMs 120000", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 429,
+        contentType: "application/json",
+        body: {},
+        retryAfter: "120",
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+
+    // This is the assertion the fix must satisfy: classifying the REAL
+    // thrown error object (not a hand-built object literal shaped like one)
+    // must actually reach the "retriable" branch, not fall through to
+    // "unknown" because `status` never made it onto the error's top level.
+    const advice = httpRetryAfterClassifier(thrown);
+    expect(advice).toMatchObject({
+      decision: "retriable",
+      delayMs: 120_000,
+    });
+  });
+
+  // Bug fix (PR #327 review), the critical regression: a real 429 with
+  // Retry-After: '0' used to classify with delayMs 0, which
+  // `M3LRetryRunner`'s `assertPositive` guard rejects — turning a
+  // legitimate "retry immediately" server signal into a spurious
+  // M3LPollingInvalidOptionError that aborts the retry loop instead of
+  // retrying. The advice's delayMs must never be 0.
+  test("a 429 response with Retry-After: '0' throws an M3LHttpClientError that httpRetryAfterClassifier classifies as retriable with delayMs 1, never 0", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 429,
+        contentType: "application/json",
+        body: {},
+        retryAfter: "0",
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+
+    const advice = httpRetryAfterClassifier(thrown);
+    expect(advice).toMatchObject({
+      decision: "retriable",
+      delayMs: 1,
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 6 — Network failure
 // ---------------------------------------------------------------------------
 describe("M3LHttpClient — network failure", () => {
@@ -679,6 +913,404 @@ describe("M3LHttpClient — network failure", () => {
     expect(httpError.message).not.toContain("super-secret");
     expect(httpError.message).not.toContain("token");
     expect(httpError.message).not.toContain("?");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6b — Retry-After header parses into M3LHttpClientError.retryAfterMs
+// ---------------------------------------------------------------------------
+describe("M3LHttpClient — Retry-After header parses into M3LHttpClientError.retryAfterMs", () => {
+  test("delta-seconds grammar converts seconds to milliseconds", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 429,
+        contentType: "application/json",
+        body: {},
+        retryAfter: "120",
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    expect((thrown as M3LHttpClientError).retryAfterMs).toBe(120_000);
+  });
+
+  // Bug fix (PR #327 review): an explicit "0" is a legal RFC 9110
+  // delta-seconds value, but a zero delay reaching `httpRetryAfterClassifier`
+  // makes `M3LRetryRunner`'s `assertPositive` guard reject the advice and
+  // abort the retry loop entirely instead of retrying immediately. The
+  // parser must floor at `MIN_RETRY_AFTER_MS` (1ms) so `0` never surfaces.
+  test("an explicit Retry-After: '0' (legal delta-seconds zero) floors to 1ms, never 0", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 429,
+        contentType: "application/json",
+        body: {},
+        retryAfter: "0",
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    expect((thrown as M3LHttpClientError).retryAfterMs).toBe(1);
+  });
+
+  test("HTTP-date grammar in the future resolves to a non-negative delay reasonably close to the delta", async () => {
+    const future = new Date(Date.now() + 5000).toUTCString();
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 429,
+        contentType: "application/json",
+        body: {},
+        retryAfter: future,
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const retryAfterMs = (thrown as M3LHttpClientError).retryAfterMs;
+    expect(retryAfterMs).toBeGreaterThanOrEqual(0);
+    expect(retryAfterMs).toBeLessThanOrEqual(10_000);
+  });
+
+  // Bug fix (PR #327 review): a past HTTP-date used to clamp to a raw 0,
+  // which — like the explicit "0" delta-seconds case above — makes
+  // `httpRetryAfterClassifier`'s advice fail `M3LRetryRunner`'s
+  // `assertPositive` guard and abort the retry loop. It must floor at
+  // `MIN_RETRY_AFTER_MS` (1ms) instead, same as the delta-seconds branch.
+  test("HTTP-date grammar in the past floors to 1ms, never zero or negative", async () => {
+    const past = new Date(Date.now() - 60_000).toUTCString();
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 429,
+        contentType: "application/json",
+        body: {},
+        retryAfter: past,
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    expect((thrown as M3LHttpClientError).retryAfterMs).toBe(1);
+  });
+
+  test("an absent Retry-After header leaves retryAfterMs undefined", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({ status: 429, contentType: "application/json", body: {} }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    expect((thrown as M3LHttpClientError).retryAfterMs).toBeUndefined();
+  });
+
+  test("an unparseable Retry-After value leaves retryAfterMs undefined without throwing", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 429,
+        contentType: "application/json",
+        body: {},
+        retryAfter: "not-a-real-value",
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    expect((thrown as M3LHttpClientError).retryAfterMs).toBeUndefined();
+  });
+
+  test("a Retry-After value of '-5' (non-delta-seconds, no alphabetic HTTP-date marker) leaves retryAfterMs undefined, not a spurious Date.parse timestamp", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 429,
+        contentType: "application/json",
+        body: {},
+        retryAfter: "-5",
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    expect((thrown as M3LHttpClientError).retryAfterMs).toBeUndefined();
+  });
+
+  test("a Retry-After value of '120.5' (non-delta-seconds, no alphabetic HTTP-date marker) leaves retryAfterMs undefined, not a spurious Date.parse timestamp", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 429,
+        contentType: "application/json",
+        body: {},
+        retryAfter: "120.5",
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    expect((thrown as M3LHttpClientError).retryAfterMs).toBeUndefined();
+  });
+
+  test("a non-'status' failure (network) never carries retryAfterMs — status-specific parsing only", async () => {
+    const networkFailure = new Error("ECONNRESET");
+    mockFetch.mockRejectedValue(networkFailure);
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/down");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.reason).toBe("network");
+    expect(httpError.retryAfterMs).toBeUndefined();
+  });
+
+  // Security re-review: an astronomically large digit string parses to a
+  // non-finite `Number(trimmed)` (`Infinity`) under the delta-seconds
+  // grammar. A non-finite parsed value must be treated as unparseable —
+  // exactly like the existing "not-a-real-value" case above — rather than
+  // surfacing `Infinity` to a downstream retry scheduler.
+  test("a Retry-After value that is an astronomically large digit string (non-finite once parsed) leaves retryAfterMs undefined", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 429,
+        contentType: "application/json",
+        body: {},
+        retryAfter: "9".repeat(400),
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    expect((thrown as M3LHttpClientError).retryAfterMs).toBeUndefined();
+  });
+
+  // Security re-review: a large-but-finite delta-seconds value (~31.7 years)
+  // must be capped at the 24h ceiling rather than surfacing the literal,
+  // absurdly large millisecond delay to a caller's retry scheduler.
+  test("a Retry-After delta-seconds value far beyond 24h is capped at the 24h ceiling (86_400_000 ms)", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 429,
+        contentType: "application/json",
+        body: {},
+        retryAfter: "999999999",
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    expect((thrown as M3LHttpClientError).retryAfterMs).toBe(86_400_000);
+  });
+
+  // Security re-review, mirror case: the same 24h ceiling applies to the
+  // HTTP-date grammar branch — a date thousands of years in the future must
+  // not surface its literal multi-millennium delta.
+  test("a Retry-After HTTP-date value thousands of years in the future is capped at the 24h ceiling (86_400_000 ms)", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 429,
+        contentType: "application/json",
+        body: {},
+        retryAfter: "Fri, 31 Dec 9999 23:59:59 GMT",
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    expect((thrown as M3LHttpClientError).retryAfterMs).toBe(86_400_000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6c — maxResponseBytes bounds buffered response bodies
+// ---------------------------------------------------------------------------
+describe("M3LHttpClient — maxResponseBytes bounds buffered response bodies", () => {
+  test.each<[string, number]>([
+    ["zero", 0],
+    ["negative", -5],
+    ["a non-integer", 1.5],
+  ])(
+    "throws M3LError(ERR_INVALID_ARGUMENT) synchronously when maxResponseBytes is %s",
+    (_label, maxResponseBytes) => {
+      expect(() => new M3LHttpClient({ maxResponseBytes })).toThrowError(
+        M3LError,
+      );
+      let thrown: unknown;
+      try {
+        new M3LHttpClient({ maxResponseBytes });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+    },
+  );
+
+  // Code review, ordering bug: the constructor must validate
+  // `maxResponseBytes` BEFORE building the `ProxyAgent` dispatcher (an
+  // undici resource holding a connection pool). Constructing it first means
+  // an invalid `maxResponseBytes` leaks an unclosed `ProxyAgent` on every
+  // rejected construction attempt.
+  test("an invalid maxResponseBytes throws before a ProxyAgent is ever constructed, even when proxyUrl is also set", () => {
+    expect(
+      () =>
+        new M3LHttpClient({
+          proxyUrl: "http://proxy.example.com",
+          maxResponseBytes: -1,
+        }),
+    ).toThrowError(M3LError);
+
+    expect(mockProxyAgent).not.toHaveBeenCalled();
+  });
+
+  test("a JSON body under the cap still resolves normally with the parsed body", async () => {
+    mockFetch.mockResolvedValue(
+      makeStreamResponse({
+        status: 200,
+        contentType: "application/json",
+        chunks: [new TextEncoder().encode(JSON.stringify({ a: 1 }))],
+      }),
+    );
+    const client = new M3LHttpClient({
+      baseUrl: "https://api.example.com",
+      maxResponseBytes: 1000,
+    });
+
+    const result = await client.get<{ a: number }>("/small");
+
+    expect(result).toEqual({ a: 1 });
+  });
+
+  test("a body exceeding the cap rejects with M3LHttpClientError, reason 'network', and the message never echoes the oversized payload", async () => {
+    const oversizedMarker = "OVERSIZED_PAYLOAD_MARKER";
+    const payload = JSON.stringify({ data: oversizedMarker.repeat(5) });
+    mockFetch.mockResolvedValue(
+      makeStreamResponse({
+        status: 200,
+        contentType: "application/json",
+        chunks: [new TextEncoder().encode(payload)],
+      }),
+    );
+    const client = new M3LHttpClient({
+      baseUrl: "https://api.example.com",
+      maxResponseBytes: 10,
+    });
+
+    let thrown: unknown;
+    try {
+      await client.get("/large");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.failure.reason).toBe("network");
+    expect(httpError.message).not.toContain(oversizedMarker);
+  });
+
+  test("requestStream() ignores maxResponseBytes and resolves even when the body would exceed the cap", async () => {
+    const largeText = "x".repeat(1000);
+    mockFetch.mockResolvedValue(
+      makeStreamResponse({
+        status: 200,
+        contentType: null,
+        chunks: [new TextEncoder().encode(largeText)],
+      }),
+    );
+    const client = new M3LHttpClient({
+      baseUrl: "https://api.example.com",
+      maxResponseBytes: 10,
+    });
+
+    const result = await client.requestStream({
+      method: "GET",
+      path: "/large-file.bin",
+    });
+
+    expect(result.status).toBe(200);
+    const text = await new Response(result.body).text();
+    expect(text).toBe(largeText);
   });
 });
 
@@ -1618,6 +2250,21 @@ describe("M3LHttpClient — type-level contract", () => {
     >();
     expectTypeOf<M3LHttpClientOptions["proxyUrl"]>().toEqualTypeOf<
       string | undefined
+    >();
+    expectTypeOf<M3LHttpClientOptions["maxResponseBytes"]>().toEqualTypeOf<
+      number | undefined
+    >();
+  });
+
+  test("M3LHttpClientError.retryAfterMs is number | undefined", () => {
+    expectTypeOf<M3LHttpClientError["retryAfterMs"]>().toEqualTypeOf<
+      number | undefined
+    >();
+  });
+
+  test("M3LHttpClientError.status is number | undefined", () => {
+    expectTypeOf<M3LHttpClientError["status"]>().toEqualTypeOf<
+      number | undefined
     >();
   });
 

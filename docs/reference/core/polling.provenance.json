@@ -53,22 +53,22 @@
         {
           "file": "packages/m3l-common/src/core/polling/classifiers.ts",
           "symbol": "combineClassifiers",
-          "blob": "d362e9262727d7e60d6d92f94b073a4ce5f902bc"
+          "blob": "204f44bff1fb18430d0548ee010ad000fab0995a"
         },
         {
           "file": "packages/m3l-common/src/core/polling/classifiers.ts",
           "symbol": "awsThrottlingClassifier",
-          "blob": "d362e9262727d7e60d6d92f94b073a4ce5f902bc"
+          "blob": "204f44bff1fb18430d0548ee010ad000fab0995a"
         },
         {
           "file": "packages/m3l-common/src/core/polling/classifiers.ts",
           "symbol": "awsNetworkClassifier",
-          "blob": "d362e9262727d7e60d6d92f94b073a4ce5f902bc"
+          "blob": "204f44bff1fb18430d0548ee010ad000fab0995a"
         },
         {
           "file": "packages/m3l-common/src/core/polling/classifiers.ts",
           "symbol": "httpRetryAfterClassifier",
-          "blob": "d362e9262727d7e60d6d92f94b073a4ce5f902bc"
+          "blob": "204f44bff1fb18430d0548ee010ad000fab0995a"
         },
         {
           "file": "packages/m3l-common/src/core/polling/events.ts",
@@ -126,7 +126,7 @@
           "blob": "495b7d141c7c5404805cf4a558f5e9a748e4bc3a"
         }
       ],
-      "retrieved": "2026-08-10"
+      "retrieved": "2026-08-12"
     },
     {
       "heading": "Events",
@@ -242,10 +242,10 @@
         {
           "file": "packages/m3l-common/src/core/polling/classifiers.ts",
           "symbol": "combineClassifiers",
-          "blob": "d362e9262727d7e60d6d92f94b073a4ce5f902bc"
+          "blob": "204f44bff1fb18430d0548ee010ad000fab0995a"
         }
       ],
-      "retrieved": "2026-08-10"
+      "retrieved": "2026-08-12"
     },
     {
       "heading": "Built-in classifiers",
@@ -253,20 +253,20 @@
         {
           "file": "packages/m3l-common/src/core/polling/classifiers.ts",
           "symbol": "awsThrottlingClassifier",
-          "blob": "d362e9262727d7e60d6d92f94b073a4ce5f902bc"
+          "blob": "204f44bff1fb18430d0548ee010ad000fab0995a"
         },
         {
           "file": "packages/m3l-common/src/core/polling/classifiers.ts",
           "symbol": "awsNetworkClassifier",
-          "blob": "d362e9262727d7e60d6d92f94b073a4ce5f902bc"
+          "blob": "204f44bff1fb18430d0548ee010ad000fab0995a"
         },
         {
           "file": "packages/m3l-common/src/core/polling/classifiers.ts",
           "symbol": "httpRetryAfterClassifier",
-          "blob": "d362e9262727d7e60d6d92f94b073a4ce5f902bc"
+          "blob": "204f44bff1fb18430d0548ee010ad000fab0995a"
         }
       ],
-      "retrieved": "2026-08-10"
+      "retrieved": "2026-08-12"
     },
     {
       "heading": "Backoff strategies",

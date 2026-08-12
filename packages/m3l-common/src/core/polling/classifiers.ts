@@ -41,6 +41,9 @@ const AWS_THROTTLING_NAMES: ReadonlySet<string> = new Set([
 /** HTTP 429 Too Many Requests — the canonical rate-limit response. */
 const HTTP_TOO_MANY_REQUESTS = 429;
 
+/** HTTP 408 Request Timeout. */
+const HTTP_REQUEST_TIMEOUT = 408;
+
 /** HTTP 400 Bad Request. */
 const HTTP_BAD_REQUEST = 400;
 
@@ -193,7 +196,7 @@ export const awsNetworkClassifier: M3LRetryClassifier = (
 };
 
 /**
- * Maps HTTP status codes to retry decisions: `429` and transient 5xx
+ * Maps HTTP status codes to retry decisions: `408`, `429`, and transient 5xx
  * (500/502/503/504) are `"retriable"`; recognisable non-retriable statuses
  * (400/401/403/404) are `"fatal"`; anything without a recognisable HTTP status
  * is `"unknown"`. When the error carries `retryAfterMs`, a retriable verdict
@@ -210,7 +213,9 @@ export const httpRetryAfterClassifier: M3LRetryClassifier = (
   if (status === undefined) return "unknown";
 
   const retriable =
-    status === HTTP_TOO_MANY_REQUESTS || TRANSIENT_5XX.has(status);
+    status === HTTP_TOO_MANY_REQUESTS ||
+    status === HTTP_REQUEST_TIMEOUT ||
+    TRANSIENT_5XX.has(status);
   if (retriable) {
     const retryAfterMs = readNumber(err, "retryAfterMs");
     if (retryAfterMs !== undefined) {

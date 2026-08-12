@@ -10,6 +10,7 @@
 import { fetch, ProxyAgent } from "undici";
 
 import { sanitizeRequestUrl } from "../../internal/network/sanitizeRequestUrl.js";
+import { M3LError } from "../errors/index.js";
 import { M3LEventEmitterBase } from "../events/index.js";
 import { M3LHttpClientError } from "./M3LHttpClientError.js";
 
@@ -18,6 +19,15 @@ const JSON_CONTENT_TYPE_PATTERN = /[/+]json\b/i;
 
 /** The per-request timeout applied when {@link M3LHttpClientOptions.timeout} is omitted. */
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** Milliseconds per second, used to convert a `Retry-After` delta-seconds value. */
+const MS_PER_SECOND = 1000;
+
+/** Seconds per hour. */
+const SECONDS_PER_HOUR = 3600;
+
+/** Hours per day. */
+const HOURS_PER_DAY = 24;
 
 /**
  * HTTP header names considered non-sensitive and safe to emit unredacted on
@@ -64,6 +74,96 @@ function redactRequestHeadersForEvent(
 }
 
 /**
+ * Upper bound on a parsed `Retry-After` delay: 24 hours. Caps a legitimate
+ * but extreme server-supplied value (and neutralizes an adversarial one, e.g.
+ * a multi-millennium HTTP-date or a huge delta-seconds value) so a single
+ * response header can never stall a caller's retry loop indefinitely.
+ */
+const MAX_RETRY_AFTER_MS = HOURS_PER_DAY * SECONDS_PER_HOUR * MS_PER_SECOND;
+
+/**
+ * Lower bound on a parsed `Retry-After` delay: 1 millisecond. `0` is a legal
+ * RFC 9110 delta-seconds value, and a past HTTP-date would otherwise clamp to
+ * `0` too — but `M3LRetryRunner`'s `assertPositive` guard rejects any
+ * `delayMs <= 0`, so a `Retry-After: 0` (or an already-past date) previously
+ * turned a retriable failure into a thrown `M3LPollingInvalidOptionError`
+ * instead of retrying. Flooring at `1` keeps the "retry as soon as possible"
+ * intent while staying strictly positive.
+ */
+const MIN_RETRY_AFTER_MS = 1;
+
+/**
+ * Parses an HTTP `Retry-After` response header into a millisecond delay,
+ * supporting both grammars RFC 9110 allows: delta-seconds (a non-negative
+ * integer, e.g. `"120"`) and an HTTP-date (e.g.
+ * `"Wed, 21 Oct 2026 07:28:00 GMT"`). Returns `undefined` for a missing,
+ * empty, or unparseable header — never throws. The resolved delay is always
+ * floored at {@link MIN_RETRY_AFTER_MS} (1 millisecond) — never `0` or
+ * negative, including for an explicit `Retry-After: 0` or an already-past
+ * HTTP-date — since downstream retry classification treats the parsed value
+ * as a strictly positive delay. A real HTTP-date always contains at least one
+ * alphabetic token (a weekday/month name, or `"GMT"`); a value with none is
+ * rejected outright rather than handed to `Date.parse`, whose lenient,
+ * engine-specific grammar would otherwise turn stray numeric-ish garbage
+ * (e.g. `"-5"`, `"120.5"`) into a spurious past-date result instead of the
+ * correct `undefined`. The resolved delay — from either grammar — is capped
+ * at {@link MAX_RETRY_AFTER_MS} (24 hours).
+ */
+function parseRetryAfterMs(
+  headerValue: string | null,
+  now: number,
+): number | undefined {
+  if (headerValue === null) return undefined;
+  const trimmed = headerValue.trim();
+  if (trimmed === "") return undefined;
+
+  if (/^\d+$/.test(trimmed)) {
+    const seconds = Number(trimmed);
+    if (!Number.isFinite(seconds)) return undefined;
+    return Math.min(
+      Math.max(seconds * MS_PER_SECOND, MIN_RETRY_AFTER_MS),
+      MAX_RETRY_AFTER_MS,
+    );
+  }
+
+  if (!/[A-Za-z]/.test(trimmed)) return undefined;
+
+  const dateMs = Date.parse(trimmed);
+  if (Number.isNaN(dateMs)) return undefined;
+  return Math.min(
+    Math.max(dateMs - now, MIN_RETRY_AFTER_MS),
+    MAX_RETRY_AFTER_MS,
+  );
+}
+
+/**
+ * Validates a caller-supplied {@link M3LHttpClientOptions.maxResponseBytes}:
+ * `undefined` (omitted) passes silently, anything else must be a positive
+ * integer or this throws {@link M3LError} (`code: "ERR_INVALID_ARGUMENT"`).
+ * Extracted so the constructor itself stays under the complexity budget.
+ */
+function validateMaxResponseBytes(maxResponseBytes: number | undefined): void {
+  if (maxResponseBytes === undefined) return;
+  if (!Number.isInteger(maxResponseBytes) || maxResponseBytes < 1) {
+    throw new M3LError(
+      `M3LHttpClient: maxResponseBytes must be a positive integer, got ${String(maxResponseBytes)}`,
+      { code: "ERR_INVALID_ARGUMENT" },
+    );
+  }
+}
+
+/**
+ * Builds the `ProxyAgent` dispatcher for a new {@link M3LHttpClient}, or
+ * `undefined` when no `proxyUrl` was configured. Extracted so the
+ * constructor itself stays under the complexity budget.
+ */
+function createDispatcher(
+  proxyUrl: string | undefined,
+): ProxyAgent | undefined {
+  return proxyUrl === undefined ? undefined : new ProxyAgent(proxyUrl);
+}
+
+/**
  * Constructor configuration for {@link M3LHttpClient}.
  *
  * @example
@@ -88,6 +188,18 @@ export interface M3LHttpClientOptions {
   readonly debug?: boolean;
   /** When set, routes every request through an `undici` `ProxyAgent` targeting this URL. */
   readonly proxyUrl?: string;
+  /**
+   * Optional cap, in bytes, on a response body's total size before
+   * `request()`/`get()` buffer it for JSON/text parsing. Enforced by
+   * counting bytes as the body stream is read; once the running total
+   * exceeds this cap, the read is aborted and the request rejects with
+   * {@link M3LHttpClientError} (`failure.reason === "network"`) instead of
+   * continuing to buffer an unbounded body into memory. Omitted (the
+   * default) is unbounded, matching every prior release's behavior — a
+   * future major may flip this default to a finite cap. Does not apply to
+   * {@link M3LHttpClient.requestStream}, which never buffers a body.
+   */
+  readonly maxResponseBytes?: number;
 }
 
 /**
@@ -274,6 +386,7 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
   readonly #timeout: number;
   readonly #debug: boolean;
   readonly #dispatcher: ProxyAgent | undefined;
+  readonly #maxResponseBytes: number | undefined;
 
   /**
    * Creates a new `M3LHttpClient`.
@@ -284,6 +397,8 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
    *
    * @param options - Optional client configuration. `timeout` defaults to
    *   `30000` milliseconds when omitted.
+   * @throws {@link M3LError} (`code: "ERR_INVALID_ARGUMENT"`) synchronously
+   *   when `maxResponseBytes` is supplied but is not a positive integer.
    */
   constructor(options?: M3LHttpClientOptions) {
     super();
@@ -291,10 +406,9 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
     this.#defaultHeaders = { ...options?.defaultHeaders };
     this.#timeout = options?.timeout ?? DEFAULT_TIMEOUT_MS;
     this.#debug = options?.debug ?? false;
-    this.#dispatcher =
-      options?.proxyUrl === undefined
-        ? undefined
-        : new ProxyAgent(options.proxyUrl);
+    validateMaxResponseBytes(options?.maxResponseBytes);
+    this.#dispatcher = createDispatcher(options?.proxyUrl);
+    this.#maxResponseBytes = options?.maxResponseBytes;
   }
 
   /**
@@ -611,7 +725,7 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
         timer,
         getFailureReason,
       },
-      (response, timer) => this.#readBody<T>(response, timer),
+      (response, timer) => this.#readBody<T>(response, timer, url),
     );
 
     return { promise, abort };
@@ -651,9 +765,17 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
 
     if (!this.#isAccepted(status, ok, expectedStatus)) {
       const safeUrl = sanitizeRequestUrl(url);
+      const retryAfterMs = parseRetryAfterMs(
+        response.headers.get("retry-after"),
+        Date.now(),
+      );
       throw new M3LHttpClientError(
         `request to ${safeUrl} failed with status ${String(status)}`,
-        { failure: { reason: "status", status }, context: { url: safeUrl } },
+        {
+          failure: { reason: "status", status },
+          context: { url: safeUrl },
+          ...(retryAfterMs !== undefined && { retryAfterMs }),
+        },
       );
     }
 
@@ -720,21 +842,82 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
    * matches. Clears `timer` only once the FULL body has been read — the
    * `#performRequest` catch already covers this method's failure path (e.g.
    * a `json()` parse error).
+   *
+   * When `#maxResponseBytes` is configured, the body is read via
+   * `#readBoundedText` instead of `response.json()`/`.text()` directly, so an
+   * oversized body aborts mid-read rather than buffering unbounded content in
+   * memory; the unbounded default path is unchanged.
    */
   async #readBody<T>(
     response: {
       readonly headers: { get(name: string): string | null };
+      readonly body: ReadableStream<Uint8Array> | null;
       json(): Promise<unknown>;
       text(): Promise<string>;
     },
     timer: ReturnType<typeof setTimeout>,
+    url: string,
   ): Promise<T> {
     const contentType = response.headers.get("content-type");
     const isJson =
       contentType !== null && JSON_CONTENT_TYPE_PATTERN.test(contentType);
-    const body = isJson ? await response.json() : await response.text();
+
+    let body: unknown;
+    const maxBytes = this.#maxResponseBytes;
+    if (maxBytes === undefined) {
+      body = isJson ? await response.json() : await response.text();
+    } else {
+      const text = await this.#readBoundedText(response, url, maxBytes);
+      body = isJson ? JSON.parse(text) : text;
+    }
+
     clearTimeout(timer);
     return body as T;
+  }
+
+  /**
+   * Reads `response`'s body stream into a UTF-8 string, aborting the read
+   * the moment the accumulated byte count exceeds `maxBytes` rather than
+   * buffering an unbounded body into memory. Only invoked when
+   * `#maxResponseBytes` is configured; the unbounded default path reads via
+   * `response.json()`/`.text()` directly.
+   */
+  async #readBoundedText(
+    response: { readonly body: ReadableStream<Uint8Array> | null },
+    url: string,
+    maxBytes: number,
+  ): Promise<string> {
+    if (response.body === null) return "";
+
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        const safeUrl = sanitizeRequestUrl(url);
+        throw new M3LHttpClientError(
+          `response from ${safeUrl} exceeded the configured ${String(maxBytes)}-byte limit`,
+          {
+            failure: { reason: "network" },
+            context: { url: safeUrl, maxResponseBytes: maxBytes },
+          },
+        );
+      }
+      chunks.push(value);
+    }
+
+    const combined = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      combined.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return new TextDecoder().decode(combined);
   }
 
   /**
