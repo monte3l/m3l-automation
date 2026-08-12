@@ -138,7 +138,14 @@ function containsWordRun(
  * Measured through the public {@link redactSensitiveLogText} path on such an
  * adversarial blob: 65 KB took ~3.9s and 130 KB ~15.6s (confirmed
  * quadratic) before this bound; bounding the key class caps worst-case work
- * per starting position to a constant, making total time O(n).
+ * per starting position to a constant, making total time O(n). One accepted
+ * consequence: a run of 100+ key-class characters immediately preceding a
+ * separator matches only its final 100 characters as the "key", so a
+ * sensitive word present only in the discarded leading portion is not
+ * recognized — real key/header names never approach this length, and
+ * {@link redactSensitiveLogValue}'s structured (object-key) redaction path
+ * calls {@link isSensitiveKey} directly, bypassing this regex entirely, so
+ * it is unaffected regardless of key length.
  */
 const BARE_KEY_VALUE_PATTERN =
   /([A-Za-z0-9_-]{1,100})(\s*[:=]\s*)("[^"]*"|(?:(?:Bearer|Basic|Digest|Token)\s+)?[^\s,;]+)/gi;

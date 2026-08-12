@@ -54,8 +54,10 @@ its `context`, and chains the underlying SDK or spawn failure via `cause`.
 
 Error analysis classifies failures into the `M3LAWSCredentialsErrorType`
 categories (defined in [AWS models](./models.md)) by matching error messages
-against regex sets — multiple patterns for an expired session, plus additional
-patterns for invalid sessions and profile-not-found.
+against a regex pattern set per category — invalid-session and
+profile-not-found each carry multiple phrasings; expired-session matches a
+single literal (`expired`), sufficient on its own since every other phrasing
+considered already contains that word.
 
 ## Usage
 
