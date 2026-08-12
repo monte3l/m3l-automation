@@ -456,6 +456,15 @@ export class M3LCSVListImporter<TItem>
       yield { ok: false, error: skipped.shift() };
       rowIndex += 1;
     }
+    // Closes the exactly-at-cap boundary the mid-loop checks above can't
+    // reach: when `#feedParser` trips the budget with `skipped.length`
+    // landing exactly at `maxRows`, the trailing drain above consumes every
+    // queued skip and exits normally without ever re-checking the budget
+    // against the final `rowIndex`. Guarded to `budgetTripped` only — an
+    // ordinary run that lands on `rowIndex === maxRows` by successfully
+    // processing exactly `maxRows` rows (never having tripped the budget) is
+    // a legitimate full consumption, not a truncation, and must not throw.
+    if (budgetTripped) assertRowBudget(rowIndex, this.#maxRows);
   }
 
   /**
