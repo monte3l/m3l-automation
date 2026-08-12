@@ -94,8 +94,20 @@ export class M3LHttpClientError extends M3LError {
   /** The discriminated failure payload. Narrow on `reason` to read `status`. */
   readonly failure: M3LHttpFailure;
   /**
+   * Convenience mirror of `failure.status` for a `"status"`-reason failure;
+   * `undefined` for every other failure mode. Lets generic status-based
+   * tooling — such as `core/polling`'s `httpRetryAfterClassifier`, which
+   * reads a foreign error's top-level `status`/`statusCode` — classify this
+   * error without narrowing `failure` first. This parallels how `reason`
+   * already mirrors `failure.reason`.
+   */
+  readonly status: number | undefined;
+  /**
    * Parsed `Retry-After` delay in milliseconds, when the failed response
-   * carried one; `undefined` for every other failure mode.
+   * carried one; `undefined` for every other failure mode. Read alongside
+   * the top-level {@link status} field by `httpRetryAfterClassifier`
+   * (`core/polling/classifiers.ts`), which expects both at the top level of
+   * the thrown error — not nested under `failure`.
    */
   readonly retryAfterMs: number | undefined;
 
@@ -118,6 +130,8 @@ export class M3LHttpClientError extends M3LError {
     this.code = "ERR_HTTP_REQUEST";
     this.failure = options.failure;
     this.reason = options.failure.reason;
+    this.status =
+      options.failure.reason === "status" ? options.failure.status : undefined;
     this.retryAfterMs = options.retryAfterMs;
   }
 }

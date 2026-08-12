@@ -23,6 +23,12 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 /** Milliseconds per second, used to convert a `Retry-After` delta-seconds value. */
 const MS_PER_SECOND = 1000;
 
+/** Seconds per hour. */
+const SECONDS_PER_HOUR = 3600;
+
+/** Hours per day. */
+const HOURS_PER_DAY = 24;
+
 /**
  * HTTP header names considered non-sensitive and safe to emit unredacted on
  * the `"request"` event. Every other header name — including one the shared
@@ -68,12 +74,26 @@ function redactRequestHeadersForEvent(
 }
 
 /**
+ * Upper bound on a parsed `Retry-After` delay: 24 hours. Caps a legitimate
+ * but extreme server-supplied value (and neutralizes an adversarial one, e.g.
+ * a multi-millennium HTTP-date or a huge delta-seconds value) so a single
+ * response header can never stall a caller's retry loop indefinitely.
+ */
+const MAX_RETRY_AFTER_MS = HOURS_PER_DAY * SECONDS_PER_HOUR * MS_PER_SECOND;
+
+/**
  * Parses an HTTP `Retry-After` response header into a millisecond delay,
  * supporting both grammars RFC 9110 allows: delta-seconds (a non-negative
  * integer, e.g. `"120"`) and an HTTP-date (e.g.
  * `"Wed, 21 Oct 2026 07:28:00 GMT"`). Returns `undefined` for a missing,
  * empty, or unparseable header — never throws. A past HTTP-date resolves to
- * `0`, never a negative delay.
+ * `0`, never a negative delay. A real HTTP-date always contains at least one
+ * alphabetic token (a weekday/month name, or `"GMT"`); a value with none is
+ * rejected outright rather than handed to `Date.parse`, whose lenient,
+ * engine-specific grammar would otherwise turn stray numeric-ish garbage
+ * (e.g. `"-5"`, `"120.5"`) into a spurious past-date result instead of the
+ * correct `undefined`. The resolved delay — from either grammar — is capped
+ * at {@link MAX_RETRY_AFTER_MS} (24 hours).
  */
 function parseRetryAfterMs(
   headerValue: string | null,
@@ -84,12 +104,16 @@ function parseRetryAfterMs(
   if (trimmed === "") return undefined;
 
   if (/^\d+$/.test(trimmed)) {
-    return Number(trimmed) * MS_PER_SECOND;
+    const seconds = Number(trimmed);
+    if (!Number.isFinite(seconds)) return undefined;
+    return Math.min(seconds * MS_PER_SECOND, MAX_RETRY_AFTER_MS);
   }
+
+  if (!/[A-Za-z]/.test(trimmed)) return undefined;
 
   const dateMs = Date.parse(trimmed);
   if (Number.isNaN(dateMs)) return undefined;
-  return Math.max(0, dateMs - now);
+  return Math.min(Math.max(0, dateMs - now), MAX_RETRY_AFTER_MS);
 }
 
 /**
@@ -362,8 +386,8 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
     this.#defaultHeaders = { ...options?.defaultHeaders };
     this.#timeout = options?.timeout ?? DEFAULT_TIMEOUT_MS;
     this.#debug = options?.debug ?? false;
-    this.#dispatcher = createDispatcher(options?.proxyUrl);
     validateMaxResponseBytes(options?.maxResponseBytes);
+    this.#dispatcher = createDispatcher(options?.proxyUrl);
     this.#maxResponseBytes = options?.maxResponseBytes;
   }
 
