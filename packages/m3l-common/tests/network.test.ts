@@ -831,6 +831,39 @@ describe("M3LHttpClient — a thrown M3LHttpClientError actually reaches httpRet
       delayMs: 120_000,
     });
   });
+
+  // Bug fix (PR #327 review), the critical regression: a real 429 with
+  // Retry-After: '0' used to classify with delayMs 0, which
+  // `M3LRetryRunner`'s `assertPositive` guard rejects — turning a
+  // legitimate "retry immediately" server signal into a spurious
+  // M3LPollingInvalidOptionError that aborts the retry loop instead of
+  // retrying. The advice's delayMs must never be 0.
+  test("a 429 response with Retry-After: '0' throws an M3LHttpClientError that httpRetryAfterClassifier classifies as retriable with delayMs 1, never 0", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 429,
+        contentType: "application/json",
+        body: {},
+        retryAfter: "0",
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+
+    const advice = httpRetryAfterClassifier(thrown);
+    expect(advice).toMatchObject({
+      decision: "retriable",
+      delayMs: 1,
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -909,6 +942,33 @@ describe("M3LHttpClient — Retry-After header parses into M3LHttpClientError.re
     expect((thrown as M3LHttpClientError).retryAfterMs).toBe(120_000);
   });
 
+  // Bug fix (PR #327 review): an explicit "0" is a legal RFC 9110
+  // delta-seconds value, but a zero delay reaching `httpRetryAfterClassifier`
+  // makes `M3LRetryRunner`'s `assertPositive` guard reject the advice and
+  // abort the retry loop entirely instead of retrying immediately. The
+  // parser must floor at `MIN_RETRY_AFTER_MS` (1ms) so `0` never surfaces.
+  test("an explicit Retry-After: '0' (legal delta-seconds zero) floors to 1ms, never 0", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 429,
+        contentType: "application/json",
+        body: {},
+        retryAfter: "0",
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    expect((thrown as M3LHttpClientError).retryAfterMs).toBe(1);
+  });
+
   test("HTTP-date grammar in the future resolves to a non-negative delay reasonably close to the delta", async () => {
     const future = new Date(Date.now() + 5000).toUTCString();
     mockFetch.mockResolvedValue(
@@ -934,7 +994,12 @@ describe("M3LHttpClient — Retry-After header parses into M3LHttpClientError.re
     expect(retryAfterMs).toBeLessThanOrEqual(10_000);
   });
 
-  test("HTTP-date grammar in the past clamps to zero, never negative", async () => {
+  // Bug fix (PR #327 review): a past HTTP-date used to clamp to a raw 0,
+  // which — like the explicit "0" delta-seconds case above — makes
+  // `httpRetryAfterClassifier`'s advice fail `M3LRetryRunner`'s
+  // `assertPositive` guard and abort the retry loop. It must floor at
+  // `MIN_RETRY_AFTER_MS` (1ms) instead, same as the delta-seconds branch.
+  test("HTTP-date grammar in the past floors to 1ms, never zero or negative", async () => {
     const past = new Date(Date.now() - 60_000).toUTCString();
     mockFetch.mockResolvedValue(
       makeResponse({
@@ -954,7 +1019,7 @@ describe("M3LHttpClient — Retry-After header parses into M3LHttpClientError.re
     }
 
     expect(thrown).toBeInstanceOf(M3LHttpClientError);
-    expect((thrown as M3LHttpClientError).retryAfterMs).toBe(0);
+    expect((thrown as M3LHttpClientError).retryAfterMs).toBe(1);
   });
 
   test("an absent Retry-After header leaves retryAfterMs undefined", async () => {

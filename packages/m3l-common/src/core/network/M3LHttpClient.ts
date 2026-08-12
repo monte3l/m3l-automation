@@ -82,12 +82,26 @@ function redactRequestHeadersForEvent(
 const MAX_RETRY_AFTER_MS = HOURS_PER_DAY * SECONDS_PER_HOUR * MS_PER_SECOND;
 
 /**
+ * Lower bound on a parsed `Retry-After` delay: 1 millisecond. `0` is a legal
+ * RFC 9110 delta-seconds value, and a past HTTP-date would otherwise clamp to
+ * `0` too — but `M3LRetryRunner`'s `assertPositive` guard rejects any
+ * `delayMs <= 0`, so a `Retry-After: 0` (or an already-past date) previously
+ * turned a retriable failure into a thrown `M3LPollingInvalidOptionError`
+ * instead of retrying. Flooring at `1` keeps the "retry as soon as possible"
+ * intent while staying strictly positive.
+ */
+const MIN_RETRY_AFTER_MS = 1;
+
+/**
  * Parses an HTTP `Retry-After` response header into a millisecond delay,
  * supporting both grammars RFC 9110 allows: delta-seconds (a non-negative
  * integer, e.g. `"120"`) and an HTTP-date (e.g.
  * `"Wed, 21 Oct 2026 07:28:00 GMT"`). Returns `undefined` for a missing,
- * empty, or unparseable header — never throws. A past HTTP-date resolves to
- * `0`, never a negative delay. A real HTTP-date always contains at least one
+ * empty, or unparseable header — never throws. The resolved delay is always
+ * floored at {@link MIN_RETRY_AFTER_MS} (1 millisecond) — never `0` or
+ * negative, including for an explicit `Retry-After: 0` or an already-past
+ * HTTP-date — since downstream retry classification treats the parsed value
+ * as a strictly positive delay. A real HTTP-date always contains at least one
  * alphabetic token (a weekday/month name, or `"GMT"`); a value with none is
  * rejected outright rather than handed to `Date.parse`, whose lenient,
  * engine-specific grammar would otherwise turn stray numeric-ish garbage
@@ -106,14 +120,20 @@ function parseRetryAfterMs(
   if (/^\d+$/.test(trimmed)) {
     const seconds = Number(trimmed);
     if (!Number.isFinite(seconds)) return undefined;
-    return Math.min(seconds * MS_PER_SECOND, MAX_RETRY_AFTER_MS);
+    return Math.min(
+      Math.max(seconds * MS_PER_SECOND, MIN_RETRY_AFTER_MS),
+      MAX_RETRY_AFTER_MS,
+    );
   }
 
   if (!/[A-Za-z]/.test(trimmed)) return undefined;
 
   const dateMs = Date.parse(trimmed);
   if (Number.isNaN(dateMs)) return undefined;
-  return Math.min(Math.max(0, dateMs - now), MAX_RETRY_AFTER_MS);
+  return Math.min(
+    Math.max(dateMs - now, MIN_RETRY_AFTER_MS),
+    MAX_RETRY_AFTER_MS,
+  );
 }
 
 /**
