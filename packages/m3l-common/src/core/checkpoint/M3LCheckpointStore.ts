@@ -7,9 +7,52 @@
 
 import * as fsp from "node:fs/promises";
 
-import { isEnoentError } from "../utils/guards.js";
+import { canonicalJsonHash } from "../json/index.js";
+import { isEnoentError, isPlainObject } from "../utils/guards.js";
 import { writeFileAtomic } from "../../internal/files/atomicWrite.js";
 import { M3LCheckpointError } from "./M3LCheckpointError.js";
+
+// ---------------------------------------------------------------------------
+// M3LCheckpointEnvelope
+// ---------------------------------------------------------------------------
+
+/**
+ * The on-disk content-addressed envelope {@link M3LCheckpointStore.write}
+ * persists and {@link M3LCheckpointStore.read} verifies. Not exported — an
+ * implementation detail of the file format, never a value a caller
+ * constructs or receives directly.
+ */
+interface M3LCheckpointEnvelope<TCheckpoint> {
+  readonly __m3lCheckpointFormat: 1;
+  readonly checksum: string;
+  readonly payload: TCheckpoint;
+}
+
+/**
+ * Narrows a JSON-parsed value to {@link M3LCheckpointEnvelope}. Uses
+ * `Object.hasOwn` throughout rather than bracket access, since `value` came
+ * from `JSON.parse` and must not be trusted to walk the prototype chain
+ * safely (e.g. a field literally named `"__proto__"`).
+ *
+ * Edge case (accepted, not a design flaw): a legacy (pre-envelope)
+ * `TCheckpoint` payload that happens to declare fields literally named
+ * `__m3lCheckpointFormat` (value `1`), `checksum` (a string), and `payload`
+ * would be misidentified as an envelope by this guard. This is considered an
+ * acceptable, low-probability limitation given the namespaced marker field
+ * name.
+ */
+function isCheckpointEnvelope(
+  value: unknown,
+): value is M3LCheckpointEnvelope<unknown> {
+  return (
+    isPlainObject(value) &&
+    Object.hasOwn(value, "__m3lCheckpointFormat") &&
+    value["__m3lCheckpointFormat"] === 1 &&
+    Object.hasOwn(value, "checksum") &&
+    typeof value["checksum"] === "string" &&
+    Object.hasOwn(value, "payload")
+  );
+}
 
 // ---------------------------------------------------------------------------
 // M3LCheckpointPathsPort
@@ -206,17 +249,29 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
   }
 
   /**
-   * Reads, JSON-parses, and validates the checkpoint file.
+   * Reads, JSON-parses, verifies, and validates the checkpoint file.
    *
    * Applies the `missing` policy only on `ENOENT` — a present-but-corrupt
    * file (or one that fails `validate`) always throws
-   * `"ERR_CHECKPOINT_PARSE"`, regardless of the `missing` policy.
+   * `"ERR_CHECKPOINT_PARSE"`, regardless of the `missing` policy. When the
+   * parsed content is a content-addressed envelope (see {@link write}), its
+   * stored `checksum` is recomputed and compared before the wrapped payload
+   * is unwrapped and validated — a mismatch throws
+   * `"ERR_CHECKPOINT_CORRUPT"` even though the file is valid JSON and its
+   * payload might otherwise pass `validate`. A pre-existing bare-format file
+   * (written before this integrity check existed, or by an older library
+   * version) has no envelope and thus nothing to compare against: it is read
+   * and validated exactly as before, with no integrity check performed.
    *
-   * @returns The parsed and validated checkpoint.
+   * @returns The parsed, verified, and validated checkpoint.
    * @throws {@link M3LCheckpointError} `"ERR_CHECKPOINT_MISSING"` when the
    *   file is absent under a `{ kind: "error" }` policy;
-   *   `"ERR_CHECKPOINT_PARSE"` when the file is present but not valid JSON or
-   *   fails `validate`; `"ERR_CHECKPOINT_IO"` for any other read failure.
+   *   `"ERR_CHECKPOINT_CORRUPT"` when an envelope's stored `checksum` does
+   *   not match the recomputed hash of its `payload`; `"ERR_CHECKPOINT_PARSE"`
+   *   when the file is present but not valid JSON, fails `validate`, or its
+   *   envelope's `payload` cannot be hashed for checksum verification (e.g. a
+   *   deeply-nested external payload overflows the call stack);
+   *   `"ERR_CHECKPOINT_IO"` for any other read failure.
    */
   async read(): Promise<TCheckpoint> {
     let raw: string;
@@ -253,31 +308,93 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
       );
     }
 
-    if (!this.#validate(parsed)) {
+    let payload: unknown = parsed;
+    if (isCheckpointEnvelope(parsed)) {
+      // Guard the checksum recomputation separately: canonicalJsonHash
+      // recurses per nesting level of `parsed.payload`, which is untrusted
+      // external content that may be adversarially or accidentally deeply
+      // nested (a stack-overflow RangeError) or otherwise unhashable — never
+      // propagate the raw error or chain it as `cause`, matching the
+      // JSON.parse guard above.
+      let recomputed: string;
+      try {
+        recomputed = canonicalJsonHash(parsed.payload);
+      } catch {
+        throw new M3LCheckpointError(
+          `checkpoint file at '${this.#path}' could not be verified`,
+          { code: "ERR_CHECKPOINT_PARSE", context: { path: this.#path } },
+        );
+      }
+      if (recomputed !== parsed.checksum) {
+        throw new M3LCheckpointError(
+          `checkpoint file at '${this.#path}' failed its integrity check: stored content does not match its checksum`,
+          { code: "ERR_CHECKPOINT_CORRUPT", context: { path: this.#path } },
+        );
+      }
+      payload = parsed.payload;
+    }
+
+    if (!this.#validate(payload)) {
       throw new M3LCheckpointError(
         `checkpoint file at '${this.#path}' has an unrecognized shape`,
         { code: "ERR_CHECKPOINT_PARSE", context: { path: this.#path } },
       );
     }
 
-    return parsed;
+    return payload;
   }
 
   /**
-   * Persists `checkpoint` atomically (write-temp-then-rename), replacing
-   * any prior contents.
+   * Persists `checkpoint` atomically (write-temp-then-rename), replacing any
+   * prior contents.
+   *
+   * Wraps `checkpoint` in a content-addressed envelope (format marker,
+   * `canonicalJsonHash` checksum, and the checkpoint itself as `payload`)
+   * rather than persisting the bare value. This lets a later `read()` verify
+   * the file's integrity against **accidental** corruption — it is not a
+   * tamper-evidence or authentication guarantee: the checksum is an unkeyed
+   * hash over publicly canonical JSON (computable via the exported
+   * `canonicalJsonHash`), so anyone with write access to the file can
+   * recompute a matching checksum, or simply strip the envelope back to the
+   * legacy bare format, either of which bypasses the check with no special
+   * knowledge.
    *
    * Does **not** create the output directory — an `ENOENT` from a missing
    * parent directory maps to `"ERR_CHECKPOINT_IO"`, never
    * `"ERR_CHECKPOINT_MISSING"` (that code is reserved for `read()`).
    *
+   * The checksum is computed inside its own `try`/`catch`: `canonicalJsonHash`
+   * throws on a circular, `BigInt`, or non-finite-number `checkpoint`, and its
+   * thrown message can embed the caller's actual value — so that failure is
+   * never chained as `cause` (it may carry sensitive checkpoint data, e.g. a
+   * DynamoDB primary key). The subsequent `writeFileAtomic` call carries no
+   * such risk (an I/O errno has no caller content) and safely chains `cause`.
+   * Both failures map to the same `"ERR_CHECKPOINT_IO"` code.
+   *
    * @param checkpoint - The checkpoint value to persist.
    * @throws {@link M3LCheckpointError} `"ERR_CHECKPOINT_IO"` on any write
-   *   failure.
+   *   failure, including a `checkpoint` value `canonicalJsonHash` cannot hash.
    */
   async write(checkpoint: TCheckpoint): Promise<void> {
+    let checksum: string;
     try {
-      await writeFileAtomic(this.#path, JSON.stringify(checkpoint));
+      checksum = canonicalJsonHash(checkpoint);
+    } catch {
+      // Never chain `cause` here: canonicalJsonHash's thrown message can
+      // embed the caller's actual (possibly sensitive) checkpoint value.
+      throw new M3LCheckpointError(
+        `failed to write checkpoint file at '${this.#path}'`,
+        { code: "ERR_CHECKPOINT_IO", context: { path: this.#path } },
+      );
+    }
+
+    const envelope: M3LCheckpointEnvelope<TCheckpoint> = {
+      __m3lCheckpointFormat: 1,
+      checksum,
+      payload: checkpoint,
+    };
+    try {
+      await writeFileAtomic(this.#path, JSON.stringify(envelope));
     } catch (cause) {
       throw new M3LCheckpointError(
         `failed to write checkpoint file at '${this.#path}'`,

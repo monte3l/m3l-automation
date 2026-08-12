@@ -8,6 +8,7 @@
 import { spawn } from "node:child_process";
 
 import { M3LPrompt } from "../../core/prompt/index.js";
+import { M3LSingleFlight } from "../../core/utils/M3LSingleFlight.js";
 import type {
   M3LAWSCredentialsErrorAnalysis,
   M3LAWSCredentialsManagerOptions,
@@ -162,6 +163,14 @@ export class M3LAWSCredentialsManager {
   private clientStsModule: Promise<typeof ClientSts> | undefined;
   private credentialProvidersModule:
     Promise<typeof CredentialProviders> | undefined;
+
+  // In-flight SSO login promises keyed by resolved profile name. Two
+  // concurrent callers for the SAME profile must share one `aws sso login`
+  // spawn rather than each racing their own browser-based flow; callers for
+  // DIFFERENT profiles remain independent. Coalescing is delegated to
+  // `M3LSingleFlight` (see ADR-0040 for the Zone A exception permitting this
+  // one import) rather than a hand-rolled map.
+  private readonly ssoLoginCoalescer = new M3LSingleFlight();
 
   /**
    * Creates a new `M3LAWSCredentialsManager`.
@@ -437,19 +446,40 @@ export class M3LAWSCredentialsManager {
   }
 
   /**
-   * Spawns `aws sso login --profile=<name>` with `stdio: "inherit"`,
-   * enforcing `loginTimeoutMs` by killing the child process if it does not
-   * exit in time.
-   *
-   * @throws {@link M3LAWSCredentialsError} When the `aws` executable itself
-   *   fails to spawn (e.g. it is not installed or not on `PATH`) — Node
-   *   reports this via the child process's `"error"` event rather than
-   *   `"exit"`.
+   * Resolves `profile` (falling back to the `"default"` profile) and runs
+   * SSO login for it, coalescing concurrent callers that resolve to the SAME
+   * profile onto a single in-flight {@link spawnSsoLogin} call via
+   * {@link M3LSingleFlight} — two callers racing a recoverable credential
+   * error for one profile must not each spawn their own `aws sso login`
+   * browser flow.
    */
   private async runSsoLogin(
     profile: M3LAWSProfile | undefined,
   ): Promise<M3LAWSLoginResult> {
     const resolvedProfile = profile ?? parseAWSProfile("default");
+
+    return this.ssoLoginCoalescer.run(String(resolvedProfile), () =>
+      this.spawnSsoLogin(resolvedProfile),
+    );
+  }
+
+  /**
+   * Spawns `aws sso login --profile=<name>` with `stdio: "inherit"`,
+   * enforcing `loginTimeoutMs` by killing the child process if it does not
+   * exit in time.
+   *
+   * @param resolvedProfile - The already-resolved profile to log in with
+   *   (never `undefined` — callers resolve the `"default"` fallback before
+   *   invoking this method, since the {@link runSsoLogin} coalescing key
+   *   needs a concrete value).
+   * @throws {@link M3LAWSCredentialsError} When the `aws` executable itself
+   *   fails to spawn (e.g. it is not installed or not on `PATH`) — Node
+   *   reports this via the child process's `"error"` event rather than
+   *   `"exit"`.
+   */
+  private async spawnSsoLogin(
+    resolvedProfile: M3LAWSProfile,
+  ): Promise<M3LAWSLoginResult> {
     const startedAt = Date.now();
 
     return new Promise<M3LAWSLoginResult>((resolve, reject) => {

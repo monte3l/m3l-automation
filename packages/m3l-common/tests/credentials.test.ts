@@ -699,6 +699,58 @@ describe("SSO login process seam", () => {
 });
 
 // =============================================================================
+// SSO login concurrency coalescing (M3LSingleFlight regression)
+//
+// Two independent callers hitting a recoverable credential error for the
+// SAME profile at the same time must share one in-flight `aws sso login`
+// spawn rather than each racing their own browser-based SSO flow. Callers
+// for DIFFERENT profiles must still spawn independently — coalescing is
+// keyed by resolved profile name, not global to the manager instance.
+// =============================================================================
+describe("SSO login concurrency coalescing", () => {
+  test("coalesces concurrent SSO logins for the same profile into a single spawn", async () => {
+    h.stsSend.mockRejectedValue(
+      new Error("Token has expired and refresh failed"),
+    );
+    configureSpawn(0, null);
+
+    const manager = new M3LAWSCredentialsManager({ interactive: false });
+    const profile = parseAWSProfile("my-profile");
+
+    const [first, second] = await Promise.all([
+      manager.ensureValidCredentials(profile),
+      manager.ensureValidCredentials(profile),
+    ]);
+
+    expect(h.spawn).toHaveBeenCalledTimes(1);
+    expect(first).toMatchObject({
+      profile: "my-profile",
+      outcome: "success",
+    });
+    expect(second).toMatchObject({
+      profile: "my-profile",
+      outcome: "success",
+    });
+  });
+
+  test("does not coalesce SSO logins for different profiles", async () => {
+    h.stsSend.mockRejectedValue(
+      new Error("Token has expired and refresh failed"),
+    );
+    configureSpawn(0, null);
+
+    const manager = new M3LAWSCredentialsManager({ interactive: false });
+
+    await Promise.all([
+      manager.ensureValidCredentials(parseAWSProfile("profile-a")),
+      manager.ensureValidCredentials(parseAWSProfile("profile-b")),
+    ]);
+
+    expect(h.spawn).toHaveBeenCalledTimes(2);
+  });
+});
+
+// =============================================================================
 // analyzeError — synchronous classification
 // =============================================================================
 describe("analyzeError", () => {

@@ -76,6 +76,7 @@ import type {
   M3LCheckpointStoreOptions,
 } from "../src/core/checkpoint/index.js";
 import { M3LError } from "../src/core/errors/index.js";
+import { canonicalJsonHash } from "../src/core/json/index.js";
 import { M3LPathResolutionError } from "../src/core/utils/index.js";
 
 // ---------------------------------------------------------------------------
@@ -93,6 +94,21 @@ function isTestCheckpoint(value: unknown): value is TestCheckpoint {
 }
 
 const EMPTY_CHECKPOINT: TestCheckpoint = {};
+
+/**
+ * A checkpoint shape that additionally permits a self-referential `self`
+ * field, so a test can construct a genuinely circular value that still
+ * satisfies its own `validate` predicate — used only to prove
+ * `canonicalJsonHash` rejects a circular checkpoint.
+ */
+interface CircularCheckpoint {
+  readonly queryId?: string;
+  self?: CircularCheckpoint;
+}
+
+function isCircularCheckpoint(value: unknown): value is CircularCheckpoint {
+  return typeof value === "object" && value !== null;
+}
 
 function makePathsPort(dir: string): M3LCheckpointPathsPort {
   return {
@@ -400,6 +416,162 @@ describe("M3LCheckpointStore.write()", () => {
       "ERR_CHECKPOINT_MISSING",
     );
   });
+
+  test("regression: write() wraps a canonicalJsonHash failure (e.g. a circular checkpoint) as M3LCheckpointError, not a bare M3LError", async () => {
+    // write() computes `canonicalJsonHash(checkpoint)` to build the envelope
+    // checksum BEFORE entering its try/catch — a circular checkpoint value
+    // makes canonicalJsonHash throw a bare M3LError (ERR_INVALID_ARGUMENT),
+    // which today escapes write() unwrapped instead of being reported as the
+    // documented M3LCheckpointError ERR_CHECKPOINT_IO.
+    const circular: CircularCheckpoint = { queryId: "q-circular" };
+    circular.self = circular;
+
+    const store = new M3LCheckpointStore<CircularCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-circular-checksum",
+      validate: isCircularCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write(circular);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LCheckpointStore — content-addressed envelope (checksum integrity)
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore — content-addressed envelope", () => {
+  test("write() then read() round-trips a value unchanged through the public API", async () => {
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-envelope-roundtrip",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ queryId: "q-envelope" });
+    await expect(store.read()).resolves.toEqual({ queryId: "q-envelope" });
+  });
+
+  test("read() rejects with M3LCheckpointError ERR_CHECKPOINT_CORRUPT when an envelope's checksum does not match its payload", async () => {
+    const filePath = path.join(dir, "run-tampered.checkpoint.json");
+    // Hand-crafted envelope: `checksum` deliberately does NOT match
+    // canonicalJsonHash({ queryId: "tampered" }) — simulates a hand-edited or
+    // partially-corrupted-but-still-parseable-and-still-validate()-passing
+    // checkpoint file.
+    const tamperedEnvelope = {
+      __m3lCheckpointFormat: 1,
+      checksum:
+        "0000000000000000000000000000000000000000000000000000000000000000",
+      payload: { queryId: "tampered" },
+    };
+    await writeFile(filePath, JSON.stringify(tamperedEnvelope), "utf8");
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-tampered",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.read();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    // ERR_CHECKPOINT_CORRUPT is not yet a member of M3LCheckpointErrorCode —
+    // this comparison is expected to be a TYPE ERROR until the GREEN phase
+    // adds it to the union. That type error IS the RED signal here; do not
+    // cast around it.
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_CORRUPT");
+  });
+
+  test("read() still succeeds for a legacy pre-envelope file (bare JSON.stringify(checkpoint), no envelope, no integrity check)", async () => {
+    const filePath = path.join(dir, "run-legacy.checkpoint.json");
+    // Exactly what today's unmodified write() persists: the bare checkpoint,
+    // no envelope wrapper — must keep reading successfully after the
+    // envelope format is introduced, with no integrity check performed
+    // (there is no checksum to check).
+    await writeFile(filePath, JSON.stringify({ queryId: "legacy" }), "utf8");
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-legacy",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    await expect(store.read()).resolves.toEqual({ queryId: "legacy" });
+  });
+
+  test("a well-formed envelope whose checksum correctly matches canonicalJsonHash(payload) reads back the payload", async () => {
+    const filePath = path.join(dir, "run-valid-envelope.checkpoint.json");
+    const payload: TestCheckpoint = { queryId: "q-valid-envelope" };
+    const validEnvelope = {
+      __m3lCheckpointFormat: 1,
+      checksum: canonicalJsonHash(payload),
+      payload,
+    };
+    await writeFile(filePath, JSON.stringify(validEnvelope), "utf8");
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-valid-envelope",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    await expect(store.read()).resolves.toEqual(payload);
+  });
+
+  test("regression: read() wraps a stack-overflow from a deeply-nested external checkpoint as M3LCheckpointError, not a raw RangeError", async () => {
+    // read() recomputes canonicalJsonHash(parsed.payload) to verify the
+    // envelope checksum; canonicalJsonHash recurses per nesting level, so a
+    // deeply-nested (attacker/corruption-controlled) checkpoint file blows
+    // the call stack. The raw JSON text is built via string concatenation
+    // (never via a recursive JSON.stringify(deepObject) or by constructing
+    // the nested value as a real JS object) so *fixture setup* itself never
+    // recurses — only Node's iterative JSON.parse touches this string before
+    // the store's own canonicalJsonHash call recurses over the parsed value.
+    const DEPTH = 20_000;
+    let nestedPayloadJson = "0";
+    for (let index = 0; index < DEPTH; index += 1) {
+      nestedPayloadJson = `{"nested":${nestedPayloadJson}}`;
+    }
+    const envelopeJson = `{"__m3lCheckpointFormat":1,"checksum":"irrelevant-fails-before-comparison","payload":${nestedPayloadJson}}`;
+
+    const filePath = path.join(dir, "run-deeply-nested.checkpoint.json");
+    await writeFile(filePath, envelopeJson, "utf8");
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-deeply-nested",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.read();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).not.toBeInstanceOf(RangeError);
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_PARSE");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -578,7 +750,10 @@ describe("type-level contract", () => {
 
   test("M3LCheckpointErrorCode is exactly the 3-member union (no wider, no narrower)", () => {
     expectTypeOf<M3LCheckpointErrorCode>().toEqualTypeOf<
-      "ERR_CHECKPOINT_IO" | "ERR_CHECKPOINT_MISSING" | "ERR_CHECKPOINT_PARSE"
+      | "ERR_CHECKPOINT_CORRUPT"
+      | "ERR_CHECKPOINT_IO"
+      | "ERR_CHECKPOINT_MISSING"
+      | "ERR_CHECKPOINT_PARSE"
     >();
   });
 

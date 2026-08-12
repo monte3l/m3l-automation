@@ -84,3 +84,4 @@ surface).
 | 0037 | [Re-read deepen-first against real consumer pull; priority order for the capability-deepening wave](./0037-deepen-first-re-read-against-consumer-pull.md) | Accepted                      |
 | 0038 | [Widen the SQS wrapper for DLQ redrive; add an `AWSServiceProvider` services tier](./0038-sqs-dlq-redrive-and-aws-services-tier.md)                       | Accepted                      |
 | 0039 | [LLM/Bedrock inference integration is out of scope for `m3l-common`](./0039-llm-integration-out-of-scope.md)                                              | Accepted                      |
+| 0040 | [Widen the `aws/**` ESLint zone to admit `core/utils/M3LSingleFlight`](./0040-single-flight-zone-widening.md)                                             | Accepted                      |

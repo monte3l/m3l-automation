@@ -8,35 +8,35 @@
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts",
           "symbol": "M3LCheckpointStore",
-          "blob": "291cb2307f4bec4574ca353bb021c2f6a8f84c80"
+          "blob": "8509626708e8d8a1b1527cd72398a768ca21d5b5"
         },
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts",
           "symbol": "M3LCheckpointStoreOptions",
-          "blob": "291cb2307f4bec4574ca353bb021c2f6a8f84c80"
+          "blob": "8509626708e8d8a1b1527cd72398a768ca21d5b5"
         },
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts",
           "symbol": "M3LCheckpointMissingPolicy",
-          "blob": "291cb2307f4bec4574ca353bb021c2f6a8f84c80"
+          "blob": "8509626708e8d8a1b1527cd72398a768ca21d5b5"
         },
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts",
           "symbol": "M3LCheckpointPathsPort",
-          "blob": "291cb2307f4bec4574ca353bb021c2f6a8f84c80"
+          "blob": "8509626708e8d8a1b1527cd72398a768ca21d5b5"
         },
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointError.ts",
           "symbol": "M3LCheckpointError",
-          "blob": "6b6bb4e40f564622aa303ccc5f3fca4edf21e5bd"
+          "blob": "be224303782bbffd74c67f0437021573ef6bb019"
         },
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointError.ts",
           "symbol": "M3LCheckpointErrorCode",
-          "blob": "6b6bb4e40f564622aa303ccc5f3fca4edf21e5bd"
+          "blob": "be224303782bbffd74c67f0437021573ef6bb019"
         }
       ],
-      "retrieved": "2026-07-26"
+      "retrieved": "2026-08-12"
     },
     {
       "heading": "`M3LCheckpointStore<TCheckpoint>`",
@@ -44,20 +44,20 @@
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts",
           "symbol": "M3LCheckpointStore",
-          "blob": "291cb2307f4bec4574ca353bb021c2f6a8f84c80"
+          "blob": "8509626708e8d8a1b1527cd72398a768ca21d5b5"
         },
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts",
           "symbol": "M3LCheckpointStoreOptions",
-          "blob": "291cb2307f4bec4574ca353bb021c2f6a8f84c80"
+          "blob": "8509626708e8d8a1b1527cd72398a768ca21d5b5"
         },
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts",
           "symbol": "M3LCheckpointMissingPolicy",
-          "blob": "291cb2307f4bec4574ca353bb021c2f6a8f84c80"
+          "blob": "8509626708e8d8a1b1527cd72398a768ca21d5b5"
         }
       ],
-      "retrieved": "2026-07-26"
+      "retrieved": "2026-08-12"
     },
     {
       "heading": "`M3LCheckpointError`",
@@ -65,15 +65,15 @@
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointError.ts",
           "symbol": "M3LCheckpointError",
-          "blob": "6b6bb4e40f564622aa303ccc5f3fca4edf21e5bd"
+          "blob": "be224303782bbffd74c67f0437021573ef6bb019"
         },
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointError.ts",
           "symbol": "M3LCheckpointErrorCode",
-          "blob": "6b6bb4e40f564622aa303ccc5f3fca4edf21e5bd"
+          "blob": "be224303782bbffd74c67f0437021573ef6bb019"
         }
       ],
-      "retrieved": "2026-07-26"
+      "retrieved": "2026-08-12"
     },
     {
       "heading": "Notes and behavior",
@@ -81,7 +81,7 @@
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts",
           "symbol": "M3LCheckpointStore",
-          "blob": "291cb2307f4bec4574ca353bb021c2f6a8f84c80"
+          "blob": "8509626708e8d8a1b1527cd72398a768ca21d5b5"
         },
         {
           "file": "packages/m3l-common/src/internal/files/atomicWrite.ts",
@@ -89,7 +89,7 @@
           "blob": "04be9af7de242e00f6762ed233e6fac46c5debc3"
         }
       ],
-      "retrieved": "2026-07-26"
+      "retrieved": "2026-08-12"
     }
   ]
 }

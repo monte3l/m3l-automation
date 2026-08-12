@@ -456,7 +456,12 @@ export default tseslint.config(
     // core/polling (the last widened by ADR-0026 for aws/sqs's internal
     // retry composition, and relied on by ADR-0027's aws/logs-insights for
     // the same reason — core/polling is acyclic w.r.t. aws/*: it depends
-    // only on core/events + internal/, nothing in that chain imports aws).
+    // only on core/events + internal/, nothing in that chain imports aws),
+    // plus the single file core/utils/M3LSingleFlight.ts (widened by
+    // ADR-0040 for aws/credentials/manager.ts's SSO-login coalescing —
+    // deliberately file-scoped, not the whole utils/ subtree, since
+    // M3LSingleFlight.ts has zero imports of its own while core/utils as a
+    // whole is the mid layer in ADR-0009's diagram).
     files: ["packages/m3l-common/src/aws/**/*.ts"],
     ignores: ["packages/m3l-common/src/aws/index.ts"],
     rules: {
@@ -468,9 +473,14 @@ export default tseslint.config(
               target: "./packages/m3l-common/src/aws",
               from: "./packages/m3l-common/src/core",
               // `except` paths are relative to `from` (core).
-              except: ["errors", "prompt", "polling"],
+              except: [
+                "errors",
+                "prompt",
+                "polling",
+                "utils/M3LSingleFlight.ts",
+              ],
               message:
-                "aws/* may import only core/errors, core/prompt, and core/polling — no other core module (ADR-0009 layering).",
+                "aws/* may import only core/errors, core/prompt, core/polling, and core/utils/M3LSingleFlight.ts — no other core module (ADR-0009 layering, ADR-0040).",
             },
             {
               target: "./packages/m3l-common/src",

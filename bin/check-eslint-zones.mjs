@@ -11,7 +11,8 @@
 // It inspects the RESOLVED config (imported, not text-matched) for:
 //   1. internal/ sealing   — the public barrels may not import src/internal (ADR-0004).
 //   2. aws island          — aws/** may import only core/errors, core/prompt,
-//                            and core/polling (ADR-0009).
+//                            core/polling, and the single file
+//                            core/utils/M3LSingleFlight.ts (ADR-0009, ADR-0040).
 //   3. core/script root    — no other core module may import core/script (ADR-0009).
 //   4. no-cycle            — packages/m3l-common/src/**/*.ts AND scripts/*/src/**/*.ts
 //                            are a DAG, `maxDepth: Infinity` (ADR-0035 A8) — see
@@ -80,8 +81,14 @@ requireZone(
 // `.includes()` — a subset check would have silently kept passing when
 // eslint.config.js widened `except` to add "polling" (2026-07-xx), which is
 // how this predicate went stale until this rewrite. An exact set means the
-// next widening has to touch this file too, deliberately.
-const AWS_ISLAND_EXCEPT = ["errors", "prompt", "polling"];
+// next widening has to touch this file too, deliberately. Widened again to
+// add the single-file exception "utils/M3LSingleFlight.ts" (ADR-0040).
+const AWS_ISLAND_EXCEPT = [
+  "errors",
+  "prompt",
+  "polling",
+  "utils/M3LSingleFlight.ts",
+];
 
 requireZone(
   `aws island (aws/** may import only core/${AWS_ISLAND_EXCEPT.join(", core/")})`,
