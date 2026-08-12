@@ -739,6 +739,35 @@ describe("analyzeError", () => {
     expect(analysis.recoverable).toBe(false);
     expect(analysis.cause).toBe(nonError);
   });
+
+  test("regression (ReDoS): classifyMessage's bounded patterns complete in bounded time against an adversarial ~100k-char near-miss message", () => {
+    // classifyMessage's fallthrough chain tries EXPIRED_PATTERNS,
+    // INVALID_PATTERNS, PROFILE_NOT_FOUND_PATTERNS, then
+    // CREDENTIALS_PROVIDER_FAILED_PATTERNS, in that order, before returning
+    // UNKNOWN — so a message that matches none of them exercises every
+    // pattern in the full chain. Repeating the bounded prefix "token " many
+    // thousands of times, with the corresponding suffix literal "expired"
+    // never appearing, gives EXPIRED_PATTERNS[1] (`/token.{0,200}expired/i`)
+    // thousands of candidate match starts, each scanning forward up to the
+    // 200-char bound before failing — the exact shape that was O(n^2) with
+    // an unbounded `.*` gap and is now O(n) with the `.{0,200}` fix.
+    const adversarialMessage = `${"token ".repeat(20_000)}done`;
+    expect(adversarialMessage.length).toBeGreaterThan(100_000);
+
+    const manager = new M3LAWSCredentialsManager();
+    const start = Date.now();
+    const analysis = manager.analyzeError(new Error(adversarialMessage));
+    const elapsed = Date.now() - start;
+
+    expect(analysis.type).toBe(M3LAWSCredentialsErrorType.UNKNOWN);
+    expect(analysis.recoverable).toBe(false);
+
+    // Measured ~14-15ms locally for a 120,000-char adversarial message;
+    // 2000ms ceiling gives well over 100x headroom for CI slowness without
+    // flaking, while still cleanly separating linear-time behavior from any
+    // catastrophic backtracking regression.
+    expect(elapsed).toBeLessThan(2000);
+  });
 });
 
 // =============================================================================

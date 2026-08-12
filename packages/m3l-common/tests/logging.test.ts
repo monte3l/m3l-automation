@@ -1461,6 +1461,48 @@ describe("redactSensitiveLogText", () => {
     expect(result).not.toContain("XYZ");
     expect(result).toContain("user=bob");
   });
+
+  test("regression (ReDoS): completes in bounded time against ~100k chars of adversarial padding across all three redaction passes", () => {
+    // Stresses all three regex passes at once:
+    // - many near-miss `key=value`/`key: value`/`key="..."` sequences using
+    //   sensitive key names, to give BARE_KEY_VALUE_PATTERN and
+    //   JSON_KEY_VALUE_PATTERN many candidate match starts;
+    // - a long run of unbalanced/unclosed double quotes, to stress the
+    //   `"[^"]*"` quoted-value alternative in both bare and JSON patterns;
+    // - a long run of EMBEDDED_SENSITIVE_PATTERN boundary characters
+    //   (`? & ; /` and whitespace) each immediately followed by a sensitive
+    //   word with no closing value, to stress that pattern's per-boundary
+    //   match attempts.
+    const nearMissPairs = Array.from(
+      { length: 4000 },
+      (_, i) =>
+        `token${String(i)}=val${String(i)} apiKey: "unterminated${String(i)} password="p${String(i)}`,
+    ).join(" ");
+    const unclosedQuotes = `"${"secret ".repeat(4000)}`;
+    const boundaryRuns = ["?", "&", ";", "/", " "]
+      .map((boundary) =>
+        `${boundary}token${boundary}auth${boundary}secret`.repeat(400),
+      )
+      .join(" ");
+
+    const plantedSecret = "token=realsecretvalue";
+    const adversarial = `${nearMissPairs} ${unclosedQuotes} ${boundaryRuns} ${plantedSecret}`;
+    expect(adversarial.length).toBeGreaterThan(100_000);
+
+    const start = Date.now();
+    const result = redactSensitiveLogText(adversarial);
+    const elapsed = Date.now() - start;
+
+    // Measured ~15ms locally for ~150k adversarial chars; 2000ms ceiling
+    // gives well over 100x headroom for CI slowness without flaking, while
+    // still cleanly separating linear-time behavior from any catastrophic
+    // backtracking regression.
+    expect(elapsed).toBeLessThan(2000);
+    expect(result).toContain("[REDACTED]");
+    expect(result).not.toContain("realsecretvalue");
+    expect(typeof result).toBe("string");
+    expect(result.length).toBeGreaterThan(90_000);
+  });
 });
 
 // ---------------------------------------------------------------------------
