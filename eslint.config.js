@@ -461,7 +461,12 @@ export default tseslint.config(
     // ADR-0040 for aws/credentials/manager.ts's SSO-login coalescing —
     // deliberately file-scoped, not the whole utils/ subtree, since
     // M3LSingleFlight.ts has zero imports of its own while core/utils as a
-    // whole is the mid layer in ADR-0009's diagram).
+    // whole is the mid layer in ADR-0009's diagram), plus the two files
+    // core/logging/M3LLogEvent.ts and core/logging/M3LLogEventCategory.ts
+    // (widened by ADR-0041 for aws/credentials/manager.ts's injected logger
+    // seam — again file-scoped: those two files form a closed, zero-heavy-
+    // dependency leaf subgraph, unlike core/logging/index.ts's barrel which
+    // pulls in M3LLogger.ts, redact.ts, and the three handler classes).
     files: ["packages/m3l-common/src/aws/**/*.ts"],
     ignores: ["packages/m3l-common/src/aws/index.ts"],
     rules: {
@@ -478,9 +483,11 @@ export default tseslint.config(
                 "prompt",
                 "polling",
                 "utils/M3LSingleFlight.ts",
+                "logging/M3LLogEvent.ts",
+                "logging/M3LLogEventCategory.ts",
               ],
               message:
-                "aws/* may import only core/errors, core/prompt, core/polling, and core/utils/M3LSingleFlight.ts — no other core module (ADR-0009 layering, ADR-0040).",
+                "aws/* may import only core/errors, core/prompt, core/polling, core/utils/M3LSingleFlight.ts, core/logging/M3LLogEvent.ts, and core/logging/M3LLogEventCategory.ts — no other core module (ADR-0009 layering, ADR-0040, ADR-0041).",
             },
             {
               target: "./packages/m3l-common/src",

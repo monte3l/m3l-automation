@@ -14,6 +14,7 @@
  * @packageDocumentation
  */
 
+import type { M3LLoggerHandler } from "../../core/logging/M3LLogEvent.js";
 import type { M3LPrompt } from "../../core/prompt/index.js";
 
 import { M3LError } from "../../core/errors/index.js";
@@ -481,4 +482,10 @@ export interface M3LAWSCredentialsManagerOptions {
    * is used if omitted.
    */
   readonly prompt?: M3LPrompt;
+  /**
+   * Log handler receiving structured events for the SSO login lifecycle
+   * (start, success, failure, timeout). No events are emitted if omitted —
+   * this is purely additive observability, not a required dependency.
+   */
+  readonly logger?: M3LLoggerHandler;
 }

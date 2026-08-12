@@ -7,6 +7,11 @@
 
 import { spawn } from "node:child_process";
 
+import type {
+  M3LLoggerHandler,
+  M3LLogEvent,
+} from "../../core/logging/M3LLogEvent.js";
+import { M3LLogEventCategory } from "../../core/logging/M3LLogEventCategory.js";
 import { M3LPrompt } from "../../core/prompt/index.js";
 import { M3LSingleFlight } from "../../core/utils/M3LSingleFlight.js";
 import type {
@@ -110,6 +115,47 @@ function matchesAny(message: string, patterns: readonly RegExp[]): boolean {
 }
 
 /**
+ * Builds the {@link M3LLogEvent} reporting a settled
+ * {@link M3LAWSLoginResult} for the injected logger — `SUCCESS` on a clean
+ * exit, `WARNING` when our own `loginTimeoutMs` timer fired, `ERROR`
+ * otherwise (a non-zero exit or an external kill). Kept as a standalone
+ * function (rather than inline per branch) so {@link
+ * M3LAWSCredentialsManager.spawnSsoLogin} stays within the file's
+ * function-length lint budget.
+ */
+function buildLoginOutcomeEvent(result: M3LAWSLoginResult): M3LLogEvent {
+  switch (result.outcome) {
+    case "success":
+      return {
+        category: M3LLogEventCategory.SUCCESS,
+        message: `SSO login succeeded for profile '${result.profile}'`,
+        data: { profile: String(result.profile) },
+      };
+    case "timedOut":
+      return {
+        category: M3LLogEventCategory.WARNING,
+        message: `SSO login for profile '${result.profile}' timed out after ${String(result.durationMs)}ms`,
+        data: { profile: String(result.profile) },
+      };
+    case "failed":
+      return {
+        category: M3LLogEventCategory.ERROR,
+        message: `SSO login for profile '${result.profile}' exited with code ${String(result.exitCode)}`,
+        data: { profile: String(result.profile) },
+      };
+    /* istanbul ignore next -- unreachable: every M3LAWSLoginResult outcome is
+       handled above; this arm exists only to fail loud if a new outcome is
+       ever added without a matching case. */
+    default: {
+      const exhaustive: never = result;
+      throw new M3LAWSCredentialsError(
+        `unhandled SSO login outcome: ${String(exhaustive)}`,
+      );
+    }
+  }
+}
+
+/**
  * Classifies a raw error message into an {@link M3LAWSCredentialsErrorType}.
  * Order matters: more specific categories are checked before the generic
  * `CREDENTIALS_PROVIDER_FAILED` fallback pattern.
@@ -128,6 +174,31 @@ function classifyMessage(message: string): M3LAWSCredentialsErrorType {
     return M3LAWSCredentialsErrorType.CREDENTIALS_PROVIDER_FAILED;
   }
   return M3LAWSCredentialsErrorType.UNKNOWN;
+}
+
+/**
+ * Classifies `error` into an {@link M3LAWSCredentialsErrorType}, checking the
+ * thrown value's identity (`error.name`) BEFORE falling back to
+ * {@link classifyMessage}'s message-regex chain. The AWS SDK/CLI reword and
+ * localize their error messages across versions and locales, but the
+ * exception `name` (e.g. `"ExpiredTokenException"`,
+ * `"SSOTokenProviderFailure"`) is a stable identity a reworded or translated
+ * message would silently fall through to `UNKNOWN` on if matched by regex
+ * alone — so identity wins whenever it is present and recognized, and only
+ * falls back to the message chain when it is absent or unrecognized.
+ */
+function classifyError(error: unknown): M3LAWSCredentialsErrorType {
+  if (error instanceof Error) {
+    switch (error.name) {
+      case "ExpiredTokenException":
+        return M3LAWSCredentialsErrorType.SSO_SESSION_EXPIRED;
+      case "SSOTokenProviderFailure":
+        return M3LAWSCredentialsErrorType.SSO_SESSION_INVALID;
+      default:
+        break;
+    }
+  }
+  return classifyMessage(extractMessage(error));
 }
 
 /**
@@ -153,6 +224,7 @@ export class M3LAWSCredentialsManager {
   private readonly maxRetries: number;
   private readonly interactive: boolean;
   private readonly injectedPrompt: M3LPrompt | undefined;
+  private readonly injectedLogger: M3LLoggerHandler | undefined;
 
   // Memoized lazy-import promises: each SDK module is
   // `import()`-ed at most once per manager instance. The `??=` assignment in
@@ -189,6 +261,7 @@ export class M3LAWSCredentialsManager {
     this.maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
     this.interactive = options.interactive ?? false;
     this.injectedPrompt = options.prompt;
+    this.injectedLogger = options.logger;
   }
 
   /**
@@ -421,8 +494,7 @@ export class M3LAWSCredentialsManager {
    * ```
    */
   analyzeError(error: unknown): M3LAWSCredentialsErrorAnalysis {
-    const message = extractMessage(error);
-    const type = classifyMessage(message);
+    const type = classifyError(error);
     return buildAnalysis(type, error);
   }
 
@@ -466,7 +538,16 @@ export class M3LAWSCredentialsManager {
   /**
    * Spawns `aws sso login --profile=<name>` with `stdio: "inherit"`,
    * enforcing `loginTimeoutMs` by killing the child process if it does not
-   * exit in time.
+   * exit in time. When an `options.logger` was injected at construction, this
+   * method dispatches one `STEP` event before spawning and one terminal
+   * outcome event once the child settles — covering the full ADR-0041
+   * lifecycle: `SUCCESS` on a clean exit, `WARNING` on our own timeout,
+   * `ERROR` on a non-zero exit (via {@link finalizeSsoLogin}), and `ERROR`
+   * on a spawn failure itself (`"error"` event, below) — a no-op when no
+   * logger was supplied. Every dispatch goes through
+   * {@link dispatchLoggerEvent}, which isolates a throwing handler so it can
+   * neither crash the process nor leave this method's returned promise
+   * unsettled.
    *
    * @param resolvedProfile - The already-resolved profile to log in with
    *   (never `undefined` — callers resolve the `"default"` fallback before
@@ -481,6 +562,12 @@ export class M3LAWSCredentialsManager {
     resolvedProfile: M3LAWSProfile,
   ): Promise<M3LAWSLoginResult> {
     const startedAt = Date.now();
+
+    this.dispatchLoggerEvent({
+      category: M3LLogEventCategory.STEP,
+      message: `starting SSO login for profile '${resolvedProfile}'`,
+      data: { profile: String(resolvedProfile) },
+    });
 
     return new Promise<M3LAWSLoginResult>((resolve, reject) => {
       const child = spawn(
@@ -503,11 +590,20 @@ export class M3LAWSCredentialsManager {
       // A spawn failure (ENOENT when `aws` is not on PATH, EACCES, etc.)
       // surfaces as an "error" event, not "exit" — an unhandled "error" on a
       // ChildProcess is fatal to the process, and the promise would
-      // otherwise never settle.
+      // otherwise never settle. Dispatches its own terminal ERROR event
+      // (ADR-0041's start/success/failure/timeout lifecycle) — data is kept
+      // to the profile name only, deliberately omitting the raw spawn
+      // error's message to avoid leaking argv/environment detail into a log
+      // sink.
       child.on("error", (cause) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        this.dispatchLoggerEvent({
+          category: M3LLogEventCategory.ERROR,
+          message: `failed to spawn 'aws sso login' for profile '${resolvedProfile}'`,
+          data: { profile: String(resolvedProfile) },
+        });
         reject(
           new M3LAWSCredentialsError(
             `failed to spawn 'aws sso login' for profile '${resolvedProfile}'; is the AWS CLI installed and on PATH?`,
@@ -522,36 +618,89 @@ export class M3LAWSCredentialsManager {
         clearTimeout(timer);
 
         const durationMs = Date.now() - startedAt;
-        if (timedOutByUs) {
-          resolve({
-            outcome: "timedOut",
-            exitCode: null,
-            profile: resolvedProfile,
+        resolve(
+          this.finalizeSsoLogin(
+            resolvedProfile,
+            exitCode,
+            timedOutByUs,
             durationMs,
-          });
-        } else if (exitCode === 0) {
-          resolve({
+          ),
+        );
+      });
+    });
+  }
+
+  /**
+   * Builds the settled {@link M3LAWSLoginResult} for a spawned `aws sso login`
+   * child process and reports it to the injected logger (a no-op when none
+   * was supplied) via {@link buildLoginOutcomeEvent}, dispatched through
+   * {@link dispatchLoggerEvent} so a throwing handler cannot prevent this
+   * method from returning `result` to its `"exit"`-handler caller. Extracted
+   * out of {@link spawnSsoLogin}'s `"exit"` handler to keep that closure
+   * within the file's function-length lint budget.
+   *
+   * @param resolvedProfile - The profile the login attempt targeted.
+   * @param exitCode - The child process's exit code (`null` on a signal
+   *   kill, our own timeout included).
+   * @param timedOutByUs - Whether OUR `loginTimeoutMs` timer fired (as
+   *   opposed to an external signal kill).
+   * @param durationMs - The wall-clock duration of the login attempt.
+   */
+  private finalizeSsoLogin(
+    resolvedProfile: M3LAWSProfile,
+    exitCode: number | null,
+    timedOutByUs: boolean,
+    durationMs: number,
+  ): M3LAWSLoginResult {
+    // `exitCode` is `null` on the "failed" arm when the process was killed by
+    // a signal we did not send (an external Ctrl-C, a forwarded SIGTERM via
+    // `stdio: "inherit"`, etc.) rather than exiting on its own with a
+    // non-zero code — passed through as-is instead of coercing to `0`, which
+    // would misrepresent an external kill as a normal zero-exit
+    // success-adjacent code.
+    const result: M3LAWSLoginResult = timedOutByUs
+      ? {
+          outcome: "timedOut",
+          exitCode: null,
+          profile: resolvedProfile,
+          durationMs,
+        }
+      : exitCode === 0
+        ? {
             outcome: "success",
             exitCode: 0,
             profile: resolvedProfile,
             durationMs,
-          });
-        } else {
-          // `exitCode` is `null` here when the process was killed by a
-          // signal we did not send (an external Ctrl-C, a forwarded
-          // SIGTERM via `stdio: "inherit"`, etc.) rather than exiting on
-          // its own with a non-zero code — pass it through as-is instead
-          // of coercing to `0`, which would misrepresent an external kill
-          // as a normal zero-exit success-adjacent code.
-          resolve({
-            outcome: "failed",
-            exitCode,
-            profile: resolvedProfile,
-            durationMs,
-          });
-        }
-      });
-    });
+          }
+        : { outcome: "failed", exitCode, profile: resolvedProfile, durationMs };
+
+    this.dispatchLoggerEvent(buildLoginOutcomeEvent(result));
+    return result;
+  }
+
+  /**
+   * Dispatches `event` to the injected logger (a no-op when none was
+   * supplied), isolating a synchronous throw from `handle()` exactly as
+   * {@link M3LLogger}'s own `dispatch` does: from this manager's
+   * perspective, a caller-supplied handler is untrusted code, so a throw in
+   * it must never crash the process or leave the SSO login promise
+   * unsettled — every call site here runs inside either a synchronous
+   * pre-spawn step or a `child` `"error"`/`"exit"` event listener, and an
+   * uncaught exception in either is fatal to the caller (an unhandled
+   * `EventEmitter` `"error"`) or would abandon the login promise mid-flight.
+   * The failure is not silently discarded: it is written to `process.stderr`
+   * as a last-resort, best-effort diagnostic.
+   */
+  private dispatchLoggerEvent(event: M3LLogEvent): void {
+    try {
+      this.injectedLogger?.handle(event);
+    } catch (cause) {
+      const detail =
+        cause instanceof Error ? (cause.stack ?? cause.message) : String(cause);
+      process.stderr.write(
+        `[m3l-common] SSO login logger handler threw: ${detail}\n`,
+      );
+    }
   }
 
   /**
