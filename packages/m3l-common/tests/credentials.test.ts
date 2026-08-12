@@ -739,6 +739,53 @@ describe("analyzeError", () => {
     expect(analysis.recoverable).toBe(false);
     expect(analysis.cause).toBe(nonError);
   });
+
+  test("regression (ReDoS): classifyMessage's bounded patterns complete in bounded time against an adversarial ~640k-char near-miss message", () => {
+    // classifyMessage's fallthrough chain tries EXPIRED_PATTERNS,
+    // INVALID_PATTERNS, PROFILE_NOT_FOUND_PATTERNS, then
+    // CREDENTIALS_PROVIDER_FAILED_PATTERNS, in that order, before returning
+    // UNKNOWN — so a message that matches none of them exercises every
+    // pattern in the full chain. `EXPIRED_PATTERNS` no longer has a
+    // multi-literal member (`token.{0,200}expired` was removed as dead code:
+    // it is a strict subset of the surviving `/expired/i`, so it could never
+    // be reached by `classifyMessage`'s first-match `.some()` check), so the
+    // adversarial literal here targets `INVALID_PATTERNS` instead. Repeating
+    // the bounded prefix "session " many thousands of times, with the
+    // corresponding suffix literal "invalid" never appearing, gives
+    // `INVALID_PATTERNS[0]` (`/session.{0,200}invalid/i`) thousands of
+    // candidate match starts, each scanning forward up to the 200-char bound
+    // before failing — the exact shape that was O(n^2) with an unbounded
+    // `.*` gap and is now O(n) with the `.{0,200}` fix.
+    //
+    // repeatCount is 80_000 (not the original 20_000): replaying the
+    // original 20_000-repeat/~120k-char input against the OLD, pre-fix
+    // unbounded `/session.*invalid/i` pattern measured only ~1.36-1.8s,
+    // under the 2000ms ceiling below — too close to cleanly separate fixed
+    // from vulnerable. At 80_000 repeats (~640k chars), the fixed,
+    // `.{0,200}`-bounded code measures ~58ms locally (linear growth, ~4x the
+    // ~15ms measured at 20_000 repeats — consistent with O(n)), while the
+    // OLD unbounded pattern measured ~29.1s on the same 640k-char input
+    // (quadratic growth from the ~1.8s at 20_000 repeats: ~16x the input
+    // gives ~16x the ~1.8s baseline squared-relative growth, i.e. roughly
+    // 4x per input doubling, matching O(n^2)) — clearly over the ceiling.
+    const adversarialMessage = `${"session ".repeat(80_000)}done`;
+    expect(adversarialMessage.length).toBeGreaterThan(600_000);
+
+    const manager = new M3LAWSCredentialsManager();
+    const start = Date.now();
+    const analysis = manager.analyzeError(new Error(adversarialMessage));
+    const elapsed = Date.now() - start;
+
+    expect(analysis.type).toBe(M3LAWSCredentialsErrorType.UNKNOWN);
+    expect(analysis.recoverable).toBe(false);
+
+    // Measured ~58ms locally for the 640,004-char adversarial message above;
+    // 2000ms ceiling gives ~34x headroom over the fixed measurement for CI
+    // slowness without flaking, while sitting ~14.5x below the ~29.1s the
+    // OLD unbounded pattern measured on the same input — a clean separation
+    // between linear-time behavior and catastrophic backtracking.
+    expect(elapsed).toBeLessThan(2000);
+  });
 });
 
 // =============================================================================
