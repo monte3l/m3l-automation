@@ -9,7 +9,32 @@ import { M3LError } from "../errors/index.js";
 import {
   ERR_IMPORT_PARSE,
   readSourceText,
+  validatePositiveIntegerOption,
 } from "../../internal/importers/resolveSource.js";
+
+/**
+ * Options accepted by {@link M3LJSONFileImporter}'s constructor.
+ *
+ * @example
+ * ```typescript
+ * import type { M3LJSONFileImporterOptions } from "@m3l-automation/m3l-common/core";
+ *
+ * const options: M3LJSONFileImporterOptions = { maxBytes: 1_000_000 };
+ * ```
+ */
+export interface M3LJSONFileImporterOptions {
+  /**
+   * The maximum number of bytes the source may occupy. Checked before any
+   * content is buffered (a file-path source is checked via `stat`, never
+   * read past the check). Defaults to unbounded when omitted.
+   *
+   * @throws {@link M3LError} with code `ERR_INVALID_ARGUMENT` at construction
+   *   when supplied and not a positive integer.
+   * @throws {@link M3LError} with code `ERR_IMPORT_SOURCE` from `read` when
+   *   the source exceeds this bound.
+   */
+  readonly maxBytes?: number;
+}
 
 /**
  * Reads and parses a single file-level source as a whole JSON document (not
@@ -21,11 +46,23 @@ import {
  * ```typescript
  * import { M3LJSONFileImporter } from "@m3l-automation/m3l-common/core";
  *
- * const importer = new M3LJSONFileImporter();
+ * const importer = new M3LJSONFileImporter({ maxBytes: 1_000_000 });
  * const doc = await importer.read<{ id: number }[]>("./data/inputs/records.json");
  * ```
  */
 export class M3LJSONFileImporter {
+  readonly #maxBytes: number | undefined;
+
+  /**
+   * Creates a JSON file importer.
+   *
+   * @param options - Importer options; see {@link M3LJSONFileImporterOptions}.
+   */
+  constructor(options: M3LJSONFileImporterOptions = {}) {
+    validatePositiveIntegerOption(options.maxBytes, "maxBytes");
+    this.#maxBytes = options.maxBytes;
+  }
+
   /**
    * Reads `source` and parses it as a whole JSON document.
    *
@@ -35,7 +72,8 @@ export class M3LJSONFileImporter {
    *   (decoded as UTF-8).
    * @returns A promise resolving to the parsed document.
    * @throws {@link M3LError} with code `ERR_IMPORT_SOURCE` when `source` is a
-   *   path that cannot be read, chaining the underlying filesystem error.
+   *   path that cannot be read, chaining the underlying filesystem error, or
+   *   when `source` exceeds the configured `maxBytes`.
    * @throws {@link M3LError} with code `ERR_IMPORT_PARSE` when `source`'s
    *   content is not valid JSON, chaining the underlying parse error.
    *
@@ -54,7 +92,7 @@ export class M3LJSONFileImporter {
    * ```
    */
   async read<T = unknown>(source: string | Buffer): Promise<T> {
-    const text = await readSourceText(source);
+    const text = await readSourceText(source, this.#maxBytes);
     try {
       return JSON.parse(text) as T;
     } catch (cause) {

@@ -882,6 +882,11 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/importers/M3LJSONFileImporter.ts"
   },
+  "M3LJSONFileImporterOptions": {
+    "submodule": "importers",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/importers/M3LJSONFileImporter.ts"
+  },
   "M3LJSONListImporter": {
     "submodule": "importers",
     "namespace": "core",
@@ -898,6 +903,11 @@
     "file": "packages/m3l-common/src/core/importers/M3LFileListImporter.ts"
   },
   "M3LTextFileImporter": {
+    "submodule": "importers",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/importers/M3LTextFileImporter.ts"
+  },
+  "M3LTextFileImporterOptions": {
     "submodule": "importers",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/importers/M3LTextFileImporter.ts"

@@ -124,6 +124,7 @@ import * as fs from "node:fs/promises";
 
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
+import type { Stats } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 
 // Make the 'node:fs/promises' module configurable so vi.spyOn can intercept
@@ -141,11 +142,13 @@ import type {
   M3LFileImporter,
   M3LFileListImporter,
   M3LImportStreamSummary,
+  M3LJSONFileImporterOptions,
   M3LJSONListImporterOptions,
   M3LListImporter,
   M3LListImporterEvents,
   M3LListImporterResult,
   M3LTextFileImporter,
+  M3LTextFileImporterOptions,
 } from "../src/core/importers/index.js";
 
 // =============================================================================
@@ -841,6 +844,350 @@ describe("M3LCSVListImporter", () => {
       >();
     });
   });
+
+  describe("M3LCSVListImporter — maxBytes/maxRows bound the import", () => {
+    describe("constructor validation (ERR_INVALID_ARGUMENT)", () => {
+      test.each([
+        ["maxBytes", 0],
+        ["maxBytes", -1],
+        ["maxBytes", 1.5],
+        ["maxBytes", Number.NaN],
+        ["maxRows", 0],
+        ["maxRows", -1],
+        ["maxRows", 1.5],
+        ["maxRows", Number.NaN],
+      ] as const)(
+        "throws M3LError code ERR_INVALID_ARGUMENT at construction when %s is %j",
+        (optionName, value) => {
+          let thrown: unknown;
+          try {
+            new Core.M3LCSVListImporter<UserRow>({ [optionName]: value });
+          } catch (error) {
+            thrown = error;
+          }
+
+          expect(thrown).toBeInstanceOf(Core.M3LError);
+          expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+            "ERR_INVALID_ARGUMENT",
+          );
+        },
+      );
+    });
+
+    describe("maxBytes — Buffer source", () => {
+      test("a Buffer within maxBytes imports normally (happy path)", async () => {
+        const importer = new Core.M3LCSVListImporter<UserRow>({
+          maxBytes: 1_000,
+        });
+        const result = await importer.import(Buffer.from(CSV_CONTENT, "utf8"));
+
+        expect(result.items).toEqual([
+          { id: "1", name: "Ada" },
+          { id: "2", name: "Grace" },
+        ]);
+      });
+
+      test("a Buffer exceeding maxBytes rejects with M3LError code ERR_IMPORT_SOURCE", async () => {
+        const importer = new Core.M3LCSVListImporter<UserRow>({
+          maxBytes: 5,
+        });
+
+        const thrown: unknown = await importer
+          .import(Buffer.from(CSV_CONTENT, "utf8"))
+          .catch((e: unknown) => e);
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_SOURCE",
+        );
+      });
+    });
+
+    describe("maxBytes — file-path source (validate-before-buffering)", () => {
+      test("a file within maxBytes imports normally (happy path)", async () => {
+        vi.spyOn(fs, "stat").mockResolvedValue({
+          size: Buffer.byteLength(CSV_CONTENT, "utf8"),
+        } as Stats);
+        vi.spyOn(fs, "readFile").mockResolvedValue(CSV_CONTENT);
+
+        const importer = new Core.M3LCSVListImporter<UserRow>({
+          maxBytes: 1_000,
+        });
+        const result = await importer.import("/fixtures/users.csv");
+
+        expect(result.items).toEqual([
+          { id: "1", name: "Ada" },
+          { id: "2", name: "Grace" },
+        ]);
+      });
+
+      test("a file exceeding maxBytes rejects with M3LError code ERR_IMPORT_SOURCE and never calls readFile", async () => {
+        const statMock = vi
+          .spyOn(fs, "stat")
+          .mockResolvedValue({ size: 10_000 } as Stats);
+        const readFileMock = vi
+          .spyOn(fs, "readFile")
+          .mockResolvedValue(CSV_CONTENT);
+
+        const importer = new Core.M3LCSVListImporter<UserRow>({
+          maxBytes: 100,
+        });
+
+        const thrown: unknown = await importer
+          .import("/fixtures/users.csv")
+          .catch((e: unknown) => e);
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_SOURCE",
+        );
+        expect(statMock).toHaveBeenCalled();
+        expect(readFileMock).not.toHaveBeenCalled();
+      });
+
+      test("a stat() rejection (e.g. missing file) surfaces as M3LError code ERR_IMPORT_SOURCE, chaining the fs error as cause", async () => {
+        const statError = Object.assign(new Error("ENOENT"), {
+          code: "ENOENT",
+        });
+        vi.spyOn(fs, "stat").mockRejectedValue(statError);
+        const readFileMock = vi
+          .spyOn(fs, "readFile")
+          .mockResolvedValue(CSV_CONTENT);
+
+        const importer = new Core.M3LCSVListImporter<UserRow>({
+          maxBytes: 100,
+        });
+
+        let thrown: unknown;
+        try {
+          await importer.import("/fixtures/does-not-exist.csv");
+        } catch (error) {
+          thrown = error;
+        }
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_SOURCE",
+        );
+        expect((thrown as InstanceType<typeof Core.M3LError>).cause).toBe(
+          statError,
+        );
+        expect(readFileMock).not.toHaveBeenCalled();
+      });
+
+      test("maxBytes is still enforced when stat() under-reports the actual file size (FIFO/procfs/TOCTOU backstop)", async () => {
+        // A FIFO, a procfs entry, or a file that grows between stat() and
+        // readFile() can report a small (or zero) stat().size while
+        // readFile() actually returns arbitrarily more bytes — the pre-read
+        // stat() check alone cannot catch this, so a post-read length
+        // assertion must act as a backstop.
+        vi.spyOn(fs, "stat").mockResolvedValue({ size: 10 } as Stats);
+        vi.spyOn(fs, "readFile").mockResolvedValue("x".repeat(1_000));
+
+        const importer = new Core.M3LCSVListImporter<UserRow>({
+          maxBytes: 100,
+        });
+
+        const thrown: unknown = await importer
+          .import("/fixtures/users.csv")
+          .catch((e: unknown) => e);
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_SOURCE",
+        );
+      });
+    });
+
+    describe("maxRows", () => {
+      const THREE_ROW_CSV_CONTENT = [
+        CSV_HEADER,
+        "1,Ada",
+        "2,Grace",
+        "3,Turing",
+      ].join("\n");
+
+      test("a source within maxRows imports normally (happy path)", async () => {
+        const importer = new Core.M3LCSVListImporter<UserRow>({
+          maxRows: 100,
+        });
+        const result = await importer.import(Buffer.from(CSV_CONTENT, "utf8"));
+
+        expect(result.items).toEqual([
+          { id: "1", name: "Ada" },
+          { id: "2", name: "Grace" },
+        ]);
+      });
+
+      test("import() rejects (whole call, no partial result) with M3LError code ERR_IMPORT_VALIDATION instead of processing the (maxRows + 1)-th row", async () => {
+        const importer = new Core.M3LCSVListImporter<UserRow>({
+          maxRows: 2,
+        });
+
+        const thrown: unknown = await importer
+          .import(Buffer.from(THREE_ROW_CSV_CONTENT, "utf8"))
+          .catch((e: unknown) => e);
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_VALIDATION",
+        );
+      });
+
+      test("importStream() yields exactly maxRows items, then throws once the (maxRows + 1)-th is attempted; import:completed does NOT fire", async () => {
+        const importer = new Core.M3LCSVListImporter<UserRow>({
+          maxRows: 2,
+        });
+        const completed = vi.fn();
+        importer.on("import:completed", completed);
+
+        const seen: UserRow[] = [];
+        let thrown: unknown;
+        try {
+          for await (const row of importer.importStream(
+            Buffer.from(THREE_ROW_CSV_CONTENT, "utf8"),
+          )) {
+            seen.push(row);
+          }
+        } catch (error) {
+          thrown = error;
+        }
+
+        expect(seen).toEqual([
+          { id: "1", name: "Ada" },
+          { id: "2", name: "Grace" },
+        ]);
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_VALIDATION",
+        );
+        expect(completed).not.toHaveBeenCalled();
+      });
+
+      describe("off-by-one boundary", () => {
+        test("maxRows equal to the total row count does NOT throw", async () => {
+          const importer = new Core.M3LCSVListImporter<UserRow>({
+            maxRows: CSV_ROWS.length,
+          });
+
+          const result = await importer.import(
+            Buffer.from(CSV_CONTENT, "utf8"),
+          );
+
+          expect(result.items).toEqual([
+            { id: "1", name: "Ada" },
+            { id: "2", name: "Grace" },
+          ]);
+        });
+
+        test("maxRows one less than the total row count DOES throw", async () => {
+          const importer = new Core.M3LCSVListImporter<UserRow>({
+            maxRows: CSV_ROWS.length - 1,
+          });
+
+          const thrown: unknown = await importer
+            .import(Buffer.from(CSV_CONTENT, "utf8"))
+            .catch((e: unknown) => e);
+
+          expect(thrown).toBeInstanceOf(Core.M3LError);
+          expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+            "ERR_IMPORT_VALIDATION",
+          );
+        });
+      });
+
+      test("a skipped/bad row counts toward maxRows, same as a successful row", async () => {
+        // 3 rows total: 1 bad (fails rowValidator) + 2 good. maxRows: 2 means
+        // only 2 total row ATTEMPTS are allowed — the bad row plus the first
+        // good row already exhaust the cap, so the second good row (the 3rd
+        // attempted row overall) must never be reached.
+        const content = [
+          CSV_HEADER,
+          "not,a,valid,row,shape",
+          "1,Ada",
+          "2,Grace",
+        ].join("\n");
+
+        const importer = new Core.M3LCSVListImporter<UserRow>({
+          maxRows: 2,
+          rowValidator: (row) =>
+            typeof row["id"] === "string" && typeof row["name"] === "string",
+        });
+
+        const thrown: unknown = await importer
+          .import(Buffer.from(content, "utf8"))
+          .catch((e: unknown) => e);
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_VALIDATION",
+        );
+      });
+
+      test("maxRows bounds work early on an all-malformed CSV, not after a full parse (wall-clock regression)", async () => {
+        // Regression for a bug where the whole buffer was fed to csv-parse's
+        // one-shot parse(bytes, options) convenience function in a single
+        // call: when every row is malformed, csv-parse's internal on_skip
+        // callback fires for every row in one synchronous burst BEFORE the
+        // consuming `for await` loop — where the maxRows budget check lives —
+        // ever gets a turn to run. So maxRows gave zero protection against a
+        // large all-malformed CSV: the entire buffer was fully parsed no
+        // matter how low maxRows was set. A real-world repro: a 3MB
+        // all-malformed CSV with maxRows: 1 took ~7.8s / ~1.1GB peak RSS
+        // before finally throwing. 200_000 malformed rows (a few MB total)
+        // keeps this test fast under the fixed behavior (measured ~13.5ms in
+        // isolated benchmarking) while staying far into multi-second
+        // territory under the unfixed behavior (measured ~3.19s for the same
+        // row count) — so a 2000ms ceiling cleanly separates fixed from
+        // unfixed with ample headroom for CI slowness, without flaking.
+        const ROW_COUNT = 200_000;
+        const malformedCsv = [
+          CSV_HEADER,
+          ...Array.from(
+            { length: ROW_COUNT },
+            (_, i) => `only-one-column-${String(i)}`,
+          ),
+        ].join("\n");
+
+        const importer = new Core.M3LCSVListImporter<UserRow>({
+          maxRows: 1,
+        });
+
+        const start = Date.now();
+        const thrown: unknown = await importer
+          .import(Buffer.from(malformedCsv, "utf8"))
+          .catch((e: unknown) => e);
+        const elapsed = Date.now() - start;
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_VALIDATION",
+        );
+        expect(elapsed).toBeLessThan(2000);
+      }, 20_000);
+
+      test("maxRows mutated on the options object after construction does not affect the already-validated bound", async () => {
+        // Both list importers currently read maxBytes/maxRows live off the
+        // caller-supplied options object at import time instead of
+        // snapshotting the validated value at construction — so mutating the
+        // SAME options object after construction silently changes the bound,
+        // even though construction-time validation already ran against the
+        // original value.
+        const opts = { maxRows: 2 };
+        const importer = new Core.M3LCSVListImporter<UserRow>(opts);
+        opts.maxRows = Number.NaN;
+
+        const thrown: unknown = await importer
+          .import(Buffer.from(THREE_ROW_CSV_CONTENT, "utf8"))
+          .catch((e: unknown) => e);
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_VALIDATION",
+        );
+      });
+    });
+  });
 });
 
 // =============================================================================
@@ -1326,6 +1673,335 @@ describe("M3LJSONListImporter", () => {
       >();
     });
   });
+
+  describe("M3LJSONListImporter — maxBytes/maxRows bound the import", () => {
+    describe("constructor validation (ERR_INVALID_ARGUMENT)", () => {
+      test.each([
+        ["maxBytes", 0],
+        ["maxBytes", -1],
+        ["maxBytes", 1.5],
+        ["maxBytes", Number.NaN],
+        ["maxRows", 0],
+        ["maxRows", -1],
+        ["maxRows", 1.5],
+        ["maxRows", Number.NaN],
+      ] as const)(
+        "throws M3LError code ERR_INVALID_ARGUMENT at construction when %s is %j",
+        (optionName, value) => {
+          let thrown: unknown;
+          try {
+            new Core.M3LJSONListImporter<unknown>({ [optionName]: value });
+          } catch (error) {
+            thrown = error;
+          }
+
+          expect(thrown).toBeInstanceOf(Core.M3LError);
+          expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+            "ERR_INVALID_ARGUMENT",
+          );
+        },
+      );
+    });
+
+    describe("maxBytes — Buffer source", () => {
+      test("a Buffer within maxBytes imports normally (happy path)", async () => {
+        const importer = new Core.M3LJSONListImporter<{
+          readonly id: number;
+          readonly name: string;
+        }>({ maxBytes: 1_000 });
+        const result = await importer.import(
+          Buffer.from(JSON_ARRAY_CONTENT, "utf8"),
+        );
+
+        expect(result.items).toEqual([
+          { id: 1, name: "Ada", metadata: { author: "Lovelace" } },
+          { id: 2, name: "Grace", metadata: { author: "Hopper" } },
+        ]);
+      });
+
+      test("a Buffer exceeding maxBytes rejects with M3LError code ERR_IMPORT_SOURCE", async () => {
+        const importer = new Core.M3LJSONListImporter<unknown>({
+          maxBytes: 5,
+        });
+
+        const thrown: unknown = await importer
+          .import(Buffer.from(JSON_ARRAY_CONTENT, "utf8"))
+          .catch((e: unknown) => e);
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_SOURCE",
+        );
+      });
+    });
+
+    describe("maxBytes — file-path source (validate-before-buffering)", () => {
+      test("a file within maxBytes imports normally (happy path)", async () => {
+        vi.spyOn(fs, "stat").mockResolvedValue({
+          size: Buffer.byteLength(JSON_ARRAY_CONTENT, "utf8"),
+        } as Stats);
+        vi.spyOn(fs, "readFile").mockResolvedValue(JSON_ARRAY_CONTENT);
+        vi.spyOn(fs, "open").mockImplementation(() =>
+          Promise.resolve(fakeJSONFileHandle(JSON_ARRAY_CONTENT)),
+        );
+
+        const importer = new Core.M3LJSONListImporter<{
+          readonly id: number;
+          readonly name: string;
+        }>({ maxBytes: 1_000 });
+        const result = await importer.import("/fixtures/records.json");
+
+        expect(result.items).toEqual([
+          { id: 1, name: "Ada", metadata: { author: "Lovelace" } },
+          { id: 2, name: "Grace", metadata: { author: "Hopper" } },
+        ]);
+      });
+
+      test("a file exceeding maxBytes rejects with M3LError code ERR_IMPORT_SOURCE and never calls readFile", async () => {
+        const statMock = vi
+          .spyOn(fs, "stat")
+          .mockResolvedValue({ size: 10_000 } as Stats);
+        const readFileMock = vi
+          .spyOn(fs, "readFile")
+          .mockResolvedValue(JSON_ARRAY_CONTENT);
+        // Mocked so the format-detector's own file open doesn't hit the real
+        // filesystem: readSourceBytes's stat-based maxBytes check rejects
+        // before format detection would run, but this keeps the test
+        // isolated from the real filesystem regardless of that ordering.
+        vi.spyOn(fs, "open").mockImplementation(() =>
+          Promise.resolve(fakeJSONFileHandle(JSON_ARRAY_CONTENT)),
+        );
+
+        const importer = new Core.M3LJSONListImporter<unknown>({
+          maxBytes: 100,
+        });
+
+        const thrown: unknown = await importer
+          .import("/fixtures/records.json")
+          .catch((e: unknown) => e);
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_SOURCE",
+        );
+        expect(statMock).toHaveBeenCalled();
+        expect(readFileMock).not.toHaveBeenCalled();
+      });
+
+      test("a stat() rejection (e.g. missing file) surfaces as M3LError code ERR_IMPORT_SOURCE, chaining the fs error as cause", async () => {
+        const statError = Object.assign(new Error("ENOENT"), {
+          code: "ENOENT",
+        });
+        vi.spyOn(fs, "stat").mockRejectedValue(statError);
+        const readFileMock = vi
+          .spyOn(fs, "readFile")
+          .mockResolvedValue(JSON_ARRAY_CONTENT);
+        // See comment above: mocked so the format-detector's own file open
+        // doesn't hit the real filesystem, keeping this test fully isolated.
+        vi.spyOn(fs, "open").mockImplementation(() =>
+          Promise.resolve(fakeJSONFileHandle(JSON_ARRAY_CONTENT)),
+        );
+
+        const importer = new Core.M3LJSONListImporter<unknown>({
+          maxBytes: 100,
+        });
+
+        let thrown: unknown;
+        try {
+          await importer.import("/fixtures/does-not-exist.json");
+        } catch (error) {
+          thrown = error;
+        }
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_SOURCE",
+        );
+        expect((thrown as InstanceType<typeof Core.M3LError>).cause).toBe(
+          statError,
+        );
+        expect(readFileMock).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("maxRows — import() batch (JSONL)", () => {
+      const THREE_LINE_JSONL = [
+        JSON.stringify({ id: 1, name: "Ada" }),
+        JSON.stringify({ id: 2, name: "Grace" }),
+        JSON.stringify({ id: 3, name: "Turing" }),
+      ].join("\n");
+
+      test("a source within maxRows imports normally (happy path)", async () => {
+        const importer = new Core.M3LJSONListImporter<{
+          readonly id: number;
+          readonly name: string;
+        }>({ maxRows: 100 });
+        const result = await importer.import(
+          Buffer.from(JSONL_CONTENT, "utf8"),
+        );
+
+        expect(result.items).toEqual([
+          { id: 1, name: "Ada", metadata: { author: "Lovelace" } },
+          { id: 2, name: "Grace", metadata: { author: "Hopper" } },
+        ]);
+      });
+
+      test("import() rejects (whole call, no partial result) with M3LError code ERR_IMPORT_VALIDATION instead of processing the (maxRows + 1)-th record", async () => {
+        const importer = new Core.M3LJSONListImporter<{
+          readonly id: number;
+          readonly name: string;
+        }>({ maxRows: 2 });
+
+        const thrown: unknown = await importer
+          .import(Buffer.from(THREE_LINE_JSONL, "utf8"))
+          .catch((e: unknown) => e);
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_VALIDATION",
+        );
+      });
+
+      describe("off-by-one boundary", () => {
+        test("maxRows equal to the total record count does NOT throw", async () => {
+          const importer = new Core.M3LJSONListImporter<{
+            readonly id: number;
+            readonly name: string;
+          }>({ maxRows: 2 });
+
+          const result = await importer.import(
+            Buffer.from(JSONL_CONTENT, "utf8"),
+          );
+
+          expect(result.items).toEqual([
+            { id: 1, name: "Ada", metadata: { author: "Lovelace" } },
+            { id: 2, name: "Grace", metadata: { author: "Hopper" } },
+          ]);
+        });
+
+        test("maxRows one less than the total record count DOES throw", async () => {
+          const importer = new Core.M3LJSONListImporter<{
+            readonly id: number;
+            readonly name: string;
+          }>({ maxRows: 1 });
+
+          const thrown: unknown = await importer
+            .import(Buffer.from(JSONL_CONTENT, "utf8"))
+            .catch((e: unknown) => e);
+
+          expect(thrown).toBeInstanceOf(Core.M3LError);
+          expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+            "ERR_IMPORT_VALIDATION",
+          );
+        });
+      });
+
+      test("a skipped/bad line counts toward maxRows, same as a successful record", async () => {
+        // 3 lines total: 1 bad (malformed JSON) + 2 good. maxRows: 2 means
+        // only 2 total line ATTEMPTS are allowed — the bad line plus the
+        // first good line already exhaust the cap, so the second good line
+        // (the 3rd attempted line overall) must never be reached.
+        const withBadLine = [
+          "{ not valid json",
+          JSON.stringify({ id: 1, name: "Ada" }),
+          JSON.stringify({ id: 2, name: "Grace" }),
+        ].join("\n");
+
+        const importer = new Core.M3LJSONListImporter<{
+          readonly id: number;
+          readonly name: string;
+        }>({ maxRows: 2 });
+
+        const thrown: unknown = await importer
+          .import(Buffer.from(withBadLine, "utf8"))
+          .catch((e: unknown) => e);
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_VALIDATION",
+        );
+      });
+
+      test("maxRows mutated on the options object after construction does not affect the already-validated bound", async () => {
+        // Both list importers currently read maxBytes/maxRows live off the
+        // caller-supplied options object at import time instead of
+        // snapshotting the validated value at construction — so mutating the
+        // SAME options object after construction silently changes the bound,
+        // even though construction-time validation already ran against the
+        // original value.
+        const opts = { maxRows: 2 };
+        const importer = new Core.M3LJSONListImporter<{
+          readonly id: number;
+          readonly name: string;
+        }>(opts);
+        opts.maxRows = Number.NaN;
+
+        const thrown: unknown = await importer
+          .import(Buffer.from(THREE_LINE_JSONL, "utf8"))
+          .catch((e: unknown) => e);
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_VALIDATION",
+        );
+      });
+
+      test("importStream() yields exactly maxRows items, then throws once the (maxRows + 1)-th is attempted; import:completed does NOT fire", async () => {
+        const importer = new Core.M3LJSONListImporter<{
+          readonly id: number;
+          readonly name: string;
+        }>({ maxRows: 2 });
+        const completed = vi.fn();
+        importer.on("import:completed", completed);
+
+        const seen: { readonly id: number; readonly name: string }[] = [];
+        let thrown: unknown;
+        try {
+          for await (const record of importer.importStream(
+            Buffer.from(THREE_LINE_JSONL, "utf8"),
+          )) {
+            seen.push(record);
+          }
+        } catch (error) {
+          thrown = error;
+        }
+
+        expect(seen).toEqual([
+          { id: 1, name: "Ada" },
+          { id: 2, name: "Grace" },
+        ]);
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_VALIDATION",
+        );
+        expect(completed).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("maxRows — JSON-array format", () => {
+      test("import() rejects with M3LError code ERR_IMPORT_VALIDATION when a JSON-array document exceeds maxRows", async () => {
+        const threeElementArray = JSON.stringify([
+          { id: 1, name: "Ada" },
+          { id: 2, name: "Grace" },
+          { id: 3, name: "Turing" },
+        ]);
+
+        const importer = new Core.M3LJSONListImporter<{
+          readonly id: number;
+          readonly name: string;
+        }>({ maxRows: 2 });
+
+        const thrown: unknown = await importer
+          .import(Buffer.from(threeElementArray, "utf8"))
+          .catch((e: unknown) => e);
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_VALIDATION",
+        );
+      });
+    });
+  });
 });
 
 // =============================================================================
@@ -1413,6 +2089,119 @@ describe("M3LTextFileImporter", () => {
       >();
     });
   });
+
+  describe("maxBytes bounds read()", () => {
+    describe("constructor validation (ERR_INVALID_ARGUMENT)", () => {
+      test.each([0, -1, 1.5, Number.NaN])(
+        "throws M3LError code ERR_INVALID_ARGUMENT at construction when maxBytes is %j",
+        (maxBytes) => {
+          let thrown: unknown;
+          try {
+            new Core.M3LTextFileImporter({ maxBytes });
+          } catch (error) {
+            thrown = error;
+          }
+
+          expect(thrown).toBeInstanceOf(Core.M3LError);
+          expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+            "ERR_INVALID_ARGUMENT",
+          );
+        },
+      );
+    });
+
+    test("no maxBytes supplied still works unbounded (default = {})", async () => {
+      const importer = new Core.M3LTextFileImporter();
+      const result = await importer.read(Buffer.from("hello world", "utf8"));
+      expect(result).toBe("hello world");
+    });
+
+    describe("Buffer source", () => {
+      test("a Buffer within maxBytes reads normally (happy path)", async () => {
+        const importer = new Core.M3LTextFileImporter({ maxBytes: 1_000 });
+        const result = await importer.read(Buffer.from("hello world", "utf8"));
+        expect(result).toBe("hello world");
+      });
+
+      test("a Buffer exceeding maxBytes rejects with M3LError code ERR_IMPORT_SOURCE", async () => {
+        const importer = new Core.M3LTextFileImporter({ maxBytes: 5 });
+
+        const thrown: unknown = await importer
+          .read(Buffer.from("hello world", "utf8"))
+          .catch((e: unknown) => e);
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_SOURCE",
+        );
+      });
+    });
+
+    describe("file-path source (validate-before-buffering)", () => {
+      test("a file within maxBytes reads normally (happy path)", async () => {
+        vi.spyOn(fs, "stat").mockResolvedValue({
+          size: Buffer.byteLength("text file content", "utf8"),
+        } as Stats);
+        vi.spyOn(fs, "readFile").mockResolvedValue("text file content");
+
+        const importer = new Core.M3LTextFileImporter({ maxBytes: 1_000 });
+        const result = await importer.read("/fixtures/notes.txt");
+
+        expect(result).toBe("text file content");
+      });
+
+      test("a file exceeding maxBytes rejects with M3LError code ERR_IMPORT_SOURCE and never calls readFile", async () => {
+        const statMock = vi
+          .spyOn(fs, "stat")
+          .mockResolvedValue({ size: 10_000 } as Stats);
+        const readFileMock = vi
+          .spyOn(fs, "readFile")
+          .mockResolvedValue("text file content");
+
+        const importer = new Core.M3LTextFileImporter({ maxBytes: 100 });
+
+        const thrown: unknown = await importer
+          .read("/fixtures/notes.txt")
+          .catch((e: unknown) => e);
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_SOURCE",
+        );
+        expect(statMock).toHaveBeenCalled();
+        expect(readFileMock).not.toHaveBeenCalled();
+      });
+
+      test("maxBytes is still enforced when stat() under-reports the actual file size (FIFO/procfs/TOCTOU backstop)", async () => {
+        // A FIFO, a procfs entry, or a file that grows between stat() and
+        // readFile() can report a small (or zero) stat().size while
+        // readFile() actually returns arbitrarily more bytes — the pre-read
+        // stat() check alone cannot catch this, so a post-read length
+        // assertion must act as a backstop.
+        vi.spyOn(fs, "stat").mockResolvedValue({ size: 10 } as Stats);
+        vi.spyOn(fs, "readFile").mockResolvedValue("x".repeat(1_000));
+
+        const importer = new Core.M3LTextFileImporter({ maxBytes: 100 });
+
+        const thrown: unknown = await importer
+          .read("/fixtures/notes.txt")
+          .catch((e: unknown) => e);
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_SOURCE",
+        );
+      });
+    });
+  });
+
+  describe("M3LTextFileImporterOptions type-level contract", () => {
+    test("maxBytes is an optional number", () => {
+      expectTypeOf<M3LTextFileImporterOptions["maxBytes"]>().toEqualTypeOf<
+        number | undefined
+      >();
+    });
+  });
 });
 
 describe("M3LJSONFileImporter", () => {
@@ -1463,6 +2252,111 @@ describe("M3LJSONFileImporter", () => {
     expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
       "ERR_IMPORT_SOURCE",
     );
+  });
+
+  describe("maxBytes bounds read()", () => {
+    describe("constructor validation (ERR_INVALID_ARGUMENT)", () => {
+      test.each([0, -1, 1.5, Number.NaN])(
+        "throws M3LError code ERR_INVALID_ARGUMENT at construction when maxBytes is %j",
+        (maxBytes) => {
+          let thrown: unknown;
+          try {
+            new Core.M3LJSONFileImporter({ maxBytes });
+          } catch (error) {
+            thrown = error;
+          }
+
+          expect(thrown).toBeInstanceOf(Core.M3LError);
+          expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+            "ERR_INVALID_ARGUMENT",
+          );
+        },
+      );
+    });
+
+    test("no maxBytes supplied still works unbounded (default = {})", async () => {
+      const importer = new Core.M3LJSONFileImporter();
+      const result = await importer.read<{ id: number; name: string }[]>(
+        Buffer.from(JSON_ARRAY_CONTENT, "utf8"),
+      );
+      expect(result).toEqual([
+        { id: 1, name: "Ada", metadata: { author: "Lovelace" } },
+        { id: 2, name: "Grace", metadata: { author: "Hopper" } },
+      ]);
+    });
+
+    describe("Buffer source", () => {
+      test("a Buffer within maxBytes reads normally (happy path)", async () => {
+        const importer = new Core.M3LJSONFileImporter({ maxBytes: 1_000 });
+        const result = await importer.read<{ id: number; name: string }[]>(
+          Buffer.from(JSON_ARRAY_CONTENT, "utf8"),
+        );
+        expect(result).toEqual([
+          { id: 1, name: "Ada", metadata: { author: "Lovelace" } },
+          { id: 2, name: "Grace", metadata: { author: "Hopper" } },
+        ]);
+      });
+
+      test("a Buffer exceeding maxBytes rejects with M3LError code ERR_IMPORT_SOURCE", async () => {
+        const importer = new Core.M3LJSONFileImporter({ maxBytes: 5 });
+
+        const thrown: unknown = await importer
+          .read(Buffer.from(JSON_ARRAY_CONTENT, "utf8"))
+          .catch((e: unknown) => e);
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_SOURCE",
+        );
+      });
+    });
+
+    describe("file-path source (validate-before-buffering)", () => {
+      test("a file within maxBytes reads normally (happy path)", async () => {
+        vi.spyOn(fs, "stat").mockResolvedValue({
+          size: Buffer.byteLength(JSON_ARRAY_CONTENT, "utf8"),
+        } as Stats);
+        vi.spyOn(fs, "readFile").mockResolvedValue(JSON_ARRAY_CONTENT);
+
+        const importer = new Core.M3LJSONFileImporter({ maxBytes: 1_000 });
+        const result = await importer.read("/fixtures/records.json");
+
+        expect(result).toEqual([
+          { id: 1, name: "Ada", metadata: { author: "Lovelace" } },
+          { id: 2, name: "Grace", metadata: { author: "Hopper" } },
+        ]);
+      });
+
+      test("a file exceeding maxBytes rejects with M3LError code ERR_IMPORT_SOURCE and never calls readFile", async () => {
+        const statMock = vi
+          .spyOn(fs, "stat")
+          .mockResolvedValue({ size: 10_000 } as Stats);
+        const readFileMock = vi
+          .spyOn(fs, "readFile")
+          .mockResolvedValue(JSON_ARRAY_CONTENT);
+
+        const importer = new Core.M3LJSONFileImporter({ maxBytes: 100 });
+
+        const thrown: unknown = await importer
+          .read("/fixtures/records.json")
+          .catch((e: unknown) => e);
+
+        expect(thrown).toBeInstanceOf(Core.M3LError);
+        expect((thrown as InstanceType<typeof Core.M3LError>).code).toBe(
+          "ERR_IMPORT_SOURCE",
+        );
+        expect(statMock).toHaveBeenCalled();
+        expect(readFileMock).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe("M3LJSONFileImporterOptions type-level contract", () => {
+    test("maxBytes is an optional number", () => {
+      expectTypeOf<M3LJSONFileImporterOptions["maxBytes"]>().toEqualTypeOf<
+        number | undefined
+      >();
+    });
   });
 });
 
@@ -1673,6 +2567,15 @@ describe("M3LCSVListImporterOptions type-level contract", () => {
       "filePath",
     );
   });
+
+  test("maxBytes and maxRows are optional numbers", () => {
+    expectTypeOf<
+      M3LCSVListImporterOptions<unknown>["maxBytes"]
+    >().toEqualTypeOf<number | undefined>();
+    expectTypeOf<M3LCSVListImporterOptions<unknown>["maxRows"]>().toEqualTypeOf<
+      number | undefined
+    >();
+  });
 });
 
 describe("M3LJSONListImporterOptions type-level contract", () => {
@@ -1683,5 +2586,14 @@ describe("M3LJSONListImporterOptions type-level contract", () => {
     expectTypeOf<M3LJSONListImporterOptions<unknown>>().toHaveProperty(
       "detectionDepth",
     );
+  });
+
+  test("maxBytes and maxRows are optional numbers", () => {
+    expectTypeOf<
+      M3LJSONListImporterOptions<unknown>["maxBytes"]
+    >().toEqualTypeOf<number | undefined>();
+    expectTypeOf<
+      M3LJSONListImporterOptions<unknown>["maxRows"]
+    >().toEqualTypeOf<number | undefined>();
   });
 });
