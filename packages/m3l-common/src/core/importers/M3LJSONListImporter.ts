@@ -16,10 +16,12 @@ import {
   ERR_IMPORT_PARSE,
   ERR_IMPORT_SOURCE,
   ERR_IMPORT_VALIDATION,
+  assertRowBudget,
   hasDangerousOwnKey,
   readSourceBytes,
   resolveSource,
   sourceLabel,
+  validatePositiveIntegerOption,
 } from "../../internal/importers/resolveSource.js";
 
 import type {
@@ -66,6 +68,30 @@ export interface M3LJSONListImporterOptions<TItem> {
    * `M3LJSONFormatDetector`. Defaults to `"standard"`.
    */
   readonly detectionDepth?: M3LJSONDetectionDepth;
+
+  /**
+   * The maximum number of bytes the source may occupy. Checked before any
+   * content is buffered (a file-path source is checked via `stat`, never
+   * read past the check). Defaults to unbounded when omitted.
+   *
+   * @throws {@link M3LError} with code `ERR_INVALID_ARGUMENT` at construction
+   *   when supplied and not a positive integer.
+   * @throws {@link M3LError} with code `ERR_IMPORT_SOURCE` from `import`/
+   *   `importStream` when the source exceeds this bound.
+   */
+  readonly maxBytes?: number;
+
+  /**
+   * The maximum number of records the import may attempt (every attempt
+   * counts, including a record later skipped as invalid or unparsable).
+   * Defaults to unbounded when omitted.
+   *
+   * @throws {@link M3LError} with code `ERR_INVALID_ARGUMENT` at construction
+   *   when supplied and not a positive integer.
+   * @throws {@link M3LError} with code `ERR_IMPORT_VALIDATION` from
+   *   `import`/`importStream` when the record count reaches this bound.
+   */
+  readonly maxRows?: number;
 }
 
 /**
@@ -132,6 +158,8 @@ export class M3LJSONListImporter<TItem>
   readonly #options: M3LJSONListImporterOptions<TItem>;
   readonly #detector: M3LJSONFormatDetector;
   readonly #extractor: M3LJSONFieldExtractor | undefined;
+  readonly #maxBytes: number | undefined;
+  readonly #maxRows: number | undefined;
 
   /**
    * Creates a JSON/JSONL list importer.
@@ -140,6 +168,10 @@ export class M3LJSONListImporter<TItem>
    */
   constructor(options: M3LJSONListImporterOptions<TItem>) {
     super();
+    validatePositiveIntegerOption(options.maxBytes, "maxBytes");
+    validatePositiveIntegerOption(options.maxRows, "maxRows");
+    this.#maxBytes = options.maxBytes;
+    this.#maxRows = options.maxRows;
     this.#options = options;
     this.#detector = new M3LJSONFormatDetector({
       depth: options.detectionDepth ?? "standard",
@@ -289,15 +321,15 @@ export class M3LJSONListImporter<TItem>
     | { readonly ok: true; readonly item: TItem }
     | { readonly ok: false; readonly error: unknown }
   > {
-    const bytes = await readSourceBytes(source);
+    const bytes = await readSourceBytes(source, this.#maxBytes);
     const format = await this.#detectFormat(source, bytes);
 
     switch (format) {
       case "json":
-        yield* this.#parseJsonArray(bytes);
+        yield* this.#parseJsonArray(bytes, this.#maxRows);
         return;
       case "jsonl":
-        yield* this.#parseJsonl(bytes);
+        yield* this.#parseJsonl(bytes, this.#maxRows);
         return;
       case "unknown":
         throw new M3LError(
@@ -339,12 +371,16 @@ export class M3LJSONListImporter<TItem>
    * (via the configured `fieldPath`, if any) as an item.
    *
    * @param bytes - The raw JSON-array document bytes.
+   * @param maxRows - The configured maximum record count, if any.
    * @returns A generator yielding one pipeline outcome per element.
    * @throws {@link M3LError} with code `ERR_IMPORT_PARSE` when `bytes` is not
    *   valid JSON.
+   * @throws {@link M3LError} with code `ERR_IMPORT_VALIDATION` when
+   *   `maxRows` is reached.
    */
   *#parseJsonArray(
     bytes: Buffer,
+    maxRows: number | undefined,
   ): Generator<
     | { readonly ok: true; readonly item: TItem }
     | { readonly ok: false; readonly error: unknown }
@@ -362,6 +398,7 @@ export class M3LJSONListImporter<TItem>
     const records = Array.isArray(parsed) ? parsed : [parsed];
     let index = 0;
     for (const record of records) {
+      assertRowBudget(index, maxRows);
       yield this.#extractOutcome(record, index);
       index += 1;
     }
@@ -373,10 +410,15 @@ export class M3LJSONListImporter<TItem>
    * malformed line yields a skip outcome instead of aborting the stream.
    *
    * @param bytes - The raw JSONL document bytes.
+   * @param maxRows - The configured maximum record count, if any.
    * @returns A generator yielding one pipeline outcome per line.
+   * @throws {@link M3LError} with code `ERR_IMPORT_VALIDATION` when
+   *   `maxRows` is reached — counting a malformed line toward the bound the
+   *   same as a successfully parsed one.
    */
   *#parseJsonl(
     bytes: Buffer,
+    maxRows: number | undefined,
   ): Generator<
     | { readonly ok: true; readonly item: TItem }
     | { readonly ok: false; readonly error: unknown }
@@ -389,6 +431,7 @@ export class M3LJSONListImporter<TItem>
 
     let index = 0;
     for (const line of lines) {
+      assertRowBudget(index, maxRows);
       try {
         const record: unknown = JSON.parse(line);
         yield this.#extractOutcome(record, index);

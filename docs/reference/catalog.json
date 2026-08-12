@@ -255,10 +255,12 @@
       "M3LCSVFormatAdapter",
       "M3LCSVAdapterFactory",
       "M3LJSONFileImporter",
+      "M3LJSONFileImporterOptions",
       "M3LJSONListImporter",
       "M3LJSONListImporterOptions",
       "M3LFileListImporter",
-      "M3LTextFileImporter"
+      "M3LTextFileImporter",
+      "M3LTextFileImporterOptions"
     ]
   },
   {

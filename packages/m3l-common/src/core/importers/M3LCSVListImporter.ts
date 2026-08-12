@@ -5,7 +5,7 @@
  * @packageDocumentation
  */
 
-import { parse } from "csv-parse";
+import { Parser } from "csv-parse";
 
 import type { CsvError } from "csv-parse";
 
@@ -14,10 +14,12 @@ import { M3LError } from "../errors/index.js";
 
 import {
   ERR_IMPORT_VALIDATION,
+  assertRowBudget,
   hasDangerousOwnKey,
   readSourceBytes,
   resolveSource,
   sourceLabel,
+  validatePositiveIntegerOption,
 } from "../../internal/importers/resolveSource.js";
 
 import { M3LCSVFormatAdapter } from "./M3LCSVFormatAdapter.js";
@@ -84,6 +86,30 @@ export interface M3LCSVListImporterOptions<TItem> {
    * shape. Runs last in the per-row pipeline.
    */
   readonly rowTransformer?: (row: Record<string, unknown>) => TItem;
+
+  /**
+   * The maximum number of bytes the source may occupy. Checked before any
+   * content is buffered (a file-path source is checked via `stat`, never
+   * read past the check). Defaults to unbounded when omitted.
+   *
+   * @throws {@link M3LError} with code `ERR_INVALID_ARGUMENT` at construction
+   *   when supplied and not a positive integer.
+   * @throws {@link M3LError} with code `ERR_IMPORT_SOURCE` from `import`/
+   *   `importStream` when the source exceeds this bound.
+   */
+  readonly maxBytes?: number;
+
+  /**
+   * The maximum number of rows the import may attempt (every attempt counts,
+   * including a row later skipped as invalid). Defaults to unbounded when
+   * omitted.
+   *
+   * @throws {@link M3LError} with code `ERR_INVALID_ARGUMENT` at construction
+   *   when supplied and not a positive integer.
+   * @throws {@link M3LError} with code `ERR_IMPORT_VALIDATION` from
+   *   `import`/`importStream` when the row count reaches this bound.
+   */
+  readonly maxRows?: number;
 }
 
 /**
@@ -112,8 +138,21 @@ export class M3LCSVListImporter<TItem>
   extends M3LEventEmitterBase<M3LListImporterEvents<TItem>>
   implements M3LListImporter<TItem>
 {
+  /**
+   * The byte size of each chunk fed to the CSV parser's writable side in
+   * {@link M3LCSVListImporter.#parseRows}. 64 KiB is small enough that a
+   * burst of `on_skip` calls triggered within a single chunk (the
+   * pathological all-malformed-source case) is bounded to roughly one
+   * chunk's worth of rows before the budget check between writes can react,
+   * while still being large enough to keep the per-chunk `.write()`
+   * overhead negligible for a well-formed source.
+   */
+  static readonly #parseChunkBytes = 65_536; // 64 KiB
+
   readonly #options: M3LCSVListImporterOptions<TItem>;
   readonly #adapter: M3LCSVFormatAdapter;
+  readonly #maxBytes: number | undefined;
+  readonly #maxRows: number | undefined;
 
   /**
    * Creates a CSV list importer.
@@ -122,6 +161,10 @@ export class M3LCSVListImporter<TItem>
    */
   constructor(options: M3LCSVListImporterOptions<TItem>) {
     super();
+    validatePositiveIntegerOption(options.maxBytes, "maxBytes");
+    validatePositiveIntegerOption(options.maxRows, "maxRows");
+    this.#maxBytes = options.maxBytes;
+    this.#maxRows = options.maxRows;
     this.#options = options;
     this.#adapter =
       options.adapter ??
@@ -255,24 +298,24 @@ export class M3LCSVListImporter<TItem>
   }
 
   /**
-   * Runs the raw-row → mapping → defaults → validator → transformer pipeline
-   * over every row of `source`, in order, skipping rows that fail parsing,
-   * validation, or transformation.
+   * Creates a `csv-parse` `Parser` configured to skip malformed rows,
+   * accumulating each skip's wrapped `M3LError` into `skipped` (in encounter
+   * order) instead of surfacing it through the parser's own event API.
    *
-   * @param source - The resolved source (file path or `Buffer`).
-   * @returns An async generator yielding one pipeline outcome per row.
+   * A synchronous no-op `'error'` listener is attached immediately: a parser
+   * torn down mid-stream by {@link M3LCSVListImporter.#feedParser} (or by a
+   * narrow timing race around it) can otherwise crash the process with an
+   * unhandled `'error'` event. This listener is a pure safety net — the
+   * `for await` loop in {@link M3LCSVListImporter.#parseRows} still observes
+   * the identical failure through the stream's own destroyed/errored state,
+   * so attaching it does not change what the consumer sees.
+   *
+   * @param skipped - The array a malformed row's wrapped error is pushed
+   *   onto, shared with the caller.
+   * @returns A newly constructed, not-yet-fed `Parser`.
    */
-  async *#parseRows(
-    source: string | Buffer,
-  ): AsyncGenerator<
-    | { readonly ok: true; readonly item: TItem }
-    | { readonly ok: false; readonly error: unknown }
-  > {
-    const bytes = await readSourceBytes(source);
-    const skipped: unknown[] = [];
-    let rowIndex = 0;
-
-    const parser = parse(bytes, {
+  #createParser(skipped: unknown[]): Parser {
+    const parser = new Parser({
       columns: true,
       skip_records_with_error: true,
       // eslint-disable-next-line @typescript-eslint/naming-convention -- `on_skip` is a fixed snake_case option key from the third-party csv-parse API, not a symbol this codebase names
@@ -289,19 +332,139 @@ export class M3LCSVListImporter<TItem>
         );
       },
     });
+    parser.on("error", () => {
+      /* handled via the for-await loop and the trailing budget check in #parseRows */
+    });
+    return parser;
+  }
 
-    for await (const rawRecord of parser) {
-      while (skipped.length > 0) {
-        yield { ok: false, error: skipped.shift() };
+  /**
+   * Feeds `bytes` to `parser` via separate, bounded-size `.write()` calls
+   * (instead of the `parse(bytes, options)` convenience form's single
+   * whole-buffer write), checking the running skip count BETWEEN writes so a
+   * `maxRows`-exceeding burst of malformed rows is caught after only the
+   * chunk that produced it — bounding the work done on a pathological
+   * all/mostly-malformed source to that one chunk instead of the whole
+   * source. See {@link M3LCSVListImporter.#parseRows} for why a single write
+   * cannot be bounded this way at all.
+   *
+   * `skipped.length` alone (no separate row-index term) is the correct
+   * budget signal here: this method always runs before any record has been
+   * consumed from `parser`, so the row index the caller tracks is still
+   * zero for the whole of this call.
+   *
+   * @param parser - The parser to feed; assumed freshly created and unfed.
+   * @param bytes - The raw CSV bytes to write.
+   * @param skipped - The same array {@link M3LCSVListImporter.#createParser}
+   *   pushes accumulated skip errors onto, read here (not mutated).
+   * @returns `true` when `maxRows` was reached mid-write and `parser` was
+   *   torn down via `destroy()` instead of `end()`.
+   */
+  #feedParser(
+    parser: Parser,
+    bytes: Buffer,
+    skipped: readonly unknown[],
+  ): boolean {
+    let budgetTripped = false;
+    for (
+      let offset = 0;
+      offset < bytes.length;
+      offset += M3LCSVListImporter.#parseChunkBytes
+    ) {
+      parser.write(
+        bytes.subarray(offset, offset + M3LCSVListImporter.#parseChunkBytes),
+      );
+      if (this.#maxRows !== undefined && skipped.length >= this.#maxRows) {
+        budgetTripped = true;
+        parser.destroy();
+        break;
+      }
+    }
+    if (!budgetTripped) parser.end();
+    return budgetTripped;
+  }
+
+  /**
+   * Runs the raw-row → mapping → defaults → validator → transformer pipeline
+   * over every row of `source`, in order, skipping rows that fail parsing,
+   * validation, or transformation.
+   *
+   * `maxRows` is enforced twice for a reason: the per-row `assertRowBudget`
+   * calls below are the correctness backstop for the ordinary case
+   * (including one where good and bad rows are interleaved), but they cannot
+   * by themselves bound the WORK done on a pathological all/mostly-malformed
+   * source. Feeding the whole buffer to `csv-parse` as a single write (the
+   * `parse(bytes, options)` convenience form) makes its `on_skip` callback
+   * fire for every malformed row in one synchronous burst before this
+   * generator — where the budget checks live — ever gets a turn to run, so a
+   * large malformed source is fully parsed regardless of how low `maxRows`
+   * is set. {@link M3LCSVListImporter.#feedParser} feeds the parser via
+   * separate, bounded-size writes and checks the running skip count between
+   * them instead, so a budget-exceeding burst only costs the one chunk that
+   * produced it.
+   *
+   * @param source - The resolved source (file path or `Buffer`).
+   * @returns An async generator yielding one pipeline outcome per row.
+   */
+  async *#parseRows(
+    source: string | Buffer,
+  ): AsyncGenerator<
+    | { readonly ok: true; readonly item: TItem }
+    | { readonly ok: false; readonly error: unknown }
+  > {
+    const rawBytes = await readSourceBytes(source, this.#maxBytes);
+    // readSourceBytes's real-world contract is "returns a Buffer", but a
+    // test double in this file's own test suite mocks the underlying
+    // `readFile` with a plain string return, which flows straight through.
+    // Coerce defensively so #feedParser's `.subarray()` chunking is robust
+    // to that either way.
+    const bytes = Buffer.isBuffer(rawBytes) ? rawBytes : Buffer.from(rawBytes);
+    const skipped: unknown[] = [];
+    let rowIndex = 0;
+
+    const parser = this.#createParser(skipped);
+    const budgetTripped = this.#feedParser(parser, bytes, skipped);
+
+    try {
+      for await (const rawRecord of parser) {
+        while (skipped.length > 0) {
+          assertRowBudget(rowIndex, this.#maxRows);
+          yield { ok: false, error: skipped.shift() };
+          rowIndex += 1;
+        }
+        assertRowBudget(rowIndex, this.#maxRows);
+        yield this.#runPipeline(rawRecord as Record<string, string>, rowIndex);
         rowIndex += 1;
       }
-      yield this.#runPipeline(rawRecord as Record<string, string>, rowIndex);
-      rowIndex += 1;
+    } catch (cause) {
+      // A genuine ERR_IMPORT_VALIDATION thrown by assertRowBudget (above,
+      // inside this same try block) must always propagate — it is never
+      // teardown noise. A stream destroyed mid-write (#feedParser, above)
+      // instead completes its async iterator with a *different*
+      // stream-teardown error; that one (and only that one) is swallowed
+      // here when self-inflicted, since the trailing budget check below
+      // re-derives the correctly-coded error from any remaining skipped
+      // entries. Any other failure (a genuine parser fault) must still
+      // propagate too.
+      if (cause instanceof M3LError && cause.code === ERR_IMPORT_VALIDATION) {
+        throw cause;
+      }
+      if (!budgetTripped) throw cause;
     }
     while (skipped.length > 0) {
+      assertRowBudget(rowIndex, this.#maxRows);
       yield { ok: false, error: skipped.shift() };
       rowIndex += 1;
     }
+    // Closes the exactly-at-cap boundary the mid-loop checks above can't
+    // reach: when `#feedParser` trips the budget with `skipped.length`
+    // landing exactly at `maxRows`, the trailing drain above consumes every
+    // queued skip and exits normally without ever re-checking the budget
+    // against the final `rowIndex`. Guarded to `budgetTripped` only — an
+    // ordinary run that lands on `rowIndex === maxRows` by successfully
+    // processing exactly `maxRows` rows (never having tripped the budget) is
+    // a legitimate full consumption, not a truncation, and must not throw.
+    if (budgetTripped) assertRowBudget(rowIndex, this.#maxRows);
   }
 
   /**
