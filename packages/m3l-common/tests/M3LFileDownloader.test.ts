@@ -394,6 +394,42 @@ describe("M3LFileDownloader.download", () => {
   });
 
   // ---------------------------------------------------------------------
+  // Security — a write-side failure must not leak a sensitive query string
+  // (e.g. an S3 presigned-URL signature or a `?token=...`) into the thrown
+  // error's `message` or `context.url`. Mirrors the truncate-at-`?` fix
+  // already applied at M3LHttpClient's three throw sites; this is the
+  // fourth site, inside M3LFileDownloader.download()'s write-failure catch.
+  // ---------------------------------------------------------------------
+  test("does not leak the query string into the thrown error's message or context.url when the write side fails", async () => {
+    mockFetch.mockResolvedValue(
+      makeStreamingResponse({ status: 200, chunks: ["fine-on-the-read-side"] }),
+    );
+    const httpClient = new M3LHttpClient();
+    const downloader = new M3LFileDownloader({ httpClient });
+    // The parent directory does not exist, so createWriteStream's underlying
+    // fd open fails with ENOENT — a write-side failure with nothing to do
+    // with the response body.
+    const destinationPath = path.join(workDir, "no-such-subdir", "file.bin");
+
+    let thrown: unknown;
+    try {
+      await downloader.download(
+        "https://example.com/file.bin?token=super-secret",
+        destinationPath,
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.context?.["url"]).toBe("https://example.com/file.bin");
+    expect(httpError.message).not.toContain("super-secret");
+    expect(httpError.message).not.toContain("token");
+    expect(httpError.message).not.toContain("?");
+  });
+
+  // ---------------------------------------------------------------------
   // Bug 2 (HIGH) — the configured timeout must bound the WHOLE streaming
   // transfer, not just header acquisition. A response body that stalls
   // (never closes, never errors on its own) after headers arrive must still

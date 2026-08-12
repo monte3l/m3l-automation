@@ -217,6 +217,288 @@ describe("M3LHttpClient — baseUrl resolution", () => {
     expect(typeof requestedUrl).toBe("string");
     expect(requestedUrl).toBe("https://other.example.com/resource");
   });
+
+  // Security re-review, gap 1 (must-fix): with no baseUrl configured, a
+  // relative (non-absolute) path is not a valid URL on its own. #resolveUrl
+  // must validate eagerly and throw a sanitized M3LHttpClientError with NO
+  // raw cause chained — never let the invalid, credential-bearing path reach
+  // `fetch()`, where a real undici implementation's own TypeError would embed
+  // the unsanitized input and leak it via `cause`.
+  test("a relative path with no baseUrl configured fails with a sanitized M3LHttpClientError, no leaked credential, and never reaches fetch", async () => {
+    // Simulates what a real undici `fetch()` would throw for this
+    // credential-bearing, non-absolute input — proving the fix doesn't rely
+    // on that raw failure ever reaching `#normalizeFailure` with its cause
+    // intact.
+    mockFetch.mockRejectedValue(
+      new TypeError(
+        "Failed to parse URL from /download/report.csv?X-Amz-Signature=SECRET_PRESIGN",
+      ),
+    );
+    const client = new M3LHttpClient();
+
+    let thrown: unknown;
+    try {
+      await client.get("/download/report.csv?X-Amz-Signature=SECRET_PRESIGN");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.message).not.toContain("SECRET_PRESIGN");
+    // No raw native error (whose own message/properties embed the
+    // unsanitized input) may be chained as cause for this failure mode.
+    expect(httpError.cause).toBeUndefined();
+    // The invalid, credential-bearing URL must never reach `fetch()` at all.
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  // Security re-review, gap 1 (must-fix), mirror case: an invalid baseUrl
+  // must fail the same sanitized way — today this throws a raw,
+  // un-normalized TypeError instead of M3LHttpClientError.
+  test("an invalid baseUrl fails with a sanitized M3LHttpClientError, no leaked credential, and never reaches fetch", async () => {
+    mockFetch.mockRejectedValue(new TypeError("should never be called"));
+    const client = new M3LHttpClient({ baseUrl: "not-a-valid-base" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/download/report.csv?X-Amz-Signature=SECRET_PRESIGN");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.message).not.toContain("SECRET_PRESIGN");
+    expect(httpError.cause).toBeUndefined();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  // Security re-review, gap 2 (design pivot): a real undici `fetch()`/`Request`
+  // unconditionally throws for ANY userinfo-bearing URL
+  // (`TypeError: Request cannot be constructed from a URL that includes
+  // credentials`). Strip-and-continue is unsound against that real behavior,
+  // and the previous approach also risked chaining the raw undici TypeError
+  // (which embeds the full credential) as `cause`. `#resolveUrl` must now
+  // reject a userinfo-bearing baseUrl upfront, synchronously, with a clean
+  // M3LHttpClientError, before the request is ever dispatched.
+  test("a baseUrl containing userinfo (user:pass@) fails with a sanitized M3LHttpClientError, no leaked credential, and never reaches fetch", async () => {
+    mockFetch.mockRejectedValue(new TypeError("should never be called"));
+    const client = new M3LHttpClient({
+      baseUrl: "https://secretuser:secretpass@api.example.com",
+    });
+
+    let thrown: unknown;
+    try {
+      await client.get("/broken");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.message).not.toContain("secretuser");
+    expect(httpError.message).not.toContain("secretpass");
+    expect(httpError.cause).toBeUndefined();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  // Same design pivot, mirror case: the credential can also arrive as
+  // userinfo embedded directly in the `path` argument, with no baseUrl
+  // involved at all.
+  test("a path containing userinfo (user:pass@) fails with a sanitized M3LHttpClientError, no leaked credential, and never reaches fetch", async () => {
+    mockFetch.mockRejectedValue(new TypeError("should never be called"));
+    const client = new M3LHttpClient();
+
+    let thrown: unknown;
+    try {
+      await client.get("https://secretuser:secretpass@api.example.com/broken");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.message).not.toContain("secretuser");
+    expect(httpError.message).not.toContain("secretpass");
+    expect(httpError.cause).toBeUndefined();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3b — getAbortable/requestAbortable/requestStream must surface a
+// #resolveUrl failure by REJECTING, never by throwing synchronously. Their
+// documented contract is "always returns synchronously" (getAbortable /
+// requestAbortable return { promise, abort }; requestStream returns a
+// Promise directly) with all failure modes routed through that promise.
+// PR #326 added two new #resolveUrl throw sites (unparseable URL, userinfo)
+// that currently throw BEFORE the promise/handle is ever constructed —
+// breaking this contract for exactly these three methods (get()/request()
+// are unaffected since a synchronous throw inside them is still caught by a
+// caller's `await ... catch`).
+// ---------------------------------------------------------------------------
+describe("M3LHttpClient — getAbortable/requestAbortable/requestStream reject #resolveUrl failures instead of throwing synchronously", () => {
+  test("getAbortable: a relative path with no baseUrl configured returns { promise, abort } synchronously, and promise rejects with a sanitized M3LHttpClientError", async () => {
+    mockFetch.mockRejectedValue(
+      new TypeError(
+        "Failed to parse URL from /download/report.csv?X-Amz-Signature=SECRET_PRESIGN",
+      ),
+    );
+    const client = new M3LHttpClient();
+
+    // This call must not throw — if the bug is present, it throws right
+    // here, before ever reaching the assertions below.
+    const handle = client.getAbortable(
+      "/download/report.csv?X-Amz-Signature=SECRET_PRESIGN",
+    );
+
+    expect(handle.promise).toBeInstanceOf(Promise);
+    expect(typeof handle.abort).toBe("function");
+    expect(() => {
+      handle.abort();
+    }).not.toThrow();
+
+    await expect(handle.promise).rejects.toBeInstanceOf(M3LHttpClientError);
+
+    let thrown: unknown;
+    try {
+      await handle.promise;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.message).not.toContain("SECRET_PRESIGN");
+    expect(httpError.cause).toBeUndefined();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test("getAbortable: a baseUrl containing userinfo (user:pass@) returns { promise, abort } synchronously, and promise rejects with a sanitized M3LHttpClientError", async () => {
+    mockFetch.mockRejectedValue(new TypeError("should never be called"));
+    const client = new M3LHttpClient({
+      baseUrl: "https://secretuser:secretpass@api.example.com",
+    });
+
+    const handle = client.getAbortable("/broken");
+
+    expect(handle.promise).toBeInstanceOf(Promise);
+    expect(typeof handle.abort).toBe("function");
+    expect(() => {
+      handle.abort();
+    }).not.toThrow();
+
+    await expect(handle.promise).rejects.toBeInstanceOf(M3LHttpClientError);
+
+    let thrown: unknown;
+    try {
+      await handle.promise;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.message).not.toContain("secretuser");
+    expect(httpError.message).not.toContain("secretpass");
+    expect(httpError.cause).toBeUndefined();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test("requestAbortable: a relative path with no baseUrl configured returns { promise, abort } synchronously, and promise rejects with a sanitized M3LHttpClientError", async () => {
+    mockFetch.mockRejectedValue(
+      new TypeError(
+        "Failed to parse URL from /download/report.csv?X-Amz-Signature=SECRET_PRESIGN",
+      ),
+    );
+    const client = new M3LHttpClient();
+
+    const handle = client.requestAbortable({
+      method: "GET",
+      path: "/download/report.csv?X-Amz-Signature=SECRET_PRESIGN",
+    });
+
+    expect(handle.promise).toBeInstanceOf(Promise);
+    expect(typeof handle.abort).toBe("function");
+    expect(() => {
+      handle.abort();
+    }).not.toThrow();
+
+    await expect(handle.promise).rejects.toBeInstanceOf(M3LHttpClientError);
+
+    let thrown: unknown;
+    try {
+      await handle.promise;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.message).not.toContain("SECRET_PRESIGN");
+    expect(httpError.cause).toBeUndefined();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test("requestAbortable: a baseUrl containing userinfo (user:pass@) returns { promise, abort } synchronously, and promise rejects with a sanitized M3LHttpClientError", async () => {
+    mockFetch.mockRejectedValue(new TypeError("should never be called"));
+    const client = new M3LHttpClient({
+      baseUrl: "https://secretuser:secretpass@api.example.com",
+    });
+
+    const handle = client.requestAbortable({ method: "POST", path: "/broken" });
+
+    expect(handle.promise).toBeInstanceOf(Promise);
+    expect(typeof handle.abort).toBe("function");
+    expect(() => {
+      handle.abort();
+    }).not.toThrow();
+
+    await expect(handle.promise).rejects.toBeInstanceOf(M3LHttpClientError);
+
+    let thrown: unknown;
+    try {
+      await handle.promise;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.message).not.toContain("secretuser");
+    expect(httpError.message).not.toContain("secretpass");
+    expect(httpError.cause).toBeUndefined();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test("requestStream: a baseUrl containing userinfo (user:pass@) does not throw synchronously — it returns a Promise that rejects with a sanitized M3LHttpClientError", async () => {
+    mockFetch.mockRejectedValue(new TypeError("should never be called"));
+    const client = new M3LHttpClient({
+      baseUrl: "https://secretuser:secretpass@api.example.com",
+    });
+
+    // Calling requestStream itself must not throw — the returned value must
+    // be a Promise, not a thrown error, even before it is awaited.
+    const pending = client.requestStream({ method: "GET", path: "/broken" });
+    expect(pending).toBeInstanceOf(Promise);
+
+    await expect(pending).rejects.toBeInstanceOf(M3LHttpClientError);
+
+    let thrown: unknown;
+    try {
+      await pending;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.message).not.toContain("secretuser");
+    expect(httpError.message).not.toContain("secretpass");
+    expect(httpError.cause).toBeUndefined();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -290,6 +572,64 @@ describe("M3LHttpClient — non-2xx responses", () => {
       });
     },
   );
+
+  test("a non-2xx response's error message and context.url strip everything from the first '?' onward", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 404,
+        contentType: "application/json",
+        body: { message: "nope" },
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/broken?token=super-secret");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    // The context url must be truncated exactly at the query-string
+    // boundary — not merely "not containing the secret".
+    expect(httpError.context).toMatchObject({
+      url: "https://api.example.com/broken",
+    });
+    expect(httpError.message).not.toContain("super-secret");
+    expect(httpError.message).not.toContain("token");
+    expect(httpError.message).not.toContain("?");
+  });
+
+  test("a non-2xx response's error message and context.url strip everything from the first '#' onward (URL fragment)", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 404,
+        contentType: "application/json",
+        body: { message: "nope" },
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/broken#access_token=fragment-secret");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    // A well-formed URL always has query before fragment, so the fragment
+    // delimiter '#' must be stripped exactly like '?' — an OAuth
+    // implicit-flow-style credential can arrive here.
+    expect(httpError.context).toMatchObject({
+      url: "https://api.example.com/broken",
+    });
+    expect(httpError.message).not.toContain("fragment-secret");
+    expect(httpError.message).not.toContain("#");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -317,6 +657,28 @@ describe("M3LHttpClient — network failure", () => {
     expect(httpError.failure.reason).toBe("network");
     expect("status" in httpError.failure).toBe(false);
     expect(httpError.cause).toBe(networkFailure);
+  });
+
+  test("a network failure's error message and context.url strip everything from the first '?' onward", async () => {
+    const networkFailure = new Error("ECONNRESET");
+    mockFetch.mockRejectedValue(networkFailure);
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/down?token=super-secret");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.context).toMatchObject({
+      url: "https://api.example.com/down",
+    });
+    expect(httpError.message).not.toContain("super-secret");
+    expect(httpError.message).not.toContain("token");
+    expect(httpError.message).not.toContain("?");
   });
 });
 
@@ -548,6 +910,137 @@ describe("M3LHttpClient — events", () => {
     expect(options?.headers).toMatchObject({ accept: "application/json" });
     expect(options?.headers).not.toHaveProperty("x-injected");
   });
+
+  test("the 'request' event redacts sensitive header values, but the real outgoing fetch headers stay unredacted", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({ status: 200, contentType: "application/json", body: {} }),
+    );
+    const client = new M3LHttpClient({
+      baseUrl: "https://api.example.com",
+      defaultHeaders: {
+        authorization: "Bearer secret-token",
+        accept: "application/json",
+      },
+    });
+    const received: M3LHttpRequestEvent[] = [];
+    client.on("request", (event) => {
+      received.push(event);
+    });
+
+    await client.get("/ping");
+
+    expect(received).toHaveLength(1);
+    // Sensitive header key: the emitted event must never carry the live
+    // credential value, only the redaction sentinel.
+    expect(received[0]?.headers["authorization"]).toBe("[REDACTED]");
+    // Non-sensitive header key: passes through unchanged.
+    expect(received[0]?.headers["accept"]).toBe("application/json");
+
+    // The real dispatch must still carry the real, unredacted credential —
+    // redaction is scoped to the emitted event only.
+    expect(fetchCallOptions()?.headers).toMatchObject({
+      authorization: "Bearer secret-token",
+      accept: "application/json",
+    });
+  });
+
+  test("the 'request' event redacts a Cookie header's entire value, not just recognized in-value key names", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({ status: 200, contentType: "application/json", body: {} }),
+    );
+    const client = new M3LHttpClient({
+      baseUrl: "https://api.example.com",
+      defaultHeaders: {
+        cookie: "sid=super-secret-session; csrf=another-secret",
+      },
+    });
+    const received: M3LHttpRequestEvent[] = [];
+    client.on("request", (event) => {
+      received.push(event);
+    });
+
+    await client.get("/ping");
+
+    expect(received).toHaveLength(1);
+    // The header-name allowlist redacts the whole value, not merely the
+    // in-value `sid=`/`csrf=` key-value pairs a name-based denylist would
+    // miss entirely (`cookie` is not a recognized sensitive field name).
+    expect(received[0]?.headers["cookie"]).toBe("[REDACTED]");
+    expect(received[0]?.headers["cookie"]).not.toContain(
+      "super-secret-session",
+    );
+    expect(received[0]?.headers["cookie"]).not.toContain("another-secret");
+
+    // The real outgoing fetch dispatch must still carry the real, complete
+    // cookie value — redaction is scoped to the emitted event only.
+    expect(fetchCallOptions()?.headers).toMatchObject({
+      cookie: "sid=super-secret-session; csrf=another-secret",
+    });
+  });
+
+  test("the 'request' event redacts an unrecognized header name too, proving header redaction is allowlist-based rather than a denylist of known-sensitive names", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({ status: 200, contentType: "application/json", body: {} }),
+    );
+    const client = new M3LHttpClient({
+      baseUrl: "https://api.example.com",
+      defaultHeaders: {
+        "x-custom-vendor-signature": "unlisted-secret-value",
+      },
+    });
+    const received: M3LHttpRequestEvent[] = [];
+    client.on("request", (event) => {
+      received.push(event);
+    });
+
+    await client.get("/ping");
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.headers["x-custom-vendor-signature"]).toBe(
+      "[REDACTED]",
+    );
+
+    expect(fetchCallOptions()?.headers).toMatchObject({
+      "x-custom-vendor-signature": "unlisted-secret-value",
+    });
+  });
+
+  test("events carry the full URL including query string while M3LHttpClientError's context.url is sanitized — an intentional asymmetry, not a regression", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 404,
+        contentType: "application/json",
+        body: { message: "nope" },
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+    const received: M3LHttpRequestEvent[] = [];
+    client.on("request", (event) => {
+      received.push(event);
+    });
+
+    let thrown: unknown;
+    try {
+      await client.get("/broken?token=super-secret");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(received).toHaveLength(1);
+    // The "request" event's own `url` field is never sanitized: it must
+    // still carry the full resolved URL, query string included.
+    expect(received[0]?.url).toBe(
+      "https://api.example.com/broken?token=super-secret",
+    );
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    // The thrown M3LHttpClientError's context.url IS sanitized: the query
+    // string must be stripped entirely.
+    expect(httpError.context).toMatchObject({
+      url: "https://api.example.com/broken",
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -747,9 +1240,18 @@ describe("M3LHttpClient.request — header merge semantics", () => {
       "content-type": "text/plain",
     };
 
+    // The real outgoing fetch call must still carry the real, unredacted
+    // merged headers.
     expect(fetchCallOptions()?.headers).toMatchObject(expectedMerged);
     expect(received).toHaveLength(1);
-    expect(received[0]?.headers).toMatchObject(expectedMerged);
+    // "x-api-key" is not on SAFE_REQUEST_HEADER_NAMES (a pure allowlist of
+    // known-safe header names), so the emitted "request" event must carry
+    // the redaction sentinel instead of the real merged value; the
+    // non-sensitive keys are unaffected.
+    expect(received[0]?.headers).toMatchObject({
+      ...expectedMerged,
+      "x-api-key": "[REDACTED]",
+    });
   });
 });
 
@@ -1068,6 +1570,32 @@ describe("M3LHttpClient.requestStream", () => {
 
     expect(thrown).toBeInstanceOf(M3LHttpClientError);
     expect((thrown as M3LHttpClientError).failure.reason).toBe("network");
+  });
+
+  test("the null-body failure's error message and context.url strip everything from the first '?' onward", async () => {
+    mockFetch.mockResolvedValue(
+      makeStreamingFakeResponse({ status: 204, body: null }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.requestStream({
+        method: "GET",
+        path: "/empty?token=super-secret",
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.context).toMatchObject({
+      url: "https://api.example.com/empty",
+    });
+    expect(httpError.message).not.toContain("super-secret");
+    expect(httpError.message).not.toContain("token");
+    expect(httpError.message).not.toContain("?");
   });
 });
 

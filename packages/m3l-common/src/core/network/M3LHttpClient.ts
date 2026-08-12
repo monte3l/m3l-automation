@@ -9,6 +9,7 @@
 
 import { fetch, ProxyAgent } from "undici";
 
+import { sanitizeRequestUrl } from "../../internal/network/sanitizeRequestUrl.js";
 import { M3LEventEmitterBase } from "../events/index.js";
 import { M3LHttpClientError } from "./M3LHttpClientError.js";
 
@@ -17,6 +18,50 @@ const JSON_CONTENT_TYPE_PATTERN = /[/+]json\b/i;
 
 /** The per-request timeout applied when {@link M3LHttpClientOptions.timeout} is omitted. */
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+/**
+ * HTTP header names considered non-sensitive and safe to emit unredacted on
+ * the `"request"` event. Every other header name — including one the shared
+ * `redactSensitiveLogValue` denylist has never seen (`Cookie`, a
+ * vendor-specific signature header) — is masked in full. An allowlist, not a
+ * denylist: the credential-bearing header namespace is unbounded and
+ * caller-controlled, so enumerating what's UNSAFE never converges (see the
+ * "Allowlist, never denylist" rule in `.claude/rules/library-src.md`).
+ * Matching is case-insensitive.
+ */
+const SAFE_REQUEST_HEADER_NAMES: ReadonlySet<string> = new Set([
+  "accept",
+  "accept-encoding",
+  "accept-language",
+  "cache-control",
+  "connection",
+  "content-length",
+  "content-type",
+  "host",
+  "user-agent",
+]);
+
+/** Replacement literal for a header value masked on the `"request"` event. */
+const REDACTED_HEADER_VALUE = "[REDACTED]";
+
+/**
+ * Builds the headers snapshot emitted on the `"request"` event: every header
+ * NOT on {@link SAFE_REQUEST_HEADER_NAMES} (case-insensitive) is replaced
+ * with {@link REDACTED_HEADER_VALUE} in full. The real headers object used
+ * for the outgoing `fetch()` dispatch is never touched by this function —
+ * only the event's own snapshot copy.
+ */
+function redactRequestHeadersForEvent(
+  headers: Record<string, string>,
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    result[key] = SAFE_REQUEST_HEADER_NAMES.has(key.toLowerCase())
+      ? value
+      : REDACTED_HEADER_VALUE;
+  }
+  return result;
+}
 
 /**
  * Constructor configuration for {@link M3LHttpClient}.
@@ -99,12 +144,27 @@ export interface M3LHttpRequestOptions {
 export interface M3LHttpRequestEvent {
   /** The HTTP method used for the request. */
   readonly method: string;
-  /** The fully resolved request URL. */
+  /**
+   * The fully resolved request URL. Unlike `headers` on this same event,
+   * this is NOT sanitized — it can carry a query string, fragment, or other
+   * caller-supplied content unchanged. Prefer `M3LHttpClientError.context.url`
+   * (sanitized) when logging a failed request's URL.
+   */
   readonly url: string;
   /**
    * The merged headers sent with the request. This is a snapshot copy — the
    * client's own header object used for dispatch is private, so mutating this
-   * value from a handler has no effect on the in-flight request.
+   * value from a handler has no effect on the in-flight request. Redaction
+   * here is allowlist-based, not a denylist of recognized sensitive field
+   * names: only header names on a small known-safe set (e.g. `accept`,
+   * `content-type`, `user-agent`) pass through unchanged; every other header
+   * name — including one this library has never seen before, such as
+   * `Cookie` or a vendor-specific signature header — is replaced with
+   * `"[REDACTED]"` in full. This trades some observability completeness
+   * (a genuinely non-sensitive but unlisted header is masked too) for
+   * guaranteed safety against the unbounded, caller-controlled header
+   * namespace. The real outgoing `fetch` request still carries the
+   * unredacted values.
    */
   readonly headers: Readonly<Record<string, string>>;
 }
@@ -113,7 +173,12 @@ export interface M3LHttpRequestEvent {
 export interface M3LHttpResponseEvent {
   /** The HTTP method used for the request. */
   readonly method: string;
-  /** The fully resolved request URL. */
+  /**
+   * The fully resolved request URL. This is NOT sanitized — it can carry a
+   * query string, fragment, or other caller-supplied content unchanged.
+   * Prefer `M3LHttpClientError.context.url` (sanitized) when logging a
+   * failed request's URL.
+   */
   readonly url: string;
   /** The HTTP status code of the response. */
   readonly status: number;
@@ -131,7 +196,12 @@ export interface M3LHttpResponseEvent {
 export interface M3LHttpErrorEvent {
   /** The HTTP method used for the request. */
   readonly method: string;
-  /** The fully resolved request URL. */
+  /**
+   * The fully resolved request URL. This is NOT sanitized — it can carry a
+   * query string, fragment, or other caller-supplied content unchanged.
+   * Prefer `M3LHttpClientError.context.url` (sanitized) when logging a
+   * failed request's URL.
+   */
   readonly url: string;
   /** The normalized error describing the failure. */
   readonly error: M3LHttpClientError;
@@ -362,7 +432,15 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
     readonly body: ReadableStream<Uint8Array>;
   }> {
     const { method, path, headers: requestHeaders } = options;
-    const url = this.#resolveUrl(path);
+
+    let url: string;
+    try {
+      url = this.#resolveUrl(path);
+    } catch (cause) {
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- cause is always the M3LHttpClientError thrown by #resolveUrl (an Error subclass); TS narrows a catch binding to unknown regardless
+      return Promise.reject(cause);
+    }
+
     const headers = { ...this.#defaultHeaders, ...requestHeaders };
     const { controller, timer, getFailureReason } =
       this.#createRequestContext();
@@ -392,12 +470,60 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
 
   /**
    * Resolves `path` against `baseUrl` when configured; otherwise `path` is
-   * treated as the full request URL.
+   * treated as the full request URL. Validates eagerly via `URL` in both
+   * branches so an invalid `path`/`baseUrl` combination fails right here,
+   * synchronously, instead of reaching `fetch()` as an unvalidated string —
+   * a native `fetch()` failure on a malformed URL embeds the raw,
+   * unsanitized input in its own `TypeError.message`, which would leak a
+   * credential (query string or fragment) through `cause` even though this
+   * module's other sanitization strips it from the error's own
+   * `message`/`context`.
+   *
+   * Also rejects, upfront, any successfully-parsed URL that carries userinfo
+   * (`user:pass@host`): a real `fetch()`/`Request` unconditionally throws
+   * for a credentialed URL, and that raw error embeds the full credential in
+   * its own message, so such a URL is never actually usable and is refused
+   * here instead of dispatched.
    */
   #resolveUrl(path: string): string {
-    return this.#baseUrl === undefined
-      ? path
-      : new URL(path, this.#baseUrl).toString();
+    let parsed: URL;
+    try {
+      parsed =
+        this.#baseUrl === undefined
+          ? new URL(path)
+          : new URL(path, this.#baseUrl);
+    } catch {
+      // The input could not be parsed as a URL at all — there is no reliable
+      // way to sanitize an arbitrary malformed string (regex-based stripping
+      // assumes structure that provably isn't there), so no `context.url` is
+      // included rather than risk echoing unsanitized fragments of it.
+      // `context.source` instead names WHICH input to check — the caller's
+      // `path`, or this client's own configured `baseUrl` — without echoing
+      // any part of either string.
+      throw new M3LHttpClientError("invalid request URL", {
+        failure: { reason: "network" },
+        context: {
+          source: this.#baseUrl === undefined ? "path" : "path-or-baseUrl",
+        },
+      });
+    }
+    if (parsed.username !== "" || parsed.password !== "") {
+      // A userinfo-bearing URL (`https://user:pass@host/`) is rejected here,
+      // before dispatch: undici's own `fetch()` unconditionally throws for
+      // any credentialed URL, and that raw error embeds the full credential
+      // in its own message — chaining it as `cause` would leak exactly what
+      // this module's sanitization exists to prevent. Since such a URL was
+      // never actually usable against a real `fetch()` anyway, reject it
+      // cleanly and immediately instead of silently stripping and attempting
+      // a request that would fail regardless. `context.host` is a separate
+      // accessor from `.username`/`.password` on a `URL` and structurally
+      // cannot contain the credential, so it is safe to surface here.
+      throw new M3LHttpClientError(
+        "request URL must not embed credentials (userinfo) — pass them via the headers option instead",
+        { failure: { reason: "network" }, context: { host: parsed.host } },
+      );
+    }
+    return parsed.toString();
   }
 
   /**
@@ -461,7 +587,15 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
       body,
       expectedStatus,
     } = options;
-    const url = this.#resolveUrl(path);
+
+    let url: string;
+    try {
+      url = this.#resolveUrl(path);
+    } catch (cause) {
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- cause is always the M3LHttpClientError thrown by #resolveUrl (an Error subclass); TS narrows a catch binding to unknown regardless
+      return { promise: Promise.reject(cause), abort: () => undefined };
+    }
+
     const headers = { ...this.#defaultHeaders, ...requestHeaders };
     const { controller, timer, getFailureReason, abort } =
       this.#createRequestContext();
@@ -516,9 +650,10 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
     this.emit("response", { method, url, status, ok, durationMs });
 
     if (!this.#isAccepted(status, ok, expectedStatus)) {
+      const safeUrl = sanitizeRequestUrl(url);
       throw new M3LHttpClientError(
-        `request to ${url} failed with status ${String(status)}`,
-        { failure: { reason: "status", status }, context: { url } },
+        `request to ${safeUrl} failed with status ${String(status)}`,
+        { failure: { reason: "status", status }, context: { url: safeUrl } },
       );
     }
 
@@ -557,7 +692,11 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
   ): Promise<TOut> {
     const { method, url, headers, timer, getFailureReason } = input;
 
-    this.emit("request", { method, url, headers: { ...headers } });
+    this.emit("request", {
+      method,
+      url,
+      headers: redactRequestHeadersForEvent(headers),
+    });
 
     try {
       const response = await this.#fetchAccepted(input);
@@ -622,9 +761,10 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
     normalizeStreamError: (cause: unknown) => M3LHttpClientError,
   ): { readonly status: number; readonly body: ReadableStream<Uint8Array> } {
     if (response.body === null) {
+      const safeUrl = sanitizeRequestUrl(url);
       throw new M3LHttpClientError(
-        `request to ${url} succeeded but returned no response body`,
-        { failure: { reason: "network" }, context: { url } },
+        `request to ${safeUrl} succeeded but returned no response body`,
+        { failure: { reason: "network" }, context: { url: safeUrl } },
       );
     }
     return {
@@ -705,11 +845,12 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
     }
 
     const resolvedReason: "network" | "timeout" | "abort" = reason ?? "network";
+    const safeUrl = sanitizeRequestUrl(url);
     return new M3LHttpClientError(
-      `${method} ${url} failed: ${resolvedReason}`,
+      `${method} ${safeUrl} failed: ${resolvedReason}`,
       {
         failure: { reason: resolvedReason },
-        context: { url },
+        context: { url: safeUrl },
         cause,
       },
     );

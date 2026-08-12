@@ -38,7 +38,10 @@ interface M3LHttpClientErrorOptions {
   readonly failure: M3LHttpFailure;
   /**
    * Structured detail identifying the failed request, e.g. `url`. Does not
-   * carry `reason`/`status` — those live on `failure`.
+   * carry `reason`/`status` — those live on `failure`. `url` never includes
+   * userinfo, a query string, or a fragment: all three are stripped before
+   * the error is constructed, so a credential passed any of those ways
+   * cannot round-trip through the error.
    */
   readonly context?: Record<string, unknown>;
   /** The underlying cause, if this failure wraps another error. */

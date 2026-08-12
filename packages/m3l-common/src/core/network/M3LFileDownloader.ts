@@ -9,6 +9,7 @@ import { createWriteStream, rmSync } from "node:fs";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
+import { sanitizeRequestUrl } from "../../internal/network/sanitizeRequestUrl.js";
 import { M3LError } from "../errors/index.js";
 import { M3LHttpClientError } from "./M3LHttpClientError.js";
 import type { M3LHttpClient } from "./M3LHttpClient.js";
@@ -115,11 +116,12 @@ export class M3LFileDownloader {
       // normalization M3LHttpClient applies while draining the body) —
       // re-throw it unchanged instead of double-wrapping.
       if (cause instanceof M3LError) throw cause;
+      const safeUrl = sanitizeRequestUrl(url);
       throw new M3LHttpClientError(
-        `failed writing the response from ${url} to ${destinationPath}`,
+        `failed writing the response from ${safeUrl} to ${destinationPath}`,
         {
           failure: { reason: "network" },
-          context: { url, destinationPath },
+          context: { url: safeUrl, destinationPath },
           cause,
         },
       );
