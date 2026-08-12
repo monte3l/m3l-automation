@@ -9,6 +9,7 @@ import { createWriteStream, rmSync } from "node:fs";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
+import { sanitizeRequestUrl } from "../../internal/network/sanitizeRequestUrl.js";
 import { M3LError } from "../errors/index.js";
 import { M3LHttpClientError } from "./M3LHttpClientError.js";
 import type { M3LHttpClient } from "./M3LHttpClient.js";
@@ -29,22 +30,6 @@ import type { M3LHttpClient } from "./M3LHttpClient.js";
 export interface M3LFileDownloaderOptions {
   /** The `M3LHttpClient` instance used to issue the download request. */
   readonly httpClient: M3LHttpClient;
-}
-
-/**
- * Strips the query string and fragment from `url` before it reaches
- * `M3LHttpClientError`'s message or context — mirrors `M3LHttpClient`'s own
- * sanitizer for the same reason: a credential passed as a query parameter or
- * a URL fragment (e.g. a presigned-URL signature) must never round-trip
- * through a thrown error. Userinfo is not handled here: by the time this
- * function runs, `this.#httpClient.requestStream()` has already resolved
- * and started streaming, which means its own `#resolveUrl` (which rejects a
- * userinfo-bearing URL upfront, before this catch block can ever run) has
- * already proven `url` carries none.
- */
-function sanitizeRequestUrl(url: string): string {
-  const boundaryMatch = /[?#]/.exec(url);
-  return boundaryMatch === null ? url : url.slice(0, boundaryMatch.index);
 }
 
 /**

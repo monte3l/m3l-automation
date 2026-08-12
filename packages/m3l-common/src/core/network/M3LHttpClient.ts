@@ -9,6 +9,7 @@
 
 import { fetch, ProxyAgent } from "undici";
 
+import { sanitizeRequestUrl } from "../../internal/network/sanitizeRequestUrl.js";
 import { M3LEventEmitterBase } from "../events/index.js";
 import { M3LHttpClientError } from "./M3LHttpClientError.js";
 
@@ -17,20 +18,6 @@ const JSON_CONTENT_TYPE_PATTERN = /[/+]json\b/i;
 
 /** The per-request timeout applied when {@link M3LHttpClientOptions.timeout} is omitted. */
 const DEFAULT_TIMEOUT_MS = 30_000;
-
-/**
- * Strips the query string and fragment from `url` before it reaches an
- * error message or `M3LHttpClientError` context — a credential passed as a
- * query parameter (`?token=...`) or a URL fragment (`#access_token=...`,
- * the OAuth implicit-flow pattern) must never round-trip through a thrown
- * error. Userinfo is handled separately, upfront, in `#resolveUrl` — by the
- * time a `url` reaches this function, it is guaranteed not to carry
- * userinfo at all.
- */
-function sanitizeRequestUrl(url: string): string {
-  const boundaryMatch = /[?#]/.exec(url);
-  return boundaryMatch === null ? url : url.slice(0, boundaryMatch.index);
-}
 
 /**
  * HTTP header names considered non-sensitive and safe to emit unredacted on
@@ -157,7 +144,12 @@ export interface M3LHttpRequestOptions {
 export interface M3LHttpRequestEvent {
   /** The HTTP method used for the request. */
   readonly method: string;
-  /** The fully resolved request URL. */
+  /**
+   * The fully resolved request URL. Unlike `headers` on this same event,
+   * this is NOT sanitized — it can carry a query string, fragment, or other
+   * caller-supplied content unchanged. Prefer `M3LHttpClientError.context.url`
+   * (sanitized) when logging a failed request's URL.
+   */
   readonly url: string;
   /**
    * The merged headers sent with the request. This is a snapshot copy — the
@@ -181,7 +173,12 @@ export interface M3LHttpRequestEvent {
 export interface M3LHttpResponseEvent {
   /** The HTTP method used for the request. */
   readonly method: string;
-  /** The fully resolved request URL. */
+  /**
+   * The fully resolved request URL. This is NOT sanitized — it can carry a
+   * query string, fragment, or other caller-supplied content unchanged.
+   * Prefer `M3LHttpClientError.context.url` (sanitized) when logging a
+   * failed request's URL.
+   */
   readonly url: string;
   /** The HTTP status code of the response. */
   readonly status: number;
@@ -199,7 +196,12 @@ export interface M3LHttpResponseEvent {
 export interface M3LHttpErrorEvent {
   /** The HTTP method used for the request. */
   readonly method: string;
-  /** The fully resolved request URL. */
+  /**
+   * The fully resolved request URL. This is NOT sanitized — it can carry a
+   * query string, fragment, or other caller-supplied content unchanged.
+   * Prefer `M3LHttpClientError.context.url` (sanitized) when logging a
+   * failed request's URL.
+   */
   readonly url: string;
   /** The normalized error describing the failure. */
   readonly error: M3LHttpClientError;
@@ -487,8 +489,14 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
       // way to sanitize an arbitrary malformed string (regex-based stripping
       // assumes structure that provably isn't there), so no `context.url` is
       // included rather than risk echoing unsanitized fragments of it.
+      // `context.source` instead names WHICH input to check — the caller's
+      // `path`, or this client's own configured `baseUrl` — without echoing
+      // any part of either string.
       throw new M3LHttpClientError("invalid request URL", {
         failure: { reason: "network" },
+        context: {
+          source: this.#baseUrl === undefined ? "path" : "path-or-baseUrl",
+        },
       });
     }
     if (parsed.username !== "" || parsed.password !== "") {
@@ -499,10 +507,12 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
       // this module's sanitization exists to prevent. Since such a URL was
       // never actually usable against a real `fetch()` anyway, reject it
       // cleanly and immediately instead of silently stripping and attempting
-      // a request that would fail regardless.
+      // a request that would fail regardless. `context.host` is a separate
+      // accessor from `.username`/`.password` on a `URL` and structurally
+      // cannot contain the credential, so it is safe to surface here.
       throw new M3LHttpClientError(
         "request URL must not embed credentials (userinfo) — pass them via the headers option instead",
-        { failure: { reason: "network" } },
+        { failure: { reason: "network" }, context: { host: parsed.host } },
       );
     }
     return parsed.toString();

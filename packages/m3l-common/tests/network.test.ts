@@ -829,6 +829,43 @@ describe("M3LHttpClient — events", () => {
       "x-custom-vendor-signature": "unlisted-secret-value",
     });
   });
+
+  test("events carry the full URL including query string while M3LHttpClientError's context.url is sanitized — an intentional asymmetry, not a regression", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 404,
+        contentType: "application/json",
+        body: { message: "nope" },
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+    const received: M3LHttpRequestEvent[] = [];
+    client.on("request", (event) => {
+      received.push(event);
+    });
+
+    let thrown: unknown;
+    try {
+      await client.get("/broken?token=super-secret");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(received).toHaveLength(1);
+    // The "request" event's own `url` field is never sanitized: it must
+    // still carry the full resolved URL, query string included.
+    expect(received[0]?.url).toBe(
+      "https://api.example.com/broken?token=super-secret",
+    );
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    // The thrown M3LHttpClientError's context.url IS sanitized: the query
+    // string must be stripped entirely.
+    expect(httpError.context).toMatchObject({
+      url: "https://api.example.com/broken",
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1032,9 +1069,10 @@ describe("M3LHttpClient.request — header merge semantics", () => {
     // merged headers.
     expect(fetchCallOptions()?.headers).toMatchObject(expectedMerged);
     expect(received).toHaveLength(1);
-    // "x-api-key" matches the redaction heuristic's "apiKey" word-run, so the
-    // emitted "request" event must carry the redaction sentinel instead of
-    // the real merged value; the non-sensitive keys are unaffected.
+    // "x-api-key" is not on SAFE_REQUEST_HEADER_NAMES (a pure allowlist of
+    // known-safe header names), so the emitted "request" event must carry
+    // the redaction sentinel instead of the real merged value; the
+    // non-sensitive keys are unaffected.
     expect(received[0]?.headers).toMatchObject({
       ...expectedMerged,
       "x-api-key": "[REDACTED]",
