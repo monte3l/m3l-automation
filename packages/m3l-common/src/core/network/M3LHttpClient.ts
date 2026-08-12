@@ -432,7 +432,15 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
     readonly body: ReadableStream<Uint8Array>;
   }> {
     const { method, path, headers: requestHeaders } = options;
-    const url = this.#resolveUrl(path);
+
+    let url: string;
+    try {
+      url = this.#resolveUrl(path);
+    } catch (cause) {
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- cause is always the M3LHttpClientError thrown by #resolveUrl (an Error subclass); TS narrows a catch binding to unknown regardless
+      return Promise.reject(cause);
+    }
+
     const headers = { ...this.#defaultHeaders, ...requestHeaders };
     const { controller, timer, getFailureReason } =
       this.#createRequestContext();
@@ -579,7 +587,15 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
       body,
       expectedStatus,
     } = options;
-    const url = this.#resolveUrl(path);
+
+    let url: string;
+    try {
+      url = this.#resolveUrl(path);
+    } catch (cause) {
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- cause is always the M3LHttpClientError thrown by #resolveUrl (an Error subclass); TS narrows a catch binding to unknown regardless
+      return { promise: Promise.reject(cause), abort: () => undefined };
+    }
+
     const headers = { ...this.#defaultHeaders, ...requestHeaders };
     const { controller, timer, getFailureReason, abort } =
       this.#createRequestContext();

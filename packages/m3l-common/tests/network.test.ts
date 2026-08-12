@@ -327,6 +327,181 @@ describe("M3LHttpClient — baseUrl resolution", () => {
 });
 
 // ---------------------------------------------------------------------------
+// 3b — getAbortable/requestAbortable/requestStream must surface a
+// #resolveUrl failure by REJECTING, never by throwing synchronously. Their
+// documented contract is "always returns synchronously" (getAbortable /
+// requestAbortable return { promise, abort }; requestStream returns a
+// Promise directly) with all failure modes routed through that promise.
+// PR #326 added two new #resolveUrl throw sites (unparseable URL, userinfo)
+// that currently throw BEFORE the promise/handle is ever constructed —
+// breaking this contract for exactly these three methods (get()/request()
+// are unaffected since a synchronous throw inside them is still caught by a
+// caller's `await ... catch`).
+// ---------------------------------------------------------------------------
+describe("M3LHttpClient — getAbortable/requestAbortable/requestStream reject #resolveUrl failures instead of throwing synchronously", () => {
+  test("getAbortable: a relative path with no baseUrl configured returns { promise, abort } synchronously, and promise rejects with a sanitized M3LHttpClientError", async () => {
+    mockFetch.mockRejectedValue(
+      new TypeError(
+        "Failed to parse URL from /download/report.csv?X-Amz-Signature=SECRET_PRESIGN",
+      ),
+    );
+    const client = new M3LHttpClient();
+
+    // This call must not throw — if the bug is present, it throws right
+    // here, before ever reaching the assertions below.
+    const handle = client.getAbortable(
+      "/download/report.csv?X-Amz-Signature=SECRET_PRESIGN",
+    );
+
+    expect(handle.promise).toBeInstanceOf(Promise);
+    expect(typeof handle.abort).toBe("function");
+    expect(() => {
+      handle.abort();
+    }).not.toThrow();
+
+    await expect(handle.promise).rejects.toBeInstanceOf(M3LHttpClientError);
+
+    let thrown: unknown;
+    try {
+      await handle.promise;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.message).not.toContain("SECRET_PRESIGN");
+    expect(httpError.cause).toBeUndefined();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test("getAbortable: a baseUrl containing userinfo (user:pass@) returns { promise, abort } synchronously, and promise rejects with a sanitized M3LHttpClientError", async () => {
+    mockFetch.mockRejectedValue(new TypeError("should never be called"));
+    const client = new M3LHttpClient({
+      baseUrl: "https://secretuser:secretpass@api.example.com",
+    });
+
+    const handle = client.getAbortable("/broken");
+
+    expect(handle.promise).toBeInstanceOf(Promise);
+    expect(typeof handle.abort).toBe("function");
+    expect(() => {
+      handle.abort();
+    }).not.toThrow();
+
+    await expect(handle.promise).rejects.toBeInstanceOf(M3LHttpClientError);
+
+    let thrown: unknown;
+    try {
+      await handle.promise;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.message).not.toContain("secretuser");
+    expect(httpError.message).not.toContain("secretpass");
+    expect(httpError.cause).toBeUndefined();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test("requestAbortable: a relative path with no baseUrl configured returns { promise, abort } synchronously, and promise rejects with a sanitized M3LHttpClientError", async () => {
+    mockFetch.mockRejectedValue(
+      new TypeError(
+        "Failed to parse URL from /download/report.csv?X-Amz-Signature=SECRET_PRESIGN",
+      ),
+    );
+    const client = new M3LHttpClient();
+
+    const handle = client.requestAbortable({
+      method: "GET",
+      path: "/download/report.csv?X-Amz-Signature=SECRET_PRESIGN",
+    });
+
+    expect(handle.promise).toBeInstanceOf(Promise);
+    expect(typeof handle.abort).toBe("function");
+    expect(() => {
+      handle.abort();
+    }).not.toThrow();
+
+    await expect(handle.promise).rejects.toBeInstanceOf(M3LHttpClientError);
+
+    let thrown: unknown;
+    try {
+      await handle.promise;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.message).not.toContain("SECRET_PRESIGN");
+    expect(httpError.cause).toBeUndefined();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test("requestAbortable: a baseUrl containing userinfo (user:pass@) returns { promise, abort } synchronously, and promise rejects with a sanitized M3LHttpClientError", async () => {
+    mockFetch.mockRejectedValue(new TypeError("should never be called"));
+    const client = new M3LHttpClient({
+      baseUrl: "https://secretuser:secretpass@api.example.com",
+    });
+
+    const handle = client.requestAbortable({ method: "POST", path: "/broken" });
+
+    expect(handle.promise).toBeInstanceOf(Promise);
+    expect(typeof handle.abort).toBe("function");
+    expect(() => {
+      handle.abort();
+    }).not.toThrow();
+
+    await expect(handle.promise).rejects.toBeInstanceOf(M3LHttpClientError);
+
+    let thrown: unknown;
+    try {
+      await handle.promise;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.message).not.toContain("secretuser");
+    expect(httpError.message).not.toContain("secretpass");
+    expect(httpError.cause).toBeUndefined();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test("requestStream: a baseUrl containing userinfo (user:pass@) does not throw synchronously — it returns a Promise that rejects with a sanitized M3LHttpClientError", async () => {
+    mockFetch.mockRejectedValue(new TypeError("should never be called"));
+    const client = new M3LHttpClient({
+      baseUrl: "https://secretuser:secretpass@api.example.com",
+    });
+
+    // Calling requestStream itself must not throw — the returned value must
+    // be a Promise, not a thrown error, even before it is awaited.
+    const pending = client.requestStream({ method: "GET", path: "/broken" });
+    expect(pending).toBeInstanceOf(Promise);
+
+    await expect(pending).rejects.toBeInstanceOf(M3LHttpClientError);
+
+    let thrown: unknown;
+    try {
+      await pending;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.message).not.toContain("secretuser");
+    expect(httpError.message).not.toContain("secretpass");
+    expect(httpError.cause).toBeUndefined();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 4 — defaultHeaders merged
 // ---------------------------------------------------------------------------
 describe("M3LHttpClient — defaultHeaders", () => {
