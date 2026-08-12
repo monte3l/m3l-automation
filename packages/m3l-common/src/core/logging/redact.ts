@@ -126,9 +126,22 @@ function containsWordRun(
  * class consumes `abc123`. On `abc123 user=alice`, `abc123` is not a scheme
  * word, so the optional group is skipped and the token class alone matches
  * `abc123`, stopping before the space.
+ *
+ * The key class is bounded to `{1,100}` (real key/header names are well
+ * under 100 characters) rather than left as an unbounded `+`. An unbounded
+ * key class immediately followed by a `[:=]` requirement that keeps failing
+ * is the same catastrophic-backtracking shape {@link EMBEDDED_SENSITIVE_PATTERN}'s
+ * own comment below describes: on a long separator-free run of key-class
+ * characters (e.g. a base64url/JWT/hex blob with no `:`/`=` anywhere inside
+ * it), an unbounded quantifier makes the engine re-test the `[:=]` check at
+ * every shorter length from every starting position — O(n²) total work.
+ * Measured through the public {@link redactSensitiveLogText} path on such an
+ * adversarial blob: 65 KB took ~3.9s and 130 KB ~15.6s (confirmed
+ * quadratic) before this bound; bounding the key class caps worst-case work
+ * per starting position to a constant, making total time O(n).
  */
 const BARE_KEY_VALUE_PATTERN =
-  /([A-Za-z0-9_-]+)(\s*[:=]\s*)("[^"]*"|(?:(?:Bearer|Basic|Digest|Token)\s+)?[^\s,;]+)/gi;
+  /([A-Za-z0-9_-]{1,100})(\s*[:=]\s*)("[^"]*"|(?:(?:Bearer|Basic|Digest|Token)\s+)?[^\s,;]+)/gi;
 
 /**
  * Matches a JSON-style double-quoted `"key": "value"` (or `"key":"value"`)

@@ -1462,7 +1462,7 @@ describe("redactSensitiveLogText", () => {
     expect(result).toContain("user=bob");
   });
 
-  test("regression (ReDoS): completes in bounded time against ~100k chars of adversarial padding across all three redaction passes", () => {
+  test("regression (ReDoS): completes in bounded time against ~440k chars of adversarial padding across all three redaction passes", () => {
     // Stresses all three regex passes at once:
     // - many near-miss `key=value`/`key: value`/`key="..."` sequences using
     //   sensitive key names, to give BARE_KEY_VALUE_PATTERN and
@@ -1472,7 +1472,21 @@ describe("redactSensitiveLogText", () => {
     // - a long run of EMBEDDED_SENSITIVE_PATTERN boundary characters
     //   (`? & ; /` and whitespace) each immediately followed by a sensitive
     //   word with no closing value, to stress that pattern's per-boundary
-    //   match attempts.
+    //   match attempts;
+    // - a long, genuinely separator-free run of key-class characters
+    //   (`[A-Za-z0-9_-]`, a repeated base64url-shaped blob) with no `:`, `=`,
+    //   whitespace, comma, or semicolon anywhere inside it. Every near-miss
+    //   pair above already contains a `:`/`=`, so none of them exercise
+    //   BARE_KEY_VALUE_PATTERN's key-class backtracking bug on their own —
+    //   replaying the original input (without this chunk) against the OLD,
+    //   pre-fix unbounded key class also completed in ~13-18ms, unable to
+    //   distinguish fixed from vulnerable for that specific bug. This chunk
+    //   is what actually stresses it: at every starting position inside the
+    //   run, the OLD unbounded `([A-Za-z0-9_-]+)` greedily consumes to the
+    //   end of the run, then backtracks one character at a time re-testing
+    //   the `[:=]` requirement — which never succeeds anywhere in the
+    //   run — giving O(n^2) total work; the `.{1,100}`-bounded key class
+    //   caps that per-position work at a constant, giving O(n).
     const nearMissPairs = Array.from(
       { length: 4000 },
       (_, i) =>
@@ -1484,24 +1498,28 @@ describe("redactSensitiveLogText", () => {
         `${boundary}token${boundary}auth${boundary}secret`.repeat(400),
       )
       .join(" ");
+    const separatorFreeRun = "QWxhZGRpbjpvcGVuc2VzYW1l".repeat(6000);
 
     const plantedSecret = "token=realsecretvalue";
-    const adversarial = `${nearMissPairs} ${unclosedQuotes} ${boundaryRuns} ${plantedSecret}`;
-    expect(adversarial.length).toBeGreaterThan(100_000);
+    const adversarial = `${nearMissPairs} ${unclosedQuotes} ${boundaryRuns} ${separatorFreeRun} ${plantedSecret}`;
+    expect(adversarial.length).toBeGreaterThan(400_000);
 
     const start = Date.now();
     const result = redactSensitiveLogText(adversarial);
     const elapsed = Date.now() - start;
 
-    // Measured ~15ms locally for ~150k adversarial chars; 2000ms ceiling
-    // gives well over 100x headroom for CI slowness without flaking, while
-    // still cleanly separating linear-time behavior from any catastrophic
-    // backtracking regression.
+    // Measured ~88ms locally for the ~443,589-char adversarial input above
+    // (including the separator-free run); 2000ms ceiling gives ~22x headroom
+    // over that measurement for CI slowness without flaking. Replaying the
+    // same input's BARE_KEY_VALUE_PATTERN pass against the OLD unbounded key
+    // class (pre-`{1,100}` fix) measured ~17.7s — ~200x slower than the
+    // fixed code and ~8.8x over this ceiling — a clean separation between
+    // linear-time behavior and catastrophic backtracking.
     expect(elapsed).toBeLessThan(2000);
     expect(result).toContain("[REDACTED]");
     expect(result).not.toContain("realsecretvalue");
     expect(typeof result).toBe("string");
-    expect(result.length).toBeGreaterThan(90_000);
+    expect(result.length).toBeGreaterThan(350_000);
   });
 });
 

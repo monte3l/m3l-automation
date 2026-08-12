@@ -40,19 +40,20 @@ const DEFAULT_MAX_RETRIES = 1;
 /**
  * Regex sets used by {@link M3LAWSCredentialsManager.analyzeError} to
  * classify a raw failure message into an {@link M3LAWSCredentialsErrorType}.
- * Each category may need multiple patterns to cover the different phrasings
- * the AWS CLI / SDK use across versions. `analyzeError` runs against
- * `error.message` from AWS SDK/CLI calls — untrusted input at the public
- * boundary — so any multi-literal pattern bounds its gap with `.{0,200}`
- * instead of an unbounded `.*`, the same fixed-width rationale
- * `core/logging/redact.ts` documents, to cap worst-case backtracking per
- * starting position at a constant and prevent catastrophic (ReDoS) behavior
- * on adversarial input.
+ * Most categories need multiple patterns to cover the different phrasings
+ * the AWS CLI / SDK use across versions — `EXPIRED_PATTERNS` is the
+ * exception, since `token.{0,200}expired` is a strict subset of `expired`
+ * (any string matching the former necessarily contains the literal
+ * "expired"), so a second pattern there would never be reached by
+ * `classifyMessage`'s first-match `.some()` check and was removed as dead.
+ * `analyzeError` runs against `error.message` from AWS SDK/CLI calls —
+ * untrusted input at the public boundary — so any multi-literal pattern
+ * bounds its gap with `.{0,200}` instead of an unbounded `.*`, the same
+ * fixed-width rationale `core/logging/redact.ts` documents, to cap
+ * worst-case backtracking per starting position at a constant and prevent
+ * catastrophic (ReDoS) behavior on adversarial input.
  */
-const EXPIRED_PATTERNS: readonly RegExp[] = [
-  /expired/i,
-  /token.{0,200}expired/i,
-];
+const EXPIRED_PATTERNS: readonly RegExp[] = [/expired/i];
 const INVALID_PATTERNS: readonly RegExp[] = [
   /session.{0,200}invalid/i,
   /invalid.{0,200}session/i,
