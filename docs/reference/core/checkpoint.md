@@ -37,8 +37,8 @@ Exported symbols:
   test can inject a bare object without constructing one.
 - `M3LCheckpointError` — thrown on every failure path; an `M3LError` subclass.
 - `M3LCheckpointErrorCode` — the narrowed code union carried by
-  `M3LCheckpointError`: `"ERR_CHECKPOINT_IO"`, `"ERR_CHECKPOINT_MISSING"`,
-  `"ERR_CHECKPOINT_PARSE"`.
+  `M3LCheckpointError`: `"ERR_CHECKPOINT_CORRUPT"`, `"ERR_CHECKPOINT_IO"`,
+  `"ERR_CHECKPOINT_MISSING"`, `"ERR_CHECKPOINT_PARSE"`.
 
 ### `M3LCheckpointStore<TCheckpoint>`
 
@@ -77,7 +77,8 @@ Safe to log. **Constructor pass-through:** an unsafe `name`(absolute, or
 containing a`..`segment) is rejected by`resolveOutput`itself, which
 throws`M3LPathResolutionError`— not`M3LCheckpointError` — directly out of
   the constructor.
-- `read(): Promise<TCheckpoint>` — reads, JSON-parses, and validates the
+- `read(): Promise<TCheckpoint>` — reads, JSON-parses, verifies the
+  content-addressed envelope's checksum (see below), and validates the
   checkpoint; applies the `missing` policy on `ENOENT`.
 - `write(checkpoint: TCheckpoint): Promise<void>` — persists `checkpoint`
   atomically (write-temp-then-rename), replacing any prior contents. **Does
@@ -91,14 +92,44 @@ throws`M3LPathResolutionError`— not`M3LCheckpointError` — directly out of
   fixed temp name would let one caller's `rename` publish another caller's
   half-written contents, reintroducing the exact torn-file failure atomicity
   is designed to prevent.
+
+**On-disk format: a content-addressed envelope.** `write()` persists
+`{ __m3lCheckpointFormat: 1, checksum, payload }` — not the bare
+`checkpoint` value — where `checksum` is `canonicalJsonHash(checkpoint)`
+(see [Core / json](./json.md)). `read()` detects this envelope shape,
+recomputes the checksum over `payload`, and compares it to the stored value
+before handing `payload` to `validate`. This catches a checkpoint file that
+was hand-edited or accidentally corrupted (a stray byte flip, a truncated
+copy) after being written, even when the result still happens to be valid
+JSON and still happens to satisfy `validate`. **This is integrity
+verification against accidental corruption, not a tamper-evidence or
+authentication guarantee**: the checksum is an unkeyed hash over public
+canonical JSON, computable by anyone via the exported `canonicalJsonHash`,
+so an adversary with write access to the checkpoint file can simply
+recompute a matching checksum, or strip the envelope entirely (see the
+backward-compatibility note below) — either bypasses the check with no
+special knowledge. **Backward compatible:** a checkpoint file written before
+this envelope existed (bare `JSON.stringify(checkpoint)`, no envelope) is
+detected as legacy and read exactly as before, with no integrity check
+possible on it (there is nothing to compare against). Upgrading the library
+does not invalidate an in-flight checkpoint from an older version.
+
 - `delete(): Promise<void>` — deletes the checkpoint file; tolerant of it
   already being absent.
 
 ### `M3LCheckpointError`
 
-One subclass, three codes — the `M3LFtsIndexError` convention. Constructor
+One subclass, four codes — the `M3LFtsIndexError` convention. Constructor
 options stay unexported (callers catch, they don't construct).
 
+- `"ERR_CHECKPOINT_CORRUPT"` — `read()` detected a content-addressed envelope
+  (see above) whose stored checksum does not match the recomputed checksum of
+  its payload — the file was hand-edited or corrupted after being written.
+  Thrown before `validate` ever sees the payload. **Never chains a `cause`**
+  (there is no underlying thrown error to chain — the mismatch is a direct
+  comparison, not a caught exception) and `context` carries only the resolved
+  `path`, never file content, matching `"ERR_CHECKPOINT_PARSE"`'s rationale
+  below.
 - `"ERR_CHECKPOINT_IO"` — a read, write, or delete failed for a reason other
   than the file being absent (`EACCES`, `EPERM`, `ENOSPC`, a rejected
   `rename`, …). Chains the underlying errno `Error` as `cause` — an errno
@@ -189,15 +220,16 @@ await store.delete();
 - **`validate` is required, not optional.** An optional validator makes
   "trust whatever is on disk" the path of least resistance; requiring it
   forces every caller to state the shape it expects to read back.
-- **A `{ kind: "empty" }` policy does not suppress `ERR_CHECKPOINT_PARSE`.**
-  The `missing` policy only governs what happens when the file is **absent**
-  (`ENOENT`). A _present-but-corrupt_ checkpoint (or one that fails
-  `validate`) always throws `ERR_CHECKPOINT_PARSE`, even for a fresh
-  (non-`--resume`) run — the store cannot distinguish "this run doesn't care
-  about resuming" from "this run should silently discard a corrupt file", and
-  guessing wrong would hide real data loss. A caller that wants a fresh run to
-  never touch a stale checkpoint should call `delete()` (or skip `read()`
-  entirely) rather than rely on the `missing` policy to paper over corruption.
+- **A `{ kind: "empty" }` policy does not suppress `ERR_CHECKPOINT_PARSE` or
+  `ERR_CHECKPOINT_CORRUPT`.** The `missing` policy only governs what happens
+  when the file is **absent** (`ENOENT`). A _present-but-corrupt_ checkpoint
+  (fails `validate`, isn't valid JSON, or fails its envelope checksum) always
+  throws, even for a fresh (non-`--resume`) run — the store cannot
+  distinguish "this run doesn't care about resuming" from "this run should
+  silently discard a corrupt file", and guessing wrong would hide real data
+  loss. A caller that wants a fresh run to never touch a stale checkpoint
+  should call `delete()` (or skip `read()` entirely) rather than rely on the
+  `missing` policy to paper over corruption.
 - **Write cadence, delete-on-success, and the checkpoint payload itself are
   caller-owned.** The store has no opinion on how often `write()` is called
   (e.g. every `checkpointEveryPages` pages) or whether `delete()` runs after
@@ -210,9 +242,10 @@ await store.delete();
   `{ kind: "empty" }` policy already answers "does a checkpoint exist" via
   whether the returned value differs from the supplied default.
 - **`aws/*` cannot import this submodule.** ESLint Zone A restricts AWS
-  client wrappers to `core/errors`, `core/prompt`, and `core/polling` only;
-  checkpoint/resume state belongs to the consuming script, not an AWS
-  operations wrapper.
+  client wrappers to `core/errors`, `core/prompt`, `core/polling`, and the
+  single file `core/utils/M3LSingleFlight.ts` (ADR-0040) only; checkpoint/
+  resume state belongs to the consuming script, not an AWS operations
+  wrapper.
 
 ## See also
 

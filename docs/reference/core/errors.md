@@ -161,6 +161,7 @@ carries a recognised `code` but no `origin`.
 | `ERR_AWS_INVALID_REGION`          | `aws/models` (`parseAWSRegion`)                     | Configured AWS region is not a valid identifier                          | caller   | false       |
 | `ERR_AWS_PROVISIONING`            | `internal/script` (bare `M3LError`)                 | Dynamic `aws/clients` facade load or provider construction failed        | external | false       |
 | `ERR_BINARY_FILE_EXPORT`          | `core/exporters`                                    | Binary file write failed (I/O)                                           | external | false       |
+| `ERR_CHECKPOINT_CORRUPT`          | `core/checkpoint` (`M3LCheckpointError`)            | Checkpoint envelope's stored checksum does not match its payload         | external | false       |
 | `ERR_CHECKPOINT_IO`               | `core/checkpoint` (`M3LCheckpointError`)            | Checkpoint read/write/delete failed for a reason other than absence      | external | false       |
 | `ERR_CHECKPOINT_MISSING`          | `core/checkpoint` (`M3LCheckpointError`)            | `--resume` requested but no checkpoint file exists                       | caller   | false       |
 | `ERR_CHECKPOINT_PARSE`            | `core/checkpoint` (`M3LCheckpointError`)            | Checkpoint file not valid JSON, or fails the caller's `validate` guard   | external | false       |

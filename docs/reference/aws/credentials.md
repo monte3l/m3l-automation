@@ -96,6 +96,24 @@ SSO login is run sequentially for invalid profiles because parallel browser wind
 ## Notes and behavior
 
 - **SSO login** spawns `aws sso login --profile=<name>` with `stdio: 'inherit'`. The login timeout is configurable and defaults to **120 seconds**.
+- **Concurrent SSO logins for the same profile are coalesced.** Two callers
+  that independently hit a recoverable credential error for the same
+  resolved profile at the same time (e.g. concurrent `ensureValidCredentials()`
+  calls, or `ensureValidCredentials()` racing `retryWithRelogin()`) share a
+  single in-flight `aws sso login` spawn and its result, instead of each
+  spawning its own duplicate browser-based flow. A few nuances:
+  - **Scope is per-manager-instance, not process-wide** — two separate
+    `M3LAWSCredentialsManager` instances for the same profile still spawn two
+    independent logins.
+  - **The coalescing key is the resolved profile** (an explicit profile, or
+    `"default"` when none is supplied), so a caller passing no profile and one
+    passing an explicit `"default"` coalesce onto the same in-flight login.
+  - **All coalesced callers share one settlement**: a failed or timed-out
+    login rejects/resolves every coalesced caller with the identical result.
+  - **The interactive re-login confirmation is not coalesced** — each caller
+    is still prompted independently before reaching the coalesced spawn, so
+    with `interactive: true` two concurrent callers can each see a prompt
+    while only one `aws sso login` process actually runs.
 - **Validation** is performed with the STS `GetCallerIdentityCommand`, which exercises the real credential resolution path rather than checking only for local file presence.
 - **Retry-with-relogin**: when an AWS operation fails with a credential error, the manager checks whether the error is recoverable and whether retries remain. If so, it optionally prompts the user (in interactive mode), re-runs SSO login, and then retries the operation. The `M3LAWSRetryContext` describes the current attempt.
 - **`ensureValidCredentialsMultiple()`** runs in three phases: parallel validation, separation of valid/invalid profiles, and sequential SSO login for the invalid ones.
