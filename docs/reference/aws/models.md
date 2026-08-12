@@ -35,9 +35,13 @@ The credential/retry/login/options symbols are pure compile-time shapes; the
 identity brands add small, side-effect-free runtime constructors
 (`parseAWSRegion`/`parseAWSProfile`, plus the `is*` guards) and one error class.
 `models` stays free of any `@aws-sdk` runtime dependency either way. The only
-cross-module reference is a **type-only** import of [`M3LPrompt`](../core/prompt.md)
-(from `core/prompt`) used to type the optional `prompt` field — compile-time
-only, so `models` still tree-shakes cleanly and pulls in no extra runtime code.
+cross-module references are **type-only** imports: [`M3LPrompt`](../core/prompt.md)
+(from `core/prompt`) typing the optional `prompt` field, and
+[`M3LLoggerHandler`](../core/logging.md) (from the single leaf file
+`core/logging/M3LLogEvent.ts` — ADR-0041 widens the `aws/**` ESLint zone to
+admit exactly that file, not the whole `core/logging` submodule) typing the
+optional `logger` field. Both are compile-time only, so `models` still
+tree-shakes cleanly and pulls in no extra runtime code.
 
 ### AWS identity types (`M3LAWSRegion`, `M3LAWSProfile`)
 
@@ -188,14 +192,15 @@ which two distinct kill paths legitimately share.
 
 Construction options for `M3LAWSCredentialsManager` (see [AWS credentials](./credentials.md)).
 
-| Field            | Type                       | Description                                                                        |
-| ---------------- | -------------------------- | ---------------------------------------------------------------------------------- |
-| `profile`        | `M3LAWSProfile` (optional) | The default profile to validate and, if needed, re-authenticate.                   |
-| `region`         | `M3LAWSRegion` (optional)  | AWS region for the STS validation client; defaults to the SDK's resolution.        |
-| `loginTimeoutMs` | `number` (optional)        | SSO login timeout in milliseconds; defaults to `120000` (120 s).                   |
-| `maxRetries`     | `number` (optional)        | Max relogin retry attempts for a recoverable failure; defaults to `1`.             |
-| `interactive`    | `boolean` (optional)       | Whether to prompt the user before re-running SSO login.                            |
-| `prompt`         | `M3LPrompt` (optional)     | Prompt used to confirm re-login in interactive mode; a default is used if omitted. |
+| Field            | Type                          | Description                                                                                                                                                                                          |
+| ---------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `profile`        | `M3LAWSProfile` (optional)    | The default profile to validate and, if needed, re-authenticate.                                                                                                                                     |
+| `region`         | `M3LAWSRegion` (optional)     | AWS region for the STS validation client; defaults to the SDK's resolution.                                                                                                                          |
+| `loginTimeoutMs` | `number` (optional)           | SSO login timeout in milliseconds; defaults to `120000` (120 s).                                                                                                                                     |
+| `maxRetries`     | `number` (optional)           | Max relogin retry attempts for a recoverable failure; defaults to `1`.                                                                                                                               |
+| `interactive`    | `boolean` (optional)          | Whether to prompt the user before re-running SSO login.                                                                                                                                              |
+| `prompt`         | `M3LPrompt` (optional)        | Prompt used to confirm re-login in interactive mode; a default is used if omitted.                                                                                                                   |
+| `logger`         | `M3LLoggerHandler` (optional) | Log handler receiving structured events for the SSO login lifecycle (start, success, failure, timeout). No events are emitted if omitted — purely additive observability, not a required dependency. |
 
 ## Notes and behavior
 
@@ -208,6 +213,9 @@ Construction options for `M3LAWSCredentialsManager` (see [AWS credentials](./cre
   compile-time-only shapes.
 - The `prompt` option is typed as [`M3LPrompt`](../core/prompt.md) via a
   type-only import; `models` carries no runtime dependency on `core/prompt`.
+- The `logger` option is typed as [`M3LLoggerHandler`](../core/logging.md) via
+  a type-only import from `core/logging/M3LLogEvent.ts` (not the `core/logging`
+  barrel); `models` carries no runtime dependency on `core/logging`.
 - Field shapes may be extended (with matching updates here) as the credentials
   manager and client providers are implemented.
 

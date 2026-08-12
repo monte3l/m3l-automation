@@ -2451,6 +2451,11 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/dynamodb/error.ts"
   },
+  "M3LDynamoDBOperations": {
+    "submodule": "dynamodb",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/dynamodb/client.ts"
+  },
   "M3LECSOperations": {
     "submodule": "ecs",
     "namespace": "aws",
@@ -2920,6 +2925,11 @@
     "submodule": "s3",
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/s3/uri.ts"
+  },
+  "M3LS3Operations": {
+    "submodule": "s3",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/s3/client.ts"
   },
   "M3LSecretsManagerOperations": {
     "submodule": "secrets-manager",

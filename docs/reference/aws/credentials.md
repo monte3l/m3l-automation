@@ -53,11 +53,20 @@ carries the classified `M3LAWSCredentialsErrorType` and the affected `profile` i
 its `context`, and chains the underlying SDK or spawn failure via `cause`.
 
 Error analysis classifies failures into the `M3LAWSCredentialsErrorType`
-categories (defined in [AWS models](./models.md)) by matching error messages
-against a regex pattern set per category — invalid-session and
-profile-not-found each carry multiple phrasings; expired-session matches a
-single literal (`expired`), sufficient on its own since every other phrasing
-considered already contains that word.
+categories (defined in [AWS models](./models.md)) in two stages:
+
+1. **Identity fast path** — when the failure is an `Error` whose `.name` is a
+   recognized AWS SDK exception name, classification short-circuits on that
+   name alone, skipping the message-regex chain entirely: `"ExpiredTokenException"`
+   classifies as `SSO_SESSION_EXPIRED`, `"SSOTokenProviderFailure"` classifies
+   as `SSO_SESSION_INVALID`. This is more robust than message text to SDK
+   wording/localization changes across versions.
+2. **Message-regex fallback** — when `.name` doesn't match either recognized
+   literal (or the failure isn't an `Error` instance), classification falls
+   back to matching `error.message` against a regex pattern set per category
+   — invalid-session and profile-not-found each carry multiple phrasings;
+   expired-session matches a single literal (`expired`), sufficient on its
+   own since every other phrasing considered already contains that word.
 
 ## Usage
 
@@ -114,6 +123,21 @@ SSO login is run sequentially for invalid profiles because parallel browser wind
     is still prompted independently before reaching the coalesced spawn, so
     with `interactive: true` two concurrent callers can each see a prompt
     while only one `aws sso login` process actually runs.
+- **An injected `logger` (`M3LLoggerHandler`, optional) observes the SSO login
+  lifecycle.** When supplied, `handle()` is called with a structured
+  `M3LLogEvent` at four points: a `STEP` event before `aws sso login` spawns,
+  and a terminal event once the child process settles — `SUCCESS` on a
+  zero exit, `WARNING` on a timeout kill, `ERROR` on a non-zero exit or on a
+  spawn failure (e.g. the `aws` executable not found on `PATH`). Each event's
+  `data` carries only the resolved profile name (plus `durationMs`/`exitCode`
+  on the terminal event) — never the raw SDK/CLI error text. **A throwing
+  handler is isolated**: `logger.handle()` is called inside a try/catch at
+  every dispatch point, so a bug in a caller-supplied handler cannot crash the
+  SSO login flow or leave `ensureValidCredentials()`/`retryWithRelogin()`
+  unsettled — the failure is diagnosed to `stderr` and the login proceeds
+  unaffected, the same isolation `M3LLogger` gives its own handlers. Omitting
+  `logger` emits no events; this is purely additive observability, never a
+  required dependency.
 - **Validation** is performed with the STS `GetCallerIdentityCommand`, which exercises the real credential resolution path rather than checking only for local file presence.
 - **Retry-with-relogin**: when an AWS operation fails with a credential error, the manager checks whether the error is recoverable and whether retries remain. If so, it optionally prompts the user (in interactive mode), re-runs SSO login, and then retries the operation. The `M3LAWSRetryContext` describes the current attempt.
 - **`ensureValidCredentialsMultiple()`** runs in three phases: parallel validation, separation of valid/invalid profiles, and sequential SSO login for the invalid ones.

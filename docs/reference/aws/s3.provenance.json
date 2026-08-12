@@ -104,6 +104,11 @@
           "file": "packages/m3l-common/src/aws/s3/uri.ts",
           "symbol": "M3LS3Uri",
           "blob": "d07f19c63edfb3baf6687023211c1133cf36d49b"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/s3/client.ts",
+          "symbol": "M3LS3Operations",
+          "blob": "412ded1fe19ab31522fe3fc3957a78e0740773e8"
         }
       ],
       "retrieved": "2026-08-11"
@@ -160,6 +165,16 @@
         }
       ],
       "retrieved": "2026-08-11"
+    },
+    {
+      "heading": "`M3LS3Operations` \u2014 the `.services.s3Operations` wrapper class",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/s3/client.ts",
+          "symbol": "M3LS3Operations",
+          "blob": "412ded1fe19ab31522fe3fc3957a78e0740773e8"
+        }
+      ]
     }
   ]
 }

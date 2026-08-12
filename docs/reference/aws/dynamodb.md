@@ -44,6 +44,7 @@ namespace):
 | `BatchDeleteResult`         | interface | `{ deleted, unprocessed }`.                                                                                                                                                            |
 | `TableDescription`          | interface | `{ itemCount, tableStatus }`.                                                                                                                                                          |
 | `M3LDynamoDBOperationError` | class     | Typed error (`code: "ERR_DYNAMODB_OPERATION"`) for any SDK rejection.                                                                                                                  |
+| `M3LDynamoDBOperations`     | class     | Thin instance-method wrapper over the 9 functions above (see below).                                                                                                                   |
 
 ### Design choices
 
@@ -75,6 +76,31 @@ Thrown by every function above when the underlying AWS SDK command rejects
 (chained via `cause`), or when a function-level precondition is violated (e.g.
 the 25-item batch cap). Callers narrow via `code === "ERR_DYNAMODB_OPERATION"`.
 
+### `M3LDynamoDBOperations` — the `.services.dynamoDBOperations` wrapper class
+
+A thin instance-method wrapper over the 9 functions above, added so
+`aws/dynamodb` has a class reachable through `AWSServiceProvider`
+(`provider.services.dynamoDBOperations`, see [AWS clients](./clients.md)) the
+same way every other wrapped service is. Construction takes **two** clients —
+a `DynamoDBDocumentClient` and a raw `DynamoDBClient` — because the functions
+themselves split the same way: every method except `describeTable` delegates
+through the document client; `describeTable` alone routes through the raw
+client, matching `describeTable`'s existing `dynamoDB`-not-`dynamoDBDocument`
+requirement above. Every method is a one-line delegation to its matching free
+function — no reimplemented SDK logic. The free functions above remain the
+primary, unchanged public API; the class is an alternate access path for
+callers who prefer `provider.services.dynamoDBOperations.getItem(...)` over
+`getItem(provider.clients.dynamoDBDocument, ...)`.
+
+```ts
+import { AWSProvider, parseAWSProfile } from "@m3l-automation/m3l-common/aws";
+
+const provider = new AWSProvider({ profile: parseAWSProfile("my-profile") });
+const order = await provider.services.dynamoDBOperations.getItem("orders", {
+  id: "42",
+});
+```
+
 ## Open questions / deferred follow-ups
 
 - Whether `queryItems`' equality-only key condition needs a follow-up (e.g. a
@@ -87,6 +113,10 @@ the 25-item batch cap). Callers narrow via `code === "ERR_DYNAMODB_OPERATION"`.
 
 ## See also
 
-- [`aws/clients`](./clients.md) — the `dynamoDBDocument`/`dynamoDB` clients this module wraps. This module is deliberately **function-based** (mirroring `aws/s3`'s ADR-0033 shape), so it has no `AWSServiceProvider`/`.services` entry — call these functions directly with `script.aws.clients.dynamoDBDocument`.
+- [`aws/clients`](./clients.md) — the `dynamoDBDocument`/`dynamoDB` clients
+  this module wraps. The primary API is still the function set above
+  (mirroring `aws/s3`'s ADR-0033 shape); `M3LDynamoDBOperations` is a thin
+  `.services.dynamoDBOperations` wrapper over the same functions, added for
+  consistency with every other AWS service tier (ADR-0038).
 - [`core/errors`](../core/errors.md) — the `M3LError` hierarchy `M3LDynamoDBOperationError` extends.
 - `scripts/dynamodb-crud` — the first consumer of this module (in review on a separate branch).

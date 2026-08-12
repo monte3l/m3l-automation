@@ -8,70 +8,70 @@
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "M3LAWSRegion",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         },
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "M3LAWSProfile",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         },
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "parseAWSRegion",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         },
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "parseAWSProfile",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         },
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "isAWSRegion",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         },
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "isAWSProfile",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         },
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "M3LAWSIdentityError",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         },
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "M3LAWSIdentityErrorCode",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         },
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "M3LAWSCredentialsErrorType",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         },
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "M3LAWSCredentialsErrorAnalysis",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         },
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "M3LAWSRetryContext",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         },
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "M3LAWSLoginResult",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         },
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "M3LAWSCredentialsManagerOptions",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-08-12"
     },
     {
       "heading": "`M3LAWSCredentialsErrorType`",
@@ -79,10 +79,10 @@
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "M3LAWSCredentialsErrorType",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-08-12"
     },
     {
       "heading": "`M3LAWSCredentialsErrorAnalysis`",
@@ -90,10 +90,10 @@
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "M3LAWSCredentialsErrorAnalysis",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-08-12"
     },
     {
       "heading": "`M3LAWSRetryContext`",
@@ -101,10 +101,10 @@
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "M3LAWSRetryContext",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-08-12"
     },
     {
       "heading": "`M3LAWSLoginResult`",
@@ -112,10 +112,10 @@
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "M3LAWSLoginResult",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-08-12"
     },
     {
       "heading": "`M3LAWSCredentialsManagerOptions`",
@@ -123,10 +123,10 @@
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "M3LAWSCredentialsManagerOptions",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-08-12"
     },
     {
       "heading": "Notes and behavior",
@@ -134,10 +134,10 @@
         {
           "file": "packages/m3l-common/src/aws/models/index.ts",
           "symbol": "M3LAWSCredentialsErrorType",
-          "blob": "cb886dac370a725e95d2ceba7294704b0190d7f6"
+          "blob": "8d7766cd8d5de26c2bda9e3fe760c809baa9f1a6"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-08-12"
     }
   ]
 }
