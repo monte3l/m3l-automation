@@ -86,3 +86,5 @@ surface).
 | 0039 | [LLM/Bedrock inference integration is out of scope for `m3l-common`](./0039-llm-integration-out-of-scope.md)                                              | Accepted                      |
 | 0040 | [Widen the `aws/**` ESLint zone to admit `core/utils/M3LSingleFlight`](./0040-single-flight-zone-widening.md)                                             | Accepted                      |
 | 0041 | [Widen the `aws/**` ESLint zone to admit `core/logging`'s handler port](./0041-logger-seam-zone-widening.md)                                              | Accepted                      |
+| 0042 | [Defer the script-facing `packages/m3l-cli` package](./0042-script-cli-package-deferred.md)                                                               | Accepted                      |
+| 0043 | [Defer a step-pipeline engine; close out the remaining reference capabilities](./0043-step-pipeline-engine-deferred.md)                                   | Accepted                      |
