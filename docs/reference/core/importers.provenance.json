@@ -33,12 +33,12 @@
         {
           "file": "packages/m3l-common/src/core/importers/M3LCSVListImporter.ts",
           "symbol": "M3LCSVListImporter",
-          "blob": "945d877a02b42fdf029f0d18b8cacd825aa6a717"
+          "blob": "806f29fd56bb333113d6b90f0de4888beb31d05d"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LCSVListImporter.ts",
           "symbol": "M3LCSVListImporterOptions",
-          "blob": "945d877a02b42fdf029f0d18b8cacd825aa6a717"
+          "blob": "806f29fd56bb333113d6b90f0de4888beb31d05d"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LCSVFormatAdapter.ts",
@@ -94,7 +94,7 @@
         {
           "file": "packages/m3l-common/src/core/importers/M3LCSVListImporter.ts",
           "symbol": "M3LCSVListImporter",
-          "blob": "945d877a02b42fdf029f0d18b8cacd825aa6a717"
+          "blob": "806f29fd56bb333113d6b90f0de4888beb31d05d"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LCSVFormatAdapter.ts",

@@ -437,12 +437,18 @@ export class M3LCSVListImporter<TItem>
         rowIndex += 1;
       }
     } catch (cause) {
-      // A stream destroyed mid-write (#feedParser, above) completes its
-      // async iterator with a stream-teardown error rather than a clean end;
-      // the trailing budget check below is what throws the correctly-coded
-      // ERR_IMPORT_VALIDATION for the caller, so that teardown noise is
-      // swallowed here — but only when it was self-inflicted. Any other
-      // failure (a genuine parser fault) must still propagate.
+      // A genuine ERR_IMPORT_VALIDATION thrown by assertRowBudget (above,
+      // inside this same try block) must always propagate — it is never
+      // teardown noise. A stream destroyed mid-write (#feedParser, above)
+      // instead completes its async iterator with a *different*
+      // stream-teardown error; that one (and only that one) is swallowed
+      // here when self-inflicted, since the trailing budget check below
+      // re-derives the correctly-coded error from any remaining skipped
+      // entries. Any other failure (a genuine parser fault) must still
+      // propagate too.
+      if (cause instanceof M3LError && cause.code === ERR_IMPORT_VALIDATION) {
+        throw cause;
+      }
       if (!budgetTripped) throw cause;
     }
     while (skipped.length > 0) {
