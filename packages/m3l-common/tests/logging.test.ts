@@ -1482,11 +1482,14 @@ describe("redactSensitiveLogText", () => {
     //   pre-fix unbounded key class also completed in ~13-18ms, unable to
     //   distinguish fixed from vulnerable for that specific bug. This chunk
     //   is what actually stresses it: at every starting position inside the
-    //   run, the OLD unbounded `([A-Za-z0-9_-]+)` greedily consumes to the
+    //   run, the OLD unguarded `([A-Za-z0-9_-]+)` greedily consumes to the
     //   end of the run, then backtracks one character at a time re-testing
     //   the `[:=]` requirement — which never succeeds anywhere in the
-    //   run — giving O(n^2) total work; the `.{1,100}`-bounded key class
-    //   caps that per-position work at a constant, giving O(n).
+    //   run — giving O(n^2) total work; the leading negative lookbehind
+    //   `(?<![A-Za-z0-9_-])` on the fixed key class excludes every interior
+    //   match-start position within that run in O(1) before any
+    //   backtracking begins, giving O(n) without capping how long a
+    //   matched key can be.
     const nearMissPairs = Array.from(
       { length: 4000 },
       (_, i) =>
@@ -1511,15 +1514,45 @@ describe("redactSensitiveLogText", () => {
     // Measured ~88ms locally for the ~443,589-char adversarial input above
     // (including the separator-free run); 2000ms ceiling gives ~22x headroom
     // over that measurement for CI slowness without flaking. Replaying the
-    // same input's BARE_KEY_VALUE_PATTERN pass against the OLD unbounded key
-    // class (pre-`{1,100}` fix) measured ~17.7s — ~200x slower than the
-    // fixed code and ~8.8x over this ceiling — a clean separation between
-    // linear-time behavior and catastrophic backtracking.
+    // same input's BARE_KEY_VALUE_PATTERN pass against the OLD unbounded,
+    // unguarded key class (pre-lookbehind fix) measured ~17.7s — ~200x
+    // slower than the fixed code and ~8.8x over this ceiling — a clean
+    // separation between linear-time behavior and catastrophic backtracking.
     expect(elapsed).toBeLessThan(2000);
     expect(result).toContain("[REDACTED]");
     expect(result).not.toContain("realsecretvalue");
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(350_000);
+  });
+
+  test("regression: a sensitive key longer than 100 characters is still redacted (guards against reintroducing a length-bounded key class)", () => {
+    // BARE_KEY_VALUE_PATTERN was briefly fixed for the ReDoS above by bounding
+    // the key class to `{1,100}` — which introduced a NEW leak: a sensitive
+    // key name longer than 100 chars fell outside the bound entirely and its
+    // value passed through unredacted. The shipped fix instead keeps the key
+    // class unbounded (`+`) and guards it with a leading negative lookbehind.
+    // This test pins that outcome so a future "let's bound the key length for
+    // safety" change can't silently re-ship the exact leak this branch fixed.
+    // The first key is 105 chars — just past where the old `{1,100}` bound
+    // would have started failing; the second is 235 chars, well past any
+    // plausible cap, to prove there is no hidden re-introduced ceiling.
+    const key105 =
+      "TOKEN_REFRESH_ENDPOINT_OVERRIDE_FOR_THE_NIGHTLY_RECONCILIATION_JOB_RUNNER_IN_THE_PROD_EU_WEST_ONE_ACCOUNT";
+    const key235 =
+      "TOKEN_REFRESH_ENDPOINT_OVERRIDE_FOR_THE_NIGHTLY_RECONCILIATION_JOB_RUNNER_IN_THE_PROD_EU_WEST_ONE_ACCOUNT_AND_THE_SECONDARY_STANDBY_REGION_USED_FOR_DISASTER_RECOVERY_FAILOVER_TESTING_ACROSS_ALL_DOWNSTREAM_INTEGRATION_ENVIRONMENTS_TODAY";
+    expect(key105.length).toBeGreaterThan(100);
+    expect(key235.length).toBeGreaterThan(200);
+
+    const plantedValue105 = "planted-secret-value-105";
+    const plantedValue235 = "planted-secret-value-235";
+
+    const result105 = redactSensitiveLogText(`${key105}=${plantedValue105}`);
+    const result235 = redactSensitiveLogText(`${key235}=${plantedValue235}`);
+
+    expect(result105).not.toContain(plantedValue105);
+    expect(result105).toContain("[REDACTED]");
+    expect(result235).not.toContain(plantedValue235);
+    expect(result235).toContain("[REDACTED]");
   });
 });
 
