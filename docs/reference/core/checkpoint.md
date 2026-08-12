@@ -130,20 +130,28 @@ options stay unexported (callers catch, they don't construct).
   comparison, not a caught exception) and `context` carries only the resolved
   `path`, never file content, matching `"ERR_CHECKPOINT_PARSE"`'s rationale
   below.
-- `"ERR_CHECKPOINT_IO"` — a read, write, or delete failed for a reason other
+- `"ERR_CHECKPOINT_IO"` — thrown from two distinct sites, with different
+  `cause` handling. (1) A read, write, or delete failed for a reason other
   than the file being absent (`EACCES`, `EPERM`, `ENOSPC`, a rejected
-  `rename`, …). Chains the underlying errno `Error` as `cause` — an errno
-  carries no file content, so chaining it is safe and useful.
+  `rename`, …) — chains the underlying errno `Error` as `cause` (an errno
+  carries no file content, so chaining it is safe and useful). (2) `write()`
+  could not compute the envelope checksum for the supplied `checkpoint` (e.g.
+  a circular reference, a `BigInt`, or a non-finite number — anything
+  `canonicalJsonHash` rejects) — **never chains a `cause`**, since the
+  underlying error's message can embed the caller's actual checkpoint value.
 - `"ERR_CHECKPOINT_MISSING"` — `read()` was called under a `{ kind: "error" }`
   missing policy and no checkpoint file exists. Chains the `ENOENT` as
-  `cause` (an errno carries no file content, so — like `ERR_CHECKPOINT_IO` —
-  chaining it is safe and useful).
-- `"ERR_CHECKPOINT_PARSE"` — the file is not valid JSON, or `validate`
-  returned `false`. **Never chains the underlying `SyntaxError` as `cause`**:
-  its message embeds a snippet of the malformed file, and a checkpoint may
-  hold caller data (a `cloudwatch-logs-insights` checkpoint carries whole log
-  rows; a `dynamodb-crud` checkpoint carries `LastEvaluatedKey` primary-key
-  values). Only the resolved `path` reaches `context`.
+  `cause` (an errno carries no file content, so — like `ERR_CHECKPOINT_IO`'s
+  I/O-failure arm — chaining it is safe and useful).
+- `"ERR_CHECKPOINT_PARSE"` — the file is not valid JSON, `validate` returned
+  `false`, or (for an enveloped file) the checksum recomputation over
+  `payload` itself failed (e.g. a `RangeError` from an adversarially or
+  accidentally deeply-nested payload). **Never chains the underlying error as
+  `cause`** on any of these three paths: a `SyntaxError`'s message embeds a
+  snippet of the malformed file, and a checkpoint may hold caller data (a
+  `cloudwatch-logs-insights` checkpoint carries whole log rows; a
+  `dynamodb-crud` checkpoint carries `LastEvaluatedKey` primary-key values).
+  Only the resolved `path` reaches `context`.
 
 ## Usage
 
@@ -203,11 +211,16 @@ await store.delete();
   `M3LFileCopier`/`M3LFileCopyError`). It stays `internal/` and unexported
   rather than promoted into `core/files` until a second caller justifies the
   public surface.
-- **`cause` chaining is resolved by error kind, not by caller option.**
-  `ERR_CHECKPOINT_IO` always chains; `ERR_CHECKPOINT_PARSE` never does. A
-  toggle to disable the parse-path protection would be a security footgun,
-  not a legitimate variation — see the Style Guide's rule on guarding the
-  parse step.
+- **`cause` chaining is resolved by error kind and content risk, not by
+  caller option.** `ERR_CHECKPOINT_PARSE` and `ERR_CHECKPOINT_CORRUPT` never
+  chain — both paths can only be reached from content that may embed caller
+  data. `ERR_CHECKPOINT_MISSING` and `ERR_CHECKPOINT_IO`'s underlying-I/O-failure
+  arm chain an errno `Error` (safe — an errno carries no file content), but
+  `ERR_CHECKPOINT_IO`'s other arm — a `write()`-time checksum-computation
+  failure — never chains, since that underlying error's own message can embed
+  the caller's checkpoint value. A toggle to disable any of this protection
+  would be a security footgun, not a legitimate variation — see the Style
+  Guide's rule on guarding the parse step.
 - **The checkpoint file is always flat at the output-directory root**,
   never nested under a per-run archival subdirectory. `M3LScript` derives a
   fresh, per-invocation `runStartedAt` on every run, and stage-9 archival
