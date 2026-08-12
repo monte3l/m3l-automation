@@ -32,6 +32,22 @@ export interface M3LFileDownloaderOptions {
 }
 
 /**
+ * Strips the query string and fragment from `url` before it reaches
+ * `M3LHttpClientError`'s message or context — mirrors `M3LHttpClient`'s own
+ * sanitizer for the same reason: a credential passed as a query parameter or
+ * a URL fragment (e.g. a presigned-URL signature) must never round-trip
+ * through a thrown error. Userinfo is not handled here: by the time this
+ * function runs, `this.#httpClient.requestStream()` has already resolved
+ * and started streaming, which means its own `#resolveUrl` (which rejects a
+ * userinfo-bearing URL upfront, before this catch block can ever run) has
+ * already proven `url` carries none.
+ */
+function sanitizeRequestUrl(url: string): string {
+  const boundaryMatch = /[?#]/.exec(url);
+  return boundaryMatch === null ? url : url.slice(0, boundaryMatch.index);
+}
+
+/**
  * Downloads a URL directly to a file, streaming the response body through
  * `node:stream/promises`'s `pipeline` instead of buffering the whole
  * response in memory first.
@@ -115,11 +131,12 @@ export class M3LFileDownloader {
       // normalization M3LHttpClient applies while draining the body) —
       // re-throw it unchanged instead of double-wrapping.
       if (cause instanceof M3LError) throw cause;
+      const safeUrl = sanitizeRequestUrl(url);
       throw new M3LHttpClientError(
-        `failed writing the response from ${url} to ${destinationPath}`,
+        `failed writing the response from ${safeUrl} to ${destinationPath}`,
         {
           failure: { reason: "network" },
-          context: { url, destinationPath },
+          context: { url: safeUrl, destinationPath },
           cause,
         },
       );
