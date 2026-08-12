@@ -79,14 +79,23 @@ function makeResponse(options: {
   readonly status: number;
   readonly contentType: string | null;
   readonly body: unknown;
+  /**
+   * Value returned by `headers.get("retry-after")` (case-insensitive).
+   * Defaults to `null` — every pre-existing `makeResponse({...})` call site
+   * that never passes this field keeps working unchanged.
+   */
+  readonly retryAfter?: string | null;
 }): UndiciResponse {
-  const { status, contentType, body } = options;
+  const { status, contentType, body, retryAfter = null } = options;
   const fake: FakeResponse = {
     status,
     ok: status >= 200 && status < 300,
     headers: {
       get(name: string): string | null {
-        return name.toLowerCase() === "content-type" ? contentType : null;
+        const lowerName = name.toLowerCase();
+        if (lowerName === "content-type") return contentType;
+        if (lowerName === "retry-after") return retryAfter;
+        return null;
       },
     },
     json(): Promise<unknown> {
@@ -94,6 +103,60 @@ function makeResponse(options: {
     },
     text(): Promise<string> {
       return Promise.resolve(typeof body === "string" ? body : String(body));
+    },
+  };
+  return fake as unknown as UndiciResponse;
+}
+
+/** Decodes and concatenates a list of byte chunks into a single string. */
+function decodeChunks(chunks: readonly Uint8Array[]): string {
+  const decoder = new TextDecoder();
+  return chunks.map((chunk) => decoder.decode(chunk)).join("");
+}
+
+/**
+ * Builds a fake fetch `Response` whose `body` is a real
+ * `ReadableStream<Uint8Array>`, for exercising the `maxResponseBytes`
+ * streaming-bytes path (which only activates once that option is set).
+ * `json()`/`text()` exist only to satisfy the structural contract other
+ * helpers rely on — they decode the same chunks and are never exercised by
+ * the bounded-buffering path itself, which reads `body` directly.
+ */
+function makeStreamResponse(options: {
+  readonly status: number;
+  readonly ok?: boolean;
+  readonly contentType: string | null;
+  readonly retryAfter?: string | null;
+  readonly chunks: readonly Uint8Array[];
+}): UndiciResponse {
+  const { status, ok, contentType, retryAfter = null, chunks } = options;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller): void {
+      for (const chunk of chunks) controller.enqueue(chunk);
+      controller.close();
+    },
+  });
+  const fake = {
+    status,
+    ok: ok ?? (status >= 200 && status < 300),
+    headers: {
+      get(name: string): string | null {
+        const lowerName = name.toLowerCase();
+        if (lowerName === "content-type") return contentType;
+        if (lowerName === "retry-after") return retryAfter;
+        return null;
+      },
+    },
+    body,
+    json(): Promise<unknown> {
+      try {
+        return Promise.resolve(JSON.parse(decodeChunks(chunks)) as unknown);
+      } catch {
+        return Promise.resolve(undefined);
+      }
+    },
+    text(): Promise<string> {
+      return Promise.resolve(decodeChunks(chunks));
     },
   };
   return fake as unknown as UndiciResponse;
@@ -679,6 +742,234 @@ describe("M3LHttpClient — network failure", () => {
     expect(httpError.message).not.toContain("super-secret");
     expect(httpError.message).not.toContain("token");
     expect(httpError.message).not.toContain("?");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6b — Retry-After header parses into M3LHttpClientError.retryAfterMs
+// ---------------------------------------------------------------------------
+describe("M3LHttpClient — Retry-After header parses into M3LHttpClientError.retryAfterMs", () => {
+  test("delta-seconds grammar converts seconds to milliseconds", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 429,
+        contentType: "application/json",
+        body: {},
+        retryAfter: "120",
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    expect((thrown as M3LHttpClientError).retryAfterMs).toBe(120_000);
+  });
+
+  test("HTTP-date grammar in the future resolves to a non-negative delay reasonably close to the delta", async () => {
+    const future = new Date(Date.now() + 5000).toUTCString();
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 429,
+        contentType: "application/json",
+        body: {},
+        retryAfter: future,
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const retryAfterMs = (thrown as M3LHttpClientError).retryAfterMs;
+    expect(retryAfterMs).toBeGreaterThanOrEqual(0);
+    expect(retryAfterMs).toBeLessThanOrEqual(10_000);
+  });
+
+  test("HTTP-date grammar in the past clamps to zero, never negative", async () => {
+    const past = new Date(Date.now() - 60_000).toUTCString();
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 429,
+        contentType: "application/json",
+        body: {},
+        retryAfter: past,
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    expect((thrown as M3LHttpClientError).retryAfterMs).toBe(0);
+  });
+
+  test("an absent Retry-After header leaves retryAfterMs undefined", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({ status: 429, contentType: "application/json", body: {} }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    expect((thrown as M3LHttpClientError).retryAfterMs).toBeUndefined();
+  });
+
+  test("an unparseable Retry-After value leaves retryAfterMs undefined without throwing", async () => {
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        status: 429,
+        contentType: "application/json",
+        body: {},
+        retryAfter: "not-a-real-value",
+      }),
+    );
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/limited");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    expect((thrown as M3LHttpClientError).retryAfterMs).toBeUndefined();
+  });
+
+  test("a non-'status' failure (network) never carries retryAfterMs — status-specific parsing only", async () => {
+    const networkFailure = new Error("ECONNRESET");
+    mockFetch.mockRejectedValue(networkFailure);
+    const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
+
+    let thrown: unknown;
+    try {
+      await client.get("/down");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.reason).toBe("network");
+    expect(httpError.retryAfterMs).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6c — maxResponseBytes bounds buffered response bodies
+// ---------------------------------------------------------------------------
+describe("M3LHttpClient — maxResponseBytes bounds buffered response bodies", () => {
+  test.each<[string, number]>([
+    ["zero", 0],
+    ["negative", -5],
+    ["a non-integer", 1.5],
+  ])(
+    "throws M3LError(ERR_INVALID_ARGUMENT) synchronously when maxResponseBytes is %s",
+    (_label, maxResponseBytes) => {
+      expect(() => new M3LHttpClient({ maxResponseBytes })).toThrowError(
+        M3LError,
+      );
+      let thrown: unknown;
+      try {
+        new M3LHttpClient({ maxResponseBytes });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+    },
+  );
+
+  test("a JSON body under the cap still resolves normally with the parsed body", async () => {
+    mockFetch.mockResolvedValue(
+      makeStreamResponse({
+        status: 200,
+        contentType: "application/json",
+        chunks: [new TextEncoder().encode(JSON.stringify({ a: 1 }))],
+      }),
+    );
+    const client = new M3LHttpClient({
+      baseUrl: "https://api.example.com",
+      maxResponseBytes: 1000,
+    });
+
+    const result = await client.get<{ a: number }>("/small");
+
+    expect(result).toEqual({ a: 1 });
+  });
+
+  test("a body exceeding the cap rejects with M3LHttpClientError, reason 'network', and the message never echoes the oversized payload", async () => {
+    const oversizedMarker = "OVERSIZED_PAYLOAD_MARKER";
+    const payload = JSON.stringify({ data: oversizedMarker.repeat(5) });
+    mockFetch.mockResolvedValue(
+      makeStreamResponse({
+        status: 200,
+        contentType: "application/json",
+        chunks: [new TextEncoder().encode(payload)],
+      }),
+    );
+    const client = new M3LHttpClient({
+      baseUrl: "https://api.example.com",
+      maxResponseBytes: 10,
+    });
+
+    let thrown: unknown;
+    try {
+      await client.get("/large");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LHttpClientError);
+    const httpError = thrown as M3LHttpClientError;
+    expect(httpError.failure.reason).toBe("network");
+    expect(httpError.message).not.toContain(oversizedMarker);
+  });
+
+  test("requestStream() ignores maxResponseBytes and resolves even when the body would exceed the cap", async () => {
+    const largeText = "x".repeat(1000);
+    mockFetch.mockResolvedValue(
+      makeStreamResponse({
+        status: 200,
+        contentType: null,
+        chunks: [new TextEncoder().encode(largeText)],
+      }),
+    );
+    const client = new M3LHttpClient({
+      baseUrl: "https://api.example.com",
+      maxResponseBytes: 10,
+    });
+
+    const result = await client.requestStream({
+      method: "GET",
+      path: "/large-file.bin",
+    });
+
+    expect(result.status).toBe(200);
+    const text = await new Response(result.body).text();
+    expect(text).toBe(largeText);
   });
 });
 
@@ -1618,6 +1909,15 @@ describe("M3LHttpClient — type-level contract", () => {
     >();
     expectTypeOf<M3LHttpClientOptions["proxyUrl"]>().toEqualTypeOf<
       string | undefined
+    >();
+    expectTypeOf<M3LHttpClientOptions["maxResponseBytes"]>().toEqualTypeOf<
+      number | undefined
+    >();
+  });
+
+  test("M3LHttpClientError.retryAfterMs is number | undefined", () => {
+    expectTypeOf<M3LHttpClientError["retryAfterMs"]>().toEqualTypeOf<
+      number | undefined
     >();
   });
 

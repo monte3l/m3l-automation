@@ -236,7 +236,7 @@ const runner = new Core.M3LRetryRunner({ classifier });
 
 - `awsThrottlingClassifier` — detects AWS throttling/rate-limit error names plus transient 5xx codes.
 - `awsNetworkClassifier` — detects network-level transient errors.
-- `httpRetryAfterClassifier` — maps HTTP status codes to retry decisions and respects `retryAfterMs` for server-driven delays.
+- `httpRetryAfterClassifier` — maps `408`/`429`/transient 5xx (500/502/503/504) to `'retriable'`, recognisable non-retriable 4xx (400/401/403/404) to `'fatal'`, and respects `retryAfterMs` for server-driven delays.
 
 ## Backoff strategies
 

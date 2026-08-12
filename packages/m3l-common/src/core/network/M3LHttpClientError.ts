@@ -46,6 +46,15 @@ interface M3LHttpClientErrorOptions {
   readonly context?: Record<string, unknown>;
   /** The underlying cause, if this failure wraps another error. */
   readonly cause?: unknown;
+  /**
+   * Parsed `Retry-After` delay in milliseconds; only ever set by
+   * {@link M3LHttpClient} for a `"status"`-reason failure whose response
+   * carried a valid `Retry-After` header. Read directly by
+   * `httpRetryAfterClassifier` (`core/polling/classifiers.ts`), which expects
+   * `err.retryAfterMs` at the top level of the thrown error — not nested
+   * under `failure`.
+   */
+  readonly retryAfterMs?: number;
 }
 
 /**
@@ -84,6 +93,11 @@ export class M3LHttpClientError extends M3LError {
   readonly reason: M3LHttpFailureReason;
   /** The discriminated failure payload. Narrow on `reason` to read `status`. */
   readonly failure: M3LHttpFailure;
+  /**
+   * Parsed `Retry-After` delay in milliseconds, when the failed response
+   * carried one; `undefined` for every other failure mode.
+   */
+  readonly retryAfterMs: number | undefined;
 
   /**
    * Creates a new `M3LHttpClientError`.
@@ -104,5 +118,6 @@ export class M3LHttpClientError extends M3LError {
     this.code = "ERR_HTTP_REQUEST";
     this.failure = options.failure;
     this.reason = options.failure.reason;
+    this.retryAfterMs = options.retryAfterMs;
   }
 }

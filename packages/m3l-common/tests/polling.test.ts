@@ -719,7 +719,7 @@ describe("core/polling", () => {
     });
 
     describe("httpRetryAfterClassifier", () => {
-      test.each([429, 500, 502, 503, 504])(
+      test.each([429, 408, 500, 502, 503, 504])(
         "status %i is retriable",
         (status) => {
           const err = Object.assign(new Error("http"), { status });
