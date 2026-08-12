@@ -228,6 +228,34 @@ try {
 }
 ```
 
+### `M3LResult` vs `throw` — the boundary policy
+
+**Default to throwing.** `throw`ing an `M3LError` subclass is this library's
+default failure signal; `M3LResult<T, E>` (`core/errors/M3LResult.ts`) is the
+exception, reserved for a narrow case, not a general alternative to the
+`M3LError` hierarchy. **[advisory]**
+
+- **Return `M3LResult` only when failure is an expected, per-item outcome the
+  caller must inspect inline** — not an exceptional condition the caller wants
+  to propagate or `catch`. The motivating (and, at time of writing, only)
+  production case is `aws/clients/multi-provider.ts`: resolving several
+  regional client providers where one region's failure must not abort the
+  others, and the caller needs each region's individual outcome to decide what
+  to do next.
+- **Otherwise throw.** A single-outcome operation, a public boundary validating
+  caller input, or anything where the natural caller shape is "this either
+  worked or I need to handle/propagate why it didn't" throws an `M3LError`
+  subclass per the rules above. Do not introduce `M3LResult` to avoid a `try`/
+  `catch` — that is a style preference, not a signal this policy exists to gate.
+- **Retrofitting an existing throwing API to return `M3LResult` is a breaking
+  change** (the return type changes shape), never a drive-by refactor. It needs
+  its own plan and major-version justification, same as any other signature
+  change.
+- `fromPromise`/`tryCatch` (`core/errors/M3LResult.ts`) exist to adapt an
+  already-throwing call into a `M3LResult` at the boundary where the per-item
+  policy above applies — they are not an invitation to wrap arbitrary
+  throwing calls opportunistically.
+
 ### TSDoc
 
 - **TSDoc on every exported symbol**, with an `@example` on primary entry points.
