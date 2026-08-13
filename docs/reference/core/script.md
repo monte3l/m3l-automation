@@ -39,7 +39,8 @@ and after a success), `configSchema` (the constructor-supplied
 `M3LConfigSchema`, or `undefined` when no schema was declared), and
 `currentConfig` (the live `M3LConfig` store — the same instance
 `getConfiguration()` returns once loaded, but readable synchronously; empty
-before the first load, reset per Lambda invocation).
+before the first load, reset per Lambda invocation and at the top of every
+`run()` call).
 `runScript()` uses `configSchema`/`currentConfig` to populate the persisted
 report's config fingerprint — see [diagnostics →
 `collectDiagnostics`](./diagnostics.md#collectdiagnostics).
@@ -288,8 +289,8 @@ interface M3LScriptHookContext {
 ## Config files (`options.configFiles`)
 
 `M3LScriptOptions.configFiles` is an optional, ordered list of JSON/YAML
-config-file paths. When supplied, each path is dispatched by file extension —
-`.json` via `M3LJSONConfigProvider`, `.yaml`/`.yml` (case-insensitive) via
+config-file paths. When supplied, each path is dispatched by file extension,
+case-insensitively — `.json` via `M3LJSONConfigProvider`, `.yaml`/`.yml` via
 `M3LYAMLConfigProvider` — and the resulting providers are inserted into
 configuration resolution at **precedence levels 2–3**: below CLI (level 1),
 above environment variables (level 4). Earlier entries in the array outrank
@@ -305,8 +306,11 @@ later ones for the same key. See
 - **A missing file is tolerated.** Both providers treat `ENOENT` as an empty
   file, not an error — a listed path that doesn't exist simply contributes no
   values, so resolution falls through to the next tier. Only a malformed
-  _existing_ file throws (`M3LConfigParseError` or `M3LUnsafeConfigKeyError`),
-  and only once configuration actually loads (stage 3), not at construction.
+  _existing_ file throws a typed `M3LConfigParseError`/`M3LUnsafeConfigKeyError`
+  — deliberately, at stage 3, not construction — though a file that exists but
+  is unreadable for another reason (e.g. `EACCES`) re-throws Node's raw
+  filesystem error, unchanged from `M3LJSONConfigProvider`/
+  `M3LYAMLConfigProvider`'s own standalone behavior.
 - **Paths are resolved verbatim** against the process's current working
   directory, the same as constructing either provider directly. Callers who
   want the canonical config directory can build the path from

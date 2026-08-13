@@ -41,6 +41,10 @@ Exported from `@m3l-automation/m3l-common/core` (the `config` sub-module):
 5. Lambda event payload (`M3LLambdaEventConfigProvider`, Lambda only) — source label `"lambda-event"` — under `M3LScript`, wired automatically by [`createLambdaHandler()`](./script.md#configuration-from-the-lambda-event); no caller wiring required
 6. Preset file (`M3LPresetConfigProvider`) — source label `"preset"`
 
+Levels 2 and 3 are not fixed to JSON-before-YAML: under `M3LScript`, both are
+wired via a single `options.configFiles` array, and array order — not file
+type — decides which of a JSON or YAML entry outranks the other.
+
 When no provider supplies a value, resolution continues to the static default, then the async fallback (see below).
 
 Every provider declares its label via `getSourceLabel()`, an overridable method on the `M3LConfigProvider` base class (default `"other"`). `M3LConfigReader.resolveForKeys(keys)` returns the winning provider's value paired with that label as an `M3LConfigResolution`; `getRawValueForKeys(keys)` delegates to it and returns just the value, unchanged from before. `M3LInMemoryConfigProvider` reports `"in-memory"`.

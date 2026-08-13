@@ -479,9 +479,10 @@ export class M3LScript {
   /**
    * The current run's/invocation's live resolved-configuration store — the
    * exact same instance {@link M3LScript.getConfiguration} returns once
-   * loaded, but readable synchronously without triggering a load. Reset to a
-   * fresh, empty store on every Lambda invocation (see
-   * {@link M3LScript.resetForInvocation}), same as `getConfiguration`.
+   * loaded, but readable synchronously without triggering a load. Empty
+   * before the first load, reset per Lambda invocation and at the top of
+   * every {@link M3LScript.run} call (see {@link M3LScript.resetForInvocation}),
+   * same as `getConfiguration`.
    *
    * @returns The live {@link M3LConfig} store.
    *
