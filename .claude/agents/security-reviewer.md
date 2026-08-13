@@ -27,13 +27,20 @@ deserialization, not network perimeter.
 2. **Input validation at the public boundary.** External input (config files,
    CLI args, Lambda events, imported files, HTTP responses) is validated/narrowed
    before use — no trusting `unknown` shapes into the core.
-3. **Prototype-pollution guard.** Object construction from external data
+3. **ReDoS-safe parsing of untrusted text.** A regex applied to caller input,
+   file/HTTP/SDK payloads, or model-generated text has no nested quantifier and
+   no same-text alternation branches, and untrusted text is never interpolated
+   into a `RegExp` source unescaped (style guide §
+   [Parsing untrusted text](../../docs/contributing/style-guide.md#parsing-untrusted-text)).
+   Flag as **Must-fix** only with a demonstrable pathological input; a
+   theoretically-tighter pattern with no realistic attack string is a Nit.
+4. **Prototype-pollution guard.** Object construction from external data
    (config/JSON deserialization) rejects dangerous keys via `isDangerousKey`
    (`__proto__`, `constructor`, `prototype`) before assignment.
-4. **AWS credentials.** Validity is proven via STS `GetCallerIdentity` (actual
+5. **AWS credentials.** Validity is proven via STS `GetCallerIdentity` (actual
    resolution), not mere profile-file presence. SSO login uses the documented
    spawn; no credentials, tokens, or `aws sso` output are logged or persisted.
-5. **No secrets in source/tests/fixtures.** `NPM_TOKEN`/`GITHUB_TOKEN` and any
+6. **No secrets in source/tests/fixtures.** `NPM_TOKEN`/`GITHUB_TOKEN` and any
    real credentials live only in CI env — never committed, never in test
    fixtures.
 

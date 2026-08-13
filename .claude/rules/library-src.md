@@ -149,6 +149,18 @@ number>` already relies on (found A4b: `LOG_LEVEL_FLOORS`).
   nothing, the denylist failed all four and regressed three times. Where the
   input is genuinely free text, say "best effort" in the TSDoc and reclassify
   the artifact instead of promising a guarantee.
+- **Parse untrusted text (caller input, file/HTTP/SDK payloads, model output)
+  with a string-first approach** (`indexOf`/`slice`/`startsWith`/`codePointAt`)
+  where it suffices; when a regex is the right tool, keep it structurally
+  non-backtracking — no nested quantifier, no same-text alternation branches,
+  one non-overlapping character class per value — and never interpolate
+  untrusted text into a `RegExp` source without escaping it first
+  (`escapeRegExp` in `core/logging/redact.ts`). Reference precedent:
+  `redact.ts`'s `BARE_KEY_VALUE_PATTERN`/`buildEmbeddedSensitivePattern` (regex
+  form) and `internal/prompt/sanitize.ts`'s `escapeTerminalControls`
+  (quantifier-free string-first form), both backed by adversarial-padding
+  regression tests. Full rationale:
+  [style guide § Parsing untrusted text](../../docs/contributing/style-guide.md#parsing-untrusted-text).
 - **A TSDoc sentence asserting a security property is a claim to verify, not
   prose to write.** Probe the built output before writing it; under-claim by
   default. A false mechanism in a doc comment propagates into the next

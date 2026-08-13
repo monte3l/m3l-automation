@@ -167,6 +167,47 @@ function label(level: LogLevel): string {
 }
 ```
 
+### Parsing untrusted text
+
+Text the library did not itself produce — caller arguments, file contents,
+HTTP/SDK response bodies, model-generated strings — is untrusted input for
+parsing purposes, independent of whether it also carries secrets.
+
+- **Default to a linear string pass** — `indexOf`/`slice`/`startsWith`/
+  `codePointAt` — over a regex when a string-first approach suffices.
+  **[advisory]**
+- **When a regex is the right tool, keep it structurally non-backtracking**:
+  no nested quantifier (`(a+)+`), no quantified alternation whose branches can
+  match the same text, and bound each value class to a single non-overlapping
+  character class. **[advisory]** (no `eslint-plugin-sonarjs` regex rule is
+  enabled here — ADR-0034/ADR-0015 scoped this repo's Sonar adoption to
+  `cognitive-complexity` only — so this is reviewer-enforced, not linted.)
+- **Never interpolate untrusted text into a `RegExp` source string.** Escape it
+  first, or avoid building the pattern from untrusted text at all. **[advisory]**
+- **A "this cannot backtrack catastrophically" TSDoc claim is something to
+  test, not just assert.** Back it with an adversarial-padding regression
+  asserting bounded completion time. **[advisory]**
+
+`core/logging/redact.ts`'s `BARE_KEY_VALUE_PATTERN` and
+`buildEmbeddedSensitivePattern` are the reference: every value class is a
+single, non-nested character class, and `escapeRegExp` sanitizes any
+dynamically-assembled fragment before it enters a pattern source.
+`internal/prompt/sanitize.ts`'s `escapeTerminalControls` is the string-first
+alternative — a quantifier-free character class with the per-code-point
+arithmetic done in the replacer callback instead of the pattern. Both carry
+adversarial-padding regression tests (`tests/logging.test.ts`,
+`tests/credentials.test.ts`) asserting bounded completion against ~440k–640k
+adversarial characters.
+
+```typescript
+// Avoid: nested quantifier — catastrophic backtracking on adversarial input
+// (e.g. many "aaaa..." characters followed by a non-matching tail).
+const UNSAFE_PATTERN = /^(a+)+$/;
+
+// Prefer: a single, non-nested character class — linear in input length.
+const SAFE_PATTERN = /^[a-z0-9_-]+$/;
+```
+
 ### Public-API typing
 
 - **Model the surface precisely.** Use **branded types** for values carrying an

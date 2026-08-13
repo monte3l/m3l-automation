@@ -10,8 +10,8 @@ Jump straight to the section you need:
 
 - [Writing new code](./style-guide.md#part-1--writing-new-code) — strictness,
   ESM imports, exports, naming (incl. the function type-alias table), immutability,
-  `interface` vs `type`, control flow, public-API typing, the `M3LError` hierarchy,
-  TSDoc, the `exports` contract, complexity limits.
+  `interface` vs `type`, control flow, parsing untrusted text, public-API typing,
+  the `M3LError` hierarchy, TSDoc, the `exports` contract, complexity limits.
 - [Writing new tests](./style-guide.md#part-2--writing-new-tests) — Vitest,
   the unit-only policy, Arrange–Act–Assert, `expectTypeOf`, mocking, fixtures,
   parameterization, determinism, the per-file coverage gate.
