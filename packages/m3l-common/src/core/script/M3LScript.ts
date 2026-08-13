@@ -7,14 +7,17 @@
 
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 
 import {
   M3LConfig,
   M3LConfigSchema,
+  M3LJSONConfigProvider,
   M3LPresetConfigProvider,
+  M3LYAMLConfigProvider,
   type M3LConfigProvider,
 } from "../config/index.js";
+import { M3LError } from "../errors/index.js";
 import { M3LExecutionEnvironment } from "../environment/index.js";
 import type { M3LFileCopyReport } from "../files/index.js";
 import { M3LFileCopier, getDefaultSubdirForPathType } from "../files/index.js";
@@ -105,6 +108,40 @@ function extractAwsRequestId(context: unknown): string | undefined {
   return typeof candidate === "string" && candidate.length > 0
     ? candidate
     : undefined;
+}
+
+/** File extensions dispatched to `M3LYAMLConfigProvider` by {@link buildConfigFileProviders}. */
+const YAML_CONFIG_FILE_EXTENSIONS: ReadonlySet<string> = new Set([
+  ".yaml",
+  ".yml",
+]);
+
+/** The file extension dispatched to `M3LJSONConfigProvider` by {@link buildConfigFileProviders}. */
+const JSON_CONFIG_FILE_EXTENSION = ".json";
+
+/**
+ * Validates that `configFilePath` carries a recognized config-file
+ * extension (`.json`, `.yaml`, or `.yml`, case-insensitive) — called eagerly,
+ * for every entry of `options.configFiles`, from the {@link M3LScript}
+ * constructor, so an unrecognized extension (including an empty string, i.e.
+ * no extension) fails loud at construction time rather than surfacing later
+ * from {@link M3LScript.buildConfigFileProviders} during stage 3.
+ *
+ * @throws {@link M3LError} with code `ERR_INVALID_ARGUMENT` naming the
+ *   offending path when the extension is not recognized.
+ */
+function validateConfigFileExtension(configFilePath: string): void {
+  const extension = extname(configFilePath).toLowerCase();
+  if (
+    extension === JSON_CONFIG_FILE_EXTENSION ||
+    YAML_CONFIG_FILE_EXTENSIONS.has(extension)
+  ) {
+    return;
+  }
+  throw new M3LError(
+    `configFiles entry '${configFilePath}' has an unrecognized extension; expected .json, .yaml, or .yml`,
+    { code: "ERR_INVALID_ARGUMENT" },
+  );
 }
 
 /**
@@ -243,6 +280,15 @@ export class M3LScript {
    */
   private readonly preset: string | undefined;
 
+  /**
+   * The caller-supplied `options.configFiles` list, already validated (every
+   * entry's extension checked) by the constructor, or `undefined` when no
+   * config files were configured. `undefined` means stage 3 reads no config
+   * file and adds no `configFileProviders` entry — see
+   * {@link M3LScript.buildConfigFileProviders}.
+   */
+  private readonly configFiles: readonly string[] | undefined;
+
   /** The logger facade wired for this script instance. */
   readonly logger: M3LLogger;
 
@@ -319,6 +365,10 @@ export class M3LScript {
    *   `--log-level` is present with no value — see
    *   {@link resolveLogLevelFloor}. Never thrown when `options.logger` is
    *   supplied: a caller-supplied logger opts out of that resolution entirely.
+   * @throws {@link M3LError} with code `ERR_INVALID_ARGUMENT` when any entry
+   *   of `options.configFiles` has an unrecognized file extension (anything
+   *   other than `.json`, `.yaml`, or `.yml`, case-insensitive, including an
+   *   empty string) — see {@link M3LScript.buildConfigFileProviders}.
    */
   constructor(options: M3LScriptOptions) {
     this.scriptMetadata = options.metadata;
@@ -330,6 +380,12 @@ export class M3LScript {
 
     this.configuredCorrelationId = options.correlationId;
     this.preset = options.preset;
+    this.configFiles = options.configFiles;
+    if (this.configFiles !== undefined) {
+      for (const configFilePath of this.configFiles) {
+        validateConfigFileExtension(configFilePath);
+      }
+    }
     this.logger = options.logger ?? this.buildDefaultLogger();
     this.prompt = options.prompt ?? new M3LPrompt();
 
@@ -772,24 +828,59 @@ export class M3LScript {
   }
 
   /**
+   * Builds the level-2/3 `configFileProviders` entries for {@link loadConfig}
+   * when `options.configFiles` was configured; `undefined` when it was not
+   * (so `loadConfig` reads no config file and adds no provider). Split out of
+   * `loadConfig` to keep that method pure orchestration, mirroring the
+   * {@link buildPresetProviders} extraction above.
+   *
+   * Each already-extension-validated path (validated eagerly by the
+   * constructor, see {@link validateConfigFileExtension}) is dispatched by
+   * extension to `M3LJSONConfigProvider` (`.json`) or `M3LYAMLConfigProvider`
+   * (`.yaml`/`.yml`, case-insensitive). This is where the providers'
+   * constructors actually run — each does a synchronous eager
+   * `readFileSync` + parse and can throw `M3LConfigParseError` /
+   * `M3LUnsafeConfigKeyError`, which propagates unchanged out of stage 3, not
+   * out of `M3LScript`'s constructor.
+   */
+  private buildConfigFileProviders(): readonly M3LConfigProvider[] | undefined {
+    if (this.configFiles === undefined || this.configFiles.length === 0) {
+      return undefined;
+    }
+
+    return this.configFiles.map((configFilePath) =>
+      YAML_CONFIG_FILE_EXTENSIONS.has(extname(configFilePath).toLowerCase())
+        ? new M3LYAMLConfigProvider(configFilePath)
+        : new M3LJSONConfigProvider(configFilePath),
+    );
+  }
+
+  /**
    * Stage 3: loads configuration via {@link M3LScriptConfigLoader}.
    *
    * When `options.preset` was configured, the preset file is loaded (and
    * validated against the declared schema) via {@link M3LScriptPresetLoader}
    * first, and its values are wired in as a lowest-priority
-   * `presetProviders` entry. Any throw from the preset loader (e.g.
+   * `presetProviders` entry. When `options.configFiles` was configured, each
+   * entry is dispatched to a `M3LJSONConfigProvider`/`M3LYAMLConfigProvider`
+   * (see {@link buildConfigFileProviders}) and wired in at precedence levels
+   * 2-3 — below the command-line provider, above the environment-variable
+   * provider. Any throw from the preset loader (e.g.
    * `M3LPresetUnknownKeysError`, or an `M3LError` coded `"ERR_PRESET_LOAD"`
-   * for a missing/malformed file), or from the subsequent
+   * for a missing/malformed file), from a config-file provider (e.g.
+   * `M3LConfigParseError`/`M3LUnsafeConfigKeyError`), or from the subsequent
    * {@link M3LConfigSchema.validate} call (an `M3LConfigValidationError`
    * coded `"ERR_CONFIG_VALIDATION"` when a schema-level validator rejects
    * the resolved store), propagates unchanged — this method does not
-   * catch/swallow either.
+   * catch/swallow any of them.
    */
   private async loadConfig(): Promise<void> {
     const presetProviders = this.buildPresetProviders();
+    const configFileProviders = this.buildConfigFileProviders();
 
     this.config = await this.configLoader.load({
       params: this.schema?.parameters ?? [],
+      ...(configFileProviders !== undefined ? { configFileProviders } : {}),
       ...(presetProviders !== undefined ? { presetProviders } : {}),
     });
     this.schema?.validate(this.config);

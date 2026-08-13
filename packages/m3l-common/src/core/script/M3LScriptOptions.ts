@@ -253,6 +253,30 @@ export interface M3LScriptOptions {
    * `""` — to mean "no preset."
    */
   readonly preset?: string;
+  /**
+   * An optional ordered list of JSON/YAML config-file paths, inserted into
+   * configuration resolution at precedence levels 2-3 — below the
+   * command-line provider, above the environment-variable provider. Earlier
+   * entries take priority over later ones for the same key.
+   *
+   * Each path is dispatched to a provider by file extension: `.json` loads
+   * via `M3LJSONConfigProvider`; `.yaml`/`.yml` (case-insensitive) via
+   * `M3LYAMLConfigProvider`. Every entry's extension is validated eagerly, at
+   * `M3LScript` construction time — an unrecognized extension (including an
+   * empty string, i.e. no extension) throws `M3LError` coded
+   * `"ERR_INVALID_ARGUMENT"` naming the offending path. This differs from
+   * `preset` (which falls back to JSON for any non-YAML extension, for
+   * back-compat) since `configFiles` is new API with no such obligation.
+   *
+   * A missing file at any listed path is tolerated — both providers treat
+   * `ENOENT` as an empty file, not an error — only a malformed *existing*
+   * file throws, and only once configuration actually loads (stage 3), not
+   * at construction time.
+   *
+   * When omitted, no file is read and no provider is added — no behavior
+   * change for scripts that do not opt in.
+   */
+  readonly configFiles?: readonly string[];
 }
 
 /**
