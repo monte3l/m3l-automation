@@ -581,7 +581,8 @@ export function runProjectSync({
       return { ok: false };
     }
 
-    const items = actionableItems(roadmap, implementation);
+    const { items, warnings } = actionableItems(roadmap, implementation);
+    for (const message of warnings) reporter.warn(message);
     const itemByKey = new Map(items.map((item) => [item.key, item]));
 
     const hubIssues = loadHubIssues(runGhFn, reporter);

@@ -124,6 +124,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:cadence",
   },
   {
+    ciStepName: "Check tracker coverage",
+    id: "check-tracker-coverage",
+    cmd: () => "pnpm check:tracker-coverage",
+  },
+  {
     ciStepName: "Check implementation count",
     id: "check-impl-counts",
     cmd: () => "pnpm check:impl-counts",
@@ -218,6 +223,13 @@ export const VERIFY_STEPS = [
     ciStepName: "Unused files / exports / dependencies (knip)",
     id: "knip",
     cmd: () => "pnpm knip",
+  },
+  {
+    ciStepName: "Check hub drift (push-only)",
+    id: "check-hub-drift",
+    cmd: () => "pnpm check:hub-drift",
+    skipReason:
+      "needs a `gh`-authenticated session and live GitHub state; ci.yml also runs it push-only, not on PRs",
   },
 ];
 
