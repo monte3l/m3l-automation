@@ -11,11 +11,10 @@ import {
   root,
   deriveCounts,
   locateSite,
-  buildImplementedListBlock,
+  locateBlock,
   TOTAL_COUNT_SITES,
   IMPLEMENTED_COUNT_SITES,
-  IMPLEMENTED_LIST_BEGIN_MARKER,
-  IMPLEMENTED_LIST_END_MARKER,
+  GENERATED_LIST_SITES,
 } from "./lib/count-sites.mjs";
 import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 
@@ -62,36 +61,36 @@ for (const [file, sites] of byFile) {
   }
 }
 
-// The generated implemented-list block in docs/implementation-status.md.
-const statusPath = join(root, "docs/implementation-status.md");
-let statusContent;
-try {
-  statusContent = readFileSync(statusPath, "utf8");
-} catch {
-  statusContent = null;
-}
-if (statusContent !== null) {
-  const start = statusContent.indexOf(IMPLEMENTED_LIST_BEGIN_MARKER);
-  const end = statusContent.indexOf(IMPLEMENTED_LIST_END_MARKER);
-  const freshBlock = buildImplementedListBlock(counts);
-  if (start !== -1 && end !== -1) {
-    const nextContent =
-      statusContent.slice(0, start) +
-      freshBlock +
-      statusContent.slice(end + IMPLEMENTED_LIST_END_MARKER.length);
-    if (nextContent !== statusContent) {
-      writeFileSync(statusPath, nextContent, "utf8");
-      touchedFiles++;
-      reporter.change(
-        "updated",
-        "docs/implementation-status.md",
-        "(implemented-list block)",
-      );
-    }
-  } else {
+// Every generated-block site (the implementation-status.md implemented-list
+// sentence, plus the three README-family submodule-name lists). Each site's
+// own file is re-read fresh (independent of the numeric splice pass above),
+// so a file appearing in both passes (e.g. README.md) never has its offsets
+// invalidated by the other pass's edit.
+for (const site of GENERATED_LIST_SITES) {
+  const filePath = join(root, site.file);
+  let content;
+  try {
+    content = readFileSync(filePath, "utf8");
+  } catch {
+    reporter.error(`gen:counts — cannot read ${site.file}, skipping.`);
+    continue;
+  }
+
+  const loc = locateBlock(content, site.marker);
+  if (!loc) {
     reporter.error(
-      "gen:counts — docs/implementation-status.md is missing the GENERATED IMPLEMENTED-LIST markers; add them once, then re-run.",
+      `gen:counts — ${site.file} is missing the GENERATED ${site.marker} markers; add them once, then re-run.`,
     );
+    continue;
+  }
+
+  const freshBlock = site.render(counts);
+  const nextContent =
+    content.slice(0, loc.start) + freshBlock + content.slice(loc.end);
+  if (nextContent !== content) {
+    writeFileSync(filePath, nextContent, "utf8");
+    touchedFiles++;
+    reporter.change("updated", site.file, `(${site.label})`);
   }
 }
 

@@ -18,7 +18,8 @@ system with no single unified view:
 - [`docs/plans/IMPLEMENTATION.md`](../plans/IMPLEMENTATION.md) — detailed
   per-item backlog (F/W/D/T series)
 - [`docs/implementation-status.md`](../implementation-status.md) —
-  count-enforced "done" ledger (26/26 submodules)
+  count-enforced "done" ledger (26/26 submodules at the time of this
+  decision; see the file itself for the current count)
 - [`docs/logs/`](../logs/README.md) — 36 immutable per-unit work logs
   (narrative history)
 - [`docs/plans/archive/`](../plans/archive/) — 31 completed dated plans
