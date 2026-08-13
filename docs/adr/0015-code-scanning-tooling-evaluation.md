@@ -10,6 +10,27 @@
 > published, so SBOM-at-release and npm provenance no longer apply. Everything
 > else in this ADR (CodeQL, Scorecard, SHA-pinned Actions, Dependabot) stands.
 >
+> **Update (2026-08-13).** Two stale claims survived below the 2026-07-06
+> Update, unswept, and a 2026-08 tracker-reconciliation audit found them:
+>
+> - The `## Decision` bullet "Attest a CycloneDX SBOM at release, alongside
+>   the existing npm provenance" and the `## Consequences` line "releases
+>   carry both provenance and an SBOM" (below) still read as live
+>   obligations even though the 2026-07-06 Update above already made them
+>   moot — the 2026-07-06 pass corrected this file's top summary but never
+>   swept the body prose it was correcting. Treat both as historical record
+>   of what was decided pre-ADR-0020 only; no SBOM or provenance step exists
+>   or is planned, since there is no release/publish path to attest at
+>   (ADR-0020).
+> - The `## Context and problem statement` line "an 80% per-file coverage
+>   gate" is the same stale claim `CLAUDE.md`/`.claude/rules/tests.md`
+>   corrected in PR #325 (2026-08-12) — this copy was not swept. The
+>   enforced gate is per-file thresholds (lines 90 / functions 83 /
+>   branches 80 / statements 89, `perFile: true`), not a flat 80%.
+>
+> Both stale bullets are left in place below (this ADR's Decision/Context are
+> a historical record, not a living spec) — this Update is the correction.
+>
 > **Update (2026-08-06).** GitHub's CodeQL default setup began reporting a
 > single consolidated `CodeQL` check on Dependabot-actor PRs instead of the
 > per-language `Analyze (javascript-typescript)` / `Analyze (actions)` checks
