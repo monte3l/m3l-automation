@@ -13,6 +13,7 @@ import {
   M3LConfig,
   M3LConfigSchema,
   M3LJSONConfigProvider,
+  M3LLambdaEventConfigProvider,
   M3LPresetConfigProvider,
   M3LYAMLConfigProvider,
   type M3LConfigProvider,
@@ -229,6 +230,21 @@ export class M3LScript {
    * always reflects the CURRENT run rather than leaking a prior one's value.
    */
   private currentDryRun = false;
+
+  /**
+   * The raw Lambda event payload for the invocation currently being served —
+   * mirrored into the level-5 config provider chain by
+   * {@link M3LScript.buildEventProviders}. Reset via
+   * {@link M3LScript.resetForInvocation} at the top of every
+   * {@link M3LScript.createLambdaHandler} invocation AND at the top of every
+   * {@link M3LScript.run} call (which always resets it to `undefined`, since
+   * `run` never receives an event), so it always reflects the CURRENT
+   * invocation and never leaks a prior Lambda invocation's event into a
+   * later `run()`/handler call. `undefined` means "no event this
+   * invocation" — either the CLI `run()` path, or a Lambda invocation that
+   * genuinely received `undefined` as its event.
+   */
+  private currentLambdaEvent: unknown = undefined;
 
   /**
    * The current run's/invocation's start timestamp — mirrored onto
@@ -652,6 +668,11 @@ export class M3LScript {
     mainFn: () => void | Promise<void>,
     options?: M3LScriptRunOptions,
   ): Promise<void> {
+    // Mirrors the Lambda-handler path's reset call, so a script instance
+    // that previously served a Lambda invocation resolves no leftover event
+    // values here — `run` never supplies an event, so this always clears
+    // `currentLambdaEvent` to `undefined`.
+    this.resetForInvocation();
     await this.runWithErrorHandling(
       mainFn,
       undefined,
@@ -694,6 +715,15 @@ export class M3LScript {
    * clients it lazily constructs) is intentionally left untouched across
    * invocations so warm starts keep reusing existing connections.
    *
+   * Unlike {@link M3LScript.run}, the received `event` is wired into stage 3
+   * (config load) as a level-5 provider (see
+   * {@link M3LScript.buildEventProviders}): a top-level event key resolves a
+   * declared config parameter, below the command-line/config-file/environment
+   * tiers but above a preset. `run()` never supplies an event, so config
+   * resolution never reaches level 5 under the CLI path — a behavioral
+   * asymmetry between the two entry points worth revisiting under a future
+   * ADR-0018 update.
+   *
    * @typeParam TEvent - The Lambda event payload type.
    * @typeParam TResult - The value `mainFn` resolves to and the handler
    *   returns.
@@ -724,7 +754,7 @@ export class M3LScript {
     mainFn: (event: TEvent, context: TContext) => Promise<TResult>,
   ): (event: TEvent, context: TContext) => Promise<TResult> {
     return async (event: TEvent, context: TContext): Promise<TResult> => {
-      this.resetForInvocation();
+      this.resetForInvocation(event);
       let result: TResult | undefined;
       // Per-invocation correlation id resolution
       // (docs/reference/core/script.md#correlation-ids): an explicit
@@ -743,11 +773,25 @@ export class M3LScript {
     };
   }
 
-  /** Resets per-invocation state ahead of a Lambda handler call. */
-  private resetForInvocation(): void {
+  /**
+   * Resets per-invocation state — the single assignment site for
+   * {@link M3LScript.currentLambdaEvent}, so the "reset, then assign the new
+   * event" ordering is structurally guaranteed rather than relying on two
+   * call sites staying in sync. Called from the very top of
+   * {@link M3LScript.createLambdaHandler}'s returned closure (passing the
+   * just-received `event`) and from the very top of {@link M3LScript.run}
+   * (with no argument, clearing `currentLambdaEvent` to `undefined` since
+   * `run` never supplies an event).
+   *
+   * @param event - The just-received Lambda event, when called from the
+   *   Lambda-handler path; omitted (clearing `currentLambdaEvent`) when
+   *   called from `run()`.
+   */
+  private resetForInvocation(event?: unknown): void {
     this.initialized = false;
     this.configLoaded = false;
     this.config = new M3LConfig();
+    this.currentLambdaEvent = event;
   }
 
   /**
@@ -856,7 +900,36 @@ export class M3LScript {
   }
 
   /**
+   * Builds the level-5 `extraProviders` entry for {@link loadConfig} when the
+   * current run/invocation carries a Lambda event (see
+   * {@link M3LScript.currentLambdaEvent}); `undefined` when it does not — the
+   * CLI `run()` path (which always clears `currentLambdaEvent`), or a Lambda
+   * invocation that genuinely received `undefined` as its event — so
+   * `loadConfig` adds no event provider. Split out of `loadConfig` to keep
+   * that method pure orchestration, mirroring the {@link buildPresetProviders}
+   * / {@link buildConfigFileProviders} extractions above.
+   *
+   * `M3LLambdaEventConfigProvider`'s own constructor screens every top-level
+   * event key against the prototype-pollution guard; a dangerous key's
+   * `M3LUnsafeConfigKeyError` propagates unchanged out of stage 3, not out of
+   * this method.
+   */
+  private buildEventProviders(): readonly M3LConfigProvider[] | undefined {
+    if (this.currentLambdaEvent === undefined) return undefined;
+    return [new M3LLambdaEventConfigProvider(this.currentLambdaEvent)];
+  }
+
+  /**
    * Stage 3: loads configuration via {@link M3LScriptConfigLoader}.
+   *
+   * Precedence, highest first: command-line arguments (level 1), config-file
+   * providers (levels 2-3, when `options.configFiles` was configured — see
+   * {@link buildConfigFileProviders}), environment variables (level 4), the
+   * current Lambda event (level 5, when {@link M3LScript.createLambdaHandler}
+   * is the entry point — see {@link buildEventProviders}), a loaded preset
+   * (level 6, when `options.preset` was configured — see
+   * {@link buildPresetProviders}), a parameter's `defaultValue` (level 7),
+   * then its `asyncFallback` (level 8).
    *
    * When `options.preset` was configured, the preset file is loaded (and
    * validated against the declared schema) via {@link M3LScriptPresetLoader}
@@ -867,20 +940,24 @@ export class M3LScript {
    * 2-3 — below the command-line provider, above the environment-variable
    * provider. Any throw from the preset loader (e.g.
    * `M3LPresetUnknownKeysError`, or an `M3LError` coded `"ERR_PRESET_LOAD"`
-   * for a missing/malformed file), from a config-file provider (e.g.
-   * `M3LConfigParseError`/`M3LUnsafeConfigKeyError`), or from the subsequent
-   * {@link M3LConfigSchema.validate} call (an `M3LConfigValidationError`
-   * coded `"ERR_CONFIG_VALIDATION"` when a schema-level validator rejects
-   * the resolved store), propagates unchanged — this method does not
-   * catch/swallow any of them.
+   * for a missing/malformed file), from a config-file provider or the event
+   * provider (e.g. `M3LConfigParseError`/`M3LUnsafeConfigKeyError`), or from
+   * the subsequent {@link M3LConfigSchema.validate} call (an
+   * `M3LConfigValidationError` coded `"ERR_CONFIG_VALIDATION"` when a
+   * schema-level validator rejects the resolved store), propagates
+   * unchanged — this method does not catch/swallow any of them.
    */
   private async loadConfig(): Promise<void> {
     const presetProviders = this.buildPresetProviders();
     const configFileProviders = this.buildConfigFileProviders();
+    const eventProviders = this.buildEventProviders();
 
     this.config = await this.configLoader.load({
       params: this.schema?.parameters ?? [],
       ...(configFileProviders !== undefined ? { configFileProviders } : {}),
+      ...(eventProviders !== undefined
+        ? { extraProviders: eventProviders }
+        : {}),
       ...(presetProviders !== undefined ? { presetProviders } : {}),
     });
     this.schema?.validate(this.config);

@@ -1560,6 +1560,195 @@ describe("M3LScript.createLambdaHandler()", () => {
 });
 
 // =============================================================================
+// M3LScript.createLambdaHandler — event → config (config-precedence
+// reconciliation, #341, commit 3 of 3)
+//
+// Contract: docs/reference/core/config.md's 8-level provider chain wires the
+// Lambda event payload in at precedence level 5, via
+// `M3LLambdaEventConfigProvider` (source label "lambda-event") — below CLI
+// (1)/configFileProviders (2-3)/env (4), above presetProviders (6)/
+// defaultValue (7)/asyncFallback (8). The provider never throws on a
+// non-object event (resolves no values) but CAN throw
+// `M3LUnsafeConfigKeyError` synchronously, during stage 3 (config-load), on a
+// dangerous top-level event key (e.g. `__proto__`). The event must also be
+// scoped per-invocation: a second `createLambdaHandler` invocation on the
+// same instance must not see an earlier invocation's event, and a later
+// `run()` call on an instance that previously served a Lambda invocation must
+// not see that invocation's event either.
+// =============================================================================
+describe("M3LScript.createLambdaHandler — event → config (#341)", () => {
+  const originalArgv = process.argv;
+
+  /** Replaces `process.argv.slice(2)` (what `M3LCommandLineConfigProvider` reads by default) with `args`. */
+  function stubArgv(...args: string[]): void {
+    process.argv = [
+      originalArgv[0] ?? "node",
+      originalArgv[1] ?? "script",
+      ...args,
+    ];
+  }
+
+  beforeEach(() => {
+    stubAwsLambdaEnvironment();
+    stubArgv();
+  });
+
+  afterEach(() => {
+    process.argv = originalArgv;
+  });
+
+  test("a top-level event key resolves a declared parameter with source label 'lambda-event'", async () => {
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+    const script = new M3LScript({
+      metadata,
+      config: { params: [region] },
+    });
+    const handler = script.createLambdaHandler(() => Promise.resolve());
+
+    await handler({ region: "event-region" }, {});
+
+    const config = await script.getConfiguration();
+    expect(config.get("region")).toBe("event-region");
+    expect(config.sourceOf("region")).toBe("lambda-event");
+  });
+
+  test("environment beats the event (level 4 > level 5)", async () => {
+    vi.stubEnv("REGION", "env-region");
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+    const script = new M3LScript({
+      metadata,
+      config: { params: [region] },
+    });
+    const handler = script.createLambdaHandler(() => Promise.resolve());
+
+    await handler({ region: "event-region" }, {});
+
+    const config = await script.getConfiguration();
+    expect(config.get("region")).toBe("env-region");
+    expect(config.sourceOf("region")).toBe("environment-variable");
+  });
+
+  test("the event beats a preset (level 5 > level 6)", async () => {
+    vi.spyOn(fs, "readFileSync").mockReturnValue(
+      JSON.stringify({ region: "preset-region" }),
+    );
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+    const script = new M3LScript({
+      metadata,
+      config: { params: [region] },
+      preset: "/fixtures/preset.json",
+    });
+    const handler = script.createLambdaHandler(() => Promise.resolve());
+
+    await handler({ region: "event-region" }, {});
+
+    const config = await script.getConfiguration();
+    expect(config.get("region")).toBe("event-region");
+    expect(config.sourceOf("region")).toBe("lambda-event");
+  });
+
+  test.each<[string, unknown]>([
+    ["a non-object string", "not-an-object"],
+    ["null", null],
+    ["a number", 42],
+  ])(
+    "a non-object event (%s) yields no values — defaultValue still resolves",
+    async (_label, event) => {
+      const region = new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+        defaultValue: "fallback-region",
+      });
+      const script = new M3LScript({
+        metadata,
+        config: { params: [region] },
+      });
+      const handler = script.createLambdaHandler(() => Promise.resolve());
+
+      await handler(event, {});
+
+      const config = await script.getConfiguration();
+      expect(config.get("region")).toBe("fallback-region");
+      expect(config.sourceOf("region")).toBe("default");
+    },
+  );
+
+  test("a prototype-pollution key in the event fails stage 3 with M3LUnsafeConfigKeyError", async () => {
+    const dangerousEvent: unknown = JSON.parse(
+      '{"__proto__": {"polluted": true}}',
+    );
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+    const script = new M3LScript({
+      metadata,
+      config: { params: [region] },
+    });
+    const handler = script.createLambdaHandler(() => Promise.resolve());
+
+    let thrown: unknown;
+    try {
+      await handler(dangerousEvent, {});
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LUnsafeConfigKeyError);
+    expect(script.getLastFailureStage()).toBe("config-load");
+  });
+
+  test("REGRESSION (leak lock A): a second Lambda invocation does not see the first invocation's event", async () => {
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+      defaultValue: "fallback-region",
+    });
+    const script = new M3LScript({
+      metadata,
+      config: { params: [region] },
+    });
+    const handler = script.createLambdaHandler(() => Promise.resolve());
+
+    await handler({ region: "first-region" }, {});
+    await handler({}, {});
+
+    const config = await script.getConfiguration();
+    expect(config.get("region")).not.toBe("first-region");
+    expect(config.get("region")).toBe("fallback-region");
+  });
+
+  test("REGRESSION (leak lock B): a run() call following a Lambda invocation resolves no event values", async () => {
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+      defaultValue: "fallback-region",
+    });
+    const script = new M3LScript({
+      metadata,
+      config: { params: [region] },
+    });
+    const handler = script.createLambdaHandler(() => Promise.resolve());
+
+    await handler({ region: "leaked-region" }, {});
+    await script.run(() => {});
+
+    const config = await script.getConfiguration();
+    expect(config.get("region")).not.toBe("leaked-region");
+    expect(config.get("region")).toBe("fallback-region");
+  });
+});
+
+// =============================================================================
 // Signal handling — SIGTERM/SIGINT/SIGQUIT
 // =============================================================================
 describe("M3LScript — signal handling", () => {
