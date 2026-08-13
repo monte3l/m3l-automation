@@ -35,10 +35,10 @@ Exported from `@m3l-automation/m3l-common/core` (the `config` sub-module):
 `M3LConfigReader` walks the provided array in declared priority order, returning the first value found. The standard ordering for a parameter is:
 
 1. CLI args (`M3LCommandLineConfigProvider`) — source label `"cli"`
-2. JSON config file (`M3LJSONConfigProvider`) — source label `"json-file"`
-3. YAML config file (`M3LYAMLConfigProvider`) — source label `"yaml-file"`
+2. JSON config file (`M3LJSONConfigProvider`) — source label `"json-file"` — under `M3LScript`, wired via [`options.configFiles`](./script.md#config-files-optionsconfigfiles)
+3. YAML config file (`M3LYAMLConfigProvider`) — source label `"yaml-file"` — same seam as level 2
 4. Environment variables and `.env` (`M3LEnvironmentConfigProvider`) — source label `"environment-variable"`
-5. Lambda event payload (`M3LLambdaEventConfigProvider`, Lambda only) — source label `"lambda-event"`
+5. Lambda event payload (`M3LLambdaEventConfigProvider`, Lambda only) — source label `"lambda-event"` — under `M3LScript`, wired automatically by [`createLambdaHandler()`](./script.md#configuration-from-the-lambda-event); no caller wiring required
 6. Preset file (`M3LPresetConfigProvider`) — source label `"preset"`
 
 When no provider supplies a value, resolution continues to the static default, then the async fallback (see below).

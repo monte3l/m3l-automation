@@ -79,7 +79,9 @@ Under Lambda, configuration is resolved from the same provider chain as a CLI
 script, with one addition that fits the platform: the **Lambda event payload**.
 The `M3LLambdaEventConfigProvider` exposes values carried on the incoming event
 as configuration, slotted into the provider priority order just below
-environment variables and above presets:
+environment variables and above presets. This wiring is automatic —
+`createLambdaHandler()` feeds the received event into stage 3 on every
+invocation; there is nothing to configure at the call site.
 
 ```text
 1. CLI args
