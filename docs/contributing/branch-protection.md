@@ -116,10 +116,13 @@ Optionally, to add a human approval on top of the automated review:
 
 Alongside classic branch protection above, `main` is also covered by a GitHub
 **repository ruleset** named `main-dual-layer-protection`
-(`enforcement: active`, `bypass_actors: []`), created 2026-07-22 — see the
-2026-07-22 update in
-[ADR-0016](../adr/0016-signed-commits-and-decision-gate.md) for why. It
-enforces, independently of the classic rule above:
+(`enforcement: active`, `bypass_actors: []`). The policy dates from
+2026-07-22 — see the 2026-07-22 update in
+[ADR-0016](../adr/0016-signed-commits-and-decision-gate.md) for why — but the
+live ruleset object was found recreated on 2026-08-10 (its `id` and
+`created_at` changed with no corresponding record of why); identify it by
+name, not by numeric id, since the id is not stable across a
+delete-and-recreate. It enforces, independently of the classic rule above:
 
 - `deletion` — blocks deleting `main`.
 - `non_fast_forward` — blocks force-pushes.
@@ -128,6 +131,14 @@ enforces, independently of the classic rule above:
   the scoping decision above).
 - `required_status_checks` — the same four contexts as classic protection:
   `verify`, `review`, `CodeQL`, `Dependency Review`.
+
+Confirm the live state of both layers directly rather than trusting this
+page's prose — same rationale as the CodeQL check-run-name command above:
+
+```bash
+gh api repos/monte3l/m3l-automation/rulesets --jq '.[] | "\(.id) \(.name) \(.enforcement)"'
+gh api repos/monte3l/m3l-automation/branches/main/protection --jq '.required_status_checks.contexts'
+```
 
 **This is intentionally overlapping, not a replacement.** GitHub enforces
 whichever of classic protection and an applicable ruleset is more restrictive
