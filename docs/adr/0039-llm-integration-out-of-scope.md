@@ -93,6 +93,11 @@ this ADR's LLM decision — tracked as a documentation follow-up, not code.
 - Related: [ADR-0021 (post-1.0 deepen-first strategy — the broadening
   intake gate this decision applies)](./0021-post-1.0-deepen-first-strategy.md),
   [ADR-0037 (deepen-first re-read — carries the intake gate forward)](./0037-deepen-first-re-read-against-consumer-pull.md),
-  [ADR-0020 (drop release automation, internal-only posture)](./0020-drop-release-automation.md),
-  `packages/m3l-common/src/internal/prompt/sanitize.ts` (existing
-  ReDoS-conscious precedent, not currently named as a rule).
+  [ADR-0020 (drop release automation, internal-only posture)](./0020-drop-release-automation.md).
+- The ReDoS-conscious string-only-parsing practice this ADR flagged as a
+  documentation follow-up is now named in
+  [style guide § Parsing untrusted text](../contributing/style-guide.md#parsing-untrusted-text),
+  citing `core/logging/redact.ts`'s bounded patterns and
+  `internal/prompt/sanitize.ts`'s `escapeTerminalControls` as precedent (the
+  latter uses a quantifier-free regex character class, not — as this ADR's
+  original wording said — "no regex"). Closes issue #336.
