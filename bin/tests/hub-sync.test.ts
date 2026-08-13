@@ -182,6 +182,12 @@ const IMPLEMENTATION_WAVES_FIXTURE = `# Implementation backlog — m3l-automatio
 | ---------------------- | -------- | ------- | ------------------------------- |
 | ReDoS hardening pass    | P0       | Blocked | close remaining regex risk       |
 
+## m3l-cli build-out — ADR-0042 activation (issue #333)
+
+| Item                             | Priority | Status | Change                     |
+| ---------------------------------- | -------- | ------ | ------------------------------- |
+| 8b — scaffold + discovery          | P2       | To Do  | packages/m3l-cli skeleton        |
+
 ## AWS getter reality
 
 | Provider getter | AWS service | Status | Wrapper submodule | Consuming script(s) | ADR / precedent |
@@ -548,6 +554,23 @@ describe("actionableItems", () => {
     expect(wave?.status).toBe("blocked");
     expect(wave?.sourceAnchor).toBe(
       "#post-comparison-hardening-wave--adr-0040004100420043",
+    );
+    expect(warnings).toEqual([]);
+  });
+
+  test("extracts m3lCliBuildOut rows with key impl:<slug(Item)>, priority/status from their own columns", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(IMPLEMENTATION_WAVES_FIXTURE);
+    const { items, warnings } = actionableItems(roadmap, implementation);
+
+    const wave = items.find(
+      (item) => item.key === `impl:${slug("8b — scaffold + discovery")}`,
+    );
+    expect(wave).toBeDefined();
+    expect(wave?.priority).toBe("p2");
+    expect(wave?.status).toBe("todo");
+    expect(wave?.sourceAnchor).toBe(
+      "#m3l-cli-build-out--adr-0042-activation-issue-333",
     );
     expect(warnings).toEqual([]);
   });

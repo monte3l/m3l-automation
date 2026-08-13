@@ -143,6 +143,38 @@ implementation resumes):
   this ADR records a design decision and a deferred build, not an
   implementation.
 
+## Update 2026-08-13 — revisit trigger fired; build activated
+
+The first revisit trigger has fired: the maintainer explicitly requested the
+build via issue [#333](https://github.com/monte3l/m3l-automation/issues/333)
+(a user "asks to browse/inspect the 13 scripts' declared parameters" — and,
+beyond that, requested the full phased build-out). The deferral is therefore
+lifted; implementation proceeds on `feat/m3l-cli` following the 8b→8g phasing
+above, full scope confirmed (8b–8g including the `M3LConfigParameter.secret`
+library prerequisite before 8f). The Status stays Accepted — this update
+activates the recorded design rather than replacing it.
+
+A pre-build re-verification (2026-08-13) confirmed every design assumption
+still holds — 13 ADR-0022-compliant scripts each exporting `configParameters`,
+the seam still unconsumed by `bin/` tooling, every named library export
+public, no reserved-name collision, no superseding ADR — with **one
+correction to the zero-dependency table**:
+
+- **Native type-stripping is not universally sufficient for
+  `scripts/*/src/config.ts`.** The table's verification used a single file
+  with no relative imports. In the real fleet,
+  `scripts/json-etl/src/config.ts` imports `./lib/field-spec.js` — a relative
+  `.js` specifier whose target exists only as `src/lib/field-spec.ts`, and
+  Node's type-stripping does not rewrite `.js` → `.ts`, so a source import of
+  that config fails with `ERR_MODULE_NOT_FOUND`. The discovery loader is
+  therefore **dist-first**: prefer `scripts/<name>/dist/config.js` (tsc
+  output, always resolvable), falling back to type-stripped `src/config.ts`
+  only when `dist` is absent or stale, and failing with a named `M3LError`
+  (never a raw stack) otherwise. The mtime cache keys on both `src/config.ts`
+  and `dist/config.js`; `doctor` reports unbuilt scripts. The risk-register
+  row on type-directed emit (and its ESLint zone) stays — it protects the
+  fallback path.
+
 ## Links
 
 - Related: [ADR-0021 (post-1.0 deepen-first strategy — the broadening intake

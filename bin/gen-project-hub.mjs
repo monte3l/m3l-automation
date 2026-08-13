@@ -204,6 +204,7 @@ function runGenerator(reporter) {
     backlog.adr0035Rollout,
     backlog.capabilityDeepeningWave,
     backlog.postComparisonHardeningWave,
+    backlog.m3lCliBuildOut,
     backlog.getterReality,
     backlog.gated,
     ledger.barrels,
