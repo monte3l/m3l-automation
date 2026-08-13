@@ -226,6 +226,13 @@ mechanism: the log narrates it once, the tracker makes it actionable and
 prioritized so it isn't lost in prose. (Cross-file a genuine external issue with
 `spawn_task` for the highest-priority items, as with F8.)
 
+**After filing a friction item or flipping a status cell, run `pnpm sync:hub`**
+(dry-run, then `-- --apply`, maintainer-local) so the GitHub Issues/Milestones/
+Project board projection doesn't go stale — this is the exact cadence gap a
+2026-08 audit found: two full waves of tracker updates landed with zero GitHub
+representation because nobody ran the sync. `pnpm check:hub-drift` alarms on
+`main` if this is skipped, but running the sync is still the actual fix.
+
 ## Step 5 — Report
 
 After writing, print:
