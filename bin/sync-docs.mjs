@@ -14,12 +14,12 @@
 // order, forwards the optional --affected scoping to the restamp step only,
 // and folds every step's structured payload into a single composite report —
 // so an agent (or a human) gets one go/no-go verdict instead of stitching
-// fourteen command outputs together by hand.
+// thirteen command outputs together by hand.
 //
 // Usage:
 //   node bin/sync-docs.mjs                       # human-readable summary
 //   node bin/sync-docs.mjs --json                 # one JSON line on stdout
-//   node bin/sync-docs.mjs --affected <path>      # scope step 2's restamp
+//   node bin/sync-docs.mjs --affected <path>      # scope step 1's restamp
 //
 // Exit contract: 0 when every step completes cleanly; 1 the moment a step's
 // child process exits non-zero (the composite report is still emitted before
@@ -57,7 +57,7 @@ if (affectedIdx !== -1) {
   const value = argv[affectedIdx + 1];
   if (value === undefined) {
     // A dangling `--affected` with nothing after it previously degraded
-    // silently to an unscoped restamp (step 2 would restamp every sidecar
+    // silently to an unscoped restamp (step 1 would restamp every sidecar
     // instead of the one the caller meant to scope) — that is exactly the
     // kind of silent misconfiguration this orchestrator exists to prevent.
     reporter.error(
@@ -220,14 +220,14 @@ function runJsonStep(name, scriptRelPath, args = [], opts = {}) {
 }
 
 /**
- * Step 6: every symbol surfaced through a namespace barrel must be named in
+ * Step 5: every symbol surfaced through a namespace barrel must be named in
  * some provenance sidecar's `sections[].sources[]` — not merely documented
  * *somewhere* on the reference page (the doc-exports check's looser bar,
  * which also accepts a plain-text mention in the markdown prose). gen:index
  * derives the whole reference index from `sources[]` alone, never the barrel
  * or the page prose, so a symbol that is barrel-wired and prose-documented
  * but absent from `sources[]` makes gen:index silently produce no diff — the
- * skill's step-8 trap. Runs in-process (not a spawned bin script), reusing
+ * skill's step-7 trap. Runs in-process (not a spawned bin script), reusing
  * the same enumeration bin/lib/reference-index.mjs already shares with the
  * doc-exports check.
  *
@@ -367,7 +367,7 @@ function checkBarrelSidecarSources() {
 }
 
 /**
- * Step 12: `prettier --write` on exactly the files step 11
+ * Step 11: `prettier --write` on exactly the files step 10
  * (gen-reference-index) reported in `updated[]`. gen-reference-index already
  * writes its JSON output prettier-shaped (see its own header comment), but
  * the README.md catalog-block surgery is plain string replacement, so this
@@ -402,7 +402,7 @@ function formatGeneratedFiles(files) {
 }
 
 /**
- * Step 14: markdown lint. Unlike every other step, `pnpm lint:md` has no
+ * Step 13: markdown lint. Unlike every other step, `pnpm lint:md` has no
  * --json mode (rumdl is a third-party CLI) — success/failure comes from the
  * exit code, and on failure only the tail of its output (rather than the full
  * transcript, which can be long) goes into the composite error.
@@ -431,14 +431,18 @@ function lintMarkdown() {
 }
 
 /**
- * Run the fixed 14-step sequence, stopping the moment a step's `ok` is false.
+ * Run the fixed 13-step sequence, stopping the moment a step's `ok` is false.
  */
 function runSequence() {
-  // 1 — pre-flight
-  if (!runJsonStep("Provenance pre-flight", "bin/check-doc-provenance.mjs").ok)
-    return;
-
-  // 2 — restamp (optionally scoped to --affected)
+  // 1 — restamp FIRST (optionally scoped to --affected). Deliberately no
+  // separate pre-flight verify ahead of this: --update runs the identical
+  // structural validation and exits 1 on any hard error BEFORE writing a
+  // single sidecar (bin/check-doc-provenance.mjs:174-197), so a pre-flight
+  // added nothing but a hard-fail on the very staleness this step exists to
+  // clear — which aborted the composite in three separate sessions
+  // (docs/logs/2026-07-23-core-script-log-level-chain.md:141,
+  // 2026-07-24-core-script-runscript-adoption.md:152). Step 6 below is the
+  // real verify gate.
   const restampArgs = ["--update"];
   if (affectedPath !== null) restampArgs.push("--affected", affectedPath);
   if (
@@ -450,28 +454,28 @@ function runSequence() {
   )
     return;
 
-  // 3 — regenerate doc counts
+  // 2 — regenerate doc counts
   if (!runJsonStep("Doc counts regen", "bin/gen-doc-counts.mjs").ok) return;
 
-  // 4 — verify doc counts
+  // 3 — verify doc counts
   if (!runJsonStep("Doc counts", "bin/check-doc-counts.mjs").ok) return;
 
-  // 5 — verify documented exports
+  // 4 — verify documented exports
   if (!runJsonStep("Documented exports", CHECK_DOC_EXPORTS_SCRIPT).ok) return;
 
-  // 6 — NEW: barrel-vs-sidecar-sources (in-process)
+  // 5 — barrel-vs-sidecar-sources (in-process)
   if (!checkBarrelSidecarSources().ok) return;
 
-  // 7 — post-stamp provenance re-check
+  // 6 — post-stamp provenance re-check (the real verify gate)
   if (
     !runJsonStep("Provenance (post-stamp)", "bin/check-doc-provenance.mjs").ok
   )
     return;
 
-  // 8 — implemented count
+  // 7 — implemented count
   if (!runJsonStep("Implemented count", "bin/check-impl-counts.mjs").ok) return;
 
-  // 9 — test counts (runs the full Vitest suite internally — generous timeout)
+  // 8 — test counts (runs the full Vitest suite internally — generous timeout)
   if (
     !runJsonStep("Test counts", "bin/check-test-counts.mjs", [], {
       timeout: 600_000,
@@ -479,26 +483,26 @@ function runSequence() {
   )
     return;
 
-  // 10 — script scaffold/doc conformance
+  // 9 — script scaffold/doc conformance
   if (!runJsonStep("Script docs", "bin/check-script-scaffold.mjs").ok) return;
 
-  // 11 — regenerate the reference index
+  // 10 — regenerate the reference index
   const genIndex = runJsonStep(
     "Reference index regen",
     "bin/gen-reference-index.mjs",
   );
   if (!genIndex.ok) return;
 
-  // 12 — format exactly what step 11 touched, before verifying it
+  // 11 — format exactly what step 10 touched, before verifying it
   if (!formatGeneratedFiles(genIndex.updated).ok) return;
 
-  // 13 — verify the reference index is current
+  // 12 — verify the reference index is current
   if (
     !runJsonStep("Reference index verify", "bin/check-reference-index.mjs").ok
   )
     return;
 
-  // 14 — markdown lint
+  // 13 — markdown lint
   lintMarkdown();
 }
 
@@ -538,7 +542,7 @@ if (sequenceCompleted && steps.length > 0) {
 } else if (!json) {
   console.error(
     `\n✗  /syncing-docs stopped at "${failedStep?.name ?? "unknown step"}" ` +
-      `(step ${steps.length} of 14).`,
+      `(step ${steps.length} of 13).`,
   );
 }
 
@@ -555,7 +559,7 @@ if (!json) {
   }
   if (!sequenceCompleted) {
     console.log(
-      `- ⏭  ${14 - steps.length} step(s) not run (stopped after the first failure)`,
+      `- ⏭  ${13 - steps.length} step(s) not run (stopped after the first failure)`,
     );
   }
   if (restampStep?.payload?.restamped) {
@@ -578,7 +582,7 @@ if (!json) {
     );
   }
   console.log(
-    "\nCommit-stats badges are live CI-published endpoint badges (not part of this pass) — see the skill's step 8 note.",
+    "\nCommit-stats badges are live CI-published endpoint badges (not part of this pass) — see the skill's step 7 note.",
   );
 }
 
