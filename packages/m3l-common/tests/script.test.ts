@@ -2238,7 +2238,21 @@ describe("M3LScriptConfigLoader", () => {
   // returns a real label instead of always undefined.
   // ---------------------------------------------------------------------
   describe("sourceOf() population (A6)", () => {
+    const originalArgv = process.argv;
+
+    afterEach(() => {
+      process.argv = originalArgv;
+    });
+
     test("populates sourceOf() with the winning provider's label for a provider-resolved value", async () => {
+      // Isolate the live CLI/env providers (both read real process state) so
+      // this test deterministically proves extraProviders — not a stray
+      // `--region` arg or `REGION` env var on the running machine/CI — wins
+      // over presetProviders/defaultValue/asyncFallback, its actual
+      // precedence-level-5 position (below CLI/env, above presetProviders).
+      process.argv = [originalArgv[0] ?? "node", originalArgv[1] ?? "script"];
+      vi.stubEnv("REGION", undefined);
+
       const loader = new M3LScriptConfigLoader();
       const region = new M3LConfigParameter({
         name: "region",
@@ -2300,13 +2314,16 @@ describe("M3LScriptConfigLoader", () => {
 });
 
 // =============================================================================
-// M3LScriptConfigLoader — presetProviders precedence (F8: preset seam)
+// M3LScriptConfigLoader — provider precedence chain (config-precedence
+// reconciliation, #341)
 //
-// Contract: `load()` gains a distinct, LOWEST-priority provider slot appended
-// AFTER CLI + env: providers = [...extraProviders, CLI, env, ...presetProviders].
-// `extraProviders` stays front-spread (highest priority).
+// Contract: `load()` builds the provider chain as
+// providers = [CLI, env, ...extraProviders, ...presetProviders] — CLI
+// (level 1) and environment (level 4) always outrank `extraProviders`
+// (level 5, e.g. a Lambda event payload), which in turn outranks
+// `presetProviders` (level 6, lowest priority).
 // =============================================================================
-describe("M3LScriptConfigLoader — presetProviders precedence (F8)", () => {
+describe("M3LScriptConfigLoader — provider precedence chain (config-precedence reconciliation, #341)", () => {
   const originalArgv = process.argv;
 
   /** Replaces `process.argv.slice(2)` (what `M3LCommandLineConfigProvider` reads by default) with `args`. */
@@ -2378,8 +2395,9 @@ describe("M3LScriptConfigLoader — presetProviders precedence (F8)", () => {
     expect(config.get("region")).toBe("env-region");
   });
 
-  test("an extraProviders value (front-spread, highest priority) overrides a presetProviders value", async () => {
+  test("an extraProviders value overrides a presetProviders value", async () => {
     stubArgv();
+    vi.stubEnv("REGION", undefined);
     const loader = new M3LScriptConfigLoader();
     const region = new M3LConfigParameter({
       name: "region",
@@ -2397,6 +2415,52 @@ describe("M3LScriptConfigLoader — presetProviders precedence (F8)", () => {
     });
 
     expect(config.get("region")).toBe("extra-region");
+  });
+
+  test("a CLI value overrides an extraProviders value", async () => {
+    // The core #341 regression lock: under the OLD (buggy) front-spread
+    // ordering, extraProviders would win here; the fixed chain places CLI
+    // (level 1) above extraProviders (level 5, e.g. a Lambda event payload).
+    stubArgv("--region=cli-region");
+    vi.stubEnv("REGION", undefined);
+    const loader = new M3LScriptConfigLoader();
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+
+    const config = await loader.load({
+      params: [region],
+      extraProviders: [
+        new M3LInMemoryConfigProvider({ region: "extra-region" }),
+      ],
+    });
+
+    expect(config.get("region")).toBe("cli-region");
+    expect(config.sourceOf("region")).toBe("cli");
+  });
+
+  test("an environment value overrides an extraProviders value", async () => {
+    // Same regression class as the CLI case above, one level down the
+    // chain: environment (level 4) must still outrank extraProviders
+    // (level 5) once the front-spread bug is fixed.
+    stubArgv();
+    vi.stubEnv("REGION", "env-region");
+    const loader = new M3LScriptConfigLoader();
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+
+    const config = await loader.load({
+      params: [region],
+      extraProviders: [
+        new M3LInMemoryConfigProvider({ region: "extra-region" }),
+      ],
+    });
+
+    expect(config.get("region")).toBe("env-region");
+    expect(config.sourceOf("region")).toBe("environment-variable");
   });
 });
 
