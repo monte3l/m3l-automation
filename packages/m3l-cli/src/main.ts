@@ -13,12 +13,11 @@ import { parseArgs } from "node:util";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Core } from "@m3l-automation/m3l-common";
-
 import { M3LCliError, exitCodeForError } from "./cli/errors.js";
 import type { M3LCliExitCode } from "./cli/errors.js";
 import type { M3LCliOutput, M3LCliOutputStream } from "./cli/output.js";
 import { createOutput } from "./cli/output.js";
+import { suggestNames } from "./cli/suggest.js";
 import type { M3LCliCommandContext } from "./commands/context.js";
 import { resolveWorkspaceRoot } from "./discovery/discover.js";
 
@@ -37,31 +36,13 @@ export interface M3LCliRunOptions {
 /** Exit code for a usage error (unknown command, missing required positional). */
 const USAGE_EXIT_CODE: M3LCliExitCode = 2;
 
-/** The command names `main.ts` currently dispatches statically (phase 8b). */
-const STATIC_COMMAND_NAMES: readonly string[] = ["list", "inspect", "help"];
-
-/**
- * Ranks `name` against {@link STATIC_COMMAND_NAMES} via
- * {@link Core.M3LUnknownParameterDetector}'s Damerau-Levenshtein suggestion
- * ranking, treating the static command names as a throwaway
- * `Core.M3LConfigSchema`'s declared parameter names purely to reuse that
- * ranking logic.
- */
-function suggestCommandNames(name: string): readonly string[] {
-  const schema = new Core.M3LConfigSchema(
-    STATIC_COMMAND_NAMES.map(
-      (commandName) =>
-        new Core.M3LConfigParameter({
-          name: commandName,
-          type: Core.M3LConfigParameterType.STRING,
-        }),
-    ),
-  );
-  const detector = new Core.M3LUnknownParameterDetector(schema);
-  return detector
-    .detectWithSuggestions([name])
-    .flatMap((entry) => entry.suggestions);
-}
+/** The command names `main.ts` currently dispatches statically (phase 8c). */
+const STATIC_COMMAND_NAMES: readonly string[] = [
+  "list",
+  "inspect",
+  "run",
+  "help",
+];
 
 /**
  * The minimal shape this module trusts `package.json` to declare — read
@@ -89,14 +70,39 @@ function printUsage(output: M3LCliOutput): void {
   output.info("Usage: m3l <command> [options]");
   output.info("");
   output.info("Commands:");
-  output.info("  list                List every scripts/* package");
-  output.info("  inspect <script>    Show a script's declared parameters");
-  output.info("  help                Show this help message");
+  output.info("  list                       List every scripts/* package");
+  output.info(
+    "  inspect <script>           Show a script's declared parameters",
+  );
+  output.info(
+    "  run <script> -- [args...]  Run a script, forwarding args after '--' verbatim",
+  );
+  output.info("  help                       Show this help message");
   output.info("");
   output.info("Flags:");
   output.info("  --json      Machine-readable output");
   output.info("  --version   Print the CLI version");
   output.info("  -h, --help  Show this help message");
+}
+
+/**
+ * Splits `argv` at the first bare `--`, so `parseArgs` never sees anything
+ * after it — the m3l-cli 8c contract for `run <script> -- [args...]`:
+ * everything after the first `--` passes through to the spawned script
+ * verbatim, even flags shaped like `main.ts`'s own (`--json`, `--help`).
+ */
+function splitAtFirstDoubleDash(argv: readonly string[]): {
+  readonly beforeArgs: readonly string[];
+  readonly passthroughArgs: readonly string[];
+} {
+  const separatorIndex = argv.indexOf("--");
+  if (separatorIndex === -1) {
+    return { beforeArgs: argv, passthroughArgs: [] };
+  }
+  return {
+    beforeArgs: argv.slice(0, separatorIndex),
+    passthroughArgs: argv.slice(separatorIndex + 1),
+  };
 }
 
 /**
@@ -176,15 +182,44 @@ async function runInspectCommand(
   );
 }
 
+/**
+ * Lazily loads and runs `run`; a missing `<script>` positional is a usage
+ * error. The spawned script's exit code propagates verbatim (not clamped to
+ * `M3LCliExitCode`).
+ */
+async function runRunCommand(
+  output: M3LCliOutput,
+  cwd: string,
+  scriptName: string | undefined,
+  passthroughArgs: readonly string[],
+  jsonOutput: boolean,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<number> {
+  if (scriptName === undefined) {
+    output.error(
+      "run requires a <script> positional — usage: m3l run <script> -- [args...]",
+    );
+    return USAGE_EXIT_CODE;
+  }
+  const { runRun } = await import("./commands/run.js");
+  return runRun(
+    buildCommandContext(cwd, output, jsonOutput, env),
+    scriptName,
+    passthroughArgs,
+  );
+}
+
 /** Parses `argv` and dispatches to the matching static or lazy command. */
 async function dispatch(
   argv: readonly string[],
   output: M3LCliOutput,
   cwd: string,
   env: Readonly<Record<string, string | undefined>>,
-): Promise<M3LCliExitCode> {
+): Promise<number> {
+  const { beforeArgs, passthroughArgs } = splitAtFirstDoubleDash(argv);
+
   const { values, positionals } = parseArgs({
-    args: [...argv],
+    args: [...beforeArgs],
     options: {
       json: { type: "boolean", default: false },
       version: { type: "boolean", default: false },
@@ -195,7 +230,11 @@ async function dispatch(
   });
 
   const command = positionals[0];
-  if (argv.length === 0 || command === "help" || values["help"] === true) {
+  if (
+    beforeArgs.length === 0 ||
+    command === "help" ||
+    values["help"] === true
+  ) {
     printUsage(output);
     return 0;
   }
@@ -211,19 +250,39 @@ async function dispatch(
   if (command === "inspect") {
     return runInspectCommand(output, cwd, positionals[1], jsonOutput, env);
   }
+  if (command === "run") {
+    return runRunCommand(
+      output,
+      cwd,
+      positionals[1],
+      passthroughArgs,
+      jsonOutput,
+      env,
+    );
+  }
 
   const unknownCommand = command ?? "";
   throw new M3LCliError(
     "ERR_CLI_UNKNOWN_COMMAND",
     `unknown command '${unknownCommand}'`,
-    { suggestions: suggestCommandNames(unknownCommand) },
+    { suggestions: suggestNames(unknownCommand, STATIC_COMMAND_NAMES) },
   );
 }
 
-/** Formats an `M3LCliError`'s message, appending a "Did you mean" hint when suggestions exist. */
+/**
+ * Formats an `M3LCliError`'s message, appending a "Did you mean" hint when
+ * suggestions exist and a `caused by:` line when its `cause` is an `Error`
+ * (one level deep — the cause's own `cause`, if any, is not recursed into).
+ */
 function formatCliErrorMessage(error: M3LCliError): string {
-  if (error.suggestions.length === 0) return error.message;
-  return `${error.message}\nDid you mean: ${error.suggestions.join(", ")}?`;
+  let message = error.message;
+  if (error.suggestions.length > 0) {
+    message += `\nDid you mean: ${error.suggestions.join(", ")}?`;
+  }
+  if (error.cause instanceof Error) {
+    message += `\n  caused by: ${error.cause.message}`;
+  }
+  return message;
 }
 
 /** Maps any caught value to its process exit code, printing it via `output.error`. */
@@ -242,12 +301,19 @@ function reportError(output: M3LCliOutput, error: unknown): M3LCliExitCode {
  * `process.exit` — callers (the `bin/m3l.mjs` wrapper) assign the resolved
  * number to `process.exitCode` themselves.
  *
+ * The return type is the general `number`, not the narrower
+ * {@link M3LCliExitCode}: every CLI-originated outcome (success, a usage
+ * error, an `M3LCliError` mapped through `exitCodeForError`) still resolves
+ * to `0`/`1`/`2`, but `run <script>` propagates the spawned child's raw exit
+ * code verbatim, which is not restricted to that range.
+ *
  * @param argv - The CLI arguments, excluding the `node`/script path
  *   (typically `process.argv.slice(2)`).
  * @param options - Optional stream/env/cwd overrides; each defaults to the
  *   corresponding `process` global.
  * @returns `0` on success, `2` for a usage error (unknown command, unknown
- *   script, missing required positional), `1` for every other failure.
+ *   script, missing required positional), `1` for every other CLI-originated
+ *   failure; for `run <script>`, the spawned child's exit code verbatim.
  *
  * @example
  * ```ts
@@ -259,7 +325,7 @@ function reportError(output: M3LCliOutput, error: unknown): M3LCliExitCode {
 export async function runCli(
   argv: readonly string[],
   options: M3LCliRunOptions = {},
-): Promise<M3LCliExitCode> {
+): Promise<number> {
   const env = options.env ?? process.env;
   const output = createOutput({
     stdout: options.stdout ?? process.stdout,

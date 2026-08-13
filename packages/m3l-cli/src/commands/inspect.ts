@@ -6,10 +6,9 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
-
 import { M3LCliError } from "../cli/errors.js";
 import type { M3LCliExitCode } from "../cli/errors.js";
+import { suggestNames } from "../cli/suggest.js";
 import type { M3LCliCommandContext } from "./context.js";
 import { discoverScripts } from "../discovery/discover.js";
 import type { M3LCliScriptCandidate } from "../discovery/discover.js";
@@ -21,31 +20,6 @@ import {
   readDiscoveryCache,
   writeDiscoveryCache,
 } from "../discovery/cache.js";
-
-/**
- * Ranks `scriptName` against every known script name via
- * {@link Core.M3LUnknownParameterDetector}'s Damerau-Levenshtein suggestion
- * ranking, treating the known names as a throwaway `Core.M3LConfigSchema`'s
- * declared parameter names purely to reuse that ranking logic.
- */
-function suggestScriptNames(
-  scriptName: string,
-  candidates: readonly M3LCliScriptCandidate[],
-): readonly string[] {
-  const schema = new Core.M3LConfigSchema(
-    candidates.map(
-      (candidate) =>
-        new Core.M3LConfigParameter({
-          name: candidate.name,
-          type: Core.M3LConfigParameterType.STRING,
-        }),
-    ),
-  );
-  const detector = new Core.M3LUnknownParameterDetector(schema);
-  return detector
-    .detectWithSuggestions([scriptName])
-    .flatMap((entry) => entry.suggestions);
-}
 
 /** Formats the aligned header + row lines for the human-readable rendering. */
 function formatParameterLines(
@@ -161,7 +135,12 @@ export async function runInspect(
     throw new M3LCliError(
       "ERR_CLI_UNKNOWN_SCRIPT",
       `unknown script '${scriptName}'`,
-      { suggestions: suggestScriptNames(scriptName, candidates) },
+      {
+        suggestions: suggestNames(
+          scriptName,
+          candidates.map((entry) => entry.name),
+        ),
+      },
     );
   }
 

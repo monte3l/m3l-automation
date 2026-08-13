@@ -79,12 +79,30 @@ needs type-directed emit).
 Hand-written usage text (parseArgs generates none) and the package version.
 Never trigger discovery.
 
+### Phase 8c — execution
+
+#### `m3l run <script> -- [args...]`
+
+Spawns the named script's built entry (`scripts/<name>/dist/main.js`) via
+`process.execPath` with `--env-file-if-exists=.env`, `cwd` set to the
+script's directory, and `stdio: "inherit"` — the terminal belongs to the
+child. Everything after the **first bare `--`** passes through verbatim
+(never parsed by the CLI's own flag handling). No config load and no cache
+involvement — `run` only needs discovery.
+
+Exit: the **child's exit code verbatim** (preserving the ADR-0035 registry
+end-to-end); a signal-terminated child yields `128 + <signal number>` (e.g.
+SIGTERM → 143). CLI-side failures: `2` unknown script (with suggestions) or
+missing `<script>` positional; `1` script not built (`ERR_CLI_SCRIPT_NOT_BUILT`,
+message names `pnpm build`) or spawn failure (`ERR_CLI_SPAWN_FAILED`,
+cause-chained).
+
 ### Later phases (not yet built)
 
-`run` (8c), per-script dynamic subcommands (8d), `doctor` (8e), presets +
-history (8f, blocked on the `M3LConfigParameter.secret` library
-prerequisite), interactive wizard (8g) — see ADR-0042 and the m3l-cli
-build-out tracker in `docs/plans/IMPLEMENTATION.md`.
+Per-script dynamic subcommands (8d), `doctor` (8e), presets + history (8f,
+blocked on the `M3LConfigParameter.secret` library prerequisite),
+interactive wizard (8g) — see ADR-0042 and the m3l-cli build-out tracker in
+`docs/plans/IMPLEMENTATION.md`.
 
 ## Reserved command names
 
