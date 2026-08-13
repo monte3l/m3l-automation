@@ -10,12 +10,14 @@ import { exitCodeForError, M3LCliError } from "../src/cli/errors.js";
 import type { M3LCliErrorCode } from "../src/cli/errors.js";
 
 describe("M3LCliErrorCode", () => {
-  test("is the exact four-member union the contract declares", () => {
+  test("is the exact six-member union the contract declares", () => {
     expectTypeOf<M3LCliErrorCode>().toEqualTypeOf<
       | "ERR_CLI_UNKNOWN_COMMAND"
       | "ERR_CLI_UNKNOWN_SCRIPT"
       | "ERR_CLI_CONFIG_IMPORT"
       | "ERR_CLI_WORKSPACE_NOT_FOUND"
+      | "ERR_CLI_SCRIPT_NOT_BUILT"
+      | "ERR_CLI_SPAWN_FAILED"
     >();
   });
 });
@@ -87,6 +89,8 @@ describe("exitCodeForError", () => {
     ["ERR_CLI_UNKNOWN_SCRIPT", 2],
     ["ERR_CLI_CONFIG_IMPORT", 1],
     ["ERR_CLI_WORKSPACE_NOT_FOUND", 1],
+    ["ERR_CLI_SCRIPT_NOT_BUILT", 1],
+    ["ERR_CLI_SPAWN_FAILED", 1],
   ];
 
   test.each(codeExitCases)(

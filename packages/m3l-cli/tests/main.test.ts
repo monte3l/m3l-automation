@@ -4,8 +4,10 @@ import * as path from "node:path";
 import { runCli } from "../src/main.js";
 import type { M3LCliRunOptions } from "../src/main.js";
 import { M3LCliError } from "../src/cli/errors.js";
+import type { M3LCliErrorCode } from "../src/cli/errors.js";
 import { runList } from "../src/commands/list.js";
 import { runInspect } from "../src/commands/inspect.js";
+import { runRun } from "../src/commands/run.js";
 import { resolveWorkspaceRoot } from "../src/discovery/discover.js";
 import type { M3LCliCommandContext } from "../src/commands/context.js";
 
@@ -23,17 +25,20 @@ import type { M3LCliCommandContext } from "../src/commands/context.js";
 
 vi.mock("../src/commands/list.js", () => ({ runList: vi.fn() }));
 vi.mock("../src/commands/inspect.js", () => ({ runInspect: vi.fn() }));
+vi.mock("../src/commands/run.js", () => ({ runRun: vi.fn() }));
 vi.mock("../src/discovery/discover.js", () => ({
   resolveWorkspaceRoot: vi.fn(),
 }));
 
 const runListMock = vi.mocked(runList);
 const runInspectMock = vi.mocked(runInspect);
+const runRunMock = vi.mocked(runRun);
 const resolveWorkspaceRootMock = vi.mocked(resolveWorkspaceRoot);
 
 afterEach(() => {
   runListMock.mockReset();
   runInspectMock.mockReset();
+  runRunMock.mockReset();
   resolveWorkspaceRootMock.mockReset();
 });
 
@@ -297,6 +302,196 @@ describe("runCli — unexpected non-M3LCliError failures", () => {
 
     await expect(runCli(["list"], options)).resolves.toBe(1);
     expect(stderrLines.join("\n")).toContain("workspace lookup exploded");
+  });
+});
+
+/**
+ * m3l-cli 8c addendum — `run <script> -- [args...]`: everything after the
+ * FIRST bare `--` in argv passes through verbatim, sliced off before
+ * `parseArgs` ever sees it, so passthrough flags (even ones shaped like
+ * `main.ts`'s own `--json`/`--help`) never get parsed or rejected.
+ */
+describe("runCli — run dispatch", () => {
+  test("lazily builds a context, resolves the script positional, and passes everything after the first '--' as passthroughArgs verbatim", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runRunMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    const code = await runCli(
+      ["run", "json-etl", "--", "--limit", "5"],
+      options,
+    );
+
+    expect(code).toBe(0);
+    expect(runRunMock).toHaveBeenCalledTimes(1);
+    const [context, scriptName, passthroughArgs] = runRunMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      string,
+      readonly string[],
+    ];
+    expect(context.workspaceRoot).toBe("/workspace-root");
+    expect(scriptName).toBe("json-etl");
+    expect(passthroughArgs).toEqual(["--limit", "5"]);
+  });
+
+  test("passes flags after '--' through unparsed, even ones shaped like main's own flags", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runRunMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    const code = await runCli(
+      ["run", "json-etl", "--", "--json", "--help"],
+      options,
+    );
+
+    expect(code).toBe(0);
+    const [, , passthroughArgs] = runRunMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      string,
+      readonly string[],
+    ];
+    expect(passthroughArgs).toEqual(["--json", "--help"]);
+  });
+
+  test("passes an empty passthroughArgs array when '--' is present with nothing after it", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runRunMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["run", "json-etl", "--"], options);
+
+    const [, , passthroughArgs] = runRunMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      string,
+      readonly string[],
+    ];
+    expect(passthroughArgs).toEqual([]);
+  });
+
+  test("passes an empty passthroughArgs array when there is no '--' at all", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runRunMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["run", "json-etl"], options);
+
+    const [, , passthroughArgs] = runRunMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      string,
+      readonly string[],
+    ];
+    expect(passthroughArgs).toEqual([]);
+  });
+
+  test("propagates the child's raw exit code (e.g. 7) verbatim, not clamped to 0/1/2", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runRunMock.mockResolvedValue(7);
+    const { options } = buildOptions();
+
+    const code = await runCli(["run", "json-etl", "--"], options);
+
+    expect(code).toBe(7);
+  });
+
+  test("passes everything after the FIRST '--' verbatim, including a second bare '--' inside passthroughArgs", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runRunMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    const code = await runCli(
+      ["run", "script", "--", "--limit", "--", "5"],
+      options,
+    );
+
+    expect(code).toBe(0);
+    const [, , passthroughArgs] = runRunMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      string,
+      readonly string[],
+    ];
+    expect(passthroughArgs).toEqual(["--limit", "--", "5"]);
+  });
+});
+
+describe("runCli — run with a missing script positional", () => {
+  test("returns 2 as a usage error without invoking runRun", async () => {
+    const { options, stderrLines } = buildOptions();
+
+    const code = await runCli(["run"], options);
+
+    expect(code).toBe(2);
+    expect(runRunMock).not.toHaveBeenCalled();
+    expect(stderrLines.join("\n")).toContain("run");
+  });
+
+  test("returns 2 without invoking runRun even when a trailing '--' is present but no script precedes it", async () => {
+    const { options } = buildOptions();
+
+    const code = await runCli(["run", "--"], options);
+
+    expect(code).toBe(2);
+    expect(runRunMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("runCli — run.js is loaded lazily, never touched by unrelated dispatch paths", () => {
+  test.each<[string, readonly string[]]>([
+    ["no arguments", []],
+    ["the help command", ["help"]],
+    ["the --version flag", ["--version"]],
+  ])("%s never calls runRun", async (_label, argv) => {
+    const { options } = buildOptions();
+
+    await runCli(argv, options);
+
+    expect(runRunMock).not.toHaveBeenCalled();
+  });
+
+  test("the list command never calls runRun", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runListMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["list"], options);
+
+    expect(runRunMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("runCli — new 8c error codes map to exit 1", () => {
+  test.each<[M3LCliErrorCode]>([
+    ["ERR_CLI_SCRIPT_NOT_BUILT"],
+    ["ERR_CLI_SPAWN_FAILED"],
+  ])("maps a rejected %s M3LCliError to exit 1", async (code) => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runRunMock.mockRejectedValue(new M3LCliError(code, `${code} message`));
+    const { options } = buildOptions();
+
+    const result = await runCli(["run", "json-etl", "--"], options);
+
+    expect(result).toBe(1);
+  });
+});
+
+describe("runCli — M3LCliError cause-chain printing", () => {
+  test("prints 'caused by: <cause message>' when the rejected M3LCliError's cause is an Error", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    const cause = new Error("spawn ENOENT");
+    runRunMock.mockRejectedValue(
+      new M3LCliError(
+        "ERR_CLI_SPAWN_FAILED",
+        "failed to spawn script at 'json-etl'",
+        { cause },
+      ),
+    );
+    const { options, stderrLines } = buildOptions();
+
+    const code = await runCli(["run", "json-etl", "--"], options);
+
+    expect(code).toBe(1);
+    const rendered = stderrLines.join("\n");
+    expect(rendered).toContain("failed to spawn script at 'json-etl'");
+    expect(rendered).toContain("caused by: spawn ENOENT");
   });
 });
 
