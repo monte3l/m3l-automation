@@ -39,7 +39,8 @@ and after a success), `configSchema` (the constructor-supplied
 `M3LConfigSchema`, or `undefined` when no schema was declared), and
 `currentConfig` (the live `M3LConfig` store — the same instance
 `getConfiguration()` returns once loaded, but readable synchronously; empty
-before the first load, reset per Lambda invocation).
+before the first load, reset per Lambda invocation and at the top of every
+`run()` call).
 `runScript()` uses `configSchema`/`currentConfig` to populate the persisted
 report's config fingerprint — see [diagnostics →
 `collectDiagnostics`](./diagnostics.md#collectdiagnostics).
@@ -65,7 +66,7 @@ Under `{ dryRun: true }` the pipeline stops after stage 5 and then runs
 `onCleanup` — stages 6, 7, the `onAfterRun` half of 8, and 9 are all skipped.
 See [Dry runs](#dry-runs).
 
-`createLambdaHandler<TEvent, TResult, TContext>()` wraps the same initialization pipeline in an AWS Lambda-compatible handler function. Per invocation, the `initialized` and `configLoaded` flags are reset and the config store is cleared, so each invocation starts clean. SDK clients are intentionally not reset between invocations, so connections are reused across warm starts.
+`createLambdaHandler<TEvent, TResult, TContext>()` wraps the same initialization pipeline in an AWS Lambda-compatible handler function. Per invocation, the `initialized` and `configLoaded` flags are reset, the config store is cleared, and the received `event` is captured for stage 3 (see [Configuration from the Lambda event](#configuration-from-the-lambda-event)), so each invocation starts clean. SDK clients are intentionally not reset between invocations, so connections are reused across warm starts. `run()` performs the same per-invocation reset (always clearing the event to "none"), so a script instance that previously served a Lambda invocation and later calls `run()` resolves no leftover event values.
 
 ## Lifecycle hooks
 
@@ -251,6 +252,7 @@ and failure diagnostics can all be tied back to the same execution.
 interface M3LScriptOptions {
   // ...existing fields
   readonly correlationId?: string; // optional; generated per run when omitted
+  readonly configFiles?: readonly string[]; // optional JSON/YAML config-file paths (see Config files)
   readonly preset?: string; // optional path to a YAML/JSON preset file (see Preset loader)
 }
 
@@ -283,6 +285,63 @@ interface M3LScriptHookContext {
   `onError` hook receives it via `ctx.correlationId`, and the best-effort stderr
   diagnostics line carries it **after** redaction, so a failed run is traceable
   to its id. A correlation id is not a secret and is never redacted.
+
+## Config files (`options.configFiles`)
+
+`M3LScriptOptions.configFiles` is an optional, ordered list of JSON/YAML
+config-file paths. When supplied, each path is dispatched by file extension,
+case-insensitively — `.json` via `M3LJSONConfigProvider`, `.yaml`/`.yml` via
+`M3LYAMLConfigProvider` — and the resulting providers are inserted into
+configuration resolution at **precedence levels 2–3**: below CLI (level 1),
+above environment variables (level 4). Earlier entries in the array outrank
+later ones for the same key. See
+[`config` → Resolution order](./config.md#resolution-order).
+
+- **Extension validation is eager.** Every entry's extension is checked at
+  `M3LScript` construction time, before any file is read. An unrecognized
+  extension — including an empty string, i.e. no extension — throws
+  `M3LError` coded `ERR_INVALID_ARGUMENT` naming the offending path. This
+  differs from `preset` (below), which falls back to JSON for any non-YAML
+  extension for back-compat reasons that don't apply to this newer field.
+- **A missing file is tolerated.** Both providers treat `ENOENT` as an empty
+  file, not an error — a listed path that doesn't exist simply contributes no
+  values, so resolution falls through to the next tier. Only a malformed
+  _existing_ file throws a typed `M3LConfigParseError`/`M3LUnsafeConfigKeyError`
+  — deliberately, at stage 3, not construction — though a file that exists but
+  is unreadable for another reason (e.g. `EACCES`) re-throws Node's raw
+  filesystem error, unchanged from `M3LJSONConfigProvider`/
+  `M3LYAMLConfigProvider`'s own standalone behavior.
+- **Paths are resolved verbatim** against the process's current working
+  directory, the same as constructing either provider directly. Callers who
+  want the canonical config directory can build the path from
+  `script.paths.getConfigDir()` (see [`utils` → Path resolution with
+  `M3LPaths`](./utils.md#path-resolution-with-m3lpaths)).
+- When `options.configFiles` is omitted, no file is read and no provider is
+  added — no behavior change.
+
+## Configuration from the Lambda event
+
+`M3LScript.createLambdaHandler()` automatically wires the received `event`
+into configuration resolution at **precedence level 5** — below CLI,
+config files, and environment variables, above a preset — using
+`M3LLambdaEventConfigProvider`. A top-level key on the event object that
+matches a declared parameter name resolves that parameter with source label
+`"lambda-event"`. No caller wiring is required; this happens for every
+Lambda invocation.
+
+- **Non-object events yield nothing.** A `null`, primitive, or otherwise
+  non-object event contributes no values (empty map), so resolution falls
+  through to the next tier.
+- **A dangerous top-level key throws.** An event carrying a
+  prototype-pollution key (e.g. `__proto__`) fails stage 3 with
+  `M3LUnsafeConfigKeyError`, propagating unchanged — the same
+  prototype-pollution guard every other provider in the chain applies.
+- **`run()` never supplies an event.** Configuration resolution never
+  reaches level 5 under the CLI path — only under
+  `createLambdaHandler()`. Per-invocation reset (see [Execution
+  flow](#execution-flow)) guarantees a script instance cannot resolve a
+  stale event from a prior Lambda invocation, whether the next call is
+  another invocation or a `run()`.
 
 ## Preset loader
 

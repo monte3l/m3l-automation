@@ -25,9 +25,8 @@ interface M3LScriptConfigLoadOptions {
   /** The declared configuration parameters to resolve. */
   readonly params: readonly M3LConfigParameter[];
   /**
-   * Additional providers consulted ahead of the standard command-line and
-   * environment providers (highest priority first). Useful for a Lambda
-   * event payload.
+   * Additional providers, consulted AFTER the command-line and environment
+   * providers (precedence level 5, e.g. a Lambda event payload).
    */
   readonly extraProviders?: readonly M3LConfigProvider[];
   /**
@@ -35,13 +34,19 @@ interface M3LScriptConfigLoadOptions {
    * environment providers (precedence level 6, e.g. a loaded preset).
    */
   readonly presetProviders?: readonly M3LConfigProvider[];
+  /**
+   * Config-file providers (precedence levels 2-3, between command-line and
+   * environment providers), ordered highest priority first.
+   */
+  readonly configFileProviders?: readonly M3LConfigProvider[];
 }
 
 /**
  * Resolves a script's declared {@link M3LConfigParameter} list against the
- * standard provider chain (extra providers, then command-line arguments,
- * then environment variables, then preset providers, in priority order),
- * producing a populated {@link M3LConfig} store.
+ * standard provider chain (command-line arguments, then config-file
+ * providers, then environment variables, then extra providers, then preset
+ * providers, in priority order), producing a populated {@link M3LConfig}
+ * store.
  *
  * Each parameter's `asyncFallback` (if any) is honored via
  * {@link M3LConfigParameter.getValueAsync}, so `load` is asynchronous.
@@ -67,9 +72,10 @@ export class M3LScriptConfigLoader {
    */
   async load(options: M3LScriptConfigLoadOptions): Promise<M3LConfig> {
     const providers: M3LConfigProvider[] = [
-      ...(options.extraProviders ?? []),
       new M3LCommandLineConfigProvider(),
+      ...(options.configFileProviders ?? []),
       new M3LEnvironmentConfigProvider(),
+      ...(options.extraProviders ?? []),
       ...(options.presetProviders ?? []),
     ];
     const reader = new M3LConfigReader(providers);

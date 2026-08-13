@@ -7,14 +7,18 @@
 
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 
 import {
   M3LConfig,
   M3LConfigSchema,
+  M3LJSONConfigProvider,
+  M3LLambdaEventConfigProvider,
   M3LPresetConfigProvider,
+  M3LYAMLConfigProvider,
   type M3LConfigProvider,
 } from "../config/index.js";
+import { M3LError } from "../errors/index.js";
 import { M3LExecutionEnvironment } from "../environment/index.js";
 import type { M3LFileCopyReport } from "../files/index.js";
 import { M3LFileCopier, getDefaultSubdirForPathType } from "../files/index.js";
@@ -107,6 +111,40 @@ function extractAwsRequestId(context: unknown): string | undefined {
     : undefined;
 }
 
+/** File extensions dispatched to `M3LYAMLConfigProvider` by {@link buildConfigFileProviders}. */
+const YAML_CONFIG_FILE_EXTENSIONS: ReadonlySet<string> = new Set([
+  ".yaml",
+  ".yml",
+]);
+
+/** The file extension dispatched to `M3LJSONConfigProvider` by {@link buildConfigFileProviders}. */
+const JSON_CONFIG_FILE_EXTENSION = ".json";
+
+/**
+ * Validates that `configFilePath` carries a recognized config-file
+ * extension (`.json`, `.yaml`, or `.yml`, case-insensitive) — called eagerly,
+ * for every entry of `options.configFiles`, from the {@link M3LScript}
+ * constructor, so an unrecognized extension (including an empty string, i.e.
+ * no extension) fails loud at construction time rather than surfacing later
+ * from {@link M3LScript.buildConfigFileProviders} during stage 3.
+ *
+ * @throws {@link M3LError} with code `ERR_INVALID_ARGUMENT` naming the
+ *   offending path when the extension is not recognized.
+ */
+function validateConfigFileExtension(configFilePath: string): void {
+  const extension = extname(configFilePath).toLowerCase();
+  if (
+    extension === JSON_CONFIG_FILE_EXTENSION ||
+    YAML_CONFIG_FILE_EXTENSIONS.has(extension)
+  ) {
+    return;
+  }
+  throw new M3LError(
+    `configFiles entry '${configFilePath}' has an unrecognized extension; expected .json, .yaml, or .yml`,
+    { code: "ERR_INVALID_ARGUMENT" },
+  );
+}
+
 /**
  * Returns the absolute paths of every regular file directly inside `dir`
  * (non-recursive; subdirectories are skipped). Returns an empty array when
@@ -194,6 +232,21 @@ export class M3LScript {
   private currentDryRun = false;
 
   /**
+   * The raw Lambda event payload for the invocation currently being served —
+   * mirrored into the level-5 config provider chain by
+   * {@link M3LScript.buildEventProviders}. Reset via
+   * {@link M3LScript.resetForInvocation} at the top of every
+   * {@link M3LScript.createLambdaHandler} invocation AND at the top of every
+   * {@link M3LScript.run} call (which always resets it to `undefined`, since
+   * `run` never receives an event), so it always reflects the CURRENT
+   * invocation and never leaks a prior Lambda invocation's event into a
+   * later `run()`/handler call. `undefined` means "no event this
+   * invocation" — either the CLI `run()` path, or a Lambda invocation that
+   * genuinely received `undefined` as its event.
+   */
+  private currentLambdaEvent: unknown = undefined;
+
+  /**
    * The current run's/invocation's start timestamp — mirrored onto
    * {@link M3LScript.runStartedAt}. Reset at the top of every
    * {@link M3LScript.runPipeline} call (including a Lambda invocation),
@@ -242,6 +295,15 @@ export class M3LScript {
    * adds no `presetProviders` entry — see {@link M3LScript.loadConfig}.
    */
   private readonly preset: string | undefined;
+
+  /**
+   * The caller-supplied `options.configFiles` list, already validated (every
+   * entry's extension checked) by the constructor, or `undefined` when no
+   * config files were configured. `undefined` means stage 3 reads no config
+   * file and adds no `configFileProviders` entry — see
+   * {@link M3LScript.buildConfigFileProviders}.
+   */
+  private readonly configFiles: readonly string[] | undefined;
 
   /** The logger facade wired for this script instance. */
   readonly logger: M3LLogger;
@@ -319,6 +381,10 @@ export class M3LScript {
    *   `--log-level` is present with no value — see
    *   {@link resolveLogLevelFloor}. Never thrown when `options.logger` is
    *   supplied: a caller-supplied logger opts out of that resolution entirely.
+   * @throws {@link M3LError} with code `ERR_INVALID_ARGUMENT` when any entry
+   *   of `options.configFiles` has an unrecognized file extension (anything
+   *   other than `.json`, `.yaml`, or `.yml`, case-insensitive, including an
+   *   empty string) — see {@link M3LScript.buildConfigFileProviders}.
    */
   constructor(options: M3LScriptOptions) {
     this.scriptMetadata = options.metadata;
@@ -330,6 +396,12 @@ export class M3LScript {
 
     this.configuredCorrelationId = options.correlationId;
     this.preset = options.preset;
+    this.configFiles = options.configFiles;
+    if (this.configFiles !== undefined) {
+      for (const configFilePath of this.configFiles) {
+        validateConfigFileExtension(configFilePath);
+      }
+    }
     this.logger = options.logger ?? this.buildDefaultLogger();
     this.prompt = options.prompt ?? new M3LPrompt();
 
@@ -407,9 +479,10 @@ export class M3LScript {
   /**
    * The current run's/invocation's live resolved-configuration store — the
    * exact same instance {@link M3LScript.getConfiguration} returns once
-   * loaded, but readable synchronously without triggering a load. Reset to a
-   * fresh, empty store on every Lambda invocation (see
-   * {@link M3LScript.resetForInvocation}), same as `getConfiguration`.
+   * loaded, but readable synchronously without triggering a load. Empty
+   * before the first load, reset per Lambda invocation and at the top of
+   * every {@link M3LScript.run} call (see {@link M3LScript.resetForInvocation}),
+   * same as `getConfiguration`.
    *
    * @returns The live {@link M3LConfig} store.
    *
@@ -596,6 +669,11 @@ export class M3LScript {
     mainFn: () => void | Promise<void>,
     options?: M3LScriptRunOptions,
   ): Promise<void> {
+    // Mirrors the Lambda-handler path's reset call, so a script instance
+    // that previously served a Lambda invocation resolves no leftover event
+    // values here — `run` never supplies an event, so this always clears
+    // `currentLambdaEvent` to `undefined`.
+    this.resetForInvocation();
     await this.runWithErrorHandling(
       mainFn,
       undefined,
@@ -638,6 +716,15 @@ export class M3LScript {
    * clients it lazily constructs) is intentionally left untouched across
    * invocations so warm starts keep reusing existing connections.
    *
+   * Unlike {@link M3LScript.run}, the received `event` is wired into stage 3
+   * (config load) as a level-5 provider (see
+   * {@link M3LScript.buildEventProviders}): a top-level event key resolves a
+   * declared config parameter, below the command-line/config-file/environment
+   * tiers but above a preset. `run()` never supplies an event, so config
+   * resolution never reaches level 5 under the CLI path — a behavioral
+   * asymmetry between the two entry points worth revisiting under a future
+   * ADR-0018 update.
+   *
    * @typeParam TEvent - The Lambda event payload type.
    * @typeParam TResult - The value `mainFn` resolves to and the handler
    *   returns.
@@ -668,7 +755,7 @@ export class M3LScript {
     mainFn: (event: TEvent, context: TContext) => Promise<TResult>,
   ): (event: TEvent, context: TContext) => Promise<TResult> {
     return async (event: TEvent, context: TContext): Promise<TResult> => {
-      this.resetForInvocation();
+      this.resetForInvocation(event);
       let result: TResult | undefined;
       // Per-invocation correlation id resolution
       // (docs/reference/core/script.md#correlation-ids): an explicit
@@ -687,11 +774,25 @@ export class M3LScript {
     };
   }
 
-  /** Resets per-invocation state ahead of a Lambda handler call. */
-  private resetForInvocation(): void {
+  /**
+   * Resets per-invocation state — the single assignment site for
+   * {@link M3LScript.currentLambdaEvent}, so the "reset, then assign the new
+   * event" ordering is structurally guaranteed rather than relying on two
+   * call sites staying in sync. Called from the very top of
+   * {@link M3LScript.createLambdaHandler}'s returned closure (passing the
+   * just-received `event`) and from the very top of {@link M3LScript.run}
+   * (with no argument, clearing `currentLambdaEvent` to `undefined` since
+   * `run` never supplies an event).
+   *
+   * @param event - The just-received Lambda event, when called from the
+   *   Lambda-handler path; omitted (clearing `currentLambdaEvent`) when
+   *   called from `run()`.
+   */
+  private resetForInvocation(event?: unknown): void {
     this.initialized = false;
     this.configLoaded = false;
     this.config = new M3LConfig();
+    this.currentLambdaEvent = event;
   }
 
   /**
@@ -772,24 +873,92 @@ export class M3LScript {
   }
 
   /**
+   * Builds the level-2/3 `configFileProviders` entries for {@link loadConfig}
+   * when `options.configFiles` was configured; `undefined` when it was not
+   * (so `loadConfig` reads no config file and adds no provider). Split out of
+   * `loadConfig` to keep that method pure orchestration, mirroring the
+   * {@link buildPresetProviders} extraction above.
+   *
+   * Each already-extension-validated path (validated eagerly by the
+   * constructor, see {@link validateConfigFileExtension}) is dispatched by
+   * extension to `M3LJSONConfigProvider` (`.json`) or `M3LYAMLConfigProvider`
+   * (`.yaml`/`.yml`, case-insensitive). This is where the providers'
+   * constructors actually run — each does a synchronous eager
+   * `readFileSync` + parse and can throw `M3LConfigParseError` /
+   * `M3LUnsafeConfigKeyError`, which propagates unchanged out of stage 3, not
+   * out of `M3LScript`'s constructor.
+   */
+  private buildConfigFileProviders(): readonly M3LConfigProvider[] | undefined {
+    if (this.configFiles === undefined || this.configFiles.length === 0) {
+      return undefined;
+    }
+
+    return this.configFiles.map((configFilePath) =>
+      YAML_CONFIG_FILE_EXTENSIONS.has(extname(configFilePath).toLowerCase())
+        ? new M3LYAMLConfigProvider(configFilePath)
+        : new M3LJSONConfigProvider(configFilePath),
+    );
+  }
+
+  /**
+   * Builds the level-5 `extraProviders` entry for {@link loadConfig} when the
+   * current run/invocation carries a Lambda event (see
+   * {@link M3LScript.currentLambdaEvent}); `undefined` when it does not — the
+   * CLI `run()` path (which always clears `currentLambdaEvent`), or a Lambda
+   * invocation that genuinely received `undefined` as its event — so
+   * `loadConfig` adds no event provider. Split out of `loadConfig` to keep
+   * that method pure orchestration, mirroring the {@link buildPresetProviders}
+   * / {@link buildConfigFileProviders} extractions above.
+   *
+   * `M3LLambdaEventConfigProvider`'s own constructor screens every top-level
+   * event key against the prototype-pollution guard; a dangerous key's
+   * `M3LUnsafeConfigKeyError` propagates unchanged out of stage 3, not out of
+   * this method.
+   */
+  private buildEventProviders(): readonly M3LConfigProvider[] | undefined {
+    if (this.currentLambdaEvent === undefined) return undefined;
+    return [new M3LLambdaEventConfigProvider(this.currentLambdaEvent)];
+  }
+
+  /**
    * Stage 3: loads configuration via {@link M3LScriptConfigLoader}.
+   *
+   * Precedence, highest first: command-line arguments (level 1), config-file
+   * providers (levels 2-3, when `options.configFiles` was configured — see
+   * {@link buildConfigFileProviders}), environment variables (level 4), the
+   * current Lambda event (level 5, when {@link M3LScript.createLambdaHandler}
+   * is the entry point — see {@link buildEventProviders}), a loaded preset
+   * (level 6, when `options.preset` was configured — see
+   * {@link buildPresetProviders}), a parameter's `defaultValue` (level 7),
+   * then its `asyncFallback` (level 8).
    *
    * When `options.preset` was configured, the preset file is loaded (and
    * validated against the declared schema) via {@link M3LScriptPresetLoader}
    * first, and its values are wired in as a lowest-priority
-   * `presetProviders` entry. Any throw from the preset loader (e.g.
+   * `presetProviders` entry. When `options.configFiles` was configured, each
+   * entry is dispatched to a `M3LJSONConfigProvider`/`M3LYAMLConfigProvider`
+   * (see {@link buildConfigFileProviders}) and wired in at precedence levels
+   * 2-3 — below the command-line provider, above the environment-variable
+   * provider. Any throw from the preset loader (e.g.
    * `M3LPresetUnknownKeysError`, or an `M3LError` coded `"ERR_PRESET_LOAD"`
-   * for a missing/malformed file), or from the subsequent
-   * {@link M3LConfigSchema.validate} call (an `M3LConfigValidationError`
-   * coded `"ERR_CONFIG_VALIDATION"` when a schema-level validator rejects
-   * the resolved store), propagates unchanged — this method does not
-   * catch/swallow either.
+   * for a missing/malformed file), from a config-file provider or the event
+   * provider (e.g. `M3LConfigParseError`/`M3LUnsafeConfigKeyError`), or from
+   * the subsequent {@link M3LConfigSchema.validate} call (an
+   * `M3LConfigValidationError` coded `"ERR_CONFIG_VALIDATION"` when a
+   * schema-level validator rejects the resolved store), propagates
+   * unchanged — this method does not catch/swallow any of them.
    */
   private async loadConfig(): Promise<void> {
     const presetProviders = this.buildPresetProviders();
+    const configFileProviders = this.buildConfigFileProviders();
+    const eventProviders = this.buildEventProviders();
 
     this.config = await this.configLoader.load({
       params: this.schema?.parameters ?? [],
+      ...(configFileProviders !== undefined ? { configFileProviders } : {}),
+      ...(eventProviders !== undefined
+        ? { extraProviders: eventProviders }
+        : {}),
       ...(presetProviders !== undefined ? { presetProviders } : {}),
     });
     this.schema?.validate(this.config);

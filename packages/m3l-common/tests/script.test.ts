@@ -112,6 +112,7 @@ import {
   M3LConfig,
   M3LConfigParameter,
   M3LConfigParameterType,
+  M3LConfigParseError,
   M3LConfigSchema,
   M3LConfigValidationError,
   M3LInMemoryConfigProvider,
@@ -1559,6 +1560,195 @@ describe("M3LScript.createLambdaHandler()", () => {
 });
 
 // =============================================================================
+// M3LScript.createLambdaHandler — event → config (config-precedence
+// reconciliation, #341, commit 3 of 3)
+//
+// Contract: docs/reference/core/config.md's 8-level provider chain wires the
+// Lambda event payload in at precedence level 5, via
+// `M3LLambdaEventConfigProvider` (source label "lambda-event") — below CLI
+// (1)/configFileProviders (2-3)/env (4), above presetProviders (6)/
+// defaultValue (7)/asyncFallback (8). The provider never throws on a
+// non-object event (resolves no values) but CAN throw
+// `M3LUnsafeConfigKeyError` synchronously, during stage 3 (config-load), on a
+// dangerous top-level event key (e.g. `__proto__`). The event must also be
+// scoped per-invocation: a second `createLambdaHandler` invocation on the
+// same instance must not see an earlier invocation's event, and a later
+// `run()` call on an instance that previously served a Lambda invocation must
+// not see that invocation's event either.
+// =============================================================================
+describe("M3LScript.createLambdaHandler — event → config (#341)", () => {
+  const originalArgv = process.argv;
+
+  /** Replaces `process.argv.slice(2)` (what `M3LCommandLineConfigProvider` reads by default) with `args`. */
+  function stubArgv(...args: string[]): void {
+    process.argv = [
+      originalArgv[0] ?? "node",
+      originalArgv[1] ?? "script",
+      ...args,
+    ];
+  }
+
+  beforeEach(() => {
+    stubAwsLambdaEnvironment();
+    stubArgv();
+  });
+
+  afterEach(() => {
+    process.argv = originalArgv;
+  });
+
+  test("a top-level event key resolves a declared parameter with source label 'lambda-event'", async () => {
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+    const script = new M3LScript({
+      metadata,
+      config: { params: [region] },
+    });
+    const handler = script.createLambdaHandler(() => Promise.resolve());
+
+    await handler({ region: "event-region" }, {});
+
+    const config = await script.getConfiguration();
+    expect(config.get("region")).toBe("event-region");
+    expect(config.sourceOf("region")).toBe("lambda-event");
+  });
+
+  test("environment beats the event (level 4 > level 5)", async () => {
+    vi.stubEnv("REGION", "env-region");
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+    const script = new M3LScript({
+      metadata,
+      config: { params: [region] },
+    });
+    const handler = script.createLambdaHandler(() => Promise.resolve());
+
+    await handler({ region: "event-region" }, {});
+
+    const config = await script.getConfiguration();
+    expect(config.get("region")).toBe("env-region");
+    expect(config.sourceOf("region")).toBe("environment-variable");
+  });
+
+  test("the event beats a preset (level 5 > level 6)", async () => {
+    vi.spyOn(fs, "readFileSync").mockReturnValue(
+      JSON.stringify({ region: "preset-region" }),
+    );
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+    const script = new M3LScript({
+      metadata,
+      config: { params: [region] },
+      preset: "/fixtures/preset.json",
+    });
+    const handler = script.createLambdaHandler(() => Promise.resolve());
+
+    await handler({ region: "event-region" }, {});
+
+    const config = await script.getConfiguration();
+    expect(config.get("region")).toBe("event-region");
+    expect(config.sourceOf("region")).toBe("lambda-event");
+  });
+
+  test.each<[string, unknown]>([
+    ["a non-object string", "not-an-object"],
+    ["null", null],
+    ["a number", 42],
+  ])(
+    "a non-object event (%s) yields no values — defaultValue still resolves",
+    async (_label, event) => {
+      const region = new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+        defaultValue: "fallback-region",
+      });
+      const script = new M3LScript({
+        metadata,
+        config: { params: [region] },
+      });
+      const handler = script.createLambdaHandler(() => Promise.resolve());
+
+      await handler(event, {});
+
+      const config = await script.getConfiguration();
+      expect(config.get("region")).toBe("fallback-region");
+      expect(config.sourceOf("region")).toBe("default");
+    },
+  );
+
+  test("a prototype-pollution key in the event fails stage 3 with M3LUnsafeConfigKeyError", async () => {
+    const dangerousEvent: unknown = JSON.parse(
+      '{"__proto__": {"polluted": true}}',
+    );
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+    const script = new M3LScript({
+      metadata,
+      config: { params: [region] },
+    });
+    const handler = script.createLambdaHandler(() => Promise.resolve());
+
+    let thrown: unknown;
+    try {
+      await handler(dangerousEvent, {});
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LUnsafeConfigKeyError);
+    expect(script.getLastFailureStage()).toBe("config-load");
+  });
+
+  test("REGRESSION (leak lock A): a second Lambda invocation does not see the first invocation's event", async () => {
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+      defaultValue: "fallback-region",
+    });
+    const script = new M3LScript({
+      metadata,
+      config: { params: [region] },
+    });
+    const handler = script.createLambdaHandler(() => Promise.resolve());
+
+    await handler({ region: "first-region" }, {});
+    await handler({}, {});
+
+    const config = await script.getConfiguration();
+    expect(config.get("region")).not.toBe("first-region");
+    expect(config.get("region")).toBe("fallback-region");
+  });
+
+  test("REGRESSION (leak lock B): a run() call following a Lambda invocation resolves no event values", async () => {
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+      defaultValue: "fallback-region",
+    });
+    const script = new M3LScript({
+      metadata,
+      config: { params: [region] },
+    });
+    const handler = script.createLambdaHandler(() => Promise.resolve());
+
+    await handler({ region: "leaked-region" }, {});
+    await script.run(() => {});
+
+    const config = await script.getConfiguration();
+    expect(config.get("region")).not.toBe("leaked-region");
+    expect(config.get("region")).toBe("fallback-region");
+  });
+});
+
+// =============================================================================
 // Signal handling — SIGTERM/SIGINT/SIGQUIT
 // =============================================================================
 describe("M3LScript — signal handling", () => {
@@ -2238,7 +2428,21 @@ describe("M3LScriptConfigLoader", () => {
   // returns a real label instead of always undefined.
   // ---------------------------------------------------------------------
   describe("sourceOf() population (A6)", () => {
+    const originalArgv = process.argv;
+
+    afterEach(() => {
+      process.argv = originalArgv;
+    });
+
     test("populates sourceOf() with the winning provider's label for a provider-resolved value", async () => {
+      // Isolate the live CLI/env providers (both read real process state) so
+      // this test deterministically proves extraProviders — not a stray
+      // `--region` arg or `REGION` env var on the running machine/CI — wins
+      // over presetProviders/defaultValue/asyncFallback, its actual
+      // precedence-level-5 position (below CLI/env, above presetProviders).
+      process.argv = [originalArgv[0] ?? "node", originalArgv[1] ?? "script"];
+      vi.stubEnv("REGION", undefined);
+
       const loader = new M3LScriptConfigLoader();
       const region = new M3LConfigParameter({
         name: "region",
@@ -2300,13 +2504,16 @@ describe("M3LScriptConfigLoader", () => {
 });
 
 // =============================================================================
-// M3LScriptConfigLoader — presetProviders precedence (F8: preset seam)
+// M3LScriptConfigLoader — provider precedence chain (config-precedence
+// reconciliation, #341)
 //
-// Contract: `load()` gains a distinct, LOWEST-priority provider slot appended
-// AFTER CLI + env: providers = [...extraProviders, CLI, env, ...presetProviders].
-// `extraProviders` stays front-spread (highest priority).
+// Contract: `load()` builds the provider chain as
+// providers = [CLI, env, ...extraProviders, ...presetProviders] — CLI
+// (level 1) and environment (level 4) always outrank `extraProviders`
+// (level 5, e.g. a Lambda event payload), which in turn outranks
+// `presetProviders` (level 6, lowest priority).
 // =============================================================================
-describe("M3LScriptConfigLoader — presetProviders precedence (F8)", () => {
+describe("M3LScriptConfigLoader — provider precedence chain (config-precedence reconciliation, #341)", () => {
   const originalArgv = process.argv;
 
   /** Replaces `process.argv.slice(2)` (what `M3LCommandLineConfigProvider` reads by default) with `args`. */
@@ -2378,8 +2585,9 @@ describe("M3LScriptConfigLoader — presetProviders precedence (F8)", () => {
     expect(config.get("region")).toBe("env-region");
   });
 
-  test("an extraProviders value (front-spread, highest priority) overrides a presetProviders value", async () => {
+  test("an extraProviders value overrides a presetProviders value", async () => {
     stubArgv();
+    vi.stubEnv("REGION", undefined);
     const loader = new M3LScriptConfigLoader();
     const region = new M3LConfigParameter({
       name: "region",
@@ -2397,6 +2605,181 @@ describe("M3LScriptConfigLoader — presetProviders precedence (F8)", () => {
     });
 
     expect(config.get("region")).toBe("extra-region");
+  });
+
+  test("a CLI value overrides an extraProviders value", async () => {
+    // The core #341 regression lock: under the OLD (buggy) front-spread
+    // ordering, extraProviders would win here; the fixed chain places CLI
+    // (level 1) above extraProviders (level 5, e.g. a Lambda event payload).
+    stubArgv("--region=cli-region");
+    vi.stubEnv("REGION", undefined);
+    const loader = new M3LScriptConfigLoader();
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+
+    const config = await loader.load({
+      params: [region],
+      extraProviders: [
+        new M3LInMemoryConfigProvider({ region: "extra-region" }),
+      ],
+    });
+
+    expect(config.get("region")).toBe("cli-region");
+    expect(config.sourceOf("region")).toBe("cli");
+  });
+
+  test("an environment value overrides an extraProviders value", async () => {
+    // Same regression class as the CLI case above, one level down the
+    // chain: environment (level 4) must still outrank extraProviders
+    // (level 5) once the front-spread bug is fixed.
+    stubArgv();
+    vi.stubEnv("REGION", "env-region");
+    const loader = new M3LScriptConfigLoader();
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+
+    const config = await loader.load({
+      params: [region],
+      extraProviders: [
+        new M3LInMemoryConfigProvider({ region: "extra-region" }),
+      ],
+    });
+
+    expect(config.get("region")).toBe("env-region");
+    expect(config.sourceOf("region")).toBe("environment-variable");
+  });
+});
+
+// =============================================================================
+// M3LScriptConfigLoader — configFileProviders precedence (config-precedence
+// reconciliation, #341, commit 2 of 3)
+//
+// Contract: `load()` splices `configFileProviders` (levels 2-3, JSON/YAML
+// config files) between CLI (level 1) and environment (level 4):
+// providers = [CLI, ...configFileProviders, env, ...extraProviders,
+// ...presetProviders]. `configFileProviders` is not yet a field on
+// `M3LScriptConfigLoadOptions` — every test in this block is expected RED
+// (a type error on the not-yet-existing option) until commit 3 wires it in.
+// =============================================================================
+describe("M3LScriptConfigLoader — configFileProviders precedence", () => {
+  const originalArgv = process.argv;
+
+  /** Replaces `process.argv.slice(2)` (what `M3LCommandLineConfigProvider` reads by default) with `args`. */
+  function stubArgv(...args: string[]): void {
+    process.argv = [
+      originalArgv[0] ?? "node",
+      originalArgv[1] ?? "script",
+      ...args,
+    ];
+  }
+
+  afterEach(() => {
+    process.argv = originalArgv;
+  });
+
+  test("a configFileProviders value overrides an environment value (level 2/3 > level 4)", async () => {
+    stubArgv();
+    vi.stubEnv("REGION", "env-region");
+    const loader = new M3LScriptConfigLoader();
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+
+    const config = await loader.load({
+      params: [region],
+      configFileProviders: [
+        new M3LInMemoryConfigProvider({ region: "config-file-region" }),
+      ],
+    });
+
+    expect(config.get("region")).toBe("config-file-region");
+  });
+
+  test("a CLI value overrides a configFileProviders value (level 1 > level 2/3)", async () => {
+    stubArgv("--region=cli-region");
+    const loader = new M3LScriptConfigLoader();
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+
+    const config = await loader.load({
+      params: [region],
+      configFileProviders: [
+        new M3LInMemoryConfigProvider({ region: "config-file-region" }),
+      ],
+    });
+
+    expect(config.get("region")).toBe("cli-region");
+  });
+
+  test("a configFileProviders value overrides an extraProviders value (level 2/3 > level 5)", async () => {
+    stubArgv();
+    vi.stubEnv("REGION", undefined);
+    const loader = new M3LScriptConfigLoader();
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+
+    const config = await loader.load({
+      params: [region],
+      configFileProviders: [
+        new M3LInMemoryConfigProvider({ region: "config-file-region" }),
+      ],
+      extraProviders: [
+        new M3LInMemoryConfigProvider({ region: "extra-region" }),
+      ],
+    });
+
+    expect(config.get("region")).toBe("config-file-region");
+  });
+
+  test("a configFileProviders value overrides a presetProviders value (level 2/3 > level 6)", async () => {
+    stubArgv();
+    vi.stubEnv("REGION", undefined);
+    const loader = new M3LScriptConfigLoader();
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+
+    const config = await loader.load({
+      params: [region],
+      configFileProviders: [
+        new M3LInMemoryConfigProvider({ region: "config-file-region" }),
+      ],
+      presetProviders: [
+        new M3LPresetConfigProvider({ region: "preset-region" }),
+      ],
+    });
+
+    expect(config.get("region")).toBe("config-file-region");
+  });
+
+  test("with two configFileProviders entries supplying the same key, the earlier one wins (array order IS priority order)", async () => {
+    stubArgv();
+    vi.stubEnv("REGION", undefined);
+    const loader = new M3LScriptConfigLoader();
+    const region = new M3LConfigParameter({
+      name: "region",
+      type: M3LConfigParameterType.STRING,
+    });
+
+    const config = await loader.load({
+      params: [region],
+      configFileProviders: [
+        new M3LInMemoryConfigProvider({ region: "first-file-region" }),
+        new M3LInMemoryConfigProvider({ region: "second-file-region" }),
+      ],
+    });
+
+    expect(config.get("region")).toBe("first-file-region");
   });
 });
 
@@ -3301,6 +3684,201 @@ describe("M3LScript — preset seam (F8)", () => {
 
     expect(thrown).toBeInstanceOf(M3LPresetUnknownKeysError);
     expect(onErrorError).toBe(thrown);
+  });
+});
+
+// =============================================================================
+// M3LScript — options.configFiles (config-precedence reconciliation, #341,
+// commit 2 of 3)
+//
+// Contract: `configFiles` is an ORDERED list of JSON/YAML file paths, earlier
+// entries higher priority, wired into resolution at precedence levels 2-3
+// (below CLI, above environment). Extension dispatch (`.json` ->
+// M3LJSONConfigProvider, `.yaml`/`.yml` case-insensitive -> M3LYAMLConfigProvider)
+// is validated EAGERLY, synchronously, at `new M3LScript(...)` construction
+// time — an unrecognized extension (including no extension) throws M3LError
+// coded ERR_INVALID_ARGUMENT naming the offending path. The providers
+// themselves are constructed lazily during stage 3 (config load); both do
+// synchronous eager `readFileSync` + parse in their OWN constructor and can
+// throw M3LConfigParseError/M3LUnsafeConfigKeyError there, which must
+// propagate out of stage 3 (getLastFailureStage() -> "config-load"). A
+// missing file is tolerated by both providers (empty map, no throw) — only a
+// malformed/existing-but-bad file is an error.
+//
+// `configFiles`/`M3LJSONConfigProvider`/`M3LYAMLConfigProvider` dispatch does
+// not exist yet — every test in this block is expected RED (a type error on
+// the not-yet-existing option, or `M3LScript` never reading it) until commit
+// 3 wires it in.
+// =============================================================================
+describe("M3LScript — options.configFiles", () => {
+  const originalArgv = process.argv;
+
+  /** Replaces `process.argv.slice(2)` (what `M3LCommandLineConfigProvider` reads by default) with `args`. */
+  function stubArgv(...args: string[]): void {
+    process.argv = [
+      originalArgv[0] ?? "node",
+      originalArgv[1] ?? "script",
+      ...args,
+    ];
+  }
+
+  /** The single-parameter schema every test in this block declares. */
+  function makeRegionParam(defaultValue?: string): M3LConfigParameter {
+    return defaultValue === undefined
+      ? new M3LConfigParameter({
+          name: "region",
+          type: M3LConfigParameterType.STRING,
+        })
+      : new M3LConfigParameter({
+          name: "region",
+          type: M3LConfigParameterType.STRING,
+          defaultValue,
+        });
+  }
+
+  /**
+   * Stubs `fs.existsSync`/`fs.readFileSync` (the primitives
+   * `M3LJSONConfigProvider`/`M3LYAMLConfigProvider` read through) keyed by
+   * exact path string, mirroring `config.test.ts`'s per-provider mocking
+   * convention. A path absent from `files` behaves like a missing file
+   * (`existsSync` false) rather than throwing, so callers opt into the
+   * "missing file tolerated" scenario simply by omitting a path.
+   */
+  function stubConfigFiles(files: Readonly<Record<string, string>>): void {
+    vi.spyOn(fs, "existsSync").mockImplementation((target: fs.PathLike) =>
+      Object.hasOwn(files, String(target)),
+    );
+    vi.spyOn(fs, "readFileSync").mockImplementation(
+      (target: fs.PathOrFileDescriptor): string => {
+        const content = files[String(target)];
+        if (content === undefined) {
+          throw Object.assign(new Error("ENOENT: no such file or directory"), {
+            code: "ENOENT",
+          });
+        }
+        return content;
+      },
+    );
+  }
+
+  beforeEach(() => {
+    stubNonAwsEnvironment();
+    stubArgv();
+    vi.stubEnv("REGION", undefined);
+  });
+
+  afterEach(() => {
+    process.argv = originalArgv;
+  });
+
+  test.each([
+    [
+      "/fake/app.json",
+      JSON.stringify({ region: "json-region" }),
+      "json-file",
+      "json-region",
+    ],
+    ["/fake/app.yaml", "region: yaml-region\n", "yaml-file", "yaml-region"],
+    ["/fake/app.yml", "region: yml-region\n", "yaml-file", "yml-region"],
+    [
+      "/fake/app.YAML",
+      "region: upper-yaml-region\n",
+      "yaml-file",
+      "upper-yaml-region",
+    ],
+  ])(
+    "configFiles: [%s] wires the extension-matching provider — config.get('region') resolves to %s and sourceOf() is '%s'",
+    async (path, content, expectedSource, expectedValue) => {
+      stubConfigFiles({ [path]: content });
+      const script = new M3LScript({
+        metadata,
+        config: { params: [makeRegionParam()] },
+        configFiles: [path],
+      });
+
+      const config = await script.getConfiguration();
+
+      expect(config.get("region")).toBe(expectedValue);
+      expect(config.sourceOf("region")).toBe(expectedSource);
+    },
+  );
+
+  test("an unrecognized configFiles extension throws M3LError (ERR_INVALID_ARGUMENT) naming the offending path, at construction time — not at getConfiguration() time", () => {
+    let thrown: unknown;
+    try {
+      new M3LScript({
+        metadata,
+        config: { params: [makeRegionParam()] },
+        configFiles: ["/fake/app.toml"],
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+    expect((thrown as M3LError).message).toContain("/fake/app.toml");
+  });
+
+  test("an empty-string configFiles entry likewise throws M3LError (ERR_INVALID_ARGUMENT) at construction time", () => {
+    let thrown: unknown;
+    try {
+      new M3LScript({
+        metadata,
+        config: { params: [makeRegionParam()] },
+        configFiles: [""],
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+  });
+
+  test("a configFiles entry pointing at a missing file is tolerated: no throw, and a declared defaultValue still resolves", async () => {
+    stubConfigFiles({});
+    const script = new M3LScript({
+      metadata,
+      config: { params: [makeRegionParam("default-region")] },
+      configFiles: ["/fake/does-not-exist.json"],
+    });
+
+    const config = await script.getConfiguration();
+
+    expect(config.get("region")).toBe("default-region");
+  });
+
+  test("a malformed configFiles entry rejects run() with M3LConfigParseError, and getLastFailureStage() lands at 'config-load'", async () => {
+    stubConfigFiles({ "/fake/bad.json": "{ not: valid json" });
+    const script = new M3LScript({
+      metadata,
+      config: { params: [makeRegionParam()] },
+      configFiles: ["/fake/bad.json"],
+    });
+
+    let thrown: unknown;
+    try {
+      await script.run(() => {});
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConfigParseError);
+    expect(script.getLastFailureStage()).toBe("config-load");
+  });
+
+  test("omitting configFiles entirely: fs.readFileSync is never called for config purposes", async () => {
+    const readFileSyncSpy = vi.spyOn(fs, "readFileSync");
+    const script = new M3LScript({
+      metadata,
+      config: { params: [makeRegionParam("default-region")] },
+    });
+
+    const config = await script.getConfiguration();
+
+    expect(config.get("region")).toBe("default-region");
+    expect(readFileSyncSpy).not.toHaveBeenCalled();
   });
 });
 
