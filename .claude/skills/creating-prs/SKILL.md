@@ -216,9 +216,9 @@ git push -u origin HEAD
 
 **Budget for the pre-push hook — it runs a multi-minute verify.** This push
 triggers the `pre-push` lefthook, which runs `format:check` + `lint` +
-`typecheck` + `test:coverage` + `build`/`check:exports` + signature check **in
-parallel**; wall-clock is roughly the slowest lane (usually `test:coverage` or
-`lint`), often 2–4 min. A fixed foreground tool-timeout will kill the `git push`
+`typecheck` + `test:coverage` + `build`/`check:exports` + signature check +
+`check:agents` + `check:test-counts` **in parallel**; wall-clock is roughly
+the slowest lane (usually `test:coverage` or `lint`), often 2–4 min. A fixed foreground tool-timeout will kill the `git push`
 mid-hook — the ref never transmits, and a later retry just pays the cost again.
 So **run the push in the background or raise the command timeout**; do not lower
 your guard by reaching for `--no-verify` to dodge the wall-clock — the hook is the

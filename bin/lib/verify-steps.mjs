@@ -6,7 +6,7 @@
 // lefthook.yml.
 //
 // Problem this solves: `.github/workflows/ci.yml`'s `verify` job runs ~35
-// ordered steps; `lefthook.yml` pre-push covers 7 of them. Nothing reproduces
+// ordered steps; `lefthook.yml` pre-push covers 8 of them. Nothing reproduces
 // the full CI gate in one local command, so a contributor either trusts a
 // stale mental model of "what CI checks" or chains ~30 `pnpm check:*`
 // invocations by hand. VERIFY_STEPS is the ordered, hand-authored mirror of

@@ -22,11 +22,12 @@ commit-msg:
 # Same whole-repo verify the old single-chain hook ran, split into independent
 # commands so lefthook runs them CONCURRENTLY (`parallel: true`). Wall-clock drops
 # from the sum of the steps to roughly the slowest lane — the fix for the multi-
-# minute serial run that was overrunning push timeouts. The token SET is unchanged,
-# so `check:cadence` (which compares tokens, not structure) stays green with no
-# CLAUDE.md edit. Tradeoffs of parallelising: a cheap failure (e.g. format:check)
-# no longer short-circuits before the expensive test run, and vitest+eslint+tsc now
-# run at once (more CPU/RAM). Worth it — the all-pass push is the case that timed out.
+# minute serial run that was overrunning push timeouts. Tradeoffs of parallelising:
+# a cheap failure (e.g. format:check) no longer short-circuits before the expensive
+# test run, and vitest+eslint+tsc now run at once (more CPU/RAM). Worth it — the
+# all-pass push is the case that timed out. Every command's token set must stay
+# mirrored in the CLAUDE.md cadence table's `pre-push` row — `check:cadence` diffs
+# the two both ways.
 pre-push:
   parallel: true
   commands:
@@ -53,6 +54,12 @@ pre-push:
     # CI-only; see docs/contributing/model-selection.md "Enforcement").
     check-agents:
       run: pnpm check:agents
+    # Catch recorded-test-count drift locally instead of first in CI (was
+    # CI-only). Its own lane, not folded into `test:`, so its scoped Vitest run
+    # is hidden behind the slower test:coverage / lint lanes rather than added
+    # to them; see docs/logs/2026-07-23-core-script-run-wrapper.md:203-206.
+    check-test-counts:
+      run: pnpm check:test-counts
 
 # Fire after `git rebase` completes (including a no-op rebase with nothing to
 # replay) and after `git merge` completes. Regenerates the derived files the
