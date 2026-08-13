@@ -58,6 +58,19 @@ interface M3LConfigParameterOptions<TType extends M3LConfigParameterType> {
    * never consulted by resolution. Consumed by {@link M3LConfigHelpFormatter}.
    */
   readonly description?: string;
+  /**
+   * Marks the parameter as carrying a secret value. Like `description`, this
+   * is a **purely declarative marker — never consulted by resolution,
+   * coercion, or validation**; resolution behaves identically whether or not
+   * it is set. It exists for consumers that handle a parameter's resolved
+   * _value_ outside the resolution path (a preset/history writer, a display
+   * layer): such a consumer must never persist a secret parameter's value,
+   * and must mask it rather than render it unmasked. The parameter's name,
+   * type, and description are not secret and still render normally —
+   * `{@link M3LConfigHelpFormatter}` output is unchanged by this flag.
+   * Defaults to `false`.
+   */
+  readonly secret?: boolean;
 }
 
 /**
@@ -110,6 +123,7 @@ export class M3LConfigParameter<
     M3LConfigValidator<M3LCoercedValue<TType>> | undefined;
   private readonly required: boolean;
   private readonly description: string | undefined;
+  private readonly secret: boolean;
 
   /**
    * Creates a new `M3LConfigParameter`.
@@ -128,6 +142,7 @@ export class M3LConfigParameter<
     this.validate = options.validate;
     this.required = options.required ?? false;
     this.description = options.description;
+    this.secret = options.secret ?? false;
 
     if (this.defaultValue !== undefined) {
       this.runValidation(this.defaultValue);
@@ -178,6 +193,18 @@ export class M3LConfigParameter<
   /** Whether resolution throws {@link M3LConfigMissingError} instead of resolving `undefined` at the true fall-through. */
   isRequired(): boolean {
     return this.required;
+  }
+
+  /**
+   * Whether the parameter is declared secret. Purely declarative — never
+   * consulted by resolution, coercion, or validation; a secret parameter
+   * resolves identically to its non-secret twin. Consumers that handle the
+   * resolved value outside the resolution path (a preset/history writer, a
+   * display layer) must consult this flag to skip persisting and to mask
+   * rendering.
+   */
+  isSecret(): boolean {
+    return this.secret;
   }
 
   /** The parameter's declared default value, or `undefined` when none was declared. */

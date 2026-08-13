@@ -11,6 +11,12 @@
  * responsibility belongs to the logging/display layer, which should consult
  * `isSecret` before rendering a value.
  *
+ * @see {@link M3LConfigParameter.isSecret} — the declared-parameter producer
+ *   for this specifier's entries: a consumer (e.g. the m3l CLI's preset
+ *   layer, ADR-0042 phase 8f) derives its `M3LSecretsSpecifier` entries from
+ *   each schema's `isSecret()` parameters instead of hand-maintaining a name
+ *   list.
+ *
  * @example
  * ```ts
  * import { M3LSecretsSpecifier } from "@m3l-automation/m3l-common/core";
