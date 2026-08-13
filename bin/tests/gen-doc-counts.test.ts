@@ -3,10 +3,16 @@ import {
   deriveCounts,
   locateSite,
   buildImplementedListBlock,
+  beginMarker,
+  endMarker,
+  locateBlock,
+  locateListAssertion,
   IMPLEMENTED_LIST_BEGIN_MARKER,
   IMPLEMENTED_LIST_END_MARKER,
   TOTAL_COUNT_SITES,
   IMPLEMENTED_COUNT_SITES,
+  GENERATED_LIST_SITES,
+  LIST_ASSERTION_SITES,
 } from "../lib/count-sites.mjs";
 
 // A small fixture status table standing in for docs/implementation-status.md,
@@ -87,6 +93,9 @@ const TOTAL_STALE_BY_LABEL: Record<string, string> = {
     "library ledger (0/0 submodules, count-enforced)",
   "total submodule count (agent-operating-model.md live-status bullet)":
     "count-enforced 0/0 ledger",
+  "total submodule count (root README.md badge alt text)": 'alt="modules: 0/0"',
+  "total submodule count (npm-facing README.md badge alt text)":
+    'alt="modules: 0/0"',
 };
 
 const IMPLEMENTED_STALE_BY_LABEL: Record<string, string> = {
@@ -103,6 +112,8 @@ const IMPLEMENTED_STALE_BY_LABEL: Record<string, string> = {
   "docs/plans/README.md living-trackers pointer":
     "library ledger (0/99 submodules, count-enforced)",
   "agent-operating-model.md live-status bullet": "count-enforced 0/99 ledger",
+  "root README.md badge alt text": 'alt="modules: 0/99"',
+  "npm-facing README.md badge alt text": 'alt="modules: 0/99"',
 };
 
 // `TOTAL_COUNT_SITES.find`/`IMPLEMENTED_COUNT_SITES.find` narrowed the same
@@ -197,6 +208,12 @@ describe("buildImplementedListBlock", () => {
     expect(block).toContain(
       "`errors` are implemented and reviewed (1 of 3 submodules)",
     );
+  });
+
+  test("is produced via the same beginMarker/endMarker machine as every other generated block", () => {
+    const block = buildImplementedListBlock(fixtureCounts());
+    expect(block.startsWith(beginMarker("IMPLEMENTED-LIST"))).toBe(true);
+    expect(block.endsWith(endMarker("IMPLEMENTED-LIST"))).toBe(true);
   });
 });
 
@@ -488,6 +505,301 @@ describe("implementation-status.md barrels-table + living-trackers sites — rea
     );
     expect(implementedLabels).not.toContain(
       "AWS submodule count (implementation-status.md barrels table)",
+    );
+  });
+});
+
+describe("deriveCounts — name fields (coreNames/awsNames/qualifiedImplementedNames)", () => {
+  test("qualifies an AWS-only implemented name, leaves a Core name and an unlisted name bare", () => {
+    const counts = deriveCounts({
+      countCore: () => 2,
+      countAws: () => 2,
+      listCoreNames: () => ["errors", "events"],
+      listAwsNames: () => ["sqs", "s3"],
+      getStatus: () => ({
+        errors: "✅", // present in coreNames -> stays bare
+        sqs: "✅", // present only in awsNames -> qualified "aws/sqs"
+        orphan: "✅", // present in neither list -> stays bare
+        events: "❌",
+      }),
+    });
+    expect(counts.coreNames).toEqual(["errors", "events"]);
+    expect(counts.awsNames).toEqual(["sqs", "s3"]);
+    expect(counts.implementedNames).toEqual(["errors", "sqs", "orphan"]);
+    expect(counts.qualifiedImplementedNames).toEqual([
+      "errors",
+      "aws/sqs",
+      "orphan",
+    ]);
+  });
+
+  test("a name present in both coreNames and awsNames stays bare — Core wins the hypothetical collision", () => {
+    const counts = deriveCounts({
+      countCore: () => 1,
+      countAws: () => 1,
+      listCoreNames: () => ["shared"],
+      listAwsNames: () => ["shared"],
+      getStatus: () => ({ shared: "✅" }),
+    });
+    expect(counts.qualifiedImplementedNames).toEqual(["shared"]);
+  });
+});
+
+describe("beginMarker / endMarker / locateBlock", () => {
+  test("beginMarker/endMarker produce the expected HTML-comment text", () => {
+    expect(beginMarker("SUBMODULE-LIST")).toBe(
+      "<!-- BEGIN GENERATED SUBMODULE-LIST -->",
+    );
+    expect(endMarker("SUBMODULE-LIST")).toBe(
+      "<!-- END GENERATED SUBMODULE-LIST -->",
+    );
+  });
+
+  test("locateBlock spans from the BEGIN marker's start through the END marker's end, inclusive of both", () => {
+    const content =
+      "prefix\n<!-- BEGIN GENERATED SUBMODULE-LIST -->\nbody\n<!-- END GENERATED SUBMODULE-LIST -->\nsuffix";
+    const loc = locateBlock(content, "SUBMODULE-LIST");
+    expect(loc).not.toBeNull();
+    if (loc === null) throw new Error("expected a location");
+    expect(content.slice(loc.start, loc.end)).toBe(
+      "<!-- BEGIN GENERATED SUBMODULE-LIST -->\nbody\n<!-- END GENERATED SUBMODULE-LIST -->",
+    );
+  });
+
+  test.each([
+    [
+      "the BEGIN marker is missing",
+      "no begin here\n<!-- END GENERATED SUBMODULE-LIST -->",
+    ],
+    [
+      "the END marker is missing",
+      "<!-- BEGIN GENERATED SUBMODULE-LIST -->\nno end here",
+    ],
+    ["both markers are missing", "nothing here at all"],
+  ])("returns null when %s", (_label, content) => {
+    expect(locateBlock(content, "SUBMODULE-LIST")).toBeNull();
+  });
+});
+
+// A qualifiedImplementedNames-aware sibling to fixtureCounts() — the plain
+// fixture above never overrides listCoreNames/listAwsNames, so reading
+// .coreNames/.awsNames/.qualifiedImplementedNames off it would silently fall
+// through to a real filesystem read (docs/reference/{core,aws}), which is
+// exactly what these tests must stay isolated from.
+function fixtureCountsQualified() {
+  return deriveCounts({
+    countCore: () => 3,
+    countAws: () => 1,
+    listCoreNames: () => ["errors", "events", "security"],
+    listAwsNames: () => ["models"],
+    getStatus: () => FIXTURE_STATUS,
+  });
+}
+
+// Mirrors applySite (above) but for a marker-delimited block rather than a
+// single numeric capture — the block-splice counterpart gen-doc-counts.mjs's
+// GENERATED_LIST_SITES loop performs.
+function applyBlockSite(
+  content: string,
+  site: (typeof GENERATED_LIST_SITES)[number],
+  counts: ReturnType<typeof deriveCounts>,
+) {
+  const loc = locateBlock(content, site.marker);
+  if (loc === null) return content;
+  return (
+    content.slice(0, loc.start) + site.render(counts) + content.slice(loc.end)
+  );
+}
+
+describe("GENERATED_LIST_SITES — generator + checker round-trip", () => {
+  test.each(GENERATED_LIST_SITES)(
+    "$label: a generate-then-check pass agrees",
+    (site) => {
+      const counts = fixtureCountsQualified();
+      const stale = `prefix\n${beginMarker(site.marker)}\nstale placeholder content\n${endMarker(site.marker)}\nsuffix`;
+      const regenerated = applyBlockSite(stale, site, counts);
+      const loc = locateBlock(regenerated, site.marker);
+      expect(loc).not.toBeNull();
+      if (loc === null) throw new Error("expected a location");
+      const committedBlock = regenerated.slice(loc.start, loc.end);
+      expect(committedBlock).toBe(site.render(counts));
+    },
+  );
+
+  test.each(GENERATED_LIST_SITES)(
+    "$label: checker fails on a hand-edited generated block",
+    (site) => {
+      const counts = fixtureCountsQualified();
+      const fresh = site.render(counts);
+      const handEdited = fresh.replace("errors", "totally-not-a-real-module");
+      expect(handEdited).not.toBe(fresh);
+
+      // byte-comparison, same as check-impl-counts.mjs's extracted-block check
+      const loc = locateBlock(handEdited, site.marker);
+      expect(loc).not.toBeNull();
+      if (loc === null) throw new Error("expected a location");
+      const committedBlock = handEdited.slice(loc.start, loc.end);
+      expect(committedBlock).not.toBe(site.render(counts));
+    },
+  );
+});
+
+describe("GENERATED_LIST_SITES — synthetic bump tracks a newly landed name", () => {
+  // Same shape as the numeric synthetic-bump describe above: two independent
+  // deriveCounts() calls simulate a submodule going from undocumented to
+  // implemented between generator runs, so a renderer that hardcodes the
+  // BEFORE name list (instead of deriving it fresh from `counts`) is caught.
+  const BEFORE_STATUS = { alpha: "✅", bravo: "✅", charlie: "❌" };
+  const AFTER_STATUS = { ...BEFORE_STATUS, delta: "✅" };
+
+  const beforeCounts = deriveCounts({
+    countCore: () => 19,
+    countAws: () => 6,
+    listCoreNames: () => ["alpha", "bravo", "charlie"],
+    listAwsNames: () => [],
+    getStatus: () => BEFORE_STATUS,
+  });
+  const afterCounts = deriveCounts({
+    countCore: () => 19,
+    countAws: () => 6,
+    listCoreNames: () => ["alpha", "bravo", "charlie", "delta"],
+    listAwsNames: () => [],
+    getStatus: () => AFTER_STATUS,
+  });
+
+  test.each(GENERATED_LIST_SITES)(
+    "$label output changes to include the newly landed name, not just alpha/bravo",
+    (site) => {
+      const beforeBlock = site.render(beforeCounts);
+      const afterBlock = site.render(afterCounts);
+      expect(beforeBlock).not.toContain("delta");
+      expect(afterBlock).toContain("delta");
+      expect(afterBlock).toContain("alpha");
+      expect(afterBlock).toContain("bravo");
+    },
+  );
+
+  test("qualifiedImplementedNames itself tracks the bump, independent of the underlying implementedNames", () => {
+    expect(beforeCounts.qualifiedImplementedNames).toEqual(["alpha", "bravo"]);
+    expect(afterCounts.qualifiedImplementedNames).toEqual([
+      "alpha",
+      "bravo",
+      "delta",
+    ]);
+  });
+});
+
+describe("locateListAssertion + LIST_ASSERTION_SITES", () => {
+  const CORE_SITE = requireSite(
+    LIST_ASSERTION_SITES,
+    "Core barrel TSDoc submodule list",
+  );
+  const AWS_SITE = requireSite(
+    LIST_ASSERTION_SITES,
+    "AWS barrel TSDoc submodule list",
+  );
+
+  // Based on the real TSDoc header comments in
+  // packages/m3l-common/src/{core,aws}/index.ts as of writing — a rewording of
+  // either anchor phrase ("here as they are implemented:" / "here as they are
+  // implemented, in dependency order:") breaks these fixtures even though
+  // they never touch the real files.
+  const CORE_FIXTURE = [
+    " * Public submodules (documented under `docs/reference/core/`) are re-exported",
+    " * here as they are implemented: `script`, `checkpoint`, `config`,",
+    " * `diagnostics`, `environment`, `errors`, `events`, `logging`, `prompt`,",
+    " * `importers`, `exporters`, `files`, `json`, `text`, `storage`, `utils`,",
+    " * `network`, `polling`, `analysis`, `messaging`, `security`.",
+  ].join("\n");
+
+  const AWS_FIXTURE = [
+    " * Public submodules (documented under `docs/reference/aws/`) are re-exported",
+    " * here as they are implemented, in dependency order: `models`, `credentials`,",
+    " * `clients`, `dynamodb`, `cloudwatch-logs-insights`, `sqs`, `signing`, `s3`,",
+    " * `athena`, `eventbridge`, `lambda`, `ecs`, `cloudformation`, `codepipeline`,",
+    " * `eks`, `cloudwatch-alarms`, `cloudwatch-metrics`, `secrets-manager`.",
+  ].join("\n");
+
+  test("Core barrel fixture: extracts the real submodule name list in source order", () => {
+    const result = locateListAssertion(CORE_FIXTURE, CORE_SITE);
+    expect(result.found).toBe(true);
+    expect(result.actualNames).toEqual([
+      "script",
+      "checkpoint",
+      "config",
+      "diagnostics",
+      "environment",
+      "errors",
+      "events",
+      "logging",
+      "prompt",
+      "importers",
+      "exporters",
+      "files",
+      "json",
+      "text",
+      "storage",
+      "utils",
+      "network",
+      "polling",
+      "analysis",
+      "messaging",
+      "security",
+    ]);
+  });
+
+  test("AWS barrel fixture: extracts the real submodule name list in dependency order", () => {
+    const result = locateListAssertion(AWS_FIXTURE, AWS_SITE);
+    expect(result.found).toBe(true);
+    expect(result.actualNames).toEqual([
+      "models",
+      "credentials",
+      "clients",
+      "dynamodb",
+      "cloudwatch-logs-insights",
+      "sqs",
+      "signing",
+      "s3",
+      "athena",
+      "eventbridge",
+      "lambda",
+      "ecs",
+      "cloudformation",
+      "codepipeline",
+      "eks",
+      "cloudwatch-alarms",
+      "cloudwatch-metrics",
+      "secrets-manager",
+    ]);
+  });
+
+  test.each(LIST_ASSERTION_SITES)(
+    "$label reports not-found when the anchor phrase is absent",
+    (site) => {
+      const result = locateListAssertion(
+        "no anchor phrase appears anywhere in this string.",
+        site,
+      );
+      expect(result.found).toBe(false);
+    },
+  );
+
+  test("extraction is a strict span-scan, not pre-filtered against expectedNames — diffing is the caller's job", () => {
+    const counts = deriveCounts({
+      countCore: () => 1,
+      countAws: () => 0,
+      listCoreNames: () => ["script"],
+      listAwsNames: () => [],
+      getStatus: () => ({ script: "✅" }),
+    });
+    const fixtureWithExtraName = [
+      " * here as they are implemented: `script`, `totally-unexpected-name`.",
+    ].join("\n");
+    const result = locateListAssertion(fixtureWithExtraName, CORE_SITE);
+    expect(result.found).toBe(true);
+    expect(result.actualNames).toContain("totally-unexpected-name");
+    expect(CORE_SITE.expectedNames(counts)).not.toContain(
+      "totally-unexpected-name",
     );
   });
 });

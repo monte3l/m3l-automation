@@ -59,13 +59,15 @@ sidecars to re-verify), but it is no longer required for correctness.
 pnpm gen:counts
 ```
 
-Regenerates every "N of 22" badge/prose site (both the denominator — total
-documented — and the numerator — implemented count) plus the generated
-implemented-list block in `docs/implementation-status.md`, all from the
-filesystem-derived counts. Idempotent — a clean tree produces no diff. Site
-inventory lives in `bin/lib/count-sites.mjs`, shared with the two checkers
-below so they can never disagree with the generator about what a site should
-say.
+Regenerates every "N of M" badge/prose site (both the denominator — total
+documented — and the numerator — implemented count), plus every generated
+name-list block: the implemented-list sentence in
+`docs/implementation-status.md` and the hand-written "Implemented submodules:
+…" enumerations in `README.md`, `packages/m3l-common/README.md`, and
+`docs/README.md` (`GENERATED_LIST_SITES`) — all from the filesystem-derived
+counts/names. Idempotent — a clean tree produces no diff. Site inventory
+lives in `bin/lib/count-sites.mjs`, shared with the two checkers below so
+they can never disagree with the generator about what a site should say.
 
 ```bash
 node bin/check-doc-counts.mjs
@@ -74,8 +76,13 @@ node bin/check-doc-counts.mjs
 Verifies the denominator: derives the canonical count from
 `docs/reference/core/*.md` and `docs/reference/aws/*.md` and asserts the
 prose in `docs/README.md`/`README.md` (root badge + prose) uses the correct
-numbers. Should always pass immediately after `gen:counts`; a failure here
-means a site isn't in `bin/lib/count-sites.mjs`'s inventory yet.
+numbers, plus asserts the hand-authored barrel TSDoc submodule lists in
+`packages/m3l-common/src/{core,aws}/index.ts` (`LIST_ASSERTION_SITES`) —
+check-only, never generated, since those two lists live under the guarded
+`packages/*/src` tree and the AWS one is deliberately dependency-ordered
+rather than alphabetical. Should always pass immediately after `gen:counts`;
+a failure here means a site isn't in `bin/lib/count-sites.mjs`'s inventory
+yet.
 
 ```bash
 pnpm check:doc-exports
@@ -105,16 +112,16 @@ reminder — but do not edit the file unless the user asks.
 pnpm check:impl-counts
 ```
 
-Verifies the numerator: asserts the implemented "N of 22" count matches
+Verifies the numerator: asserts the implemented "N of M" count matches
 across every badge/prose site listed in `bin/lib/count-sites.mjs` (`README.md`,
 `packages/m3l-common/README.md`, `docs/README.md`,
-`docs/implementation-status.md`), **and** byte-verifies the generated
-implemented-list block (the `<!-- BEGIN/END GENERATED IMPLEMENTED-LIST -->`
-sentence near the top of `docs/implementation-status.md`) against a fresh
-render — so a hand edit inside the markers is caught too. Should already pass
-after step 2's `pnpm gen:counts`; if it doesn't, the Status column in
-`docs/implementation-status.md` disagrees with what step 2 derived — fix the
-✅ row, then re-run `gen:counts`.
+`docs/implementation-status.md`), **and** byte-verifies every
+`GENERATED_LIST_SITES` block (the implemented-list sentence in
+`docs/implementation-status.md` plus the three README-family submodule-name
+lists) against a fresh render — so a hand edit inside any marker pair is
+caught too. Should already pass after step 2's `pnpm gen:counts`; if it
+doesn't, the Status column in `docs/implementation-status.md` disagrees with
+what step 2 derived — fix the ✅ row, then re-run `gen:counts`.
 
 ### 5 — Test count check
 

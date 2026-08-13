@@ -17,8 +17,10 @@ import {
   root,
   deriveCounts,
   locateSite,
+  locateListAssertion,
   lineOf,
   TOTAL_COUNT_SITES,
+  LIST_ASSERTION_SITES,
 } from "./lib/count-sites.mjs";
 import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 
@@ -61,6 +63,43 @@ for (const site of TOTAL_COUNT_SITES) {
       `${site.file}: ${site.label} says ${result.actual} but derived count is ${result.expected}\n` +
         `   Derived: Core=${counts.coreCount} + AWS=${counts.awsCount} = ${counts.total}\n` +
         `   Context: "...${ctx}..."`,
+      { file: site.file, line: lineOf(content, result.matchIndex) },
+    );
+    errors++;
+  }
+}
+
+for (const site of LIST_ASSERTION_SITES) {
+  const filePath = join(root, site.file);
+  let content;
+  try {
+    content = readFileSync(filePath, "utf8");
+  } catch {
+    reporter.error(`Cannot read ${site.file}`, { file: site.file });
+    errors++;
+    continue;
+  }
+
+  const result = locateListAssertion(content, site);
+  if (!result.found) {
+    reporter.error(
+      `${site.file}: expected pattern not found: ${site.pattern}`,
+      { file: site.file },
+    );
+    errors++;
+    continue;
+  }
+
+  const expected = new Set(site.expectedNames(counts));
+  const actual = new Set(result.actualNames);
+  const missing = [...expected].filter((name) => !actual.has(name));
+  const extra = [...actual].filter((name) => !expected.has(name));
+  if (missing.length > 0 || extra.length > 0) {
+    const parts = [];
+    if (missing.length > 0) parts.push(`missing: ${missing.join(", ")}`);
+    if (extra.length > 0) parts.push(`extra: ${extra.join(", ")}`);
+    reporter.error(
+      `${site.file}: ${site.label} is out of sync with docs/reference/ (${parts.join("; ")})`,
       { file: site.file, line: lineOf(content, result.matchIndex) },
     );
     errors++;
