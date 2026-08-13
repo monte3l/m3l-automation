@@ -37,7 +37,24 @@ export const BANNED_EXACT_NAMES = new Map([
 ]);
 
 /**
- * Validate a script name against the ADR-0028 full-service-name convention.
+ * ADR-0042: static command names of the m3l CLI. A script whose name equals
+ * one of these would shadow the CLI's own subcommand routing (`m3l <script>`
+ * dynamic dispatch, ADR-0042 phase 8d), so scaffold and checker both reject
+ * them. `run <script>` stays the always-unambiguous canonical form either
+ * way; this list just keeps the short form collision-free.
+ */
+const RESERVED_CLI_NAMES = new Set([
+  "list",
+  "inspect",
+  "run",
+  "doctor",
+  "new",
+  "help",
+]);
+
+/**
+ * Validate a script name against the ADR-0028 full-service-name convention
+ * and the ADR-0042 reserved-CLI-name list.
  * Returns human-readable problem strings (empty array = compliant).
  */
 export function serviceNameErrors(name) {
@@ -53,6 +70,11 @@ export function serviceNameErrors(name) {
   if (exactTarget) {
     problems.push(
       `"${name}" names an AWS capability without its owning service — ADR-0028 requires "${exactTarget}".`,
+    );
+  }
+  if (RESERVED_CLI_NAMES.has(name)) {
+    problems.push(
+      `"${name}" is a reserved m3l CLI command name (${[...RESERVED_CLI_NAMES].join(", ")}) — ADR-0042 forbids script names that shadow a static CLI command.`,
     );
   }
   return problems;

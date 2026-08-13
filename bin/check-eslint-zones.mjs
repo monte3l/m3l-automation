@@ -25,6 +25,13 @@
 //                            never a sibling script's src (ADR-0029 backstop).
 //   6. prod-not-to-test    — packages/m3l-common/src and scripts/*/src may not
 //                            import from a tests/ tree.
+//   7. type-stripping zone — scripts/*/src/config.ts bans type-directed emit
+//                            (enum, runtime namespace, decorators, parameter
+//                            properties) so the m3l CLI's native
+//                            type-stripping fallback stays loadable (ADR-0042).
+//   8. m3l-cli boundary    — packages/m3l-cli/src may import only
+//                            @m3l-automation/m3l-common and node: builtins,
+//                            and is covered by the no-cycle rule (ADR-0042).
 //
 // Usage:
 //   node bin/check-eslint-zones.mjs   # exits 0 on success, 1 on any violation
@@ -124,15 +131,86 @@ const hasNoCycleGuard = config.some((block) => {
   const coversScripts = files.some((f) =>
     norm(f).endsWith("scripts/*/src/**/*.ts"),
   );
+  const coversCli = files.some((f) =>
+    norm(f).endsWith("packages/m3l-cli/src/**/*.ts"),
+  );
   const rule = block?.rules?.["import-x/no-cycle"];
   const [severity, options] = Array.isArray(rule) ? rule : [rule];
   const isError = severity === "error" || severity === 2;
   const isInfiniteDepth = options?.maxDepth === Infinity;
-  return coversLibrary && coversScripts && isError && isInfiniteDepth;
+  return (
+    coversLibrary && coversScripts && coversCli && isError && isInfiniteDepth
+  );
 });
 if (!hasNoCycleGuard) {
   reporter.error(
-    "missing or malformed ADR-0035 guard: import-x/no-cycle over packages/m3l-common/src/**/*.ts and scripts/*/src/**/*.ts (maxDepth: Infinity)",
+    "missing or malformed ADR-0035 guard: import-x/no-cycle over packages/m3l-common/src/**/*.ts, scripts/*/src/**/*.ts, and packages/m3l-cli/src/**/*.ts (maxDepth: Infinity)",
+    { file: "eslint.config.js" },
+  );
+  errors++;
+}
+
+// ADR-0042: the m3l CLI's discovery fallback executes scripts/*/src/config.ts
+// via Node native type-stripping, which cannot run type-directed emit. A
+// dedicated no-restricted-syntax zone must ban all four emit-requiring
+// constructs — and carry the general scripts block's process.env selector,
+// since flat config replaces (not merges) a rule's value and config.ts is
+// ignores-excluded from that block.
+const TYPE_STRIPPING_SELECTORS = [
+  "TSEnumDeclaration",
+  "TSModuleDeclaration:not([declare=true])",
+  "Decorator",
+  "TSParameterProperty",
+  "MemberExpression[object.name='process'][property.name='env']",
+];
+const hasTypeStrippingZone = config.some((block) => {
+  const files = Array.isArray(block?.files) ? block.files : [];
+  if (!files.some((f) => norm(f).endsWith("scripts/*/src/config.ts"))) {
+    return false;
+  }
+  const rule = block?.rules?.["no-restricted-syntax"];
+  if (!Array.isArray(rule)) return false;
+  const [severity, ...entries] = rule;
+  const isError = severity === "error" || severity === 2;
+  const selectors = entries.map((entry) => entry?.selector);
+  return (
+    isError && TYPE_STRIPPING_SELECTORS.every((sel) => selectors.includes(sel))
+  );
+});
+if (!hasTypeStrippingZone) {
+  reporter.error(
+    "missing or malformed ADR-0042 guard: no-restricted-syntax type-stripping zone over scripts/*/src/config.ts (enum/namespace/decorator/parameter-property bans + process.env selector)",
+    { file: "eslint.config.js" },
+  );
+  errors++;
+}
+
+// ADR-0042: the m3l CLI package's zero-runtime-dependency guarantee — its
+// source may import only the library (or a subpath) and node: builtins.
+const hasCliImportBoundary = config.some((block) => {
+  const files = Array.isArray(block?.files) ? block.files : [];
+  if (!files.some((f) => norm(f).endsWith("packages/m3l-cli/src/**/*.ts"))) {
+    return false;
+  }
+  const rule = block?.rules?.["@typescript-eslint/no-restricted-imports"];
+  if (!Array.isArray(rule)) return false;
+  const [severity, options] = rule;
+  const isError = severity === "error" || severity === 2;
+  const patterns = Array.isArray(options?.patterns) ? options.patterns : [];
+  return (
+    isError &&
+    patterns.some(
+      (pattern) =>
+        typeof pattern?.regex === "string" &&
+        pattern.regex.includes("@m3l-automation/m3l-common") &&
+        pattern.regex.includes("node:") &&
+        pattern.allowTypeImports === false,
+    )
+  );
+});
+if (!hasCliImportBoundary) {
+  reporter.error(
+    "missing or malformed ADR-0042 guard: @typescript-eslint/no-restricted-imports boundary over packages/m3l-cli/src/**/*.ts (library + node: builtins only)",
     { file: "eslint.config.js" },
   );
   errors++;
