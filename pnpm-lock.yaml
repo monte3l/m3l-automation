@@ -100,6 +100,12 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
+  packages/m3l-cli:
+    dependencies:
+      '@m3l-automation/m3l-common':
+        specifier: workspace:*
+        version: link:../m3l-common
+
   packages/m3l-common:
     dependencies:
       '@aws-sdk/client-api-gateway':

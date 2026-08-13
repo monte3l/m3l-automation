@@ -223,7 +223,7 @@ export default tseslint.config(
     // block in this file now has non-overlapping `files`/`ignores` for
     // exactly this reason.
     files: ["scripts/*/src/**/*.ts"],
-    ignores: ["scripts/*/src/main.ts"],
+    ignores: ["scripts/*/src/main.ts", "scripts/*/src/config.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -389,6 +389,82 @@ export default tseslint.config(
       "max-lines": [
         "error",
         { max: 200, skipBlankLines: true, skipComments: true },
+      ],
+    },
+  },
+  {
+    // ADR-0042: the m3l CLI's discovery loader may fall back to executing
+    // `scripts/*/src/config.ts` via Node's native type-stripping, which
+    // cannot run type-directed emit — enum, runtime namespace, decorators,
+    // and constructor parameter properties all throw at import time. Ban
+    // them here so the fallback path stays universally loadable.
+    //
+    // config.ts is `ignores`-excluded from the general scripts
+    // no-restricted-syntax block above, and this block re-carries that
+    // block's two selectors (process.env ban, dynamic-import backstop):
+    // flat config replaces — not merges — a rule's value for whichever
+    // block matches a file last, so the union must live in one block (the
+    // same split main.ts already uses).
+    files: ["scripts/*/src/config.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "MemberExpression[object.name='process'][property.name='env']",
+          message:
+            "Scripts must not read process.env directly — declare config via M3LConfigParameter and read it from the resolved config (scripts.md).",
+        },
+        {
+          selector:
+            "ImportExpression[source.type='Literal'][source.value=/^(?!\\.)(?!node:)(?!@m3l-automation\\/m3l-common($|\\/)).+$/]",
+          message:
+            "Scripts may only dynamically import @m3l-automation/m3l-common (or a subpath), node: builtins, or a relative module — ADR-0029 bans script-local dependencies.",
+        },
+        {
+          selector: "TSEnumDeclaration",
+          message:
+            "config.ts must stay executable under Node native type-stripping (ADR-0042 CLI discovery fallback) — enums need type-directed emit; use a const object or union type instead.",
+        },
+        {
+          selector: "TSModuleDeclaration:not([declare=true])",
+          message:
+            "config.ts must stay executable under Node native type-stripping (ADR-0042 CLI discovery fallback) — runtime namespaces need type-directed emit; use a plain module instead.",
+        },
+        {
+          selector: "Decorator",
+          message:
+            "config.ts must stay executable under Node native type-stripping (ADR-0042 CLI discovery fallback) — decorators need type-directed emit.",
+        },
+        {
+          selector: "TSParameterProperty",
+          message:
+            "config.ts must stay executable under Node native type-stripping (ADR-0042 CLI discovery fallback) — constructor parameter properties need type-directed emit; declare the field explicitly.",
+        },
+      ],
+    },
+  },
+  {
+    // The m3l CLI package mirrors the scripts' ADR-0029 dependency boundary:
+    // its only runtime dependency is @m3l-automation/m3l-common, so its
+    // source may import only the library (or a subpath) and node: builtins.
+    // This mechanizes the package's zero-runtime-dependency guarantee
+    // (ADR-0042) at source level, the same way check:script-deps guards the
+    // scripts' manifests.
+    files: ["packages/m3l-cli/src/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex: "^(?!\\.)(?!node:)(?!@m3l-automation/m3l-common($|/)).+$",
+              allowTypeImports: false,
+              message:
+                "The m3l CLI may only import @m3l-automation/m3l-common (or a subpath) and node: builtins — ADR-0042 keeps it zero-dependency.",
+            },
+          ],
+        },
       ],
     },
   },
@@ -607,7 +683,11 @@ export default tseslint.config(
     // between a script's steps/ modules is the same failure mode and was
     // previously uncovered — the rule's scope is "every module that ships",
     // not "the library specifically".
-    files: ["packages/m3l-common/src/**/*.ts", "scripts/*/src/**/*.ts"],
+    files: [
+      "packages/m3l-common/src/**/*.ts",
+      "scripts/*/src/**/*.ts",
+      "packages/m3l-cli/src/**/*.ts",
+    ],
     rules: {
       "import-x/no-cycle": ["error", { maxDepth: Infinity }],
     },
@@ -617,7 +697,11 @@ export default tseslint.config(
     // Plain ESM .mjs — no TypeScript project service. Enables the rules that
     // caught historical PR findings: empty-catch swallowing, variable shadowing,
     // unused vars, and (via no-undef) missing explicit imports.
-    files: ["bin/**/*.mjs", ".claude/hooks/**/*.mjs"],
+    files: [
+      "bin/**/*.mjs",
+      ".claude/hooks/**/*.mjs",
+      "packages/m3l-cli/bin/**/*.mjs",
+    ],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: {
       parserOptions: { projectService: false },
