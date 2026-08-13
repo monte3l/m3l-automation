@@ -15,20 +15,14 @@ lint) — never source code, tests, or barrel exports.
 pnpm sync:docs          # or: node bin/sync-docs.mjs [--affected <path>] [--json]
 ```
 
-`bin/sync-docs.mjs` (ADR-0030 Phase 4) runs steps 1–9 below as one
-deterministic sequence: fail-fast ordering, the gen:index-before-prettier
-rule baked in (it prettier-writes exactly the artifacts `gen:index`
-regenerated), plus a machine check for the step-8 trap (every barrel export
-must appear in a sidecar `sections[].sources[]`). `--json` emits one
-aggregated payload; the human mode prints the summary block below. When it
-passes, this skill is done — report its summary.
-
-**Known gap (recurred 3+ times):** the composite's own step 1 can exit 1 on
-mere staleness warnings, contradicting step 1's own manual-fallback text below
-("fine here, cleared in step 2"). If a documented source file changed since
-the last provenance stamp, run `node bin/check-doc-provenance.mjs --update`
-proactively **before** `pnpm sync:docs` rather than waiting for the composite
-to fail on it.
+`bin/sync-docs.mjs` (ADR-0030 Phase 4) runs steps 1–8 below as one
+deterministic sequence: fail-fast ordering, re-stamp-before-verify (so a
+staleness warning that the restamp itself would clear never aborts the run),
+the gen:index-before-prettier rule baked in (it prettier-writes exactly the
+artifacts `gen:index` regenerated), plus a machine check for the step-7 trap
+(every barrel export must appear in a sidecar `sections[].sources[]`).
+`--json` emits one aggregated payload; the human mode prints the summary
+block below. When it passes, this skill is done — report its summary.
 
 Fall back to the manual steps only when the composite itself is broken or you
 need to isolate a single failing step.
@@ -38,38 +32,28 @@ need to isolate a single failing step.
 Run in order. **Fail fast**: stop at the first failing step, report the full
 error output, and tell the user what to fix before re-running.
 
-### 1 — Pre-flight: verify provenance sidecars
-
-```bash
-node bin/check-doc-provenance.mjs
-```
-
-Checks that every `*.provenance.json` sidecar in `docs/reference/` has valid
-structure — headings exist in the sibling `.md`, source files exist, symbols
-are exported. Staleness warnings (`⚠ stale — re-verify`) are fine here; they
-will be cleared in step 2.
-
-Stop if exit code is 1 (hard errors). Fix the sidecar content (wrong heading,
-missing file, removed symbol) before proceeding.
-
-### 2 — Re-stamp provenance to current HEAD
+### 1 — Re-stamp provenance to current HEAD
 
 ```bash
 node bin/check-doc-provenance.mjs --update
 ```
 
+`--update` validates sidecar structure first — headings exist in the sibling
+`.md`, source files exist, symbols are exported — and exits 1 without writing
+anything if a hard error is found (wrong heading, missing file, removed
+symbol). Fix the sidecar content and re-run before proceeding.
+
 Staleness is content-addressed (git blob SHA per source file), not
-commit-addressed, so the bare `--update` is now safe to run repo-wide: it
-stamps `blob` and bumps `retrieved` only for sections whose source content
-actually changed, and skips writing any sidecar with nothing stale. A rebase
-or an unrelated module's change never re-stamps sidecars it didn't touch.
-Only run after step 1 passed (even with staleness warnings).
+commit-addressed, so the bare `--update` is safe to run repo-wide: it stamps
+`blob` and bumps `retrieved` only for sections whose source content actually
+changed, and skips writing any sidecar with nothing stale. A rebase or an
+unrelated module's change never re-stamps sidecars it didn't touch.
 
 Scoping with `--affected <path/to/changed-source-file>` still works and is a
 useful optimization when you already know which sidecars are in play (fewer
 sidecars to re-verify), but it is no longer required for correctness.
 
-### 3 — Regenerate and verify doc counts
+### 2 — Regenerate and verify doc counts
 
 ```bash
 pnpm gen:counts
@@ -102,7 +86,7 @@ its `docs/reference` page. A newly shipped submodule that added exports must hav
 them all documented; this is the gate that catches an undocumented symbol before
 it reaches CI. Report the exact undocumented symbols if it fails.
 
-### 4 — Final provenance check (post-stamp)
+### 3 — Final provenance check (post-stamp)
 
 ```bash
 node bin/check-doc-provenance.mjs
@@ -110,7 +94,7 @@ node bin/check-doc-provenance.mjs
 
 Confirm all sidecars are structurally clean and staleness-free after stamping.
 
-### 5 — Implementation-status check
+### 4 — Implementation-status check
 
 Read `docs/implementation-status.md`. If the current task context or user
 description mentions a newly shipped submodule, verify its row in the table
@@ -128,11 +112,11 @@ across every badge/prose site listed in `bin/lib/count-sites.mjs` (`README.md`,
 implemented-list block (the `<!-- BEGIN/END GENERATED IMPLEMENTED-LIST -->`
 sentence near the top of `docs/implementation-status.md`) against a fresh
 render — so a hand edit inside the markers is caught too. Should already pass
-after step 3's `pnpm gen:counts`; if it doesn't, the Status column in
-`docs/implementation-status.md` disagrees with what step 3 derived — fix the
+after step 2's `pnpm gen:counts`; if it doesn't, the Status column in
+`docs/implementation-status.md` disagrees with what step 2 derived — fix the
 ✅ row, then re-run `gen:counts`.
 
-### 6 — Test count check
+### 5 — Test count check
 
 ```bash
 pnpm check:test-counts
@@ -145,7 +129,7 @@ against the "N tests" values recorded in the Notes column of
 If it fails, the output names the submodule, the recorded count, and the
 actual count. Tell the user the exact edit required in the Notes column.
 
-### 7 — Consumer-script docs check
+### 6 — Consumer-script docs check
 
 ```bash
 pnpm check:script-scaffold
@@ -159,7 +143,7 @@ exist. If a script's config schema changed, also eyeball that the contract
 page's schema table still matches `src/config.ts` — that content sync is not
 machine-checked.
 
-### 8 — Regenerate the reference index
+### 7 — Regenerate the reference index
 
 ```bash
 pnpm gen:index && pnpm check:index
@@ -174,7 +158,7 @@ barrel — **and** the consumer-scripts catalog block in
 or scripts changed.
 
 **A new export must be in the sidecar `sources[]`, not just the barrel.** Because
-the index derives from the sidecars, a scoped restamp (step 2,
+the index derives from the sidecars, a scoped restamp (step 1,
 `--update --affected …`) refreshes `commit`/`retrieved` timestamps but never
 **adds** the new symbol — you must hand-add it to `sources[]` (in every relevant
 section) in the same change set. The tell that you forgot: `gen:index` produces
@@ -194,7 +178,7 @@ every push to `main` and publishes them to GitHub Pages
 (`.github/workflows/pages.yml`), so no local command touches
 them and the README never needs a badge reconcile.
 
-### 9 — Markdown lint
+### 8 — Markdown lint
 
 ```bash
 pnpm lint:md
@@ -217,7 +201,6 @@ Output after all steps complete:
 ```
 ## /syncing-docs summary
 
-- Provenance pre-flight: ✓ / ✗
 - Sidecars re-stamped:   <N sidecars updated to <short SHA>>
 - Doc counts regen:      ✓ (gen:counts — N site(s) updated / already current)
 - Doc counts:            ✓ (Core=N, AWS=M, total=N+M) / ✗
@@ -231,7 +214,7 @@ Output after all steps complete:
 - Markdown lint:         ✓ / ✗
 
 Commit-stats badges are live CI-published endpoint badges (not part of this
-pass) — see step 8's note.
+pass) — see step 7's note.
 ```
 
 Replace ✓ with ✗ and include the tool's error output for any failed step.
