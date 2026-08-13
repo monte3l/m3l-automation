@@ -75,7 +75,7 @@ surface).
 | 0028 | [AWS-scoped scripts and submodules are named with full official AWS service names](./0028-aws-service-naming-convention.md)                               | Accepted                      |
 | 0029 | [Consumer scripts depend only on @m3l-automation/m3l-common](./0029-script-dependency-boundary.md)                                                        | Accepted                      |
 | 0030 | [Targeted workflow tooling and MCP adoption](./0030-targeted-workflow-tooling-and-mcp.md)                                                                 | Accepted                      |
-| 0031 | [Relational and document data-engine access for the consumer fleet](./0031-relational-and-document-data-engine-access.md)                                 | Proposed                      |
+| 0031 | [Relational and document data-engine access for the consumer fleet](./0031-relational-and-document-data-engine-access.md)                                 | Accepted                      |
 | 0032 | [Centralized project-state and roadmap visibility hub](./0032-project-management-visibility-hub.md)                                                       | Accepted                      |
 | 0033 | [Typed S3 operations wrapper over the raw SDK client](./0033-aws-s3-operations-wrapper.md)                                                                | Accepted                      |
 | 0034 | [Sonar/Act-Podman re-assessment: OSS complexity/duplication gates, Act/Podman declined](./0034-sonar-act-podman-reassessment.md)                          | Accepted                      |
