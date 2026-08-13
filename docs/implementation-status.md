@@ -26,7 +26,7 @@ _Planned_ = implementation plan exists in `docs/plans/archive/`.
 | -------------------------------------- | ------ | -------------------------------------------- |
 | `src/index.ts` (re-exports Core + AWS) | ✅     | wired; re-exports the Core + AWS namespaces  |
 | `src/core/index.ts`                    | ✅     | wired; all 21 Core submodules surfaced here  |
-| `src/aws/index.ts`                     | ✅     | wired; all 15 AWS submodules surfaced here   |
+| `src/aws/index.ts`                     | ✅     | wired; all 18 AWS submodules surfaced here   |
 | `exports` map (`.`, `./core`, `./aws`) | ✅     | the public contract — do not extend (semver) |
 
 ## Core submodules (`docs/reference/core/`)

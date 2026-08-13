@@ -156,6 +156,32 @@ export const TOTAL_COUNT_SITES = [
     label: "total submodule count (implementation-status.md intro prose)",
     expected: (counts) => counts.total,
   },
+  {
+    file: "docs/implementation-status.md",
+    pattern: /all (\d+) Core submodules surfaced here/,
+    label: "Core submodule count (implementation-status.md barrels table)",
+    expected: (counts) => counts.coreCount,
+  },
+  {
+    file: "docs/implementation-status.md",
+    pattern: /all (\d+) AWS submodules surfaced here/,
+    label: "AWS submodule count (implementation-status.md barrels table)",
+    expected: (counts) => counts.awsCount,
+  },
+  {
+    file: "docs/plans/README.md",
+    pattern: /library ledger \(\d+\/(\d+) submodules, count-enforced\)/,
+    label:
+      "total submodule count (docs/plans/README.md living-trackers pointer)",
+    expected: (counts) => counts.total,
+  },
+  {
+    file: "docs/contributing/agent-operating-model.md",
+    pattern: /count-enforced \d+\/(\d+) ledger/,
+    label:
+      "total submodule count (agent-operating-model.md live-status bullet)",
+    expected: (counts) => counts.total,
+  },
 ];
 
 // Numerator sites: each must show `counts.implemented`. The denominator half
@@ -210,6 +236,18 @@ export const IMPLEMENTED_COUNT_SITES = [
     pattern:
       /count-enforced library ledger \((\d+)\/\d+ submodules, shipped at/,
     label: "ROADMAP.md Status snapshot",
+    expected: (counts) => counts.implemented,
+  },
+  {
+    file: "docs/plans/README.md",
+    pattern: /library ledger \((\d+)\/\d+ submodules, count-enforced\)/,
+    label: "docs/plans/README.md living-trackers pointer",
+    expected: (counts) => counts.implemented,
+  },
+  {
+    file: "docs/contributing/agent-operating-model.md",
+    pattern: /count-enforced (\d+)\/\d+ ledger/,
+    label: "agent-operating-model.md live-status bullet",
     expected: (counts) => counts.implemented,
   },
 ];
