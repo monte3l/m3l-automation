@@ -1,10 +1,12 @@
 # Dependabot PR sweep — CodeQL required-check fix
 
-**Status: docs shipped, settings change handed back.** Commit `98f63d0` on
-`fix/dependabot-codeql-required-check`. The actual branch-protection/ruleset
-API mutation was blocked by the Claude Code auto-mode classifier
-(repository-admin action outside what a general "proceed" authorizes) and is
-left for the maintainer to run directly.
+**Status: done — docs shipped and settings applied.** Commit `98f63d0` on
+`fix/dependabot-codeql-required-check`. The branch-protection/ruleset API
+mutation was blocked by the Claude Code auto-mode classifier (repository-admin
+action outside what a general "proceed" authorizes) and left for the
+maintainer to run directly; the maintainer applied both `gh api PUT` calls on
+2026-08-06, evidenced by PRs #291–#295 (armed with `--auto --squash` below)
+all merging that same day.
 
 ## Context
 
@@ -70,7 +72,10 @@ Review` (`fail-on-severity: high`) and `pnpm audit` in `verify` remain the
 - `pnpm lint`, `pnpm typecheck`, `pnpm test:coverage` (6104 tests, 97.94%
   statement coverage), `pnpm build`, and `pnpm sync:docs` all pass on the
   branch.
-- **Still pending (maintainer action):** apply the two `gh api PUT` calls
-  (classic branch protection + ruleset `19550369`) that actually repoint the
-  required-status-check list. Until that lands, PRs #291–#295 stay armed but
-  `BLOCKED`.
+- **Applied (2026-08-06):** the maintainer ran the two `gh api PUT` calls
+  (classic branch protection + the `main-dual-layer-protection` ruleset),
+  repointing the required-status-check list on both layers to
+  `verify`/`review`/`CodeQL`/`Dependency Review`. PRs #291–#295 unblocked and
+  merged the same day. Re-verified live 2026-08-13 (issue #339); see
+  `docs/contributing/branch-protection.md` for the current required-context
+  list and how to re-check it.
