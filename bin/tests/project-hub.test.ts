@@ -110,6 +110,13 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 | **H1** | Done        | ADR-0040 landed            |
 | **H2** | In Progress | ADR-0042 in review          |
 
+## m3l-cli build-out — ADR-0042 activation (issue #333)
+
+| Item                                              | Priority | Status | Change                          | Source / notes                            |
+| -------------------------------------------------- | -------- | ------ | ---------------------------------- | --------------------------------------------- |
+| **ADR-0042 activation record**                     | P2       | Done   | tracker section added               | ADR-0042, issue #333                          |
+| **8b — scaffold + discovery (\`list\`, \`inspect\`)** | P2       | To Do  | \`packages/m3l-cli\` skeleton         | ADR-0042 phasing 8b                           |
+
 ## AWS getter reality
 
 | Provider getter | AWS service (ADR-0028 name) | Status | Wrapper submodule       | Consuming script(s)  | ADR / precedent                 |
@@ -637,17 +644,39 @@ describe("extractImplementation", () => {
     expect(h2Row?.[statusIndex]).toBe("In Progress");
   });
 
-  test("all six sections produce no errors when every heading is present", () => {
+  test("m3lCliBuildOut table is parsed with its header and rows", () => {
+    const result = extractImplementation(IMPLEMENTATION_FIXTURE);
+    expect(result.m3lCliBuildOut).not.toBeNull();
+    expect(result.m3lCliBuildOut?.header).toEqual([
+      "Item",
+      "Priority",
+      "Status",
+      "Change",
+      "Source / notes",
+    ]);
+    expect(result.m3lCliBuildOut?.rows).toHaveLength(2);
+    const statusIndex = columnIndex(
+      result.m3lCliBuildOut?.header ?? [],
+      "Status",
+    );
+    const activationRow = result.m3lCliBuildOut?.rows.find(
+      (row) => row[0] === "**ADR-0042 activation record**",
+    );
+    expect(activationRow?.[statusIndex]).toBe("Done");
+  });
+
+  test("all seven sections produce no errors when every heading is present", () => {
     const result = extractImplementation(IMPLEMENTATION_FIXTURE);
     expect(result.errors).toEqual([]);
   });
 
-  test("reports descriptive errors for capabilityDeepeningWave and postComparisonHardeningWave when their headings are absent", () => {
+  test("reports descriptive errors for capabilityDeepeningWave, postComparisonHardeningWave, and m3lCliBuildOut when their headings are absent", () => {
     const result = extractImplementation(
       IMPLEMENTATION_MISSING_NEW_WAVES_FIXTURE,
     );
     expect(result.capabilityDeepeningWave).toBeNull();
     expect(result.postComparisonHardeningWave).toBeNull();
+    expect(result.m3lCliBuildOut).toBeNull();
     expect(
       result.errors.some((error) => /Capability-deepening wave/i.test(error)),
     ).toBe(true);
@@ -655,6 +684,9 @@ describe("extractImplementation", () => {
       result.errors.some((error) =>
         /Post-comparison hardening wave/i.test(error),
       ),
+    ).toBe(true);
+    expect(
+      result.errors.some((error) => /m3l-cli build-out/i.test(error)),
     ).toBe(true);
     // The other four sections are still present and unaffected.
     expect(result.friction).not.toBeNull();
@@ -757,7 +789,7 @@ Just some prose, no table here at all.
     ]);
   });
 
-  test("regression lock: the real IMPLEMENTATION_SECTION_HEADINGS registry covers all six real headings", () => {
+  test("regression lock: the real IMPLEMENTATION_SECTION_HEADINGS registry covers all seven real headings", () => {
     const content = `## Library friction (F-series)
 
 | Item | Status |
@@ -781,6 +813,12 @@ Just some prose, no table here at all.
 | Item | Status |
 | ---- | ------ |
 | H1   | Done   |
+
+## m3l-cli build-out — ADR-0042 activation (issue #333)
+
+| Item | Status |
+| ---- | ------ |
+| 8b   | To Do  |
 
 ## AWS getter reality
 
@@ -997,6 +1035,7 @@ describe("renderHubPage", () => {
       adr0035Rollout: { header: [], rows: [] },
       capabilityDeepeningWave: { header: [], rows: [] },
       postComparisonHardeningWave: { header: [], rows: [] },
+      m3lCliBuildOut: { header: [], rows: [] },
       getterReality: { header: [], rows: [] },
       gated: { header: [], rows: [] },
       errors: [],

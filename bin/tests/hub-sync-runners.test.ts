@@ -78,6 +78,11 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 | Item | Priority | Status | Change | Source / notes |
 | ---- | -------- | ------ | ------ | ----------------- |
 
+## m3l-cli build-out — ADR-0042 activation (issue #333)
+
+| Item | Priority | Status | Change | Source / notes |
+| ---- | -------- | ------ | ------ | ----------------- |
+
 ## AWS getter reality
 
 | Provider getter | AWS service | Status | Wrapper submodule | Consuming script(s) | ADR / precedent |
@@ -125,6 +130,11 @@ const EMPTY_IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automatio
 | ---- | -------- | ------ | ------ | ----------------- |
 
 ## Post-comparison hardening wave — ADR-0040/0041/0042/0043
+
+| Item | Priority | Status | Change | Source / notes |
+| ---- | -------- | ------ | ------ | ----------------- |
+
+## m3l-cli build-out — ADR-0042 activation (issue #333)
 
 | Item | Priority | Status | Change | Source / notes |
 | ---- | -------- | ------ | ------ | ----------------- |

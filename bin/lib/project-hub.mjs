@@ -387,6 +387,10 @@ export const IMPLEMENTATION_SECTION_HEADINGS = {
     label: "Post-comparison hardening wave — ADR-0040/0041/0042/0043",
     regex: /^## Post-comparison hardening wave(?=[\s(]|$)/m,
   },
+  m3lCliBuildOut: {
+    label: "m3l-cli build-out — ADR-0042 activation (issue #333)",
+    regex: /^## m3l-cli build-out(?=[\s(]|$)/m,
+  },
   getterReality: {
     label: "AWS getter reality",
     regex: /^## AWS getter reality(?=[\s(]|$)/m,
@@ -398,13 +402,14 @@ export const IMPLEMENTATION_SECTION_HEADINGS = {
 };
 
 /**
- * Extract the six `docs/plans/IMPLEMENTATION.md` sections (library friction,
+ * Extract the seven `docs/plans/IMPLEMENTATION.md` sections (library friction,
  * ADR-0035 rollout, capability-deepening wave, post-comparison hardening
- * wave, AWS getter reality, gated/deferred) as parsed tables. Same
- * missing-section -> `errors` contract as {@link extractRoadmap}; never throws.
+ * wave, m3l-cli build-out, AWS getter reality, gated/deferred) as parsed
+ * tables. Same missing-section -> `errors` contract as {@link extractRoadmap};
+ * never throws.
  *
  * @param {string} content `docs/plans/IMPLEMENTATION.md` contents
- * @returns {{ friction: ReturnType<typeof parseMarkdownTable>, adr0035Rollout: ReturnType<typeof parseMarkdownTable>, capabilityDeepeningWave: ReturnType<typeof parseMarkdownTable>, postComparisonHardeningWave: ReturnType<typeof parseMarkdownTable>, getterReality: ReturnType<typeof parseMarkdownTable>, gated: ReturnType<typeof parseMarkdownTable>, errors: string[] }}
+ * @returns {{ friction: ReturnType<typeof parseMarkdownTable>, adr0035Rollout: ReturnType<typeof parseMarkdownTable>, capabilityDeepeningWave: ReturnType<typeof parseMarkdownTable>, postComparisonHardeningWave: ReturnType<typeof parseMarkdownTable>, m3lCliBuildOut: ReturnType<typeof parseMarkdownTable>, getterReality: ReturnType<typeof parseMarkdownTable>, gated: ReturnType<typeof parseMarkdownTable>, errors: string[] }}
  * @example
  * ```js
  * import { extractImplementation } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
@@ -934,6 +939,12 @@ export function renderHubPage(model) {
       "backlog-post-comparison-hardening-wave",
       "Post-comparison hardening wave — ADR-0040/0041/0042/0043",
       backlog.postComparisonHardeningWave,
+      "docs/plans",
+    ),
+    renderOptionalTable(
+      "backlog-m3l-cli-build-out",
+      "m3l-cli build-out — ADR-0042 activation (issue #333)",
+      backlog.m3lCliBuildOut,
       "docs/plans",
     ),
     renderOptionalTable(
