@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "TODO: describe what this automation does.",
+  "description": "Run a single Amazon Athena query and export its results to JSON or CSV, with checkpointed resume",
   "engines": {
     "node": ">=24"
   },

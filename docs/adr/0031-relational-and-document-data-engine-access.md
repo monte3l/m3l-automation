@@ -1,6 +1,6 @@
 # 0031. Relational and document data-engine access for the consumer fleet
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-16
 - **Deciders:** Enrico Lionello
 
@@ -160,6 +160,29 @@ admit it without re-litigating the boundary question:
   established pattern and moving the count-enforced submodule ledger by one.
   A future `mongodb` optional-peer addition would likewise be additive —
   minor, per ADR-0017.
+
+## Update (2026-08-13) — status corrected from Proposed to Accepted
+
+This ADR's `## Decision` section was always definitive — two-tier admission,
+with the RDS Data API route and the DocumentDB named-terms gate both fully
+specified — but the `Status:` line was never flipped from `Proposed`, and
+both `docs/ROADMAP.md` and `docs/plans/IMPLEMENTATION.md` had, in the
+meantime, come to treat its outcome as settled while independently
+**misstating** the Decision itself: both trackers' P2/D4 rows for
+`aws/rds-data`/DocumentDB read "ADR-0031 already dropped `pg`"/"already
+dropped `mongodb`" and marked the rows **Rejected**. That inverts what this
+ADR actually decided. [ADR-0029](./0029-script-dependency-boundary.md) is
+what dropped the raw `pg`/`mongodb` drivers from fleet scope; this ADR's
+whole purpose was re-opening that question and **re-admitting** Aurora
+PostgreSQL (via the RDS Data API, an AWS SDK client) while keeping
+DocumentDB gated on named, pre-cleared terms — neither engine was "dropped"
+by this ADR. Found and corrected by a 2026-08 tracker-reconciliation audit:
+status flipped to `Accepted` (matching the Decision that was already live),
+and both trackers' rows corrected to **Deferred** — gated on an actual
+consumer script per this ADR's own Consequences ("Any future `aws/rds-data`
+build is still gated behind an actual consumer script per ADR-0027"), not
+Rejected. Tracked as issues #204/#205 (`docs/ROADMAP.md`,
+`docs/plans/IMPLEMENTATION.md` § Gated library modules).
 
 ## Links
 

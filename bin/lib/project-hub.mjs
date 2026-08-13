@@ -175,6 +175,64 @@ export function classifyStatus(cell) {
   return "todo";
 }
 
+// Escape a string for literal use inside a RegExp source.
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Find every level-2 (`## `) heading in `content` whose section contains a
+ * pipe table with a "Status" column, then return the heading text of every
+ * one **not** matched by any regex in `registeredHeadings` (pass
+ * {@link ROADMAP_SECTION_HEADINGS} or {@link IMPLEMENTATION_SECTION_HEADINGS}
+ * depending on which tracker `content` is). This is the guard against the
+ * failure mode that let the capability-deepening and post-comparison
+ * hardening wave tables go completely unparsed for weeks after landing:
+ * `extractRoadmap`/`extractImplementation` only report an error for a
+ * heading they already know to look for, so a newly added status-bearing
+ * table is a silent no-op — this function is the check that notices the new
+ * heading exists at all. Level-3 (`### `) subsections are deliberately out
+ * of scope: some trackers nest another section's coarse subset under a
+ * `### ` heading on purpose (see the "ROADMAP's own nested … subsection is
+ * skipped" note on {@link actionableItems} in `./hub-sync.mjs`), and this
+ * scan operates at the same `## ` granularity `extractRoadmap`/
+ * `extractImplementation` already do.
+ *
+ * @param {string} content a tracker file's full contents
+ * @param {Record<string, { label: string, regex: RegExp }>} registeredHeadings
+ * @returns {string[]} heading text (without the `## ` prefix) of every
+ *   uncovered status-bearing section, in document order
+ * @example
+ * ```js
+ * import { findUncoveredStatusHeadings, IMPLEMENTATION_SECTION_HEADINGS } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
+ *
+ * findUncoveredStatusHeadings(
+ *   "## New wave\n\n| Item | Status |\n| - | - |\n| x | Done |\n",
+ *   IMPLEMENTATION_SECTION_HEADINGS,
+ * );
+ * // ["New wave"]
+ * ```
+ */
+export function findUncoveredStatusHeadings(content, registeredHeadings) {
+  const registered = Object.values(registeredHeadings);
+  const uncovered = [];
+  const headingRegex = /^## (.+)$/gm;
+  let match;
+  while ((match = headingRegex.exec(content)) !== null) {
+    const headingText = match[1].trim();
+    const tableRegex = new RegExp(`^## ${escapeRegExp(headingText)}$`, "m");
+    const table = parseMarkdownTable(content, tableRegex);
+    if (!table) continue;
+    if (columnIndex(table.header, "Status") === -1) continue;
+
+    const covered = registered.some(({ regex }) =>
+      regex.test(`## ${headingText}`),
+    );
+    if (!covered) uncovered.push(headingText);
+  }
+  return uncovered;
+}
+
 function classifyAdrStatusKind(statusText) {
   if (statusText.startsWith("Accepted")) return "Accepted";
   if (statusText.startsWith("Proposed")) return "Proposed";
@@ -245,7 +303,22 @@ export function parseDatedDoc(filename, content) {
   return { date, slug, title };
 }
 
-const ROADMAP_SECTION_HEADINGS = {
+/**
+ * The `docs/ROADMAP.md` level-2 (`## `) sections {@link extractRoadmap}
+ * knows how to find, keyed by the same names its return object uses.
+ * Exported (alongside {@link IMPLEMENTATION_SECTION_HEADINGS}) so
+ * `check-tracker-coverage.mjs` can tell "a status-bearing table exists" from
+ * "a status-bearing table is actually registered here" without duplicating
+ * this map.
+ *
+ * @example
+ * ```js
+ * import { ROADMAP_SECTION_HEADINGS } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
+ *
+ * ROADMAP_SECTION_HEADINGS.priority0.label; // "Priority 0"
+ * ```
+ */
+export const ROADMAP_SECTION_HEADINGS = {
   priority0: { label: "Priority 0", regex: /^## Priority 0(?=[\s(]|$)/m },
   priority1: { label: "Priority 1", regex: /^## Priority 1(?=[\s(]|$)/m },
   priority2: { label: "Priority 2", regex: /^## Priority 2(?=[\s(]|$)/m },
@@ -285,7 +358,19 @@ export function extractRoadmap(content) {
   return { ...sections, errors };
 }
 
-const IMPLEMENTATION_SECTION_HEADINGS = {
+/**
+ * The `docs/plans/IMPLEMENTATION.md` level-2 (`## `) sections
+ * {@link extractImplementation} knows how to find. See
+ * {@link ROADMAP_SECTION_HEADINGS} for why this is exported.
+ *
+ * @example
+ * ```js
+ * import { IMPLEMENTATION_SECTION_HEADINGS } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
+ *
+ * IMPLEMENTATION_SECTION_HEADINGS.gated.label; // "Gated library modules & deferred decisions (P2)"
+ * ```
+ */
+export const IMPLEMENTATION_SECTION_HEADINGS = {
   friction: {
     label: "Library friction (F-series)",
     regex: /^## Library friction \(F-series\)(?=[\s(]|$)/m,
@@ -293,6 +378,14 @@ const IMPLEMENTATION_SECTION_HEADINGS = {
   adr0035Rollout: {
     label: "ADR-0035 rollout — failure reporting & diagnostics",
     regex: /^## ADR-0035 rollout(?=[\s(]|$)/m,
+  },
+  capabilityDeepeningWave: {
+    label: "Capability-deepening wave — ADR-0037/0038/0039",
+    regex: /^## Capability-deepening wave(?=[\s(]|$)/m,
+  },
+  postComparisonHardeningWave: {
+    label: "Post-comparison hardening wave — ADR-0040/0041/0042/0043",
+    regex: /^## Post-comparison hardening wave(?=[\s(]|$)/m,
   },
   getterReality: {
     label: "AWS getter reality",
@@ -305,12 +398,13 @@ const IMPLEMENTATION_SECTION_HEADINGS = {
 };
 
 /**
- * Extract the four `docs/plans/IMPLEMENTATION.md` sections (library friction,
- * ADR-0035 rollout, AWS getter reality, gated/deferred) as parsed tables. Same
+ * Extract the six `docs/plans/IMPLEMENTATION.md` sections (library friction,
+ * ADR-0035 rollout, capability-deepening wave, post-comparison hardening
+ * wave, AWS getter reality, gated/deferred) as parsed tables. Same
  * missing-section -> `errors` contract as {@link extractRoadmap}; never throws.
  *
  * @param {string} content `docs/plans/IMPLEMENTATION.md` contents
- * @returns {{ friction: ReturnType<typeof parseMarkdownTable>, adr0035Rollout: ReturnType<typeof parseMarkdownTable>, getterReality: ReturnType<typeof parseMarkdownTable>, gated: ReturnType<typeof parseMarkdownTable>, errors: string[] }}
+ * @returns {{ friction: ReturnType<typeof parseMarkdownTable>, adr0035Rollout: ReturnType<typeof parseMarkdownTable>, capabilityDeepeningWave: ReturnType<typeof parseMarkdownTable>, postComparisonHardeningWave: ReturnType<typeof parseMarkdownTable>, getterReality: ReturnType<typeof parseMarkdownTable>, gated: ReturnType<typeof parseMarkdownTable>, errors: string[] }}
  * @example
  * ```js
  * import { extractImplementation } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
@@ -766,7 +860,7 @@ footer { margin-top: 3rem; color: var(--muted); font-size: 0.85rem; }
  *   commitSha: string,
  *   summary: { implemented: number, total: number },
  *   roadmap: { priority0: unknown, priority1: unknown, priority2: unknown, governance: unknown, errors: string[] },
- *   backlog: { friction: unknown, adr0035Rollout: unknown, getterReality: unknown, gated: unknown, errors: string[] },
+ *   backlog: { friction: unknown, adr0035Rollout: unknown, capabilityDeepeningWave: unknown, postComparisonHardeningWave: unknown, getterReality: unknown, gated: unknown, errors: string[] },
  *   ledger: { implemented: number, total: number, barrels: unknown, core: unknown, aws: unknown, errors: string[] },
  *   corpus: ReturnType<typeof buildCorpusSections>,
  * }} model
@@ -780,7 +874,7 @@ footer { margin-top: 3rem; color: var(--muted); font-size: 0.85rem; }
  *   commitSha: "abc1234",
  *   summary: { implemented: 30, total: 31 },
  *   roadmap: { priority0: null, priority1: null, priority2: null, governance: null, errors: [] },
- *   backlog: { friction: null, adr0035Rollout: null, getterReality: null, gated: null, errors: [] },
+ *   backlog: { friction: null, adr0035Rollout: null, capabilityDeepeningWave: null, postComparisonHardeningWave: null, getterReality: null, gated: null, errors: [] },
  *   ledger: { implemented: 30, total: 31, barrels: null, core: null, aws: null, errors: [] },
  *   corpus: { adrs: [], logs: [], archive: [], plans: [], reference: { core: [], aws: [], scripts: [] }, readmes: [] },
  * });
@@ -828,6 +922,18 @@ export function renderHubPage(model) {
       "backlog-adr-0035-rollout",
       "ADR-0035 rollout — failure reporting & diagnostics",
       backlog.adr0035Rollout,
+      "docs/plans",
+    ),
+    renderOptionalTable(
+      "backlog-capability-deepening-wave",
+      "Capability-deepening wave — ADR-0037/0038/0039",
+      backlog.capabilityDeepeningWave,
+      "docs/plans",
+    ),
+    renderOptionalTable(
+      "backlog-post-comparison-hardening-wave",
+      "Post-comparison hardening wave — ADR-0040/0041/0042/0043",
+      backlog.postComparisonHardeningWave,
       "docs/plans",
     ),
     renderOptionalTable(

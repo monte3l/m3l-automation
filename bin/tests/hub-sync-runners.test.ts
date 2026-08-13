@@ -2,7 +2,13 @@ import { describe, expect, test } from "vitest";
 import { runIssueSync } from "../sync-hub-issues.mjs";
 import { runProjectSync } from "../sync-hub-projects.mjs";
 import { runPhases } from "../sync-hub.mjs";
-import { HUB_PROJECT_TITLE, hubMarker } from "../lib/hub-sync.mjs";
+import {
+  actionableItems,
+  buildIssuePayload,
+  HUB_PROJECT_TITLE,
+  hubMarker,
+} from "../lib/hub-sync.mjs";
+import { extractImplementation, extractRoadmap } from "../lib/project-hub.mjs";
 
 // ---------------------------------------------------------------------------
 // Fixed identifiers the two runners hard-code internally (bin/sync-hub-issues.mjs,
@@ -62,6 +68,16 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 | Phase | Priority | Status | Change | Source / notes |
 | ----- | -------- | ------ | ------ | ----------------- |
 
+## Capability-deepening wave — ADR-0037/0038/0039
+
+| Item | Priority | Status | Change | Source / notes |
+| ---- | -------- | ------ | ------ | ----------------- |
+
+## Post-comparison hardening wave — ADR-0040/0041/0042/0043
+
+| Item | Priority | Status | Change | Source / notes |
+| ---- | -------- | ------ | ------ | ----------------- |
+
 ## AWS getter reality
 
 | Provider getter | AWS service | Status | Wrapper submodule | Consuming script(s) | ADR / precedent |
@@ -84,6 +100,127 @@ function makeReadDoc(
     if (relativePath === "docs/plans/IMPLEMENTATION.md") return implementation;
     throw new Error(`unexpected readDoc path in test fixture: ${relativePath}`);
   };
+}
+
+// Every section table below is present (so extraction never errors) but
+// deliberately empty except Priority 0's — computes items via the real
+// actionableItems/extract* pipeline (see computeItems below) rather than
+// hand-transcribing a title/body/labels shape that would silently drift from
+// buildIssuePayload's actual output.
+const EMPTY_IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
+
+## Library friction (F-series)
+
+| ID     | Priority | Status | Title & change    | Source / call-site |
+| ------ | -------- | ------ | -------------------- | --------------------- |
+
+## ADR-0035 rollout — failure reporting & diagnostics
+
+| Phase | Priority | Status | Change | Source / notes |
+| ----- | -------- | ------ | ------ | ----------------- |
+
+## Capability-deepening wave — ADR-0037/0038/0039
+
+| Item | Priority | Status | Change | Source / notes |
+| ---- | -------- | ------ | ------ | ----------------- |
+
+## Post-comparison hardening wave — ADR-0040/0041/0042/0043
+
+| Item | Priority | Status | Change | Source / notes |
+| ---- | -------- | ------ | ------ | ----------------- |
+
+## AWS getter reality
+
+| Provider getter | AWS service | Status | Wrapper submodule | Consuming script(s) | ADR / precedent |
+| ----------------- | ------------- | ------ | -------------------- | ----------------------- | ------------------ |
+
+## Gated library modules & deferred decisions (P2)
+
+| ID                  | Status   | Unblock condition |
+| --------------------- | -------- | -------------------- |
+`;
+
+// A single already-in-sync To-Do item — everything else in each tracker
+// stays empty so the plan is trivially empty when the matching issue/
+// milestone already exists (the `check` drift-gate "nothing to do" case).
+const CHECK_EMPTY_ROADMAP_FIXTURE = `# Roadmap — m3l-automation
+
+## Priority 0
+
+| Item    | What      | Status | Why now / Notes |
+| ------- | ---------- | ------ | ------------------ |
+| **CK1** | synced thing | To Do | notes |
+
+## Priority 1
+
+| Wave   | Scripts | Status | Depends on |
+| ------ | ------- | ------ | ---------- |
+
+## Priority 2
+
+| Item                | Status   | Unblock condition |
+| --------------------- | -------- | -------------------- |
+
+## Governance follow-ups
+
+| Item   | What              | Status | Notes   |
+| ------ | ------------------ | ------ | ------- |
+`;
+
+// Two Done P0 rows with no prior marker anywhere — the --backfill target
+// case. BF1 has no close title match among existingIssues (routes to
+// planBackfill.create); BF2's title is engineered (in each test) to collide
+// with an unmarked existing issue (routes to planBackfill.needsReview).
+const BACKFILL_ROADMAP_FIXTURE = `# Roadmap — m3l-automation
+
+## Priority 0
+
+| Item    | What      | Status | Why now / Notes |
+| ------- | ---------- | ------ | ------------------ |
+| **BF1** | historical done thing | Done | notes |
+| **BF2** | duplicate done thing | Done | notes |
+
+## Priority 1
+
+| Wave   | Scripts | Status | Depends on |
+| ------ | ------- | ------ | ---------- |
+
+## Priority 2
+
+| Item                | Status   | Unblock condition |
+| --------------------- | -------- | -------------------- |
+
+## Governance follow-ups
+
+| Item   | What              | Status | Notes   |
+| ------ | ------------------ | ------ | ------- |
+`;
+
+// Runs the exact same extraction + item-derivation pipeline runIssueSync
+// itself uses internally, so a test's "current GitHub state" fixture (an
+// existingIssues entry meant to already match a tracker row) is built from
+// the real buildIssuePayload output — never a hand-typed guess at its
+// title/body/labels shape, which would silently drift the moment that
+// shape changes.
+function computeItems(
+  roadmap: string,
+  implementation: string,
+): ReturnType<typeof actionableItems>["items"] {
+  return actionableItems(
+    extractRoadmap(roadmap),
+    extractImplementation(implementation),
+  ).items;
+}
+
+// `noUncheckedIndexedAccess` makes every array index read `T | undefined`;
+// guard instead of `!` (see .claude/rules/library-src.md) — a test fixture
+// that fails this throws with a clear message rather than silently reading
+// `undefined` deeper into the assertion chain.
+function required<T>(value: T | undefined, label: string): T {
+  if (value === undefined) {
+    throw new Error(`test fixture: expected ${label} to be defined`);
+  }
+  return value;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,12 +333,12 @@ function authFailRule(message = "not logged in"): GhRule {
   };
 }
 
+// `state=all` (not the API's `open` default) so a closed milestone doesn't
+// look absent and get re-`POST`ed — see loadExistingMilestoneTitles.
 function milestonesGetRule(titles: string[]): GhRule {
   return {
     match: (a) =>
-      a[0] === "api" &&
-      a[1] === `repos/${REPO}/milestones` &&
-      !a.includes("-X"),
+      a[0] === "api" && a[1] === `repos/${REPO}/milestones?state=all`,
     respond: () => JSON.stringify(titles.map((title) => ({ title }))),
   };
 }
@@ -231,10 +368,42 @@ function labelCreateRule(): GhRule {
   };
 }
 
-function issueCreateRule(): GhRule {
+// createIssue() now parses the created issue's number out of `gh issue
+// create`'s printed URL — an empty stdout no longer parses, so every scripted
+// create response must look like the real CLI's output. `number` defaults to
+// an arbitrary placeholder for callers that don't care about the parsed value.
+function issueCreateRule(number = 1): GhRule {
   return {
     match: (a) => a[0] === "issue" && a[1] === "create",
-    respond: () => "",
+    respond: () => `https://github.com/${REPO}/issues/${String(number)}\n`,
+  };
+}
+
+// Matches only an unfiltered `gh issue list` (no `--label` token) — used by
+// the --backfill collision guard's loadAllIssues, distinct from the
+// hub-sync-label-filtered read issueListSyncRule answers.
+function issueListAllRule(issues: unknown[]): GhRule {
+  return {
+    match: (a) =>
+      a[0] === "issue" &&
+      a[1] === "list" &&
+      a.includes("number,title,body,state,labels") &&
+      !a.includes("--label"),
+    respond: () => JSON.stringify(issues),
+  };
+}
+
+// Matches only the hub-sync-label-filtered `gh issue list` read
+// (loadExistingIssues) — the counterpart to issueListAllRule above, needed
+// once a single test scripts both reads with different fixtures.
+function issueListLabeledRule(issues: unknown[]): GhRule {
+  return {
+    match: (a) =>
+      a[0] === "issue" &&
+      a[1] === "list" &&
+      a.includes("number,title,body,state,labels") &&
+      a.includes("--label"),
+    respond: () => JSON.stringify(issues),
   };
 }
 
@@ -393,9 +562,33 @@ describe("runIssueSync", () => {
     expect(reporter.errors).toEqual([]);
     expect(reporter.finishedWith).toMatchObject({
       applied: false,
-      milestones: { create: 3 },
+      milestones: { create: 4 },
       issues: { create: 5, update: 0, close: 0, reopen: 0, untouched: 0 },
     });
+  });
+
+  test("dry run: queries milestones with state=all so a closed milestone isn't re-created", () => {
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      milestonesGetRule([]),
+      issueListSyncRule([]),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueSync({
+      runGh,
+      reporter,
+      apply: false,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(
+      calls.some(
+        (args) =>
+          args[0] === "api" && args[1] === `repos/${REPO}/milestones?state=all`,
+      ),
+    ).toBe(true);
   });
 
   test("--apply: records mutating calls in order (label bootstrap, then milestones, then issue create), each argv an array", () => {
@@ -426,8 +619,11 @@ describe("runIssueSync", () => {
     const issueCreateCalls = calls.filter(
       (a) => a[0] === "issue" && a[1] === "create",
     );
-    expect(labelCalls).toHaveLength(5);
-    expect(milestoneCreateCalls).toHaveLength(3);
+    // HUB_LABEL + 4 priority labels + 2 status labels (deferred/blocked).
+    expect(labelCalls).toHaveLength(7);
+    // Priority 0, Priority 1, Governance, Priority 2 — one per priority
+    // actually present among this fixture's items.
+    expect(milestoneCreateCalls).toHaveLength(4);
     expect(issueCreateCalls).toHaveLength(5);
 
     const firstLabelIndex = calls.findIndex((a) => a[0] === "label");
@@ -637,6 +833,285 @@ describe("runIssueSync", () => {
     );
     expect(calls).toHaveLength(3);
     expect(calls.every((args) => !isMutatingIssueCall(args))).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // check mode — the CI drift gate. Mutually exclusive with --apply (enforced
+  // in the main-guard, not runIssueSync itself); a plain dry run (check:
+  // false, the default) keeps its always-{ ok: true } preview contract.
+  // -------------------------------------------------------------------------
+
+  test("check: true with a non-empty plan returns { ok: false } and reports drift, without mutating anything", () => {
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      milestonesGetRule([]),
+      issueListSyncRule([]),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueSync({
+      runGh,
+      reporter,
+      apply: false,
+      check: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(reporter.errors.some((message) => /drift/i.test(message))).toBe(
+      true,
+    );
+    expect(reporter.succeeded).toEqual([]);
+    expect(calls.every((args) => !isMutatingIssueCall(args))).toBe(true);
+    expect(reporter.finishedWith).toMatchObject({
+      applied: false,
+      milestones: { create: 4 },
+      issues: { create: 5 },
+    });
+  });
+
+  test("check: true with an empty plan (everything already synced) returns { ok: true } with a distinct success message, without mutating anything", () => {
+    const items = computeItems(
+      CHECK_EMPTY_ROADMAP_FIXTURE,
+      EMPTY_IMPLEMENTATION_FIXTURE,
+    );
+    const payload = buildIssuePayload(required(items[0], "items[0]"));
+    const existingIssues = [
+      {
+        number: 701,
+        title: payload.title,
+        body: payload.body,
+        state: "OPEN",
+        labels: payload.labels.map((name) => ({ name })),
+      },
+    ];
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      milestonesGetRule(["Priority 0"]),
+      issueListSyncRule(existingIssues),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueSync({
+      runGh,
+      reporter,
+      apply: false,
+      check: true,
+      readDoc: makeReadDoc(
+        CHECK_EMPTY_ROADMAP_FIXTURE,
+        EMPTY_IMPLEMENTATION_FIXTURE,
+      ),
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(reporter.errors).toEqual([]);
+    expect(
+      reporter.succeeded.some((message) => /drift check passed/i.test(message)),
+    ).toBe(true);
+    expect(calls.every((args) => !isMutatingIssueCall(args))).toBe(true);
+    expect(reporter.finishedWith).toMatchObject({
+      applied: false,
+      milestones: { create: 0 },
+      issues: { create: 0, update: 0, close: 0, reopen: 0, untouched: 1 },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // backfill mode — the one-time historical-record pass (planBackfill). Never
+  // touches an item planIssueSync already tracks (marker present); only
+  // resolved (Done/Rejected) rows with no marker at all are candidates.
+  // -------------------------------------------------------------------------
+
+  test("backfill: true dry run reports a backfill summary and makes no mutating gh calls", () => {
+    const duplicateTitle = buildIssuePayload(
+      required(
+        computeItems(BACKFILL_ROADMAP_FIXTURE, EMPTY_IMPLEMENTATION_FIXTURE)[1],
+        "backfill items[1]",
+      ),
+    ).title;
+    const allIssues = [
+      {
+        number: 900,
+        title: duplicateTitle,
+        body: "",
+        state: "OPEN",
+        labels: [],
+      },
+    ];
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      milestonesGetRule([]),
+      issueListLabeledRule([]),
+      issueListAllRule(allIssues),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueSync({
+      runGh,
+      reporter,
+      apply: false,
+      backfill: true,
+      readDoc: makeReadDoc(
+        BACKFILL_ROADMAP_FIXTURE,
+        EMPTY_IMPLEMENTATION_FIXTURE,
+      ),
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(calls.every((args) => !isMutatingIssueCall(args))).toBe(true);
+    expect(reporter.finishedWith).toMatchObject({
+      applied: false,
+      backfill: { create: 1, needsReview: 1 },
+    });
+  });
+
+  test("backfill: true --apply creates+closes a create-bucket entry (using the parsed issue number), warns (no gh call) for a needsReview entry", () => {
+    const duplicateTitle = buildIssuePayload(
+      required(
+        computeItems(BACKFILL_ROADMAP_FIXTURE, EMPTY_IMPLEMENTATION_FIXTURE)[1],
+        "backfill items[1]",
+      ),
+    ).title;
+    const allIssues = [
+      {
+        number: 900,
+        title: duplicateTitle,
+        body: "",
+        state: "OPEN",
+        labels: [],
+      },
+    ];
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      milestonesGetRule([]),
+      issueListLabeledRule([]),
+      issueListAllRule(allIssues),
+      labelCreateRule(),
+      milestoneCreateRule(),
+      issueCreateRule(266),
+      issueCloseRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueSync({
+      runGh,
+      reporter,
+      apply: true,
+      backfill: true,
+      readDoc: makeReadDoc(
+        BACKFILL_ROADMAP_FIXTURE,
+        EMPTY_IMPLEMENTATION_FIXTURE,
+      ),
+    });
+
+    expect(outcome.ok).toBe(true);
+
+    const createCalls = calls.filter(
+      (a) => a[0] === "issue" && a[1] === "create",
+    );
+    const closeCalls = calls.filter(
+      (a) => a[0] === "issue" && a[1] === "close",
+    );
+    // Only BF1 (planBackfill.create) is ever created — BF2 (needsReview)
+    // never reaches a `gh issue create` call.
+    expect(createCalls).toHaveLength(1);
+    expect(closeCalls).toHaveLength(1);
+
+    const createIndex = calls.indexOf(
+      required(createCalls[0], "createCalls[0]"),
+    );
+    const closeIndex = calls.indexOf(required(closeCalls[0], "closeCalls[0]"));
+    expect(createIndex).toBeLessThan(closeIndex);
+    // The close call targets the number createIssue() parsed out of the
+    // scripted "https://…/issues/266" stdout, not a hand-picked stand-in.
+    expect(closeCalls[0]?.[2]).toBe("266");
+
+    expect(
+      reporter.changes.some(
+        (entry) =>
+          entry.kind === "created" && /backfilled, closed:/.test(entry.file),
+      ),
+    ).toBe(true);
+    expect(
+      reporter.warnings.some((message) => /Backfill skipped/.test(message)),
+    ).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // staleManagedLabels — now also strips a stale status:* label (previously
+  // only priority:*), used by editIssue's --remove-label loop.
+  // -------------------------------------------------------------------------
+
+  test("--apply: editing an issue whose item regressed off Blocked removes the stale status:blocked label", () => {
+    const roadmapWithRegressedStatus = `# Roadmap — m3l-automation
+
+## Priority 0
+
+| Item   | What                  | Status | Why now / Notes |
+| ------ | ---------------------- | ------ | ------------------ |
+| **UE** | no-longer-blocked thing | To Do  | notes               |
+
+## Priority 1
+
+| Wave   | Scripts | Status | Depends on |
+| ------ | ------- | ------ | ---------- |
+
+## Priority 2
+
+| Item                | Status   | Unblock condition |
+| --------------------- | -------- | -------------------- |
+
+## Governance follow-ups
+
+| Item   | What              | Status | Notes   |
+| ------ | ------------------ | ------ | ------- |
+`;
+    const existingIssues = [
+      {
+        number: 801,
+        title: "no-longer-blocked thing (stale)",
+        body: `${hubMarker("roadmap:p0:ue")}\nstale body\n`,
+        state: "OPEN",
+        labels: [
+          { name: "hub-sync" },
+          { name: "priority:p0" },
+          { name: "status:blocked" },
+        ],
+      },
+    ];
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      milestonesGetRule([]),
+      issueListSyncRule(existingIssues),
+      labelCreateRule(),
+      milestoneCreateRule(),
+      issueEditRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueSync({
+      runGh,
+      reporter,
+      apply: true,
+      readDoc: makeReadDoc(
+        roadmapWithRegressedStatus,
+        EMPTY_IMPLEMENTATION_FIXTURE,
+      ),
+    });
+
+    expect(outcome.ok).toBe(true);
+    const editCall = calls.find((a) => a[0] === "issue" && a[1] === "edit");
+    expect(editCall).toBeDefined();
+    // Read every "--remove-label <value>" pair positionally, rather than
+    // checking flag/value tokens independently — arrayContaining would pass
+    // even if "priority:p0" merely appeared elsewhere in argv (e.g. paired
+    // with --add-label), which is exactly what a correct edit call does.
+    const removedLabels = (editCall ?? [])
+      .map((arg, index) => (arg === "--remove-label" ? index : -1))
+      .filter((index) => index !== -1)
+      .map((index) => editCall?.[index + 1]);
+    expect(removedLabels).toEqual(["status:blocked"]);
+    expect(removedLabels).not.toContain("priority:p0");
   });
 });
 

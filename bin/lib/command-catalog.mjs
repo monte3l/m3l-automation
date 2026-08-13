@@ -133,7 +133,7 @@ export const COMMAND_CATALOG = [
   {
     name: "sync:hub-issues",
     description:
-      "Maintainer-run, local-only: syncs docs/ROADMAP.md + IMPLEMENTATION.md into GitHub Issues/Milestones. Dry-run by default; pass `-- --apply` to execute.",
+      "Maintainer-run, local-only: syncs docs/ROADMAP.md + IMPLEMENTATION.md into GitHub Issues/Milestones. Dry-run by default; pass `-- --apply` to execute, `-- --check` for the CI drift-gate mode (fails on a non-empty plan), or `-- --backfill` (composes with `--apply`) for the one-time historical backfill of Done/Rejected rows that predate sync:hub — creates each backfilled issue already closed, with a fuzzy-match collision guard against every existing issue title.",
   },
   {
     name: "sync:hub-projects",
@@ -229,6 +229,16 @@ export const COMMAND_CATALOG = [
     name: "check:cadence",
     description:
       "Verifies CLAUDE.md's Commands cadence table matches lefthook.yml's pre-commit/commit-msg/pre-push stages exactly. Run after editing lefthook.yml.",
+  },
+  {
+    name: "check:tracker-coverage",
+    description:
+      "Verifies every status-bearing table in ROADMAP.md/IMPLEMENTATION.md is registered with the sync:hub extractor (bin/lib/project-hub.mjs), so a newly added tracker table can't silently go unsynced. Run after adding a new '## ' section with a Status column to either tracker.",
+  },
+  {
+    name: "check:hub-drift",
+    description:
+      "CI-gated dry-run of sync:hub-issues that fails when the plan is non-empty — GitHub Issues/Milestones no longer match ROADMAP.md/IMPLEMENTATION.md. Needs gh auth; run push-only in CI (ci.yml), and locally before pushing to main if you have gh authenticated.",
   },
   {
     name: "check:worktree",

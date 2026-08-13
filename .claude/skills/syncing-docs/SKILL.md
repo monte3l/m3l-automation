@@ -202,6 +202,14 @@ pnpm lint:md
 
 Run from the repo root. Report any failures.
 
+**Out of scope, but check anyway if `docs/ROADMAP.md`/`docs/plans/IMPLEMENTATION.md`
+status cells changed in this session:** this skill's scope is doc metadata
+only — it never touches those two trackers or GitHub. If they did change
+(a unit shipped, a row flipped to Done), run `pnpm sync:hub` (dry-run, then
+`-- --apply`, maintainer-local) afterward so GitHub Issues/Milestones/the
+Project board stay a live projection rather than silently going stale — see
+`docs/ROADMAP.md`'s Maintenance section and ADR-0032's 2026-08-13 Update.
+
 ## Summary report
 
 Output after all steps complete:

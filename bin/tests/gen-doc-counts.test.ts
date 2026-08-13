@@ -79,6 +79,14 @@ const TOTAL_STALE_BY_LABEL: Record<string, string> = {
     "0 of 0 submodules are implemented",
   "total submodule count (implementation-status.md intro prose)":
     "(0 of 0 submodules)",
+  "Core submodule count (implementation-status.md barrels table)":
+    "all 0 Core submodules surfaced here",
+  "AWS submodule count (implementation-status.md barrels table)":
+    "all 0 AWS submodules surfaced here",
+  "total submodule count (docs/plans/README.md living-trackers pointer)":
+    "library ledger (0/0 submodules, count-enforced)",
+  "total submodule count (agent-operating-model.md live-status bullet)":
+    "count-enforced 0/0 ledger",
 };
 
 const IMPLEMENTED_STALE_BY_LABEL: Record<string, string> = {
@@ -92,7 +100,26 @@ const IMPLEMENTED_STALE_BY_LABEL: Record<string, string> = {
     "library ledger (0/99 submodules, count-enforced)",
   "ROADMAP.md Status snapshot":
     "count-enforced library ledger (0/99 submodules, shipped at",
+  "docs/plans/README.md living-trackers pointer":
+    "library ledger (0/99 submodules, count-enforced)",
+  "agent-operating-model.md live-status bullet": "count-enforced 0/99 ledger",
 };
+
+// `TOTAL_COUNT_SITES.find`/`IMPLEMENTED_COUNT_SITES.find` narrowed the same
+// way `requireStale` narrows the map lookups above — real-content fixture
+// tests below look a site up by its exact label rather than duplicating its
+// regex/expected-fn inline, so they stay wired to the real site definition
+// (and fail loudly, not silently, if a label is ever renamed).
+function requireSite<T extends { label: string }>(
+  sites: readonly T[],
+  label: string,
+): T {
+  const site = sites.find((candidate) => candidate.label === label);
+  if (site === undefined) {
+    throw new Error(`no site registered with label "${label}"`);
+  }
+  return site;
+}
 
 // `Record<string, string>` indexing is `string | undefined` under
 // noUncheckedIndexedAccess; `expect(...).toBeDefined()` only narrows at
@@ -335,5 +362,132 @@ describe("synthetic count bump — no site hardcodes a stale total", () => {
     // Guards against a template that hardcodes the BEFORE numbers instead of
     // deriving them from whichever `counts` it's called with.
     expect(afterBlock).not.toContain("(2 of 25 submodules)");
+  });
+});
+
+describe("implementation-status.md barrels-table + living-trackers sites — real current phrasing", () => {
+  // Real repo values as of writing (not the synthetic fixtures used above):
+  // docs/reference/core/*.md has 21 pages, docs/reference/aws/*.md has 18,
+  // and every one of the 39 is marked ✅ implemented. This locks the exact
+  // regex against the exact real-world sentence, independent of whether the
+  // generic synthetic-bump loop above happens to exercise it — a future
+  // accidental rewording of any of these four sentences breaks this test
+  // even though it would never touch a fixture string.
+  function realCounts() {
+    return deriveCounts({
+      countCore: () => 21,
+      countAws: () => 18,
+      getStatus: () =>
+        Object.fromEntries(
+          Array.from({ length: 39 }, (_, i) => [`module-${i}`, "✅"]),
+        ),
+    });
+  }
+
+  test("Core barrels-table sentence reports no drift against the real Core count", () => {
+    const counts = realCounts();
+    const site = requireSite(
+      TOTAL_COUNT_SITES,
+      "Core submodule count (implementation-status.md barrels table)",
+    );
+    const content =
+      "| `src/core/index.ts`                    | ✅     | wired; all 21 Core submodules surfaced here  |";
+    const result = locateSite(content, site, counts);
+    expect(result.found).toBe(true);
+    expect(result.actual).toBe(21);
+    expect(result.actual).toBe(result.expected);
+  });
+
+  test("AWS barrels-table sentence reports no drift against the real AWS count", () => {
+    const counts = realCounts();
+    const site = requireSite(
+      TOTAL_COUNT_SITES,
+      "AWS submodule count (implementation-status.md barrels table)",
+    );
+    const content =
+      "| `src/aws/index.ts`                     | ✅     | wired; all 18 AWS submodules surfaced here   |";
+    const result = locateSite(content, site, counts);
+    expect(result.found).toBe(true);
+    expect(result.actual).toBe(18);
+    expect(result.actual).toBe(result.expected);
+  });
+
+  test("docs/plans/README.md living-trackers pointer reports no drift on its total half", () => {
+    const counts = realCounts();
+    const site = requireSite(
+      TOTAL_COUNT_SITES,
+      "total submodule count (docs/plans/README.md living-trackers pointer)",
+    );
+    const content = "  library ledger (39/39 submodules, count-enforced).";
+    const result = locateSite(content, site, counts);
+    expect(result.found).toBe(true);
+    expect(result.actual).toBe(39);
+    expect(result.actual).toBe(result.expected);
+  });
+
+  test("docs/plans/README.md living-trackers pointer reports no drift on its implemented half", () => {
+    const counts = realCounts();
+    const site = requireSite(
+      IMPLEMENTED_COUNT_SITES,
+      "docs/plans/README.md living-trackers pointer",
+    );
+    const content = "  library ledger (39/39 submodules, count-enforced).";
+    const result = locateSite(content, site, counts);
+    expect(result.found).toBe(true);
+    expect(result.actual).toBe(39);
+    expect(result.actual).toBe(result.expected);
+  });
+
+  test("agent-operating-model.md live-status bullet reports no drift on its total half", () => {
+    const counts = realCounts();
+    const site = requireSite(
+      TOTAL_COUNT_SITES,
+      "total submodule count (agent-operating-model.md live-status bullet)",
+    );
+    const content =
+      '  count-enforced 39/39 ledger — `pnpm gen:counts` regenerates every "N of M"';
+    const result = locateSite(content, site, counts);
+    expect(result.found).toBe(true);
+    expect(result.actual).toBe(39);
+    expect(result.actual).toBe(result.expected);
+  });
+
+  test("agent-operating-model.md live-status bullet reports no drift on its implemented half", () => {
+    const counts = realCounts();
+    const site = requireSite(
+      IMPLEMENTED_COUNT_SITES,
+      "agent-operating-model.md live-status bullet",
+    );
+    const content =
+      '  count-enforced 39/39 ledger — `pnpm gen:counts` regenerates every "N of M"';
+    const result = locateSite(content, site, counts);
+    expect(result.found).toBe(true);
+    expect(result.actual).toBe(39);
+    expect(result.actual).toBe(result.expected);
+  });
+
+  test("the Core/AWS barrels-table entries are total-only, with no numerator sibling", () => {
+    // Unlike the "N of M" pairs (e.g. the living-trackers pointer above),
+    // these two prose sentences carry a single number each — there is
+    // deliberately no IMPLEMENTED_COUNT_SITES entry for either label, since
+    // "N documented submodules" has no separate implemented/total halves to
+    // track independently (same shape as the pre-existing CLAUDE.md barrel
+    // comments). This guards against the generic synthetic-bump loop's
+    // TOTAL_COUNT_SITES/IMPLEMENTED_COUNT_SITES pairing ever being assumed to
+    // be 1:1.
+    const totalLabels = TOTAL_COUNT_SITES.map((site) => site.label);
+    const implementedLabels = IMPLEMENTED_COUNT_SITES.map((site) => site.label);
+    expect(totalLabels).toContain(
+      "Core submodule count (implementation-status.md barrels table)",
+    );
+    expect(totalLabels).toContain(
+      "AWS submodule count (implementation-status.md barrels table)",
+    );
+    expect(implementedLabels).not.toContain(
+      "Core submodule count (implementation-status.md barrels table)",
+    );
+    expect(implementedLabels).not.toContain(
+      "AWS submodule count (implementation-status.md barrels table)",
+    );
   });
 });

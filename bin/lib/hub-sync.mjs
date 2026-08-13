@@ -52,8 +52,13 @@ export const PRIORITY_LABELS = {
 };
 
 /**
- * Maps p0/p1/p2 priorities to their GitHub milestone title. Governance items
- * have no milestone — {@link buildIssuePayload} returns `null` for them.
+ * Maps p0/p1/p2/governance priorities to their GitHub milestone title, plus
+ * the `major` bucket {@link MAJOR_BUMP_ITEM_KEYS} routes specific items to
+ * regardless of their priority. Every {@link Item} now resolves to a real
+ * milestone — governance items previously had none
+ * ({@link buildIssuePayload} returned `null`), which left issue #194 the
+ * only milestone-less issue while the "Priority 0" milestone held zero; see
+ * the dated ADR-0032 Update for the rationale.
  *
  * @example
  * ```js
@@ -66,6 +71,56 @@ export const MILESTONE_TITLES = {
   p0: "Priority 0",
   p1: "Priority 1",
   p2: "Priority 2",
+  governance: "Governance",
+  major: "2.0 / breaking",
+};
+
+/**
+ * {@link Item} keys routed to the `MILESTONE_TITLES.major` ("2.0 / breaking")
+ * milestone regardless of their table-derived priority — work explicitly
+ * recorded as needing a major-version bump before it can be built (F3's own
+ * text: "Re-file against a real 2.0 milestone if one is ever opened"; the
+ * `@deprecated` `AWSClientProvider` getter-removal row is the same class).
+ * Keys are computed via {@link slug}/the literal `impl:F3` friction-table
+ * key, not hand-typed, so this can never independently drift from the real
+ * key-generation logic in {@link actionableItems} — only from the tracker
+ * row's own identity-cell wording, which is the same dependency every
+ * {@link hubMarker} key already has.
+ *
+ * @example
+ * ```js
+ * import { MAJOR_BUMP_ITEM_KEYS } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ *
+ * MAJOR_BUMP_ITEM_KEYS.has("impl:F3"); // true
+ * ```
+ */
+export const MAJOR_BUMP_ITEM_KEYS = new Set([
+  "impl:F3",
+  `impl:${slug(
+    "Removal of the 4 `@deprecated` `AWSClientProvider` convenience getters (`dynamoDBDocument`/`sqsOperations`/`eventBridgeOperations`/`requestSigner`)",
+  )}`,
+]);
+
+/**
+ * Maps a Deferred/Blocked {@link Item} status to the GitHub label that makes
+ * it visually distinguishable from a plain "not yet started" To Do issue.
+ * Without this, Deferred, Blocked, and To Do were identical on GitHub — same
+ * open state, same priority label — and the Status column itself is
+ * excluded from the derived issue body, so a reader had no way to tell a
+ * blocked item from an actionable one. `done`/`rejected` issues are closed
+ * by {@link planIssueSync} instead of labeled; `todo`/`in-progress` carry no
+ * status label — they already are the two "actionable now" states.
+ *
+ * @example
+ * ```js
+ * import { STATUS_LABELS } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ *
+ * STATUS_LABELS.blocked; // "status:blocked"
+ * ```
+ */
+export const STATUS_LABELS = {
+  deferred: "status:deferred",
+  blocked: "status:blocked",
 };
 
 const ROADMAP_PATH = "docs/ROADMAP.md";
@@ -80,6 +135,9 @@ const ROADMAP_ANCHORS = {
 const IMPLEMENTATION_ANCHORS = {
   friction: "#library-friction-f-series",
   adr0035Rollout: "#adr-0035-rollout--failure-reporting--diagnostics",
+  capabilityDeepeningWave: "#capability-deepening-wave--adr-003700380039",
+  postComparisonHardeningWave:
+    "#post-comparison-hardening-wave--adr-0040004100420043",
   gated: "#gated-library-modules--deferred-decisions-p2",
 };
 
@@ -91,11 +149,25 @@ function stripMarkdown(text) {
   return linkless.replace(/[`*_]/g, "").trim();
 }
 
-// Slugify a tracker-table identity cell into the lowercase, dash-separated
-// form used inside an Item key: markdown links/backticks/emphasis are
-// stripped first (keeping a link's label), then everything but [a-z0-9]+ is
-// collapsed into a single "-", with leading/trailing dashes trimmed.
-function slug(text) {
+/**
+ * Slugify a tracker-table identity cell into the lowercase, dash-separated
+ * form used inside an Item key: markdown links/backticks/emphasis are
+ * stripped first (keeping a link's label), then everything but `[a-z0-9]+`
+ * is collapsed into a single "-", with leading/trailing dashes trimmed.
+ * Exported so a caller can derive a `gated`-table item's exact key from its
+ * literal ID-cell text (see {@link MAJOR_BUMP_ITEM_KEYS}) without
+ * hand-computing — and risking drifting from — the same transform.
+ *
+ * @param {string} text
+ * @returns {string}
+ * @example
+ * ```js
+ * import { slug } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ *
+ * slug("`aws/rds-data` Aurora PostgreSQL"); // "aws-rds-data-aurora-postgresql"
+ * ```
+ */
+export function slug(text) {
   return stripMarkdown(text)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -145,20 +217,25 @@ function buildDetail(header, row, excludeIndices) {
     .join("\n\n");
 }
 
-// Map an F-series row's raw Priority cell ("P0"/"P1"/"P2", possibly
-// markdown-wrapped) to an Item priority, falling back to "p2" for anything
-// unrecognized.
+// Map an F-series/wave-table row's raw Priority cell ("P0"/"P1"/"P2",
+// possibly markdown-wrapped) to an Item priority. Falls back to "p2" for
+// anything unrecognized (including the capability-deepening/post-comparison
+// wave tables' "—" placeholder, used on rows whose change isn't
+// priority-tiered) but reports `recognized: false` so the caller can surface
+// a warning instead of defaulting silently — a genuinely open row filed
+// under Priority 2 by a typo or a new placeholder convention should be loud,
+// not quiet.
 function mapFrictionPriority(cell) {
   const normalized = stripMarkdown(cell).toUpperCase();
   switch (normalized) {
     case "P0":
-      return "p0";
+      return { priority: "p0", recognized: true };
     case "P1":
-      return "p1";
+      return { priority: "p1", recognized: true };
     case "P2":
-      return "p2";
+      return { priority: "p2", recognized: true };
     default:
-      return "p2";
+      return { priority: "p2", recognized: false };
   }
 }
 
@@ -221,13 +298,14 @@ export function parseHubMarker(body) {
  * flat, actionable {@link Item} list the sync planners operate on.
  *
  * Emits ROADMAP Priority 0, Priority 1, and Governance follow-ups rows, plus
- * IMPLEMENTATION's Library friction (F-series), ADR-0035 rollout, and Gated
+ * IMPLEMENTATION's Library friction (F-series), ADR-0035 rollout,
+ * capability-deepening wave, post-comparison hardening wave, and Gated
  * modules (P2) rows. ROADMAP Priority 2 is never emitted — the IMPLEMENTATION
  * gated table is that content's item source, to avoid duplicate issues.
- * ROADMAP's own nested "ADR-0035 rollout" subsection (under Priority 0) is
- * skipped for the same reason: it is a coarse A1-A5 subset of
- * IMPLEMENTATION's fuller A1-A9 table, which is this content's item source.
- * Done rows ARE
+ * ROADMAP's own nested "ADR-0035 rollout" subsection (under Priority 0), and
+ * its two nested wave subsections under Priority 0, are skipped for the same
+ * reason: each is a coarse subset of the fuller IMPLEMENTATION table that is
+ * this content's item source. Done rows ARE
  * emitted (closes downstream are driven by them). Rows that produce the same
  * key are deduped: the first row's fields win, and later rows only
  * contribute additional detail lines. A `null` section (extractor found no
@@ -236,13 +314,17 @@ export function parseHubMarker(body) {
  *
  * @param {ReturnType<typeof import("./project-hub.mjs").extractRoadmap>} roadmap
  * @param {ReturnType<typeof import("./project-hub.mjs").extractImplementation>} implementation
- * @returns {Item[]}
+ * @returns {{ items: Item[], warnings: string[] }} `warnings` reports a
+ *   friction/wave-table row whose Priority cell wasn't one of "P0"/"P1"/"P2"
+ *   (e.g. a new placeholder convention or a typo) and was defaulted to p2 —
+ *   loud rather than silent, since a genuinely open row landing on the wrong
+ *   milestone by accident should be noticed.
  * @example
  * ```js
  * import { extractImplementation, extractRoadmap } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
  * import { actionableItems } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
  *
- * const items = actionableItems(
+ * const { items, warnings } = actionableItems(
  *   extractRoadmap(roadmapMarkdown),
  *   extractImplementation(implementationMarkdown),
  * );
@@ -250,6 +332,7 @@ export function parseHubMarker(body) {
  */
 export function actionableItems(roadmap, implementation) {
   const items = [];
+  const warnings = [];
   const byKey = new Map();
 
   function addItem(item) {
@@ -260,6 +343,18 @@ export function actionableItems(roadmap, implementation) {
     }
     byKey.set(item.key, item);
     items.push(item);
+  }
+
+  // Resolve a friction/wave-table row's Priority cell, appending a warning
+  // when it wasn't recognized (see mapFrictionPriority).
+  function resolvePriority(cell, key) {
+    const { priority, recognized } = mapFrictionPriority(cell ?? "");
+    if (!recognized) {
+      warnings.push(
+        `Implementation: item "${key}" has an unrecognized Priority cell ("${cell ?? ""}") — defaulted to p2.`,
+      );
+    }
+    return priority;
   }
 
   if (roadmap.priority0) {
@@ -334,11 +429,12 @@ export function actionableItems(roadmap, implementation) {
     const titleIndex = columnIndex(header, "Title & change");
     for (const row of rows) {
       const strippedId = stripMarkdown(row[idIndex] ?? "");
+      const key = `impl:${strippedId}`;
       addItem({
-        key: `impl:${strippedId}`,
+        key,
         title: `${strippedId} — ${row[titleIndex] ?? ""}`,
         status: classifyStatus(row[statusIndex] ?? ""),
-        priority: mapFrictionPriority(row[priorityIndex] ?? ""),
+        priority: resolvePriority(row[priorityIndex], key),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.friction,
         detail: buildDetail(header, row, new Set([idIndex, statusIndex])),
@@ -354,14 +450,57 @@ export function actionableItems(roadmap, implementation) {
     const changeIndex = columnIndex(header, "Change");
     for (const row of rows) {
       const strippedPhase = stripMarkdown(row[phaseIndex] ?? "");
+      const key = `impl:${strippedPhase}`;
       addItem({
-        key: `impl:${strippedPhase}`,
+        key,
         title: `${strippedPhase} — ${row[changeIndex] ?? ""}`,
         status: classifyStatus(row[statusIndex] ?? ""),
-        priority: mapFrictionPriority(row[priorityIndex] ?? ""),
+        priority: resolvePriority(row[priorityIndex], key),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.adr0035Rollout,
         detail: buildDetail(header, row, new Set([phaseIndex, statusIndex])),
+      });
+    }
+  }
+
+  if (implementation.capabilityDeepeningWave) {
+    const { header, rows } = implementation.capabilityDeepeningWave;
+    const itemIndex = columnIndex(header, "Item");
+    const priorityIndex = columnIndex(header, "Priority");
+    const statusIndex = columnIndex(header, "Status");
+    const changeIndex = columnIndex(header, "Change");
+    for (const row of rows) {
+      const strippedItem = stripMarkdown(row[itemIndex] ?? "");
+      const key = `impl:${slug(row[itemIndex] ?? "")}`;
+      addItem({
+        key,
+        title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
+        status: classifyStatus(row[statusIndex] ?? ""),
+        priority: resolvePriority(row[priorityIndex], key),
+        sourcePath: IMPLEMENTATION_PATH,
+        sourceAnchor: IMPLEMENTATION_ANCHORS.capabilityDeepeningWave,
+        detail: buildDetail(header, row, new Set([itemIndex, statusIndex])),
+      });
+    }
+  }
+
+  if (implementation.postComparisonHardeningWave) {
+    const { header, rows } = implementation.postComparisonHardeningWave;
+    const itemIndex = columnIndex(header, "Item");
+    const priorityIndex = columnIndex(header, "Priority");
+    const statusIndex = columnIndex(header, "Status");
+    const changeIndex = columnIndex(header, "Change");
+    for (const row of rows) {
+      const strippedItem = stripMarkdown(row[itemIndex] ?? "");
+      const key = `impl:${slug(row[itemIndex] ?? "")}`;
+      addItem({
+        key,
+        title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
+        status: classifyStatus(row[statusIndex] ?? ""),
+        priority: resolvePriority(row[priorityIndex], key),
+        sourcePath: IMPLEMENTATION_PATH,
+        sourceAnchor: IMPLEMENTATION_ANCHORS.postComparisonHardeningWave,
+        detail: buildDetail(header, row, new Set([itemIndex, statusIndex])),
       });
     }
   }
@@ -384,7 +523,7 @@ export function actionableItems(roadmap, implementation) {
     }
   }
 
-  return items;
+  return { items, warnings };
 }
 
 /**
@@ -396,7 +535,11 @@ export function actionableItems(roadmap, implementation) {
  * `MAX_TITLE_LENGTH` — a tracker row's "Title & change" cell can run to
  * several sentences, and GitHub issue titles are meant to be scanned as
  * labels, not read as prose; the untruncated detail always survives in the
- * body.
+ * body. `labels` always carries {@link HUB_LABEL} + the priority label, plus
+ * a {@link STATUS_LABELS} entry when the item is Deferred/Blocked. The
+ * milestone is {@link MAJOR_BUMP_ITEM_KEYS}'s `major` bucket when the item's
+ * key is in that set, else the priority's {@link MILESTONE_TITLES} entry —
+ * every item now resolves to a real milestone, including governance ones.
  *
  * @param {Item} item
  * @returns {{ title: string, body: string, labels: string[], milestoneTitle: string | null }}
@@ -418,14 +561,20 @@ export function actionableItems(roadmap, implementation) {
 export function buildIssuePayload(item) {
   const banner = `**Derived — do not edit.** Authored source: [${item.sourcePath}](${blobUrl(item.sourcePath)}${item.sourceAnchor}); re-synced by \`pnpm sync:hub\`.`;
   const body = [hubMarker(item.key), "", banner, "", item.detail].join("\n");
-  const milestoneTitle =
-    item.priority === "governance" ? null : MILESTONE_TITLES[item.priority];
+  const milestoneTitle = MAJOR_BUMP_ITEM_KEYS.has(item.key)
+    ? MILESTONE_TITLES.major
+    : MILESTONE_TITLES[item.priority];
   const title = truncateTitle(stripTitleMarkdown(item.title));
+  const statusLabel = STATUS_LABELS[item.status];
 
   return {
     title,
     body,
-    labels: [HUB_LABEL, PRIORITY_LABELS[item.priority]],
+    labels: [
+      HUB_LABEL,
+      PRIORITY_LABELS[item.priority],
+      ...(statusLabel ? [statusLabel] : []),
+    ],
     milestoneTitle,
   };
 }
@@ -489,6 +638,35 @@ function isResolved(status) {
   return status === "done" || status === "rejected";
 }
 
+// The three label families planIssueSync's dirty-check tracks for drift —
+// HUB_LABEL, priority:*, status:*. Anything else on an issue (a human-added
+// label) is outside hub-sync's authority and never inspected here.
+function isManagedLabel(label) {
+  return (
+    label === HUB_LABEL ||
+    label.startsWith("priority:") ||
+    label.startsWith("status:")
+  );
+}
+
+// Whether `currentLabels`' managed subset (see isManagedLabel) differs from
+// `payload.labels` — order-independent set comparison. Without this,
+// planIssueSync's dirty-check only ever compared title/body, so an item
+// whose STATUS_LABELS entry changed (or was newly added) with no title/body
+// change would never reach editIssue and the label would silently never
+// apply. Found adding STATUS_LABELS: issue #207 (already open, Blocked,
+// unchanged title/body) would otherwise never have received
+// `status:blocked`.
+function managedLabelsDiffer(currentLabels, payload) {
+  const current = new Set(currentLabels.filter(isManagedLabel));
+  const desired = new Set(payload.labels);
+  if (current.size !== desired.size) return true;
+  for (const label of desired) {
+    if (!current.has(label)) return true;
+  }
+  return false;
+}
+
 /**
  * Plan the create/update/close/reopen actions that bring `existingIssues`
  * into sync with `items`. Matching is **only** by
@@ -498,6 +676,11 @@ function isResolved(status) {
  *
  * Idempotency law: calling this again over the issue state its own plan
  * produced yields empty `create`/`update`/`close`/`reopen`.
+ *
+ * Dirty (triggers `update`) on a title/body change **or** a managed-label
+ * drift (see {@link managedLabelsDiffer}) — the latter so a status-only
+ * change (e.g. To Do → Deferred, same title/body) still reaches `editIssue`
+ * and gets its {@link STATUS_LABELS} entry applied, not just its milestone.
  *
  * @param {Item[]} items
  * @param {{ number: number, title: string, body: string, state: "open" | "closed", labels: string[] }[]} existingIssues
@@ -551,7 +734,9 @@ export function planIssueSync(items, existingIssues) {
     matchedKeys.add(item.key);
     const payload = buildIssuePayload(item);
     const isDirty =
-      issue.title !== payload.title || issue.body !== payload.body;
+      issue.title !== payload.title ||
+      issue.body !== payload.body ||
+      managedLabelsDiffer(issue.labels, payload);
 
     if (issue.state === "closed") {
       if (isResolved(item.status)) {
@@ -669,4 +854,135 @@ export function planProjectSync(trackedIssues, existingProjectItems) {
   }
 
   return { add, setStatus, archive };
+}
+
+// Plain Levenshtein edit distance between two strings — no dependency (this
+// repo's minimal-runtime-deps rule extends to bin/ tooling); O(a.length *
+// b.length) is fine at GitHub-issue-title scale (<=120 chars after
+// truncateTitle, at most a few hundred existing issues).
+function levenshteinDistance(a, b) {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const dp = Array.from({ length: rows }, () => new Array(cols).fill(0));
+  for (let j = 0; j < cols; j++) dp[0][j] = j;
+  for (let i = 0; i < rows; i++) dp[i][0] = i;
+  for (let i = 1; i < rows; i++) {
+    for (let j = 1; j < cols; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost,
+      );
+    }
+  }
+  return dp[rows - 1][cols - 1];
+}
+
+/**
+ * Case-insensitive title similarity in `[0, 1]` — `1` is identical, `0` is
+ * maximally different (every character differs, `levenshteinDistance` equals
+ * the longer string's length). Only used by {@link planBackfill}'s collision
+ * guard; not a general-purpose fuzzy-match utility.
+ *
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ * @example
+ * ```js
+ * import { titleSimilarity } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ *
+ * titleSimilarity("F7 — Opt-in tolerant handling", "f7 — opt-in tolerant handling"); // 1
+ * ```
+ */
+export function titleSimilarity(a, b) {
+  const left = a.toLowerCase();
+  const right = b.toLowerCase();
+  const maxLength = Math.max(left.length, right.length);
+  if (maxLength === 0) return 1;
+  return 1 - levenshteinDistance(left, right) / maxLength;
+}
+
+/**
+ * Plan a **one-time** backfill of GitHub issues for tracker rows that were
+ * already Done/Rejected before `sync:hub` ever ran against them — the
+ * go-forward-only gap {@link planIssueSync} accepts by design (a resolved
+ * item with no marker is silently skipped there, never created). Every
+ * backfilled issue is created **and immediately closed** with the same
+ * done/rejected reason a live resolved item's close uses, so the historical
+ * record exists on GitHub without ever appearing as open work.
+ *
+ * Only considers items with **no existing marker match at all** — an item
+ * {@link planIssueSync} already tracks (marker present, regardless of
+ * open/closed state) is never touched here, so running this after
+ * `planIssueSync` never double-plans the same row.
+ *
+ * **Collision guard:** because a pre-existing row never carried a marker, a
+ * naive backfill could refile something a maintainer already created by hand
+ * under a slightly different title. Before planning a create, every
+ * candidate title is fuzzy-matched ({@link titleSimilarity}) against every
+ * existing issue title (open or closed, marker or not); the single best
+ * match at or above `threshold` routes the item to `needsReview` instead of
+ * `create`, so a human confirms it rather than risking a duplicate.
+ *
+ * @param {Item[]} items
+ * @param {{ number: number, title: string, body: string, state: "open" | "closed" }[]} existingIssues
+ * @param {{ threshold?: number }} [options] `threshold` (default `0.85`) is
+ *   the minimum {@link titleSimilarity} that routes a candidate to
+ *   `needsReview` — tuned high so genuinely distinct same-family rows (e.g.
+ *   F8 vs. F8-adopt, which share boilerplate wording) don't false-positive.
+ * @returns {{
+ *   create: { key: string, payload: ReturnType<typeof buildIssuePayload>, comment: string, reason: "completed" | "not planned" }[],
+ *   needsReview: { key: string, payload: ReturnType<typeof buildIssuePayload>, candidateNumber: number, candidateTitle: string, similarity: number }[],
+ * }}
+ * @example
+ * ```js
+ * import { planBackfill } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ *
+ * const plan = planBackfill(items, existingIssues);
+ * plan.create.forEach(({ payload }) => console.log(payload.title));
+ * ```
+ */
+export function planBackfill(items, existingIssues, { threshold = 0.85 } = {}) {
+  const create = [];
+  const needsReview = [];
+
+  const markedKeys = new Set(
+    existingIssues
+      .map((issue) => parseHubMarker(issue.body))
+      .filter((key) => key !== null),
+  );
+
+  for (const item of items) {
+    if (!isResolved(item.status) || markedKeys.has(item.key)) continue;
+
+    const payload = buildIssuePayload(item);
+    let bestMatch = null;
+    for (const issue of existingIssues) {
+      const similarity = titleSimilarity(payload.title, issue.title);
+      if (!bestMatch || similarity > bestMatch.similarity) {
+        bestMatch = { number: issue.number, title: issue.title, similarity };
+      }
+    }
+
+    if (bestMatch && bestMatch.similarity >= threshold) {
+      needsReview.push({
+        key: item.key,
+        payload,
+        candidateNumber: bestMatch.number,
+        candidateTitle: bestMatch.title,
+        similarity: bestMatch.similarity,
+      });
+      continue;
+    }
+
+    create.push({
+      key: item.key,
+      payload,
+      comment: CLOSE_REASON[item.status],
+      reason: CLOSE_STATE_REASON[item.status],
+    });
+  }
+
+  return { create, needsReview };
 }

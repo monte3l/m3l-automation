@@ -17,6 +17,13 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Widens the workflow-level `contents: read` default with `issues: read`
+    # — needed only by the push-only "Check hub drift" step at the end of
+    # this job (reads Issues/Milestones; never writes). See that step's
+    # comment and ADR-0032's 2026-08-13 Update.
+    permissions:
+      contents: read
+      issues: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -112,6 +119,12 @@ jobs:
       # lefthook stage's checks documented exactly, so the cadence can't drift.
       - name: Check cadence docs
         run: pnpm check:cadence
+
+      # Every status-bearing ("## ", has a Status column) table in ROADMAP.md
+      # and IMPLEMENTATION.md must be registered with the sync:hub extractor —
+      # otherwise a newly added tracker table is a silent no-op forever.
+      - name: Check tracker coverage
+        run: pnpm check:tracker-coverage
 
       # The implemented-count numerator ("N of 22") must match the ✅ rows in
       # docs/implementation-status.md across every badge / prose / HTML site.
@@ -226,3 +239,16 @@ jobs:
 
       - name: Unused files / exports / dependencies (knip)
         run: pnpm knip
+
+      # ADR-0032's visibility hub: docs/ROADMAP.md + IMPLEMENTATION.md must
+      # still match GitHub Issues/Milestones. Push-only (not on PRs) — this
+      # is a drift ALARM for main, not a merge-blocking gate for unrelated
+      # work; the underlying sync itself stays maintainer-local (`pnpm
+      # sync:hub -- --apply`), since GITHUB_TOKEN cannot write GitHub
+      # Projects v2 (see the ADR). Needs `issues: read`, scoped to this job
+      # only (the workflow default stays `contents: read`).
+      - name: Check hub drift (push-only)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm check:hub-drift

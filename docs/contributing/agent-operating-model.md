@@ -42,7 +42,7 @@ that reviews it" structural, and keeps the hub's context lean.
 - **Live status**: three living trackers, updated by the hub as work lands (they
   are the durable memory the isolated spokes do not share). `docs/implementation-status.md`
   is the source of truth for what library work is **built** vs. documented (the
-  count-enforced 24/24 ledger — `pnpm gen:counts` regenerates every "N of M"
+  count-enforced 39/39 ledger — `pnpm gen:counts` regenerates every "N of M"
   badge/prose site and the implemented-list block from the ✅ rows;
   `check:doc-counts`/`check:impl-counts` verify them). `docs/ROADMAP.md`
   (coarse, unblock-first) and `docs/plans/IMPLEMENTATION.md` (detailed
@@ -52,9 +52,14 @@ that reviews it" structural, and keeps the hub's context lean.
   conflict across parallel branches. When a unit lands: flip its status in
   the relevant tracker, `git mv` any dated plan it completes into
   `docs/plans/archive/`, and a new friction item from a work log is filed
-  into `IMPLEMENTATION.md` (not left narrative-only). Completed plans live in
-  `docs/plans/archive/` (frozen, excluded from `lint:md`);
-  `docs/plans/README.md` and `docs/logs/README.md` index them.
+  into `IMPLEMENTATION.md` (not left narrative-only), **then run
+  `pnpm sync:hub`** (dry-run, then `-- --apply`, maintainer-local) to
+  reconcile GitHub Issues/Milestones/the Project board — ADR-0032's
+  visibility hub is a projection of these two trackers, not an independent
+  source, and goes silently stale if the sync isn't run (`pnpm check:hub-drift`
+  is CI's push-to-main alarm for that staleness, not a substitute for running
+  it). Completed plans live in `docs/plans/archive/` (frozen, excluded from
+  `lint:md`); `docs/plans/README.md` and `docs/logs/README.md` index them.
 - The `implementing-submodules` skill encodes this loop end-to-end; `scaffolding-submodules`
   scaffolds a greenfield module and hands off to it. All 22 bootstrap submodules
   already have `docs/reference` specs, so `implementing-submodules` is the normal entry

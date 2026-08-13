@@ -532,3 +532,91 @@ board to a full six-option field remains possible later (a board schema
 change plus a `PROJECT_STATUS_OPTIONS` update) but is not needed today; this
 Update exists so the collapse is a stated decision instead of one
 discoverable only by reading `hub-sync.mjs`'s source.
+
+## Update (2026-08-13): status labels, a two-milestone-schema change, a milestone-lookup bug fix, a CI drift gate, and a one-time historical backfill
+
+A 2026-08 tracker-reconciliation audit found the sync had not run since
+2026-07-30 — two full waves of tracker updates (ADR-0037/0038/0039,
+ADR-0040/0041/0042/0043) landed with zero GitHub representation, structurally
+invisible to `extractImplementation`'s heading map — and, separately, that the
+issue side of the hub could not express Deferred/Blocked at all: same open
+state, same priority label as a plain To Do issue, and the Status column is
+excluded from the derived issue body by design (`buildDetail`'s
+`excludeIndices`), so a reader had no way to tell a blocked item from an
+actionable one on GitHub. Five fixes landed together (the first three below
+fix the label/milestone gap; the last two prevent and repair the staleness gap):
+
+- **Two new labels**, `status:deferred`/`status:blocked` (`STATUS_LABELS`,
+  `bin/lib/hub-sync.mjs`), applied by `buildIssuePayload` only for those two
+  statuses — `done`/`rejected` issues are closed instead of labeled, and
+  `todo`/`in-progress` carry no status label since they already are the two
+  "actionable now" states. Bootstrapped alongside the existing five labels in
+  `LABEL_DEFS` (`bin/sync-hub-issues.mjs`).
+- **A `managedLabelsDiffer` dirty-check widening.** `planIssueSync`'s dirty
+  check previously compared only title/body, so a status-only change (same
+  title/body, e.g. To Do → Blocked) would never reach `editIssue` and the new
+  label would silently never apply — found live on issue #207 (open,
+  Blocked, unchanged title/body since it was filed). `isDirty` now also
+  fires on managed-label drift (`HUB_LABEL`/`priority:*`/`status:*`); a
+  human-added label outside those three families is never inspected. The
+  runner's label-removal helper (`stalePriorityLabels`, now
+  `staleManagedLabels`) was widened the same way so a stale `status:*` label
+  is pruned on the next status change, not just a stale `priority:*` one.
+- **Two new milestones**, replacing two prior gaps: **Governance** (every
+  governance-priority item previously resolved `milestoneTitle: null` via
+  `--remove-milestone`, leaving issue #194 the only milestone-less issue) and
+  **2.0 / breaking** (major-bump-gated work — F3, the `@deprecated`
+  `AWSClientProvider` getter-removal row — previously shared the "Priority 2"
+  milestone with everything else gated, indistinguishable from a merely
+  deferred item). Routing is `MAJOR_BUMP_ITEM_KEYS` (`bin/lib/hub-sync.mjs`)
+  — a small set of exact `Item` keys, computed via the real `slug()`
+  transform rather than hand-typed, so it can't independently drift from
+  `actionableItems`' own key generation — checked before the normal
+  priority → milestone lookup in `buildIssuePayload`. Every `Item` now
+  resolves to a real milestone; `MILESTONE_TITLES` no longer has a
+  priority with no milestone.
+- **`loadExistingMilestoneTitles` now queries `state=all`.** It previously
+  omitted `state`, which defaults to `open` — closing the "Priority 0"
+  milestone (empty since every P0 row is Done) would have made the next
+  `--apply` re-`POST` it and 422-fail the entire sync. Found while adding
+  the two milestones above, not by an observed failure.
+- **A CI drift gate**, `pnpm check:hub-drift`
+  (`node bin/sync-hub-issues.mjs --check`, `.github/workflows/ci.yml`'s
+  push-to-main-only "Check hub drift" step). `check` is a third mode
+  alongside dry-run/`--apply`: it computes the same plan but returns
+  `{ ok: false }` when it's non-empty, instead of dry-run's always-succeed
+  contract. Scoped `push`-only (not `pull_request`) so it alarms on `main`
+  without becoming a merge-blocking gate for unrelated PRs whenever the hub
+  happens to be behind. Needs `issues: read`, added at job level to
+  `verify` (workflow default stays `contents: read`) — a genuinely
+  read-only scope; `--apply` still never runs in CI, since `GITHUB_TOKEN`
+  cannot write GitHub Projects v2 regardless.
+- **A one-time `--backfill` mode** (`planBackfill`, `bin/lib/hub-sync.mjs`;
+  composes with `--apply`, e.g. `pnpm sync:hub-issues -- --apply --backfill`).
+  `planIssueSync` is deliberately go-forward-only: a resolved (Done/Rejected)
+  row with no marker is silently skipped, never created — the accepted
+  consequence noted in the 2026-07-28 drift reconciliation for every
+  historically-Done row that predates issue #189. `--backfill` closes that
+  gap once: it plans a **create-then-immediately-close** for every
+  marker-less resolved row, so the historical record exists on GitHub
+  without ever reading as open work. Collision guard: since a pre-existing
+  row never carried a marker, a naive backfill could refile something a
+  maintainer already created by hand under a slightly different title —
+  every candidate title is fuzzy-matched (`titleSimilarity`, plain
+  Levenshtein, no dependency) against **every** existing issue title (not
+  just hub-sync-labeled ones — `loadAllIssues`, unfiltered), and a match at
+  or above 85% similarity routes to `needsReview` instead of auto-creating,
+  for the maintainer to resolve by hand.
+
+None of this changes `PROJECT_STATUS_OPTIONS` (the board Status field is
+untouched) or the board's own field set — only issue labels and milestones.
+
+**Known gap, not fixed here:** `planIssueSync` marks a closed-and-resolved
+issue `untouched` unconditionally — it never recomputes or reapplies
+`payload` for one, dirty or not (that branch predates this Update; changing
+it risks the planner's idempotency law for a cosmetic milestone correction).
+So F3 (issue #196, already closed as Rejected, filed under "Priority 2"
+before `MAJOR_BUMP_ITEM_KEYS` existed) will not automatically move to
+"2.0 / breaking" — a one-time manual milestone move via the GitHub UI closes
+it. A newly created or reopened issue is unaffected; this only touches an
+issue that was already closed before this Update landed.
