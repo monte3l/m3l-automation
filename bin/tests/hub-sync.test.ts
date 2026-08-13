@@ -3,15 +3,20 @@ import { extractImplementation, extractRoadmap } from "../lib/project-hub.mjs";
 import {
   HUB_LABEL,
   HUB_PROJECT_TITLE,
+  MAJOR_BUMP_ITEM_KEYS,
   MILESTONE_TITLES,
   PRIORITY_LABELS,
+  STATUS_LABELS,
   actionableItems,
   buildIssuePayload,
   hubMarker,
   parseHubMarker,
+  planBackfill,
   planIssueSync,
   planMilestones,
   planProjectSync,
+  slug,
+  titleSimilarity,
 } from "../lib/hub-sync.mjs";
 
 // ---------------------------------------------------------------------------
@@ -144,6 +149,46 @@ const IMPLEMENTATION_DEDUPE_FIXTURE = `# Implementation backlog — m3l-automati
 | **D4** SSM config      | Deferred | a 2nd script hand-rolling SSM config fetch      |
 `;
 
+// A row whose Priority cell is neither "P0"/"P1"/"P2" (markdown-stripped,
+// case-insensitive) — exercises actionableItems's warnings channel.
+const IMPLEMENTATION_BAD_PRIORITY_FIXTURE = `# Implementation backlog — m3l-automation
+
+## Library friction (F-series)
+
+| ID     | Priority | Status   | Title & change      | Source / call-site |
+| ------ | -------- | -------- | ---------------------- | --------------------- |
+| **F7** | —        | Deferred | still relevant          | json-etl log F7        |
+`;
+
+// Exercises the two new capability-deepening / post-comparison-hardening
+// wave sections actionableItems now handles.
+const IMPLEMENTATION_WAVES_FIXTURE = `# Implementation backlog — m3l-automation
+
+## Library friction (F-series)
+
+| ID     | Priority | Status   | Title & change      | Source / call-site |
+| ------ | -------- | -------- | ---------------------- | --------------------- |
+| **F7** | P2       | Deferred | still relevant          | json-etl log F7        |
+
+## Capability-deepening wave (ADR-0037/0038/0039)
+
+| Item                    | Priority | Status | Change                    |
+| ------------------------ | -------- | ------ | ---------------------------- |
+| \`aws/rds-data\` Aurora    | P1       | To Do  | add RDS Data API wrapper      |
+
+## Post-comparison hardening wave (ADR-0040/0041/0042/0043)
+
+| Item                  | Priority | Status  | Change                     |
+| ---------------------- | -------- | ------- | ------------------------------- |
+| ReDoS hardening pass    | P0       | Blocked | close remaining regex risk       |
+
+## AWS getter reality
+
+| Provider getter | AWS service | Status | Wrapper submodule | Consuming script(s) | ADR / precedent |
+| ----------------- | ------------- | ------ | -------------------- | ----------------------- | ------------------ |
+| \`s3\`             | S3            | Done   | aws/s3                | s3-objects (done)         | ADR-0033            |
+`;
+
 // ---------------------------------------------------------------------------
 // makeItem — a well-formed Item builder for the planner-level tests, which
 // don't need to route through actionableItems (that mapping is covered
@@ -201,16 +246,38 @@ describe("PRIORITY_LABELS", () => {
   });
 });
 
+describe("STATUS_LABELS", () => {
+  test("maps deferred/blocked statuses to their status:<x> label", () => {
+    expect(STATUS_LABELS).toMatchObject({
+      deferred: "status:deferred",
+      blocked: "status:blocked",
+    });
+  });
+});
+
 describe("MILESTONE_TITLES", () => {
-  test("maps p0/p1/p2 to their milestone titles, with no governance entry", () => {
+  test("maps p0/p1/p2/governance to their milestone titles, plus a major bucket", () => {
     expect(MILESTONE_TITLES).toMatchObject({
       p0: "Priority 0",
       p1: "Priority 1",
       p2: "Priority 2",
+      governance: "Governance",
+      major: "2.0 / breaking",
     });
+  });
+});
+
+describe("MAJOR_BUMP_ITEM_KEYS", () => {
+  test("contains exactly the F3 friction key and the AWSClientProvider getter-removal key", () => {
+    expect(MAJOR_BUMP_ITEM_KEYS.has("impl:F3")).toBe(true);
     expect(
-      (MILESTONE_TITLES as Record<string, string>)["governance"],
-    ).toBeUndefined();
+      MAJOR_BUMP_ITEM_KEYS.has(
+        `impl:${slug(
+          "Removal of the 4 `@deprecated` `AWSClientProvider` convenience getters (`dynamoDBDocument`/`sqsOperations`/`eventBridgeOperations`/`requestSigner`)",
+        )}`,
+      ),
+    ).toBe(true);
+    expect(MAJOR_BUMP_ITEM_KEYS.size).toBe(2);
   });
 });
 
@@ -272,7 +339,8 @@ describe("actionableItems", () => {
   test("emits the exact documented keys for P0/P1/governance/F-series rows", () => {
     const roadmap = extractRoadmap(ROADMAP_FIXTURE);
     const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
-    const items = actionableItems(roadmap, implementation) as TestItem[];
+    const { items, warnings } = actionableItems(roadmap, implementation);
+    expect(warnings).toEqual([]);
     const keys = items.map((item) => item.key);
 
     expect(keys).toContain("roadmap:p0:p0a");
@@ -284,7 +352,8 @@ describe("actionableItems", () => {
   test("emits the gated (P2) item keyed off the slugged ID cell, priority p2", () => {
     const roadmap = extractRoadmap(ROADMAP_FIXTURE);
     const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
-    const items = actionableItems(roadmap, implementation) as TestItem[];
+    const { items, warnings } = actionableItems(roadmap, implementation);
+    expect(warnings).toEqual([]);
     const gated = items.find((item) => item.key === "impl:d4-ssm-config");
 
     expect(gated).toBeDefined();
@@ -299,7 +368,8 @@ describe("actionableItems", () => {
   test("does NOT emit ROADMAP Priority 2 rows (the IMPLEMENTATION gated table is the source)", () => {
     const roadmap = extractRoadmap(ROADMAP_FIXTURE);
     const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
-    const items = actionableItems(roadmap, implementation) as TestItem[];
+    const { items, warnings } = actionableItems(roadmap, implementation);
+    expect(warnings).toEqual([]);
 
     expect(items.some((item) => item.key === "roadmap:p2:d4-ssm-config")).toBe(
       false,
@@ -312,7 +382,8 @@ describe("actionableItems", () => {
   test("done rows are still emitted, with status 'done'", () => {
     const roadmap = extractRoadmap(ROADMAP_FIXTURE);
     const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
-    const items = actionableItems(roadmap, implementation) as TestItem[];
+    const { items, warnings } = actionableItems(roadmap, implementation);
+    expect(warnings).toEqual([]);
 
     const doneP0 = items.find((item) => item.key === "roadmap:p0:p0b");
     const doneW4 = items.find((item) => item.key === "roadmap:W4:sqs-etl");
@@ -326,7 +397,8 @@ describe("actionableItems", () => {
   test("governance status is classified from a Status column, not the Notes cell", () => {
     const roadmap = extractRoadmap(ROADMAP_FIXTURE);
     const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
-    const items = actionableItems(roadmap, implementation) as TestItem[];
+    const { items, warnings } = actionableItems(roadmap, implementation);
+    expect(warnings).toEqual([]);
 
     const t1 = items.find((item) => item.key === "roadmap:gov:t1");
     const t8 = items.find((item) => item.key === "roadmap:gov:t8");
@@ -339,7 +411,8 @@ describe("actionableItems", () => {
   test("F-series title is '<ID> — <Title & change>' with markdown-stripped ID", () => {
     const roadmap = extractRoadmap(ROADMAP_FIXTURE);
     const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
-    const items = actionableItems(roadmap, implementation) as TestItem[];
+    const { items, warnings } = actionableItems(roadmap, implementation);
+    expect(warnings).toEqual([]);
 
     const f7 = items.find((item) => item.key === "impl:F7");
     expect(f7?.title).toBe(
@@ -353,7 +426,8 @@ describe("actionableItems", () => {
   test("ADR-0035 rollout row is keyed 'impl:<Phase>', titled '<Phase> — <Change>', priority/status from its own columns", () => {
     const roadmap = extractRoadmap(ROADMAP_FIXTURE);
     const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
-    const items = actionableItems(roadmap, implementation) as TestItem[];
+    const { items, warnings } = actionableItems(roadmap, implementation);
+    expect(warnings).toEqual([]);
 
     const a7 = items.find((item) => item.key === "impl:A7");
     expect(a7).toBeDefined();
@@ -366,7 +440,8 @@ describe("actionableItems", () => {
   test("P1 key is 'roadmap:<Wave>:<slug(Scripts)>' and title is '<Wave> — <Scripts>'", () => {
     const roadmap = extractRoadmap(ROADMAP_FIXTURE);
     const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
-    const items = actionableItems(roadmap, implementation) as TestItem[];
+    const { items, warnings } = actionableItems(roadmap, implementation);
+    expect(warnings).toEqual([]);
 
     const w3 = items.find((item) => item.key === "roadmap:W3:ecs-ops");
     expect(w3).toBeDefined();
@@ -378,7 +453,8 @@ describe("actionableItems", () => {
   test("slug() strips markdown, backticks, and punctuation into single-dash segments", () => {
     const roadmap = extractRoadmap(ROADMAP_FIXTURE);
     const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
-    const items = actionableItems(roadmap, implementation) as TestItem[];
+    const { items, warnings } = actionableItems(roadmap, implementation);
+    expect(warnings).toEqual([]);
 
     expect(
       items.some((item) => item.key === "roadmap:p0:multi-word-test"),
@@ -388,7 +464,8 @@ describe("actionableItems", () => {
   test("dedupes rows sharing a key: keeps the first row's fields, merges the later row's detail", () => {
     const roadmap = extractRoadmap(ROADMAP_FIXTURE);
     const implementation = extractImplementation(IMPLEMENTATION_DEDUPE_FIXTURE);
-    const items = actionableItems(roadmap, implementation) as TestItem[];
+    const { items, warnings } = actionableItems(roadmap, implementation);
+    expect(warnings).toEqual([]);
 
     const f7Items = items.filter((item) => item.key === "impl:F7");
     expect(f7Items).toHaveLength(1);
@@ -400,7 +477,7 @@ describe("actionableItems", () => {
     expect(f7?.detail).toContain("second-call-site");
   });
 
-  test("skips null sections silently, without throwing", () => {
+  test("skips null sections silently, without throwing, and reports no warnings", () => {
     const roadmap = extractRoadmap(ROADMAP_MISSING_GOVERNANCE_FIXTURE);
     const implementation = extractImplementation(
       IMPLEMENTATION_MISSING_GATED_FIXTURE,
@@ -409,10 +486,14 @@ describe("actionableItems", () => {
     expect(implementation.gated).toBeNull();
 
     let items: TestItem[] = [];
+    let warnings: string[] = [];
     expect(() => {
-      items = actionableItems(roadmap, implementation);
+      const result = actionableItems(roadmap, implementation);
+      items = result.items;
+      warnings = result.warnings;
     }).not.toThrow();
 
+    expect(warnings).toEqual([]);
     expect(items.some((item) => item.key.startsWith("roadmap:gov:"))).toBe(
       false,
     );
@@ -420,6 +501,55 @@ describe("actionableItems", () => {
     // The sections that ARE present must still be processed.
     expect(items.some((item) => item.key === "roadmap:p0:p0a")).toBe(true);
     expect(items.some((item) => item.key === "impl:F7")).toBe(true);
+  });
+
+  test("an unrecognized Priority cell defaults the item to p2 and appends exactly one warning naming the row's key and raw cell", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(
+      IMPLEMENTATION_BAD_PRIORITY_FIXTURE,
+    );
+    const { items, warnings } = actionableItems(roadmap, implementation);
+
+    const f7 = items.find((item) => item.key === "impl:F7");
+    expect(f7?.priority).toBe("p2");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("impl:F7");
+    expect(warnings[0]).toContain("—");
+  });
+
+  test("extracts capabilityDeepeningWave rows with key impl:<slug(Item)>, priority/status from their own columns", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(IMPLEMENTATION_WAVES_FIXTURE);
+    const { items, warnings } = actionableItems(roadmap, implementation);
+
+    const wave = items.find(
+      (item) => item.key === `impl:${slug("`aws/rds-data` Aurora")}`,
+    );
+    expect(wave).toBeDefined();
+    expect(wave?.priority).toBe("p1");
+    expect(wave?.status).toBe("todo");
+    expect(wave?.title).toContain("add RDS Data API wrapper");
+    expect(wave?.sourceAnchor).toBe(
+      "#capability-deepening-wave--adr-003700380039",
+    );
+    expect(warnings).toEqual([]);
+  });
+
+  test("extracts postComparisonHardeningWave rows with key impl:<slug(Item)>, priority/status from their own columns", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(IMPLEMENTATION_WAVES_FIXTURE);
+    const { items, warnings } = actionableItems(roadmap, implementation);
+
+    const wave = items.find(
+      (item) => item.key === `impl:${slug("ReDoS hardening pass")}`,
+    );
+    expect(wave).toBeDefined();
+    expect(wave?.priority).toBe("p0");
+    expect(wave?.status).toBe("blocked");
+    expect(wave?.sourceAnchor).toBe(
+      "#post-comparison-hardening-wave--adr-0040004100420043",
+    );
+    expect(warnings).toEqual([]);
   });
 });
 
@@ -459,16 +589,32 @@ describe("buildIssuePayload", () => {
     expect(payload.body).toContain("**What:** a very specific detail");
   });
 
-  test("labels are exactly ['hub-sync', 'priority:<x>'] in that order", () => {
-    const item = makeItem({ priority: "p1" });
-    const payload = buildIssuePayload(item) as { labels: string[] };
-    expect(payload.labels).toEqual(["hub-sync", "priority:p1"]);
-  });
+  test.each(["todo", "in-progress", "done", "rejected"] as const)(
+    "labels carry no status label for status %s",
+    (status) => {
+      const item = makeItem({ priority: "p1", status });
+      const payload = buildIssuePayload(item) as { labels: string[] };
+      expect(payload.labels).toEqual(["hub-sync", "priority:p1"]);
+    },
+  );
+
+  test.each([
+    ["deferred", "status:deferred"],
+    ["blocked", "status:blocked"],
+  ] as const)(
+    "labels append the STATUS_LABELS entry for status %s",
+    (status, statusLabel) => {
+      const item = makeItem({ priority: "p1", status });
+      const payload = buildIssuePayload(item) as { labels: string[] };
+      expect(payload.labels).toEqual(["hub-sync", "priority:p1", statusLabel]);
+    },
+  );
 
   test.each([
     ["p0", "Priority 0"],
     ["p1", "Priority 1"],
     ["p2", "Priority 2"],
+    ["governance", "Governance"],
   ] as const)(
     "milestoneTitle for priority %s is %j",
     (priority, expectedTitle) => {
@@ -480,14 +626,30 @@ describe("buildIssuePayload", () => {
     },
   );
 
-  test("milestoneTitle is null for a governance item", () => {
+  test("milestoneTitle is never null for a governance item: it resolves to the Governance milestone", () => {
     const item = makeItem({ priority: "governance" });
     const payload = buildIssuePayload(item) as {
       milestoneTitle: string | null;
       labels: string[];
     };
-    expect(payload.milestoneTitle).toBeNull();
+    expect(payload.milestoneTitle).toBe("Governance");
     expect(payload.labels).toEqual(["hub-sync", "priority:governance"]);
+  });
+
+  test("milestoneTitle is '2.0 / breaking' for an item keyed impl:F3, regardless of its priority", () => {
+    const item = makeItem({ key: "impl:F3", priority: "p2" });
+    const payload = buildIssuePayload(item) as {
+      milestoneTitle: string | null;
+    };
+    expect(payload.milestoneTitle).toBe("2.0 / breaking");
+  });
+
+  test("milestoneTitle is the normal priority-derived title for an item outside MAJOR_BUMP_ITEM_KEYS", () => {
+    const item = makeItem({ key: "impl:F4", priority: "p2" });
+    const payload = buildIssuePayload(item) as {
+      milestoneTitle: string | null;
+    };
+    expect(payload.milestoneTitle).toBe("Priority 2");
   });
 });
 
@@ -645,10 +807,10 @@ describe("planMilestones", () => {
     expect(result.create).toEqual(["Priority 0"]);
   });
 
-  test("never returns any milestone for governance items (no milestone exists)", () => {
+  test("plans the Governance milestone for governance items (no longer milestone-less)", () => {
     const items = [makeItem({ key: "gov", priority: "governance" })];
     const result = planMilestones(items, []);
-    expect(result.create).toEqual([]);
+    expect(result.create).toEqual(["Governance"]);
   });
 
   test("is empty when every required milestone already exists", () => {
@@ -912,6 +1074,252 @@ describe("planIssueSync", () => {
     expect(result.untouched).toEqual([{ number: 15, reason: "no marker" }]);
     expect(result.update.some((entry) => entry.number === 15)).toBe(false);
     expect(result.close.some((entry) => entry.number === 15)).toBe(false);
+  });
+
+  test("same title/body but different managed labels (e.g. a missing STATUS_LABELS entry) triggers update, not untouched", () => {
+    const item = makeItem({
+      key: "roadmap:p0:label-drift",
+      status: "deferred",
+    });
+    const payload = buildIssuePayload(item) as {
+      title: string;
+      body: string;
+      labels: string[];
+    };
+    // Stale: title/body match the desired payload, but the labels predate
+    // STATUS_LABELS — no "status:deferred" entry.
+    const staleIssue: TestIssue = {
+      number: 20,
+      title: payload.title,
+      body: payload.body,
+      state: "open",
+      labels: [HUB_LABEL, PRIORITY_LABELS.p0],
+    };
+
+    const result = planIssueSync([item], [staleIssue]) as IssueSyncResult;
+
+    expect(result.update).toHaveLength(1);
+    expect(result.update[0]?.number).toBe(20);
+    expect(result.update[0]?.key).toBe("roadmap:p0:label-drift");
+    expect(result.create).toEqual([]);
+    expect(result.close).toEqual([]);
+    expect(result.untouched).toEqual([]);
+  });
+
+  test("an extra human-added label outside HUB_LABEL/priority:*/status:* never triggers dirtiness", () => {
+    const item = makeItem({ key: "roadmap:p0:human-label", status: "todo" });
+    const payload = buildIssuePayload(item) as {
+      title: string;
+      body: string;
+      labels: string[];
+    };
+    const issueWithHumanLabel: TestIssue = {
+      number: 21,
+      title: payload.title,
+      body: payload.body,
+      state: "open",
+      labels: [...payload.labels, "needs-triage"],
+    };
+
+    const result = planIssueSync(
+      [item],
+      [issueWithHumanLabel],
+    ) as IssueSyncResult;
+
+    expect(result.untouched).toEqual([{ number: 21, reason: "in sync" }]);
+    expect(result.update).toEqual([]);
+    expect(result.create).toEqual([]);
+    expect(result.close).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// titleSimilarity
+// ---------------------------------------------------------------------------
+
+describe("titleSimilarity", () => {
+  test("identical strings score 1", () => {
+    expect(
+      titleSimilarity(
+        "F7 — Opt-in tolerant handling",
+        "F7 — Opt-in tolerant handling",
+      ),
+    ).toBe(1);
+  });
+
+  test("is case-insensitive", () => {
+    expect(titleSimilarity("Some Title", "some title")).toBe(1);
+  });
+
+  test("completely different equal-length strings score 0", () => {
+    expect(titleSimilarity("aaaa", "bbbb")).toBe(0);
+  });
+
+  test("both-empty strings score 1 (the maxLength-0 guard)", () => {
+    expect(titleSimilarity("", "")).toBe(1);
+  });
+
+  test("a near-match (one character off) scores strictly between 0 and 1", () => {
+    const similarity = titleSimilarity(
+      "F7 — Opt-in tolerant handling",
+      "F7 — Opt-in tolerant handlng",
+    );
+    expect(similarity).toBeGreaterThan(0);
+    expect(similarity).toBeLessThan(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// planBackfill
+// ---------------------------------------------------------------------------
+
+interface BackfillIssue {
+  number: number;
+  title: string;
+  body: string;
+  state: "open" | "closed";
+}
+
+interface BackfillResult {
+  create: {
+    key: string;
+    payload: unknown;
+    comment: string;
+    reason: "completed" | "not planned";
+  }[];
+  needsReview: {
+    key: string;
+    payload: unknown;
+    candidateNumber: number;
+    candidateTitle: string;
+    similarity: number;
+  }[];
+}
+
+describe("planBackfill", () => {
+  test("a resolved 'done' item with no marker and no similar existing title lands in create with the done comment/reason", () => {
+    const item = makeItem({ key: "roadmap:p0:backfill-done", status: "done" });
+    const result = planBackfill([item], []) as BackfillResult;
+
+    expect(result.create).toHaveLength(1);
+    expect(result.create[0]?.key).toBe("roadmap:p0:backfill-done");
+    expect(result.create[0]?.comment).toMatch(/done/i);
+    expect(result.create[0]?.reason).toBe("completed");
+    expect(result.needsReview).toEqual([]);
+  });
+
+  test("a resolved 'rejected' item with no marker and no similar existing title lands in create with the rejected comment/reason", () => {
+    const item = makeItem({
+      key: "roadmap:p0:backfill-rejected",
+      status: "rejected",
+    });
+    const result = planBackfill([item], []) as BackfillResult;
+
+    expect(result.create).toHaveLength(1);
+    expect(result.create[0]?.key).toBe("roadmap:p0:backfill-rejected");
+    expect(result.create[0]?.comment).toMatch(/rejected/i);
+    expect(result.create[0]?.reason).toBe("not planned");
+    expect(result.needsReview).toEqual([]);
+  });
+
+  test("a resolved item with no marker but a highly similar existing issue title routes to needsReview instead of create", () => {
+    const item = makeItem({
+      key: "roadmap:p0:backfill-similar",
+      status: "done",
+      title: "F7 — Opt-in tolerant handling for unparseable rows",
+    });
+    const payload = buildIssuePayload(item) as { title: string };
+    const similarIssue: BackfillIssue = {
+      number: 30,
+      title: payload.title,
+      body: "No marker in this body.",
+      state: "open",
+    };
+
+    const result = planBackfill([item], [similarIssue]) as BackfillResult;
+
+    expect(result.create).toEqual([]);
+    expect(result.needsReview).toHaveLength(1);
+    expect(result.needsReview[0]?.key).toBe("roadmap:p0:backfill-similar");
+    expect(result.needsReview[0]?.candidateNumber).toBe(30);
+    expect(result.needsReview[0]?.candidateTitle).toBe(payload.title);
+    expect(result.needsReview[0]?.similarity).toBeGreaterThanOrEqual(0.85);
+  });
+
+  test("a resolved item that already has a marker match anywhere in existingIssues is untouched by this planner", () => {
+    const item = makeItem({
+      key: "roadmap:p0:already-tracked",
+      status: "done",
+    });
+    const trackedIssue = issueFromPayload(31, item, "closed");
+
+    const result = planBackfill([item], [trackedIssue]) as BackfillResult;
+
+    expect(result.create).toEqual([]);
+    expect(result.needsReview).toEqual([]);
+  });
+
+  test("a not-resolved item (e.g. 'todo') is never considered, even with no marker anywhere", () => {
+    const item = makeItem({ key: "roadmap:p0:still-open", status: "todo" });
+
+    const result = planBackfill([item], []) as BackfillResult;
+
+    expect(result.create).toEqual([]);
+    expect(result.needsReview).toEqual([]);
+  });
+
+  test("a custom lower threshold routes a borderline-similarity pair to needsReview that the default threshold would create", () => {
+    const item = makeItem({
+      key: "roadmap:p0:borderline-low",
+      status: "done",
+      title: "Improve retry backoff jitter handling",
+    });
+    const candidateIssue: BackfillIssue = {
+      number: 32,
+      title: "Improve retry timeout jitter handling",
+      body: "No marker.",
+      state: "open",
+    };
+
+    const defaultResult = planBackfill(
+      [item],
+      [candidateIssue],
+    ) as BackfillResult;
+    const lowThresholdResult = planBackfill([item], [candidateIssue], {
+      threshold: 0.8,
+    }) as BackfillResult;
+
+    expect(defaultResult.create).toHaveLength(1);
+    expect(defaultResult.needsReview).toEqual([]);
+    expect(lowThresholdResult.create).toEqual([]);
+    expect(lowThresholdResult.needsReview).toHaveLength(1);
+  });
+
+  test("a custom higher threshold routes a normally-needsReview pair to create instead", () => {
+    const item = makeItem({
+      key: "roadmap:p0:borderline-high",
+      status: "done",
+      title: "Add RDS Data API wrapper for read-only queries",
+    });
+    const candidateIssue: BackfillIssue = {
+      number: 33,
+      title: "Add RDS Data API wrapper for read-write queries",
+      body: "No marker.",
+      state: "open",
+    };
+
+    const defaultResult = planBackfill(
+      [item],
+      [candidateIssue],
+    ) as BackfillResult;
+    const highThresholdResult = planBackfill([item], [candidateIssue], {
+      threshold: 0.95,
+    }) as BackfillResult;
+
+    expect(defaultResult.create).toEqual([]);
+    expect(defaultResult.needsReview).toHaveLength(1);
+    expect(highThresholdResult.create).toHaveLength(1);
+    expect(highThresholdResult.needsReview).toEqual([]);
   });
 });
 

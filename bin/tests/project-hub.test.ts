@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  IMPLEMENTATION_SECTION_HEADINGS,
   REPO_BLOB_BASE,
   blobUrl,
   buildCorpusSections,
@@ -9,6 +10,7 @@ import {
   extractImplementation,
   extractImplementationStatus,
   extractRoadmap,
+  findUncoveredStatusHeadings,
   parseAdr,
   parseDatedDoc,
   parseMarkdownTable,
@@ -94,6 +96,20 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 | **A1** | P0       | Done     | \`core/diagnostics\` submodule    | **PR:** #212.         |
 | **A7** | P2       | Rejected | Residual free-text redaction gaps | Accepted per ADR update |
 
+## Capability-deepening wave — ADR-0037/0038/0039
+
+| Item   | Status | Notes                    |
+| ------ | ------ | ------------------------- |
+| **C1** | Done   | ADR-0037 landed            |
+| **C2** | To Do  | ADR-0039 blocked on C1     |
+
+## Post-comparison hardening wave — ADR-0040/0041/0042/0043
+
+| Item   | Status      | Notes                    |
+| ------ | ----------- | ------------------------- |
+| **H1** | Done        | ADR-0040 landed            |
+| **H2** | In Progress | ADR-0042 in review          |
+
 ## AWS getter reality
 
 | Provider getter | AWS service (ADR-0028 name) | Status | Wrapper submodule       | Consuming script(s)  | ADR / precedent                 |
@@ -107,6 +123,33 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 | ----------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------- |
 | **D4** SSM config provider                                        | Deferred | a 2nd script hand-rolling SSM config fetch                                  |
 | **F7 / \`onUnknownFormat\`** tolerant per-record array import      | Deferred | a consumer needing per-record tolerance on irregular non-JSONL input        |
+`;
+
+const IMPLEMENTATION_MISSING_NEW_WAVES_FIXTURE = `# Implementation backlog — m3l-automation
+
+## Library friction (F-series)
+
+| ID     | Status | Title & change     |
+| ------ | ------ | -------------------- |
+| **F8** | Done   | Preset seam wired      |
+
+## ADR-0035 rollout — failure reporting & diagnostics
+
+| Phase  | Status | Change                       |
+| ------ | ------ | ------------------------------ |
+| **A1** | Done   | \`core/diagnostics\` submodule  |
+
+## AWS getter reality
+
+| Provider getter | Status | Wrapper submodule |
+| ----------------- | ------ | -------------------- |
+| \`s3\`             | Done   | \`aws/s3\`            |
+
+## Gated library modules & deferred decisions (P2)
+
+| ID     | Status   | Unblock condition                          |
+| ------ | -------- | --------------------------------------------- |
+| **D4** | Deferred | a 2nd script hand-rolling SSM config fetch     |
 `;
 
 const IMPLEMENTATION_STATUS_FIXTURE = `# Implementation status — m3l-common vs. documented spec
@@ -555,6 +598,206 @@ describe("extractImplementation", () => {
     expect(a7Row).toBeDefined();
     expect(a7Row?.[statusIndex]).toBe("Rejected");
   });
+
+  test("capabilityDeepeningWave table is parsed with its header and rows", () => {
+    const result = extractImplementation(IMPLEMENTATION_FIXTURE);
+    expect(result.capabilityDeepeningWave).not.toBeNull();
+    expect(result.capabilityDeepeningWave?.header).toEqual([
+      "Item",
+      "Status",
+      "Notes",
+    ]);
+    expect(result.capabilityDeepeningWave?.rows).toHaveLength(2);
+    const statusIndex = columnIndex(
+      result.capabilityDeepeningWave?.header ?? [],
+      "Status",
+    );
+    const c1Row = result.capabilityDeepeningWave?.rows.find(
+      (row) => row[0] === "**C1**",
+    );
+    expect(c1Row?.[statusIndex]).toBe("Done");
+  });
+
+  test("postComparisonHardeningWave table is parsed with its header and rows", () => {
+    const result = extractImplementation(IMPLEMENTATION_FIXTURE);
+    expect(result.postComparisonHardeningWave).not.toBeNull();
+    expect(result.postComparisonHardeningWave?.header).toEqual([
+      "Item",
+      "Status",
+      "Notes",
+    ]);
+    expect(result.postComparisonHardeningWave?.rows).toHaveLength(2);
+    const statusIndex = columnIndex(
+      result.postComparisonHardeningWave?.header ?? [],
+      "Status",
+    );
+    const h2Row = result.postComparisonHardeningWave?.rows.find(
+      (row) => row[0] === "**H2**",
+    );
+    expect(h2Row?.[statusIndex]).toBe("In Progress");
+  });
+
+  test("all six sections produce no errors when every heading is present", () => {
+    const result = extractImplementation(IMPLEMENTATION_FIXTURE);
+    expect(result.errors).toEqual([]);
+  });
+
+  test("reports descriptive errors for capabilityDeepeningWave and postComparisonHardeningWave when their headings are absent", () => {
+    const result = extractImplementation(
+      IMPLEMENTATION_MISSING_NEW_WAVES_FIXTURE,
+    );
+    expect(result.capabilityDeepeningWave).toBeNull();
+    expect(result.postComparisonHardeningWave).toBeNull();
+    expect(
+      result.errors.some((error) => /Capability-deepening wave/i.test(error)),
+    ).toBe(true);
+    expect(
+      result.errors.some((error) =>
+        /Post-comparison hardening wave/i.test(error),
+      ),
+    ).toBe(true);
+    // The other four sections are still present and unaffected.
+    expect(result.friction).not.toBeNull();
+    expect(result.adr0035Rollout).not.toBeNull();
+    expect(result.getterReality).not.toBeNull();
+    expect(result.gated).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findUncoveredStatusHeadings
+// ---------------------------------------------------------------------------
+
+describe("findUncoveredStatusHeadings", () => {
+  const COVERED_HEADINGS = {
+    covered: {
+      label: "Covered section",
+      regex: /^## Covered section(?=[\s(]|$)/m,
+    },
+  };
+
+  test("a heading with a Status-column table covered by the registry is not flagged", () => {
+    const content = `## Covered section
+
+| Item | Status |
+| ---- | ------ |
+| x    | Done   |
+`;
+    expect(findUncoveredStatusHeadings(content, COVERED_HEADINGS)).toEqual([]);
+  });
+
+  test("a heading with a Status-column table NOT covered by the registry is flagged", () => {
+    const content = `## Uncovered section
+
+| Item | Status |
+| ---- | ------ |
+| x    | Done   |
+`;
+    expect(findUncoveredStatusHeadings(content, COVERED_HEADINGS)).toEqual([
+      "Uncovered section",
+    ]);
+  });
+
+  test("a heading whose table has no Status column is never flagged, even if unregistered", () => {
+    const content = `## Uncovered but no status column
+
+| Item | Notes |
+| ---- | ----- |
+| x    | none  |
+`;
+    expect(findUncoveredStatusHeadings(content, COVERED_HEADINGS)).toEqual([]);
+  });
+
+  test("a heading with no table at all (prose only) is never flagged", () => {
+    const content = `## Uncovered prose-only section
+
+Just some prose, no table here at all.
+
+## Covered section
+
+| Item | Status |
+| ---- | ------ |
+| x    | Done   |
+`;
+    expect(findUncoveredStatusHeadings(content, COVERED_HEADINGS)).toEqual([]);
+  });
+
+  test("a level-3 heading with a Status column is out of scope and never flagged", () => {
+    const content = `### Uncovered subsection
+
+| Item | Status |
+| ---- | ------ |
+| x    | Done   |
+`;
+    expect(findUncoveredStatusHeadings(content, COVERED_HEADINGS)).toEqual([]);
+  });
+
+  test("multiple uncovered headings in one document are all returned, in document order", () => {
+    const content = `## First uncovered
+
+| Item | Status |
+| ---- | ------ |
+| x    | Done   |
+
+## Covered section
+
+| Item | Status |
+| ---- | ------ |
+| y    | To Do  |
+
+## Second uncovered
+
+| Item | Status |
+| ---- | ------ |
+| z    | Blocked |
+`;
+    expect(findUncoveredStatusHeadings(content, COVERED_HEADINGS)).toEqual([
+      "First uncovered",
+      "Second uncovered",
+    ]);
+  });
+
+  test("regression lock: the real IMPLEMENTATION_SECTION_HEADINGS registry covers all six real headings", () => {
+    const content = `## Library friction (F-series)
+
+| Item | Status |
+| ---- | ------ |
+| F8   | Done   |
+
+## ADR-0035 rollout — failure reporting & diagnostics
+
+| Item | Status |
+| ---- | ------ |
+| A1   | Done   |
+
+## Capability-deepening wave — ADR-0037/0038/0039
+
+| Item | Status |
+| ---- | ------ |
+| C1   | Done   |
+
+## Post-comparison hardening wave — ADR-0040/0041/0042/0043
+
+| Item | Status |
+| ---- | ------ |
+| H1   | Done   |
+
+## AWS getter reality
+
+| Item | Status |
+| ---- | ------ |
+| s3   | Done   |
+
+## Gated library modules & deferred decisions (P2)
+
+| Item | Status   |
+| ---- | -------- |
+| D4   | Deferred |
+`;
+    expect(
+      findUncoveredStatusHeadings(content, IMPLEMENTATION_SECTION_HEADINGS),
+    ).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -752,6 +995,8 @@ describe("renderHubPage", () => {
         ],
       },
       adr0035Rollout: { header: [], rows: [] },
+      capabilityDeepeningWave: { header: [], rows: [] },
+      postComparisonHardeningWave: { header: [], rows: [] },
       getterReality: { header: [], rows: [] },
       gated: { header: [], rows: [] },
       errors: [],
