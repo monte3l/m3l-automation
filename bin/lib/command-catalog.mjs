@@ -213,7 +213,7 @@ export const COMMAND_CATALOG = [
   {
     name: "check:test-counts",
     description:
-      "Verifies the per-submodule test counts recorded in docs/implementation-status.md's Notes column match the live Vitest suite. Run after adding/removing tests for an implemented submodule.",
+      "Verifies the per-submodule test counts recorded in docs/implementation-status.md's Notes column match the live Vitest suite. CI and pre-push both run this. Run after adding/removing tests for an implemented submodule.",
   },
   {
     name: "check:workflows",
