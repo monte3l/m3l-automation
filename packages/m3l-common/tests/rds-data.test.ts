@@ -500,6 +500,35 @@ describe("M3LRDSDataOperations", () => {
       expect(message).not.toContain("SENTINEL_MALFORMED_KIND_LEAK");
       expect(h.send).not.toHaveBeenCalled();
     });
+
+    test("does not leak a raw terminal-control sequence from a malformed kind into the unmapped-kind error's message", async () => {
+      // A malformed `kind` carrying an embedded terminal escape (clear
+      // screen) plus a newline fabricating a fake log line must not reach
+      // `.message` unmodified — this module's own documented behavior says
+      // the message reaches the script logger and the persisted run report.
+      const ESC = "\x1b";
+      const malformedValue = {
+        kind: `safe${ESC}[2Jinjected\nFAKE LOG LINE`,
+        value: "irrelevant",
+      } as unknown as M3LRDSDataValue;
+
+      const operations = new M3LRDSDataOperations(fakeClient());
+
+      let thrown: unknown;
+      try {
+        await operations.executeStatement({
+          ...MINIMAL_STATEMENT_INPUT,
+          parameters: [{ name: "bogus", value: malformedValue }],
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LRDSDataOperationError);
+      const message = (thrown as M3LRDSDataOperationError).message;
+      expect(message).not.toContain(ESC);
+      expect(message).not.toContain("\nFAKE LOG LINE");
+    });
   });
 
   // ===========================================================================
@@ -911,6 +940,34 @@ describe("M3LRDSDataOperations", () => {
       // ...and so must the rollback's own failure — a fnError that already
       // carries a cause of its own must not cause rollbackError to be
       // silently dropped from the chain.
+      expect(causeChain(thrown)).toContain(rollbackError);
+    });
+
+    test("still surfaces M3LRDSDataOperationError (not a raw TypeError) when fn's error is frozen and rollback also fails", async () => {
+      // Assigning `.cause` on a frozen error throws a TypeError in strict
+      // (ESM) mode. This must not let that TypeError escape unhandled in
+      // place of the operation's own typed error — and the rollback failure
+      // must still end up reachable somewhere in the surfaced error's cause
+      // chain, not silently dropped just because the primary attachment path
+      // failed.
+      const fnError = Object.freeze(new Error("statement failed"));
+      const rollbackError = fatalError("rollback denied");
+      h.send
+        .mockResolvedValueOnce({ transactionId: "txn-5" }) // BeginTransaction
+        .mockRejectedValueOnce(rollbackError); // RollbackTransaction
+
+      const operations = new M3LRDSDataOperations(fakeClient());
+
+      let thrown: unknown;
+      try {
+        await operations.withTransaction(MINIMAL_BEGIN_INPUT, () =>
+          Promise.reject(fnError),
+        );
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LRDSDataOperationError);
       expect(causeChain(thrown)).toContain(rollbackError);
     });
   });
