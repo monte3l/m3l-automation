@@ -12,12 +12,50 @@ import { suggestNames } from "../cli/suggest.js";
 import type { M3LCliCommandContext } from "./context.js";
 import { discoverScripts } from "../discovery/discover.js";
 import { spawnScript } from "../run/spawn.js";
+import { recordHistoryEntry } from "../history/store.js";
+
+/**
+ * `M3LCliCommandContext` plus the run-history file's absolute path (8f) —
+ * `runRun`'s own parameter type, narrower than the shared base so the
+ * best-effort history recording below can read `context.historyFilePath`
+ * without a cast.
+ */
+interface M3LCliRunCommandContext extends M3LCliCommandContext {
+  readonly historyFilePath: string;
+}
+
+/**
+ * Best-effort records a run-history entry after a successful spawn — never
+ * throws (any failure, including {@link recordHistoryEntry} itself throwing
+ * rather than returning `false`, is swallowed) since history recording must
+ * never affect the resolved exit code {@link runRun} already has in hand.
+ */
+function recordRunHistory(
+  historyFilePath: string,
+  scriptName: string,
+  exitCode: number,
+): void {
+  try {
+    recordHistoryEntry(historyFilePath, {
+      timestamp: new Date().toISOString(),
+      script: scriptName,
+      parameterNames: [],
+      exitCode,
+    });
+  } catch {
+    /* best-effort: history recording must never affect the resolved exit code */
+  }
+}
 
 /**
  * Resolves `scriptName` to a discovered `scripts/*` candidate and spawns its
- * compiled `dist/main.js`, forwarding `passthroughArgs` verbatim.
+ * compiled `dist/main.js`, forwarding `passthroughArgs` verbatim. Once the
+ * spawn resolves, best-effort records a run-history entry (8f) with an empty
+ * `parameterNames` — `run` never parses flags, unlike the dynamic per-script
+ * dispatch.
  *
- * @param context - The command context to run against.
+ * @param context - The command context to run against; must carry
+ *   `historyFilePath`.
  * @param scriptName - The script name to run.
  * @param passthroughArgs - Arguments forwarded verbatim to the spawned
  *   script (everything after the first bare `--` in the original `argv`).
@@ -35,7 +73,7 @@ import { spawnScript } from "../run/spawn.js";
  * ```
  */
 export async function runRun(
-  context: M3LCliCommandContext,
+  context: M3LCliRunCommandContext,
   scriptName: string,
   passthroughArgs: readonly string[],
 ): Promise<number> {
@@ -55,5 +93,7 @@ export async function runRun(
     );
   }
 
-  return spawnScript(candidate.directory, passthroughArgs);
+  const exitCode = await spawnScript(candidate.directory, passthroughArgs);
+  recordRunHistory(context.historyFilePath, scriptName, exitCode);
+  return exitCode;
 }

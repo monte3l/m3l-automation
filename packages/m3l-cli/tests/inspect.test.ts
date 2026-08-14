@@ -73,6 +73,7 @@ function buildContext(overrides: Partial<M3LCliCommandContext> = {}): {
     output,
     jsonOutput: false,
     cacheFilePath: "/workspace/data/cache/m3l-cli/discovery.json",
+    historyFilePath: "/workspace/data/cache/m3l-cli/history.json",
     ...overrides,
   };
   return { context, infoLines, headingLines };
@@ -210,7 +211,7 @@ describe("runInspect — config load failure", () => {
 });
 
 describe("runInspect — type contract", () => {
-  test("M3LCliParameterDescriptor is a readonly descriptor of name/aliases/type/required/defaultValue/description", () => {
+  test("M3LCliParameterDescriptor is a readonly descriptor of name/aliases/type/required/defaultValue/description/secret", () => {
     expectTypeOf<M3LCliParameterDescriptor>().toEqualTypeOf<{
       readonly name: string;
       readonly aliases: readonly string[];
@@ -218,6 +219,7 @@ describe("runInspect — type contract", () => {
       readonly required: boolean;
       readonly defaultValue: string | undefined;
       readonly description: string;
+      readonly secret?: boolean;
     }>();
   });
 });

@@ -140,22 +140,45 @@ Exit: `1` iff any check is `fail` (`warn` never affects the code); `0`
 otherwise. An unhealthy workspace is a doctor _result_ — only doctor's own
 infrastructure failing throws (`ERR_CLI_DOCTOR_FAILED`, cause-chained).
 
+### Phase 8f — presets + history
+
+#### `m3l presets <script>`
+
+Lists every preset file under `data/config/presets/` (`.json`/`.yaml`/
+`.yml`), validating each against the script's declared schema via
+`Core.M3LScriptPresetLoader`: one row per file — NAME / FORMAT /
+PARAMETERS / STATUS — where PARAMETERS shows the preset's **key names
+only, never values** (preset files may hold secrets), and an invalid
+preset renders its load-error summary as a row rather than aborting.
+Unknown script exits `2` with suggestions; empty listing is ok (exit 0).
+
+#### `m3l history`
+
+Renders the run history — TIME / SCRIPT / PARAMETERS / EXIT — recorded
+best-effort after every `run`/dynamic spawn. Entries carry the script
+name, the parsed canonical **parameter names** (dynamic form; `run`
+records none since it never parses), the child exit code, and a
+timestamp — **never values** (the entry type cannot carry them). Bounded
+ring buffer (cap 100) persisted beside the discovery cache
+(`<cacheDir>/m3l-cli/history.json`); recording and reading are
+best-effort and never affect an exit code; a corrupt file is surfaced by
+`doctor` ("will be rebuilt") and rebuilt on the next write.
+
+#### Preset writing (8g consumer)
+
+`writePreset` (internal) stores JSON presets in the loader-compatible
+format, **refuses to persist any secret-flagged parameter** (skipped
+names are reported explicitly), refuses unknown keys, and fails loud on
+IO errors (`ERR_CLI_PRESET_INVALID`) — the wizard's save-as-preset (8g)
+is its consumer. Secret flags reach the CLI through the parameter
+descriptors (`secret`, threaded tolerantly from `isSecret()` so a stale
+pre-2.3.0 `dist` build simply reads as non-secret) and cached
+descriptors are validated element-wise on read.
+
+Reserved command names now include `presets` and `history` (scaffold +
+doctor drift-guard updated).
+
 ### Later phases (not yet built)
 
-Presets + history (8f — its `M3LConfigParameter.secret` library
-prerequisite shipped in PR #416) and the interactive wizard (8g) — see
-ADR-0042 and the m3l-cli build-out tracker in
-`docs/plans/IMPLEMENTATION.md`.
-
-## Reserved command names
-
-`list`, `inspect`, `run`, `doctor`, `new`, `help` — a script may not take one
-of these as its package name; `bin/scaffold-script.mjs` and
-`check:script-scaffold` reject them (`RESERVED_CLI_NAMES` in
-`bin/lib/script-scaffold.mjs`).
-
-## Cache layout
-
-`<cacheDir>/m3l-cli/discovery.json` — a JSON map of script name to
-`{ srcMtimeMs, distMtimeMs, descriptor }`. Deleting it is always safe; it is
-rebuilt on the next discovery-bearing command.
+The interactive wizard (8g) — see ADR-0042 and the m3l-cli build-out
+tracker in `docs/plans/IMPLEMENTATION.md`.

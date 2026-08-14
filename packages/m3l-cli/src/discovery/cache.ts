@@ -9,6 +9,8 @@
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { Core } from "@m3l-automation/m3l-common";
+
 import type { M3LCliParameterDescriptor } from "./load-config.js";
 
 /** Indentation width for the pretty-printed cache file. */
@@ -50,11 +52,45 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * Checks whether `value` is a well-formed cached {@link M3LCliParameterDescriptor}
+ * element — every field present with its documented primitive shape,
+ * including the 8f-added `secret` boolean. Validated element-wise (rather
+ * than trusting the array's shape alone) so a single malformed or stale
+ * (pre-8f, missing `secret`) parameter entry drops the whole cache entry it
+ * belongs to — this is also how a pre-8f cache gets invalidated exactly once
+ * on upgrade, since every entry it wrote lacked `secret`.
+ *
+ * @param value - The candidate `parameters` array element to check.
+ * @returns Whether `value` is a well-formed cached parameter descriptor.
+ */
+function isValidCachedParameter(
+  value: unknown,
+): value is M3LCliParameterDescriptor {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  const { name, aliases, type, required, defaultValue, description, secret } =
+    value;
+  return (
+    typeof name === "string" &&
+    Array.isArray(aliases) &&
+    aliases.every((alias) => typeof alias === "string") &&
+    typeof type === "string" &&
+    typeof required === "boolean" &&
+    (defaultValue === undefined || typeof defaultValue === "string") &&
+    typeof description === "string" &&
+    typeof secret === "boolean"
+  );
+}
+
+/**
  * Checks whether `value` has the minimal shape {@link M3LCliDiscoveryCacheEntry}
  * requires — `srcMtimeMs`/`distMtimeMs` each `number | null`, and `parameters`
- * an array — so a malformed entry in a hand-edited or corrupted cache file
- * (e.g. `{"foo": null}`, or an entry missing `parameters`) is dropped rather
- * than trusted through to a raw `TypeError` in `list`/`inspect`.
+ * an array whose every element passes {@link isValidCachedParameter} — so a
+ * malformed entry in a hand-edited or corrupted cache file (e.g.
+ * `{"foo": null}`, an entry missing `parameters`, or one whose parameters
+ * lack the 8f `secret` field) is dropped rather than trusted through to a
+ * raw `TypeError` in `list`/`inspect`.
  *
  * @param value - The candidate cache-entry value to check.
  * @returns Whether `value` is a well-formed {@link M3LCliDiscoveryCacheEntry}.
@@ -67,25 +103,81 @@ function isValidCacheEntry(value: unknown): value is M3LCliDiscoveryCacheEntry {
   return (
     (typeof srcMtimeMs === "number" || srcMtimeMs === null) &&
     (typeof distMtimeMs === "number" || distMtimeMs === null) &&
-    Array.isArray(parameters)
+    Array.isArray(parameters) &&
+    parameters.every(isValidCachedParameter)
   );
+}
+
+/**
+ * Projects a validated {@link M3LCliParameterDescriptor} down to exactly its
+ * declared fields, so a hand-added extra field on a parsed cache element
+ * cannot pass through into a `list`/`inspect --json` output.
+ *
+ * @param parameter - An element already confirmed well-formed by
+ *   {@link isValidCachedParameter}.
+ * @returns A new object carrying only the declared fields.
+ */
+function projectCachedParameter(
+  parameter: M3LCliParameterDescriptor,
+): M3LCliParameterDescriptor {
+  return {
+    name: parameter.name,
+    aliases: [...parameter.aliases],
+    type: parameter.type,
+    required: parameter.required,
+    defaultValue: parameter.defaultValue,
+    description: parameter.description,
+    // `isValidCachedParameter` already proved `secret` is a `boolean` (never
+    // `undefined`) on every element reaching this function; the `?? false`
+    // only satisfies the public descriptor type's optional `secret?:
+    // boolean`, it never actually observes the fallback at runtime.
+    secret: parameter.secret ?? false,
+  };
+}
+
+/**
+ * Projects a validated {@link M3LCliDiscoveryCacheEntry} down to exactly its
+ * declared fields (see {@link projectCachedParameter} for the same treatment
+ * of each `parameters` element), so a hand-added extra top-level field on a
+ * parsed cache entry cannot pass through into a `list`/`inspect --json`
+ * output.
+ *
+ * @param entry - An entry already confirmed well-formed by
+ *   {@link isValidCacheEntry}.
+ * @returns A new object carrying only the declared fields.
+ */
+function projectCacheEntry(
+  entry: M3LCliDiscoveryCacheEntry,
+): M3LCliDiscoveryCacheEntry {
+  return {
+    srcMtimeMs: entry.srcMtimeMs,
+    distMtimeMs: entry.distMtimeMs,
+    parameters: entry.parameters.map(projectCachedParameter),
+  };
 }
 
 /**
  * Filters a parsed cache payload down to its well-formed entries (see
  * {@link isValidCacheEntry}), silently dropping any entry that fails the
- * shape guard.
+ * shape guard, skipping a dangerous key (`__proto__`, `constructor`,
+ * `prototype` — see `Core.isDangerousKey`) entirely rather than validating
+ * it, and projecting every kept entry to exactly its declared fields (see
+ * {@link projectCacheEntry}).
  *
  * @param payload - The parsed, already-confirmed-plain-object cache payload.
- * @returns Only the entries that pass the shape guard.
+ * @returns Only the entries that pass the shape guard, each narrowed to its
+ *   declared fields.
  */
 function filterValidEntries(
   payload: Record<string, unknown>,
 ): M3LCliDiscoveryCache {
   const validated: Record<string, M3LCliDiscoveryCacheEntry> = {};
   for (const [name, entry] of Object.entries(payload)) {
+    if (Core.isDangerousKey(name)) {
+      continue;
+    }
     if (isValidCacheEntry(entry)) {
-      validated[name] = entry;
+      validated[name] = projectCacheEntry(entry);
     }
   }
   return validated;

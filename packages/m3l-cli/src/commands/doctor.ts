@@ -21,6 +21,7 @@ import type { M3LCliScriptCandidate } from "../discovery/discover.js";
 import { loadScriptParameters } from "../discovery/load-config.js";
 import { configMtimes, readDiscoveryCache } from "../discovery/cache.js";
 import type { M3LCliConfigMtimes } from "../discovery/cache.js";
+import { readHistory } from "../history/store.js";
 
 /**
  * A single check's outcome: `"ok"` (healthy), `"warn"` (diagnosable but not
@@ -81,9 +82,20 @@ const RESERVED_COMMAND_NAMES: readonly string[] = [
   "inspect",
   "run",
   "doctor",
+  "presets",
+  "history",
   "new",
   "help",
 ];
+
+/**
+ * `M3LCliCommandContext` plus the run-history file's absolute path (8f) —
+ * `runDoctor`'s own parameter type, narrower than the shared base so the
+ * "history" check can read `context.historyFilePath` without a cast.
+ */
+interface M3LCliDoctorCommandContext extends M3LCliCommandContext {
+  readonly historyFilePath: string;
+}
 
 /** Checks the running Node.js major version against {@link NODE_VERSION_FLOOR}. */
 function checkNodeVersion(): M3LCliDoctorCheck {
@@ -330,6 +342,80 @@ function checkCache(cacheFilePath: string): M3LCliDoctorCheck {
   };
 }
 
+/**
+ * Checks whether `value` is a raw, unfiltered history payload's array shape —
+ * parsed independently of {@link readHistory}, whose per-entry filtering and
+ * blanket failure fallback (both to `[]`) make a genuinely empty-but-valid
+ * history file indistinguishable from a corrupted one once routed through it.
+ *
+ * @param value - The parsed JSON payload to check.
+ * @returns Whether `value` is an array.
+ */
+function isRawHistoryPayload(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
+/**
+ * Checks the run-history file's parent-directory writability and, when the
+ * file exists, its readability/validity — mirrors {@link checkCache}'s
+ * absent/valid/invalid arms exactly, swapping the cache's non-array
+ * plain-object shape for history's array shape (see
+ * {@link isRawHistoryPayload}).
+ */
+function checkHistory(historyFilePath: string): M3LCliDoctorCheck {
+  const ancestor = nearestExistingAncestor(dirname(historyFilePath));
+
+  try {
+    accessSync(ancestor, constants.W_OK);
+  } catch (error) {
+    if (isPermissionDenied(error)) {
+      return {
+        name: "history",
+        status: "warn",
+        detail: `history directory is not writable: '${historyFilePath}'`,
+      };
+    }
+    throw new M3LCliError(
+      "ERR_CLI_DOCTOR_FAILED",
+      "history-writability probe failed",
+      { cause: error },
+    );
+  }
+
+  if (!existsSync(historyFilePath)) {
+    return {
+      name: "history",
+      status: "ok",
+      detail: `history file will be created at '${historyFilePath}'`,
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(historyFilePath, "utf8"));
+  } catch {
+    return {
+      name: "history",
+      status: "warn",
+      detail: `history file '${historyFilePath}' is unreadable/invalid — will be rebuilt`,
+    };
+  }
+  if (!isRawHistoryPayload(parsed)) {
+    return {
+      name: "history",
+      status: "warn",
+      detail: `history file '${historyFilePath}' is unreadable/invalid — will be rebuilt`,
+    };
+  }
+
+  const entryCount = readHistory(historyFilePath).length;
+  return {
+    name: "history",
+    status: "ok",
+    detail: `history file '${historyFilePath}' holds ${String(entryCount)} entr${entryCount === 1 ? "y" : "ies"}`,
+  };
+}
+
 /** The human-readable rendering's column headers. */
 const HEADER = ["CHECK", "STATUS", "DETAIL"] as const;
 
@@ -356,16 +442,18 @@ function renderChecks(
  * Checks, in order: `node-version`, `workspace-root`, one `script:<name>`
  * row per discovered candidate (dir shape, dist freshness, config
  * importability through the real {@link loadScriptParameters} loader — never
- * the discovery cache), `reserved-names`, and `cache`. Never throws for an
- * unhealthy check — an unhealthy-but-diagnosable workspace is a normal
- * result, rendered as a `"warn"`/`"fail"` row, not an exception. An
+ * the discovery cache), `reserved-names`, `cache`, and `history` (8f — mirrors
+ * `cache`'s absent/valid/invalid arms over `context.historyFilePath`). Never
+ * throws for an unhealthy check — an unhealthy-but-diagnosable workspace is a
+ * normal result, rendered as a `"warn"`/`"fail"` row, not an exception. An
  * unexpected failure in a check's own collaborator (e.g. `discoverScripts`
  * itself throwing) propagates as an {@link M3LCliError} with code
  * `"ERR_CLI_DOCTOR_FAILED"` rather than being swallowed into a `"fail"` row —
- * an already-typed `M3LCliError` (e.g. from {@link checkCache}'s
- * writability probe) passes through unwrapped.
+ * an already-typed `M3LCliError` (e.g. from {@link checkCache}'s or
+ * {@link checkHistory}'s writability probe) passes through unwrapped.
  *
- * @param context - The command context to run against.
+ * @param context - The command context to run against; must carry
+ *   `historyFilePath`.
  * @returns `0` when no check resolved `"fail"` (a `"warn"`-only or fully
  *   `"ok"` result still exits `0`); `1` when at least one check resolved
  *   `"fail"`.
@@ -378,7 +466,7 @@ function renderChecks(
  * ```
  */
 export async function runDoctor(
-  context: M3LCliCommandContext,
+  context: M3LCliDoctorCommandContext,
 ): Promise<number> {
   let checks: M3LCliDoctorCheck[];
   try {
@@ -390,6 +478,7 @@ export async function runDoctor(
     }
     checks.push(checkReservedNames(candidates));
     checks.push(checkCache(context.cacheFilePath));
+    checks.push(checkHistory(context.historyFilePath));
   } catch (error) {
     if (error instanceof M3LCliError) {
       throw error;

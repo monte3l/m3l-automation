@@ -10,7 +10,7 @@ import { exitCodeForError, M3LCliError } from "../src/cli/errors.js";
 import type { M3LCliErrorCode } from "../src/cli/errors.js";
 
 describe("M3LCliErrorCode", () => {
-  test("is the exact nine-member union the contract declares (8e adds ERR_CLI_DOCTOR_FAILED)", () => {
+  test("is the exact ten-member union the contract declares (8f adds ERR_CLI_PRESET_INVALID)", () => {
     expectTypeOf<M3LCliErrorCode>().toEqualTypeOf<
       | "ERR_CLI_UNKNOWN_COMMAND"
       | "ERR_CLI_UNKNOWN_SCRIPT"
@@ -21,6 +21,7 @@ describe("M3LCliErrorCode", () => {
       | "ERR_CLI_UNKNOWN_PARAMETER"
       | "ERR_CLI_INVALID_PARAMETER_VALUE"
       | "ERR_CLI_DOCTOR_FAILED"
+      | "ERR_CLI_PRESET_INVALID"
     >();
   });
 });
@@ -97,6 +98,7 @@ describe("exitCodeForError", () => {
     ["ERR_CLI_UNKNOWN_PARAMETER", 2],
     ["ERR_CLI_INVALID_PARAMETER_VALUE", 2],
     ["ERR_CLI_DOCTOR_FAILED", 1],
+    ["ERR_CLI_PRESET_INVALID", 1],
   ];
 
   test.each(codeExitCases)(

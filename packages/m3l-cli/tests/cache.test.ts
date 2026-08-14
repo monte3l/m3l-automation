@@ -37,6 +37,22 @@ const sampleEntry: M3LCliDiscoveryCacheEntry = {
   parameters: [],
 };
 
+/**
+ * A well-formed parameters-element fixture (8f contract): every
+ * `M3LCliDiscoveryCacheEntry.parameters` element must carry name/type/
+ * description strings, an aliases string-array, required/secret booleans,
+ * and a `defaultValue` of `string | undefined`.
+ */
+const wellFormedParameter = {
+  name: "region",
+  aliases: ["r"],
+  type: "STRING",
+  required: true,
+  defaultValue: "us-east-1",
+  description: "AWS region",
+  secret: false,
+};
+
 function errnoError(code: string): NodeJS.ErrnoException {
   const error = new Error(code) as NodeJS.ErrnoException;
   error.code = code;
@@ -101,6 +117,81 @@ describe("readDiscoveryCache", () => {
     });
   });
 
+  test("keeps an entry whose parameters elements are all well-formed, including the secret boolean (8f)", () => {
+    const payload = {
+      exporter: {
+        srcMtimeMs: 1,
+        distMtimeMs: 2,
+        parameters: [wellFormedParameter],
+      },
+    };
+    vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(payload));
+
+    expect(readDiscoveryCache("/cache/discovery.json")).toEqual(payload);
+  });
+
+  test("drops an entry whose parameters element lacks the 'secret' field, invalidating a pre-8f cache entry (8f)", () => {
+    const { secret: _drop, ...preSecretParameter } = wellFormedParameter;
+    const payload = {
+      exporter: {
+        srcMtimeMs: 1,
+        distMtimeMs: 2,
+        parameters: [preSecretParameter],
+      },
+    };
+    vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(payload));
+
+    expect(readDiscoveryCache("/cache/discovery.json")).toEqual({});
+  });
+
+  test.each([
+    ["secret is a string, not boolean", { secret: "false" }],
+    ["name is missing", { name: undefined }],
+    ["aliases is not an array", { aliases: "r" }],
+    ["required is a string, not boolean", { required: "true" }],
+    ["type is a number, not a string", { type: 1 }],
+    ["description is a number, not a string", { description: 1 }],
+    [
+      "defaultValue is a number (must be string | undefined)",
+      { defaultValue: 1 },
+    ],
+  ])(
+    "drops an entry whose parameters element is malformed: %s (8f)",
+    (_label, override) => {
+      const payload = {
+        exporter: {
+          srcMtimeMs: 1,
+          distMtimeMs: 2,
+          parameters: [{ ...wellFormedParameter, ...override }],
+        },
+      };
+      vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(payload));
+
+      expect(readDiscoveryCache("/cache/discovery.json")).toEqual({});
+    },
+  );
+
+  test("drops only the entry with a malformed parameters element, keeping a well-formed sibling entry (8f)", () => {
+    const { secret: _drop, ...preSecretParameter } = wellFormedParameter;
+    const payload = {
+      good: {
+        srcMtimeMs: 1,
+        distMtimeMs: 2,
+        parameters: [wellFormedParameter],
+      },
+      stale: {
+        srcMtimeMs: 3,
+        distMtimeMs: 4,
+        parameters: [preSecretParameter],
+      },
+    };
+    vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(payload));
+
+    expect(readDiscoveryCache("/cache/discovery.json")).toEqual({
+      good: payload.good,
+    });
+  });
+
   test("never throws even on an unexpected synchronous fs error", () => {
     vi.spyOn(fs, "readFileSync").mockImplementation(() => {
       throw new Error("disk exploded");
@@ -108,6 +199,61 @@ describe("readDiscoveryCache", () => {
 
     expect(() => readDiscoveryCache("/cache/discovery.json")).not.toThrow();
     expect(readDiscoveryCache("/cache/discovery.json")).toEqual({});
+  });
+
+  test.each(["__proto__", "constructor"])(
+    "skips a dangerous key entry named %s entirely, never surfacing it as an own key of the returned cache",
+    (dangerousKey) => {
+      const payload = `{"${dangerousKey}": ${JSON.stringify(sampleEntry)}, "ok": ${JSON.stringify(sampleEntry)}}`;
+      vi.spyOn(fs, "readFileSync").mockReturnValue(payload);
+
+      const result = readDiscoveryCache("/cache/discovery.json");
+
+      expect(result).toEqual({ ok: sampleEntry });
+      expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+      expect(Object.prototype.hasOwnProperty.call(result, dangerousKey)).toBe(
+        false,
+      );
+    },
+  );
+
+  test("drops any hand-added extra field on a kept entry, projecting to exactly the declared entry shape", () => {
+    const payload = {
+      exporter: {
+        srcMtimeMs: 1,
+        distMtimeMs: 2,
+        parameters: [],
+        extraTopLevelField: "should-not-survive",
+      },
+    };
+    vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(payload));
+
+    const result = readDiscoveryCache("/cache/discovery.json");
+
+    expect(result).toEqual({
+      exporter: { srcMtimeMs: 1, distMtimeMs: 2, parameters: [] },
+    });
+    expect(result["exporter"]).not.toHaveProperty("extraTopLevelField");
+  });
+
+  test("drops any hand-added extra field on a kept entry's parameters element, projecting to exactly the declared descriptor shape", () => {
+    const payload = {
+      exporter: {
+        srcMtimeMs: 1,
+        distMtimeMs: 2,
+        parameters: [
+          { ...wellFormedParameter, extraParameterField: "should-not-survive" },
+        ],
+      },
+    };
+    vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(payload));
+
+    const result = readDiscoveryCache("/cache/discovery.json");
+
+    expect(result["exporter"]?.parameters).toEqual([wellFormedParameter]);
+    expect(result["exporter"]?.parameters[0]).not.toHaveProperty(
+      "extraParameterField",
+    );
   });
 });
 

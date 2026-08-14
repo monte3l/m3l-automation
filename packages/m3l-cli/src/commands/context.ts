@@ -24,6 +24,7 @@ import type { M3LCliOutput } from "../cli/output.js";
  *   output: createOutput({ stdout: process.stdout, stderr: process.stderr }),
  *   jsonOutput: false,
  *   cacheFilePath: "/repo/data/cache/m3l-cli/discovery.json",
+ *   historyFilePath: "/repo/data/cache/m3l-cli/history.json",
  * };
  * ```
  */
@@ -36,4 +37,10 @@ export interface M3LCliCommandContext {
   readonly jsonOutput: boolean;
   /** The absolute path to the discovery cache file. */
   readonly cacheFilePath: string;
+  /**
+   * The absolute path to the run-history file (8f) — `main.ts`'s
+   * `buildCommandContext` populates this for every command context, even
+   * ones (`list`/`inspect`/`presets`) that don't read it.
+   */
+  readonly historyFilePath: string;
 }
