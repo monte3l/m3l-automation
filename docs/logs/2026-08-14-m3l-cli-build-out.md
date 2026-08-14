@@ -27,8 +27,9 @@ package plus one library semver-minor, across 8 PRs:
   merged after a one-finding claude-pr-review FAIL→fix cycle.
 - **#417** 8d dynamic per-script subcommands + shared table/cached-load
   dedup refactors — open at log time.
-- **#418** 8e `doctor` (stacked) — open.
-- **#419** 8f presets + history + secret threading (stacked) — open.
+- **#418** 8e `doctor` (stacked) — open at log time.
+- **#419** 8f presets + history + secret threading (stacked) — open at log
+  time; merged the same day as part of the 8b–8g closeout sequence.
 - **8g** wizard + closeout — this change set (final PR of the series).
 
 Final state: 380 m3l-cli tests across 20 files (7,189 workspace-wide), every

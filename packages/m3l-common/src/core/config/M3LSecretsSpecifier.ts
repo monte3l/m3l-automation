@@ -11,11 +11,10 @@
  * responsibility belongs to the logging/display layer, which should consult
  * `isSecret` before rendering a value.
  *
- * @see {@link M3LConfigParameter.isSecret} — the declared-parameter producer
- *   for this specifier's entries: a consumer (e.g. the m3l CLI's preset
- *   layer, ADR-0042 phase 8f) derives its `M3LSecretsSpecifier` entries from
- *   each schema's `isSecret()` parameters instead of hand-maintaining a name
- *   list.
+ * @see {@link deriveSecretsSpecifier} — derives a populated
+ *   `M3LSecretsSpecifier` from a whole schema's declared `isSecret()`
+ *   parameters (and, by default, their aliases) instead of hand-maintaining a
+ *   name list.
  *
  * @example
  * ```ts
@@ -66,6 +65,12 @@ export class M3LSecretsSpecifier {
    * copy — mutating the returned set, or calling `markSecret` after reading
    * it, never affects this instance's internal state or a previously read
    * snapshot.
+   *
+   * @remarks
+   * When this instance was produced by {@link deriveSecretsSpecifier} with
+   * its default `includeAliases: true`, this set is a set of _reachable flag
+   * names_, not a 1:1 mapping of declared parameter names — a secret
+   * parameter's declared aliases appear here alongside its canonical name.
    */
   get secretNames(): ReadonlySet<string> {
     return new Set(this.names);

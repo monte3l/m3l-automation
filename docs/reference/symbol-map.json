@@ -224,6 +224,16 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/config/M3LConfigSchemaValidator.ts"
   },
+  "deriveSecretsSpecifier": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/deriveSecretsSpecifier.ts"
+  },
+  "M3LDeriveSecretsSpecifierOptions": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/deriveSecretsSpecifier.ts"
+  },
   "M3LConfigAccessorOptions": {
     "submodule": "config",
     "namespace": "core",
@@ -1061,6 +1071,16 @@
     "submodule": "logging",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/logging/M3LLogEvent.ts"
+  },
+  "M3LSecretNamesPort": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/redact.ts"
+  },
+  "M3LRedactOptions": {
+    "submodule": "logging",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/logging/redact.ts"
   },
   "M3LMessenger": {
     "submodule": "messaging",

@@ -206,14 +206,67 @@ function buildEmbeddedSensitivePattern(): RegExp {
  */
 const EMBEDDED_SENSITIVE_PATTERN = buildEmbeddedSensitivePattern();
 
+/**
+ * A caller-supplied, structural port over a declared set of secret field
+ * names — most commonly `M3LSecretsSpecifier` from `core/config`, built via
+ * `deriveSecretsSpecifier` from a script's own config schema. Consulted by
+ * {@link redactSensitiveLogText} and {@link redactSensitiveLogValue} as an
+ * *additive* widening of the built-in heuristic in {@link isSensitiveKey} —
+ * never a narrowing of it.
+ *
+ * @example
+ * ```ts
+ * import type { M3LSecretNamesPort } from "@m3l-automation/m3l-common/core";
+ *
+ * const secrets: M3LSecretNamesPort = {
+ *   isSecret: (name) => name === "tenantRef",
+ * };
+ * ```
+ */
+export interface M3LSecretNamesPort {
+  /** Returns whether `name` (a candidate key) should be treated as secret. */
+  readonly isSecret: (name: string) => boolean;
+}
+
+/**
+ * Optional options accepted by {@link redactSensitiveLogText} and
+ * {@link redactSensitiveLogValue}.
+ *
+ * @example
+ * ```ts
+ * import type { M3LRedactOptions } from "@m3l-automation/m3l-common/core";
+ *
+ * const options: M3LRedactOptions = {
+ *   secrets: { isSecret: (name) => name === "tenantRef" },
+ * };
+ * ```
+ */
+export interface M3LRedactOptions {
+  /**
+   * A declared secrets specifier consulted alongside the built-in heuristic.
+   * Omitted, `undefined`, or a port whose `isSecret` never returns `true`
+   * behaves identically to the bare (no-`options`) call.
+   */
+  readonly secrets?: M3LSecretNamesPort | undefined;
+}
+
+/** Returns whether `key` is sensitive by the heuristic or a declared secrets port. */
+function isSensitiveOrDeclaredKey(
+  key: string,
+  options: M3LRedactOptions | undefined,
+): boolean {
+  return isSensitiveKey(key) || options?.secrets?.isSecret(key) === true;
+}
+
 /** Redacts one matched bare key/separator/value triple, preserving quoting. */
 function redactBareMatch(
   match: string,
   key: string,
   separator: string,
   value: string,
+  options: M3LRedactOptions | undefined,
 ): string {
-  if (!isSensitiveKey(key)) return match;
+  if (!isSensitiveOrDeclaredKey(key, options)) return match;
 
   const isQuoted = value.startsWith('"') && value.endsWith('"');
   const replacement = isQuoted ? `"${REDACTED}"` : REDACTED;
@@ -233,9 +286,9 @@ function redactBareMatch(
  * also catches a sensitive pair *embedded* inside another field's value —
  * a URL query string (`url=https://x/?token=secret`) or a cookie header
  * (`Cookie: token=abc; path=/`) — which the first pass alone would miss
- * because the outer, non-sensitive key's value consumes it whole. Never
- * throws — an input with no matching pairs, or no sensitive keys, is
- * returned unchanged.
+ * because the outer, non-sensitive key's value consumes it whole. An input
+ * with no matching pairs, or no sensitive keys, is returned unchanged; this
+ * function does not itself throw, but see `@remarks` for the one exception.
  *
  * @remarks
  * This is a **best-effort** redactor for free-form text, not a parser — it
@@ -252,7 +305,32 @@ function redactBareMatch(
  * {@link redactSensitiveLogValue} over interpolating values into free-form
  * text and redacting the resulting string.
  *
+ * A declared secrets specifier (`options.secrets`) widens the first two
+ * passes only — never the third. The optional `options.secrets` port is
+ * consulted on the quoted JSON-style pass (`"key": "value"`) and the bare
+ * `key=value` pass only, additively alongside the built-in heuristic — it
+ * can widen what gets redacted, never narrow it. It is deliberately **not**
+ * consulted on the third, embedded-value pass: that pass is a single
+ * regular expression precompiled once at module load from the fixed
+ * built-in key-name list, and rebuilding it per call from an arbitrary,
+ * mutable, caller-supplied name set would reopen the catastrophic-backtracking
+ * (ReDoS) class of bug the fixed pattern was specifically hardened against.
+ * A declared secret embedded inside another field's value (e.g.
+ * `url=https://x/?tenant-ref=abc`) is therefore not redacted by the port —
+ * only a top-level `tenant-ref=...` pair is.
+ *
+ * This function does not itself throw for any well-formed `string` input.
+ * The one exception is a caller-supplied `options.secrets` port
+ * ({@link M3LSecretNamesPort}) whose `isSecret` implementation itself
+ * throws, or that is malformed at the JS runtime boundary (e.g. rehydrated
+ * from untyped JSON with a non-callable `isSecret`) — such a failure
+ * propagates uncaught, by design: this function does not guard third-party
+ * port calls.
+ *
  * @param text - The free-form text to scan and redact.
+ * @param options - Optional; a declared secrets specifier to widen
+ *   redaction (first two passes only, see `@remarks`). Omitted, `{}`, or
+ *   `{ secrets: undefined }` behaves identically to the bare call.
  * @returns `text` with every sensitive value replaced by `[REDACTED]`.
  * @example
  * ```ts
@@ -262,11 +340,14 @@ function redactBareMatch(
  * // "token=[REDACTED] user=alice"
  * ```
  */
-export function redactSensitiveLogText(text: string): string {
+export function redactSensitiveLogText(
+  text: string,
+  options?: M3LRedactOptions,
+): string {
   const withJsonRedacted = text.replace(
     JSON_KEY_VALUE_PATTERN,
     (match, key: string, separator: string) => {
-      if (!isSensitiveKey(key)) return match;
+      if (!isSensitiveOrDeclaredKey(key, options)) return match;
       return `"${key}"${separator}"${REDACTED}"`;
     },
   );
@@ -274,7 +355,7 @@ export function redactSensitiveLogText(text: string): string {
   const withBareRedacted = withJsonRedacted.replace(
     BARE_KEY_VALUE_PATTERN,
     (match, key: string, separator: string, value: string) =>
-      redactBareMatch(match, key, separator, value),
+      redactBareMatch(match, key, separator, value, options),
   );
 
   // Second, additive pass: pass 1 only redacts a *top-level* key=value pair
@@ -302,8 +383,19 @@ export function redactSensitiveLogText(text: string): string {
  * an embedded `key=value` pattern inside a string value is also masked;
  * other scalars (number, boolean, null, undefined) pass through unchanged.
  *
+ * A declared secrets specifier (`options.secrets`) is forwarded through
+ * every recursive call — array elements, nested-record entries, and string
+ * leaves alike — so a secret nested at any depth is redacted the same as a
+ * top-level one, additively alongside the built-in heuristic. See
+ * {@link M3LRedactOptions} and {@link redactSensitiveLogText}'s `@remarks`
+ * for the one deliberate scope limitation (the embedded-value pass never
+ * consults the port), which applies the same way to a string leaf here.
+ *
  * @param value - The value to redact; may be a scalar, array, object, or any
  *   nested combination.
+ * @param options - Optional; a declared secrets specifier to widen
+ *   redaction at every depth. Omitted, `{}`, or `{ secrets: undefined }`
+ *   behaves identically to the bare call.
  * @returns A redacted, deep-cloned copy of `value`.
  * @example
  * ```ts
@@ -313,11 +405,14 @@ export function redactSensitiveLogText(text: string): string {
  * // { apiKey: "[REDACTED]" }
  * ```
  */
-export function redactSensitiveLogValue(value: unknown): unknown {
-  if (typeof value === "string") return redactSensitiveLogText(value);
+export function redactSensitiveLogValue(
+  value: unknown,
+  options?: M3LRedactOptions,
+): unknown {
+  if (typeof value === "string") return redactSensitiveLogText(value, options);
 
   if (Array.isArray(value)) {
-    return value.map((item) => redactSensitiveLogValue(item));
+    return value.map((item) => redactSensitiveLogValue(item, options));
   }
 
   if (isPlainRecord(value)) {
@@ -328,9 +423,9 @@ export function redactSensitiveLogValue(value: unknown): unknown {
       // `result[key] = …` assignment, which would corrupt the clone's
       // prototype chain instead of merely copying a data field.
       if (isDangerousKey(key)) continue;
-      result[key] = isSensitiveKey(key)
+      result[key] = isSensitiveOrDeclaredKey(key, options)
         ? REDACTED
-        : redactSensitiveLogValue(entry);
+        : redactSensitiveLogValue(entry, options);
     }
     return result;
   }
