@@ -22,6 +22,7 @@ Exported from `@m3l-automation/m3l-common/core` (the `config` sub-module):
 - Provider classes: `M3LCommandLineConfigProvider`, `M3LJSONConfigProvider`, `M3LYAMLConfigProvider`, `M3LEnvironmentConfigProvider`, `M3LInMemoryConfigProvider`, `M3LLambdaEventConfigProvider`, `M3LPresetConfigProvider`
 - `coerceConfigValue` (the value parser: coerces a raw provider value to its declared `M3LConfigParameterType`, throwing on a type mismatch; generic over the target type so its return is `M3LCoercedValue<T>`, not `unknown`)
 - `M3LSecretsSpecifier`
+- `deriveSecretsSpecifier`, `M3LDeriveSecretsSpecifierOptions` (derives an `M3LSecretsSpecifier` from a schema's declared `secret` parameters — see [Secret parameters](#secret-parameters))
 - `M3LUnknownParameterDetector`
 - `M3LUnknownParameterSuggestion`, `M3LUnknownParameterSuggestOptions` (the typed result/options pair for `M3LUnknownParameterDetector.detectWithSuggestions`)
 - `M3LConfigValidator` (type: a `(value) => true | string` schema-time validator)
@@ -187,10 +188,64 @@ must uphold this contract:
   same never-persist rule as presets, stated here so both 8f surfaces
   inherit it from the spec rather than each other.
 
-This flag is the declared-parameter producer for secret-name sets: a
-consumer (e.g. the m3l CLI's preset layer, ADR-0042 phase 8f) derives its
-`M3LSecretsSpecifier` entries from each schema's `isSecret()` parameters
-instead of hand-maintaining a name list.
+### `deriveSecretsSpecifier`
+
+```typescript
+interface M3LDeriveSecretsSpecifierOptions {
+  readonly includeAliases?: boolean; // default true
+}
+
+function deriveSecretsSpecifier(
+  schema: M3LConfigSchema,
+  options?: M3LDeriveSecretsSpecifierOptions,
+): M3LSecretsSpecifier;
+```
+
+A standalone function — not a `M3LConfigSchema` method, matching the
+free-function convention `coerceConfigValue` already establishes for
+per-schema derivations — that derives an `M3LSecretsSpecifier` from a
+schema's declared parameters: every parameter where `isSecret()` is `true` is
+marked. A non-secret parameter contributes nothing.
+
+**`includeAliases` defaults to `true`.** A secret is reachable under any of
+its declared aliases — the m3l CLI's dynamic per-script subcommands accept a
+secret parameter's alias as a flag exactly like its canonical name
+(`docs/reference/cli.md`, phase 8d) — so a _lookup_ consumer (redaction,
+below) that only marked the canonical name would under-redact a value logged
+by its alias. This means `secretNames` on the returned specifier is, by
+default, a set of _reachable flag names_, not a 1:1 set of declared parameter
+names — a parameter with two aliases contributes three entries. Pass
+`{ includeAliases: false }` when the consumer instead _iterates_ the
+specifier as a parameter-name set (e.g. a listing that prints "these
+parameters are secret") and needs a clean 1:1 mapping.
+
+**Known gap — the marked set does not cover every reachable spelling.**
+`M3LSecretsSpecifier.isSecret` is an exact, case-sensitive name match. A
+declared name or alias is also reachable through
+`M3LEnvironmentConfigProvider`'s derived SCREAMING_SNAKE env-var key (e.g. a
+declared `tenantRef` is readable as `TENANT_REF`), which `deriveSecretsSpecifier`
+does not additionally mark — unlike the built-in redaction heuristic
+(`core/logging`), which is case- and separator-insensitive by design. A value
+logged under the env-derived spelling is therefore not redacted by the
+derived specifier alone. This is a known limitation, not a bug; widen the
+options bag if this ever needs closing.
+
+A schema with no secret parameters returns an empty (but non-`undefined`)
+specifier. Each call returns a fresh instance; mutating it via `markSecret`
+never affects the schema or any other returned specifier.
+
+This is the schema-side half of the `secret`-flag contract: `isSecret()`
+above is the per-parameter declaration, `deriveSecretsSpecifier` is what
+turns a whole schema's declarations into the name-set `redactSensitiveLogValue`
+/ `redactSensitiveLogText` (`core/logging`) consult to redact a value the
+built-in heuristic key-list wouldn't otherwise catch — see
+[`core/logging`'s redaction section](./logging.md#redacting-with-a-declared-secrets-specifier).
+A consumer such as the m3l CLI's preset layer (ADR-0042 phase 8f) may still
+choose to carry its own serializable secret flag instead of a live
+`M3LSecretsSpecifier` instance when the specifier can't survive a persistence
+boundary (e.g. a JSON-serialized discovery cache) — `deriveSecretsSpecifier`
+is for in-process consumers that hold a live `M3LConfigSchema`, such as a
+script's own logging setup.
 
 ## Typo suggestions
 

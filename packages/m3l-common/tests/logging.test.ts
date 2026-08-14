@@ -54,6 +54,7 @@ import {
   vi,
 } from "vitest";
 
+import type { M3LSecretsSpecifier } from "../src/core/config/index.js";
 import { serializeErrorChain } from "../src/core/diagnostics/index.js";
 import { M3LError } from "../src/core/errors/index.js";
 import { M3LFileListExporter } from "../src/core/exporters/index.js";
@@ -70,6 +71,8 @@ import type {
   M3LLoggerHandler,
   M3LLogLevelFloor,
   M3LLoggerOptions,
+  M3LRedactOptions,
+  M3LSecretNamesPort,
   M3LTableColumn,
   M3LTableOptions,
 } from "../src/core/logging/index.js";
@@ -1554,6 +1557,97 @@ describe("redactSensitiveLogText", () => {
     expect(result235).not.toContain(plantedValue235);
     expect(result235).toContain("[REDACTED]");
   });
+
+  test("back-compat: a bare call with no options argument still redacts by the heuristic alone", () => {
+    const result = redactSensitiveLogText("token=abc123 user=alice");
+
+    expect(result).toContain("[REDACTED]");
+    expect(result).not.toContain("abc123");
+    expect(result).toContain("user=alice");
+  });
+
+  test("back-compat: an empty options object, and one with secrets explicitly undefined, behave identically to the bare call", () => {
+    const bare = redactSensitiveLogText("token=abc123 user=alice");
+    const emptyOptions = redactSensitiveLogText("token=abc123 user=alice", {});
+    const undefinedSecrets = redactSensitiveLogText("token=abc123 user=alice", {
+      secrets: undefined,
+    });
+
+    expect(emptyOptions).toBe(bare);
+    expect(undefinedSecrets).toBe(bare);
+  });
+
+  test("a declared secrets port redacts a top-level key=value pair the heuristic alone does not match", () => {
+    const secrets: M3LSecretNamesPort = {
+      isSecret: (name: string) => name === "tenantRef",
+    };
+
+    const withoutSecrets = redactSensitiveLogText(
+      "tenantRef=abc123 region=eu-south-1",
+    );
+    expect(withoutSecrets).toContain("tenantRef=abc123");
+
+    const withSecrets = redactSensitiveLogText(
+      "tenantRef=abc123 region=eu-south-1",
+      { secrets },
+    );
+    expect(withSecrets).toContain("[REDACTED]");
+    expect(withSecrets).not.toContain("abc123");
+    expect(withSecrets).toContain("region=eu-south-1");
+  });
+
+  test("additive only: a declared secrets port does not narrow the existing heuristic redaction", () => {
+    // isSecret returns false for the heuristic-matched key and true only for
+    // an unrelated name — the heuristic match for `apiKey` must still fire.
+    const secrets: M3LSecretNamesPort = {
+      isSecret: (name: string) => name === "someUnrelatedName",
+    };
+
+    const result = redactSensitiveLogText("apiKey=abc123", { secrets });
+
+    expect(result).toContain("[REDACTED]");
+    expect(result).not.toContain("abc123");
+  });
+
+  test("deliberate limitation: a declared secrets port does NOT reach a sensitive word embedded inside another field's value", () => {
+    // EMBEDDED_SENSITIVE_PATTERN (the third, additive pass that finds a
+    // sensitive word embedded inside another field's value, e.g. a URL query
+    // string) is built from the fixed SENSITIVE_KEY_NAMES list only — it must
+    // never be extended with caller-supplied names, both to avoid rebuilding
+    // a dynamic regex per call (the file documents a real measured ReDoS
+    // incident from an earlier version of this exact construction) and
+    // because an empty-string secret name would match everywhere. Only a
+    // top-level `tenant-ref=...` pair gets the declared-secret treatment.
+    const secrets: M3LSecretNamesPort = {
+      isSecret: (name: string) => name === "tenant-ref",
+    };
+
+    const result = redactSensitiveLogText("url=https://x/?tenant-ref=abc", {
+      secrets,
+    });
+
+    expect(result).toContain("tenant-ref=abc");
+    expect(result).not.toContain("[REDACTED]");
+  });
+
+  test("type-level: the options parameter is optional and accepts a bare object literal implementing isSecret", () => {
+    expectTypeOf(redactSensitiveLogText)
+      .parameter(1)
+      .toEqualTypeOf<M3LRedactOptions | undefined>();
+    // A bare structural literal type-checks without importing/constructing
+    // M3LSecretsSpecifier — the port is purely structural.
+    redactSensitiveLogText("token=abc123", {
+      secrets: { isSecret: (name: string) => name === "tenantRef" },
+    });
+  });
+
+  test("type-level: M3LSecretsSpecifier (core/config) structurally satisfies M3LSecretNamesPort", () => {
+    // Pins the documented structural conformance (docs/reference/core/logging.md)
+    // between the two submodules: a real M3LSecretsSpecifier instance must
+    // keep type-checking as a `secrets` port, not just the bare object
+    // literals every other test in this block uses.
+    expectTypeOf<M3LSecretsSpecifier>().toExtend<M3LSecretNamesPort>();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1695,6 +1789,123 @@ describe("redactSensitiveLogValue", () => {
 
     expect(result.correlationId).toBe("abc-123");
     expect(result.token).toBe("[REDACTED]");
+  });
+
+  test("back-compat: a bare call with no options argument still redacts by the heuristic alone", () => {
+    const input = { apiKey: "secret", region: "eu-south-1" };
+
+    const result = redactSensitiveLogValue(input) as Record<string, unknown>;
+
+    expect(result["apiKey"]).toBe("[REDACTED]");
+    expect(result["region"]).toBe("eu-south-1");
+  });
+
+  test("back-compat: an empty options object, and one with secrets explicitly undefined, behave identically to the bare call", () => {
+    const input = { apiKey: "secret", region: "eu-south-1" };
+
+    const bare = redactSensitiveLogValue(input) as Record<string, unknown>;
+    const emptyOptions = redactSensitiveLogValue(input, {}) as Record<
+      string,
+      unknown
+    >;
+    const undefinedSecrets = redactSensitiveLogValue(input, {
+      secrets: undefined,
+    }) as Record<string, unknown>;
+
+    expect(emptyOptions).toEqual(bare);
+    expect(undefinedSecrets).toEqual(bare);
+  });
+
+  test("a declared secrets port redacts a key the heuristic alone does not match, leaving a sibling untouched", () => {
+    const secrets: M3LSecretNamesPort = {
+      isSecret: (name: string) => name === "tenantRef",
+    };
+    const input = { tenantRef: "abc123", region: "eu-south-1" };
+
+    const withoutSecrets = redactSensitiveLogValue(input) as Record<
+      string,
+      unknown
+    >;
+    expect(withoutSecrets["tenantRef"]).toBe("abc123");
+
+    const withSecrets = redactSensitiveLogValue(input, {
+      secrets,
+    }) as Record<string, unknown>;
+    expect(withSecrets["tenantRef"]).toBe("[REDACTED]");
+    expect(withSecrets["region"]).toBe("eu-south-1");
+  });
+
+  test("additive only: a declared secrets port does not narrow the existing heuristic redaction", () => {
+    // isSecret returns false for the heuristic-matched key — the heuristic
+    // match for `apiKey` must still fire regardless.
+    const secrets: M3LSecretNamesPort = {
+      isSecret: (name: string) => name === "someUnrelatedName",
+    };
+    const input = { apiKey: "secret" };
+
+    const result = redactSensitiveLogValue(input, {
+      secrets,
+    }) as Record<string, unknown>;
+
+    expect(result["apiKey"]).toBe("[REDACTED]");
+  });
+
+  test("a declared secrets port redacts a key nested inside an array and a nested object, at depth 2+", () => {
+    // Deliberately asserts only on a secret that appears at depth 2 (inside
+    // `outer.tenantRef`) and depth 2 within an array element
+    // (`list[0].tenantRef`) — never at depth 0 — so a future implementation
+    // that only forwards `options` at the top-level call, and forgets to
+    // thread it through the recursive object/array calls, fails this test.
+    const secrets: M3LSecretNamesPort = {
+      isSecret: (name: string) => name === "tenantRef",
+    };
+    const input = {
+      outer: { tenantRef: "nested-secret", region: "eu-south-1" },
+      list: [{ tenantRef: "list-secret" }],
+    };
+
+    const result = redactSensitiveLogValue(input, { secrets }) as {
+      outer: { tenantRef: string; region: string };
+      list: { tenantRef: string }[];
+    };
+
+    expect(result.outer.tenantRef).toBe("[REDACTED]");
+    expect(result.outer.region).toBe("eu-south-1");
+    expect(result.list[0]?.tenantRef).toBe("[REDACTED]");
+  });
+
+  test("dangerous-key precedence: a __proto__ key is still skipped entirely even when a secrets port also marks it secret", () => {
+    // The dangerous-key skip must win regardless of and before the new port
+    // check — a secrets port that (incorrectly, or maliciously) marks
+    // "__proto__" secret must never cause it to reach a bare assignment.
+    const secrets: M3LSecretNamesPort = {
+      isSecret: (name: string) => name === "__proto__",
+    };
+    const input = JSON.parse(
+      '{"__proto__":{"polluted":true},"apiKey":"secret"}',
+    ) as Record<string, unknown>;
+
+    const out = redactSensitiveLogValue(input, {
+      secrets,
+    }) as Record<string, unknown>;
+
+    const probe = {} as Record<string, unknown>;
+    expect(probe["polluted"]).toBeUndefined();
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+    expect(Object.hasOwn(out, "__proto__")).toBe(false);
+    expect(out["apiKey"]).toBe("[REDACTED]");
+  });
+
+  test("type-level: the options parameter is optional and accepts a bare object literal implementing isSecret", () => {
+    expectTypeOf(redactSensitiveLogValue)
+      .parameter(1)
+      .toEqualTypeOf<M3LRedactOptions | undefined>();
+    // A bare structural literal type-checks without importing/constructing
+    // M3LSecretsSpecifier — the port is purely structural.
+    redactSensitiveLogValue(
+      { tenantRef: "abc123" },
+      { secrets: { isSecret: (name: string) => name === "tenantRef" } },
+    );
   });
 });
 

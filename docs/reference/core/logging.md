@@ -27,6 +27,11 @@ Public surface (`logging/index.ts`):
   (`M3LFileLoggerHandlerOptions` additionally carries the required `filePath`).
 - `M3LTableFormatter`, `M3LTableOptions`, `M3LTableColumn` — table rendering.
 - `redactSensitiveLogText`, `redactSensitiveLogValue` — redaction helpers.
+- `M3LSecretNamesPort` — a structural port (`isSecret(name): boolean`)
+  consulted through the optional `secrets` field of `M3LRedactOptions`; see
+  [Redacting with a declared secrets specifier](#redacting-with-a-declared-secrets-specifier).
+- `M3LRedactOptions` — the optional second argument accepted by both
+  redaction helpers (`{ secrets?: M3LSecretNamesPort }`).
 
 ### `M3LLogger` methods
 
@@ -204,6 +209,65 @@ import { Core } from "@m3l-automation/m3l-common";
 const safeText = Core.redactSensitiveLogText("token=abc123 user=alice");
 const safeValue = Core.redactSensitiveLogValue({ apiKey: "secret" });
 ```
+
+By default, both helpers redact by a built-in heuristic key-name match only
+(`SENSITIVE_KEY_NAMES` internally — common names like `apiKey`, `password`,
+`token`). A parameter name that doesn't match that list is not redacted unless
+declared secret and threaded through explicitly (below).
+
+### Redacting with a declared secrets specifier
+
+Both helpers accept an optional second `options` argument carrying a
+`secrets` field that satisfies the structural `M3LSecretNamesPort` port:
+
+```typescript
+interface M3LSecretNamesPort {
+  readonly isSecret: (name: string) => boolean;
+}
+
+interface M3LRedactOptions {
+  readonly secrets?: M3LSecretNamesPort | undefined;
+}
+```
+
+`M3LSecretsSpecifier` (`core/config`) satisfies this port, most commonly built
+from a script's own schema via
+[`deriveSecretsSpecifier`](./config.md#derivesecretsspecifier):
+
+```typescript
+import { Core } from "@m3l-automation/m3l-common";
+
+const secrets = script.configSchema
+  ? Core.deriveSecretsSpecifier(script.configSchema)
+  : undefined;
+const safeValue = Core.redactSensitiveLogValue(payload, { secrets });
+```
+
+A supplied port is **additive only** — it can only widen what gets redacted,
+never narrow it. A key the built-in heuristic already matches (e.g.
+`apiKey`) stays redacted even when the port doesn't declare it; a key the
+port declares secret (e.g. a schema-declared `tenantRef` that the heuristic
+wouldn't otherwise catch) is redacted because it was declared. The `options`
+argument is optional and every existing single-argument call site is
+unaffected — passing nothing (or `{}`, or `{ secrets: undefined }`) keeps the
+byte-identical heuristic-only behavior. Any plain object literal implementing
+`isSecret` works; importing `M3LSecretsSpecifier` specifically is not
+required.
+
+**Scope limitation — deliberate, not a bug.** `redactSensitiveLogText` runs
+three internal passes: a quoted `"key": "value"` pass, a bare `key=value`
+pass, and a third, heuristic-only pass that finds a sensitive word _embedded_
+inside another field's value (e.g. `url=https://x/?token=abc`). The `secrets`
+port is consulted on the first two passes only — **not** the third. That
+third pass is built once, at module load, into a single precompiled regular
+expression derived from the fixed built-in key-name list; extending it to an
+arbitrary, mutable, caller-supplied name set would mean rebuilding that regex
+on every call from untrusted-shape input, reopening the catastrophic-backtracking
+class of bug the fixed pattern was specifically hardened against. So a
+declared secret embedded inside another value (`url=https://x/?tenant-ref=abc`)
+is **not** redacted by the port — only a _top-level_ `tenant-ref=...` pair
+is. Route a value expected to embed a secret through `redactSensitiveLogValue`
+on its own field instead of relying on the embedded-value pass to catch it.
 
 ## Notes and behavior
 

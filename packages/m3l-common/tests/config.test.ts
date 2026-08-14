@@ -97,12 +97,14 @@ import {
   M3LUnknownParameterDetector,
   M3LUnsafeConfigKeyError,
   M3LYAMLConfigProvider,
+  deriveSecretsSpecifier,
 } from "../src/core/config/index.js";
 import type {
   M3LCoercedValue,
   M3LConfigResolution,
   M3LConfigSchemaValidator,
   M3LConfigValidator,
+  M3LDeriveSecretsSpecifierOptions,
   M3LUnknownParameterSuggestion,
   M3LUnknownParameterSuggestOptions,
 } from "../src/core/config/index.js";
@@ -1777,6 +1779,168 @@ describe("M3LConfigSchema", () => {
         expect(validator).toHaveBeenCalledTimes(1);
         expect(validator.mock.calls[0]?.[0]).toBe(config);
       });
+    });
+  });
+});
+
+// =============================================================================
+// deriveSecretsSpecifier(schema, options?) — a standalone free function (not
+// a schema method — matches the coerceConfigValue.ts free-function
+// convention) that derives an M3LSecretsSpecifier from a schema's declared
+// parameters: every parameter where isSecret() is true is marked, by
+// canonical name and — when options.includeAliases is true (the default) —
+// every alias too (docs/reference/core/config.md "Secret parameters").
+// =============================================================================
+describe("deriveSecretsSpecifier", () => {
+  test("happy path: marks exactly the secret parameters' names, no aliases declared", () => {
+    const schema = new M3LConfigSchema([
+      new M3LConfigParameter({
+        name: "apiKey",
+        type: M3LConfigParameterType.STRING,
+        secret: true,
+      }),
+      new M3LConfigParameter({
+        name: "dbPassword",
+        type: M3LConfigParameterType.STRING,
+        secret: true,
+      }),
+      new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+      }),
+      new M3LConfigParameter({
+        name: "timeout",
+        type: M3LConfigParameterType.INT,
+      }),
+    ]);
+
+    const specifier = deriveSecretsSpecifier(schema);
+
+    expect(specifier.secretNames).toEqual(new Set(["apiKey", "dbPassword"]));
+  });
+
+  test("aliases are marked by default (includeAliases omitted): a secret parameter's aliases all appear, a non-secret parameter's aliases never do", () => {
+    const schema = new M3LConfigSchema([
+      new M3LConfigParameter({
+        name: "apiKey",
+        type: M3LConfigParameterType.STRING,
+        aliases: ["api-key", "token"],
+        secret: true,
+      }),
+      new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+        aliases: ["aws-region"],
+      }),
+    ]);
+
+    const specifier = deriveSecretsSpecifier(schema);
+
+    expect(specifier.secretNames).toEqual(
+      new Set(["apiKey", "api-key", "token"]),
+    );
+    expect(specifier.isSecret("region")).toBe(false);
+    expect(specifier.isSecret("aws-region")).toBe(false);
+  });
+
+  test("aliases are marked when includeAliases is explicitly true (same as the default)", () => {
+    const schema = new M3LConfigSchema([
+      new M3LConfigParameter({
+        name: "apiKey",
+        type: M3LConfigParameterType.STRING,
+        aliases: ["api-key", "token"],
+        secret: true,
+      }),
+    ]);
+
+    const specifier = deriveSecretsSpecifier(schema, {
+      includeAliases: true,
+    });
+
+    expect(specifier.secretNames).toEqual(
+      new Set(["apiKey", "api-key", "token"]),
+    );
+  });
+
+  test("includeAliases: false marks only canonical names, never aliases", () => {
+    const schema = new M3LConfigSchema([
+      new M3LConfigParameter({
+        name: "apiKey",
+        type: M3LConfigParameterType.STRING,
+        aliases: ["api-key", "token"],
+        secret: true,
+      }),
+      new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+        aliases: ["aws-region"],
+      }),
+    ]);
+
+    const specifier = deriveSecretsSpecifier(schema, {
+      includeAliases: false,
+    });
+
+    expect(specifier.isSecret("apiKey")).toBe(true);
+    expect(specifier.isSecret("api-key")).toBe(false);
+    expect(specifier.isSecret("token")).toBe(false);
+    expect(specifier.secretNames).toEqual(new Set(["apiKey"]));
+  });
+
+  test("returns a non-undefined, non-null empty M3LSecretsSpecifier when no parameter is secret", () => {
+    const schema = new M3LConfigSchema([
+      new M3LConfigParameter({
+        name: "region",
+        type: M3LConfigParameterType.STRING,
+      }),
+    ]);
+
+    const specifier = deriveSecretsSpecifier(schema);
+
+    expect(specifier).not.toBeUndefined();
+    expect(specifier).not.toBeNull();
+    expect(specifier).toBeInstanceOf(M3LSecretsSpecifier);
+    expect(specifier.secretNames).toEqual(new Set());
+  });
+
+  test("returns an empty M3LSecretsSpecifier for a schema constructed with an empty parameter array", () => {
+    const schema = new M3LConfigSchema([]);
+
+    const specifier = deriveSecretsSpecifier(schema);
+
+    expect(specifier).toBeInstanceOf(M3LSecretsSpecifier);
+    expect(specifier.secretNames).toEqual(new Set());
+  });
+
+  test("returns a fresh, independent instance on each call: mutating one result never affects another or the schema", () => {
+    const schema = new M3LConfigSchema([
+      new M3LConfigParameter({
+        name: "apiKey",
+        type: M3LConfigParameterType.STRING,
+        secret: true,
+      }),
+    ]);
+
+    const first = deriveSecretsSpecifier(schema);
+    const second = deriveSecretsSpecifier(schema);
+    first.markSecret("extra");
+
+    expect(first.secretNames).toEqual(new Set(["apiKey", "extra"]));
+    expect(second.secretNames).toEqual(new Set(["apiKey"]));
+
+    const third = deriveSecretsSpecifier(schema);
+    expect(third.secretNames).toEqual(new Set(["apiKey"]));
+    expect(third.isSecret("extra")).toBe(false);
+  });
+
+  describe("type-level contract", () => {
+    test("returns M3LSecretsSpecifier and its options parameter is optional", () => {
+      expectTypeOf(
+        deriveSecretsSpecifier,
+      ).returns.toEqualTypeOf<M3LSecretsSpecifier>();
+      expectTypeOf(deriveSecretsSpecifier)
+        .parameter(1)
+        .toEqualTypeOf<M3LDeriveSecretsSpecifierOptions | undefined>();
     });
   });
 });

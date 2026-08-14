@@ -187,6 +187,31 @@ the build are recorded there: the dist-first loader (above) and a
 reserved-name set widened to nine (`presets`, `history`, `wizard` joined
 the original six as new static commands landed).
 
+## Update 2026-08-14 — library prerequisite gap closed (issue #337)
+
+The "Library prerequisite for 8f" section above set a hard rule: the
+`M3LSecretsSpecifier` producer "must ship before 8f, not as part of it." In
+practice only half of that prerequisite shipped before 8f — PR #416 added the
+`secret?: boolean` flag, but `core/config/M3LSecretsSpecifier.ts` still had no
+producer anywhere in the repo when 8f (PR #419) and 8g (PR #420) shipped on
+top of it. This was a tracker/ADR bookkeeping gap, not a functional one: the
+CLI never depended on the missing producer, because a live class instance
+cannot survive the CLI's JSON discovery cache, so 8f's presets/history layer
+built its own serializable `M3LCliParameterDescriptor.secret: boolean` field
+instead and never needed `M3LSecretsSpecifier` at all. The rule in this ADR
+was accurate about what _should_ gate 8f; it was simply never re-verified
+against the shipped code before 8f was marked done.
+
+The gap is closed retroactively: `deriveSecretsSpecifier(schema, options?)`
+(`core/config`, m3l-common 2.4.0) is now the real producer, deriving an
+`M3LSecretsSpecifier` from a schema's declared `secret` parameters, and
+`core/logging`'s `redactSensitiveLogValue`/`redactSensitiveLogText` are the
+real consumer via a new optional `M3LRedactOptions`. See
+`docs/reference/core/config.md` ("Secret parameters") and
+`docs/reference/core/logging.md` ("Redacting with a declared secrets
+specifier") for the shipped contract. This closes issue #337 and the
+corresponding `docs/plans/IMPLEMENTATION.md` tracker row.
+
 ## Links
 
 - Related: [ADR-0021 (post-1.0 deepen-first strategy — the broadening intake
