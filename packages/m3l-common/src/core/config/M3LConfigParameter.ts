@@ -67,8 +67,9 @@ interface M3LConfigParameterOptions<TType extends M3LConfigParameterType> {
    * layer): such a consumer must never persist a secret parameter's value,
    * and must mask it rather than render it unmasked. The parameter's name,
    * type, and description are not secret and still render normally —
-   * `{@link M3LConfigHelpFormatter}` output is unchanged by this flag.
-   * Defaults to `false`.
+   * `{@link M3LConfigHelpFormatter}` masks only the `default:` line
+   * (rendering `default: ********`), since a `defaultValue` may be
+   * env-sourced rather than a source literal. Defaults to `false`.
    */
   readonly secret?: boolean;
 }
