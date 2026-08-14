@@ -2846,6 +2846,81 @@
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/models/index.ts"
   },
+  "M3LRDSDataOperations": {
+    "submodule": "rds-data",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/rds-data/client.ts"
+  },
+  "M3LRDSDataBeginTransactionInput": {
+    "submodule": "rds-data",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/rds-data/types.ts"
+  },
+  "M3LRDSDataOperationError": {
+    "submodule": "rds-data",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/rds-data/error.ts"
+  },
+  "M3LRDSDataResultTooLargeError": {
+    "submodule": "rds-data",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/rds-data/error.ts"
+  },
+  "M3LRDSDataValue": {
+    "submodule": "rds-data",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/rds-data/types.ts"
+  },
+  "M3LRDSDataColumn": {
+    "submodule": "rds-data",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/rds-data/types.ts"
+  },
+  "M3LRDSDataRow": {
+    "submodule": "rds-data",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/rds-data/types.ts"
+  },
+  "M3LRDSDataParameter": {
+    "submodule": "rds-data",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/rds-data/types.ts"
+  },
+  "M3LRDSDataTypeHint": {
+    "submodule": "rds-data",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/rds-data/types.ts"
+  },
+  "M3LRDSDataStatementInput": {
+    "submodule": "rds-data",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/rds-data/types.ts"
+  },
+  "M3LRDSDataStatementResult": {
+    "submodule": "rds-data",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/rds-data/types.ts"
+  },
+  "M3LRDSDataBatchInput": {
+    "submodule": "rds-data",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/rds-data/types.ts"
+  },
+  "M3LRDSDataUpdateResult": {
+    "submodule": "rds-data",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/rds-data/types.ts"
+  },
+  "M3LRDSDataBatchResult": {
+    "submodule": "rds-data",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/rds-data/types.ts"
+  },
+  "M3LRDSDataTransaction": {
+    "submodule": "rds-data",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/rds-data/types.ts"
+  },
   "listObjects": {
     "submodule": "s3",
     "namespace": "aws",

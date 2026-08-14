@@ -12,15 +12,15 @@
 <a href="https://nodejs.org/api/esm.html"><img src="https://img.shields.io/badge/esm-only-66D9EF?style=flat-square&labelColor=272822" alt="ESM only"></a>
 <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-66D9EF?style=flat-square&labelColor=272822" alt="TypeScript strict"></a>
 <a href="https://github.com/monte3l/m3l-automation/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-A6E22E?style=flat-square&labelColor=272822" alt="Apache-2.0"></a>
-<a href="https://github.com/monte3l/m3l-automation/blob/main/docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-39%2F39-A6E22E?style=flat-square&labelColor=272822" alt="modules: 39/39"></a>
+<a href="https://github.com/monte3l/m3l-automation/blob/main/docs/implementation-status.md"><img src="https://img.shields.io/badge/modules-40%2F40-A6E22E?style=flat-square&labelColor=272822" alt="modules: 40/40"></a>
 </p>
 
-> **All 39 of 39 submodules are implemented and reviewed.** The package is
+> **All 40 of 40 submodules are implemented and reviewed.** The package is
 > internal and not published to npm; `version` in `package.json` is hand-managed.
 > Implemented submodules:
 > <!-- BEGIN GENERATED SUBMODULE-LIST -->
 >
-> `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `logging`, `files`, `network`, `polling`, `prompt`, `importers`, `exporters`, `storage`, `text`, `script`, `diagnostics`, `checkpoint`, `aws/models`, `aws/credentials`, `aws/clients`, `aws/dynamodb`, `aws/cloudwatch-logs-insights`, `aws/sqs`, `aws/signing`, `aws/s3`, `aws/athena`, `aws/eventbridge`, `aws/lambda`, `aws/ecs`, `aws/codepipeline`, `aws/cloudformation`, `aws/eks`, `aws/cloudwatch-alarms`, `aws/cloudwatch-metrics`, `aws/secrets-manager`.
+> `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `logging`, `files`, `network`, `polling`, `prompt`, `importers`, `exporters`, `storage`, `text`, `script`, `diagnostics`, `checkpoint`, `aws/models`, `aws/credentials`, `aws/clients`, `aws/dynamodb`, `aws/cloudwatch-logs-insights`, `aws/sqs`, `aws/signing`, `aws/s3`, `aws/athena`, `aws/eventbridge`, `aws/lambda`, `aws/ecs`, `aws/codepipeline`, `aws/cloudformation`, `aws/eks`, `aws/cloudwatch-alarms`, `aws/cloudwatch-metrics`, `aws/secrets-manager`, `aws/rds-data`.
 > <!-- END GENERATED SUBMODULE-LIST -->
 
 A shared infrastructure library for automation scripts and AWS Lambda handlers. It provides
