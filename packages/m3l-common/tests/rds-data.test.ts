@@ -883,6 +883,36 @@ describe("M3LRDSDataOperations", () => {
         thrown === fnError || causeChain(thrown).includes(fnError);
       expect(fnErrorReachable).toBe(true);
     });
+
+    test("still surfaces the rollback's own failure when fn's error already carries its own unrelated cause", async () => {
+      const preExistingCause = new Error("pre-existing cause");
+      const fnError = new Error("statement failed", {
+        cause: preExistingCause,
+      });
+      const rollbackError = fatalError("rollback denied");
+      h.send
+        .mockResolvedValueOnce({ transactionId: "txn-4" }) // BeginTransaction
+        .mockRejectedValueOnce(rollbackError); // RollbackTransaction
+
+      const operations = new M3LRDSDataOperations(fakeClient());
+
+      let thrown: unknown;
+      try {
+        await operations.withTransaction(MINIMAL_BEGIN_INPUT, () =>
+          Promise.reject(fnError),
+        );
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LRDSDataOperationError);
+      // fn's own original cause must still be reachable...
+      expect(causeChain(thrown)).toContain(preExistingCause);
+      // ...and so must the rollback's own failure — a fnError that already
+      // carries a cause of its own must not cause rollbackError to be
+      // silently dropped from the chain.
+      expect(causeChain(thrown)).toContain(rollbackError);
+    });
   });
 
   // ===========================================================================
