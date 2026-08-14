@@ -476,6 +476,30 @@ describe("M3LRDSDataOperations", () => {
       expect(message).not.toContain(SENTINEL);
       expect(JSON.stringify(thrown)).not.toContain(SENTINEL);
     });
+
+    test("throws M3LRDSDataOperationError before calling send() for a parameter value carrying an unmapped kind, without leaking the value into the error's message", async () => {
+      const malformedValue = {
+        kind: "not-a-real-kind",
+        value: "SENTINEL_MALFORMED_KIND_LEAK",
+      } as unknown as M3LRDSDataValue;
+
+      const operations = new M3LRDSDataOperations(fakeClient());
+
+      let thrown: unknown;
+      try {
+        await operations.executeStatement({
+          ...MINIMAL_STATEMENT_INPUT,
+          parameters: [{ name: "bogus", value: malformedValue }],
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LRDSDataOperationError);
+      const message = (thrown as M3LRDSDataOperationError).message;
+      expect(message).not.toContain("SENTINEL_MALFORMED_KIND_LEAK");
+      expect(h.send).not.toHaveBeenCalled();
+    });
   });
 
   // ===========================================================================
@@ -849,6 +873,15 @@ describe("M3LRDSDataOperations", () => {
 
       expect(thrown).toBeInstanceOf(M3LRDSDataOperationError);
       expect(causeChain(thrown)).toContain(rollbackError);
+      // Per the doc contract, a rollback failure is chained onto the error
+      // fn's own throw surfaces as — so fn's original error must itself
+      // remain reachable from `thrown`'s own identity or cause chain, not
+      // just the rollback error. A fix that drops fnError entirely (e.g. by
+      // constructing a brand-new error around only rollbackError) must fail
+      // this.
+      const fnErrorReachable =
+        thrown === fnError || causeChain(thrown).includes(fnError);
+      expect(fnErrorReachable).toBe(true);
     });
   });
 
