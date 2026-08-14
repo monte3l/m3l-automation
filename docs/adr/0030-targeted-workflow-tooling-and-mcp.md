@@ -140,11 +140,14 @@ falsifiable trigger; the rest of the ADR is unchanged.
 
 **Correction to the Context section:** the claim that "five skills hand-roll
 `gh api --paginate` + `jq` choreography" (original context, above) overstates
-the jq surface. Live count: three skills use `gh api --paginate`
+the jq surface. Live count: four skills use `gh api --paginate`
 (`resolving-pr-comments:74`, `reviewing-dependabot-prs:79`,
-`triaging-scan-alerts:55`); `creating-prs:191` uses `gh api` without
-`--paginate`; `triaging-ci` uses no `gh api` and no jq at all. "Five" was the
-count of GitHub-facing skills, not of `gh api --paginate` + jq call sites.
+`triaging-scan-alerts:55`, `creating-prs:198`); `triaging-ci` uses no `gh api`
+and no jq at all. "Five" was the count of GitHub-facing skills, not of
+`gh api --paginate` + jq call sites. (Corrected 2026-08-14: this errata itself
+originally misstated `creating-prs:191` as using `gh api` without
+`--paginate` — the live call at `creating-prs:198` does pass `--paginate`,
+required for the code-scanning-alerts endpoint's pagination.)
 
 **Coverage matrix** — why migration stalled:
 
@@ -206,12 +209,59 @@ compliant with this ADR's posture requirement (`${VAR}` expansion, no literal
 key) — but a PAT carries broader standing scope than OAuth would, and the
 delivery record should be read with that correction in mind.
 
+## Amendment (2026-08-14)
+
+Issue #344 existed only to carry the 2026-07-27 amendment's revisit trigger
+forward as a periodic re-check reminder — nothing in the repo polled it, and
+its own row text admitted as much. This amendment re-evaluates the trigger
+once with evidence, then retires it: the trigger's own limbs are not the kind
+of thing a reminder can usefully re-check, so a re-check reminder was the
+wrong instrument in the first place.
+
+**Re-evaluation, 2026-08-14:**
+
+| Trigger limb (2026-07-27 amendment, above)                                          | Verdict        | Evidence                                                                                                                                                                                                                                                                                                                                     |
+| ----------------------------------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (a₁) default MCP toolset gains an Actions or code-scanning tool                     | Unfired        | Live `mcp__github__*` inventory carries zero Actions tools and zero code-scanning-alerts tools. `run_secret_scanning` exists but is content secret-scanning, not the `GET /repos/{o}/{r}/code-scanning/alerts` endpoint `creating-prs`/`triaging-scan-alerts` need — a near-miss that shows limb (a₁) is not reliably checkable from memory. |
+| (a₂) a logged gh-CLI friction incident in `docs/logs/`                              | Unfired        | Repo-wide grep for auth failure / rate-limit / jq-parsing break across every `docs/logs/*.md` (40+ files, 3 added since the amendment): zero hits.                                                                                                                                                                                           |
+| (b) the affected skill still runs headless under `claude-pr-review.yml`'s allowlist | Still blocking | `claude-pr-review.yml` still pins `--allowedTools Bash,Read` with no `--mcp-config`.                                                                                                                                                                                                                                                         |
+
+Every blocker behind these limbs — the schema-budget toolset decision, MCP
+being hub-only (no `.claude/agents/*.md` grants `mcp__*`), and the headless
+CI allowlist — is a **repo-side decision the maintainer controls**, not a
+change in GitHub's remote MCP server that a periodic re-check would ever
+observe. Limb (a₁) in particular is unfalsifiable in practice: the repo pins
+no baseline of the remote server's tool inventory, so "gains a tool" can only
+be judged from memory at whatever moment someone happens to look.
+
+**Retirement:** the two-part revisit trigger is retired. In its place, revisit
+a given skill's `gh`-CLI mechanism only when the maintainer makes one of these
+deliberate repo edits — each an action, not an observation, so re-opening no
+longer depends on remembering to look:
+
+1. `.claude/agents/*.md` gains an `mcp__*` tool grant for a spoke (MCP stops
+   being hub-only);
+2. `.github/workflows/claude-pr-review.yml` gains `--mcp-config` (MCP becomes
+   available headless);
+3. `.mcp.json`'s `github` entry opts into the `/x/actions` or
+   `/x/code_security` toolset (the schema-budget decision is revisited);
+4. a concrete gh-CLI failure blocks a workflow and is written up in
+   `docs/logs/` — limb (a₂) above, preserved as a live re-open condition.
+
+The coverage matrix, toolset decision, and structural-blockers text in the
+2026-07-27 amendment above remain the standing record of _why_ each skill
+stays gh-CLI-based; only the revisit mechanism changes. `docs/plans/IMPLEMENTATION.md`'s
+gated-decisions table records this row as `Rejected`, closing issue #344.
+
 ## Links
 
-- Supersedes / superseded by: the 2026-07-27 amendment above supersedes
-  decision item 4's migration trigger; nothing supersedes this ADR as a whole.
-  Retires the "GitHub MCP blocked by enterprise policy" claim formerly stated
-  in `.claude/skills/triaging-ci/SKILL.md` and
+- Supersedes / superseded by: the 2026-07-27 amendment supersedes decision
+  item 4's original migration trigger; the 2026-08-14 amendment above
+  supersedes the 2026-07-27 amendment's _revisit trigger_ specifically (its
+  coverage matrix, toolset decision, and structural blockers stand
+  unchanged). Nothing supersedes this ADR as a whole. Retires the "GitHub MCP
+  blocked by enterprise policy" claim formerly stated in
+  `.claude/skills/triaging-ci/SKILL.md` and
   `.claude/skills/triaging-scan-alerts/SKILL.md`.
 - Delivery record:
   [`docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md`](../logs/2026-07-17-adr-0030-workflow-tooling-mcp.md)

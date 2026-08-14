@@ -126,8 +126,9 @@ coverage (see `docs/contributing/agent-operating-model.md`): **MCP is
 hub-only** (no spoke holds an `mcp__*` tool grant), and **MCP is unavailable
 in headless CI** (`claude-pr-review.yml` pins `--allowedTools Bash,Read`). A
 skill that must run inside either context stays gh-CLI-based regardless of
-toolset coverage. Don't migrate a skill's mechanism without re-reading the
-ADR-0030 amendment's revisit trigger first.
+toolset coverage. The 2026-07-27 amendment's revisit trigger was retired by
+ADR-0030's 2026-08-14 amendment (issue #344) — don't migrate a skill's
+mechanism without re-reading that amendment's re-open condition first.
 
 ## How to re-check usage
 
