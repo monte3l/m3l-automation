@@ -10,6 +10,7 @@
  */
 
 export * from "./coerceConfigValue.js";
+export * from "./deriveSecretsSpecifier.js";
 export * from "./M3LCommandLineConfigProvider.js";
 export * from "./M3LConfig.js";
 export * from "./M3LConfigAccessor.js";

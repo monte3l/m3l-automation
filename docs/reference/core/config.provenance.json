@@ -93,7 +93,7 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LSecretsSpecifier.ts",
           "symbol": "M3LSecretsSpecifier",
-          "blob": "bb65a9a32cb3499c09dc0203b6eaa77c339c0044"
+          "blob": "3646b174c0e160ad10c1275c003e82604cf1a6a8"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts",
@@ -154,6 +154,16 @@
           "file": "packages/m3l-common/src/core/config/M3LConfigSchemaValidator.ts",
           "symbol": "M3LConfigSchemaValidator",
           "blob": "40b440cfba38d667ddfe1888b9547b342a4004f0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/deriveSecretsSpecifier.ts",
+          "symbol": "deriveSecretsSpecifier",
+          "blob": "7e6f72e6b149f6cab73374391d872f6a13439c7a"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/deriveSecretsSpecifier.ts",
+          "symbol": "M3LDeriveSecretsSpecifierOptions",
+          "blob": "7e6f72e6b149f6cab73374391d872f6a13439c7a"
         }
       ],
       "retrieved": "2026-08-14"
@@ -269,7 +279,7 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LSecretsSpecifier.ts",
           "symbol": "M3LSecretsSpecifier",
-          "blob": "bb65a9a32cb3499c09dc0203b6eaa77c339c0044"
+          "blob": "3646b174c0e160ad10c1275c003e82604cf1a6a8"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts",
@@ -282,7 +292,7 @@
           "blob": "a74f891b6406c14760848564c577e70d88855e10"
         }
       ],
-      "retrieved": "2026-08-13"
+      "retrieved": "2026-08-14"
     }
   ]
 }
