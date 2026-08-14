@@ -45,6 +45,7 @@ const STATIC_COMMAND_NAMES: readonly string[] = [
   "list",
   "inspect",
   "run",
+  "doctor",
   "help",
 ];
 
@@ -80,6 +81,9 @@ function printUsage(output: M3LCliOutput): void {
   );
   output.info(
     "  run <script> -- [args...]  Run a script, forwarding args after '--' verbatim",
+  );
+  output.info(
+    "  doctor                     Run environment/workspace health checks",
   );
   output.info("  help                       Show this help message");
   output.info("  <script> [--param value ...] [-- args...]");
@@ -221,6 +225,23 @@ async function runRunCommand(
 }
 
 /**
+ * Lazily loads and runs `doctor`. Its return type is the general `number`
+ * (like {@link runRunCommand}'s), not the narrower {@link M3LCliExitCode} —
+ * `runDoctor` always resolves `0`/`1` in practice, but nothing in its own
+ * contract restricts that, so this wrapper doesn't assert a narrower type
+ * than the callee declares.
+ */
+async function runDoctorCommand(
+  output: M3LCliOutput,
+  cwd: string,
+  jsonOutput: boolean,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<number> {
+  const { runDoctor } = await import("./commands/doctor.js");
+  return runDoctor(buildCommandContext(cwd, output, jsonOutput, env));
+}
+
+/**
  * Lazily loads and delegates to `commands/dynamic.js`'s `runDynamic` — the
  * fallback for any first positional that isn't a
  * {@link STATIC_COMMAND_NAMES} entry (8d). Its `--help`/`-h`, unknown-script,
@@ -276,11 +297,11 @@ function parseStaticCommandArgs(beforeArgs: readonly string[]): {
 }
 
 /**
- * Dispatches one of the `list`/`inspect`/`run` static commands — invoked
- * only once `beforeArgs[0]` is confirmed to be a {@link STATIC_COMMAND_NAMES}
- * entry other than `help` (handled earlier in {@link dispatch}), so
- * `positionals[0]` can only ever be `"list"`/`"inspect"`/`"run"` by the time
- * the switch below runs.
+ * Dispatches one of the `list`/`inspect`/`run`/`doctor` static commands —
+ * invoked only once `beforeArgs[0]` is confirmed to be a
+ * {@link STATIC_COMMAND_NAMES} entry other than `help` (handled earlier in
+ * {@link dispatch}), so `positionals[0]` can only ever be
+ * `"list"`/`"inspect"`/`"run"`/`"doctor"` by the time the switch below runs.
  *
  * Also restores the pre-8d behavior of recognizing a `--version` flag
  * anywhere in `beforeArgs` (not just as the very first token, which
@@ -325,12 +346,14 @@ async function dispatchStaticCommand(
       );
     case "list":
       return runListCommand(output, cwd, jsonOutput, env);
+    case "doctor":
+      return runDoctorCommand(output, cwd, jsonOutput, env);
     case undefined:
     default:
       // `beforeArgs[0]` is confirmed a `STATIC_COMMAND_NAMES` entry other
       // than `help` before this function is ever invoked (see the doc
-      // above), so `command` can only be "list"/"inspect"/"run" at runtime
-      // — anything else here is a caller contract violation, not a normal
+      // above), so `command` can only be "list"/"inspect"/"run"/"doctor" at
+      // runtime — anything else here is a caller contract violation, not a normal
       // path, and `command`'s static type is the general `string |
       // undefined` (not a literal union `parseArgs`'s `positionals` can't
       // express), so this can't be a compile-checked `never` exhaustiveness
