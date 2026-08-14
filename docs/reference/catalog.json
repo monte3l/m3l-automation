@@ -72,6 +72,8 @@
       "M3LConfigMissingError",
       "M3LConfigAccessor",
       "M3LConfigSchemaValidator",
+      "deriveSecretsSpecifier",
+      "M3LDeriveSecretsSpecifierOptions",
       "M3LConfigAccessorOptions"
     ]
   },
@@ -310,7 +312,9 @@
       "M3LLogLevelFloor",
       "M3LConsoleLoggerHandlerOptions",
       "M3LJsonLoggerHandlerOptions",
-      "M3LLoggerHandler"
+      "M3LLoggerHandler",
+      "M3LSecretNamesPort",
+      "M3LRedactOptions"
     ]
   },
   {

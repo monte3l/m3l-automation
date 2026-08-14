@@ -154,6 +154,16 @@
           "file": "packages/m3l-common/src/core/config/M3LConfigSchemaValidator.ts",
           "symbol": "M3LConfigSchemaValidator",
           "blob": "40b440cfba38d667ddfe1888b9547b342a4004f0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/deriveSecretsSpecifier.ts",
+          "symbol": "deriveSecretsSpecifier",
+          "blob": "7e6f72e6b149f6cab73374391d872f6a13439c7a"
+        },
+        {
+          "file": "packages/m3l-common/src/core/config/deriveSecretsSpecifier.ts",
+          "symbol": "M3LDeriveSecretsSpecifierOptions",
+          "blob": "7e6f72e6b149f6cab73374391d872f6a13439c7a"
         }
       ],
       "retrieved": "2026-08-14"

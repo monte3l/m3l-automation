@@ -89,6 +89,16 @@
           "file": "packages/m3l-common/src/core/logging/M3LLogEvent.ts",
           "symbol": "M3LLoggerHandler",
           "blob": "230e5a2daad2548c2ca58104d022d438940b8f32"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/redact.ts",
+          "symbol": "M3LSecretNamesPort",
+          "blob": "f63b064fa8781afe744fc9c6f0e45c2f4b75088d"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/redact.ts",
+          "symbol": "M3LRedactOptions",
+          "blob": "f63b064fa8781afe744fc9c6f0e45c2f4b75088d"
         }
       ],
       "retrieved": "2026-08-14"
@@ -215,6 +225,16 @@
         {
           "file": "packages/m3l-common/src/core/logging/redact.ts",
           "symbol": "redactSensitiveLogValue",
+          "blob": "f63b064fa8781afe744fc9c6f0e45c2f4b75088d"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/redact.ts",
+          "symbol": "M3LSecretNamesPort",
+          "blob": "f63b064fa8781afe744fc9c6f0e45c2f4b75088d"
+        },
+        {
+          "file": "packages/m3l-common/src/core/logging/redact.ts",
+          "symbol": "M3LRedactOptions",
           "blob": "f63b064fa8781afe744fc9c6f0e45c2f4b75088d"
         }
       ],
