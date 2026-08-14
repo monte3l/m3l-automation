@@ -123,11 +123,28 @@ the first bare `--` appended verbatim.
   names; colliding declared names/aliases fail loud with
   `ERR_CLI_CONFIG_IMPORT`.
 
+### Phase 8e — diagnostics
+
+#### `m3l doctor`
+
+Renders one aligned row per check (`CHECK` / `STATUS` / `DETAIL`, statuses
+`ok` / `warn` / `fail`; `--json` for the machine-readable array):
+Node floor (≥ 24), workspace root, one `script:<name>` row per discovered
+script (dir shape → fail when neither config exists; dist freshness → warn
+naming `pnpm build`; importability through the real loader → fail with the
+load-error message; all-green renders the parameter count), reserved-name
+collision audit, and cache health (parent-dir writability, cache-file
+integrity — an invalid file warns "will be rebuilt", an absent one is ok).
+
+Exit: `1` iff any check is `fail` (`warn` never affects the code); `0`
+otherwise. An unhealthy workspace is a doctor _result_ — only doctor's own
+infrastructure failing throws (`ERR_CLI_DOCTOR_FAILED`, cause-chained).
+
 ### Later phases (not yet built)
 
-`doctor` (8e), presets + history (8f, blocked on the
-`M3LConfigParameter.secret` library prerequisite — shipped, PR #416),
-interactive wizard (8g) — see ADR-0042 and the m3l-cli build-out tracker in
+Presets + history (8f — its `M3LConfigParameter.secret` library
+prerequisite shipped in PR #416) and the interactive wizard (8g) — see
+ADR-0042 and the m3l-cli build-out tracker in
 `docs/plans/IMPLEMENTATION.md`.
 
 ## Reserved command names

@@ -9,6 +9,7 @@ import { runList } from "../src/commands/list.js";
 import { runInspect } from "../src/commands/inspect.js";
 import { runRun } from "../src/commands/run.js";
 import { runDynamic } from "../src/commands/dynamic.js";
+import { runDoctor } from "../src/commands/doctor.js";
 import { resolveWorkspaceRoot } from "../src/discovery/discover.js";
 import type { M3LCliCommandContext } from "../src/commands/context.js";
 
@@ -28,6 +29,7 @@ vi.mock("../src/commands/list.js", () => ({ runList: vi.fn() }));
 vi.mock("../src/commands/inspect.js", () => ({ runInspect: vi.fn() }));
 vi.mock("../src/commands/run.js", () => ({ runRun: vi.fn() }));
 vi.mock("../src/commands/dynamic.js", () => ({ runDynamic: vi.fn() }));
+vi.mock("../src/commands/doctor.js", () => ({ runDoctor: vi.fn() }));
 vi.mock("../src/discovery/discover.js", () => ({
   resolveWorkspaceRoot: vi.fn(),
 }));
@@ -36,6 +38,7 @@ const runListMock = vi.mocked(runList);
 const runInspectMock = vi.mocked(runInspect);
 const runRunMock = vi.mocked(runRun);
 const runDynamicMock = vi.mocked(runDynamic);
+const runDoctorMock = vi.mocked(runDoctor);
 const resolveWorkspaceRootMock = vi.mocked(resolveWorkspaceRoot);
 
 afterEach(() => {
@@ -43,6 +46,7 @@ afterEach(() => {
   runInspectMock.mockReset();
   runRunMock.mockReset();
   runDynamicMock.mockReset();
+  runDoctorMock.mockReset();
   resolveWorkspaceRootMock.mockReset();
 });
 
@@ -593,10 +597,12 @@ describe("runCli — dynamic dispatch (8d)", () => {
     ["the --version flag", ["--version"]],
     ["the inspect command", ["inspect", "exporter"]],
     ["the run command", ["run", "json-etl", "--"]],
+    ["the doctor command", ["doctor"]],
   ])("dynamic.js is never touched by %s", async (_label, argv) => {
     resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
     runInspectMock.mockResolvedValue(0);
     runRunMock.mockResolvedValue(0);
+    runDoctorMock.mockResolvedValue(0);
     const { options } = buildOptions();
 
     await runCli(argv, options);
@@ -639,6 +645,74 @@ describe("runCli — M3LCliError cause-chain printing", () => {
     const rendered = stderrLines.join("\n");
     expect(rendered).toContain("failed to spawn script at 'json-etl'");
     expect(rendered).toContain("caused by: spawn ENOENT");
+  });
+});
+
+/**
+ * m3l-cli 8e addendum — `doctor` joins the static command table alongside
+ * `list`/`inspect`/`run`/`help`, always winning over dynamic per-script
+ * dispatch, and supports `--json` like the other static commands.
+ */
+describe("runCli — doctor dispatch (8e)", () => {
+  test("lazily builds a context from resolveWorkspaceRoot and propagates runDoctor's return code", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDoctorMock.mockResolvedValue(1);
+    const { options } = buildOptions();
+
+    const code = await runCli(["doctor"], options);
+
+    expect(code).toBe(1);
+    expect(resolveWorkspaceRootMock).toHaveBeenCalledWith("/workspace");
+    expect(runDoctorMock).toHaveBeenCalledTimes(1);
+    const [context] = runDoctorMock.mock.calls[0] as [M3LCliCommandContext];
+    expect(context.workspaceRoot).toBe("/workspace-root");
+    expect(context.jsonOutput).toBe(false);
+  });
+
+  test("sets jsonOutput true in the context when --json is passed", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDoctorMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["doctor", "--json"], options);
+
+    const [context] = runDoctorMock.mock.calls[0] as [M3LCliCommandContext];
+    expect(context.jsonOutput).toBe(true);
+  });
+
+  test("propagates a rejected ERR_CLI_DOCTOR_FAILED to exit 1", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDoctorMock.mockRejectedValue(
+      new M3LCliError("ERR_CLI_DOCTOR_FAILED", "doctor could not run"),
+    );
+    const { options, stderrLines } = buildOptions();
+
+    const code = await runCli(["doctor"], options);
+
+    expect(code).toBe(1);
+    expect(stderrLines.join("\n")).toContain("doctor could not run");
+  });
+
+  test("doctor.js is loaded lazily and never touched by unrelated dispatch paths", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runListMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["list"], options);
+
+    expect(runDoctorMock).not.toHaveBeenCalled();
+  });
+
+  test("the static 'doctor' command wins over dynamic dispatch and never calls runDynamic", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDoctorMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    const code = await runCli(["doctor"], options);
+
+    expect(code).toBe(0);
+    expect(runDoctorMock).toHaveBeenCalledTimes(1);
+    expect(runDynamicMock).not.toHaveBeenCalled();
   });
 });
 
