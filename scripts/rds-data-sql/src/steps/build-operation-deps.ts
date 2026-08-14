@@ -1,0 +1,542 @@
+/**
+ * `steps/build-operation-deps` — composes the single per-operation
+ * dependency bag `run-rds-data-sql` dispatches into.
+ *
+ * Business logic lives here — never in `main.ts`. Based on
+ * `settings.operation`, builds ONLY the one matching `Run*Deps` bag
+ * (`query`/`load`/`execute`/`migrate`), never all four — avoiding an
+ * unneeded file read/parse for the three operations not selected this run.
+ * See `docs/reference/scripts/rds-data-sql.md`'s per-step rows for the
+ * per-operation composition rules this module implements.
+ */
+
+import { readFile, readdir } from "node:fs/promises";
+import { join } from "node:path";
+
+import { Core, type AWS } from "@m3l-automation/m3l-common";
+
+import { qualifyIdentifier } from "../lib/identifiers.js";
+import {
+  coerceRdsDataValueForOutput,
+  type RdsDataSqlOutputFormat,
+} from "./export-results.js";
+import type { RdsDataSqlSettings } from "./resolve-settings.js";
+import type { RunExecuteDeps } from "./run-execute.js";
+import type { RunLoadCheckpoint, RunLoadDeps } from "./run-load.js";
+import type { RunMigrateDeps, RunMigrateFile } from "./run-migrate.js";
+import type { RunQueryCheckpoint, RunQueryDeps } from "./run-query.js";
+
+/**
+ * The `Core.M3LError` code {@link buildOperationDeps} throws with on any
+ * file-read/parse failure, or when a cross-parameter requirement
+ * `resolve-settings.ts`/`config.ts`'s validators don't already enforce
+ * (`query`'s `output.file`) is missing.
+ */
+const BUILD_DEPS_CODE = "ERR_RDS_DATA_SQL_INPUT_FILE";
+
+/** {@link AWS.M3LRDSDataParameter.typeHint}'s declared literal set, mirrored to validate a `parameters.file`-sourced value. */
+const TYPE_HINTS: ReadonlySet<string> = new Set([
+  "DATE",
+  "DECIMAL",
+  "JSON",
+  "TIME",
+  "TIMESTAMP",
+  "UUID",
+]);
+
+/** Injected dependencies for {@link buildOperationDeps}. */
+export interface BuildOperationDepsDeps {
+  /** The resolved, typed run settings. */
+  readonly settings: RdsDataSqlSettings;
+  /** The provisioned RDS Data API operations wrapper. */
+  readonly rdsData: AWS.M3LRDSDataOperations;
+  /** The prompt facade forwarded to `execute`'s destructive-op gate. */
+  readonly prompt: Core.M3LPrompt;
+  /** The run's `M3LPaths` instance, resolving `sql.file`/`parameters.file`/`input.file`/`migrations.dir`/`output.file`. */
+  readonly paths: Core.M3LPaths;
+  /** The run's correlated logger. */
+  readonly logger: Core.M3LLogger;
+}
+
+/**
+ * The single per-operation deps bag {@link buildOperationDeps} resolves —
+ * exactly one property is ever set, matching `settings.operation`.
+ */
+export interface RdsDataSqlOperationDeps {
+  /** `runQuery`'s deps bag; set only when `settings.operation` is `"query"`. */
+  readonly query?: RunQueryDeps;
+  /** `runLoad`'s deps bag; set only when `settings.operation` is `"load"`. */
+  readonly load?: RunLoadDeps;
+  /** `runExecute`'s deps bag; set only when `settings.operation` is `"execute"`. */
+  readonly execute?: RunExecuteDeps;
+  /** `runMigrate`'s deps bag; set only when `settings.operation` is `"migrate"`. */
+  readonly migrate?: RunMigrateDeps;
+}
+
+/**
+ * Resolves `query`/`execute`'s statement text: `settings.sql` verbatim, or
+ * `settings.sqlFile`'s content read via `paths.resolveInput`.
+ *
+ * @throws {@link Core.M3LError} coded `BUILD_DEPS_CODE` when both are unset
+ *   (defensive — `config.ts`'s cross-parameter validator already prevents
+ *   this through the normal script lifecycle) or the file cannot be read.
+ */
+async function resolveSql(
+  paths: Core.M3LPaths,
+  settings: Pick<RdsDataSqlSettings, "sql" | "sqlFile">,
+): Promise<string> {
+  if (settings.sql !== undefined) return settings.sql;
+  if (settings.sqlFile === undefined) {
+    throw new Core.M3LError(
+      "'sql'/'sql.file' were both unset when building operation deps",
+      { code: BUILD_DEPS_CODE },
+    );
+  }
+  const resolvedPath = paths.resolveInput(settings.sqlFile);
+  try {
+    return await readFile(resolvedPath, "utf8");
+  } catch (cause) {
+    throw new Core.M3LError(`failed to read sql.file at '${resolvedPath}'`, {
+      code: BUILD_DEPS_CODE,
+      cause,
+    });
+  }
+}
+
+/** Narrows a JSON-parsed value to {@link AWS.M3LRDSDataValue}'s discriminated shape. */
+function isRdsDataValue(value: unknown): value is AWS.M3LRDSDataValue {
+  if (typeof value !== "object" || value === null) return false;
+  const raw = value as Record<string, unknown>;
+  switch (raw["kind"]) {
+    case "null":
+      return true;
+    case "string":
+      return typeof raw["value"] === "string";
+    case "long":
+    case "double":
+      return typeof raw["value"] === "number";
+    case "boolean":
+      return typeof raw["value"] === "boolean";
+    case "blob":
+      return raw["value"] instanceof Uint8Array;
+    default:
+      return false;
+  }
+}
+
+/** Narrows a JSON-parsed value to {@link AWS.M3LRDSDataParameter}'s shape. */
+function isRdsDataParameter(value: unknown): value is AWS.M3LRDSDataParameter {
+  if (typeof value !== "object" || value === null) return false;
+  const raw = value as Record<string, unknown>;
+  if (!Object.hasOwn(raw, "name") || typeof raw["name"] !== "string") {
+    return false;
+  }
+  if (!Object.hasOwn(raw, "value") || !isRdsDataValue(raw["value"])) {
+    return false;
+  }
+  if (!Object.hasOwn(raw, "typeHint")) return true;
+  const typeHint = raw["typeHint"];
+  return typeof typeHint === "string" && TYPE_HINTS.has(typeHint);
+}
+
+/** Narrows a JSON-parsed value to a `readonly AWS.M3LRDSDataParameter[]`. */
+function isRdsDataParameterArray(
+  value: unknown,
+): value is readonly AWS.M3LRDSDataParameter[] {
+  return Array.isArray(value) && value.every(isRdsDataParameter);
+}
+
+/**
+ * Resolves `query`/`execute`'s named parameter set: `[]` when
+ * `parametersFile` is unset, otherwise its JSON content, parsed and
+ * validated against {@link AWS.M3LRDSDataParameter}'s shape.
+ *
+ * @throws {@link Core.M3LError} coded `BUILD_DEPS_CODE` when the file cannot
+ *   be read, is not valid JSON, or does not hold an array of named RDS Data
+ *   API parameters.
+ */
+async function resolveParameters(
+  paths: Core.M3LPaths,
+  parametersFile: string | undefined,
+): Promise<readonly AWS.M3LRDSDataParameter[]> {
+  if (parametersFile === undefined) return [];
+  const resolvedPath = paths.resolveInput(parametersFile);
+
+  let raw: string;
+  try {
+    raw = await readFile(resolvedPath, "utf8");
+  } catch (cause) {
+    throw new Core.M3LError(
+      `failed to read parameters.file at '${resolvedPath}'`,
+      { code: BUILD_DEPS_CODE, cause },
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    // Never chain the raw SyntaxError: parameters.file may hold sensitive
+    // bind values, and V8's SyntaxError message can embed a content snippet.
+    throw new Core.M3LError(
+      `parameters.file at '${resolvedPath}' is not valid JSON`,
+      { code: BUILD_DEPS_CODE },
+    );
+  }
+
+  if (!isRdsDataParameterArray(parsed)) {
+    throw new Core.M3LError(
+      `parameters.file at '${resolvedPath}' must be an array of named RDS Data API parameters`,
+      { code: BUILD_DEPS_CODE },
+    );
+  }
+  return parsed;
+}
+
+/**
+ * Narrows one array entry to a plain record: a non-null, non-array object.
+ * Deliberately shallow — it does not validate individual field value types,
+ * mirroring `cloudwatch-logs-insights/steps/checkpoint.ts`'s
+ * `isLogsInsightsRow` validation depth for an accumulated checkpoint entry.
+ */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Narrows a value to a `readonly Record<string, unknown>[]`, or accepts `undefined`. */
+function isOptionalRecordArray(
+  value: unknown,
+): value is readonly Record<string, unknown>[] | undefined {
+  if (value === undefined) return true;
+  return Array.isArray(value) && value.every(isPlainRecord);
+}
+
+/** Narrows a checkpoint file's parsed content to {@link RunQueryCheckpoint}. */
+function isRunQueryCheckpoint(value: unknown): value is RunQueryCheckpoint {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  if (
+    Object.hasOwn(candidate, "offset") &&
+    typeof candidate["offset"] !== "number"
+  ) {
+    return false;
+  }
+  return isOptionalRecordArray(candidate["rows"]);
+}
+
+/** Narrows a checkpoint file's parsed content to {@link RunLoadCheckpoint}. */
+function isRunLoadCheckpoint(value: unknown): value is RunLoadCheckpoint {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  if (
+    Object.hasOwn(candidate, "chunkIndex") &&
+    typeof candidate["chunkIndex"] !== "number"
+  ) {
+    return false;
+  }
+  if (
+    Object.hasOwn(candidate, "recordsProcessed") &&
+    typeof candidate["recordsProcessed"] !== "number"
+  ) {
+    return false;
+  }
+  return isOptionalRecordArray(candidate["failedRecords"]);
+}
+
+/** Builds the format-selected exporter class for `query`'s `output.format`. */
+function createQueryExporter(
+  format: RdsDataSqlOutputFormat,
+  outputPath: string,
+): Core.M3LListExporter<Record<string, unknown>> {
+  switch (format) {
+    case "json":
+      return new Core.M3LJSONListExporter<Record<string, unknown>>({
+        filePath: outputPath,
+        format: "array",
+      });
+    case "jsonl":
+      return new Core.M3LJSONListExporter<Record<string, unknown>>({
+        filePath: outputPath,
+        format: "jsonl",
+      });
+    case "csv":
+      return new Core.M3LCSVListExporter<Record<string, unknown>>({
+        filePath: outputPath,
+      });
+    default: {
+      const exhaustive: never = format;
+      throw new Core.M3LError(
+        `unhandled output.format: ${String(exhaustive)}`,
+        { code: BUILD_DEPS_CODE },
+      );
+    }
+  }
+}
+
+/** Coerces one result row into `query`'s output record, keyed by column name. */
+function toOutputRecord(
+  columns: readonly AWS.M3LRDSDataColumn[],
+  row: readonly AWS.M3LRDSDataValue[],
+  format: RdsDataSqlOutputFormat,
+): Record<string, unknown> {
+  // Null-prototype base: a result column literally named `__proto__` must
+  // become a normal own property, not silently vanish into the object's
+  // prototype setter. This makes `output.format: json`/`jsonl` round-trip
+  // correctly (`JSON.stringify` reads own-enumerable keys, which a
+  // null-prototype object still has). `output.format: csv` is NOT covered:
+  // `M3LCSVListExporter` re-materializes each row into a plain `{}`
+  // internally, so a `__proto__`/`constructor`/`prototype`-named column
+  // still loses its value there — a library-level limitation out of this
+  // script's control.
+  const record: Record<string, unknown> = Object.create(null) as Record<
+    string,
+    unknown
+  >;
+  columns.forEach((column, index) => {
+    const value = row[index];
+    if (value !== undefined) {
+      record[column.name] = coerceRdsDataValueForOutput(value, format);
+    }
+  });
+  return record;
+}
+
+/** Builds `query`'s deps bag — split out of {@link buildOperationDeps} to keep its complexity low. */
+async function buildQueryDeps(
+  deps: BuildOperationDepsDeps,
+): Promise<RunQueryDeps> {
+  const { settings, rdsData, paths, logger } = deps;
+  if (settings.outputFile === undefined) {
+    throw new Core.M3LError("'query' requires 'output.file' to be set", {
+      code: BUILD_DEPS_CODE,
+    });
+  }
+
+  const sql = await resolveSql(paths, settings);
+  const parameters = await resolveParameters(paths, settings.parametersFile);
+  const writer = createQueryExporter(
+    settings.outputFormat,
+    paths.resolveOutput(settings.outputFile),
+  ).exportStream();
+  const checkpoint = new Core.M3LCheckpointStore<RunQueryCheckpoint>({
+    paths,
+    name: "query",
+    validate: isRunQueryCheckpoint,
+    missing: { kind: "empty", value: {} },
+  });
+  const outputFormat = settings.outputFormat;
+
+  return {
+    rdsData,
+    resourceArn: settings.resourceArn,
+    secretArn: settings.secretArn,
+    database: settings.database,
+    ...(settings.schema !== undefined && { schema: settings.schema }),
+    sql,
+    parameters,
+    pageSize: settings.pageSize,
+    checkpoint,
+    writer,
+    toRecord: (columns, row) => toOutputRecord(columns, row, outputFormat),
+    logger,
+  };
+}
+
+/** Builds the format-selected importer class for `load`'s `input.format`. */
+function createLoadImporter(
+  format: RdsDataSqlSettings["inputFormat"],
+): Core.M3LListImporter<Record<string, unknown>> {
+  switch (format) {
+    case "jsonl":
+      return new Core.M3LJSONListImporter<Record<string, unknown>>({});
+    case "csv":
+      return new Core.M3LCSVListImporter<Record<string, unknown>>({});
+    default: {
+      const exhaustive: never = format;
+      throw new Core.M3LError(`unhandled input.format: ${String(exhaustive)}`, {
+        code: BUILD_DEPS_CODE,
+      });
+    }
+  }
+}
+
+/** Builds `load`'s deps bag — split out of {@link buildOperationDeps} to keep its complexity low. */
+function buildLoadDeps(deps: BuildOperationDepsDeps): RunLoadDeps {
+  const { settings, rdsData, paths, logger } = deps;
+  if (settings.table === undefined || settings.inputFile === undefined) {
+    throw new Core.M3LError(
+      "'load' requires 'table' and 'input.file' to be set",
+      { code: BUILD_DEPS_CODE },
+    );
+  }
+
+  const importer = createLoadImporter(settings.inputFormat);
+  const checkpoint = new Core.M3LCheckpointStore<RunLoadCheckpoint>({
+    paths,
+    name: "load",
+    validate: isRunLoadCheckpoint,
+    missing: { kind: "empty", value: {} },
+  });
+  const failedWriter = new Core.M3LJSONListExporter<Record<string, unknown>>({
+    filePath: paths.resolveOutput("failed.jsonl"),
+    format: "jsonl",
+  }).exportStream();
+
+  return {
+    rdsData,
+    resourceArn: settings.resourceArn,
+    secretArn: settings.secretArn,
+    database: settings.database,
+    ...(settings.schema !== undefined && { schema: settings.schema }),
+    table: qualifyIdentifier(settings.schema, settings.table),
+    ...(settings.columns !== undefined && { columns: settings.columns }),
+    importer,
+    source: paths.resolveInput(settings.inputFile),
+    batchSize: settings.batchSize,
+    checkpoint,
+    failedWriter,
+    logger,
+  };
+}
+
+/** Builds `execute`'s deps bag — split out of {@link buildOperationDeps} to keep its complexity low. */
+async function buildExecuteDeps(
+  deps: BuildOperationDepsDeps,
+): Promise<RunExecuteDeps> {
+  const { settings, rdsData, prompt, paths, logger } = deps;
+  const sql = await resolveSql(paths, settings);
+  const parameters = await resolveParameters(paths, settings.parametersFile);
+
+  return {
+    rdsData,
+    resourceArn: settings.resourceArn,
+    secretArn: settings.secretArn,
+    database: settings.database,
+    ...(settings.schema !== undefined && { schema: settings.schema }),
+    sql,
+    parameters,
+    yes: settings.yes,
+    prompt,
+    logger,
+  };
+}
+
+/** Lists `migrationsDir`'s `.sql` files (filesystem order) and reads each one's content. */
+async function listMigrationFiles(
+  paths: Core.M3LPaths,
+  migrationsDir: string,
+): Promise<readonly RunMigrateFile[]> {
+  const dirPath = paths.resolveInput(migrationsDir);
+  let filenames: readonly string[];
+  try {
+    const entries = await readdir(dirPath, { withFileTypes: true });
+    filenames = entries
+      .filter(
+        (entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".sql"),
+      )
+      .map((entry) => entry.name);
+  } catch (cause) {
+    throw new Core.M3LError(`failed to list migrations.dir at '${dirPath}'`, {
+      code: BUILD_DEPS_CODE,
+      cause,
+    });
+  }
+
+  const migrations: RunMigrateFile[] = [];
+  for (const filename of filenames) {
+    const filePath = join(dirPath, filename);
+    try {
+      migrations.push({ filename, sql: await readFile(filePath, "utf8") });
+    } catch (cause) {
+      throw new Core.M3LError(
+        `failed to read migration file at '${filePath}'`,
+        { code: BUILD_DEPS_CODE, cause },
+      );
+    }
+  }
+  return migrations;
+}
+
+/** Builds `migrate`'s deps bag — split out of {@link buildOperationDeps} to keep its complexity low. */
+async function buildMigrateDeps(
+  deps: BuildOperationDepsDeps,
+): Promise<RunMigrateDeps> {
+  const { settings, rdsData, paths, logger } = deps;
+  if (settings.migrationsDir === undefined) {
+    throw new Core.M3LError("'migrate' requires 'migrations.dir' to be set", {
+      code: BUILD_DEPS_CODE,
+    });
+  }
+  const migrations = await listMigrationFiles(paths, settings.migrationsDir);
+
+  return {
+    rdsData,
+    resourceArn: settings.resourceArn,
+    secretArn: settings.secretArn,
+    database: settings.database,
+    ...(settings.schema !== undefined && { schema: settings.schema }),
+    migrationsTable: qualifyIdentifier(
+      settings.schema,
+      settings.migrationsTable,
+    ),
+    migrations,
+    logger,
+  };
+}
+
+/**
+ * Builds the single per-operation deps bag matching `deps.settings.operation`
+ * — never all four, avoiding an unneeded file read/parse for the operations
+ * not selected this run.
+ *
+ * @param deps - See {@link BuildOperationDepsDeps}.
+ * @returns The one populated `Run*Deps` bag, matching `deps.settings.operation`.
+ * @throws {@link Core.M3LError} coded `"ERR_RDS_DATA_SQL_INPUT_FILE"` when a
+ *   required file cannot be read/parsed, or a cross-parameter requirement is
+ *   unmet.
+ *
+ * @example
+ * ```ts
+ * import { Core, type AWS } from "@m3l-automation/m3l-common";
+ * import { buildOperationDeps } from "./build-operation-deps.js";
+ * import { resolveRdsDataSqlSettings } from "./resolve-settings.js";
+ *
+ * async function run(
+ *   config: Core.M3LConfig,
+ *   rdsData: AWS.M3LRDSDataOperations,
+ *   prompt: Core.M3LPrompt,
+ *   logger: Core.M3LLogger,
+ * ): Promise<void> {
+ *   const settings = resolveRdsDataSqlSettings(config);
+ *   const paths = new Core.M3LPaths();
+ *   const operationDeps = await buildOperationDeps({
+ *     settings,
+ *     rdsData,
+ *     prompt,
+ *     paths,
+ *     logger,
+ *   });
+ *   console.log(Object.keys(operationDeps));
+ * }
+ * ```
+ */
+export async function buildOperationDeps(
+  deps: BuildOperationDepsDeps,
+): Promise<RdsDataSqlOperationDeps> {
+  switch (deps.settings.operation) {
+    case "query":
+      return { query: await buildQueryDeps(deps) };
+    case "load":
+      return { load: buildLoadDeps(deps) };
+    case "execute":
+      return { execute: await buildExecuteDeps(deps) };
+    case "migrate":
+      return { migrate: await buildMigrateDeps(deps) };
+    default: {
+      const exhaustive: never = deps.settings.operation;
+      throw new Core.M3LError(`unhandled operation: ${String(exhaustive)}`, {
+        code: BUILD_DEPS_CODE,
+      });
+    }
+  }
+}

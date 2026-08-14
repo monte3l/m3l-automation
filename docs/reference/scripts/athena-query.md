@@ -22,8 +22,11 @@ exported to one output file. **Out of scope:** multi-query batches, per-row
 transformation, and any AWS SDK call the script would have to construct
 itself — `script.aws.clients.athena` (the raw `AthenaClient`) is only ever
 handed to `M3LAthenaClient`, never called directly. The `pg`/`mongodb` engines
-are out of scope entirely (ADR-0029 supersedes script-local deps; ADR-0031
-declines the Aurora/DocumentDB wrappers).
+are out of scope entirely — ADR-0029 dropped script-local drivers in favor of
+typed library wrappers; ADR-0031 separately re-admits Aurora PostgreSQL into
+fleet scope via the RDS Data API (see [`aws/rds-data`](../aws/rds-data.md))
+and keeps DocumentDB out of scope on named, pre-cleared terms, neither of
+which this script covers.
 
 ## Configuration schema
 

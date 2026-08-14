@@ -184,6 +184,17 @@ build is still gated behind an actual consumer script per ADR-0027"), not
 Rejected. Tracked as issues #204/#205 (`docs/ROADMAP.md`,
 `docs/plans/IMPLEMENTATION.md` § Gated library modules).
 
+## Update (2026-08-14) — the ADR-0027 consumer gate opened
+
+A Data-API-enabled Aurora PostgreSQL cluster became reachable, opening the
+per-consumer-need gate this ADR's Consequences section anticipated. The
+`aws/rds-data` wrapper (`M3LRDSDataOperations`) shipped per this ADR's
+Decision (**PR:** #424); its named consumer, the `rds-data-sql` script
+(ROADMAP W6), is in review as a follow-on PR in the same two-PR chain. Once
+both land, issue #204's D4 row flips `Deferred`/`In review` → `Done` in both
+trackers. DocumentDB's gate (issue #205) is unaffected — it remains deferred
+on its own, separately unmet terms.
+
 ## Links
 
 - Supersedes / superseded by: **refines [ADR-0029](./0029-script-dependency-boundary.md)**
