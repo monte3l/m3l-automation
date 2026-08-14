@@ -19,6 +19,7 @@ import { M3LECSOperations } from "../ecs/client.js";
 import { M3LEKSOperations } from "../eks/client.js";
 import { M3LEventBridgeOperations } from "../eventbridge/client.js";
 import { M3LLambdaOperations } from "../lambda/client.js";
+import { M3LRDSDataOperations } from "../rds-data/index.js";
 import { M3LS3Operations } from "../s3/client.js";
 import { M3LSecretsManagerOperations } from "../secrets-manager/client.js";
 import { M3LRequestSigner } from "../signing/client.js";
@@ -74,6 +75,7 @@ export class AWSServiceProvider {
   private ecsWrapper: M3LECSOperations | undefined;
   private eksWrapper: M3LEKSOperations | undefined;
   private lambdaWrapper: M3LLambdaOperations | undefined;
+  private rdsDataOperationsWrapper: M3LRDSDataOperations | undefined;
   private secretsManagerWrapper: M3LSecretsManagerOperations | undefined;
   private requestSignerClient: M3LRequestSigner | undefined;
   private credentialsManager: M3LAWSCredentialsManager | undefined;
@@ -259,6 +261,20 @@ export class AWSServiceProvider {
   }
 
   /**
+   * The {@link M3LRDSDataOperations} wrapper over `clientProvider.rdsData`,
+   * constructed on first access.
+   */
+  get rdsDataOperations(): M3LRDSDataOperations {
+    const cached = this.rdsDataOperationsWrapper;
+    if (cached !== undefined) return cached;
+
+    const client = this.clientProvider.rdsData; // may throw — let it propagate
+    const wrapper = new M3LRDSDataOperations(client);
+    this.rdsDataOperationsWrapper = wrapper;
+    return wrapper;
+  }
+
+  /**
    * The {@link M3LSecretsManagerOperations} wrapper over
    * `clientProvider.secretsManager`, constructed on first access.
    */
@@ -389,6 +405,7 @@ export class AWSServiceProvider {
     this.ecsWrapper = undefined;
     this.eksWrapper = undefined;
     this.lambdaWrapper = undefined;
+    this.rdsDataOperationsWrapper = undefined;
     this.secretsManagerWrapper = undefined;
     this.requestSignerClient = undefined;
     this.credentialsManager = undefined;

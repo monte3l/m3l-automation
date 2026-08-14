@@ -887,6 +887,31 @@
   },
   {
     "namespace": "aws",
+    "name": "rds-data",
+    "importPath": "@m3l-automation/m3l-common/aws",
+    "status": "✅",
+    "wired": true,
+    "docPath": "docs/reference/aws/rds-data.md",
+    "symbols": [
+      "M3LRDSDataOperations",
+      "M3LRDSDataBeginTransactionInput",
+      "M3LRDSDataOperationError",
+      "M3LRDSDataResultTooLargeError",
+      "M3LRDSDataValue",
+      "M3LRDSDataColumn",
+      "M3LRDSDataRow",
+      "M3LRDSDataParameter",
+      "M3LRDSDataTypeHint",
+      "M3LRDSDataStatementInput",
+      "M3LRDSDataStatementResult",
+      "M3LRDSDataBatchInput",
+      "M3LRDSDataUpdateResult",
+      "M3LRDSDataBatchResult",
+      "M3LRDSDataTransaction"
+    ]
+  },
+  {
+    "namespace": "aws",
     "name": "s3",
     "importPath": "@m3l-automation/m3l-common/aws",
     "status": "✅",
