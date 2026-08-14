@@ -4,7 +4,11 @@
  */
 import { describe, expect, expectTypeOf, test } from "vitest";
 
-import { createOutput, resolveColorEnabled } from "../src/cli/output.js";
+import {
+  createOutput,
+  resolveColorEnabled,
+  sanitizeTerminalText,
+} from "../src/cli/output.js";
 import type {
   M3LCliOutput,
   M3LCliOutputOptions,
@@ -182,6 +186,65 @@ describe("createOutput", () => {
     const stderr = createStream(false);
 
     expect(() => createOutput({ stdout, stderr })).not.toThrow();
+  });
+});
+
+describe("sanitizeTerminalText", () => {
+  test("strips every C0 control code point, including ESC (0x1B)", () => {
+    expect(sanitizeTerminalText("a\x1b[31mb")).toBe("a[31mb");
+    expect(sanitizeTerminalText("\x00\x01\x02")).toBe("");
+  });
+
+  test("strips DEL (0x7F)", () => {
+    expect(sanitizeTerminalText("a\x7fb")).toBe("ab");
+  });
+
+  test("strips C1 control code points (0x80-0x9F)", () => {
+    expect(sanitizeTerminalText("a\x80b\x9fc")).toBe("abc");
+  });
+
+  test("strips Unicode bidi embedding/override code points (U+202A-U+202E)", () => {
+    expect(sanitizeTerminalText("a‪b‫c‬d‭e‮f")).toBe("abcdef");
+  });
+
+  test("strips Unicode bidi isolate code points (U+2066-U+2069)", () => {
+    expect(sanitizeTerminalText("a⁦b⁧c⁨d⁩e")).toBe("abcde");
+  });
+
+  test("a right-to-left override followed by reversed text is neutralized (classic spoofing payload)", () => {
+    const spoofed = "safe‮exe.cod";
+    expect(sanitizeTerminalText(spoofed)).toBe("safeexe.cod");
+    expect(sanitizeTerminalText(spoofed)).not.toContain("‮");
+  });
+
+  test("preserves benign text unchanged: accents, emoji, digits, and punctuation", () => {
+    expect(sanitizeTerminalText("café — naïve")).toBe("café — naïve");
+    expect(sanitizeTerminalText("🚀 rocket 2.0!")).toBe("🚀 rocket 2.0!");
+    expect(sanitizeTerminalText("us-east-1")).toBe("us-east-1");
+  });
+
+  test("preserves the space character (0x20) but strips newline and tab (both C0 controls)", () => {
+    expect(sanitizeTerminalText("a b")).toBe("a b");
+    expect(sanitizeTerminalText("a\nb\tc")).toBe("abc");
+  });
+
+  test("is a no-op for empty input", () => {
+    expect(sanitizeTerminalText("")).toBe("");
+  });
+
+  test.each([
+    ["ESC", "\x1b"],
+    ["C0 null", "\x00"],
+    ["C0 max (0x1F)", "\x1f"],
+    ["DEL", "\x7f"],
+    ["C1 min (0x80)", "\x80"],
+    ["C1 max (0x9F)", "\x9f"],
+    ["bidi embedding min (U+202A)", "‪"],
+    ["bidi override max (U+202E)", "‮"],
+    ["bidi isolate min (U+2066)", "⁦"],
+    ["bidi isolate max (U+2069)", "⁩"],
+  ])("strips %s entirely from a surrounded string", (_label, char) => {
+    expect(sanitizeTerminalText(`x${char}y`)).toBe("xy");
   });
 });
 

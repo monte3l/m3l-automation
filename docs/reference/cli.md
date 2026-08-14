@@ -178,7 +178,35 @@ descriptors are validated element-wise on read.
 Reserved command names now include `presets` and `history` (scaffold +
 doctor drift-guard updated).
 
-### Later phases (not yet built)
+### Phase 8g — interactive wizard
 
-The interactive wizard (8g) — see ADR-0042 and the m3l-cli build-out
-tracker in `docs/plans/IMPLEMENTATION.md`.
+#### `m3l wizard`
+
+The guided composition flow (explicitly invoked — bare `m3l` still prints
+help; a non-interactive stdin exits `2`): fuzzy `autocomplete` script
+selection ("name — description"), then one typed prompt per declared
+parameter in declaration order — `password` (masked input) for
+secret-flagged parameters, `confirm` for BOOL, `number` for INT/DOUBLE,
+comma-split `text` for STRING_ARRAY, `text` with the default prefilled
+otherwise. An empty answer skips an optional parameter; a required one is
+re-asked once, then skipped with a warning (the script's own validation
+stays the authority at run time).
+
+The confirmation summary masks secret values (`********`) and routes every
+value through `redactSensitiveLogValue` — a wizard-entered secret reaches
+only the spawned child's argv, never the terminal, a preset, or history.
+Save-as-preset is offered before the run decision (`writePreset`'s
+fail-closed secret skip reports any excluded names; a failed save never
+loses the composed run), then "run now?" — decline exits `0` without
+spawning; accept translates the answers through the shared dynamic-argv
+builder, spawns via the 8c path, and records the prompted parameter names
+in history. Prompt UI is `Core.M3LPrompt` (terminal-control-escaped
+rendering), constructed lazily behind an injectable port.
+
+> Delivery caveat: a wizard-entered secret reaches the child **via argv**
+> (`--name=value`), exactly as invoking the script directly would — on a
+> shared host that is visible in `/proc/<pid>/cmdline`, so prefer `.env` /
+> environment delivery for secrets there and leave the prompt blank.
+
+`wizard` completes the reserved command-name set:
+`list, inspect, run, doctor, presets, history, new, help, wizard`.

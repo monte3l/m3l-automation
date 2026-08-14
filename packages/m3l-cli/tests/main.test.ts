@@ -12,6 +12,7 @@ import { runDynamic } from "../src/commands/dynamic.js";
 import { runDoctor } from "../src/commands/doctor.js";
 import { runPresets } from "../src/commands/presets.js";
 import { runHistory } from "../src/commands/history.js";
+import { runWizard } from "../src/commands/wizard.js";
 import { resolveWorkspaceRoot } from "../src/discovery/discover.js";
 import type { M3LCliCommandContext } from "../src/commands/context.js";
 
@@ -45,6 +46,7 @@ vi.mock("../src/commands/dynamic.js", () => ({ runDynamic: vi.fn() }));
 vi.mock("../src/commands/doctor.js", () => ({ runDoctor: vi.fn() }));
 vi.mock("../src/commands/presets.js", () => ({ runPresets: vi.fn() }));
 vi.mock("../src/commands/history.js", () => ({ runHistory: vi.fn() }));
+vi.mock("../src/commands/wizard.js", () => ({ runWizard: vi.fn() }));
 vi.mock("../src/discovery/discover.js", () => ({
   resolveWorkspaceRoot: vi.fn(),
 }));
@@ -56,6 +58,7 @@ const runDynamicMock = vi.mocked(runDynamic);
 const runDoctorMock = vi.mocked(runDoctor);
 const runPresetsMock = vi.mocked(runPresets);
 const runHistoryMock = vi.mocked(runHistory);
+const runWizardMock = vi.mocked(runWizard);
 const resolveWorkspaceRootMock = vi.mocked(resolveWorkspaceRoot);
 
 afterEach(() => {
@@ -66,6 +69,7 @@ afterEach(() => {
   runDoctorMock.mockReset();
   runPresetsMock.mockReset();
   runHistoryMock.mockReset();
+  runWizardMock.mockReset();
   resolveWorkspaceRootMock.mockReset();
 });
 
@@ -617,11 +621,13 @@ describe("runCli — dynamic dispatch (8d)", () => {
     ["the inspect command", ["inspect", "exporter"]],
     ["the run command", ["run", "json-etl", "--"]],
     ["the doctor command", ["doctor"]],
+    ["the wizard command", ["wizard"]],
   ])("dynamic.js is never touched by %s", async (_label, argv) => {
     resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
     runInspectMock.mockResolvedValue(0);
     runRunMock.mockResolvedValue(0);
     runDoctorMock.mockResolvedValue(0);
+    runWizardMock.mockResolvedValue(0);
     const { options } = buildOptions();
 
     await runCli(argv, options);
@@ -803,6 +809,62 @@ describe("runCli — history dispatch (8f)", () => {
     await runCli(["list"], options);
 
     expect(runHistoryMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * m3l-cli 8g addendum — `wizard` joins the static command table, always
+ * winning over dynamic per-script dispatch, lazily importing
+ * `commands/wizard.js` only when invoked.
+ */
+describe("runCli — wizard dispatch (8g)", () => {
+  test("lazily builds a context from resolveWorkspaceRoot and propagates runWizard's return code", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runWizardMock.mockResolvedValue(2);
+    const { options } = buildOptions();
+
+    const code = await runCli(["wizard"], options);
+
+    expect(code).toBe(2);
+    expect(resolveWorkspaceRootMock).toHaveBeenCalledWith("/workspace");
+    expect(runWizardMock).toHaveBeenCalledTimes(1);
+    const [context] = runWizardMock.mock.calls[0] as [M3LCliCommandContext];
+    expect(context.workspaceRoot).toBe("/workspace-root");
+  });
+
+  test("wizard.js is loaded lazily and never touched by unrelated dispatch paths", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runListMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["list"], options);
+
+    expect(runWizardMock).not.toHaveBeenCalled();
+  });
+
+  test("the static 'wizard' command wins over dynamic dispatch and never calls runDynamic", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runWizardMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    const code = await runCli(["wizard"], options);
+
+    expect(code).toBe(0);
+    expect(runWizardMock).toHaveBeenCalledTimes(1);
+    expect(runDynamicMock).not.toHaveBeenCalled();
+  });
+
+  test("propagates a rejected M3LCliError from runWizard through the usual exit-code mapping", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runWizardMock.mockRejectedValue(
+      new M3LCliError("ERR_CLI_WORKSPACE_NOT_FOUND", "no workspace found"),
+    );
+    const { options, stderrLines } = buildOptions();
+
+    const code = await runCli(["wizard"], options);
+
+    expect(code).toBe(1);
+    expect(stderrLines.join("\n")).toContain("no workspace found");
   });
 });
 
