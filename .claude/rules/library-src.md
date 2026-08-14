@@ -34,6 +34,21 @@ paths:
   that catches an omission lives in `core/errors` and only runs as part of the
   full-workspace suite — a new submodule's own isolated test run gives no
   signal that this step was skipped (found on `aws/athena`, 2026-07-18).
+- **Guard reads and writes together when mutating a property on an object you
+  don't own — and verify success by reading it back, never by the absence of
+  a throw.** Attaching a secondary failure onto a caught error's `cause`
+  (e.g. chaining a rollback failure onto the error that triggered the
+  rollback) can fail in more ways than an `=== undefined` check plus a
+  guarded assignment accounts for: the property can be an accessor whose
+  getter itself throws, the object can be frozen/sealed/non-extensible, or a
+  setter can silently no-op without storing anything. Wrap the read AND the
+  write for one link in a single `try`/`catch`, and after an
+  assignment that didn't throw, compare `object.property === value` before
+  reporting success — a non-throwing write is not proof the value was
+  stored. Found on `aws/rds-data`'s `withTransaction`: a fix that guarded
+  only the write crashed on a frozen `cause`, destroying both chained
+  errors; the same fix, still missing a read-back check, then reported
+  false success against a no-op setter (`docs/logs/2026-08-14-aws-rds-data.md`).
 - **Never export error-constructor options interfaces.** Callers _catch_
   errors, they don't construct them — the options shape is an implementation
   detail of the constructor, not public API. This is scoped to `M3LError`
