@@ -79,7 +79,7 @@ inherit it). Secrets go **only** here or in config `secretNames` — never in
 source or fixtures.
 
 - `AWS_PROFILE` — required; the profile the `aws.profile` config parameter
-  resolves to, provisioning `script.aws.clients.eventBridgeOperations`.
+  resolves to, provisioning `script.aws.services.eventBridgeOperations`.
 
 Per-script data isolation (ADR-0022): the library shares one flat
 `data/{config,input,output}` root across all scripts, so point the overrides at

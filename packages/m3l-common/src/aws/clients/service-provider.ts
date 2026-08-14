@@ -34,12 +34,16 @@ import type { AWSClientProvider } from "./provider.js";
  * access path every wrapper submodule is reachable through as
  * `provider.services.<name>`, without the caller constructing it by hand.
  *
- * Every getter except `dynamoDBDocument` builds a **fresh** wrapper instance
- * distinct from `AWSClientProvider`'s own (deprecated) convenience-getter
- * equivalent, though both ultimately share the same underlying,
- * lazily-cached SDK client from `clientProvider` — so using both facades for
- * the same service never resolves credentials twice or opens two
- * connections.
+ * Most getters build a **fresh** wrapper instance, sharing the same
+ * underlying, lazily-cached SDK client from `clientProvider` that
+ * `clientProvider`'s own raw-client getters use — so accessing a raw client
+ * via `clientProvider` and its wrapper via `services` never resolves
+ * credentials twice or opens two connections. Two exceptions:
+ * `dynamoDBDocument` is a direct passthrough to
+ * `clientProvider.dynamoDBDocument` (there is no separate wrapper class for
+ * it), and `requestSigner`/`credentials` are built from
+ * `clientProvider.profile`/`clientProvider.region` rather than from any SDK
+ * client.
  *
  * @example
  * ```ts
@@ -98,9 +102,7 @@ export class AWSServiceProvider {
 
   /**
    * The {@link M3LSQSOperations} wrapper over `clientProvider.sqs`,
-   * constructed on first access. A fresh instance distinct from
-   * `clientProvider.sqsOperations`, though both wrap the same underlying,
-   * shared `SQSClient`.
+   * constructed on first access.
    */
   get sqsOperations(): M3LSQSOperations {
     const cached = this.sqsOperationsWrapper;
@@ -114,9 +116,7 @@ export class AWSServiceProvider {
 
   /**
    * The {@link M3LEventBridgeOperations} wrapper over
-   * `clientProvider.eventBridge`, constructed on first access. A fresh
-   * instance distinct from `clientProvider.eventBridgeOperations`, though
-   * both wrap the same underlying, shared `EventBridgeClient`.
+   * `clientProvider.eventBridge`, constructed on first access.
    */
   get eventBridgeOperations(): M3LEventBridgeOperations {
     const cached = this.eventBridgeOperationsWrapper;
@@ -327,9 +327,7 @@ export class AWSServiceProvider {
 
   /**
    * The {@link M3LS3Operations} wrapper over `clientProvider.s3`, constructed
-   * on first access. A fresh instance distinct from any convenience getter on
-   * `AWSClientProvider` (which has none for `s3`), though it wraps the same
-   * underlying, shared `S3Client`.
+   * on first access.
    */
   get s3Operations(): M3LS3Operations {
     const cached = this.s3OperationsWrapper;

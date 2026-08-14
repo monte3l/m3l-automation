@@ -70,7 +70,7 @@ resolved `command`.
 | `destructive-gate`  | Shared confirmation step used by `dump-queue` (when `deleteAfterDump`), `redrive-queue`, `delete-messages`, `purge-queue`: prints the target + operation, prompts via `script.prompt.confirm()`, bypassed by `yes` (bypass logged)            |
 | `run-sqs-etl`       | Composition: resolves settings for the selected `command`, dispatches to the matching step above, returns the run summary                                                                                                                     |
 
-All SQS access goes through `script.aws.clients.sqsOperations`
+All SQS access goes through `script.aws.services.sqsOperations`
 (`AWS.M3LSQSOperations`, see [`aws/sqs`](../aws/sqs.md)) — this script never
 imports `@aws-sdk/client-sqs` or constructs its own `SQSClient`.
 
