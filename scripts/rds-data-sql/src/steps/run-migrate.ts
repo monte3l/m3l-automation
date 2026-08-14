@@ -75,13 +75,52 @@ export interface RunMigrateResult {
 
 /**
  * Matches a single-quoted string (`''`-escaped), a double-quoted identifier
- * (`""`-escaped), a `--…`-to-EOL line comment, or a `/*…*\/` block comment —
- * every span that can hide a `;` without it being a real statement
- * terminator. Used by {@link looksLikeMultipleStatements} to strip those
- * spans before counting top-level semicolons.
+ * (`""`-escaped), a `--…`-to-EOL line comment, or a block comment's opening
+ * `/*` delimiter — every span that can hide a `;` without it being a real
+ * statement terminator. Used by {@link stripQuotedAndCommentedSpans} to
+ * strip those spans before {@link looksLikeMultipleStatements} counts
+ * top-level semicolons.
+ *
+ * The block-comment alternative matches only the opening `/*`, not the full
+ * `/\*[\s\S]*?\*\/` span: that greedy-content form re-scans quadratically
+ * from every unterminated `/*` in adversarial input.
+ * {@link stripQuotedAndCommentedSpans} locates the matching `*\/` itself via
+ * a plain `indexOf` scan, which stays linear.
  */
 const QUOTED_OR_COMMENTED_SPAN =
-  /'(?:[^']|'')*'|"(?:[^"]|"")*"|--[^\n]*|\/\*[\s\S]*?\*\//gu;
+  /'(?:[^']|'')*'|"(?:[^"]|"")*"|--[^\n]*|\/\*/gu;
+
+/**
+ * Strips every quoted-string/line-comment/block-comment span from `sql` —
+ * split out of {@link looksLikeMultipleStatements} to isolate the
+ * block-comment span's linear `indexOf` handling from the otherwise-regex-
+ * driven scan.
+ *
+ * The quoted-string and line-comment alternatives are consumed directly from
+ * {@link QUOTED_OR_COMMENTED_SPAN}'s match (both already linear). A matched
+ * `/*` opener instead has its closing `*\/` located by `indexOf` from the
+ * opener's end; when none is found, the block comment is treated as
+ * extending to the end of `sql` (an unterminated `/*` cannot hide a real
+ * statement terminator after it, since nothing after it is real SQL either).
+ */
+function stripQuotedAndCommentedSpans(sql: string): string {
+  let result = "";
+  let cursor = 0;
+  QUOTED_OR_COMMENTED_SPAN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = QUOTED_OR_COMMENTED_SPAN.exec(sql)) !== null) {
+    result += sql.slice(cursor, match.index);
+    if (match[0] === "/*") {
+      const closing = sql.indexOf("*/", match.index + "/*".length);
+      cursor = closing === -1 ? sql.length : closing + "*/".length;
+    } else {
+      cursor = match.index + match[0].length;
+    }
+    QUOTED_OR_COMMENTED_SPAN.lastIndex = cursor;
+  }
+  result += sql.slice(cursor);
+  return result;
+}
 
 /**
  * Detects an "obvious second statement" in `sql` — a second top-level `;`
@@ -97,7 +136,7 @@ const QUOTED_OR_COMMENTED_SPAN =
  * @returns `true` when more than one top-level `;` remains.
  */
 function looksLikeMultipleStatements(sql: string): boolean {
-  const withoutQuotesOrComments = sql.replace(QUOTED_OR_COMMENTED_SPAN, "");
+  const withoutQuotesOrComments = stripQuotedAndCommentedSpans(sql);
   let semicolons = 0;
   for (const char of withoutQuotesOrComments) {
     if (char === ";") semicolons += 1;

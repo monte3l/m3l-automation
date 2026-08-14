@@ -18,6 +18,11 @@
 
 import { Core } from "@m3l-automation/m3l-common";
 
+import {
+  BATCH_SIZE_DEFAULT,
+  MIGRATIONS_TABLE_DEFAULT,
+  PAGE_SIZE_DEFAULT,
+} from "../lib/defaults.js";
 import { validateIdentifier } from "../lib/identifiers.js";
 
 /** The `Core.M3LError` code every `resolveRdsDataSqlSettings` guard throws with. */
@@ -31,15 +36,6 @@ const INPUT_FORMATS = ["jsonl", "csv"] as const;
 
 /** The declared literal set backing `output.format`. */
 const OUTPUT_FORMATS = ["json", "jsonl", "csv"] as const;
-
-/** `migrations.table`'s documented default value. */
-const MIGRATIONS_TABLE_DEFAULT = "schema_migrations";
-
-/** `batch.size`'s documented default value. */
-const BATCH_SIZE_DEFAULT = 100;
-
-/** `page.size`'s documented default value. */
-const PAGE_SIZE_DEFAULT = 1_000;
 
 /**
  * The typed, run-ready settings `run-query`/`run-load`/`run-execute`/

@@ -1,19 +1,19 @@
 import { Core } from "@m3l-automation/m3l-common";
 
+import {
+  BATCH_SIZE_DEFAULT,
+  MIGRATIONS_TABLE_DEFAULT,
+  PAGE_SIZE_DEFAULT,
+} from "./lib/defaults.js";
 import { IDENTIFIER_PATTERN } from "./lib/identifiers.js";
 
 /** Row-chunk size bounds for `load`'s `batchExecuteStatement` calls. */
 const BATCH_SIZE_MIN = 1;
 const BATCH_SIZE_MAX = 10_000;
-const BATCH_SIZE_DEFAULT = 100;
 
 /** Row page size bounds for `query`. `0` issues the statement unpaged. */
 const PAGE_SIZE_MIN = 0;
 const PAGE_SIZE_MAX = 10_000;
-const PAGE_SIZE_DEFAULT = 1_000;
-
-/** The default tracking table name for `migrate`. */
-const MIGRATIONS_TABLE_DEFAULT = "schema_migrations";
 
 /**
  * The declared configuration schema for `rds-data-sql` — the script's only

@@ -306,6 +306,24 @@ async function buildQueryDeps(
   };
 }
 
+/** Builds the format-selected importer class for `load`'s `input.format`. */
+function createLoadImporter(
+  format: RdsDataSqlSettings["inputFormat"],
+): Core.M3LListImporter<Record<string, unknown>> {
+  switch (format) {
+    case "jsonl":
+      return new Core.M3LJSONListImporter<Record<string, unknown>>({});
+    case "csv":
+      return new Core.M3LCSVListImporter<Record<string, unknown>>({});
+    default: {
+      const exhaustive: never = format;
+      throw new Core.M3LError(`unhandled input.format: ${String(exhaustive)}`, {
+        code: BUILD_DEPS_CODE,
+      });
+    }
+  }
+}
+
 /** Builds `load`'s deps bag — split out of {@link buildOperationDeps} to keep its complexity low. */
 function buildLoadDeps(deps: BuildOperationDepsDeps): RunLoadDeps {
   const { settings, rdsData, paths, logger } = deps;
@@ -316,10 +334,7 @@ function buildLoadDeps(deps: BuildOperationDepsDeps): RunLoadDeps {
     );
   }
 
-  const importer: Core.M3LListImporter<Record<string, unknown>> =
-    settings.inputFormat === "csv"
-      ? new Core.M3LCSVListImporter<Record<string, unknown>>({})
-      : new Core.M3LJSONListImporter<Record<string, unknown>>({});
+  const importer = createLoadImporter(settings.inputFormat);
   const checkpoint = new Core.M3LCheckpointStore<RunLoadCheckpoint>({
     paths,
     name: "load",

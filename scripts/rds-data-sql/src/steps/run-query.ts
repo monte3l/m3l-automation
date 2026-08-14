@@ -95,16 +95,32 @@ export interface RunQueryResult {
   readonly rowsRead: number;
 }
 
+/** Whether `char` (a single code unit) is whitespace or `;` — the set {@link stripTrailingStatementNoise} strips from the end of `sql`. */
+function isTrailingNoiseChar(char: string): boolean {
+  return char === ";" || /\s/u.test(char);
+}
+
 /**
  * Strips a trailing `;` and surrounding whitespace from `sql`, so the
  * paging wrapper never produces `SELECT * FROM (SELECT 1;) AS m3l_page …` —
  * a syntax error every Data-API-enabled Postgres cluster would reject.
  *
+ * Implemented as a manual backward scan (not a trailing-anchored regex):
+ * a regex alternation of `\s`/`;` repeated with a `$` anchor backtracks
+ * quadratically on adversarial input (long alternating whitespace/`;` runs),
+ * and `sql.file` is operator-supplied text this step must stay robust
+ * against regardless of size.
+ *
  * @param sql - The caller's raw statement.
  * @returns `sql` with any trailing whitespace/`;` run removed.
  */
 function stripTrailingStatementNoise(sql: string): string {
-  return sql.trim().replace(/[\s;]+$/u, "");
+  const trimmed = sql.trim();
+  let end = trimmed.length;
+  while (end > 0 && isTrailingNoiseChar(trimmed.charAt(end - 1))) {
+    end -= 1;
+  }
+  return trimmed.slice(0, end);
 }
 
 /**
