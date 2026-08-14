@@ -172,7 +172,12 @@ logger, paths) as a single options object and is unit-testable without the
   `RunLoadCheckpoint.recordsProcessed` tracks the total records read from the
   stream so far (accepted or rejected); on resume, every record up to that
   count is skipped entirely — neither re-accepted nor re-rejected — before
-  normal classification resumes.
+  normal classification resumes. Because those skipped records never reach
+  classification, the first chunk formed after a resume is numbered starting
+  from `chunkIndex + 1` (the checkpoint's last flushed chunk, plus one), not
+  from `0` — a resumed run's chunk numbering continues where the prior run
+  left off rather than restarting, keeping it correctly distinct from
+  already-flushed chunks.
 - **`query`'s paging requires `ORDER BY` inside the caller's statement.**
   `LIMIT`/`OFFSET` alone do not guarantee stable row ordering across pages;
   the wrapping subquery does not add one. `OFFSET` paging over a

@@ -325,13 +325,15 @@ describe("runLoad", () => {
     // `checkpoint.failedRecords` silently lost every reject a prior
     // interrupted run had already recorded.
     const seededRecord = { bad: "row-a" };
-    // Chunk 0 — already covered by the prior interrupted run; its
-    // insert-flush is skipped, never re-inserted or re-recorded.
+    // Already classified by the prior interrupted run (per `recordsProcessed:
+    // 1`) — re-streamed but skipped without reclassifying, never re-inserted
+    // or re-recorded.
     const skippedGoodRecord = { id: 1 };
     // Fails coercion (an array value); rejected immediately regardless of
     // chunk boundary.
     const newlyRejectedRecord = { id: [1, 2, 3] };
-    // Chunk 1 — past the resume point; actually inserted.
+    // The first chunk this run actually forms — numbered 1 (resumeFromChunkIndex
+    // 0 + 1), past the resume point; actually inserted.
     const newlyInsertedRecord = { id: 2 };
 
     const importer = makeImporter([
@@ -345,6 +347,12 @@ describe("runLoad", () => {
       read: vi.fn().mockResolvedValue({
         chunkIndex: 0,
         failedRecords: [seededRecord],
+        // `skippedGoodRecord` is the only record the prior interrupted run
+        // classified before it stopped — a real checkpoint always persists
+        // `chunkIndex` and `recordsProcessed` together (`flushChunk`'s single
+        // `checkpoint.write` call), so a checkpoint with `chunkIndex` set but
+        // no `recordsProcessed` can never occur in practice.
+        recordsProcessed: 1,
       }),
       write: vi.fn().mockResolvedValue(undefined),
       delete: vi.fn().mockResolvedValue(undefined),
@@ -370,8 +378,9 @@ describe("runLoad", () => {
     expect(failedWriter.append).toHaveBeenNthCalledWith(1, seededRecord);
     expect(failedWriter.append).toHaveBeenNthCalledWith(2, newlyRejectedRecord);
 
-    // Chunk 0 (already covered) is skipped without a duplicate insert; only
-    // the chunk past the resume point (index 1) is actually inserted.
+    // `skippedGoodRecord` (already covered, per `recordsProcessed`) is
+    // skipped without a duplicate insert; only the newly-formed chunk past
+    // the resume point (index 1) is actually inserted.
     expect(withTransaction).toHaveBeenCalledTimes(1);
     expect(batchExecuteStatement).toHaveBeenCalledTimes(1);
 
@@ -462,6 +471,94 @@ describe("runLoad", () => {
     expect(withTransaction).not.toHaveBeenCalled();
     expect(batchExecuteStatement).not.toHaveBeenCalled();
     expect(checkpoint.write).not.toHaveBeenCalled();
+  });
+
+  test("resume: the first post-resume chunk is numbered resumeFromChunkIndex + 1, not 0, so it is inserted rather than mis-skipped as already-done", async () => {
+    // Regression test for the chunk-mis-numbering bug: seeding `nextChunkIndex`
+    // at `0` on every run (rather than from `resumeFromChunkIndex + 1`) made
+    // the first chunk a resumed run actually forms collide with chunk `0`
+    // from the prior interrupted run, so `flushChunk`'s
+    // `chunkIndex <= resumeFromChunkIndex` guard silently skipped it as
+    // already-done instead of inserting it.
+    const alreadyProcessed = Array.from({ length: 100 }, (_unused, index) => ({
+      id: index,
+    }));
+    const newRecords = Array.from({ length: 100 }, (_unused, index) => ({
+      id: 100 + index,
+    }));
+    const importer = makeImporter([...alreadyProcessed, ...newRecords]);
+    const batchExecuteStatement = vi.fn().mockResolvedValue(batchResult(100));
+    const withTransaction = passthroughWithTransaction();
+    const checkpoint = {
+      read: vi.fn().mockResolvedValue({ chunkIndex: 0, recordsProcessed: 100 }),
+      write: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+    };
+    const failedWriter = makeFailedWriter();
+
+    const result = await runLoad({
+      rdsData: { batchExecuteStatement, withTransaction },
+      resourceArn: "arn:aws:rds:cluster",
+      secretArn: "arn:aws:secretsmanager:secret",
+      table: '"t"',
+      columns: ["id"],
+      importer,
+      batchSize: 100,
+      checkpoint,
+      failedWriter,
+      logger: makeLogger(),
+    });
+
+    expect(withTransaction).toHaveBeenCalledTimes(1);
+    expect(batchExecuteStatement).toHaveBeenCalledTimes(1);
+    const input = batchExecuteStatement.mock
+      .calls[0]?.[0] as AWS.M3LRDSDataBatchInput;
+    expect(input.parameterSets).toHaveLength(100);
+    expect(result.inserted).toBe(100);
+    expect(result.failed).toBe(0);
+    expect(checkpoint.write).toHaveBeenCalledTimes(1);
+    expect(checkpoint.write).toHaveBeenCalledWith(
+      expect.objectContaining({ chunkIndex: 1 }),
+    );
+  });
+
+  test("resume: chunk numbering continues correctly from a mid-run resume point (chunkIndex 3 -> 4)", async () => {
+    const alreadyProcessed = Array.from({ length: 400 }, (_unused, index) => ({
+      id: index,
+    }));
+    const newRecords = Array.from({ length: 100 }, (_unused, index) => ({
+      id: 400 + index,
+    }));
+    const importer = makeImporter([...alreadyProcessed, ...newRecords]);
+    const batchExecuteStatement = vi.fn().mockResolvedValue(batchResult(100));
+    const withTransaction = passthroughWithTransaction();
+    const checkpoint = {
+      read: vi.fn().mockResolvedValue({ chunkIndex: 3, recordsProcessed: 400 }),
+      write: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+    };
+    const failedWriter = makeFailedWriter();
+
+    const result = await runLoad({
+      rdsData: { batchExecuteStatement, withTransaction },
+      resourceArn: "arn:aws:rds:cluster",
+      secretArn: "arn:aws:secretsmanager:secret",
+      table: '"t"',
+      columns: ["id"],
+      importer,
+      batchSize: 100,
+      checkpoint,
+      failedWriter,
+      logger: makeLogger(),
+    });
+
+    expect(withTransaction).toHaveBeenCalledTimes(1);
+    expect(batchExecuteStatement).toHaveBeenCalledTimes(1);
+    expect(result.inserted).toBe(100);
+    expect(result.failed).toBe(0);
+    expect(checkpoint.write).toHaveBeenCalledWith(
+      expect.objectContaining({ chunkIndex: 4 }),
+    );
   });
 
   test("a chunk whose transaction fails is recorded as failed, and later chunks still attempt", async () => {

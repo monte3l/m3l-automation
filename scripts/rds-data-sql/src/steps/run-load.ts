@@ -533,7 +533,17 @@ export async function runLoad(deps: RunLoadDeps): Promise<RunLoadResult> {
     columns: deps.columns ? deps.columns.map(validateColumnName) : undefined,
     inserted: 0,
     failed: initialFailedRecords.length,
-    nextChunkIndex: 0,
+    // Seeded from the resume point, not hardcoded `0`: on a genuine resume
+    // (`resumeFromChunkIndex` >= 0) the prior run already fully attempted
+    // chunks `0..resumeFromChunkIndex`, so the first chunk this run actually
+    // forms is really `resumeFromChunkIndex + 1` in the original absolute
+    // sequence — post-skip records never re-enter `classifyRecord`, so
+    // renumbering from `0` here would make `flushChunk`'s
+    // `chunkIndex <= resumeFromChunkIndex` guard misidentify a genuinely new
+    // chunk as already-flushed. For a fresh run or a legacy checkpoint with
+    // no `chunkIndex` (`resumeFromChunkIndex === -1`), this seeds to `0`,
+    // identical to the prior hardcoded behavior.
+    nextChunkIndex: resumeFromChunkIndex + 1,
     pending: [],
     failedRecords: initialFailedRecords,
     recordsProcessed: 0,
