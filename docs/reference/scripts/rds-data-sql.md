@@ -1,0 +1,182 @@
+# rds-data-sql
+
+Run parameterized SQL — paged queries, bulk loads, single statements, and
+transactional migrations — against an Aurora PostgreSQL cluster via the RDS
+Data API, using the library's [`aws/rds-data`](../aws/rds-data.md) wrapper.
+
+> **This page is the script's contract** — configuration schema, steps, and
+> inputs/outputs. How to _run_ it lives in the colocated
+> [`scripts/rds-data-sql/README.md`](../../../scripts/rds-data-sql/README.md).
+
+## Purpose and scope
+
+`rds-data-sql` is the fleet's first relational-store sink and its first
+transactional consumer. Of the 13 scripts that preceded it, none reads or
+writes a relational database — `json-etl`, `athena-query`,
+`cloudwatch-logs-insights`, and `sqs-etl` only ever _produce_ files. This
+script fills that gap via four operations, dispatched by the `operation`
+config parameter:
+
+- **`query`** — run a caller-supplied `SELECT`, optionally paged, streaming
+  results to a file.
+- **`load`** — bulk-insert a JSONL/CSV file into a table, chunked and
+  transactional per chunk.
+- **`execute`** — run a single statement (DML or DDL), reporting rows
+  affected; anything not a plain `SELECT` is gated behind a destructive-op
+  confirmation.
+- **`migrate`** — apply an ordered set of `.sql` files inside one
+  transaction, recording applied versions in a migrations table.
+
+The script never constructs an AWS SDK command or imports
+`@aws-sdk/client-rds-data` itself; `aws/rds-data`'s `M3LRDSDataOperations` is
+the sole abstraction boundary, reached via `script.aws.services.rdsDataOperations`.
+
+**In scope:** single-cluster, single-database SQL execution against a
+Data-API-enabled Aurora PostgreSQL cluster, including paged reads,
+transactional bulk load, ad hoc DML/DDL, and ordered transactional
+migrations. **Out of scope:** schema/cluster provisioning
+([`cloudformation-stacks`](./cloudformation-stacks.md)'s concern),
+non-Aurora or non-Data-API databases (ADR-0031's rejected `pg`-driver route),
+and record-shape transformation beyond the output-format coercion described
+below — reformatting a `load`'s input or a `query`'s output is `json-etl`'s
+job, not duplicated here.
+
+## Configuration schema
+
+Declared in `src/config.ts` (`configParameters`); config is the script's only
+input seam (never `process.env`). Resolution order is CLI > JSON > YAML >
+env/.env > preset > default.
+
+| Parameter          | Type           | Default             | Validation                             | Description                                                                                                                                                                                                                                                                                                                 |
+| ------------------ | -------------- | ------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `aws.profile`      | `STRING`       | _(req.)_            | non-empty                              | AWS named profile; declaring this parameter triggers the `script.aws` provisioning seam (`AWS_PROFILE_PARAM_NAME`).                                                                                                                                                                                                         |
+| `aws.region`       | `STRING`       | _(unset)_           | non-empty when set                     | Optional AWS region override, consulted once provisioning is underway (`AWS_REGION_PARAM_NAME`); never independently gates provisioning.                                                                                                                                                                                    |
+| `operation`        | `STRING`       | _(req.)_            | `oneOf(query, load, execute, migrate)` | Which of the four operations this run performs.                                                                                                                                                                                                                                                                             |
+| `cluster.arn`      | `STRING`       | _(req.)_            | non-empty                              | Aurora cluster/instance ARN, passed as `resourceArn` to every `aws/rds-data` call.                                                                                                                                                                                                                                          |
+| `secret.arn`       | `STRING`       | _(req.)_            | non-empty                              | Secrets Manager ARN holding the database credentials, passed as `secretArn`; preflight-validated via `secretsManager.describeSecret` before any statement runs.                                                                                                                                                             |
+| `database`         | `STRING`       | _(req.)_            | non-empty                              | Target database name.                                                                                                                                                                                                                                                                                                       |
+| `schema`           | `STRING`       | _(unset)_           | non-empty when set, identifier pattern | Optional schema qualifier; when set, `load`/`migrate` reference `<schema>.<table>`/`<schema>.<migrations.table>`. **Never** passed as the Data API request's own `schema` field (AWS does not support it — see Notes).                                                                                                      |
+| `sql`              | `STRING`       | _(unset)_           | non-empty when set                     | Inline SQL statement for `query`/`execute`. Mutually exclusive with `sql.file`; exactly one is required for `query` and `execute`.                                                                                                                                                                                          |
+| `sql.file`         | `STRING`       | _(unset)_           | non-empty when set                     | Path (resolved under `M3L_INPUT_DIR`) to a `.sql` file holding the statement for `query`/`execute`. Mutually exclusive with `sql`.                                                                                                                                                                                          |
+| `parameters.file`  | `STRING`       | _(unset)_           | non-empty when set                     | Optional path (resolved under `M3L_INPUT_DIR`) to a JSON file of named `M3LRDSDataParameter`s bound to `sql`/`sql.file` for `query`/`execute`. Must not declare a parameter named `limit` or `offset` — reserved by `query`'s paging wrapper.                                                                               |
+| `input.file`       | `STRING`       | _(unset)_           | non-empty when set                     | Source file for `load`, resolved under `M3L_INPUT_DIR`; required for `load`.                                                                                                                                                                                                                                                |
+| `input.format`     | `STRING`       | `jsonl`             | `oneOf(jsonl, csv)`                    | `load`'s importer selector — chooses `M3LJSONListImporter` or `M3LCSVListImporter`; no extension sniffing.                                                                                                                                                                                                                  |
+| `table`            | `STRING`       | _(unset)_           | non-empty when set, identifier pattern | Target table for `load`; required for `load`.                                                                                                                                                                                                                                                                               |
+| `columns`          | `STRING_ARRAY` | _(unset)_           | identifier pattern per entry when set  | Optional explicit `INSERT` column list for `load`. When unset, inferred from the first imported record's keys, each validated against the same identifier pattern; a later record whose key set differs from the resolved column list is rejected to `failed.jsonl` rather than silently binding against the wrong columns. |
+| `batch.size`       | `INT`          | `100`               | `range(1, 10_000)`                     | Row-chunk size for `load`'s `batchExecuteStatement` calls.                                                                                                                                                                                                                                                                  |
+| `page.size`        | `INT`          | `1_000`             | `range(0, 10_000)`                     | Row page size for `query`. `0` issues the caller's statement unpaged. `ERR_RDS_DATA_RESULT_TOO_LARGE` can surface at any `page.size` (including `0`) if a page's encoded result exceeds the Data API's 1 MiB cap.                                                                                                           |
+| `output.file`      | `STRING`       | _(unset)_           | non-empty when set                     | Destination file for `query` results, resolved under `M3L_OUTPUT_DIR`; required for `query`.                                                                                                                                                                                                                                |
+| `output.format`    | `STRING`       | `json`              | `oneOf(json, jsonl, csv)`              | `query`'s output encoding.                                                                                                                                                                                                                                                                                                  |
+| `migrations.dir`   | `STRING`       | _(unset)_           | non-empty when set                     | Directory (resolved under `M3L_INPUT_DIR`) of `.sql` files applied in lexicographic filename order; required for `migrate`. Each file must hold exactly one statement.                                                                                                                                                      |
+| `migrations.table` | `STRING`       | `schema_migrations` | non-empty, identifier pattern          | Table tracking applied migration filenames for `migrate`; created if absent.                                                                                                                                                                                                                                                |
+| `yes`              | `BOOL`         | `false`             | —                                      | Bypasses the interactive destructive-op confirmation for `execute` (the `s3-objects`/CI-automation precedent) — non-interactive runs must set this explicitly.                                                                                                                                                              |
+
+`aws.profile`, `operation`, `cluster.arn`, `secret.arn`, and `database` are
+declared `required: true`, so presence is enforced by the library at
+**config-load time**. The remaining per-operation requirements are
+**cross-parameter** constraints a single parameter's `validate:` callback
+cannot express, so (following the `json-etl` precedent, not `dynamodb-crud`'s
+run-start guards) they are declared as an **ordered, fail-fast** list of
+`Core.M3LConfigSchemaValidator`s in `configValidators`, exported alongside
+`configParameters` — `M3LConfigSchema.validate` runs them in declaration
+order and throws on the first failure's exact string, coded
+`ERR_CONFIG_VALIDATION`:
+
+1. `"'query'/'execute' require exactly one of 'sql' or 'sql.file' to be set"`
+   — fires when `operation` is `query`/`execute` and `sql`/`sql.file` are
+   both set or both unset. A `sql`/`sql.file` value supplied for `load`/
+   `migrate` is silently ignored, not an error.
+2. `"'load' requires 'table' and 'input.file' to be set"` — fires when
+   `operation` is `load` and either is unset.
+3. `"'migrate' requires 'migrations.dir' to be set"` — fires when `operation`
+   is `migrate` and it is unset.
+
+The **identifier pattern** referenced above (`schema`, `table`, `columns`,
+`migrations.table`) is `^[A-Za-z_][A-Za-z0-9_]{0,62}$`; every identifier is
+additionally double-quoted (with embedded `"` doubled) when interpolated into
+generated SQL, since PostgreSQL identifiers cannot be bound as statement
+parameters the way values can.
+
+## Steps
+
+One row per `src/steps/` module; each takes injected dependencies (config
+values, `script.aws.services.rdsDataOperations`, `script.aws.services.secretsManager`,
+logger, paths) as a single options object and is unit-testable without the
+`M3LScript` lifecycle.
+
+| Step                   | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resolve-settings`     | Narrows the resolved `M3LConfig` into a typed `RdsDataSqlSettings` interface via `Core.M3LConfigAccessor`, throwing `Core.M3LError` coded `ERR_RDS_DATA_SQL_SETTINGS` if a declared value resolves to an unexpected type or an identifier (`schema`/`table`/`columns`/`migrations.table`) fails the identifier pattern. Resolves `sql.file`/`migrations.dir` as plain path strings only — reading their file contents is `build-operation-deps`'s job.                                                                                                                                                                                                                                                                                                                                                                                         |
+| `preflight-secret`     | One `secretsManager.describeSecret(secret.arn)` call before any operation runs, turning a typo'd or wrong-account secret ARN into `Core.M3LError` coded `ERR_RDS_DATA_SQL_SECRET_PREFLIGHT` instead of an opaque Data API `BadRequestException` surfacing mid-statement.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `build-operation-deps` | Composes the single per-operation dependency bag `run-rds-data-sql` dispatches into, based on `settings.operation`: resolves `sql`/`sql.file` and parses `parameters.file`'s JSON into `M3LRDSDataParameter[]` (for `query`/`execute`), constructs the `M3LCheckpointStore`-backed checkpoint and streaming-writer ports and selects the output exporter by `output.format` (for `query`), selects the importer by `input.format` and the rejection writer (for `load`), and lists/reads `migrations.dir`'s `.sql` files (for `migrate`). Also schema-qualifies and double-quotes `table`/`migrations.table` per the identifier rule above. Throws `Core.M3LError` coded `ERR_RDS_DATA_SQL_INPUT_FILE` on any file-read/parse failure.                                                                                                         |
+| `run-rds-data-sql`     | Composes the pipeline — the only module that knows operation dispatch order: preflight → dispatch on `operation` (exhaustive `switch` with a `const exhaustive: never` tail) → the matching read/write step → emit a run summary through the `ctx`-correlated logger. Throws `Core.M3LError` coded `ERR_RDS_DATA_SQL_PARTIAL_FAILURE` when `load` finishes with any row in `failed.jsonl`, so `Core.runScript` maps it to a non-zero exit code; `query`/`execute`/`migrate` failures propagate their own thrown error the same way.                                                                                                                                                                                                                                                                                                            |
+| `run-query`            | Wraps the caller's statement (its trailing `;`/whitespace stripped) as `SELECT * FROM (<sql>) AS m3l_page LIMIT :limit OFFSET :offset` when `page.size > 0`, streaming each page through `export-results`'s `exporter.exportStream()` + `writer.append()`. `offset` starts at the checkpoint's saved value (or `0`), advances by `page.size` each iteration via `Core.M3LCheckpointStore`, and the loop ends the first time a page returns fewer than `page.size` rows. `page.size = 0` issues the caller's statement unpaged, once.                                                                                                                                                                                                                                                                                                           |
+| `run-load`             | Imports `input.file` via `Core.M3LListImporter.importStream()` (selected by `input.format`), resolves the column list (`columns`, or the first record's keys) and validates every column name against the identifier pattern, coerces each record's values to `M3LRDSDataValue` (`null→null`, `boolean→boolean`, `string→string`, a safe integer → `long`, any other finite number → `double`; a non-finite number, `undefined`, array, or nested object is rejected to `failed.jsonl` rather than coerced), rejects any record whose key set differs from the resolved columns, chunks the rest to `batch.size`, inserts each chunk via `batchExecuteStatement` inside one `withTransaction` scope per chunk, and checkpoints by chunk index.                                                                                                 |
+| `run-execute`          | Runs `sql`/`sql.file` once (bound to `parameters.file`, if set), reporting rows affected. The statement is normalized (leading whitespace stripped, then leading `--…`/`/*…*/` comments stripped, repeated until neither remains) and its first keyword token compared case-insensitively; anything other than `SELECT` is gated behind `Core.confirmDestructive` (`yes`, `code: "ERR_RDS_DATA_SQL_ABORTED"`). This check is a **convenience gate, not a security control** — a side-effecting function called from inside a `SELECT` is not detected.                                                                                                                                                                                                                                                                                         |
+| `run-migrate`          | Ensures `migrations.table` exists (`CREATE TABLE IF NOT EXISTS <qualified> (filename text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`), reads `migrations.dir`'s `.sql` files in lexicographic order, filters out filenames already recorded in `migrations.table`, and applies the remainder — each file exactly one statement — inside **one** `withTransaction` scope that also creates the tracking table and records each applied filename. A failure rolls back every file in that run; if the rollback itself also fails, both errors stay reachable via `.cause` chaining (see Notes) — otherwise `fn`'s own error propagates unchanged. `CREATE INDEX CONCURRENTLY` cannot run inside this transaction (a PostgreSQL restriction, not this script's); split it into its own migration file run as `execute` instead. |
+| `export-results`       | Coerces `M3LRDSDataValue` to its output representation at this boundary only (`null`/`string`/`long`/`double`/`boolean` pass through; `blob` becomes base64), with an exhaustive `switch` on `output.format`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+
+## Inputs and outputs
+
+- **Reads:** `sql.file`/`parameters.file`/`migrations.dir` (`query`/`execute`/`migrate`)
+  and `input.file` (`load`), all resolved under `M3L_INPUT_DIR`.
+- **Writes:** `output.file` for `query`, streamed in the format named by
+  `output.format`, resolved under `M3L_OUTPUT_DIR`. `load` writes
+  `<output-dir>/failed.jsonl` for any row rejected before insertion or any
+  chunk whose transaction rolls back. `query`/`load` write a
+  `<output-dir>/<operation>.checkpoint.json` (deleted on successful
+  completion) for resumable runs.
+- **Reports:** a run summary — rows read/written/affected/failed, and for
+  `migrate`, the list of applied filenames — so a partial `load` failure is
+  never silent (see `run-rds-data-sql` above for the exact non-zero-exit
+  mechanism).
+
+## Notes and behavior
+
+- **`query`'s paging requires `ORDER BY` inside the caller's statement.**
+  `LIMIT`/`OFFSET` alone do not guarantee stable row ordering across pages;
+  the wrapping subquery does not add one. `OFFSET` paging over a
+  concurrently-mutating table can still skip or repeat rows between pages —
+  this is a Data API/PostgreSQL limitation, not something this script
+  corrects.
+- **`load` and `migrate` are the library's first consumers of
+  `withTransaction`'s rollback-failure chaining** (see
+  [`aws/rds-data`](../aws/rds-data.md)): when `fn` throws and the subsequent
+  rollback **also** fails, both errors stay reachable via the thrown error's
+  `.cause` chain rather than one silently replacing the other; when the
+  rollback succeeds, `fn`'s own error propagates unchanged.
+- **`migrate` runs one transaction per invocation, not per file.** A Data
+  API statement is cancelled at roughly 45 seconds and a transaction with no
+  activity for 3 minutes is auto-rolled-back — a very large migration batch
+  or a single long-running statement can hit either limit; split it across
+  runs if so.
+- **`query`'s `output.format: csv` loses the value of a result column
+  literally named `__proto__`/`constructor`/`prototype`.** JSON/JSONL output
+  is unaffected. The library's `M3LCSVListExporter` re-materializes each row
+  into a plain object internally, so that one column's assignment hits the
+  object's prototype instead of creating an own property — a known CSV-path
+  limitation, not something this script controls. Not a security issue (a
+  result value is always a primitive, so nothing can be re-parented), only a
+  data-loss edge case for a pathologically-named column.
+
+## See also
+
+- [`aws/rds-data`](../aws/rds-data.md) — `M3LRDSDataOperations`
+  (`executeStatement`/`batchExecuteStatement`/`beginTransaction`/
+  `commitTransaction`/`rollbackTransaction`/`withTransaction`) and the
+  `M3LRDSDataValue` discriminated union used throughout.
+- [`aws/secrets-manager`](../aws/secrets-manager.md) — `describeSecret`, used
+  by the preflight step.
+- [`core/checkpoint`](../core/checkpoint.md) — `M3LCheckpointStore`, used by
+  `run-query`/`run-load` for resumable runs.
+- [`core/importers`](../core/importers.md) — `M3LListImporter`, used by
+  `run-load`.
+- [`core/prompt`](../core/prompt.md) — `Core.confirmDestructive`, used by
+  `run-execute`.
+- [`core/script`](../core/script.md) — the `M3LScript` lifecycle the script
+  runs on.
+- [ADR-0031](../../adr/0031-relational-and-document-data-engine-access.md) —
+  the ADR pre-clearing the `aws/rds-data` wrapper and this script's
+  per-consumer gate.
+- [ADR-0022](../../adr/0022-reintroduce-scripts-workspace.md) — fleet
+  conventions.

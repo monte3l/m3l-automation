@@ -8,7 +8,7 @@ The submodule wraps an **injected**, already-provisioned `AthenaClient` — obta
 
 It composes with `core/polling`: query completion is polled via `M3LPoller` built from `M3LPollingPolicies.athenaQuery()`, and the initial `StartQueryExecution` call (plus every `GetQueryExecution`/`GetQueryResults` call) is retried under AWS throttling via `M3LRetryRunner` + `M3LPollingPolicies.awsThrottling()` — matching the `M3LLogsInsightsClient` precedent.
 
-This submodule is the ADR-0029 W4 prerequisite for the `athena-query` consumer script, which is Athena-only in scope (the `pg`/`mongodb` engines were dropped; see [ADR-0031](../../adr/0031-relational-and-document-data-engine-access.md)).
+This submodule is the ADR-0029 W4 prerequisite for the `athena-query` consumer script, which is Athena-only in scope (the `pg`/`mongodb` engines were dropped by [ADR-0029](../../adr/0029-script-dependency-boundary.md), not ADR-0031 — [ADR-0031](../../adr/0031-relational-and-document-data-engine-access.md) separately re-admits Aurora PostgreSQL via [`aws/rds-data`](./rds-data.md) and keeps DocumentDB out of scope on named terms).
 
 ## Public API
 
