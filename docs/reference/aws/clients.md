@@ -66,6 +66,7 @@ second, independently-supplied copy.
 | `ssm`              | `SSMClient`              | `@aws-sdk/client-ssm`             |
 | `sqs`              | `SQSClient`              | `@aws-sdk/client-sqs`             |
 | `secretsManager`   | `SecretsManagerClient`   | `@aws-sdk/client-secrets-manager` |
+| `rdsData`          | `RDSDataClient`          | `@aws-sdk/client-rds-data`        |
 
 Most getters construct a fresh SDK client from the resolved region and
 credentials. Two behave specially:
@@ -159,6 +160,7 @@ return value:
 | `eks`                    | [`M3LEKSOperations`](./eks.md)                              | `clientProvider.eks`                                                                                                                                              |
 | `lambda`                 | [`M3LLambdaOperations`](./lambda.md)                        | `clientProvider.lambda`                                                                                                                                           |
 | `secretsManager`         | [`M3LSecretsManagerOperations`](./secrets-manager.md)       | `clientProvider.secretsManager`                                                                                                                                   |
+| `rdsDataOperations`      | [`M3LRDSDataOperations`](./rds-data.md)                     | `clientProvider.rdsData`                                                                                                                                          |
 | `s3Operations`           | [`M3LS3Operations`](./s3.md)                                | `clientProvider.s3`                                                                                                                                               |
 | `dynamoDBOperations`     | [`M3LDynamoDBOperations`](./dynamodb.md)                    | `clientProvider.dynamoDBDocument` + `clientProvider.dynamoDB` (two clients — see below)                                                                           |
 | `credentials`            | [`M3LAWSCredentialsManager`](./credentials.md)              | `clientProvider.profile`/`clientProvider.region` (not a raw client)                                                                                               |

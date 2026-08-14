@@ -188,17 +188,19 @@ per `exactOptionalPropertyTypes`) rather than guessing.
 
 ### Errors
 
-| Error                           | Code                            | Thrown by               | Trigger                                                                                                                                                                                                                                                                                                       |
-| ------------------------------- | ------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `M3LRDSDataOperationError`      | `ERR_RDS_DATA_OPERATION`        | every method            | any SDK rejection other than the `UnsupportedResultException` case below; a `beginTransaction` response with no `transactionId`; an unmapped `Field` member (`arrayValue`/`$unknown`). Chains the raw SDK rejection (or, for `withTransaction`'s rollback-failure path, the rollback's own error) as `cause`. |
-| `M3LRDSDataResultTooLargeError` | `ERR_RDS_DATA_RESULT_TOO_LARGE` | `executeStatement` only | the SDK rejects with `error.name === "UnsupportedResultException"`.                                                                                                                                                                                                                                           |
+| Error                           | Code                            | Thrown by               | Trigger                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------- | ------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `M3LRDSDataOperationError`      | `ERR_RDS_DATA_OPERATION`        | every method            | any SDK rejection other than the `UnsupportedResultException` case below; a `beginTransaction` response with no `transactionId`; an unmapped `Field` member (`arrayValue`/`$unknown`). Chains the raw SDK rejection as `cause`; for `withTransaction`'s rollback-failure path, the surfaced error is `fn`'s own thrown error with the rollback's own failure chained onto _its_ `cause` — both are recoverable by walking the cause chain, never just one. |
+| `M3LRDSDataResultTooLargeError` | `ERR_RDS_DATA_RESULT_TOO_LARGE` | `executeStatement` only | the SDK rejects with an `Error`-shaped value whose `name === "UnsupportedResultException"`. A non-`Error` rejection carrying that same `name` (e.g. a plain object thrown by a non-conforming caller/mock) is not recognized and falls through to `M3LRDSDataOperationError` instead.                                                                                                                                                                      |
 
 ## Usage
 
 ```ts
 import { M3LRDSDataOperations } from "@m3l-automation/m3l-common/aws";
 
-const rdsData = new M3LRDSDataOperations(script.aws.services.rdsDataOperations);
+const rdsData = new M3LRDSDataOperations(script.aws.clients.rdsData);
+// or, equivalently, skip constructing it yourself: script.aws.services.rdsDataOperations
+// already returns a memoized M3LRDSDataOperations.
 
 const result = await rdsData.executeStatement({
   resourceArn: clusterArn,
@@ -242,8 +244,15 @@ await rdsData.withTransaction(
   itself calls `GetSecretValue`. A consumer script wanting a fail-fast error
   on a typo'd/wrong-account ARN should preflight with
   `aws/secrets-manager`'s `describeSecret` before issuing statements.
-- Error messages must never contain a parameter or row value — only
-  identifiers (cluster/secret ARN, transaction id, or a row/column index).
+- **This module's own `.message` text must never contain a parameter or row
+  value** — only identifiers (cluster/secret ARN, transaction id, or a
+  row/column index). This guarantee is scoped to the message channel only:
+  every method chains the raw SDK rejection as `cause`, and a real
+  Data-API/PostgreSQL error can itself echo a parameter's value verbatim
+  server-side (e.g. a unique-constraint-violation message naming the
+  duplicate key's value). Callers must not log or persist an
+  `M3LRDSDataOperationError`'s full `cause` chain assuming it is
+  value-free — only the error's own `message` carries that guarantee.
 
 ## See also
 
