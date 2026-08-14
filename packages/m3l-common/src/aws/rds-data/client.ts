@@ -96,8 +96,20 @@ function mapValueToField(value: M3LRDSDataValue): Field {
       return { blobValue: value.value };
     default: {
       const exhaustive: never = value;
+      // This branch is reachable only via a type-system bypass (an `as` cast
+      // supplying a shape outside the M3LRDSDataValue union). Name only the
+      // encountered `kind` (or its `typeof`, if `kind` itself is missing or
+      // non-string) — never `JSON.stringify` the whole value, which would
+      // serialize an arbitrary caller-supplied payload straight into the
+      // error message. Mirrors `mapField`'s sibling default-case handling
+      // below, which names only the location and the member's kind.
+      const malformed = exhaustive as { readonly kind?: unknown };
+      const kindDescription =
+        typeof malformed.kind === "string"
+          ? malformed.kind
+          : `typeof ${typeof malformed.kind}`;
       throw new M3LRDSDataOperationError(
-        `unmapped M3LRDSDataValue kind: ${JSON.stringify(exhaustive)}`,
+        `unmapped M3LRDSDataValue kind: ${kindDescription}`,
       );
     }
   }
@@ -272,6 +284,46 @@ function mapColumn(column: ColumnMetadata): M3LRDSDataColumn {
     label: column.label ?? "",
     ...(nullable !== undefined && { nullable }),
   };
+}
+
+/**
+ * The maximum number of links {@link attachRollbackFailure} follows down
+ * `fnError`'s own `.cause` chain while searching for an open (`undefined`)
+ * `.cause` slot to attach `rollbackError` to. Matches the bound the test
+ * file's own `causeChain()` helper walks, so a well-formed chain is always
+ * fully explored while a pathological (e.g. cyclic) one cannot loop forever.
+ */
+const MAX_CAUSE_CHAIN_WALK = 10;
+
+/**
+ * Attaches `rollbackError` to the first open `.cause` slot found by walking
+ * `fnError`'s own `.cause` chain, so both `fn`'s failure and the rollback's
+ * failure stay reachable from the error `withTransaction` ultimately
+ * surfaces. Checks `fnError.cause` itself first; when that is already taken,
+ * follows `.cause` links (each one re-checked with `instanceof Error` before
+ * continuing) up to {@link MAX_CAUSE_CHAIN_WALK} levels deep. An
+ * already-set `.cause` at any level is never overwritten. When `fnError`
+ * isn't an `Error`, or no open slot is found within the bound, this is a
+ * no-op — see {@link M3LRDSDataOperations.withTransaction}'s TSDoc for that
+ * edge case's resulting behavior.
+ *
+ * @param fnError - The error thrown by `fn`, mutated in place when an open
+ *   slot is found.
+ * @param rollbackError - The rollback's own failure to chain onto `fnError`.
+ */
+function attachRollbackFailure(fnError: unknown, rollbackError: unknown): void {
+  let link: Error | undefined = fnError instanceof Error ? fnError : undefined;
+  for (
+    let depth = 0;
+    link !== undefined && depth < MAX_CAUSE_CHAIN_WALK;
+    depth += 1
+  ) {
+    if (link.cause === undefined) {
+      link.cause = rollbackError;
+      return;
+    }
+    link = link.cause instanceof Error ? link.cause : undefined;
+  }
 }
 
 /**
@@ -515,16 +567,33 @@ export class M3LRDSDataOperations {
 
   /**
    * Runs `fn` inside a begin/commit transaction, rolling back on any throw.
-   * A rollback failure is never swallowed: it is chained as the `cause` of
-   * the error `fn`'s own throw surfaces as. When the rollback succeeds,
-   * `fn`'s original error propagates unchanged.
+   *
+   * When `fn` throws and the rollback succeeds, `fn`'s original error
+   * propagates unchanged (identity preserved, so `instanceof` checks against
+   * it still work). When `fn` throws AND the rollback also fails, the
+   * rollback failure is never swallowed and `fn`'s original error is never
+   * dropped: this throws a new {@link M3LRDSDataOperationError} whose `cause`
+   * is `fn`'s own error, with the rollback failure attached to the first open
+   * (`undefined`) `.cause` slot found by walking `fn`'s error's own `.cause`
+   * chain — starting at `fn`'s error itself, then its `.cause`, then that
+   * `.cause`'s own `.cause`, and so on for up to 10 links. An already-set
+   * `.cause` at any level is never clobbered; the walk simply keeps
+   * descending past it looking for the first unset one. In the unusual case
+   * where every level within that bound already carries a non-`Error`,
+   * non-`undefined` `.cause` (so no open slot exists), the rollback failure
+   * is not attached anywhere and only `fn`'s own error surfaces via the
+   * thrown error's `cause`. Otherwise, both errors stay reachable by walking
+   * the surfaced error's cause chain.
    *
    * @param input - The target cluster/secret/database/schema.
    * @param fn - Receives the started transaction's id; its return value
    *   becomes `withTransaction`'s resolved value on commit.
-   * @throws {@link M3LRDSDataOperationError} when begin/commit/rollback
-   *   fails, or `fn`'s own thrown error (with a failed rollback chained onto
-   *   it as `cause`) when `fn` fails.
+   * @throws {@link M3LRDSDataOperationError} when begin/commit fails, or when
+   *   `fn` fails and the rollback also fails (chaining `fn`'s own error,
+   *   which in turn chains the rollback failure, as its `cause`, at the
+   *   first open slot in `fn`'s error's own cause chain).
+   * @throws `fn`'s own thrown error, unchanged, when `fn` fails and the
+   *   rollback succeeds.
    */
   async withTransaction<T>(
     input: M3LRDSDataBeginTransactionInput,
@@ -541,9 +610,10 @@ export class M3LRDSDataOperations {
           transactionId,
         });
       } catch (rollbackError) {
+        attachRollbackFailure(fnError, rollbackError);
         throw new M3LRDSDataOperationError(
-          `withTransaction: rollback failed for resourceArn=${input.resourceArn}, transactionId=${transactionId}, after fn's own failure`,
-          { cause: rollbackError },
+          `withTransaction: fn failed and rollback also failed for resourceArn=${input.resourceArn}, transactionId=${transactionId}`,
+          { cause: fnError },
         );
       }
       throw fnError;
