@@ -318,6 +318,70 @@ describe("runLoad", () => {
     );
   });
 
+  test("resume: re-appends the checkpoint's failed records to failedWriter before consuming new records, and the failed count includes both", async () => {
+    // Regression test for the resumed-run data-loss bug: `failedWriter`'s
+    // underlying exporter truncates `failed.jsonl` on construction, so a
+    // resumed run that skipped re-populating it from
+    // `checkpoint.failedRecords` silently lost every reject a prior
+    // interrupted run had already recorded.
+    const seededRecord = { bad: "row-a" };
+    // Chunk 0 — already covered by the prior interrupted run; its
+    // insert-flush is skipped, never re-inserted or re-recorded.
+    const skippedGoodRecord = { id: 1 };
+    // Fails coercion (an array value); rejected immediately regardless of
+    // chunk boundary.
+    const newlyRejectedRecord = { id: [1, 2, 3] };
+    // Chunk 1 — past the resume point; actually inserted.
+    const newlyInsertedRecord = { id: 2 };
+
+    const importer = makeImporter([
+      skippedGoodRecord,
+      newlyRejectedRecord,
+      newlyInsertedRecord,
+    ]);
+    const batchExecuteStatement = vi.fn().mockResolvedValue(batchResult(1));
+    const withTransaction = passthroughWithTransaction();
+    const checkpoint = {
+      read: vi.fn().mockResolvedValue({
+        chunkIndex: 0,
+        failedRecords: [seededRecord],
+      }),
+      write: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+    };
+    const failedWriter = makeFailedWriter();
+
+    const result = await runLoad({
+      rdsData: { batchExecuteStatement, withTransaction },
+      resourceArn: "arn:aws:rds:cluster",
+      secretArn: "arn:aws:secretsmanager:secret",
+      table: '"t"',
+      columns: ["id"],
+      importer,
+      batchSize: 1,
+      checkpoint,
+      failedWriter,
+      logger: makeLogger(),
+    });
+
+    // The seeded (resumed) rejected record is re-appended to failedWriter
+    // before any newly-rejected record from this run.
+    expect(failedWriter.append).toHaveBeenCalledTimes(2);
+    expect(failedWriter.append).toHaveBeenNthCalledWith(1, seededRecord);
+    expect(failedWriter.append).toHaveBeenNthCalledWith(2, newlyRejectedRecord);
+
+    // Chunk 0 (already covered) is skipped without a duplicate insert; only
+    // the chunk past the resume point (index 1) is actually inserted.
+    expect(withTransaction).toHaveBeenCalledTimes(1);
+    expect(batchExecuteStatement).toHaveBeenCalledTimes(1);
+
+    // The resolved failed count reflects both the seeded and the newly
+    // rejected record, not just this run's new rejection — the direct
+    // proof the old truncate-and-lose-history bug is closed.
+    expect(result.failed).toBe(2);
+    expect(result.inserted).toBe(1);
+  });
+
   test("a chunk whose transaction fails is recorded as failed, and later chunks still attempt", async () => {
     const items = [{ id: 1 }, { id: 2 }, { id: 3 }];
     const importer = makeImporter(items);

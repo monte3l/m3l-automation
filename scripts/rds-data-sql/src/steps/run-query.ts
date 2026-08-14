@@ -38,6 +38,14 @@ const RESERVED_PARAMETER_NAMES: ReadonlySet<string> = new Set([
 export interface RunQueryCheckpoint {
   /** The `OFFSET` to resume paging from, when a prior run was interrupted. */
   readonly offset?: number;
+  /**
+   * Every output record already streamed to `writer` by a prior interrupted
+   * run, in emission order — the same `toRecord`-coerced shape passed to
+   * `writer.append`. On resume, {@link runQuery} re-appends every one of
+   * these to `writer` before it starts paging again, since `writer`'s
+   * underlying exporter truncates the output file on construction.
+   */
+  readonly rows?: readonly Record<string, unknown>[];
 }
 
 /** The narrow checkpoint port {@link runQuery} depends on. */
@@ -45,7 +53,10 @@ interface RunQueryCheckpointPort {
   /** Reads the current checkpoint, or an empty object on a fresh run. */
   read(): Promise<RunQueryCheckpoint>;
   /** Persists the checkpoint after a full page completes. */
-  write(checkpoint: { readonly offset: number }): Promise<void>;
+  write(checkpoint: {
+    readonly offset: number;
+    readonly rows: readonly Record<string, unknown>[];
+  }): Promise<void>;
   /** Deletes the checkpoint once the run completes successfully. */
   delete(): Promise<void>;
 }
@@ -161,21 +172,34 @@ function buildStatementInput(
   };
 }
 
-/** Streams one `executeStatement` result's rows through `toRecord` + `writer.append`, returning the row count. */
+/** Streams one `executeStatement` result's rows through `toRecord` + `writer.append`, returning the coerced records in emission order. */
 async function streamResultRows(
   deps: Pick<RunQueryDeps, "writer" | "toRecord">,
   result: AWS.M3LRDSDataStatementResult,
-): Promise<number> {
+): Promise<readonly Record<string, unknown>[]> {
+  const records: Record<string, unknown>[] = [];
   for (const row of result.rows) {
-    await deps.writer.append(deps.toRecord(result.columns, row));
+    const record = deps.toRecord(result.columns, row);
+    await deps.writer.append(record);
+    records.push(record);
   }
-  return result.rows.length;
+  return records;
 }
 
-/** Runs the `page.size > 0` paged path — split out of {@link runQuery} to keep its cyclomatic complexity low. */
+/**
+ * Runs the `page.size > 0` paged path — split out of {@link runQuery} to
+ * keep its cyclomatic complexity low. `accumulatedRows` is mutated in
+ * place (pushed to after every page), mirroring
+ * `cloudwatch-logs-insights/steps/run-cloudwatch-logs-insights.ts`'s
+ * `awaitAndAccumulate` pattern: the checkpoint written after each page
+ * carries the full accumulated record set, not just this page's, so a
+ * resumed run can fully re-populate its (truncating) writer before
+ * continuing.
+ */
 async function runPagedQuery(
   deps: RunQueryDeps,
   startOffset: number,
+  accumulatedRows: Record<string, unknown>[],
 ): Promise<number> {
   const wrappedSql = `SELECT * FROM (${stripTrailingStatementNoise(deps.sql)}) AS m3l_page LIMIT :limit OFFSET :offset`;
   let offset = startOffset;
@@ -189,12 +213,13 @@ async function runPagedQuery(
         { name: "offset", value: { kind: "long", value: offset } },
       ]),
     );
-    const pageRowCount = await streamResultRows(deps, result);
-    rowsRead += pageRowCount;
+    const pageRecords = await streamResultRows(deps, result);
+    rowsRead += pageRecords.length;
+    accumulatedRows.push(...pageRecords);
 
-    if (pageRowCount < deps.pageSize) break;
+    if (pageRecords.length < deps.pageSize) break;
     offset += deps.pageSize;
-    await deps.checkpoint.write({ offset });
+    await deps.checkpoint.write({ offset, rows: accumulatedRows });
   }
 
   return rowsRead;
@@ -205,7 +230,8 @@ async function runUnpagedQuery(deps: RunQueryDeps): Promise<number> {
   const result = await deps.rdsData.executeStatement(
     buildStatementInput(deps, deps.sql, deps.parameters),
   );
-  return streamResultRows(deps, result);
+  const records = await streamResultRows(deps, result);
+  return records.length;
 }
 
 /**
@@ -236,12 +262,27 @@ export async function runQuery(deps: RunQueryDeps): Promise<RunQueryResult> {
   assertNoReservedParameterNames(deps.parameters, deps.pageSize);
 
   const savedCheckpoint = await deps.checkpoint.read();
+  const accumulatedRows: Record<string, unknown>[] = [
+    ...(savedCheckpoint.rows ?? []),
+  ];
+  // The exporter behind `writer` truncates its output file on construction
+  // (`fs.createWriteStream`'s default flags) — a resumed run must
+  // re-populate it with every record a prior interrupted run already wrote
+  // before any new page is streamed, or those rows are silently lost.
+  for (const record of accumulatedRows) {
+    await deps.writer.append(record);
+  }
+
   let rowsRead: number;
 
   try {
     rowsRead =
       deps.pageSize > 0
-        ? await runPagedQuery(deps, savedCheckpoint.offset ?? 0)
+        ? await runPagedQuery(
+            deps,
+            savedCheckpoint.offset ?? 0,
+            accumulatedRows,
+          )
         : await runUnpagedQuery(deps);
   } finally {
     // Best-effort: a failing close() must never mask the real outcome above.

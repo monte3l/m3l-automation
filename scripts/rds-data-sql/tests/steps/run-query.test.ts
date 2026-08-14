@@ -201,6 +201,60 @@ describe("runQuery", () => {
     );
   });
 
+  test("resume: re-appends the checkpoint's accumulated rows to the writer before streaming new pages, and persists the combined set", async () => {
+    // Regression test for the resumed-run data-loss bug: `writer`'s
+    // underlying exporter truncates its output file on construction, so a
+    // resumed run that skipped re-populating it from `checkpoint.rows`
+    // silently lost every row a prior interrupted run had already written.
+    const seededRows = [{ id: 1 }, { id: 2 }];
+    const newRecords = [{ id: longValue(3) }, { id: longValue(4) }];
+    const executeStatement = vi
+      .fn()
+      .mockResolvedValueOnce(statementResult([[longValue(3)], [longValue(4)]]))
+      .mockResolvedValueOnce(statementResult([]));
+    const checkpoint = {
+      read: vi.fn().mockResolvedValue({ offset: 1000, rows: seededRows }),
+      write: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+    };
+    const writer = makeWriter();
+    const toRecord = vi.fn((_columns: unknown, row: AWS.M3LRDSDataRow) => ({
+      id: row[0],
+    }));
+
+    const result = await runQuery({
+      rdsData: { executeStatement },
+      resourceArn: "arn:aws:rds:cluster",
+      secretArn: "arn:aws:secretsmanager:secret",
+      sql: "SELECT id FROM t ORDER BY id",
+      parameters: [],
+      pageSize: 2,
+      checkpoint,
+      writer,
+      toRecord,
+      logger: makeLogger(),
+    });
+
+    // The two seeded (resumed) records are re-appended to the writer
+    // before any newly-fetched page's rows — the writer's call sequence
+    // starts with the resumed records, not just the new ones.
+    expect(writer.append).toHaveBeenCalledTimes(4);
+    expect(writer.append).toHaveBeenNthCalledWith(1, seededRows[0]);
+    expect(writer.append).toHaveBeenNthCalledWith(2, seededRows[1]);
+    expect(writer.append).toHaveBeenNthCalledWith(3, newRecords[0]);
+    expect(writer.append).toHaveBeenNthCalledWith(4, newRecords[1]);
+
+    // The mid-run checkpoint carries the full accumulated record set
+    // (seeded + newly streamed), not just this run's new rows — the direct
+    // proof the old truncate-and-lose-history bug is closed.
+    expect(checkpoint.write).toHaveBeenCalledTimes(1);
+    expect(checkpoint.write).toHaveBeenCalledWith({
+      offset: 1002,
+      rows: [...seededRows, ...newRecords],
+    });
+    expect(result.rowsRead).toBe(2);
+  });
+
   test.each(["limit", "offset"] as const)(
     "throws a coded M3LError, without calling executeStatement, when parameters.file declares '%s' and page.size > 0",
     async (reservedName) => {

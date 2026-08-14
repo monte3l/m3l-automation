@@ -193,18 +193,48 @@ async function resolveParameters(
   return parsed;
 }
 
+/**
+ * Narrows one array entry to a plain record: a non-null, non-array object.
+ * Deliberately shallow — it does not validate individual field value types,
+ * mirroring `cloudwatch-logs-insights/steps/checkpoint.ts`'s
+ * `isLogsInsightsRow` validation depth for an accumulated checkpoint entry.
+ */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Narrows a value to a `readonly Record<string, unknown>[]`, or accepts `undefined`. */
+function isOptionalRecordArray(
+  value: unknown,
+): value is readonly Record<string, unknown>[] | undefined {
+  if (value === undefined) return true;
+  return Array.isArray(value) && value.every(isPlainRecord);
+}
+
 /** Narrows a checkpoint file's parsed content to {@link RunQueryCheckpoint}. */
 function isRunQueryCheckpoint(value: unknown): value is RunQueryCheckpoint {
   if (typeof value !== "object" || value === null) return false;
-  if (!Object.hasOwn(value, "offset")) return true;
-  return typeof (value as Record<string, unknown>)["offset"] === "number";
+  const candidate = value as Record<string, unknown>;
+  if (
+    Object.hasOwn(candidate, "offset") &&
+    typeof candidate["offset"] !== "number"
+  ) {
+    return false;
+  }
+  return isOptionalRecordArray(candidate["rows"]);
 }
 
 /** Narrows a checkpoint file's parsed content to {@link RunLoadCheckpoint}. */
 function isRunLoadCheckpoint(value: unknown): value is RunLoadCheckpoint {
   if (typeof value !== "object" || value === null) return false;
-  if (!Object.hasOwn(value, "chunkIndex")) return true;
-  return typeof (value as Record<string, unknown>)["chunkIndex"] === "number";
+  const candidate = value as Record<string, unknown>;
+  if (
+    Object.hasOwn(candidate, "chunkIndex") &&
+    typeof candidate["chunkIndex"] !== "number"
+  ) {
+    return false;
+  }
+  return isOptionalRecordArray(candidate["failedRecords"]);
 }
 
 /** Builds the format-selected exporter class for `query`'s `output.format`. */
