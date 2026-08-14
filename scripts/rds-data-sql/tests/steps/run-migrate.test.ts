@@ -217,6 +217,41 @@ describe("runMigrate", () => {
     expect(calls).not.toContain("CREATE TABLE c (id int)");
   });
 
+  test("an unterminated block comment is treated as extending to end of file, not counted as hiding a second statement", async () => {
+    // Regression/coverage test for stripQuotedAndCommentedSpans's
+    // `closing === -1` path: an opened `/*` with no matching `*/` must be
+    // treated as consuming the rest of the file, so a `;` inside it is
+    // never counted as a top-level statement terminator. The lone real `;`
+    // right after the CREATE TABLE clause is fine on its own (a single
+    // trailing terminator); if the unterminated comment's own `;` were
+    // wrongly counted too, this would trip looksLikeMultipleStatements and
+    // throw MIGRATION_INVALID_CODE instead of applying successfully.
+    const migrations = [
+      {
+        filename: "001_a.sql",
+        sql: "CREATE TABLE a (id int); /* unterminated comment with a ; inside",
+      },
+    ];
+    const migrationsTable = '"schema_migrations"';
+    const executeStatement = makeExecuteStatement({
+      migrationsTable,
+      migrations,
+      alreadyApplied: [],
+    });
+    const withTransaction = passthroughWithTransaction();
+
+    const result = await runMigrate({
+      rdsData: { executeStatement, withTransaction },
+      resourceArn: "arn:aws:rds:cluster",
+      secretArn: "arn:aws:secretsmanager:secret",
+      migrationsTable,
+      migrations,
+      logger: makeLogger(),
+    });
+
+    expect(result.applied).toEqual(["001_a.sql"]);
+  });
+
   test("when the rollback also fails, both fn's error and the rollback failure stay reachable via .cause chaining", async () => {
     const rollbackFailure = new AWS.M3LRDSDataOperationError("rollback failed");
     const fnError = new Error("insert failed", { cause: rollbackFailure });

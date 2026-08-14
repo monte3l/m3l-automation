@@ -234,6 +234,12 @@ function isRunLoadCheckpoint(value: unknown): value is RunLoadCheckpoint {
   ) {
     return false;
   }
+  if (
+    Object.hasOwn(candidate, "recordsProcessed") &&
+    typeof candidate["recordsProcessed"] !== "number"
+  ) {
+    return false;
+  }
   return isOptionalRecordArray(candidate["failedRecords"]);
 }
 

@@ -382,6 +382,88 @@ describe("runLoad", () => {
     expect(result.inserted).toBe(1);
   });
 
+  test("resume: a re-streamed record already classified in a prior run (per 'recordsProcessed') is skipped, not reclassified — closing the double-rejection regression", async () => {
+    // Regression test for the resumed-run double-rejection bug: the prior
+    // round's resume test seeded `checkpoint.failedRecords` with a record
+    // that never actually reappeared in the importer's re-streamed output,
+    // so it could never exercise reclassification — it passed whether or
+    // not the `recordsProcessed`-based skip worked at all. This test seeds
+    // `failedRecords` with objects that ARE (by reference) part of the
+    // importer's yielded stream, mirroring the reported reproduction: 100
+    // records, 5 fail coercion, batch.size=100, run 1 ends with
+    // `{chunkIndex: 0, failedRecords: [5 records], recordsProcessed: 100}`;
+    // run 2 must report `failed: 5`, not `10`.
+    const badPositions = new Set([10, 30, 50, 70, 90]);
+    const items: Record<string, unknown>[] = [];
+    const badRecords: Record<string, unknown>[] = [];
+    for (let index = 0; index < 100; index += 1) {
+      if (badPositions.has(index)) {
+        // Fails coercion: an array value never coerces to M3LRDSDataValue.
+        const bad = { id: [index] };
+        items.push(bad);
+        badRecords.push(bad);
+      } else {
+        items.push({ id: index });
+      }
+    }
+
+    const importer = makeImporter(items);
+    const batchExecuteStatement = vi.fn().mockResolvedValue(batchResult(1));
+    const withTransaction = passthroughWithTransaction();
+    const checkpoint = {
+      read: vi.fn().mockResolvedValue({
+        chunkIndex: 0,
+        failedRecords: badRecords,
+        recordsProcessed: 100,
+      }),
+      write: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+    };
+    const failedWriter = makeFailedWriter();
+
+    const result = await runLoad({
+      rdsData: { batchExecuteStatement, withTransaction },
+      resourceArn: "arn:aws:rds:cluster",
+      secretArn: "arn:aws:secretsmanager:secret",
+      table: '"t"',
+      columns: ["id"],
+      importer,
+      batchSize: 100,
+      checkpoint,
+      failedWriter,
+      logger: makeLogger(),
+    });
+
+    // (a) One specific re-streamed bad record is appended exactly once —
+    // from the seed replay only, never again from reclassification, even
+    // though the identical object is re-yielded by the importer.
+    const targetBadRecord = badRecords[2];
+    if (targetBadRecord === undefined) {
+      throw new Error("expected at least 3 seeded bad records");
+    }
+    const appendCallsForTarget = failedWriter.append.mock.calls.filter(
+      ([record]) => record === targetBadRecord,
+    );
+    expect(appendCallsForTarget).toHaveLength(1);
+
+    // Total append calls match the seed count exactly (5), not double (10).
+    expect(failedWriter.append).toHaveBeenCalledTimes(5);
+
+    // (b) The resolved failed count reflects one instance of each seeded
+    // record, not two.
+    expect(result.failed).toBe(5);
+    expect(result.inserted).toBe(0);
+
+    // (c) None of the re-streamed records — good or bad — were reclassified:
+    // no insert attempt (every good record was already accepted/inserted by
+    // the interrupted prior run, so this run must not re-attempt them) and
+    // no checkpoint re-write, proving classifyRecord's effects never ran for
+    // any record covered by the resume skip.
+    expect(withTransaction).not.toHaveBeenCalled();
+    expect(batchExecuteStatement).not.toHaveBeenCalled();
+    expect(checkpoint.write).not.toHaveBeenCalled();
+  });
+
   test("a chunk whose transaction fails is recorded as failed, and later chunks still attempt", async () => {
     const items = [{ id: 1 }, { id: 2 }, { id: 3 }];
     const importer = makeImporter(items);

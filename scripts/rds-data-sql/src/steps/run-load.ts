@@ -51,6 +51,18 @@ export interface RunLoadCheckpoint {
    * `failed.jsonl` on construction.
    */
   readonly failedRecords?: readonly Record<string, unknown>[];
+  /**
+   * The total number of records READ from the import stream so far, across
+   * every resumed run — both accepted (into a chunk) and rejected, unlike
+   * {@link RunLoadCheckpoint.chunkIndex} (which only counts fully-attempted
+   * chunks of *accepted* records). On resume, {@link runLoad} skips
+   * classifying (accepting or rejecting) each of the import stream's first
+   * `recordsProcessed` records — the stream is re-read from the beginning,
+   * but every record already classified by a prior interrupted run must not
+   * be reclassified, or a record that was already rejected gets rejected
+   * (and recorded to `failedWriter`) a second time.
+   */
+  readonly recordsProcessed?: number;
 }
 
 /** The narrow checkpoint port {@link runLoad} depends on. */
@@ -61,6 +73,7 @@ interface RunLoadCheckpointPort {
   write(checkpoint: {
     readonly chunkIndex: number;
     readonly failedRecords: readonly Record<string, unknown>[];
+    readonly recordsProcessed: number;
   }): Promise<void>;
   /** Deletes the checkpoint once the run completes with no failed rows. */
   delete(): Promise<void>;
@@ -293,6 +306,10 @@ async function insertChunk(
  * *before* this chunk; the checkpoint written after this chunk carries the
  * full accumulator (this chunk's newly-rejected rows appended, if any) so a
  * resumed run can fully re-populate `failedWriter` before continuing.
+ * `recordsProcessed` is the run's current count of records read from the
+ * import stream (accept or reject) as of this chunk, persisted alongside
+ * `chunkIndex`/`failedRecords` so a resumed run knows how far into the
+ * re-streamed input to skip reclassifying.
  *
  * @returns See {@link FlushChunkOutcome}.
  */
@@ -301,6 +318,7 @@ async function flushChunk(
   chunk: readonly PendingRow[],
   chunkIndex: number,
   accumulatedFailed: readonly Record<string, unknown>[],
+  recordsProcessed: number,
 ): Promise<FlushChunkOutcome> {
   if (chunk.length === 0) {
     return { inserted: 0, failed: 0, failedRecords: accumulatedFailed };
@@ -318,6 +336,7 @@ async function flushChunk(
   await context.deps.checkpoint.write({
     chunkIndex,
     failedRecords: outcome.failedRecords,
+    recordsProcessed,
   });
   return outcome;
 }
@@ -348,6 +367,15 @@ interface LoadState {
   readonly pending: readonly PendingRow[];
   /** Every raw record rejected so far this run (including any re-populated from a resumed checkpoint); the checkpoint's `failedRecords` field. */
   readonly failedRecords: readonly Record<string, unknown>[];
+  /**
+   * The count of records read from the import stream so far *this run*
+   * (accept or reject) — the checkpoint's `recordsProcessed` field. Starts
+   * at `0` on every run (including a resumed one): the import stream is
+   * always re-read from the beginning, so this run's own counter tracks
+   * stream position independently of the resume skip-count it's compared
+   * against in {@link consumeImportStream}.
+   */
+  readonly recordsProcessed: number;
 }
 
 /** Flushes `state.pending` as one chunk, when non-empty, returning the resulting state. */
@@ -367,6 +395,7 @@ async function flushPending(
     state.pending,
     state.nextChunkIndex,
     state.failedRecords,
+    state.recordsProcessed,
   );
   return {
     ...state,
@@ -403,28 +432,48 @@ async function classifyRecord(
       columns,
       failed: state.failed + 1,
       failedRecords: [...state.failedRecords, record],
+      recordsProcessed: state.recordsProcessed + 1,
     };
   }
   return {
     ...state,
     columns,
     pending: [...state.pending, { record, parameters }],
+    recordsProcessed: state.recordsProcessed + 1,
   };
 }
 
-/** Drains `deps.importer`'s stream, classifying and chunk-flushing each record in turn, returning the final state. */
+/**
+ * Drains `deps.importer`'s stream, classifying and chunk-flushing each
+ * record in turn, returning the final state.
+ *
+ * On a resumed run the import stream is always re-read from the beginning,
+ * but every record already classified (accepted or rejected) by a prior
+ * interrupted run must not be reclassified — reclassifying an already
+ * rejected record would append it to `failedWriter` a second time. So while
+ * this run's own `recordsProcessed` counter is still below
+ * `resumeFromRecordCount`, each record is skipped entirely (never passed to
+ * {@link classifyRecord}, never touching `pending`/`failedWriter`/`failed`)
+ * — only the counter advances. Once the counter catches up, classification
+ * resumes normally for every subsequent record.
+ */
 async function consumeImportStream(
   deps: RunLoadDeps,
   initialState: LoadState,
   resumeFromChunkIndex: number,
+  resumeFromRecordCount: number,
 ): Promise<LoadState> {
   const stream = deps.importer.importStream(deps.source);
   let state = initialState;
   let step = await stream.next();
   while (step.done !== true) {
-    state = await classifyRecord(deps, state, step.value);
-    if (state.pending.length >= deps.batchSize) {
-      state = await flushPending(deps, state, resumeFromChunkIndex);
+    if (state.recordsProcessed < resumeFromRecordCount) {
+      state = { ...state, recordsProcessed: state.recordsProcessed + 1 };
+    } else {
+      state = await classifyRecord(deps, state, step.value);
+      if (state.pending.length >= deps.batchSize) {
+        state = await flushPending(deps, state, resumeFromChunkIndex);
+      }
     }
     step = await stream.next();
   }
@@ -468,6 +517,7 @@ async function closeFailedWriterBestEffort(deps: RunLoadDeps): Promise<void> {
 export async function runLoad(deps: RunLoadDeps): Promise<RunLoadResult> {
   const savedCheckpoint = await deps.checkpoint.read();
   const resumeFromChunkIndex = savedCheckpoint.chunkIndex ?? -1;
+  const resumeFromRecordCount = savedCheckpoint.recordsProcessed ?? 0;
   const initialFailedRecords = savedCheckpoint.failedRecords ?? [];
 
   // The exporter behind `failedWriter` truncates `failed.jsonl` on
@@ -486,11 +536,17 @@ export async function runLoad(deps: RunLoadDeps): Promise<RunLoadResult> {
     nextChunkIndex: 0,
     pending: [],
     failedRecords: initialFailedRecords,
+    recordsProcessed: 0,
   };
 
   let state: LoadState;
   try {
-    state = await consumeImportStream(deps, initialState, resumeFromChunkIndex);
+    state = await consumeImportStream(
+      deps,
+      initialState,
+      resumeFromChunkIndex,
+      resumeFromRecordCount,
+    );
   } finally {
     await closeFailedWriterBestEffort(deps);
   }

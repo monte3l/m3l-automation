@@ -412,6 +412,96 @@ describe("buildOperationDeps: load", () => {
 
     expect(result.load?.importer).toBeInstanceOf(Core.M3LJSONListImporter);
   });
+
+  test("throws a coded error on an unhandled 'input.format' value, never constructing the checkpoint store", async () => {
+    const thrown = await captureThrown(() =>
+      buildOperationDeps(
+        buildDeps(
+          makeSettings({
+            operation: "load",
+            table: "users",
+            inputFile: "users.jsonl",
+            // Deliberately outside the declared "jsonl" | "csv" union to
+            // exercise createLoadImporter's exhaustiveness `never` guard at
+            // runtime (e.g. a bypassed config validator). Cast is required
+            // to construct an otherwise-unreachable input for the
+            // type-narrowed parameter — mirrors
+            // scripts/athena-query/tests/steps/export-results.test.ts's
+            // same-shaped exhaustive-default-branch test.
+            inputFormat: "xml" as unknown as "jsonl",
+          }),
+        ),
+      ),
+    );
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    expect((thrown as Core.M3LError).code).toBe(BUILD_DEPS_CODE);
+  });
+});
+
+describe("buildOperationDeps: checkpoint validation", () => {
+  test("query's checkpoint validator rejects a 'rows' array containing a non-plain-object entry", async () => {
+    stubWriteStream();
+    const result = await buildOperationDeps(
+      buildDeps(
+        makeSettings({
+          operation: "query",
+          sql: "SELECT 1",
+          outputFile: "out.json",
+        }),
+      ),
+    );
+    const queryDeps = result.query;
+    if (queryDeps === undefined) {
+      throw new Error("expected buildOperationDeps to populate 'query'");
+    }
+
+    // A bare (non-enveloped, "legacy format") checkpoint file whose 'rows'
+    // field is present but holds a non-plain-object entry — isOptionalRecordArray
+    // must reject it, and M3LCheckpointStore treats a validate() failure
+    // identically to malformed JSON.
+    vi.mocked(fsp.readFile).mockResolvedValue(
+      JSON.stringify({ rows: ["not-a-record"] }),
+    );
+
+    const thrown = await captureThrown(() => queryDeps.checkpoint.read());
+
+    expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
+    expect((thrown as Core.M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_PARSE",
+    );
+  });
+
+  test("load's checkpoint validator rejects a 'failedRecords' array containing a non-plain-object entry", async () => {
+    stubWriteStream();
+    const result = await buildOperationDeps(
+      buildDeps(
+        makeSettings({
+          operation: "load",
+          table: "users",
+          inputFile: "users.jsonl",
+        }),
+      ),
+    );
+    const loadDeps = result.load;
+    if (loadDeps === undefined) {
+      throw new Error("expected buildOperationDeps to populate 'load'");
+    }
+
+    // A malformed 'failedRecords' entry — here `null`, which fails
+    // isPlainRecord's `value !== null` check — must be rejected the same
+    // way an unparseable file would be.
+    vi.mocked(fsp.readFile).mockResolvedValue(
+      JSON.stringify({ failedRecords: [null] }),
+    );
+
+    const thrown = await captureThrown(() => loadDeps.checkpoint.read());
+
+    expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
+    expect((thrown as Core.M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_PARSE",
+    );
+  });
 });
 
 describe("buildOperationDeps: execute", () => {
