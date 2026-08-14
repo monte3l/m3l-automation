@@ -44,7 +44,7 @@ await Core.runScript(
       logger: script.logger,
       correlationId: getCorrelationId(),
       httpClient,
-      signer: script.aws?.clients.requestSigner,
+      signer: script.aws?.services.requestSigner,
       prompt: script.prompt,
     });
   },

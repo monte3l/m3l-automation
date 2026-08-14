@@ -41,8 +41,8 @@ headers, ready to merge into an outgoing request.
 
 Construction performs no I/O — no credentials are resolved until
 `signedHeaders` is first called. When accessed via
-`AWSClientProvider.requestSigner` (the cached convenience getter), the signer is
-built from the provider's own `profile`/`region`.
+`AWSServiceProvider.requestSigner` (`script.aws.services.requestSigner`), the
+signer is built from the underlying `AWSClientProvider`'s own `profile`/`region`.
 
 | Method                   | Returns                           | Throws            |
 | ------------------------ | --------------------------------- | ----------------- |
@@ -86,8 +86,8 @@ chained via `cause`.
 ### From within a script
 
 ```typescript
-// script.aws.clients.requestSigner is the cached convenience getter
-const signer = script.aws.clients.requestSigner;
+// script.aws.services.requestSigner is the cached getter
+const signer = script.aws.services.requestSigner;
 
 const headers = await signer.signedHeaders({
   method: "POST",
@@ -128,17 +128,16 @@ const headers = await signer.signedHeaders({
   resolution is deferred to the first `signedHeaders` call, so a bad profile
   surfaces as an `M3LSigningError` from `signedHeaders`, not from the
   constructor.
-- `AWSClientProvider` exposes a cached `requestSigner` getter that constructs an
-  `M3LRequestSigner` from the provider's own `profile`/`region`, mirroring the
-  `sqsOperations` convenience getter; it holds no destroyable resource of its
-  own and is cleared (not independently destroyed) by `provider.close()`.
+- `AWSServiceProvider` exposes a cached `requestSigner` getter that constructs
+  an `M3LRequestSigner` from the underlying `AWSClientProvider`'s own
+  `profile`/`region`; it holds no destroyable resource of its own and is
+  cleared (not independently destroyed) by `services.close()`.
 
 ## See also
 
-- [AWS Clients](./clients.md) — `AWSClientProvider` and the cached
-  `requestSigner` convenience getter this module is reached through
-  (`@deprecated` in favor of `AWSServiceProvider.requestSigner`,
-  `script.aws.services.requestSigner`).
+- [AWS Clients](./clients.md) — `AWSClientProvider`/`AWSServiceProvider` and
+  the cached `requestSigner` getter this module is reached through
+  (`AWSServiceProvider.requestSigner`, `script.aws.services.requestSigner`).
 - [AWS Models](./models.md) — `M3LAWSRegion` / `M3LAWSProfile` and their
   parsers, reused for this signer's options.
 - [Network](../core/network.md) — `M3LHttpClient`, into whose request headers

@@ -1,6 +1,6 @@
 # AWS Clients
 
-`AWSClientProvider` and `AWSMultiClientProvider` create and lazily cache raw AWS SDK v3 clients, resolving credentials per profile: `AWSClientProvider`'s primary getters expose the underlying SDK clients directly, plus four deprecated pre-`.services` convenience wrappers kept for compatibility (see [`AWSServiceProvider`](#awsserviceprovider) below, [ADR-0038](../../adr/0038-sqs-dlq-redrive-and-aws-services-tier.md)).
+`AWSClientProvider` and `AWSMultiClientProvider` create and lazily cache raw AWS SDK v3 clients, resolving credentials per profile: `AWSClientProvider`'s getters expose the underlying SDK clients directly (see [`AWSServiceProvider`](#awsserviceprovider) below for library-owned wrapper objects, [ADR-0038](../../adr/0038-sqs-dlq-redrive-and-aws-services-tier.md)/[ADR-0044](../../adr/0044-remove-deprecated-client-wrapper-getters.md)).
 
 ## Overview
 
@@ -79,28 +79,14 @@ credentials. Two behave specially:
   `dynamoDB` client too; `close()` destroys that underlying `dynamoDB` client,
   and the document wrapper is **not** destroyed independently (doing so would
   double-destroy the shared connection). Its cached reference is cleared with
-  the rest.
+  the rest. It is also reachable via
+  [`services.dynamoDBDocument`](#awsserviceprovider), a passthrough to this
+  same getter — neither access path is deprecated.
 - **`cloudWatchLogs`** and **`athena`** provide the clients for the polling
   flows already shipped in `core/polling`: `cloudWatchLogs` drives the Logs
   Insights `StartQuery`/`GetQueryResults` cycle that
   `M3LPollingPolicies.cloudWatchLogsQuery()` polls, and `athena` pairs with
   `M3LPollingPolicies.athenaQuery()` for Athena query execution.
-
-**Convenience getters** — unlike the service-client getters above, these
-return a library-owned wrapper object rather than a raw AWS SDK client, but
-are cached the same lazy-on-first-access way. **All four are `@deprecated`**
-(TSDoc tag only, not a runtime warning) in favor of their
-[`AWSServiceProvider`](#awsserviceprovider) equivalent — kept functional
-indefinitely, not scheduled for removal (removing them would source-break the
-four consumer scripts already built against `.clients.<name>`; see
-[ADR-0038](../../adr/0038-sqs-dlq-redrive-and-aws-services-tier.md)):
-
-| Getter                  | Returns                                        | `.services` equivalent           | Notes                                                                                                                                                                                    |
-| ----------------------- | ---------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sqsOperations`         | [`M3LSQSOperations`](./sqs.md)                 | `services.sqsOperations`         | Constructed from this provider's `sqs` client (`new M3LSQSOperations(this.sqs)`). Shares the underlying `sqs` client's connection lifecycle — see below.                                 |
-| `eventBridgeOperations` | [`M3LEventBridgeOperations`](./eventbridge.md) | `services.eventBridgeOperations` | Constructed from this provider's `eventBridge` client (`new M3LEventBridgeOperations(this.eventBridge)`). Shares the underlying `eventBridge` client's connection lifecycle — see below. |
-| `requestSigner`         | [`M3LRequestSigner`](./signing.md)             | `services.requestSigner`         | Built from this provider's own resolved `profile`/`region`. Holds no destroyable resource of its own — its cache is cleared, not independently destroyed, by `close()`.                  |
-| `dynamoDBDocument`      | `DynamoDBDocumentClient` (see above)           | `services.dynamoDBDocument`      | Documented above with the service-client getters — it is a raw (document-layer) SDK client, not a library-owned wrapper, but is grouped here per ADR-0038's four-getter accounting.      |
 
 Other members:
 
@@ -150,9 +136,12 @@ class.
 
 **Service getters** — each is synchronous, constructs its wrapper on first
 access, and caches it for the provider's lifetime. Every entry except
-`dynamoDBDocument` is a **new** wrapper instance distinct from its
-`.clients.<name>` equivalent (a fresh, lightweight object wrapping the same
-underlying, still-shared SDK client — see `AWSProvider` above):
+`dynamoDBDocument` is a **new**, library-owned wrapper instance built over a
+raw SDK client this provider does not itself expose (a fresh, lightweight
+object wrapping the same underlying, still-shared SDK client — see
+`AWSProvider` above); `dynamoDBDocument` is the one exception, since the raw
+`.clients.dynamoDBDocument` SDK client it passes through **is** the getter's
+return value:
 
 | Getter                   | Returns                                                     | Built from                                                                                                                                                        |
 | ------------------------ | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -322,4 +311,5 @@ const item = await getItem(provider.services.dynamoDBDocument, "orders", {
 - [AWS models](./models.md) — shared AWS model types.
 - [Lambda handlers](../../guides/lambda-handlers.md) — connection reuse across invocations.
 - [Script](../core/script.md) — the `script.aws` facade.
-- [ADR-0038](../../adr/0038-sqs-dlq-redrive-and-aws-services-tier.md) — why `AWSServiceProvider`/`.services` exists and why the four `.clients` convenience getters are deprecated in place rather than removed.
+- [ADR-0038](../../adr/0038-sqs-dlq-redrive-and-aws-services-tier.md) — why `AWSServiceProvider`/`.services` exists.
+- [ADR-0044](../../adr/0044-remove-deprecated-client-wrapper-getters.md) — why three of the original four `.clients` convenience getters (`sqsOperations`, `eventBridgeOperations`, `requestSigner`) were removed rather than kept deprecated-in-place, and why `dynamoDBDocument` was kept and un-deprecated.

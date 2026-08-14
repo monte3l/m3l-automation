@@ -47,7 +47,7 @@ await Core.runScript(
       paths: script.paths,
       logger: script.logger,
       correlationId: getCorrelationId(),
-      eventBridgeOperations: aws.clients.eventBridgeOperations,
+      eventBridgeOperations: aws.services.eventBridgeOperations,
       prompt: script.prompt,
     });
   },

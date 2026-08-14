@@ -27,7 +27,7 @@ library-owned types so a caller never touches an `@aws-sdk/client-sqs` type.
 
 **Constructor** — `new M3LSQSOperations(client)`, where `client` is a raw
 `SQSClient` (e.g. `script.aws.clients.sqs`, or the cached
-`script.aws.clients.sqsOperations` convenience getter which constructs one
+`script.aws.services.sqsOperations` getter which constructs one
 for you, sharing the underlying `sqs` client's lifecycle).
 
 | Method                                                                   | Retried?  | Returns                                         | Throws                 |
@@ -216,8 +216,8 @@ value }` for the SDK. Receiving: only entries whose `StringValue` is present
 ### From within a script
 
 ```typescript
-// script.aws.clients.sqsOperations is the cached convenience getter
-const sqsOperations = script.aws.clients.sqsOperations;
+// script.aws.services.sqsOperations is the cached getter
+const sqsOperations = script.aws.services.sqsOperations;
 
 const messages = await sqsOperations.receive(queueUrl, { maxMessages: 10 });
 
@@ -255,10 +255,11 @@ const sqsOperations = new AWS.M3LSQSOperations(provider.sqs);
 - No `@aws-sdk/client-sqs` type ever appears in this module's public surface
   — every request/response shape is translated to a plain type in
   `aws/sqs/types.ts` at the boundary.
-- `M3LSQSOperations` holds no destroyable resource of its own; when accessed
-  via `AWSClientProvider.sqsOperations`, it shares the underlying `sqs`
-  client's connection lifecycle and is cleared (not independently destroyed)
-  by `provider.close()`.
+- `M3LSQSOperations` holds no destroyable resource of its own; via
+  `AWSServiceProvider.sqsOperations`, it wraps the shared `clientProvider.sqs`
+  client — that underlying connection is destroyed by `clientProvider.close()`;
+  the wrapper's own cache is cleared (not independently destroyed) by
+  `services.close()`.
 - `core/polling` is an intentional, ADR-0026-recorded exception to Zone A
   (`aws/**` may otherwise import only `core/errors`/`core/prompt`), added for
   this module's internal retry composition. The `eslint.config.js` exception
@@ -270,8 +271,7 @@ const sqsOperations = new AWS.M3LSQSOperations(provider.sqs);
 ## See also
 
 - [AWS Clients](./clients.md) — the raw `sqs` client getter and
-  `AWSClientProvider`/`AWSProvider` this module builds on; the
-  `sqsOperations` convenience getter is `@deprecated` in favor of
+  `AWSClientProvider`/`AWSProvider` this module builds on; reached as
   `AWSServiceProvider.sqsOperations` (`script.aws.services.sqsOperations`).
 - [ADR-0026](../../adr/0026-sqs-operations-wrapper.md) — why this pattern
   exists and the Zone A amendment.
