@@ -970,6 +970,74 @@ describe("M3LRDSDataOperations", () => {
       expect(thrown).toBeInstanceOf(M3LRDSDataOperationError);
       expect(causeChain(thrown)).toContain(rollbackError);
     });
+
+    test("still surfaces M3LRDSDataOperationError (not a raw TypeError) when reading fn's error's .cause throws and rollback also fails", async () => {
+      // A `.cause` accessor whose getter itself throws must not let that
+      // throw escape as a raw TypeError in place of the operation's own
+      // typed error — and the rollback failure must still end up reachable
+      // somewhere in the surfaced error's cause chain.
+      const fnError = new Error("statement failed");
+      Object.defineProperty(fnError, "cause", {
+        get() {
+          throw new Error("cause getter boom");
+        },
+        configurable: true,
+      });
+      const rollbackError = fatalError("rollback denied");
+      h.send
+        .mockResolvedValueOnce({ transactionId: "txn-6" }) // BeginTransaction
+        .mockRejectedValueOnce(rollbackError); // RollbackTransaction
+
+      const operations = new M3LRDSDataOperations(fakeClient());
+
+      let thrown: unknown;
+      try {
+        await operations.withTransaction(MINIMAL_BEGIN_INPUT, () =>
+          Promise.reject(fnError),
+        );
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LRDSDataOperationError);
+      expect(causeChain(thrown)).toContain(rollbackError);
+    });
+
+    test("still chains the rollback failure reachably when fn's error's .cause setter silently no-ops instead of throwing", async () => {
+      // A `.cause` accessor whose setter accepts the assignment without
+      // actually storing anything must not be mistaken for a successful
+      // attachment — rollbackError has to remain reachable from the
+      // surfaced error's own cause chain regardless of which branch
+      // withTransaction takes.
+      const fnError = new Error("statement failed");
+      Object.defineProperty(fnError, "cause", {
+        get() {
+          return undefined;
+        },
+        set() {
+          // Intentionally no-op: accepts the assignment without storing it.
+        },
+        configurable: true,
+      });
+      const rollbackError = fatalError("rollback denied");
+      h.send
+        .mockResolvedValueOnce({ transactionId: "txn-7" }) // BeginTransaction
+        .mockRejectedValueOnce(rollbackError); // RollbackTransaction
+
+      const operations = new M3LRDSDataOperations(fakeClient());
+
+      let thrown: unknown;
+      try {
+        await operations.withTransaction(MINIMAL_BEGIN_INPUT, () =>
+          Promise.reject(fnError),
+        );
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LRDSDataOperationError);
+      expect(causeChain(thrown)).toContain(rollbackError);
+    });
   });
 
   // ===========================================================================
