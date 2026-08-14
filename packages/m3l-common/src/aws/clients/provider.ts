@@ -17,6 +17,7 @@ import { ECSClient } from "@aws-sdk/client-ecs";
 import { EKSClient } from "@aws-sdk/client-eks";
 import { EventBridgeClient } from "@aws-sdk/client-eventbridge";
 import { LambdaClient } from "@aws-sdk/client-lambda";
+import { RDSDataClient } from "@aws-sdk/client-rds-data";
 import { S3Client } from "@aws-sdk/client-s3";
 import { SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
 import { SQSClient } from "@aws-sdk/client-sqs";
@@ -69,7 +70,8 @@ type AWSServiceName =
   | "athena"
   | "ssm"
   | "sqs"
-  | "secretsManager";
+  | "secretsManager"
+  | "rdsData";
 
 /** The subset of an AWS SDK v3 client's shape this provider relies on. */
 interface DestroyableClient {
@@ -261,6 +263,14 @@ export class AWSClientProvider {
     return this.getOrConstruct(
       "secretsManager",
       (config) => new SecretsManagerClient(config),
+    );
+  }
+
+  /** The `RDSDataClient` for this provider's profile, constructed on first access. */
+  get rdsData(): RDSDataClient {
+    return this.getOrConstruct(
+      "rdsData",
+      (config) => new RDSDataClient(config),
     );
   }
 

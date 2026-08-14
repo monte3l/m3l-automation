@@ -66,6 +66,7 @@ second, independently-supplied copy.
 | `ssm`              | `SSMClient`              | `@aws-sdk/client-ssm`             |
 | `sqs`              | `SQSClient`              | `@aws-sdk/client-sqs`             |
 | `secretsManager`   | `SecretsManagerClient`   | `@aws-sdk/client-secrets-manager` |
+| `rdsData`          | `RDSDataClient`          | `@aws-sdk/client-rds-data`        |
 
 Most getters construct a fresh SDK client from the resolved region and
 credentials. Two behave specially:
@@ -159,6 +160,7 @@ return value:
 | `eks`                    | [`M3LEKSOperations`](./eks.md)                              | `clientProvider.eks`                                                                                                                                              |
 | `lambda`                 | [`M3LLambdaOperations`](./lambda.md)                        | `clientProvider.lambda`                                                                                                                                           |
 | `secretsManager`         | [`M3LSecretsManagerOperations`](./secrets-manager.md)       | `clientProvider.secretsManager`                                                                                                                                   |
+| `rdsDataOperations`      | [`M3LRDSDataOperations`](./rds-data.md)                     | `clientProvider.rdsData`                                                                                                                                          |
 | `s3Operations`           | [`M3LS3Operations`](./s3.md)                                | `clientProvider.s3`                                                                                                                                               |
 | `dynamoDBOperations`     | [`M3LDynamoDBOperations`](./dynamodb.md)                    | `clientProvider.dynamoDBDocument` + `clientProvider.dynamoDB` (two clients — see below)                                                                           |
 | `credentials`            | [`M3LAWSCredentialsManager`](./credentials.md)              | `clientProvider.profile`/`clientProvider.region` (not a raw client)                                                                                               |
@@ -192,7 +194,7 @@ Other members:
   to `clientProvider`.
 - `close()` — clears this provider's own cache so a later getter access
   constructs fresh wrapper instances. Unlike `AWSClientProvider.close()`,
-  this **never calls `.destroy()`** on anything: none of the seventeen getters
+  this **never calls `.destroy()`** on anything: none of the eighteen getters
   above holds a destroyable resource of its own — each either wraps a client
   `clientProvider` owns (and destroys), or (for `requestSigner`/
   `credentials`) holds no destroyable resource at all. Calling

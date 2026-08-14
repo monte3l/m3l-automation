@@ -129,6 +129,7 @@ const AWS_REACHABILITY_CASES: ReadonlyArray<
   ["codepipeline", "M3LCodePipelineOperations", "function"],
   ["eks", "M3LEKSOperations", "function"],
   ["secrets-manager", "M3LSecretsManagerOperations", "function"],
+  ["rds-data", "M3LRDSDataOperations", "function"],
 ];
 
 test.each(AWS_REACHABILITY_CASES)(
@@ -153,8 +154,8 @@ test("Core namespace exposes at least as many keys as there are wired submodule 
 });
 
 test("AWS namespace exposes at least as many keys as there are wired submodule barrels", () => {
-  // Mirrors src/aws/index.ts's 16 `export *` lines.
-  const AWS_WIRED_SUBMODULE_COUNT = 16;
+  // Mirrors src/aws/index.ts's 17 `export *` lines.
+  const AWS_WIRED_SUBMODULE_COUNT = 17;
   expect(Object.keys(m3l.AWS).length).toBeGreaterThanOrEqual(
     AWS_WIRED_SUBMODULE_COUNT,
   );

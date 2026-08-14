@@ -1,0 +1,98 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "aws/rds-data.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/rds-data/client.ts",
+          "symbol": "M3LRDSDataOperations",
+          "blob": "8c5e57f96a88eb018069d2c25fca0e6fcd2e170a"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/rds-data/types.ts",
+          "symbol": "M3LRDSDataBeginTransactionInput",
+          "blob": "2fc58a56c3aca52c7d5437fcf8f751aa1d0587a1"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/rds-data/error.ts",
+          "symbol": "M3LRDSDataOperationError",
+          "blob": "a98ffaea8cb5b9573f56a68fc27ae24da79300a1"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/rds-data/error.ts",
+          "symbol": "M3LRDSDataResultTooLargeError",
+          "blob": "a98ffaea8cb5b9573f56a68fc27ae24da79300a1"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/rds-data/types.ts",
+          "symbol": "M3LRDSDataValue",
+          "blob": "2fc58a56c3aca52c7d5437fcf8f751aa1d0587a1"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/rds-data/types.ts",
+          "symbol": "M3LRDSDataColumn",
+          "blob": "2fc58a56c3aca52c7d5437fcf8f751aa1d0587a1"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/rds-data/types.ts",
+          "symbol": "M3LRDSDataRow",
+          "blob": "2fc58a56c3aca52c7d5437fcf8f751aa1d0587a1"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/rds-data/types.ts",
+          "symbol": "M3LRDSDataParameter",
+          "blob": "2fc58a56c3aca52c7d5437fcf8f751aa1d0587a1"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/rds-data/types.ts",
+          "symbol": "M3LRDSDataTypeHint",
+          "blob": "2fc58a56c3aca52c7d5437fcf8f751aa1d0587a1"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/rds-data/types.ts",
+          "symbol": "M3LRDSDataStatementInput",
+          "blob": "2fc58a56c3aca52c7d5437fcf8f751aa1d0587a1"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/rds-data/types.ts",
+          "symbol": "M3LRDSDataStatementResult",
+          "blob": "2fc58a56c3aca52c7d5437fcf8f751aa1d0587a1"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/rds-data/types.ts",
+          "symbol": "M3LRDSDataBatchInput",
+          "blob": "2fc58a56c3aca52c7d5437fcf8f751aa1d0587a1"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/rds-data/types.ts",
+          "symbol": "M3LRDSDataUpdateResult",
+          "blob": "2fc58a56c3aca52c7d5437fcf8f751aa1d0587a1"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/rds-data/types.ts",
+          "symbol": "M3LRDSDataBatchResult",
+          "blob": "2fc58a56c3aca52c7d5437fcf8f751aa1d0587a1"
+        },
+        {
+          "file": "packages/m3l-common/src/aws/rds-data/types.ts",
+          "symbol": "M3LRDSDataTransaction",
+          "blob": "2fc58a56c3aca52c7d5437fcf8f751aa1d0587a1"
+        }
+      ],
+      "retrieved": "2026-08-14"
+    },
+    {
+      "heading": "Notes and behavior",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/aws/rds-data/client.ts",
+          "symbol": "M3LRDSDataOperations",
+          "blob": "8c5e57f96a88eb018069d2c25fca0e6fcd2e170a"
+        }
+      ],
+      "retrieved": "2026-08-14"
+    }
+  ]
+}
