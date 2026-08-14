@@ -26,7 +26,9 @@ export type M3LCliErrorCode =
   | "ERR_CLI_CONFIG_IMPORT"
   | "ERR_CLI_WORKSPACE_NOT_FOUND"
   | "ERR_CLI_SCRIPT_NOT_BUILT"
-  | "ERR_CLI_SPAWN_FAILED";
+  | "ERR_CLI_SPAWN_FAILED"
+  | "ERR_CLI_UNKNOWN_PARAMETER"
+  | "ERR_CLI_INVALID_PARAMETER_VALUE";
 
 /**
  * The closed set of process exit codes the m3l CLI ever resolves to: `0`
@@ -97,9 +99,9 @@ const GENERAL_EXIT_CODE: M3LCliExitCode = 1;
 
 /**
  * Maps every {@link M3LCliErrorCode} to its exit code (analogous to a shell
- * "incorrect usage" convention for the two usage-class codes). A `Record`
+ * "incorrect usage" convention for the usage-class codes). A `Record`
  * keyed by the full error-code union — rather than a `ReadonlySet` of the
- * usage-class subset — forces a compile error the moment a fifth
+ * usage-class subset — forces a compile error the moment a new
  * `M3LCliErrorCode` is added without an explicit exit-code decision for it.
  */
 const EXIT_CODE_BY_ERROR_CODE: Record<M3LCliErrorCode, M3LCliExitCode> = {
@@ -109,15 +111,17 @@ const EXIT_CODE_BY_ERROR_CODE: Record<M3LCliErrorCode, M3LCliExitCode> = {
   ERR_CLI_WORKSPACE_NOT_FOUND: GENERAL_EXIT_CODE,
   ERR_CLI_SCRIPT_NOT_BUILT: GENERAL_EXIT_CODE,
   ERR_CLI_SPAWN_FAILED: GENERAL_EXIT_CODE,
+  ERR_CLI_UNKNOWN_PARAMETER: 2,
+  ERR_CLI_INVALID_PARAMETER_VALUE: 2,
 };
 
 /**
  * Resolves the process exit code for a thrown/caught value.
  *
  * @param error - Any value caught at the CLI's top level.
- * @returns `2` for a usage-class {@link M3LCliError}
- *   (`ERR_CLI_UNKNOWN_COMMAND`/`ERR_CLI_UNKNOWN_SCRIPT`), `1` for every other
- *   `M3LCliError` and any non-`M3LCliError` value.
+ * @returns `2` for a usage-class {@link M3LCliError} (any code the
+ *   {@link EXIT_CODE_BY_ERROR_CODE} map assigns exit code `2`), `1` for
+ *   every other `M3LCliError` and any non-`M3LCliError` value.
  *
  * @example
  * ```ts

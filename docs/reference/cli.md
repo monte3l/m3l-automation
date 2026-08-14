@@ -97,10 +97,36 @@ missing `<script>` positional; `1` script not built (`ERR_CLI_SCRIPT_NOT_BUILT`,
 message names `pnpm build`) or spawn failure (`ERR_CLI_SPAWN_FAILED`,
 cause-chained).
 
+### Phase 8d — per-script dynamic subcommands
+
+#### `m3l <script> [--param value ...] [-- args...]`
+
+Any first positional that is not a static command resolves through
+discovery: an exact script-name match builds a per-script `parseArgs`
+configuration from the script's declared `configParameters` (BOOL →
+boolean flag; STRING_ARRAY → repeatable; every other type → string; each
+alias maps back to its canonical name), parses the pre-`--` flags strictly,
+translates the parsed values back to canonical `--name=value` child argv in
+declaration order, and delegates to the 8c spawn path — with anything after
+the first bare `--` appended verbatim.
+
+- Static commands always win the dispatch (and the reserved-name list keeps
+  future scripts from shadowing them); `run <script>` remains the canonical
+  unambiguous form.
+- `m3l <script> --help` renders the same parameter table as
+  `inspect <script>` — no spawn.
+- An unrecognized flag exits `2` with `ERR_CLI_UNKNOWN_PARAMETER` and
+  Damerau–Levenshtein suggestions over the script's declared parameter
+  names; a BOOL flag given a value (`--verbose=true`) exits `2` with
+  `ERR_CLI_INVALID_PARAMETER_VALUE` naming the parameter; an unknown first
+  positional exits `2` with suggestions spanning static commands and script
+  names; colliding declared names/aliases fail loud with
+  `ERR_CLI_CONFIG_IMPORT`.
+
 ### Later phases (not yet built)
 
-Per-script dynamic subcommands (8d), `doctor` (8e), presets + history (8f,
-blocked on the `M3LConfigParameter.secret` library prerequisite),
+`doctor` (8e), presets + history (8f, blocked on the
+`M3LConfigParameter.secret` library prerequisite — shipped, PR #416),
 interactive wizard (8g) — see ADR-0042 and the m3l-cli build-out tracker in
 `docs/plans/IMPLEMENTATION.md`.
 
