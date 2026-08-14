@@ -8,7 +8,7 @@
  *   AWSClientProvider, AWSMultiClientProvider, AWSProvider, AWS_REGION,
  *   M3LAWSClientError.
  *
- * Mocking strategy: all 14 `@aws-sdk/client-*` service packages plus
+ * Mocking strategy: all 15 `@aws-sdk/client-*` service packages plus
  * `@aws-sdk/credential-provider-ini` are mocked with top-level `vi.mock` +
  * a `vi.hoisted` bag of mutable spies (this repo's convention — see the
  * sibling `tests/credentials.test.ts` for the rationale: it sidesteps the
@@ -61,6 +61,7 @@ const h = vi.hoisted(() => {
     cloudWatchLogsCtor: vi.fn(),
     athenaCtor: vi.fn(),
     secretsManagerCtor: vi.fn(),
+    rdsDataCtor: vi.fn(),
     docFrom: vi.fn(),
     docDestroy: vi.fn(),
     makeClientClass,
@@ -137,6 +138,9 @@ vi.mock("@aws-sdk/client-athena", () => ({
 vi.mock("@aws-sdk/client-secrets-manager", () => ({
   SecretsManagerClient: h.makeClientClass(h.secretsManagerCtor),
 }));
+vi.mock("@aws-sdk/client-rds-data", () => ({
+  RDSDataClient: h.makeClientClass(h.rdsDataCtor),
+}));
 vi.mock("@aws-sdk/lib-dynamodb", () => ({
   // DynamoDBDocumentClient.from(rawClient) returns a wrapper with its OWN
   // destroy spy, so a test can assert the wrapper is NOT destroyed by close().
@@ -169,6 +173,7 @@ import { M3LECSOperations } from "../src/aws/ecs/index.js";
 import { M3LEKSOperations } from "../src/aws/eks/index.js";
 import { M3LLambdaOperations } from "../src/aws/lambda/index.js";
 import { M3LSecretsManagerOperations } from "../src/aws/secrets-manager/index.js";
+import { M3LRDSDataOperations } from "../src/aws/rds-data/index.js";
 import { M3LSQSOperations } from "../src/aws/sqs/index.js";
 import { M3LAWSCredentialsManager } from "../src/aws/credentials/index.js";
 import { M3LS3Operations } from "../src/aws/s3/index.js";
@@ -177,6 +182,7 @@ import type { S3Client } from "@aws-sdk/client-s3";
 import type { CloudWatchLogsClient } from "@aws-sdk/client-cloudwatch-logs";
 import type { AthenaClient } from "@aws-sdk/client-athena";
 import type { SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
+import type { RDSDataClient } from "@aws-sdk/client-rds-data";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 
 // ---------------------------------------------------------------------------
@@ -209,6 +215,7 @@ const GETTER_MATRIX = [
   ["cloudWatchLogs", h.cloudWatchLogsCtor] as const,
   ["athena", h.athenaCtor] as const,
   ["secretsManager", h.secretsManagerCtor] as const,
+  ["rdsData", h.rdsDataCtor] as const,
 ] satisfies readonly (readonly [
   keyof AWSClientProvider,
   ReturnType<typeof vi.fn>,
@@ -856,6 +863,7 @@ const SERVICE_GETTER_MATRIX = [
   ["ecs", M3LECSOperations, h.ecsCtor] as const,
   ["eks", M3LEKSOperations, h.eksCtor] as const,
   ["lambda", M3LLambdaOperations, h.lambdaCtor] as const,
+  ["rdsDataOperations", M3LRDSDataOperations, h.rdsDataCtor] as const,
   [
     "secretsManager",
     M3LSecretsManagerOperations,
@@ -1391,6 +1399,10 @@ describe("type-level contracts", () => {
     >().toEqualTypeOf<SecretsManagerClient>();
   });
 
+  test("provider.rdsData is typed RDSDataClient", () => {
+    expectTypeOf<AWSClientProvider["rdsData"]>().toEqualTypeOf<RDSDataClient>();
+  });
+
   test("provider.dynamoDBDocument is typed DynamoDBDocumentClient", () => {
     expectTypeOf<
       AWSClientProvider["dynamoDBDocument"]
@@ -1491,6 +1503,12 @@ describe("type-level contracts: AWSServiceProvider getters", () => {
     expectTypeOf<
       AWSServiceProvider["lambda"]
     >().toEqualTypeOf<M3LLambdaOperations>();
+  });
+
+  test("rdsDataOperations is typed M3LRDSDataOperations", () => {
+    expectTypeOf<
+      AWSServiceProvider["rdsDataOperations"]
+    >().toEqualTypeOf<M3LRDSDataOperations>();
   });
 
   test("secretsManager is typed M3LSecretsManagerOperations", () => {
