@@ -8,6 +8,7 @@ import type { M3LCliErrorCode } from "../src/cli/errors.js";
 import { runList } from "../src/commands/list.js";
 import { runInspect } from "../src/commands/inspect.js";
 import { runRun } from "../src/commands/run.js";
+import { runDynamic } from "../src/commands/dynamic.js";
 import { resolveWorkspaceRoot } from "../src/discovery/discover.js";
 import type { M3LCliCommandContext } from "../src/commands/context.js";
 
@@ -26,6 +27,7 @@ import type { M3LCliCommandContext } from "../src/commands/context.js";
 vi.mock("../src/commands/list.js", () => ({ runList: vi.fn() }));
 vi.mock("../src/commands/inspect.js", () => ({ runInspect: vi.fn() }));
 vi.mock("../src/commands/run.js", () => ({ runRun: vi.fn() }));
+vi.mock("../src/commands/dynamic.js", () => ({ runDynamic: vi.fn() }));
 vi.mock("../src/discovery/discover.js", () => ({
   resolveWorkspaceRoot: vi.fn(),
 }));
@@ -33,12 +35,14 @@ vi.mock("../src/discovery/discover.js", () => ({
 const runListMock = vi.mocked(runList);
 const runInspectMock = vi.mocked(runInspect);
 const runRunMock = vi.mocked(runRun);
+const runDynamicMock = vi.mocked(runDynamic);
 const resolveWorkspaceRootMock = vi.mocked(resolveWorkspaceRoot);
 
 afterEach(() => {
   runListMock.mockReset();
   runInspectMock.mockReset();
   runRunMock.mockReset();
+  runDynamicMock.mockReset();
   resolveWorkspaceRootMock.mockReset();
 });
 
@@ -114,8 +118,37 @@ describe("runCli — static commands never touch discovery", () => {
   });
 });
 
+describe("runCli — --version/--help anywhere in a static command's args (8d restored behavior)", () => {
+  test("['list', '--version'] prints the version and returns 0 without dispatching runList", async () => {
+    const { options, stdoutLines } = buildOptions();
+
+    const code = await runCli(["list", "--version"], options);
+
+    expect(code).toBe(0);
+    expect(runListMock).not.toHaveBeenCalled();
+    expect(stdoutLines.join("\n")).toMatch(/\d+\.\d+\.\d+/);
+  });
+
+  test("['list', '--help'] renders usage and returns 0 without dispatching runList", async () => {
+    const { options, stdoutLines } = buildOptions();
+
+    const code = await runCli(["list", "--help"], options);
+
+    expect(code).toBe(0);
+    expect(runListMock).not.toHaveBeenCalled();
+    const rendered = stdoutLines.join("\n");
+    expect(rendered).toContain("Usage: m3l");
+  });
+});
+
 describe("runCli — unknown command", () => {
   test("returns 2 with a 'Did you mean' suggestion for a near-miss unknown command", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDynamicMock.mockRejectedValue(
+      new M3LCliError("ERR_CLI_UNKNOWN_SCRIPT", "unknown script 'lsit'", {
+        suggestions: ["list"],
+      }),
+    );
     const { options, stderrLines } = buildOptions();
 
     const code = await runCli(["lsit"], options);
@@ -130,6 +163,12 @@ describe("runCli — unknown command", () => {
   });
 
   test("returns 2 with no suggestion for a completely unrelated unknown command", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDynamicMock.mockRejectedValue(
+      new M3LCliError("ERR_CLI_UNKNOWN_SCRIPT", "unknown script 'zzzzzqqqq'", {
+        suggestions: [],
+      }),
+    );
     const { options, stderrLines } = buildOptions();
 
     const code = await runCli(["zzzzzqqqq"], options);
@@ -455,6 +494,114 @@ describe("runCli — run.js is loaded lazily, never touched by unrelated dispatc
     await runCli(["list"], options);
 
     expect(runRunMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * m3l-cli 8d addendum — a non-static first positional lazily dispatches to
+ * `commands/dynamic.js`'s `runDynamic`, receiving the args between the
+ * script name and the first bare `--` plus everything after it as
+ * `passthroughArgs`; the static command table (list/inspect/run/help) always
+ * wins over dynamic dispatch.
+ */
+describe("runCli — dynamic dispatch (8d)", () => {
+  test("lazily builds a context and delegates to runDynamic with the script name, pre-'--' args, and passthroughArgs", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDynamicMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    const code = await runCli(
+      ["json-etl", "--region", "us-east-1", "--", "--limit", "5"],
+      options,
+    );
+
+    expect(code).toBe(0);
+    expect(runDynamicMock).toHaveBeenCalledTimes(1);
+    const [context, scriptName, args, passthroughArgs] = runDynamicMock.mock
+      .calls[0] as [
+      M3LCliCommandContext,
+      string,
+      readonly string[],
+      readonly string[],
+    ];
+    expect(context.workspaceRoot).toBe("/workspace-root");
+    expect(scriptName).toBe("json-etl");
+    expect(args).toEqual(["--region", "us-east-1"]);
+    expect(passthroughArgs).toEqual(["--limit", "5"]);
+  });
+
+  test("passes an empty args array and empty passthroughArgs when the script name is the only token", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDynamicMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["json-etl"], options);
+
+    const [, , args, passthroughArgs] = runDynamicMock.mock.calls[0] as [
+      M3LCliCommandContext,
+      string,
+      readonly string[],
+      readonly string[],
+    ];
+    expect(args).toEqual([]);
+    expect(passthroughArgs).toEqual([]);
+  });
+
+  test("propagates runDynamic's resolved exit code verbatim", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDynamicMock.mockResolvedValue(9);
+    const { options } = buildOptions();
+
+    const code = await runCli(["json-etl"], options);
+
+    expect(code).toBe(9);
+  });
+
+  test("maps a rejected ERR_CLI_UNKNOWN_SCRIPT from runDynamic to exit 2 with suggestions (replaces the old direct unknown-command throw)", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDynamicMock.mockRejectedValue(
+      new M3LCliError("ERR_CLI_UNKNOWN_SCRIPT", "unknown script 'lst'", {
+        suggestions: ["list"],
+      }),
+    );
+    const { options, stderrLines } = buildOptions();
+
+    const code = await runCli(["lst"], options);
+
+    expect(code).toBe(2);
+    const rendered = stderrLines.join("\n");
+    expect(rendered).toContain("unknown script 'lst'");
+    expect(rendered).toContain("Did you mean");
+    expect(rendered).toContain("list");
+  });
+
+  test("the static 'list' command still routes statically and never calls runDynamic", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runListMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    const code = await runCli(["list"], options);
+
+    expect(code).toBe(0);
+    expect(runListMock).toHaveBeenCalledTimes(1);
+    expect(runDynamicMock).not.toHaveBeenCalled();
+  });
+
+  test.each<[string, readonly string[]]>([
+    ["no arguments", []],
+    ["the help command", ["help"]],
+    ["the --version flag", ["--version"]],
+    ["the inspect command", ["inspect", "exporter"]],
+    ["the run command", ["run", "json-etl", "--"]],
+  ])("dynamic.js is never touched by %s", async (_label, argv) => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runInspectMock.mockResolvedValue(0);
+    runRunMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(argv, options);
+
+    expect(runDynamicMock).not.toHaveBeenCalled();
   });
 });
 

@@ -1,9 +1,10 @@
 /**
  * `main` — the m3l CLI's composition root: parses `argv`, dispatches to the
- * static `help`/`--version` commands or lazily to `list`/`inspect`, and maps
- * every outcome (including a thrown `M3LCliError` or an unexpected value) to
- * a process exit code without ever throwing or calling `process.exit`
- * itself.
+ * static `help`/`--version` commands, lazily to `list`/`inspect`/`run`, or
+ * (for any other first positional) lazily to `commands/dynamic.js`'s
+ * runtime-registered per-script dispatch, and maps every outcome (including
+ * a thrown `M3LCliError` or an unexpected value) to a process exit code
+ * without ever throwing or calling `process.exit` itself.
  *
  * @packageDocumentation
  */
@@ -17,7 +18,6 @@ import { M3LCliError, exitCodeForError } from "./cli/errors.js";
 import type { M3LCliExitCode } from "./cli/errors.js";
 import type { M3LCliOutput, M3LCliOutputStream } from "./cli/output.js";
 import { createOutput } from "./cli/output.js";
-import { suggestNames } from "./cli/suggest.js";
 import type { M3LCliCommandContext } from "./commands/context.js";
 import { resolveWorkspaceRoot } from "./discovery/discover.js";
 
@@ -36,7 +36,11 @@ export interface M3LCliRunOptions {
 /** Exit code for a usage error (unknown command, missing required positional). */
 const USAGE_EXIT_CODE: M3LCliExitCode = 2;
 
-/** The command names `main.ts` currently dispatches statically (phase 8c). */
+/**
+ * The reserved command names `main.ts` always dispatches statically — these
+ * always win over dynamic per-script dispatch (8d), so a script can never be
+ * reached under one of these names.
+ */
 const STATIC_COMMAND_NAMES: readonly string[] = [
   "list",
   "inspect",
@@ -78,6 +82,13 @@ function printUsage(output: M3LCliOutput): void {
     "  run <script> -- [args...]  Run a script, forwarding args after '--' verbatim",
   );
   output.info("  help                       Show this help message");
+  output.info("  <script> [--param value ...] [-- args...]");
+  output.info(
+    "                             Run any discovered scripts/* package,",
+  );
+  output.info(
+    "                             translating its declared parameters into flags",
+  );
   output.info("");
   output.info("Flags:");
   output.info("  --json      Machine-readable output");
@@ -209,7 +220,129 @@ async function runRunCommand(
   );
 }
 
-/** Parses `argv` and dispatches to the matching static or lazy command. */
+/**
+ * Lazily loads and delegates to `commands/dynamic.js`'s `runDynamic` — the
+ * fallback for any first positional that isn't a
+ * {@link STATIC_COMMAND_NAMES} entry (8d). Its `--help`/`-h`, unknown-script,
+ * and unknown-parameter handling all live in `dynamic.ts`; this wrapper only
+ * builds the shared context and threads the raw (unparsed by `main.ts`)
+ * pre-`--` argument slice through.
+ */
+async function runDynamicCommand(
+  output: M3LCliOutput,
+  cwd: string,
+  scriptName: string,
+  args: readonly string[],
+  passthroughArgs: readonly string[],
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<number> {
+  const { runDynamic } = await import("./commands/dynamic.js");
+  return runDynamic(
+    buildCommandContext(cwd, output, false, env),
+    scriptName,
+    args,
+    passthroughArgs,
+  );
+}
+
+/**
+ * Parses the static-command flag surface (`--json`/`--help`) out of
+ * `beforeArgs`. Only ever invoked once `beforeArgs[0]` is confirmed to be a
+ * recognized static command — for any other (dynamic-script) first
+ * positional, `parseArgs`'s non-strict mode would misparse an unrecognized
+ * `--flag value` pair (absorbing the flag as a bare boolean and splitting
+ * its value into `positionals`), so dynamic dispatch bypasses this
+ * entirely and threads the raw `beforeArgs` slice through instead.
+ */
+function parseStaticCommandArgs(beforeArgs: readonly string[]): {
+  readonly positionals: readonly string[];
+  readonly jsonOutput: boolean;
+  readonly helpRequested: boolean;
+} {
+  const { values, positionals } = parseArgs({
+    args: [...beforeArgs],
+    options: {
+      json: { type: "boolean", default: false },
+      help: { type: "boolean", short: "h", default: false },
+    },
+    allowPositionals: true,
+    strict: false,
+  });
+  return {
+    positionals,
+    jsonOutput: values["json"] === true,
+    helpRequested: values["help"] === true,
+  };
+}
+
+/**
+ * Dispatches one of the `list`/`inspect`/`run` static commands — invoked
+ * only once `beforeArgs[0]` is confirmed to be a {@link STATIC_COMMAND_NAMES}
+ * entry other than `help` (handled earlier in {@link dispatch}), so
+ * `positionals[0]` can only ever be `"list"`/`"inspect"`/`"run"` by the time
+ * the switch below runs.
+ *
+ * Also restores the pre-8d behavior of recognizing a `--version` flag
+ * anywhere in `beforeArgs` (not just as the very first token, which
+ * {@link dispatch} already handles before this function is ever called) —
+ * e.g. `m3l list --version` prints the version instead of running `list`.
+ * This is confined to the static-command path: a dynamic script invocation
+ * never reaches this function, so a script's own `--version` parameter is
+ * never intercepted.
+ */
+async function dispatchStaticCommand(
+  beforeArgs: readonly string[],
+  passthroughArgs: readonly string[],
+  output: M3LCliOutput,
+  cwd: string,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<number> {
+  const { positionals, jsonOutput, helpRequested } =
+    parseStaticCommandArgs(beforeArgs);
+
+  if (helpRequested) {
+    printUsage(output);
+    return 0;
+  }
+
+  if (beforeArgs.includes("--version")) {
+    output.info(readCliVersion());
+    return 0;
+  }
+
+  const command = positionals[0];
+  switch (command) {
+    case "inspect":
+      return runInspectCommand(output, cwd, positionals[1], jsonOutput, env);
+    case "run":
+      return runRunCommand(
+        output,
+        cwd,
+        positionals[1],
+        passthroughArgs,
+        jsonOutput,
+        env,
+      );
+    case "list":
+      return runListCommand(output, cwd, jsonOutput, env);
+    case undefined:
+    default:
+      // `beforeArgs[0]` is confirmed a `STATIC_COMMAND_NAMES` entry other
+      // than `help` before this function is ever invoked (see the doc
+      // above), so `command` can only be "list"/"inspect"/"run" at runtime
+      // — anything else here is a caller contract violation, not a normal
+      // path, and `command`'s static type is the general `string |
+      // undefined` (not a literal union `parseArgs`'s `positionals` can't
+      // express), so this can't be a compile-checked `never` exhaustiveness
+      // assertion.
+      throw new M3LCliError(
+        "ERR_CLI_UNKNOWN_COMMAND",
+        `unreachable dispatchStaticCommand command '${command ?? ""}'`,
+      );
+  }
+}
+
+/** Parses `argv` and dispatches to the matching static, lazy, or dynamic command. */
 async function dispatch(
   argv: readonly string[],
   output: M3LCliOutput,
@@ -218,54 +351,32 @@ async function dispatch(
 ): Promise<number> {
   const { beforeArgs, passthroughArgs } = splitAtFirstDoubleDash(argv);
 
-  const { values, positionals } = parseArgs({
-    args: [...beforeArgs],
-    options: {
-      json: { type: "boolean", default: false },
-      version: { type: "boolean", default: false },
-      help: { type: "boolean", short: "h", default: false },
-    },
-    allowPositionals: true,
-    strict: false,
-  });
-
-  const command = positionals[0];
-  if (
-    beforeArgs.length === 0 ||
-    command === "help" ||
-    values["help"] === true
-  ) {
+  if (beforeArgs.length === 0) {
     printUsage(output);
     return 0;
   }
-  if (values["version"] === true) {
+
+  const firstToken = beforeArgs[0] ?? "";
+  if (firstToken === "help" || firstToken === "--help" || firstToken === "-h") {
+    printUsage(output);
+    return 0;
+  }
+  if (firstToken === "--version") {
     output.info(readCliVersion());
     return 0;
   }
 
-  const jsonOutput = values["json"] === true;
-  if (command === "list") {
-    return runListCommand(output, cwd, jsonOutput, env);
-  }
-  if (command === "inspect") {
-    return runInspectCommand(output, cwd, positionals[1], jsonOutput, env);
-  }
-  if (command === "run") {
-    return runRunCommand(
-      output,
-      cwd,
-      positionals[1],
-      passthroughArgs,
-      jsonOutput,
-      env,
-    );
+  if (STATIC_COMMAND_NAMES.includes(firstToken)) {
+    return dispatchStaticCommand(beforeArgs, passthroughArgs, output, cwd, env);
   }
 
-  const unknownCommand = command ?? "";
-  throw new M3LCliError(
-    "ERR_CLI_UNKNOWN_COMMAND",
-    `unknown command '${unknownCommand}'`,
-    { suggestions: suggestNames(unknownCommand, STATIC_COMMAND_NAMES) },
+  return runDynamicCommand(
+    output,
+    cwd,
+    firstToken,
+    beforeArgs.slice(1),
+    passthroughArgs,
+    env,
   );
 }
 
