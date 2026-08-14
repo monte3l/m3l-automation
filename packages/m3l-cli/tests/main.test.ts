@@ -9,8 +9,23 @@ import { runList } from "../src/commands/list.js";
 import { runInspect } from "../src/commands/inspect.js";
 import { runRun } from "../src/commands/run.js";
 import { runDynamic } from "../src/commands/dynamic.js";
+import { runDoctor } from "../src/commands/doctor.js";
+import { runPresets } from "../src/commands/presets.js";
+import { runHistory } from "../src/commands/history.js";
+import { runWizard } from "../src/commands/wizard.js";
 import { resolveWorkspaceRoot } from "../src/discovery/discover.js";
 import type { M3LCliCommandContext } from "../src/commands/context.js";
+
+/**
+ * `M3LCliCommandContext` gains `historyFilePath` per the 8f contract — not
+ * yet present on the type until `commands/context.ts` is extended. A local
+ * extension (rather than an `as` cast) keeps assertions type-checked against
+ * a real declared shape in RED, and becomes an identical (harmless)
+ * extension of the real field once GREEN lands.
+ */
+interface M3LCliCommandContextWithHistory extends M3LCliCommandContext {
+  readonly historyFilePath: string;
+}
 
 /**
  * Contract: `src/main.ts` — `runCli` parses `argv` with `node:util`
@@ -28,6 +43,10 @@ vi.mock("../src/commands/list.js", () => ({ runList: vi.fn() }));
 vi.mock("../src/commands/inspect.js", () => ({ runInspect: vi.fn() }));
 vi.mock("../src/commands/run.js", () => ({ runRun: vi.fn() }));
 vi.mock("../src/commands/dynamic.js", () => ({ runDynamic: vi.fn() }));
+vi.mock("../src/commands/doctor.js", () => ({ runDoctor: vi.fn() }));
+vi.mock("../src/commands/presets.js", () => ({ runPresets: vi.fn() }));
+vi.mock("../src/commands/history.js", () => ({ runHistory: vi.fn() }));
+vi.mock("../src/commands/wizard.js", () => ({ runWizard: vi.fn() }));
 vi.mock("../src/discovery/discover.js", () => ({
   resolveWorkspaceRoot: vi.fn(),
 }));
@@ -36,6 +55,10 @@ const runListMock = vi.mocked(runList);
 const runInspectMock = vi.mocked(runInspect);
 const runRunMock = vi.mocked(runRun);
 const runDynamicMock = vi.mocked(runDynamic);
+const runDoctorMock = vi.mocked(runDoctor);
+const runPresetsMock = vi.mocked(runPresets);
+const runHistoryMock = vi.mocked(runHistory);
+const runWizardMock = vi.mocked(runWizard);
 const resolveWorkspaceRootMock = vi.mocked(resolveWorkspaceRoot);
 
 afterEach(() => {
@@ -43,6 +66,10 @@ afterEach(() => {
   runInspectMock.mockReset();
   runRunMock.mockReset();
   runDynamicMock.mockReset();
+  runDoctorMock.mockReset();
+  runPresetsMock.mockReset();
+  runHistoryMock.mockReset();
+  runWizardMock.mockReset();
   resolveWorkspaceRootMock.mockReset();
 });
 
@@ -593,10 +620,14 @@ describe("runCli — dynamic dispatch (8d)", () => {
     ["the --version flag", ["--version"]],
     ["the inspect command", ["inspect", "exporter"]],
     ["the run command", ["run", "json-etl", "--"]],
+    ["the doctor command", ["doctor"]],
+    ["the wizard command", ["wizard"]],
   ])("dynamic.js is never touched by %s", async (_label, argv) => {
     resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
     runInspectMock.mockResolvedValue(0);
     runRunMock.mockResolvedValue(0);
+    runDoctorMock.mockResolvedValue(0);
+    runWizardMock.mockResolvedValue(0);
     const { options } = buildOptions();
 
     await runCli(argv, options);
@@ -639,6 +670,217 @@ describe("runCli — M3LCliError cause-chain printing", () => {
     const rendered = stderrLines.join("\n");
     expect(rendered).toContain("failed to spawn script at 'json-etl'");
     expect(rendered).toContain("caused by: spawn ENOENT");
+  });
+});
+
+/**
+ * m3l-cli 8e addendum — `doctor` joins the static command table alongside
+ * `list`/`inspect`/`run`/`help`, always winning over dynamic per-script
+ * dispatch, and supports `--json` like the other static commands.
+ */
+describe("runCli — doctor dispatch (8e)", () => {
+  test("lazily builds a context from resolveWorkspaceRoot and propagates runDoctor's return code", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDoctorMock.mockResolvedValue(1);
+    const { options } = buildOptions();
+
+    const code = await runCli(["doctor"], options);
+
+    expect(code).toBe(1);
+    expect(resolveWorkspaceRootMock).toHaveBeenCalledWith("/workspace");
+    expect(runDoctorMock).toHaveBeenCalledTimes(1);
+    const [context] = runDoctorMock.mock.calls[0] as [M3LCliCommandContext];
+    expect(context.workspaceRoot).toBe("/workspace-root");
+    expect(context.jsonOutput).toBe(false);
+  });
+
+  test("sets jsonOutput true in the context when --json is passed", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDoctorMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["doctor", "--json"], options);
+
+    const [context] = runDoctorMock.mock.calls[0] as [M3LCliCommandContext];
+    expect(context.jsonOutput).toBe(true);
+  });
+
+  test("propagates a rejected ERR_CLI_DOCTOR_FAILED to exit 1", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDoctorMock.mockRejectedValue(
+      new M3LCliError("ERR_CLI_DOCTOR_FAILED", "doctor could not run"),
+    );
+    const { options, stderrLines } = buildOptions();
+
+    const code = await runCli(["doctor"], options);
+
+    expect(code).toBe(1);
+    expect(stderrLines.join("\n")).toContain("doctor could not run");
+  });
+
+  test("doctor.js is loaded lazily and never touched by unrelated dispatch paths", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runListMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["list"], options);
+
+    expect(runDoctorMock).not.toHaveBeenCalled();
+  });
+
+  test("the static 'doctor' command wins over dynamic dispatch and never calls runDynamic", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runDoctorMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    const code = await runCli(["doctor"], options);
+
+    expect(code).toBe(0);
+    expect(runDoctorMock).toHaveBeenCalledTimes(1);
+    expect(runDynamicMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * m3l-cli 8f addendum — `presets <script>` and `history` join the static
+ * command table; both build a context whose `historyFilePath` sits beside
+ * the discovery cache under `m3l-cli/history.json`.
+ */
+describe("runCli — presets dispatch (8f)", () => {
+  test("lazily builds a context, resolves the script positional, and propagates runPresets' return code", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runPresetsMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    const code = await runCli(["presets", "exporter"], options);
+
+    expect(code).toBe(0);
+    expect(runPresetsMock).toHaveBeenCalledTimes(1);
+    const [context, scriptName] = runPresetsMock.mock.calls[0] as [
+      M3LCliCommandContextWithHistory,
+      string,
+    ];
+    expect(context.workspaceRoot).toBe("/workspace-root");
+    expect(scriptName).toBe("exporter");
+  });
+
+  test("returns 2 as a usage error without invoking runPresets when the <script> positional is missing", async () => {
+    const { options, stderrLines } = buildOptions();
+
+    const code = await runCli(["presets"], options);
+
+    expect(code).toBe(2);
+    expect(runPresetsMock).not.toHaveBeenCalled();
+    expect(stderrLines.join("\n")).toContain("presets");
+  });
+
+  test("presets.js is loaded lazily and never touched by unrelated dispatch paths", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runListMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["list"], options);
+
+    expect(runPresetsMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("runCli — history dispatch (8f)", () => {
+  test("lazily builds a context (no positional required) and propagates runHistory's return code", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runHistoryMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    const code = await runCli(["history"], options);
+
+    expect(code).toBe(0);
+    expect(runHistoryMock).toHaveBeenCalledTimes(1);
+    const [context] = runHistoryMock.mock.calls[0] as [
+      M3LCliCommandContextWithHistory,
+    ];
+    expect(context.workspaceRoot).toBe("/workspace-root");
+  });
+
+  test("history.js is loaded lazily and never touched by unrelated dispatch paths", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runListMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["list"], options);
+
+    expect(runHistoryMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * m3l-cli 8g addendum — `wizard` joins the static command table, always
+ * winning over dynamic per-script dispatch, lazily importing
+ * `commands/wizard.js` only when invoked.
+ */
+describe("runCli — wizard dispatch (8g)", () => {
+  test("lazily builds a context from resolveWorkspaceRoot and propagates runWizard's return code", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runWizardMock.mockResolvedValue(2);
+    const { options } = buildOptions();
+
+    const code = await runCli(["wizard"], options);
+
+    expect(code).toBe(2);
+    expect(resolveWorkspaceRootMock).toHaveBeenCalledWith("/workspace");
+    expect(runWizardMock).toHaveBeenCalledTimes(1);
+    const [context] = runWizardMock.mock.calls[0] as [M3LCliCommandContext];
+    expect(context.workspaceRoot).toBe("/workspace-root");
+  });
+
+  test("wizard.js is loaded lazily and never touched by unrelated dispatch paths", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runListMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["list"], options);
+
+    expect(runWizardMock).not.toHaveBeenCalled();
+  });
+
+  test("the static 'wizard' command wins over dynamic dispatch and never calls runDynamic", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runWizardMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    const code = await runCli(["wizard"], options);
+
+    expect(code).toBe(0);
+    expect(runWizardMock).toHaveBeenCalledTimes(1);
+    expect(runDynamicMock).not.toHaveBeenCalled();
+  });
+
+  test("propagates a rejected M3LCliError from runWizard through the usual exit-code mapping", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runWizardMock.mockRejectedValue(
+      new M3LCliError("ERR_CLI_WORKSPACE_NOT_FOUND", "no workspace found"),
+    );
+    const { options, stderrLines } = buildOptions();
+
+    const code = await runCli(["wizard"], options);
+
+    expect(code).toBe(1);
+    expect(stderrLines.join("\n")).toContain("no workspace found");
+  });
+});
+
+describe("runCli — context.historyFilePath (8f)", () => {
+  test("builds a historyFilePath ending in m3l-cli/history.json, path-separator agnostic", async () => {
+    resolveWorkspaceRootMock.mockReturnValue("/workspace-root");
+    runListMock.mockResolvedValue(0);
+    const { options } = buildOptions();
+
+    await runCli(["list"], options);
+
+    const [context] = runListMock.mock.calls[0] as [
+      M3LCliCommandContextWithHistory,
+    ];
+    const normalized = context.historyFilePath.split(path.sep).join("/");
+    expect(normalized.endsWith("m3l-cli/history.json")).toBe(true);
   });
 });
 

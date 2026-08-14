@@ -7,6 +7,78 @@
 
 import { styleText } from "node:util";
 
+/** The last C0 control code point (`0x1F`); `0x00`–this range is banned. */
+const C0_CONTROL_MAX = 0x1f;
+/** The `DEL` code point (`0x7F`), banned alongside the C0 controls. */
+const DEL_CODE_POINT = 0x7f;
+/** The first C1 control code point (`0x80`). */
+const C1_CONTROL_MIN = 0x80;
+/** The last C1 control code point (`0x9F`). */
+const C1_CONTROL_MAX = 0x9f;
+/** The first Unicode bidi embedding/override code point (`U+202A`). */
+const BIDI_EMBEDDING_OVERRIDE_MIN = 0x202a;
+/** The last Unicode bidi embedding/override code point (`U+202E`). */
+const BIDI_EMBEDDING_OVERRIDE_MAX = 0x202e;
+/** The first Unicode bidi isolate code point (`U+2066`). */
+const BIDI_ISOLATE_MIN = 0x2066;
+/** The last Unicode bidi isolate code point (`U+2069`). */
+const BIDI_ISOLATE_MAX = 0x2069;
+
+/**
+ * Checks whether a single Unicode code point is one this module strips from
+ * attacker-influencable text before it ever reaches a terminal-rendered
+ * channel: C0 controls (`0x00`–`0x1F`, including `ESC` `0x1B`) plus `DEL`
+ * (`0x7F`), C1 controls (`0x80`–`0x9F`), and the Unicode bidi
+ * embedding/override (`U+202A`–`U+202E`) and isolate (`U+2066`–`U+2069`)
+ * controls — the ranges a terminal could interpret as an escape sequence or
+ * a directional override rather than literal text.
+ *
+ * @param codePoint - A single Unicode code point, e.g. from
+ *   `String.prototype.codePointAt`.
+ * @returns Whether `codePoint` must be stripped.
+ */
+function isDisallowedTerminalCodePoint(codePoint: number): boolean {
+  const isC0OrDel = codePoint <= C0_CONTROL_MAX || codePoint === DEL_CODE_POINT;
+  const isC1 = codePoint >= C1_CONTROL_MIN && codePoint <= C1_CONTROL_MAX;
+  const isBidiEmbeddingOrOverride =
+    codePoint >= BIDI_EMBEDDING_OVERRIDE_MIN &&
+    codePoint <= BIDI_EMBEDDING_OVERRIDE_MAX;
+  const isBidiIsolate =
+    codePoint >= BIDI_ISOLATE_MIN && codePoint <= BIDI_ISOLATE_MAX;
+  return isC0OrDel || isC1 || isBidiEmbeddingOrOverride || isBidiIsolate;
+}
+
+/**
+ * Strips control characters and Unicode bidi direction overrides from
+ * attacker-influencable text before it reaches a terminal-rendered channel
+ * (e.g. a prompt's prefilled `default`, or a rendered summary cell) — a
+ * per-code-point filter (no regex, so no backtracking risk) built from
+ * {@link isDisallowedTerminalCodePoint}'s banned ranges.
+ *
+ * Every other code point (including printable Unicode outside the banned
+ * ranges) passes through unchanged, so this is a no-op for benign text.
+ *
+ * @param text - The raw text to sanitize.
+ * @returns `text` with every disallowed code point removed.
+ *
+ * @example
+ * ```ts
+ * import { sanitizeTerminalText } from "./output.js";
+ *
+ * sanitizeTerminalText("us-east-1"); // "us-east-1" — unchanged
+ * ```
+ */
+export function sanitizeTerminalText(text: string): string {
+  let result = "";
+  for (const char of text) {
+    const codePoint = char.codePointAt(0);
+    if (codePoint === undefined || !isDisallowedTerminalCodePoint(codePoint)) {
+      result += char;
+    }
+  }
+  return result;
+}
+
 /**
  * Resolves whether ANSI color styling should be applied, given a stream's
  * TTY-ness and the process environment.
