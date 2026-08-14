@@ -174,6 +174,17 @@ describe("runDynamic — unknown script", () => {
       suggestions: expect.arrayContaining(["list"]) as unknown,
     });
   });
+
+  test("throws ERR_CLI_UNKNOWN_SCRIPT with a suggestion over a near-miss reserved command name ('doctro' -> 'doctor')", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+
+    const context = buildContext();
+
+    await expect(runDynamic(context, "doctro", [], [])).rejects.toMatchObject({
+      code: "ERR_CLI_UNKNOWN_SCRIPT",
+      suggestions: expect.arrayContaining(["doctor"]) as unknown,
+    });
+  });
 });
 
 describe("runDynamic — --help/-h delegation", () => {

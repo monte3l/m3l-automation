@@ -290,3 +290,10 @@ expect(new Set(names).size).toBe(names.length);
   type has no constructor to introspect, and the mismatch shows as a cryptic
   `never` constraint). Re-run `tsc -b` + `eslint` on the test file once GREEN lands
   to catch all three before the hub has to route them back.
+
+- **A widened shared type owns its pin sweep.** When a phase adds a field to
+  a shared interface (a descriptor, a command context), grep the whole test
+  tree for that type's name and for `toEqualTypeOf`/`toEqual` literals of
+  its shape, and update every pin in the same pass — stale pins are silent
+  until GREEN and cost a follow-up micro-pass each (three in the 2026-08-14
+  m3l-cli build-out).

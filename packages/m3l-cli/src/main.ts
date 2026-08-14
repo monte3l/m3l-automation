@@ -40,6 +40,14 @@ const USAGE_EXIT_CODE: M3LCliExitCode = 2;
  * The reserved command names `main.ts` always dispatches statically — these
  * always win over dynamic per-script dispatch (8d), so a script can never be
  * reached under one of these names.
+ *
+ * A deliberately narrower subset of the full ADR-0042 reserved-name list
+ * (`doctor.ts`'s `RESERVED_COMMAND_NAMES`, `commands/dynamic.ts`'s
+ * `STATIC_COMMAND_NAMES`, and `bin/lib/script-scaffold.mjs`'s
+ * `RESERVED_CLI_NAMES`): it omits `"new"`, which is reserved against script
+ * names but has no dispatched command here, so it correctly falls through to
+ * dynamic dispatch's unknown-script handling rather than
+ * {@link dispatchStaticCommandByName}'s unreachable default.
  */
 const STATIC_COMMAND_NAMES: readonly string[] = [
   "list",
@@ -48,6 +56,7 @@ const STATIC_COMMAND_NAMES: readonly string[] = [
   "doctor",
   "presets",
   "history",
+  "wizard",
   "help",
 ];
 
@@ -91,6 +100,9 @@ function printUsage(output: M3LCliOutput): void {
     "  presets <script>           List a script's declared preset files",
   );
   output.info("  history                    Show the recorded run history");
+  output.info(
+    "  wizard                     Interactively build and run a script",
+  );
   output.info("  help                       Show this help message");
   output.info("  <script> [--param value ...] [-- args...]");
   output.info(
@@ -303,6 +315,17 @@ async function runHistoryCommand(
   return runHistory(buildCommandContext(cwd, output, jsonOutput, env));
 }
 
+/** Lazily loads and runs `wizard` — no positional required. */
+async function runWizardCommand(
+  output: M3LCliOutput,
+  cwd: string,
+  jsonOutput: boolean,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<number> {
+  const { runWizard } = await import("./commands/wizard.js");
+  return runWizard(buildCommandContext(cwd, output, jsonOutput, env));
+}
+
 /**
  * Lazily loads and delegates to `commands/dynamic.js`'s `runDynamic` — the
  * fallback for any first positional that isn't a
@@ -366,7 +389,7 @@ function parseStaticCommandArgs(beforeArgs: readonly string[]): {
  * inlining the switch would make.
  *
  * `command` can only be
- * `"list"`/`"inspect"`/`"run"`/`"doctor"`/`"presets"`/`"history"` at runtime
+ * `"list"`/`"inspect"`/`"run"`/`"doctor"`/`"presets"`/`"history"`/`"wizard"` at runtime
  * (see {@link dispatchStaticCommand}'s doc) — anything else is a caller
  * contract violation, not a normal path, and `command`'s static type is the
  * general `string | undefined` (not a literal union `parseArgs`'s
@@ -402,6 +425,8 @@ async function dispatchStaticCommandByName(
       return runPresetsCommand(output, cwd, positionals[1], jsonOutput, env);
     case "history":
       return runHistoryCommand(output, cwd, jsonOutput, env);
+    case "wizard":
+      return runWizardCommand(output, cwd, jsonOutput, env);
     case undefined:
     default:
       throw new M3LCliError(

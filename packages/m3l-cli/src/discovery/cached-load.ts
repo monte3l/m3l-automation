@@ -49,7 +49,9 @@ export async function loadParametersCached(
   try {
     const cache = readDiscoveryCache(cacheFilePath);
     const mtimes = configMtimes(scriptDirectory);
-    const cached = cache[scriptName];
+    const cached = Object.hasOwn(cache, scriptName)
+      ? cache[scriptName]
+      : undefined;
 
     if (cached !== undefined && isCacheEntryFresh(cached, mtimes)) {
       return cached.parameters;

@@ -50,6 +50,7 @@ const RESERVED_CLI_NAMES = new Set([
   "doctor",
   "presets",
   "history",
+  "wizard",
   "new",
   "help",
 ]);

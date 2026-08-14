@@ -285,3 +285,10 @@ export async function runExport(deps: {
 Ground your work in `.claude/rules/library-src.md` (library mode),
 `.claude/rules/scripts.md` (script mode), and
 `docs/contributing/coding-standards.md`.
+
+- **Scope stays small; report terse.** A dispatch covering more than ~5
+  files, or bundling implement + full verify + coverage narration, is the
+  known trigger for mid-turn truncation (13 incidents in the 2026-08-14
+  m3l-cli build-out). Work first, then ONE terse report; never narrate
+  between steps. If you are resumed after a cutoff, finish from disk state
+  rather than re-explaining.

@@ -284,3 +284,10 @@ export class M3LPoller {
 against the project `tsconfig` in this harness. A passing `pnpm typecheck` /
 `pnpm lint` is the source of truth — don't chase a red squiggle the CLI says is
 clean.
+
+- **A mirrored constant's drift guard must enumerate every copy.** When a
+  literal set must exist in two module graphs (e.g. `bin/` scripts vs a
+  package), the guard test that compares copies has to list ALL of them —
+  a two-of-three mirror test passes precisely while the third copy drifts
+  (found on the m3l-cli reserved-name set, 2026-08-14: the suggestion pool
+  missed two growth waves the guarded pair caught).
