@@ -332,25 +332,35 @@ const MAX_CAUSE_CHAIN_WALK = 10;
  * `fnError`'s own `.cause` chain, so both `fn`'s failure and the rollback's
  * failure stay reachable from the error `withTransaction` ultimately
  * surfaces. Checks `fnError.cause` itself first; when that is already taken,
- * follows `.cause` links (each one re-checked with `instanceof Error` before
- * continuing) up to {@link MAX_CAUSE_CHAIN_WALK} levels deep. An
+ * follows `.cause` links up to {@link MAX_CAUSE_CHAIN_WALK} levels deep. An
  * already-set `.cause` at any level is never overwritten.
+ *
+ * Every read of `.cause` (the open-slot check and the chain-walk step) and
+ * the write are performed inside one `try`/`catch` per link, so a `.cause`
+ * accessor whose getter or setter throws (or a `Proxy` whose `get`/`set`
+ * trap throws) can never let a raw error escape this helper and mask
+ * `withTransaction`'s intended thrown error — that link is treated as
+ * failed and the walk stops there rather than continuing past a link whose
+ * `.cause` state is now unknown. After an assignment that doesn't throw,
+ * the value is read back and compared against `rollbackError`; a `.cause`
+ * setter that silently no-ops (accepts the assignment without storing it)
+ * therefore does not get reported as a success. On either kind of failure
+ * at a link, the walk stops at that link rather than searching deeper,
+ * since a link that failed to read or verify its own `.cause` cannot be
+ * trusted to report the true state of any slot beyond it.
  *
  * Returns `false` — never throws — when attachment did not happen, whether
  * because `fnError` isn't an `Error`, no open slot was found within the
- * bound, or the assignment itself threw (e.g. `fnError`, or a link in its
- * chain, is frozen/sealed/non-extensible, or `.cause` is an accessor-only
- * property). The assignment is guarded with its own `try`/`catch` so a
- * `TypeError` from an unwritable `.cause` can never escape this helper and
- * mask `withTransaction`'s intended thrown error. See
- * {@link M3LRDSDataOperations.withTransaction}'s TSDoc for how the caller
- * branches on this return value.
+ * bound, a read or write at some link threw, or a write's read-back did not
+ * match `rollbackError`.
+ * See {@link M3LRDSDataOperations.withTransaction}'s TSDoc for how the
+ * caller branches on this return value.
  *
  * @param fnError - The error thrown by `fn`, mutated in place when an open,
  *   writable slot is found.
  * @param rollbackError - The rollback's own failure to chain onto `fnError`.
- * @returns `true` when `rollbackError` was successfully attached somewhere
- *   in `fnError`'s chain, `false` otherwise.
+ * @returns `true` when `rollbackError` was successfully attached and
+ *   verified somewhere in `fnError`'s chain, `false` otherwise.
  */
 function attachRollbackFailure(
   fnError: unknown,
@@ -362,18 +372,20 @@ function attachRollbackFailure(
     link !== undefined && depth < MAX_CAUSE_CHAIN_WALK;
     depth += 1
   ) {
-    if (link.cause === undefined) {
-      try {
-        link.cause = rollbackError;
-        return true;
-      } catch {
-        // The slot looked open but assignment failed (frozen/sealed/
-        // non-extensible error, or an accessor-only `.cause`). Report
-        // failure to the caller rather than retrying deeper or rethrowing.
-        return false;
+    try {
+      if (link.cause !== undefined) {
+        link = link.cause instanceof Error ? link.cause : undefined;
+        continue;
       }
+      link.cause = rollbackError;
+      return link.cause === rollbackError;
+    } catch {
+      // A read or write at this link threw (frozen/sealed/non-extensible
+      // error, an accessor-only `.cause`, or a getter/setter that itself
+      // throws). This link's `.cause` state is now unknown/untrustworthy,
+      // so stop here rather than attempting to walk past it.
+      return false;
     }
-    link = link.cause instanceof Error ? link.cause : undefined;
   }
   return false;
 }
