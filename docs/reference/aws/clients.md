@@ -194,7 +194,7 @@ Other members:
   to `clientProvider`.
 - `close()` — clears this provider's own cache so a later getter access
   constructs fresh wrapper instances. Unlike `AWSClientProvider.close()`,
-  this **never calls `.destroy()`** on anything: none of the seventeen getters
+  this **never calls `.destroy()`** on anything: none of the eighteen getters
   above holds a destroyable resource of its own — each either wraps a client
   `clientProvider` owns (and destroys), or (for `requestSigner`/
   `credentials`) holds no destroyable resource at all. Calling

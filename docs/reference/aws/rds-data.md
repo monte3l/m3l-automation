@@ -129,11 +129,28 @@ class M3LRDSDataOperations {
 
 `withTransaction` begins a transaction, runs `fn` with the started
 transaction's id, commits on success, and rolls back on any throw from
-`fn`. **A rollback failure must never be swallowed** — it is chained as the
-`cause` of the error `fn`'s own throw surfaces as, so a caller always learns
-both that the operation failed _and_ that the rollback also failed, rather
-than seeing only one. When the rollback succeeds, `fn`'s original error
-propagates unchanged.
+`fn`. **A rollback failure must never be swallowed.** When the rollback
+succeeds, `fn`'s original error propagates unchanged (identity preserved,
+so `instanceof` checks against it still work). When `fn` throws AND the
+rollback also fails, this always throws a new `M3LRDSDataOperationError` —
+but which errors it chains depends on whether `fn`'s own error object could
+be annotated with the rollback failure:
+
+- **Annotation succeeds** (`fn`'s error is an `Error`, and an open
+  (`undefined`) `.cause` slot exists somewhere in its own `.cause` chain,
+  up to 10 links deep, never clobbering an already-set `.cause`): the
+  thrown error's `cause` is `fn`'s own error object, which in turn chains
+  the rollback failure at the slot found. Both errors stay reachable by
+  walking the surfaced error's cause chain, and `fn`'s error retains its
+  original identity.
+- **Annotation fails** (`fn`'s error isn't an `Error`, no open slot exists
+  within the bound, or the `.cause` assignment/read itself throws — e.g. a
+  frozen/sealed/non-extensible error, or an accessor-only `.cause`): the
+  thrown error's `cause` is the rollback failure directly, and its message
+  additionally notes that `fn`'s own error object could not be annotated.
+  `fn`'s error object identity is **not** preserved in this fallback path —
+  a caller doing `instanceof` against `fn`'s original error type will not
+  match — but the rollback failure is always reachable.
 
 ### SDK request/response mapping (authoritative)
 
@@ -188,10 +205,10 @@ per `exactOptionalPropertyTypes`) rather than guessing.
 
 ### Errors
 
-| Error                           | Code                            | Thrown by               | Trigger                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ------------------------------- | ------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `M3LRDSDataOperationError`      | `ERR_RDS_DATA_OPERATION`        | every method            | any SDK rejection other than the `UnsupportedResultException` case below; a `beginTransaction` response with no `transactionId`; an unmapped `Field` member (`arrayValue`/`$unknown`). Chains the raw SDK rejection as `cause`; for `withTransaction`'s rollback-failure path, the surfaced error is `fn`'s own thrown error with the rollback's own failure chained onto _its_ `cause` — both are recoverable by walking the cause chain, never just one. |
-| `M3LRDSDataResultTooLargeError` | `ERR_RDS_DATA_RESULT_TOO_LARGE` | `executeStatement` only | the SDK rejects with an `Error`-shaped value whose `name === "UnsupportedResultException"`. A non-`Error` rejection carrying that same `name` (e.g. a plain object thrown by a non-conforming caller/mock) is not recognized and falls through to `M3LRDSDataOperationError` instead.                                                                                                                                                                      |
+| Error                           | Code                            | Thrown by               | Trigger                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------- | ------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `M3LRDSDataOperationError`      | `ERR_RDS_DATA_OPERATION`        | every method            | any SDK rejection other than the `UnsupportedResultException` case below; a `beginTransaction` response with no `transactionId`; an unmapped `Field` member (`arrayValue`/`$unknown`) when mapping a response; a `M3LRDSDataValue` whose `kind` is outside the union when building a statement's parameters (reachable only via a type-system bypass — the message names the offending `kind` only, length-capped and control-character-stripped, never the value). Chains the raw SDK rejection as `cause`; for `withTransaction`'s rollback-failure path, see the `withTransaction` section above for the two-branch cause-chain shape. |
+| `M3LRDSDataResultTooLargeError` | `ERR_RDS_DATA_RESULT_TOO_LARGE` | `executeStatement` only | the SDK rejects with an `Error`-shaped value whose `name === "UnsupportedResultException"`. A non-`Error` rejection carrying that same `name` (e.g. a plain object thrown by a non-conforming caller/mock) is not recognized and falls through to `M3LRDSDataOperationError` instead.                                                                                                                                                                                                                                                                                                                                                     |
 
 ## Usage
 
