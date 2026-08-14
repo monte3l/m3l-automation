@@ -123,22 +123,90 @@ the first bare `--` appended verbatim.
   names; colliding declared names/aliases fail loud with
   `ERR_CLI_CONFIG_IMPORT`.
 
-### Later phases (not yet built)
+### Phase 8e — diagnostics
 
-`doctor` (8e), presets + history (8f, blocked on the
-`M3LConfigParameter.secret` library prerequisite — shipped, PR #416),
-interactive wizard (8g) — see ADR-0042 and the m3l-cli build-out tracker in
-`docs/plans/IMPLEMENTATION.md`.
+#### `m3l doctor`
 
-## Reserved command names
+Renders one aligned row per check (`CHECK` / `STATUS` / `DETAIL`, statuses
+`ok` / `warn` / `fail`; `--json` for the machine-readable array):
+Node floor (≥ 24), workspace root, one `script:<name>` row per discovered
+script (dir shape → fail when neither config exists; dist freshness → warn
+naming `pnpm build`; importability through the real loader → fail with the
+load-error message; all-green renders the parameter count), reserved-name
+collision audit, and cache health (parent-dir writability, cache-file
+integrity — an invalid file warns "will be rebuilt", an absent one is ok).
 
-`list`, `inspect`, `run`, `doctor`, `new`, `help` — a script may not take one
-of these as its package name; `bin/scaffold-script.mjs` and
-`check:script-scaffold` reject them (`RESERVED_CLI_NAMES` in
-`bin/lib/script-scaffold.mjs`).
+Exit: `1` iff any check is `fail` (`warn` never affects the code); `0`
+otherwise. An unhealthy workspace is a doctor _result_ — only doctor's own
+infrastructure failing throws (`ERR_CLI_DOCTOR_FAILED`, cause-chained).
 
-## Cache layout
+### Phase 8f — presets + history
 
-`<cacheDir>/m3l-cli/discovery.json` — a JSON map of script name to
-`{ srcMtimeMs, distMtimeMs, descriptor }`. Deleting it is always safe; it is
-rebuilt on the next discovery-bearing command.
+#### `m3l presets <script>`
+
+Lists every preset file under `data/config/presets/` (`.json`/`.yaml`/
+`.yml`), validating each against the script's declared schema via
+`Core.M3LScriptPresetLoader`: one row per file — NAME / FORMAT /
+PARAMETERS / STATUS — where PARAMETERS shows the preset's **key names
+only, never values** (preset files may hold secrets), and an invalid
+preset renders its load-error summary as a row rather than aborting.
+Unknown script exits `2` with suggestions; empty listing is ok (exit 0).
+
+#### `m3l history`
+
+Renders the run history — TIME / SCRIPT / PARAMETERS / EXIT — recorded
+best-effort after every `run`/dynamic spawn. Entries carry the script
+name, the parsed canonical **parameter names** (dynamic form; `run`
+records none since it never parses), the child exit code, and a
+timestamp — **never values** (the entry type cannot carry them). Bounded
+ring buffer (cap 100) persisted beside the discovery cache
+(`<cacheDir>/m3l-cli/history.json`); recording and reading are
+best-effort and never affect an exit code; a corrupt file is surfaced by
+`doctor` ("will be rebuilt") and rebuilt on the next write.
+
+#### Preset writing (8g consumer)
+
+`writePreset` (internal) stores JSON presets in the loader-compatible
+format, **refuses to persist any secret-flagged parameter** (skipped
+names are reported explicitly), refuses unknown keys, and fails loud on
+IO errors (`ERR_CLI_PRESET_INVALID`) — the wizard's save-as-preset (8g)
+is its consumer. Secret flags reach the CLI through the parameter
+descriptors (`secret`, threaded tolerantly from `isSecret()` so a stale
+pre-2.3.0 `dist` build simply reads as non-secret) and cached
+descriptors are validated element-wise on read.
+
+Reserved command names now include `presets` and `history` (scaffold +
+doctor drift-guard updated).
+
+### Phase 8g — interactive wizard
+
+#### `m3l wizard`
+
+The guided composition flow (explicitly invoked — bare `m3l` still prints
+help; a non-interactive stdin exits `2`): fuzzy `autocomplete` script
+selection ("name — description"), then one typed prompt per declared
+parameter in declaration order — `password` (masked input) for
+secret-flagged parameters, `confirm` for BOOL, `number` for INT/DOUBLE,
+comma-split `text` for STRING_ARRAY, `text` with the default prefilled
+otherwise. An empty answer skips an optional parameter; a required one is
+re-asked once, then skipped with a warning (the script's own validation
+stays the authority at run time).
+
+The confirmation summary masks secret values (`********`) and routes every
+value through `redactSensitiveLogValue` — a wizard-entered secret reaches
+only the spawned child's argv, never the terminal, a preset, or history.
+Save-as-preset is offered before the run decision (`writePreset`'s
+fail-closed secret skip reports any excluded names; a failed save never
+loses the composed run), then "run now?" — decline exits `0` without
+spawning; accept translates the answers through the shared dynamic-argv
+builder, spawns via the 8c path, and records the prompted parameter names
+in history. Prompt UI is `Core.M3LPrompt` (terminal-control-escaped
+rendering), constructed lazily behind an injectable port.
+
+> Delivery caveat: a wizard-entered secret reaches the child **via argv**
+> (`--name=value`), exactly as invoking the script directly would — on a
+> shared host that is visible in `/proc/<pid>/cmdline`, so prefer `.env` /
+> environment delivery for secrets there and leave the prompt blank.
+
+`wizard` completes the reserved command-name set:
+`list, inspect, run, doctor, presets, history, new, help, wizard`.

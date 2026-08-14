@@ -175,6 +175,18 @@ correction to the zero-dependency table**:
   row on type-directed emit (and its ESLint zone) stays — it protects the
   fallback path.
 
+## Update 2026-08-14 — 8b-8g shipped
+
+The full activated phasing has shipped: 8b discovery/introspection +
+governance (PR #407), 8c `run` (PR #415), 8d dynamic subcommands (PR #417),
+8e `doctor` (PR #418), 8f presets + history (PR #419) atop the
+`M3LConfigParameter.secret` library prerequisite (PR #416, m3l-common
+2.3.0), and 8g interactive wizard (final PR of the series). The CLI's
+living contract is `docs/reference/cli.md`. Two design corrections from
+the build are recorded there: the dist-first loader (above) and a
+reserved-name set widened to nine (`presets`, `history`, `wizard` joined
+the original six as new static commands landed).
+
 ## Links
 
 - Related: [ADR-0021 (post-1.0 deepen-first strategy — the broadening intake

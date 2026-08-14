@@ -9,6 +9,7 @@ import { loadParametersCached } from "../src/discovery/cached-load.js";
 import type { M3LCliParameterDescriptor } from "../src/discovery/load-config.js";
 import { spawnScript } from "../src/run/spawn.js";
 import { runInspect } from "../src/commands/inspect.js";
+import { recordHistoryEntry } from "../src/history/store.js";
 
 /**
  * Contract: `src/commands/dynamic.ts` — `runDynamic` resolves `scriptName`
@@ -38,17 +39,22 @@ vi.mock("../src/run/spawn.js", () => ({
 vi.mock("../src/commands/inspect.js", () => ({
   runInspect: vi.fn(),
 }));
+vi.mock("../src/history/store.js", () => ({
+  recordHistoryEntry: vi.fn(),
+}));
 
 const discoverScriptsMock = vi.mocked(discoverScripts);
 const loadParametersCachedMock = vi.mocked(loadParametersCached);
 const spawnScriptMock = vi.mocked(spawnScript);
 const runInspectMock = vi.mocked(runInspect);
+const recordHistoryEntryMock = vi.mocked(recordHistoryEntry);
 
 afterEach(() => {
   discoverScriptsMock.mockReset();
   loadParametersCachedMock.mockReset();
   spawnScriptMock.mockReset();
   runInspectMock.mockReset();
+  recordHistoryEntryMock.mockReset();
 });
 
 function createOutputCollector(): {
@@ -70,15 +76,27 @@ function createOutputCollector(): {
   };
 }
 
+/**
+ * `M3LCliCommandContext` gains `historyFilePath` per the 8f contract — not
+ * yet present on the type until `commands/context.ts` is extended. A local
+ * extension (rather than an `as` cast) keeps the object literal type-checked
+ * against a real declared shape in RED, and becomes an identical (harmless)
+ * extension of the real field once GREEN lands.
+ */
+interface M3LCliCommandContextWithHistory extends M3LCliCommandContext {
+  readonly historyFilePath: string;
+}
+
 function buildContext(
-  overrides: Partial<M3LCliCommandContext> = {},
-): M3LCliCommandContext {
+  overrides: Partial<M3LCliCommandContextWithHistory> = {},
+): M3LCliCommandContextWithHistory {
   const { output } = createOutputCollector();
   return {
     workspaceRoot: "/workspace",
     output,
     jsonOutput: false,
     cacheFilePath: "/workspace/data/cache/m3l-cli/discovery.json",
+    historyFilePath: "/workspace/data/cache/m3l-cli/history.json",
     ...overrides,
   };
 }
@@ -154,6 +172,17 @@ describe("runDynamic — unknown script", () => {
     await expect(runDynamic(context, "lst", [], [])).rejects.toMatchObject({
       code: "ERR_CLI_UNKNOWN_SCRIPT",
       suggestions: expect.arrayContaining(["list"]) as unknown,
+    });
+  });
+
+  test("throws ERR_CLI_UNKNOWN_SCRIPT with a suggestion over a near-miss reserved command name ('doctro' -> 'doctor')", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+
+    const context = buildContext();
+
+    await expect(runDynamic(context, "doctro", [], [])).rejects.toMatchObject({
+      code: "ERR_CLI_UNKNOWN_SCRIPT",
+      suggestions: expect.arrayContaining(["doctor"]) as unknown,
     });
   });
 });
@@ -382,5 +411,85 @@ describe("runDynamic — spawn code propagation", () => {
     const code = await runDynamic(context, "json-etl", [], []);
 
     expect(code).toBe(7);
+  });
+});
+
+/**
+ * m3l-cli 8f addendum — after `spawnScript` resolves, `runDynamic`
+ * best-effort records a history entry naming the parsed canonical parameter
+ * names (unlike `runRun`, which never parses and always records `[]`); a
+ * recording failure never surfaces and never changes the resolved exit code.
+ */
+describe("runDynamic — best-effort history recording (8f)", () => {
+  test("records a history entry naming the parsed canonical parameter names and the spawned exit code", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    spawnScriptMock.mockResolvedValue(4);
+    recordHistoryEntryMock.mockReturnValue(true);
+
+    const context = buildContext();
+    const code = await runDynamic(
+      context,
+      "json-etl",
+      ["--r", "us-east-1", "--v"],
+      [],
+    );
+
+    expect(code).toBe(4);
+    expect(recordHistoryEntryMock).toHaveBeenCalledTimes(1);
+    const [historyFilePath, entry] = recordHistoryEntryMock.mock.calls[0] ?? [
+      "",
+      undefined,
+    ];
+    expect(historyFilePath).toBe(context.historyFilePath);
+    expect(entry).toMatchObject({
+      script: "json-etl",
+      parameterNames: expect.arrayContaining(["region", "verbose"]) as unknown,
+      exitCode: 4,
+    });
+    expect(
+      typeof (entry as { timestamp?: unknown } | undefined)?.timestamp,
+    ).toBe("string");
+  });
+
+  test("does not record history when --help delegates to runInspect (no spawn)", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    runInspectMock.mockResolvedValue(0);
+
+    await runDynamic(buildContext(), "json-etl", ["--help"], []);
+
+    expect(recordHistoryEntryMock).not.toHaveBeenCalled();
+  });
+
+  test("does not record history when the script is unknown", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+
+    await expect(
+      runDynamic(buildContext(), "exportr", [], []),
+    ).rejects.toBeInstanceOf(M3LCliError);
+    expect(recordHistoryEntryMock).not.toHaveBeenCalled();
+  });
+
+  test("does not record history when an unknown parameter throws before spawn", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+
+    await expect(
+      runDynamic(buildContext(), "json-etl", ["--regoin", "us-east-1"], []),
+    ).rejects.toBeInstanceOf(M3LCliError);
+    expect(recordHistoryEntryMock).not.toHaveBeenCalled();
+  });
+
+  test("a history-recording failure never affects the resolved exit code", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    loadParametersCachedMock.mockResolvedValue(descriptors);
+    spawnScriptMock.mockResolvedValue(0);
+    recordHistoryEntryMock.mockImplementation(() => {
+      throw new Error("disk full");
+    });
+
+    const code = await runDynamic(buildContext(), "json-etl", [], []);
+
+    expect(code).toBe(0);
   });
 });

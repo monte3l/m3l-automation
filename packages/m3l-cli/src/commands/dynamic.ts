@@ -1,8 +1,8 @@
 /**
  * `commands/dynamic` — runtime-registered per-script subcommands. Any first
- * positional that doesn't match a static command (`list`/`inspect`/`run`/
- * `help`) dispatches here, translating a script's declared config parameters
- * into a real `parseArgs`-driven flag surface and spawning it.
+ * positional that doesn't match a reserved command name dispatches here,
+ * translating a script's declared config parameters into a real
+ * `parseArgs`-driven flag surface and spawning it.
  *
  * @packageDocumentation
  */
@@ -17,18 +17,46 @@ import { loadParametersCached } from "../discovery/cached-load.js";
 import type { M3LCliParameterDescriptor } from "../discovery/load-config.js";
 import { spawnScript } from "../run/spawn.js";
 import { runInspect } from "./inspect.js";
+import { recordHistoryEntry } from "../history/store.js";
 
 /**
- * The reserved static command names `main.ts` always dispatches statically —
- * mirrored here (rather than imported from `main.ts`) so `dynamic.ts` stays
- * decoupled from the composition root; a script can never be discovered
- * under one of these names, so they're folded into the unknown-script
+ * `M3LCliCommandContext` plus the run-history file's absolute path (8f) —
+ * `runDynamic`'s own parameter type, narrower than the shared base so the
+ * best-effort history recording below can read `context.historyFilePath`
+ * without a cast.
+ */
+interface M3LCliDynamicCommandContext extends M3LCliCommandContext {
+  readonly historyFilePath: string;
+}
+
+/**
+ * The full ADR-0042 reserved CLI command-name list — every name a discovered
+ * script can never be registered under, folded into the unknown-script
  * suggestion pool alongside the discovered script names.
+ *
+ * Kept as its own literal here (rather than sharing an import) for two
+ * independent reasons: `doctor.ts`'s own `RESERVED_COMMAND_NAMES` is pinned
+ * by a `doctor.test.ts` drift guard that regex-extracts the literal array
+ * straight out of `doctor.ts`'s source text, so that declaration can't move;
+ * and `main.ts`'s own `STATIC_COMMAND_NAMES` is a narrower, intentionally
+ * different list (it excludes `"new"`, which has no dispatched command and
+ * would hit `dispatchStaticCommandByName`'s unreachable default), plus
+ * `main.ts` lazy-imports every command module to keep `help`/`--version`
+ * free of discovery — a static import of `doctor.ts` purely for this
+ * constant would defeat that. This literal must stay set-equal to
+ * `doctor.ts`'s `RESERVED_COMMAND_NAMES` and `bin/lib/script-scaffold.mjs`'s
+ * `RESERVED_CLI_NAMES` (the ADR-0042 source of truth) whenever any of the
+ * three changes.
  */
 const STATIC_COMMAND_NAMES: readonly string[] = [
   "list",
   "inspect",
   "run",
+  "doctor",
+  "presets",
+  "history",
+  "new",
+  "wizard",
   "help",
 ];
 
@@ -203,8 +231,24 @@ function pushTranslatedArg(
  * in `descriptors`' declaration order (see {@link pushTranslatedArg} for the
  * per-type translation). An alias hit maps back to its canonical
  * `descriptor.name`.
+ *
+ * Exported (8g refactor) so `commands/wizard.ts` can reuse the exact same
+ * translation instead of duplicating it — both modules build a
+ * `{descriptor.name: value}`-shaped record and hand it to this one shared
+ * routine to produce the spawned script's argv.
+ *
+ * @param descriptors - The script's declared parameters, in declaration order.
+ * @param values - The parsed/collected values, keyed by canonical name or
+ *   alias.
+ * @returns The translated `--name[=value]` argv tokens, in declaration order.
+ *
+ * @example
+ * ```ts
+ * const argv = translateArgv(descriptors, { region: "us-east-1", verbose: true });
+ * // ["--region=us-east-1", "--verbose"]
+ * ```
  */
-function translateArgv(
+export function translateArgv(
   descriptors: readonly M3LCliParameterDescriptor[],
   values: M3LCliParsedValues,
 ): readonly string[] {
@@ -223,12 +267,62 @@ function translateArgv(
 }
 
 /**
+ * Names every declared parameter whose canonical name or an alias is present
+ * in the already-parsed `values` — the run-history entry's `parameterNames`
+ * (8f), mapped to each descriptor's canonical `name` (never the alias key
+ * the caller happened to type).
+ */
+function presentParameterNames(
+  descriptors: readonly M3LCliParameterDescriptor[],
+  values: M3LCliParsedValues,
+): readonly string[] {
+  return descriptors
+    .filter((descriptor) =>
+      [descriptor.name, ...descriptor.aliases].some((name) =>
+        Object.hasOwn(values, name),
+      ),
+    )
+    .map((descriptor) => descriptor.name);
+}
+
+/**
+ * Best-effort records a run-history entry after a successful spawn — never
+ * throws (any failure, including {@link recordHistoryEntry} itself throwing
+ * rather than returning `false`, is swallowed) since history recording must
+ * never affect the resolved exit code {@link runDynamic} already has in hand.
+ */
+function recordDynamicHistory(
+  historyFilePath: string,
+  scriptName: string,
+  parameterNames: readonly string[],
+  exitCode: number,
+): void {
+  try {
+    recordHistoryEntry(historyFilePath, {
+      timestamp: new Date().toISOString(),
+      script: scriptName,
+      parameterNames,
+      exitCode,
+    });
+  } catch {
+    /* best-effort: history recording must never affect the resolved exit code */
+  }
+}
+
+/**
  * Resolves `scriptName` against the discovered `scripts/*` candidates and
  * either delegates to `runInspect` (for `--help`/`-h`) or parses `args`
  * against the script's declared parameters and spawns it, forwarding
  * `passthroughArgs` verbatim after the translated flags.
  *
- * @param context - The command context to run against.
+ * Once the spawn resolves, best-effort records a run-history entry (8f)
+ * naming the parsed canonical parameter names (unlike `run`, which never
+ * parses and always records `[]`) — never recorded for the `--help`/`-h`
+ * delegation (no spawn) or when an unknown script/parameter throws before
+ * spawning.
+ *
+ * @param context - The command context to run against; must carry
+ *   `historyFilePath`.
  * @param scriptName - The first positional token, resolved as a script name.
  * @param args - The tokens between the script name and the first bare `--`
  *   in the original `argv` (raw — not pre-parsed by `main.ts`).
@@ -254,7 +348,7 @@ function translateArgv(
  * ```
  */
 export async function runDynamic(
-  context: M3LCliCommandContext,
+  context: M3LCliDynamicCommandContext,
   scriptName: string,
   args: readonly string[],
   passthroughArgs: readonly string[],
@@ -305,8 +399,15 @@ export async function runDynamic(
   }
 
   const translatedArgs = translateArgv(descriptors, values);
-  return spawnScript(candidate.directory, [
+  const exitCode = await spawnScript(candidate.directory, [
     ...translatedArgs,
     ...passthroughArgs,
   ]);
+  recordDynamicHistory(
+    context.historyFilePath,
+    scriptName,
+    presentParameterNames(descriptors, values),
+    exitCode,
+  );
+  return exitCode;
 }

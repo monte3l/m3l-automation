@@ -12,6 +12,16 @@ import { pathToFileURL } from "node:url";
 import { M3LCliError } from "../cli/errors.js";
 
 /**
+ * Mask rendered in place of a secret-flagged parameter's default value.
+ * Mirrors `Core.M3LConfigHelpFormatter`'s own `SECRET_MASK` — the same
+ * 8-asterisk convention, applied here so masking happens once, at the
+ * descriptor source, rather than being left to every renderer (the
+ * discovery cache, `inspect`'s table, its `--json` output) to remember
+ * independently.
+ */
+const SECRET_MASK = "********";
+
+/**
  * A CLI-facing rendering of a config parameter's declaration, with every
  * value coerced to a display-safe primitive.
  */
@@ -28,6 +38,17 @@ export interface M3LCliParameterDescriptor {
   readonly defaultValue: string | undefined;
   /** The parameter's human-readable description, or `""` when absent. */
   readonly description: string;
+  /**
+   * Whether the parameter is declared secret (see `Core.M3LConfigParameter.isSecret`).
+   * A secret-flagged parameter's resolved value must never be persisted or
+   * rendered unmasked by any consumer of this descriptor (the preset writer
+   * skips it entirely; a display surface must hard-mask it). Declared
+   * optional so a hand-built fixture literal predating the 8f
+   * secret-threading addition remains a valid `M3LCliParameterDescriptor`;
+   * {@link describeParameters} itself always assigns an explicit `true`/`false`,
+   * never leaves it `undefined`.
+   */
+  readonly secret?: boolean;
 }
 
 /**
@@ -53,6 +74,37 @@ interface M3LCliParameterLike {
   isRequired(): boolean;
   getDefaultValue(): M3LCliParameterValue | undefined;
   getDescription(): string | undefined;
+  /**
+   * Optional — NOT part of the six-getter parameter-like gate
+   * ({@link PARAMETER_LIKE_GETTER_NAMES}). A duck-typed export compiled
+   * against a dist predating the 8f secret-threading addition simply won't
+   * have this method; {@link describeParameters} treats its absence as
+   * non-secret rather than rejecting the whole element.
+   */
+  isSecret?(): boolean;
+}
+
+/**
+ * Renders a parameter's default value for the {@link M3LCliParameterDescriptor}
+ * shape: `undefined` stays `undefined` (no default was declared), a secret
+ * default renders as {@link SECRET_MASK} rather than the raw value — an
+ * env-sourced secret default materializes at import time, so masking here
+ * (the one place every descriptor is built) covers the discovery cache and
+ * every renderer downstream in one change — and every other default renders
+ * via `String(...)`.
+ *
+ * @param value - The parameter's raw default value, or `undefined`.
+ * @param secret - Whether the parameter is declared secret.
+ * @returns The display-safe rendering.
+ */
+function renderDefaultValue(
+  value: M3LCliParameterValue | undefined,
+  secret: boolean,
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  return secret ? SECRET_MASK : String(value);
 }
 
 /**
@@ -80,14 +132,16 @@ export function describeParameters(
 ): readonly M3LCliParameterDescriptor[] {
   return parameters.map((parameter) => {
     const defaultValue = parameter.getDefaultValue();
+    const secret =
+      typeof parameter.isSecret === "function" ? parameter.isSecret() : false;
     return {
       name: parameter.getName(),
       aliases: parameter.getAliases(),
       type: parameter.getType(),
       required: parameter.isRequired(),
-      defaultValue:
-        defaultValue === undefined ? undefined : String(defaultValue),
+      defaultValue: renderDefaultValue(defaultValue, secret),
       description: parameter.getDescription() ?? "",
+      secret,
     };
   });
 }
