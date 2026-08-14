@@ -17,6 +17,17 @@ import { loadParametersCached } from "../discovery/cached-load.js";
 import type { M3LCliParameterDescriptor } from "../discovery/load-config.js";
 import { spawnScript } from "../run/spawn.js";
 import { runInspect } from "./inspect.js";
+import { recordHistoryEntry } from "../history/store.js";
+
+/**
+ * `M3LCliCommandContext` plus the run-history file's absolute path (8f) —
+ * `runDynamic`'s own parameter type, narrower than the shared base so the
+ * best-effort history recording below can read `context.historyFilePath`
+ * without a cast.
+ */
+interface M3LCliDynamicCommandContext extends M3LCliCommandContext {
+  readonly historyFilePath: string;
+}
 
 /**
  * The reserved static command names `main.ts` always dispatches statically —
@@ -223,12 +234,62 @@ function translateArgv(
 }
 
 /**
+ * Names every declared parameter whose canonical name or an alias is present
+ * in the already-parsed `values` — the run-history entry's `parameterNames`
+ * (8f), mapped to each descriptor's canonical `name` (never the alias key
+ * the caller happened to type).
+ */
+function presentParameterNames(
+  descriptors: readonly M3LCliParameterDescriptor[],
+  values: M3LCliParsedValues,
+): readonly string[] {
+  return descriptors
+    .filter((descriptor) =>
+      [descriptor.name, ...descriptor.aliases].some((name) =>
+        Object.hasOwn(values, name),
+      ),
+    )
+    .map((descriptor) => descriptor.name);
+}
+
+/**
+ * Best-effort records a run-history entry after a successful spawn — never
+ * throws (any failure, including {@link recordHistoryEntry} itself throwing
+ * rather than returning `false`, is swallowed) since history recording must
+ * never affect the resolved exit code {@link runDynamic} already has in hand.
+ */
+function recordDynamicHistory(
+  historyFilePath: string,
+  scriptName: string,
+  parameterNames: readonly string[],
+  exitCode: number,
+): void {
+  try {
+    recordHistoryEntry(historyFilePath, {
+      timestamp: new Date().toISOString(),
+      script: scriptName,
+      parameterNames,
+      exitCode,
+    });
+  } catch {
+    /* best-effort: history recording must never affect the resolved exit code */
+  }
+}
+
+/**
  * Resolves `scriptName` against the discovered `scripts/*` candidates and
  * either delegates to `runInspect` (for `--help`/`-h`) or parses `args`
  * against the script's declared parameters and spawns it, forwarding
  * `passthroughArgs` verbatim after the translated flags.
  *
- * @param context - The command context to run against.
+ * Once the spawn resolves, best-effort records a run-history entry (8f)
+ * naming the parsed canonical parameter names (unlike `run`, which never
+ * parses and always records `[]`) — never recorded for the `--help`/`-h`
+ * delegation (no spawn) or when an unknown script/parameter throws before
+ * spawning.
+ *
+ * @param context - The command context to run against; must carry
+ *   `historyFilePath`.
  * @param scriptName - The first positional token, resolved as a script name.
  * @param args - The tokens between the script name and the first bare `--`
  *   in the original `argv` (raw — not pre-parsed by `main.ts`).
@@ -254,7 +315,7 @@ function translateArgv(
  * ```
  */
 export async function runDynamic(
-  context: M3LCliCommandContext,
+  context: M3LCliDynamicCommandContext,
   scriptName: string,
   args: readonly string[],
   passthroughArgs: readonly string[],
@@ -305,8 +366,15 @@ export async function runDynamic(
   }
 
   const translatedArgs = translateArgv(descriptors, values);
-  return spawnScript(candidate.directory, [
+  const exitCode = await spawnScript(candidate.directory, [
     ...translatedArgs,
     ...passthroughArgs,
   ]);
+  recordDynamicHistory(
+    context.historyFilePath,
+    scriptName,
+    presentParameterNames(descriptors, values),
+    exitCode,
+  );
+  return exitCode;
 }

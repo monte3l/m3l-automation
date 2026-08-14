@@ -20,6 +20,7 @@ import {
   readDiscoveryCache,
   writeDiscoveryCache,
 } from "../src/discovery/cache.js";
+import { recordHistoryEntry } from "../src/history/store.js";
 
 vi.mock("../src/discovery/discover.js", () => ({
   discoverScripts: vi.fn(),
@@ -49,6 +50,9 @@ vi.mock("../src/discovery/cache.js", () => ({
     throw new Error("runRun must never call isCacheEntryFresh");
   }),
 }));
+vi.mock("../src/history/store.js", () => ({
+  recordHistoryEntry: vi.fn(),
+}));
 
 const discoverScriptsMock = vi.mocked(discoverScripts);
 const spawnScriptMock = vi.mocked(spawnScript);
@@ -57,6 +61,7 @@ const readDiscoveryCacheMock = vi.mocked(readDiscoveryCache);
 const writeDiscoveryCacheMock = vi.mocked(writeDiscoveryCache);
 const configMtimesMock = vi.mocked(configMtimes);
 const isCacheEntryFreshMock = vi.mocked(isCacheEntryFresh);
+const recordHistoryEntryMock = vi.mocked(recordHistoryEntry);
 
 afterEach(() => {
   discoverScriptsMock.mockReset();
@@ -66,6 +71,7 @@ afterEach(() => {
   writeDiscoveryCacheMock.mockReset();
   configMtimesMock.mockReset();
   isCacheEntryFreshMock.mockReset();
+  recordHistoryEntryMock.mockReset();
 });
 
 function createOutputCollector(): M3LCliCommandContext["output"] {
@@ -83,14 +89,26 @@ function createOutputCollector(): M3LCliCommandContext["output"] {
   };
 }
 
+/**
+ * `M3LCliCommandContext` gains `historyFilePath` per the 8f contract — not
+ * yet present on the type until `commands/context.ts` is extended. A local
+ * extension (rather than an `as` cast) keeps the object literal type-checked
+ * against a real declared shape in RED, and becomes an identical (harmless)
+ * extension of the real field once GREEN lands.
+ */
+interface M3LCliCommandContextWithHistory extends M3LCliCommandContext {
+  readonly historyFilePath: string;
+}
+
 function buildContext(
-  overrides: Partial<M3LCliCommandContext> = {},
-): M3LCliCommandContext {
+  overrides: Partial<M3LCliCommandContextWithHistory> = {},
+): M3LCliCommandContextWithHistory {
   return {
     workspaceRoot: "/workspace",
     output: createOutputCollector(),
     jsonOutput: false,
     cacheFilePath: "/workspace/data/cache/m3l-cli/discovery.json",
+    historyFilePath: "/workspace/data/cache/m3l-cli/history.json",
     ...overrides,
   };
 }
@@ -181,5 +199,68 @@ describe("runRun — unknown script", () => {
       suggestions: [],
     });
     expect(spawnScriptMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * m3l-cli 8f addendum — after `spawnScript` resolves, `runRun` best-effort
+ * records a history entry with an empty `parameterNames` (it never parses
+ * flags); a recording failure never surfaces and never changes the resolved
+ * exit code.
+ */
+describe("runRun — best-effort history recording (8f)", () => {
+  test("records a history entry with empty parameterNames and the spawned exit code after a successful spawn", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    spawnScriptMock.mockResolvedValue(3);
+    recordHistoryEntryMock.mockReturnValue(true);
+
+    const context = buildContext();
+    const code = await runRun(context, "exporter", ["--limit", "5"]);
+
+    expect(code).toBe(3);
+    expect(recordHistoryEntryMock).toHaveBeenCalledTimes(1);
+    const [historyFilePath, entry] = recordHistoryEntryMock.mock.calls[0] ?? [
+      "",
+      undefined,
+    ];
+    expect(historyFilePath).toBe(context.historyFilePath);
+    expect(entry).toMatchObject({
+      script: "exporter",
+      parameterNames: [],
+      exitCode: 3,
+    });
+    expect(
+      typeof (entry as { timestamp?: unknown } | undefined)?.timestamp,
+    ).toBe("string");
+  });
+
+  test("does not record history when spawnScript rejects", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    spawnScriptMock.mockRejectedValue(new Error("not built"));
+
+    await expect(runRun(buildContext(), "exporter", [])).rejects.toThrow();
+    expect(recordHistoryEntryMock).not.toHaveBeenCalled();
+  });
+
+  test("a history-recording failure never affects the resolved exit code", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    spawnScriptMock.mockResolvedValue(0);
+    recordHistoryEntryMock.mockImplementation(() => {
+      throw new Error("disk full");
+    });
+
+    const code = await runRun(buildContext(), "exporter", []);
+
+    expect(code).toBe(0);
+  });
+
+  test("a history-recording that returns false never affects the resolved exit code", async () => {
+    discoverScriptsMock.mockReturnValue(knownCandidates);
+    spawnScriptMock.mockResolvedValue(5);
+    recordHistoryEntryMock.mockReturnValue(false);
+
+    const code = await runRun(buildContext(), "exporter", []);
+
+    expect(code).toBe(5);
   });
 });

@@ -46,6 +46,8 @@ const STATIC_COMMAND_NAMES: readonly string[] = [
   "inspect",
   "run",
   "doctor",
+  "presets",
+  "history",
   "help",
 ];
 
@@ -85,6 +87,10 @@ function printUsage(output: M3LCliOutput): void {
   output.info(
     "  doctor                     Run environment/workspace health checks",
   );
+  output.info(
+    "  presets <script>           List a script's declared preset files",
+  );
+  output.info("  history                    Show the recorded run history");
   output.info("  help                       Show this help message");
   output.info("  <script> [--param value ...] [-- args...]");
   output.info(
@@ -133,6 +139,22 @@ function splitAtFirstDoubleDash(argv: readonly string[]): {
 const CACHE_DIR_ENV_VAR = "M3L_CACHE_DIR";
 
 /**
+ * Resolves the directory the {@link CACHE_DIR_ENV_VAR} override (or the
+ * `<workspaceRoot>/data/cache` default) names — shared by
+ * {@link resolveCacheFilePath} and {@link resolveHistoryFilePath} so both
+ * files sit under the same root.
+ */
+function resolveCacheDir(
+  workspaceRoot: string,
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  const cacheDirOverride = env[CACHE_DIR_ENV_VAR];
+  return cacheDirOverride !== undefined && cacheDirOverride !== ""
+    ? cacheDirOverride
+    : join(workspaceRoot, "data", "cache");
+}
+
+/**
  * Resolves the discovery cache file's absolute path: under the
  * {@link CACHE_DIR_ENV_VAR} override when set in `env`, otherwise under
  * `<workspaceRoot>/data/cache`.
@@ -141,12 +163,19 @@ function resolveCacheFilePath(
   workspaceRoot: string,
   env: Readonly<Record<string, string | undefined>>,
 ): string {
-  const cacheDirOverride = env[CACHE_DIR_ENV_VAR];
-  const cacheDir =
-    cacheDirOverride !== undefined && cacheDirOverride !== ""
-      ? cacheDirOverride
-      : join(workspaceRoot, "data", "cache");
-  return join(cacheDir, "m3l-cli", "discovery.json");
+  return join(resolveCacheDir(workspaceRoot, env), "m3l-cli", "discovery.json");
+}
+
+/**
+ * Resolves the run-history file's absolute path, mirroring
+ * {@link resolveCacheFilePath}'s `M3L_CACHE_DIR`/workspace-root resolution
+ * (8f) — the two files sit side by side under the same cache directory.
+ */
+function resolveHistoryFilePath(
+  workspaceRoot: string,
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  return join(resolveCacheDir(workspaceRoot, env), "m3l-cli", "history.json");
 }
 
 /** Builds the shared per-command context, resolving the workspace root. */
@@ -162,6 +191,7 @@ function buildCommandContext(
     output,
     jsonOutput,
     cacheFilePath: resolveCacheFilePath(workspaceRoot, env),
+    historyFilePath: resolveHistoryFilePath(workspaceRoot, env),
   };
 }
 
@@ -241,6 +271,38 @@ async function runDoctorCommand(
   return runDoctor(buildCommandContext(cwd, output, jsonOutput, env));
 }
 
+/** Lazily loads and runs `presets`; a missing `<script>` positional is a usage error. */
+async function runPresetsCommand(
+  output: M3LCliOutput,
+  cwd: string,
+  scriptName: string | undefined,
+  jsonOutput: boolean,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<M3LCliExitCode> {
+  if (scriptName === undefined) {
+    output.error(
+      "presets requires a <script> positional — usage: m3l presets <script>",
+    );
+    return USAGE_EXIT_CODE;
+  }
+  const { runPresets } = await import("./commands/presets.js");
+  return runPresets(
+    buildCommandContext(cwd, output, jsonOutput, env),
+    scriptName,
+  );
+}
+
+/** Lazily loads and runs `history` — no positional required. */
+async function runHistoryCommand(
+  output: M3LCliOutput,
+  cwd: string,
+  jsonOutput: boolean,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<number> {
+  const { runHistory } = await import("./commands/history.js");
+  return runHistory(buildCommandContext(cwd, output, jsonOutput, env));
+}
+
 /**
  * Lazily loads and delegates to `commands/dynamic.js`'s `runDynamic` — the
  * fallback for any first positional that isn't a
@@ -297,11 +359,64 @@ function parseStaticCommandArgs(beforeArgs: readonly string[]): {
 }
 
 /**
- * Dispatches one of the `list`/`inspect`/`run`/`doctor` static commands —
- * invoked only once `beforeArgs[0]` is confirmed to be a
+ * Dispatches by the already-confirmed static command name — split out of
+ * {@link dispatchStaticCommand} purely to keep that function's cyclomatic
+ * complexity under the ESLint `complexity` ceiling as the static command
+ * table grows (8f adds `presets`/`history`); no behavioral difference from
+ * inlining the switch would make.
+ *
+ * `command` can only be
+ * `"list"`/`"inspect"`/`"run"`/`"doctor"`/`"presets"`/`"history"` at runtime
+ * (see {@link dispatchStaticCommand}'s doc) — anything else is a caller
+ * contract violation, not a normal path, and `command`'s static type is the
+ * general `string | undefined` (not a literal union `parseArgs`'s
+ * `positionals` can't express), so this can't be a compile-checked `never`
+ * exhaustiveness assertion.
+ */
+async function dispatchStaticCommandByName(
+  command: string | undefined,
+  positionals: readonly string[],
+  passthroughArgs: readonly string[],
+  output: M3LCliOutput,
+  cwd: string,
+  jsonOutput: boolean,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<number> {
+  switch (command) {
+    case "inspect":
+      return runInspectCommand(output, cwd, positionals[1], jsonOutput, env);
+    case "run":
+      return runRunCommand(
+        output,
+        cwd,
+        positionals[1],
+        passthroughArgs,
+        jsonOutput,
+        env,
+      );
+    case "list":
+      return runListCommand(output, cwd, jsonOutput, env);
+    case "doctor":
+      return runDoctorCommand(output, cwd, jsonOutput, env);
+    case "presets":
+      return runPresetsCommand(output, cwd, positionals[1], jsonOutput, env);
+    case "history":
+      return runHistoryCommand(output, cwd, jsonOutput, env);
+    case undefined:
+    default:
+      throw new M3LCliError(
+        "ERR_CLI_UNKNOWN_COMMAND",
+        `unreachable dispatchStaticCommand command '${command ?? ""}'`,
+      );
+  }
+}
+
+/**
+ * Dispatches one of the `list`/`inspect`/`run`/`doctor`/`presets`/`history`
+ * static commands — invoked only once `beforeArgs[0]` is confirmed to be a
  * {@link STATIC_COMMAND_NAMES} entry other than `help` (handled earlier in
- * {@link dispatch}), so `positionals[0]` can only ever be
- * `"list"`/`"inspect"`/`"run"`/`"doctor"` by the time the switch below runs.
+ * {@link dispatch}), so `positionals[0]` can only ever be one of those names
+ * by the time {@link dispatchStaticCommandByName}'s switch runs.
  *
  * Also restores the pre-8d behavior of recognizing a `--version` flag
  * anywhere in `beforeArgs` (not just as the very first token, which
@@ -331,38 +446,15 @@ async function dispatchStaticCommand(
     return 0;
   }
 
-  const command = positionals[0];
-  switch (command) {
-    case "inspect":
-      return runInspectCommand(output, cwd, positionals[1], jsonOutput, env);
-    case "run":
-      return runRunCommand(
-        output,
-        cwd,
-        positionals[1],
-        passthroughArgs,
-        jsonOutput,
-        env,
-      );
-    case "list":
-      return runListCommand(output, cwd, jsonOutput, env);
-    case "doctor":
-      return runDoctorCommand(output, cwd, jsonOutput, env);
-    case undefined:
-    default:
-      // `beforeArgs[0]` is confirmed a `STATIC_COMMAND_NAMES` entry other
-      // than `help` before this function is ever invoked (see the doc
-      // above), so `command` can only be "list"/"inspect"/"run"/"doctor" at
-      // runtime — anything else here is a caller contract violation, not a normal
-      // path, and `command`'s static type is the general `string |
-      // undefined` (not a literal union `parseArgs`'s `positionals` can't
-      // express), so this can't be a compile-checked `never` exhaustiveness
-      // assertion.
-      throw new M3LCliError(
-        "ERR_CLI_UNKNOWN_COMMAND",
-        `unreachable dispatchStaticCommand command '${command ?? ""}'`,
-      );
-  }
+  return dispatchStaticCommandByName(
+    positionals[0],
+    positionals,
+    passthroughArgs,
+    output,
+    cwd,
+    jsonOutput,
+    env,
+  );
 }
 
 /** Parses `argv` and dispatches to the matching static, lazy, or dynamic command. */

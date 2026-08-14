@@ -30,6 +30,7 @@ import { loadScriptParameters } from "../src/discovery/load-config.js";
 import type { M3LCliParameterDescriptor } from "../src/discovery/load-config.js";
 import { configMtimes, readDiscoveryCache } from "../src/discovery/cache.js";
 import type { M3LCliConfigMtimes } from "../src/discovery/cache.js";
+import { readHistory } from "../src/history/store.js";
 import { M3LCliError } from "../src/cli/errors.js";
 
 /**
@@ -53,11 +54,15 @@ vi.mock("../src/discovery/cache.js", () => ({
   configMtimes: vi.fn(),
   readDiscoveryCache: vi.fn(),
 }));
+vi.mock("../src/history/store.js", () => ({
+  readHistory: vi.fn(),
+}));
 
 const discoverScriptsMock = vi.mocked(discoverScripts);
 const loadScriptParametersMock = vi.mocked(loadScriptParameters);
 const configMtimesMock = vi.mocked(configMtimes);
 const readDiscoveryCacheMock = vi.mocked(readDiscoveryCache);
+const readHistoryMock = vi.mocked(readHistory);
 
 const ORIGINAL_NODE_VERSION = process.version;
 
@@ -74,6 +79,7 @@ beforeEach(() => {
   configMtimesMock.mockReturnValue({ srcMtimeMs: 100, distMtimeMs: 200 });
   loadScriptParametersMock.mockResolvedValue([]);
   readDiscoveryCacheMock.mockReturnValue({});
+  readHistoryMock.mockReturnValue([]);
   vi.spyOn(fs, "existsSync").mockReturnValue(false);
   vi.spyOn(fs, "accessSync").mockImplementation(() => undefined);
 });
@@ -84,6 +90,7 @@ afterEach(() => {
   loadScriptParametersMock.mockReset();
   configMtimesMock.mockReset();
   readDiscoveryCacheMock.mockReset();
+  readHistoryMock.mockReset();
   Object.defineProperty(process, "version", {
     value: ORIGINAL_NODE_VERSION,
     configurable: true,
@@ -116,17 +123,31 @@ function createOutputCollector(): {
   };
 }
 
-function buildContext(overrides: Partial<M3LCliCommandContext> = {}): {
-  context: M3LCliCommandContext;
+/**
+ * `M3LCliCommandContext` gains `historyFilePath` per the 8f contract — not
+ * yet present on the type until `commands/context.ts` is extended. A local
+ * extension (rather than an `as` cast) keeps the object literal type-checked
+ * against a real declared shape in RED, and becomes an identical (harmless)
+ * extension of the real field once GREEN lands.
+ */
+interface M3LCliCommandContextWithHistory extends M3LCliCommandContext {
+  readonly historyFilePath: string;
+}
+
+function buildContext(
+  overrides: Partial<M3LCliCommandContextWithHistory> = {},
+): {
+  context: M3LCliCommandContextWithHistory;
   infoLines: string[];
   headingLines: string[];
 } {
   const { output, infoLines, headingLines } = createOutputCollector();
-  const context: M3LCliCommandContext = {
+  const context: M3LCliCommandContextWithHistory = {
     workspaceRoot: "/workspace-root",
     output,
     jsonOutput: true,
     cacheFilePath: "/workspace-root/data/cache/m3l-cli/discovery.json",
+    historyFilePath: "/workspace-root/data/cache/m3l-cli/history.json",
     ...overrides,
   };
   return { context, infoLines, headingLines };
@@ -464,6 +485,69 @@ describe("runDoctor — cache check", () => {
     const row = findCheck(parseChecks(infoLines), "cache");
     expect(row?.status).toBe("ok");
     expect(row?.detail).toContain("1 entry");
+    expect(code).toBe(0);
+  });
+});
+
+/**
+ * m3l-cli 8f addendum — the "history" check mirrors the "cache" check's
+ * absent/valid/invalid arms, reading `context.historyFilePath`.
+ */
+describe("runDoctor — history check (8f)", () => {
+  test("ok ('will be created') when the history file does not exist", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    readHistoryMock.mockReturnValue([]);
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const row = findCheck(parseChecks(infoLines), "history");
+    expect(row?.status).toBe("ok");
+    expect(row?.detail).toMatch(/will be created/i);
+    expect(code).toBe(0);
+  });
+
+  test("ok naming the entry count when the history file exists and parses to a valid entry array", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs, "readFileSync").mockReturnValue(
+      JSON.stringify([
+        {
+          timestamp: "2026-01-01T00:00:00.000Z",
+          script: "exporter",
+          parameterNames: [],
+          exitCode: 0,
+        },
+      ]),
+    );
+    readHistoryMock.mockReturnValue([
+      {
+        timestamp: "2026-01-01T00:00:00.000Z",
+        script: "exporter",
+        parameterNames: [],
+        exitCode: 0,
+      },
+    ]);
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const row = findCheck(parseChecks(infoLines), "history");
+    expect(row?.status).toBe("ok");
+    expect(row?.detail).toMatch(/1 entr/);
+    expect(code).toBe(0);
+  });
+
+  test("warns 'will be rebuilt' when the history file exists but is invalid/unreadable", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs, "readFileSync").mockReturnValue("not json{");
+    readHistoryMock.mockReturnValue([]);
+
+    const { context, infoLines } = buildContext();
+    const code = await runDoctor(context);
+
+    const row = findCheck(parseChecks(infoLines), "history");
+    expect(row?.status).toBe("warn");
+    expect(row?.detail).toMatch(/rebuil|invalid|unreadable/i);
     expect(code).toBe(0);
   });
 });

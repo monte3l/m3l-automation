@@ -48,6 +48,8 @@ const RESERVED_CLI_NAMES = new Set([
   "inspect",
   "run",
   "doctor",
+  "presets",
+  "history",
   "new",
   "help",
 ]);

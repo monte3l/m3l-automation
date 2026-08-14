@@ -73,6 +73,7 @@ describe("describeParameters", () => {
         required: true,
         defaultValue: "3000",
         description: "the listen port",
+        secret: false,
       },
     ]);
   });
@@ -105,6 +106,72 @@ describe("describeParameters", () => {
 
   test("returns an empty array for an empty input", () => {
     expect(describeParameters([])).toEqual([]);
+  });
+
+  test("maps a secret-flagged parameter's isSecret() through to descriptor.secret (8f)", () => {
+    const parameter = new Core.M3LConfigParameter({
+      name: "API_KEY",
+      type: Core.M3LConfigParameterType.STRING,
+      secret: true,
+    });
+
+    const [descriptor] = describeParameters([parameter]);
+
+    expect(descriptor?.secret).toBe(true);
+  });
+
+  test("maps a non-secret parameter's isSecret() to descriptor.secret === false (8f)", () => {
+    const parameter = new Core.M3LConfigParameter({
+      name: "REGION",
+      type: Core.M3LConfigParameterType.STRING,
+    });
+
+    const [descriptor] = describeParameters([parameter]);
+
+    expect(descriptor?.secret).toBe(false);
+  });
+
+  test("masks a secret-flagged parameter's defaultValue as ******** in the descriptor, never the raw value (8f)", () => {
+    const parameter = new Core.M3LConfigParameter({
+      name: "API_KEY",
+      type: Core.M3LConfigParameterType.STRING,
+      defaultValue: "raw-secret-default-value",
+      secret: true,
+    });
+
+    const [descriptor] = describeParameters([parameter]);
+
+    expect(descriptor?.defaultValue).toBe("********");
+    expect(descriptor?.defaultValue).not.toContain("raw-secret-default-value");
+  });
+
+  test("leaves a non-secret parameter's defaultValue untouched (8f)", () => {
+    const parameter = new Core.M3LConfigParameter({
+      name: "REGION",
+      type: Core.M3LConfigParameterType.STRING,
+      defaultValue: "us-east-1",
+    });
+
+    const [descriptor] = describeParameters([parameter]);
+
+    expect(descriptor?.defaultValue).toBe("us-east-1");
+  });
+
+  test("treats a duck-typed element missing isSecret() as non-secret, tolerating stale pre-2.3.0 dist builds (8f)", () => {
+    const staleParameterLike = {
+      getName: () => "LEGACY",
+      getAliases: () => [],
+      getType: () => "STRING",
+      isRequired: () => false,
+      getDefaultValue: () => undefined,
+      getDescription: () => undefined,
+      // no isSecret() — simulates a config module compiled against a dist
+      // predating the 8f secret-threading addition.
+    };
+
+    const [descriptor] = describeParameters([staleParameterLike]);
+
+    expect(descriptor?.secret).toBe(false);
   });
 });
 
@@ -222,6 +289,7 @@ describe("loadScriptParameters", () => {
         required: false,
         defaultValue: undefined,
         description: "",
+        secret: false,
       },
     ]);
   });
@@ -291,7 +359,7 @@ describe("loadScriptParameters", () => {
 });
 
 describe("M3LCliParameterDescriptor contract", () => {
-  test("declares the documented readonly shape", () => {
+  test("declares the documented readonly shape, including 8f's secret flag", () => {
     expectTypeOf<M3LCliParameterDescriptor>().toEqualTypeOf<{
       readonly name: string;
       readonly aliases: readonly string[];
@@ -299,6 +367,7 @@ describe("M3LCliParameterDescriptor contract", () => {
       readonly required: boolean;
       readonly defaultValue: string | undefined;
       readonly description: string;
+      readonly secret?: boolean;
     }>();
   });
 });
