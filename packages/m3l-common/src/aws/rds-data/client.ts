@@ -74,6 +74,38 @@ const databaseResumingClassifier: M3LRetryClassifier = (
 };
 
 /**
+ * The maximum number of characters of a caller-supplied (malformed) `kind`
+ * string embedded in {@link mapValueToField}'s unmapped-kind error message.
+ * Longer input is truncated with a trailing `"…"` indicator.
+ */
+const MAX_KIND_DESCRIPTION_LENGTH = 100;
+
+/**
+ * Sanitizes an untrusted `kind` string before it is embedded in a thrown
+ * error's message: caps its length to {@link MAX_KIND_DESCRIPTION_LENGTH}
+ * characters (truncating with a trailing `"…"` indicator when longer) and
+ * strips ASCII control characters (code points below `0x20`, plus `0x7f`) —
+ * a caller-controlled `kind` could otherwise smuggle ANSI escape sequences
+ * or embedded newlines into logs/reports that later render the message.
+ * String-first and non-backtracking: a single flat character class, no
+ * nesting or alternation.
+ *
+ * @param kind - The raw, caller-influenced `kind` value.
+ * @returns A bounded, control-character-free description safe to embed in
+ *   an error message.
+ */
+function sanitizeKindDescription(kind: string): string {
+  const truncated =
+    kind.length > MAX_KIND_DESCRIPTION_LENGTH
+      ? `${kind.slice(0, MAX_KIND_DESCRIPTION_LENGTH)}…`
+      : kind;
+  // Single flat character class over ASCII control code points — not a
+  // backtracking-prone pattern, so the rule's blanket ban is overbroad here.
+  // eslint-disable-next-line no-control-regex
+  return truncated.replace(/[\x00-\x1f\x7f]/gu, "");
+}
+
+/**
  * Translates a {@link M3LRDSDataValue} into the SDK's `Field` union — the
  * reverse of {@link mapField}, used to build a `SqlParameter`'s `value`.
  *
@@ -106,7 +138,7 @@ function mapValueToField(value: M3LRDSDataValue): Field {
       const malformed = exhaustive as { readonly kind?: unknown };
       const kindDescription =
         typeof malformed.kind === "string"
-          ? malformed.kind
+          ? sanitizeKindDescription(malformed.kind)
           : `typeof ${typeof malformed.kind}`;
       throw new M3LRDSDataOperationError(
         `unmapped M3LRDSDataValue kind: ${kindDescription}`,
@@ -302,16 +334,28 @@ const MAX_CAUSE_CHAIN_WALK = 10;
  * surfaces. Checks `fnError.cause` itself first; when that is already taken,
  * follows `.cause` links (each one re-checked with `instanceof Error` before
  * continuing) up to {@link MAX_CAUSE_CHAIN_WALK} levels deep. An
- * already-set `.cause` at any level is never overwritten. When `fnError`
- * isn't an `Error`, or no open slot is found within the bound, this is a
- * no-op — see {@link M3LRDSDataOperations.withTransaction}'s TSDoc for that
- * edge case's resulting behavior.
+ * already-set `.cause` at any level is never overwritten.
  *
- * @param fnError - The error thrown by `fn`, mutated in place when an open
- *   slot is found.
+ * Returns `false` — never throws — when attachment did not happen, whether
+ * because `fnError` isn't an `Error`, no open slot was found within the
+ * bound, or the assignment itself threw (e.g. `fnError`, or a link in its
+ * chain, is frozen/sealed/non-extensible, or `.cause` is an accessor-only
+ * property). The assignment is guarded with its own `try`/`catch` so a
+ * `TypeError` from an unwritable `.cause` can never escape this helper and
+ * mask `withTransaction`'s intended thrown error. See
+ * {@link M3LRDSDataOperations.withTransaction}'s TSDoc for how the caller
+ * branches on this return value.
+ *
+ * @param fnError - The error thrown by `fn`, mutated in place when an open,
+ *   writable slot is found.
  * @param rollbackError - The rollback's own failure to chain onto `fnError`.
+ * @returns `true` when `rollbackError` was successfully attached somewhere
+ *   in `fnError`'s chain, `false` otherwise.
  */
-function attachRollbackFailure(fnError: unknown, rollbackError: unknown): void {
+function attachRollbackFailure(
+  fnError: unknown,
+  rollbackError: unknown,
+): boolean {
   let link: Error | undefined = fnError instanceof Error ? fnError : undefined;
   for (
     let depth = 0;
@@ -319,11 +363,19 @@ function attachRollbackFailure(fnError: unknown, rollbackError: unknown): void {
     depth += 1
   ) {
     if (link.cause === undefined) {
-      link.cause = rollbackError;
-      return;
+      try {
+        link.cause = rollbackError;
+        return true;
+      } catch {
+        // The slot looked open but assignment failed (frozen/sealed/
+        // non-extensible error, or an accessor-only `.cause`). Report
+        // failure to the caller rather than retrying deeper or rethrowing.
+        return false;
+      }
     }
     link = link.cause instanceof Error ? link.cause : undefined;
   }
+  return false;
 }
 
 /**
@@ -571,27 +623,35 @@ export class M3LRDSDataOperations {
    * When `fn` throws and the rollback succeeds, `fn`'s original error
    * propagates unchanged (identity preserved, so `instanceof` checks against
    * it still work). When `fn` throws AND the rollback also fails, the
-   * rollback failure is never swallowed and `fn`'s original error is never
-   * dropped: this throws a new {@link M3LRDSDataOperationError} whose `cause`
-   * is `fn`'s own error, with the rollback failure attached to the first open
-   * (`undefined`) `.cause` slot found by walking `fn`'s error's own `.cause`
-   * chain — starting at `fn`'s error itself, then its `.cause`, then that
-   * `.cause`'s own `.cause`, and so on for up to 10 links. An already-set
-   * `.cause` at any level is never clobbered; the walk simply keeps
-   * descending past it looking for the first unset one. In the unusual case
-   * where every level within that bound already carries a non-`Error`,
-   * non-`undefined` `.cause` (so no open slot exists), the rollback failure
-   * is not attached anywhere and only `fn`'s own error surfaces via the
-   * thrown error's `cause`. Otherwise, both errors stay reachable by walking
-   * the surfaced error's cause chain.
+   * rollback failure is never swallowed and this always throws a new
+   * {@link M3LRDSDataOperationError} — but which errors it chains depends on
+   * whether {@link attachRollbackFailure} could annotate `fn`'s own error
+   * object:
+   *
+   * - **Attachment succeeds** (`fn`'s error is an `Error`, and an open
+   *   (`undefined`) `.cause` slot exists somewhere in its own `.cause` chain
+   *   — starting at `fn`'s error itself, then its `.cause`, then that
+   *   `.cause`'s own `.cause`, and so on for up to 10 links, never
+   *   clobbering an already-set `.cause`): the thrown error's `cause` is
+   *   `fn`'s own error object, which in turn chains the rollback failure at
+   *   the slot found. Both errors stay reachable by walking the surfaced
+   *   error's cause chain, and `fn`'s error retains its original identity.
+   * - **Attachment fails** (`fn`'s error isn't an `Error`, no open slot
+   *   exists within the 10-link bound, or the `.cause` assignment itself
+   *   throws — e.g. a frozen/sealed/non-extensible error, or an
+   *   accessor-only `.cause`): the thrown error's `cause` is the rollback
+   *   failure directly, and its message additionally notes that `fn`'s own
+   *   error object could not be annotated. `fn`'s error object identity is
+   *   not preserved in this fallback path, but the rollback failure is
+   *   always reachable.
    *
    * @param input - The target cluster/secret/database/schema.
    * @param fn - Receives the started transaction's id; its return value
    *   becomes `withTransaction`'s resolved value on commit.
    * @throws {@link M3LRDSDataOperationError} when begin/commit fails, or when
-   *   `fn` fails and the rollback also fails (chaining `fn`'s own error,
-   *   which in turn chains the rollback failure, as its `cause`, at the
-   *   first open slot in `fn`'s error's own cause chain).
+   *   `fn` fails and the rollback also fails — chaining either `fn`'s own
+   *   error (itself chaining the rollback failure) when annotation
+   *   succeeded, or the rollback failure directly when it did not.
    * @throws `fn`'s own thrown error, unchanged, when `fn` fails and the
    *   rollback succeeds.
    */
@@ -610,10 +670,16 @@ export class M3LRDSDataOperations {
           transactionId,
         });
       } catch (rollbackError) {
-        attachRollbackFailure(fnError, rollbackError);
+        const attached = attachRollbackFailure(fnError, rollbackError);
+        if (attached) {
+          throw new M3LRDSDataOperationError(
+            `withTransaction: fn failed and rollback also failed for resourceArn=${input.resourceArn}, transactionId=${transactionId}`,
+            { cause: fnError },
+          );
+        }
         throw new M3LRDSDataOperationError(
-          `withTransaction: fn failed and rollback also failed for resourceArn=${input.resourceArn}, transactionId=${transactionId}`,
-          { cause: fnError },
+          `withTransaction: fn failed and rollback also failed for resourceArn=${input.resourceArn}, transactionId=${transactionId} (fn's own error object could not be annotated with the rollback failure)`,
+          { cause: rollbackError },
         );
       }
       throw fnError;
