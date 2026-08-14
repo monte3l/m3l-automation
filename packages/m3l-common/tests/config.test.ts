@@ -2786,6 +2786,118 @@ describe("M3LConfigParameter `required` option", () => {
 });
 
 // =============================================================================
+// M3LConfigParameter `secret` option — purely declarative marker
+// (docs/reference/core/config.md "Secret parameters"; RED until implemented)
+// =============================================================================
+describe("M3LConfigParameter `secret` option", () => {
+  test("isSecret() returns true when `secret: true` is declared", () => {
+    const parameter = new M3LConfigParameter({
+      name: "apiKey",
+      type: M3LConfigParameterType.STRING,
+      secret: true,
+    });
+
+    expect(parameter.isSecret()).toBe(true);
+  });
+
+  test("isSecret() returns false by default when `secret` is omitted", () => {
+    const parameter = new M3LConfigParameter({
+      name: "apiKey",
+      type: M3LConfigParameterType.STRING,
+    });
+
+    expect(parameter.isSecret()).toBe(false);
+  });
+
+  test("isSecret() returns false when `secret: false` is declared explicitly", () => {
+    const parameter = new M3LConfigParameter({
+      name: "apiKey",
+      type: M3LConfigParameterType.STRING,
+      secret: false,
+    });
+
+    expect(parameter.isSecret()).toBe(false);
+  });
+
+  test("resolution/coercion/required behavior is identical for a secret parameter and its non-secret twin (secret is never consulted by resolution)", async () => {
+    const reader = new M3LConfigReader([new M3LInMemoryConfigProvider({})]);
+
+    const secretWithDefault = new M3LConfigParameter({
+      name: "apiKey",
+      type: M3LConfigParameterType.STRING,
+      defaultValue: "shh",
+      secret: true,
+    });
+    const plainWithDefault = new M3LConfigParameter({
+      name: "apiKey",
+      type: M3LConfigParameterType.STRING,
+      defaultValue: "shh",
+    });
+
+    await expect(secretWithDefault.getValueAsync(reader)).resolves.toBe("shh");
+    await expect(plainWithDefault.getValueAsync(reader)).resolves.toBe("shh");
+
+    const secretRequired = new M3LConfigParameter({
+      name: "missing",
+      type: M3LConfigParameterType.STRING,
+      required: true,
+      secret: true,
+    });
+    const plainRequired = new M3LConfigParameter({
+      name: "missing",
+      type: M3LConfigParameterType.STRING,
+      required: true,
+    });
+
+    await expect(secretRequired.getValueAsync(reader)).rejects.toBeInstanceOf(
+      M3LConfigMissingError,
+    );
+    await expect(plainRequired.getValueAsync(reader)).rejects.toBeInstanceOf(
+      M3LConfigMissingError,
+    );
+  });
+
+  describe("type-level contract", () => {
+    test("secret is an optional boolean constructor option (positive control)", () => {
+      expect(
+        () =>
+          new M3LConfigParameter({
+            name: "apiKey",
+            type: M3LConfigParameterType.STRING,
+            secret: true,
+          }),
+      ).not.toThrow();
+      expect(
+        () =>
+          new M3LConfigParameter({
+            name: "apiKey",
+            type: M3LConfigParameterType.STRING,
+          }),
+      ).not.toThrow();
+    });
+
+    test("isSecret() returns boolean", () => {
+      const parameter = new M3LConfigParameter({
+        name: "apiKey",
+        type: M3LConfigParameterType.STRING,
+        secret: true,
+      });
+
+      expectTypeOf(parameter.isSecret()).toEqualTypeOf<boolean>();
+    });
+
+    test("declaring `secret: undefined` is rejected under exactOptionalPropertyTypes (declare-or-omit, matching `required`'s style)", () => {
+      // @ts-expect-error -- secret is declared `secret?: boolean` (no `| undefined`), so an explicit `undefined` is rejected under exactOptionalPropertyTypes, mirroring `required?: boolean`
+      new M3LConfigParameter({
+        name: "apiKey",
+        type: M3LConfigParameterType.STRING,
+        secret: undefined,
+      });
+    });
+  });
+});
+
+// =============================================================================
 // M3LConfigValidationError
 // =============================================================================
 describe("M3LConfigValidationError", () => {
@@ -3140,6 +3252,28 @@ describe("M3LConfigHelpFormatter", () => {
     const formatter = new M3LConfigHelpFormatter();
 
     expect(formatter.format(schema)).toBe("");
+  });
+
+  test("a secret parameter renders name/type/description normally but masks its default: line as `default: ********`", () => {
+    const schema = new M3LConfigSchema([
+      new M3LConfigParameter({
+        name: "apiKey",
+        type: M3LConfigParameterType.STRING,
+        required: true,
+        secret: true,
+        description: "API key for the target service",
+        defaultValue: "shh-default",
+      }),
+    ]);
+    const formatter = new M3LConfigHelpFormatter();
+
+    const output = formatter.format(schema);
+    const lines = output.split("\n");
+
+    expect(lines[0]).toBe("--apiKey <STRING> (required)");
+    expect(lines[1]).toBe("    API key for the target service");
+    expect(output).not.toContain("shh-default");
+    expect(lines[2]).toBe("    default: ********");
   });
 
   test("type-level: format() returns string", () => {

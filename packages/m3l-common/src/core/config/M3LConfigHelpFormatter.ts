@@ -11,6 +11,9 @@ import type { M3LConfigSchema } from "./M3LConfigSchema.js";
 /** Indentation applied to a description/default line beneath its header. */
 const LINE_INDENT = "    ";
 
+/** Mask rendered in place of a secret parameter's default value. */
+const SECRET_MASK = "********";
+
 /**
  * Renders a header line for `parameter`, e.g. `--name, --alias <STRING>`,
  * with a trailing `" (required)"` when the parameter is required.
@@ -45,7 +48,10 @@ function formatParameter(parameter: M3LConfigParameter): string {
 
   const defaultValue = parameter.getDefaultValue();
   if (defaultValue !== undefined) {
-    lines.push(`${LINE_INDENT}default: ${formatDefaultValue(defaultValue)}`);
+    const rendered = parameter.isSecret()
+      ? SECRET_MASK
+      : formatDefaultValue(defaultValue);
+    lines.push(`${LINE_INDENT}default: ${rendered}`);
   }
 
   return lines.join("\n");

@@ -125,7 +125,8 @@ const region = new Core.M3LConfigParameter({
 `description` is purely presentational — it is never consulted by resolution.
 `M3LConfigParameter` exposes it, alongside the other declared fields, via
 getters mirroring the existing `getName()`/`getAliases()` style:
-`getType()`, `isRequired()`, `getDefaultValue()`, and `getDescription()`.
+`getType()`, `isRequired()`, `isSecret()`, `getDefaultValue()`, and
+`getDescription()`.
 
 `M3LConfigHelpFormatter` renders a plain-text usage listing from a declared
 `M3LConfigSchema`, one block per parameter in declaration order, separated by
@@ -147,6 +148,49 @@ either, both, or neither, in that order. An array-typed default renders
 comma-joined (`default: a, b, c`); every other declared type renders via
 `String(value)`. `format()` never throws and never resolves a value; an empty
 schema renders `""`.
+
+## Secret parameters
+
+A parameter may declare itself secret:
+
+```typescript
+const apiKey = new Core.M3LConfigParameter({
+  name: "apiKey",
+  type: Core.M3LConfigParameterType.STRING,
+  required: true,
+  secret: true,
+  description: "API key for the target service",
+});
+```
+
+`secret` (default `false`) is exposed via an `isSecret(): boolean` getter in
+the same declared-fields getter family as `isRequired()`. Like
+`description`, it is **purely declarative — never consulted by resolution,
+coercion, or validation**. It exists as a machine-readable marker for
+consumers that handle parameter _values_ outside the resolution path, which
+must uphold this contract:
+
+- **Never persist** a secret parameter's value (a preset/history writer
+  skips it, with an explicit notice rather than a silent drop).
+- **Never display** a secret parameter's resolved or default value
+  unmasked — route any rendering through
+  `redactSensitiveLogValue` (`core/logging`) or equivalent masking.
+- A secret parameter's **name, type, and description are not secret** —
+  listings and `--help` render its block normally, **except the
+  `default:` line, which `M3LConfigHelpFormatter` masks** (`default: ********`)
+  when `isSecret()` is true. A source-literal secret default is already
+  visible in source, but nothing constrains `defaultValue` to a literal —
+  an env- or runtime-sourced default (`defaultValue: process.env.API_TOKEN`)
+  would otherwise leak into help output and any consumer that persists
+  rendered descriptors.
+- **History surfaces store names and outcomes only, never values** — the
+  same never-persist rule as presets, stated here so both 8f surfaces
+  inherit it from the spec rather than each other.
+
+This flag is the declared-parameter producer for secret-name sets: a
+consumer (e.g. the m3l CLI's preset layer, ADR-0042 phase 8f) derives its
+`M3LSecretsSpecifier` entries from each schema's `isSecret()` parameters
+instead of hand-maintaining a name list.
 
 ## Typo suggestions
 
