@@ -6,36 +6,272 @@
  * why this module exists as an AWS-SDK-only route back into fleet scope for
  * Aurora PostgreSQL (via the RDS Data API), never the raw `pg` driver.
  *
- * **Scaffold status:** every method below is a placeholder that rejects with
- * {@link M3LRDSDataOperationError} — the real implementation lands under the
- * `implementing-submodules` TDD loop. Signatures and TSDoc are the contract;
- * bodies are not yet written. The constructor does not yet store its client
- * (nothing reads it until the real implementation lands).
+ * `ExecuteStatement` is synchronous — unlike `aws/athena`, there is no
+ * async-query-then-poll shape here, so this module never imports
+ * `M3LPoller`. Every SDK send still goes through a per-instance
+ * {@link M3LRetryRunner} combining `M3LPollingPolicies.awsThrottling()` with
+ * a module-local classifier recognizing `DatabaseResumingException` — the
+ * Aurora-Serverless-v1 paused-cluster case AWS recommends retrying.
  *
  * @packageDocumentation
  */
 
-import type { RDSDataClient } from "@aws-sdk/client-rds-data";
+import type {
+  ColumnMetadata,
+  Field,
+  RDSDataClient,
+  SqlParameter,
+} from "@aws-sdk/client-rds-data";
+import {
+  BatchExecuteStatementCommand,
+  BeginTransactionCommand,
+  CommitTransactionCommand,
+  ExecuteStatementCommand,
+  RollbackTransactionCommand,
+} from "@aws-sdk/client-rds-data";
 
-import { M3LRDSDataOperationError } from "./error.js";
+import {
+  combineClassifiers,
+  M3LPollingPolicies,
+  M3LRetryRunner,
+} from "../../core/polling/index.js";
+import type { M3LRetryClassifier } from "../../core/polling/index.js";
+
+import {
+  M3LRDSDataOperationError,
+  M3LRDSDataResultTooLargeError,
+} from "./error.js";
 import type {
   M3LRDSDataBatchInput,
   M3LRDSDataBatchResult,
+  M3LRDSDataBeginTransactionInput,
+  M3LRDSDataColumn,
+  M3LRDSDataParameter,
+  M3LRDSDataRow,
   M3LRDSDataStatementInput,
   M3LRDSDataStatementResult,
   M3LRDSDataTransaction,
+  M3LRDSDataValue,
 } from "./types.js";
 
-/** Input for {@link M3LRDSDataOperations.beginTransaction}. */
-export interface M3LRDSDataBeginTransactionInput {
-  /** The Aurora Data-API-enabled cluster's Amazon Resource Name (ARN). */
+/**
+ * Recognizes the SDK's `DatabaseResumingException` (Aurora Serverless v1's
+ * paused-cluster condition) by `error.name`, mapping it to `"retriable"`.
+ * Everything else is `"unknown"`, so this composes cleanly with
+ * `M3LPollingPolicies.awsThrottling()`'s classifier via
+ * {@link combineClassifiers}. Scoped locally to this module — never edited
+ * into the shared `awsThrottlingClassifier` other AWS wrappers use.
+ *
+ * @param error - The thrown value (any shape).
+ * @returns `"retriable"` for a `DatabaseResumingException`, otherwise `"unknown"`.
+ */
+const databaseResumingClassifier: M3LRetryClassifier = (
+  error: unknown,
+): "retriable" | "unknown" => {
+  if (typeof error !== "object" || error === null) return "unknown";
+  const name = (error as { readonly name?: unknown }).name;
+  return name === "DatabaseResumingException" ? "retriable" : "unknown";
+};
+
+/**
+ * Translates a {@link M3LRDSDataValue} into the SDK's `Field` union — the
+ * reverse of {@link mapField}, used to build a `SqlParameter`'s `value`.
+ *
+ * @param value - The plain, library-owned parameter value.
+ * @returns The equivalent SDK `Field`.
+ */
+function mapValueToField(value: M3LRDSDataValue): Field {
+  switch (value.kind) {
+    case "null":
+      return { isNull: true };
+    case "string":
+      return { stringValue: value.value };
+    case "long":
+      return { longValue: value.value };
+    case "double":
+      return { doubleValue: value.value };
+    case "boolean":
+      return { booleanValue: value.value };
+    case "blob":
+      return { blobValue: value.value };
+    default: {
+      const exhaustive: never = value;
+      throw new M3LRDSDataOperationError(
+        `unmapped M3LRDSDataValue kind: ${JSON.stringify(exhaustive)}`,
+      );
+    }
+  }
+}
+
+/**
+ * Translates a {@link M3LRDSDataParameter} into the SDK's `SqlParameter`
+ * shape, used to build `ExecuteStatement`/`BatchExecuteStatement` command
+ * input. `typeHint` is included only when the caller supplied one
+ * (`exactOptionalPropertyTypes`-safe).
+ *
+ * @param parameter - The plain, library-owned SQL parameter.
+ * @returns The equivalent SDK `SqlParameter`.
+ */
+function buildSqlParameter(parameter: M3LRDSDataParameter): SqlParameter {
+  return {
+    name: parameter.name,
+    value: mapValueToField(parameter.value),
+    ...(parameter.typeHint !== undefined && {
+      typeHint: parameter.typeHint,
+    }),
+  };
+}
+
+/**
+ * Translates one SDK `Field` into a {@link M3LRDSDataValue}. A `Field` whose
+ * `isNull` is `true` maps to the `"null"` kind; a `Field` whose `isNull` is
+ * `false` is a representable wire value and must NOT short-circuit to null —
+ * it falls through to whichever other member (`stringValue`/`longValue`/
+ * `doubleValue`/`booleanValue`/`blobValue`) is actually present.
+ * `arrayValue` and `$unknown` are unmapped: mapping either to the `"null"`
+ * kind would silently corrupt data for a caller writing results out, so both
+ * throw {@link M3LRDSDataOperationError} naming `location` (a row/column
+ * index or a `generatedFields` index) and the encountered member's kind —
+ * never the value itself.
+ *
+ * @param field - The raw SDK `Field`.
+ * @param location - A human-readable position (e.g. `"row 0, column 1"`),
+ *   included in the thrown error's message for an unmapped member.
+ * @returns The equivalent {@link M3LRDSDataValue}.
+ * @throws {@link M3LRDSDataOperationError} when `field` carries an
+ *   `arrayValue` or an unrecognized (`$unknown`) member.
+ */
+function mapField(field: Field, location: string): M3LRDSDataValue {
+  if (field.isNull === true) return { kind: "null" };
+  if (field.stringValue !== undefined) {
+    return { kind: "string", value: field.stringValue };
+  }
+  if (field.longValue !== undefined) {
+    return { kind: "long", value: field.longValue };
+  }
+  if (field.doubleValue !== undefined) {
+    return { kind: "double", value: field.doubleValue };
+  }
+  if (field.booleanValue !== undefined) {
+    return { kind: "boolean", value: field.booleanValue };
+  }
+  if (field.blobValue !== undefined) {
+    return { kind: "blob", value: field.blobValue };
+  }
+  if (field.arrayValue !== undefined) {
+    throw new M3LRDSDataOperationError(
+      `unmapped Field member "arrayValue" at ${location}`,
+    );
+  }
+  throw new M3LRDSDataOperationError(
+    `unmapped Field member "$unknown" at ${location}`,
+  );
+}
+
+/**
+ * Builds an `ExecuteStatementCommand`'s input from a
+ * {@link M3LRDSDataStatementInput} — split out of
+ * {@link M3LRDSDataOperations.executeStatement} to keep its cyclomatic
+ * complexity low. `database`/`schema`/`parameters`/`transactionId` are
+ * included only when the caller supplied them; `includeResultMetadata` is
+ * always `true` (without it, the SDK never returns `columnMetadata`).
+ *
+ * @param input - The caller's statement input.
+ * @returns The SDK `ExecuteStatementCommand` input shape.
+ */
+function buildExecuteStatementInput(input: M3LRDSDataStatementInput): {
   readonly resourceArn: string;
-  /** The Secrets Manager ARN of the secret granting DB access. */
   readonly secretArn: string;
-  /** The target database name. */
+  readonly sql: string;
   readonly database?: string;
-  /** The target schema name. */
   readonly schema?: string;
+  readonly parameters?: SqlParameter[];
+  readonly transactionId?: string;
+  readonly includeResultMetadata: true;
+} {
+  return {
+    resourceArn: input.resourceArn,
+    secretArn: input.secretArn,
+    sql: input.sql,
+    ...(input.database !== undefined && { database: input.database }),
+    ...(input.schema !== undefined && { schema: input.schema }),
+    ...(input.parameters !== undefined && {
+      parameters: input.parameters.map(buildSqlParameter),
+    }),
+    ...(input.transactionId !== undefined && {
+      transactionId: input.transactionId,
+    }),
+    includeResultMetadata: true,
+  };
+}
+
+/**
+ * Maps an `ExecuteStatement` SDK rejection to the right typed error — split
+ * out of {@link M3LRDSDataOperations.executeStatement} to keep its
+ * cyclomatic complexity low. `UnsupportedResultException` (an oversized
+ * result, an unsupported data type, or a multidimensional array — the SDK
+ * gives no way to tell which) maps to
+ * {@link M3LRDSDataResultTooLargeError}; every other rejection maps to
+ * {@link M3LRDSDataOperationError}.
+ *
+ * @param cause - The raw SDK `.send()` rejection.
+ * @param resourceArn - The target cluster's ARN, named (never a parameter
+ *   value) in the thrown error's message.
+ * @throws {@link M3LRDSDataResultTooLargeError} or
+ *   {@link M3LRDSDataOperationError}, always.
+ */
+function throwExecuteStatementError(
+  cause: unknown,
+  resourceArn: string,
+): never {
+  if (cause instanceof Error && cause.name === "UnsupportedResultException") {
+    throw new M3LRDSDataResultTooLargeError(
+      `executeStatement: ExecuteStatement rejected with an oversized result, an unsupported data type, or a multidimensional array for resourceArn=${resourceArn}`,
+      { cause },
+    );
+  }
+  throw new M3LRDSDataOperationError(
+    `executeStatement: ExecuteStatement failed for resourceArn=${resourceArn}`,
+    { cause },
+  );
+}
+
+/** Maps one SDK result-set row (`Field[]`) into a {@link M3LRDSDataRow}. */
+function mapRow(fields: readonly Field[], rowIndex: number): M3LRDSDataRow {
+  return fields.map((field, columnIndex) =>
+    mapField(field, `row ${rowIndex}, column ${columnIndex}`),
+  );
+}
+
+/** Maps a flat `Field[]` (e.g. `generatedFields`) into `M3LRDSDataValue[]`. */
+function mapFieldList(
+  fields: readonly Field[],
+  label: string,
+): readonly M3LRDSDataValue[] {
+  return fields.map((field, index) => mapField(field, `${label}[${index}]`));
+}
+
+/**
+ * Translates an SDK `ColumnMetadata` into a {@link M3LRDSDataColumn}.
+ * `name`/`typeName`/`label` default to `""` when the SDK omits them.
+ * `nullable` is the SDK's JDBC-style `number | undefined` (`0` for not
+ * nullable, `1` for nullable, `2` for nullable-unknown). This maps `1` to
+ * `true` and `0` to `false`; any other value (including `2` or an absent
+ * field) omits the `nullable` key entirely (never `undefined`, per
+ * `exactOptionalPropertyTypes`).
+ *
+ * @param column - The raw SDK `ColumnMetadata`.
+ * @returns The equivalent {@link M3LRDSDataColumn}.
+ */
+function mapColumn(column: ColumnMetadata): M3LRDSDataColumn {
+  const nullable =
+    column.nullable === 1 ? true : column.nullable === 0 ? false : undefined;
+  return {
+    name: column.name ?? "",
+    typeName: column.typeName ?? "",
+    label: column.label ?? "",
+    ...(nullable !== undefined && { nullable }),
+  };
 }
 
 /**
@@ -58,15 +294,26 @@ export interface M3LRDSDataBeginTransactionInput {
  * ```
  */
 export class M3LRDSDataOperations {
+  readonly #client: RDSDataClient;
+  readonly #runner: M3LRetryRunner;
+
   /**
    * Creates a new `M3LRDSDataOperations`.
    *
-   * @param _client - An already-provisioned `RDSDataClient`, typically
+   * @param client - An already-provisioned `RDSDataClient`, typically
    *   `script.aws.clients.rdsData` or `script.aws.services.rdsDataOperations`.
-   *   Unused for now: every method below is an unimplemented placeholder: the
-   *   real implementation stores and calls this client.
    */
-  constructor(_client: RDSDataClient) {}
+  constructor(client: RDSDataClient) {
+    this.#client = client;
+    const throttling = M3LPollingPolicies.awsThrottling();
+    this.#runner = new M3LRetryRunner({
+      ...throttling,
+      classifier: combineClassifiers(
+        throttling.classifier,
+        databaseResumingClassifier,
+      ),
+    });
+  }
 
   /**
    * Runs one SQL statement and returns its typed result set.
@@ -74,18 +321,42 @@ export class M3LRDSDataOperations {
    * @param input - The statement, its parameters, and the target cluster.
    * @returns The mapped rows, columns, and update count.
    * @throws {@link M3LRDSDataOperationError} when the request fails after
-   *   retries.
-   * @throws {@link M3LRDSDataResultTooLargeError} when an unpaged result set
-   *   exceeds the RDS Data API's 1 MiB response cap.
+   *   retries, or when a returned `Field` carries an unmapped
+   *   `arrayValue`/`$unknown` member.
+   * @throws {@link M3LRDSDataResultTooLargeError} when the SDK rejects with
+   *   `UnsupportedResultException` — an oversized result, an unsupported
+   *   data type, or a multidimensional array (the SDK gives no way to tell
+   *   which).
    */
-  executeStatement(
+  async executeStatement(
     input: M3LRDSDataStatementInput,
   ): Promise<M3LRDSDataStatementResult> {
-    return Promise.reject(
-      new M3LRDSDataOperationError(
-        `executeStatement: not yet implemented (resourceArn=${input.resourceArn})`,
-      ),
+    const command = new ExecuteStatementCommand(
+      buildExecuteStatementInput(input),
     );
+
+    let response;
+    try {
+      response = await this.#runner.run(() => this.#client.send(command));
+    } catch (cause) {
+      throwExecuteStatementError(cause, input.resourceArn);
+    }
+
+    const rows = (response.records ?? []).map((row, rowIndex) =>
+      mapRow(row, rowIndex),
+    );
+    const columns = (response.columnMetadata ?? []).map(mapColumn);
+    const generatedFields = mapFieldList(
+      response.generatedFields ?? [],
+      "generatedFields",
+    );
+
+    return {
+      rows,
+      columns,
+      numberOfRecordsUpdated: response.numberOfRecordsUpdated ?? 0,
+      generatedFields,
+    };
   }
 
   /**
@@ -94,16 +365,48 @@ export class M3LRDSDataOperations {
    * @param input - The statement, its parameter sets, and the target cluster.
    * @returns One update result per parameter set, in order.
    * @throws {@link M3LRDSDataOperationError} when the request fails after
-   *   retries.
+   *   retries, or when a returned `Field` carries an unmapped
+   *   `arrayValue`/`$unknown` member. A `BatchExecuteStatement` rejection
+   *   never maps to {@link M3LRDSDataResultTooLargeError} — that mapping is
+   *   `executeStatement`-only.
    */
-  batchExecuteStatement(
+  async batchExecuteStatement(
     input: M3LRDSDataBatchInput,
   ): Promise<M3LRDSDataBatchResult> {
-    return Promise.reject(
-      new M3LRDSDataOperationError(
-        `batchExecuteStatement: not yet implemented (resourceArn=${input.resourceArn})`,
+    const command = new BatchExecuteStatementCommand({
+      resourceArn: input.resourceArn,
+      secretArn: input.secretArn,
+      sql: input.sql,
+      ...(input.database !== undefined && { database: input.database }),
+      ...(input.schema !== undefined && { schema: input.schema }),
+      parameterSets: input.parameterSets.map((parameterSet) =>
+        parameterSet.map(buildSqlParameter),
       ),
+      ...(input.transactionId !== undefined && {
+        transactionId: input.transactionId,
+      }),
+    });
+
+    let response;
+    try {
+      response = await this.#runner.run(() => this.#client.send(command));
+    } catch (cause) {
+      throw new M3LRDSDataOperationError(
+        `batchExecuteStatement: BatchExecuteStatement failed for resourceArn=${input.resourceArn}`,
+        { cause },
+      );
+    }
+
+    const updateResults = (response.updateResults ?? []).map(
+      (updateResult, index) => ({
+        generatedFields: mapFieldList(
+          updateResult.generatedFields ?? [],
+          `updateResults[${index}].generatedFields`,
+        ),
+      }),
     );
+
+    return { updateResults };
   }
 
   /**
@@ -113,16 +416,35 @@ export class M3LRDSDataOperations {
    * @returns A {@link M3LRDSDataTransaction} to pass to `executeStatement`
    *   (via `transactionId`), `commitTransaction`, or `rollbackTransaction`.
    * @throws {@link M3LRDSDataOperationError} when the request fails after
-   *   retries.
+   *   retries, or when a successful response carries no `transactionId`.
    */
-  beginTransaction(
+  async beginTransaction(
     input: M3LRDSDataBeginTransactionInput,
   ): Promise<M3LRDSDataTransaction> {
-    return Promise.reject(
-      new M3LRDSDataOperationError(
-        `beginTransaction: not yet implemented (resourceArn=${input.resourceArn})`,
-      ),
-    );
+    const command = new BeginTransactionCommand({
+      resourceArn: input.resourceArn,
+      secretArn: input.secretArn,
+      ...(input.database !== undefined && { database: input.database }),
+      ...(input.schema !== undefined && { schema: input.schema }),
+    });
+
+    let response;
+    try {
+      response = await this.#runner.run(() => this.#client.send(command));
+    } catch (cause) {
+      throw new M3LRDSDataOperationError(
+        `beginTransaction: BeginTransaction failed for resourceArn=${input.resourceArn}`,
+        { cause },
+      );
+    }
+
+    if (response.transactionId === undefined) {
+      throw new M3LRDSDataOperationError(
+        `beginTransaction: BeginTransaction response carried no transactionId for resourceArn=${input.resourceArn}`,
+      );
+    }
+
+    return { transactionId: response.transactionId };
   }
 
   /**
@@ -135,16 +457,27 @@ export class M3LRDSDataOperations {
    * @throws {@link M3LRDSDataOperationError} when the request fails after
    *   retries.
    */
-  commitTransaction(
+  async commitTransaction(
     resourceArn: string,
     secretArn: string,
     transaction: M3LRDSDataTransaction,
   ): Promise<void> {
-    return Promise.reject(
-      new M3LRDSDataOperationError(
-        `commitTransaction: not yet implemented (transactionId=${transaction.transactionId}, resourceArn=${resourceArn}, secretArn=${secretArn})`,
-      ),
-    );
+    try {
+      await this.#runner.run(() =>
+        this.#client.send(
+          new CommitTransactionCommand({
+            resourceArn,
+            secretArn,
+            transactionId: transaction.transactionId,
+          }),
+        ),
+      );
+    } catch (cause) {
+      throw new M3LRDSDataOperationError(
+        `commitTransaction: CommitTransaction failed for resourceArn=${resourceArn}, transactionId=${transaction.transactionId}`,
+        { cause },
+      );
+    }
   }
 
   /**
@@ -157,22 +490,34 @@ export class M3LRDSDataOperations {
    * @throws {@link M3LRDSDataOperationError} when the request fails after
    *   retries.
    */
-  rollbackTransaction(
+  async rollbackTransaction(
     resourceArn: string,
     secretArn: string,
     transaction: M3LRDSDataTransaction,
   ): Promise<void> {
-    return Promise.reject(
-      new M3LRDSDataOperationError(
-        `rollbackTransaction: not yet implemented (transactionId=${transaction.transactionId}, resourceArn=${resourceArn}, secretArn=${secretArn})`,
-      ),
-    );
+    try {
+      await this.#runner.run(() =>
+        this.#client.send(
+          new RollbackTransactionCommand({
+            resourceArn,
+            secretArn,
+            transactionId: transaction.transactionId,
+          }),
+        ),
+      );
+    } catch (cause) {
+      throw new M3LRDSDataOperationError(
+        `rollbackTransaction: RollbackTransaction failed for resourceArn=${resourceArn}, transactionId=${transaction.transactionId}`,
+        { cause },
+      );
+    }
   }
 
   /**
    * Runs `fn` inside a begin/commit transaction, rolling back on any throw.
    * A rollback failure is never swallowed: it is chained as the `cause` of
-   * the error `fn`'s own throw surfaces as.
+   * the error `fn`'s own throw surfaces as. When the rollback succeeds,
+   * `fn`'s original error propagates unchanged.
    *
    * @param input - The target cluster/secret/database/schema.
    * @param fn - Receives the started transaction's id; its return value
@@ -181,14 +526,32 @@ export class M3LRDSDataOperations {
    *   fails, or `fn`'s own thrown error (with a failed rollback chained onto
    *   it as `cause`) when `fn` fails.
    */
-  withTransaction<T>(
+  async withTransaction<T>(
     input: M3LRDSDataBeginTransactionInput,
-    _fn: (transactionId: string) => Promise<T>,
+    fn: (transactionId: string) => Promise<T>,
   ): Promise<T> {
-    return Promise.reject(
-      new M3LRDSDataOperationError(
-        `withTransaction: not yet implemented (resourceArn=${input.resourceArn})`,
-      ),
-    );
+    const { transactionId } = await this.beginTransaction(input);
+
+    let result: T;
+    try {
+      result = await fn(transactionId);
+    } catch (fnError) {
+      try {
+        await this.rollbackTransaction(input.resourceArn, input.secretArn, {
+          transactionId,
+        });
+      } catch (rollbackError) {
+        throw new M3LRDSDataOperationError(
+          `withTransaction: rollback failed for resourceArn=${input.resourceArn}, transactionId=${transactionId}, after fn's own failure`,
+          { cause: rollbackError },
+        );
+      }
+      throw fnError;
+    }
+
+    await this.commitTransaction(input.resourceArn, input.secretArn, {
+      transactionId,
+    });
+    return result;
   }
 }

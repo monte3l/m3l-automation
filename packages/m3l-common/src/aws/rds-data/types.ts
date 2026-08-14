@@ -130,3 +130,15 @@ export interface M3LRDSDataTransaction {
   /** The transaction's id. */
   readonly transactionId: string;
 }
+
+/** Input for {@link M3LRDSDataOperations.beginTransaction}. */
+export interface M3LRDSDataBeginTransactionInput {
+  /** The Aurora Data-API-enabled cluster's Amazon Resource Name (ARN). */
+  readonly resourceArn: string;
+  /** The Secrets Manager ARN of the secret granting DB access. */
+  readonly secretArn: string;
+  /** The target database name. */
+  readonly database?: string;
+  /** The target schema name. */
+  readonly schema?: string;
+}

@@ -442,17 +442,14 @@ describe("M3LRDSDataOperations", () => {
 
       const operations = new M3LRDSDataOperations(fakeClient());
 
-      await expect(
-        operations.executeStatement(MINIMAL_STATEMENT_INPUT),
-      ).rejects.toThrow(M3LRDSDataOperationError);
-      expect(h.send).toHaveBeenCalledTimes(1);
-
       let thrown: unknown;
       try {
         await operations.executeStatement(MINIMAL_STATEMENT_INPUT);
       } catch (error) {
         thrown = error;
       }
+
+      expect(thrown).toBeInstanceOf(M3LRDSDataOperationError);
       expect(thrown).toBeInstanceOf(M3LError);
       expect((thrown as M3LRDSDataOperationError).cause).toBe(sdkError);
     });

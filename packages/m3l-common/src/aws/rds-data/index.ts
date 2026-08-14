@@ -7,7 +7,6 @@
  * @packageDocumentation
  */
 
-export type { M3LRDSDataBeginTransactionInput } from "./client.js";
 export { M3LRDSDataOperations } from "./client.js";
 export {
   M3LRDSDataOperationError,
@@ -16,6 +15,7 @@ export {
 export type {
   M3LRDSDataBatchInput,
   M3LRDSDataBatchResult,
+  M3LRDSDataBeginTransactionInput,
   M3LRDSDataColumn,
   M3LRDSDataParameter,
   M3LRDSDataRow,
