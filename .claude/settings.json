@@ -190,7 +190,8 @@
       "mcp__github__pull_request_read",
       "mcp__github__list_pull_requests",
       "mcp__github__search_pull_requests",
-      "mcp__github__get_me"
+      "mcp__github__get_me",
+      "mcp__github__add_issue_comment"
     ]
   },
   "availableModels": ["fable", "opus", "sonnet", "haiku"],
