@@ -5,56 +5,36 @@ import { M3LCliError } from "../src/cli/errors.js";
 import type { M3LCliCommandContext } from "../src/commands/context.js";
 import { discoverScripts } from "../src/discovery/discover.js";
 import type { M3LCliScriptCandidate } from "../src/discovery/discover.js";
-import { loadScriptParameters } from "../src/discovery/load-config.js";
+import { loadParametersCached } from "../src/discovery/cached-load.js";
 import type { M3LCliParameterDescriptor } from "../src/discovery/load-config.js";
-import {
-  configMtimes,
-  isCacheEntryFresh,
-  readDiscoveryCache,
-  writeDiscoveryCache,
-} from "../src/discovery/cache.js";
-import type { M3LCliDiscoveryCacheEntry } from "../src/discovery/cache.js";
 
 /**
- * Contract: `src/commands/inspect.ts` — `runInspect` resolves the script
- * name against `discoverScripts`; an unknown name throws an
+ * Contract: `src/commands/inspect.ts` — `runInspect` resolves the script name
+ * against `discoverScripts`; an unknown name throws an
  * `ERR_CLI_UNKNOWN_SCRIPT` error carrying Damerau-Levenshtein `suggestions`
  * over the known names (via `Core.M3LUnknownParameterDetector`); a known
- * script loads its parameters (cache-aware, same as `runList`) and renders
- * the parameter table; a non-`M3LCliError` config-load failure (or freshness
- * probe failure) is wrapped into `ERR_CLI_CONFIG_IMPORT` with `cause`
- * chained, while an already-typed `M3LCliError` propagates unchanged. See
- * the pinned contract at
+ * script loads its parameters through the shared `loadParametersCached`
+ * helper (8d dedup refactor, 8b review CR#4) — propagating its failure
+ * unchanged rather than annotating a row — and renders the parameter table
+ * through the shared `formatAlignedTable` helper (8d dedup refactor, 8b
+ * review CR#5), so its human-readable rendering is now column-aligned rather
+ * than a flat `.join("  ")`. See the pinned contract at
  * `docs/reference/cli.md`.
  */
 
 vi.mock("../src/discovery/discover.js", () => ({
   discoverScripts: vi.fn(),
 }));
-vi.mock("../src/discovery/load-config.js", () => ({
-  loadScriptParameters: vi.fn(),
-}));
-vi.mock("../src/discovery/cache.js", () => ({
-  readDiscoveryCache: vi.fn(),
-  writeDiscoveryCache: vi.fn(),
-  configMtimes: vi.fn(),
-  isCacheEntryFresh: vi.fn(),
+vi.mock("../src/discovery/cached-load.js", () => ({
+  loadParametersCached: vi.fn(),
 }));
 
 const discoverScriptsMock = vi.mocked(discoverScripts);
-const loadScriptParametersMock = vi.mocked(loadScriptParameters);
-const readDiscoveryCacheMock = vi.mocked(readDiscoveryCache);
-const writeDiscoveryCacheMock = vi.mocked(writeDiscoveryCache);
-const configMtimesMock = vi.mocked(configMtimes);
-const isCacheEntryFreshMock = vi.mocked(isCacheEntryFresh);
+const loadParametersCachedMock = vi.mocked(loadParametersCached);
 
 afterEach(() => {
   discoverScriptsMock.mockReset();
-  loadScriptParametersMock.mockReset();
-  readDiscoveryCacheMock.mockReset();
-  writeDiscoveryCacheMock.mockReset();
-  configMtimesMock.mockReset();
-  isCacheEntryFreshMock.mockReset();
+  loadParametersCachedMock.mockReset();
 });
 
 function createOutputCollector(): {
@@ -131,25 +111,20 @@ const exporterParameters: readonly M3LCliParameterDescriptor[] = [
   },
 ];
 
-const freshMtimes = { srcMtimeMs: 100, distMtimeMs: 200 };
-
-describe("runInspect — known script, cache-fresh path", () => {
-  test("uses the cached descriptors and never calls loadScriptParameters", async () => {
+describe("runInspect — known script", () => {
+  test("loads parameters through loadParametersCached and renders the JSON descriptor array", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
-    configMtimesMock.mockReturnValue(freshMtimes);
-    const cachedEntry: M3LCliDiscoveryCacheEntry = {
-      ...freshMtimes,
-      parameters: exporterParameters,
-    };
-    readDiscoveryCacheMock.mockReturnValue({ exporter: cachedEntry });
-    isCacheEntryFreshMock.mockReturnValue(true);
+    loadParametersCachedMock.mockResolvedValue(exporterParameters);
 
     const { context, infoLines } = buildContext({ jsonOutput: true });
     const code = await runInspect(context, "exporter");
 
     expect(code).toBe(0);
-    expect(loadScriptParametersMock).not.toHaveBeenCalled();
-    expect(infoLines).toHaveLength(1);
+    expect(loadParametersCachedMock).toHaveBeenCalledWith(
+      "exporter",
+      exporterCandidate.directory,
+      context.cacheFilePath,
+    );
     const descriptor = JSON.parse(
       infoLines[0] ?? "null",
     ) as readonly M3LCliParameterDescriptor[];
@@ -157,37 +132,10 @@ describe("runInspect — known script, cache-fresh path", () => {
   });
 });
 
-describe("runInspect — known script, cache-stale path", () => {
-  test("loads and persists parameters when no fresh cache entry exists", async () => {
+describe("runInspect — aligned table rendering (8d: via shared formatAlignedTable)", () => {
+  test("prints a heading, then a header line and one column-aligned row per parameter with no trailing whitespace", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
-    configMtimesMock.mockReturnValue(freshMtimes);
-    readDiscoveryCacheMock.mockReturnValue({});
-    loadScriptParametersMock.mockResolvedValue(exporterParameters);
-
-    const { context } = buildContext();
-    const code = await runInspect(context, "exporter");
-
-    expect(code).toBe(0);
-    expect(loadScriptParametersMock).toHaveBeenCalledWith(
-      exporterCandidate.directory,
-    );
-    expect(writeDiscoveryCacheMock).toHaveBeenCalledWith(
-      context.cacheFilePath,
-      expect.objectContaining({
-        exporter: { ...freshMtimes, parameters: exporterParameters },
-      }),
-    );
-  });
-});
-
-describe("runInspect — rendering", () => {
-  test("prints a heading and human-readable parameter rows when jsonOutput is false", async () => {
-    discoverScriptsMock.mockReturnValue(knownCandidates);
-    configMtimesMock.mockReturnValue(freshMtimes);
-    readDiscoveryCacheMock.mockReturnValue({
-      exporter: { ...freshMtimes, parameters: exporterParameters },
-    });
-    isCacheEntryFreshMock.mockReturnValue(true);
+    loadParametersCachedMock.mockResolvedValue(exporterParameters);
 
     const { context, infoLines, headingLines } = buildContext({
       jsonOutput: false,
@@ -196,9 +144,26 @@ describe("runInspect — rendering", () => {
 
     expect(code).toBe(0);
     expect(headingLines.length).toBeGreaterThan(0);
-    const rendered = infoLines.join("\n");
-    expect(rendered).toContain("region");
-    expect(rendered).toContain("batchSize");
+    // header + one row per parameter
+    expect(infoLines).toHaveLength(1 + exporterParameters.length);
+    for (const line of infoLines) {
+      expect(line).not.toMatch(/\s$/);
+    }
+    const [header, regionRow, batchSizeRow] = infoLines;
+    expect(header).toContain("NAME");
+    expect(header).toContain("ALIASES");
+    expect(header).toContain("TYPE");
+    expect(header).toContain("REQUIRED");
+    expect(header).toContain("DEFAULT");
+    expect(header).toContain("DESCRIPTION");
+    // the NAME column is padded to the width of the longest name
+    // ("batchSize", 9 chars) so both rows' second column starts at the
+    // same offset — the observable effect of column alignment.
+    const regionNameField = regionRow?.slice(0, "batchSize".length) ?? "";
+    const batchSizeNameField = batchSizeRow?.slice(0, "batchSize".length) ?? "";
+    expect(regionNameField.trimEnd()).toBe("region");
+    expect(batchSizeNameField.trimEnd()).toBe("batchSize");
+    expect(regionRow?.indexOf("STRING")).toBe(batchSizeRow?.indexOf("INT"));
   });
 });
 
@@ -212,7 +177,7 @@ describe("runInspect — unknown script", () => {
       code: "ERR_CLI_UNKNOWN_SCRIPT",
       suggestions: expect.arrayContaining(["exporter"]) as unknown,
     });
-    expect(loadScriptParametersMock).not.toHaveBeenCalled();
+    expect(loadParametersCachedMock).not.toHaveBeenCalled();
   });
 
   test("throws ERR_CLI_UNKNOWN_SCRIPT with an empty suggestions array when nothing is close", async () => {
@@ -230,63 +195,17 @@ describe("runInspect — unknown script", () => {
 });
 
 describe("runInspect — config load failure", () => {
-  test("wraps a non-M3LCliError loadScriptParameters rejection into ERR_CLI_CONFIG_IMPORT with cause chained", async () => {
+  test("propagates a loadParametersCached rejection unchanged (not re-wrapped)", async () => {
     discoverScriptsMock.mockReturnValue(knownCandidates);
-    configMtimesMock.mockReturnValue(freshMtimes);
-    readDiscoveryCacheMock.mockReturnValue({});
-    const loadError = new Error("cannot import config");
-    loadScriptParametersMock.mockRejectedValue(loadError);
-
-    const { context } = buildContext();
-
-    let thrown: unknown;
-    try {
-      await runInspect(context, "exporter");
-    } catch (error) {
-      thrown = error;
-    }
-    expect(thrown).toBeInstanceOf(M3LCliError);
-    expect((thrown as M3LCliError).code).toBe("ERR_CLI_CONFIG_IMPORT");
-    expect((thrown as M3LCliError).cause).toBe(loadError);
-  });
-
-  test("propagates an M3LCliError from loadScriptParameters unchanged, not double-wrapped", async () => {
-    discoverScriptsMock.mockReturnValue(knownCandidates);
-    configMtimesMock.mockReturnValue(freshMtimes);
-    readDiscoveryCacheMock.mockReturnValue({});
     const loadError = new M3LCliError(
       "ERR_CLI_CONFIG_IMPORT",
       "cannot import config",
     );
-    loadScriptParametersMock.mockRejectedValue(loadError);
+    loadParametersCachedMock.mockRejectedValue(loadError);
 
     const { context } = buildContext();
 
     await expect(runInspect(context, "exporter")).rejects.toBe(loadError);
-  });
-});
-
-describe("runInspect — freshness probe failure", () => {
-  test("wraps a configMtimes throw into ERR_CLI_CONFIG_IMPORT with cause chained", async () => {
-    discoverScriptsMock.mockReturnValue(knownCandidates);
-    readDiscoveryCacheMock.mockReturnValue({});
-    const probeError = new Error("EACCES: permission denied");
-    configMtimesMock.mockImplementation(() => {
-      throw probeError;
-    });
-
-    const { context } = buildContext();
-
-    let thrown: unknown;
-    try {
-      await runInspect(context, "exporter");
-    } catch (error) {
-      thrown = error;
-    }
-    expect(thrown).toBeInstanceOf(M3LCliError);
-    expect((thrown as M3LCliError).code).toBe("ERR_CLI_CONFIG_IMPORT");
-    expect((thrown as M3LCliError).cause).toBe(probeError);
-    expect(loadScriptParametersMock).not.toHaveBeenCalled();
   });
 });
 

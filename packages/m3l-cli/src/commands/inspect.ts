@@ -1,7 +1,9 @@
 /**
  * `commands/inspect` — prints a single script's declared parameter table (or
  * suggests near-miss names for an unknown script), reading through the
- * discovery cache like `commands/list`.
+ * discovery cache via the shared `loadParametersCached` helper (8d dedup
+ * refactor, 8b review CR#4) and rendering through the shared
+ * `formatAlignedTable` helper (8d dedup refactor, 8b review CR#5).
  *
  * @packageDocumentation
  */
@@ -9,41 +11,32 @@
 import { M3LCliError } from "../cli/errors.js";
 import type { M3LCliExitCode } from "../cli/errors.js";
 import { suggestNames } from "../cli/suggest.js";
+import { formatAlignedTable } from "../cli/table.js";
 import type { M3LCliCommandContext } from "./context.js";
 import { discoverScripts } from "../discovery/discover.js";
-import type { M3LCliScriptCandidate } from "../discovery/discover.js";
-import { loadScriptParameters } from "../discovery/load-config.js";
+import { loadParametersCached } from "../discovery/cached-load.js";
 import type { M3LCliParameterDescriptor } from "../discovery/load-config.js";
-import {
-  configMtimes,
-  isCacheEntryFresh,
-  readDiscoveryCache,
-  writeDiscoveryCache,
-} from "../discovery/cache.js";
 
-/** Formats the aligned header + row lines for the human-readable rendering. */
-function formatParameterLines(
-  parameters: readonly M3LCliParameterDescriptor[],
-): readonly string[] {
-  const header = [
-    "NAME",
-    "ALIASES",
-    "TYPE",
-    "REQUIRED",
-    "DEFAULT",
-    "DESCRIPTION",
-  ].join("  ");
-  const body = parameters.map((parameter) =>
-    [
-      parameter.name,
-      parameter.aliases.join(","),
-      parameter.type,
-      String(parameter.required),
-      parameter.defaultValue ?? "",
-      parameter.description,
-    ].join("  "),
-  );
-  return [header, ...body];
+/** The human-readable rendering's column headers. */
+const HEADER = [
+  "NAME",
+  "ALIASES",
+  "TYPE",
+  "REQUIRED",
+  "DEFAULT",
+  "DESCRIPTION",
+] as const;
+
+/** Renders a single parameter's cells for {@link formatAlignedTable}. */
+function toTableRow(parameter: M3LCliParameterDescriptor): readonly string[] {
+  return [
+    parameter.name,
+    parameter.aliases.join(","),
+    parameter.type,
+    String(parameter.required),
+    parameter.defaultValue ?? "",
+    parameter.description,
+  ];
 }
 
 /** Renders the resolved parameters through `context.output`, JSON or human-readable. */
@@ -57,55 +50,15 @@ function renderParameters(
   }
 
   context.output.heading("Parameters");
-  for (const line of formatParameterLines(parameters)) {
+  for (const line of formatAlignedTable(HEADER, parameters.map(toTableRow))) {
     context.output.info(line);
   }
 }
 
 /**
- * Resolves `scriptName`'s parameters, reusing a fresh cache entry when
- * available and otherwise loading (and best-effort persisting) them.
- */
-async function resolveParameters(
-  context: M3LCliCommandContext,
-  candidate: M3LCliScriptCandidate,
-): Promise<readonly M3LCliParameterDescriptor[]> {
-  try {
-    const cache = readDiscoveryCache(context.cacheFilePath);
-    const mtimes = configMtimes(candidate.directory);
-    const cached = cache[candidate.name];
-
-    if (cached !== undefined && isCacheEntryFresh(cached, mtimes)) {
-      return cached.parameters;
-    }
-
-    const parameters = await loadScriptParameters(candidate.directory);
-    writeDiscoveryCache(context.cacheFilePath, {
-      ...cache,
-      [candidate.name]: { ...mtimes, parameters },
-    });
-    return parameters;
-  } catch (error) {
-    // A raw non-M3LCliError failure here (e.g. an EACCES from the
-    // configMtimes freshness probe) is wrapped rather than propagated
-    // unwrapped, so every caller of runInspect only ever observes an
-    // M3LCliError; an already-typed M3LCliError (e.g. from
-    // loadScriptParameters) is re-thrown unchanged, never double-wrapped.
-    if (error instanceof M3LCliError) {
-      throw error;
-    }
-    throw new M3LCliError(
-      "ERR_CLI_CONFIG_IMPORT",
-      `failed to resolve parameters for script '${candidate.name}'`,
-      { cause: error },
-    );
-  }
-}
-
-/**
  * Prints `scriptName`'s declared parameter table (name, aliases, type,
- * required, default, description), reading through the discovery cache the
- * same way `commands/list`'s `runList` does.
+ * required, default, description), reading through the discovery cache via
+ * {@link loadParametersCached}.
  *
  * @param context - The command context to run against.
  * @param scriptName - The script name to inspect.
@@ -113,10 +66,8 @@ async function resolveParameters(
  * @throws {@link M3LCliError} coded `ERR_CLI_UNKNOWN_SCRIPT` — with
  *   Damerau-Levenshtein `suggestions` over the known script names — when
  *   `scriptName` does not match a discovered script.
- * @throws {@link M3LCliError} coded `ERR_CLI_CONFIG_IMPORT` when the matched
- *   script's config module fails to load or its freshness probe fails; an
- *   already-typed `M3LCliError` (e.g. from {@link loadScriptParameters})
- *   propagates unchanged, and any other failure is wrapped into one.
+ * @throws Whatever {@link loadParametersCached} throws, unwrapped — an
+ *   already-typed `M3LCliError` propagates unchanged.
  *
  * @example
  * ```ts
@@ -144,7 +95,11 @@ export async function runInspect(
     );
   }
 
-  const parameters = await resolveParameters(context, candidate);
+  const parameters = await loadParametersCached(
+    candidate.name,
+    candidate.directory,
+    context.cacheFilePath,
+  );
   renderParameters(context, parameters);
   return 0;
 }

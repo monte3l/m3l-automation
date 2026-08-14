@@ -5,53 +5,31 @@ import type { M3LCliListRow } from "../src/commands/list.js";
 import type { M3LCliCommandContext } from "../src/commands/context.js";
 import { discoverScripts } from "../src/discovery/discover.js";
 import type { M3LCliScriptCandidate } from "../src/discovery/discover.js";
-import { loadScriptParameters } from "../src/discovery/load-config.js";
+import { loadParametersCached } from "../src/discovery/cached-load.js";
 import type { M3LCliParameterDescriptor } from "../src/discovery/load-config.js";
-import {
-  configMtimes,
-  isCacheEntryFresh,
-  readDiscoveryCache,
-  writeDiscoveryCache,
-} from "../src/discovery/cache.js";
-import type { M3LCliDiscoveryCacheEntry } from "../src/discovery/cache.js";
 
 /**
- * Contract: `src/commands/list.ts` — `runList` composes
- * `discoverScripts`/`loadScriptParameters`/the discovery-cache module to
- * render one row per discovered script (name/description/parameterCount/
- * loadError), preferring a fresh cache entry over a fresh import, and
- * continuing the listing when a single script's config fails to load. See
- * the pinned contract at
- * `docs/reference/cli.md`.
+ * Contract: `src/commands/list.ts` — `runList` composes `discoverScripts` and
+ * the shared `loadParametersCached` helper (8d dedup refactor, 8b review
+ * CR#4) to render one row per discovered script
+ * (name/description/parameterCount/loadError), catching and annotating a
+ * single script's load failure on its own row rather than aborting the
+ * listing. See the pinned contract at `docs/reference/cli.md`.
  */
 
 vi.mock("../src/discovery/discover.js", () => ({
   discoverScripts: vi.fn(),
 }));
-vi.mock("../src/discovery/load-config.js", () => ({
-  loadScriptParameters: vi.fn(),
-}));
-vi.mock("../src/discovery/cache.js", () => ({
-  readDiscoveryCache: vi.fn(),
-  writeDiscoveryCache: vi.fn(),
-  configMtimes: vi.fn(),
-  isCacheEntryFresh: vi.fn(),
+vi.mock("../src/discovery/cached-load.js", () => ({
+  loadParametersCached: vi.fn(),
 }));
 
 const discoverScriptsMock = vi.mocked(discoverScripts);
-const loadScriptParametersMock = vi.mocked(loadScriptParameters);
-const readDiscoveryCacheMock = vi.mocked(readDiscoveryCache);
-const writeDiscoveryCacheMock = vi.mocked(writeDiscoveryCache);
-const configMtimesMock = vi.mocked(configMtimes);
-const isCacheEntryFreshMock = vi.mocked(isCacheEntryFresh);
+const loadParametersCachedMock = vi.mocked(loadParametersCached);
 
 afterEach(() => {
   discoverScriptsMock.mockReset();
-  loadScriptParametersMock.mockReset();
-  readDiscoveryCacheMock.mockReset();
-  writeDiscoveryCacheMock.mockReset();
-  configMtimesMock.mockReset();
-  isCacheEntryFreshMock.mockReset();
+  loadParametersCachedMock.mockReset();
 });
 
 /** Minimal structural stand-in for `M3LCliOutput` — a simple call collector. */
@@ -119,25 +97,20 @@ const exporterParameters: readonly M3LCliParameterDescriptor[] = [
   },
 ];
 
-const freshMtimes = { srcMtimeMs: 100, distMtimeMs: 200 };
-
-describe("runList — cache-fresh path", () => {
-  test("uses the cached parameter count and never calls loadScriptParameters", async () => {
+describe("runList — happy path", () => {
+  test("resolves each script's row through loadParametersCached, keyed by name/directory/cacheFilePath", async () => {
     discoverScriptsMock.mockReturnValue([exporterCandidate]);
-    configMtimesMock.mockReturnValue(freshMtimes);
-    const cachedEntry: M3LCliDiscoveryCacheEntry = {
-      ...freshMtimes,
-      parameters: exporterParameters,
-    };
-    readDiscoveryCacheMock.mockReturnValue({ exporter: cachedEntry });
-    isCacheEntryFreshMock.mockReturnValue(true);
+    loadParametersCachedMock.mockResolvedValue(exporterParameters);
 
     const { context, infoLines } = buildContext({ jsonOutput: true });
     const code = await runList(context);
 
     expect(code).toBe(0);
-    expect(loadScriptParametersMock).not.toHaveBeenCalled();
-    expect(infoLines).toHaveLength(1);
+    expect(loadParametersCachedMock).toHaveBeenCalledWith(
+      "exporter",
+      exporterCandidate.directory,
+      context.cacheFilePath,
+    );
     const rows = JSON.parse(infoLines[0] ?? "[]") as M3LCliListRow[];
     expect(rows).toEqual([
       {
@@ -150,67 +123,15 @@ describe("runList — cache-fresh path", () => {
   });
 });
 
-describe("runList — cache-stale/missing path", () => {
-  test("loads and persists parameters when no cache entry exists for a script", async () => {
-    discoverScriptsMock.mockReturnValue([exporterCandidate]);
-    configMtimesMock.mockReturnValue(freshMtimes);
-    readDiscoveryCacheMock.mockReturnValue({});
-    loadScriptParametersMock.mockResolvedValue(exporterParameters);
-
-    const { context } = buildContext();
-    const code = await runList(context);
-
-    expect(code).toBe(0);
-    expect(loadScriptParametersMock).toHaveBeenCalledWith(
-      exporterCandidate.directory,
-    );
-    expect(writeDiscoveryCacheMock).toHaveBeenCalledWith(
-      context.cacheFilePath,
-      expect.objectContaining({
-        exporter: {
-          ...freshMtimes,
-          parameters: exporterParameters,
-        },
-      }),
-    );
-  });
-
-  test("reloads parameters when the cached entry is stale (isCacheEntryFresh returns false)", async () => {
-    discoverScriptsMock.mockReturnValue([exporterCandidate]);
-    configMtimesMock.mockReturnValue(freshMtimes);
-    const staleEntry: M3LCliDiscoveryCacheEntry = {
-      srcMtimeMs: 1,
-      distMtimeMs: 2,
-      parameters: [],
-    };
-    readDiscoveryCacheMock.mockReturnValue({ exporter: staleEntry });
-    isCacheEntryFreshMock.mockReturnValue(false);
-    loadScriptParametersMock.mockResolvedValue(exporterParameters);
-
-    const { context } = buildContext();
-    const code = await runList(context);
-
-    expect(code).toBe(0);
-    expect(isCacheEntryFreshMock).toHaveBeenCalledWith(staleEntry, freshMtimes);
-    expect(loadScriptParametersMock).toHaveBeenCalledWith(
-      exporterCandidate.directory,
-    );
-  });
-});
-
 describe("runList — partial load failure", () => {
   test("annotates the failing row with loadError and parameterCount null while other rows still render, returning 0", async () => {
     discoverScriptsMock.mockReturnValue([exporterCandidate, importerCandidate]);
-    configMtimesMock.mockReturnValue(freshMtimes);
-    const cachedEntry: M3LCliDiscoveryCacheEntry = {
-      ...freshMtimes,
-      parameters: exporterParameters,
-    };
-    readDiscoveryCacheMock.mockReturnValue({ exporter: cachedEntry });
-    isCacheEntryFreshMock.mockReturnValue(true);
-    loadScriptParametersMock.mockRejectedValue(
-      new Error("cannot import config"),
-    );
+    loadParametersCachedMock.mockImplementation((scriptName: string) => {
+      if (scriptName === "importer") {
+        return Promise.reject(new Error("cannot import config"));
+      }
+      return Promise.resolve(exporterParameters);
+    });
 
     const { context, infoLines } = buildContext({ jsonOutput: true });
     const code = await runList(context);
@@ -234,39 +155,10 @@ describe("runList — partial load failure", () => {
   });
 });
 
-describe("runList — freshness probe failure", () => {
-  test("annotates the row with a wrapped loadError when configMtimes throws, and listing continues at exit 0", async () => {
-    discoverScriptsMock.mockReturnValue([exporterCandidate]);
-    readDiscoveryCacheMock.mockReturnValue({});
-    configMtimesMock.mockImplementation(() => {
-      throw new Error("EACCES: permission denied");
-    });
-
-    const { context, infoLines } = buildContext({ jsonOutput: true });
-    const code = await runList(context);
-
-    expect(code).toBe(0);
-    const rows = JSON.parse(infoLines[0] ?? "[]") as M3LCliListRow[];
-    expect(rows).toEqual([
-      {
-        name: "exporter",
-        description: "Exports data",
-        parameterCount: null,
-        loadError: "EACCES: permission denied",
-      },
-    ]);
-    expect(loadScriptParametersMock).not.toHaveBeenCalled();
-  });
-});
-
 describe("runList — rendering modes", () => {
   test("prints a heading and human-readable rows when jsonOutput is false", async () => {
     discoverScriptsMock.mockReturnValue([exporterCandidate]);
-    configMtimesMock.mockReturnValue(freshMtimes);
-    readDiscoveryCacheMock.mockReturnValue({
-      exporter: { ...freshMtimes, parameters: exporterParameters },
-    });
-    isCacheEntryFreshMock.mockReturnValue(true);
+    loadParametersCachedMock.mockResolvedValue(exporterParameters);
 
     const { context, infoLines, headingLines } = buildContext({
       jsonOutput: false,
@@ -281,13 +173,48 @@ describe("runList — rendering modes", () => {
 
   test("returns 0 with an empty JSON array when no scripts are discovered", async () => {
     discoverScriptsMock.mockReturnValue([]);
-    readDiscoveryCacheMock.mockReturnValue({});
 
     const { context, infoLines } = buildContext({ jsonOutput: true });
     const code = await runList(context);
 
     expect(code).toBe(0);
     expect(JSON.parse(infoLines[0] ?? "null")).toEqual([]);
+    expect(loadParametersCachedMock).not.toHaveBeenCalled();
+  });
+
+  test("renders 'ERROR: <loadError>' as the parameters cell for a failing row in human-readable mode", async () => {
+    discoverScriptsMock.mockReturnValue([importerCandidate]);
+    loadParametersCachedMock.mockRejectedValue(
+      new Error("cannot import config"),
+    );
+
+    const { context, infoLines } = buildContext({ jsonOutput: false });
+    const code = await runList(context);
+
+    expect(code).toBe(0);
+    expect(infoLines.join("\n")).toContain("ERROR: cannot import config");
+  });
+
+  test("annotates the row via String(error) when loadParametersCached rejects with a non-Error value", async () => {
+    discoverScriptsMock.mockReturnValue([importerCandidate]);
+    loadParametersCachedMock.mockImplementation(() =>
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- intentional non-Error rejection to verify the String(error) fallback
+      Promise.reject("not an Error instance"),
+    );
+
+    const { context, infoLines } = buildContext({ jsonOutput: true });
+    const code = await runList(context);
+
+    expect(code).toBe(0);
+    const rows = JSON.parse(infoLines[0] ?? "[]") as M3LCliListRow[];
+    expect(rows).toEqual([
+      {
+        name: "importer",
+        description: "Imports data",
+        parameterCount: null,
+        loadError: "not an Error instance",
+      },
+    ]);
   });
 });
 

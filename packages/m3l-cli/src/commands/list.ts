@@ -1,26 +1,17 @@
 /**
  * `commands/list` — enumerates every `scripts/*` package with its declared
- * parameter count, reading through the discovery cache.
+ * parameter count, reading through the discovery cache via the shared
+ * `loadParametersCached` helper (8d dedup refactor, 8b review CR#4).
  *
  * @packageDocumentation
  */
 
 import type { M3LCliCommandContext } from "./context.js";
-import { M3LCliError } from "../cli/errors.js";
 import type { M3LCliExitCode } from "../cli/errors.js";
+import { formatAlignedTable } from "../cli/table.js";
 import { discoverScripts } from "../discovery/discover.js";
 import type { M3LCliScriptCandidate } from "../discovery/discover.js";
-import { loadScriptParameters } from "../discovery/load-config.js";
-import {
-  configMtimes,
-  isCacheEntryFresh,
-  readDiscoveryCache,
-  writeDiscoveryCache,
-} from "../discovery/cache.js";
-import type {
-  M3LCliDiscoveryCache,
-  M3LCliDiscoveryCacheEntry,
-} from "../discovery/cache.js";
+import { loadParametersCached } from "../discovery/cached-load.js";
 
 /**
  * One rendered row of `m3l list` output: one per discovered script. A
@@ -50,95 +41,47 @@ export type M3LCliListRow = {
     }
 );
 
-/** Result of resolving a single candidate: its row plus a cache update, if any. */
-interface M3LCliListRowResolution {
-  readonly row: M3LCliListRow;
-  readonly freshEntry: M3LCliDiscoveryCacheEntry | undefined;
+/** The human-readable rendering's column headers. */
+const HEADER = ["NAME", "DESCRIPTION", "PARAMETERS"] as const;
+
+/** Renders a single row's cells for {@link formatAlignedTable}. */
+function toTableRow(row: M3LCliListRow): readonly string[] {
+  const parameters =
+    row.loadError !== null
+      ? `ERROR: ${row.loadError}`
+      : String(row.parameterCount);
+  return [row.name, row.description, parameters];
 }
 
 /**
- * Resolves a single script candidate's row, reusing a fresh cache entry when
- * available and otherwise loading (and reporting) its parameters.
+ * Resolves a single script candidate's row, reading through
+ * {@link loadParametersCached}; a load failure annotates the row rather than
+ * aborting the whole listing.
  */
 async function resolveRow(
   candidate: M3LCliScriptCandidate,
-  cache: M3LCliDiscoveryCache,
-): Promise<M3LCliListRowResolution> {
+  context: M3LCliCommandContext,
+): Promise<M3LCliListRow> {
   try {
-    const mtimes = configMtimes(candidate.directory);
-    const cached = cache[candidate.name];
-
-    if (cached !== undefined && isCacheEntryFresh(cached, mtimes)) {
-      return {
-        row: {
-          name: candidate.name,
-          description: candidate.description,
-          parameterCount: cached.parameters.length,
-          loadError: null,
-        },
-        freshEntry: undefined,
-      };
-    }
-
-    const parameters = await loadScriptParameters(candidate.directory);
+    const parameters = await loadParametersCached(
+      candidate.name,
+      candidate.directory,
+      context.cacheFilePath,
+    );
     return {
-      row: {
-        name: candidate.name,
-        description: candidate.description,
-        parameterCount: parameters.length,
-        loadError: null,
-      },
-      freshEntry: { ...mtimes, parameters },
+      name: candidate.name,
+      description: candidate.description,
+      parameterCount: parameters.length,
+      loadError: null,
     };
   } catch (error) {
-    // A raw non-M3LCliError failure here (e.g. an EACCES from the
-    // configMtimes freshness probe) is wrapped rather than surfaced
-    // unwrapped, so every row's loadError is drawn from a typed failure;
-    // the wrapped message mirrors the original failure's own text.
-    const rawMessage = error instanceof Error ? error.message : String(error);
-    const wrapped =
-      error instanceof M3LCliError
-        ? error
-        : new M3LCliError("ERR_CLI_CONFIG_IMPORT", rawMessage, {
-            cause: error,
-          });
     return {
-      row: {
-        name: candidate.name,
-        description: candidate.description,
-        parameterCount: null,
-        loadError: wrapped.message,
-      },
-      freshEntry: undefined,
+      name: candidate.name,
+      description: candidate.description,
+      parameterCount: null,
+      loadError: error instanceof Error ? error.message : String(error),
     };
   }
-}
-
-/** Minimum column width for the `NAME` column (its own header length). */
-const MIN_NAME_COLUMN_WIDTH = "NAME".length;
-
-/** Minimum column width for the `DESCRIPTION` column (its own header length). */
-const MIN_DESCRIPTION_COLUMN_WIDTH = "DESCRIPTION".length;
-
-/** Formats the aligned header + row lines for the human-readable rendering. */
-function formatRowLines(rows: readonly M3LCliListRow[]): readonly string[] {
-  const nameWidth = Math.max(
-    MIN_NAME_COLUMN_WIDTH,
-    ...rows.map((row) => row.name.length),
-  );
-  const descriptionWidth = Math.max(
-    MIN_DESCRIPTION_COLUMN_WIDTH,
-    ...rows.map((row) => row.description.length),
-  );
-  const header = `${"NAME".padEnd(nameWidth)}  ${"DESCRIPTION".padEnd(descriptionWidth)}  PARAMETERS`;
-  const body = rows.map((row) => {
-    const parameters =
-      row.loadError !== null
-        ? `ERROR: ${row.loadError}`
-        : String(row.parameterCount);
-    return `${row.name.padEnd(nameWidth)}  ${row.description.padEnd(descriptionWidth)}  ${parameters}`;
-  });
-  return [header, ...body];
 }
 
 /** Renders the resolved rows through `context.output`, JSON or human-readable. */
@@ -152,7 +95,7 @@ function renderRows(
   }
 
   context.output.heading("Scripts");
-  for (const line of formatRowLines(rows)) {
+  for (const line of formatAlignedTable(HEADER, rows.map(toTableRow))) {
     context.output.info(line);
   }
 }
@@ -161,8 +104,8 @@ function renderRows(
  * Discovers every `scripts/*` package under `context.workspaceRoot` and
  * renders one row per script (name/description/parameter count/load error).
  *
- * Reads through the discovery cache: a script whose cached entry is still
- * fresh (see {@link isCacheEntryFresh}) reuses its cached parameter count
+ * Reads through the discovery cache via {@link loadParametersCached}: a
+ * script whose cached entry is still fresh reuses its cached parameter count
  * without importing the script's config module; a stale or missing entry
  * loads the config module and best-effort persists the refreshed cache. A
  * single script's config-load failure is recorded on its row
@@ -187,21 +130,10 @@ export async function runList(
   context: M3LCliCommandContext,
 ): Promise<M3LCliExitCode> {
   const candidates = discoverScripts(context.workspaceRoot);
-  const cache = readDiscoveryCache(context.cacheFilePath);
 
   const rows: M3LCliListRow[] = [];
-  const updates: Record<string, M3LCliDiscoveryCacheEntry> = {};
-
   for (const candidate of candidates) {
-    const { row, freshEntry } = await resolveRow(candidate, cache);
-    rows.push(row);
-    if (freshEntry !== undefined) {
-      updates[candidate.name] = freshEntry;
-    }
-  }
-
-  if (Object.keys(updates).length > 0) {
-    writeDiscoveryCache(context.cacheFilePath, { ...cache, ...updates });
+    rows.push(await resolveRow(candidate, context));
   }
 
   renderRows(context, rows);
