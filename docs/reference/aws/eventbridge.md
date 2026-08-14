@@ -53,7 +53,7 @@ their common fields (`id`/`arn`/`roleArn`/`input`/`inputPath`).
 
 **Constructor** — `new M3LEventBridgeOperations(client)`, where `client` is a
 raw `EventBridgeClient` (e.g. `script.aws.clients.eventBridge`, or the cached
-`script.aws.clients.eventBridgeOperations` convenience getter which
+`script.aws.services.eventBridgeOperations` getter which
 constructs one for you, sharing the underlying `eventBridge` client's
 lifecycle).
 
@@ -127,8 +127,8 @@ scheduleExpression?, state?, description?, roleArn?, eventBusName? }`.
 ### From within a script
 
 ```typescript
-// script.aws.clients.eventBridgeOperations is the cached convenience getter
-const eventBridgeOperations = script.aws.clients.eventBridgeOperations;
+// script.aws.services.eventBridgeOperations is the cached getter
+const eventBridgeOperations = script.aws.services.eventBridgeOperations;
 
 const { rules } = await eventBridgeOperations.listRules({
   namePrefix: "nightly-",
@@ -164,10 +164,11 @@ const eventBridgeOperations = new AWS.M3LEventBridgeOperations(
 - No `@aws-sdk/client-eventbridge` type ever appears in this module's public
   surface — every request/response shape is translated to a plain type in
   `aws/eventbridge/types.ts` at the boundary.
-- `M3LEventBridgeOperations` holds no destroyable resource of its own; when
-  accessed via `AWSClientProvider.eventBridgeOperations`, it shares the
-  underlying `eventBridge` client's connection lifecycle and is cleared (not
-  independently destroyed) by `provider.close()`.
+- `M3LEventBridgeOperations` holds no destroyable resource of its own; via
+  `AWSServiceProvider.eventBridgeOperations`, it wraps the shared
+  `clientProvider.eventBridge` client — that underlying connection is
+  destroyed by `clientProvider.close()`; the wrapper's own cache is cleared
+  (not independently destroyed) by `services.close()`.
 - `core/polling` is used here under the same Zone A exception ADR-0026
   recorded for `aws/sqs` (`aws/**` may otherwise import only
   `core/errors`/`core/prompt`); this module does not widen that exception
@@ -176,8 +177,7 @@ const eventBridgeOperations = new AWS.M3LEventBridgeOperations(
 ## See also
 
 - [AWS Clients](./clients.md) — the raw `eventBridge` client getter and
-  `AWSClientProvider`/`AWSProvider` this module builds on; the
-  `eventBridgeOperations` convenience getter is `@deprecated` in favor of
+  `AWSClientProvider`/`AWSProvider` this module builds on; reached as
   `AWSServiceProvider.eventBridgeOperations` (`script.aws.services.eventBridgeOperations`).
 - [SQS Operations](./sqs.md) — the sibling wrapper this module's shape mirrors,
   and [ADR-0026](../../adr/0026-sqs-operations-wrapper.md) for the pattern's

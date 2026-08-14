@@ -1,8 +1,18 @@
 # 0038. Widen the SQS wrapper for DLQ redrive; add an `AWSServiceProvider` services tier
 
-- **Status:** Accepted
+- **Status:** Accepted; the services-tier decision partially superseded by [ADR-0044](0044-remove-deprecated-client-wrapper-getters.md)
 - **Date:** 2026-08-10
 - **Deciders:** Enrico Lionello (maintainer); Claude (audit synthesis)
+
+> **Partially superseded (2026-08-14).** The decision to keep all four
+> `.clients` convenience getters deprecated-in-place indefinitely did not
+> hold — the "future major bump" it deferred removal to turned out to be an
+> unfireable gate (the package was already past the named milestone version
+> with no external consumers to protect). [ADR-0044](0044-remove-deprecated-client-wrapper-getters.md)
+> removes three of the four (`sqsOperations`, `eventBridgeOperations`,
+> `requestSigner`); `dynamoDBDocument` is kept and un-deprecated, since it is
+> a raw SDK client rather than a library-owned wrapper. The DLQ redrive
+> decision and Zone A analysis below are unaffected and remain in force.
 
 ## Context and problem statement
 
@@ -170,7 +180,8 @@ that one was silently skipped.
 
 ## Links
 
-- Supersedes / superseded by: none. Amends ADR-0026's scope and
+- Superseded by: [ADR-0044](./0044-remove-deprecated-client-wrapper-getters.md)
+  (partially — see the status-line note above). Amends ADR-0026's scope and
   `docs/reference/aws/clients.md`'s stance, the same way ADR-0026 itself
   amended ADR-0009's Zone A enforcement without superseding either.
 - Related: [ADR-0009 (dependency-direction guard)](./0009-dependency-direction-guard.md),

@@ -490,112 +490,6 @@ describe("AWSClientProvider getter: dynamoDBDocument", () => {
 });
 
 // =============================================================================
-// AWSClientProvider — requestSigner (shares no destroyable resource; unlike
-// every other getter above, `M3LRequestSigner` is NOT mocked here — its own
-// construction is documented/tested (tests/signing.test.ts) as performing no
-// I/O, so exercising the REAL class is what proves the getter's `profile`
-// conditional-spread branch (tests/reference/aws/clients.md — "resolves
-// credentials the same profile-aware way") actually builds without throwing
-// under both branches, rather than just asserting a mock was called.
-// =============================================================================
-describe("AWSClientProvider getter: requestSigner", () => {
-  test("constructs an M3LRequestSigner on first access", () => {
-    const provider = new AWSClientProvider();
-
-    expect(provider.requestSigner).toBeInstanceOf(M3LRequestSigner);
-  });
-
-  test("caches the signer — repeat access returns the SAME instance", () => {
-    const provider = new AWSClientProvider();
-
-    const first = provider.requestSigner;
-    const second = provider.requestSigner;
-
-    expect(second).toBe(first);
-  });
-
-  test("constructs successfully with no profile set (SDK default credential chain branch)", () => {
-    const provider = new AWSClientProvider();
-
-    expect(() => provider.requestSigner).not.toThrow();
-  });
-
-  test("constructs successfully with a profile set (fromIni branch)", () => {
-    const provider = new AWSClientProvider({
-      profile: parseAWSProfile("my-profile"),
-    });
-
-    expect(() => provider.requestSigner).not.toThrow();
-    expect(provider.requestSigner).toBeInstanceOf(M3LRequestSigner);
-  });
-
-  test("close() does not attempt to destroy the request signer — it holds no destroyable resource of its own", () => {
-    const provider = new AWSClientProvider();
-
-    void provider.requestSigner;
-
-    expect(() => provider.close()).not.toThrow();
-    expect(h.destroy).not.toHaveBeenCalled();
-  });
-
-  test("close() clears the cache — a subsequent access constructs a fresh instance", () => {
-    const provider = new AWSClientProvider();
-
-    const before = provider.requestSigner;
-    provider.close();
-    const after = provider.requestSigner;
-
-    expect(after).not.toBe(before);
-  });
-});
-
-// =============================================================================
-// AWSClientProvider — eventBridgeOperations (shares the eventBridge client
-// lifecycle, mirroring the `sqsOperations` getter's pattern in
-// src/aws/clients/provider.ts: a plain wrapper constructed from the already-
-// cached raw client, holding no destroyable resource of its own).
-// =============================================================================
-describe("AWSClientProvider getter: eventBridgeOperations", () => {
-  test("constructs its wrapper and the underlying eventBridge client on first access", () => {
-    const provider = new AWSClientProvider();
-
-    const operations = provider.eventBridgeOperations;
-
-    expect(operations).toBeInstanceOf(M3LEventBridgeOperations);
-    expect(h.eventBridgeCtor).toHaveBeenCalledTimes(1);
-  });
-
-  test("caches the wrapper — repeat access returns the SAME instance", () => {
-    const provider = new AWSClientProvider();
-
-    const first = provider.eventBridgeOperations;
-    const second = provider.eventBridgeOperations;
-
-    expect(second).toBe(first);
-    expect(h.eventBridgeCtor).toHaveBeenCalledTimes(1);
-  });
-
-  test("close() destroys the shared underlying eventBridge client exactly once (the wrapper holds no destroyable resource of its own)", () => {
-    const provider = new AWSClientProvider();
-
-    void provider.eventBridgeOperations;
-    provider.close();
-
-    expect(h.destroy).toHaveBeenCalledTimes(1);
-  });
-
-  test("close() clears it — a subsequent access after close() constructs a fresh instance", () => {
-    const provider = new AWSClientProvider();
-
-    const before = provider.eventBridgeOperations;
-    provider.close();
-    const after = provider.eventBridgeOperations;
-
-    expect(after).not.toBe(before);
-  });
-});
-
-// =============================================================================
 // AWSClientProvider — close()
 // =============================================================================
 describe("AWSClientProvider.close", () => {
@@ -1030,24 +924,6 @@ describe("AWSServiceProvider — cloudWatchAlarms / cloudWatchMetrics share the 
 });
 
 // =============================================================================
-// AWSServiceProvider — cross-provider client sharing: `.services.sqsOperations`
-// and `.clients.sqsOperations` wrap the same underlying SQSClient, never
-// double-constructing it.
-// =============================================================================
-describe("AWSServiceProvider — shares the raw client with AWSClientProvider's own convenience getter", () => {
-  test("services.sqsOperations is a different object from clientProvider.sqsOperations, but SQSClient is constructed exactly once", () => {
-    const clientProvider = new AWSClientProvider();
-    const services = new AWSServiceProvider(clientProvider);
-
-    const fromServices = services.sqsOperations;
-    const fromClients = clientProvider.sqsOperations;
-
-    expect(fromServices).not.toBe(fromClients);
-    expect(h.sqsCtor).toHaveBeenCalledTimes(1);
-  });
-});
-
-// =============================================================================
 // AWSServiceProvider — dynamoDBOperations shares its underlying raw
 // DynamoDBClient/DynamoDBDocumentClient construction with the existing
 // dynamoDBDocument passthrough getter: accessing both never constructs the
@@ -1274,6 +1150,49 @@ describe("AWSServiceProvider.close", () => {
     const b = services.s3Operations;
 
     expect(b).not.toBe(a);
+  });
+
+  test("clears the requestSigner cache — a subsequent access after close() constructs a fresh instance", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    const before = services.requestSigner;
+    services.close();
+    const after = services.requestSigner;
+
+    expect(after).not.toBe(before);
+  });
+
+  test("close() does not attempt to destroy the request signer — it holds no destroyable resource of its own", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    void services.requestSigner;
+    services.close();
+
+    expect(h.destroy).not.toHaveBeenCalled();
+  });
+
+  test("clears the eventBridgeOperations cache — a subsequent access after close() constructs a fresh instance", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    const before = services.eventBridgeOperations;
+    services.close();
+    const after = services.eventBridgeOperations;
+
+    expect(after).not.toBe(before);
+  });
+
+  test("clears the sqsOperations cache — a subsequent access after close() constructs a fresh instance", () => {
+    const clientProvider = new AWSClientProvider();
+    const services = new AWSServiceProvider(clientProvider);
+
+    const before = services.sqsOperations;
+    services.close();
+    const after = services.sqsOperations;
+
+    expect(after).not.toBe(before);
   });
 
   test("clears the dynamoDBOperations cache — a subsequent access after close() constructs a fresh instance", () => {

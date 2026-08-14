@@ -48,7 +48,7 @@ await Core.runScript(
       paths: script.paths,
       logger: script.logger,
       correlationId: getCorrelationId(),
-      sqsOperations: aws.clients.sqsOperations,
+      sqsOperations: aws.services.sqsOperations,
       prompt: script.prompt,
     });
   },
