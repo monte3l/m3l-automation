@@ -39,6 +39,27 @@ const exportResultsMock = vi.hoisted(() =>
   vi.fn().mockResolvedValue(undefined),
 );
 
+/**
+ * Mutable state backing the mocked `Core.M3LJSONListExporter`'s streaming
+ * writer: `bytesWritten` is seeded from the construction option's
+ * `resumeFromByte` (defaulting to `0`) and grows by
+ * `JSON.stringify(item).length` on every `append()` — a deterministic stand-in
+ * for the real byte-flush accounting, sufficient to assert monotonic growth
+ * and exact per-window deltas without depending on the real exporter's wire
+ * format. `constructOptions` records every construction call's options object
+ * so a test can assert the `resumeFromByte` a given run constructed with.
+ */
+const jsonExporterState = vi.hoisted(() => ({
+  bytesWritten: 0,
+  constructOptions: [] as Record<string, unknown>[],
+}));
+
+const jsonExporterMocks = vi.hoisted(() => ({
+  exportStream: vi.fn(),
+  append: vi.fn().mockResolvedValue(undefined),
+  close: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
   const actual = await importOriginal<typeof M3LCommon>();
   return {
@@ -55,6 +76,39 @@ vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
           delete: checkpointMocks.delete,
         };
       }),
+      // Same reasoning: the JSON path (once implemented) constructs
+      // `new Core.M3LJSONListExporter(...)` directly (not through
+      // `export-results.ts`, which is mocked away above), so it needs its own
+      // mocked constructor rather than being covered by `exportResultsMock`.
+      M3LJSONListExporter: vi
+        .fn()
+        .mockImplementation(function mockedJSONExporter(
+          options: Record<string, unknown>,
+        ) {
+          const resumeFromByte =
+            typeof options["resumeFromByte"] === "number"
+              ? options["resumeFromByte"]
+              : 0;
+          jsonExporterState.constructOptions.push(options);
+          jsonExporterState.bytesWritten = resumeFromByte;
+          return {
+            exportStream: () => {
+              jsonExporterMocks.exportStream();
+              return {
+                append: async (item: unknown) => {
+                  await jsonExporterMocks.append(item);
+                  jsonExporterState.bytesWritten += JSON.stringify(item).length;
+                },
+                close: async () => {
+                  await jsonExporterMocks.close();
+                },
+                get bytesWritten() {
+                  return jsonExporterState.bytesWritten;
+                },
+              };
+            },
+          };
+        }),
     },
   };
 });
@@ -142,10 +196,16 @@ afterEach(() => {
   checkpointMocks.delete.mockReset().mockResolvedValue(undefined);
   exportResultsMock.mockReset().mockResolvedValue(undefined);
   vi.mocked(Core.M3LCheckpointStore).mockClear();
+  jsonExporterState.bytesWritten = 0;
+  jsonExporterState.constructOptions.length = 0;
+  jsonExporterMocks.exportStream.mockReset();
+  jsonExporterMocks.append.mockReset().mockResolvedValue(undefined);
+  jsonExporterMocks.close.mockReset().mockResolvedValue(undefined);
+  vi.mocked(Core.M3LJSONListExporter).mockClear();
 });
 
 describe("runCloudwatchLogsInsights — happy path", () => {
-  it("composes startQuery + checkpoint(inFlightQueryId) + awaitResults per window, accumulates rows, and exports once at the end", async () => {
+  it("composes startQuery + checkpoint(inFlightQueryId) + awaitResults per window, streaming each row to the JSON writer and closing it at the end", async () => {
     const callOrder: string[] = [];
     const client = buildClient();
     client.startQuery.mockImplementation(() => {
@@ -208,19 +268,18 @@ describe("runCloudwatchLogsInsights — happy path", () => {
       "writeCheckpoint:completed:2",
     ]);
 
-    // export-results is called exactly once, after every window, with the
-    // full accumulated row set.
-    expect(exportResultsMock).toHaveBeenCalledTimes(1);
-    expect(exportResultsMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        rows: [
-          { "@message": "row-from-query-0" },
-          { "@message": "row-from-query-1" },
-        ],
-        format: "json",
-        output: "results.json",
-      }),
-    );
+    // JSON format streams: each fetched row is appended to the writer
+    // individually, in order, and the writer is closed once every window
+    // completes — the batch export-results step is never invoked.
+    expect(jsonExporterMocks.append).toHaveBeenCalledTimes(2);
+    expect(jsonExporterMocks.append).toHaveBeenNthCalledWith(1, {
+      "@message": "row-from-query-0",
+    });
+    expect(jsonExporterMocks.append).toHaveBeenNthCalledWith(2, {
+      "@message": "row-from-query-1",
+    });
+    expect(jsonExporterMocks.close).toHaveBeenCalledTimes(1);
+    expect(exportResultsMock).not.toHaveBeenCalled();
 
     expect(summary).toEqual({ windowsCompleted: 2, rowsExported: 2 });
   });
@@ -355,9 +414,14 @@ describe("runCloudwatchLogsInsights — resume", () => {
       });
     });
 
+    // A realistic json-format resumed checkpoint: rows stay `[]` (the
+    // streaming path never buffers rows in the checkpoint — see
+    // `outputBytes`) and `outputBytes` records the writer's byte offset from
+    // the prior run.
     checkpointMocks.read.mockResolvedValue({
       completedWindows: 1,
-      rows: [{ "@message": "already-fetched" }],
+      rows: [],
+      outputBytes: 128,
       inFlightQueryId: "query-inflight",
     });
 
@@ -389,20 +453,25 @@ describe("runCloudwatchLogsInsights — resume", () => {
     expect(awaitedIds).toContain("query-inflight");
     expect(client.awaitResults).toHaveBeenCalledTimes(2);
 
-    // Final export carries the checkpoint's carried-over row plus both
-    // newly-fetched rows.
-    expect(exportResultsMock).toHaveBeenCalledTimes(1);
-    expect(exportResultsMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        rows: expect.arrayContaining([
-          { "@message": "already-fetched" },
-          { "@message": "row-from-query-inflight" },
-          { "@message": "row-from-query-fresh-1" },
-        ]) as unknown,
-      }),
-    );
+    // JSON streaming never carries the checkpoint's `rows` field forward
+    // (that field exists only for the CSV accumulation path, and this
+    // fixture's `rows` is empty anyway) — only rows fetched THIS run are
+    // appended, one per completed window, and the batch export-results step
+    // is never invoked.
+    expect(exportResultsMock).not.toHaveBeenCalled();
+    expect(jsonExporterMocks.append).toHaveBeenCalledTimes(2);
+    expect(jsonExporterMocks.append).toHaveBeenNthCalledWith(1, {
+      "@message": "row-from-query-inflight",
+    });
+    expect(jsonExporterMocks.append).toHaveBeenNthCalledWith(2, {
+      "@message": "row-from-query-fresh-1",
+    });
+    expect(jsonExporterMocks.close).toHaveBeenCalledTimes(1);
 
-    expect(summary).toEqual({ windowsCompleted: 3, rowsExported: 3 });
+    // rowsExported is `initial.rowsExported ?? 0` (this fixture omits that
+    // field entirely) plus the 2 rows appended this run — not the full
+    // 3-row accumulated set the old batch-export contract asserted.
+    expect(summary).toEqual({ windowsCompleted: 3, rowsExported: 2 });
   });
 
   it("propagates ERR_CHECKPOINT_MISSING when resuming with no checkpoint file, never calling any window's startQuery", async () => {
@@ -441,6 +510,52 @@ describe("runCloudwatchLogsInsights — resume", () => {
     expect(client.startQuery).not.toHaveBeenCalled();
     expect(exportResultsMock).not.toHaveBeenCalled();
   });
+
+  it("rejects a json-format checkpoint carrying non-empty rows with no outputBytes (a legacy or format-mismatched checkpoint), before any window runs", async () => {
+    const client = buildClient();
+    // Non-empty `rows` with no `outputBytes` can only mean a checkpoint from
+    // before the streaming rework (or written by a csv-format run) — the
+    // streaming path never forwards `rows`, so silently resuming would lose
+    // those rows permanently.
+    checkpointMocks.read.mockResolvedValue({
+      completedWindows: 1,
+      rows: [{ "@message": "legacy-row" }],
+      inFlightQueryId: "query-inflight",
+    });
+
+    const config = buildConfig({
+      ...BASE_VALUES,
+      start: "2026-07-01T00:00:00Z",
+      end: "2026-07-01T02:00:00Z",
+      resume: true,
+    });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+
+    let thrown: unknown;
+    try {
+      await runCloudwatchLogsInsights({
+        config,
+        logger,
+        client: asClient(client),
+        paths,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    expect((thrown as Core.M3LError).code).toBe(
+      "ERR_LOGS_INSIGHTS_LEGACY_CHECKPOINT",
+    );
+
+    // The rejection happens at checkpoint-validation time, strictly before
+    // any window is driven.
+    expect(client.startQuery).not.toHaveBeenCalled();
+    expect(client.awaitResults).not.toHaveBeenCalled();
+    expect(exportResultsMock).not.toHaveBeenCalled();
+    expect(Core.M3LJSONListExporter).not.toHaveBeenCalled();
+  });
 });
 
 describe("isLogsInsightsCheckpoint", () => {
@@ -474,5 +589,415 @@ describe("isLogsInsightsCheckpoint", () => {
       inFlightQueryId: "q-1",
     };
     expect(isLogsInsightsCheckpoint(candidate)).toBe(true);
+  });
+});
+
+/**
+ * Contract: the JSON-only streaming-resume fix. `format === "json"` opens a
+ * `Core.M3LJSONListExporter(...).exportStream()` writer once, before any
+ * window runs, appends each window's rows individually (no in-memory
+ * accumulation, no row-buffering in the checkpoint — `rows: []` on every
+ * write), and closes the writer at the end instead of calling
+ * `export-results.ts`'s batch `exportResults()`. `format === "csv"` is
+ * explicitly out of scope and must be bit-for-bit unchanged: no writer is
+ * ever opened, and the existing full-accumulation + single batch
+ * `exportResults()` call behavior is preserved.
+ */
+describe("runCloudwatchLogsInsights — JSON streaming (fresh run)", () => {
+  it("opens the streaming writer once, appends one row per call across every window, and never calls the batch export-results step", async () => {
+    const client = buildClient();
+    let call = 0;
+    client.startQuery.mockImplementation(() => {
+      const id = `query-${String(call)}`;
+      call += 1;
+      return Promise.resolve(id);
+    });
+    client.awaitResults.mockImplementation((queryId: string) => {
+      return Promise.resolve({
+        queryId,
+        status: "Complete",
+        rows: [{ "@message": `row-from-${queryId}` }],
+      });
+    });
+
+    const config = buildConfig({
+      ...BASE_VALUES,
+      start: "2026-07-01T00:00:00Z",
+      end: "2026-07-01T02:00:00Z", // 2 windows
+      resume: false,
+    });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+
+    const summary = await runCloudwatchLogsInsights({
+      config,
+      logger,
+      client: asClient(client),
+      paths,
+    });
+
+    // The writer is opened exactly once for the whole run, not per window.
+    expect(Core.M3LJSONListExporter).toHaveBeenCalledTimes(1);
+    expect(jsonExporterMocks.exportStream).toHaveBeenCalledTimes(1);
+
+    // A fresh (non-resumed) run opens the writer at byte offset 0 — whether
+    // via an explicit `resumeFromByte: 0` or by omitting the option.
+    const [constructOptions] = jsonExporterState.constructOptions;
+    expect(constructOptions?.["resumeFromByte"] ?? 0).toBe(0);
+
+    // Each row is appended individually, in order, across both windows —
+    // never batched.
+    expect(jsonExporterMocks.append).toHaveBeenCalledTimes(2);
+    expect(jsonExporterMocks.append).toHaveBeenNthCalledWith(1, {
+      "@message": "row-from-query-0",
+    });
+    expect(jsonExporterMocks.append).toHaveBeenNthCalledWith(2, {
+      "@message": "row-from-query-1",
+    });
+    expect(jsonExporterMocks.close).toHaveBeenCalledTimes(1);
+
+    // No batch export anywhere — export-results.ts is never invoked for the
+    // JSON path.
+    expect(exportResultsMock).not.toHaveBeenCalled();
+
+    expect(summary).toEqual({ windowsCompleted: 2, rowsExported: 2 });
+  });
+
+  it("checkpoints rows: [] (never accumulating) on every write, with outputBytes tracking the writer's bytesWritten", async () => {
+    const client = buildClient();
+    let call = 0;
+    client.startQuery.mockImplementation(() => {
+      const id = `query-${String(call)}`;
+      call += 1;
+      return Promise.resolve(id);
+    });
+    client.awaitResults.mockImplementation((queryId: string) => {
+      return Promise.resolve({
+        queryId,
+        status: "Complete",
+        rows: [{ "@message": `row-from-${queryId}` }],
+      });
+    });
+
+    const config = buildConfig({
+      ...BASE_VALUES,
+      start: "2026-07-01T00:00:00Z",
+      end: "2026-07-01T02:00:00Z", // 2 windows
+      resume: false,
+    });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+
+    await runCloudwatchLogsInsights({
+      config,
+      logger,
+      client: asClient(client),
+      paths,
+    });
+
+    interface WriteCall {
+      readonly completedWindows: number;
+      readonly rows: readonly unknown[];
+      readonly outputBytes?: number;
+      readonly inFlightQueryId?: string;
+    }
+    const calls = checkpointMocks.write.mock.calls as [WriteCall][];
+    expect(calls.length).toBeGreaterThan(0);
+    for (const [checkpoint] of calls) {
+      expect(checkpoint.rows).toEqual([]);
+    }
+
+    const row0 = { "@message": "row-from-query-0" };
+    const row1 = { "@message": "row-from-query-1" };
+    const bytes0 = JSON.stringify(row0).length;
+    const bytes1 = JSON.stringify(row1).length;
+
+    expect(checkpointMocks.write).toHaveBeenNthCalledWith(1, {
+      completedWindows: 0,
+      rows: [],
+      inFlightQueryId: "query-0",
+      outputBytes: 0,
+    });
+    expect(checkpointMocks.write).toHaveBeenNthCalledWith(2, {
+      completedWindows: 1,
+      rows: [],
+      outputBytes: bytes0,
+    });
+    expect(checkpointMocks.write).toHaveBeenNthCalledWith(3, {
+      completedWindows: 1,
+      rows: [],
+      inFlightQueryId: "query-1",
+      outputBytes: bytes0,
+    });
+    expect(checkpointMocks.write).toHaveBeenNthCalledWith(4, {
+      completedWindows: 2,
+      rows: [],
+      outputBytes: bytes0 + bytes1,
+    });
+  });
+});
+
+describe("runCloudwatchLogsInsights — JSON streaming (resumed run)", () => {
+  it("constructs the writer with resumeFromByte from the checkpoint's outputBytes, and every write during resumed windows keeps rows: [] with outputBytes non-decreasing", async () => {
+    const client = buildClient();
+    let startQueryCalls = 0;
+    client.startQuery.mockImplementation(() => {
+      startQueryCalls += 1;
+      return Promise.resolve(`query-fresh-${String(startQueryCalls)}`);
+    });
+    client.awaitResults.mockImplementation((queryId: string) => {
+      return Promise.resolve({
+        queryId,
+        status: "Complete",
+        rows: [{ "@message": `row-from-${queryId}` }],
+      });
+    });
+
+    const resumedOutputBytes = 512;
+    const resumedRowsExported = 7;
+    checkpointMocks.read.mockResolvedValue({
+      completedWindows: 1,
+      rows: [],
+      outputBytes: resumedOutputBytes,
+      rowsExported: resumedRowsExported,
+    });
+
+    const config = buildConfig({
+      ...BASE_VALUES,
+      start: "2026-07-01T00:00:00Z",
+      end: "2026-07-01T03:00:00Z", // 3 windows: [0] done, [1]/[2] remaining
+      resume: true,
+    });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+
+    const summary = await runCloudwatchLogsInsights({
+      config,
+      logger,
+      client: asClient(client),
+      paths,
+    });
+
+    const [constructOptions] = jsonExporterState.constructOptions;
+    expect(constructOptions?.["resumeFromByte"]).toBe(resumedOutputBytes);
+
+    interface WriteCall {
+      readonly completedWindows: number;
+      readonly rows: readonly unknown[];
+      readonly outputBytes?: number;
+    }
+    const calls = checkpointMocks.write.mock.calls as [WriteCall][];
+    expect(calls.length).toBeGreaterThan(0);
+
+    let previousOutputBytes = -1;
+    for (const [checkpoint] of calls) {
+      expect(checkpoint.rows).toEqual([]);
+      expect(checkpoint.outputBytes).toBeGreaterThanOrEqual(resumedOutputBytes);
+      const current = checkpoint.outputBytes ?? -1;
+      expect(current).toBeGreaterThanOrEqual(previousOutputBytes);
+      previousOutputBytes = current;
+    }
+
+    // `rowsExported` for a resumed JSON run is the prior run's checkpointed
+    // row count (`rowsExported`) plus this run's newly-appended rows (one
+    // per remaining window: windows 1 and 2, since window 0 was already
+    // completed at resume time) — closing the design gap flagged in the
+    // RED-phase report (see checkpoint.ts's `LogsInsightsCheckpoint.rowsExported`).
+    expect(summary.windowsCompleted).toBe(3);
+    expect(summary.rowsExported).toBe(resumedRowsExported + 2);
+  });
+});
+
+describe("runCloudwatchLogsInsights — JSON streaming pre-window checkpoint bytes", () => {
+  it("startOrReattachQuery's pre-window checkpoint write reflects bytes flushed by prior windows only, not the window about to start", async () => {
+    const client = buildClient();
+    let call = 0;
+    client.startQuery.mockImplementation(() => {
+      const id = `query-${String(call)}`;
+      call += 1;
+      return Promise.resolve(id);
+    });
+    client.awaitResults.mockImplementation((queryId: string) => {
+      return Promise.resolve({
+        queryId,
+        status: "Complete",
+        rows: [{ "@message": `row-from-${queryId}`, extra: "x".repeat(20) }],
+      });
+    });
+
+    const config = buildConfig({
+      ...BASE_VALUES,
+      start: "2026-07-01T00:00:00Z",
+      end: "2026-07-01T03:00:00Z", // 3 windows
+      resume: false,
+    });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+
+    await runCloudwatchLogsInsights({
+      config,
+      logger,
+      client: asClient(client),
+      paths,
+    });
+
+    interface WriteCall {
+      readonly completedWindows: number;
+      readonly inFlightQueryId?: string;
+      readonly outputBytes?: number;
+    }
+    const calls = checkpointMocks.write.mock.calls as [WriteCall][];
+    const preWindowWrites = calls
+      .map(([checkpoint]) => checkpoint)
+      .filter((checkpoint) => checkpoint.inFlightQueryId !== undefined);
+    expect(preWindowWrites).toHaveLength(3);
+
+    // Pre-window write for window 0: no row has been appended yet anywhere.
+    expect(preWindowWrites[0]?.outputBytes).toBe(0);
+
+    const row0 = {
+      "@message": "row-from-query-0",
+      extra: "x".repeat(20),
+    };
+    const bytes0 = JSON.stringify(row0).length;
+    // Pre-window write for window 1 reflects window 0's bytes only — window
+    // 1 itself has not appended anything yet.
+    expect(preWindowWrites[1]?.outputBytes).toBe(bytes0);
+
+    const row1 = {
+      "@message": "row-from-query-1",
+      extra: "x".repeat(20),
+    };
+    const bytes1 = JSON.stringify(row1).length;
+    // Pre-window write for window 2 reflects windows 0+1 combined only.
+    expect(preWindowWrites[2]?.outputBytes).toBe(bytes0 + bytes1);
+  });
+});
+
+describe("runCloudwatchLogsInsights — CSV format (unchanged behavior)", () => {
+  it("fresh run: never touches the JSON streaming writer; full row accumulation and a single batch export-results call, exactly as before this fix", async () => {
+    const client = buildClient();
+    let call = 0;
+    client.startQuery.mockImplementation(() => {
+      const id = `query-${String(call)}`;
+      call += 1;
+      return Promise.resolve(id);
+    });
+    client.awaitResults.mockImplementation((queryId: string) => {
+      return Promise.resolve({
+        queryId,
+        status: "Complete",
+        rows: [{ "@message": `row-from-${queryId}` }],
+      });
+    });
+
+    const config = buildConfig({
+      ...BASE_VALUES,
+      format: "csv",
+      output: "results.csv",
+      start: "2026-07-01T00:00:00Z",
+      end: "2026-07-01T02:00:00Z",
+      resume: false,
+    });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+
+    const summary = await runCloudwatchLogsInsights({
+      config,
+      logger,
+      client: asClient(client),
+      paths,
+    });
+
+    expect(Core.M3LJSONListExporter).not.toHaveBeenCalled();
+    expect(jsonExporterMocks.exportStream).not.toHaveBeenCalled();
+    expect(jsonExporterMocks.append).not.toHaveBeenCalled();
+
+    expect(exportResultsMock).toHaveBeenCalledTimes(1);
+    expect(exportResultsMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rows: [
+          { "@message": "row-from-query-0" },
+          { "@message": "row-from-query-1" },
+        ],
+        format: "csv",
+        output: "results.csv",
+      }),
+    );
+
+    interface WriteCall {
+      readonly completedWindows: number;
+      readonly rows: readonly unknown[];
+      readonly outputBytes?: number;
+    }
+    const calls = checkpointMocks.write.mock.calls as [WriteCall][];
+    for (const [checkpoint] of calls) {
+      expect(checkpoint.outputBytes).toBeUndefined();
+    }
+    const finalWrite = calls.find(
+      ([checkpoint]) => checkpoint.completedWindows === 2,
+    );
+    expect(finalWrite?.[0].rows).toEqual([
+      { "@message": "row-from-query-0" },
+      { "@message": "row-from-query-1" },
+    ]);
+
+    expect(summary).toEqual({ windowsCompleted: 2, rowsExported: 2 });
+  });
+
+  it("resumed run: never touches the JSON streaming writer; checkpoint rows keep the full carried-over + fetched set (never emptied)", async () => {
+    const client = buildClient();
+    let startQueryCalls = 0;
+    client.startQuery.mockImplementation(() => {
+      startQueryCalls += 1;
+      return Promise.resolve(`query-fresh-${String(startQueryCalls)}`);
+    });
+    client.awaitResults.mockImplementation((queryId: string) => {
+      return Promise.resolve({
+        queryId,
+        status: "Complete",
+        rows: [{ "@message": `row-from-${queryId}` }],
+      });
+    });
+
+    checkpointMocks.read.mockResolvedValue({
+      completedWindows: 1,
+      rows: [{ "@message": "already-fetched" }],
+      inFlightQueryId: "query-inflight",
+    });
+
+    const config = buildConfig({
+      ...BASE_VALUES,
+      format: "csv",
+      output: "results.csv",
+      start: "2026-07-01T00:00:00Z",
+      end: "2026-07-01T03:00:00Z",
+      resume: true,
+    });
+    const logger = new Core.M3LLogger([]);
+    const paths = buildPaths();
+
+    const summary = await runCloudwatchLogsInsights({
+      config,
+      logger,
+      client: asClient(client),
+      paths,
+    });
+
+    expect(Core.M3LJSONListExporter).not.toHaveBeenCalled();
+
+    expect(exportResultsMock).toHaveBeenCalledTimes(1);
+    expect(exportResultsMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rows: expect.arrayContaining([
+          { "@message": "already-fetched" },
+          { "@message": "row-from-query-inflight" },
+          { "@message": "row-from-query-fresh-1" },
+        ]) as unknown,
+        format: "csv",
+      }),
+    );
+
+    expect(summary).toEqual({ windowsCompleted: 3, rowsExported: 3 });
   });
 });

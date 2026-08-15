@@ -10,6 +10,12 @@
  * mid-run would truncate it, which is why `run-cloudwatch-logs-insights.ts`
  * accumulates rows (in memory and in the checkpoint) instead of writing
  * incrementally.
+ *
+ * Note: the `json` branch below is no longer called by
+ * `run-cloudwatch-logs-insights.ts`, which now streams JSON directly via
+ * `Core.M3LJSONListExporter.exportStream()` instead of this module — only
+ * `csv` still routes through this whole-array path. The `json` branch stays,
+ * unchanged, as a general-purpose export path.
  */
 
 import { Core } from "@m3l-automation/m3l-common";
