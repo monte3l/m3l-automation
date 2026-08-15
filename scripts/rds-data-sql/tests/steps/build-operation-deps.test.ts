@@ -440,7 +440,7 @@ describe("buildOperationDeps: load", () => {
 });
 
 describe("buildOperationDeps: checkpoint validation", () => {
-  test("query's checkpoint validator rejects a 'rows' array containing a non-plain-object entry", async () => {
+  test("query's checkpoint validator rejects a 'columns' array containing a non-string entry", async () => {
     stubWriteStream();
     const result = await buildOperationDeps(
       buildDeps(
@@ -456,12 +456,13 @@ describe("buildOperationDeps: checkpoint validation", () => {
       throw new Error("expected buildOperationDeps to populate 'query'");
     }
 
-    // A bare (non-enveloped, "legacy format") checkpoint file whose 'rows'
-    // field is present but holds a non-plain-object entry — isOptionalRecordArray
-    // must reject it, and M3LCheckpointStore treats a validate() failure
-    // identically to malformed JSON.
+    // A checkpoint file whose 'columns' field is present but holds a
+    // non-string entry (rows is gone; columns is the new resume-seam field
+    // for CSV output) must be rejected the same way an unparseable file
+    // would be — M3LCheckpointStore treats a validate() failure identically
+    // to malformed JSON.
     vi.mocked(fsp.readFile).mockResolvedValue(
-      JSON.stringify({ rows: ["not-a-record"] }),
+      JSON.stringify({ columns: [123] }),
     );
 
     const thrown = await captureThrown(() => queryDeps.checkpoint.read());
@@ -472,7 +473,35 @@ describe("buildOperationDeps: checkpoint validation", () => {
     );
   });
 
-  test("load's checkpoint validator rejects a 'failedRecords' array containing a non-plain-object entry", async () => {
+  test("query's checkpoint validator rejects an 'outputBytes' that isn't a number", async () => {
+    stubWriteStream();
+    const result = await buildOperationDeps(
+      buildDeps(
+        makeSettings({
+          operation: "query",
+          sql: "SELECT 1",
+          outputFile: "out.json",
+        }),
+      ),
+    );
+    const queryDeps = result.query;
+    if (queryDeps === undefined) {
+      throw new Error("expected buildOperationDeps to populate 'query'");
+    }
+
+    vi.mocked(fsp.readFile).mockResolvedValue(
+      JSON.stringify({ outputBytes: "not-a-number" }),
+    );
+
+    const thrown = await captureThrown(() => queryDeps.checkpoint.read());
+
+    expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
+    expect((thrown as Core.M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_PARSE",
+    );
+  });
+
+  test("load's checkpoint validator rejects a 'failedOutputBytes' that isn't a number", async () => {
     stubWriteStream();
     const result = await buildOperationDeps(
       buildDeps(
@@ -488,11 +517,11 @@ describe("buildOperationDeps: checkpoint validation", () => {
       throw new Error("expected buildOperationDeps to populate 'load'");
     }
 
-    // A malformed 'failedRecords' entry — here `null`, which fails
-    // isPlainRecord's `value !== null` check — must be rejected the same
-    // way an unparseable file would be.
+    // `failedRecords` is gone — a malformed `failedOutputBytes` (the new
+    // resume-seam field) must be rejected the same way an unparseable file
+    // would be.
     vi.mocked(fsp.readFile).mockResolvedValue(
-      JSON.stringify({ failedRecords: [null] }),
+      JSON.stringify({ failedOutputBytes: "not-a-number" }),
     );
 
     const thrown = await captureThrown(() => loadDeps.checkpoint.read());
@@ -500,6 +529,445 @@ describe("buildOperationDeps: checkpoint validation", () => {
     expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
     expect((thrown as Core.M3LCheckpointError).code).toBe(
       "ERR_CHECKPOINT_PARSE",
+    );
+  });
+
+  test("load's checkpoint validator rejects a 'failedCount' that isn't a number", async () => {
+    stubWriteStream();
+    const result = await buildOperationDeps(
+      buildDeps(
+        makeSettings({
+          operation: "load",
+          table: "users",
+          inputFile: "users.jsonl",
+        }),
+      ),
+    );
+    const loadDeps = result.load;
+    if (loadDeps === undefined) {
+      throw new Error("expected buildOperationDeps to populate 'load'");
+    }
+
+    vi.mocked(fsp.readFile).mockResolvedValue(
+      JSON.stringify({ failedCount: "not-a-number" }),
+    );
+
+    const thrown = await captureThrown(() => loadDeps.checkpoint.read());
+
+    expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
+    expect((thrown as Core.M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_PARSE",
+    );
+  });
+});
+
+/** Builds a fresh 'query' operation's checkpoint port, mirroring the "checkpoint validation" describe block's setup. */
+async function getQueryCheckpoint(): Promise<{
+  read(): Promise<unknown>;
+}> {
+  stubWriteStream();
+  const result = await buildOperationDeps(
+    buildDeps(
+      makeSettings({
+        operation: "query",
+        sql: "SELECT 1",
+        outputFile: "out.json",
+      }),
+    ),
+  );
+  const queryDeps = result.query;
+  if (queryDeps === undefined) {
+    throw new Error("expected buildOperationDeps to populate 'query'");
+  }
+  return queryDeps.checkpoint;
+}
+
+/** Builds a fresh 'load' operation's checkpoint port, mirroring the "checkpoint validation" describe block's setup. */
+async function getLoadCheckpoint(): Promise<{
+  read(): Promise<unknown>;
+}> {
+  const result = await buildOperationDeps(
+    buildDeps(
+      makeSettings({
+        operation: "load",
+        table: "users",
+        inputFile: "users.jsonl",
+      }),
+    ),
+  );
+  const loadDeps = result.load;
+  if (loadDeps === undefined) {
+    throw new Error("expected buildOperationDeps to populate 'load'");
+  }
+  return loadDeps.checkpoint;
+}
+
+describe("buildOperationDeps: checkpoint co-occurrence validation (offset<->outputBytes, chunkIndex<->failedOutputBytes<->recordsProcessed)", () => {
+  test("query's checkpoint validator rejects 'offset' present without 'outputBytes'", async () => {
+    const checkpoint = await getQueryCheckpoint();
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({ offset: 5 }));
+
+    const thrown = await captureThrown(() => checkpoint.read());
+
+    expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
+    expect((thrown as Core.M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_PARSE",
+    );
+  });
+
+  test("query's checkpoint validator rejects 'outputBytes' present without 'offset'", async () => {
+    const checkpoint = await getQueryCheckpoint();
+    vi.mocked(fsp.readFile).mockResolvedValue(
+      JSON.stringify({ outputBytes: 5 }),
+    );
+
+    const thrown = await captureThrown(() => checkpoint.read());
+
+    expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
+    expect((thrown as Core.M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_PARSE",
+    );
+  });
+
+  test("query's checkpoint validator accepts 'offset' and 'outputBytes' present together", async () => {
+    const checkpoint = await getQueryCheckpoint();
+    vi.mocked(fsp.readFile).mockResolvedValue(
+      JSON.stringify({ offset: 5, outputBytes: 100 }),
+    );
+
+    await expect(checkpoint.read()).resolves.toEqual({
+      offset: 5,
+      outputBytes: 100,
+    });
+  });
+
+  test("query's checkpoint validator accepts neither 'offset' nor 'outputBytes' present (a fresh, not-yet-progressed checkpoint)", async () => {
+    const checkpoint = await getQueryCheckpoint();
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({}));
+
+    await expect(checkpoint.read()).resolves.toEqual({});
+  });
+
+  test("load's checkpoint validator rejects 'chunkIndex' present without 'failedOutputBytes'", async () => {
+    const checkpoint = await getLoadCheckpoint();
+    vi.mocked(fsp.readFile).mockResolvedValue(
+      JSON.stringify({ chunkIndex: 5 }),
+    );
+
+    const thrown = await captureThrown(() => checkpoint.read());
+
+    expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
+    expect((thrown as Core.M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_PARSE",
+    );
+  });
+
+  test("load's checkpoint validator rejects 'failedOutputBytes' present without 'chunkIndex'", async () => {
+    const checkpoint = await getLoadCheckpoint();
+    vi.mocked(fsp.readFile).mockResolvedValue(
+      JSON.stringify({ failedOutputBytes: 5 }),
+    );
+
+    const thrown = await captureThrown(() => checkpoint.read());
+
+    expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
+    expect((thrown as Core.M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_PARSE",
+    );
+  });
+
+  test("load's checkpoint validator rejects 'recordsProcessed' present without 'chunkIndex' or 'failedOutputBytes'", async () => {
+    const checkpoint = await getLoadCheckpoint();
+    vi.mocked(fsp.readFile).mockResolvedValue(
+      JSON.stringify({ recordsProcessed: 30 }),
+    );
+
+    const thrown = await captureThrown(() => checkpoint.read());
+
+    expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
+    expect((thrown as Core.M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_PARSE",
+    );
+  });
+
+  test("load's checkpoint validator rejects 'chunkIndex' and 'failedOutputBytes' present without 'recordsProcessed'", async () => {
+    const checkpoint = await getLoadCheckpoint();
+    vi.mocked(fsp.readFile).mockResolvedValue(
+      JSON.stringify({ chunkIndex: 5, failedOutputBytes: 100 }),
+    );
+
+    const thrown = await captureThrown(() => checkpoint.read());
+
+    expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
+    expect((thrown as Core.M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_PARSE",
+    );
+  });
+
+  test("load's checkpoint validator accepts 'chunkIndex', 'failedOutputBytes', and 'recordsProcessed' present together", async () => {
+    const checkpoint = await getLoadCheckpoint();
+    vi.mocked(fsp.readFile).mockResolvedValue(
+      JSON.stringify({
+        chunkIndex: 5,
+        failedOutputBytes: 100,
+        recordsProcessed: 30,
+      }),
+    );
+
+    await expect(checkpoint.read()).resolves.toEqual({
+      chunkIndex: 5,
+      failedOutputBytes: 100,
+      recordsProcessed: 30,
+    });
+  });
+
+  test("load's checkpoint validator accepts neither 'chunkIndex', 'failedOutputBytes', nor 'recordsProcessed' present (a fresh, not-yet-progressed checkpoint)", async () => {
+    const checkpoint = await getLoadCheckpoint();
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({}));
+
+    await expect(checkpoint.read()).resolves.toEqual({});
+  });
+});
+
+describe("buildOperationDeps: checkpoint safe-integer validation", () => {
+  /**
+   * Every numeric checkpoint field this step validates, paired with the
+   * companion field(s) that must also be present to satisfy the
+   * co-occurrence check exercised in the describe block above — so each
+   * case below isolates the safe-integer check alone.
+   */
+  const FIELD_CASES = [
+    ["query", "offset", { outputBytes: 100 }] as const,
+    ["query", "outputBytes", { offset: 5 }] as const,
+    ["load", "chunkIndex", { failedOutputBytes: 100 }] as const,
+    ["load", "failedOutputBytes", { chunkIndex: 5 }] as const,
+    ["load", "failedCount", {}] as const,
+    ["load", "recordsProcessed", {}] as const,
+  ];
+
+  /**
+   * `NaN` cannot appear in valid JSON text (`JSON.parse` rejects the bare
+   * `NaN` token as a syntax error), so it's produced by stubbing
+   * `JSON.parse`'s return value directly instead of via `readFile`'s
+   * string content — mirroring what a corrupted-in-place checkpoint file's
+   * already-decoded value would look like to `M3LCheckpointStore.read()`'s
+   * `validate()` step.
+   */
+  const BAD_VALUES = [
+    ["NaN", Number.NaN] as const,
+    ["-1", -1] as const,
+    ["1.5 (non-integer)", 1.5] as const,
+  ];
+
+  const SAFE_INTEGER_CASES = FIELD_CASES.flatMap(
+    ([operation, field, companion]) =>
+      BAD_VALUES.map(
+        ([label, value]) =>
+          [operation, field, label, value, companion] as const,
+      ),
+  );
+
+  test.each(SAFE_INTEGER_CASES)(
+    "%s's checkpoint validator rejects a non-safe-integer '%s' value of %s",
+    async (operation, field, _label, value, companion) => {
+      const checkpoint =
+        operation === "query"
+          ? await getQueryCheckpoint()
+          : await getLoadCheckpoint();
+      vi.mocked(fsp.readFile).mockResolvedValue("{}");
+      vi.spyOn(JSON, "parse").mockReturnValueOnce({
+        ...companion,
+        [field]: value,
+      });
+
+      const thrown = await captureThrown(() => checkpoint.read());
+
+      expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
+      expect((thrown as Core.M3LCheckpointError).code).toBe(
+        "ERR_CHECKPOINT_PARSE",
+      );
+    },
+  );
+
+  test("a well-formed checkpoint with every field a valid safe non-negative integer is accepted", async () => {
+    const queryCheckpoint = await getQueryCheckpoint();
+    vi.mocked(fsp.readFile).mockResolvedValue(
+      JSON.stringify({ offset: 5, outputBytes: 100, columns: ["id"] }),
+    );
+
+    await expect(queryCheckpoint.read()).resolves.toEqual({
+      offset: 5,
+      outputBytes: 100,
+      columns: ["id"],
+    });
+
+    const loadCheckpoint = await getLoadCheckpoint();
+    vi.mocked(fsp.readFile).mockResolvedValue(
+      JSON.stringify({
+        chunkIndex: 3,
+        failedOutputBytes: 200,
+        failedCount: 4,
+        recordsProcessed: 40,
+      }),
+    );
+
+    await expect(loadCheckpoint.read()).resolves.toEqual({
+      chunkIndex: 3,
+      failedOutputBytes: 200,
+      failedCount: 4,
+      recordsProcessed: 40,
+    });
+  });
+});
+
+describe("buildOperationDeps: query createWriter", () => {
+  test("returns a createWriter factory (not a pre-built writer), deferring the exporter's fs.createWriteStream call until it is invoked", async () => {
+    stubWriteStream();
+    const result = await buildOperationDeps(
+      buildDeps(
+        makeSettings({
+          operation: "query",
+          sql: "SELECT 1",
+          outputFile: "out.json",
+        }),
+      ),
+    );
+
+    // No fs.createWriteStream call has happened yet — buildQueryDeps no
+    // longer eagerly opens the output file, since resumeFromByte/columns
+    // (needed by a CSV resume) are only known once the caller has read its
+    // own checkpoint.
+    expect(fs.createWriteStream).not.toHaveBeenCalled();
+    expect(result.query?.createWriter).toBeTypeOf("function");
+    expect(
+      (result.query as unknown as { writer?: unknown }).writer,
+    ).toBeUndefined();
+
+    result.query?.createWriter({ resumeFromByte: 0, columns: undefined });
+    expect(fs.createWriteStream).toHaveBeenCalledTimes(1);
+    expect(fs.createWriteStream).toHaveBeenCalledWith(
+      expect.stringContaining("out.json"),
+    );
+  });
+
+  test("forwards a nonzero resumeFromByte into the underlying exporter's fs.createWriteStream call ({ flags: 'r+', start })", async () => {
+    const result = await buildOperationDeps(
+      buildDeps(
+        makeSettings({
+          operation: "query",
+          sql: "SELECT 1",
+          outputFile: "out.jsonl",
+          outputFormat: "jsonl",
+        }),
+      ),
+    );
+    stubWriteStream();
+
+    result.query?.createWriter({ resumeFromByte: 250, columns: undefined });
+
+    expect(fs.createWriteStream).toHaveBeenCalledWith(
+      expect.stringContaining("out.jsonl"),
+      { flags: "r+", start: 250 },
+    );
+  });
+
+  test("for CSV output, forwards 'columns' into the exporter — proven by the exporter's own resume-requires-columns validation firing when columns is omitted", async () => {
+    const result = await buildOperationDeps(
+      buildDeps(
+        makeSettings({
+          operation: "query",
+          sql: "SELECT 1",
+          outputFile: "out.csv",
+          outputFormat: "csv",
+        }),
+      ),
+    );
+    stubWriteStream();
+
+    // M3LCSVListExporter itself throws ERR_CSV_EXPORT when resumeFromByte>0
+    // and columns is empty/unset — this only fires if buildQueryDeps's
+    // createWriter factory actually threads the caller's columns argument
+    // through to the exporter's construction options.
+    let thrown: unknown;
+    try {
+      result.query?.createWriter({ resumeFromByte: 100, columns: undefined });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    expect((thrown as Core.M3LError).code).toBe("ERR_CSV_EXPORT");
+
+    // Supplying columns avoids that same validation error.
+    expect(() =>
+      result.query?.createWriter({
+        resumeFromByte: 100,
+        columns: ["id", "name"],
+      }),
+    ).not.toThrow();
+  });
+
+  test("for json/jsonl output, a nonzero resumeFromByte with no columns does not throw (columns is CSV-only)", async () => {
+    const result = await buildOperationDeps(
+      buildDeps(
+        makeSettings({
+          operation: "query",
+          sql: "SELECT 1",
+          outputFile: "out.json",
+          outputFormat: "json",
+        }),
+      ),
+    );
+    stubWriteStream();
+
+    expect(() =>
+      result.query?.createWriter({ resumeFromByte: 100, columns: undefined }),
+    ).not.toThrow();
+  });
+});
+
+describe("buildOperationDeps: load createFailedWriter", () => {
+  test("returns a createFailedWriter factory (not a pre-built failedWriter), deferring the exporter's fs.createWriteStream call until it is invoked", async () => {
+    stubWriteStream();
+    const result = await buildOperationDeps(
+      buildDeps(
+        makeSettings({
+          operation: "load",
+          table: "users",
+          inputFile: "users.jsonl",
+        }),
+      ),
+    );
+
+    expect(fs.createWriteStream).not.toHaveBeenCalled();
+    expect(result.load?.createFailedWriter).toBeTypeOf("function");
+    expect(
+      (result.load as unknown as { failedWriter?: unknown }).failedWriter,
+    ).toBeUndefined();
+
+    result.load?.createFailedWriter(0);
+    expect(fs.createWriteStream).toHaveBeenCalledTimes(1);
+    expect(fs.createWriteStream).toHaveBeenCalledWith(
+      expect.stringContaining("failed.jsonl"),
+    );
+  });
+
+  test("forwards a nonzero resumeFromByte into the underlying exporter's fs.createWriteStream call ({ flags: 'r+', start })", async () => {
+    const result = await buildOperationDeps(
+      buildDeps(
+        makeSettings({
+          operation: "load",
+          table: "users",
+          inputFile: "users.jsonl",
+        }),
+      ),
+    );
+    stubWriteStream();
+
+    result.load?.createFailedWriter(750);
+
+    expect(fs.createWriteStream).toHaveBeenCalledWith(
+      expect.stringContaining("failed.jsonl"),
+      { flags: "r+", start: 750 },
     );
   });
 });

@@ -75,7 +75,7 @@ function buildCheckpointStore(): Core.M3LCheckpointStore<ScanCheckpoint> {
     paths: new Core.M3LPaths(),
     name: "run",
     validate: alwaysScanCheckpoint,
-    missing: { kind: "empty", value: { segments: {} } },
+    missing: { kind: "empty", value: { segments: {}, outputBytes: 0 } },
   });
 }
 
@@ -100,6 +100,13 @@ function baseOptions(
     resume: false,
     checkpointStore,
     logger,
+    // Resume-seam threading (dynamodb-crud data-loss fix): `dispatchScan`
+    // owns the actual `M3LListExporterStreamWriter`'s `bytesWritten`;
+    // `scan-table.ts` only learns the current value through this callback so
+    // its checkpoint writes can carry `outputBytes` alongside `segments`. `0`
+    // is a safe default for every test that does not care about the exact
+    // value threaded through.
+    getOutputBytes: () => 0,
     ...overrides,
   };
 }
@@ -226,18 +233,23 @@ describe("scanTable — query mode", () => {
 });
 
 describe("scanTable — checkpointing", () => {
-  test("writes the checkpoint every checkpointEveryPages pages, keyed by segment index", async () => {
+  test("writes the checkpoint every checkpointEveryPages pages, keyed by segment index, carrying outputBytes from getOutputBytes", async () => {
     vi.mocked(AWS.scanSegment).mockImplementation(async function* () {
       await Promise.resolve();
       yield { items: [{ id: 1 }], lastEvaluatedKey: { id: 1 } };
       yield { items: [{ id: 2 }], lastEvaluatedKey: undefined };
     });
 
-    await drain(scanTable(baseOptions({ checkpointEveryPages: 1 })));
+    await drain(
+      scanTable(
+        baseOptions({ checkpointEveryPages: 1, getOutputBytes: () => 42 }),
+      ),
+    );
 
     // eslint-disable-next-line @typescript-eslint/unbound-method -- mocked store property is a vi.fn(), never called unbound
     expect(checkpointStore.write).toHaveBeenCalledWith({
       segments: { "0": { id: 1 } },
+      outputBytes: 42,
     });
   });
 
@@ -340,6 +352,7 @@ describe("scanTable — checkpointing", () => {
     // eslint-disable-next-line @typescript-eslint/unbound-method -- mocked store property is a vi.fn(), never called unbound
     expect(checkpointStore.write).toHaveBeenLastCalledWith({
       segments: { "0": null, "1": null },
+      outputBytes: 0,
     });
     // eslint-disable-next-line @typescript-eslint/unbound-method -- mocked store property is a vi.fn(), never called unbound
     expect(checkpointStore.delete).toHaveBeenCalledTimes(1);
@@ -351,6 +364,7 @@ describe("scanTable — resume", () => {
     // eslint-disable-next-line @typescript-eslint/unbound-method -- mocked store property is a vi.fn(), never called unbound
     vi.mocked(checkpointStore.read).mockResolvedValue({
       segments: { "0": { cursorId: "abc" } },
+      outputBytes: 128,
     });
     vi.mocked(AWS.scanSegment).mockImplementation(async function* () {
       await Promise.resolve();
@@ -371,6 +385,7 @@ describe("scanTable — resume", () => {
     // eslint-disable-next-line @typescript-eslint/unbound-method -- mocked store property is a vi.fn(), never called unbound
     vi.mocked(checkpointStore.read).mockResolvedValue({
       segments: { "0": null },
+      outputBytes: 256,
     });
 
     const items = await drain(
@@ -429,6 +444,16 @@ describe("scanTable — type contract", () => {
       Record<string, Record<string, unknown> | null>
     >();
   });
+
+  test("ScanCheckpoint gains a required outputBytes: number field (resume seam)", () => {
+    expectTypeOf<ScanCheckpoint["outputBytes"]>().toBeNumber();
+  });
+
+  test("ScanTableOptions requires getOutputBytes: () => number (resume seam)", () => {
+    expectTypeOf<ScanTableOptions["getOutputBytes"]>().toEqualTypeOf<
+      () => number
+    >();
+  });
 });
 
 describe("isScanCheckpoint", () => {
@@ -440,13 +465,46 @@ describe("isScanCheckpoint", () => {
       "an object whose segments has an array-valued entry",
       { segments: { "0": [] } },
     ],
+    ["an object missing outputBytes entirely", { segments: { "0": null } }],
+    [
+      "an object whose outputBytes is negative",
+      { segments: { "0": null }, outputBytes: -1 },
+    ],
+    [
+      "an object whose outputBytes is a non-number (string)",
+      { segments: { "0": null }, outputBytes: "5" },
+    ],
+    [
+      "an object whose outputBytes is NaN",
+      { segments: { "0": null }, outputBytes: Number.NaN },
+    ],
+    [
+      "an object whose outputBytes is Infinity",
+      { segments: { "0": null }, outputBytes: Number.POSITIVE_INFINITY },
+    ],
+    [
+      "an object whose outputBytes is a non-integer (3.5)",
+      { segments: { "0": null }, outputBytes: 3.5 },
+    ],
   ])("rejects %s", (_description, candidate) => {
     expect(isScanCheckpoint(candidate)).toBe(false);
   });
 
-  test("accepts a well-formed checkpoint", () => {
+  test("accepts a well-formed checkpoint with outputBytes: 0", () => {
     expect(
-      isScanCheckpoint({ segments: { "0": null, "1": { key: "x" } } }),
+      isScanCheckpoint({
+        segments: { "0": null, "1": { key: "x" } },
+        outputBytes: 0,
+      }),
+    ).toBe(true);
+  });
+
+  test("accepts a well-formed checkpoint with a positive outputBytes", () => {
+    expect(
+      isScanCheckpoint({
+        segments: { "0": null, "1": { key: "x" } },
+        outputBytes: 4096,
+      }),
     ).toBe(true);
   });
 });
