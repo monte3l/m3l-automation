@@ -157,9 +157,11 @@ function resolveAction(
   }
   // Unreachable through the public resolveAction() path — M3LRetryAdvice's
   // decision only ever carries "retriable" | "fatal" | "unknown". Kept only
-  // so adding a new M3LRetryDecision value fails to *compile* here; an
-  // off-vocabulary decision from an untyped JS caller still degrades to
-  // "unknown" at runtime, exactly as before.
+  // so adding a new M3LRetryDecision value fails to *compile* here. An
+  // off-vocabulary decision from an untyped JS caller degrades through
+  // unknownDecision at runtime — stricter than the pre-refactor code, which
+  // could leak the raw out-of-vocabulary string into a retry:scheduled
+  // payload's classification field instead.
   const _exhaustive: never = advice.decision;
   return unknownDecision === "fatal"
     ? { action: "stop", classification: "unknown" }
