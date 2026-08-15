@@ -152,6 +152,46 @@ function resolveAction(
 }
 
 /**
+ * The per-`run()` backoff progression. Owns the `prevDelay` seed the
+ * decorrelated-jitter strategies feed on, so the load-bearing rule — a
+ * server-driven `delayMs` override applies to ONE attempt and must never
+ * seed the progression — lives in exactly one place instead of being split
+ * across two branches of the retry loop.
+ *
+ * Instantiated inside each `run()` call frame, never on the instance, which
+ * is what keeps concurrent runs on one runner isolated.
+ *
+ * Module-private: never re-exported through `core/polling/index.ts`.
+ */
+class DelayProgression {
+  readonly #backoff: M3LBackoffStrategy;
+  #prevDelay: number | undefined;
+
+  constructor(backoff: M3LBackoffStrategy) {
+    this.#backoff = backoff;
+  }
+
+  /**
+   * @param attempt - The 0-based index of the attempt that just failed.
+   * @param override - A server-driven delay for this attempt, or `undefined`
+   *   to advance the configured backoff.
+   * @returns The delay, in milliseconds, to sleep before the next attempt.
+   * @throws When `override` is present but not a finite positive number.
+   */
+  next(attempt: number, override: number | undefined): number {
+    if (override !== undefined) {
+      assertPositive(override, "advice.delayMs");
+      // Deliberately does NOT assign #prevDelay: a one-off server delay must
+      // not perturb the jittered progression.
+      return override;
+    }
+    const nextDelay = this.#backoff.nextDelay(attempt, this.#prevDelay);
+    this.#prevDelay = nextDelay;
+    return nextDelay;
+  }
+}
+
+/**
  * Re-executes an operation until it succeeds or retries are exhausted.
  *
  * Attempt and backoff state live inside each {@link M3LRetryRunner.run} call
@@ -207,7 +247,7 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
    *   `unknown` verdict, or retry exhaustion.
    */
   async run<T>(op: () => Promise<T>): Promise<T> {
-    let prevDelay: number | undefined;
+    const progression = new DelayProgression(this.#backoff);
     const lastAttempt = this.#maxAttempts - 1;
 
     for (let attempt = 0; ; attempt++) {
@@ -241,23 +281,13 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
           throw error;
         }
 
-        // A server-driven delayMs (only expressible on a `retriable` advice)
-        // overrides the configured backoff for THIS attempt only, so it must
-        // not seed the jittered backoff progression: leave prevDelay untouched.
-        let delayValue: number;
-        if (resolved.delayMs !== undefined) {
-          assertPositive(resolved.delayMs, "advice.delayMs");
-          delayValue = resolved.delayMs;
-        } else {
-          delayValue = this.#backoff.nextDelay(attempt, prevDelay);
-          prevDelay = delayValue;
-        }
+        const delayMs = progression.next(attempt, resolved.delayMs);
         this.emit("retry:scheduled", {
           attempt: attempt + 1,
-          delayMs: delayValue,
+          delayMs,
           classification: resolved.classification,
         });
-        await delay(delayValue);
+        await delay(delayMs);
       }
     }
   }
