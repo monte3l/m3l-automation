@@ -572,7 +572,7 @@ describe("retryWithRelogin", () => {
       thrown = error;
     }
     expect(thrown).toBeInstanceOf(M3LAWSCredentialsError);
-    expect(operation.mock.calls.length).toBeLessThanOrEqual(2);
+    expect(operation.mock.calls.length).toBe(2);
   });
 
   test("unrecoverable first error throws immediately — no login attempted", async () => {
@@ -611,6 +611,240 @@ describe("retryWithRelogin", () => {
       thrown = error;
     }
     expect(thrown).toBeInstanceOf(M3LAWSCredentialsError);
+  });
+
+  test("an already-typed M3LAWSCredentialsError from the operation is re-thrown by identity, not re-wrapped", async () => {
+    const manager = new M3LAWSCredentialsManager({ interactive: false });
+    const originalError = new M3LAWSCredentialsError("boom from operation");
+    const operation = vi.fn().mockRejectedValue(originalError);
+
+    await expect(manager.retryWithRelogin(operation)).rejects.toBe(
+      originalError,
+    );
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(h.spawn).not.toHaveBeenCalled();
+  });
+
+  test("unrecoverable failure with no profile resolved omits the profile suffix and carries type/cause in context", async () => {
+    const manager = new M3LAWSCredentialsManager({ interactive: false });
+    const originalError = new Error("Profile not found");
+    const operation = vi.fn().mockRejectedValue(originalError);
+
+    let thrown: unknown;
+    try {
+      await manager.retryWithRelogin(operation);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LAWSCredentialsError);
+    const err = thrown as M3LAWSCredentialsError;
+    expect(err.message).toBe(
+      "operation failed with an unrecoverable credential error",
+    );
+    expect(err.context["profile"]).toBeUndefined();
+    expect(err.context["type"]).toBe("PROFILE_NOT_FOUND");
+    expect(err.cause).toBe(originalError);
+  });
+
+  test("unrecoverable failure with a resolved profile appends the ' for profile' suffix", async () => {
+    const manager = new M3LAWSCredentialsManager({ interactive: false });
+    const originalError = new Error("Profile not found");
+    const operation = vi.fn().mockRejectedValue(originalError);
+
+    let thrown: unknown;
+    try {
+      await manager.retryWithRelogin(operation, parseAWSProfile("my-profile"));
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LAWSCredentialsError);
+    const err = thrown as M3LAWSCredentialsError;
+    expect(err.message).toBe(
+      "operation failed with an unrecoverable credential error for profile 'my-profile'",
+    );
+    expect(err.context["type"]).toBe("PROFILE_NOT_FOUND");
+    expect(err.context["profile"]).toBe("my-profile");
+    expect(err.cause).toBe(originalError);
+  });
+
+  test("retries exhausted with a profile — message carries the suffix, cause is the LAST attempt's error by identity", async () => {
+    configureSpawn(0, null);
+    const manager = new M3LAWSCredentialsManager({
+      interactive: false,
+      maxRetries: 1,
+    });
+
+    const firstError = new Error("Token has expired and refresh failed");
+    const secondError = new Error(
+      "The SSO session associated with this profile is invalid",
+    );
+    const operation = vi
+      .fn()
+      .mockRejectedValueOnce(firstError)
+      .mockRejectedValueOnce(secondError);
+
+    let thrown: unknown;
+    try {
+      await manager.retryWithRelogin(operation, parseAWSProfile("my-profile"));
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LAWSCredentialsError);
+    const err = thrown as M3LAWSCredentialsError;
+    expect(err.message).toBe(
+      "operation failed with a recoverable credential error, but retries are exhausted for profile 'my-profile'",
+    );
+    expect(err.context["type"]).toBe("SSO_SESSION_INVALID");
+    expect(err.cause).toBe(secondError);
+    expect(operation).toHaveBeenCalledTimes(2);
+  });
+
+  test("retries exhausted with no profile — message omits the suffix", async () => {
+    configureSpawn(0, null);
+    const manager = new M3LAWSCredentialsManager({
+      interactive: false,
+      maxRetries: 1,
+    });
+    const operation = vi
+      .fn()
+      .mockRejectedValue(new Error("Token has expired and refresh failed"));
+
+    let thrown: unknown;
+    try {
+      await manager.retryWithRelogin(operation);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LAWSCredentialsError);
+    const err = thrown as M3LAWSCredentialsError;
+    expect(err.message).toBe(
+      "operation failed with a recoverable credential error, but retries are exhausted",
+    );
+  });
+
+  test("an unrecoverable failure on the FINAL attempt throws the unrecoverable message, not the exhausted one", async () => {
+    configureSpawn(0, null);
+    const manager = new M3LAWSCredentialsManager({
+      interactive: false,
+      maxRetries: 1,
+    });
+    const operation = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Token has expired and refresh failed"))
+      .mockRejectedValueOnce(new Error("Profile not found"));
+
+    let thrown: unknown;
+    try {
+      await manager.retryWithRelogin(operation, parseAWSProfile("my-profile"));
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LAWSCredentialsError);
+    const err = thrown as M3LAWSCredentialsError;
+    expect(err.message).toBe(
+      "operation failed with an unrecoverable credential error for profile 'my-profile'",
+    );
+    expect(operation).toHaveBeenCalledTimes(2);
+  });
+
+  test("interactive re-login declined during a retry rejects with the decline error; operation ran once, no login spawned", async () => {
+    const manager = new M3LAWSCredentialsManager({
+      interactive: true,
+      prompt: makePrompt(false),
+    });
+    const operation = vi
+      .fn()
+      .mockRejectedValue(new Error("Token has expired and refresh failed"));
+
+    let thrown: unknown;
+    try {
+      await manager.retryWithRelogin(operation, parseAWSProfile("my-profile"));
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LAWSCredentialsError);
+    const err = thrown as M3LAWSCredentialsError;
+    expect(err.message).toBe("re-login declined for profile 'my-profile'");
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(h.spawn).not.toHaveBeenCalled();
+  });
+
+  test("an SSO spawn failure during a retry rejects with the spawn-failure error; operation ran once", async () => {
+    const spawnError = Object.assign(new Error("spawn aws ENOENT"), {
+      code: "ENOENT",
+    });
+    configureSpawnError(spawnError);
+    const manager = new M3LAWSCredentialsManager({ interactive: false });
+    const operation = vi
+      .fn()
+      .mockRejectedValue(new Error("Token has expired and refresh failed"));
+
+    let thrown: unknown;
+    try {
+      await manager.retryWithRelogin(operation, parseAWSProfile("my-profile"));
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LAWSCredentialsError);
+    const err = thrown as M3LAWSCredentialsError;
+    expect(err.message).toBe(
+      "failed to spawn 'aws sso login' for profile 'my-profile'; is the AWS CLI installed and on PATH?",
+    );
+    expect(err.cause).toBe(spawnError);
+    expect(operation).toHaveBeenCalledTimes(1);
+  });
+
+  test("maxRetries=2 exhausts after exactly 3 operation attempts and 2 relogin spawns", async () => {
+    configureSpawn(0, null);
+    const manager = new M3LAWSCredentialsManager({
+      interactive: false,
+      maxRetries: 2,
+    });
+    const operation = vi
+      .fn()
+      .mockRejectedValue(new Error("Token has expired and refresh failed"));
+
+    let thrown: unknown;
+    try {
+      await manager.retryWithRelogin(operation, parseAWSProfile("my-profile"));
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LAWSCredentialsError);
+    expect(operation).toHaveBeenCalledTimes(3);
+    expect(h.spawn).toHaveBeenCalledTimes(2);
+    const err = thrown as M3LAWSCredentialsError;
+    expect(err.message).toBe(
+      "operation failed with a recoverable credential error, but retries are exhausted for profile 'my-profile'",
+    );
+  });
+
+  test("falls back to the constructor-supplied profile when retryWithRelogin is called without one", async () => {
+    configureSpawn(0, null);
+    const manager = new M3LAWSCredentialsManager({
+      profile: parseAWSProfile("ctor-profile"),
+      interactive: false,
+    });
+    const operation = vi
+      .fn()
+      .mockRejectedValue(new Error("Token has expired and refresh failed"));
+
+    let thrown: unknown;
+    try {
+      await manager.retryWithRelogin(operation);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LAWSCredentialsError);
+    expect(h.spawn).toHaveBeenCalledWith(
+      "aws",
+      ["sso", "login", "--profile=ctor-profile"],
+      expect.objectContaining({ stdio: "inherit" }),
+    );
+    const err = thrown as M3LAWSCredentialsError;
+    expect(err.message).toBe(
+      "operation failed with a recoverable credential error, but retries are exhausted for profile 'ctor-profile'",
+    );
   });
 });
 
