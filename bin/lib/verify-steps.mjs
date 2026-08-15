@@ -129,6 +129,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:tracker-coverage",
   },
   {
+    ciStepName: "Check tracker status vocabulary",
+    id: "check-tracker-status",
+    cmd: () => "pnpm check:tracker-status",
+  },
+  {
     ciStepName: "Check implementation count",
     id: "check-impl-counts",
     cmd: () => "pnpm check:impl-counts",

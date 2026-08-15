@@ -621,3 +621,53 @@ before `MAJOR_BUMP_ITEM_KEYS` existed) will not automatically move to
 "2.0 / breaking" — a one-time manual milestone move via the GitHub UI closes
 it. A newly created or reopened issue is unaffected; this only touches an
 issue that was already closed before this Update landed.
+
+## Update (2026-08-15): the tracker/board vocabulary split is now enforced, not just documented
+
+The 2026-07-28 Update above states the split — tracker Status cells use the
+six-value badge vocabulary, the Projects board's Status field uses its own
+three-value one (Pending/In review/Done) — but nothing checked a tracker cell
+actually stayed on the tracker side of that split. A board-side token,
+`In review`, leaked into the D4 `aws/rds-data` row in
+`docs/plans/IMPLEMENTATION.md`. `classifyStatus` (`bin/lib/project-hub.mjs`)
+had no branch for it and silently classified it `"todo"`, so issue #204 sat
+open — board status "Pending" — for weeks after the work it tracked had
+already shipped (found and worked around while retiring that gate, #428;
+filed as its own gap rather than fixed in the same change).
+
+Resolved as: **a board-side token in a tracker cell is an authoring mistake,
+not a synonym to alias.** Aliasing the one observed token (`In review` →
+`In Progress`) would have fixed this single leak while leaving the vocabulary
+boundary just as porous to the next one (`Pending`, a typo, a backticked
+`` `In review` ``) — silently, the same way this one was. Enforcing the
+boundary instead of widening it:
+
+- `classifyStatus` split into `classifyStatusCell(cell) -> { kind, recognized }`
+  (mirroring the existing `mapFrictionPriority`) plus a thin `classifyStatus`
+  wrapper for callers that only need the badge kind (the dashboard renderer
+  still needs to render _something_ for a bad cell, so `kind` still defaults
+  to `"todo"` — only `recognized` is new). The cell-stripping regex was also
+  widened from `**bold**` -only to `**bold**`/`` `code` ``/`_italic_`,
+  closing a second silent hole where a backticked `` `In review` `` cell
+  would have fallen through the vocabulary check for an unrelated reason.
+- `bin/lib/hub-sync.mjs`'s `actionableItems` gained `resolveStatus`, mirroring
+  the existing `resolvePriority`: every tracker row's Status cell now warns
+  into the same `warnings` array a bad Priority cell already did.
+- A new hard CI gate, `pnpm check:tracker-status`
+  (`bin/check-tracker-status.mjs`, sibling to `check:tracker-coverage`,
+  wired into `verify-steps.mjs`/`ci.yml` the same way): fails the build the
+  moment an off-vocabulary Status cell exists anywhere in `docs/ROADMAP.md`
+  or `docs/plans/IMPLEMENTATION.md` (`## `- and `### `-level tables alike,
+  reporting the exact `path:line` and cell text), so the leak this Update
+  describes cannot reach `main` a second time. A warning in a dry-run log was
+  the channel that let the first one sit unnoticed for weeks; this is the
+  backstop that doesn't depend on someone reading that log.
+- `PROJECT_STATUS_OPTIONS`'s lookup (`projectStatusOption`,
+  `bin/lib/hub-sync.mjs`) now throws instead of silently defaulting to
+  Pending on a miss — with `resolveStatus`/`check:tracker-status` both in
+  place, `status` reaching that function is provably always one of the six
+  kinds, so a miss there would be a programming error, not tracker data.
+
+No live tracker row was off-vocabulary at the time this landed — the `In
+review` cell was already flipped to `Done` by #428 — so `check:tracker-status`
+starts green; this Update and the gate exist to keep it that way.

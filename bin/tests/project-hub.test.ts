@@ -5,11 +5,13 @@ import {
   blobUrl,
   buildCorpusSections,
   classifyStatus,
+  classifyStatusCell,
   columnIndex,
   escapeHtml,
   extractImplementation,
   extractImplementationStatus,
   extractRoadmap,
+  findOffVocabularyStatusCells,
   findUncoveredStatusHeadings,
   parseAdr,
   parseDatedDoc,
@@ -418,6 +420,53 @@ describe("classifyStatus", () => {
     ["", "todo"],
   ])("classifies %j as %s", (cell, expected) => {
     expect(classifyStatus(cell)).toBe(expected);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// classifyStatusCell
+// ---------------------------------------------------------------------------
+
+describe("classifyStatusCell", () => {
+  test.each([
+    // Each of the 6 keywords: bare, bold, and a case variation.
+    ["Done", { kind: "done", recognized: true }],
+    ["**Done**", { kind: "done", recognized: true }],
+    ["DONE", { kind: "done", recognized: true }],
+    ["To Do", { kind: "todo", recognized: true }],
+    ["**To Do**", { kind: "todo", recognized: true }],
+    ["to do", { kind: "todo", recognized: true }],
+    ["In Progress", { kind: "in-progress", recognized: true }],
+    ["**In Progress**", { kind: "in-progress", recognized: true }],
+    ["in-progress", { kind: "in-progress", recognized: true }],
+    ["Deferred", { kind: "deferred", recognized: true }],
+    ["**Deferred**", { kind: "deferred", recognized: true }],
+    ["DEFERRED", { kind: "deferred", recognized: true }],
+    ["Blocked", { kind: "blocked", recognized: true }],
+    ["**Blocked**", { kind: "blocked", recognized: true }],
+    ["BLOCKED", { kind: "blocked", recognized: true }],
+    ["Rejected", { kind: "rejected", recognized: true }],
+    ["**Rejected**", { kind: "rejected", recognized: true }],
+    ["REJECTED", { kind: "rejected", recognized: true }],
+    // Backtick/underscore marker stripping (previously only "**" was stripped).
+    ["`Done`", { kind: "done", recognized: true }],
+    ["_Deferred_", { kind: "deferred", recognized: true }],
+    // The 4 legacy status emoji.
+    ["✅", { kind: "done", recognized: true }],
+    ["❌", { kind: "todo", recognized: true }],
+    ["🧪", { kind: "in-progress", recognized: true }],
+    ["🟢", { kind: "in-progress", recognized: true }],
+    // A keyword with trailing prose.
+    ["deferred — backlog only", { kind: "deferred", recognized: true }],
+    // The backtick fix: a board-side "In review" token, backtick-wrapped or
+    // bare, is off-vocabulary either way.
+    ["`In review`", { kind: "todo", recognized: false }],
+    ["In review", { kind: "todo", recognized: false }],
+    // Empty and clearly-bogus cells.
+    ["", { kind: "todo", recognized: false }],
+    ["something else entirely", { kind: "todo", recognized: false }],
+  ] as const)("classifies %j as %j", (cell, expected) => {
+    expect(classifyStatusCell(cell)).toEqual(expected);
   });
 });
 
@@ -835,6 +884,125 @@ Just some prose, no table here at all.
     expect(
       findUncoveredStatusHeadings(content, IMPLEMENTATION_SECTION_HEADINGS),
     ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findOffVocabularyStatusCells
+// ---------------------------------------------------------------------------
+
+describe("findOffVocabularyStatusCells", () => {
+  test("a clean tracker with only in-vocabulary cells returns no findings", () => {
+    const content = `## Clean
+
+| Item | Status |
+| ---- | ------ |
+| a    | Done   |
+| b    | To Do  |
+`;
+    expect(findOffVocabularyStatusCells(content)).toEqual([]);
+  });
+
+  test("a level-2 heading's table with an off-vocabulary cell is reported with the correct line, heading, and cell", () => {
+    const content = `## Wave
+
+| Item | Status |
+| ---- | ------ |
+| x    | In review |
+`;
+    expect(findOffVocabularyStatusCells(content)).toEqual([
+      { line: 5, heading: "Wave", cell: "In review" },
+    ]);
+  });
+
+  test("a level-3 nested table (under a ### subsection) is also scanned and reported", () => {
+    const content = `## Section
+
+### Subsection
+
+| Item | Status |
+| ---- | ------ |
+| x    | In review |
+`;
+    expect(findOffVocabularyStatusCells(content)).toEqual([
+      { line: 7, heading: "Subsection", cell: "In review" },
+    ]);
+  });
+
+  test("multiple off-vocabulary cells across multiple tables/headings are all reported in document order", () => {
+    const content = `## First
+
+| Item | Status |
+| ---- | ------ |
+| a    | In review |
+| b    | Done   |
+
+## Second
+
+| Item | Status |
+| ---- | ------ |
+| c    | Reviewing |
+`;
+    expect(findOffVocabularyStatusCells(content)).toEqual([
+      { line: 5, heading: "First", cell: "In review" },
+      { line: 12, heading: "Second", cell: "Reviewing" },
+    ]);
+  });
+
+  test("a table with no Status column is ignored (no false positives)", () => {
+    const content = `## No status column
+
+| Item | Notes |
+| ---- | ----- |
+| x    | In review |
+`;
+    expect(findOffVocabularyStatusCells(content)).toEqual([]);
+  });
+
+  test("the header/body divider row is never itself misclassified as a data row", () => {
+    const content = `## Empty table
+
+| Item | Status |
+| ---- | ------ |
+`;
+    expect(findOffVocabularyStatusCells(content)).toEqual([]);
+  });
+
+  test("a table missing its divider row still scans the first data row instead of silently skipping it as a positional divider", () => {
+    // No `| ---- | ------ |` line at all: a purely positional "line 2 of the
+    // table is always the divider" rule would treat this first data row as
+    // the divider and skip it, hiding the off-vocabulary "In review" cell.
+    const content = `## No Divider
+
+| Item | Status |
+| x    | In review |
+| y    | Done   |
+`;
+    expect(findOffVocabularyStatusCells(content)).toEqual([
+      { line: 4, heading: "No Divider", cell: "In review" },
+    ]);
+  });
+
+  test("two tables placed back-to-back with no blank line between them are scanned independently against their own Status column index", () => {
+    // Table A's last data row (line 5) is immediately followed by table B's
+    // header row (line 6, no blank line) with a different Status column
+    // index (1 vs. 2). A stale statusIndex carried over from table A would
+    // read table B's "Extra" column instead of its real "Status" column,
+    // missing the "Reviewing" finding; misreading table B's header/divider
+    // text as data rows of table A would also produce false positives.
+    const content = `## Adjacent
+
+| Item | Status |
+| ---- | ------ |
+| a    | In review |
+| Notes | Extra | Status |
+| ----- | ----- | ------ |
+| b     | Done  | Reviewing |
+`;
+    expect(findOffVocabularyStatusCells(content)).toEqual([
+      { line: 5, heading: "Adjacent", cell: "In review" },
+      { line: 8, heading: "Adjacent", cell: "Reviewing" },
+    ]);
   });
 });
 
