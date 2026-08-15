@@ -40,11 +40,15 @@ export function isValidResumeFromByte(value: number): boolean {
  * first {@link M3LWriteStreamLifecycle.write} or
  * {@link M3LWriteStreamLifecycle.end} call instead of throwing from the
  * constructor. The same deferred-failure contract applies to a `resumeFromByte`
- * truncate failure (e.g. the file being resumed no longer exists): it is
- * caught at construction and stored the same way an async stream `'error'` is,
- * rather than thrown synchronously, so a caller can always treat "did
- * construction throw" and "did the first write reject" as two different,
- * predictable questions.
+ * truncate failure (e.g. the file being resumed no longer exists) — and to a
+ * `resumeFromByte` that exceeds the file's actual on-disk size, which would
+ * otherwise have `fs.truncateSync` silently zero-pad the gap instead of
+ * erroring (a `bytesWritten`-derived checkpoint can legitimately outrun the
+ * durably-flushed file after an unclean exit, or a checkpoint file can be
+ * corrupted/hand-edited). Both are caught at construction and stored the same
+ * way an async stream `'error'` is, rather than thrown synchronously, so a
+ * caller can always treat "did construction throw" and "did the first write
+ * reject" as two different, predictable questions.
  */
 export class M3LWriteStreamLifecycle {
   readonly #stream: WriteStream;
@@ -69,7 +73,26 @@ export class M3LWriteStreamLifecycle {
       // mirroring the async 'error' handling below. `createWriteStream`
       // itself never throws synchronously (it opens the fd lazily), so it is
       // always safe to call unconditionally afterward.
+      //
+      // Guard against `fs.truncateSync` silently EXTENDING a file shorter
+      // than `resumeFromByte`: per POSIX/Node's documented truncate contract,
+      // truncating to a length beyond the current size does not error, it
+      // zero-pads the gap with NUL bytes. A file can legitimately be shorter
+      // than a checkpoint claims because `fs.WriteStream`'s write callback
+      // (and the `bytesWritten` counter a caller checkpoints from) fires once
+      // the OS has *accepted* a write into its page cache, not once it is
+      // durably flushed to disk — an unclean process/OS exit between those
+      // two points leaves the on-disk file short. A hand-edited or corrupted
+      // checkpoint has the same effect. Either way, resuming onto a
+      // too-short file would silently corrupt its tail with NUL bytes and
+      // raise no error — exactly what this resume seam exists to prevent.
       try {
+        const stat = fs.statSync(filePath);
+        if (stat.size < resumeFromByte) {
+          throw new Error(
+            `resumeFromByte (${String(resumeFromByte)}) exceeds '${filePath}''s actual size (${String(stat.size)}) — the file is shorter than the checkpoint claims; refusing to resume onto it`,
+          );
+        }
         fs.truncateSync(filePath, resumeFromByte);
       } catch (error) {
         this.#pendingError =

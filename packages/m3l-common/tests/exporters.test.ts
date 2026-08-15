@@ -770,6 +770,7 @@ describe("M3LCSVListExporter", () => {
 
   test("resumeFromByte > 0 with columns supplied: the header is not re-written and rows are resolved against the supplied columns, not the first appended row", async () => {
     const { stream } = stubWriteStreamWithSpy();
+    vi.spyOn(fs, "statSync").mockReturnValue({ size: 256 } as fs.Stats);
     vi.spyOn(fs, "truncateSync").mockImplementation(() => undefined);
     const exporter = new M3LCSVListExporter<Row>({
       filePath: "/exports/resume.csv",
@@ -1092,6 +1093,7 @@ describe("M3LJSONListExporter", () => {
 
   test("resumeFromByte > 0 (jsonl): truncates to the offset, opens r+ at start, and bytesWritten accumulates from the offset", async () => {
     const { stream, spy } = stubWriteStreamWithSpy();
+    vi.spyOn(fs, "statSync").mockReturnValue({ size: 128 } as fs.Stats);
     const truncateSpy = vi
       .spyOn(fs, "truncateSync")
       .mockImplementation(() => undefined);
@@ -1128,6 +1130,7 @@ describe("M3LJSONListExporter", () => {
 
   test("resumeFromByte > 0 (array format): append() emits a leading comma (not '[') and close() still writes the trailing ']'", async () => {
     const { stream } = stubWriteStreamWithSpy();
+    vi.spyOn(fs, "statSync").mockReturnValue({ size: 64 } as fs.Stats);
     vi.spyOn(fs, "truncateSync").mockImplementation(() => undefined);
     const exporter = new M3LJSONListExporter<Record_>({
       filePath: "/exports/resume.json",
@@ -1157,7 +1160,10 @@ describe("M3LJSONListExporter", () => {
     const enoent = Object.assign(new Error("ENOENT: no such file"), {
       code: "ENOENT",
     });
-    vi.spyOn(fs, "truncateSync").mockImplementation(() => {
+    // A real missing file fails at fs.statSync (which now runs first), not
+    // fs.truncateSync — truncateSync is left unmocked and must never be
+    // reached in this scenario.
+    vi.spyOn(fs, "statSync").mockImplementation(() => {
       throw enoent;
     });
     let exporter: M3LJSONListExporter<Record_> | undefined;
@@ -1216,6 +1222,7 @@ describe("M3LJSONListExporter", () => {
   test("a truncateSync failure is NOT clobbered by a later, distinct async stream 'error': the first append() rejects with the ORIGINAL truncate error, not the subsequent stream-open error", async () => {
     const truncateError = new Error("truncate failed: ENOENT");
     const streamOpenError = new Error("stream open failed: EACCES");
+    vi.spyOn(fs, "statSync").mockReturnValue({ size: 16 } as fs.Stats);
     vi.spyOn(fs, "truncateSync").mockImplementation(() => {
       throw truncateError;
     });
@@ -1254,6 +1261,38 @@ describe("M3LJSONListExporter", () => {
     expect(thrown).toBeInstanceOf(M3LError);
     expect((thrown as M3LError).cause).toBe(truncateError);
     expect((thrown as M3LError).cause).not.toBe(streamOpenError);
+  });
+
+  test("resumeFromByte exceeding the file's actual on-disk size: the constructor does not throw, but the first append() rejects with a chained M3LError and fs.truncateSync is never called", async () => {
+    stubWriteStreamWithSpy();
+    vi.spyOn(fs, "statSync").mockReturnValue({ size: 10 } as fs.Stats);
+    const truncateSpy = vi.spyOn(fs, "truncateSync");
+
+    let exporter: M3LJSONListExporter<Record_> | undefined;
+    expect(() => {
+      exporter = new M3LJSONListExporter<Record_>({
+        filePath: "/exports/too-short.jsonl",
+        format: "jsonl",
+        resumeFromByte: 128,
+      });
+    }).not.toThrow();
+
+    const nonNullExporter = exporter;
+    if (nonNullExporter === undefined) {
+      throw new Error("exporter must have been constructed");
+    }
+    const writer = nonNullExporter.exportStream();
+
+    let thrown: unknown;
+    try {
+      await writer.append({ id: "1" });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_JSON_LIST_EXPORT");
+    expect(truncateSpy).not.toHaveBeenCalled();
   });
 
   test("M3LBaseListExporter's batch export() ignores resumeFromByte — always opens with a plain filePath (no flags/start)", async () => {
