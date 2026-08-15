@@ -202,6 +202,17 @@ function classifyError(error: unknown): M3LAWSCredentialsErrorType {
 }
 
 /**
+ * The ` for profile 'x'` clause appended to a {@link
+ * M3LAWSCredentialsManager.retryWithRelogin} failure message, or the empty
+ * string when no profile was resolved. Extracted so the two throw sites
+ * cannot drift apart — the ternary was previously spelled out verbatim in
+ * both.
+ */
+function profileSuffix(profile: M3LAWSProfile | undefined): string {
+  return profile !== undefined ? ` for profile '${profile}'` : "";
+}
+
+/**
  * Creates a new `M3LAWSCredentialsManager`.
  *
  * @example
@@ -428,7 +439,6 @@ export class M3LAWSCredentialsManager {
    * });
    * ```
    */
-  // eslint-disable-next-line sonarjs/cognitive-complexity -- pre-existing retry/relogin control flow (20 vs. the 15 allowed); refactoring security-sensitive SSO credential logic needs a dedicated test-safety-net pass, not an inline edit alongside the ADR-0034 lint-gate rollout, so it is tracked as accepted debt there instead
   async retryWithRelogin<T>(
     operation: () => Promise<T>,
     profile?: M3LAWSProfile,
@@ -451,7 +461,7 @@ export class M3LAWSCredentialsManager {
         const analysis = this.analyzeError(error);
         if (!analysis.recoverable) {
           throw new M3LAWSCredentialsError(
-            `operation failed with an unrecoverable credential error${resolvedProfile !== undefined ? ` for profile '${resolvedProfile}'` : ""}`,
+            `operation failed with an unrecoverable credential error${profileSuffix(resolvedProfile)}`,
             { type: analysis.type, profile: resolvedProfile, cause: error },
           );
         }
@@ -459,7 +469,7 @@ export class M3LAWSCredentialsManager {
         const attemptsRemain = attempt < maxAttempts;
         if (!attemptsRemain) {
           throw new M3LAWSCredentialsError(
-            `operation failed with a recoverable credential error, but retries are exhausted${resolvedProfile !== undefined ? ` for profile '${resolvedProfile}'` : ""}`,
+            `operation failed with a recoverable credential error, but retries are exhausted${profileSuffix(resolvedProfile)}`,
             { type: analysis.type, profile: resolvedProfile, cause: error },
           );
         }
