@@ -110,6 +110,19 @@ paths:
   always a non-empty string) and thread it through your own logs; set
   `M3LScriptOptions.correlationId` only to inherit an upstream trace. It is
   re-resolved per Lambda invocation.
+- **A `Core.M3LCheckpointStore<T>` type guard must reject a field pair that
+  is present-without-its-correlate, not just validate each field
+  independently.** When one checkpoint field is meaningless without another
+  (a resume offset without the byte-length it corresponds to, a chunk index
+  without its byte/record count), require them to co-occur — a checkpoint
+  written by an older version of the script, or by a sibling code path
+  under a different format, can otherwise satisfy an independently-optional
+  validator while silently resuming from the wrong point. Confirmed across
+  two independent scripts in the same change: `rds-data-sql`'s
+  `offset`⟺`outputBytes` and, caught only by an explicit reviewer prompt
+  after the first fix already existed as precedent,
+  `cloudwatch-logs-insights`'s `rows`⟺`outputBytes`
+  (`docs/logs/2026-08-15-exporter-resume-seam.md`).
 
 ## I/O, config files, secrets, AWS
 
