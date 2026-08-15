@@ -1,18 +1,26 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
 import { AWS, Core } from "@m3l-automation/m3l-common";
 
-import { runLoad } from "../../src/steps/run-load.js";
+import { runLoad, type RunLoadCheckpoint } from "../../src/steps/run-load.js";
 
 /**
  * Contract: docs/reference/scripts/rds-data-sql.md, `run-load` row + the
  * `columns` config-parameter row (explicit vs. inferred, identifier
- * validation, heterogeneous-row rejection) + `batch.size` row.
+ * validation, heterogeneous-row rejection) + `batch.size` row, plus the
+ * byte-offset resume seam design for `M3LJSONListExporter` (issue #427/F11,
+ * `docs/logs/2026-08-14-rds-data-sql.md`).
  *
  * `run-load`'s injected-deps shape isn't pre-declared — this file defines
  * it as the contract the implementer builds against:
  *
  * ```ts
+ * interface RunLoadCheckpoint {
+ *   readonly chunkIndex?: number;
+ *   readonly failedOutputBytes?: number;
+ *   readonly failedCount?: number;
+ *   readonly recordsProcessed?: number;
+ * }
  * interface RunLoadDeps {
  *   readonly rdsData: Pick<AWS.M3LRDSDataOperations, "batchExecuteStatement" | "withTransaction">;
  *   readonly resourceArn: string;
@@ -25,11 +33,15 @@ import { runLoad } from "../../src/steps/run-load.js";
  *   readonly source?: string;
  *   readonly batchSize: number;
  *   readonly checkpoint: {
- *     read(): Promise<{ readonly chunkIndex?: number }>;
- *     write(checkpoint: { readonly chunkIndex: number }): Promise<void>;
+ *     read(): Promise<RunLoadCheckpoint>;
+ *     write(checkpoint: RunLoadCheckpoint & { readonly chunkIndex: number }): Promise<void>;
  *     delete(): Promise<void>;
  *   };
- *   readonly failedWriter: { append(record: Record<string, unknown>): Promise<void>; close(): Promise<void> };
+ *   readonly createFailedWriter: (resumeFromByte: number) => {
+ *     append(record: Record<string, unknown>): Promise<void>;
+ *     close(): Promise<void>;
+ *     readonly bytesWritten: number;
+ *   };
  *   readonly logger: Core.M3LLogger;
  * }
  * function runLoad(deps: RunLoadDeps): Promise<{ readonly inserted: number; readonly failed: number }>;
@@ -38,25 +50,50 @@ import { runLoad } from "../../src/steps/run-load.js";
  * `runLoad` itself never throws on a partial failure — it returns a summary
  * with a nonzero `failed` count; `run-rds-data-sql` is the layer that maps
  * that into `ERR_RDS_DATA_SQL_PARTIAL_FAILURE` (covered in its own test file).
+ *
+ * DISCREPANCY NOTE (flagged for the hub / design owner): the task's "exact
+ * design" section gives `RunLoadCheckpoint` as exactly `{ chunkIndex?,
+ * failedOutputBytes?, failedCount? }` — three fields, dropping
+ * `recordsProcessed` entirely with no replacement mechanism described.
+ * `recordsProcessed` is what currently prevents a resumed run from
+ * re-classifying (and thus re-rejecting/double-counting) a record a prior
+ * interrupted run already accepted or rejected — a distinct concern from the
+ * byte-offset resume seam this task fixes, and two existing regression
+ * tests guard it. Dropping it silently would reopen that regression with no
+ * described alternative, so these tests retain `recordsProcessed` as a 4th
+ * optional checkpoint field pending confirmation from the design owner.
  */
 
 function makeLogger(): Core.M3LLogger {
   return new Core.M3LLogger([]);
 }
 
-function makeCheckpoint() {
+function makeCheckpoint(initial: RunLoadCheckpoint = {}) {
   return {
-    read: vi.fn().mockResolvedValue({}),
+    read: vi.fn().mockResolvedValue(initial),
     write: vi.fn().mockResolvedValue(undefined),
     delete: vi.fn().mockResolvedValue(undefined),
   };
 }
 
-function makeFailedWriter() {
+/** Builds a failed-writer stub whose `bytesWritten` grows by 10 per `append` call. */
+function makeFailedWriter(initialBytesWritten = 0) {
+  let bytes = initialBytesWritten;
   return {
-    append: vi.fn().mockResolvedValue(undefined),
+    append: vi.fn(async (_record: Record<string, unknown>) => {
+      await Promise.resolve();
+      bytes += 10;
+    }),
     close: vi.fn().mockResolvedValue(undefined),
+    get bytesWritten() {
+      return bytes;
+    },
   };
+}
+
+/** Builds a `createFailedWriter` factory mock that always returns `writer`, recording every call's `resumeFromByte` arg. */
+function makeFailedWriterFactory(writer: ReturnType<typeof makeFailedWriter>) {
+  return vi.fn((_resumeFromByte: number) => writer);
 }
 
 /** Builds an importer whose `importStream()` yields `items` in order. */
@@ -115,8 +152,19 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("RunLoadCheckpoint", () => {
+  test("drops 'failedRecords' and gains 'failedOutputBytes'/'failedCount' (recordsProcessed retained — see DISCREPANCY NOTE above)", () => {
+    expectTypeOf<RunLoadCheckpoint>().toEqualTypeOf<{
+      readonly chunkIndex?: number;
+      readonly failedOutputBytes?: number;
+      readonly failedCount?: number;
+      readonly recordsProcessed?: number;
+    }>();
+  });
+});
+
 describe("runLoad", () => {
-  test("happy path: chunks to batch.size and inserts each chunk via batchExecuteStatement inside withTransaction", async () => {
+  test("happy path: chunks to batch.size, inserts each chunk via batchExecuteStatement inside withTransaction, and constructs the failed-writer fresh", async () => {
     const items = [
       { id: 1, name: "a" },
       { id: 2, name: "b" },
@@ -128,6 +176,7 @@ describe("runLoad", () => {
     const withTransaction = passthroughWithTransaction();
     const checkpoint = makeCheckpoint();
     const failedWriter = makeFailedWriter();
+    const createFailedWriter = makeFailedWriterFactory(failedWriter);
 
     const result = await runLoad({
       rdsData: { batchExecuteStatement, withTransaction },
@@ -137,13 +186,15 @@ describe("runLoad", () => {
       importer,
       batchSize: 2,
       checkpoint,
-      failedWriter,
+      createFailedWriter,
       logger: makeLogger(),
     });
 
     expect(importer.importStream).toHaveBeenCalledTimes(1);
     expect(withTransaction).toHaveBeenCalledTimes(2);
     expect(batchExecuteStatement).toHaveBeenCalledTimes(2);
+    expect(createFailedWriter).toHaveBeenCalledTimes(1);
+    expect(createFailedWriter).toHaveBeenCalledWith(0);
 
     const firstInput = batchExecuteStatement.mock
       .calls[0]?.[0] as AWS.M3LRDSDataBatchInput;
@@ -173,7 +224,7 @@ describe("runLoad", () => {
       importer,
       batchSize: 10,
       checkpoint: makeCheckpoint(),
-      failedWriter: makeFailedWriter(),
+      createFailedWriter: makeFailedWriterFactory(makeFailedWriter()),
       logger: makeLogger(),
     });
 
@@ -202,7 +253,7 @@ describe("runLoad", () => {
       importer,
       batchSize: 10,
       checkpoint: makeCheckpoint(),
-      failedWriter: makeFailedWriter(),
+      createFailedWriter: makeFailedWriterFactory(makeFailedWriter()),
       logger: makeLogger(),
     });
 
@@ -212,7 +263,7 @@ describe("runLoad", () => {
     expect(parameterNames).toEqual(["id", "name"]);
   });
 
-  test("a later record whose key set differs from the resolved columns is rejected to failedWriter, not inserted", async () => {
+  test("a later record whose key set differs from the resolved columns is rejected to the failed-writer, not inserted", async () => {
     const items = [
       { id: 1, name: "a" },
       { id: 2, extra: "x" },
@@ -221,6 +272,7 @@ describe("runLoad", () => {
     const batchExecuteStatement = vi.fn().mockResolvedValue(batchResult(1));
     const withTransaction = passthroughWithTransaction();
     const failedWriter = makeFailedWriter();
+    const createFailedWriter = makeFailedWriterFactory(failedWriter);
 
     const result = await runLoad({
       rdsData: { batchExecuteStatement, withTransaction },
@@ -230,7 +282,7 @@ describe("runLoad", () => {
       importer,
       batchSize: 10,
       checkpoint: makeCheckpoint(),
-      failedWriter,
+      createFailedWriter,
       logger: makeLogger(),
     });
 
@@ -270,7 +322,7 @@ describe("runLoad", () => {
           importer,
           batchSize: 1,
           checkpoint: makeCheckpoint(),
-          failedWriter: makeFailedWriter(),
+          createFailedWriter: makeFailedWriterFactory(makeFailedWriter()),
           logger: makeLogger(),
         });
 
@@ -290,12 +342,13 @@ describe("runLoad", () => {
     ];
 
     test.each(rejectedCases)(
-      "rejects a record whose value is %s to failedWriter rather than coercing it",
+      "rejects a record whose value is %s to the failed-writer rather than coercing it",
       async (_label, raw) => {
         const importer = makeImporter([{ value: raw }]);
         const batchExecuteStatement = vi.fn().mockResolvedValue(batchResult(1));
         const withTransaction = passthroughWithTransaction();
         const failedWriter = makeFailedWriter();
+        const createFailedWriter = makeFailedWriterFactory(failedWriter);
 
         const result = await runLoad({
           rdsData: { batchExecuteStatement, withTransaction },
@@ -306,7 +359,7 @@ describe("runLoad", () => {
           importer,
           batchSize: 1,
           checkpoint: makeCheckpoint(),
-          failedWriter,
+          createFailedWriter,
           logger: makeLogger(),
         });
 
@@ -318,22 +371,16 @@ describe("runLoad", () => {
     );
   });
 
-  test("resume: re-appends the checkpoint's failed records to failedWriter before consuming new records, and the failed count includes both", async () => {
-    // Regression test for the resumed-run data-loss bug: `failedWriter`'s
-    // underlying exporter truncates `failed.jsonl` on construction, so a
-    // resumed run that skipped re-populating it from
+  test("resume: constructs the failed-writer from the checkpoint's saved byte offset, and does not re-append records already recorded by a prior interrupted run", async () => {
+    // Regression test for the resumed-run data-loss bug: the failed-writer's
+    // underlying exporter used to truncate `failed.jsonl` on construction,
+    // so a resumed run that skipped re-populating it from
     // `checkpoint.failedRecords` silently lost every reject a prior
-    // interrupted run had already recorded.
-    const seededRecord = { bad: "row-a" };
-    // Already classified by the prior interrupted run (per `recordsProcessed:
-    // 1`) — re-streamed but skipped without reclassifying, never re-inserted
-    // or re-recorded.
+    // interrupted run had already recorded. The fix is a byte-offset resume
+    // seam instead: the writer resumes from `failedOutputBytes`, so nothing
+    // is truncated and nothing needs replaying.
     const skippedGoodRecord = { id: 1 };
-    // Fails coercion (an array value); rejected immediately regardless of
-    // chunk boundary.
     const newlyRejectedRecord = { id: [1, 2, 3] };
-    // The first chunk this run actually forms — numbered 1 (resumeFromChunkIndex
-    // 0 + 1), past the resume point; actually inserted.
     const newlyInsertedRecord = { id: 2 };
 
     const importer = makeImporter([
@@ -343,21 +390,14 @@ describe("runLoad", () => {
     ]);
     const batchExecuteStatement = vi.fn().mockResolvedValue(batchResult(1));
     const withTransaction = passthroughWithTransaction();
-    const checkpoint = {
-      read: vi.fn().mockResolvedValue({
-        chunkIndex: 0,
-        failedRecords: [seededRecord],
-        // `skippedGoodRecord` is the only record the prior interrupted run
-        // classified before it stopped — a real checkpoint always persists
-        // `chunkIndex` and `recordsProcessed` together (`flushChunk`'s single
-        // `checkpoint.write` call), so a checkpoint with `chunkIndex` set but
-        // no `recordsProcessed` can never occur in practice.
-        recordsProcessed: 1,
-      }),
-      write: vi.fn().mockResolvedValue(undefined),
-      delete: vi.fn().mockResolvedValue(undefined),
-    };
+    const checkpoint = makeCheckpoint({
+      chunkIndex: 0,
+      failedOutputBytes: 500,
+      failedCount: 1,
+      recordsProcessed: 1,
+    });
     const failedWriter = makeFailedWriter();
+    const createFailedWriter = makeFailedWriterFactory(failedWriter);
 
     const result = await runLoad({
       rdsData: { batchExecuteStatement, withTransaction },
@@ -368,67 +408,52 @@ describe("runLoad", () => {
       importer,
       batchSize: 1,
       checkpoint,
-      failedWriter,
+      createFailedWriter,
       logger: makeLogger(),
     });
 
-    // The seeded (resumed) rejected record is re-appended to failedWriter
-    // before any newly-rejected record from this run.
-    expect(failedWriter.append).toHaveBeenCalledTimes(2);
-    expect(failedWriter.append).toHaveBeenNthCalledWith(1, seededRecord);
-    expect(failedWriter.append).toHaveBeenNthCalledWith(2, newlyRejectedRecord);
+    expect(createFailedWriter).toHaveBeenCalledTimes(1);
+    expect(createFailedWriter).toHaveBeenCalledWith(500);
+
+    // Only the newly-rejected record this run is appended — nothing
+    // re-appended from the checkpoint's prior failedCount.
+    expect(failedWriter.append).toHaveBeenCalledTimes(1);
+    expect(failedWriter.append).toHaveBeenCalledWith(newlyRejectedRecord);
 
     // `skippedGoodRecord` (already covered, per `recordsProcessed`) is
-    // skipped without a duplicate insert; only the newly-formed chunk past
-    // the resume point (index 1) is actually inserted.
+    // skipped without a duplicate insert.
     expect(withTransaction).toHaveBeenCalledTimes(1);
     expect(batchExecuteStatement).toHaveBeenCalledTimes(1);
 
-    // The resolved failed count reflects both the seeded and the newly
-    // rejected record, not just this run's new rejection — the direct
-    // proof the old truncate-and-lose-history bug is closed.
+    // The resolved failed count carries the prior run's failedCount forward
+    // plus this run's own newly-rejected record.
     expect(result.failed).toBe(2);
     expect(result.inserted).toBe(1);
   });
 
-  test("resume: a re-streamed record already classified in a prior run (per 'recordsProcessed') is skipped, not reclassified — closing the double-rejection regression", async () => {
-    // Regression test for the resumed-run double-rejection bug: the prior
-    // round's resume test seeded `checkpoint.failedRecords` with a record
-    // that never actually reappeared in the importer's re-streamed output,
-    // so it could never exercise reclassification — it passed whether or
-    // not the `recordsProcessed`-based skip worked at all. This test seeds
-    // `failedRecords` with objects that ARE (by reference) part of the
-    // importer's yielded stream, mirroring the reported reproduction: 100
-    // records, 5 fail coercion, batch.size=100, run 1 ends with
-    // `{chunkIndex: 0, failedRecords: [5 records], recordsProcessed: 100}`;
-    // run 2 must report `failed: 5`, not `10`.
+  test("resume: a re-streamed record already classified in a prior run (per 'recordsProcessed') is skipped, not reclassified or re-appended", async () => {
+    // Regression test for the resumed-run double-rejection bug, adapted to
+    // the byte-offset resume seam: with no more replay-from-checkpoint step,
+    // a fully-covered resume (recordsProcessed === the whole re-streamed
+    // length) must produce ZERO new failed-writer appends and zero new
+    // insert attempts — every record is skipped outright.
     const badPositions = new Set([10, 30, 50, 70, 90]);
     const items: Record<string, unknown>[] = [];
-    const badRecords: Record<string, unknown>[] = [];
     for (let index = 0; index < 100; index += 1) {
-      if (badPositions.has(index)) {
-        // Fails coercion: an array value never coerces to M3LRDSDataValue.
-        const bad = { id: [index] };
-        items.push(bad);
-        badRecords.push(bad);
-      } else {
-        items.push({ id: index });
-      }
+      items.push(badPositions.has(index) ? { id: [index] } : { id: index });
     }
 
     const importer = makeImporter(items);
     const batchExecuteStatement = vi.fn().mockResolvedValue(batchResult(1));
     const withTransaction = passthroughWithTransaction();
-    const checkpoint = {
-      read: vi.fn().mockResolvedValue({
-        chunkIndex: 0,
-        failedRecords: badRecords,
-        recordsProcessed: 100,
-      }),
-      write: vi.fn().mockResolvedValue(undefined),
-      delete: vi.fn().mockResolvedValue(undefined),
-    };
+    const checkpoint = makeCheckpoint({
+      chunkIndex: 0,
+      failedOutputBytes: 500,
+      failedCount: 5,
+      recordsProcessed: 100,
+    });
     const failedWriter = makeFailedWriter();
+    const createFailedWriter = makeFailedWriterFactory(failedWriter);
 
     const result = await runLoad({
       rdsData: { batchExecuteStatement, withTransaction },
@@ -439,47 +464,22 @@ describe("runLoad", () => {
       importer,
       batchSize: 100,
       checkpoint,
-      failedWriter,
+      createFailedWriter,
       logger: makeLogger(),
     });
 
-    // (a) One specific re-streamed bad record is appended exactly once —
-    // from the seed replay only, never again from reclassification, even
-    // though the identical object is re-yielded by the importer.
-    const targetBadRecord = badRecords[2];
-    if (targetBadRecord === undefined) {
-      throw new Error("expected at least 3 seeded bad records");
-    }
-    const appendCallsForTarget = failedWriter.append.mock.calls.filter(
-      ([record]) => record === targetBadRecord,
-    );
-    expect(appendCallsForTarget).toHaveLength(1);
-
-    // Total append calls match the seed count exactly (5), not double (10).
-    expect(failedWriter.append).toHaveBeenCalledTimes(5);
-
-    // (b) The resolved failed count reflects one instance of each seeded
-    // record, not two.
-    expect(result.failed).toBe(5);
-    expect(result.inserted).toBe(0);
-
-    // (c) None of the re-streamed records — good or bad — were reclassified:
-    // no insert attempt (every good record was already accepted/inserted by
-    // the interrupted prior run, so this run must not re-attempt them) and
-    // no checkpoint re-write, proving classifyRecord's effects never ran for
-    // any record covered by the resume skip.
+    expect(failedWriter.append).not.toHaveBeenCalled();
     expect(withTransaction).not.toHaveBeenCalled();
     expect(batchExecuteStatement).not.toHaveBeenCalled();
     expect(checkpoint.write).not.toHaveBeenCalled();
+
+    // The resolved failed count carries forward the checkpoint's own count
+    // unchanged — there is nothing new to add.
+    expect(result.failed).toBe(5);
+    expect(result.inserted).toBe(0);
   });
 
   test("resume: the first post-resume chunk is numbered resumeFromChunkIndex + 1, not 0, so it is inserted rather than mis-skipped as already-done", async () => {
-    // Regression test for the chunk-mis-numbering bug: seeding `nextChunkIndex`
-    // at `0` on every run (rather than from `resumeFromChunkIndex + 1`) made
-    // the first chunk a resumed run actually forms collide with chunk `0`
-    // from the prior interrupted run, so `flushChunk`'s
-    // `chunkIndex <= resumeFromChunkIndex` guard silently skipped it as
-    // already-done instead of inserting it.
     const alreadyProcessed = Array.from({ length: 100 }, (_unused, index) => ({
       id: index,
     }));
@@ -489,12 +489,8 @@ describe("runLoad", () => {
     const importer = makeImporter([...alreadyProcessed, ...newRecords]);
     const batchExecuteStatement = vi.fn().mockResolvedValue(batchResult(100));
     const withTransaction = passthroughWithTransaction();
-    const checkpoint = {
-      read: vi.fn().mockResolvedValue({ chunkIndex: 0, recordsProcessed: 100 }),
-      write: vi.fn().mockResolvedValue(undefined),
-      delete: vi.fn().mockResolvedValue(undefined),
-    };
-    const failedWriter = makeFailedWriter();
+    const checkpoint = makeCheckpoint({ chunkIndex: 0, recordsProcessed: 100 });
+    const createFailedWriter = makeFailedWriterFactory(makeFailedWriter());
 
     const result = await runLoad({
       rdsData: { batchExecuteStatement, withTransaction },
@@ -505,7 +501,7 @@ describe("runLoad", () => {
       importer,
       batchSize: 100,
       checkpoint,
-      failedWriter,
+      createFailedWriter,
       logger: makeLogger(),
     });
 
@@ -532,12 +528,8 @@ describe("runLoad", () => {
     const importer = makeImporter([...alreadyProcessed, ...newRecords]);
     const batchExecuteStatement = vi.fn().mockResolvedValue(batchResult(100));
     const withTransaction = passthroughWithTransaction();
-    const checkpoint = {
-      read: vi.fn().mockResolvedValue({ chunkIndex: 3, recordsProcessed: 400 }),
-      write: vi.fn().mockResolvedValue(undefined),
-      delete: vi.fn().mockResolvedValue(undefined),
-    };
-    const failedWriter = makeFailedWriter();
+    const checkpoint = makeCheckpoint({ chunkIndex: 3, recordsProcessed: 400 });
+    const createFailedWriter = makeFailedWriterFactory(makeFailedWriter());
 
     const result = await runLoad({
       rdsData: { batchExecuteStatement, withTransaction },
@@ -548,7 +540,7 @@ describe("runLoad", () => {
       importer,
       batchSize: 100,
       checkpoint,
-      failedWriter,
+      createFailedWriter,
       logger: makeLogger(),
     });
 
@@ -559,6 +551,136 @@ describe("runLoad", () => {
     expect(checkpoint.write).toHaveBeenCalledWith(
       expect.objectContaining({ chunkIndex: 4 }),
     );
+  });
+
+  test("checkpoint writes after a chunk include failedOutputBytes reflecting the failed-writer's own bytesWritten, and failedCount as a running total across chunks", async () => {
+    const items = [
+      { id: [1] }, // rejected (coercion failure)
+      { id: 2 }, // accepted -> flushes chunk 0 (batchSize 1)
+      { id: [3] }, // rejected
+      { id: 4 }, // accepted -> flushes chunk 1
+    ];
+    const importer = makeImporter(items);
+    const batchExecuteStatement = vi.fn().mockResolvedValue(batchResult(1));
+    const withTransaction = passthroughWithTransaction();
+    const checkpoint = makeCheckpoint();
+    const failedWriter = makeFailedWriter();
+    const createFailedWriter = makeFailedWriterFactory(failedWriter);
+
+    await runLoad({
+      rdsData: { batchExecuteStatement, withTransaction },
+      resourceArn: "arn:aws:rds:cluster",
+      secretArn: "arn:aws:secretsmanager:secret",
+      table: '"t"',
+      columns: ["id"],
+      importer,
+      batchSize: 1,
+      checkpoint,
+      createFailedWriter,
+      logger: makeLogger(),
+    });
+
+    expect(checkpoint.write).toHaveBeenCalledTimes(2);
+    expect(checkpoint.write).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        chunkIndex: 0,
+        failedOutputBytes: 10,
+        failedCount: 1,
+      }),
+    );
+    expect(checkpoint.write).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        chunkIndex: 1,
+        failedOutputBytes: 20,
+        failedCount: 2,
+      }),
+    );
+  });
+
+  test("close() failure on the failed-writer after an otherwise-successful run throws a coded M3LError chaining the close error, and does not delete the checkpoint", async () => {
+    const closeError = new Error("close failed");
+    const failedWriter = makeFailedWriter();
+    failedWriter.close.mockRejectedValue(closeError);
+    const createFailedWriter = makeFailedWriterFactory(failedWriter);
+    const items = [{ id: 1 }];
+    const importer = makeImporter(items);
+    const batchExecuteStatement = vi.fn().mockResolvedValue(batchResult(1));
+    const withTransaction = passthroughWithTransaction();
+    const checkpoint = makeCheckpoint();
+
+    let thrown: unknown;
+    try {
+      await runLoad({
+        rdsData: { batchExecuteStatement, withTransaction },
+        resourceArn: "arn:aws:rds:cluster",
+        secretArn: "arn:aws:secretsmanager:secret",
+        table: '"users"',
+        importer,
+        batchSize: 10,
+        checkpoint,
+        createFailedWriter,
+        logger: makeLogger(),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    expect((thrown as Core.M3LError).code).toBe(
+      "ERR_RDS_DATA_SQL_OUTPUT_WRITER",
+    );
+    expect((thrown as Core.M3LError).cause).toBe(closeError);
+    expect(checkpoint.delete).not.toHaveBeenCalled();
+  });
+
+  test("close() failure on the failed-writer while the import stream already failed is only logged — the original stream error propagates unmodified", async () => {
+    const closeError = new Error("close failed");
+    const failedWriter = makeFailedWriter();
+    failedWriter.close.mockRejectedValue(closeError);
+    const createFailedWriter = makeFailedWriterFactory(failedWriter);
+    const streamError = new Error("import stream failed");
+    const importer = {
+      import: vi.fn(),
+      importStream: vi.fn(() => {
+        // eslint-disable-next-line require-yield -- intentionally never yields; this generator always throws before any record
+        async function* generator(): AsyncGenerator<
+          Record<string, unknown>,
+          Core.M3LImportStreamSummary
+        > {
+          await Promise.resolve();
+          throw streamError;
+        }
+        return generator();
+      }),
+    };
+    const batchExecuteStatement = vi.fn();
+    const withTransaction = passthroughWithTransaction();
+    const checkpoint = makeCheckpoint();
+    const logger = makeLogger();
+    const errorSpy = vi.spyOn(logger, "error");
+
+    let thrown: unknown;
+    try {
+      await runLoad({
+        rdsData: { batchExecuteStatement, withTransaction },
+        resourceArn: "arn:aws:rds:cluster",
+        secretArn: "arn:aws:secretsmanager:secret",
+        table: '"users"',
+        importer,
+        batchSize: 10,
+        checkpoint,
+        createFailedWriter,
+        logger,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(streamError);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(checkpoint.delete).not.toHaveBeenCalled();
   });
 
   test("a chunk whose transaction fails is recorded as failed, and later chunks still attempt", async () => {
@@ -584,6 +706,7 @@ describe("runLoad", () => {
         ) => fn("txn-3"),
       );
     const failedWriter = makeFailedWriter();
+    const createFailedWriter = makeFailedWriterFactory(failedWriter);
 
     const result = await runLoad({
       rdsData: { batchExecuteStatement, withTransaction },
@@ -594,7 +717,7 @@ describe("runLoad", () => {
       importer,
       batchSize: 1,
       checkpoint: makeCheckpoint(),
-      failedWriter,
+      createFailedWriter,
       logger: makeLogger(),
     });
 
