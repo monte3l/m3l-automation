@@ -195,6 +195,10 @@ both land, issue #204's D4 row flips `Deferred`/`In review` → `Done` in both
 trackers. DocumentDB's gate (issue #205) is unaffected — it remains deferred
 on its own, separately unmet terms.
 
+## Update (2026-08-15) — the D4 gate is retired
+
+Both PRs in the two-PR chain landed: the `aws/rds-data` wrapper (merged as **PR:** #424) and its named consumer, the `rds-data-sql` script (merged as **PR:** #425), both on 2026-08-14. Issue #204's D4 row is flipped to `Done` in both trackers (`docs/ROADMAP.md`, `docs/plans/IMPLEMENTATION.md` § Gated library modules) and the issue is closed. ROADMAP W6 closes alongside it (issue #426). One known limitation carries forward rather than closing with the gate: no live Data-API-enabled Aurora cluster has yet exercised the wrapper end-to-end — both PRs' responses were verified against installed `@aws-sdk/client-rds-data` dist-types, not real infrastructure (`docs/logs/2026-08-14-aws-rds-data.md`, `docs/logs/2026-08-14-rds-data-sql.md`). DocumentDB's gate (issue #205) remains unaffected — it stays deferred on its own, separately unmet terms.
+
 ## Links
 
 - Supersedes / superseded by: **refines [ADR-0029](./0029-script-dependency-boundary.md)**
