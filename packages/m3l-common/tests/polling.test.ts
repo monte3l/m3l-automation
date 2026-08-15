@@ -1165,6 +1165,271 @@ describe("core/polling", () => {
           },
         ]);
       });
+
+      test.each([0, -1, Number.NaN])(
+        "an invalid advice.delayMs (%p) rejects with the assertPositive guard error, not the original op error, and never emits retry:scheduled",
+        async (badDelay) => {
+          const classifier: M3LRetryClassifier = () => ({
+            decision: "retriable",
+            delayMs: badDelay,
+          });
+          const runner = new M3LRetryRunner({
+            classifier,
+            backoff: M3LBackoff.constant(10),
+            maxAttempts: 2,
+          });
+          const events = recordRetryEvents(runner);
+          const original = new Error("op failure, never reached by caller");
+
+          let thrown: unknown;
+          try {
+            await settleWithTimers(runner.run(() => Promise.reject(original)));
+          } catch (error) {
+            thrown = error;
+          }
+
+          expect(thrown).toBeInstanceOf(M3LError);
+          expect(thrown).not.toBe(original);
+          expect((thrown as M3LError).code).toBe("ERR_POLLING_INVALID_OPTION");
+          expect(events.some((event) => event.name === "retry:scheduled")).toBe(
+            false,
+          );
+        },
+      );
+
+      test("a fatal advice given in OBJECT form ({ decision: 'fatal' }) rejects with the original error and emits retry:fatal", async () => {
+        const classifier: M3LRetryClassifier = () => ({ decision: "fatal" });
+        const runner = new M3LRetryRunner({
+          classifier,
+          backoff: M3LBackoff.constant(10),
+          maxAttempts: 5,
+        });
+        const events = recordRetryEvents(runner);
+        const original = new Error("fatal via object advice");
+
+        await expect(
+          settleWithTimers(runner.run(() => Promise.reject(original))),
+        ).rejects.toBe(original);
+
+        expect(events).toEqual([
+          { name: "retry:attempt", payload: { attempt: 1, maxAttempts: 5 } },
+          {
+            name: "retry:fatal",
+            payload: { attempt: 1, classification: "fatal" },
+          },
+        ]);
+      });
+
+      test("an 'unknown' advice given in OBJECT form ({ decision: 'unknown' }) resolves per unknownDecision and reports raw classification 'unknown' on retry:scheduled", async () => {
+        const classifier: M3LRetryClassifier = () => ({
+          decision: "unknown",
+        });
+        const runner = new M3LRetryRunner({
+          classifier,
+          backoff: M3LBackoff.constant(10),
+          unknownDecision: "retriable",
+          maxAttempts: 5,
+        });
+        const events = recordRetryEvents(runner);
+
+        let attempts = 0;
+        const op = (): Promise<string> => {
+          attempts += 1;
+          if (attempts < 2) return Promise.reject(new Error("x"));
+          return Promise.resolve("recovered");
+        };
+
+        await expect(settleWithTimers(runner.run(op))).resolves.toBe(
+          "recovered",
+        );
+
+        expect(events).toEqual([
+          { name: "retry:attempt", payload: { attempt: 1, maxAttempts: 5 } },
+          {
+            name: "retry:scheduled",
+            payload: { attempt: 1, delayMs: 10, classification: "unknown" },
+          },
+          { name: "retry:attempt", payload: { attempt: 2, maxAttempts: 5 } },
+          { name: "retry:success", payload: { attempt: 2 } },
+        ]);
+      });
+
+      test("a fatal classification on the LAST attempt emits retry:fatal, never retry:exhausted (fatal is checked before exhaustion)", async () => {
+        let call = 0;
+        const classifier: M3LRetryClassifier = () => {
+          call += 1;
+          return call === 1 ? "retriable" : "fatal";
+        };
+        const runner = new M3LRetryRunner({
+          classifier,
+          backoff: M3LBackoff.constant(10),
+          maxAttempts: 2,
+        });
+        const events = recordRetryEvents(runner);
+        const original = new Error("fatal lands on the final attempt");
+        const op = (): Promise<never> => Promise.reject(original);
+
+        await expect(settleWithTimers(runner.run(op))).rejects.toBe(original);
+
+        expect(events).toEqual([
+          { name: "retry:attempt", payload: { attempt: 1, maxAttempts: 2 } },
+          {
+            name: "retry:scheduled",
+            payload: { attempt: 1, delayMs: 10, classification: "retriable" },
+          },
+          { name: "retry:attempt", payload: { attempt: 2, maxAttempts: 2 } },
+          {
+            name: "retry:fatal",
+            payload: { attempt: 2, classification: "fatal" },
+          },
+        ]);
+        expect(events.some((event) => event.name === "retry:exhausted")).toBe(
+          false,
+        );
+      });
+
+      test("maxAttempts:1 with unknownDecision 'fatal' emits retry:fatal, never retry:exhausted, even though the sole attempt is also the last", async () => {
+        const classifier: M3LRetryClassifier = () => "unknown";
+        const runner = new M3LRetryRunner({
+          classifier,
+          backoff: M3LBackoff.constant(10),
+          unknownDecision: "fatal",
+          maxAttempts: 1,
+        });
+        const events = recordRetryEvents(runner);
+        const original = new Error(
+          "unknown resolved to fatal on the only attempt",
+        );
+
+        await expect(
+          settleWithTimers(runner.run(() => Promise.reject(original))),
+        ).rejects.toBe(original);
+
+        expect(events).toEqual([
+          { name: "retry:attempt", payload: { attempt: 1, maxAttempts: 1 } },
+          {
+            name: "retry:fatal",
+            payload: { attempt: 1, classification: "unknown" },
+          },
+        ]);
+      });
+
+      test("maxAttempts:2 with unknownDecision 'retriable' schedules attempt 1 (classification 'unknown') then exhausts on attempt 2", async () => {
+        const classifier: M3LRetryClassifier = () => "unknown";
+        const runner = new M3LRetryRunner({
+          classifier,
+          backoff: M3LBackoff.constant(10),
+          unknownDecision: "retriable",
+          maxAttempts: 2,
+        });
+        const events = recordRetryEvents(runner);
+        const original = new Error("always unknown");
+        const op = (): Promise<never> => Promise.reject(original);
+
+        await expect(settleWithTimers(runner.run(op))).rejects.toBe(original);
+
+        expect(events).toEqual([
+          { name: "retry:attempt", payload: { attempt: 1, maxAttempts: 2 } },
+          {
+            name: "retry:scheduled",
+            payload: { attempt: 1, delayMs: 10, classification: "unknown" },
+          },
+          { name: "retry:attempt", payload: { attempt: 2, maxAttempts: 2 } },
+          { name: "retry:exhausted", payload: { attempts: 2 } },
+        ]);
+      });
+
+      test("maxAttempts:1 with a retriable classification exhausts immediately: no retry:scheduled event and no setTimeout call", async () => {
+        const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+        const classifier: M3LRetryClassifier = () => "retriable";
+        const runner = new M3LRetryRunner({
+          classifier,
+          backoff: M3LBackoff.constant(10),
+          maxAttempts: 1,
+        });
+        const events = recordRetryEvents(runner);
+        const original = new Error(
+          "always retriable, but only one attempt allowed",
+        );
+        const op = (): Promise<never> => Promise.reject(original);
+
+        await expect(settleWithTimers(runner.run(op))).rejects.toBe(original);
+
+        expect(events).toEqual([
+          { name: "retry:attempt", payload: { attempt: 1, maxAttempts: 1 } },
+          { name: "retry:exhausted", payload: { attempts: 1 } },
+        ]);
+        expect(setTimeoutSpy).not.toHaveBeenCalled();
+        setTimeoutSpy.mockRestore();
+      });
+
+      test("Math.random pinned: a plain retriable classification (no delayMs advice) follows the same decorrelated-jitter progression as M3LPoller", async () => {
+        const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.5);
+        try {
+          const classifier: M3LRetryClassifier = () => "retriable";
+          const runner = new M3LRetryRunner({
+            classifier,
+            backoff: M3LBackoff.exponentialJittered(100, 5_000),
+            maxAttempts: 4,
+          });
+          const events = recordRetryEvents(runner);
+          const op = (): Promise<never> =>
+            Promise.reject(new Error("always fails"));
+
+          await settleWithTimers(runner.run(op)).catch(() => undefined);
+
+          const delays: number[] = [];
+          for (const event of events) {
+            if (event.name === "retry:scheduled") {
+              delays.push(event.payload.delayMs);
+            }
+          }
+          // start=100, cap=5_000, random=0.5, same seed sequence as the pinned
+          // M3LPoller exponentialJittered test above: 200, 350, 575.
+          expect(delays).toEqual([200, 350, 575]);
+        } finally {
+          randomSpy.mockRestore();
+        }
+      });
+
+      test("Math.random pinned: a server-driven delayMs override on attempt 1 does not seed prevDelay for attempt 2's decorrelated-jitter backoff", async () => {
+        const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.5);
+        try {
+          let call = 0;
+          const classifier: M3LRetryClassifier = () => {
+            call += 1;
+            if (call === 1) {
+              return { decision: "retriable" as const, delayMs: 999 };
+            }
+            return "retriable";
+          };
+          const runner = new M3LRetryRunner({
+            classifier,
+            backoff: M3LBackoff.exponentialJittered(100, 5_000),
+            maxAttempts: 4,
+          });
+          const events = recordRetryEvents(runner);
+          const op = (): Promise<never> =>
+            Promise.reject(new Error("always fails"));
+
+          await settleWithTimers(runner.run(op)).catch(() => undefined);
+
+          const delays: number[] = [];
+          for (const event of events) {
+            if (event.name === "retry:scheduled") {
+              delays.push(event.payload.delayMs);
+            }
+          }
+          // Attempt 1's 999ms is the server override, verbatim. Attempts 2 and 3
+          // must match P8a's first two values (200, 350) exactly — if the
+          // override had seeded prevDelay instead of leaving it untouched,
+          // attempt 2's delay would jump to roughly
+          // 100 + 0.5*(999*3 - 100) ≈ 1548.5, far above 200.
+          expect(delays).toEqual([999, 200, 350]);
+        } finally {
+          randomSpy.mockRestore();
+        }
+      });
     });
 
     describe("outcome invariance — a throwing handler never changes the resolved value or error", () => {
