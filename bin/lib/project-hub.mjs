@@ -143,13 +143,57 @@ export function columnIndex(header, name) {
 
 /**
  * Classify a tracker table's status cell into one of the six badge kinds the
- * hub renders. Strips `**bold**` markers first, then matches a leading
+ * hub renders, and report whether the cell was actually recognized. Strips
+ * `**bold**`/`` `code` ``/`_italic_` markers first, then matches a leading
  * done/to-do/in-progress/deferred/blocked/rejected keyword or one of the four
  * legacy status emoji (kept for the count-enforced `implementation-status.md`
- * ledger, whose ✅/🧪/🟢/❌ cells are never rewritten to keywords). An
- * unrecognized or empty cell defaults to "todo" — source Status cells are a
- * single authored keyword, so there is no ambiguous "other" case left to
- * preserve.
+ * ledger, whose ✅/🧪/🟢/❌ cells are never rewritten to keywords).
+ *
+ * ADR-0032 documents this six-value vocabulary as distinct from the GitHub
+ * Projects board's own three-option Status field (Pending/In review/Done,
+ * `PROJECT_STATUS_OPTIONS` in `./hub-sync.mjs`) — a board-side token landing
+ * in a *tracker* cell (e.g. `In review`) is an authoring mistake, not a
+ * synonym, so `recognized: false` lets a caller surface it instead of
+ * silently treating it as `kind: "todo"` (`docs/adr/0032-…md`'s
+ * "the tracker's 6-value status vocabulary maps onto the Project board's
+ * 3-value Status field" Update).
+ *
+ * @param {string} cell
+ * @returns {{ kind: "done" | "todo" | "in-progress" | "deferred" | "blocked" | "rejected", recognized: boolean }}
+ * @example
+ * ```js
+ * import { classifyStatusCell } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
+ *
+ * classifyStatusCell("**Done**"); // { kind: "done", recognized: true }
+ * classifyStatusCell("In review"); // { kind: "todo", recognized: false }
+ * ```
+ */
+export function classifyStatusCell(cell) {
+  const stripped = cell.replace(/[`*_]/g, "").trim();
+  if (stripped.startsWith("✅")) return { kind: "done", recognized: true };
+  if (stripped.startsWith("❌")) return { kind: "todo", recognized: true };
+  if (stripped.startsWith("🧪") || stripped.startsWith("🟢"))
+    return { kind: "in-progress", recognized: true };
+  if (/^done\b/i.test(stripped)) return { kind: "done", recognized: true };
+  if (/^to\s?do\b/i.test(stripped)) return { kind: "todo", recognized: true };
+  if (/^in[\s-]?progress\b/i.test(stripped))
+    return { kind: "in-progress", recognized: true };
+  if (/^deferred\b/i.test(stripped))
+    return { kind: "deferred", recognized: true };
+  if (/^blocked\b/i.test(stripped))
+    return { kind: "blocked", recognized: true };
+  if (/^rejected\b/i.test(stripped))
+    return { kind: "rejected", recognized: true };
+  return { kind: "todo", recognized: false };
+}
+
+/**
+ * Classify a tracker table's status cell into one of the six badge kinds the
+ * hub renders, discarding whether the cell was actually recognized. Thin
+ * wrapper over {@link classifyStatusCell} kept for callers that only need the
+ * badge kind (the dashboard renderer must always produce a badge, even for an
+ * off-vocabulary cell) — `./hub-sync.mjs`'s `actionableItems` uses
+ * {@link classifyStatusCell} directly so it can warn on `recognized: false`.
  *
  * @param {string} cell
  * @returns {"done" | "todo" | "in-progress" | "deferred" | "blocked" | "rejected"}
@@ -161,18 +205,7 @@ export function columnIndex(header, name) {
  * ```
  */
 export function classifyStatus(cell) {
-  const stripped = cell.replace(/\*\*/g, "").trim();
-  if (stripped.startsWith("✅")) return "done";
-  if (stripped.startsWith("❌")) return "todo";
-  if (stripped.startsWith("🧪") || stripped.startsWith("🟢"))
-    return "in-progress";
-  if (/^done\b/i.test(stripped)) return "done";
-  if (/^to\s?do\b/i.test(stripped)) return "todo";
-  if (/^in[\s-]?progress\b/i.test(stripped)) return "in-progress";
-  if (/^deferred\b/i.test(stripped)) return "deferred";
-  if (/^blocked\b/i.test(stripped)) return "blocked";
-  if (/^rejected\b/i.test(stripped)) return "rejected";
-  return "todo";
+  return classifyStatusCell(cell).kind;
 }
 
 // Escape a string for literal use inside a RegExp source.
@@ -231,6 +264,111 @@ export function findUncoveredStatusHeadings(content, registeredHeadings) {
     if (!covered) uncovered.push(headingText);
   }
   return uncovered;
+}
+
+/**
+ * Walk `content` line by line and report every Status cell, in every pipe
+ * table under every `## `/`### ` heading, that {@link classifyStatusCell}
+ * does not recognize. Unlike {@link parseMarkdownTable}/
+ * {@link findUncoveredStatusHeadings} this is a plain line scan rather than a
+ * per-heading regex lookup, for two reasons neither of those helpers can
+ * give a caller: `parseMarkdownTable`'s `{ header, rows }` result carries no
+ * line numbers, so it cannot report *where* a bad cell is; and it returns
+ * only the first table after a heading, whereas `docs/ROADMAP.md` nests
+ * status-bearing tables under `### `-level subsections (the ADR-0035
+ * rollout, capability-deepening, and post-comparison hardening waves) that
+ * `findUncoveredStatusHeadings` deliberately does not descend into (it scans
+ * `## ` only). A vocabulary check has to cover every such table, so this
+ * function tracks the nearest preceding heading of *either* level and finds
+ * every table, not just the first one per `## ` section.
+ *
+ * The divider row is identified by *content* — {@link isDividerRow}'s
+ * all-dashes-cells check, the same one {@link parseMarkdownTable} already
+ * relies on — never by position ("the second table line is always the
+ * divider"). A positional rule would silently treat a table's genuine first
+ * data row as the divider whenever a contributor drops or garbles it,
+ * classifying nothing and defeating the whole point of this scan. The same
+ * content check also tells two tables placed back-to-back with no blank line
+ * between them apart correctly: a `|`-line whose own next line is itself a
+ * divider row is a new table's header, even mid-scan — otherwise the second
+ * table's header/divider text would be misread as data rows of the first,
+ * against its stale `statusIndex`.
+ *
+ * @param {string} content a tracker file's full contents
+ * @returns {Array<{ line: number, heading: string, cell: string }>} one entry
+ *   per off-vocabulary Status cell, in document order; `line` is 1-indexed
+ * @example
+ * ```js
+ * import { findOffVocabularyStatusCells } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
+ *
+ * findOffVocabularyStatusCells(
+ *   "## Wave\n\n| Item | Status |\n| --- | --- |\n| x | In review |\n",
+ * );
+ * // [{ line: 5, heading: "Wave", cell: "In review" }]
+ * ```
+ */
+export function findOffVocabularyStatusCells(content) {
+  const lines = content.split("\n");
+  const findings = [];
+  let heading = "";
+  let statusIndex = -1;
+  let inTable = false;
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const trimmed = line.trim();
+    const headingMatch = /^#{2,3}\s+(.+)$/.exec(line);
+
+    if (headingMatch) {
+      heading = headingMatch[1].trim();
+      inTable = false;
+      statusIndex = -1;
+      continue;
+    }
+
+    if (!trimmed.startsWith("|")) {
+      inTable = false;
+      statusIndex = -1;
+      continue;
+    }
+
+    if (!inTable) {
+      // First `|`-prefixed line after a non-table line: the header row.
+      inTable = true;
+      statusIndex = columnIndex(splitTableRow(line), "Status");
+      continue;
+    }
+
+    const cells = splitTableRow(line);
+
+    // A divider row is identified by *content* (isDividerRow — all-dashes
+    // cells), never by position: a positional "the second table line is
+    // always the divider" assumption would silently treat a genuine first
+    // data row as the divider whenever a contributor drops or garbles it,
+    // classifying nothing and defeating this exact gate.
+    if (isDividerRow(cells)) continue;
+
+    // A `|`-line whose own next line IS a divider row is itself a NEW
+    // table's header, even mid-scan — otherwise two tables placed
+    // back-to-back with no blank line between them would have the second
+    // table's header/divider text misread as data rows of the first, against
+    // the first table's stale statusIndex.
+    const nextLine = lines[index + 1];
+    if (nextLine !== undefined && isDividerRow(splitTableRow(nextLine))) {
+      statusIndex = columnIndex(cells, "Status");
+      continue;
+    }
+
+    if (statusIndex === -1) continue;
+
+    const cell = cells[statusIndex] ?? "";
+    const { recognized } = classifyStatusCell(cell);
+    if (!recognized) {
+      findings.push({ line: index + 1, heading, cell });
+    }
+  }
+
+  return findings;
 }
 
 function classifyAdrStatusKind(statusText) {

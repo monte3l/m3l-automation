@@ -241,6 +241,11 @@ export const COMMAND_CATALOG = [
       "Verifies every status-bearing table in ROADMAP.md/IMPLEMENTATION.md is registered with the sync:hub extractor (bin/lib/project-hub.mjs), so a newly added tracker table can't silently go unsynced. Run after adding a new '## ' section with a Status column to either tracker.",
   },
   {
+    name: "check:tracker-status",
+    description:
+      "Verifies every Status cell in ROADMAP.md/IMPLEMENTATION.md is one of ADR-0032's six tracker values (Done/To Do/In Progress/Deferred/Blocked/Rejected), rejecting board-side tokens like 'In review' that classifyStatus would otherwise silently read as To Do. Run after editing a Status cell in either tracker.",
+  },
+  {
     name: "check:hub-drift",
     description:
       "CI-gated dry-run of sync:hub-issues that fails when the plan is non-empty — GitHub Issues/Milestones no longer match ROADMAP.md/IMPLEMENTATION.md. Needs gh auth; run push-only in CI (ci.yml), and locally before pushing to main if you have gh authenticated.",
