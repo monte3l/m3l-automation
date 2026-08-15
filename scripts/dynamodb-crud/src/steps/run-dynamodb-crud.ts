@@ -360,10 +360,27 @@ async function dispatchScan(
     validate: isScanCheckpoint,
     missing: settings.resume
       ? { kind: "error" }
-      : { kind: "empty", value: { segments: {} } },
+      : { kind: "empty", value: { segments: {}, outputBytes: 0 } },
   });
   const mode: "scan" | "query" =
     settings.operation === "query" ? "query" : "scan";
+
+  // Read the checkpoint's `outputBytes` BEFORE constructing the exporter, so
+  // a resumed run reopens `output` in append mode at that offset instead of
+  // a fresh, truncating exporter silently destroying every record a prior
+  // interrupted run already wrote. Safe to call `read()` unconditionally —
+  // when `resume` is false, the store's `missing` policy above resolves an
+  // empty `outputBytes: 0` value rather than throwing.
+  const outputBytes = settings.resume
+    ? (await checkpointStore.read()).outputBytes
+    : 0;
+
+  const exporter = new Core.M3LJSONListExporter<Record<string, unknown>>({
+    filePath: outputPath,
+    format: "jsonl",
+    resumeFromByte: outputBytes,
+  });
+  const writer = exporter.exportStream();
 
   const records = scanTable({
     dynamoDBDocument: deps.dynamoDBDocument,
@@ -376,25 +393,16 @@ async function dispatchScan(
     checkpointEveryPages: settings.checkpointEveryPages,
     resume: settings.resume,
     checkpointStore,
+    getOutputBytes: () => writer.bytesWritten,
     logger: deps.logger,
   });
 
-  const exporter = new Core.M3LJSONListExporter<Record<string, unknown>>({
-    filePath: outputPath,
-    format: "jsonl",
-  });
-
   let read = 0;
-  await streamToExporter(
-    records,
-    exporter.exportStream(),
-    deps.logger,
-    async () => {
-      read += 1;
-      logProgressIfDue(deps, read, settings.progressEveryRecords);
-      await throttleIfDue(read, settings.batchSize, settings.maxPagesPerSecond);
-    },
-  );
+  await streamToExporter(records, writer, deps.logger, async () => {
+    read += 1;
+    logProgressIfDue(deps, read, settings.progressEveryRecords);
+    await throttleIfDue(read, settings.batchSize, settings.maxPagesPerSecond);
+  });
 
   return { read, written: 0, failed: 0, skipped: 0 };
 }

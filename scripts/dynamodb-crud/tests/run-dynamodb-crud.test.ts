@@ -122,9 +122,17 @@ function fakeJSONFileHandle(content: string): FileHandle {
 
 class FakeWriteStream extends EventEmitter {
   chunks: string[] = [];
+  /**
+   * Mirrors real `fs.WriteStream#bytesWritten`: the running total of bytes
+   * pushed through `write()`/`end(chunk)` — backs the resume-seam
+   * (`M3LListExporterStreamWriter#bytesWritten`) tests below, mirroring
+   * `packages/m3l-common/tests/exporters.test.ts`'s own `FakeWriteStream`.
+   */
+  bytesWritten = 0;
 
   write(chunk: string | Buffer, cb?: (error?: Error | null) => void): boolean {
     this.chunks.push(chunk.toString());
+    this.bytesWritten += Buffer.byteLength(chunk.toString());
     queueMicrotask(() => {
       cb?.();
     });
@@ -134,6 +142,7 @@ class FakeWriteStream extends EventEmitter {
   end(chunk?: string | Buffer): this {
     if (chunk !== undefined) {
       this.chunks.push(chunk.toString());
+      this.bytesWritten += Buffer.byteLength(chunk.toString());
     }
     queueMicrotask(() => this.emit("finish"));
     return this;
@@ -151,6 +160,21 @@ function stubOutputStream(): FakeWriteStream {
     output as unknown as WriteStream,
   );
   return output;
+}
+
+/**
+ * Same as {@link stubOutputStream}, but also returns the `createWriteStream`
+ * spy so a test can assert on the exact arguments the exporter opened the
+ * stream with (plain `filePath` vs. `(filePath, { flags, start })`) — the
+ * resume-seam regression coverage (fix #4) needs this to prove a resumed run
+ * never truncates prior output.
+ */
+function stubOutputStreamWithSpy() {
+  const output = new FakeWriteStream();
+  const spy = vi
+    .spyOn(fs, "createWriteStream")
+    .mockReturnValue(output as unknown as WriteStream);
+  return { output, spy };
 }
 
 /** Stubs the input read path (`M3LJSONListImporter`'s file handle) with `content`. */
@@ -924,6 +948,97 @@ describe("runDynamodbCrud — checkpoint identity keyed to runName/operation+tab
     const callOptions = scanTableMock.mock.calls[0]?.[0];
     expect(callOptions?.checkpointStore.path).toBe(expectedCheckpointPath);
     expect(callOptions?.checkpointStore.path).not.toBe(unexpectedFallbackPath);
+  });
+});
+
+describe("runDynamodbCrud — resumed scan opens output for r+ append, never truncates prior output (fix #4, data-loss bug)", () => {
+  /**
+   * Same rationale as `stubCheckpointFs` above (checkpoint I/O is real,
+   * unmocked `Core.M3LCheckpointStore` machinery in this file) — stubs the
+   * three fs primitives its write/delete paths use so no real file is ever
+   * written, renamed, or unlinked.
+   */
+  function stubCheckpointWrites(): void {
+    vi.spyOn(fsp, "writeFile").mockResolvedValue(undefined);
+    vi.spyOn(fsp, "rename").mockResolvedValue(undefined);
+    vi.spyOn(fsp, "unlink").mockResolvedValue(undefined);
+  }
+
+  test("resume: true threads the checkpointed outputBytes into the exporter — createWriteStream opens r+ at that offset, not a truncating write", async () => {
+    stubCheckpointWrites();
+    const resumeOutputBytes = 512;
+    // The exporter's resume guard reads fs.statSync before fs.truncateSync
+    // to refuse resuming onto a file shorter than the checkpointed offset —
+    // stub it to report a large-enough on-disk size so the happy-path
+    // resume actually reaches truncateSync.
+    vi.spyOn(fs, "statSync").mockReturnValue({
+      size: resumeOutputBytes,
+    } as fs.Stats);
+    vi.spyOn(fs, "truncateSync").mockImplementation(() => undefined);
+    // Bare (non-enveloped) checkpoint content: `M3LCheckpointStore.read()`
+    // accepts a pre-existing bare-format file with no integrity check, which
+    // keeps this fixture a plain JSON literal instead of a computed
+    // checksum envelope. Segment "0" is already fully drained (`null`);
+    // segment "1" is still in progress — the mixed-state case the fix must
+    // handle correctly.
+    vi.spyOn(fsp, "readFile").mockResolvedValue(
+      JSON.stringify({
+        segments: { "0": null, "1": { cursorId: "abc" } },
+        outputBytes: resumeOutputBytes,
+      }),
+    );
+    scanSegmentMock.mockImplementation(function fakeScanSegment() {
+      return (async function* page() {
+        await Promise.resolve();
+        yield { items: [{ id: "resumed" }], lastEvaluatedKey: undefined };
+      })();
+    });
+    const { spy: createWriteStreamSpy } = stubOutputStreamWithSpy();
+    const deps = buildDeps({
+      ...BASE_CONFIG,
+      operation: "scan",
+      totalSegments: 2,
+      resume: true,
+      output: "out.jsonl",
+    });
+
+    await runDynamodbCrud(deps);
+
+    const paths = new Core.M3LPaths();
+    const expectedOutputPath = paths.resolveOutput("out.jsonl");
+    // This is the regression assertion: the bug this test guards against
+    // constructed a fresh, truncating exporter on every `--resume` run at
+    // the same `outputPath`, silently destroying every record a prior
+    // interrupted run had already written. A plain
+    // `createWriteStream(expectedOutputPath)` call here (no options object)
+    // would reproduce that data loss.
+    expect(createWriteStreamSpy).toHaveBeenCalledWith(expectedOutputPath, {
+      flags: "r+",
+      start: resumeOutputBytes,
+    });
+  });
+
+  test("a fresh (non-resume) 'scan' run still opens the output with a plain truncating createWriteStream(filePath) call", async () => {
+    scanSegmentMock.mockImplementation(function fakeScanSegment() {
+      return (async function* page() {
+        await Promise.resolve();
+        yield { items: [{ id: "a" }], lastEvaluatedKey: undefined };
+      })();
+    });
+    const { spy: createWriteStreamSpy } = stubOutputStreamWithSpy();
+    const deps = buildDeps({
+      ...BASE_CONFIG,
+      operation: "scan",
+      resume: false,
+      output: "out.jsonl",
+    });
+
+    await runDynamodbCrud(deps);
+
+    const paths = new Core.M3LPaths();
+    const expectedOutputPath = paths.resolveOutput("out.jsonl");
+    expect(createWriteStreamSpy).toHaveBeenCalledWith(expectedOutputPath);
+    expect(createWriteStreamSpy.mock.calls[0]).toHaveLength(1);
   });
 });
 

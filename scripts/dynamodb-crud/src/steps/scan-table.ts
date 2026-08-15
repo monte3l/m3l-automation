@@ -7,6 +7,16 @@ import { AWS, Core } from "@m3l-automation/m3l-common";
  */
 export interface ScanCheckpoint {
   readonly segments: Readonly<Record<string, Record<string, unknown> | null>>;
+  /**
+   * The output exporter's `bytesWritten` at the moment this checkpoint was
+   * written. `dispatchScan` (in `run-dynamodb-crud.ts`) reads this back on
+   * `--resume` and passes it as the exporter's `resumeFromByte`, so the
+   * resumed run reopens `output` in append mode at exactly this offset
+   * instead of constructing a fresh, truncating exporter at the same path —
+   * without this field, a resumed run would silently destroy every record a
+   * prior interrupted run had already written.
+   */
+  readonly outputBytes: number;
 }
 
 /** Injected dependencies and resolved config for {@link scanTable}. */
@@ -31,6 +41,16 @@ export interface ScanTableOptions {
   readonly resume: boolean;
   /** The injected checkpoint store backing this run's resume state. */
   readonly checkpointStore: Core.M3LCheckpointStore<ScanCheckpoint>;
+  /**
+   * Returns the output exporter's current `bytesWritten`. `scanTable` (via
+   * `driveSegment`) reads this at every checkpoint write and threads it into
+   * the persisted {@link ScanCheckpoint.outputBytes}, so a `--resume`'d run
+   * can reopen `output` at exactly this offset instead of a caller
+   * constructing a fresh, truncating exporter at the same path — the
+   * `dispatchScan` caller owns the actual writer, so this is a read-only
+   * callback rather than `scanTable` taking the writer itself.
+   */
+  readonly getOutputBytes: () => number;
   /** Logger for diagnostics. */
   readonly logger: Core.M3LLogger;
 }
@@ -47,7 +67,9 @@ export interface ScanTableOptions {
  * ```typescript
  * import { isScanCheckpoint } from "./scan-table.js";
  *
- * const candidate: unknown = JSON.parse('{"segments":{"0":null}}');
+ * const candidate: unknown = JSON.parse(
+ *   '{"segments":{"0":null},"outputBytes":0}',
+ * );
  * if (isScanCheckpoint(candidate)) {
  *   // candidate is narrowed to ScanCheckpoint here
  * }
@@ -55,11 +77,20 @@ export interface ScanTableOptions {
  */
 export function isScanCheckpoint(value: unknown): value is ScanCheckpoint {
   if (typeof value !== "object" || value === null) return false;
-  const segments = (value as Partial<ScanCheckpoint>).segments;
+  const candidate = value as Partial<ScanCheckpoint>;
+  const segments = candidate.segments;
   if (
     typeof segments !== "object" ||
     segments === null ||
     Array.isArray(segments)
+  ) {
+    return false;
+  }
+  const { outputBytes } = candidate;
+  if (
+    typeof outputBytes !== "number" ||
+    !Number.isSafeInteger(outputBytes) ||
+    outputBytes < 0
   ) {
     return false;
   }
@@ -186,7 +217,10 @@ async function* driveSegment(
     yield* page.items;
     state.set(segmentIndex, page.lastEvaluatedKey ?? null);
     if (pageCount % opts.checkpointEveryPages === 0) {
-      await opts.checkpointStore.write({ segments: state.snapshot() });
+      await opts.checkpointStore.write({
+        segments: state.snapshot(),
+        outputBytes: opts.getOutputBytes(),
+      });
       opts.logger.step(
         `scanTable: checkpoint written for '${opts.tableName}' (segment ${String(segmentIndex)}, ${String(pageCount)} pages)`,
         { checkpointPath: opts.checkpointStore.path, segmentIndex, pageCount },
@@ -287,7 +321,7 @@ async function* mergeAsync(
  *   paths,
  *   name: "run-1",
  *   validate: isScanCheckpoint,
- *   missing: { kind: "empty", value: { segments: {} } },
+ *   missing: { kind: "empty", value: { segments: {}, outputBytes: 0 } },
  * });
  *
  * for await (const item of scanTable({
@@ -301,6 +335,7 @@ async function* mergeAsync(
  *   checkpointEveryPages: 25,
  *   resume: false,
  *   checkpointStore,
+ *   getOutputBytes: () => 0,
  *   logger: new Core.M3LLogger([]),
  * })) {
  *   // ...
