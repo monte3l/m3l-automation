@@ -126,3 +126,28 @@ also remove its suppression.
   [ADR-0009](./0009-dependency-direction-guard.md) (minimal runtime/dev
   dependencies, platform-native preference — the driver behind declining Act/Podman).
 - Related: `eslint.config.js`, `.jscpd.json`, `.github/workflows/ci.yml`.
+
+## Amendment (2026-08-15): the accepted cognitive-complexity debt is discharged
+
+The dedicated test-safety-net-first refactor pass this ADR called for above
+has landed for both functions (issue #335):
+
+- `retryWithRelogin` (`aws/credentials/manager.ts`): 20 → 3. A
+  characterization-test safety net landed first; the catch body's duplicated
+  " for profile 'x'" ternary was hoisted into a module-private
+  `profileSuffix` helper, then the error-classification/relogin logic was
+  extracted into a private `reloginOrThrow` method, leaving `retryWithRelogin`
+  as a plain retry-loop shell.
+- `run` (`core/polling/M3LRetryRunner.ts`): 17 → 9. Its two narrowing `as`
+  casts — previously justified only by branch ordering — were eliminated by
+  introducing a module-private `ResolvedRetryAction` discriminated union and a
+  pure `resolveAction` function, so each `retry:*` event payload's
+  `classification` now narrows as a type fact instead of an assertion; the
+  delay-selection/`prevDelay`-seeding logic was then extracted into a
+  module-private `DelayProgression` class, per-`run()`-call-scoped to keep
+  concurrent runs isolated.
+
+Both `eslint-disable-next-line sonarjs/cognitive-complexity` suppressions are
+removed. Neither function's public signature changed; no new export was
+added. See `docs/plans/IMPLEMENTATION.md`'s "Gated library modules & deferred
+decisions (P2)" table for the closed tracker row.
