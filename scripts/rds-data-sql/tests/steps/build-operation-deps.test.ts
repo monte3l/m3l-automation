@@ -602,7 +602,7 @@ async function getLoadCheckpoint(): Promise<{
   return loadDeps.checkpoint;
 }
 
-describe("buildOperationDeps: checkpoint co-occurrence validation (offset<->outputBytes, chunkIndex<->failedOutputBytes)", () => {
+describe("buildOperationDeps: checkpoint co-occurrence validation (offset<->outputBytes, chunkIndex<->failedOutputBytes<->recordsProcessed)", () => {
   test("query's checkpoint validator rejects 'offset' present without 'outputBytes'", async () => {
     const checkpoint = await getQueryCheckpoint();
     vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({ offset: 5 }));
@@ -676,19 +676,52 @@ describe("buildOperationDeps: checkpoint co-occurrence validation (offset<->outp
     );
   });
 
-  test("load's checkpoint validator accepts 'chunkIndex' and 'failedOutputBytes' present together", async () => {
+  test("load's checkpoint validator rejects 'recordsProcessed' present without 'chunkIndex' or 'failedOutputBytes'", async () => {
+    const checkpoint = await getLoadCheckpoint();
+    vi.mocked(fsp.readFile).mockResolvedValue(
+      JSON.stringify({ recordsProcessed: 30 }),
+    );
+
+    const thrown = await captureThrown(() => checkpoint.read());
+
+    expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
+    expect((thrown as Core.M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_PARSE",
+    );
+  });
+
+  test("load's checkpoint validator rejects 'chunkIndex' and 'failedOutputBytes' present without 'recordsProcessed'", async () => {
     const checkpoint = await getLoadCheckpoint();
     vi.mocked(fsp.readFile).mockResolvedValue(
       JSON.stringify({ chunkIndex: 5, failedOutputBytes: 100 }),
     );
 
+    const thrown = await captureThrown(() => checkpoint.read());
+
+    expect(thrown).toBeInstanceOf(Core.M3LCheckpointError);
+    expect((thrown as Core.M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_PARSE",
+    );
+  });
+
+  test("load's checkpoint validator accepts 'chunkIndex', 'failedOutputBytes', and 'recordsProcessed' present together", async () => {
+    const checkpoint = await getLoadCheckpoint();
+    vi.mocked(fsp.readFile).mockResolvedValue(
+      JSON.stringify({
+        chunkIndex: 5,
+        failedOutputBytes: 100,
+        recordsProcessed: 30,
+      }),
+    );
+
     await expect(checkpoint.read()).resolves.toEqual({
       chunkIndex: 5,
       failedOutputBytes: 100,
+      recordsProcessed: 30,
     });
   });
 
-  test("load's checkpoint validator accepts neither 'chunkIndex' nor 'failedOutputBytes' present (a fresh, not-yet-progressed checkpoint)", async () => {
+  test("load's checkpoint validator accepts neither 'chunkIndex', 'failedOutputBytes', nor 'recordsProcessed' present (a fresh, not-yet-progressed checkpoint)", async () => {
     const checkpoint = await getLoadCheckpoint();
     vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({}));
 

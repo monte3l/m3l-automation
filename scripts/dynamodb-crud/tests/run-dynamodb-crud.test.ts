@@ -816,6 +816,102 @@ describe("runDynamodbCrud — operation dispatch routing", () => {
   });
 });
 
+describe("runDynamodbCrud — export writer close() failure attribution (mirrors run-query.ts's closeWriterAfterRun)", () => {
+  /**
+   * Same as {@link stubOutputStream}, but the underlying stream emits an
+   * 'error' instead of 'finish' when `end()` is called — simulates a
+   * `close()` failure (e.g. a resumed run whose checkpoint claims more
+   * output bytes than the file actually has, a failure the writer defers
+   * until its first `write()`/`end()` call) for the tests below.
+   */
+  function stubOutputStreamFailingClose(closeError: Error): void {
+    const output = new FakeWriteStream();
+    output.end = (chunk?: string | Buffer): FakeWriteStream => {
+      if (chunk !== undefined) {
+        output.chunks.push(chunk.toString());
+        output.bytesWritten += Buffer.byteLength(chunk.toString());
+      }
+      queueMicrotask(() => {
+        output.emit("error", closeError);
+      });
+      return output;
+    };
+    vi.spyOn(fs, "createWriteStream").mockReturnValue(
+      output as unknown as WriteStream,
+    );
+  }
+
+  test("scan completes successfully but the writer's close() then fails: throws ERR_DYNAMO_CRUD_OUTPUT_WRITER chaining the close error", async () => {
+    const closeError = new Error("disk full");
+    stubOutputStreamFailingClose(closeError);
+    scanSegmentMock.mockImplementation(function fakeScanSegment() {
+      return (async function* page() {
+        await Promise.resolve();
+        yield { items: [{ id: "a" }], lastEvaluatedKey: undefined };
+      })();
+    });
+    const deps = buildDeps({
+      ...BASE_CONFIG,
+      operation: "scan",
+      output: "out.jsonl",
+    });
+
+    let thrown: unknown;
+    try {
+      await runDynamodbCrud(deps);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    expect((thrown as Core.M3LError).code).toBe(
+      "ERR_DYNAMO_CRUD_OUTPUT_WRITER",
+    );
+    // The exporter's writer.close() already wraps the raw stream 'error' as
+    // its own M3LError (code ERR_JSON_LIST_EXPORT) before rejecting — the
+    // dynamodb-crud wrapper chains THAT as its cause, which in turn chains
+    // the original raw close failure.
+    const chained = (thrown as Core.M3LError).cause;
+    expect(chained).toBeInstanceOf(Core.M3LError);
+    expect((chained as Core.M3LError).code).toBe("ERR_JSON_LIST_EXPORT");
+    expect((chained as Core.M3LError).cause).toBe(closeError);
+  });
+
+  test("a source failure mid-scan whose best-effort close() also fails still throws the original wrapped error, only logging the close failure", async () => {
+    const closeError = new Error("close also failed");
+    stubOutputStreamFailingClose(closeError);
+    const scanError = new Error("scanSegment failed");
+    scanSegmentMock.mockImplementation(function fakeScanSegment() {
+      // eslint-disable-next-line require-yield -- intentionally never yields; this generator always throws before any record
+      return (async function* page() {
+        await Promise.resolve();
+        throw scanError;
+      })();
+    });
+    const deps = buildDeps({
+      ...BASE_CONFIG,
+      operation: "scan",
+      output: "out.jsonl",
+    });
+    const warningSpy = vi.spyOn(deps.logger, "warning");
+
+    let thrown: unknown;
+    try {
+      await runDynamodbCrud(deps);
+    } catch (error) {
+      thrown = error;
+    }
+
+    // scanSegment's raw failure (not already an M3LError) gets wrapped by
+    // streamToExporter as ERR_DYNAMO_CRUD_OUTPUT, chaining the original —
+    // NOT replaced by the also-failing close() call, which is only logged.
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    expect((thrown as Core.M3LError).code).toBe("ERR_DYNAMO_CRUD_OUTPUT");
+    expect((thrown as Core.M3LError).cause).toBe(scanError);
+    expect(warningSpy).toHaveBeenCalled();
+  });
+});
+
 describe("runDynamodbCrud — bad record vs. source failure (batch input)", () => {
   test("a single malformed input line is skipped-and-counted while good records still get written", async () => {
     stubInputFile(

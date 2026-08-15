@@ -46,7 +46,7 @@ the array wholesale and never reads keys), so it leaves `TItem` unbounded.
 All list exporters extend `M3LEventEmitterBase` and define two modes:
 
 - `export(items)` — **batch**: writes all items in one call.
-- `exportStream()` — **streaming**: returns an `M3LListExporterStreamWriter<TItem>` exposing `append(item)` and `close()`.
+- `exportStream()` — **streaming**: returns an `M3LListExporterStreamWriter<TItem>` exposing `append(item)`, `close()`, and `bytesWritten` (the running output size, for resume — see below).
 
 ### Event map
 
@@ -148,8 +148,11 @@ The contract, in three rules:
 1. `resumeFromByte: n` truncates the output file to exactly `n` bytes, then
    appends. `undefined`/`0` is the default truncate-to-empty behavior.
 2. `bytesWritten` (on `M3LListExporterStreamWriter`) is `resumeFromByte` plus
-   every byte the writer has since flushed — the value to persist in a
-   checkpoint, never the appended items themselves.
+   every byte the writer has since had accepted by the underlying stream
+   (not necessarily durably flushed to disk — see ADR-0045's Consequences)
+   — the value to persist in a checkpoint, never the appended items
+   themselves. `M3LHTMLListExporter` buffers every row until `close()`, so
+   its `bytesWritten` reads `0` for the entire append phase.
 3. **Ordering is load-bearing.** Call `append`, then read `bytesWritten`,
    then write the checkpoint — in that order. A crash anywhere in that
    window leaves the checkpoint behind the file; the next resume truncates
@@ -167,13 +170,40 @@ rather than deriving it from the first appended row's own keys.
 resume is incoherent (its closing tags are only ever written on a clean
 `close()`), so it stays truncate-only.
 
-An invalid `resumeFromByte` (negative, non-integer, or larger than the
-target file's actual on-disk size — the file being shorter than the offset
-claims can happen after an unclean shutdown, since a write's callback fires
-once the OS accepts it, not once it is durably flushed) never throws
-synchronously and never silently truncates-and-pads with NUL bytes; it
-defers a rejection to the writer's first `append()`/`close()` call, chaining
-the real cause. See ADR-0045 for the full design rationale.
+`resumeFromByte` is only ever honored by `exportStream()`. The batch
+`export(items)` method always writes the complete file fresh, ignoring any
+`resumeFromByte` the exporter was constructed with — resume is a
+streaming-only concern.
+
+An invalid `resumeFromByte` fails in one of two distinct ways, depending on
+what's wrong with it:
+
+- **A malformed value** (negative, `NaN`, `Infinity`, or non-integer) throws
+  synchronously **from the exporter's own constructor** — `new
+Core.M3LJSONListExporter({ resumeFromByte: -1, ... })` throws immediately,
+  before `exportStream()` is ever called.
+- **A value larger than the target file's actual on-disk size** — which can
+  happen after an unclean shutdown, since a write's callback fires once the
+  OS accepts it, not once it is durably flushed — never throws synchronously
+  and never silently truncates-and-pads with NUL bytes; it defers a
+  rejection to the writer's first `append()`/`close()` call, chaining the
+  real cause.
+
+See ADR-0045 for the full design rationale.
+
+Two format-specific edge cases worth knowing before relying on this in
+production:
+
+- **JSON array-format resume** requires the on-disk prefix to already be an
+  unterminated array holding at least one item (a resumed writer primes
+  itself to emit a leading `,` on the next append, and `]` on `close()`) —
+  this only holds if the prior writer was never `close()`d before the crash;
+  resuming past a cleanly-closed array (which already has its trailing `]`)
+  produces malformed JSON. JSONL has no such constraint — a resumed line
+  simply appends after the offset.
+- **CSV resume** requires `columns` to be non-empty as well as present —
+  `columns: []` with `resumeFromByte > 0` is rejected the same as an absent
+  `columns`.
 
 ## Notes and behavior
 

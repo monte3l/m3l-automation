@@ -279,10 +279,64 @@ async function throttleIfDue(
 }
 
 /**
+ * The `Core.M3LError` code {@link closeExporterWriterAfterRun} throws with
+ * when `writer.close()` fails and it is the ONLY failure — the loop in
+ * {@link streamToExporter} already completed cleanly. Kept distinct from
+ * `"ERR_DYNAMO_CRUD_OUTPUT"` (which still covers a mid-stream append/read
+ * failure, and a `close()` failure secondary to one) so an operator can tell
+ * "a resumed run's checkpoint claims more bytes than the output file
+ * actually has" apart from an ordinary mid-scan/append failure.
+ */
+const OUTPUT_WRITER_CODE = "ERR_DYNAMO_CRUD_OUTPUT_WRITER";
+
+/**
+ * Closes `writer` after {@link streamToExporter}'s loop has finished,
+ * attributing a `close()` failure correctly depending on whether that loop
+ * already threw:
+ *
+ * - `primaryFailed: true` — the loop already threw, and that error is what's
+ *   propagating past this call. A `close()` failure here is secondary, so
+ *   it's only logged; re-throwing it would replace the original error
+ *   mid-flight instead of letting it continue propagating.
+ * - `primaryFailed: false` — the loop completed cleanly, so a `close()`
+ *   failure here is the ONLY signal of a real problem: e.g. a resumed run
+ *   whose checkpoint claims an output byte offset beyond the file's actual
+ *   size, a failure the writer defers until its first `write()`/`end()` call
+ *   (which happens inside `close()` when zero items were newly appended this
+ *   run). Swallowing it would report a clean run over a truncated/invalid
+ *   resume, so it propagates as a dedicated typed `M3LError` instead.
+ *
+ * @throws {@link Core.M3LError} coded `"ERR_DYNAMO_CRUD_OUTPUT_WRITER"` when
+ *   `writer.close()` fails and `primaryFailed` is `false`.
+ */
+async function closeExporterWriterAfterRun(
+  writer: Core.M3LListExporterStreamWriter<Record<string, unknown>>,
+  primaryFailed: boolean,
+  logger: Core.M3LLogger,
+): Promise<void> {
+  try {
+    await writer.close();
+  } catch (closeError) {
+    if (primaryFailed) {
+      logger.warning("export close after failure also failed", {
+        cause: closeError,
+      });
+      return;
+    }
+    throw new Core.M3LError(
+      "dynamodb-crud export writer failed to close after a successful run",
+      { code: OUTPUT_WRITER_CODE, cause: closeError },
+    );
+  }
+}
+
+/**
  * Streams `records` into `writer`, invoking `onItem` after each successful
  * append, then finalizes the output. Wraps the whole append/close lifecycle
  * in one fallible region: a failure mid-stream still attempts a best-effort
- * `close()` (without letting that cleanup attempt mask the original error).
+ * `close()` (without letting that cleanup attempt mask the original error) —
+ * see {@link closeExporterWriterAfterRun} for how a `close()`-only failure is
+ * distinguished from one secondary to a mid-stream failure.
  */
 async function streamToExporter(
   records:
@@ -291,27 +345,21 @@ async function streamToExporter(
   logger: Core.M3LLogger,
   onItem: (item: Record<string, unknown>) => Promise<void>,
 ): Promise<void> {
+  let primaryFailed = false;
   try {
     for await (const item of records) {
       await writer.append(item);
       await onItem(item);
     }
-    await writer.close();
   } catch (cause) {
-    // Best-effort cleanup only: a second close() failure here must not mask
-    // the primary read/append failure being re-thrown below.
-    try {
-      await writer.close();
-    } catch (closeError) {
-      logger.warning("export close after failure also failed", {
-        cause: closeError,
-      });
-    }
+    primaryFailed = true;
     if (cause instanceof Core.M3LError) throw cause;
     throw new Core.M3LError("dynamodb-crud scan/query/export failed", {
       code: "ERR_DYNAMO_CRUD_OUTPUT",
       cause,
     });
+  } finally {
+    await closeExporterWriterAfterRun(writer, primaryFailed, logger);
   }
 }
 

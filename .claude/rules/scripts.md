@@ -112,17 +112,30 @@ paths:
   re-resolved per Lambda invocation.
 - **A `Core.M3LCheckpointStore<T>` type guard must reject a field pair that
   is present-without-its-correlate, not just validate each field
-  independently.** When one checkpoint field is meaningless without another
-  (a resume offset without the byte-length it corresponds to, a chunk index
-  without its byte/record count), require them to co-occur — a checkpoint
-  written by an older version of the script, or by a sibling code path
-  under a different format, can otherwise satisfy an independently-optional
-  validator while silently resuming from the wrong point. Confirmed across
-  two independent scripts in the same change: `rds-data-sql`'s
-  `offset`⟺`outputBytes` and, caught only by an explicit reviewer prompt
-  after the first fix already existed as precedent,
-  `cloudwatch-logs-insights`'s `rows`⟺`outputBytes`
-  (`docs/logs/2026-08-15-exporter-resume-seam.md`).
+  independently — and this applies to EVERY correlated pair on the
+  checkpoint, not just the first one you fix.** When one checkpoint field is
+  meaningless without another (a resume offset without the byte-length it
+  corresponds to, a chunk index without its byte/record count), require
+  them to co-occur — a checkpoint written by an older version of the
+  script, or by a sibling code path under a different format, can otherwise
+  satisfy an independently-optional validator while silently resuming from
+  the wrong point. Confirmed three times in the same change:
+  `rds-data-sql`'s `isRunQueryCheckpoint` got `offset`⟺`outputBytes`
+  right, but its sibling `isRunLoadCheckpoint` only checked
+  `chunkIndex`⟺`failedOutputBytes` and missed the checkpoint's THIRD
+  correlated field, `recordsProcessed` — silently duplicating already-committed
+  DB inserts and `failed.jsonl` rows on a checkpoint missing just that one
+  field, caught only by a final whole-diff review pass comparing the two
+  functions side by side, not by either function's own individual review.
+  `cloudwatch-logs-insights` took a structurally different but equally valid
+  path: its `rows`⟺`outputBytes` correlate is format-dependent (`rows` is
+  legitimately populated for a CSV checkpoint), so it's enforced downstream
+  in the JSON-writer-open step rather than in the type guard itself — a
+  reminder that "co-occurrence" is the invariant to enforce, not "in the
+  type guard" specifically, when the correlate depends on something the
+  guard can't see. When you find and fix one missing co-occurrence check on
+  a checkpoint type, audit every OTHER field on that same type for the same
+  gap before moving on (`docs/logs/2026-08-15-exporter-resume-seam.md`).
 
 ## I/O, config files, secrets, AWS
 

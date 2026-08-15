@@ -264,16 +264,31 @@ function isRunQueryCheckpoint(value: unknown): value is RunQueryCheckpoint {
   return isOptionalStringArray(candidate["columns"]);
 }
 
-/** Narrows a checkpoint file's parsed content to {@link RunLoadCheckpoint}. */
+/**
+ * Narrows a checkpoint file's parsed content to {@link RunLoadCheckpoint}.
+ *
+ * Unlike {@link isRunQueryCheckpoint}'s single `offset`⟺`outputBytes` pair,
+ * `RunLoadCheckpoint` has THREE fields that all gate resume behavior
+ * together: `chunkIndex`, `failedOutputBytes`, AND `recordsProcessed`. All
+ * three must co-occur — any one present without the other two is rejected.
+ * `fieldsCoOccur` is pairwise, but presence-equality is transitive: chaining
+ * `chunkIndex`⟺`failedOutputBytes` with `chunkIndex`⟺`recordsProcessed`
+ * forces all three into lockstep without a dedicated 3-way helper. A
+ * checkpoint missing just `recordsProcessed` would otherwise pass, and on
+ * resume `run-load.ts`'s `resumeFromRecordCount` would silently default to
+ * `0`, re-classifying already-handled records and re-inserting already-
+ * committed chunks with zero error.
+ */
 function isRunLoadCheckpoint(value: unknown): value is RunLoadCheckpoint {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
   if (!isOptionalSafeIntegerField(candidate, "chunkIndex")) return false;
   if (!isOptionalSafeIntegerField(candidate, "failedOutputBytes")) return false;
+  if (!isOptionalSafeIntegerField(candidate, "recordsProcessed")) return false;
   if (!fieldsCoOccur(candidate, "chunkIndex", "failedOutputBytes"))
     return false;
-  if (!isOptionalSafeIntegerField(candidate, "failedCount")) return false;
-  return isOptionalSafeIntegerField(candidate, "recordsProcessed");
+  if (!fieldsCoOccur(candidate, "chunkIndex", "recordsProcessed")) return false;
+  return isOptionalSafeIntegerField(candidate, "failedCount");
 }
 
 /** The resume-seam args {@link createQueryExporter} threads into the constructed exporter. */

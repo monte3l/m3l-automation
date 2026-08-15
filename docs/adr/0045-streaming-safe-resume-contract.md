@@ -67,14 +67,19 @@ We chose **option 1, byte-offset resume**, landed as:
 - `M3LListExporterStreamWriter<TItem>` gains `readonly bytesWritten: number`
   — the value a caller reads after `append()` resolves and persists in its
   checkpoint.
-- `M3LWriteStreamLifecycle` (internal) validates `resumeFromByte` is a
-  non-negative safe integer, then stats the target file and refuses to
-  proceed if it is shorter than the claimed offset — closing a durability
-  gap where `fs.WriteStream`'s write callback fires once the OS accepts a
-  write, not once it is flushed to disk, so an unclean shutdown can leave
-  the file shorter than a checkpoint claims. All of this surfaces through
-  the writer's first `append()`/`close()` call, never synchronously from a
-  constructor, matching the class's existing deferred-error contract.
+- The two public exporter constructors validate `resumeFromByte` is a
+  non-negative safe integer, throwing synchronously (`ERR_JSON_LIST_EXPORT`/
+  `ERR_CSV_EXPORT`) on a malformed value — a caller/config error, caught at
+  construction rather than deferred. `M3LWriteStreamLifecycle` (internal)
+  separately stats the target file and refuses to proceed if it is shorter
+  than the claimed offset — closing a durability gap where
+  `fs.WriteStream`'s write callback fires once the OS accepts a write, not
+  once it is flushed to disk, so an unclean shutdown can leave the file
+  shorter than a checkpoint claims. That size check surfaces only through
+  the writer's first `append()`/`close()` call, matching the class's
+  existing deferred-error contract for I/O-level failures — the value
+  validation and the size reconciliation are deliberately two different
+  failure modes at two different points, not one uniform deferred contract.
 - `M3LHTMLListExporter` gets no new option — a mid-document HTML resume is
   incoherent (closing tags), so it stays truncate-only.
 
@@ -115,12 +120,18 @@ We chose **option 1, byte-offset resume**, landed as:
   `queryExecutionId`, and it exports the full row set once, after the query
   completes; the defect never applied to it.
 
-Checkpoint validators across all four scripts additionally: require a
-numeric offset field and its co-occurring byte-length field to be present
-together (a checkpoint with one but not the other — most realistically a
-file left over from before this change — is rejected rather than silently
-resumed from byte 0 while its cursor advances past already-written data),
-and reject `NaN`/`Infinity`/non-integer/negative values outright.
+Checkpoint validators across all four scripts reject `NaN`/`Infinity`/
+non-integer/negative values outright on every numeric field. `dynamodb-crud`
+and `rds-data-sql` additionally require a numeric offset field and its
+co-occurring byte-length field to be present together in their
+`M3LCheckpointStore` type guard (a checkpoint with one but not the other —
+most realistically a file left over from before this change — is rejected
+rather than silently resumed from byte 0 while its cursor advances past
+already-written data). `cloudwatch-logs-insights` enforces the equivalent
+`rows`⟺`outputBytes` correlate downstream instead, in the JSON-writer-open
+step rather than the type guard itself, because the correlate there is
+format-dependent (`rows` is legitimately populated for a CSV-format
+checkpoint) rather than a structural invariant the guard alone can express.
 
 ## Consequences
 
@@ -143,11 +154,15 @@ and reject `NaN`/`Infinity`/non-integer/negative values outright.
   would need either a bootstrap-buffer-until-first-row design or accepting
   CSV log exports as inherently unbounded.
 - **Semver impact:** minor (`3.0.0` → `3.1.0`) — `resumeFromByte`/`columns`
-  are additive options, `bytesWritten` is a new required member on
+  are additive options. `bytesWritten` is a new required member on
   `M3LListExporterStreamWriter<TItem>` (an interface with exactly three
-  first-party implementors in this repo, none of them hand-constructed by a
-  caller — verified via a repo-wide grep before treating this as additive
-  rather than breaking).
+  first-party implementors); consumer test fakes in `rds-data-sql`,
+  `cloudwatch-logs-insights`, and `dynamodb-crud` DO hand-construct object
+  literals satisfying this interface, but all were updated in the same
+  commit series that added the member, so no source-breaking gap was ever
+  left unaddressed within this repo — still treated as additive rather than
+  breaking, since a future external consumer's hand-built writer (were one
+  to exist) would need the same update.
 
 ## Links
 
