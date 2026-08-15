@@ -38,19 +38,32 @@ const INVALID_COLUMN_CODE = "ERR_RDS_DATA_SQL_INVALID_COLUMN";
  */
 const FAILED_WRITER_CODE = "ERR_RDS_DATA_SQL_FAILED_WRITER";
 
+/**
+ * The `Core.M3LError` code {@link runLoad} throws with when the rejection
+ * writer's `close()` fails after the import stream otherwise consumed
+ * cleanly — see {@link closeFailedWriterBestEffort}'s TSDoc for why this
+ * case cannot be a best-effort log.
+ */
+const OUTPUT_WRITER_CODE = "ERR_RDS_DATA_SQL_OUTPUT_WRITER";
+
 /** The resume-state shape {@link runLoad} persists via its injected `checkpoint` port. */
 export interface RunLoadCheckpoint {
   /** The 0-based index of the last chunk fully attempted (inserted or recorded as failed). */
   readonly chunkIndex?: number;
   /**
-   * Every raw input record already rejected to `failedWriter` by a prior
-   * interrupted run, in rejection order — the same shape passed to
-   * `failedWriter.append`. On resume, {@link runLoad} re-appends every one
-   * of these to `failedWriter` before it starts consuming the import
-   * stream again, since `failedWriter`'s underlying exporter truncates
-   * `failed.jsonl` on construction.
+   * The byte length already flushed to `failed.jsonl` by a prior
+   * interrupted run — `failedWriter.bytesWritten` as of the last checkpoint
+   * write. On resume, {@link runLoad} passes this to `createFailedWriter`
+   * as `resumeFromByte`, so the reopened writer appends from exactly this
+   * offset instead of truncating and replaying every prior rejection.
    */
-  readonly failedRecords?: readonly Record<string, unknown>[];
+  readonly failedOutputBytes?: number;
+  /**
+   * The total number of rows rejected to `failedWriter` so far, across
+   * every resumed run — seeds {@link runLoad}'s own running failed-count on
+   * resume, and is re-persisted (updated) after every chunk.
+   */
+  readonly failedCount?: number;
   /**
    * The total number of records READ from the import stream so far, across
    * every resumed run — both accepted (into a chunk) and rejected, unlike
@@ -70,11 +83,9 @@ interface RunLoadCheckpointPort {
   /** Reads the current checkpoint, or an empty object on a fresh run. */
   read(): Promise<RunLoadCheckpoint>;
   /** Persists the checkpoint after a chunk has been attempted. */
-  write(checkpoint: {
-    readonly chunkIndex: number;
-    readonly failedRecords: readonly Record<string, unknown>[];
-    readonly recordsProcessed: number;
-  }): Promise<void>;
+  write(
+    checkpoint: RunLoadCheckpoint & { readonly chunkIndex: number },
+  ): Promise<void>;
   /** Deletes the checkpoint once the run completes with no failed rows. */
   delete(): Promise<void>;
 }
@@ -85,6 +96,8 @@ interface RunLoadFailedWriterPort {
   append(record: Record<string, unknown>): Promise<void>;
   /** Closes the underlying `failed.jsonl` stream. */
   close(): Promise<void>;
+  /** The total byte length flushed to `failed.jsonl` so far. */
+  readonly bytesWritten: number;
 }
 
 /** Injected dependencies for {@link runLoad}. */
@@ -114,8 +127,16 @@ export interface RunLoadDeps {
   readonly batchSize: number;
   /** The resume-state port; see {@link RunLoadCheckpointPort}. */
   readonly checkpoint: RunLoadCheckpointPort;
-  /** The rejection-writer port; see {@link RunLoadFailedWriterPort}. */
-  readonly failedWriter: RunLoadFailedWriterPort;
+  /**
+   * Builds the rejection-writer, deferred until its resume byte offset is
+   * known: unlike `run-query`'s writer, `failed.jsonl` is always JSONL
+   * (no column-bootstrap concern), so this is a much simpler seam than
+   * `RunQueryDeps.createWriter` — `runLoad` calls it exactly once, at the
+   * very top of the run, with `checkpoint.failedOutputBytes ?? 0`.
+   */
+  readonly createFailedWriter: (
+    resumeFromByte: number,
+  ) => RunLoadFailedWriterPort;
   /** The run's correlated logger. */
   readonly logger: Core.M3LLogger;
 }
@@ -132,6 +153,18 @@ export interface RunLoadResult {
 interface PendingRow {
   readonly record: Record<string, unknown>;
   readonly parameters: readonly AWS.M3LRDSDataParameter[];
+}
+
+/**
+ * Fixed per-run context threaded through the load's helper functions — split
+ * out so each function's own parameter count stays low. `failedWriter` is
+ * built once by {@link runLoad} (from `deps.createFailedWriter`) and shared
+ * by every helper that needs to record a rejection.
+ */
+interface LoadContext {
+  readonly deps: RunLoadDeps;
+  readonly failedWriter: RunLoadFailedWriterPort;
+  readonly resumeFromChunkIndex: number;
 }
 
 /**
@@ -212,40 +245,30 @@ function coerceRecord(
   return parameters;
 }
 
-/** Fixed per-run context threaded through {@link flushChunk} — split out so its own parameter count stays low. */
-interface FlushContext {
-  readonly deps: RunLoadDeps;
-  readonly sql: string;
-  readonly resumeFromChunkIndex: number;
-}
-
-/** {@link flushChunk}'s result: the chunk's own inserted/failed counts, plus the run-scoped rejected-record accumulator after this chunk. */
-interface FlushChunkOutcome {
+/** {@link insertChunk}'s result: the chunk's own inserted/failed row counts. */
+interface InsertChunkOutcome {
   /** The number of rows inserted for this chunk. */
   readonly inserted: number;
   /** The number of rows failed for this chunk. */
   readonly failed: number;
-  /** Every raw record rejected so far this run, including this chunk's (if any). */
-  readonly failedRecords: readonly Record<string, unknown>[];
 }
 
 /**
  * Attempts one chunk's `batchExecuteStatement` inside its own
  * `withTransaction` scope. On a transaction failure, every row in the chunk
- * is recorded to `failedWriter` and `accumulatedFailed` grows to include
- * them; the run continues — a chunk-level failure never aborts subsequent
- * chunks. Split out of {@link flushChunk} to keep that function within the
- * module's line-count budget.
+ * is recorded to `context.failedWriter`; the run continues — a chunk-level
+ * failure never aborts subsequent chunks. Split out of {@link flushChunk} to
+ * keep that function within the module's line-count budget.
  *
- * @returns See {@link FlushChunkOutcome}.
+ * @returns See {@link InsertChunkOutcome}.
  */
 async function insertChunk(
-  context: FlushContext,
+  context: LoadContext,
+  sql: string,
   chunk: readonly PendingRow[],
   chunkIndex: number,
-  accumulatedFailed: readonly Record<string, unknown>[],
-): Promise<FlushChunkOutcome> {
-  const { deps } = context;
+): Promise<InsertChunkOutcome> {
+  const { deps, failedWriter } = context;
   try {
     await deps.rdsData.withTransaction(
       {
@@ -258,7 +281,7 @@ async function insertChunk(
         await deps.rdsData.batchExecuteStatement({
           resourceArn: deps.resourceArn,
           secretArn: deps.secretArn,
-          sql: context.sql,
+          sql,
           ...(deps.database !== undefined && { database: deps.database }),
           ...(deps.schema !== undefined && { schema: deps.schema }),
           parameterSets: chunk.map((row) => row.parameters),
@@ -266,11 +289,7 @@ async function insertChunk(
         });
       },
     );
-    return {
-      inserted: chunk.length,
-      failed: 0,
-      failedRecords: accumulatedFailed,
-    };
+    return { inserted: chunk.length, failed: 0 };
   } catch (cause) {
     const chunkFailureReason =
       cause instanceof Error ? cause.message : String(cause);
@@ -279,7 +298,7 @@ async function insertChunk(
     });
     try {
       for (const row of chunk) {
-        await deps.failedWriter.append(row.record);
+        await failedWriter.append(row.record);
       }
     } catch (appendCause) {
       // The original transaction-failure `cause` above is only preserved in
@@ -290,52 +309,40 @@ async function insertChunk(
         { code: FAILED_WRITER_CODE, cause: appendCause },
       );
     }
-    return {
-      inserted: 0,
-      failed: chunk.length,
-      failedRecords: [...accumulatedFailed, ...chunk.map((row) => row.record)],
-    };
+    return { inserted: 0, failed: chunk.length };
   }
 }
 
 /**
  * Inserts one chunk (via {@link insertChunk}) and checkpoints the outcome. A
  * chunk already covered by a prior interrupted run
- * (`chunkIndex <= resumeFromChunkIndex`) is skipped without re-inserting or
- * re-recording it. `accumulatedFailed` is this run's rejected record set
- * *before* this chunk; the checkpoint written after this chunk carries the
- * full accumulator (this chunk's newly-rejected rows appended, if any) so a
- * resumed run can fully re-populate `failedWriter` before continuing.
- * `recordsProcessed` is the run's current count of records read from the
- * import stream (accept or reject) as of this chunk, persisted alongside
- * `chunkIndex`/`failedRecords` so a resumed run knows how far into the
- * re-streamed input to skip reclassifying.
+ * (`chunkIndex <= context.resumeFromChunkIndex`) is skipped without
+ * re-inserting or re-checkpointing it. The checkpoint written after this
+ * chunk carries `context.failedWriter.bytesWritten` and the run's
+ * just-updated running `failedCount`/`recordsProcessed` — the writer's own
+ * byte-offset resume seam means no record replay is ever needed on the next
+ * resume.
  *
- * @returns See {@link FlushChunkOutcome}.
+ * @returns See {@link InsertChunkOutcome}.
  */
 async function flushChunk(
-  context: FlushContext,
+  context: LoadContext,
+  sql: string,
   chunk: readonly PendingRow[],
   chunkIndex: number,
-  accumulatedFailed: readonly Record<string, unknown>[],
+  failedCountAfterChunk: number,
   recordsProcessed: number,
-): Promise<FlushChunkOutcome> {
-  if (chunk.length === 0) {
-    return { inserted: 0, failed: 0, failedRecords: accumulatedFailed };
-  }
+): Promise<InsertChunkOutcome> {
+  if (chunk.length === 0) return { inserted: 0, failed: 0 };
   if (chunkIndex <= context.resumeFromChunkIndex) {
-    return { inserted: 0, failed: 0, failedRecords: accumulatedFailed };
+    return { inserted: 0, failed: 0 };
   }
 
-  const outcome = await insertChunk(
-    context,
-    chunk,
-    chunkIndex,
-    accumulatedFailed,
-  );
+  const outcome = await insertChunk(context, sql, chunk, chunkIndex);
   await context.deps.checkpoint.write({
     chunkIndex,
-    failedRecords: outcome.failedRecords,
+    failedOutputBytes: context.failedWriter.bytesWritten,
+    failedCount: failedCountAfterChunk + outcome.failed,
     recordsProcessed,
   });
   return outcome;
@@ -362,11 +369,10 @@ function resolveColumns(
 interface LoadState {
   readonly columns: readonly string[] | undefined;
   readonly inserted: number;
+  /** The running total of rows rejected — seeded from the checkpoint's `failedCount` on resume, the checkpoint's own `failedCount` field. */
   readonly failed: number;
   readonly nextChunkIndex: number;
   readonly pending: readonly PendingRow[];
-  /** Every raw record rejected so far this run (including any re-populated from a resumed checkpoint); the checkpoint's `failedRecords` field. */
-  readonly failedRecords: readonly Record<string, unknown>[];
   /**
    * The count of records read from the import stream so far *this run*
    * (accept or reject) — the checkpoint's `recordsProcessed` field. Starts
@@ -380,30 +386,26 @@ interface LoadState {
 
 /** Flushes `state.pending` as one chunk, when non-empty, returning the resulting state. */
 async function flushPending(
-  deps: RunLoadDeps,
+  context: LoadContext,
   state: LoadState,
-  resumeFromChunkIndex: number,
 ): Promise<LoadState> {
   if (state.columns === undefined || state.pending.length === 0) return state;
-  const context: FlushContext = {
-    deps,
-    sql: buildInsertSql(deps.table, state.columns),
-    resumeFromChunkIndex,
-  };
+  const chunkIndex = state.nextChunkIndex;
+  const sql = buildInsertSql(context.deps.table, state.columns);
   const outcome = await flushChunk(
     context,
+    sql,
     state.pending,
-    state.nextChunkIndex,
-    state.failedRecords,
+    chunkIndex,
+    state.failed,
     state.recordsProcessed,
   );
   return {
     ...state,
     inserted: state.inserted + outcome.inserted,
     failed: state.failed + outcome.failed,
-    nextChunkIndex: state.nextChunkIndex + 1,
+    nextChunkIndex: chunkIndex + 1,
     pending: [],
-    failedRecords: outcome.failedRecords,
   };
 }
 
@@ -411,27 +413,25 @@ async function flushPending(
  * Classifies one imported `record` against `state.columns` (resolving it
  * from `record`'s own keys on the first call, when `deps.columns` is unset):
  * an accepted row is appended to the returned state's `pending`; a rejected
- * one is appended to `deps.failedWriter` and both `failed` and
- * `failedRecords` advance. Split out of the import loop to keep its nesting
- * depth low.
+ * one is appended to `context.failedWriter` and `failed` advances. Split out
+ * of the import loop to keep its nesting depth low.
  */
 async function classifyRecord(
-  deps: RunLoadDeps,
+  context: LoadContext,
   state: LoadState,
   record: Record<string, unknown>,
 ): Promise<LoadState> {
-  const columns = state.columns ?? resolveColumns(deps.columns, record);
+  const columns = state.columns ?? resolveColumns(context.deps.columns, record);
   const parameters = keysMatchColumns(record, columns)
     ? coerceRecord(record, columns)
     : undefined;
 
   if (parameters === undefined) {
-    await deps.failedWriter.append(record);
+    await context.failedWriter.append(record);
     return {
       ...state,
       columns,
       failed: state.failed + 1,
-      failedRecords: [...state.failedRecords, record],
       recordsProcessed: state.recordsProcessed + 1,
     };
   }
@@ -444,8 +444,8 @@ async function classifyRecord(
 }
 
 /**
- * Drains `deps.importer`'s stream, classifying and chunk-flushing each
- * record in turn, returning the final state.
+ * Drains `context.deps.importer`'s stream, classifying and chunk-flushing
+ * each record in turn, returning the final state.
  *
  * On a resumed run the import stream is always re-read from the beginning,
  * but every record already classified (accepted or rejected) by a prior
@@ -458,37 +458,68 @@ async function classifyRecord(
  * resumes normally for every subsequent record.
  */
 async function consumeImportStream(
-  deps: RunLoadDeps,
+  context: LoadContext,
   initialState: LoadState,
-  resumeFromChunkIndex: number,
   resumeFromRecordCount: number,
 ): Promise<LoadState> {
-  const stream = deps.importer.importStream(deps.source);
+  const stream = context.deps.importer.importStream(context.deps.source);
   let state = initialState;
   let step = await stream.next();
   while (step.done !== true) {
     if (state.recordsProcessed < resumeFromRecordCount) {
       state = { ...state, recordsProcessed: state.recordsProcessed + 1 };
     } else {
-      state = await classifyRecord(deps, state, step.value);
-      if (state.pending.length >= deps.batchSize) {
-        state = await flushPending(deps, state, resumeFromChunkIndex);
+      state = await classifyRecord(context, state, step.value);
+      if (state.pending.length >= context.deps.batchSize) {
+        state = await flushPending(context, state);
       }
     }
     step = await stream.next();
   }
-  return flushPending(deps, state, resumeFromChunkIndex);
+  return flushPending(context, state);
 }
 
-/** Closes `deps.failedWriter`, best-effort — a failing close() must never mask the real outcome above it. */
-async function closeFailedWriterBestEffort(deps: RunLoadDeps): Promise<void> {
+/**
+ * Closes `failedWriter` after {@link runLoad}'s import-stream consumption has
+ * finished, attributing a `close()` failure correctly depending on whether
+ * that consumption already threw:
+ *
+ * - `primaryFailed: true` — `consumeImportStream` already threw, and that
+ *   error is what's propagating out of `runLoad`. A `close()` failure here
+ *   is secondary, so it's only logged; re-throwing it would replace the
+ *   original error mid-flight instead of letting it continue propagating.
+ * - `primaryFailed: false` — `consumeImportStream` completed cleanly (every
+ *   remaining record inserted, none newly rejected this run), so a
+ *   `close()` failure here is the ONLY signal of a real problem: e.g. a
+ *   resumed run whose checkpoint claims a `resumeFromByte` beyond
+ *   `failed.jsonl`'s actual size, a failure the writer defers until its
+ *   first `write()`/`end()` call (which happens inside `close()` when zero
+ *   rows were newly rejected this run). Swallowing it would let `runLoad`
+ *   delete the checkpoint and report success over a truncated/invalid
+ *   resume, so it propagates as a typed `M3LError` instead.
+ *
+ * @throws {@link Core.M3LError} coded `"ERR_RDS_DATA_SQL_OUTPUT_WRITER"` when
+ *   `close()` fails and `primaryFailed` is `false`.
+ */
+async function closeFailedWriterBestEffort(
+  failedWriter: RunLoadFailedWriterPort,
+  logger: Core.M3LLogger,
+  primaryFailed: boolean,
+): Promise<void> {
   try {
-    await deps.failedWriter.close();
+    await failedWriter.close();
   } catch (closeError) {
-    deps.logger.error("run-load: failed to close the rejection writer", {
-      error:
-        closeError instanceof Error ? closeError.message : String(closeError),
-    });
+    if (primaryFailed) {
+      logger.error("run-load: failed to close the rejection writer", {
+        error:
+          closeError instanceof Error ? closeError.message : String(closeError),
+      });
+      return;
+    }
+    throw new Core.M3LError(
+      "run-load: failed to close the rejection writer after a successful run",
+      { code: OUTPUT_WRITER_CODE, cause: closeError },
+    );
   }
 }
 
@@ -502,6 +533,11 @@ async function closeFailedWriterBestEffort(deps: RunLoadDeps): Promise<void> {
  * @throws {@link Core.M3LError} coded `"ERR_RDS_DATA_SQL_INVALID_COLUMN"`
  *   when an explicit or inferred column name fails the identifier pattern —
  *   a structural problem affecting the whole run, not a single row.
+ * @throws {@link Core.M3LError} coded `"ERR_RDS_DATA_SQL_OUTPUT_WRITER"` when
+ *   the import stream otherwise consumed cleanly but the rejection writer's
+ *   `close()` fails — see {@link closeFailedWriterBestEffort} for why this
+ *   case cannot be a best-effort log (it may carry the only signal of an
+ *   invalid resume).
  *
  * @example
  * ```ts
@@ -518,21 +554,15 @@ export async function runLoad(deps: RunLoadDeps): Promise<RunLoadResult> {
   const savedCheckpoint = await deps.checkpoint.read();
   const resumeFromChunkIndex = savedCheckpoint.chunkIndex ?? -1;
   const resumeFromRecordCount = savedCheckpoint.recordsProcessed ?? 0;
-  const initialFailedRecords = savedCheckpoint.failedRecords ?? [];
-
-  // The exporter behind `failedWriter` truncates `failed.jsonl` on
-  // construction (`fs.createWriteStream`'s default flags) — a resumed run
-  // must re-populate it with every record a prior interrupted run already
-  // rejected before any new record is consumed, or those rejections are
-  // silently lost.
-  for (const record of initialFailedRecords) {
-    await deps.failedWriter.append(record);
-  }
+  const failedWriter = deps.createFailedWriter(
+    savedCheckpoint.failedOutputBytes ?? 0,
+  );
+  const context: LoadContext = { deps, failedWriter, resumeFromChunkIndex };
 
   const initialState: LoadState = {
     columns: deps.columns ? deps.columns.map(validateColumnName) : undefined,
     inserted: 0,
-    failed: initialFailedRecords.length,
+    failed: savedCheckpoint.failedCount ?? 0,
     // Seeded from the resume point, not hardcoded `0`: on a genuine resume
     // (`resumeFromChunkIndex` >= 0) the prior run already fully attempted
     // chunks `0..resumeFromChunkIndex`, so the first chunk this run actually
@@ -545,20 +575,27 @@ export async function runLoad(deps: RunLoadDeps): Promise<RunLoadResult> {
     // identical to the prior hardcoded behavior.
     nextChunkIndex: resumeFromChunkIndex + 1,
     pending: [],
-    failedRecords: initialFailedRecords,
     recordsProcessed: 0,
   };
 
   let state: LoadState;
+  // Tracks whether consumeImportStream already threw, so
+  // closeFailedWriterBestEffort knows whether a close() failure is
+  // secondary (log-only) or is itself the only signal of a real failure
+  // (must propagate). See that function's own TSDoc for why the
+  // distinction matters.
+  let primaryFailed = false;
   try {
     state = await consumeImportStream(
-      deps,
+      context,
       initialState,
-      resumeFromChunkIndex,
       resumeFromRecordCount,
     );
+  } catch (cause) {
+    primaryFailed = true;
+    throw cause;
   } finally {
-    await closeFailedWriterBestEffort(deps);
+    await closeFailedWriterBestEffort(failedWriter, deps.logger, primaryFailed);
   }
 
   if (state.failed === 0) await deps.checkpoint.delete();

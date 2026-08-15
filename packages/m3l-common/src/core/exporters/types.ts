@@ -63,6 +63,27 @@ export interface M3LListExporterStreamWriter<TItem extends object> {
    * @returns A promise that resolves once the output has been finalized.
    */
   close(): Promise<void>;
+
+  /**
+   * The running total of bytes written to the underlying output so far,
+   * counting from the resume offset the writer was opened with (`0` for a
+   * fresh export).
+   *
+   * @remarks
+   * Read this after an {@link M3LListExporterStreamWriter.append} call
+   * resolves and checkpoint it; to resume a crashed/interrupted export, pass
+   * that exact checkpointed value back in as the format-specific
+   * `resumeFromByte` construction option, so the new writer picks up exactly
+   * where the previous one left off.
+   *
+   * When this reflects a flushed byte count is format-dependent: CSV and
+   * JSON/JSONL flush each row/item as it is appended, so `bytesWritten`
+   * grows on every `append()`. HTML buffers every row until `close()` (its
+   * `{{count}}` placeholder cannot be resolved until the item count is
+   * known), so its `bytesWritten` reads `0` for the entire append phase and
+   * only reflects the real total once `close()` resolves.
+   */
+  readonly bytesWritten: number;
 }
 
 /**
@@ -187,6 +208,26 @@ export interface M3LCSVListExporterOptions {
    * Defaults to `'keep-generated'`.
    */
   readonly conflictStrategy?: ColumnConflictStrategy;
+  /**
+   * Resumes a streaming export ({@link M3LListExporter.exportStream}) from
+   * this byte offset instead of writing from scratch: the file is truncated
+   * to this offset and reopened for append. Requires `columns` (there is no
+   * on-disk header left to re-derive columns from once truncated to a
+   * mid-body offset). Ignored by the batch `export()` method, which always
+   * writes a complete file from scratch. Defaults to `0`.
+   */
+  readonly resumeFromByte?: number;
+  /**
+   * The exact, ordered column set to use for this file.
+   *
+   * Required when `resumeFromByte > 0` (must match the header already
+   * written). When supplied on a fresh export (`resumeFromByte` unset or
+   * `0`), it still pins the column set/order from the very first appended
+   * row rather than deriving it from that row's own keys — useful when a
+   * caller must commit to a column set before it has seen any row (e.g.
+   * deriving it from separate schema metadata).
+   */
+  readonly columns?: readonly string[];
 }
 
 /**
@@ -215,6 +256,17 @@ export interface M3LJSONListExporterOptions {
    * (`.jsonl` maps to `'jsonl'`, anything else maps to `'array'`).
    */
   readonly format?: M3LJSONListExporterFormat;
+  /**
+   * Resumes a streaming export ({@link M3LListExporter.exportStream}) from
+   * this byte offset instead of writing from scratch: the file is truncated
+   * to this offset and reopened for append. In `'array'` format, the next
+   * appended item emits a leading `,` instead of the opening `[` (the
+   * on-disk prefix up to `resumeFromByte` is assumed to already hold a valid
+   * open array with at least one item). Ignored by the batch `export()`
+   * method, which always writes a complete file from scratch. Defaults to
+   * `0`.
+   */
+  readonly resumeFromByte?: number;
 }
 
 /**

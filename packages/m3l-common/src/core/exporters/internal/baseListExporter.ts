@@ -39,11 +39,23 @@ export abstract class M3LBaseListExporter<TItem extends object>
   protected readonly filePath: string;
 
   /**
-   * @param filePath - The destination file path.
+   * The byte offset `exportStream()` resumes writing from (`0` for a fresh
+   * export). Only the streaming path honors this — the batch `export()`
+   * method always writes a complete file from scratch, since a resumed batch
+   * write would need to re-derive which items were already on disk, which is
+   * outside this seam's scope.
    */
-  protected constructor(filePath: string) {
+  protected readonly resumeFromByte: number;
+
+  /**
+   * @param filePath - The destination file path.
+   * @param resumeFromByte - The byte offset `exportStream()` resumes writing
+   *   from. Defaults to `0` (fresh export).
+   */
+  protected constructor(filePath: string, resumeFromByte = 0) {
     super();
     this.filePath = filePath;
+    this.resumeFromByte = resumeFromByte;
   }
 
   /**
@@ -107,7 +119,10 @@ export abstract class M3LBaseListExporter<TItem extends object>
    */
   exportStream(): M3LListExporterStreamWriter<TItem> {
     this.emit("export:started", { filePath: this.filePath });
-    const lifecycle = new M3LWriteStreamLifecycle(this.filePath);
+    const lifecycle = new M3LWriteStreamLifecycle(
+      this.filePath,
+      this.resumeFromByte,
+    );
     const writer = this.createStreamWriter(lifecycle, (error) => {
       this.emit("export:error", { error });
     });
@@ -116,6 +131,9 @@ export abstract class M3LBaseListExporter<TItem extends object>
       close: async () => {
         await writer.close();
         this.emit("export:completed", { filePath: this.filePath });
+      },
+      get bytesWritten() {
+        return writer.bytesWritten;
       },
     };
   }

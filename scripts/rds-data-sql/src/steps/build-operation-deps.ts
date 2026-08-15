@@ -193,75 +193,136 @@ async function resolveParameters(
   return parsed;
 }
 
-/**
- * Narrows one array entry to a plain record: a non-null, non-array object.
- * Deliberately shallow — it does not validate individual field value types,
- * mirroring `cloudwatch-logs-insights/steps/checkpoint.ts`'s
- * `isLogsInsightsRow` validation depth for an accumulated checkpoint entry.
- */
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+/** Narrows a value to a `readonly string[]`, or accepts `undefined`. */
+function isOptionalStringArray(
+  value: unknown,
+): value is readonly string[] | undefined {
+  if (value === undefined) return true;
+  return (
+    Array.isArray(value) && value.every((entry) => typeof entry === "string")
+  );
 }
 
-/** Narrows a value to a `readonly Record<string, unknown>[]`, or accepts `undefined`. */
-function isOptionalRecordArray(
-  value: unknown,
-): value is readonly Record<string, unknown>[] | undefined {
-  if (value === undefined) return true;
-  return Array.isArray(value) && value.every(isPlainRecord);
+/**
+ * Whether `candidate[field]` is a safe, non-negative integer, when present —
+ * a no-op (`true`) when the field is absent.
+ *
+ * Every numeric checkpoint field this step validates either gates a byte
+ * offset a writer resumes appending from (`outputBytes`/`failedOutputBytes`)
+ * or drives a direct numeric comparison against an in-progress run's own
+ * counter (`offset`, `chunkIndex`, `recordsProcessed`, `failedCount` — e.g.
+ * `run-load.ts`'s `flushChunk`'s `chunkIndex <= resumeFromChunkIndex` and
+ * `consumeImportStream`'s `recordsProcessed < resumeFromRecordCount`). A bare
+ * `typeof … === "number"` check (the prior shape here) accepts `NaN`,
+ * `±Infinity`, non-integers, and negatives — a `NaN` in particular makes
+ * every comparison built from it evaluate `false`, silently disabling the
+ * resume-skip and reprocessing/duplicating already-handled work with zero
+ * error. `Number.isSafeInteger` rejects all of those; `>= 0` additionally
+ * rejects a negative offset/index, which can never be a legitimate resume
+ * position.
+ */
+function isOptionalSafeIntegerField(
+  candidate: Record<string, unknown>,
+  field: string,
+): boolean {
+  if (!Object.hasOwn(candidate, field)) return true;
+  const value = candidate[field];
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+/**
+ * Whether `candidate`'s `a` and `b` fields are both present or both absent —
+ * never exactly one.
+ *
+ * A checkpoint that carries a byte-length field's numeric correlate
+ * (`outputBytes`/`failedOutputBytes`) without the offset/index field it
+ * describes (or vice versa) is malformed: within this version, every
+ * checkpoint write always sets both together, so a checkpoint carrying only
+ * one is either corrupted or was written by a pre-resume-redesign version of
+ * this step (the old shape paired `offset` with `rows`, never `outputBytes`).
+ * Accepting it would silently open the resumed writer at byte `0` (truncating
+ * the output file) while still advancing the other field forward — the exact
+ * data-loss class this step's resume redesign exists to close. Rejecting it
+ * here surfaces a loud, typed `M3LCheckpointError` from
+ * `Core.M3LCheckpointStore.read()` instead.
+ */
+function fieldsCoOccur(
+  candidate: Record<string, unknown>,
+  a: string,
+  b: string,
+): boolean {
+  return Object.hasOwn(candidate, a) === Object.hasOwn(candidate, b);
 }
 
 /** Narrows a checkpoint file's parsed content to {@link RunQueryCheckpoint}. */
 function isRunQueryCheckpoint(value: unknown): value is RunQueryCheckpoint {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  if (
-    Object.hasOwn(candidate, "offset") &&
-    typeof candidate["offset"] !== "number"
-  ) {
-    return false;
-  }
-  return isOptionalRecordArray(candidate["rows"]);
+  if (!isOptionalSafeIntegerField(candidate, "offset")) return false;
+  if (!isOptionalSafeIntegerField(candidate, "outputBytes")) return false;
+  if (!fieldsCoOccur(candidate, "offset", "outputBytes")) return false;
+  return isOptionalStringArray(candidate["columns"]);
 }
 
-/** Narrows a checkpoint file's parsed content to {@link RunLoadCheckpoint}. */
+/**
+ * Narrows a checkpoint file's parsed content to {@link RunLoadCheckpoint}.
+ *
+ * Unlike {@link isRunQueryCheckpoint}'s single `offset`⟺`outputBytes` pair,
+ * `RunLoadCheckpoint` has THREE fields that all gate resume behavior
+ * together: `chunkIndex`, `failedOutputBytes`, AND `recordsProcessed`. All
+ * three must co-occur — any one present without the other two is rejected.
+ * `fieldsCoOccur` is pairwise, but presence-equality is transitive: chaining
+ * `chunkIndex`⟺`failedOutputBytes` with `chunkIndex`⟺`recordsProcessed`
+ * forces all three into lockstep without a dedicated 3-way helper. A
+ * checkpoint missing just `recordsProcessed` would otherwise pass, and on
+ * resume `run-load.ts`'s `resumeFromRecordCount` would silently default to
+ * `0`, re-classifying already-handled records and re-inserting already-
+ * committed chunks with zero error.
+ */
 function isRunLoadCheckpoint(value: unknown): value is RunLoadCheckpoint {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  if (
-    Object.hasOwn(candidate, "chunkIndex") &&
-    typeof candidate["chunkIndex"] !== "number"
-  ) {
+  if (!isOptionalSafeIntegerField(candidate, "chunkIndex")) return false;
+  if (!isOptionalSafeIntegerField(candidate, "failedOutputBytes")) return false;
+  if (!isOptionalSafeIntegerField(candidate, "recordsProcessed")) return false;
+  if (!fieldsCoOccur(candidate, "chunkIndex", "failedOutputBytes"))
     return false;
-  }
-  if (
-    Object.hasOwn(candidate, "recordsProcessed") &&
-    typeof candidate["recordsProcessed"] !== "number"
-  ) {
-    return false;
-  }
-  return isOptionalRecordArray(candidate["failedRecords"]);
+  if (!fieldsCoOccur(candidate, "chunkIndex", "recordsProcessed")) return false;
+  return isOptionalSafeIntegerField(candidate, "failedCount");
 }
 
-/** Builds the format-selected exporter class for `query`'s `output.format`. */
+/** The resume-seam args {@link createQueryExporter} threads into the constructed exporter. */
+interface QueryExporterResumeArgs {
+  /** The byte offset the returned exporter's stream writer should resume appending from (`0` for a fresh export). */
+  readonly resumeFromByte: number;
+  /** The output column list — forwarded only to the `csv` branch (the `json`/`jsonl` options types have no `columns` field). */
+  readonly columns: readonly string[] | undefined;
+}
+
+/** Builds the format-selected exporter class for `query`'s `output.format`, forwarding `resume`'s byte offset (and, for CSV, its columns) into the exporter's construction options. */
 function createQueryExporter(
   format: RdsDataSqlOutputFormat,
   outputPath: string,
+  resume: QueryExporterResumeArgs,
 ): Core.M3LListExporter<Record<string, unknown>> {
   switch (format) {
     case "json":
       return new Core.M3LJSONListExporter<Record<string, unknown>>({
         filePath: outputPath,
         format: "array",
+        resumeFromByte: resume.resumeFromByte,
       });
     case "jsonl":
       return new Core.M3LJSONListExporter<Record<string, unknown>>({
         filePath: outputPath,
         format: "jsonl",
+        resumeFromByte: resume.resumeFromByte,
       });
     case "csv":
       return new Core.M3LCSVListExporter<Record<string, unknown>>({
         filePath: outputPath,
+        resumeFromByte: resume.resumeFromByte,
+        ...(resume.columns !== undefined && { columns: resume.columns }),
       });
     default: {
       const exhaustive: never = format;
@@ -314,10 +375,6 @@ async function buildQueryDeps(
 
   const sql = await resolveSql(paths, settings);
   const parameters = await resolveParameters(paths, settings.parametersFile);
-  const writer = createQueryExporter(
-    settings.outputFormat,
-    paths.resolveOutput(settings.outputFile),
-  ).exportStream();
   const checkpoint = new Core.M3LCheckpointStore<RunQueryCheckpoint>({
     paths,
     name: "query",
@@ -325,6 +382,7 @@ async function buildQueryDeps(
     missing: { kind: "empty", value: {} },
   });
   const outputFormat = settings.outputFormat;
+  const outputPath = paths.resolveOutput(settings.outputFile);
 
   return {
     rdsData,
@@ -336,7 +394,11 @@ async function buildQueryDeps(
     parameters,
     pageSize: settings.pageSize,
     checkpoint,
-    writer,
+    // Deferred, not eagerly opened: a CSV resume's `columns` (its header)
+    // is only known once the caller has read its own checkpoint, so
+    // `runQuery` itself calls this once it has that value in hand.
+    createWriter: (args) =>
+      createQueryExporter(outputFormat, outputPath, args).exportStream(),
     toRecord: (columns, row) => toOutputRecord(columns, row, outputFormat),
     logger,
   };
@@ -377,10 +439,7 @@ function buildLoadDeps(deps: BuildOperationDepsDeps): RunLoadDeps {
     validate: isRunLoadCheckpoint,
     missing: { kind: "empty", value: {} },
   });
-  const failedWriter = new Core.M3LJSONListExporter<Record<string, unknown>>({
-    filePath: paths.resolveOutput("failed.jsonl"),
-    format: "jsonl",
-  }).exportStream();
+  const failedWriterPath = paths.resolveOutput("failed.jsonl");
 
   return {
     rdsData,
@@ -394,7 +453,15 @@ function buildLoadDeps(deps: BuildOperationDepsDeps): RunLoadDeps {
     source: paths.resolveInput(settings.inputFile),
     batchSize: settings.batchSize,
     checkpoint,
-    failedWriter,
+    // Deferred, not eagerly opened: its resume byte offset is only known
+    // once the caller has read its own checkpoint, so `runLoad` itself
+    // calls this once, at the top of the run.
+    createFailedWriter: (resumeFromByte) =>
+      new Core.M3LJSONListExporter<Record<string, unknown>>({
+        filePath: failedWriterPath,
+        format: "jsonl",
+        resumeFromByte,
+      }).exportStream(),
     logger,
   };
 }

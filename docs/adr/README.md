@@ -89,3 +89,4 @@ surface).
 | 0042 | [Defer the script-facing `packages/m3l-cli` package](./0042-script-cli-package-deferred.md)                                                               | Accepted                         |
 | 0043 | [Defer a step-pipeline engine; close out the remaining reference capabilities](./0043-step-pipeline-engine-deferred.md)                                   | Accepted                         |
 | 0044 | [Remove three deprecated `AWSClientProvider` wrapper getters](./0044-remove-deprecated-client-wrapper-getters.md)                                         | Accepted                         |
+| 0045 | [Byte-offset streaming resume for list exporters](./0045-streaming-safe-resume-contract.md)                                                               | Accepted                         |

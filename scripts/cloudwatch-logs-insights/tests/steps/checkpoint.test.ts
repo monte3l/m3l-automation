@@ -57,6 +57,28 @@ describe("isLogsInsightsCheckpoint", () => {
     it("a checkpoint with inFlightQueryId absent", () => {
       expect(isLogsInsightsCheckpoint(baseCheckpoint())).toBe(true);
     });
+
+    it("a checkpoint with outputBytes present and a valid non-negative integer (JSON-format resume state)", () => {
+      expect(
+        isLogsInsightsCheckpoint({
+          ...baseCheckpoint(),
+          outputBytes: 1024,
+        }),
+      ).toBe(true);
+    });
+
+    it("a checkpoint with outputBytes: 0 (a JSON-format run that has not appended any byte yet)", () => {
+      expect(
+        isLogsInsightsCheckpoint({
+          ...baseCheckpoint(),
+          outputBytes: 0,
+        }),
+      ).toBe(true);
+    });
+
+    it("a checkpoint with outputBytes absent (CSV-format checkpoints never populate it)", () => {
+      expect(isLogsInsightsCheckpoint(baseCheckpoint())).toBe(true);
+    });
   });
 
   describe("rejects", () => {
@@ -152,6 +174,51 @@ describe("isLogsInsightsCheckpoint", () => {
         isLogsInsightsCheckpoint({
           ...baseCheckpoint(),
           inFlightQueryId: 123,
+        }),
+      ).toBe(false);
+    });
+
+    it("outputBytes: NaN", () => {
+      expect(
+        isLogsInsightsCheckpoint({
+          ...baseCheckpoint(),
+          outputBytes: Number.NaN,
+        }),
+      ).toBe(false);
+    });
+
+    it("outputBytes: Infinity", () => {
+      expect(
+        isLogsInsightsCheckpoint({
+          ...baseCheckpoint(),
+          outputBytes: Number.POSITIVE_INFINITY,
+        }),
+      ).toBe(false);
+    });
+
+    it("outputBytes: -1 (negative)", () => {
+      expect(
+        isLogsInsightsCheckpoint({
+          ...baseCheckpoint(),
+          outputBytes: -1,
+        }),
+      ).toBe(false);
+    });
+
+    it("outputBytes: 1.5 (non-integer)", () => {
+      expect(
+        isLogsInsightsCheckpoint({
+          ...baseCheckpoint(),
+          outputBytes: 1.5,
+        }),
+      ).toBe(false);
+    });
+
+    it("outputBytes present as a non-number", () => {
+      expect(
+        isLogsInsightsCheckpoint({
+          ...baseCheckpoint(),
+          outputBytes: "1024",
         }),
       ).toBe(false);
     });

@@ -8,6 +8,7 @@ import { M3LError } from "../errors/index.js";
 
 import { M3LBaseListExporter } from "./internal/baseListExporter.js";
 import { onceErrorEmitter } from "./internal/onceErrorEmitter.js";
+import { isValidResumeFromByte } from "./internal/writeStreamLifecycle.js";
 import type { M3LWriteStreamLifecycle } from "./internal/writeStreamLifecycle.js";
 
 import type {
@@ -65,11 +66,29 @@ class M3LJSONStreamWriter<
     format: M3LJSONListExporterFormat,
     filePath: string,
     onError: (error: M3LError) => void,
+    resumeFromByte: number,
   ) {
     this.#lifecycle = lifecycle;
     this.#format = format;
     this.#filePath = filePath;
     this.#onError = onceErrorEmitter(onError);
+    // Resuming an in-progress array document: the on-disk prefix already
+    // opened the '[' and wrote at least one item (the caller only resumes
+    // from a checkpoint taken after a prior append), so the next append must
+    // emit a leading ',' rather than re-opening the array. JSONL needs no
+    // equivalent state — each line is independent of what came before it.
+    if (resumeFromByte > 0 && format === "array") {
+      this.#opened = true;
+      this.#wroteFirst = true;
+    }
+  }
+
+  /**
+   * The running total of bytes written so far, delegated straight to the
+   * underlying lifecycle (which already accounts for the resume offset).
+   */
+  get bytesWritten(): number {
+    return this.#lifecycle.bytesWritten;
   }
 
   async append(item: TItem): Promise<void> {
@@ -135,9 +154,23 @@ export class M3LJSONListExporter<
    *
    * @param options - Construction options. `format` overrides the
    *   extension-based inference (`.jsonl` maps to `'jsonl'`, else `'array'`).
+   * @throws {@link M3LError} with code `ERR_JSON_LIST_EXPORT` if
+   *   `resumeFromByte` is supplied and is not a non-negative integer.
    */
   constructor(options: M3LJSONListExporterOptions) {
-    super(options.filePath);
+    if (
+      options.resumeFromByte !== undefined &&
+      !isValidResumeFromByte(options.resumeFromByte)
+    ) {
+      throw new M3LError("resumeFromByte must be a non-negative integer", {
+        code: "ERR_JSON_LIST_EXPORT",
+        context: {
+          filePath: options.filePath,
+          resumeFromByte: options.resumeFromByte,
+        },
+      });
+    }
+    super(options.filePath, options.resumeFromByte ?? 0);
     this.#format = options.format ?? formatFromExtension(options.filePath);
   }
 
@@ -180,6 +213,7 @@ export class M3LJSONListExporter<
       this.#format,
       this.filePath,
       onError,
+      this.resumeFromByte,
     );
   }
 }

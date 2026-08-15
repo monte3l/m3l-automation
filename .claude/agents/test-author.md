@@ -264,6 +264,18 @@ expect(new Set(names).size).toBe(names.length);
   compile-time only and does not runtime-freeze. Runtime freezing is a
   project-wide convention decision for the hub, not a per-module test invention.
 - Don't implement the module and don't review code — hand both back to the hub.
+- **A bug found while writing a proving test, but outside your write scope
+  (`src/`), gets `test.fails(...)` — never a silently weakened assertion or a
+  guessed fix.** Write the test against the CORRECT contract, name it with a
+  short `[KNOWN BUG]`-style prefix, and explain the bug in a comment above it
+  so the hub can dispatch `code-implementer` precisely. This keeps the suite
+  green, documents the gap exactly, and self-resolves visibly: once the real
+  fix lands, `test.fails` reports an XPASS (an unexpectedly-passing test),
+  which is the signal to flip it to a normal `test` (`docs/logs/2026-08-15-exporter-resume-seam.md`,
+  divergence 2 — found while proving a `run-query.ts` close()-attribution
+  fix, a resumed run's writer was invisible to its own `finally` block on a
+  different throw path entirely, a genuine resource leak the fix round
+  hadn't asked about).
 
 - Do not use real filesystem mutations in tests (`mkdtempSync`, `mkdirSync`, `writeFileSync`, `rmSync`, etc.); this is enforced by ESLint's `no-restricted-syntax` rule. The only sanctioned pattern is `vi.spyOn(fs, method)` or `vi.mock('node:fs')`.
 - **The mock target must track the implementation's I/O primitive.** If the
