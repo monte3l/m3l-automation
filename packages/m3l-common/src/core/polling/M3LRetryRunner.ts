@@ -97,6 +97,118 @@ function toAdvice(result: M3LRetryDecision | M3LRetryAdvice): M3LRetryAdvice {
 }
 
 /**
+ * The runner's reaction to one failed attempt, pairing what to DO with the
+ * RAW classifier verdict every `retry:*` payload must report.
+ *
+ * Carrying both in one discriminated value is what removes the two narrowing
+ * `as` casts the loop body used to need: each arm's `classification` is
+ * already typed to exactly the subset its event payload accepts, so the
+ * relationship is proven by the type rather than by branch ordering plus a
+ * comment.
+ *
+ * Module-private: never re-exported through `core/polling/index.ts`.
+ */
+type ResolvedRetryAction =
+  | {
+      /** Stop retrying and propagate the original error unchanged. */
+      readonly action: "stop";
+      readonly classification: "fatal" | "unknown";
+    }
+  | {
+      /** Schedule another attempt. */
+      readonly action: "retry";
+      readonly classification: "retriable" | "unknown";
+      /**
+       * Server-driven override for THIS attempt only, or `undefined` to use
+       * the configured backoff. Declared as `number | undefined` rather than
+       * an optional property so it can be assigned unconditionally under
+       * `exactOptionalPropertyTypes`.
+       */
+      readonly delayMs: number | undefined;
+    };
+
+/**
+ * Resolve one classifier verdict into the runner's reaction, applying
+ * `unknownDecision` to an `unknown` verdict while preserving the raw verdict
+ * for telemetry.
+ */
+function resolveAction(
+  advice: M3LRetryAdvice,
+  unknownDecision: M3LUnknownDecision,
+): ResolvedRetryAction {
+  if (advice.decision === "retriable") {
+    return {
+      action: "retry",
+      classification: "retriable",
+      delayMs: advice.delayMs,
+    };
+  }
+  if (advice.decision === "fatal") {
+    return { action: "stop", classification: "fatal" };
+  }
+  if (advice.decision === "unknown") {
+    return unknownDecision === "fatal"
+      ? { action: "stop", classification: advice.decision }
+      : {
+          action: "retry",
+          classification: advice.decision,
+          delayMs: undefined,
+        };
+  }
+  // Unreachable through the public resolveAction() path — M3LRetryAdvice's
+  // decision only ever carries "retriable" | "fatal" | "unknown". Kept only
+  // so adding a new M3LRetryDecision value fails to *compile* here. An
+  // off-vocabulary decision from an untyped JS caller degrades through
+  // unknownDecision at runtime — stricter than the pre-refactor code, which
+  // could leak the raw out-of-vocabulary string into a retry:scheduled
+  // payload's classification field instead.
+  const _exhaustive: never = advice.decision;
+  return unknownDecision === "fatal"
+    ? { action: "stop", classification: "unknown" }
+    : { action: "retry", classification: "unknown", delayMs: undefined };
+}
+
+/**
+ * The per-`run()` backoff progression. Owns the `prevDelay` seed the
+ * decorrelated-jitter strategies feed on, so the load-bearing rule — a
+ * server-driven `delayMs` override applies to ONE attempt and must never
+ * seed the progression — lives in exactly one place instead of being split
+ * across two branches of the retry loop.
+ *
+ * Instantiated inside each `run()` call frame, never on the instance, which
+ * is what keeps concurrent runs on one runner isolated.
+ *
+ * Module-private: never re-exported through `core/polling/index.ts`.
+ */
+class DelayProgression {
+  readonly #backoff: M3LBackoffStrategy;
+  #prevDelay: number | undefined;
+
+  constructor(backoff: M3LBackoffStrategy) {
+    this.#backoff = backoff;
+  }
+
+  /**
+   * @param attempt - The 0-based index of the attempt that just failed.
+   * @param override - A server-driven delay for this attempt, or `undefined`
+   *   to advance the configured backoff.
+   * @returns The delay, in milliseconds, to sleep before the next attempt.
+   * @throws When `override` is present but not a finite positive number.
+   */
+  next(attempt: number, override: number | undefined): number {
+    if (override !== undefined) {
+      assertPositive(override, "advice.delayMs");
+      // Deliberately does NOT assign #prevDelay: a one-off server delay must
+      // not perturb the jittered progression.
+      return override;
+    }
+    const nextDelay = this.#backoff.nextDelay(attempt, this.#prevDelay);
+    this.#prevDelay = nextDelay;
+    return nextDelay;
+  }
+}
+
+/**
  * Re-executes an operation until it succeeds or retries are exhausted.
  *
  * Attempt and backoff state live inside each {@link M3LRetryRunner.run} call
@@ -151,9 +263,8 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
    * @throws The last thrown error (unchanged) on a fatal verdict, an unresolved
    *   `unknown` verdict, or retry exhaustion.
    */
-  // eslint-disable-next-line sonarjs/cognitive-complexity -- pre-existing retry-classification control flow (17 vs. the 15 allowed); the ordering between fatal/exhausted/server-delay branches is load-bearing (see the inline comments below) and needs a dedicated test-safety-net pass to refactor safely, so it is tracked as accepted debt in ADR-0034 instead
   async run<T>(op: () => Promise<T>): Promise<T> {
-    let prevDelay: number | undefined;
+    const progression = new DelayProgression(this.#backoff);
     const lastAttempt = this.#maxAttempts - 1;
 
     for (let attempt = 0; ; attempt++) {
@@ -166,29 +277,18 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
         this.emit("retry:success", { attempt: attempt + 1 });
         return result;
       } catch (error) {
-        const advice = toAdvice(this.#classifier(error));
-        // Raw verdict, captured before unknownDecision resolution: every
-        // retry:* payload reports what the classifier actually said, not
-        // what this runner instance happens to resolve "unknown" to.
-        const classification = advice.decision;
-        const decision =
-          advice.decision === "unknown"
-            ? this.#unknownDecision
-            : advice.decision;
+        const resolved = resolveAction(
+          toAdvice(this.#classifier(error)),
+          this.#unknownDecision,
+        );
 
         // Fatal (or unknown resolved to fatal) propagates the original error
-        // unchanged — checked first so an unknown-resolved-to-fatal verdict on
-        // the last attempt reports as retry:fatal, not retry:exhausted.
-        if (decision === "fatal") {
-          // Narrowing `as`, not `any`: reaching this branch means
-          // `advice.decision` was either raw "fatal" or "unknown" resolved to
-          // "fatal" — a raw "retriable" verdict always resolves `decision` to
-          // "retriable" and never enters this branch, so "retriable" is
-          // provably excluded from `classification` here.
-          const fatalClassification = classification as "fatal" | "unknown";
+        // unchanged — checked FIRST so an unknown-resolved-to-fatal verdict
+        // on the last attempt reports as retry:fatal, not retry:exhausted.
+        if (resolved.action === "stop") {
           this.emit("retry:fatal", {
             attempt: attempt + 1,
-            classification: fatalClassification,
+            classification: resolved.classification,
           });
           throw error;
         }
@@ -198,30 +298,13 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
           throw error;
         }
 
-        // A server-driven delayMs (only expressible on a `retriable` advice)
-        // overrides the configured backoff for THIS attempt only, so it must
-        // not seed the jittered backoff progression: leave prevDelay untouched.
-        let delayValue: number;
-        if (advice.decision === "retriable" && advice.delayMs !== undefined) {
-          assertPositive(advice.delayMs, "advice.delayMs");
-          delayValue = advice.delayMs;
-        } else {
-          delayValue = this.#backoff.nextDelay(attempt, prevDelay);
-          prevDelay = delayValue;
-        }
-        // Narrowing `as`, not `any`: reaching this point means `decision` was
-        // resolved to something other than "fatal" (handled/thrown above), so
-        // the raw `classification` here is provably "retriable" or "unknown" —
-        // a raw "fatal" verdict always resolves `decision` to "fatal" and
-        // throws before this line is reached.
-        const scheduledClassification = classification as
-          "retriable" | "unknown";
+        const delayMs = progression.next(attempt, resolved.delayMs);
         this.emit("retry:scheduled", {
           attempt: attempt + 1,
-          delayMs: delayValue,
-          classification: scheduledClassification,
+          delayMs,
+          classification: resolved.classification,
         });
-        await delay(delayValue);
+        await delay(delayMs);
       }
     }
   }

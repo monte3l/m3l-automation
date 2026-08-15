@@ -202,6 +202,17 @@ function classifyError(error: unknown): M3LAWSCredentialsErrorType {
 }
 
 /**
+ * The ` for profile 'x'` clause appended to a {@link
+ * M3LAWSCredentialsManager.retryWithRelogin} failure message, or the empty
+ * string when no profile was resolved. Extracted so the two throw sites
+ * cannot drift apart — the ternary was previously spelled out verbatim in
+ * both.
+ */
+function profileSuffix(profile: M3LAWSProfile | undefined): string {
+  return profile !== undefined ? ` for profile '${profile}'` : "";
+}
+
+/**
  * Creates a new `M3LAWSCredentialsManager`.
  *
  * @example
@@ -428,7 +439,6 @@ export class M3LAWSCredentialsManager {
    * });
    * ```
    */
-  // eslint-disable-next-line sonarjs/cognitive-complexity -- pre-existing retry/relogin control flow (20 vs. the 15 allowed); refactoring security-sensitive SSO credential logic needs a dedicated test-safety-net pass, not an inline edit alongside the ADR-0034 lint-gate rollout, so it is tracked as accepted debt there instead
   async retryWithRelogin<T>(
     operation: () => Promise<T>,
     profile?: M3LAWSProfile,
@@ -443,36 +453,68 @@ export class M3LAWSCredentialsManager {
         // triggers).
         return await operation();
       } catch (error) {
-        // An already-typed M3LAWSCredentialsError (e.g. an SDK module load
-        // failure surfaced by the relogin path) is re-thrown
-        // unchanged rather than re-wrapped.
-        if (error instanceof M3LAWSCredentialsError) throw error;
-
-        const analysis = this.analyzeError(error);
-        if (!analysis.recoverable) {
-          throw new M3LAWSCredentialsError(
-            `operation failed with an unrecoverable credential error${resolvedProfile !== undefined ? ` for profile '${resolvedProfile}'` : ""}`,
-            { type: analysis.type, profile: resolvedProfile, cause: error },
-          );
-        }
-
-        const attemptsRemain = attempt < maxAttempts;
-        if (!attemptsRemain) {
-          throw new M3LAWSCredentialsError(
-            `operation failed with a recoverable credential error, but retries are exhausted${resolvedProfile !== undefined ? ` for profile '${resolvedProfile}'` : ""}`,
-            { type: analysis.type, profile: resolvedProfile, cause: error },
-          );
-        }
-
-        // The relogin must complete before the next retry attempt is issued.
-        await this.confirmRelogin(resolvedProfile);
-        await this.runSsoLogin(resolvedProfile);
+        // Throws on an unrecoverable/already-typed/exhausted failure;
+        // returns only once the relogin has completed and the next attempt
+        // should be issued.
+        await this.reloginOrThrow(
+          error,
+          resolvedProfile,
+          attempt < maxAttempts,
+        );
       }
     }
 
     /* istanbul ignore next -- unreachable: the loop above always returns or
        throws before falling off the end. */
     throw new M3LAWSCredentialsError("retryWithRelogin: unreachable");
+  }
+
+  /**
+   * Reacts to one failed `retryWithRelogin` attempt: either THROWS (the error
+   * was already typed, is unrecoverable, or no attempts remain) or completes
+   * the interactive confirmation + SSO relogin and returns normally, which is
+   * the caller's signal to issue the next attempt.
+   *
+   * Returning normally is the ONLY "keep going" signal — there is no boolean
+   * result to misread.
+   *
+   * @param error - The value the operation rejected with; `unknown` because
+   *   any thrown value may surface here.
+   * @param profile - The already-resolved profile (may be `undefined`).
+   * @param attemptsRemain - Whether the loop has another attempt left after
+   *   this failure.
+   * @throws {@link M3LAWSCredentialsError} On an already-typed error
+   *   (re-thrown by identity), an unrecoverable classification, exhausted
+   *   retries, or a declined interactive confirmation.
+   */
+  private async reloginOrThrow(
+    error: unknown,
+    profile: M3LAWSProfile | undefined,
+    attemptsRemain: boolean,
+  ): Promise<void> {
+    // An already-typed M3LAWSCredentialsError (e.g. an SDK module load
+    // failure surfaced by the relogin path) is re-thrown
+    // unchanged rather than re-wrapped.
+    if (error instanceof M3LAWSCredentialsError) throw error;
+
+    const analysis = this.analyzeError(error);
+    if (!analysis.recoverable) {
+      throw new M3LAWSCredentialsError(
+        `operation failed with an unrecoverable credential error${profileSuffix(profile)}`,
+        { type: analysis.type, profile, cause: error },
+      );
+    }
+
+    if (!attemptsRemain) {
+      throw new M3LAWSCredentialsError(
+        `operation failed with a recoverable credential error, but retries are exhausted${profileSuffix(profile)}`,
+        { type: analysis.type, profile, cause: error },
+      );
+    }
+
+    // The relogin must complete before the next retry attempt is issued.
+    await this.confirmRelogin(profile);
+    await this.runSsoLogin(profile);
   }
 
   /**
