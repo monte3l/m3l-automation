@@ -8,72 +8,72 @@
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "M3LListExporter",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "M3LListExporterStreamWriter",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "M3LListExporterEvents",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "M3LListExporterStartedPayload",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "M3LListExporterCompletedPayload",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "M3LListExporterErrorPayload",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "ColumnConflictStrategy",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/M3LCSVListExporter.ts",
           "symbol": "M3LCSVListExporter",
-          "blob": "3e92fc17e3a1550f1196b76ad0f03c2731c1860c"
+          "blob": "14e55303cca68b47c86ce1f6360f0d1b365d96dd"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "M3LCSVListExporterOptions",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/M3LJSONListExporter.ts",
           "symbol": "M3LJSONListExporter",
-          "blob": "ca53f1ec5387584cf17fadae203ee20cc656ee5e"
+          "blob": "5974b5e3e106076a213d253e94f00667559e7afd"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "M3LJSONListExporterOptions",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "M3LJSONListExporterFormat",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/M3LHTMLListExporter.ts",
           "symbol": "M3LHTMLListExporter",
-          "blob": "8f67113f425eb18deee3b8403e8a06f67abda660"
+          "blob": "f8ceb6fcadbd80cd5f2ffca54f166e79cde1e3ac"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "M3LHTMLListExporterOptions",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/M3LFileExporter.ts",
@@ -116,7 +116,7 @@
           "blob": "0399adb4096eae4bdb35f1f251039c87ea47ad6d"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-08-15"
     },
     {
       "heading": "The `M3LListExporter<TItem>` contract",
@@ -124,15 +124,15 @@
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "M3LListExporter",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "M3LListExporterStreamWriter",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-08-15"
     },
     {
       "heading": "Event map",
@@ -140,25 +140,25 @@
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "M3LListExporterEvents",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "M3LListExporterStartedPayload",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "M3LListExporterCompletedPayload",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "M3LListExporterErrorPayload",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-08-15"
     },
     {
       "heading": "Notes and behavior",
@@ -166,27 +166,27 @@
         {
           "file": "packages/m3l-common/src/core/exporters/M3LCSVListExporter.ts",
           "symbol": "M3LCSVListExporter",
-          "blob": "3e92fc17e3a1550f1196b76ad0f03c2731c1860c"
+          "blob": "14e55303cca68b47c86ce1f6360f0d1b365d96dd"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "ColumnConflictStrategy",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/M3LJSONListExporter.ts",
           "symbol": "M3LJSONListExporter",
-          "blob": "ca53f1ec5387584cf17fadae203ee20cc656ee5e"
+          "blob": "5974b5e3e106076a213d253e94f00667559e7afd"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/types.ts",
           "symbol": "M3LJSONListExporterFormat",
-          "blob": "7039c20b512648d1d503c20453a3c0f5d9945daa"
+          "blob": "31e34b2a4c60f0f945b19395d40bed0ee457fec9"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/M3LHTMLListExporter.ts",
           "symbol": "M3LHTMLListExporter",
-          "blob": "8f67113f425eb18deee3b8403e8a06f67abda660"
+          "blob": "f8ceb6fcadbd80cd5f2ffca54f166e79cde1e3ac"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/M3LBinaryFileExporter.ts",
@@ -204,7 +204,7 @@
           "blob": "0399adb4096eae4bdb35f1f251039c87ea47ad6d"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-08-15"
     }
   ]
 }

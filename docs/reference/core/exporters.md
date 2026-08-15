@@ -115,6 +115,66 @@ await writer.append({ id: "1" });
 await writer.close();
 ```
 
+### Resuming a streaming export
+
+`exportStream()` truncates its target file on open by default — a caller
+resuming an interrupted run must not simply reopen the same path. `resumeFromByte`
+(on both `M3LJSONListExporterOptions` and `M3LCSVListExporterOptions`) makes a
+streaming resume safe without buffering the run's output a second time:
+
+```typescript
+import { Core } from "@m3l-automation/m3l-common";
+
+// First run: append until the process is interrupted.
+const exporter = new Core.M3LJSONListExporter<{ id: string }>({
+  filePath: "./data/outputs/records.jsonl",
+});
+const writer = exporter.exportStream();
+await writer.append({ id: "1" });
+const checkpointedOffset = writer.bytesWritten; // persist this, not the item
+
+// Later, a resumed run:
+const resumed = new Core.M3LJSONListExporter<{ id: string }>({
+  filePath: "./data/outputs/records.jsonl",
+  resumeFromByte: checkpointedOffset,
+});
+const resumedWriter = resumed.exportStream();
+await resumedWriter.append({ id: "2" }); // appended after the offset, not truncated
+await resumedWriter.close();
+```
+
+The contract, in three rules:
+
+1. `resumeFromByte: n` truncates the output file to exactly `n` bytes, then
+   appends. `undefined`/`0` is the default truncate-to-empty behavior.
+2. `bytesWritten` (on `M3LListExporterStreamWriter`) is `resumeFromByte` plus
+   every byte the writer has since flushed — the value to persist in a
+   checkpoint, never the appended items themselves.
+3. **Ordering is load-bearing.** Call `append`, then read `bytesWritten`,
+   then write the checkpoint — in that order. A crash anywhere in that
+   window leaves the checkpoint behind the file; the next resume truncates
+   away the un-checkpointed tail and redoes that work. Duplicate work,
+   never lost or doubled output.
+
+`M3LCSVListExporter` additionally requires `columns` (the exact, ordered
+column set already written to the file) whenever `resumeFromByte > 0` —
+otherwise the writer has no way to know the on-disk header, and construction
+throws `ERR_CSV_EXPORT` synchronously. `columns` may also be supplied on a
+fresh export (`resumeFromByte` unset) to pin the column set from the start
+rather than deriving it from the first appended row's own keys.
+
+`M3LHTMLListExporter` has no `resumeFromByte` option — a mid-document HTML
+resume is incoherent (its closing tags are only ever written on a clean
+`close()`), so it stays truncate-only.
+
+An invalid `resumeFromByte` (negative, non-integer, or larger than the
+target file's actual on-disk size — the file being shorter than the offset
+claims can happen after an unclean shutdown, since a write's callback fires
+once the OS accepts it, not once it is durably flushed) never throws
+synchronously and never silently truncates-and-pads with NUL bytes; it
+defers a rejection to the writer's first `append()`/`close()` call, chaining
+the real cause. See ADR-0045 for the full design rationale.
+
 ## Notes and behavior
 
 - **CSV column conflicts** — `M3LCSVListExporter` uses `csv-stringify` over an `fs.WriteStream`. When merging original row data, column name collisions are resolved by `ColumnConflictStrategy`: `'keep-generated'` or `'keep-original'`.
@@ -129,3 +189,4 @@ await writer.close();
 - [files](./files.md) — archiving generated output files.
 - [json](./json.md) — JSON field paths and format detection.
 - [events](./events.md) — the typed event emitter base.
+- [ADR-0045](../../adr/0045-streaming-safe-resume-contract.md) — the byte-offset resume design rationale.
