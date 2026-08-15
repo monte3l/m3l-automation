@@ -36,3 +36,8 @@ It is not feature, performance, or behavior work — those are separate commits.
   tests that no longer assert a contract, refactor a shared fixture once (not every
   caller), and update a mock target the moment the impl's I/O primitive changes (a
   stale mock silently intercepts nothing).
+- **Removing a lint suppression cannot be its own commit.** `reportUnusedDisableDirectives:
+"error"` (`eslint.config.js`) makes a stale `eslint-disable-next-line` a lint error
+  the instant the finding it suppressed no longer fires — so the extraction step that
+  clears a threshold (e.g. `sonarjs/cognitive-complexity`) and the deletion of its
+  suppression comment must land in the same commit, never split across two.
