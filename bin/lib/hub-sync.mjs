@@ -5,9 +5,9 @@
 // (bin/sync-hub-issues.mjs, bin/sync-hub-projects.mjs), which supply the
 // `gh` execution, auth preflight, and dry-run printing this module never does.
 //
-// Reuses classifyStatus/columnIndex/blobUrl from ./project-hub.mjs rather
+// Reuses classifyStatusCell/columnIndex/blobUrl from ./project-hub.mjs rather
 // than duplicating tracker-table parsing semantics.
-import { blobUrl, classifyStatus, columnIndex } from "./project-hub.mjs";
+import { blobUrl, classifyStatusCell, columnIndex } from "./project-hub.mjs";
 
 /**
  * The fixed label every hub-sync-managed issue carries, so a maintainer can
@@ -358,6 +358,21 @@ export function actionableItems(roadmap, implementation) {
     return priority;
   }
 
+  // Resolve any tracker row's Status cell, appending a warning when it
+  // wasn't recognized (see classifyStatusCell). `label` names the tracker
+  // section in the warning ("Roadmap" or "Implementation") the way
+  // resolvePriority hardcodes "Implementation" for its friction/wave-only
+  // callers.
+  function resolveStatus(cell, key, label) {
+    const { kind, recognized } = classifyStatusCell(cell ?? "");
+    if (!recognized) {
+      warnings.push(
+        `${label}: item "${key}" has an unrecognized Status cell ("${cell ?? ""}") — treated as To Do.`,
+      );
+    }
+    return kind;
+  }
+
   if (roadmap.priority0) {
     const { header, rows } = roadmap.priority0;
     const itemIndex = columnIndex(header, "Item");
@@ -366,10 +381,11 @@ export function actionableItems(roadmap, implementation) {
     for (const row of rows) {
       const itemCell = row[itemIndex] ?? "";
       const strippedItem = stripMarkdown(itemCell);
+      const key = `roadmap:p0:${slug(itemCell)}`;
       addItem({
-        key: `roadmap:p0:${slug(itemCell)}`,
+        key,
         title: `${strippedItem} — ${row[whatIndex] ?? ""}`,
-        status: classifyStatus(row[statusIndex] ?? ""),
+        status: resolveStatus(row[statusIndex], key, "Roadmap"),
         priority: "p0",
         sourcePath: ROADMAP_PATH,
         sourceAnchor: ROADMAP_ANCHORS.p0,
@@ -386,10 +402,11 @@ export function actionableItems(roadmap, implementation) {
     for (const row of rows) {
       const wave = stripMarkdown(row[waveIndex] ?? "");
       const scripts = stripMarkdown(row[scriptsIndex] ?? "");
+      const key = `roadmap:${wave}:${slug(row[scriptsIndex] ?? "")}`;
       addItem({
-        key: `roadmap:${wave}:${slug(row[scriptsIndex] ?? "")}`,
+        key,
         title: `${wave} — ${scripts}`,
-        status: classifyStatus(row[statusIndex] ?? ""),
+        status: resolveStatus(row[statusIndex], key, "Roadmap"),
         priority: "p1",
         sourcePath: ROADMAP_PATH,
         sourceAnchor: ROADMAP_ANCHORS.p1,
@@ -410,10 +427,11 @@ export function actionableItems(roadmap, implementation) {
     for (const row of rows) {
       const itemCell = row[itemIndex] ?? "";
       const strippedItem = stripMarkdown(itemCell);
+      const key = `roadmap:gov:${slug(itemCell)}`;
       addItem({
-        key: `roadmap:gov:${slug(itemCell)}`,
+        key,
         title: `${strippedItem} — ${row[whatIndex] ?? ""}`,
-        status: classifyStatus(row[statusIndex] ?? ""),
+        status: resolveStatus(row[statusIndex], key, "Roadmap"),
         priority: "governance",
         sourcePath: ROADMAP_PATH,
         sourceAnchor: ROADMAP_ANCHORS.governance,
@@ -434,7 +452,7 @@ export function actionableItems(roadmap, implementation) {
       addItem({
         key,
         title: `${strippedId} — ${row[titleIndex] ?? ""}`,
-        status: classifyStatus(row[statusIndex] ?? ""),
+        status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.friction,
@@ -455,7 +473,7 @@ export function actionableItems(roadmap, implementation) {
       addItem({
         key,
         title: `${strippedPhase} — ${row[changeIndex] ?? ""}`,
-        status: classifyStatus(row[statusIndex] ?? ""),
+        status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.adr0035Rollout,
@@ -476,7 +494,7 @@ export function actionableItems(roadmap, implementation) {
       addItem({
         key,
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
-        status: classifyStatus(row[statusIndex] ?? ""),
+        status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.capabilityDeepeningWave,
@@ -497,7 +515,7 @@ export function actionableItems(roadmap, implementation) {
       addItem({
         key,
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
-        status: classifyStatus(row[statusIndex] ?? ""),
+        status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.postComparisonHardeningWave,
@@ -518,7 +536,7 @@ export function actionableItems(roadmap, implementation) {
       addItem({
         key,
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
-        status: classifyStatus(row[statusIndex] ?? ""),
+        status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.m3lCliBuildOut,
@@ -533,10 +551,11 @@ export function actionableItems(roadmap, implementation) {
     const statusIndex = columnIndex(header, "Status");
     for (const row of rows) {
       const idCell = row[idIndex] ?? "";
+      const key = `impl:${slug(idCell)}`;
       addItem({
-        key: `impl:${slug(idCell)}`,
+        key,
         title: stripMarkdown(idCell),
-        status: classifyStatus(row[statusIndex] ?? ""),
+        status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: "p2",
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.gated,
@@ -809,8 +828,23 @@ const PROJECT_STATUS_OPTIONS = {
 };
 
 // Map an Item/tracked-issue status to its board single-select option name.
+// `status` is always one of the six kinds classifyStatusCell/resolveStatus
+// produce (a closed set — see the Item/trackedIssues type above), so a miss
+// here is a programming error (e.g. a new badge kind added without a
+// matching PROJECT_STATUS_OPTIONS entry), not off-vocabulary tracker data —
+// that case is now caught earlier and loudly, by resolveStatus's warning and
+// check:tracker-status's hard gate (bin/check-tracker-status.mjs). Throwing
+// instead of silently defaulting to Pending keeps this table's exhaustiveness
+// enforced rather than assumed.
 function projectStatusOption(status) {
-  return PROJECT_STATUS_OPTIONS[status] ?? PROJECT_STATUS_OPTIONS.todo;
+  const option = PROJECT_STATUS_OPTIONS[status];
+  if (option === undefined) {
+    throw new Error(
+      `projectStatusOption: no board option mapped for status "${status}" — ` +
+        `PROJECT_STATUS_OPTIONS is missing an entry for a new badge kind.`,
+    );
+  }
+  return option;
 }
 
 /**

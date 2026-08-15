@@ -126,6 +126,12 @@ jobs:
       - name: Check tracker coverage
         run: pnpm check:tracker-coverage
 
+      # Every Status cell in those same tables must be one of ADR-0032's six
+      # tracker values — a board-side token ("In review") in a tracker cell
+      # classifies as "todo" and leaves shipped work reading as open (#204).
+      - name: Check tracker status vocabulary
+        run: pnpm check:tracker-status
+
       # The implemented-count numerator ("N of 22") must match the ✅ rows in
       # docs/implementation-status.md across every badge / prose / HTML site.
       - name: Check implementation count

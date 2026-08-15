@@ -195,6 +195,29 @@ const IMPLEMENTATION_WAVES_FIXTURE = `# Implementation backlog — m3l-automatio
 | \`s3\`             | S3            | Done   | aws/s3                | s3-objects (done)         | ADR-0033            |
 `;
 
+// A Roadmap Priority-0 row whose Status cell is a board-side token ("In
+// review") rather than one of the tracker's 6-value vocabulary — exercises
+// actionableItems's resolveStatus warning channel with label "Roadmap".
+const ROADMAP_BAD_STATUS_FIXTURE = `# Roadmap — m3l-automation
+
+## Priority 0
+
+| Item    | What                      | Status    | Why now / Notes |
+| ------- | -------------------------- | --------- | ------------------ |
+| **P0A** | First priority zero item   | In review | needs doing         |
+`;
+
+// A Library-friction row whose Status cell is off-vocabulary — exercises
+// actionableItems's resolveStatus warning channel with label "Implementation".
+const IMPLEMENTATION_BAD_STATUS_FIXTURE = `# Implementation backlog — m3l-automation
+
+## Library friction (F-series)
+
+| ID     | Priority | Status    | Title & change      | Source / call-site |
+| ------ | -------- | --------- | ---------------------- | --------------------- |
+| **F7** | P2       | Reviewing | still relevant          | json-etl log F7        |
+`;
+
 // ---------------------------------------------------------------------------
 // makeItem — a well-formed Item builder for the planner-level tests, which
 // don't need to route through actionableItems (that mapping is covered
@@ -521,6 +544,34 @@ describe("actionableItems", () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("impl:F7");
     expect(warnings[0]).toContain("—");
+  });
+
+  test("an unrecognized Roadmap Status cell defaults the item to todo and appends a Roadmap-labeled warning", () => {
+    const roadmap = extractRoadmap(ROADMAP_BAD_STATUS_FIXTURE);
+    const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
+    const { items, warnings } = actionableItems(roadmap, implementation);
+
+    const p0a = items.find((item) => item.key === "roadmap:p0:p0a");
+    expect(p0a?.status).toBe("todo");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toBe(
+      'Roadmap: item "roadmap:p0:p0a" has an unrecognized Status cell ("In review") — treated as To Do.',
+    );
+  });
+
+  test("an unrecognized Implementation Status cell defaults the item to todo and appends an Implementation-labeled warning", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(
+      IMPLEMENTATION_BAD_STATUS_FIXTURE,
+    );
+    const { items, warnings } = actionableItems(roadmap, implementation);
+
+    const f7 = items.find((item) => item.key === "impl:F7");
+    expect(f7?.status).toBe("todo");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toBe(
+      'Implementation: item "impl:F7" has an unrecognized Status cell ("Reviewing") — treated as To Do.',
+    );
   });
 
   test("extracts capabilityDeepeningWave rows with key impl:<slug(Item)>, priority/status from their own columns", () => {
@@ -1452,5 +1503,18 @@ describe("planProjectSync", () => {
     expect(secondRun.add).toEqual([]);
     expect(secondRun.setStatus).toEqual([]);
     expect(secondRun.archive).toEqual([]);
+  });
+
+  test("an unmapped status value throws instead of silently defaulting to Pending (defensive: unreachable through the public Item/TrackedIssue type, only reachable by casting past it)", () => {
+    const trackedIssues: TrackedIssue[] = [
+      {
+        number: 6,
+        state: "open",
+        status: "bogus" as unknown as TestItem["status"],
+      },
+    ];
+    expect(() => planProjectSync(trackedIssues, [])).toThrow(
+      /no board option mapped for status "bogus"/,
+    );
   });
 });
