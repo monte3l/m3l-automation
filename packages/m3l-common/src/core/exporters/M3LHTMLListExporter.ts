@@ -154,6 +154,17 @@ class M3LHTMLStreamWriter<
     this.#onError = onceErrorEmitter(onError);
   }
 
+  /**
+   * The running total of bytes written so far, delegated straight to the
+   * underlying lifecycle. HTML export has no resume seam (it always
+   * truncates and rewrites the whole document), so this always counts from
+   * `0`; the getter exists only to satisfy the shared
+   * {@link M3LListExporterStreamWriter} contract.
+   */
+  get bytesWritten(): number {
+    return this.#lifecycle.bytesWritten;
+  }
+
   // Buffering a row is synchronous; append() still returns a Promise to
   // satisfy the M3LListExporterStreamWriter contract, and any downstream
   // write failure surfaces on close() instead.

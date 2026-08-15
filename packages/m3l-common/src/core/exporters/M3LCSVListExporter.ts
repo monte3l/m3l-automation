@@ -10,6 +10,7 @@ import { M3LError } from "../errors/index.js";
 
 import { M3LBaseListExporter } from "./internal/baseListExporter.js";
 import { onceErrorEmitter } from "./internal/onceErrorEmitter.js";
+import { isValidResumeFromByte } from "./internal/writeStreamLifecycle.js";
 import type { M3LWriteStreamLifecycle } from "./internal/writeStreamLifecycle.js";
 
 import type {
@@ -66,11 +67,34 @@ class M3LCSVStreamWriter<
     strategy: ColumnConflictStrategy,
     filePath: string,
     onError: (error: M3LError) => void,
+    columns: readonly string[] | undefined,
+    resumeFromByte: number,
   ) {
     this.#lifecycle = lifecycle;
     this.#strategy = strategy;
     this.#filePath = filePath;
     this.#onError = onceErrorEmitter(onError);
+    // A caller-pinned column set is used verbatim instead of deriving it
+    // lazily from the first appended row's own keys (see append() below) —
+    // required on resume (there is no on-disk header left to re-derive from
+    // past a mid-body truncation offset) and useful on a fresh export when
+    // the caller must commit to a column set before seeing any row.
+    if (columns !== undefined) {
+      this.#columns = columns;
+    }
+    // Resuming mid-file: the header line was already written before the
+    // truncation offset, so this writer must not emit another one.
+    if (resumeFromByte > 0) {
+      this.#headerWritten = true;
+    }
+  }
+
+  /**
+   * The running total of bytes written so far, delegated straight to the
+   * underlying lifecycle (which already accounts for the resume offset).
+   */
+  get bytesWritten(): number {
+    return this.#lifecycle.bytesWritten;
   }
 
   async append(item: TItem): Promise<void> {
@@ -142,16 +166,46 @@ export class M3LCSVListExporter<
   TItem extends object,
 > extends M3LBaseListExporter<TItem> {
   readonly #strategy: ColumnConflictStrategy;
+  readonly #columns: readonly string[] | undefined;
 
   /**
    * Creates a CSV list exporter.
    *
    * @param options - Construction options; `conflictStrategy` defaults to
    *   `'keep-generated'`.
+   * @throws {@link M3LError} with code `ERR_CSV_EXPORT` if `resumeFromByte`
+   *   is not a non-negative integer, or if it is greater than `0` and
+   *   `columns` is not supplied as a non-empty array — a resumed file has
+   *   no on-disk header left to re-derive columns from past the truncation
+   *   offset, so the caller must supply the exact header that was already
+   *   written.
    */
   constructor(options: M3LCSVListExporterOptions) {
-    super(options.filePath);
+    if (
+      options.resumeFromByte !== undefined &&
+      !isValidResumeFromByte(options.resumeFromByte)
+    ) {
+      throw new M3LError("resumeFromByte must be a non-negative integer", {
+        code: "ERR_CSV_EXPORT",
+        context: {
+          filePath: options.filePath,
+          resumeFromByte: options.resumeFromByte,
+        },
+      });
+    }
+    const resumeFromByte = options.resumeFromByte ?? 0;
+    if (
+      resumeFromByte > 0 &&
+      (options.columns === undefined || options.columns.length === 0)
+    ) {
+      throw new M3LError(
+        "CSV export resume requires non-empty 'columns' (the header already written to the file being resumed)",
+        { code: "ERR_CSV_EXPORT", context: { filePath: options.filePath } },
+      );
+    }
+    super(options.filePath, resumeFromByte);
     this.#strategy = options.conflictStrategy ?? "keep-generated";
+    this.#columns = options.columns;
   }
 
   /**
@@ -197,6 +251,8 @@ export class M3LCSVListExporter<
       this.#strategy,
       this.filePath,
       onError,
+      this.#columns,
+      this.resumeFromByte,
     );
   }
 }

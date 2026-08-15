@@ -34,8 +34,18 @@ import * as fs from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import * as fsp from "node:fs/promises";
 import { EventEmitter } from "node:events";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
+
+// Named imports (not `fsp.<method>` member calls) are used for the real,
+// unmocked filesystem calls in the torn-write round-trip tests below: the
+// repo's `no-restricted-syntax` guard bans mutating `fs`/`fsp`/`fsPromises`
+// *member-expression* calls in tests, but a bare identifier call
+// (`mkdtemp(...)`) is unaffected — mirrors the pattern in
+// `tests/checkpoint.test.ts`.
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 
 // Make 'node:fs' and 'node:fs/promises' configurable so vi.spyOn can
 // intercept individual functions (ESM namespace objects are non-writable).
@@ -79,6 +89,12 @@ import {
  */
 class FakeWriteStream extends EventEmitter {
   chunks: string[] = [];
+  /**
+   * Mirrors real `fs.WriteStream#bytesWritten`: the running total of bytes
+   * pushed through `write()`/`end(chunk)`, used by the new
+   * `M3LWriteStreamLifecycle#bytesWritten` getter under test.
+   */
+  bytesWritten = 0;
   #shouldFailWrite: boolean;
   #shouldFailEnd: boolean;
   #backpressure: boolean;
@@ -107,6 +123,7 @@ class FakeWriteStream extends EventEmitter {
       return false;
     }
     this.chunks.push(chunk.toString());
+    this.bytesWritten += Buffer.byteLength(chunk.toString());
     // The FIRST write, when backpressure is enabled, reports the internal
     // buffer as full (returns false per the real fs.WriteStream contract)
     // and defers 'drain' to a later microtask; every subsequent write
@@ -130,6 +147,7 @@ class FakeWriteStream extends EventEmitter {
   end(chunk?: string | Buffer): this {
     if (chunk !== undefined) {
       this.chunks.push(chunk.toString());
+      this.bytesWritten += Buffer.byteLength(chunk.toString());
     }
     if (this.#shouldFailEnd) {
       queueMicrotask(() => this.emit("error", new Error("end failed")));
@@ -157,6 +175,25 @@ function stubWriteStream(
     fake as unknown as WriteStream,
   );
   return fake;
+}
+
+/**
+ * Same as {@link stubWriteStream}, but also returns the `createWriteStream`
+ * spy so a test can assert on the exact arguments the lifecycle opened the
+ * stream with (plain `filePath` vs. `(filePath, { flags, start })`).
+ */
+function stubWriteStreamWithSpy(
+  options: {
+    failWrite?: boolean;
+    failEnd?: boolean;
+    backpressure?: boolean;
+  } = {},
+) {
+  const fake = new FakeWriteStream(options);
+  const spy = vi
+    .spyOn(fs, "createWriteStream")
+    .mockReturnValue(fake as unknown as WriteStream);
+  return { stream: fake, spy };
 }
 
 /** Installs a fake fs.createWriteStream that synchronously throws on open. */
@@ -194,6 +231,29 @@ describe("type contracts", () => {
       append: (item: { id: string }) => Promise<void>;
       close: () => Promise<void>;
     }>();
+  });
+
+  test("M3LListExporterStreamWriter<TItem> gains a readonly bytesWritten: number (resume seam)", () => {
+    expectTypeOf<M3LListExporterStreamWriter<{ id: string }>>().toMatchTypeOf<{
+      append: (item: { id: string }) => Promise<void>;
+      close: () => Promise<void>;
+      bytesWritten: number;
+    }>();
+  });
+
+  test("M3LJSONListExporterOptions gains an optional resumeFromByte: number", () => {
+    expectTypeOf<M3LJSONListExporterOptions>()
+      .toHaveProperty("resumeFromByte")
+      .toEqualTypeOf<number | undefined>();
+  });
+
+  test("M3LCSVListExporterOptions gains optional resumeFromByte: number and columns: readonly string[]", () => {
+    expectTypeOf<M3LCSVListExporterOptions>()
+      .toHaveProperty("resumeFromByte")
+      .toEqualTypeOf<number | undefined>();
+    expectTypeOf<M3LCSVListExporterOptions>()
+      .toHaveProperty("columns")
+      .toEqualTypeOf<readonly string[] | undefined>();
   });
 
   test("M3LListExporter<TItem>.exportStream() is synchronous (returns writer directly)", () => {
@@ -466,6 +526,22 @@ describe("M3LCSVListExporter", () => {
     expect(content).toContain("Linus");
   });
 
+  test("exportStream()'s bytesWritten getter delegates through the CSV stream writer and grows with each append()", async () => {
+    const stream = stubWriteStream();
+    const exporter = new M3LCSVListExporter<Row>({
+      filePath: "/exports/bytes.csv",
+    });
+
+    const writer = exporter.exportStream();
+    expect(writer.bytesWritten).toBe(0);
+
+    await writer.append({ id: "1", name: "Ada" });
+    expect(writer.bytesWritten).toBe(Buffer.byteLength(stream.content()));
+
+    await writer.append({ id: "2", name: "Linus" });
+    expect(writer.bytesWritten).toBe(Buffer.byteLength(stream.content()));
+  });
+
   test("emits export:started then export:completed for a successful export()", async () => {
     stubWriteStream();
     const exporter = new M3LCSVListExporter<Row>({
@@ -687,6 +763,86 @@ describe("M3LCSVListExporter", () => {
     expect(drainFiredAt).toBeLessThan(appendResolvedAt);
     expect(stream.content()).toContain("Ada");
   });
+
+  // -------------------------------------------------------------------------
+  // resumeFromByte (streaming-safe resume seam)
+  // -------------------------------------------------------------------------
+
+  test("resumeFromByte > 0 with columns supplied: the header is not re-written and rows are resolved against the supplied columns, not the first appended row", async () => {
+    const { stream } = stubWriteStreamWithSpy();
+    vi.spyOn(fs, "truncateSync").mockImplementation(() => undefined);
+    const exporter = new M3LCSVListExporter<Row>({
+      filePath: "/exports/resume.csv",
+      resumeFromByte: 256,
+      columns: ["id", "name"],
+    });
+
+    const writer = exporter.exportStream();
+    await writer.append({ id: "3", name: "Grace" });
+    await writer.close();
+
+    for (const chunk of stream.chunks) {
+      expect(chunk).not.toMatch(/^id,name/);
+    }
+    expect(stream.content()).toContain("3");
+    expect(stream.content()).toContain("Grace");
+  });
+
+  test("resumeFromByte > 0 WITHOUT columns: the constructor throws synchronously with M3LError code ERR_CSV_EXPORT", () => {
+    stubWriteStreamWithSpy();
+
+    let thrown: unknown;
+    try {
+      new M3LCSVListExporter<Row>({
+        filePath: "/exports/resume-no-columns.csv",
+        resumeFromByte: 256,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_CSV_EXPORT");
+  });
+
+  test("resumeFromByte > 0 with columns: [] (empty array): the constructor throws the same M3LError/ERR_CSV_EXPORT as the columns-undefined case", () => {
+    stubWriteStreamWithSpy();
+
+    let thrown: unknown;
+    try {
+      new M3LCSVListExporter<Row>({
+        filePath: "/exports/resume-empty-columns.csv",
+        resumeFromByte: 1,
+        columns: [],
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_CSV_EXPORT");
+  });
+
+  test.each([-1, 1.5])(
+    "resumeFromByte: %s (invalid): the constructor throws synchronously with M3LError code ERR_CSV_EXPORT",
+    (resumeFromByte) => {
+      stubWriteStreamWithSpy();
+
+      let thrown: unknown;
+      try {
+        new M3LCSVListExporter<Row>({
+          filePath: "/exports/invalid-resume.csv",
+          resumeFromByte,
+          columns: ["id", "name"],
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_CSV_EXPORT");
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -916,6 +1072,303 @@ describe("M3LJSONListExporter", () => {
     const parsed: unknown = JSON.parse(stream.content());
     expect(parsed).toEqual([]);
   });
+
+  // -------------------------------------------------------------------------
+  // resumeFromByte (streaming-safe resume seam)
+  // -------------------------------------------------------------------------
+
+  test("fresh export (no resumeFromByte): exportStream() opens with a plain filePath — no flags/start options", () => {
+    const { spy } = stubWriteStreamWithSpy();
+    const exporter = new M3LJSONListExporter<Record_>({
+      filePath: "/exports/fresh.jsonl",
+      format: "jsonl",
+    });
+
+    exporter.exportStream();
+
+    expect(spy).toHaveBeenCalledWith("/exports/fresh.jsonl");
+    expect(spy.mock.calls[0]).toHaveLength(1);
+  });
+
+  test("resumeFromByte > 0 (jsonl): truncates to the offset, opens r+ at start, and bytesWritten accumulates from the offset", async () => {
+    const { stream, spy } = stubWriteStreamWithSpy();
+    const truncateSpy = vi
+      .spyOn(fs, "truncateSync")
+      .mockImplementation(() => undefined);
+    const filePath = "/exports/resume.jsonl";
+    const resumeFromByte = 128;
+    const exporter = new M3LJSONListExporter<Record_>({
+      filePath,
+      format: "jsonl",
+      resumeFromByte,
+    });
+
+    const writer = exporter.exportStream();
+
+    expect(truncateSpy).toHaveBeenCalledWith(filePath, resumeFromByte);
+    expect(spy).toHaveBeenCalledWith(filePath, {
+      flags: "r+",
+      start: resumeFromByte,
+    });
+
+    await writer.append({ id: "1" });
+    const firstLine = `${JSON.stringify({ id: "1" })}\n`;
+    expect(stream.content()).toBe(firstLine);
+    expect(writer.bytesWritten).toBe(
+      resumeFromByte + Buffer.byteLength(firstLine),
+    );
+
+    await writer.append({ id: "2" });
+    const secondLine = `${JSON.stringify({ id: "2" })}\n`;
+    expect(stream.content()).toBe(firstLine + secondLine);
+    expect(writer.bytesWritten).toBe(
+      resumeFromByte + Buffer.byteLength(firstLine + secondLine),
+    );
+  });
+
+  test("resumeFromByte > 0 (array format): append() emits a leading comma (not '[') and close() still writes the trailing ']'", async () => {
+    const { stream } = stubWriteStreamWithSpy();
+    vi.spyOn(fs, "truncateSync").mockImplementation(() => undefined);
+    const exporter = new M3LJSONListExporter<Record_>({
+      filePath: "/exports/resume.json",
+      format: "array",
+      resumeFromByte: 64,
+    });
+
+    const writer = exporter.exportStream();
+    await writer.append({ id: "2" });
+    await writer.append({ id: "3" });
+    await writer.close();
+
+    expect(stream.content().startsWith(",")).toBe(true);
+    expect(stream.content().startsWith("[")).toBe(false);
+    expect(stream.content().endsWith("]")).toBe(true);
+
+    // Simulate the pre-offset on-disk prefix (a valid partial array opened
+    // with the first item already written) to prove the resumed tail
+    // concatenates into a well-formed document.
+    const fullDocument = `[${JSON.stringify({ id: "1" })}${stream.content()}`;
+    const parsed: unknown = JSON.parse(fullDocument);
+    expect(parsed).toEqual([{ id: "1" }, { id: "2" }, { id: "3" }]);
+  });
+
+  test("resumeFromByte on a file that no longer exists: the constructor does not throw, but the first append() rejects with a chained M3LError and export:error fires", async () => {
+    stubWriteStreamWithSpy();
+    const enoent = Object.assign(new Error("ENOENT: no such file"), {
+      code: "ENOENT",
+    });
+    vi.spyOn(fs, "truncateSync").mockImplementation(() => {
+      throw enoent;
+    });
+    let exporter: M3LJSONListExporter<Record_> | undefined;
+    expect(() => {
+      exporter = new M3LJSONListExporter<Record_>({
+        filePath: "/exports/gone.jsonl",
+        format: "jsonl",
+        resumeFromByte: 32,
+      });
+    }).not.toThrow();
+
+    const nonNullExporter = exporter;
+    if (nonNullExporter === undefined) {
+      throw new Error("exporter must have been constructed");
+    }
+    let emittedError: unknown;
+    nonNullExporter.on("export:error", (payload: { error: unknown }) => {
+      emittedError = payload.error;
+    });
+    const writer = nonNullExporter.exportStream();
+
+    let thrown: unknown;
+    try {
+      await writer.append({ id: "1" });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_JSON_LIST_EXPORT");
+    expect((thrown as M3LError).cause).toBe(enoent);
+    expect(emittedError).toBeInstanceOf(M3LError);
+  });
+
+  test.each([-1, 1.5])(
+    "resumeFromByte: %s (invalid): the constructor throws synchronously with M3LError code ERR_JSON_LIST_EXPORT",
+    (resumeFromByte) => {
+      stubWriteStreamWithSpy();
+
+      let thrown: unknown;
+      try {
+        new M3LJSONListExporter<Record_>({
+          filePath: "/exports/invalid-resume.jsonl",
+          format: "jsonl",
+          resumeFromByte,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_JSON_LIST_EXPORT");
+    },
+  );
+
+  test("a truncateSync failure is NOT clobbered by a later, distinct async stream 'error': the first append() rejects with the ORIGINAL truncate error, not the subsequent stream-open error", async () => {
+    const truncateError = new Error("truncate failed: ENOENT");
+    const streamOpenError = new Error("stream open failed: EACCES");
+    vi.spyOn(fs, "truncateSync").mockImplementation(() => {
+      throw truncateError;
+    });
+    vi.spyOn(fs, "createWriteStream").mockImplementation(() => {
+      const fake = new EventEmitter();
+      // Emitted AFTER the constructor's synchronous truncate failure has
+      // already recorded #pendingError — a pre-fix implementation
+      // unconditionally overwrites it here, discarding the more specific
+      // truncate diagnostic.
+      queueMicrotask(() => {
+        fake.emit("error", streamOpenError);
+      });
+      return fake as unknown as WriteStream;
+    });
+
+    const exporter = new M3LJSONListExporter<Record_>({
+      filePath: "/exports/double-failure.jsonl",
+      format: "jsonl",
+      resumeFromByte: 16,
+    });
+    const writer = exporter.exportStream();
+
+    // Let the queued async stream 'error' fire before appending, so a
+    // pre-fix implementation would already have clobbered #pendingError by
+    // the time append()/write() reads it.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    let thrown: unknown;
+    try {
+      await writer.append({ id: "1" });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).cause).toBe(truncateError);
+    expect((thrown as M3LError).cause).not.toBe(streamOpenError);
+  });
+
+  test("M3LBaseListExporter's batch export() ignores resumeFromByte — always opens with a plain filePath (no flags/start)", async () => {
+    const { spy } = stubWriteStreamWithSpy();
+    vi.spyOn(fs, "truncateSync").mockImplementation(() => undefined);
+    const exporter = new M3LJSONListExporter<Record_>({
+      filePath: "/exports/batch-ignores-resume.jsonl",
+      format: "jsonl",
+      resumeFromByte: 999,
+    });
+
+    await exporter.export([{ id: "1" }]);
+
+    expect(spy).toHaveBeenCalledWith("/exports/batch-ignores-resume.jsonl");
+    expect(spy.mock.calls[0]).toHaveLength(1);
+  });
+
+  test("torn-write round-trip (jsonl): resuming from the last known-good bytesWritten past a mid-line crash produces N well-formed, non-duplicated lines", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "m3l-exporter-resume-"));
+    try {
+      const filePath = path.join(dir, "records.jsonl");
+      const items = [
+        { id: "1" },
+        { id: "2" },
+        { id: "3" },
+        { id: "4" },
+      ] satisfies Record_[];
+
+      const exporter1 = new M3LJSONListExporter<Record_>({
+        filePath,
+        format: "jsonl",
+      });
+      const writer1 = exporter1.exportStream();
+      await writer1.append(items[0] as Record_);
+      await writer1.append(items[1] as Record_);
+      const lastKnownGoodOffset = writer1.bytesWritten;
+      expect(typeof lastKnownGoodOffset).toBe("number");
+
+      // Write a third, full line so we have real on-disk bytes to chop —
+      // then truncate strictly inside it, simulating a crash mid-write.
+      await writer1.append(items[2] as Record_);
+      const fullOffset = writer1.bytesWritten;
+      expect(typeof fullOffset).toBe("number");
+      const midLineOffset = lastKnownGoodOffset + 3;
+      expect(midLineOffset).toBeLessThan(fullOffset);
+      fs.truncateSync(filePath, midLineOffset);
+      // writer1 is abandoned here — it never observes the truncation, mimicking
+      // a crashed process that never called close().
+
+      const exporter2 = new M3LJSONListExporter<Record_>({
+        filePath,
+        format: "jsonl",
+        resumeFromByte: lastKnownGoodOffset,
+      });
+      const writer2 = exporter2.exportStream();
+      await writer2.append(items[2] as Record_);
+      await writer2.append(items[3] as Record_);
+      await writer2.close();
+
+      const finalContent = await readFile(filePath, "utf8");
+      const lines = finalContent.trim().split("\n").filter(Boolean);
+      expect(lines).toHaveLength(4);
+      const parsedLines = lines.map((line) => JSON.parse(line) as unknown);
+      expect(parsedLines).toEqual(items);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("torn-write round-trip (array): resuming from the last known-good bytesWritten past a mid-item crash still parses to N well-formed, non-duplicated items", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "m3l-exporter-resume-"));
+    try {
+      const filePath = path.join(dir, "records.json");
+      const items = [
+        { id: "1" },
+        { id: "2" },
+        { id: "3" },
+        { id: "4" },
+      ] satisfies Record_[];
+
+      const exporter1 = new M3LJSONListExporter<Record_>({
+        filePath,
+        format: "array",
+      });
+      const writer1 = exporter1.exportStream();
+      await writer1.append(items[0] as Record_);
+      await writer1.append(items[1] as Record_);
+      const lastKnownGoodOffset = writer1.bytesWritten;
+      expect(typeof lastKnownGoodOffset).toBe("number");
+
+      await writer1.append(items[2] as Record_);
+      const fullOffset = writer1.bytesWritten;
+      expect(typeof fullOffset).toBe("number");
+      const midItemOffset = lastKnownGoodOffset + 3;
+      expect(midItemOffset).toBeLessThan(fullOffset);
+      fs.truncateSync(filePath, midItemOffset);
+      // writer1 is abandoned here — never closed, so no trailing ']' either.
+
+      const exporter2 = new M3LJSONListExporter<Record_>({
+        filePath,
+        format: "array",
+        resumeFromByte: lastKnownGoodOffset,
+      });
+      const writer2 = exporter2.exportStream();
+      await writer2.append(items[2] as Record_);
+      await writer2.append(items[3] as Record_);
+      await writer2.close();
+
+      const finalContent = await readFile(filePath, "utf8");
+      const parsed: unknown = JSON.parse(finalContent);
+      expect(parsed).toEqual(items);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1077,6 +1530,23 @@ describe("M3LHTMLListExporter", () => {
     expect(content).toContain("2");
     expect(content).toContain("Ada");
     expect(content).toContain("Linus");
+  });
+
+  test("exportStream()'s bytesWritten getter delegates through the HTML stream writer: reads 0 while rows are buffered, and the real total only after close() flushes the document", async () => {
+    const stream = stubWriteStream();
+    const exporter = new M3LHTMLListExporter<Row>({
+      filePath: "/exports/bytes.html",
+    });
+
+    const writer = exporter.exportStream();
+    expect(writer.bytesWritten).toBe(0);
+
+    await writer.append({ id: "1", name: "Ada" });
+    expect(writer.bytesWritten).toBe(0);
+
+    await writer.close();
+    expect(writer.bytesWritten).toBe(Buffer.byteLength(stream.content()));
+    expect(writer.bytesWritten).toBeGreaterThan(0);
   });
 
   test("streaming: close() with zero appends still renders a valid document with {{count}} = 0", async () => {
