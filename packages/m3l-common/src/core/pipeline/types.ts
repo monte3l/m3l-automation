@@ -62,7 +62,7 @@ export interface M3LOperationPipelineBaseDeps {
  * type Guardable = Core.M3LGuardableKey<Settings>; // "key"
  * ```
  */
-export type M3LGuardableKey<TSettings> = {
+export type M3LGuardableKey<TSettings extends object> = {
   [K in keyof TSettings & string]: undefined extends TSettings[K] ? K : never;
 }[keyof TSettings & string];
 
@@ -99,7 +99,7 @@ export type M3LGuardableKey<TSettings> = {
  */
 export type M3LOperationHandlers<
   TOp extends string,
-  TSettings,
+  TSettings extends object,
   TDeps,
   TResult,
   TContext,
@@ -148,7 +148,7 @@ export type M3LOperationHandlers<
  */
 export type M3LPipelineDeclinePolicy<
   TOp extends string,
-  TSettings,
+  TSettings extends object,
   TDeps,
   TResult,
 > =
@@ -206,7 +206,7 @@ export type M3LPipelineDeclinePolicy<
  */
 export interface M3LPipelineDestructiveOptions<
   TOp extends string,
-  TSettings,
+  TSettings extends object,
   TDeps,
   TResult,
   TContext,
@@ -229,9 +229,102 @@ export interface M3LPipelineDestructiveOptions<
 }
 
 /**
+ * The members of {@link M3LOperationPipelineOptions} that don't depend on
+ * whether `prepare` is required — kept as its own (unexported) shape so the
+ * public type can intersect it with a `prepare` arm chosen conditionally on
+ * `TContext`, instead of duplicating every other member across two branches.
+ *
+ * @typeParam TOp - The closed operation-name union read from the `operation`
+ *   config parameter via `accessor.oneOf`.
+ * @typeParam TSettings - The struct `resolveSettings` returns.
+ * @typeParam TDeps - The dependency bag passed to `run`; must extend {@link
+ *   M3LOperationPipelineBaseDeps}.
+ * @typeParam TResult - The result type every handler resolves and the
+ *   outcome carries.
+ * @typeParam TContext - The value `prepare` produces, fed to the gate's
+ *   `describe` and to every handler. Defaults to `undefined` when no
+ *   `prepare` is configured.
+ */
+interface M3LOperationPipelineCoreOptions<
+  TOp extends string,
+  TSettings extends object,
+  TDeps extends M3LOperationPipelineBaseDeps,
+  TResult,
+  TContext,
+> {
+  /**
+   * The closed set of operation names, checked via `accessor.oneOf`. A
+   * non-empty readonly tuple, not a plain `readonly TOp[]` — a widened
+   * `readonly string[]` no longer type-checks here, so `TOp` cannot
+   * silently widen to `string` and dissolve the handler table's
+   * exhaustiveness (an empty array would otherwise type-check while
+   * defeating every mapped type keyed off `TOp`).
+   */
+  readonly operations: readonly [TOp, ...(readonly TOp[])];
+  /** The `M3LError` code attached to every guard/config failure. */
+  readonly configCode: string;
+  /**
+   * Resolves the settings struct for the chosen operation. Must not re-read
+   * the `"operation"` parameter or apply its own required-field guards —
+   * those are owned by the "Operation" and "Guards" phases.
+   */
+  readonly resolveSettings: (
+    accessor: M3LConfigAccessor,
+    operation: TOp,
+  ) => TSettings | Promise<TSettings>;
+  /**
+   * Per-operation list of guardable settings keys checked via
+   * `accessor.requiredFor`. Exhaustive over `TOp` at the type level;
+   * operations requiring nothing use an empty array.
+   */
+  readonly requiredFields?: {
+    readonly [K in TOp]: readonly M3LGuardableKey<TSettings>[];
+  };
+  /** Destructive-operation confirmation gate; omit for a non-destructive pipeline. */
+  readonly destructive?: M3LPipelineDestructiveOptions<
+    TOp,
+    TSettings,
+    TDeps,
+    TResult,
+    TContext
+  >;
+  /** The exhaustive per-operation dispatch table. */
+  readonly handlers: M3LOperationHandlers<
+    TOp,
+    TSettings,
+    TDeps,
+    TResult,
+    TContext
+  >;
+  /** Runs after dispatch, before `finalize`, to persist the handler's result. */
+  readonly persist?: (
+    result: TResult,
+    settings: TSettings,
+    deps: TDeps,
+  ) => Promise<void>;
+  /**
+   * Runs after `persist`, so a post-dispatch assertion that throws still
+   * leaves the persisted result on disk.
+   */
+  readonly finalize?: (
+    result: TResult,
+    settings: TSettings,
+    deps: TDeps,
+  ) => void | Promise<void>;
+}
+
+/**
  * Constructor options for {@link M3LOperationPipeline}. Fully generic over
  * the operation union, settings struct, dependency bag, result type, and the
  * optional `prepare`-produced context type.
+ *
+ * `prepare` is conditionally required: when `TContext` is `undefined` (the
+ * default, no `prepare` configured), `prepare` stays optional; when
+ * `TContext` is anything else, `prepare` becomes a required member. This
+ * makes the engine's `undefined as TContext` fallback cast
+ * (`M3LOperationPipeline.run`, phase 5) type-system-guaranteed rather than
+ * merely documented — a caller cannot pin a non-`undefined` `TContext`
+ * without also supplying the `prepare` that produces it.
  *
  * @typeParam TOp - The closed operation-name union read from the `operation`
  *   config parameter via `accessor.oneOf`.
@@ -269,75 +362,40 @@ export interface M3LPipelineDestructiveOptions<
  * };
  * ```
  */
-export interface M3LOperationPipelineOptions<
+export type M3LOperationPipelineOptions<
   TOp extends string,
-  TSettings,
+  TSettings extends object,
   TDeps extends M3LOperationPipelineBaseDeps,
   TResult,
   TContext = undefined,
-> {
-  /** The closed set of operation names, checked via `accessor.oneOf`. */
-  readonly operations: readonly TOp[];
-  /** The `M3LError` code attached to every guard/config failure. */
-  readonly configCode: string;
-  /**
-   * Resolves the settings struct for the chosen operation. Must not re-read
-   * the `"operation"` parameter or apply its own required-field guards —
-   * those are owned by the "Operation" and "Guards" phases.
-   */
-  readonly resolveSettings: (
-    accessor: M3LConfigAccessor,
-    operation: TOp,
-  ) => TSettings | Promise<TSettings>;
-  /**
-   * Per-operation list of guardable settings keys checked via
-   * `accessor.requiredFor`. Exhaustive over `TOp` at the type level;
-   * operations requiring nothing use an empty array.
-   */
-  readonly requiredFields?: {
-    readonly [K in TOp]: readonly M3LGuardableKey<TSettings>[];
-  };
-  /**
-   * Runs once, before the destructive gate. Its return value feeds both the
-   * gate's `describe` and every handler as `context`.
-   */
-  readonly prepare?: (
-    operation: TOp,
-    settings: TSettings,
-    deps: TDeps,
-  ) => Promise<TContext>;
-  /** Destructive-operation confirmation gate; omit for a non-destructive pipeline. */
-  readonly destructive?: M3LPipelineDestructiveOptions<
-    TOp,
-    TSettings,
-    TDeps,
-    TResult,
-    TContext
-  >;
-  /** The exhaustive per-operation dispatch table. */
-  readonly handlers: M3LOperationHandlers<
-    TOp,
-    TSettings,
-    TDeps,
-    TResult,
-    TContext
-  >;
-  /** Runs after dispatch, before `finalize`, to persist the handler's result. */
-  readonly persist?: (
-    result: TResult,
-    settings: TSettings,
-    deps: TDeps,
-  ) => Promise<void>;
-  /**
-   * Runs after `persist`, so a post-dispatch assertion that throws still
-   * leaves the persisted result on disk.
-   */
-  readonly finalize?: (
-    result: TResult,
-    settings: TSettings,
-    deps: TDeps,
-  ) => void | Promise<void>;
-}
+> = M3LOperationPipelineCoreOptions<TOp, TSettings, TDeps, TResult, TContext> &
+  ([TContext] extends [undefined]
+    ? {
+        /**
+         * Runs once, before the destructive gate. Its return value feeds
+         * both the gate's `describe` and every handler as `context`.
+         * Optional here because `TContext` is `undefined` — no `prepare`
+         * is configured, so `context` is `undefined` throughout the run.
+         */
+        readonly prepare?: (
+          operation: TOp,
+          settings: TSettings,
+          deps: TDeps,
+        ) => Promise<TContext>;
+      }
+    : {
+        /**
+         * Runs once, before the destructive gate. Its return value feeds
+         * both the gate's `describe` and every handler as `context`.
+         * Required here because `TContext` is not `undefined` — the engine
+         * has no other way to produce a `TContext` value.
+         */
+        readonly prepare: (
+          operation: TOp,
+          settings: TSettings,
+          deps: TDeps,
+        ) => Promise<TContext>;
+      });
 
 /**
  * The value resolved by {@link M3LOperationPipeline.run}.

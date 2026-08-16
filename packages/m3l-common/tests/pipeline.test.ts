@@ -52,8 +52,8 @@ import type {
 // Shared behavioral fixture
 // ---------------------------------------------------------------------------
 
-type TestOp = "read" | "write";
-const TEST_OPS: readonly TestOp[] = ["read", "write"];
+const TEST_OPS = ["read", "write"] as const;
+type TestOp = (typeof TEST_OPS)[number];
 
 interface TestSettings {
   readonly bucket?: string | undefined;
@@ -140,6 +140,10 @@ describe("core/pipeline", () => {
       operations: TEST_OPS,
       configCode: "ERR_TEST_CONFIG",
       resolveSettings: () => ({ yes: false }),
+      // Pinned TestContext is not exercised by any construction-time case
+      // below; a trivial prepare keeps this literal well-typed once
+      // `prepare` becomes required whenever TContext !== undefined.
+      prepare: () => Promise.resolve({ note: "n" }),
       handlers: NOOP_HANDLERS,
     };
 
@@ -156,10 +160,17 @@ describe("core/pipeline", () => {
     ][] = [
       [
         "B40 empty operations",
-        () => ({
-          ...baseOptions,
-          operations: [],
-        }),
+        () =>
+          ({
+            ...baseOptions,
+            operations: [] as readonly string[],
+          }) as unknown as M3LOperationPipelineOptions<
+            TestOp,
+            TestSettings,
+            TestDeps,
+            TestResult,
+            TestContext
+          >,
       ],
       [
         "B41 duplicate operations",
@@ -216,8 +227,14 @@ describe("core/pipeline", () => {
       try {
         new M3LOperationPipeline({
           ...baseOptions,
-          operations: [],
-        });
+          operations: [] as readonly string[],
+        } as unknown as M3LOperationPipelineOptions<
+          TestOp,
+          TestSettings,
+          TestDeps,
+          TestResult,
+          TestContext
+        >);
       } catch (error) {
         thrown = error;
       }
@@ -242,8 +259,14 @@ describe("core/pipeline", () => {
       try {
         new M3LOperationPipeline({
           ...baseOptions,
-          operations: [],
-        });
+          operations: [] as readonly string[],
+        } as unknown as M3LOperationPipelineOptions<
+          TestOp,
+          TestSettings,
+          TestDeps,
+          TestResult,
+          TestContext
+        >);
       } catch (error) {
         thrown = error;
       }
@@ -310,6 +333,9 @@ describe("core/pipeline", () => {
         configCode: "ERR_TEST_CONFIG",
         resolveSettings: () => ({ yes: false }),
         requiredFields: { read: [], write: [] },
+        // Not exercised here (operation resolution fails before prepare);
+        // trivial, kept only to satisfy the pinned TestContext generic.
+        prepare: () => Promise.resolve({ note: "n" }),
         handlers: NOOP_HANDLERS,
       });
     }
@@ -384,7 +410,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -415,7 +441,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -452,6 +478,9 @@ describe("core/pipeline", () => {
           return { yes: false };
         },
         requiredFields: { read: [], write: ["bucket"] },
+        // Not exercised here (the guard rejects before prepare runs);
+        // trivial, kept only to satisfy the pinned TestContext generic.
+        prepare: () => Promise.resolve({ note: "n" }),
         handlers: NOOP_HANDLERS,
       });
 
@@ -641,7 +670,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -675,6 +704,47 @@ describe("core/pipeline", () => {
       expect(thrown).toBeInstanceOf(M3LError);
       expect(prepare).not.toHaveBeenCalled();
       expect(handler).not.toHaveBeenCalled();
+    });
+
+    test("SC-A a requiredFields row with multiple missing keys names the FIRST missing key in array order", async () => {
+      interface MultiGuardSettings {
+        readonly first?: string | undefined;
+        readonly second?: string | undefined;
+        readonly third?: string | undefined;
+      }
+      type MultiGuardOp = "multi";
+      const { deps, config } = makeHarness();
+      config.set("operation", "multi");
+
+      const pipeline = new M3LOperationPipeline<
+        MultiGuardOp,
+        MultiGuardSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: ["multi"],
+        configCode: "ERR_TEST_CONFIG",
+        // "second" and "third" are both missing; "first" is present. The
+        // row lists "second" ahead of "third", so the guard must name
+        // "second" — not "third", and not alphabetical/declaration order.
+        resolveSettings: () => ({ first: "present" }),
+        requiredFields: { multi: ["first", "second", "third"] },
+        handlers: {
+          multi: () => Promise.reject(new Error("handler should not run")),
+        },
+      });
+
+      let thrown: unknown;
+      try {
+        await pipeline.run(deps);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).message).toBe(
+        "'second' is required for operation 'multi'",
+      );
     });
   });
 
@@ -881,7 +951,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -906,7 +976,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -942,7 +1012,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -978,7 +1048,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -1021,7 +1091,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -1057,7 +1127,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -1076,6 +1146,134 @@ describe("core/pipeline", () => {
       await expect(pipeline.run(deps)).rejects.toBe(foreignError);
       expect(handler).not.toHaveBeenCalled();
     });
+
+    test("SF-A a synchronous throw from destructive.describe propagates reference-identically; confirm and handler are skipped", async () => {
+      const describeError = new Error("describe blew up");
+      const { deps, config, confirmMock } = makeHarness();
+      config.set("operation", "write");
+      const handler = vi.fn(() => Promise.resolve({ processed: 0 }));
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        destructive: {
+          operations: new Set(["write"]),
+          describe: () => {
+            throw describeError;
+          },
+          yes: () => false,
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: { kind: "throw" },
+        },
+        handlers: { read: handler, write: handler },
+      });
+
+      let thrown: unknown;
+      try {
+        await pipeline.run(deps);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBe(describeError);
+      expect(confirmMock).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    test("SF-A a synchronous throw from destructive.yes propagates reference-identically; confirm and handler are skipped", async () => {
+      const yesError = new Error("yes blew up");
+      const { deps, config, confirmMock } = makeHarness();
+      config.set("operation", "write");
+      const handler = vi.fn(() => Promise.resolve({ processed: 0 }));
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        destructive: {
+          operations: new Set(["write"]),
+          describe: () => "destroy",
+          yes: () => {
+            throw yesError;
+          },
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: { kind: "throw" },
+        },
+        handlers: { read: handler, write: handler },
+      });
+
+      let thrown: unknown;
+      try {
+        await pipeline.run(deps);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBe(yesError);
+      expect(confirmMock).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    test.each([
+      ["a string rejection", "cancelled"],
+      ["a null rejection", null],
+    ])(
+      "SF-C %s from the prompt adapter propagates as-is under soft-land — never treated as a decline",
+      async (_label, rejectionValue) => {
+        const { deps, config } = makeHarness(() =>
+          // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- intentional primitive rejection to prove it propagates un-normalized, not treated as a decline
+          Promise.reject(rejectionValue),
+        );
+        config.set("operation", "write");
+        const handler = vi.fn(() => Promise.resolve({ processed: 0 }));
+
+        const pipeline = new M3LOperationPipeline<
+          TestOp,
+          TestSettings,
+          TestDeps,
+          TestResult,
+          undefined
+        >({
+          operations: TEST_OPS,
+          configCode: "ERR_TEST_CONFIG",
+          resolveSettings: () => ({ yes: false }),
+          requiredFields: { read: [], write: [] },
+          destructive: {
+            operations: new Set(["write"]),
+            describe: () => "destroy",
+            yes: () => false,
+            abortCode: "ERR_TEST_ABORTED",
+            onDecline: {
+              kind: "soft-land",
+              result: () => ({ processed: -1 }),
+            },
+          },
+          handlers: { read: handler, write: handler },
+        });
+
+        let thrown: unknown;
+        try {
+          await pipeline.run(deps);
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown).toBe(rejectionValue);
+        expect(handler).not.toHaveBeenCalled();
+      },
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -1092,7 +1290,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -1137,7 +1335,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -1187,6 +1385,9 @@ describe("core/pipeline", () => {
         configCode: "ERR_TEST_CONFIG",
         resolveSettings: () => ({ yes: false }),
         requiredFields: { read: [], write: [] },
+        // Not exercised (decline always fires); trivial, kept only to
+        // satisfy the pinned TestContext generic.
+        prepare: () => Promise.resolve({ note: "n" }),
         destructive: {
           operations: new Set(["write"]),
           describe: () => "destroy",
@@ -1255,6 +1456,9 @@ describe("core/pipeline", () => {
         configCode: "ERR_TEST_CONFIG",
         resolveSettings: () => ({ yes: false }),
         requiredFields: { read: [], write: [] },
+        // Not exercised (decline always fires); trivial, kept only to
+        // satisfy the pinned TestContext generic.
+        prepare: () => Promise.resolve({ note: "n" }),
         destructive: {
           operations: new Set(["write"]),
           describe: () => "destroy",
@@ -1271,6 +1475,105 @@ describe("core/pipeline", () => {
       });
 
       await pipeline.run(deps);
+      expect(persist).not.toHaveBeenCalled();
+      expect(finalize).not.toHaveBeenCalled();
+    });
+
+    test("SF-B a throw from onDecline.warning propagates; handler/persist/finalize are not called", async () => {
+      const warningError = new Error("warning blew up");
+      const { deps, config } = makeHarness(() => Promise.resolve(false));
+      config.set("operation", "write");
+      const handler = vi.fn(() => Promise.resolve({ processed: 0 }));
+      const persist = vi.fn(() => Promise.resolve(undefined));
+      const finalize = vi.fn(() => undefined);
+      const resultFn = vi.fn(() => ({ processed: 0 }));
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        destructive: {
+          operations: new Set(["write"]),
+          describe: () => "destroy",
+          yes: () => false,
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: {
+            kind: "soft-land",
+            result: resultFn,
+            warning: () => {
+              throw warningError;
+            },
+          },
+        },
+        handlers: { read: handler, write: handler },
+        persist,
+        finalize,
+      });
+
+      let thrown: unknown;
+      try {
+        await pipeline.run(deps);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBe(warningError);
+      expect(resultFn).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+      expect(persist).not.toHaveBeenCalled();
+      expect(finalize).not.toHaveBeenCalled();
+    });
+
+    test("SF-B a throw from onDecline.result propagates; handler/persist/finalize are not called", async () => {
+      const resultError = new Error("result blew up");
+      const { deps, config } = makeHarness(() => Promise.resolve(false));
+      config.set("operation", "write");
+      const handler = vi.fn(() => Promise.resolve({ processed: 0 }));
+      const persist = vi.fn(() => Promise.resolve(undefined));
+      const finalize = vi.fn(() => undefined);
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        destructive: {
+          operations: new Set(["write"]),
+          describe: () => "destroy",
+          yes: () => false,
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: {
+            kind: "soft-land",
+            result: () => {
+              throw resultError;
+            },
+          },
+        },
+        handlers: { read: handler, write: handler },
+        persist,
+        finalize,
+      });
+
+      let thrown: unknown;
+      try {
+        await pipeline.run(deps);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBe(resultError);
+      expect(handler).not.toHaveBeenCalled();
       expect(persist).not.toHaveBeenCalled();
       expect(finalize).not.toHaveBeenCalled();
     });
@@ -1319,7 +1622,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -1350,7 +1653,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -1376,7 +1679,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -1405,7 +1708,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -1434,7 +1737,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -1482,7 +1785,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -1523,7 +1826,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -1551,7 +1854,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -1582,7 +1885,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -1676,10 +1979,8 @@ describe("core/pipeline", () => {
     });
 
     test("B3 a throw during any phase stops the run there; no later phase runs", async () => {
-      const order: string[] = [];
       const { config } = makeHarness();
       config.set("operation", "write");
-      void order;
 
       // resolveSettings throws
       {
@@ -1779,7 +2080,7 @@ describe("core/pipeline", () => {
           TestSettings,
           TestDeps,
           TestResult,
-          TestContext
+          undefined
         >({
           operations: TEST_OPS,
           configCode: "ERR_TEST_CONFIG",
@@ -1822,7 +2123,7 @@ describe("core/pipeline", () => {
         TestSettings,
         TestDeps,
         TestResult,
-        TestContext
+        undefined
       >({
         operations: TEST_OPS,
         configCode: "ERR_TEST_CONFIG",
@@ -1855,10 +2156,66 @@ describe("core/pipeline", () => {
       const outcomeB = await pipeline.run(depsB);
       expect(outcomeB.result).toEqual({ processed: 2 });
     });
+
+    test("SC-B two concurrent run() calls on one instance via Promise.all show no cross-talk", async () => {
+      const seen: { read?: TestSettings; write?: TestSettings } = {};
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        // The `await Promise.resolve()` yields to the microtask queue so the
+        // two concurrent run() calls below genuinely interleave through this
+        // phase instead of resolving sequentially before the other starts.
+        resolveSettings: async (accessor) => {
+          await Promise.resolve();
+          return { bucket: accessor.optionalString("bucket"), yes: false };
+        },
+        requiredFields: { read: [], write: [] },
+        handlers: {
+          read: (_operation, settings) => {
+            seen.read = settings;
+            return Promise.resolve({
+              processed: settings.bucket === "first" ? 1 : -1,
+            });
+          },
+          write: (_operation, settings) => {
+            seen.write = settings;
+            return Promise.resolve({
+              processed: settings.bucket === "second" ? 2 : -1,
+            });
+          },
+        },
+      });
+
+      const { deps: depsA, config: configA } = makeHarness();
+      configA.set("operation", "read");
+      configA.set("bucket", "first");
+
+      const { deps: depsB, config: configB } = makeHarness();
+      configB.set("operation", "write");
+      configB.set("bucket", "second");
+
+      const [outcomeA, outcomeB] = await Promise.all([
+        pipeline.run(depsA),
+        pipeline.run(depsB),
+      ]);
+
+      expect(outcomeA.result).toEqual({ processed: 1 });
+      expect(outcomeB.result).toEqual({ processed: 2 });
+      expect(seen.read).not.toBe(seen.write);
+      expect(seen.read?.bucket).toBe("first");
+      expect(seen.write?.bucket).toBe("second");
+    });
   });
 
   // -------------------------------------------------------------------------
-  // Type-level contract (T1-T12)
+  // Type-level contract (T1-T13)
   // -------------------------------------------------------------------------
   describe("type-level contract", () => {
     const T1_OPS = ["list", "describe", "get", "put", "delete-batch"] as const;
@@ -2203,6 +2560,59 @@ describe("core/pipeline", () => {
           // `{ count: number }`; TResult cannot unify. The diagnostic's exact
           // location/code is not asserted — only that construction errors.
           list: () => Promise.resolve({ count: 0 }),
+        },
+      });
+    });
+
+    test("T13 @ts-expect-error prepare is required whenever TContext is pinned to a non-undefined type", () => {
+      interface Ctx {
+        readonly plan: string;
+      }
+      new M3LOperationPipeline<
+        "delete",
+        { readonly key: string },
+        M3LOperationPipelineBaseDeps,
+        { readonly processed: number },
+        Ctx
+      >(
+        // @ts-expect-error — TContext is pinned to `Ctx` (not `undefined`) via
+        // the explicit type args above, so `prepare` becomes a required
+        // member of the conditional intersection (see
+        // M3LOperationPipelineOptions); omitting it here must fail to
+        // compile.
+        {
+          operations: ["delete"],
+          configCode: "ERR_TEST_CONFIG",
+          resolveSettings: () => ({ key: "k" }),
+          requiredFields: { delete: [] },
+          handlers: {
+            delete: (
+              _op: "delete",
+              _settings: { readonly key: string },
+              ctx: Ctx,
+            ) => {
+              expectTypeOf(ctx).toEqualTypeOf<Ctx>();
+              return Promise.resolve({ processed: ctx.plan.length });
+            },
+          },
+        },
+      );
+    });
+
+    test("T14 @ts-expect-error a widened operations array is rejected", () => {
+      const widened: readonly string[] = ["read", "write"];
+      new M3LOperationPipeline({
+        // @ts-expect-error — `operations` requires the non-empty readonly
+        // tuple `readonly [TOp, ...(readonly TOp[])]`, not a widened
+        // `readonly string[]`; a widened array would infer TOp = string
+        // and dissolve handler-table exhaustiveness.
+        operations: widened,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ key: "k" }),
+        requiredFields: { read: [], write: [] },
+        handlers: {
+          read: () => Promise.resolve({ count: 0 }),
+          write: () => Promise.resolve({ count: 0 }),
         },
       });
     });

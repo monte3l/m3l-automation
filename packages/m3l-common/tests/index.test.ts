@@ -69,6 +69,7 @@ const CORE_REACHABILITY_CASES: ReadonlyArray<
   ["logging", "M3LLogger", "function"],
   ["messaging", "M3LMessenger", "function"],
   ["network", "M3LHttpClient", "function"],
+  ["pipeline", "M3LOperationPipeline", "function"],
   ["polling", "M3LPoller", "function"],
   ["prompt", "M3LPrompt", "function"],
   ["script", "M3LScript", "function"],
@@ -143,11 +144,11 @@ test.each(AWS_REACHABILITY_CASES)(
 
 test("Core namespace exposes at least as many keys as there are wired submodule barrels", () => {
   // Mirrors the number of `export * from "./<module>/index.js"` lines in
-  // src/core/index.ts (20, per ADR-0035 phase 1 — bump this alongside a new
-  // submodule barrel). The per-submodule cases above are the primary defense
-  // against one dropped export line; this is a coarse secondary canary that
-  // catches a wholesale collapse of the barrel's export list.
-  const CORE_WIRED_SUBMODULE_COUNT = 20;
+  // src/core/index.ts (22, including core/pipeline — bump this alongside a
+  // new submodule barrel). The per-submodule cases above are the primary
+  // defense against one dropped export line; this is a coarse secondary
+  // canary that catches a wholesale collapse of the barrel's export list.
+  const CORE_WIRED_SUBMODULE_COUNT = 22;
   expect(Object.keys(m3l.Core).length).toBeGreaterThanOrEqual(
     CORE_WIRED_SUBMODULE_COUNT,
   );

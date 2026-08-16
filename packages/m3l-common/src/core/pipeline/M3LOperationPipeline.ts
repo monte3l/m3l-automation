@@ -75,7 +75,7 @@ import type {
  */
 export class M3LOperationPipeline<
   TOp extends string,
-  TSettings,
+  TSettings extends object,
   TDeps extends M3LOperationPipelineBaseDeps,
   TResult,
   TContext = undefined,
@@ -138,11 +138,11 @@ export class M3LOperationPipeline<
     // Phase 4: guards, checked in the row's array order; first miss throws.
     this.#runGuards(accessor, operation, settings);
 
-    // Phase 5: prepare, once, before the gate. Without a `prepare` callback,
-    // TContext is pinned to `undefined` at the type level (see
-    // M3LOperationPipelineOptions's TContext default and the T8 contract
-    // test) — the runtime cast below reflects that compile-time guarantee,
-    // which the class cannot otherwise express for an unconstrained generic.
+    // Phase 5: prepare, once, before the gate. M3LOperationPipelineOptions
+    // makes `prepare` required whenever TContext is not `undefined` (a
+    // conditional type keyed on TContext), so the only way to reach this
+    // branch with `options.prepare` absent is TContext === undefined — the
+    // cast below is type-system-guaranteed, not merely documented.
     const context = options.prepare
       ? await options.prepare(operation, settings, deps)
       : (undefined as TContext);

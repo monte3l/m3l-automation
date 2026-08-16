@@ -37,7 +37,7 @@ import type {
  */
 export function validatePipelineOptions<
   TOp extends string,
-  TSettings,
+  TSettings extends object,
   TDeps extends M3LOperationPipelineBaseDeps,
   TResult,
   TContext,

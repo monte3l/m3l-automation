@@ -114,13 +114,13 @@ interface M3LOperationPipelineBaseDeps {
   readonly prompt: M3LPrompt;
 }
 
-type M3LGuardableKey<TSettings> = {
+type M3LGuardableKey<TSettings extends object> = {
   [K in keyof TSettings & string]: undefined extends TSettings[K] ? K : never;
 }[keyof TSettings & string];
 
 type M3LOperationHandlers<
   TOp extends string,
-  TSettings,
+  TSettings extends object,
   TDeps,
   TResult,
   TContext,
@@ -133,7 +133,12 @@ type M3LOperationHandlers<
   ) => Promise<TResult>;
 };
 
-type M3LPipelineDeclinePolicy<TOp extends string, TSettings, TDeps, TResult> =
+type M3LPipelineDeclinePolicy<
+  TOp extends string,
+  TSettings extends object,
+  TDeps,
+  TResult,
+> =
   | { readonly kind: "throw" }
   | {
       readonly kind: "soft-land";
@@ -151,7 +156,7 @@ type M3LPipelineDeclinePolicy<TOp extends string, TSettings, TDeps, TResult> =
 
 interface M3LPipelineDestructiveOptions<
   TOp extends string,
-  TSettings,
+  TSettings extends object,
   TDeps,
   TResult,
   TContext,
@@ -168,14 +173,45 @@ interface M3LPipelineDestructiveOptions<
   readonly onDecline: M3LPipelineDeclinePolicy<TOp, TSettings, TDeps, TResult>;
 }
 
-interface M3LOperationPipelineOptions<
+// The exported options type is an intersection: a core shape carrying every
+// member except `prepare`, plus a conditional arm that makes `prepare`
+// OPTIONAL when `TContext` is `undefined` and REQUIRED otherwise — so a
+// handler can never receive a typed-non-undefined `context` holding
+// `undefined` at runtime.
+type M3LOperationPipelineOptions<
   TOp extends string,
-  TSettings,
+  TSettings extends object,
   TDeps extends M3LOperationPipelineBaseDeps,
   TResult,
   TContext = undefined,
+> = M3LOperationPipelineCoreOptions<TOp, TSettings, TDeps, TResult, TContext> &
+  ([TContext] extends [undefined]
+    ? {
+        readonly prepare?: (
+          operation: TOp,
+          settings: TSettings,
+          deps: TDeps,
+        ) => Promise<TContext>;
+      }
+    : {
+        readonly prepare: (
+          operation: TOp,
+          settings: TSettings,
+          deps: TDeps,
+        ) => Promise<TContext>;
+      });
+
+// Core shape (not exported — reachable only through M3LOperationPipelineOptions):
+interface M3LOperationPipelineCoreOptions<
+  TOp extends string,
+  TSettings extends object,
+  TDeps extends M3LOperationPipelineBaseDeps,
+  TResult,
+  TContext,
 > {
-  readonly operations: readonly TOp[];
+  /** Non-empty tuple of literal operation names — a widened `readonly
+   *  string[]` is rejected so `TOp` cannot silently widen to `string`. */
+  readonly operations: readonly [TOp, ...(readonly TOp[])];
   readonly configCode: string;
   readonly resolveSettings: (
     accessor: M3LConfigAccessor,
@@ -184,11 +220,6 @@ interface M3LOperationPipelineOptions<
   readonly requiredFields?: {
     readonly [K in TOp]: readonly M3LGuardableKey<TSettings>[];
   };
-  readonly prepare?: (
-    operation: TOp,
-    settings: TSettings,
-    deps: TDeps,
-  ) => Promise<TContext>;
   readonly destructive?: M3LPipelineDestructiveOptions<
     TOp,
     TSettings,
@@ -223,7 +254,7 @@ interface M3LOperationPipelineOutcome<TOp extends string, TResult> {
 
 class M3LOperationPipeline<
   TOp extends string,
-  TSettings,
+  TSettings extends object,
   TDeps extends M3LOperationPipelineBaseDeps,
   TResult,
   TContext = undefined,
@@ -257,10 +288,12 @@ class M3LOperationPipeline<
   can never name an always-present field.
 - **Inference.** All five generics infer from a single options-object literal
   when `resolveSettings` and the handler functions are standalone typed
-  declarations. If inference proves brittle in practice, the pre-agreed
-  fallback is a curried builder (`createOperationPipeline<TSettings,
-TDeps>()({...})`) — a decision to make at spec-conformance review, not
-  mid-implementation.
+  declarations — proven at contract time by compiling s3-objects-shaped
+  fixtures with zero diagnostics and locked by the suite's type-level tests.
+  The once-considered curried-builder fallback is **declined** (recorded at
+  spec-conformance review). One caveat the fixtures encode: `TDeps` infers
+  only from callback parameter positions, so at least one callback must
+  annotate its `deps` parameter with the script's deps type.
 
 ## Construction-time validation
 

@@ -365,7 +365,7 @@
     "namespace": "core",
     "name": "pipeline",
     "importPath": "@m3l-automation/m3l-common/core",
-    "status": "🧪",
+    "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/pipeline.md",
     "symbols": []
