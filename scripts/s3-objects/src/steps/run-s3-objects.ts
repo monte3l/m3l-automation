@@ -9,14 +9,6 @@ import { runSingleObjectOp } from "./single-object-ops.js";
 /** The closed union of `s3-objects`'s declared `operation` values. */
 type S3ObjectsOperation = (typeof S3_OBJECTS_OPERATIONS)[number];
 
-/** Operations that route through {@link Core.confirmDestructive} before proceeding. */
-const DESTRUCTIVE_OPERATIONS: ReadonlySet<S3ObjectsOperation> = new Set([
-  "put",
-  "copy",
-  "delete",
-  "delete-batch",
-]);
-
 /** The run summary `run-s3-objects` reports: objects/keys processed and failed. */
 export interface RunS3ObjectsSummary {
   /**
@@ -53,7 +45,8 @@ type GuardedFieldName =
  * requires (see the contract's per-operation requirement table). Keyed as a
  * `Record<S3ObjectsOperation, …>` so a new operation added to
  * {@link S3_OBJECTS_OPERATIONS} without a corresponding entry here is a
- * compile error.
+ * compile error. Fed to `Core.M3LOperationPipeline`'s `requiredFields`
+ * option, which owns the actual per-operation guard check.
  */
 const REQUIRED_FIELDS: Record<S3ObjectsOperation, readonly GuardedFieldName[]> =
   {
@@ -67,40 +60,18 @@ const REQUIRED_FIELDS: Record<S3ObjectsOperation, readonly GuardedFieldName[]> =
   };
 
 /**
- * Applies the cross-parameter requirements `M3LConfigParameter` cannot
- * express on its own (e.g. `key` is required for `describe` but not `list`),
- * throwing before any AWS call.
+ * Resolves every declared parameter this run needs from the pipeline's own
+ * accessor. `operation`/`bucket`/`aws.profile` presence is enforced by the
+ * declared config schema at config-load time in the real script; the type
+ * re-checks here are defensive (a caller building `Core.M3LConfig` directly
+ * bypasses that validation). Must not re-read `"operation"` or apply its own
+ * required-field guards — `Core.M3LOperationPipeline` owns both (the
+ * "Operation" and "Guards" phases).
  */
-function applyOperationGuards(
+function resolveSettings(
+  accessor: Core.M3LConfigAccessor,
   operation: S3ObjectsOperation,
-  fields: Record<GuardedFieldName, string | undefined>,
-): void {
-  for (const name of REQUIRED_FIELDS[operation]) {
-    if (fields[name] === undefined) {
-      throw new Core.M3LError(
-        `'${name}' is required for operation '${operation}'`,
-        { code: "ERR_S3_OBJECTS_CONFIG" },
-      );
-    }
-  }
-}
-
-/**
- * Resolves and guard-checks every declared parameter this run needs,
- * throwing before any AWS call. `operation`/`bucket`/`aws.profile` presence
- * is enforced by the declared config schema at config-load time in the real
- * script; the type re-checks here are defensive (a caller building
- * `Core.M3LConfig` directly bypasses that validation), and the
- * cross-parameter requirements (e.g. `key` for `describe`) are genuinely
- * only checkable here.
- */
-function resolveSettings(config: Core.M3LConfig): RunSettings {
-  const accessor = new Core.M3LConfigAccessor({
-    config,
-    code: "ERR_S3_OBJECTS_CONFIG",
-  });
-
-  const operation = accessor.oneOf("operation", S3_OBJECTS_OPERATIONS);
+): RunSettings {
   const bucket = accessor.requiredString("bucket", operation);
   const key = accessor.optionalString("key");
   const prefix = accessor.optionalString("prefix");
@@ -111,14 +82,6 @@ function resolveSettings(config: Core.M3LConfig): RunSettings {
   const input = accessor.optionalString("input");
   const output = accessor.optionalString("output");
   const yes = accessor.requiredBoolean("yes", operation);
-
-  applyOperationGuards(operation, {
-    key,
-    output,
-    input,
-    sourceBucket,
-    sourceKey,
-  });
 
   return {
     operation,
@@ -137,10 +100,10 @@ function resolveSettings(config: Core.M3LConfig): RunSettings {
 
 /**
  * Narrows an optional field to its defined value, throwing a defensive
- * config error otherwise. `applyOperationGuards` has already enforced
- * presence for every field callers read this way before those callers are
- * ever invoked — this is a type-narrowing safety net, not an expected
- * runtime path.
+ * config error otherwise. The pipeline's `requiredFields` guard has already
+ * enforced presence for every field callers read this way before those
+ * callers are ever invoked — this is a type-narrowing safety net, not an
+ * expected runtime path.
  */
 function requireDefined(value: string | undefined, name: string): string {
   if (value === undefined) {
@@ -165,8 +128,8 @@ function describeDestructiveOp(settings: RunSettings): string {
     case "list":
     case "describe":
     case "get":
-      // Guarded by DESTRUCTIVE_OPERATIONS.has(...) before this function is
-      // ever called — reaching here means the gate was invoked for a
+      // Guarded by destructive.operations before this function is ever
+      // called — reaching here means the gate was invoked for a
       // non-destructive operation, which is an internal miscall.
       throw new Core.M3LError(
         `internal: describeDestructiveOp called for non-destructive operation '${settings.operation}'`,
@@ -181,11 +144,23 @@ function describeDestructiveOp(settings: RunSettings): string {
   }
 }
 
-/** The dependencies `dispatch` needs once `config` has resolved to `settings`. */
+/** The full dependency bag `runS3Objects` receives and the pipeline threads through. */
+interface Deps extends Core.M3LOperationPipelineBaseDeps {
+  readonly paths: Core.M3LPaths;
+  readonly correlationId: string;
+  readonly s3: Parameters<typeof AWS.listObjects>[0];
+}
+
+/** The dependencies each per-operation dispatch function needs. */
 interface DispatchDeps {
   readonly paths: Core.M3LPaths;
   readonly logger: Core.M3LLogger;
   readonly s3: Parameters<typeof AWS.listObjects>[0];
+}
+
+/** Narrows the full pipeline `Deps` down to what a dispatch function needs. */
+function toDispatchDeps(deps: Deps): DispatchDeps {
+  return { paths: deps.paths, logger: deps.logger, s3: deps.s3 };
 }
 
 /** `list`: streams the bucket listing to `output`, translating `runListObjects`'s summary. */
@@ -207,12 +182,6 @@ async function dispatchList(
   });
   return { processed: summary.processed, failed: 0 };
 }
-
-/** The single-object operations `dispatchSingleObject` routes to `runSingleObjectOp`. */
-type SingleObjectDispatchOperation = Exclude<
-  S3ObjectsOperation,
-  "list" | "delete-batch"
->;
 
 /** `describe`/`get`: routes to `runSingleObjectOp`, reading the object to `output`. */
 async function dispatchDescribeOrGet(
@@ -284,34 +253,6 @@ async function dispatchDeleteObject(
   return { processed: summary.processed, failed: 0 };
 }
 
-/**
- * `describe`/`get`/`put`/`copy`/`delete`: routes to the operation-appropriate
- * `runSingleObjectOp` dispatcher above.
- */
-async function dispatchSingleObject(
-  operation: SingleObjectDispatchOperation,
-  settings: RunSettings,
-  deps: DispatchDeps,
-): Promise<RunS3ObjectsSummary> {
-  switch (operation) {
-    case "describe":
-    case "get":
-      return dispatchDescribeOrGet(operation, settings, deps);
-    case "put":
-      return dispatchPutObject(settings, deps);
-    case "copy":
-      return dispatchCopyObject(settings, deps);
-    case "delete":
-      return dispatchDeleteObject(settings, deps);
-    default: {
-      const exhaustive: never = operation;
-      throw new Core.M3LError(`unhandled operation: ${String(exhaustive)}`, {
-        code: "ERR_S3_OBJECTS_CONFIG",
-      });
-    }
-  }
-}
-
 /** `delete-batch`: deletes every key listed in `input`, translating `runDeleteBatch`'s result. */
 async function dispatchDeleteBatch(
   settings: RunSettings,
@@ -328,44 +269,105 @@ async function dispatchDeleteBatch(
 }
 
 /**
- * Dispatches to the operation-appropriate step, translating each step's own
- * result shape into the shared `{ processed, failed }` run summary.
+ * Adapts a `dispatch*` step function's own parameter shape (`settings`,
+ * `DispatchDeps`) to `Core.M3LOperationHandlers`'s fixed handler signature
+ * (`operation`, `settings`, `context`, `deps`), for the four operations whose
+ * dispatch doesn't need the `operation` argument itself. `handleDescribeOrGet`
+ * stays a standalone named function below since it does need it (routing
+ * `"describe"`/`"get"` through to `dispatchDescribeOrGet`'s own `operation`
+ * parameter). The `"delete-batch"` handler-table key — not camelCase — reads
+ * as a plain object-literal property referencing a `CallExpression` result
+ * rather than an object-literal method, so the workspace's `naming-convention`
+ * ESLint rule doesn't flag it either way.
  */
-async function dispatch(
+function adaptHandler(
+  dispatch: (
+    settings: RunSettings,
+    deps: DispatchDeps,
+  ) => Promise<RunS3ObjectsSummary>,
+) {
+  return (
+    _operation: S3ObjectsOperation,
+    settings: RunSettings,
+    _context: undefined,
+    deps: Deps,
+  ): Promise<RunS3ObjectsSummary> => dispatch(settings, toDispatchDeps(deps));
+}
+
+async function handleDescribeOrGet(
+  operation: "describe" | "get",
   settings: RunSettings,
-  deps: DispatchDeps,
+  _context: undefined,
+  deps: Deps,
 ): Promise<RunS3ObjectsSummary> {
-  switch (settings.operation) {
-    case "list":
-      return dispatchList(settings, deps);
-    case "describe":
-    case "get":
-    case "put":
-    case "copy":
-    case "delete":
-      return dispatchSingleObject(settings.operation, settings, deps);
-    case "delete-batch":
-      return dispatchDeleteBatch(settings, deps);
-    default: {
-      const exhaustive: never = settings.operation;
-      throw new Core.M3LError(`unhandled operation: ${String(exhaustive)}`, {
-        code: "ERR_S3_OBJECTS_CONFIG",
-      });
-    }
-  }
+  return dispatchDescribeOrGet(operation, settings, toDispatchDeps(deps));
 }
 
 /**
- * Composes the `s3-objects` pipeline end to end — the only module that knows
- * operation dispatch order: resolve + guard-check config → (the
- * destructive-operation gate, for `put`/`copy`/`delete`/`delete-batch`) →
- * the operation-appropriate step → the run summary.
+ * The `s3-objects` pipeline: resolve + guard-check config -&gt; (the
+ * destructive-operation gate, for `put`/`copy`/`delete`/`delete-batch`) -&gt;
+ * the operation-appropriate step -&gt; the run summary, all owned by
+ * `Core.M3LOperationPipeline`. Built once at module load — a pipeline
+ * instance is stateless across `run()` calls.
  *
- * An operator declining the destructive-operation gate (`confirm` resolving
- * `false`, surfacing as `ERR_S3_OBJECTS_ABORTED`) soft-lands: this function
- * logs a warning and resolves an all-zero summary rather than throwing. Any
- * other gate failure propagates unmodified. This mirrors `dynamodb-crud`'s
- * `ERR_DYNAMO_CRUD_ABORTED` handling, not `sqs-etl`'s.
+ * An operator declining the destructive-operation gate (surfacing as
+ * `ERR_S3_OBJECTS_ABORTED`) soft-lands: the engine logs a warning and
+ * resolves an all-zero summary rather than throwing, without dispatching or
+ * running `finalize`. Any other gate failure propagates unmodified. This
+ * mirrors `dynamodb-crud`'s `ERR_DYNAMO_CRUD_ABORTED` handling, not
+ * `sqs-etl`'s.
+ */
+const pipeline = new Core.M3LOperationPipeline({
+  operations: S3_OBJECTS_OPERATIONS,
+  configCode: "ERR_S3_OBJECTS_CONFIG",
+  resolveSettings,
+  requiredFields: REQUIRED_FIELDS,
+  destructive: {
+    operations: new Set(["put", "copy", "delete", "delete-batch"] as const),
+    describe: (_operation, settings) => describeDestructiveOp(settings),
+    yes: (settings) => settings.yes,
+    abortCode: "ERR_S3_OBJECTS_ABORTED",
+    onDecline: {
+      kind: "soft-land",
+      result: () => ({ processed: 0, failed: 0 }),
+      warning: (operation, settings, deps) =>
+        `s3-objects run ${deps.correlationId} aborted before '${operation}' on bucket '${settings.bucket}'`,
+    },
+  },
+  handlers: {
+    list: adaptHandler(dispatchList),
+    describe: handleDescribeOrGet,
+    get: handleDescribeOrGet,
+    put: adaptHandler(dispatchPutObject),
+    copy: adaptHandler(dispatchCopyObject),
+    delete: adaptHandler(dispatchDeleteObject),
+    "delete-batch": adaptHandler(dispatchDeleteBatch),
+  },
+  finalize: (result, _settings, deps) => {
+    deps.logger.step(`s3-objects run ${deps.correlationId} complete`, {
+      processed: result.processed,
+      failed: result.failed,
+    });
+
+    // A partial delete-batch failure must never be silent: this is the
+    // domain decision that a non-zero `failed` count fails the whole run,
+    // so it lives here (not in `main.ts`, which stays pure
+    // composition/propagation per ADR-0022 — see main.ts's own header
+    // comment).
+    if (result.failed > 0) {
+      throw new Core.M3LError(
+        `s3-objects run ${deps.correlationId} left ${String(result.failed)} key(s) failed`,
+        { code: "ERR_S3_OBJECTS_FAILED_KEYS", context: { ...result } },
+      );
+    }
+  },
+});
+
+/**
+ * Composes the `s3-objects` pipeline end to end via
+ * `Core.M3LOperationPipeline`, preserving the legacy `RunS3ObjectsSummary`
+ * return shape regardless of whether the run completed or soft-landed on a
+ * declined destructive-operation gate.
  *
  * @param deps - The resolved config, `M3LPaths`, logger, per-run correlation
  *   id, the provisioned `s3` client, and `script.prompt`.
@@ -395,60 +397,6 @@ async function dispatch(
  * console.log(summary.processed, summary.failed);
  * ```
  */
-export async function runS3Objects(deps: {
-  readonly config: Core.M3LConfig;
-  readonly paths: Core.M3LPaths;
-  readonly logger: Core.M3LLogger;
-  readonly correlationId: string;
-  readonly s3: Parameters<typeof AWS.listObjects>[0];
-  readonly prompt: Core.M3LPrompt;
-}): Promise<RunS3ObjectsSummary> {
-  const settings = resolveSettings(deps.config);
-
-  if (DESTRUCTIVE_OPERATIONS.has(settings.operation)) {
-    try {
-      await Core.confirmDestructive({
-        prompt: deps.prompt,
-        logger: deps.logger,
-        description: describeDestructiveOp(settings),
-        yes: settings.yes,
-        code: "ERR_S3_OBJECTS_ABORTED",
-      });
-    } catch (cause) {
-      if (
-        cause instanceof Core.M3LError &&
-        cause.code === "ERR_S3_OBJECTS_ABORTED"
-      ) {
-        deps.logger.warning(
-          `s3-objects run ${deps.correlationId} aborted before '${settings.operation}' on bucket '${settings.bucket}'`,
-        );
-        return { processed: 0, failed: 0 };
-      }
-      throw cause;
-    }
-  }
-
-  const summary = await dispatch(settings, {
-    paths: deps.paths,
-    logger: deps.logger,
-    s3: deps.s3,
-  });
-
-  deps.logger.step(`s3-objects run ${deps.correlationId} complete`, {
-    processed: summary.processed,
-    failed: summary.failed,
-  });
-
-  // A partial delete-batch failure must never be silent: this is the domain
-  // decision that a non-zero `failed` count fails the whole run, so it lives
-  // here (not in `main.ts`, which stays pure composition/propagation per
-  // ADR-0022 — see main.ts's own header comment).
-  if (summary.failed > 0) {
-    throw new Core.M3LError(
-      `s3-objects run ${deps.correlationId} left ${String(summary.failed)} key(s) failed`,
-      { code: "ERR_S3_OBJECTS_FAILED_KEYS", context: { ...summary } },
-    );
-  }
-
-  return summary;
+export async function runS3Objects(deps: Deps): Promise<RunS3ObjectsSummary> {
+  return (await pipeline.run(deps)).result;
 }
