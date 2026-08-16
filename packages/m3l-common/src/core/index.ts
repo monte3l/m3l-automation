@@ -5,7 +5,7 @@
  * here as they are implemented: `script`, `checkpoint`, `config`,
  * `diagnostics`, `environment`, `errors`, `events`, `logging`, `prompt`,
  * `importers`, `exporters`, `files`, `json`, `text`, `storage`, `utils`,
- * `network`, `polling`, `analysis`, `messaging`, `security`.
+ * `network`, `pipeline`, `polling`, `analysis`, `messaging`, `security`.
  *
  * Each submodule lives in its own directory with a barrel `index.ts` and is
  * surfaced through this namespace — the package `exports` map stays at three
@@ -29,6 +29,7 @@ export * from "./json/index.js";
 export * from "./logging/index.js";
 export * from "./messaging/index.js";
 export * from "./network/index.js";
+export * from "./pipeline/index.js";
 export * from "./polling/index.js";
 export * from "./prompt/index.js";
 export * from "./script/index.js";
