@@ -16,15 +16,14 @@ interface RawSettings {
   readonly force: boolean;
   readonly maxWaitTime: number | undefined;
   readonly yes: boolean;
+  readonly output: string | undefined;
 }
 
-/** The dependencies every dispatched operation needs, once `config` has resolved. */
-interface DispatchDeps {
-  readonly logger: Core.M3LLogger;
+/** The full dependency bag `runEcsOps` receives and the pipeline threads through. */
+interface Deps extends Core.M3LOperationPipelineBaseDeps {
+  readonly paths: Core.M3LPaths;
+  readonly correlationId: string;
   readonly operations: AWS.M3LECSOperations;
-  readonly prompt: Core.M3LPrompt;
-  readonly accessor: Core.M3LConfigAccessor;
-  readonly reader: Core.M3LInputFileReader;
 }
 
 /** The union of result shapes any dispatched operation can resolve. */
@@ -34,21 +33,6 @@ type DispatchResult =
   | AWS.M3LECSWaiterResult
   | AWS.M3LECSListClustersResult
   | AWS.M3LECSClusterSummary;
-
-/** Runs `Core.confirmDestructive` — every mutating operation routes through this before dispatch. */
-async function runGate(
-  description: string,
-  yes: boolean,
-  deps: Pick<DispatchDeps, "prompt" | "logger">,
-): Promise<void> {
-  await Core.confirmDestructive({
-    prompt: deps.prompt,
-    logger: deps.logger,
-    description,
-    yes,
-    code: "ERR_ECS_OPS_ABORTED",
-  });
-}
 
 /** Builds `delete-service`'s gate description from the `cluster`/`service` config values. */
 function buildDeleteGateDescription(cluster: string, service: string): string {
@@ -84,16 +68,202 @@ function buildRecordGateDescription(
   return `${operation} cluster '${cluster ?? UNKNOWN_TARGET_PHRASE}' service '${serviceName ?? UNKNOWN_TARGET_PHRASE}'`;
 }
 
-/** `list-services`/`describe-service`: guard-checks cross-parameter requirements, then dispatches to `read-services`. */
+/**
+ * Builds a fresh `Core.M3LConfigAccessor` over `deps.config`, coded
+ * `ERR_ECS_OPS_CONFIG`. `M3LOperationHandlers`/`prepare` only receive the
+ * pipeline's `deps` bag — not the engine's own internal accessor — so the
+ * one remaining site that still needs a config read outside the engine's own
+ * phases (the completion-log re-read in {@link runEcsOps}) builds its own.
+ * `M3LConfigAccessor` is a stateless read-through wrapper, so constructing a
+ * fresh one per call is behaviorally identical to sharing one instance.
+ */
+function buildAccessor(deps: Deps): Core.M3LConfigAccessor {
+  return new Core.M3LConfigAccessor({
+    config: deps.config,
+    code: "ERR_ECS_OPS_CONFIG",
+  });
+}
+
+/** Builds a fresh `Core.M3LInputFileReader` over `deps.paths`, coded `ERR_ECS_OPS_CONFIG` — see {@link buildAccessor}. */
+function buildReader(deps: Deps): Core.M3LInputFileReader {
+  return new Core.M3LInputFileReader({
+    paths: deps.paths,
+    code: "ERR_ECS_OPS_CONFIG",
+  });
+}
+
+/**
+ * Narrows an already-guarded optional settings field to its defined value,
+ * throwing a defensive `ERR_ECS_OPS_CONFIG` otherwise. The pipeline's
+ * `requiredFields` guard (phase 4) has already enforced presence for every
+ * field callers read this way before those callers are ever invoked — this
+ * is a type-narrowing safety net, not an expected runtime path.
+ */
+function requireDefined<TValue>(
+  value: TValue | undefined,
+  name: string,
+): TValue {
+  if (value === undefined) {
+    throw new Core.M3LError(`'${name}' is required for this operation`, {
+      code: "ERR_ECS_OPS_CONFIG",
+    });
+  }
+  return value;
+}
+
+/**
+ * Which of `cluster`/`service`/`services`/`input` each operation requires,
+ * checked via `Core.M3LConfigAccessor.requiredFor` in the engine's own
+ * "Guards" phase (phase 4) — before `prepare`, the destructive gate, or any
+ * handler ever runs. Keyed as a `Record<EcsOperation, …>` so a new operation
+ * added to {@link ECS_OPERATIONS} without a corresponding entry here is a
+ * compile error. `wait-services-stable`'s non-empty-segments-after-split
+ * check is content validation, not presence, and stays inline in
+ * `dispatchWait`.
+ */
+const REQUIRED_FIELDS: Record<
+  EcsOperation,
+  readonly Core.M3LGuardableKey<RawSettings>[]
+> = {
+  "list-services": [],
+  "describe-service": ["cluster", "service"],
+  "create-service": ["input"],
+  "update-service": ["input"],
+  "delete-service": ["cluster", "service"],
+  "wait-services-stable": ["cluster", "services"],
+  "list-clusters": [],
+  "describe-cluster": ["cluster"],
+};
+
+/**
+ * Resolves the raw, per-operation-optional config values the pipeline reads
+ * once, up front. Must not re-read `"operation"` or apply its own
+ * required-field guards — those are owned by the engine's own "Operation"
+ * and "Guards" phases (the latter driven by {@link REQUIRED_FIELDS}).
+ */
+function resolveSettings(accessor: Core.M3LConfigAccessor): RawSettings {
+  return {
+    cluster: accessor.optionalString("cluster"),
+    service: accessor.optionalString("service"),
+    services: accessor.optionalStringArray("services"),
+    input: accessor.optionalString("input"),
+    nextToken: accessor.optionalString("nextToken"),
+    force: accessor.booleanWithDefault("force", FORCE_DEFAULT),
+    maxWaitTime: accessor.optionalNumber("maxWaitTime"),
+    yes: accessor.booleanWithDefault("yes", YES_DEFAULT),
+    output: accessor.optionalString("output"),
+  };
+}
+
+/** The per-write-operation description/input resolved before gating. */
+interface WriteDispatchPlan {
+  readonly description: string;
+  readonly input: Record<string, unknown> | undefined;
+}
+
+/**
+ * Narrows `prepare`'s `WriteDispatchPlan | undefined` context to a defined
+ * plan. `TContext` is uniform across every handler table entry (it is
+ * `WriteDispatchPlan | undefined` for every operation, not just the three
+ * write ones), but `prepare` only ever produces a defined plan for
+ * `create-service`/`update-service`/`delete-service` — an `undefined`
+ * context reaching a write handler or the destructive `describe` callback is
+ * unreachable except via caller misuse of the engine, guarded here
+ * defensively.
+ */
+function requireWritePlan(
+  context: WriteDispatchPlan | undefined,
+  operation: "create-service" | "update-service" | "delete-service",
+): WriteDispatchPlan {
+  if (context === undefined) {
+    throw new Core.M3LError(
+      `internal: no write-dispatch plan resolved for '${operation}'`,
+      { code: "ERR_ECS_OPS_CONFIG" },
+    );
+  }
+  return context;
+}
+
+/**
+ * Narrows `destructive.describe`'s `operation` — typed as the full
+ * `EcsOperation` union (the engine's `M3LPipelineDestructiveOptions.describe`
+ * signature is not narrowed to `destructive.operations`'s subset) — to the
+ * three write operations. The engine only invokes `describe` for a member of
+ * `destructive.operations`, so reaching the defensive throw means the engine
+ * itself miscalled it.
+ */
+function requireWriteOperation(
+  operation: EcsOperation,
+): "create-service" | "update-service" | "delete-service" {
+  if (
+    operation === "create-service" ||
+    operation === "update-service" ||
+    operation === "delete-service"
+  ) {
+    return operation;
+  }
+  throw new Core.M3LError(
+    `internal: destructive gate invoked for non-destructive operation '${operation}'`,
+    { code: "ERR_ECS_OPS_CONFIG" },
+  );
+}
+
+/**
+ * The pipeline's `prepare` phase: runs once per run, before the destructive
+ * gate, for every operation. Resolves `delete-service`'s gate description
+ * directly from config, or reads+parses `create-service`/`update-service`'s
+ * `input` file (the one place either file is ever read). Presence of
+ * `cluster`/`service`/`input` is already enforced by the engine's "Guards"
+ * phase (phase 4, driven by {@link REQUIRED_FIELDS}) before `prepare` ever
+ * runs — the {@link requireDefined} calls below are a defensive type-narrowing
+ * safety net, not a runtime guard. Every non-write operation resolves
+ * `undefined`.
+ */
+async function prepareWriteDispatch(
+  operation: EcsOperation,
+  raw: RawSettings,
+  deps: Deps,
+): Promise<WriteDispatchPlan | undefined> {
+  switch (operation) {
+    case "delete-service": {
+      const cluster = requireDefined(raw.cluster, "cluster");
+      const service = requireDefined(raw.service, "service");
+      return {
+        description: buildDeleteGateDescription(cluster, service),
+        input: undefined,
+      };
+    }
+    case "create-service":
+    case "update-service": {
+      const inputName = requireDefined(raw.input, "input");
+      const parsed = await buildReader(deps).readJSONRecord(inputName);
+      return {
+        description: buildRecordGateDescription(operation, parsed),
+        input: { ...parsed },
+      };
+    }
+    case "list-services":
+    case "describe-service":
+    case "wait-services-stable":
+    case "list-clusters":
+    case "describe-cluster":
+      return undefined;
+    default: {
+      const exhaustive: never = operation;
+      throw new Core.M3LError(`unhandled operation: ${String(exhaustive)}`, {
+        code: "ERR_ECS_OPS_CONFIG",
+      });
+    }
+  }
+}
+
+/** `list-services`/`describe-service`: dispatches to `read-services`. Cross-parameter presence for `describe-service` is enforced by the engine's Guards phase before this runs — see {@link REQUIRED_FIELDS}. */
 async function dispatchReadServices(
   operation: "list-services" | "describe-service",
   raw: RawSettings,
-  deps: DispatchDeps,
+  _context: WriteDispatchPlan | undefined,
+  deps: Deps,
 ): Promise<DispatchResult> {
-  if (operation === "describe-service") {
-    deps.accessor.requiredFor(raw.cluster, "cluster", operation);
-    deps.accessor.requiredFor(raw.service, "service", operation);
-  }
   const { readServices } = await import("./read-services.js");
   return readServices({
     operations: deps.operations,
@@ -104,15 +274,13 @@ async function dispatchReadServices(
   });
 }
 
-/** `list-clusters`/`describe-cluster`: guard-checks cross-parameter requirements, then dispatches to `read-clusters`. */
+/** `list-clusters`/`describe-cluster`: dispatches to `read-clusters`. Cross-parameter presence for `describe-cluster` is enforced by the engine's Guards phase before this runs — see {@link REQUIRED_FIELDS}. */
 async function dispatchReadClusters(
   operation: "list-clusters" | "describe-cluster",
   raw: RawSettings,
-  deps: DispatchDeps,
+  _context: WriteDispatchPlan | undefined,
+  deps: Deps,
 ): Promise<DispatchResult> {
-  if (operation === "describe-cluster") {
-    deps.accessor.requiredFor(raw.cluster, "cluster", operation);
-  }
   const { readClusters } = await import("./read-clusters.js");
   return readClusters({
     operations: deps.operations,
@@ -122,21 +290,20 @@ async function dispatchReadClusters(
   });
 }
 
-/** `wait-services-stable`: guard-checks `cluster`/`services`, then dispatches to `wait-services`. Never gated. */
+/**
+ * `wait-services-stable`: dispatches to `wait-services`. Never gated.
+ * Presence of `cluster`/`services` is enforced by the engine's Guards phase
+ * (see {@link REQUIRED_FIELDS}); the non-empty-segments-after-split check
+ * below is content validation the engine cannot express, so it stays inline.
+ */
 async function dispatchWait(
+  _operation: "wait-services-stable",
   raw: RawSettings,
-  deps: DispatchDeps,
+  _context: WriteDispatchPlan | undefined,
+  deps: Deps,
 ): Promise<DispatchResult> {
-  const cluster = deps.accessor.requiredFor(
-    raw.cluster,
-    "cluster",
-    "wait-services-stable",
-  );
-  const services = deps.accessor.requiredFor(
-    raw.services,
-    "services",
-    "wait-services-stable",
-  );
+  const cluster = requireDefined(raw.cluster, "cluster");
+  const services = requireDefined(raw.services, "services");
   if (services.length === 0) {
     throw new Core.M3LError(
       "'services' must contain at least one non-empty segment after splitting on ','",
@@ -153,56 +320,18 @@ async function dispatchWait(
   });
 }
 
-/** The per-write-operation description/input resolved before gating. */
-interface WriteDispatchPlan {
-  readonly description: string;
-  readonly input: Record<string, unknown> | undefined;
-}
-
-/** Resolves `delete-service`'s gate description directly from config, or reads+parses `create-service`/`update-service`'s `input` file. */
-async function planWriteDispatch(
-  operation: "create-service" | "update-service" | "delete-service",
-  raw: RawSettings,
-  deps: Pick<DispatchDeps, "accessor" | "reader">,
-): Promise<WriteDispatchPlan> {
-  if (operation === "delete-service") {
-    const cluster = deps.accessor.requiredFor(
-      raw.cluster,
-      "cluster",
-      operation,
-    );
-    const service = deps.accessor.requiredFor(
-      raw.service,
-      "service",
-      operation,
-    );
-    return {
-      description: buildDeleteGateDescription(cluster, service),
-      input: undefined,
-    };
-  }
-
-  const inputName = deps.accessor.requiredFor(raw.input, "input", operation);
-  const parsed = await deps.reader.readJSONRecord(inputName);
-  return {
-    description: buildRecordGateDescription(operation, parsed),
-    input: { ...parsed },
-  };
-}
-
-/** `create-service`/`update-service`/`delete-service`: resolves the operation's plan, gates, then dispatches to `write-service`. */
+/** `create-service`/`update-service`/`delete-service`: dispatches to `write-service` using the plan `prepare` resolved before the gate. */
 async function dispatchWriteService(
   operation: "create-service" | "update-service" | "delete-service",
   raw: RawSettings,
-  deps: DispatchDeps,
+  context: WriteDispatchPlan | undefined,
+  deps: Deps,
 ): Promise<DispatchResult> {
-  const plan = await planWriteDispatch(operation, raw, deps);
-  await runGate(plan.description, raw.yes, deps);
-
+  const plan = requireWritePlan(context, operation);
   const { writeService } = await import("./write-service.js");
   return writeService({
     operations: deps.operations,
-    reader: deps.reader,
+    reader: buildReader(deps),
     operation,
     input: plan.input,
     cluster: raw.cluster,
@@ -211,164 +340,94 @@ async function dispatchWriteService(
   });
 }
 
-/** The four dispatch families `ecs-ops` routes operations into. */
-type DispatchGroup = "read-services" | "read-clusters" | "write" | "wait";
-
 /**
- * Which dispatch family each operation belongs to. Keyed as a
- * `Record<EcsOperation, …>` so a new operation added to {@link ECS_OPERATIONS}
- * without a corresponding entry here is a compile error.
+ * True when `result` is a `wait-services-stable` outcome — the only member
+ * of {@link DispatchResult} carrying a `state` field. `finalize` is not
+ * passed `operation` (it is not part of the engine's `finalize` contract),
+ * so this structural check is how it recognizes a wait result to assert
+ * against.
  */
-const DISPATCH_GROUP: Record<EcsOperation, DispatchGroup> = {
-  "list-services": "read-services",
-  "describe-service": "read-services",
-  "create-service": "write",
-  "update-service": "write",
-  "delete-service": "write",
-  "wait-services-stable": "wait",
-  "list-clusters": "read-clusters",
-  "describe-cluster": "read-clusters",
-};
-
-/** Narrows `operation` to `list-services`/`describe-service`, matching {@link DISPATCH_GROUP}'s `"read-services"` entries. */
-function isReadServicesOperation(
-  operation: EcsOperation,
-): operation is "list-services" | "describe-service" {
-  return operation === "list-services" || operation === "describe-service";
-}
-
-/** Narrows `operation` to `list-clusters`/`describe-cluster`, matching {@link DISPATCH_GROUP}'s `"read-clusters"` entries. */
-function isReadClustersOperation(
-  operation: EcsOperation,
-): operation is "list-clusters" | "describe-cluster" {
-  return operation === "list-clusters" || operation === "describe-cluster";
-}
-
-/** Narrows `operation` to the three mutating service operations, matching {@link DISPATCH_GROUP}'s `"write"` entries. */
-function isWriteOperation(
-  operation: EcsOperation,
-): operation is "create-service" | "update-service" | "delete-service" {
-  return (
-    operation === "create-service" ||
-    operation === "update-service" ||
-    operation === "delete-service"
-  );
-}
-
-/**
- * Dispatches to the operation-appropriate step, dynamic-importing it at
- * dispatch time (not a top-level static import) — so `steps/*.test.ts` can
- * `vi.mock` a step module before dispatch resolves it. Routes through
- * {@link DISPATCH_GROUP} into the four per-family dispatchers, each of which
- * guard-checks its own per-operation cross-parameter requirements before any
- * gate or AWS call, then — for every mutating operation — runs
- * `Core.confirmDestructive`.
- */
-async function dispatchOperation(
-  operation: EcsOperation,
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<DispatchResult> {
-  const group = DISPATCH_GROUP[operation];
-  switch (group) {
-    case "read-services": {
-      if (!isReadServicesOperation(operation)) {
-        throw new Core.M3LError(
-          `internal: '${operation}' miscategorized as a read-services operation`,
-          { code: "ERR_ECS_OPS_CONFIG" },
-        );
-      }
-      return dispatchReadServices(operation, raw, deps);
-    }
-    case "read-clusters": {
-      if (!isReadClustersOperation(operation)) {
-        throw new Core.M3LError(
-          `internal: '${operation}' miscategorized as a read-clusters operation`,
-          { code: "ERR_ECS_OPS_CONFIG" },
-        );
-      }
-      return dispatchReadClusters(operation, raw, deps);
-    }
-    case "write": {
-      if (!isWriteOperation(operation)) {
-        throw new Core.M3LError(
-          `internal: '${operation}' miscategorized as a write operation`,
-          { code: "ERR_ECS_OPS_CONFIG" },
-        );
-      }
-      return dispatchWriteService(operation, raw, deps);
-    }
-    case "wait":
-      return dispatchWait(raw, deps);
-    default: {
-      const exhaustive: never = group;
-      throw new Core.M3LError(
-        `unhandled dispatch group: ${String(exhaustive)}`,
-        { code: "ERR_ECS_OPS_CONFIG" },
-      );
-    }
-  }
-}
-
-/** Resolves the raw, per-operation-optional config values `run-ecs-ops` reads once, up front. */
-function readRawSettings(accessor: Core.M3LConfigAccessor): RawSettings {
-  return {
-    cluster: accessor.optionalString("cluster"),
-    service: accessor.optionalString("service"),
-    services: accessor.optionalStringArray("services"),
-    input: accessor.optionalString("input"),
-    nextToken: accessor.optionalString("nextToken"),
-    force: accessor.booleanWithDefault("force", FORCE_DEFAULT),
-    maxWaitTime: accessor.optionalNumber("maxWaitTime"),
-    yes: accessor.booleanWithDefault("yes", YES_DEFAULT),
-  };
-}
-
-/** Persists `result` to `output` (when configured) via `Core.M3LJSONFileExporter`. */
-async function persistOutput(
-  paths: Core.M3LPaths,
-  output: string | undefined,
+function isWaiterResult(
   result: DispatchResult,
-): Promise<void> {
-  if (output === undefined) return;
-  const exporter = new Core.M3LJSONFileExporter({
-    filePath: paths.resolveOutput(output),
-  });
-  await exporter.export(result);
+): result is AWS.M3LECSWaiterResult {
+  return "state" in result;
 }
 
 /**
- * Throws `ERR_ECS_OPS_WAIT_NOT_STABLE` when `operation` is
- * `wait-services-stable` and the resolved `M3LECSWaiterResult.state` is not
- * `"SUCCESS"` — called *after* {@link persistOutput}, so the timeout/abort
- * reason survives on disk even though the run then fails.
+ * The `ecs-ops` pipeline: resolve settings -&gt; (for every operation) plan
+ * a write dispatch -&gt; (for `create-service`/`update-service`/`delete-service`)
+ * the destructive-operation gate -&gt; the operation-appropriate step -&gt;
+ * persist the result to `output` (when configured) -&gt; assert
+ * `wait-services-stable` resolved `SUCCESS`, all owned by
+ * `Core.M3LOperationPipeline`. Built once at module load — a pipeline
+ * instance is stateless across `run()` calls.
+ *
+ * A declined destructive-operation gate (`ERR_ECS_OPS_ABORTED`) propagates
+ * to the caller unmodified (`onDecline: { kind: "throw" }`) — unlike
+ * `s3-objects`, a decline here aborts the whole run rather than soft-landing
+ * an empty result.
  */
-function assertWaitStable(
-  operation: EcsOperation,
-  result: DispatchResult,
-  correlationId: string,
-): void {
-  if (operation !== "wait-services-stable") return;
-  const waiterResult = result as AWS.M3LECSWaiterResult;
-  if (waiterResult.state === "SUCCESS") return;
-  throw new Core.M3LError(
-    `ecs-ops run ${correlationId}: wait-services-stable resolved '${waiterResult.state}', not SUCCESS`,
-    {
-      code: "ERR_ECS_OPS_WAIT_NOT_STABLE",
-      context: {
-        state: waiterResult.state,
-        ...(waiterResult.reason !== undefined && {
-          reason: waiterResult.reason,
-        }),
+const pipeline = new Core.M3LOperationPipeline<
+  EcsOperation,
+  RawSettings,
+  Deps,
+  DispatchResult,
+  WriteDispatchPlan | undefined
+>({
+  operations: ECS_OPERATIONS,
+  configCode: "ERR_ECS_OPS_CONFIG",
+  resolveSettings,
+  requiredFields: REQUIRED_FIELDS,
+  prepare: prepareWriteDispatch,
+  destructive: {
+    operations: new Set([
+      "create-service",
+      "update-service",
+      "delete-service",
+    ] as const),
+    describe: (operation, _settings, context) =>
+      requireWritePlan(context, requireWriteOperation(operation)).description,
+    yes: (settings) => settings.yes,
+    abortCode: "ERR_ECS_OPS_ABORTED",
+    onDecline: { kind: "throw" },
+  },
+  handlers: {
+    "list-services": dispatchReadServices,
+    "describe-service": dispatchReadServices,
+    "create-service": dispatchWriteService,
+    "update-service": dispatchWriteService,
+    "delete-service": dispatchWriteService,
+    "wait-services-stable": dispatchWait,
+    "list-clusters": dispatchReadClusters,
+    "describe-cluster": dispatchReadClusters,
+  },
+  persist: async (result, settings, deps) => {
+    if (settings.output === undefined) return;
+    const exporter = new Core.M3LJSONFileExporter({
+      filePath: deps.paths.resolveOutput(settings.output),
+    });
+    await exporter.export(result);
+  },
+  finalize: (result, _settings, deps) => {
+    if (!isWaiterResult(result) || result.state === "SUCCESS") return;
+    throw new Core.M3LError(
+      `ecs-ops run ${deps.correlationId}: wait-services-stable resolved '${result.state}', not SUCCESS`,
+      {
+        code: "ERR_ECS_OPS_WAIT_NOT_STABLE",
+        context: {
+          state: result.state,
+          ...(result.reason !== undefined && { reason: result.reason }),
+        },
       },
-    },
-  );
-}
+    );
+  },
+});
 
 /**
- * Composes the `ecs-ops` pipeline end to end: resolves + guard-checks
- * config, runs `Core.confirmDestructive` for every mutating operation, dispatches to
- * the operation-appropriate step, persists the result to `output` (when
+ * Composes the `ecs-ops` pipeline end to end via
+ * `Core.M3LOperationPipeline`: resolves + guard-checks config, runs
+ * `Core.confirmDestructive` for every mutating operation, dispatches to the
+ * operation-appropriate step, persists the result to `output` (when
  * configured) via `Core.M3LJSONFileExporter`, and — for
  * `wait-services-stable` — throws once the result has had a chance to be
  * persisted first.
@@ -409,42 +468,24 @@ function assertWaitStable(
  * });
  * ```
  */
-export async function runEcsOps(deps: {
-  readonly config: Core.M3LConfig;
-  readonly paths: Core.M3LPaths;
-  readonly logger: Core.M3LLogger;
-  readonly correlationId: string;
-  readonly operations: AWS.M3LECSOperations;
-  readonly prompt: Core.M3LPrompt;
-}): Promise<void> {
-  const accessor = new Core.M3LConfigAccessor({
-    config: deps.config,
-    code: "ERR_ECS_OPS_CONFIG",
-  });
-  const reader = new Core.M3LInputFileReader({
-    paths: deps.paths,
-    code: "ERR_ECS_OPS_CONFIG",
-  });
+export async function runEcsOps(deps: Deps): Promise<void> {
+  const outcome = await pipeline.run(deps);
 
-  const operation = accessor.oneOf("operation", ECS_OPERATIONS);
-  const raw = readRawSettings(accessor);
-  const output = accessor.optionalString("output");
-
-  const result = await dispatchOperation(operation, raw, {
-    logger: deps.logger,
-    operations: deps.operations,
-    prompt: deps.prompt,
-    accessor,
-    reader,
-  });
-
-  await persistOutput(deps.paths, output, result);
-  assertWaitStable(operation, result, deps.correlationId);
+  // Re-derives the same cluster/service/services log context the
+  // pre-migration orchestrator read once up front — `M3LOperationPipeline`'s
+  // outcome doesn't carry the resolved settings, and this stays a pure
+  // config read with no side effect, so recomputing it here (after `run()`
+  // resolves, so it never fires when `finalize` throws) preserves the
+  // completion log's shape.
+  const accessor = buildAccessor(deps);
+  const cluster = accessor.optionalString("cluster");
+  const service = accessor.optionalString("service");
+  const services = accessor.optionalStringArray("services");
 
   deps.logger.step(`ecs-ops run ${deps.correlationId} complete`, {
-    operation,
-    ...(raw.cluster !== undefined && { cluster: raw.cluster }),
-    ...(raw.service !== undefined && { service: raw.service }),
-    ...(raw.services !== undefined && { services: raw.services.join(",") }),
+    operation: outcome.operation,
+    ...(cluster !== undefined && { cluster }),
+    ...(service !== undefined && { service }),
+    ...(services !== undefined && { services: services.join(",") }),
   });
 }

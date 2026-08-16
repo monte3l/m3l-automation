@@ -290,6 +290,16 @@ expect(new Set(names).size).toBe(names.length);
   documented `M3LError` subclass with its `cause` chained.
 - Boolean spies return `mockReturnValue(false)`, not `undefined` — the TS type wins over Node's runtime reality.
 - Vitest 4.x `expectTypeOf` precision: `.toBeBigInt()` (not `.toBigInt()`), and `.toMatchTypeOf<T>()` for subtype checks (not `.toEqualTypeOf`). A 2-tuple `test.each` row callback must accept **both** params.
+- **Mock at collaborator seams, not the library barrel.** Never
+  `vi.mock("@m3l-automation/m3l-common")` to override a library function the
+  code under test might receive indirectly (e.g. `confirmDestructive` invoked
+  inside `M3LOperationPipeline` via a relative import — a barrel mock cannot
+  intercept it). Spy on the injected collaborator instead (`vi.spyOn` on a
+  real `M3LPrompt`'s `confirm`, the AWS client fns, `node:fs`): that seam
+  survives behavior-preserving refactors that move the call into the library,
+  keeping the suite a valid characterization net
+  (`docs/logs/2026-08-16-pipeline-migrations.md` — 8 gate tests broke on a
+  migration whose observable behavior was identical).
 - **Fixtures must not pin unexercised generics.** Never instantiate a
   generic class/type with explicit type arguments as a fixture convenience —
   pin only the parameters the scenario actually exercises and let inference
