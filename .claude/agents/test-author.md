@@ -290,6 +290,16 @@ expect(new Set(names).size).toBe(names.length);
   documented `M3LError` subclass with its `cause` chained.
 - Boolean spies return `mockReturnValue(false)`, not `undefined` — the TS type wins over Node's runtime reality.
 - Vitest 4.x `expectTypeOf` precision: `.toBeBigInt()` (not `.toBigInt()`), and `.toMatchTypeOf<T>()` for subtype checks (not `.toEqualTypeOf`). A 2-tuple `test.each` row callback must accept **both** params.
+- **Fixtures must not pin unexercised generics.** Never instantiate a
+  generic class/type with explicit type arguments as a fixture convenience —
+  pin only the parameters the scenario actually exercises and let inference
+  fill the rest, and declare literal-list fixtures (operation unions etc.) as
+  `as const` tuples with the union derived from them
+  (`type X = (typeof LIST)[number]`). Explicitly-pinned-but-unexercised
+  generics and widened arrays encode representable-but-invalid states that
+  later type-soundness fixes are designed to outlaw — a fixture style that
+  fights the intended consumer style blocked two src must-fixes and forced a
+  three-pass coordinated repair (`docs/logs/2026-08-16-core-pipeline.md`).
 - **RED type-assertions and type-probes go stale at GREEN.** A cast you add so a
   test compiles against a not-yet-existing type (`{ id: "x" } as M3LFoo`) becomes
   a `@typescript-eslint/no-unnecessary-type-assertion` error the moment the real
