@@ -8,7 +8,10 @@
  * @packageDocumentation
  */
 
-import { M3LPipelineInvalidOptionError } from "../../internal/pipeline/errors.js";
+import { validatePipelineOptions } from "../../internal/pipeline/validate.js";
+import { M3LError } from "../errors/index.js";
+import { M3LConfigAccessor } from "../config/M3LConfigAccessor.js";
+import { confirmDestructive } from "../prompt/M3LDestructiveGate.js";
 
 import type {
   M3LOperationPipelineBaseDeps,
@@ -102,11 +105,16 @@ export class M3LOperationPipeline<
       TContext
     >,
   ) {
+    validatePipelineOptions(options);
     this.#options = options;
   }
 
   /**
    * Runs the ten-phase pipeline over `deps` and resolves the outcome.
+   *
+   * All per-run state lives in this call's own frame — nothing is written to
+   * the instance — so one pipeline instance is reusable across sequential
+   * runs and safe under concurrent `run()` calls.
    *
    * @param deps - The dependency bag; must extend {@link
    *   M3LOperationPipelineBaseDeps}.
@@ -114,13 +122,144 @@ export class M3LOperationPipeline<
    * @throws Any error from phases 1–9 propagates unmodified, except a decline
    *   handled by `onDecline: { kind: "soft-land" }`.
    */
-  run(deps: TDeps): Promise<M3LOperationPipelineOutcome<TOp, TResult>> {
-    void deps;
-    return Promise.reject(
-      new M3LPipelineInvalidOptionError(
-        "M3LOperationPipeline.run: not yet implemented — see docs/reference/core/pipeline.md",
-        { operations: this.#options.operations },
-      ),
+  async run(deps: TDeps): Promise<M3LOperationPipelineOutcome<TOp, TResult>> {
+    const options = this.#options;
+
+    // Phase 1-2: accessor + operation.
+    const accessor = new M3LConfigAccessor({
+      config: deps.config,
+      code: options.configCode,
+    });
+    const operation = accessor.oneOf("operation", options.operations);
+
+    // Phase 3: settings (sync or async resolver, awaited either way).
+    const settings = await options.resolveSettings(accessor, operation);
+
+    // Phase 4: guards, checked in the row's array order; first miss throws.
+    this.#runGuards(accessor, operation, settings);
+
+    // Phase 5: prepare, once, before the gate. Without a `prepare` callback,
+    // TContext is pinned to `undefined` at the type level (see
+    // M3LOperationPipelineOptions's TContext default and the T8 contract
+    // test) — the runtime cast below reflects that compile-time guarantee,
+    // which the class cannot otherwise express for an unconstrained generic.
+    const context = options.prepare
+      ? await options.prepare(operation, settings, deps)
+      : (undefined as TContext);
+
+    // Phase 6: the destructive gate, only for a member operation. A
+    // returned outcome means the gate soft-landed a decline — persist and
+    // finalize (phases 8-9) never run for a declined outcome (R1).
+    const declined = await this.#runGate(operation, settings, context, deps);
+    if (declined !== undefined) return declined;
+
+    // Phase 7: dispatch.
+    const result = await this.#dispatch(operation, settings, context, deps);
+
+    // Phase 8-9: persist, then finalize — strictly sequential so a throwing
+    // finalize (e.g. a wait that did not stabilize) still leaves the
+    // persisted result on disk.
+    if (options.persist) {
+      await options.persist(result, settings, deps);
+    }
+    if (options.finalize) {
+      await options.finalize(result, settings, deps);
+    }
+
+    // Phase 10: outcome.
+    return { status: "completed", operation, result };
+  }
+
+  /** Phase 4: checks each `requiredFields[operation]` key in array order. */
+  #runGuards(
+    accessor: M3LConfigAccessor,
+    operation: TOp,
+    settings: TSettings,
+  ): void {
+    const requiredKeys = this.#options.requiredFields?.[operation];
+    if (requiredKeys === undefined) return;
+    for (const key of requiredKeys) {
+      accessor.requiredFor(settings[key], key, operation);
+    }
+  }
+
+  /**
+   * Phase 6: the destructive-confirmation gate. Resolves `undefined` when
+   * the operation isn't gated or confirmation succeeds (the run should
+   * continue to dispatch); resolves a `"declined"` outcome when
+   * `onDecline: { kind: "soft-land" }` absorbed the decline. Any other gate
+   * failure — including `onDecline: { kind: "throw" }`'s decline error —
+   * propagates by throwing.
+   */
+  async #runGate(
+    operation: TOp,
+    settings: TSettings,
+    context: TContext,
+    deps: TDeps,
+  ): Promise<M3LOperationPipelineOutcome<TOp, TResult> | undefined> {
+    const destructive = this.#options.destructive;
+    if (destructive === undefined || !destructive.operations.has(operation)) {
+      return undefined;
+    }
+
+    const description = destructive.describe(
+      operation,
+      settings,
+      context,
+      deps,
     );
+    const bypass = destructive.yes(settings);
+    try {
+      await confirmDestructive({
+        prompt: deps.prompt,
+        logger: deps.logger,
+        description,
+        yes: bypass,
+        code: destructive.abortCode,
+      });
+      return undefined;
+    } catch (error) {
+      // Only an M3LError carrying the gate's own abortCode is a decline;
+      // any other failure (a different M3LError code, or a non-M3LError
+      // thrown by a custom prompt adapter) propagates unmodified.
+      if (
+        !(error instanceof M3LError) ||
+        error.code !== destructive.abortCode
+      ) {
+        throw error;
+      }
+      const policy = destructive.onDecline;
+      if (policy.kind === "throw") {
+        throw error;
+      }
+      if (policy.warning) {
+        deps.logger.warning(policy.warning(operation, settings, deps));
+      }
+      return {
+        status: "declined",
+        operation,
+        result: policy.result(operation, settings, deps),
+      };
+    }
+  }
+
+  /**
+   * Phase 7: dispatch. `handlers` is an exhaustive mapped type keyed by
+   * `TOp`, where each key `K`'s handler narrows its first parameter to `K`.
+   * Indexing the table by the very `operation: TOp` value that resolved it
+   * is exactly the shape TypeScript's homomorphic-mapped-type indexing
+   * resolves to: a function taking `TOp`, `TSettings`, `TContext`, and
+   * `TDeps`, returning `Promise<TResult>` — no runtime cast is needed here;
+   * the table's exhaustiveness (every member of `TOp` has an entry) is what
+   * makes this call sound.
+   */
+  async #dispatch(
+    operation: TOp,
+    settings: TSettings,
+    context: TContext,
+    deps: TDeps,
+  ): Promise<TResult> {
+    const handler = this.#options.handlers[operation];
+    return handler(operation, settings, context, deps);
   }
 }
