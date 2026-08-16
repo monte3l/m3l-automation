@@ -120,6 +120,34 @@ outright (no revisit trigger — they are settled, not pending):
   engine) and two closures with no code change (canonical JSON, alerting
   client); no code, export, or `exports`-map entry changes.
 
+## Update (2026-08-16) — trigger (b) fired; engine building, s3-objects + ecs-ops migrating
+
+The revisit trigger this ADR defined has fired: the maintainer explicitly
+proposed migrating two existing scripts onto a shared engine (trigger (b),
+issue #334). The engine is being built as a new Core submodule,
+**`core/pipeline`** (`M3LOperationPipeline`), on `feat/step-pipeline-engine`,
+with **`s3-objects`** and **`ecs-ops`** — the near-identical pair this ADR
+itself named — as the first two consumers.
+
+Scope boundary, recorded so the engine does not creep past its evidence:
+
+- The engine absorbs only the multi-operation dispatcher skeleton (operation
+  union → settings resolution → per-operation required-field guards →
+  destructive-operation gate via `Core.confirmDestructive` with a
+  script-chosen decline policy → handler dispatch → optional persist →
+  optional post-dispatch assertions).
+- Deliberately out of scope: checkpoint/resume (`dynamodb-crud`), multi-file
+  routing (`rds-data-sql`), thin passthrough and single-operation scripts,
+  custom gate variants, and completion-log text (script-owned).
+- The dispatcher population has grown since this ADR was written: 18
+  `run-*.ts` files (~6,992 lines), of which 8 are multi-operation dispatchers
+  — the actual duplication target. Migration of the remaining 6 is tracked as
+  new backlog rows, gated on parity evidence from the first two migrations.
+
+The three capabilities this ADR closed outright (LLM/Bedrock, canonical-JSON
+contracts, internal-alerting-service client) remain closed — this update
+opens only the engine gate.
+
 ## Links
 
 - Related: [ADR-0021 (post-1.0 deepen-first strategy — the broadening intake

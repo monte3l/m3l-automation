@@ -4,7 +4,7 @@ The **living, prioritized view of pending program work**. It is the coarse
 companion to two other trackers:
 
 - [`docs/implementation-status.md`](./implementation-status.md) — the _done_
-  library ledger (40/40 submodules, count-enforced).
+  library ledger (41/41 submodules, count-enforced).
 - [`docs/plans/IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md) — the _detailed_
   per-item backlog this file summarizes.
 
@@ -17,7 +17,7 @@ _Maintenance_ at the bottom. Completed dated plans live under
 
 Per-item status lives in the tables below (Priority 0/1/2) and in
 [`docs/implementation-status.md`](./implementation-status.md) — the
-count-enforced library ledger (40/40 submodules, shipped at v1.1.0 + the
+count-enforced library ledger (41/41 submodules, shipped at v1.1.0 + the
 ad-hoc `aws/dynamodb`, `aws/sqs`, and `aws/cloudwatch-logs-insights` additions,
 ADR-0026/ADR-0027).
 
@@ -87,17 +87,17 @@ primitives (`M3LSingleFlight`, `canonicalJsonHash`) with zero consumers. Detail
 - source call-sites in
   [`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#post-comparison-hardening-wave--adr-0040004100420043).
 
-| Item                                   | Status   | Why now / Notes                                                                                                                                                                                                             |
-| -------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Doc drift — coverage gate claim**    | Done     | Corrected the stale "80% coverage gate" prose to the enforced per-file thresholds. **PR:** #325.                                                                                                                            |
-| **Credential leak in `M3LHttpClient`** | Done     | `"request"` event headers and error-context URLs now go through the shared redactor. **PR:** #326.                                                                                                                          |
-| **HTTP dead branches reachable**       | Done     | `Retry-After` parsing, 408 added to the retriable set, opt-in `maxResponseBytes`. **PR:** #327.                                                                                                                             |
-| **Bounded input on the import path**   | Done     | Opt-in `maxBytes`/`maxRows` on `resolveSource`, default unbounded. **PR:** #328.                                                                                                                                            |
-| **ReDoS regression coverage**          | Done     | Adversarial-padding regression tests for `redact.ts` and the credentials-manager classifiers. **PR:** #329.                                                                                                                 |
-| **Wire the unwired islands**           | Done     | `M3LSingleFlight` coalesces concurrent SSO logins; `canonicalJsonHash` content-addresses checkpoint payloads. **PR:** #330.                                                                                                 |
-| **AWS depth**                          | Done     | Identity-based credential-failure classification, an injected credentials-manager logger seam, `M3LS3Operations`/`M3LDynamoDBOperations` `.services`-tier getters. **PR:** #331.                                            |
-| **Script-facing CLI package**          | Done     | Zero-dependency design accepted and recorded; revisit trigger fired 2026-08-13 (issue #333) — full 8b–8g build activated on `feat/m3l-cli`. See [ADR-0042](./adr/0042-script-cli-package-deferred.md) (updated 2026-08-13). |
-| **Step-pipeline engine**               | Deferred | 4,867 lines of repeated dispatch shape across 13 scripts; deferred, gated on a named consumer. See [ADR-0043](./adr/0043-step-pipeline-engine-deferred.md).                                                                 |
+| Item                                   | Status      | Why now / Notes                                                                                                                                                                                                                                                                                                           |
+| -------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Doc drift — coverage gate claim**    | Done        | Corrected the stale "80% coverage gate" prose to the enforced per-file thresholds. **PR:** #325.                                                                                                                                                                                                                          |
+| **Credential leak in `M3LHttpClient`** | Done        | `"request"` event headers and error-context URLs now go through the shared redactor. **PR:** #326.                                                                                                                                                                                                                        |
+| **HTTP dead branches reachable**       | Done        | `Retry-After` parsing, 408 added to the retriable set, opt-in `maxResponseBytes`. **PR:** #327.                                                                                                                                                                                                                           |
+| **Bounded input on the import path**   | Done        | Opt-in `maxBytes`/`maxRows` on `resolveSource`, default unbounded. **PR:** #328.                                                                                                                                                                                                                                          |
+| **ReDoS regression coverage**          | Done        | Adversarial-padding regression tests for `redact.ts` and the credentials-manager classifiers. **PR:** #329.                                                                                                                                                                                                               |
+| **Wire the unwired islands**           | Done        | `M3LSingleFlight` coalesces concurrent SSO logins; `canonicalJsonHash` content-addresses checkpoint payloads. **PR:** #330.                                                                                                                                                                                               |
+| **AWS depth**                          | Done        | Identity-based credential-failure classification, an injected credentials-manager logger seam, `M3LS3Operations`/`M3LDynamoDBOperations` `.services`-tier getters. **PR:** #331.                                                                                                                                          |
+| **Script-facing CLI package**          | Done        | Zero-dependency design accepted and recorded; revisit trigger fired 2026-08-13 (issue #333) — full 8b–8g build activated on `feat/m3l-cli`. See [ADR-0042](./adr/0042-script-cli-package-deferred.md) (updated 2026-08-13).                                                                                               |
+| **Step-pipeline engine**               | In progress | Repeated dispatch shape across the script fleet; was deferred, gated on a named consumer. Trigger (b) fired 2026-08-16 (issue #334): `core/pipeline` building on `feat/step-pipeline-engine`, `s3-objects` + `ecs-ops` migrating first. See [ADR-0043](./adr/0043-step-pipeline-engine-deferred.md) (updated 2026-08-16). |
 
 ## Priority 1 — Consumer fleet
 
