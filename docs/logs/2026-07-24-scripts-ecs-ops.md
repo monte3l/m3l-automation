@@ -149,7 +149,7 @@ especially for any script whose wrapper spans more than one resource type (as
   every file had actually been written and every test passed — no
   `SendMessage` resume was needed either time. The lesson is procedural
   discipline, not a defect: always verify on-disk state independently before
-  treating a spoke's return as done, per the existing subagent-dispatch rule.
+  treating a spoke's return as done, per the existing subagent-dispatch rule. _(promoted → .claude/rules/subagent-dispatch.md)_
 
 - **Split the destructive-gate's description-building rule by resource
   identity source, not by operation name.** When a script's operations span

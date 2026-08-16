@@ -189,7 +189,7 @@ informational, not enforced.
 
 - **Read the gate script, not the note** — `check:doc-counts` counts `.md` files
   (total 22); `check:doc-exports` is what enforces documented exports. Confirm a
-  check's behavior from its source before building a contract around it.
+  check's behavior from its source before building a contract around it. _(promoted → CLAUDE.md)_
 - **Coverage is raised with tests, never with deletions** — stripping an
   uncovered path that implements a documented input form is a regression the
   coverage gate happily rewards; it is a test gap, not dead code, and reviewers
@@ -210,4 +210,4 @@ informational, not enforced.
 - **Keep supply-chain exclusions in lockstep with dependabot bumps** — a
   freshly-published pinned version can fall inside pnpm's `minimumReleaseAge`
   window on a later day and block every command; add the exact version to
-  `minimumReleaseAgeExclude` when it's bumped.
+  `minimumReleaseAgeExclude` when it's bumped. _(promoted → CLAUDE.md)_

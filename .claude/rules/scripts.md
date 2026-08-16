@@ -64,7 +64,13 @@ paths:
   narrowing across a function-call boundary, so a full-union parameter leaves
   the final `exhaustive: never` completeness check failing to compile even when
   the runtime dispatch is already correct (`aws/codepipeline`'s `codepipeline-ops`,
-  2026-07-27).
+  2026-07-27). **Since 2026-08-16 the preferred shape for a NEW multi-operation
+  dispatcher — and the migration target for existing ones (issue #334 wave) —
+  is `Core.M3LOperationPipeline`** (`docs/reference/core/pipeline.md`): its
+  exhaustive per-operation handler table gives each operation its own function,
+  so the size ceiling that motivated the two-level split never approaches.
+  Reach for the two-level split only where the engine is deliberately out of
+  scope (multi-file routers, checkpoint/resume dispatchers).
 - **Scaffold with the generator, never by hand:** `pnpm scaffold:script <name>`
   emits the whole shape from `templates/script/`; to evolve the shape, change
   the templates + manifest together — a hand-added or hand-dropped file fails

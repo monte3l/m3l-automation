@@ -134,6 +134,17 @@ ADR-0013 (its durable home), not a per-plan caveat.
    throws on an `Err`). Precision here prevents the tests from over-constraining
    a type and saves a re-work round — especially for weaker routed models.
 
+   **Settle any open type-level design question with a compile probe at
+   contract time, never "during implementation."** A question the contract
+   leaves open ("will these five generics infer from one options literal?",
+   "is X assignable to Y?") is answered by an actual `tsc --strict` check —
+   in-memory or scratch — against the real types, before RED. A 10-minute
+   probe retired a whole fallback design in one case
+   (`docs/logs/2026-08-16-core-pipeline.md`) and let six templated dispatches
+   state a settled fact instead of hedging in another
+   (`docs/logs/2026-07-28-w5-config-accessor-fleet-retrofit.md`) — deferring
+   it invites N downstream artifacts to each answer it differently.
+
    **For an `aws/*` wrapper around anything beyond a plain `.send()` call — a
    waiter, a paginator, a multi-step poll — verify the SDK's actual
    resolve/throw behavior against its installed dist-types before the doc's

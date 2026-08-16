@@ -72,7 +72,7 @@ green — `2500` tests across 46 files, `tsc -b` / `eslint` / `build` clean,
 
 ## What didn't go as planned, and why
 
-### 1. The `test-author` spoke truncated at its output limit after spending its whole budget exploring
+### 1. The `test-author` spoke truncated at its output limit after spending its whole budget exploring _(promoted → .claude/rules/subagent-dispatch.md)_
 
 The first `test-author` dispatch burned 42 tool calls (~105k tokens) reading the
 suite's helpers and patterns, then hit its turn/output limit having written only

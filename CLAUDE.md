@@ -575,6 +575,17 @@ only, never a new `exports` subpath.
 - A new public subpath needs BOTH `src/<path>/index.ts` and an `exports` entry,
   or consumers cannot import it — but per the layout above, new submodules go
   through the namespace barrel, not a new subpath.
+- A fresh dependency bump can trip pnpm's `minimumReleaseAge` and block every
+  command. Add the exact `name@version` to `minimumReleaseAgeExclude` in the
+  same change (own `build:` commit); never weaken the policy. If pnpm suddenly
+  rejects the lockfile, check the release-age policy before suspecting the
+  lockfile itself.
+- What a `check:*` gate enforces is defined by its `bin/*.mjs` source, not by
+  prose near it (e.g. `check:doc-counts` counts `.md` files; `check:doc-exports`
+  enforces documented exports; `check:api` moves only on an `exports`-map
+  subpath change, never a barrel-surfaced symbol; `check:cadence` compares the
+  token set of checks, so reordering lefthook lanes needs no doc edit). Read
+  the script before designing a contract or plan around the gate.
 
 <!--
 ================================================================
