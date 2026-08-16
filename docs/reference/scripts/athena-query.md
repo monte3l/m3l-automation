@@ -25,8 +25,8 @@ handed to `M3LAthenaClient`, never called directly. The `pg`/`mongodb` engines
 are out of scope entirely — ADR-0029 dropped script-local drivers in favor of
 typed library wrappers; ADR-0031 separately re-admits Aurora PostgreSQL into
 fleet scope via the RDS Data API (see [`aws/rds-data`](../aws/rds-data.md))
-and keeps DocumentDB out of scope on named, pre-cleared terms, neither of
-which this script covers.
+and rejects DocumentDB (issue #205 — no AWS-SDK query path, no VPC-reachable
+execution environment), neither of which this script covers.
 
 ## Configuration schema
 

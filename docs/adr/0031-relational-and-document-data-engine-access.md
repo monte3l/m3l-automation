@@ -199,6 +199,44 @@ on its own, separately unmet terms.
 
 Both PRs in the two-PR chain landed: the `aws/rds-data` wrapper (merged as **PR:** #424) and its named consumer, the `rds-data-sql` script (merged as **PR:** #425), both on 2026-08-14. Issue #204's D4 row is flipped to `Done` in both trackers (`docs/ROADMAP.md`, `docs/plans/IMPLEMENTATION.md` § Gated library modules) and the issue is closed. ROADMAP W6 closes alongside it (issue #426). One known limitation carries forward rather than closing with the gate: no live Data-API-enabled Aurora cluster has yet exercised the wrapper end-to-end — both PRs' responses were verified against installed `@aws-sdk/client-rds-data` dist-types, not real infrastructure (`docs/logs/2026-08-14-aws-rds-data.md`, `docs/logs/2026-08-14-rds-data-sql.md`). DocumentDB's gate (issue #205) remains unaffected — it stays deferred on its own, separately unmet terms.
 
+## Update (2026-08-16) — the D4 DocumentDB gate is rejected
+
+Issue #205's D4 row is flipped `Deferred` → `Rejected` in both trackers
+(`docs/ROADMAP.md`, `docs/plans/IMPLEMENTATION.md` § Gated library modules),
+and the issue is closed. This is **not** a return to the original 2026-07
+Rejected verdict that was reverted in 2026-08 (that one misread this ADR as
+having "dropped" `mongodb`, when ADR-0029 did) — this rejection accepts the
+Decision above in full and rejects the gate on its own unmet terms: a
+2026-08 audit found no evidence anywhere in the repo of a real DocumentDB
+workload (every mention is gate bookkeeping, archived pre-ADR-0029 design
+material, a stale branch name, or a test fixture), confirmed there is still
+no AWS-SDK query path for DocumentDB, and confirmed the fleet's documented
+execution environment (public HTTPS, no VPC attachment) cannot reach a
+DocumentDB cluster.
+
+**The four named DocumentDB terms in the Decision section above (the
+optional `mongodb` peer, the `ERR_MONGODB_MISSING_DEP` error convention, the
+AWS-credential-seam requirement, and mandatory TLS) are withdrawn and no
+longer stand as pre-approval.** They are left in place as history — this ADR
+is immutable once Accepted (`docs/adr/README.md`) and its Aurora tier already
+shipped — but the same audit found they never covered three design problems
+a real wrapper would have to solve: (1) a provider-seam mismatch (an optional
+peer must load via `await import()`, but `AWSClientProvider`'s getters are
+documented as synchronous because every existing service client is a hard
+dependency — `packages/m3l-common/src/aws/clients/provider.ts`); (2) no
+connection-lifecycle precedent (every existing optional peer in `core/text`
+is a stateless per-call parser; a `MongoClient` needs connect/close
+lifecycle management); (3) no TLS/CA-bundle handling seam exists anywhere in
+the library. The terms therefore understated the true cost and cannot be
+cited as pre-clearance; any future proposal starts from a fresh boundary
+audit, not a narrow ADR-0017 application. ADR-0029's dependency boundary is
+left intact and unreopened.
+
+Revisit only if a real DocumentDB workload appears **and** a VPC-reachable
+execution environment is documented — matching the two-conjunct standard the
+Aurora gate actually met (issue #204: "a Data-API-enabled Aurora cluster
+became reachable").
+
 ## Links
 
 - Supersedes / superseded by: **refines [ADR-0029](./0029-script-dependency-boundary.md)**
