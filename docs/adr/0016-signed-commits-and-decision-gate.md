@@ -48,6 +48,40 @@
 > single consolidated `CodeQL` context instead
 > ([ADR-0015](./0015-code-scanning-tooling-evaluation.md) Update
 > (2026-08-06)). See `branch-protection.md` for the current list.
+>
+> **Update (2026-08-17).** The 2026-07-12 Update's revisit trigger ("Revisit
+> if a `Bash`-mediated bypass of one of these guards is ever observed in
+> practice") is retired — closes issue #210. A sweep of all 73
+> `docs/logs/*.md` work logs found zero such observations: the three recorded
+> incidents of the hub writing to a guarded path
+> (`docs/logs/2026-07-24-w5-promote-destructive-gate.md`,
+> `2026-07-26-w5-promote-checkpoint-store.md`,
+> `2026-07-27-scripts-codepipeline-ops.md`) all used the `Edit` tool, not
+> `Bash`. More decisively, nothing in the repo polls for the trigger's
+> condition — it can only ever arrive as a logged incident, the same ground on
+> which the ADR-0030 gh-CLI-vs-MCP revisit trigger was retired (commit
+> `33cb838`, issue #344). The 2026-07-12 Update's framing also overstated the
+> gap: it says the guards "do not see files mutated via the `Bash` tool," but
+> `.claude/hooks/guard-readonly-bash.mjs` — added that same day — already runs
+> on a `PreToolUse: Bash` matcher and pattern-matches redirection (`>`, `>>`,
+> `>|`), `tee`, and `sed -i`. It is scoped to read-only subagents only (keyed
+> on the hook payload's `agent_type` field), never the hub's own Bash calls,
+> so the accurate statement is that the write-time _content_ guards
+> (`guard-secret-writes`, `guard-js-extension`, etc.) are not wired to `Bash`,
+> not that Bash writes are unseeable to the hook layer generally. The
+> 2026-07-12 Update's "CI (`gitleaks`, branch protection) remains the
+> authoritative backstop" claim is also corrected: that holds per-guard for
+> `guard-secret-writes` (gitleaks), `guard-js-extension`/`guard-no-commonjs`
+> (ESLint `import-x/extensions`/`import-x/no-commonjs`) — but
+> `guard-branch-isolation` has no non-hook backstop at all; branch protection
+> stops an unsigned/unreviewed _push_, not a `main`-branch working-tree write.
+> That gap is real and observed (the three incidents above, all via `Edit` on
+> a feature branch where the guard correctly did not fire since it only
+> blocks writes on `main`), and is filed as its own P2 tracker row rather than
+> folded into this trigger. Replacement re-open condition for the retired
+> trigger: a `docs/logs/` entry recording an actual `Bash`-mediated write into
+> `packages/*/src/**`, `scripts/*/src/**`, `**/tests/**`, or `dist/**` that a
+> `Write|Edit` guard would have blocked.
 
 ## Context and problem statement
 
