@@ -38,11 +38,21 @@ the rule.
 **Blocking** hooks exit 2 and reject the tool call outright. **Advisory** hooks
 also exit 2 but only print a reminder to stderr — they never stop the edit.
 
-**Known gap (accepted risk):** the `Write|Edit` PreToolUse guards cannot see
-file writes made through `Bash` (`echo > .env`, heredocs, `tee`). This was
-deliberately not closed at the hook layer in the 2026-07-12 hardening pass; CI
-`gitleaks` and branch protection are the backstops. Tracked in
-`docs/plans/IMPLEMENTATION.md` (P2 table).
+**Known gap (accepted risk, issue #210 retired 2026-08-17):** the write-time
+_content_ `Write|Edit` guards (`guard-secret-writes`, `guard-js-extension`,
+etc.) are not wired to `Bash`. This is narrower than it sounds:
+`guard-readonly-bash.mjs` above already detects Bash-mediated writes
+(redirection, `tee`, `sed -i`) via a `PreToolUse: Bash` matcher — it just
+restricts read-only subagents rather than gating content for the hub. Wiring
+the content guards to it was deliberately not done in the 2026-07-12 hardening
+pass; CI `gitleaks` and branch protection are the backstops for
+`guard-secret-writes`/`guard-js-extension`/`guard-no-commonjs` specifically.
+**`guard-branch-isolation` has no non-hook backstop at all** — branch
+protection stops an unsigned/unreviewed push, not a `main`-branch
+working-tree write — and nothing distinguishes a hub-authored `Edit` from a
+spoke-authored one on a feature branch; tracked as its own P2 row in
+`docs/plans/IMPLEMENTATION.md`. See ADR-0016's 2026-08-17 Update and
+`docs/plans/archive/2026-08-17-retire-adr-0016-bash-write-trigger.md`.
 
 See also: `bin/check-hooks.mjs` (wiring validator), ADR-0016 (signed-commit
 enforcement), `docs/contributing/branch-protection.md`.
