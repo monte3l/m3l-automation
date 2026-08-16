@@ -151,7 +151,7 @@ real (non-mock) starting point.
   work was done. The existing truncation-recovery protocol (verify state
   directly before resuming) already covers this correctly; the added
   nuance worth naming is that verification can conclude "no action needed,"
-  not just "resume with a specific gap."
+  not just "resume with a specific gap." _(promoted → .claude/rules/subagent-dispatch.md)_
 - **`vi.spyOn` on an already-`vi.fn()`-wrapped export doesn't compose the way
   `vi.spyOn` on a real function does.** `vi.restoreAllMocks()` only fully
   resets spies created against a genuine (non-mock) starting implementation;

@@ -165,7 +165,7 @@ widened in this PR.
   N+1 needs unmerged phase N, branch stacked, then
   `git rebase --onto origin/main <parent> <branch>` after the squash merge;
   used three times here without conflict beyond one config-array union.
-  _(promoted → docs/contributing/contributing.md)_
+  _(promoted → docs/contributing/contributing.md)_ _(promoted → .claude/skills/resolving-merge-conflicts/SKILL.md)_
 - **Re-verify plan premises at build time** — two premises had self-healed
   between planning and building; the authoritative skill/doc text at build
   time outranks the plan that quoted it.

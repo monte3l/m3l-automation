@@ -20,7 +20,14 @@ occurrences. The checklist:
 - **Decompose before you dispatch.** Scale the dispatch to task complexity —
   a module/script spanning many files gets split into bounded sub-dispatches
   up front, not handed to one spoke as an indivisible turn. Don't rely on
-  journaling to make an oversized turn safe.
+  journaling to make an oversized turn safe. A single-file test suite is the
+  worst case: a `test-author` dispatch expected to produce more than ~40
+  tests in one file gets pre-split into two or more checkpointed batches (by
+  describe-block group), each ending with a run of the partial suite, rather
+  than authored in one unbroken pass — and a fix round crossing ~5+ distinct
+  findings gets split by item count the same way
+  (`2026-07-11-scripts-json-etl.md`, `2026-08-14-rds-data-sql.md`,
+  `2026-08-16-core-pipeline.md`).
 - **Size a FIX round by file, not by finding count.** A review fan-out returns
   findings grouped by concern; dispatching them that way hands one spoke every
   file the findings touch. Regroup by file — one spoke per file (or tight file
@@ -83,6 +90,15 @@ status`/`git diff`, re-run `tsc`/`eslint`/`vitest`/coverage) before deciding
   dispatch — a fresh agent has no memory of the prior exploration and restarts
   the whole budget from zero. Hand it a scoped punch-list of exactly what's
   left, not a full re-explanation.
+- **Verification can conclude "no resume needed" — prefer hub verification
+  over a resume when only the report is missing.** A truncated return whose
+  artifacts are already on disk (files written, gates green when you run them
+  yourself) needs no `SendMessage` resume at all — re-running the
+  verification battery from the hub is cheaper and faster than paying a
+  resume round. Reserve resumes for truncations where the work itself is
+  genuinely unfinished; six separate sessions confirmed the
+  report-cut-off-but-work-done case is at least as common as the
+  work-cut-off case.
 - **Review spokes return a bounded digest**, not an open-ended report — long
   findings spill to a scratchpad file; the return is a capped Must-fix/
   Should-fix/Nits summary plus the file path. Applies to `code-reviewer`,

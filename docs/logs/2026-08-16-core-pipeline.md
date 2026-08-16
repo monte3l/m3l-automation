@@ -88,7 +88,7 @@ exercise, and operation-list fixtures should be `as const` tuples with the
 union derived from them — the fixture style should model the intended
 consumer style, not fight it.
 
-### 2. Four writer-spoke mid-turn truncations in one run
+### 2. Four writer-spoke mid-turn truncations in one run _(promoted → .claude/rules/subagent-dispatch.md)_
 
 The RED test-author truncated twice, the fixture test-author once, and the
 GREEN implementer once at the report stage — each final message a progress
@@ -124,7 +124,7 @@ Update — treat ADR metrics as snapshots, never as current state.
   spec-conformance producer pass compiling probe fixtures killed the
   inference-vs-builder question with zero diagnostics before RED; a design
   fallback "to decide during implementation" is a decision you can force
-  earlier with a 10-minute compile probe.
+  earlier with a 10-minute compile probe. _(promoted → .claude/skills/implementing-submodules/SKILL.md)_
 - **Fixtures must not pin unexercised generics** — explicit five-type-arg
   instantiation as a fixture convenience blocked two soundness fixes; derive
   unions from `as const` tuples and let inference do the rest.
@@ -133,7 +133,7 @@ Update — treat ADR metrics as snapshots, never as current state.
   truncates with its artifacts already written and only the report missing,
   re-running the verification battery from the hub is cheaper and faster
   than a resume; reserve resumes for truncations with work genuinely
-  unfinished.
+  unfinished. _(promoted → .claude/rules/subagent-dispatch.md)_
 - **Re-derive a gating ADR's evidence before opening its gate** — ADR
   metrics are snapshots; the Update that opens a gate should carry the
   corrected census so the next reader isn't planning against stale numbers.

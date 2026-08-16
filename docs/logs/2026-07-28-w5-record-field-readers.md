@@ -181,4 +181,4 @@ have caught this before the first review round.
   `git rebase --onto origin/main <last-shared-commit> HEAD`**, not a plain
   `git rebase origin/main` — the latter tries to replay the base PR's
   already-squashed commits again and hits spurious conflicts against content
-  that's already identical in `main`.
+  that's already identical in `main`. _(promoted → .claude/skills/resolving-merge-conflicts/SKILL.md)_

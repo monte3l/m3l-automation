@@ -187,7 +187,7 @@ running the gates) remains the backstop that actually caught it here.
 unknown>>` → `Record<string, unknown>` assignability) let every dispatch
   prompt state a settled fact ("no downstream type-widening needed") instead
   of hedging with "widen if the compiler complains," which would have invited
-  6 independent, possibly-inconsistent workarounds.
+  6 independent, possibly-inconsistent workarounds. _(promoted → .claude/skills/implementing-submodules/SKILL.md)_
 - **Surveying out-of-scope duplication clusters and filing them as tracker
   rows — instead of silently dropping the survey — keeps a future promotion
   pass from re-deriving the same scope analysis.** The 4 new `Deferred` rows

@@ -142,7 +142,7 @@ inventing a second, independently-suppliable parameter for the same
 information — a single source of truth is usually available for free if the
 holding class is under your control in the same PR.
 
-### 3. Two more writer-spoke truncations, both verified harmless
+### 3. Two more writer-spoke truncations, both verified harmless _(promoted → .claude/rules/subagent-dispatch.md)_
 
 Both `test-author` dispatches (initial RED, fix-round RED) and one
 `code-implementer` dispatch (initial GREEN) returned truncated, mid-thought

@@ -224,7 +224,7 @@ truncation cost one extra round-trip, not a wasted dispatch.
   fairly large surface (9 step modules, 138 tests). The one truncation that
   did occur was in a later, single large 7-item fix-round dispatch, which
   reinforces rather than contradicts the lesson: split by item count as well
-  as by file group when a fix round crosses roughly 5+ distinct findings.
+  as by file group when a fix round crosses roughly 5+ distinct findings. _(promoted → .claude/rules/subagent-dispatch.md)_
 - **Tracker status flips for a not-yet-numbered PR belong in a later,
   separate `docs:` commit, not the feature PR itself.** Investigated via
   `git log -S` rather than assumed: this repo's actual practice for prior

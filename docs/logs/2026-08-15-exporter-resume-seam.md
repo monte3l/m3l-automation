@@ -110,7 +110,7 @@ _existing_ suite before dispatching GREEN, to catch this class of breakage
 before it's discovered mid-flight) rather than assuming its blast radius is
 obvious from the fix description alone.
 
-### 2. A GREEN-phase implementer's fix for one bug surfaced a second, more severe bug in the same function, caught only by the proving-test author
+### 2. A GREEN-phase implementer's fix for one bug surfaced a second, more severe bug in the same function, caught only by the proving-test author _(promoted → .claude/agents/test-author.md)_
 
 Fixing `run-query.ts`'s close()-failure attribution (making a close() failure
 after primary success propagate as a real error) required a `test.fails()`

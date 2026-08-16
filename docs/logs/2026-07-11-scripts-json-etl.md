@@ -67,7 +67,7 @@ Two signed commits on `feat/script-json-etl`: `95de1fc`
 
 ## What didn't go as planned, and why
 
-### 1. Both writer spokes truncated mid-thought; the test-author wrote nothing on its first pass
+### 1. Both writer spokes truncated mid-thought; the test-author wrote nothing on its first pass _(promoted → .claude/rules/subagent-dispatch.md)_
 
 The `test-author`'s first run burned its **entire** budget (150k tokens, 55 tool
 uses) on exploration + planning and wrote **zero** files, returning a truncated
