@@ -108,7 +108,7 @@ code: "ERR_*_ABORTED"})`) required no new imports and no structural changes
 
 ## What didn't go as planned, and why
 
-### 1. A writer-spoke truncation on the first fleet-retrofit dispatch
+### 1. A writer-spoke truncation on the first fleet-retrofit dispatch _(promoted → .claude/rules/subagent-dispatch.md)_
 
 The first `code-implementer` dispatch for Phase B (delete 5 files, update 9
 call sites) ended its final message mid-thought: "Let's view and fix each of

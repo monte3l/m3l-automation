@@ -290,6 +290,15 @@ expect(new Set(names).size).toBe(names.length);
   documented `M3LError` subclass with its `cause` chained.
 - Boolean spies return `mockReturnValue(false)`, not `undefined` — the TS type wins over Node's runtime reality.
 - Vitest 4.x `expectTypeOf` precision: `.toBeBigInt()` (not `.toBigInt()`), and `.toMatchTypeOf<T>()` for subtype checks (not `.toEqualTypeOf`). A 2-tuple `test.each` row callback must accept **both** params.
+- **A regression test must discriminate the fix — verify it fails against the
+  pre-fix code.** A fixture that passes post-fix proves nothing by itself: it
+  can coincidentally pass (e.g. `String(obj)` collapsing to
+  `"[object Object]"` defeats an object-shaped leak fixture) or fail for an
+  unrelated reason. Trace or run the pre-fix behavior and confirm the test
+  fails for the finding's exact mechanism; when writing the test before the
+  fix lands, `test.fails()` gives the same proof as an XPASS the moment the
+  fix arrives (`docs/logs/2026-08-11-aws-sqs-redrive-athena-template.md`,
+  `docs/logs/2026-08-15-exporter-resume-seam.md`).
 - **Mock at collaborator seams, not the library barrel.** Never
   `vi.mock("@m3l-automation/m3l-common")` to override a library function the
   code under test might receive indirectly (e.g. `confirmDestructive` invoked

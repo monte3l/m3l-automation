@@ -78,7 +78,7 @@ reminder that the pre-push is only a backstop; `main`'s health depends on not
 - **A token-set cadence guard makes structural hook edits free.** Because
   `check:cadence` compares which checks run (not how they're arranged),
   reordering or parallelizing `lefthook.yml` needs no doc edit — confirmed by
-  reading `bin/check-cadence-doc.mjs` before editing rather than guessing.
+  reading `bin/check-cadence-doc.mjs` before editing rather than guessing. _(promoted → CLAUDE.md)_
 - **Warming turbo does not speed the slow pre-push lanes.** `test:coverage` and
   `lint` are un-cached (turbo caches only `build`/`typecheck`), so "run the gates
   first" never shortened the timeout-prone step — the real fixes are concurrency

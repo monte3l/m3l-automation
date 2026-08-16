@@ -165,7 +165,7 @@ enumerate every site that must change — the guard is the source of truth.
   same-day Dependabot dependency fails install and every `pnpm <script>`; fix by
   adding `name@version` to `minimumReleaseAgeExclude` as a standalone `build:`
   commit, and pass `--config.verify-deps-before-run=false` for the session once
-  node_modules is complete — don't weaken the policy.
+  node_modules is complete — don't weaken the policy. _(promoted → CLAUDE.md)_
 - **Confirm only surface-affecting spec-silent decisions.** For an
   interface-only module, settle low-stakes inferred gaps with stated defaults and
   reserve user confirmation for choices that change the public API or

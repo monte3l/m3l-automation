@@ -204,4 +204,4 @@ verification commands myself took under two minutes).
   plus a direct re-run of the five gate commands confirmed everything was
   actually done in under two minutes — cheaper than resuming the spoke and
   much cheaper than assuming failure and redoing the work. Confirms the
-  existing `subagent-dispatch.md` guidance rather than adding anything new.
+  existing `subagent-dispatch.md` guidance rather than adding anything new. _(promoted → .claude/rules/subagent-dispatch.md)_

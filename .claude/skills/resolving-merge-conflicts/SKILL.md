@@ -62,6 +62,17 @@ gen:counts`, not a real conflict).
 
 ## Steps
 
+### 0 — Stacked PR reported CONFLICTING after its base squash-merged?
+
+If the trigger is a GitHub PR showing `CONFLICTING` right after its base PR
+squash-merged (a stacked PR retargeted to `main`), it is usually NOT a content
+conflict: the branch's duplicated base commits clash with their own squashed
+copies on `main`. Before classifying any hunks, try
+`git rebase --onto origin/main <old-base-branch> <branch>` (see
+`docs/contributing/contributing.md`) — it replays only the PR's own commits
+and typically resolves with zero conflicted paths. Fall through to the steps
+below only if that rebase itself stops on conflicts.
+
 ### 1 — Detect the in-progress operation
 
 Determine whether a rebase or a merge is underway and capture the conflicted
