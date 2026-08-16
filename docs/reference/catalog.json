@@ -368,7 +368,16 @@
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/pipeline.md",
-    "symbols": []
+    "symbols": [
+      "M3LOperationPipeline",
+      "M3LOperationPipelineBaseDeps",
+      "M3LGuardableKey",
+      "M3LOperationHandlers",
+      "M3LPipelineDeclinePolicy",
+      "M3LPipelineDestructiveOptions",
+      "M3LOperationPipelineOptions",
+      "M3LOperationPipelineOutcome"
+    ]
   },
   {
     "namespace": "core",

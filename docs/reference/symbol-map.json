@@ -1202,6 +1202,46 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/network/M3LFileDownloader.ts"
   },
+  "M3LOperationPipeline": {
+    "submodule": "pipeline",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/pipeline/M3LOperationPipeline.ts"
+  },
+  "M3LOperationPipelineBaseDeps": {
+    "submodule": "pipeline",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/pipeline/types.ts"
+  },
+  "M3LGuardableKey": {
+    "submodule": "pipeline",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/pipeline/types.ts"
+  },
+  "M3LOperationHandlers": {
+    "submodule": "pipeline",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/pipeline/types.ts"
+  },
+  "M3LPipelineDeclinePolicy": {
+    "submodule": "pipeline",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/pipeline/types.ts"
+  },
+  "M3LPipelineDestructiveOptions": {
+    "submodule": "pipeline",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/pipeline/types.ts"
+  },
+  "M3LOperationPipelineOptions": {
+    "submodule": "pipeline",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/pipeline/types.ts"
+  },
+  "M3LOperationPipelineOutcome": {
+    "submodule": "pipeline",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/pipeline/types.ts"
+  },
   "M3LPoller": {
     "submodule": "polling",
     "namespace": "core",
