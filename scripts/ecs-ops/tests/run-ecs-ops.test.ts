@@ -2,8 +2,6 @@ import * as fsp from "node:fs/promises";
 
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
-import type * as M3LCommon from "@m3l-automation/m3l-common";
-
 /**
  * Contract: docs/reference/scripts/ecs-ops.md `run-ecs-ops` row — the
  * orchestrator/dispatcher. Resolves and guard-checks config per operation
@@ -20,11 +18,18 @@ import type * as M3LCommon from "@m3l-automation/m3l-common";
  * ONLY the orchestrator's guard/gate/dispatch/persist wiring, never a
  * step's internal logic — that is each step's own test file's job);
  * `node:fs/promises` and `Core.M3LJSONFileExporter` are the true I/O
- * boundary, also mocked. `Core.confirmDestructive` is a stable library
- * function, not a locally dynamic-imported step, so it is intercepted via a
- * package-level `vi.mock("@m3l-automation/m3l-common", ...)` factory that
- * spreads the real module and overrides only `Core.confirmDestructive`,
- * rather than a `vi.mock` of a local module path.
+ * boundary, also mocked. The destructive gate itself
+ * (`Core.confirmDestructive`) runs for real: `Core.M3LOperationPipeline`
+ * invokes it via an internal relative import that a package-level
+ * `vi.mock("@m3l-automation/m3l-common", ...)` override of
+ * `Core.confirmDestructive` cannot intercept, so the gate is instead
+ * exercised end to end and observed at the one seam it always calls
+ * through — a per-test `Core.M3LPrompt` instance's `confirm` method, spied
+ * via `vi.spyOn` (the same technique
+ * `scripts/s3-objects/tests/steps/run-s3-objects.test.ts` uses for its own
+ * destructive gate). This is architecture-agnostic: it observes the gate at
+ * the prompt boundary `confirmDestructive` has always called through,
+ * regardless of how the pipeline that invokes it is wired.
  */
 
 vi.mock("node:fs/promises", async () => {
@@ -32,27 +37,11 @@ vi.mock("node:fs/promises", async () => {
   return { ...actual, readFile: vi.fn(actual.readFile) };
 });
 
-// vi.hoisted() is required here (unlike the plain vi.fn() locals below):
-// @m3l-automation/m3l-common is imported statically below, so its vi.mock
-// factory runs eagerly at module-eval time when that import is resolved —
-// before a plain top-level `const` would have initialized. The relative-path
-// step mocks are only resolved lazily via the dispatcher's dynamic import()
-// inside a test body, by which point a plain const has long since run.
-const destructiveGateMock = vi.hoisted(() =>
-  vi.fn().mockResolvedValue(undefined),
-);
 const readServicesMock = vi.fn();
 const writeServiceMock = vi.fn();
 const waitServicesMock = vi.fn();
 const readClustersMock = vi.fn();
 
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
-  const actual = await importOriginal<typeof M3LCommon>();
-  return {
-    ...actual,
-    Core: { ...actual.Core, confirmDestructive: destructiveGateMock },
-  };
-});
 vi.mock("../src/steps/read-services.js", () => ({
   readServices: readServicesMock,
 }));
@@ -116,13 +105,26 @@ function buildDeps(
   };
 }
 
+/**
+ * Builds a `Core.M3LPrompt` whose `confirm` method is stubbed to resolve
+ * `confirmed`, alongside the spy itself. `Core.confirmDestructive` (invoked
+ * internally by `Core.M3LOperationPipeline`) always calls `deps.prompt.confirm`
+ * directly on the decline/confirm path — this is the seam every gate test in
+ * this file observes instead of a `Core`-barrel override.
+ */
+function confirmingPrompt(confirmed: boolean) {
+  const prompt = new Core.M3LPrompt();
+  const confirm = vi.spyOn(prompt, "confirm").mockResolvedValue(confirmed);
+  return { prompt, confirm };
+}
+
 afterEach(() => {
-  // restoreAllMocks() only undoes vi.spyOn spies; it does not clear the
-  // plain vi.fn() mocks created inside the top-level vi.mock() factories
-  // above, so their call history would otherwise leak into the next test.
+  // restoreAllMocks() only undoes vi.spyOn spies (fsp.readFile and
+  // prompt.confirm above); it does not clear the plain vi.fn() mocks created
+  // inside the top-level vi.mock() factories above, so their call history
+  // would otherwise leak into the next test.
   vi.restoreAllMocks();
   vi.mocked(fsp.readFile).mockReset();
-  destructiveGateMock.mockReset().mockResolvedValue(undefined);
   readServicesMock.mockReset();
   writeServiceMock.mockReset();
   waitServicesMock.mockReset();
@@ -133,12 +135,16 @@ describe("runEcsOps — per-operation config guards (fire before any AWS call or
   test.each(["describe-service", "delete-service", "wait-services-stable"])(
     "throws ERR_ECS_OPS_CONFIG when operation '%s' is missing 'cluster'",
     async (operation) => {
-      const deps = buildDeps({ operation, service: "my-svc", services: "a" });
+      const { prompt, confirm } = confirmingPrompt(true);
+      const deps = buildDeps(
+        { operation, service: "my-svc", services: "a" },
+        { prompt },
+      );
 
       await expect(runEcsOps(deps)).rejects.toMatchObject({
         code: "ERR_ECS_OPS_CONFIG",
       });
-      expect(destructiveGateMock).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
       expect(readServicesMock).not.toHaveBeenCalled();
       expect(writeServiceMock).not.toHaveBeenCalled();
       expect(waitServicesMock).not.toHaveBeenCalled();
@@ -147,22 +153,26 @@ describe("runEcsOps — per-operation config guards (fire before any AWS call or
   );
 
   test("throws ERR_ECS_OPS_CONFIG when operation 'describe-cluster' is missing 'cluster'", async () => {
-    const deps = buildDeps({ operation: "describe-cluster" });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps({ operation: "describe-cluster" }, { prompt });
 
     await expect(runEcsOps(deps)).rejects.toMatchObject({
       code: "ERR_ECS_OPS_CONFIG",
     });
+    expect(confirm).not.toHaveBeenCalled();
     expect(readClustersMock).not.toHaveBeenCalled();
   });
 
   test.each(["describe-service", "delete-service"])(
     "throws ERR_ECS_OPS_CONFIG when operation '%s' is missing 'service'",
     async (operation) => {
-      const deps = buildDeps({ operation, cluster: "my-cluster" });
+      const { prompt, confirm } = confirmingPrompt(true);
+      const deps = buildDeps({ operation, cluster: "my-cluster" }, { prompt });
 
       await expect(runEcsOps(deps)).rejects.toMatchObject({
         code: "ERR_ECS_OPS_CONFIG",
       });
+      expect(confirm).not.toHaveBeenCalled();
       expect(readServicesMock).not.toHaveBeenCalled();
       expect(writeServiceMock).not.toHaveBeenCalled();
     },
@@ -183,12 +193,13 @@ describe("runEcsOps — per-operation config guards (fire before any AWS call or
   test.each(["create-service", "update-service"])(
     "throws ERR_ECS_OPS_CONFIG when operation '%s' is missing 'input'",
     async (operation) => {
-      const deps = buildDeps({ operation });
+      const { prompt, confirm } = confirmingPrompt(true);
+      const deps = buildDeps({ operation }, { prompt });
 
       await expect(runEcsOps(deps)).rejects.toMatchObject({
         code: "ERR_ECS_OPS_CONFIG",
       });
-      expect(destructiveGateMock).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
       expect(writeServiceMock).not.toHaveBeenCalled();
       expect(fsp.readFile).not.toHaveBeenCalled();
     },
@@ -246,75 +257,79 @@ describe("runEcsOps — destructive-gate dispatch (create/update/delete-service 
   ])("never runs destructive-gate for '%s'", async (operation) => {
     readServicesMock.mockResolvedValue({ serviceArns: [] });
     readClustersMock.mockResolvedValue({ clusterArns: [] });
-    const deps = buildDeps({
-      operation,
-      cluster: "my-cluster",
-      service: "my-svc",
-    });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      { operation, cluster: "my-cluster", service: "my-svc" },
+      { prompt },
+    );
 
     await runEcsOps(deps);
 
-    expect(destructiveGateMock).not.toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
   });
 
   test("never runs destructive-gate for 'wait-services-stable'", async () => {
     waitServicesMock.mockResolvedValue({ state: "SUCCESS" });
-    const deps = buildDeps({
-      operation: "wait-services-stable",
-      cluster: "my-cluster",
-      services: "svc-a",
-    });
-
-    await runEcsOps(deps);
-
-    expect(destructiveGateMock).not.toHaveBeenCalled();
-  });
-
-  test("runs destructive-gate before dispatching 'delete-service', building description from cluster/service config values", async () => {
-    writeServiceMock.mockResolvedValue(SERVICE_DESCRIPTION);
-    const deps = buildDeps({
-      operation: "delete-service",
-      cluster: "my-cluster",
-      service: "my-svc",
-    });
-
-    await runEcsOps(deps);
-
-    expect(destructiveGateMock).toHaveBeenCalledTimes(1);
-    const call = destructiveGateMock.mock.calls[0] as [
-      { readonly description: string; readonly yes: boolean },
-    ];
-    expect(call[0].description).toContain("my-cluster");
-    expect(call[0].description).toContain("my-svc");
-    expect(call[0].yes).toBe(false);
-  });
-
-  test("forwards 'yes' through to destructive-gate", async () => {
-    writeServiceMock.mockResolvedValue(SERVICE_DESCRIPTION);
-    const deps = buildDeps({
-      operation: "delete-service",
-      cluster: "my-cluster",
-      service: "my-svc",
-      yes: true,
-    });
-
-    await runEcsOps(deps);
-
-    const call = destructiveGateMock.mock.calls[0] as [
-      { readonly yes: boolean },
-    ];
-    expect(call[0].yes).toBe(true);
-  });
-
-  test("propagates ERR_ECS_OPS_ABORTED from destructive-gate, never dispatching writeService", async () => {
-    destructiveGateMock.mockRejectedValue(
-      new Core.M3LError("aborted", { code: "ERR_ECS_OPS_ABORTED" }),
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "wait-services-stable",
+        cluster: "my-cluster",
+        services: "svc-a",
+      },
+      { prompt },
     );
-    const deps = buildDeps({
-      operation: "delete-service",
-      cluster: "my-cluster",
-      service: "my-svc",
-    });
+
+    await runEcsOps(deps);
+
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  test("runs the destructive gate before dispatching 'delete-service', reaching the prompt with a 'Confirm: ...?' message built from cluster/service config values", async () => {
+    writeServiceMock.mockResolvedValue(SERVICE_DESCRIPTION);
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      { operation: "delete-service", cluster: "my-cluster", service: "my-svc" },
+      { prompt },
+    );
+
+    await runEcsOps(deps);
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringMatching(/^Confirm: .*\?$/),
+    );
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("my-cluster"));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("my-svc"));
+  });
+
+  test("'yes: true' bypasses the interactive prompt entirely and logs the gate's own bypass warning, still dispatching writeService", async () => {
+    writeServiceMock.mockResolvedValue(SERVICE_DESCRIPTION);
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "delete-service",
+        cluster: "my-cluster",
+        service: "my-svc",
+        yes: true,
+      },
+      { prompt },
+    );
+    const warningSpy = vi.spyOn(deps.logger, "warning");
+
+    await runEcsOps(deps);
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(warningSpy).toHaveBeenCalled();
+    expect(writeServiceMock).toHaveBeenCalled();
+  });
+
+  test("propagates ERR_ECS_OPS_ABORTED when the interactive gate is declined, never dispatching writeService", async () => {
+    const { prompt } = confirmingPrompt(false);
+    const deps = buildDeps(
+      { operation: "delete-service", cluster: "my-cluster", service: "my-svc" },
+      { prompt },
+    );
 
     await expect(runEcsOps(deps)).rejects.toMatchObject({
       code: "ERR_ECS_OPS_ABORTED",
@@ -322,7 +337,7 @@ describe("runEcsOps — destructive-gate dispatch (create/update/delete-service 
     expect(writeServiceMock).not.toHaveBeenCalled();
   });
 
-  test("builds the 'create-service' gate description from the parsed input's serviceName/cluster", async () => {
+  test("builds the 'create-service' gate description from the parsed input's serviceName/cluster, reaching the prompt", async () => {
     const inputPath = PATHS.resolveInput("create.json");
     const parsedInput = {
       cluster: "my-cluster",
@@ -331,54 +346,50 @@ describe("runEcsOps — destructive-gate dispatch (create/update/delete-service 
     };
     stubReadFileByPath({ [inputPath]: JSON.stringify(parsedInput) });
     writeServiceMock.mockResolvedValue(SERVICE_DESCRIPTION);
-    const deps = buildDeps({
-      operation: "create-service",
-      input: "create.json",
-    });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      { operation: "create-service", input: "create.json" },
+      { prompt },
+    );
 
     await runEcsOps(deps);
 
-    const call = destructiveGateMock.mock.calls[0] as [
-      { readonly description: string },
-    ];
-    expect(call[0].description).toContain("my-cluster");
-    expect(call[0].description).toContain("my-svc");
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("my-cluster"));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("my-svc"));
   });
 
   test("falls back to a generic '(see input file)' phrase when the parsed input has neither serviceName/service nor cluster", async () => {
     const inputPath = PATHS.resolveInput("create.json");
     stubReadFileByPath({ [inputPath]: JSON.stringify({}) });
     writeServiceMock.mockResolvedValue(SERVICE_DESCRIPTION);
-    const deps = buildDeps({
-      operation: "create-service",
-      input: "create.json",
-    });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      { operation: "create-service", input: "create.json" },
+      { prompt },
+    );
 
     await runEcsOps(deps);
 
-    const call = destructiveGateMock.mock.calls[0] as [
-      { readonly description: string },
-    ];
-    expect(call[0].description).toContain("(see input file)");
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining("(see input file)"),
+    );
   });
 
-  test("builds the 'update-service' gate description using the parsed input's 'service' field (serviceName ?? service fallback)", async () => {
+  test("builds the 'update-service' gate description using the parsed input's 'service' field (serviceName ?? service fallback), reaching the prompt", async () => {
     const inputPath = PATHS.resolveInput("update.json");
     const parsedInput = { cluster: "my-cluster", service: "my-svc" };
     stubReadFileByPath({ [inputPath]: JSON.stringify(parsedInput) });
     writeServiceMock.mockResolvedValue(SERVICE_DESCRIPTION);
-    const deps = buildDeps({
-      operation: "update-service",
-      input: "update.json",
-    });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      { operation: "update-service", input: "update.json" },
+      { prompt },
+    );
 
     await runEcsOps(deps);
 
-    const call = destructiveGateMock.mock.calls[0] as [
-      { readonly description: string },
-    ];
-    expect(call[0].description).toContain("my-cluster");
-    expect(call[0].description).toContain("my-svc");
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("my-cluster"));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("my-svc"));
   });
 });
 
@@ -431,10 +442,13 @@ describe("runEcsOps — operation dispatch routing", () => {
     };
     stubReadFileByPath({ [inputPath]: JSON.stringify(parsedInput) });
     writeServiceMock.mockResolvedValue(SERVICE_DESCRIPTION);
-    const deps = buildDeps({
-      operation: "create-service",
-      input: "create.json",
-    });
+    // create-service is destructive-gated; a real (unstubbed) M3LPrompt
+    // would otherwise block on real stdin here — see confirmingPrompt.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      { operation: "create-service", input: "create.json" },
+      { prompt },
+    );
 
     await runEcsOps(deps);
 
@@ -448,12 +462,17 @@ describe("runEcsOps — operation dispatch routing", () => {
 
   test("'delete-service' dispatches to writeService with cluster/service/force from config, input undefined", async () => {
     writeServiceMock.mockResolvedValue(SERVICE_DESCRIPTION);
-    const deps = buildDeps({
-      operation: "delete-service",
-      cluster: "my-cluster",
-      service: "my-svc",
-      force: true,
-    });
+    // delete-service is destructive-gated; see the create-service test above.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "delete-service",
+        cluster: "my-cluster",
+        service: "my-svc",
+        force: true,
+      },
+      { prompt },
+    );
 
     await runEcsOps(deps);
 
@@ -605,6 +624,47 @@ describe("runEcsOps — wait-services-stable: persist-then-throw ordering on non
     });
 
     await expect(runEcsOps(deps)).resolves.toBeUndefined();
+  });
+});
+
+describe("runEcsOps — finalize wait-state assertion (isWaiterResult structural check)", () => {
+  test("a non-waiter result (describe-cluster's M3LECSClusterSummary, carrying 'status' not 'state') never triggers ERR_ECS_OPS_WAIT_NOT_STABLE, even with a non-SUCCESS-looking status value", async () => {
+    readClustersMock.mockResolvedValue({
+      clusterArn: "arn:aws:ecs:us-east-1:123:cluster/my-cluster",
+      clusterName: "my-cluster",
+      status: "INACTIVE",
+    });
+    const deps = buildDeps({
+      operation: "describe-cluster",
+      cluster: "my-cluster",
+    });
+
+    await expect(runEcsOps(deps)).resolves.toBeUndefined();
+  });
+});
+
+describe("runEcsOps — completion-log payload", () => {
+  test("logs completion with the re-derived cluster/service/services context matching the configured values", async () => {
+    waitServicesMock.mockResolvedValue({ state: "SUCCESS" });
+    const deps = buildDeps({
+      operation: "wait-services-stable",
+      cluster: "my-cluster",
+      services: "svc-a,svc-b",
+      service: "my-svc",
+    });
+    const stepSpy = vi.spyOn(deps.logger, "step");
+
+    await runEcsOps(deps);
+
+    expect(stepSpy).toHaveBeenCalledWith(
+      "ecs-ops run run-1 complete",
+      expect.objectContaining({
+        operation: "wait-services-stable",
+        cluster: "my-cluster",
+        service: "my-svc",
+        services: "svc-a,svc-b",
+      }),
+    );
   });
 });
 
