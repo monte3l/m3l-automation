@@ -170,6 +170,7 @@ export const M3L_ERROR_CATALOG: Readonly<
   ERR_LOG_TABLE_ALIGN: { origin: "caller", retryable: false },
   ERR_LOG_TABLE_BORDER: { origin: "caller", retryable: false },
   ERR_PATH_RESOLUTION: { origin: "external", retryable: false },
+  ERR_PIPELINE_INVALID_OPTION: { origin: "caller", retryable: false },
   ERR_POLLING_INVALID_OPTION: { origin: "caller", retryable: false },
   ERR_POLL_EXHAUSTED: { origin: "external", retryable: true },
   ERR_POLL_FAILURE: { origin: "external", retryable: false },

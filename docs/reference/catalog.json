@@ -363,6 +363,15 @@
   },
   {
     "namespace": "core",
+    "name": "pipeline",
+    "importPath": "@m3l-automation/m3l-common/core",
+    "status": "🧪",
+    "wired": true,
+    "docPath": "docs/reference/core/pipeline.md",
+    "symbols": []
+  },
+  {
+    "namespace": "core",
     "name": "polling",
     "importPath": "@m3l-automation/m3l-common/core",
     "status": "✅",
