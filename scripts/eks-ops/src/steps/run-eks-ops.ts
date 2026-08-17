@@ -38,6 +38,7 @@ interface RawSettings {
   readonly include: readonly string[] | undefined;
   readonly maxWaitTime: number;
   readonly yes: boolean;
+  readonly operation: EksOperation;
 }
 
 /** The full dependency bag `runEksOps` receives and the pipeline threads through. */
@@ -65,23 +66,7 @@ interface PrepareResult {
   readonly input: Readonly<Record<string, unknown>> | undefined;
 }
 
-/**
- * Builds a fresh `Core.M3LConfigAccessor` over `deps.config`, coded
- * `ERR_EKS_OPS_CONFIG`. `M3LOperationHandlers`/`prepare` only receive the
- * pipeline's `deps` bag — the one remaining site that still needs a config
- * read outside the engine's own phases (the completion-log re-read in
- * {@link runEksOps}) builds its own. `M3LConfigAccessor` is a stateless
- * read-through wrapper, so constructing a fresh one per call is behaviorally
- * identical to sharing one instance.
- */
-function buildAccessor(deps: Deps): Core.M3LConfigAccessor {
-  return new Core.M3LConfigAccessor({
-    config: deps.config,
-    code: "ERR_EKS_OPS_CONFIG",
-  });
-}
-
-/** Builds a fresh `Core.M3LInputFileReader` over `deps.paths`, coded `ERR_EKS_OPS_CONFIG` — see {@link buildAccessor}. */
+/** Builds a fresh `Core.M3LInputFileReader` over `deps.paths`, coded `ERR_EKS_OPS_CONFIG`. */
 function buildReader(deps: Deps): Core.M3LInputFileReader {
   return new Core.M3LInputFileReader({
     paths: deps.paths,
@@ -192,6 +177,7 @@ function resolveSettings(accessor: Core.M3LConfigAccessor): RawSettings {
       MAX_WAIT_TIME_DEFAULT,
     ),
     yes: accessor.booleanWithDefault("yes", YES_DEFAULT),
+    operation: accessor.requiredString("operation", "eks-ops") as EksOperation,
   };
 }
 
@@ -556,11 +542,21 @@ const pipeline = new Core.M3LOperationPipeline<
     "wait-nodegroup-deleted": dispatchWaitNodegroup,
   },
   persist: async (result, settings, deps) => {
-    if (settings.output === undefined) return;
-    let safeResult: DispatchResult | Record<string, unknown> = result;
+    let summaryFields: Record<string, unknown> = {};
     if (isWaiterResult(result) || isUpdateResult(result)) {
-      safeResult = buildSafeSummaryFields(result);
+      summaryFields = buildSafeSummaryFields(result);
     }
+    deps.logger.step(`eks-ops operation '${settings.operation}' complete`, {
+      operation: settings.operation,
+      ...(settings.cluster !== undefined && { cluster: settings.cluster }),
+      ...(settings.nodegroup !== undefined && {
+        nodegroup: settings.nodegroup,
+      }),
+      ...summaryFields,
+    });
+    if (settings.output === undefined) return;
+    const safeResult: DispatchResult | Record<string, unknown> =
+      isWaiterResult(result) || isUpdateResult(result) ? summaryFields : result;
     const exporter = new Core.M3LJSONFileExporter({
       filePath: deps.paths.resolveOutput(settings.output),
     });
@@ -645,25 +641,5 @@ const pipeline = new Core.M3LOperationPipeline<
  * ```
  */
 export async function runEksOps(deps: Deps): Promise<void> {
-  const outcome = await pipeline.run(deps);
-
-  // Re-derives the cluster/nodegroup log context — the outcome carries no
-  // settings. This stays a pure config read with no side effect, so
-  // recomputing it here (after `run()` resolves, so it never fires when
-  // `finalize` throws) preserves the completion log's shape.
-  const accessor = buildAccessor(deps);
-  const cluster = accessor.optionalString("cluster");
-  const nodegroup = accessor.optionalString("nodegroup");
-
-  let summaryFields: Record<string, unknown> = {};
-  if (isWaiterResult(outcome.result) || isUpdateResult(outcome.result)) {
-    summaryFields = buildSafeSummaryFields(outcome.result);
-  }
-
-  deps.logger.step(`eks-ops operation '${outcome.operation}' complete`, {
-    operation: outcome.operation,
-    ...(cluster !== undefined && { cluster }),
-    ...(nodegroup !== undefined && { nodegroup }),
-    ...summaryFields,
-  });
+  await pipeline.run(deps);
 }
