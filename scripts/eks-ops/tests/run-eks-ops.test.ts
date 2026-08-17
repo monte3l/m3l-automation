@@ -22,9 +22,12 @@ import type * as M3LCommon from "@m3l-automation/m3l-common";
  * mocked (this file asserts ONLY the orchestrator's guard/gate/dispatch/
  * persist wiring, never a step's internal logic — that is each step's own
  * test file's job); `node:fs/promises` and `Core.M3LJSONFileExporter` are the
- * true I/O boundary, also mocked. `Core.confirmDestructive` is intercepted
- * via a package-level `vi.mock("@m3l-automation/m3l-common", ...)` factory
- * that spreads the real module and overrides only `Core.confirmDestructive`.
+ * true I/O boundary, also mocked. `Core.confirmDestructive`'s gate is
+ * intercepted via `vi.spyOn(prompt, "confirm")` — both the current
+ * orchestrator (which calls `Core.confirmDestructive({ prompt: deps.prompt,
+ * ... })`) and the future `Core.M3LOperationPipeline` (which invokes the same
+ * gate through an internal relative import) observe the gate through
+ * `deps.prompt.confirm`, making the spy the seam that works for both.
  */
 
 vi.mock("node:fs/promises", async () => {
@@ -32,16 +35,11 @@ vi.mock("node:fs/promises", async () => {
   return { ...actual, readFile: vi.fn(actual.readFile) };
 });
 
-// vi.hoisted() for every mock referenced inside a vi.mock(...) factory below:
-// @m3l-automation/m3l-common is imported statically further down, so its
-// factory runs eagerly at module-eval time — before a plain top-level const
-// would have initialized. The six step-module mocks are hoisted defensively
-// too, since it is not yet known (the implementation doesn't exist) whether
-// run-eks-ops.ts will reach them via a static or a dynamic import() — see
-// `.claude/rules/tests.md`'s note on this exact hazard.
-const destructiveGateMock = vi.hoisted(() =>
-  vi.fn().mockResolvedValue(undefined),
-);
+// vi.hoisted() for every mock referenced inside a vi.mock(...) factory below.
+// The six step-module mocks are hoisted defensively: if run-eks-ops.ts ever
+// adds a static import from one of those step modules (even just a shared
+// constant), the factory runs eagerly at module-eval time — before a plain
+// top-level const would have initialized — see `.claude/rules/tests.md`.
 const readClustersMock = vi.hoisted(() => vi.fn());
 const writeClusterMock = vi.hoisted(() => vi.fn());
 const waitClusterMock = vi.hoisted(() => vi.fn());
@@ -51,10 +49,7 @@ const waitNodegroupMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
   const actual = await importOriginal<typeof M3LCommon>();
-  return {
-    ...actual,
-    Core: { ...actual.Core, confirmDestructive: destructiveGateMock },
-  };
+  return { ...actual };
 });
 vi.mock("../src/steps/read-clusters.js", () => ({
   readClusters: readClustersMock,
@@ -115,13 +110,25 @@ function buildDeps(
   };
 }
 
+/**
+ * Builds a `Core.M3LPrompt` whose `confirm` is spied and pre-resolved to
+ * `confirmed`. The spy is the seam both the current orchestrator (via
+ * `Core.confirmDestructive`) and the future `Core.M3LOperationPipeline`
+ * (via its internal gate) invoke when a destructive operation is triggered.
+ */
+function confirmingPrompt(confirmed: boolean) {
+  const prompt = new Core.M3LPrompt();
+  const confirm = vi.spyOn(prompt, "confirm").mockResolvedValue(confirmed);
+  return { prompt, confirm };
+}
+
 afterEach(() => {
-  // restoreAllMocks() only undoes vi.spyOn spies; it does not clear the
-  // plain vi.fn() mocks created inside the top-level vi.mock() factories
-  // above, so their call history would otherwise leak into the next test.
+  // restoreAllMocks() undoes vi.spyOn spies (including the per-test
+  // confirmingPrompt spy). It does not clear the plain vi.fn() mocks
+  // created inside the top-level vi.mock() factories above, so their call
+  // history would otherwise leak into the next test.
   vi.restoreAllMocks();
   vi.mocked(fsp.readFile).mockReset();
-  destructiveGateMock.mockReset().mockResolvedValue(undefined);
   readClustersMock.mockReset();
   writeClusterMock.mockReset();
   waitClusterMock.mockReset();
@@ -206,17 +213,21 @@ describe("runEksOps — per-operation config guards (fire before any AWS call or
   test.each(CLUSTER_REQUIRED_OPERATIONS)(
     "throws ERR_EKS_OPS_CONFIG when operation '%s' is missing 'cluster'",
     async (operation) => {
-      const deps = buildDeps({
-        operation,
-        nodegroup: "my-nodegroup",
-        input: "payload.json",
-        kubernetesVersion: "1.30",
-      });
+      const { prompt, confirm } = confirmingPrompt(true);
+      const deps = buildDeps(
+        {
+          operation,
+          nodegroup: "my-nodegroup",
+          input: "payload.json",
+          kubernetesVersion: "1.30",
+        },
+        { prompt },
+      );
 
       await expect(runEksOps(deps)).rejects.toMatchObject({
         code: "ERR_EKS_OPS_CONFIG",
       });
-      expect(destructiveGateMock).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
       expectNoStepCalled();
     },
   );
@@ -241,31 +252,39 @@ describe("runEksOps — per-operation config guards (fire before any AWS call or
   test.each(INPUT_REQUIRED_OPERATIONS)(
     "throws ERR_EKS_OPS_CONFIG when operation '%s' is missing 'input'",
     async (operation) => {
-      const deps = buildDeps({
-        operation,
-        cluster: "my-cluster",
-        nodegroup: "my-nodegroup",
-      });
+      const { prompt, confirm } = confirmingPrompt(true);
+      const deps = buildDeps(
+        {
+          operation,
+          cluster: "my-cluster",
+          nodegroup: "my-nodegroup",
+        },
+        { prompt },
+      );
 
       await expect(runEksOps(deps)).rejects.toMatchObject({
         code: "ERR_EKS_OPS_CONFIG",
       });
-      expect(destructiveGateMock).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
       expect(fsp.readFile).not.toHaveBeenCalled();
       expectNoStepCalled();
     },
   );
 
   test("throws ERR_EKS_OPS_CONFIG when 'update-cluster-version' is missing 'kubernetesVersion' (required there)", async () => {
-    const deps = buildDeps({
-      operation: "update-cluster-version",
-      cluster: "my-cluster",
-    });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "update-cluster-version",
+        cluster: "my-cluster",
+      },
+      { prompt },
+    );
 
     await expect(runEksOps(deps)).rejects.toMatchObject({
       code: "ERR_EKS_OPS_CONFIG",
     });
-    expect(destructiveGateMock).not.toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
     expectNoStepCalled();
   });
 
@@ -381,13 +400,14 @@ describe("runEksOps — per-operation config guards (fire before any AWS call or
   });
 
   test("throws ERR_EKS_OPS_CONFIG when 'operation' is stored as a value outside the declared set (defensive)", async () => {
-    const deps = buildDeps({ operation: "frobnicate" });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps({ operation: "frobnicate" }, { prompt });
 
     await expect(runEksOps(deps)).rejects.toMatchObject({
       code: "ERR_EKS_OPS_CONFIG",
     });
     expectNoStepCalled();
-    expect(destructiveGateMock).not.toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
   });
 });
 
@@ -399,15 +419,19 @@ describe("runEksOps — destructive-gate dispatch (mutating operations only)", (
       readNodegroupsMock.mockResolvedValue({ nodegroups: [] });
       waitClusterMock.mockResolvedValue({ state: "SUCCESS" });
       waitNodegroupMock.mockResolvedValue({ state: "SUCCESS" });
-      const deps = buildDeps({
-        operation,
-        cluster: "my-cluster",
-        nodegroup: "my-nodegroup",
-      });
+      const { prompt, confirm } = confirmingPrompt(true);
+      const deps = buildDeps(
+        {
+          operation,
+          cluster: "my-cluster",
+          nodegroup: "my-nodegroup",
+        },
+        { prompt },
+      );
 
       await runEksOps(deps);
 
-      expect(destructiveGateMock).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
     },
   );
 
@@ -417,19 +441,24 @@ describe("runEksOps — destructive-gate dispatch (mutating operations only)", (
       arn: "arn:aws:eks:us-east-1:123:cluster/my-cluster",
       status: "DELETING",
     });
-    const deps = buildDeps({
-      operation: "delete-cluster",
-      cluster: "my-cluster",
-    });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "delete-cluster",
+        cluster: "my-cluster",
+        // yes: false (default) — confirm IS called, verifying the gate ran
+      },
+      { prompt },
+    );
 
     await runEksOps(deps);
 
-    expect(destructiveGateMock).toHaveBeenCalledTimes(1);
-    const call = destructiveGateMock.mock.calls[0] as [
-      { readonly description: string; readonly yes: boolean },
-    ];
-    expect(call[0].description).toContain("my-cluster");
-    expect(call[0].yes).toBe(false);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    // Core.confirmDestructive passes `description` as the sole argument to
+    // prompt.confirm — assert it encodes the cluster name:
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("my-cluster"));
+    // When yes is false the gate calls confirm; when yes is true it doesn't
+    // (verified in the "forwards yes" test below).
   });
 
   test("runs destructive-gate exactly once before dispatching 'create-nodegroup'", async () => {
@@ -445,46 +474,58 @@ describe("runEksOps — destructive-gate dispatch (mutating operations only)", (
       nodegroupArn: "arn",
       status: "CREATING",
     });
-    const deps = buildDeps({
-      operation: "create-nodegroup",
-      cluster: "my-cluster",
-      nodegroup: "my-nodegroup",
-      input: "create-ng.json",
-    });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "create-nodegroup",
+        cluster: "my-cluster",
+        nodegroup: "my-nodegroup",
+        input: "create-ng.json",
+        // yes: false (default) — confirm IS called, verifying the gate ran
+      },
+      { prompt },
+    );
 
     await runEksOps(deps);
 
-    expect(destructiveGateMock).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveBeenCalledTimes(1);
   });
 
-  test("forwards 'yes' through to destructive-gate", async () => {
+  test("when 'yes' is true, the destructive gate is bypassed (prompt.confirm never called)", async () => {
     writeClusterMock.mockResolvedValue({
       name: "my-cluster",
       arn: "arn",
       status: "DELETING",
     });
-    const deps = buildDeps({
-      operation: "delete-cluster",
-      cluster: "my-cluster",
-      yes: true,
-    });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "delete-cluster",
+        cluster: "my-cluster",
+        yes: true,
+      },
+      { prompt },
+    );
 
     await runEksOps(deps);
 
-    const call = destructiveGateMock.mock.calls[0] as [
-      { readonly yes: boolean },
-    ];
-    expect(call[0].yes).toBe(true);
+    // Core.confirmDestructive short-circuits when yes===true, never calling
+    // prompt.confirm. If it did call confirm, this assertion would fail.
+    expect(confirm).not.toHaveBeenCalled();
+    expect(writeClusterMock).toHaveBeenCalledTimes(1);
   });
 
   test("propagates ERR_EKS_OPS_ABORTED from destructive-gate when 'delete-cluster' is declined, never dispatching writeCluster", async () => {
-    destructiveGateMock.mockRejectedValue(
-      new Core.M3LError("aborted", { code: "ERR_EKS_OPS_ABORTED" }),
+    // confirmingPrompt(false): prompt.confirm resolves false →
+    // Core.confirmDestructive throws M3LError({ code: "ERR_EKS_OPS_ABORTED" })
+    const { prompt } = confirmingPrompt(false);
+    const deps = buildDeps(
+      {
+        operation: "delete-cluster",
+        cluster: "my-cluster",
+      },
+      { prompt },
     );
-    const deps = buildDeps({
-      operation: "delete-cluster",
-      cluster: "my-cluster",
-    });
 
     await expect(runEksOps(deps)).rejects.toMatchObject({
       code: "ERR_EKS_OPS_ABORTED",
@@ -500,15 +541,18 @@ describe("runEksOps — destructive-gate dispatch (mutating operations only)", (
         subnets: ["subnet-1"],
       }),
     });
-    destructiveGateMock.mockRejectedValue(
-      new Core.M3LError("aborted", { code: "ERR_EKS_OPS_ABORTED" }),
+    // confirmingPrompt(false): prompt.confirm resolves false →
+    // Core.confirmDestructive throws M3LError({ code: "ERR_EKS_OPS_ABORTED" })
+    const { prompt } = confirmingPrompt(false);
+    const deps = buildDeps(
+      {
+        operation: "create-nodegroup",
+        cluster: "my-cluster",
+        nodegroup: "my-nodegroup",
+        input: "create-ng.json",
+      },
+      { prompt },
     );
-    const deps = buildDeps({
-      operation: "create-nodegroup",
-      cluster: "my-cluster",
-      nodegroup: "my-nodegroup",
-      input: "create-ng.json",
-    });
 
     await expect(runEksOps(deps)).rejects.toMatchObject({
       code: "ERR_EKS_OPS_ABORTED",
@@ -532,17 +576,22 @@ describe("runEksOps — destructive-gate dispatch (mutating operations only)", (
         }),
         [inputPath2]: JSON.stringify({ deletionProtection: true }),
       });
-      const deps = buildDeps({
-        operation,
-        cluster: "my-cluster",
-        nodegroup: "my-nodegroup",
-        input: operation.includes("create") ? "create.json" : "update.json",
-        kubernetesVersion: "1.30",
-      });
+      const { prompt, confirm } = confirmingPrompt(true);
+      const deps = buildDeps(
+        {
+          operation,
+          cluster: "my-cluster",
+          nodegroup: "my-nodegroup",
+          input: operation.includes("create") ? "create.json" : "update.json",
+          kubernetesVersion: "1.30",
+          // yes: false (default) — confirm IS called, verifying the gate ran
+        },
+        { prompt },
+      );
 
       await runEksOps(deps);
 
-      expect(destructiveGateMock).toHaveBeenCalledTimes(1);
+      expect(confirm).toHaveBeenCalledTimes(1);
     },
   );
 });
