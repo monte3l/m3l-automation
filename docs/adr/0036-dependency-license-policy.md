@@ -56,10 +56,13 @@ WTFPL)`, `(MIT AND Zlib)`, `(BSD-2-Clause OR MIT OR Apache-2.0)`) and must
 
 ## Decision
 
-We gate at **two layers**, both using the same allow-list: `MIT`,
+We gate at **two layers**, both using the same allow-list: `MIT`, `MIT-0`,
 `Apache-2.0`, `BSD-2-Clause`, `BSD-3-Clause`, `ISC`, `0BSD`, `CC0-1.0`,
 `Unlicense`. No copyleft, no share-alike, nothing requiring downstream
-disclosure — matching ADR-0006's Apache-2.0 rationale.
+disclosure — matching ADR-0006's Apache-2.0 rationale. `MIT-0` ("MIT No
+Attribution") is OSI-approved and strictly more permissive than `MIT`; it was
+added (2026-08-17) when `nodemailer`'s `MIT-0` surfaced in the Dependency
+Review diff gate during the `deepmerge-ts` security bump.
 
 **Layer 1 — `dependency-review.yml`:** `allow-licenses` set to the same
 list, PR-time, GitHub-native, zero added script.
@@ -108,10 +111,11 @@ Apache-2.0 operand). The **DEV scope has real, non-blocking outliers**:
 allow-listed, so the `AND` fails even though `MIT` alone would pass),
 `argparse`'s `2.0.1` resolution (`Python-2.0` — a second, differently
 licensed version of the same package name also resolves in the tree, so
-both are checked independently), `duck` (bare non-SPDX `"BSD"`, distinct
-from the allow-listed `BSD-2-Clause`/`BSD-3-Clause`), and `nodemailer`
-(`MIT-0`). None of these ship in the published package; all are correctly
-warn-only.
+both are checked independently), and `duck` (bare non-SPDX `"BSD"`, distinct
+from the allow-listed `BSD-2-Clause`/`BSD-3-Clause`). None of these ship in
+the published package; all are correctly warn-only. (`nodemailer`'s `MIT-0`
+was previously listed here but is no longer an outlier — `MIT-0` was added to
+the allow-list on 2026-08-17.)
 
 ## Consequences
 

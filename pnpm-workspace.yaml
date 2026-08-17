@@ -31,6 +31,11 @@ overrides:
   # and must resolve untouched. Drop once the pinned @aws-sdk/client-* deps
   # catch up on their own.
   "@aws-sdk/core@>=3.977.0 <3.977.6": "^3.977.6"
+  # GHSA-ggr8-5vv4-36mx: deepmerge-ts stack exhaustion on recursive object
+  # graphs (2026-08-17). Transitive path: mailparser→html-to-text@10.0.0,
+  # which pins ^7.1.5; no html-to-text release yet ships >=8. Drop once
+  # html-to-text or mailparser bumps the direct dep above 8.
+  "deepmerge-ts@<8.0.0": "^8.0.0"
 allowBuilds:
   unrs-resolver: false
   lefthook: true
