@@ -8,7 +8,7 @@ import {
 } from "../lib/licenses.mjs";
 
 describe("ALLOWED_LICENSES", () => {
-  test("contains exactly the eight documented permissive/public-domain ids", () => {
+  test("contains exactly the nine documented permissive/public-domain ids", () => {
     expect([...ALLOWED_LICENSES].sort()).toEqual(
       [
         "0BSD",
@@ -18,6 +18,7 @@ describe("ALLOWED_LICENSES", () => {
         "CC0-1.0",
         "ISC",
         "MIT",
+        "MIT-0",
         "Unlicense",
       ].sort(),
     );

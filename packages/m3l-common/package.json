@@ -87,7 +87,7 @@
     "@types/mailparser": "^3.4.6",
     "adm-zip": "^0.6.0",
     "cheerio": "^1.2.0",
-    "mailparser": "^3.9.14",
+    "mailparser": "^3.9.15",
     "mammoth": "^1.12.0",
     "read-excel-file": "^9.3.9",
     "unpdf": "^1.6.2"
@@ -95,7 +95,7 @@
   "peerDependencies": {
     "adm-zip": "^0.6.0",
     "cheerio": "^1.2.0",
-    "mailparser": "^3.9.14",
+    "mailparser": "^3.9.15",
     "mammoth": "^1.12.0",
     "read-excel-file": "^9.3.9",
     "unpdf": "^1.6.2"
