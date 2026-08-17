@@ -8,7 +8,7 @@ records what shipped, what matched the plan, what required a design decision
 (the NOT_FOUND ordering wrinkle), and durable lessons for the remaining
 queued migrations (cloudwatch-logs-insights, eks-ops, codepipeline-ops).
 
-Plan of record: [`docs/plans/on-issue-438-peaceful-sunset.md`](../plans/on-issue-438-peaceful-sunset.md)
+Plan of record: `~/.claude/plans/on-issue-438-peaceful-sunset.md` (session-local; not archived — routine migration, covered by this work log).
 
 ## Summary
 
