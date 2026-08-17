@@ -19,16 +19,14 @@ interface RawSettings {
   readonly nextToken: string | undefined;
   readonly maxWaitTime: number | undefined;
   readonly yes: boolean;
+  readonly output: string | undefined;
 }
 
-/** The dependencies every dispatched operation needs, once `config` has resolved. */
-interface DispatchDeps {
+/** The full dependency bag `runCloudformationStacks` receives and the pipeline threads through. */
+interface Deps extends Core.M3LOperationPipelineBaseDeps {
   readonly paths: Core.M3LPaths;
-  readonly logger: Core.M3LLogger;
+  readonly correlationId: string;
   readonly operations: AWS.M3LCloudFormationOperations;
-  readonly prompt: Core.M3LPrompt;
-  readonly accessor: Core.M3LConfigAccessor;
-  readonly reader: Core.M3LInputFileReader;
 }
 
 /** The union of result shapes any dispatched operation can resolve. */
@@ -41,6 +39,56 @@ type DispatchResult =
   | AWS.M3LCloudFormationUpdateStackResult
   | void
   | AWS.M3LCloudFormationWaiterResult;
+
+/** The three `wait-stack-*-complete` operations. */
+type WaitOperation =
+  | "wait-stack-create-complete"
+  | "wait-stack-update-complete"
+  | "wait-stack-delete-complete";
+
+/**
+ * Builds a fresh `Core.M3LConfigAccessor` over `deps.config`, coded
+ * `ERR_CLOUDFORMATION_STACKS_CONFIG`. `M3LOperationHandlers`/`prepare` only
+ * receive the pipeline's `deps` bag — not the engine's own internal accessor
+ * — so the one remaining site that still needs a config read outside the
+ * engine's own phases (the completion-log re-read in
+ * {@link runCloudformationStacks}) builds its own. `M3LConfigAccessor` is a
+ * stateless read-through wrapper, so constructing a fresh one per call is
+ * behaviorally identical to sharing one instance.
+ */
+function buildAccessor(deps: Deps): Core.M3LConfigAccessor {
+  return new Core.M3LConfigAccessor({
+    config: deps.config,
+    code: "ERR_CLOUDFORMATION_STACKS_CONFIG",
+  });
+}
+
+/** Builds a fresh `Core.M3LInputFileReader` over `deps.paths`, coded `ERR_CLOUDFORMATION_STACKS_CONFIG` — see {@link buildAccessor}. */
+function buildReader(deps: Deps): Core.M3LInputFileReader {
+  return new Core.M3LInputFileReader({
+    paths: deps.paths,
+    code: "ERR_CLOUDFORMATION_STACKS_CONFIG",
+  });
+}
+
+/**
+ * Narrows an already-guarded optional settings field to its defined value,
+ * throwing a defensive `ERR_CLOUDFORMATION_STACKS_CONFIG` otherwise. The
+ * pipeline's `requiredFields` guard (phase 4) has already enforced presence
+ * for every field callers read this way before those callers are ever invoked
+ * — this is a type-narrowing safety net, not an expected runtime path.
+ */
+function requireDefined<TValue>(
+  value: TValue | undefined,
+  name: string,
+): TValue {
+  if (value === undefined) {
+    throw new Core.M3LError(`'${name}' is required for this operation`, {
+      code: "ERR_CLOUDFORMATION_STACKS_CONFIG",
+    });
+  }
+  return value;
+}
 
 /** Splits `raw` on `,`, trims each segment, drops empty segments, and requires at least one remaining segment. */
 function splitNonEmpty(raw: string, name: string): readonly string[] {
@@ -120,11 +168,11 @@ interface CreateOrUpdatePlan {
 async function planCreateOrUpdate(
   operation: "create-stack" | "update-stack",
   raw: RawSettings,
-  deps: Pick<DispatchDeps, "paths" | "accessor" | "reader">,
+  deps: Deps,
 ): Promise<CreateOrUpdatePlan> {
-  const inputName = deps.accessor.requiredFor(raw.input, "input", operation);
+  const inputName = requireDefined(raw.input, "input");
   const parsed: Record<string, unknown> =
-    await deps.reader.readJSONRecord(inputName);
+    await buildReader(deps).readJSONRecord(inputName);
   const templateText = await resolveTemplateText(
     raw.template,
     parsed,
@@ -151,14 +199,10 @@ interface WriteDispatchPlan {
 async function planWriteDispatch(
   operation: "create-stack" | "update-stack" | "delete-stack",
   raw: RawSettings,
-  deps: Pick<DispatchDeps, "paths" | "accessor" | "reader">,
+  deps: Deps,
 ): Promise<WriteDispatchPlan> {
   if (operation === "delete-stack") {
-    const stackName = deps.accessor.requiredFor(
-      raw.stackName,
-      "stackName",
-      operation,
-    );
+    const stackName = requireDefined(raw.stackName, "stackName");
     const retainResources =
       raw.retainResources !== undefined
         ? splitNonEmpty(raw.retainResources, "retainResources")
@@ -184,225 +228,120 @@ async function planWriteDispatch(
   };
 }
 
-/** Runs `Core.confirmDestructive` — every mutating operation routes through this before dispatch. */
-async function runGate(
-  description: string,
-  yes: boolean,
-  deps: Pick<DispatchDeps, "prompt" | "logger">,
-): Promise<void> {
-  await Core.confirmDestructive({
-    prompt: deps.prompt,
-    logger: deps.logger,
-    description,
-    yes,
-    code: "ERR_CLOUDFORMATION_STACKS_ABORTED",
-  });
-}
-
-/** `list-stacks`/`describe-stack`: guard-checks cross-parameter requirements, then dispatches to `read-stacks`. */
-async function dispatchReadStacks(
-  operation: "list-stacks" | "describe-stack",
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<DispatchResult> {
-  const stackName =
-    operation === "describe-stack"
-      ? deps.accessor.requiredFor(raw.stackName, "stackName", operation)
-      : undefined;
-  const stackStatusFilter =
-    raw.stackStatusFilter !== undefined
-      ? splitNonEmpty(raw.stackStatusFilter, "stackStatusFilter")
-      : undefined;
-
-  const { readStacks } = await import("./read-stacks.js");
-  return readStacks({
-    operations: deps.operations,
-    operation,
-    stackName,
-    stackStatusFilter,
-    nextToken: raw.nextToken,
-  });
-}
-
-/** `describe-stack-events`: guard-checks `stackName`, then dispatches to `read-stack-events`. Never gated. */
-async function dispatchReadStackEvents(
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<DispatchResult> {
-  const stackName = deps.accessor.requiredFor(
-    raw.stackName,
-    "stackName",
-    "describe-stack-events",
-  );
-  const { readStackEvents } = await import("./read-stack-events.js");
-  return readStackEvents({
-    operations: deps.operations,
-    stackName,
-    nextToken: raw.nextToken,
-  });
-}
-
-/** The three `wait-stack-*-complete` operations. */
-type WaitOperation =
-  | "wait-stack-create-complete"
-  | "wait-stack-update-complete"
-  | "wait-stack-delete-complete";
-
-/** `wait-stack-*-complete`: guard-checks `stackName`, then dispatches to `wait-stack`. Never gated. */
-async function dispatchWait(
-  operation: WaitOperation,
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<DispatchResult> {
-  const stackName = deps.accessor.requiredFor(
-    raw.stackName,
-    "stackName",
-    operation,
-  );
-  const { waitStack } = await import("./wait-stack.js");
-  return waitStack({
-    operations: deps.operations,
-    operation,
-    stackName,
-    maxWaitTime: raw.maxWaitTime,
-  });
-}
-
-/** `create-stack`/`update-stack`/`delete-stack`: resolves the operation's plan, gates, then dispatches to `write-stack`. */
-async function dispatchWrite(
+/**
+ * Narrows `prepare`'s `WriteDispatchPlan | undefined` context to a defined
+ * plan. `TContext` is uniform across every handler table entry (it is
+ * `WriteDispatchPlan | undefined` for every operation, not just the three
+ * write ones), but `prepare` only ever produces a defined plan for
+ * `create-stack`/`update-stack`/`delete-stack` — an `undefined` context
+ * reaching a write handler or the destructive `describe` callback is
+ * unreachable except via caller misuse of the engine, guarded here
+ * defensively.
+ */
+function requireWritePlan(
+  context: WriteDispatchPlan | undefined,
   operation: "create-stack" | "update-stack" | "delete-stack",
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<DispatchResult> {
-  const plan = await planWriteDispatch(operation, raw, deps);
-  await runGate(plan.description, raw.yes, deps);
-
-  const { writeStack } = await import("./write-stack.js");
-  return writeStack({
-    operations: deps.operations,
-    reader: deps.reader,
-    operation,
-    input: plan.input,
-    templateText: plan.templateText,
-    stackName: plan.stackName,
-    retainResources: plan.retainResources,
-    roleArn: plan.roleArn,
-  });
+): WriteDispatchPlan {
+  if (context === undefined) {
+    throw new Core.M3LError(
+      `internal: no write-dispatch plan resolved for '${operation}'`,
+      { code: "ERR_CLOUDFORMATION_STACKS_CONFIG" },
+    );
+  }
+  return context;
 }
-
-/** The four dispatch families `cloudformation-stacks` routes operations into. */
-type DispatchGroup = "read-stacks" | "read-stack-events" | "write" | "wait";
 
 /**
- * Which dispatch family each operation belongs to. Keyed as a
- * `Record<Operation, …>` so a new operation added to
- * {@link CLOUDFORMATION_STACKS_OPERATIONS} without a corresponding entry here
- * is a compile error.
+ * Narrows `destructive.describe`'s `operation` — typed as the full
+ * `Operation` union (the engine's `M3LPipelineDestructiveOptions.describe`
+ * signature is not narrowed to `destructive.operations`'s subset) — to the
+ * three write operations. The engine only invokes `describe` for a member of
+ * `destructive.operations`, so reaching the defensive throw means the engine
+ * itself miscalled it.
  */
-const DISPATCH_GROUP: Record<Operation, DispatchGroup> = {
-  "list-stacks": "read-stacks",
-  "describe-stack": "read-stacks",
-  "describe-stack-events": "read-stack-events",
-  "create-stack": "write",
-  "update-stack": "write",
-  "delete-stack": "write",
-  "wait-stack-create-complete": "wait",
-  "wait-stack-update-complete": "wait",
-  "wait-stack-delete-complete": "wait",
-};
-
-/** Narrows `operation` to `list-stacks`/`describe-stack`, matching {@link DISPATCH_GROUP}'s `"read-stacks"` entries. */
-function isReadStacksOperation(
+function requireWriteOperation(
   operation: Operation,
-): operation is "list-stacks" | "describe-stack" {
-  return operation === "list-stacks" || operation === "describe-stack";
-}
-
-/** Narrows `operation` to the three mutating stack operations, matching {@link DISPATCH_GROUP}'s `"write"` entries. */
-function isWriteOperation(
-  operation: Operation,
-): operation is "create-stack" | "update-stack" | "delete-stack" {
-  return (
+): "create-stack" | "update-stack" | "delete-stack" {
+  if (
     operation === "create-stack" ||
     operation === "update-stack" ||
     operation === "delete-stack"
-  );
-}
-
-/** Narrows `operation` to the three wait operations, matching {@link DISPATCH_GROUP}'s `"wait"` entries. */
-function isWaitOperation(operation: Operation): operation is WaitOperation {
-  return (
-    operation === "wait-stack-create-complete" ||
-    operation === "wait-stack-update-complete" ||
-    operation === "wait-stack-delete-complete"
+  ) {
+    return operation;
+  }
+  throw new Core.M3LError(
+    `internal: destructive gate invoked for non-destructive operation '${operation}'`,
+    { code: "ERR_CLOUDFORMATION_STACKS_CONFIG" },
   );
 }
 
 /**
- * Dispatches to the operation-appropriate step, dynamic-importing it at
- * dispatch time (not a top-level static import) — so `steps/*.test.ts` can
- * `vi.mock` a step module before dispatch resolves it. Routes through
- * {@link DISPATCH_GROUP} into the four per-family dispatchers, each of which
- * guard-checks its own per-operation cross-parameter requirements before any
- * gate or AWS call, then — for every mutating operation — runs
- * `Core.confirmDestructive`. Each dispatcher's `accessor.requiredFor(...)`
- * calls for `stackName`/`input` are also enforced earlier, at config-load
- * time, by `config.ts`'s `configValidators` (F1b) — they stay here because
- * they additionally narrow `string | undefined` into `string` for typed
- * downstream use, which TypeScript still needs even though presence is now
- * guaranteed before this function ever runs. The `template`-vs-`input`-
- * record `templateBody`/`templateUrl` conflict check (`resolveTemplateText`)
- * is a different class of guard, outside `configValidators`' reach — see
- * `config.ts` for why.
+ * The pipeline's `prepare` phase: runs once per run, before the destructive
+ * gate, for every operation. Resolves `delete-stack`'s gate description
+ * directly from config, or reads+parses `create-stack`/`update-stack`'s
+ * `input` file (the one place either file is ever read). Presence of
+ * `stackName`/`input` is already enforced by the engine's "Guards" phase
+ * (phase 4, driven by {@link REQUIRED_FIELDS}) before `prepare` ever runs —
+ * the {@link requireDefined} calls below are a defensive type-narrowing
+ * safety net, not a runtime guard. Every non-write operation resolves
+ * `undefined`.
  */
-async function dispatchOperation(
+async function prepareWriteDispatch(
   operation: Operation,
   raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<DispatchResult> {
-  const group = DISPATCH_GROUP[operation];
-  switch (group) {
-    case "read-stacks": {
-      if (!isReadStacksOperation(operation)) {
-        throw new Core.M3LError(
-          `internal: '${operation}' miscategorized as a read-stacks operation`,
-          { code: "ERR_CLOUDFORMATION_STACKS_CONFIG" },
-        );
-      }
-      return dispatchReadStacks(operation, raw, deps);
-    }
-    case "read-stack-events":
-      return dispatchReadStackEvents(raw, deps);
-    case "write": {
-      if (!isWriteOperation(operation)) {
-        throw new Core.M3LError(
-          `internal: '${operation}' miscategorized as a write operation`,
-          { code: "ERR_CLOUDFORMATION_STACKS_CONFIG" },
-        );
-      }
-      return dispatchWrite(operation, raw, deps);
-    }
-    case "wait": {
-      if (!isWaitOperation(operation)) {
-        throw new Core.M3LError(
-          `internal: '${operation}' miscategorized as a wait operation`,
-          { code: "ERR_CLOUDFORMATION_STACKS_CONFIG" },
-        );
-      }
-      return dispatchWait(operation, raw, deps);
-    }
+  deps: Deps,
+): Promise<WriteDispatchPlan | undefined> {
+  switch (operation) {
+    case "create-stack":
+    case "update-stack":
+    case "delete-stack":
+      return planWriteDispatch(operation, raw, deps);
+    case "list-stacks":
+    case "describe-stack":
+    case "describe-stack-events":
+    case "wait-stack-create-complete":
+    case "wait-stack-update-complete":
+    case "wait-stack-delete-complete":
+      return undefined;
     default: {
-      const exhaustive: never = group;
-      throw new Core.M3LError(
-        `unhandled dispatch group: ${String(exhaustive)}`,
-        { code: "ERR_CLOUDFORMATION_STACKS_CONFIG" },
-      );
+      const exhaustive: never = operation;
+      throw new Core.M3LError(`unhandled operation: ${String(exhaustive)}`, {
+        code: "ERR_CLOUDFORMATION_STACKS_CONFIG",
+      });
     }
   }
 }
 
-/** Resolves the raw, per-operation-optional config values `run-cloudformation-stacks` reads once, up front. */
-function readRawSettings(accessor: Core.M3LConfigAccessor): RawSettings {
+/**
+ * Which of `stackName`/`input` each operation requires, checked via
+ * `Core.M3LConfigAccessor.requiredFor` in the engine's own "Guards" phase
+ * (phase 4) — before `prepare`, the destructive gate, or any handler ever
+ * runs. Keyed as a `Record<Operation, …>` so a new operation added to
+ * {@link CLOUDFORMATION_STACKS_OPERATIONS} without a corresponding entry here
+ * is a compile error.
+ */
+const REQUIRED_FIELDS: Record<
+  Operation,
+  readonly Core.M3LGuardableKey<RawSettings>[]
+> = {
+  "list-stacks": [],
+  "describe-stack": ["stackName"],
+  "describe-stack-events": ["stackName"],
+  "create-stack": ["input"],
+  "update-stack": ["input"],
+  "delete-stack": ["stackName"],
+  "wait-stack-create-complete": ["stackName"],
+  "wait-stack-update-complete": ["stackName"],
+  "wait-stack-delete-complete": ["stackName"],
+};
+
+/**
+ * Resolves the raw, per-operation-optional config values the pipeline reads
+ * once, up front. Must not re-read `"operation"` or apply its own
+ * required-field guards — those are owned by the engine's own "Operation"
+ * and "Guards" phases (the latter driven by {@link REQUIRED_FIELDS}).
+ */
+function resolveSettings(accessor: Core.M3LConfigAccessor): RawSettings {
   return {
     stackName: accessor.optionalString("stackName"),
     input: accessor.optionalString("input"),
@@ -413,85 +352,192 @@ function readRawSettings(accessor: Core.M3LConfigAccessor): RawSettings {
     nextToken: accessor.optionalString("nextToken"),
     maxWaitTime: accessor.optionalNumber("maxWaitTime"),
     yes: accessor.booleanWithDefault("yes", YES_DEFAULT),
+    output: accessor.optionalString("output"),
   };
 }
 
-/**
- * Persists `result` to `output` via `Core.M3LJSONFileExporter` when both
- * `output` is configured and `result` is not `void`/`undefined` — this
- * single check covers both `delete-stack` (always `void`, nothing to
- * persist) and a `describe-stack` resolving `undefined` (never reached here,
- * since the dispatcher throws `NOT_FOUND` before calling this function).
- */
-async function persistOutput(
-  paths: Core.M3LPaths,
-  output: string | undefined,
-  result: DispatchResult,
-): Promise<void> {
-  if (output === undefined || result === undefined) return;
-  const exporter = new Core.M3LJSONFileExporter({
-    filePath: paths.resolveOutput(output),
+/** `list-stacks`/`describe-stack`: dispatches to `read-stacks`. For `describe-stack`, throws `ERR_CLOUDFORMATION_STACKS_NOT_FOUND` when the step resolves `undefined` — in the Dispatch phase, before any persistence. Cross-parameter presence for `describe-stack` is enforced by the engine's Guards phase before this runs — see {@link REQUIRED_FIELDS}. */
+async function dispatchReadStacks(
+  operation: "list-stacks" | "describe-stack",
+  raw: RawSettings,
+  _context: WriteDispatchPlan | undefined,
+  deps: Deps,
+): Promise<DispatchResult> {
+  const stackName =
+    operation === "describe-stack"
+      ? requireDefined(raw.stackName, "stackName")
+      : undefined;
+  const stackStatusFilter =
+    raw.stackStatusFilter !== undefined
+      ? splitNonEmpty(raw.stackStatusFilter, "stackStatusFilter")
+      : undefined;
+
+  const { readStacks } = await import("./read-stacks.js");
+  const result = await readStacks({
+    operations: deps.operations,
+    operation,
+    stackName,
+    stackStatusFilter,
+    nextToken: raw.nextToken,
   });
-  await exporter.export(result);
+
+  if (operation === "describe-stack" && result === undefined) {
+    throw new Core.M3LError(
+      `describe-stack: stack '${requireDefined(raw.stackName, "stackName")}' not found`,
+      { code: "ERR_CLOUDFORMATION_STACKS_NOT_FOUND" },
+    );
+  }
+
+  return result;
+}
+
+/** `describe-stack-events`: dispatches to `read-stack-events`. Never gated. Cross-parameter presence for `stackName` is enforced by the engine's Guards phase before this runs — see {@link REQUIRED_FIELDS}. */
+async function dispatchReadStackEvents(
+  _operation: "describe-stack-events",
+  raw: RawSettings,
+  _context: WriteDispatchPlan | undefined,
+  deps: Deps,
+): Promise<DispatchResult> {
+  const stackName = requireDefined(raw.stackName, "stackName");
+  const { readStackEvents } = await import("./read-stack-events.js");
+  return readStackEvents({
+    operations: deps.operations,
+    stackName,
+    nextToken: raw.nextToken,
+  });
+}
+
+/** `wait-stack-*-complete`: dispatches to `wait-stack`. Never gated. Cross-parameter presence for `stackName` is enforced by the engine's Guards phase before this runs — see {@link REQUIRED_FIELDS}. */
+async function dispatchWait(
+  operation: WaitOperation,
+  raw: RawSettings,
+  _context: WriteDispatchPlan | undefined,
+  deps: Deps,
+): Promise<DispatchResult> {
+  const stackName = requireDefined(raw.stackName, "stackName");
+  const { waitStack } = await import("./wait-stack.js");
+  return waitStack({
+    operations: deps.operations,
+    operation,
+    stackName,
+    maxWaitTime: raw.maxWaitTime,
+  });
+}
+
+/** `create-stack`/`update-stack`/`delete-stack`: dispatches to `write-stack` using the plan `prepare` resolved before the gate. */
+async function dispatchWrite(
+  operation: "create-stack" | "update-stack" | "delete-stack",
+  _raw: RawSettings,
+  context: WriteDispatchPlan | undefined,
+  deps: Deps,
+): Promise<DispatchResult> {
+  const plan = requireWritePlan(context, operation);
+  const { writeStack } = await import("./write-stack.js");
+  return writeStack({
+    operations: deps.operations,
+    reader: buildReader(deps),
+    operation,
+    input: plan.input,
+    templateText: plan.templateText,
+    stackName: plan.stackName,
+    retainResources: plan.retainResources,
+    roleArn: plan.roleArn,
+  });
 }
 
 /**
- * Throws `ERR_CLOUDFORMATION_STACKS_WAIT_NOT_COMPLETE` when `operation` is
- * one of the three `wait-stack-*-complete` operations and the resolved
- * `M3LCloudFormationWaiterResult.state` is not `"SUCCESS"` — called *after*
- * {@link persistOutput}, so the timeout/abort reason survives on disk even
- * though the run then fails.
+ * True when `result` is a `wait-stack-*-complete` outcome — the only member
+ * of {@link DispatchResult} carrying a `state` field.`finalize` is not
+ * passed `operation` (it is not part of the engine's `finalize` contract),
+ * so this structural check is how it recognizes a wait result to assert
+ * against.
  */
-function assertWaitComplete(
-  operation: Operation,
+function isWaiterResult(
   result: DispatchResult,
-  correlationId: string,
-): void {
-  if (!isWaitOperation(operation)) return;
-  const waiterResult = result as AWS.M3LCloudFormationWaiterResult;
-  if (waiterResult.state === "SUCCESS") return;
-  throw new Core.M3LError(
-    `cloudformation-stacks run ${correlationId}: ${operation} resolved '${waiterResult.state}', not SUCCESS`,
-    {
-      code: "ERR_CLOUDFORMATION_STACKS_WAIT_NOT_COMPLETE",
-      context: {
-        state: waiterResult.state,
-        ...(waiterResult.reason !== undefined && {
-          reason: waiterResult.reason,
-        }),
+): result is AWS.M3LCloudFormationWaiterResult {
+  return (
+    result !== undefined && typeof result === "object" && "state" in result
+  );
+}
+
+/**
+ * The `cloudformation-stacks` pipeline: resolve settings → (for every
+ * operation) plan a write dispatch → (for `create-stack`/`update-stack`/
+ * `delete-stack`) the destructive-operation gate → the operation-appropriate
+ * step → persist the result to `output` (when configured) → assert a
+ * `wait-stack-*-complete` operation resolved `SUCCESS`, all owned by
+ * `Core.M3LOperationPipeline`. Built once at module load — a pipeline
+ * instance is stateless across `run()` calls.
+ *
+ * A declined destructive-operation gate (`ERR_CLOUDFORMATION_STACKS_ABORTED`)
+ * propagates to the caller unmodified (`onDecline: { kind: "throw" }`) —
+ * a decline here aborts the whole run rather than soft-landing an empty result.
+ */
+const pipeline = new Core.M3LOperationPipeline<
+  Operation,
+  RawSettings,
+  Deps,
+  DispatchResult,
+  WriteDispatchPlan | undefined
+>({
+  operations: CLOUDFORMATION_STACKS_OPERATIONS,
+  configCode: "ERR_CLOUDFORMATION_STACKS_CONFIG",
+  resolveSettings,
+  requiredFields: REQUIRED_FIELDS,
+  prepare: prepareWriteDispatch,
+  destructive: {
+    operations: new Set([
+      "create-stack",
+      "update-stack",
+      "delete-stack",
+    ] as const),
+    describe: (operation, _settings, context) =>
+      requireWritePlan(context, requireWriteOperation(operation)).description,
+    yes: (settings) => settings.yes,
+    abortCode: "ERR_CLOUDFORMATION_STACKS_ABORTED",
+    onDecline: { kind: "throw" },
+  },
+  handlers: {
+    "list-stacks": dispatchReadStacks,
+    "describe-stack": dispatchReadStacks,
+    "describe-stack-events": dispatchReadStackEvents,
+    "create-stack": dispatchWrite,
+    "update-stack": dispatchWrite,
+    "delete-stack": dispatchWrite,
+    "wait-stack-create-complete": dispatchWait,
+    "wait-stack-update-complete": dispatchWait,
+    "wait-stack-delete-complete": dispatchWait,
+  },
+  persist: async (result, settings, deps) => {
+    if (settings.output === undefined || result === undefined) return;
+    const exporter = new Core.M3LJSONFileExporter({
+      filePath: deps.paths.resolveOutput(settings.output),
+    });
+    await exporter.export(result);
+  },
+  finalize: (result, _settings, deps) => {
+    if (!isWaiterResult(result) || result.state === "SUCCESS") return;
+    throw new Core.M3LError(
+      `cloudformation-stacks run ${deps.correlationId}: wait operation resolved '${result.state}', not SUCCESS`,
+      {
+        code: "ERR_CLOUDFORMATION_STACKS_WAIT_NOT_COMPLETE",
+        context: {
+          state: result.state,
+          ...(result.reason !== undefined && { reason: result.reason }),
+        },
       },
-    },
-  );
-}
+    );
+  },
+});
 
 /**
- * Throws `ERR_CLOUDFORMATION_STACKS_NOT_FOUND` when `operation` is
- * `describe-stack` and the resolved result is `undefined` — checked *before*
- * any persistence is attempted, since there is no result object to persist
- * in that case.
- */
-function assertDescribeStackFound(
-  operation: Operation,
-  result: DispatchResult,
-  stackName: string | undefined,
-): void {
-  if (operation !== "describe-stack" || result !== undefined) return;
-  throw new Core.M3LError(
-    `describe-stack: stack '${stackName ?? ""}' not found`,
-    { code: "ERR_CLOUDFORMATION_STACKS_NOT_FOUND" },
-  );
-}
-
-/**
- * Composes the `cloudformation-stacks` pipeline end to end: resolves +
- * guard-checks config, runs `Core.confirmDestructive` for every mutating
- * operation, dispatches to the operation-appropriate step, and — following
- * the two orderings the spec page documents — either throws
- * `ERR_CLOUDFORMATION_STACKS_NOT_FOUND` before any persistence
- * (`describe-stack`) or persists `output` before throwing
- * `ERR_CLOUDFORMATION_STACKS_WAIT_NOT_COMPLETE` (the three wait operations).
- * Every other operation simply persists a non-`void` result to `output` when
- * configured.
+ * Composes the `cloudformation-stacks` pipeline end to end via
+ * `Core.M3LOperationPipeline`: resolves + guard-checks config, runs
+ * `Core.confirmDestructive` for every mutating operation, dispatches to the
+ * operation-appropriate step, persists the result to `output` (when
+ * configured) via `Core.M3LJSONFileExporter`, and — for the three
+ * `wait-stack-*-complete` operations — throws once the result has had a
+ * chance to be persisted first.
  *
  * @param deps - The resolved config, `M3LPaths`, logger, correlation id, the
  *   injected `AWS.M3LCloudFormationOperations`, and the interactive-prompt
@@ -508,11 +554,13 @@ function assertDescribeStackFound(
  *   when the destructive-operation confirmation is declined.
  * @throws {@link Core.M3LError} coded
  *   `"ERR_CLOUDFORMATION_STACKS_NOT_FOUND"` when `describe-stack` resolves
- *   `undefined`.
+ *   `undefined` — thrown during the Dispatch phase, before any persistence.
  * @throws {@link Core.M3LError} coded
  *   `"ERR_CLOUDFORMATION_STACKS_WAIT_NOT_COMPLETE"` when a
  *   `wait-stack-*-complete` operation resolves a
- *   `M3LCloudFormationWaiterResult` whose `state` is not `"SUCCESS"`.
+ *   `M3LCloudFormationWaiterResult` whose `state` is not `"SUCCESS"` —
+ *   thrown *after* the result has been persisted to `output`, when
+ *   configured, so the timeout/abort reason is still on disk for diagnosis.
  *
  * @example
  * ```typescript
@@ -534,45 +582,12 @@ function assertDescribeStackFound(
  * });
  * ```
  */
-export async function runCloudformationStacks(deps: {
-  readonly config: Core.M3LConfig;
-  readonly paths: Core.M3LPaths;
-  readonly logger: Core.M3LLogger;
-  readonly correlationId: string;
-  readonly operations: AWS.M3LCloudFormationOperations;
-  readonly prompt: Core.M3LPrompt;
-}): Promise<void> {
-  const accessor = new Core.M3LConfigAccessor({
-    config: deps.config,
-    code: "ERR_CLOUDFORMATION_STACKS_CONFIG",
-  });
-  const reader = new Core.M3LInputFileReader({
-    paths: deps.paths,
-    code: "ERR_CLOUDFORMATION_STACKS_CONFIG",
-  });
-
-  const operation = accessor.oneOf(
-    "operation",
-    CLOUDFORMATION_STACKS_OPERATIONS,
-  );
-  const raw = readRawSettings(accessor);
-  const output = accessor.optionalString("output");
-
-  const result = await dispatchOperation(operation, raw, {
-    paths: deps.paths,
-    logger: deps.logger,
-    operations: deps.operations,
-    prompt: deps.prompt,
-    accessor,
-    reader,
-  });
-
-  assertDescribeStackFound(operation, result, raw.stackName);
-  await persistOutput(deps.paths, output, result);
-  assertWaitComplete(operation, result, deps.correlationId);
-
+export async function runCloudformationStacks(deps: Deps): Promise<void> {
+  const outcome = await pipeline.run(deps);
+  const accessor = buildAccessor(deps);
+  const stackName = accessor.optionalString("stackName");
   deps.logger.step(`cloudformation-stacks run ${deps.correlationId} complete`, {
-    operation,
-    ...(raw.stackName !== undefined && { stackName: raw.stackName }),
+    operation: outcome.operation,
+    ...(stackName !== undefined && { stackName }),
   });
 }

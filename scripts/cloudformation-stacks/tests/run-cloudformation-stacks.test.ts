@@ -2,8 +2,6 @@ import * as fsp from "node:fs/promises";
 
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
-import type * as M3LCommon from "@m3l-automation/m3l-common";
-
 /**
  * Contract: docs/reference/scripts/cloudformation-stacks.md
  * `run-cloudformation-stacks` row — the orchestrator/dispatcher. Resolves
@@ -23,11 +21,11 @@ import type * as M3LCommon from "@m3l-automation/m3l-common";
  * guard/gate/dispatch/persist wiring, never a step's internal logic — that
  * is each step's own test file's job); `node:fs/promises` and
  * `Core.M3LJSONFileExporter` are the true I/O boundary, also mocked.
- * `Core.confirmDestructive` is a stable library function, not a locally
- * dynamic-imported step, so it is intercepted via a package-level
- * `vi.mock("@m3l-automation/m3l-common", ...)` factory that spreads the
- * real module and overrides only `Core.confirmDestructive`, rather than a
- * `vi.mock` of a local module path.
+ * The destructive gate is intercepted via a `vi.spyOn` on the injected
+ * `Core.M3LPrompt` instance's `confirm` method — `confirmDestructive`
+ * always delegates to `prompt.confirm(description)` internally, so this
+ * seam works both before and after the orchestrator is migrated onto
+ * `Core.M3LOperationPipeline`.
  */
 
 vi.mock("node:fs/promises", async () => {
@@ -35,27 +33,11 @@ vi.mock("node:fs/promises", async () => {
   return { ...actual, readFile: vi.fn(actual.readFile) };
 });
 
-// vi.hoisted() is required here (unlike the plain vi.fn() locals below):
-// @m3l-automation/m3l-common is imported statically below, so its vi.mock
-// factory runs eagerly at module-eval time when that import is resolved —
-// before a plain top-level `const` would have initialized. The relative-path
-// step mocks are only resolved lazily via the dispatcher's dynamic import()
-// inside a test body, by which point a plain const has long since run.
-const destructiveGateMock = vi.hoisted(() =>
-  vi.fn().mockResolvedValue(undefined),
-);
 const readStacksMock = vi.fn();
 const readStackEventsMock = vi.fn();
 const writeStackMock = vi.fn();
 const waitStackMock = vi.fn();
 
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
-  const actual = await importOriginal<typeof M3LCommon>();
-  return {
-    ...actual,
-    Core: { ...actual.Core, confirmDestructive: destructiveGateMock },
-  };
-});
 vi.mock("../src/steps/read-stacks.js", () => ({
   readStacks: readStacksMock,
 }));
@@ -114,13 +96,19 @@ function buildDeps(
   };
 }
 
+/** Returns a prompt spy that resolves the gate to `confirmed` and the spy for assertions. */
+function confirmingPrompt(confirmed: boolean) {
+  const prompt = new Core.M3LPrompt();
+  const confirm = vi.spyOn(prompt, "confirm").mockResolvedValue(confirmed);
+  return { prompt, confirm };
+}
+
 afterEach(() => {
   // restoreAllMocks() only undoes vi.spyOn spies; it does not clear the
   // plain vi.fn() mocks created inside the top-level vi.mock() factories
   // above, so their call history would otherwise leak into the next test.
   vi.restoreAllMocks();
   vi.mocked(fsp.readFile).mockReset();
-  destructiveGateMock.mockReset().mockResolvedValue(undefined);
   readStacksMock.mockReset();
   readStackEventsMock.mockReset();
   writeStackMock.mockReset();
@@ -138,12 +126,13 @@ describe("runCloudformationStacks — per-operation config guards (fire before a
   ])(
     "throws ERR_CLOUDFORMATION_STACKS_CONFIG when operation '%s' is missing 'stackName'",
     async (operation) => {
-      const deps = buildDeps({ operation });
+      const { prompt, confirm } = confirmingPrompt(true);
+      const deps = buildDeps({ operation }, { prompt });
 
       await expect(runCloudformationStacks(deps)).rejects.toMatchObject({
         code: "ERR_CLOUDFORMATION_STACKS_CONFIG",
       });
-      expect(destructiveGateMock).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
       expect(readStacksMock).not.toHaveBeenCalled();
       expect(readStackEventsMock).not.toHaveBeenCalled();
       expect(writeStackMock).not.toHaveBeenCalled();
@@ -154,12 +143,13 @@ describe("runCloudformationStacks — per-operation config guards (fire before a
   test.each(["create-stack", "update-stack"])(
     "throws ERR_CLOUDFORMATION_STACKS_CONFIG when operation '%s' is missing 'input'",
     async (operation) => {
-      const deps = buildDeps({ operation });
+      const { prompt, confirm } = confirmingPrompt(true);
+      const deps = buildDeps({ operation }, { prompt });
 
       await expect(runCloudformationStacks(deps)).rejects.toMatchObject({
         code: "ERR_CLOUDFORMATION_STACKS_CONFIG",
       });
-      expect(destructiveGateMock).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
       expect(writeStackMock).not.toHaveBeenCalled();
       expect(fsp.readFile).not.toHaveBeenCalled();
     },
@@ -237,11 +227,15 @@ describe("runCloudformationStacks — template/input conflict rule (runs before 
       [templatePath]: "Resources: {}",
     });
     writeStackMock.mockResolvedValue(CREATE_STACK_RESULT);
-    const deps = buildDeps({
-      operation: "create-stack",
-      input: "create.json",
-      template: "template.yaml",
-    });
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "create-stack",
+        input: "create.json",
+        template: "template.yaml",
+      },
+      { prompt },
+    );
 
     await runCloudformationStacks(deps);
 
@@ -343,56 +337,49 @@ describe("runCloudformationStacks — destructive-gate dispatch (create/update/d
     readStacksMock.mockResolvedValue({ stackSummaries: [] });
     readStackEventsMock.mockResolvedValue({ stackEvents: [] });
     waitStackMock.mockResolvedValue({ state: "SUCCESS" });
-    const deps = buildDeps({ operation, stackName: "my-stack" });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps({ operation, stackName: "my-stack" }, { prompt });
 
     await runCloudformationStacks(deps);
 
-    expect(destructiveGateMock).not.toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
   });
 
   test("runs destructive-gate before dispatching 'delete-stack', building description from the stackName config value", async () => {
     writeStackMock.mockResolvedValue(undefined);
-    const deps = buildDeps({
-      operation: "delete-stack",
-      stackName: "my-stack",
-    });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      { operation: "delete-stack", stackName: "my-stack" },
+      { prompt },
+    );
 
     await runCloudformationStacks(deps);
 
-    expect(destructiveGateMock).toHaveBeenCalledTimes(1);
-    const call = destructiveGateMock.mock.calls[0] as [
-      { readonly description: string; readonly yes: boolean },
-    ];
-    expect(call[0].description).toContain("my-stack");
-    expect(call[0].yes).toBe(false);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("my-stack"));
   });
 
   test("forwards 'yes' through to destructive-gate", async () => {
     writeStackMock.mockResolvedValue(undefined);
-    const deps = buildDeps({
-      operation: "delete-stack",
-      stackName: "my-stack",
-      yes: true,
-    });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      { operation: "delete-stack", stackName: "my-stack", yes: true },
+      { prompt },
+    );
 
     await runCloudformationStacks(deps);
 
-    const call = destructiveGateMock.mock.calls[0] as [
-      { readonly yes: boolean },
-    ];
-    expect(call[0].yes).toBe(true);
+    // When yes=true, confirmDestructive bypasses prompt.confirm entirely
+    // (logs a warning instead) — so the spy must not be called.
+    expect(confirm).not.toHaveBeenCalled();
   });
 
   test("propagates ERR_CLOUDFORMATION_STACKS_ABORTED from destructive-gate, never dispatching writeStack", async () => {
-    destructiveGateMock.mockRejectedValue(
-      new Core.M3LError("aborted", {
-        code: "ERR_CLOUDFORMATION_STACKS_ABORTED",
-      }),
+    const { prompt } = confirmingPrompt(false);
+    const deps = buildDeps(
+      { operation: "delete-stack", stackName: "my-stack" },
+      { prompt },
     );
-    const deps = buildDeps({
-      operation: "delete-stack",
-      stackName: "my-stack",
-    });
 
     await expect(runCloudformationStacks(deps)).rejects.toMatchObject({
       code: "ERR_CLOUDFORMATION_STACKS_ABORTED",
@@ -406,17 +393,15 @@ describe("runCloudformationStacks — destructive-gate dispatch (create/update/d
       [inputPath]: JSON.stringify({ stackName: "my-stack" }),
     });
     writeStackMock.mockResolvedValue(CREATE_STACK_RESULT);
-    const deps = buildDeps({
-      operation: "create-stack",
-      input: "create.json",
-    });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      { operation: "create-stack", input: "create.json" },
+      { prompt },
+    );
 
     await runCloudformationStacks(deps);
 
-    const call = destructiveGateMock.mock.calls[0] as [
-      { readonly description: string },
-    ];
-    expect(call[0].description).toContain("my-stack");
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("my-stack"));
   });
 });
 
@@ -456,11 +441,15 @@ describe("runCloudformationStacks — 'stackStatusFilter'/'retainResources' comm
 
   test("splits/trims/drops-empty 'retainResources' before dispatching to writeStack (delete-stack)", async () => {
     writeStackMock.mockResolvedValue(undefined);
-    const deps = buildDeps({
-      operation: "delete-stack",
-      stackName: "my-stack",
-      retainResources: " BucketA ,BucketB,, BucketC ",
-    });
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "delete-stack",
+        stackName: "my-stack",
+        retainResources: " BucketA ,BucketB,, BucketC ",
+      },
+      { prompt },
+    );
 
     await runCloudformationStacks(deps);
 
@@ -547,10 +536,11 @@ describe("runCloudformationStacks — operation dispatch routing (dynamic-import
     const parsedInput = { stackName: "my-stack" };
     stubReadFileByPath({ [inputPath]: JSON.stringify(parsedInput) });
     writeStackMock.mockResolvedValue(CREATE_STACK_RESULT);
-    const deps = buildDeps({
-      operation: "create-stack",
-      input: "create.json",
-    });
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      { operation: "create-stack", input: "create.json" },
+      { prompt },
+    );
 
     await runCloudformationStacks(deps);
 
@@ -564,11 +554,15 @@ describe("runCloudformationStacks — operation dispatch routing (dynamic-import
 
   test("'delete-stack' dispatches to writeStack with stackName/retainResources/roleArn from config, input undefined", async () => {
     writeStackMock.mockResolvedValue(undefined);
-    const deps = buildDeps({
-      operation: "delete-stack",
-      stackName: "my-stack",
-      roleArn: "arn:aws:iam::123:role/deploy",
-    });
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "delete-stack",
+        stackName: "my-stack",
+        roleArn: "arn:aws:iam::123:role/deploy",
+      },
+      { prompt },
+    );
 
     await runCloudformationStacks(deps);
 
@@ -633,11 +627,15 @@ describe("runCloudformationStacks — output persistence", () => {
     const exportSpy = vi
       .spyOn(Core.M3LJSONFileExporter.prototype, "export")
       .mockResolvedValue(undefined);
-    const deps = buildDeps({
-      operation: "delete-stack",
-      stackName: "my-stack",
-      output: "result.json",
-    });
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "delete-stack",
+        stackName: "my-stack",
+        output: "result.json",
+      },
+      { prompt },
+    );
 
     await runCloudformationStacks(deps);
 
