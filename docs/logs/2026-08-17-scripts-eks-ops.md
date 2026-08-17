@@ -3,8 +3,8 @@
 This log covers issue #440 — the migration of
 `scripts/eks-ops/src/steps/run-eks-ops.ts` (654 lines) onto
 `Core.M3LOperationPipeline`, the fourth consumer migration in the ADR-0043 wave
-(after s3-objects #435, ecs-ops #436, lambda-ops #454, and cloudformation-stacks
-#457). It records what shipped, what matched the plan, what required a design
+(after s3-objects #435, ecs-ops #436, lambda-ops #454, and cloudformation-stacks #457).
+It records what shipped, what matched the plan, what required a design
 decision (the dual structural-guard requirement in both `persist` and `finalize`),
 and durable lessons for the remaining queued migration (codepipeline-ops).
 
