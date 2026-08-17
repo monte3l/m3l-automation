@@ -2,8 +2,6 @@ import * as fsp from "node:fs/promises";
 
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
-import type * as M3LCommon from "@m3l-automation/m3l-common";
-
 /**
  * Contract: docs/reference/scripts/lambda-ops.md `run-lambda-ops` row — the
  * orchestrator/dispatcher. Guard-checks the resolved config per operation
@@ -17,12 +15,14 @@ import type * as M3LCommon from "@m3l-automation/m3l-common";
  * populated. Step modules are mocked (this file asserts ONLY the
  * orchestrator's guard/gate/dispatch/persist wiring, never a step's internal
  * logic — that is each step's own test file's job); `node:fs/promises` and
- * `Core.M3LJSONFileExporter` are the true I/O boundary, also mocked.
- * `Core.confirmDestructive` is a stable library function, not a locally
- * dynamic-imported step, so it is intercepted via a package-level
- * `vi.mock("@m3l-automation/m3l-common", ...)` factory that spreads the real
- * module and overrides only `Core.confirmDestructive`, rather than a
- * `vi.mock` of a local module path.
+ * `Core.M3LJSONFileExporter` are the true I/O boundary, also mocked. The
+ * destructive gate itself (`Core.confirmDestructive`) runs for real and is
+ * observed at the one seam it always calls through — a per-test
+ * `Core.M3LPrompt` instance's `confirm` method, spied via `vi.spyOn` (the same
+ * technique `scripts/ecs-ops/tests/run-ecs-ops.test.ts` uses for its own
+ * destructive gate). This is architecture-agnostic: it observes the gate at
+ * the prompt boundary `confirmDestructive` has always called through, regardless
+ * of how the dispatcher that invokes it is wired (issue #437 migration target).
  */
 
 vi.mock("node:fs/promises", async () => {
@@ -30,26 +30,10 @@ vi.mock("node:fs/promises", async () => {
   return { ...actual, readFile: vi.fn(actual.readFile) };
 });
 
-// vi.hoisted() is required here (unlike the plain vi.fn() locals below):
-// @m3l-automation/m3l-common is imported statically below, so its vi.mock
-// factory runs eagerly at module-eval time when that import is resolved —
-// before a plain top-level `const` would have initialized. The relative-path
-// step mocks are only resolved lazily via the dispatcher's dynamic import()
-// inside a test body, by which point a plain const has long since run.
-const destructiveGateMock = vi.hoisted(() =>
-  vi.fn().mockResolvedValue(undefined),
-);
 const readFunctionsMock = vi.fn();
 const writeFunctionMock = vi.fn();
 const invokeFunctionMock = vi.fn();
 
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
-  const actual = await importOriginal<typeof M3LCommon>();
-  return {
-    ...actual,
-    Core: { ...actual.Core, confirmDestructive: destructiveGateMock },
-  };
-});
 vi.mock("../src/steps/read-functions.js", () => ({
   readFunctions: readFunctionsMock,
 }));
@@ -103,19 +87,31 @@ function buildDeps(
   };
 }
 
+/**
+ * Builds a `Core.M3LPrompt` whose `confirm` method is stubbed to resolve
+ * `confirmed`, alongside the spy itself. `Core.confirmDestructive` (invoked
+ * internally by `run-lambda-ops`) always calls `deps.prompt.confirm` directly
+ * on the decline/confirm path — this is the seam every gate test in this file
+ * observes instead of a `Core`-barrel override.
+ */
+function confirmingPrompt(confirmed: boolean) {
+  const prompt = new Core.M3LPrompt();
+  const confirm = vi.spyOn(prompt, "confirm").mockResolvedValue(confirmed);
+  return { prompt, confirm };
+}
+
 afterEach(() => {
-  // restoreAllMocks() only undoes vi.spyOn spies (the exporter prototype
-  // spy below); it does not clear the plain vi.fn() mocks created inside
-  // the top-level vi.mock() factories above, so their call history would
-  // otherwise leak into the next test. fsp.readFile is one such vi.fn()
-  // (wrapped once at module scope by the node:fs/promises factory above):
-  // vi.spyOn(fsp, "readFile") in stubReadFileByPath() detects it is already
-  // a mock and reuses that same instance rather than layering a fresh spy,
-  // so restoreAllMocks() does not reset its call log either — it needs its
+  // restoreAllMocks() only undoes vi.spyOn spies (the exporter prototype spy
+  // and prompt.confirm spies above); it does not clear the plain vi.fn() mocks
+  // created inside the top-level vi.mock() factories above, so their call
+  // history would otherwise leak into the next test. fsp.readFile is one such
+  // vi.fn() (wrapped once at module scope by the node:fs/promises factory
+  // above): vi.spyOn(fsp, "readFile") in stubReadFileByPath() detects it is
+  // already a mock and reuses that same instance rather than layering a fresh
+  // spy, so restoreAllMocks() does not reset its call log either — it needs its
   // own explicit mockReset() here, same as the step mocks below.
   vi.restoreAllMocks();
   vi.mocked(fsp.readFile).mockReset();
-  destructiveGateMock.mockReset().mockResolvedValue(undefined);
   readFunctionsMock.mockReset();
   writeFunctionMock.mockReset();
   invokeFunctionMock.mockReset();
@@ -132,12 +128,13 @@ describe("runLambdaOps — config guards (fire before any AWS call or step dispa
   ])(
     "throws ERR_LAMBDA_OPS_CONFIG when operation '%s' is missing 'functionName'",
     async (operation) => {
-      const deps = buildDeps({ operation });
+      const { prompt, confirm } = confirmingPrompt(true);
+      const deps = buildDeps({ operation }, { prompt });
 
       await expect(runLambdaOps(deps)).rejects.toMatchObject({
         code: "ERR_LAMBDA_OPS_CONFIG",
       });
-      expect(destructiveGateMock).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
       expect(readFunctionsMock).not.toHaveBeenCalled();
       expect(writeFunctionMock).not.toHaveBeenCalled();
       expect(invokeFunctionMock).not.toHaveBeenCalled();
@@ -217,11 +214,15 @@ describe("runLambdaOps — destructive-gate dispatch", () => {
     "never runs destructive-gate for '%s'",
     async (operation) => {
       readFunctionsMock.mockResolvedValue({ functions: [] });
-      const deps = buildDeps({ operation, functionName: "my-function" });
+      const { prompt, confirm } = confirmingPrompt(true);
+      const deps = buildDeps(
+        { operation, functionName: "my-function" },
+        { prompt },
+      );
 
       await runLambdaOps(deps);
 
-      expect(destructiveGateMock).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
     },
   );
 
@@ -233,47 +234,57 @@ describe("runLambdaOps — destructive-gate dispatch", () => {
     async (operation, extra) => {
       invokeFunctionMock.mockResolvedValue({ statusCode: 200 });
       writeFunctionMock.mockResolvedValue(undefined);
-      const deps = buildDeps({
-        operation,
-        functionName: "my-function",
-        ...extra,
-      });
+      const { prompt, confirm } = confirmingPrompt(true);
+      const deps = buildDeps(
+        {
+          operation,
+          functionName: "my-function",
+          ...extra,
+        },
+        { prompt },
+      );
 
       await runLambdaOps(deps);
 
-      expect(destructiveGateMock).toHaveBeenCalledTimes(1);
-      const call = destructiveGateMock.mock.calls[0] as [
-        { readonly description: string; readonly yes: boolean },
-      ];
-      expect(call[0].description).toContain("my-function");
-      expect(call[0].yes).toBe(false);
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(confirm).toHaveBeenCalledWith(
+        expect.stringMatching(/^Confirm: .*\?$/),
+      );
+      expect(confirm).toHaveBeenCalledWith(
+        expect.stringContaining("my-function"),
+      );
     },
   );
 
-  test("forwards 'yes' through to destructive-gate", async () => {
+  test("'yes: true' bypasses the interactive prompt entirely and logs the gate's own bypass warning, still dispatching writeFunction", async () => {
     writeFunctionMock.mockResolvedValue(undefined);
-    const deps = buildDeps({
-      operation: "delete",
-      functionName: "my-function",
-      yes: true,
-    });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "delete",
+        functionName: "my-function",
+        yes: true,
+      },
+      { prompt },
+    );
+    const warningSpy = vi.spyOn(deps.logger, "warning");
 
     await runLambdaOps(deps);
 
-    const call = destructiveGateMock.mock.calls[0] as [
-      { readonly yes: boolean },
-    ];
-    expect(call[0].yes).toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(warningSpy).toHaveBeenCalled();
+    expect(writeFunctionMock).toHaveBeenCalled();
   });
 
   test("propagates ERR_LAMBDA_OPS_ABORTED from destructive-gate, never dispatching the step", async () => {
-    destructiveGateMock.mockRejectedValue(
-      new Core.M3LError("aborted", { code: "ERR_LAMBDA_OPS_ABORTED" }),
+    const { prompt } = confirmingPrompt(false);
+    const deps = buildDeps(
+      {
+        operation: "delete",
+        functionName: "my-function",
+      },
+      { prompt },
     );
-    const deps = buildDeps({
-      operation: "delete",
-      functionName: "my-function",
-    });
 
     await expect(runLambdaOps(deps)).rejects.toMatchObject({
       code: "ERR_LAMBDA_OPS_ABORTED",
@@ -349,12 +360,18 @@ describe("runLambdaOps — operation dispatch routing", () => {
       functionArn: "arn:aws:lambda:us-east-1:123:function:my-function",
       lastModified: "2026-01-01T00:00:00Z",
     });
-    const deps = buildDeps({
-      operation: "create",
-      functionName: "my-function",
-      zipFilePath: "code.zip",
-      input: "def.json",
-    });
+    // create is destructive-gated; a real (unstubbed) M3LPrompt would
+    // otherwise block on real stdin here — see confirmingPrompt.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "create",
+        functionName: "my-function",
+        zipFilePath: "code.zip",
+        input: "def.json",
+      },
+      { prompt },
+    );
 
     await runLambdaOps(deps);
 
@@ -380,11 +397,16 @@ describe("runLambdaOps — operation dispatch routing", () => {
       functionArn: "arn:aws:lambda:us-east-1:123:function:my-function",
       lastModified: "2026-01-01T00:00:00Z",
     });
-    const deps = buildDeps({
-      operation: "update-code",
-      functionName: "my-function",
-      zipFilePath: "code.zip",
-    });
+    // update-code is destructive-gated; see the create test above.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "update-code",
+        functionName: "my-function",
+        zipFilePath: "code.zip",
+      },
+      { prompt },
+    );
 
     await runLambdaOps(deps);
 
@@ -404,11 +426,16 @@ describe("runLambdaOps — operation dispatch routing", () => {
       functionArn: "arn:aws:lambda:us-east-1:123:function:my-function",
       lastModified: "2026-01-01T00:00:00Z",
     });
-    const deps = buildDeps({
-      operation: "update-configuration",
-      functionName: "my-function",
-      input: "def.json",
-    });
+    // update-configuration is destructive-gated; see the create test above.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "update-configuration",
+        functionName: "my-function",
+        input: "def.json",
+      },
+      { prompt },
+    );
 
     await runLambdaOps(deps);
 
@@ -421,10 +448,15 @@ describe("runLambdaOps — operation dispatch routing", () => {
 
   test("'delete' dispatches to writeFunction with neither zipFile nor input", async () => {
     writeFunctionMock.mockResolvedValue(undefined);
-    const deps = buildDeps({
-      operation: "delete",
-      functionName: "my-function",
-    });
+    // delete is destructive-gated; see the create test above.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "delete",
+        functionName: "my-function",
+      },
+      { prompt },
+    );
 
     await runLambdaOps(deps);
 
@@ -443,11 +475,16 @@ describe("runLambdaOps — operation dispatch routing", () => {
     const payload = { key: "value" };
     stubReadFileByPath({ [inputPath]: JSON.stringify(payload) });
     invokeFunctionMock.mockResolvedValue({ statusCode: 200 });
-    const deps = buildDeps({
-      operation: "invoke",
-      functionName: "my-function",
-      input: "payload.json",
-    });
+    // invoke is destructive-gated; see the create test above.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "invoke",
+        functionName: "my-function",
+        input: "payload.json",
+      },
+      { prompt },
+    );
 
     await runLambdaOps(deps);
 
@@ -461,10 +498,15 @@ describe("runLambdaOps — operation dispatch routing", () => {
 
   test("'invoke' omits the payload (passes undefined) when 'input' is unset", async () => {
     invokeFunctionMock.mockResolvedValue({ statusCode: 200 });
-    const deps = buildDeps({
-      operation: "invoke",
-      functionName: "my-function",
-    });
+    // invoke is destructive-gated; see the create test above.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "invoke",
+        functionName: "my-function",
+      },
+      { prompt },
+    );
 
     await runLambdaOps(deps);
 
@@ -519,11 +561,16 @@ describe("runLambdaOps — output persistence", () => {
     const exportSpy = vi
       .spyOn(Core.M3LJSONFileExporter.prototype, "export")
       .mockResolvedValue(undefined);
-    const deps = buildDeps({
-      operation: "delete",
-      functionName: "my-function",
-      output: "result.json",
-    });
+    // delete is destructive-gated; see the create test above.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "delete",
+        functionName: "my-function",
+        output: "result.json",
+      },
+      { prompt },
+    );
 
     await runLambdaOps(deps);
 
@@ -542,11 +589,16 @@ describe("runLambdaOps — invoke functionError: persist-then-throw ordering", (
     const exportSpy = vi
       .spyOn(Core.M3LJSONFileExporter.prototype, "export")
       .mockResolvedValue(undefined);
-    const deps = buildDeps({
-      operation: "invoke",
-      functionName: "my-function",
-      output: "result.json",
-    });
+    // invoke is destructive-gated; see the create test above.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "invoke",
+        functionName: "my-function",
+        output: "result.json",
+      },
+      { prompt },
+    );
 
     await expect(runLambdaOps(deps)).rejects.toMatchObject({
       code: "ERR_LAMBDA_OPS_FUNCTION_ERROR",
@@ -565,10 +617,15 @@ describe("runLambdaOps — invoke functionError: persist-then-throw ordering", (
       statusCode: 200,
       functionError: "Unhandled",
     });
-    const deps = buildDeps({
-      operation: "invoke",
-      functionName: "my-function",
-    });
+    // invoke is destructive-gated; see the create test above.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "invoke",
+        functionName: "my-function",
+      },
+      { prompt },
+    );
 
     await expect(runLambdaOps(deps)).rejects.toMatchObject({
       code: "ERR_LAMBDA_OPS_FUNCTION_ERROR",
@@ -577,10 +634,15 @@ describe("runLambdaOps — invoke functionError: persist-then-throw ordering", (
 
   test("does not throw when 'invoke' succeeds without a functionError", async () => {
     invokeFunctionMock.mockResolvedValue({ statusCode: 200 });
-    const deps = buildDeps({
-      operation: "invoke",
-      functionName: "my-function",
-    });
+    // invoke is destructive-gated; see the create test above.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "invoke",
+        functionName: "my-function",
+      },
+      { prompt },
+    );
 
     await expect(runLambdaOps(deps)).resolves.toBeUndefined();
   });
@@ -589,10 +651,15 @@ describe("runLambdaOps — invoke functionError: persist-then-throw ordering", (
 describe("runLambdaOps — summary log context (statusCode only for 'invoke')", () => {
   test("'invoke's summary log includes statusCode from the result", async () => {
     invokeFunctionMock.mockResolvedValue({ statusCode: 200 });
-    const deps = buildDeps({
-      operation: "invoke",
-      functionName: "my-function",
-    });
+    // invoke is destructive-gated; see the create test above.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "invoke",
+        functionName: "my-function",
+      },
+      { prompt },
+    );
     const stepSpy = vi.spyOn(deps.logger, "step");
 
     await runLambdaOps(deps);
@@ -620,11 +687,17 @@ describe("runLambdaOps — malformed/unreadable input-file failure paths", () =>
   test("wraps an unreadable input file's read failure as ERR_LAMBDA_OPS_CONFIG, chaining the raw cause", async () => {
     const cause = new Error("ENOENT: no such file or directory");
     vi.spyOn(fsp, "readFile").mockRejectedValue(cause);
-    const deps = buildDeps({
-      operation: "invoke",
-      functionName: "my-function",
-      input: "payload.json",
-    });
+    // invoke's gate fires before reading the input file, so a confirming
+    // prompt is required to let execution reach the read.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "invoke",
+        functionName: "my-function",
+        input: "payload.json",
+      },
+      { prompt },
+    );
 
     let thrown: unknown;
     try {
@@ -642,11 +715,17 @@ describe("runLambdaOps — malformed/unreadable input-file failure paths", () =>
   test("throws ERR_LAMBDA_OPS_CONFIG ('must be valid JSON') when the input file's content is malformed JSON", async () => {
     const inputPath = PATHS.resolveInput("payload.json");
     stubReadFileByPath({ [inputPath]: "{not json" });
-    const deps = buildDeps({
-      operation: "invoke",
-      functionName: "my-function",
-      input: "payload.json",
-    });
+    // invoke is destructive-gated and its gate fires before reading the input
+    // file; see the test above.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "invoke",
+        functionName: "my-function",
+        input: "payload.json",
+      },
+      { prompt },
+    );
 
     let thrown: unknown;
     try {
@@ -664,11 +743,16 @@ describe("runLambdaOps — malformed/unreadable input-file failure paths", () =>
   test("F10: malformed JSON parse failure does not chain the raw SyntaxError as cause", async () => {
     const inputPath = PATHS.resolveInput("payload.json");
     stubReadFileByPath({ [inputPath]: "{not json" });
-    const deps = buildDeps({
-      operation: "invoke",
-      functionName: "my-function",
-      input: "payload.json",
-    });
+    // invoke is destructive-gated; see the test above.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "invoke",
+        functionName: "my-function",
+        input: "payload.json",
+      },
+      { prompt },
+    );
 
     let thrown: unknown;
     try {
@@ -690,11 +774,16 @@ describe("runLambdaOps — malformed/unreadable input-file failure paths", () =>
     stubReadFileByPath({
       [inputPath]: '{"__proto__":{"polluted":true}}',
     });
-    const deps = buildDeps({
-      operation: "update-configuration",
-      functionName: "my-function",
-      input: "def.json",
-    });
+    // update-configuration is destructive-gated; see the test above.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "update-configuration",
+        functionName: "my-function",
+        input: "def.json",
+      },
+      { prompt },
+    );
 
     await expect(runLambdaOps(deps)).rejects.toMatchObject({
       code: "ERR_LAMBDA_OPS_CONFIG",
@@ -705,11 +794,16 @@ describe("runLambdaOps — malformed/unreadable input-file failure paths", () =>
   test("throws ERR_LAMBDA_OPS_CONFIG ('must decode to a JSON object') when the parsed input is a JSON array", async () => {
     const inputPath = PATHS.resolveInput("def.json");
     stubReadFileByPath({ [inputPath]: JSON.stringify([1, 2, 3]) });
-    const deps = buildDeps({
-      operation: "update-configuration",
-      functionName: "my-function",
-      input: "def.json",
-    });
+    // update-configuration is destructive-gated; see the test above.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "update-configuration",
+        functionName: "my-function",
+        input: "def.json",
+      },
+      { prompt },
+    );
 
     let thrown: unknown;
     try {
@@ -729,11 +823,16 @@ describe("runLambdaOps — malformed/unreadable input-file failure paths", () =>
   test("throws ERR_LAMBDA_OPS_CONFIG ('must decode to a JSON object') when the parsed input is a JSON primitive", async () => {
     const inputPath = PATHS.resolveInput("def.json");
     stubReadFileByPath({ [inputPath]: "42" });
-    const deps = buildDeps({
-      operation: "update-configuration",
-      functionName: "my-function",
-      input: "def.json",
-    });
+    // update-configuration is destructive-gated; see the test above.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "update-configuration",
+        functionName: "my-function",
+        input: "def.json",
+      },
+      { prompt },
+    );
 
     let thrown: unknown;
     try {

@@ -15,17 +15,22 @@ interface RawSettings {
   readonly zipFilePath: string | undefined;
   readonly input: string | undefined;
   readonly yes: boolean;
+  readonly output: string | undefined;
 }
 
-/** The dependencies every dispatched operation needs, once `config` has resolved. */
-interface DispatchDeps {
+/** The full dependency bag `runLambdaOps` receives and the pipeline threads through. */
+interface Deps extends Core.M3LOperationPipelineBaseDeps {
   readonly paths: Core.M3LPaths;
-  readonly logger: Core.M3LLogger;
+  readonly correlationId: string;
   readonly operations: AWS.M3LLambdaOperations;
-  readonly prompt: Core.M3LPrompt;
-  readonly accessor: Core.M3LConfigAccessor;
-  readonly reader: Core.M3LInputFileReader;
 }
+
+/** The union of result shapes any dispatched operation can resolve. */
+type DispatchResult =
+  | AWS.M3LLambdaListFunctionsResult
+  | AWS.M3LLambdaFunctionConfiguration
+  | AWS.M3LLambdaInvokeResult
+  | undefined;
 
 /** Reads `zipFilePath` under `M3L_INPUT_DIR` as raw bytes, for `create`/`update-code`. */
 async function readZipFileBytes(
@@ -44,236 +49,268 @@ async function readZipFileBytes(
   }
 }
 
-/** Builds the human-readable description `destructive-gate` prints/prompts with. */
-function buildGateDescription(
-  operation: LambdaOperation,
-  functionName: string,
-): string {
-  return `${operation} function '${functionName}'`;
-}
-
-/** Runs `Core.confirmDestructive` — every mutating operation routes through this before dispatch. */
-async function runGate(
-  operation: LambdaOperation,
-  functionName: string,
-  yes: boolean,
-  deps: Pick<DispatchDeps, "prompt" | "logger">,
-): Promise<void> {
-  await Core.confirmDestructive({
-    prompt: deps.prompt,
-    logger: deps.logger,
-    description: buildGateDescription(operation, functionName),
-    yes,
-    code: "ERR_LAMBDA_OPS_ABORTED",
+/**
+ * Builds a fresh `Core.M3LConfigAccessor` over `deps.config`, coded
+ * `ERR_LAMBDA_OPS_CONFIG`. `M3LOperationHandlers` only receive the pipeline's
+ * `deps` bag — not the engine's own internal accessor — so the one remaining
+ * site that still needs a config read outside the engine's own phases (the
+ * completion-log re-read in {@link runLambdaOps}) builds its own.
+ * `M3LConfigAccessor` is a stateless read-through wrapper, so constructing a
+ * fresh one per call is behaviorally identical to sharing one instance.
+ */
+function buildAccessor(deps: Deps): Core.M3LConfigAccessor {
+  return new Core.M3LConfigAccessor({
+    config: deps.config,
+    code: "ERR_LAMBDA_OPS_CONFIG",
   });
 }
 
-/** The four mutating operations dispatched through `write-function` — mirrors that module's own (unexported) union. */
-type WriteOperation =
-  "create" | "update-code" | "update-configuration" | "delete";
-
-/** The three dispatch families `lambda-ops` routes operations into. */
-type DispatchGroup = "read" | "invoke" | "write";
+/** Builds a fresh `Core.M3LInputFileReader` over `deps.paths`, coded `ERR_LAMBDA_OPS_CONFIG` — see {@link buildAccessor}. */
+function buildReader(deps: Deps): Core.M3LInputFileReader {
+  return new Core.M3LInputFileReader({
+    paths: deps.paths,
+    code: "ERR_LAMBDA_OPS_CONFIG",
+  });
+}
 
 /**
- * Which dispatch family each operation belongs to. Keyed as a
- * `Record<LambdaOperation, …>` so a new operation added to
- * {@link LAMBDA_OPERATIONS} without a corresponding entry here is a compile
- * error — the same exhaustiveness an explicit `switch` would give, without
- * the per-case line/complexity cost.
+ * Narrows an already-guarded optional settings field to its defined value,
+ * throwing a defensive `ERR_LAMBDA_OPS_CONFIG` otherwise. The pipeline's
+ * `requiredFields` guard (phase 4) has already enforced presence for every
+ * field callers read this way before those callers are ever invoked — this
+ * is a type-narrowing safety net, not an expected runtime path.
  */
-const DISPATCH_GROUP: Record<LambdaOperation, DispatchGroup> = {
-  list: "read",
-  describe: "read",
-  invoke: "invoke",
-  create: "write",
-  "update-code": "write",
-  "update-configuration": "write",
-  delete: "write",
-};
-
-/** Narrows `operation` to `list`/`describe`, matching {@link DISPATCH_GROUP}'s `"read"` entries. */
-function isReadOperation(
-  operation: LambdaOperation,
-): operation is "list" | "describe" {
-  return operation === "list" || operation === "describe";
-}
-
-/** Narrows `operation` to {@link WriteOperation}, matching {@link DISPATCH_GROUP}'s `"write"` entries. */
-function isWriteOperation(
-  operation: LambdaOperation,
-): operation is WriteOperation {
-  return (
-    operation === "create" ||
-    operation === "update-code" ||
-    operation === "update-configuration" ||
-    operation === "delete"
-  );
-}
-
-/** `list`/`describe`: dispatches to `read-functions`, guard-checking `functionName` for `describe`. */
-async function dispatchRead(
-  operation: "list" | "describe",
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<unknown> {
-  const { readFunctions } = await import("./read-functions.js");
-  if (operation === "list") {
-    return readFunctions({
-      operations: deps.operations,
-      operation: "list",
-      marker: raw.marker,
-      functionName: undefined,
+function requireDefined<TValue>(
+  value: TValue | undefined,
+  name: string,
+): TValue {
+  if (value === undefined) {
+    throw new Core.M3LError(`'${name}' is required for this operation`, {
+      code: "ERR_LAMBDA_OPS_CONFIG",
     });
   }
-  const functionName = deps.accessor.requiredFor(
-    raw.functionName,
-    "functionName",
-    operation,
-  );
+  return value;
+}
+
+/**
+ * Resolves the raw, per-operation-optional config values the pipeline reads
+ * once, up front. Must not re-read `"operation"` or apply its own
+ * required-field guards — those are owned by the engine's own "Operation"
+ * and "Guards" phases (the latter driven by {@link REQUIRED_FIELDS}).
+ */
+function resolveSettings(accessor: Core.M3LConfigAccessor): RawSettings {
+  return {
+    functionName: accessor.optionalString("functionName"),
+    marker: accessor.optionalString("marker"),
+    zipFilePath: accessor.optionalString("zipFilePath"),
+    input: accessor.optionalString("input"),
+    yes: accessor.booleanWithDefault("yes", YES_DEFAULT),
+    output: accessor.optionalString("output"),
+  };
+}
+
+/**
+ * Which of `functionName`/`zipFilePath`/`input` each operation requires,
+ * checked via `Core.M3LConfigAccessor.requiredFor` in the engine's own
+ * "Guards" phase (phase 4) — before the destructive gate or any handler
+ * ever runs. Keyed as a `Record<LambdaOperation, …>` so a new operation
+ * added to {@link LAMBDA_OPERATIONS} without a corresponding entry here is a
+ * compile error. `invoke`'s `input` is deliberately excluded — a missing
+ * `input` means "invoke with an empty payload", not a config error.
+ */
+const REQUIRED_FIELDS: Record<
+  LambdaOperation,
+  readonly Core.M3LGuardableKey<RawSettings>[]
+> = {
+  list: [],
+  describe: ["functionName"],
+  invoke: ["functionName"],
+  create: ["functionName", "zipFilePath", "input"],
+  "update-code": ["functionName", "zipFilePath"],
+  "update-configuration": ["functionName", "input"],
+  delete: ["functionName"],
+};
+
+/**
+ * `list`: dispatches to `read-functions` with the resolved marker. Never
+ * gated — `list` is a read-only operation.
+ */
+async function dispatchList(
+  _operation: "list",
+  settings: RawSettings,
+  _context: undefined,
+  deps: Deps,
+): Promise<DispatchResult> {
+  const { readFunctions } = await import("./read-functions.js");
+  return readFunctions({
+    operations: deps.operations,
+    operation: "list",
+    marker: settings.marker,
+    functionName: undefined,
+  });
+}
+
+/**
+ * `describe`: dispatches to `read-functions` with the resolved `functionName`.
+ * Cross-parameter presence is enforced by the engine's Guards phase before
+ * this runs — see {@link REQUIRED_FIELDS}. Never gated.
+ */
+async function dispatchDescribe(
+  _operation: "describe",
+  settings: RawSettings,
+  _context: undefined,
+  deps: Deps,
+): Promise<DispatchResult> {
+  const { readFunctions } = await import("./read-functions.js");
   return readFunctions({
     operations: deps.operations,
     operation: "describe",
+    functionName: requireDefined(settings.functionName, "functionName"),
     marker: undefined,
-    functionName,
   });
 }
 
-/** `invoke`: guard-checks `functionName`, gates, resolves the optional payload, then dispatches to `invoke-function`. */
-async function dispatchInvoke(
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<unknown> {
-  const functionName = deps.accessor.requiredFor(
-    raw.functionName,
-    "functionName",
-    "invoke",
-  );
-  await runGate("invoke", functionName, raw.yes, deps);
-  const payload =
-    raw.input === undefined ? undefined : await deps.reader.readJSON(raw.input);
-  const { invokeFunction } = await import("./invoke-function.js");
-  return invokeFunction({ operations: deps.operations, functionName, payload });
-}
-
-/** The per-write-operation cross-parameter fields, guard-checked before any gate or AWS call. */
-interface WriteFields {
-  readonly functionName: string;
-  readonly zipFilePath: string | undefined;
-  readonly inputName: string | undefined;
-}
-
 /**
- * Guard-checks the cross-parameter requirements each write operation
- * declares — `zipFilePath` for `create`/`update-code`, `input` for
- * `create`/`update-configuration` — entirely before any gate or AWS call.
+ * `invoke`: resolves the optional payload from `input` (a missing `input`
+ * means "invoke with an empty payload"), then dispatches to `invoke-function`.
+ * Presence of `functionName` is enforced by the engine's Guards phase before
+ * this runs — see {@link REQUIRED_FIELDS}.
  */
-function requireWriteFields(
-  operation: WriteOperation,
-  raw: RawSettings,
-  accessor: Core.M3LConfigAccessor,
-): WriteFields {
-  const functionName = accessor.requiredFor(
-    raw.functionName,
-    "functionName",
-    operation,
-  );
-  const zipFilePath =
-    operation === "create" || operation === "update-code"
-      ? accessor.requiredFor(raw.zipFilePath, "zipFilePath", operation)
+async function dispatchInvoke(
+  _operation: "invoke",
+  settings: RawSettings,
+  _context: undefined,
+  deps: Deps,
+): Promise<DispatchResult> {
+  const reader = buildReader(deps);
+  const payload =
+    settings.input !== undefined
+      ? await reader.readJSON(settings.input)
       : undefined;
-  const inputName =
-    operation === "create" || operation === "update-configuration"
-      ? accessor.requiredFor(raw.input, "input", operation)
-      : undefined;
-  return { functionName, zipFilePath, inputName };
+  const { invokeFunction } = await import("./invoke-function.js");
+  return invokeFunction({
+    operations: deps.operations,
+    functionName: requireDefined(settings.functionName, "functionName"),
+    payload,
+  });
 }
 
 /**
- * `create`/`update-code`/`update-configuration`/`delete`: guard-checks the
- * operation's cross-parameter requirements, gates, resolves `zipFilePath`/
- * `input` into raw bytes/parsed JSON when the operation declares them, then
- * dispatches to `write-function`.
+ * `create`/`update-code`/`update-configuration`/`delete`: resolves zip bytes
+ * and/or parses the input JSON when the operation declares them, then
+ * dispatches to `write-function`. Cross-parameter presence is enforced by the
+ * engine's Guards phase before this runs — see {@link REQUIRED_FIELDS}.
  */
 async function dispatchWrite(
-  operation: WriteOperation,
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<unknown> {
-  const fields = requireWriteFields(operation, raw, deps.accessor);
-  await runGate(operation, fields.functionName, raw.yes, deps);
-
+  operation: "create" | "update-code" | "update-configuration" | "delete",
+  settings: RawSettings,
+  _context: undefined,
+  deps: Deps,
+): Promise<DispatchResult> {
   const zipFile =
-    fields.zipFilePath === undefined
-      ? undefined
-      : await readZipFileBytes(deps.paths, fields.zipFilePath);
+    settings.zipFilePath !== undefined
+      ? await readZipFileBytes(
+          deps.paths,
+          requireDefined(settings.zipFilePath, "zipFilePath"),
+        )
+      : undefined;
   const input =
-    fields.inputName === undefined
-      ? undefined
-      : await deps.reader.readJSONRecord(fields.inputName);
-
+    settings.input !== undefined
+      ? await buildReader(deps).readJSONRecord(
+          requireDefined(settings.input, "input"),
+        )
+      : undefined;
   const { writeFunction } = await import("./write-function.js");
   return writeFunction({
     operations: deps.operations,
-    reader: deps.reader,
+    reader: buildReader(deps),
     operation,
-    functionName: fields.functionName,
+    functionName: requireDefined(settings.functionName, "functionName"),
     zipFile,
     input,
   });
 }
 
 /**
- * Dispatches to the operation-appropriate step, dynamic-importing it at
- * dispatch time (not a top-level static import) — the same reason
- * `api-gateway-client`'s dispatcher does: so `steps/*.test.ts` can `vi.mock`
- * a step module before dispatch resolves it. Routes through
- * {@link DISPATCH_GROUP} into {@link dispatchRead}/{@link dispatchInvoke}/
- * {@link dispatchWrite}, each of which guard-checks its own per-operation
- * cross-parameter requirements before any gate or AWS call, then — for every
- * operation except `list`/`describe` — runs `Core.confirmDestructive`.
+ * True when `result` is an `invoke` outcome — the only member of
+ * {@link DispatchResult} carrying a `statusCode` field. `finalize` is not
+ * passed `operation`, so this structural check is how it distinguishes an
+ * invoke result from the read/write types in the union.
  */
-async function dispatchOperation(
-  operation: LambdaOperation,
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<unknown> {
-  const group = DISPATCH_GROUP[operation];
-  switch (group) {
-    case "read": {
-      if (!isReadOperation(operation)) {
-        throw new Core.M3LError(
-          `internal: '${operation}' miscategorized as a read operation`,
-          { code: "ERR_LAMBDA_OPS_CONFIG" },
-        );
-      }
-      return dispatchRead(operation, raw, deps);
-    }
-    case "invoke":
-      return dispatchInvoke(raw, deps);
-    case "write": {
-      if (!isWriteOperation(operation)) {
-        throw new Core.M3LError(
-          `internal: '${operation}' miscategorized as a write operation`,
-          { code: "ERR_LAMBDA_OPS_CONFIG" },
-        );
-      }
-      return dispatchWrite(operation, raw, deps);
-    }
-    default: {
-      const exhaustive: never = group;
-      throw new Core.M3LError(
-        `unhandled dispatch group: ${String(exhaustive)}`,
-        { code: "ERR_LAMBDA_OPS_CONFIG" },
-      );
-    }
-  }
+function isInvokeResult(
+  result: DispatchResult,
+): result is AWS.M3LLambdaInvokeResult {
+  return result !== undefined && "statusCode" in result;
 }
 
 /**
- * Composes the `lambda-ops` pipeline end to end: resolves + guard-checks
- * config, runs `Core.confirmDestructive` for every mutating operation, dispatches to
- * the operation-appropriate step, persists the result to `output` (when
+ * The `lambda-ops` pipeline: resolve settings → (for `invoke`/`create`/
+ * `update-code`/`update-configuration`/`delete`) the destructive-operation
+ * gate → the operation-appropriate step → persist the result to `output`
+ * (when configured) → throw on a populated `invoke` `functionError`, all
+ * owned by `Core.M3LOperationPipeline`. Built once at module load — a
+ * pipeline instance is stateless across `run()` calls.
+ *
+ * A declined destructive-operation gate (`ERR_LAMBDA_OPS_ABORTED`) propagates
+ * to the caller unmodified (`onDecline: { kind: "throw" }`).
+ */
+const pipeline = new Core.M3LOperationPipeline<
+  LambdaOperation,
+  RawSettings,
+  Deps,
+  DispatchResult
+>({
+  operations: LAMBDA_OPERATIONS,
+  configCode: "ERR_LAMBDA_OPS_CONFIG",
+  resolveSettings,
+  requiredFields: REQUIRED_FIELDS,
+  destructive: {
+    operations: new Set([
+      "invoke",
+      "create",
+      "update-code",
+      "update-configuration",
+      "delete",
+    ] as const),
+    describe: (operation, settings) =>
+      `${operation} function '${requireDefined(settings.functionName, "functionName")}'`,
+    yes: (settings) => settings.yes,
+    abortCode: "ERR_LAMBDA_OPS_ABORTED",
+    onDecline: { kind: "throw" },
+  },
+  handlers: {
+    list: dispatchList,
+    describe: dispatchDescribe,
+    invoke: dispatchInvoke,
+    create: dispatchWrite,
+    "update-code": dispatchWrite,
+    "update-configuration": dispatchWrite,
+    delete: dispatchWrite,
+  },
+  persist: async (result, settings, deps) => {
+    if (settings.output === undefined || result === undefined) return;
+    const exporter = new Core.M3LJSONFileExporter({
+      filePath: deps.paths.resolveOutput(settings.output),
+    });
+    await exporter.export(result);
+  },
+  finalize: (result, _settings, deps) => {
+    if (!isInvokeResult(result) || result.functionError === undefined) return;
+    throw new Core.M3LError(
+      `lambda-ops run ${deps.correlationId}: invoke returned a function error`,
+      {
+        code: "ERR_LAMBDA_OPS_FUNCTION_ERROR",
+        context: { functionError: result.functionError },
+      },
+    );
+  },
+});
+
+/**
+ * Composes the `lambda-ops` pipeline end to end via
+ * `Core.M3LOperationPipeline`: resolves + guard-checks config, runs
+ * `Core.confirmDestructive` for every mutating operation, dispatches to the
+ * operation-appropriate step, persists the result to `output` (when
  * configured) via `Core.M3LJSONFileExporter`, and — for `invoke` — throws
  * once a populated `functionError` has had a chance to be persisted first.
  *
@@ -311,65 +348,21 @@ async function dispatchOperation(
  * });
  * ```
  */
-export async function runLambdaOps(deps: {
-  readonly config: Core.M3LConfig;
-  readonly paths: Core.M3LPaths;
-  readonly logger: Core.M3LLogger;
-  readonly correlationId: string;
-  readonly operations: AWS.M3LLambdaOperations;
-  readonly prompt: Core.M3LPrompt;
-}): Promise<void> {
-  const accessor = new Core.M3LConfigAccessor({
-    config: deps.config,
-    code: "ERR_LAMBDA_OPS_CONFIG",
-  });
-  const reader = new Core.M3LInputFileReader({
-    paths: deps.paths,
-    code: "ERR_LAMBDA_OPS_CONFIG",
-  });
+export async function runLambdaOps(deps: Deps): Promise<void> {
+  const outcome = await pipeline.run(deps);
 
-  const operation = accessor.oneOf("operation", LAMBDA_OPERATIONS);
-  const raw: RawSettings = {
-    functionName: accessor.optionalString("functionName"),
-    marker: accessor.optionalString("marker"),
-    zipFilePath: accessor.optionalString("zipFilePath"),
-    input: accessor.optionalString("input"),
-    yes: accessor.booleanWithDefault("yes", YES_DEFAULT),
-  };
-  const output = accessor.optionalString("output");
-
-  const result = await dispatchOperation(operation, raw, {
-    paths: deps.paths,
-    logger: deps.logger,
-    operations: deps.operations,
-    prompt: deps.prompt,
-    accessor,
-    reader,
-  });
-
-  if (output !== undefined && result !== undefined) {
-    const exporter = new Core.M3LJSONFileExporter({
-      filePath: deps.paths.resolveOutput(output),
-    });
-    await exporter.export(result);
-  }
-
-  const invokeResult =
-    operation === "invoke" ? (result as AWS.M3LLambdaInvokeResult) : undefined;
-
-  if (invokeResult !== undefined && invokeResult.functionError !== undefined) {
-    throw new Core.M3LError(
-      `lambda-ops run ${deps.correlationId}: invoke returned a function error`,
-      {
-        code: "ERR_LAMBDA_OPS_FUNCTION_ERROR",
-        context: { functionError: invokeResult.functionError },
-      },
-    );
-  }
+  // Re-read functionName for the completion log. The engine's outcome doesn't
+  // carry resolved settings, so re-derive from config (pure read, no side
+  // effect — same as ecs-ops's post-run accessor pattern).
+  const accessor = buildAccessor(deps);
+  const functionName = accessor.optionalString("functionName");
+  const invokeResult = isInvokeResult(outcome.result)
+    ? outcome.result
+    : undefined;
 
   deps.logger.step(`lambda-ops run ${deps.correlationId} complete`, {
-    operation,
-    ...(raw.functionName !== undefined && { functionName: raw.functionName }),
+    operation: outcome.operation,
+    ...(functionName !== undefined && { functionName }),
     // Only the numeric statusCode — never payload/logResult/functionError,
     // which may carry caller data the library never logs by default.
     ...(invokeResult !== undefined && { statusCode: invokeResult.statusCode }),
