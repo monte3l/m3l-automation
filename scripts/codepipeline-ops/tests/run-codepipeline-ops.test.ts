@@ -2,8 +2,6 @@ import * as fsp from "node:fs/promises";
 
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
-import type * as M3LCommon from "@m3l-automation/m3l-common";
-
 import type * as WatchExecutionModule from "../src/steps/watch-execution.js";
 
 /**
@@ -26,9 +24,14 @@ import type * as WatchExecutionModule from "../src/steps/watch-execution.js";
  * ONLY the orchestrator's guard/gate/dispatch/persist wiring, never a step's
  * internal logic — that is each step's own test file's job);
  * `node:fs/promises` and `Core.M3LJSONFileExporter` are the true I/O
- * boundary, also mocked. `Core.confirmDestructive` is intercepted via a
- * package-level `vi.mock("@m3l-automation/m3l-common", ...)` factory that
- * spreads the real module and overrides only `Core.confirmDestructive`.
+ * boundary, also mocked. The destructive gate itself
+ * (`Core.confirmDestructive`) runs for real: it is exercised end to end and
+ * observed at the one seam it always calls through — a per-test
+ * `Core.M3LPrompt` instance's `confirm` method, spied via `vi.spyOn` (the
+ * same technique `scripts/ecs-ops/tests/run-ecs-ops.test.ts` uses for its own
+ * destructive gate). This is architecture-agnostic: it observes the gate at
+ * the prompt boundary `confirmDestructive` has always called through,
+ * regardless of how the pipeline that invokes it is wired.
  */
 
 vi.mock("node:fs/promises", async () => {
@@ -37,19 +40,13 @@ vi.mock("node:fs/promises", async () => {
 });
 
 // vi.hoisted() is required here (unlike the plain vi.fn() locals below):
-// @m3l-automation/m3l-common is imported statically below, so its vi.mock
-// factory runs eagerly at module-eval time when that import is resolved —
-// before a plain top-level `const` would have initialized. Likewise,
 // run-codepipeline-ops.ts statically imports `FAILED_STATUSES` from
 // ./watch-execution.js (so `assertWatchSucceeded` doesn't hand-maintain a
 // second copy of the same status set — see that module's export), which
-// forces watch-execution.js's own mock factory to also run eagerly. The
-// remaining relative-path step mocks are only resolved lazily via the
-// dispatcher's dynamic import() inside a test body, by which point a plain
-// const has long since run.
-const destructiveGateMock = vi.hoisted(() =>
-  vi.fn().mockResolvedValue(undefined),
-);
+// forces watch-execution.js's own mock factory to also run eagerly at
+// module-eval time. The remaining relative-path step mocks are only resolved
+// lazily via the dispatcher's dynamic import() inside a test body, by which
+// point a plain const has long since run.
 const watchExecutionMock = vi.hoisted(() => vi.fn());
 const readPipelinesMock = vi.fn();
 const readStateMock = vi.fn();
@@ -58,13 +55,6 @@ const writePipelineMock = vi.fn();
 const executeMock = vi.fn();
 const transitionsMock = vi.fn();
 
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
-  const actual = await importOriginal<typeof M3LCommon>();
-  return {
-    ...actual,
-    Core: { ...actual.Core, confirmDestructive: destructiveGateMock },
-  };
-});
 vi.mock("../src/steps/read-pipelines.js", () => ({
   readPipelines: readPipelinesMock,
 }));
@@ -145,13 +135,25 @@ function buildDeps(
   };
 }
 
+/**
+ * Builds a `Core.M3LPrompt` whose `confirm` method is stubbed to resolve
+ * `confirmed`, alongside the spy itself. `Core.confirmDestructive` always
+ * calls `deps.prompt.confirm` directly on the decline/confirm path — this is
+ * the seam every gate test in this file observes instead of a `Core`-barrel
+ * override.
+ */
+function confirmingPrompt(confirmed: boolean) {
+  const prompt = new Core.M3LPrompt();
+  const confirm = vi.spyOn(prompt, "confirm").mockResolvedValue(confirmed);
+  return { prompt, confirm };
+}
+
 afterEach(() => {
   // restoreAllMocks() only undoes vi.spyOn spies; it does not clear the
   // plain vi.fn() mocks created inside the top-level vi.mock() factories
   // above, so their call history would otherwise leak into the next test.
   vi.restoreAllMocks();
   vi.mocked(fsp.readFile).mockReset();
-  destructiveGateMock.mockReset().mockResolvedValue(undefined);
   readPipelinesMock.mockReset();
   readStateMock.mockReset();
   readExecutionsMock.mockReset();
@@ -173,17 +175,21 @@ describe("runCodepipelineOps — per-operation config guards (fire before any AW
   ])(
     "throws ERR_CODEPIPELINE_OPS_CONFIG when operation '%s' is missing 'pipeline'",
     async (operation) => {
-      const deps = buildDeps({
-        operation,
-        stage: "Deploy",
-        transitionType: "Inbound",
-        executionId: "exec-1",
-      });
+      const { prompt, confirm } = confirmingPrompt(true);
+      const deps = buildDeps(
+        {
+          operation,
+          stage: "Deploy",
+          transitionType: "Inbound",
+          executionId: "exec-1",
+        },
+        { prompt },
+      );
 
       await expect(runCodepipelineOps(deps)).rejects.toMatchObject({
         code: "ERR_CODEPIPELINE_OPS_CONFIG",
       });
-      expect(destructiveGateMock).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
       expect(readPipelinesMock).not.toHaveBeenCalled();
       expect(readStateMock).not.toHaveBeenCalled();
       expect(readExecutionsMock).not.toHaveBeenCalled();
@@ -211,12 +217,13 @@ describe("runCodepipelineOps — per-operation config guards (fire before any AW
   test.each(["create-pipeline", "update-pipeline"])(
     "throws ERR_CODEPIPELINE_OPS_CONFIG when operation '%s' is missing 'input'",
     async (operation) => {
-      const deps = buildDeps({ operation });
+      const { prompt, confirm } = confirmingPrompt(true);
+      const deps = buildDeps({ operation }, { prompt });
 
       await expect(runCodepipelineOps(deps)).rejects.toMatchObject({
         code: "ERR_CODEPIPELINE_OPS_CONFIG",
       });
-      expect(destructiveGateMock).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
       expect(writePipelineMock).not.toHaveBeenCalled();
       expect(fsp.readFile).not.toHaveBeenCalled();
     },
@@ -289,61 +296,62 @@ describe("runCodepipelineOps — destructive-gate dispatch (create/update/delete
       pipelineName: "my-pipeline",
       status: "Succeeded",
     });
-    const deps = buildDeps({
-      operation,
-      pipeline: "my-pipeline",
-      executionId: "exec-1",
-      stage: "Deploy",
-      transitionType: "Inbound",
-      reason: "why",
-    });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation,
+        pipeline: "my-pipeline",
+        executionId: "exec-1",
+        stage: "Deploy",
+        transitionType: "Inbound",
+        reason: "why",
+      },
+      { prompt },
+    );
 
     await runCodepipelineOps(deps);
 
-    expect(destructiveGateMock).not.toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
   });
 
   test("runs destructive-gate exactly once before dispatching 'delete-pipeline', building description from the pipeline config value", async () => {
     writePipelineMock.mockResolvedValue(undefined);
-    const deps = buildDeps({
-      operation: "delete-pipeline",
-      pipeline: "my-pipeline",
-    });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      { operation: "delete-pipeline", pipeline: "my-pipeline" },
+      { prompt },
+    );
 
     await runCodepipelineOps(deps);
 
-    expect(destructiveGateMock).toHaveBeenCalledTimes(1);
-    const call = destructiveGateMock.mock.calls[0] as [
-      { readonly description: string; readonly yes: boolean },
-    ];
-    expect(call[0].description).toContain("my-pipeline");
-    expect(call[0].yes).toBe(false);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining("my-pipeline"),
+    );
   });
 
   test("forwards 'yes' through to destructive-gate", async () => {
     writePipelineMock.mockResolvedValue(undefined);
-    const deps = buildDeps({
-      operation: "delete-pipeline",
-      pipeline: "my-pipeline",
-      yes: true,
-    });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      { operation: "delete-pipeline", pipeline: "my-pipeline", yes: true },
+      { prompt },
+    );
 
     await runCodepipelineOps(deps);
 
-    const call = destructiveGateMock.mock.calls[0] as [
-      { readonly yes: boolean },
-    ];
-    expect(call[0].yes).toBe(true);
+    // yes: true bypasses the interactive prompt; confirmDestructive logs a
+    // warning instead of calling confirm
+    expect(confirm).not.toHaveBeenCalled();
+    expect(writePipelineMock).toHaveBeenCalled();
   });
 
   test("propagates ERR_CODEPIPELINE_OPS_ABORTED from destructive-gate, never dispatching writePipeline", async () => {
-    destructiveGateMock.mockRejectedValue(
-      new Core.M3LError("aborted", { code: "ERR_CODEPIPELINE_OPS_ABORTED" }),
+    const { prompt } = confirmingPrompt(false);
+    const deps = buildDeps(
+      { operation: "delete-pipeline", pipeline: "my-pipeline" },
+      { prompt },
     );
-    const deps = buildDeps({
-      operation: "delete-pipeline",
-      pipeline: "my-pipeline",
-    });
 
     await expect(runCodepipelineOps(deps)).rejects.toMatchObject({
       code: "ERR_CODEPIPELINE_OPS_ABORTED",
@@ -355,32 +363,33 @@ describe("runCodepipelineOps — destructive-gate dispatch (create/update/delete
     const inputPath = PATHS.resolveInput("create.json");
     stubReadFileByPath({ [inputPath]: JSON.stringify(DECLARATION) });
     writePipelineMock.mockResolvedValue(DECLARATION);
-    const deps = buildDeps({
-      operation: "create-pipeline",
-      input: "create.json",
-    });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      { operation: "create-pipeline", input: "create.json" },
+      { prompt },
+    );
 
     await runCodepipelineOps(deps);
 
-    expect(destructiveGateMock).toHaveBeenCalledTimes(1);
-    const call = destructiveGateMock.mock.calls[0] as [
-      { readonly description: string },
-    ];
-    expect(call[0].description).toContain("my-pipeline");
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining("my-pipeline"),
+    );
   });
 
   test("runs destructive-gate exactly once before dispatching 'update-pipeline'", async () => {
     const inputPath = PATHS.resolveInput("update.json");
     stubReadFileByPath({ [inputPath]: JSON.stringify(DECLARATION) });
     writePipelineMock.mockResolvedValue(DECLARATION);
-    const deps = buildDeps({
-      operation: "update-pipeline",
-      input: "update.json",
-    });
+    const { prompt, confirm } = confirmingPrompt(true);
+    const deps = buildDeps(
+      { operation: "update-pipeline", input: "update.json" },
+      { prompt },
+    );
 
     await runCodepipelineOps(deps);
 
-    expect(destructiveGateMock).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -444,10 +453,11 @@ describe("runCodepipelineOps — operation dispatch routing (one representative 
 
   test("'delete-pipeline' (write family) dispatches to writePipeline with pipeline from config, declaration undefined", async () => {
     writePipelineMock.mockResolvedValue(undefined);
-    const deps = buildDeps({
-      operation: "delete-pipeline",
-      pipeline: "my-pipeline",
-    });
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      { operation: "delete-pipeline", pipeline: "my-pipeline" },
+      { prompt },
+    );
 
     await runCodepipelineOps(deps);
 
@@ -530,10 +540,13 @@ describe("runCodepipelineOps — operation dispatch routing (one representative 
     const inputPath = PATHS.resolveInput("create.json");
     stubReadFileByPath({ [inputPath]: JSON.stringify(DECLARATION) });
     writePipelineMock.mockResolvedValue(DECLARATION);
-    const deps = buildDeps({
-      operation: "create-pipeline",
-      input: "create.json",
-    });
+    // create-pipeline is destructive-gated; a real (unstubbed) M3LPrompt
+    // would otherwise block on real stdin here — see confirmingPrompt.
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      { operation: "create-pipeline", input: "create.json" },
+      { prompt },
+    );
 
     await runCodepipelineOps(deps);
 
@@ -581,11 +594,15 @@ describe("runCodepipelineOps — output persistence", () => {
     const exportSpy = vi
       .spyOn(Core.M3LJSONFileExporter.prototype, "export")
       .mockResolvedValue(undefined);
-    const deps = buildDeps({
-      operation: "delete-pipeline",
-      pipeline: "my-pipeline",
-      output: "result.json",
-    });
+    const { prompt } = confirmingPrompt(true);
+    const deps = buildDeps(
+      {
+        operation: "delete-pipeline",
+        pipeline: "my-pipeline",
+        output: "result.json",
+      },
+      { prompt },
+    );
 
     await runCodepipelineOps(deps);
 
@@ -835,9 +852,13 @@ describe("runCodepipelineOps — exhaustive operation-narrowing chain (all 13 op
     const inputPath = PATHS.resolveInput("create.json");
     stubReadFileByPath({ [inputPath]: JSON.stringify(DECLARATION) });
     writePipelineMock.mockResolvedValue(DECLARATION);
+    const { prompt } = confirmingPrompt(true);
     await expect(
       runCodepipelineOps(
-        buildDeps({ operation: "create-pipeline", input: "create.json" }),
+        buildDeps(
+          { operation: "create-pipeline", input: "create.json" },
+          { prompt },
+        ),
       ),
     ).resolves.toBeUndefined();
     expect(writePipelineMock).toHaveBeenCalledTimes(1);
@@ -847,9 +868,13 @@ describe("runCodepipelineOps — exhaustive operation-narrowing chain (all 13 op
     const inputPath = PATHS.resolveInput("update.json");
     stubReadFileByPath({ [inputPath]: JSON.stringify(DECLARATION) });
     writePipelineMock.mockResolvedValue(DECLARATION);
+    const { prompt } = confirmingPrompt(true);
     await expect(
       runCodepipelineOps(
-        buildDeps({ operation: "update-pipeline", input: "update.json" }),
+        buildDeps(
+          { operation: "update-pipeline", input: "update.json" },
+          { prompt },
+        ),
       ),
     ).resolves.toBeUndefined();
     expect(writePipelineMock).toHaveBeenCalledTimes(1);
@@ -857,9 +882,13 @@ describe("runCodepipelineOps — exhaustive operation-narrowing chain (all 13 op
 
   test("'delete-pipeline' reaches writePipeline", async () => {
     writePipelineMock.mockResolvedValue(undefined);
+    const { prompt } = confirmingPrompt(true);
     await expect(
       runCodepipelineOps(
-        buildDeps({ operation: "delete-pipeline", pipeline: "my-pipeline" }),
+        buildDeps(
+          { operation: "delete-pipeline", pipeline: "my-pipeline" },
+          { prompt },
+        ),
       ),
     ).resolves.toBeUndefined();
     expect(writePipelineMock).toHaveBeenCalledTimes(1);
