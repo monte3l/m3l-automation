@@ -33,6 +33,8 @@ import process from "node:process";
 import { execFileSync } from "node:child_process";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isProtectedPath } from "../../bin/lib/protected-paths.mjs";
+export { isProtectedPath };
 
 /**
  * Returns a git runner that executes every command with `git -C dir`, binding
@@ -55,15 +57,6 @@ export function defaultGitFor(dir) {
 
 /** Default runner bound to process.cwd() — used as fallback / test default. */
 const defaultGit = defaultGitFor(process.cwd());
-
-/** True when `filePath` is a source/test path that needs branch isolation. */
-export function isProtectedPath(filePath) {
-  return (
-    /(^|\/)packages\/[^/]+\/src\//.test(filePath) ||
-    /(^|\/)scripts\/[^/]+\/src\//.test(filePath) ||
-    /(^|\/)tests\//.test(filePath)
-  );
-}
 
 /**
  * True when the working tree is effectively on `main`: either the checked-out
