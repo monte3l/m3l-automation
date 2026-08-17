@@ -400,10 +400,15 @@ const pipeline = new Core.M3LOperationPipeline<
     const waiterResult = result as AWS.M3LECSWaiterResult;
     if (waiterResult.state === "SUCCESS") return;
     throw new Core.M3LError(
-      `ecs-ops run ${deps.correlationId}: wait did not stabilize`,
+      `ecs-ops run ${deps.correlationId}: wait-services-stable resolved '${waiterResult.state}', not SUCCESS`,
       {
         code: "ERR_ECS_OPS_WAIT_NOT_STABLE",
-        context: { state: waiterResult.state, reason: waiterResult.reason },
+        context: {
+          state: waiterResult.state,
+          ...(waiterResult.reason !== undefined && {
+            reason: waiterResult.reason,
+          }),
+        },
       },
     );
   },
