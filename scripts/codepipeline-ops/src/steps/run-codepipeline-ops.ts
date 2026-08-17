@@ -5,8 +5,8 @@ import {
   ABANDON_DEFAULT,
   CODEPIPELINE_OPS_OPERATIONS,
   STAGE_TRANSITION_TYPES,
-  WAIT_MAX_ATTEMPTS_DEFAULT,
   WAIT_INTERVAL_SECONDS_DEFAULT,
+  WAIT_MAX_ATTEMPTS_DEFAULT,
   YES_DEFAULT,
 } from "../config.js";
 import { FAILED_STATUSES } from "./watch-execution.js";
@@ -14,8 +14,14 @@ import { FAILED_STATUSES } from "./watch-execution.js";
 /** The closed union of `codepipeline-ops`'s declared `operation` values. */
 type CodepipelineOperation = (typeof CODEPIPELINE_OPS_OPERATIONS)[number];
 
-/** The raw, per-operation-optional config values `run-codepipeline-ops` resolves once, up front. */
-interface RawSettings {
+/**
+ * The resolved, per-run config values — carries `operation` so `finalize`
+ * can identify `watch-execution` results without a structurally distinct
+ * type (`describe-execution` and `watch-execution` both return
+ * `AWS.M3LCodePipelineExecution`, so a structural guard would mismatch).
+ */
+interface RunSettings {
+  readonly operation: CodepipelineOperation;
   readonly pipeline: string | undefined;
   readonly executionId: string | undefined;
   readonly stage: string | undefined;
@@ -27,20 +33,22 @@ interface RawSettings {
   readonly clientRequestToken: string | undefined;
   readonly abandon: boolean;
   readonly yes: boolean;
+  readonly output: string | undefined;
   readonly waitMaxAttempts: number;
   readonly waitIntervalSeconds: number;
 }
 
-/** The dependencies every dispatched operation needs, once `config` has resolved. */
-interface DispatchDeps {
-  readonly logger: Core.M3LLogger;
+/** The full dependency bag `runCodepipelineOps` receives and the pipeline threads through. */
+interface Deps extends Core.M3LOperationPipelineBaseDeps {
+  readonly paths: Core.M3LPaths;
+  readonly correlationId: string;
   readonly operations: AWS.M3LCodePipelineOperations;
-  readonly prompt: Core.M3LPrompt;
-  readonly accessor: Core.M3LConfigAccessor;
-  readonly reader: Core.M3LInputFileReader;
 }
 
-/** The union of result shapes any dispatched operation can resolve. `void` for `delete-pipeline`/both stage-transition operations. */
+/**
+ * The union of result shapes any dispatched operation can resolve.
+ * `undefined` for `delete-pipeline` and both stage-transition operations.
+ */
 type DispatchResult =
   | AWS.M3LCodePipelineListPipelinesResult
   | AWS.M3LCodePipelineDefinition
@@ -52,40 +60,15 @@ type DispatchResult =
   | AWS.M3LCodePipelineStopExecutionResult
   | undefined;
 
-/** Guard-checks and narrows `transitionType` to the wrapper's closed `"Inbound" | "Outbound"` union. */
-function requireTransitionType(
-  accessor: Core.M3LConfigAccessor,
-  value: string | undefined,
-  operation: CodepipelineOperation,
-): AWS.M3LCodePipelineStageTransitionType {
-  const raw = accessor.requiredFor(value, "transitionType", operation);
-  if ((STAGE_TRANSITION_TYPES as readonly string[]).includes(raw) === false) {
-    throw new Core.M3LError(
-      `'transitionType' must be one of: ${STAGE_TRANSITION_TYPES.join(", ")}`,
-      { code: "ERR_CODEPIPELINE_OPS_CONFIG" },
-    );
-  }
-  return raw as AWS.M3LCodePipelineStageTransitionType;
-}
-
-/** Runs `Core.confirmDestructive` — every mutating pipeline operation routes through this before dispatch. */
-async function runGate(
-  description: string,
-  yes: boolean,
-  deps: Pick<DispatchDeps, "prompt" | "logger">,
-): Promise<void> {
-  await Core.confirmDestructive({
-    prompt: deps.prompt,
-    logger: deps.logger,
-    description,
-    yes,
-    code: "ERR_CODEPIPELINE_OPS_ABORTED",
-  });
+/** The per-write-operation description/declaration resolved before gating. */
+interface WriteDispatchPlan {
+  readonly description: string;
+  readonly declaration: Record<string, unknown> | undefined;
 }
 
 /** Builds `delete-pipeline`'s gate description from the `pipeline` config value. */
-function buildDeleteGateDescription(pipeline: string): string {
-  return `delete-pipeline pipeline '${pipeline}'`;
+function buildDeleteGateDescription(pipelineName: string): string {
+  return `delete-pipeline pipeline '${pipelineName}'`;
 }
 
 /**
@@ -117,329 +100,110 @@ function buildRecordGateDescription(
   return `create-pipeline pipeline '${target}'`;
 }
 
-/** `list-pipelines`/`describe-pipeline`: guard-checks cross-parameter requirements, then dispatches to `read-pipelines`. */
-async function dispatchReadPipelines(
-  operation: "list-pipelines" | "describe-pipeline",
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<DispatchResult> {
-  if (operation === "describe-pipeline") {
-    deps.accessor.requiredFor(raw.pipeline, "pipeline", operation);
-  }
-  const { readPipelines } = await import("./read-pipelines.js");
-  return readPipelines({
-    operations: deps.operations,
-    operation,
-    pipeline: raw.pipeline,
-    version: raw.version,
-    nextToken: undefined,
-    maxResults: raw.maxResults,
-  });
-}
-
-/** `get-pipeline-state`: guard-checks `pipeline`, then dispatches to `read-state`. */
-async function dispatchReadState(
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<DispatchResult> {
-  const pipeline = deps.accessor.requiredFor(
-    raw.pipeline,
-    "pipeline",
-    "get-pipeline-state",
-  );
-  const { readState } = await import("./read-state.js");
-  return readState({ operations: deps.operations, pipeline });
-}
-
-/** `list-executions`/`describe-execution`: guard-checks cross-parameter requirements, then dispatches to `read-executions`. */
-async function dispatchReadExecutions(
-  operation: "list-executions" | "describe-execution",
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<DispatchResult> {
-  const pipeline = deps.accessor.requiredFor(
-    raw.pipeline,
-    "pipeline",
-    operation,
-  );
-  if (operation === "describe-execution") {
-    deps.accessor.requiredFor(raw.executionId, "executionId", operation);
-  }
-  const { readExecutions } = await import("./read-executions.js");
-  return readExecutions({
-    operations: deps.operations,
-    operation,
-    pipeline,
-    executionId: raw.executionId,
-    nextToken: undefined,
-    maxResults: raw.maxResults,
-  });
-}
-
-/** The per-write-operation description/declaration resolved before gating. */
-interface WriteDispatchPlan {
-  readonly description: string;
-  readonly declaration: Record<string, unknown> | undefined;
-}
-
-/** Resolves `delete-pipeline`'s gate description directly from config, or reads+parses `create-pipeline`/`update-pipeline`'s `input` file. */
-async function planWriteDispatch(
-  operation: "create-pipeline" | "update-pipeline" | "delete-pipeline",
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<WriteDispatchPlan> {
-  if (operation === "delete-pipeline") {
-    const pipeline = deps.accessor.requiredFor(
-      raw.pipeline,
-      "pipeline",
-      operation,
+/**
+ * Narrows an already-guarded optional settings field to its defined value,
+ * throwing a defensive `ERR_CODEPIPELINE_OPS_CONFIG` otherwise. The
+ * pipeline's `requiredFields` guard (phase 4) has already enforced presence
+ * for every field callers read this way before those callers are ever
+ * invoked — this is a type-narrowing safety net, not an expected runtime
+ * path.
+ */
+function requireDefined<T>(
+  value: T | undefined,
+  name: string,
+  operation: string,
+): T {
+  if (value === undefined) {
+    throw new Core.M3LError(
+      `'${name}' is required for operation '${operation}'`,
+      { code: "ERR_CODEPIPELINE_OPS_CONFIG" },
     );
-    return {
-      description: buildDeleteGateDescription(pipeline),
-      declaration: undefined,
-    };
   }
-
-  const inputName = deps.accessor.requiredFor(raw.input, "input", operation);
-  const parsed = await deps.reader.readJSONRecord(inputName);
-  return {
-    description: buildRecordGateDescription(operation, parsed),
-    declaration: parsed,
-  };
-}
-
-/** `create-pipeline`/`update-pipeline`/`delete-pipeline`: resolves the operation's plan, gates, then dispatches to `write-pipeline`. */
-async function dispatchWritePipeline(
-  operation: "create-pipeline" | "update-pipeline" | "delete-pipeline",
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<DispatchResult> {
-  const plan = await planWriteDispatch(operation, raw, deps);
-  await runGate(plan.description, raw.yes, deps);
-
-  const { writePipeline } = await import("./write-pipeline.js");
-  return writePipeline({
-    operations: deps.operations,
-    reader: deps.reader,
-    operation,
-    declaration: plan.declaration,
-    pipeline: raw.pipeline,
-  });
-}
-
-/** `start-execution`/`stop-execution`: guard-checks cross-parameter requirements, then dispatches to `execute`. Never gated. */
-async function dispatchExecute(
-  operation: "start-execution" | "stop-execution",
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<DispatchResult> {
-  const pipeline = deps.accessor.requiredFor(
-    raw.pipeline,
-    "pipeline",
-    operation,
-  );
-  if (operation === "stop-execution") {
-    deps.accessor.requiredFor(raw.executionId, "executionId", operation);
-  }
-  const { execute } = await import("./execute.js");
-  return execute({
-    operations: deps.operations,
-    operation,
-    pipeline,
-    executionId: raw.executionId,
-    clientRequestToken: raw.clientRequestToken,
-    abandon: raw.abandon,
-    reason: raw.reason,
-  });
-}
-
-/** `enable-stage-transition`/`disable-stage-transition`: guard-checks cross-parameter requirements, then dispatches to `transitions`. Never gated. */
-async function dispatchTransitions(
-  operation: "enable-stage-transition" | "disable-stage-transition",
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<DispatchResult> {
-  const pipeline = deps.accessor.requiredFor(
-    raw.pipeline,
-    "pipeline",
-    operation,
-  );
-  const stage = deps.accessor.requiredFor(raw.stage, "stage", operation);
-  const transitionType = requireTransitionType(
-    deps.accessor,
-    raw.transitionType,
-    operation,
-  );
-  if (operation === "disable-stage-transition") {
-    deps.accessor.requiredFor(raw.reason, "reason", operation);
-  }
-  const { transitions } = await import("./transitions.js");
-  await transitions({
-    operations: deps.operations,
-    operation,
-    pipeline,
-    stage,
-    transitionType,
-    reason: raw.reason,
-  });
-  return undefined;
-}
-
-/** `watch-execution`: guard-checks `pipeline`/`executionId`, then dispatches to `watch-execution`'s step module. Never gated. */
-async function dispatchWatch(
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<DispatchResult> {
-  const pipeline = deps.accessor.requiredFor(
-    raw.pipeline,
-    "pipeline",
-    "watch-execution",
-  );
-  const executionId = deps.accessor.requiredFor(
-    raw.executionId,
-    "executionId",
-    "watch-execution",
-  );
-  const { watchExecution } = await import("./watch-execution.js");
-  return watchExecution({
-    operations: deps.operations,
-    logger: deps.logger,
-    pipeline,
-    executionId,
-    waitMaxAttempts: raw.waitMaxAttempts,
-    waitIntervalSeconds: raw.waitIntervalSeconds,
-  });
-}
-
-/** Narrows `operation` to `list-pipelines`/`describe-pipeline`. */
-function isReadPipelinesOperation(
-  operation: CodepipelineOperation,
-): operation is "list-pipelines" | "describe-pipeline" {
-  return operation === "list-pipelines" || operation === "describe-pipeline";
-}
-
-/** Narrows `operation` to `list-executions`/`describe-execution`. */
-function isReadExecutionsOperation(
-  operation: CodepipelineOperation,
-): operation is "list-executions" | "describe-execution" {
-  return operation === "list-executions" || operation === "describe-execution";
-}
-
-/** Narrows `operation` to the three mutating pipeline operations. */
-function isWriteOperation(
-  operation: CodepipelineOperation,
-): operation is "create-pipeline" | "update-pipeline" | "delete-pipeline" {
-  return (
-    operation === "create-pipeline" ||
-    operation === "update-pipeline" ||
-    operation === "delete-pipeline"
-  );
-}
-
-/** Narrows `operation` to `start-execution`/`stop-execution`. */
-function isExecuteOperation(
-  operation: CodepipelineOperation,
-): operation is "start-execution" | "stop-execution" {
-  return operation === "start-execution" || operation === "stop-execution";
-}
-
-/** Narrows `operation` to the two stage-transition operations. */
-function isTransitionsOperation(
-  operation: CodepipelineOperation,
-): operation is "enable-stage-transition" | "disable-stage-transition" {
-  return (
-    operation === "enable-stage-transition" ||
-    operation === "disable-stage-transition"
-  );
+  return value;
 }
 
 /**
- * The eight {@link CodepipelineOperation} members {@link dispatchOperation}
- * hands off to {@link dispatchMutatingOperation} — every operation that is
- * not one of the five read-only ones handled directly in
- * `dispatchOperation`. Declaring this as its own literal union (rather than
- * accepting the full {@link CodepipelineOperation}) is what makes the
- * `exhaustive: never` check below actually exhaustive: TypeScript does not
- * carry narrowing across a function boundary, so a parameter typed
- * `CodepipelineOperation` would leave the five excluded read operations
- * unnarrowed inside this function's own body.
+ * Guard-checks and narrows `transitionType` to the wrapper's closed
+ * `"Inbound" | "Outbound"` union. Presence is already enforced by the
+ * engine's Guards phase (via {@link REQUIRED_FIELDS}); the `requireDefined`
+ * call here is a defensive type-narrowing safety net. The value-set check
+ * defends against a bypass of the config-level `oneOf` validator.
  */
-type MutatingOperation = Exclude<
+function requireTransitionType(
+  value: string | undefined,
+  operation: CodepipelineOperation,
+): AWS.M3LCodePipelineStageTransitionType {
+  const raw = requireDefined(value, "transitionType", operation);
+  if (!(STAGE_TRANSITION_TYPES as readonly string[]).includes(raw)) {
+    throw new Core.M3LError(
+      `'transitionType' must be one of: ${STAGE_TRANSITION_TYPES.join(", ")}`,
+      { code: "ERR_CODEPIPELINE_OPS_CONFIG" },
+    );
+  }
+  return raw as AWS.M3LCodePipelineStageTransitionType;
+}
+
+/**
+ * Narrows `prepare`'s `WriteDispatchPlan | undefined` context to a defined
+ * plan. `TContext` is uniform across every handler table entry, but `prepare`
+ * only ever produces a defined plan for the three write operations — an
+ * `undefined` context reaching a write handler or the destructive `describe`
+ * callback is unreachable except via caller misuse of the engine, guarded
+ * here defensively.
+ */
+function requireWritePlan(
+  context: WriteDispatchPlan | undefined,
+  operation: CodepipelineOperation,
+): WriteDispatchPlan {
+  if (context === undefined) {
+    throw new Core.M3LError(
+      `internal: no write-dispatch plan resolved for '${operation}'`,
+      { code: "ERR_CODEPIPELINE_OPS_CONFIG" },
+    );
+  }
+  return context;
+}
+
+/**
+ * Which of the settings fields each operation requires, checked by the
+ * engine's Guards phase before `prepare`, the destructive gate, or any
+ * handler runs. Keyed as a `Record<CodepipelineOperation, …>` so a new
+ * operation added to {@link CODEPIPELINE_OPS_OPERATIONS} without a
+ * corresponding entry here is a compile error.
+ */
+const REQUIRED_FIELDS: Record<
   CodepipelineOperation,
-  | "list-pipelines"
-  | "describe-pipeline"
-  | "get-pipeline-state"
-  | "list-executions"
-  | "describe-execution"
->;
+  readonly Core.M3LGuardableKey<RunSettings>[]
+> = {
+  "list-pipelines": [],
+  "describe-pipeline": ["pipeline"],
+  "get-pipeline-state": ["pipeline"],
+  "list-executions": ["pipeline"],
+  "describe-execution": ["pipeline", "executionId"],
+  "create-pipeline": ["input"],
+  "update-pipeline": ["input"],
+  "delete-pipeline": ["pipeline"],
+  "start-execution": ["pipeline"],
+  "stop-execution": ["pipeline", "executionId"],
+  "enable-stage-transition": ["pipeline", "stage", "transitionType"],
+  "disable-stage-transition": ["pipeline", "stage", "transitionType", "reason"],
+  "watch-execution": ["pipeline", "executionId"],
+};
 
 /**
- * The second half of {@link dispatchOperation}'s exhaustive narrowing chain —
- * split into its own function to stay under the per-function line/complexity
- * caps (ADR-0022 §2). Routes the four mutating/execution-control/watch
- * families; the final `operation === "watch-execution"` check leaves nothing
- * unnarrowed, so a {@link CODEPIPELINE_OPS_OPERATIONS} member added without a
- * branch here fails to compile (`exhaustive: never` below) rather than
- * falling through silently at runtime.
+ * Resolves the raw, per-operation-optional config values the pipeline reads
+ * once, up front. Receives `operation` directly from the engine (phase 2)
+ * and stores it in `RunSettings` for `finalize`'s operation-identity check.
+ * Must not re-read `"operation"` from the accessor or apply its own
+ * required-field guards — those are owned by the engine's own "Operation"
+ * and "Guards" phases.
  */
-async function dispatchMutatingOperation(
-  operation: MutatingOperation,
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<DispatchResult> {
-  if (isWriteOperation(operation)) {
-    return dispatchWritePipeline(operation, raw, deps);
-  }
-  if (isExecuteOperation(operation)) {
-    return dispatchExecute(operation, raw, deps);
-  }
-  if (isTransitionsOperation(operation)) {
-    return dispatchTransitions(operation, raw, deps);
-  }
-  if (operation === "watch-execution") {
-    return dispatchWatch(raw, deps);
-  }
-  const exhaustive: never = operation;
-  throw new Core.M3LError(`unhandled operation: ${String(exhaustive)}`, {
-    code: "ERR_CODEPIPELINE_OPS_CONFIG",
-  });
-}
-
-/**
- * Dispatches to the operation-appropriate step, dynamic-importing it at
- * dispatch time (not a top-level static import) — so `steps/*.test.ts` can
- * `vi.mock` a step module before dispatch resolves it. An exhaustive
- * type-predicate chain (continued in {@link dispatchMutatingOperation}) routes
- * into the seven per-family dispatchers, each of which guard-checks its own
- * per-operation cross-parameter requirements before any gate or AWS call,
- * then — for every mutating pipeline operation — runs
- * `Core.confirmDestructive`. Each dispatcher's `accessor.requiredFor(...)`
- * calls are also enforced earlier, at config-load time, by `config.ts`'s
- * `configValidators` (F1b) — they stay here because they additionally narrow
- * `string | undefined` into `string` for typed downstream use, which
- * TypeScript still needs even though presence is now guaranteed before this
- * function ever runs.
- */
-async function dispatchOperation(
+function resolveSettings(
+  accessor: Core.M3LConfigAccessor,
   operation: CodepipelineOperation,
-  raw: RawSettings,
-  deps: DispatchDeps,
-): Promise<DispatchResult> {
-  if (isReadPipelinesOperation(operation)) {
-    return dispatchReadPipelines(operation, raw, deps);
-  }
-  if (operation === "get-pipeline-state") {
-    return dispatchReadState(raw, deps);
-  }
-  if (isReadExecutionsOperation(operation)) {
-    return dispatchReadExecutions(operation, raw, deps);
-  }
-  return dispatchMutatingOperation(operation, raw, deps);
-}
-
-/** Resolves the raw, per-operation-optional config values `run-codepipeline-ops` reads once, up front. */
-function readRawSettings(accessor: Core.M3LConfigAccessor): RawSettings {
+): RunSettings {
   return {
+    operation,
     pipeline: accessor.optionalString("pipeline"),
     executionId: accessor.optionalString("executionId"),
     stage: accessor.optionalString("stage"),
@@ -451,6 +215,7 @@ function readRawSettings(accessor: Core.M3LConfigAccessor): RawSettings {
     clientRequestToken: accessor.optionalString("clientRequestToken"),
     abandon: accessor.booleanWithDefault("abandon", ABANDON_DEFAULT),
     yes: accessor.booleanWithDefault("yes", YES_DEFAULT),
+    output: accessor.optionalString("output"),
     waitMaxAttempts: accessor.numberWithDefault(
       "waitMaxAttempts",
       WAIT_MAX_ATTEMPTS_DEFAULT,
@@ -460,6 +225,202 @@ function readRawSettings(accessor: Core.M3LConfigAccessor): RawSettings {
       WAIT_INTERVAL_SECONDS_DEFAULT,
     ),
   };
+}
+
+/**
+ * The pipeline's `prepare` phase: runs once per run, before the destructive
+ * gate, for every operation. Resolves `delete-pipeline`'s gate description
+ * directly from config, or reads+parses `create-pipeline`/`update-pipeline`'s
+ * `input` file (the one place either file is ever read). Presence of
+ * `pipeline`/`input` is already enforced by the engine's "Guards" phase
+ * before `prepare` ever runs — the {@link requireDefined} calls below are a
+ * defensive type-narrowing safety net. Every non-write operation resolves
+ * `undefined`.
+ */
+async function prepare(
+  operation: CodepipelineOperation,
+  settings: RunSettings,
+  deps: Deps,
+): Promise<WriteDispatchPlan | undefined> {
+  if (operation === "delete-pipeline") {
+    const pipelineName = requireDefined(
+      settings.pipeline,
+      "pipeline",
+      operation,
+    );
+    return {
+      description: buildDeleteGateDescription(pipelineName),
+      declaration: undefined,
+    };
+  }
+  if (operation === "create-pipeline" || operation === "update-pipeline") {
+    const inputName = requireDefined(settings.input, "input", operation);
+    const reader = new Core.M3LInputFileReader({
+      paths: deps.paths,
+      code: "ERR_CODEPIPELINE_OPS_INPUT",
+    });
+    const parsed = await reader.readJSONRecord(inputName);
+    return {
+      description: buildRecordGateDescription(operation, parsed),
+      declaration: parsed,
+    };
+  }
+  return undefined;
+}
+
+/** `list-pipelines`/`describe-pipeline`: dispatches to `read-pipelines`. */
+async function dispatchReadPipelines(
+  operation: "list-pipelines" | "describe-pipeline",
+  settings: RunSettings,
+  _ctx: WriteDispatchPlan | undefined,
+  deps: Deps,
+): Promise<DispatchResult> {
+  const { readPipelines } = await import("./read-pipelines.js");
+  return readPipelines({
+    operations: deps.operations,
+    operation,
+    pipeline: settings.pipeline,
+    version: settings.version,
+    nextToken: undefined,
+    maxResults: settings.maxResults,
+  });
+}
+
+/** `get-pipeline-state`: dispatches to `read-state`. */
+async function dispatchReadState(
+  _operation: "get-pipeline-state",
+  settings: RunSettings,
+  _ctx: WriteDispatchPlan | undefined,
+  deps: Deps,
+): Promise<DispatchResult> {
+  const pipelineName = requireDefined(
+    settings.pipeline,
+    "pipeline",
+    "get-pipeline-state",
+  );
+  const { readState } = await import("./read-state.js");
+  return readState({ operations: deps.operations, pipeline: pipelineName });
+}
+
+/** `list-executions`/`describe-execution`: dispatches to `read-executions`. */
+async function dispatchReadExecutions(
+  operation: "list-executions" | "describe-execution",
+  settings: RunSettings,
+  _ctx: WriteDispatchPlan | undefined,
+  deps: Deps,
+): Promise<DispatchResult> {
+  const pipelineName = requireDefined(settings.pipeline, "pipeline", operation);
+  const { readExecutions } = await import("./read-executions.js");
+  return readExecutions({
+    operations: deps.operations,
+    operation,
+    pipeline: pipelineName,
+    executionId: settings.executionId,
+    nextToken: undefined,
+    maxResults: settings.maxResults,
+  });
+}
+
+/**
+ * `create-pipeline`/`update-pipeline`/`delete-pipeline`: dispatches to
+ * `write-pipeline` using the plan `prepare` resolved before the gate.
+ */
+async function dispatchWrite(
+  operation: "create-pipeline" | "update-pipeline" | "delete-pipeline",
+  settings: RunSettings,
+  ctx: WriteDispatchPlan | undefined,
+  deps: Deps,
+): Promise<DispatchResult> {
+  const plan = requireWritePlan(ctx, operation);
+  const { writePipeline } = await import("./write-pipeline.js");
+  return writePipeline({
+    operations: deps.operations,
+    reader: new Core.M3LInputFileReader({
+      paths: deps.paths,
+      code: "ERR_CODEPIPELINE_OPS_INPUT",
+    }),
+    operation,
+    declaration: plan.declaration,
+    pipeline: settings.pipeline,
+  });
+}
+
+/** `start-execution`/`stop-execution`: dispatches to `execute`. Never gated. */
+async function dispatchExecute(
+  operation: "start-execution" | "stop-execution",
+  settings: RunSettings,
+  _ctx: WriteDispatchPlan | undefined,
+  deps: Deps,
+): Promise<DispatchResult> {
+  const pipelineName = requireDefined(settings.pipeline, "pipeline", operation);
+  const { execute } = await import("./execute.js");
+  return execute({
+    operations: deps.operations,
+    operation,
+    pipeline: pipelineName,
+    executionId: settings.executionId,
+    clientRequestToken: settings.clientRequestToken,
+    abandon: settings.abandon,
+    reason: settings.reason,
+  });
+}
+
+/**
+ * `enable-stage-transition`/`disable-stage-transition`: dispatches to
+ * `transitions`. Never gated. Presence of `pipeline`/`stage`/`transitionType`
+ * (and `reason` for `disable-stage-transition`) is enforced by the engine's
+ * Guards phase — see {@link REQUIRED_FIELDS}.
+ */
+async function dispatchTransitions(
+  operation: "enable-stage-transition" | "disable-stage-transition",
+  settings: RunSettings,
+  _ctx: WriteDispatchPlan | undefined,
+  deps: Deps,
+): Promise<undefined> {
+  const pipelineName = requireDefined(settings.pipeline, "pipeline", operation);
+  const stage = requireDefined(settings.stage, "stage", operation);
+  const transitionType = requireTransitionType(
+    settings.transitionType,
+    operation,
+  );
+  const { transitions } = await import("./transitions.js");
+  await transitions({
+    operations: deps.operations,
+    operation,
+    pipeline: pipelineName,
+    stage,
+    transitionType,
+    reason: settings.reason,
+  });
+  return undefined;
+}
+
+/** `watch-execution`: dispatches to `watch-execution`'s step module. Never gated. */
+async function dispatchWatch(
+  _operation: "watch-execution",
+  settings: RunSettings,
+  _ctx: WriteDispatchPlan | undefined,
+  deps: Deps,
+): Promise<DispatchResult> {
+  const pipelineName = requireDefined(
+    settings.pipeline,
+    "pipeline",
+    "watch-execution",
+  );
+  const executionId = requireDefined(
+    settings.executionId,
+    "executionId",
+    "watch-execution",
+  );
+  const { watchExecution } = await import("./watch-execution.js");
+  return watchExecution({
+    operations: deps.operations,
+    logger: deps.logger,
+    pipeline: pipelineName,
+    executionId,
+    waitMaxAttempts: settings.waitMaxAttempts,
+    waitIntervalSeconds: settings.waitIntervalSeconds,
+  });
 }
 
 /** Persists `result` to `output` (when configured and non-`undefined`) via `Core.M3LJSONFileExporter`. */
@@ -476,21 +437,18 @@ async function persistOutput(
 }
 
 /**
- * Throws `ERR_CODEPIPELINE_OPS_WATCH_FAILED` when `operation` is
- * `watch-execution` and the resolved `M3LCodePipelineExecution.status` is one
- * of the three failed terminal statuses (`Failed`/`Stopped`/`Cancelled`) —
- * called *after* {@link persistOutput}, so the terminal execution record
- * survives on disk even though the run then fails. `Succeeded` and
- * `Superseded` both pass through without throwing — a superseded execution
- * is routine under CodePipeline's default execution mode, not a failure.
+ * Throws `ERR_CODEPIPELINE_OPS_WATCH_FAILED` when the resolved
+ * `M3LCodePipelineExecution.status` is one of the three failed terminal
+ * statuses (`Failed`/`Stopped`/`Cancelled`) — called *after*
+ * {@link persistOutput}, so the terminal execution record survives on disk
+ * even though the run then fails. `Succeeded` and `Superseded` both pass
+ * through without throwing — a superseded execution is routine under
+ * CodePipeline's default execution mode, not a failure.
  */
 function assertWatchSucceeded(
-  operation: CodepipelineOperation,
-  result: DispatchResult,
+  execution: AWS.M3LCodePipelineExecution,
   correlationId: string,
 ): void {
-  if (operation !== "watch-execution") return;
-  const execution = result as AWS.M3LCodePipelineExecution;
   if (!FAILED_STATUSES.has(execution.status)) return;
   throw new Core.M3LError(
     `codepipeline-ops run ${correlationId}: watch-execution resolved '${execution.status}'`,
@@ -502,12 +460,80 @@ function assertWatchSucceeded(
 }
 
 /**
- * Composes the `codepipeline-ops` pipeline end to end: resolves +
- * guard-checks config, runs `Core.confirmDestructive` for every mutating
- * pipeline operation, dispatches to the operation-appropriate step, persists
- * the result to `output` (when configured) via `Core.M3LJSONFileExporter`,
- * and — for `watch-execution` — throws once the result has had a chance to
- * be persisted first.
+ * The `codepipeline-ops` pipeline: resolve settings → (for every operation)
+ * plan a write dispatch → (for `create-pipeline`/`update-pipeline`/
+ * `delete-pipeline`) the destructive-operation gate → the
+ * operation-appropriate step → persist the result to `output` (when
+ * configured) → assert `watch-execution` resolved successfully, all owned by
+ * `Core.M3LOperationPipeline`. Built once at module load — a pipeline
+ * instance is stateless across `run()` calls.
+ *
+ * A declined destructive-operation gate (`ERR_CODEPIPELINE_OPS_ABORTED`)
+ * propagates to the caller unmodified (`onDecline: { kind: "throw" }`) — a
+ * decline here aborts the whole run rather than soft-landing an empty result.
+ */
+const pipeline = new Core.M3LOperationPipeline<
+  CodepipelineOperation,
+  RunSettings,
+  Deps,
+  DispatchResult,
+  WriteDispatchPlan | undefined
+>({
+  operations: CODEPIPELINE_OPS_OPERATIONS,
+  configCode: "ERR_CODEPIPELINE_OPS_CONFIG",
+  resolveSettings,
+  requiredFields: REQUIRED_FIELDS,
+  prepare,
+  destructive: {
+    operations: new Set([
+      "create-pipeline",
+      "update-pipeline",
+      "delete-pipeline",
+    ] as const),
+    describe: (operation, _settings, context, _deps) =>
+      requireWritePlan(context, operation).description,
+    yes: (settings) => settings.yes,
+    abortCode: "ERR_CODEPIPELINE_OPS_ABORTED",
+    onDecline: { kind: "throw" },
+  },
+  handlers: {
+    "list-pipelines": dispatchReadPipelines,
+    "describe-pipeline": dispatchReadPipelines,
+    "get-pipeline-state": dispatchReadState,
+    "list-executions": dispatchReadExecutions,
+    "describe-execution": dispatchReadExecutions,
+    "create-pipeline": dispatchWrite,
+    "update-pipeline": dispatchWrite,
+    "delete-pipeline": dispatchWrite,
+    "start-execution": dispatchExecute,
+    "stop-execution": dispatchExecute,
+    "enable-stage-transition": dispatchTransitions,
+    "disable-stage-transition": dispatchTransitions,
+    "watch-execution": dispatchWatch,
+  },
+  persist: async (result, settings, deps) => {
+    await persistOutput(deps.paths, settings.output, result);
+  },
+  finalize: (result, settings, deps) => {
+    if (settings.operation !== "watch-execution") return;
+    // `describe-execution` and `watch-execution` both resolve
+    // `AWS.M3LCodePipelineExecution` — branching on `settings.operation`
+    // (not a structural type predicate) avoids a false positive when
+    // `describe-execution` resolves a Failed/Stopped/Cancelled execution.
+    assertWatchSucceeded(
+      result as AWS.M3LCodePipelineExecution,
+      deps.correlationId,
+    );
+  },
+});
+
+/**
+ * Composes the `codepipeline-ops` pipeline end to end via
+ * `Core.M3LOperationPipeline`: resolves + guard-checks config, runs
+ * `Core.confirmDestructive` for every mutating pipeline operation, dispatches
+ * to the operation-appropriate step, persists the result to `output` (when
+ * configured) via `Core.M3LJSONFileExporter`, and — for `watch-execution` —
+ * throws once the result has had a chance to be persisted first.
  *
  * @param deps - The resolved config, `M3LPaths`, logger, correlation id, the
  *   injected `AWS.M3LCodePipelineOperations`, and the interactive-prompt
@@ -550,41 +576,24 @@ function assertWatchSucceeded(
  * });
  * ```
  */
-export async function runCodepipelineOps(deps: {
-  readonly config: Core.M3LConfig;
-  readonly paths: Core.M3LPaths;
-  readonly logger: Core.M3LLogger;
-  readonly correlationId: string;
-  readonly operations: AWS.M3LCodePipelineOperations;
-  readonly prompt: Core.M3LPrompt;
-}): Promise<void> {
+export async function runCodepipelineOps(deps: Deps): Promise<void> {
+  const outcome = await pipeline.run(deps);
+
+  // Re-reads `pipeline`/`executionId` from config after the engine's `run()`
+  // resolves — `M3LOperationPipeline`'s outcome doesn't carry the resolved
+  // settings, and this stays a pure config read with no side effect, so
+  // recomputing here (after `run()` resolves, so it never fires when
+  // `finalize` throws) preserves the completion log's shape.
   const accessor = new Core.M3LConfigAccessor({
     config: deps.config,
     code: "ERR_CODEPIPELINE_OPS_CONFIG",
   });
-  const reader = new Core.M3LInputFileReader({
-    paths: deps.paths,
-    code: "ERR_CODEPIPELINE_OPS_INPUT",
-  });
-
-  const operation = accessor.oneOf("operation", CODEPIPELINE_OPS_OPERATIONS);
-  const raw = readRawSettings(accessor);
-  const output = accessor.optionalString("output");
-
-  const result = await dispatchOperation(operation, raw, {
-    logger: deps.logger,
-    operations: deps.operations,
-    prompt: deps.prompt,
-    accessor,
-    reader,
-  });
-
-  await persistOutput(deps.paths, output, result);
-  assertWatchSucceeded(operation, result, deps.correlationId);
+  const pipelineName = accessor.optionalString("pipeline");
+  const executionId = accessor.optionalString("executionId");
 
   deps.logger.step(`codepipeline-ops run ${deps.correlationId} complete`, {
-    operation,
-    ...(raw.pipeline !== undefined && { pipeline: raw.pipeline }),
-    ...(raw.executionId !== undefined && { executionId: raw.executionId }),
+    operation: outcome.operation,
+    ...(pipelineName !== undefined && { pipeline: pipelineName }),
+    ...(executionId !== undefined && { executionId }),
   });
 }
