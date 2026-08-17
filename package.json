@@ -78,9 +78,9 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.4",
-    "@commitlint/config-conventional": "21.2.0",
-    "@commitlint/lint": "21.2.0",
-    "@commitlint/load": "21.2.0",
+    "@commitlint/config-conventional": "21.2.2",
+    "@commitlint/lint": "21.2.2",
+    "@commitlint/load": "21.2.2",
     "@commitlint/types": "21.2.0",
     "@eslint/js": "10.0.1",
     "@modelcontextprotocol/sdk": "1.29.0",
