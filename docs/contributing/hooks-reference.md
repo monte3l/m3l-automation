@@ -2,7 +2,7 @@
 
 The single authoritative inventory of every hook wired into `.claude/settings.json`
 (implemented under `.claude/hooks/*.mjs`). CLAUDE.md's "Claude Code hooks" note
-is deliberately a one-paragraph pointer to this file — the full 20-hook list
+is deliberately a one-paragraph pointer to this file — the full 21-hook list
 lives here so it stays in one place instead of drifting across sections.
 `pnpm check:hooks` validates that every command below resolves to a real file,
 every event name is a real Claude Code lifecycle event, and every hook carries
@@ -24,6 +24,7 @@ the rule.
 | PreToolUse       | `Write\|Edit` | `guard-protected-paths.mjs`         | Blocks hand-edits to tool-owned artifacts (`dist/**`).                                                                                                                        | blocking |
 | PreToolUse       | `Write\|Edit` | `guard-eslint-disable-red.mjs`      | Rejects a test-file write that suppresses RED-phase ESLint noise (`import-x/no-unresolved`, `no-unsafe-*`) instead of letting it self-resolve at GREEN.                       | blocking |
 | PreToolUse       | `Write\|Edit` | `guard-branch-isolation.mjs`        | Blocks `packages/*/src/**`, `scripts/*/src/**`, `**/tests/**` writes while `HEAD` is `main` (or detached on the main commit).                                                 | blocking |
+| PreToolUse       | `Write\|Edit` | `guard-hub-src-writes.mjs`          | Blocks the hub (no `agent_type`) from writing guarded src/test paths on any branch — spokes (`code-implementer`/`test-author`) are allowed; closes issue #446.                | blocking |
 | PreToolUse       | `Write\|Edit` | `guard-secret-writes.mjs`           | Refuses to write a real secret/token literal or a `.env` file to disk (CI `gitleaks` is the backstop).                                                                        | blocking |
 | PostToolUse      | `Write\|Edit` | `post-edit-md-verify.mjs`           | Runs prettier + rumdl on the edited `.md` file for immediate feedback (`post-edit-verify.mjs` skips non-`.ts` files).                                                         | advisory |
 | PostToolUse      | `Write\|Edit` | `guard-exports-semver.mjs`          | Reminds that an edit to the `exports` map is a semver event needing a `feat!:` / `BREAKING CHANGE:` commit; does not hard-block.                                              | advisory |
@@ -49,9 +50,10 @@ pass; CI `gitleaks` and branch protection are the backstops for
 `guard-secret-writes`/`guard-js-extension`/`guard-no-commonjs` specifically.
 **`guard-branch-isolation` has no non-hook backstop at all** — branch
 protection stops an unsigned/unreviewed push, not a `main`-branch
-working-tree write — and nothing distinguishes a hub-authored `Edit` from a
-spoke-authored one on a feature branch; tracked as its own P2 row in
-`docs/plans/IMPLEMENTATION.md`. See ADR-0016's 2026-08-17 Update and
+working-tree write. The feature-branch gap (nothing distinguishing a
+hub-authored `Edit` from a spoke-authored one) is closed by the new
+`guard-hub-src-writes.mjs` row above (issue #446, 2026-08-17). See
+ADR-0016's 2026-08-17 Update and
 `docs/plans/archive/2026-08-17-retire-adr-0016-bash-write-trigger.md`.
 
 See also: `bin/check-hooks.mjs` (wiring validator), ADR-0016 (signed-commit
