@@ -104,6 +104,11 @@ paths:
   tests from the doc contract, watch them fail for the right reason (the symbol
   doesn't exist yet), then let the implementation make them pass — don't backfill
   a test that just mirrors an implementation you already wrote.
+- **Update `docs/implementation-status.md` Notes count in the same commit as any
+  new test.** `check:test-counts` asserts the "N tests" value in every ✅ row
+  matches the live Vitest count; a mismatch discovered at `pnpm verify` time
+  forces a standalone `chore:` commit. Include the Notes update in the same
+  feat/refactor commit that adds the test.
 - **Justify intentional `eslint-disable` on the error channel.** A module that
   tests its error channel throws/rejects non-`Error` values to prove
   normalization, which trips `only-throw-error` / `prefer-promise-reject-errors`.
