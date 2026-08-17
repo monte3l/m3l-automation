@@ -72,8 +72,8 @@ operation)`, producing the message `'<name>' is required for operation
    gate propagates unmodified. (The `yes: true` bypass warning on this path
    is emitted by `confirmDestructive` itself, not authored by the engine.)
 7. **Dispatch** — `handlers[operation](operation, settings, context, deps)`.
-8. **Persist** — `persist?.(result, settings, deps)`.
-9. **Finalize** — `finalize?.(result, settings, deps)`. Runs **after**
+8. **Persist** — `persist?.(result, settings, deps, operation)`.
+9. **Finalize** — `finalize?.(result, settings, deps, operation)`. Runs **after**
    persist, so a post-dispatch assertion that throws (e.g. a wait operation
    that did not stabilize) still leaves the persisted result on disk.
 10. **Outcome** — resolves `{ status: "completed", operation, result }`.
@@ -238,11 +238,13 @@ interface M3LOperationPipelineCoreOptions<
     result: TResult,
     settings: TSettings,
     deps: TDeps,
+    operation: TOp,
   ) => Promise<void>;
   readonly finalize?: (
     result: TResult,
     settings: TSettings,
     deps: TDeps,
+    operation: TOp,
   ) => void | Promise<void>;
 }
 
