@@ -92,7 +92,7 @@
     "eslint-plugin-sonarjs": "4.2.0",
     "eslint-plugin-tsdoc": "0.5.2",
     "globals": "17.9.0",
-    "jscpd": "5.0.14",
+    "jscpd": "5.0.15",
     "knip": "6.25.0",
     "lefthook": "2.1.9",
     "prettier": "3.9.4",
