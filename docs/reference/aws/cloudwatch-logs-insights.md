@@ -13,7 +13,8 @@ It composes with `core/polling`: query completion is polled via `M3LPoller` buil
 Exported from `@m3l-automation/m3l-common/aws` (and re-exported under the `AWS` namespace):
 
 - `M3LLogsInsightsClient` — the query wrapper class.
-- `LogsInsightsAwaitOptions` — optional-override type for `awaitResults`/`runQuery`.
+- `LogsInsightsAwaitOptions` — optional-override type for `awaitResults`/`runQuery`, carrying `pollerOptions` and an
+  optional `signal` (see Cooperative cancellation).
 - `StartLogsInsightsQueryInput` — `startQuery`/`runQuery` input shape.
 - `LogsInsightsQueryResult` — the successful result shape.
 - `LogsInsightsQueryStatistics`, `LogsInsightsQueryStatus`, `LogsInsightsRow` — supporting types.
@@ -63,6 +64,20 @@ Exported from `@m3l-automation/m3l-common/aws` (and re-exported under the `AWS` 
 `M3LLogsInsightsQueryFailedError` is likewise thrown when the `GetQueryResults` SDK call itself fails after retries are exhausted: `GetQueryResults` is now retried under AWS throttling (`M3LRetryRunner` + `M3LPollingPolicies.awsThrottling()`), matching `StartQuery`'s treatment. A genuine send failure is reported with `status: "Unknown"` and the original error chained via `cause`. This is in addition to its existing terminal-AWS-status case (`Failed`/`Cancelled`/`Timeout`/`Unknown`/no-status), which still carries no `cause` — a successful response carrying a bad status has no exception to chain.
 
 Poll-attempt exhaustion (the attempt bound reached while the query is still `Running`/`Scheduled`) is **not** wrapped: the `M3LPoller`-thrown plain `M3LError` with `code === "ERR_POLL_EXHAUSTED"` propagates unchanged. Callers narrow by `code`, never by `instanceof` on a poller-internal class (that class is intentionally not exported from the public barrel).
+
+### Cooperative cancellation
+
+`LogsInsightsAwaitOptions` accepts an optional `signal?: AbortSignal`, threaded into the
+`M3LPoller` that drives `awaitResults` (and therefore `runQuery`). When the
+signal aborts, the poll rejects with
+[`M3LOperationAbortedError`](../core/errors.md#m3loperationabortederror)
+(`ERR_OPERATION_ABORTED`, `origin: "caller"`, `retryable: false`) and abandons
+any pending backoff delay rather than sleeping it out. Omitting the signal leaves
+behavior exactly as before.
+
+Cancelling stops this client waiting; it does not cancel the query
+CloudWatch Logs-side. Use the service's own cancellation call if the query itself must
+be stopped ([ADR-0049](../../adr/0049-cooperative-cancellation-contract.md)).
 
 ## See also
 

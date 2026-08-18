@@ -131,6 +131,12 @@ into its text output. Without it, a truncated chain in `run-report.json` or an
 - `M3LRunReportBase` — the fields common to both arms.
 - `M3LRunReportFailure` — the failure block (`stage` + `chain`).
 - `M3LRunOutcome` — `"success" | "failure" | "dry-run" | "interrupted"`.
+  `interrupted` is produced when the run was cancelled — a shutdown signal
+  aborted [`script.signal`](./script.md#cooperative-cancellation-scriptsignal)
+  and an in-flight wait rejected with
+  [`M3LOperationAbortedError`](./errors.md#m3loperationabortederror).
+  Cancellation is an operator decision, so the report must not present it as
+  a `failure`.
 - `M3LRunReportInput` — what `build`/`persist` accept.
 - `M3LRunReporter` — builds and persists a run report.
 - `M3LRunReporterOptions` — `{ paths?, fileName? }`.
@@ -160,7 +166,7 @@ and the run report:
 | `2`       | `CONFIG_USAGE` | Configuration / usage error                     | `caller`         |
 | `3`       | `EXTERNAL`     | External-system failure                         | `external`       |
 | `4`       | `LIBRARY`      | Library-internal fault                          | `library`        |
-| `5`       | `INTERRUPTED`  | Signal-forced shutdown                          | —                |
+| `5`       | `INTERRUPTED`  | Signal-forced shutdown, or a cancelled run      | —                |
 
 `mapErrorToExitCode(error: unknown): M3LErrorExitCode` resolves in order: the
 error's `origin` field (see [`errors` → Fault origin](./errors.md#fault-origin),
@@ -173,6 +179,14 @@ The return type is `M3LErrorExitCode` (`1 | 2 | 3 | 4`), not `number`: `SUCCESS`
 and `INTERRUPTED` describe how a run ended, not what an error was, so they are
 set by the caller and are unreachable from this function by construction rather
 than by convention.
+
+This is why a **cancelled** run is recognised in `runScript()` rather than here.
+`M3LOperationAbortedError` carries `origin: "caller"`, so routing it through
+`mapErrorToExitCode` would yield `2` (`CONFIG_USAGE`) — a cancellation reported
+as a configuration fault. Instead `runScript()` tests for the abort _before_
+mapping and assigns `INTERRUPTED` directly, exactly as it already does for a
+signal-forced shutdown. `M3LErrorExitCode` stays `1 | 2 | 3 | 4`
+([ADR-0049](../../adr/0049-cooperative-cancellation-contract.md)).
 
 **Contract:** nothing in the library calls `process.exit()` on this path.
 [`runScript()`](./script.md#runscript) assigns `process.exitCode` so in-flight

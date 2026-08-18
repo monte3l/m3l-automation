@@ -24,8 +24,8 @@ future revision of this wrapper.
 - `M3LECSOperationError` — thrown on a request-level ECS failure.
 - Plain types: `M3LECSListServicesResult`, `M3LECSServiceDescription`,
   `M3LECSCreateServiceInput`, `M3LECSUpdateServiceInput`,
-  `M3LECSWaiterResult`, `M3LECSListClustersResult`, `M3LECSClusterSummary`,
-  `M3LECSLoadBalancer`, `M3LECSNetworkConfiguration`.
+  `M3LECSWaiterOptions`, `M3LECSWaiterResult`, `M3LECSListClustersResult`,
+  `M3LECSClusterSummary`, `M3LECSLoadBalancer`, `M3LECSNetworkConfiguration`.
 
 ## Public API
 
@@ -85,12 +85,26 @@ translating that catch back into a resolved value where it can.
 matching the AWS CLI's own default ECS `services-stable` wait budget (40
 attempts at a 15-second poll delay).
 
-**Only the two terminal states the SDK identifies by a distinct error
-name resolve rather than throw**: a caught error named `"TimeoutError"`
-resolves `{ state: "TIMEOUT", reason: error.message }`; a caught error named
-`"AbortError"` (the waiter's own abort signal, not a caller-driven abort in
-this v1) resolves `{ state: "ABORTED", reason: error.message }`. Every other
-rejection — including the SDK's `FAILURE` terminal waiter state (a service
+**A caught error named `"TimeoutError"` resolves `{ state: "TIMEOUT", reason }`**,
+where `reason` is a fresh, static, library-constructed string naming the cluster
+and services waited on. It is deliberately **not** the SDK error's own `message`:
+`@smithy/core`'s `checkExceptions` builds that message by serializing the whole
+waiter result, which can embed the last observed `DescribeServices` response.
+This mirrors the treatment `aws/eks`'s waiters already apply for the same reason.
+
+**A caller-signal abort rejects rather than resolving.** The method accepts
+`options.signal` and forwards it to the SDK waiter's `abortSignal`, so cancelling
+stops the in-flight request. On abort it rejects with
+[`M3LOperationAbortedError`](../core/errors.md#m3loperationabortederror)
+(`ERR_OPERATION_ABORTED`, `origin: "caller"`, `retryable: false`) rather than
+resolving `{ state: "ABORTED" }` — rejecting is what lets `runScript()` recognise
+the run as `interrupted` instead of reporting a success or a failure
+([ADR-0049](../../adr/0049-cooperative-cancellation-contract.md)). The
+`"ABORTED"` member of `M3LECSWaiterResult` is therefore unreachable; it is
+retained rather than removed because narrowing an exported union is a breaking
+change.
+
+Every other rejection — including the SDK's `FAILURE` terminal waiter state (a service
 that definitively cannot stabilize, e.g. a task repeatedly failing its health
 check) — throws `M3LECSOperationError` chaining the cause. This is narrower
 than "any non-stable outcome resolves": the SDK's own `checkExceptions` helper
@@ -133,8 +147,15 @@ automatic retry. A caller wanting resilience composes its own
   `desiredCount`, `taskDefinition`, `forceNewDeployment`,
   `networkConfiguration` are optional (each included in the SDK command only
   when the caller supplies it — `exactOptionalPropertyTypes`-safe).
+- `M3LECSWaiterOptions` — `maxWaitTime?: number` (seconds, defaults to `600`)
+  and `signal?: AbortSignal`. Extracted as a named interface in the cooperative-
+  cancellation change so it matches `M3LEKSWaiterOptions` and
+  `M3LCloudFormationWaitOptions`; it was previously an inline object literal on
+  the method signature.
 - `M3LECSWaiterResult` — `state` is one of `"SUCCESS" | "ABORTED" |
-"TIMEOUT"`; `reason` is present only when the waiter supplies one.
+"TIMEOUT"`; `reason` is present only when the waiter supplies one, and is always
+  a fresh, static, library-constructed string — never the raw SDK waiter error's
+  own `message` (see the Waiters section).
 - `M3LECSListClustersResult` — `clusterArns` always an array; `nextToken`
   present only when the SDK returns one.
 - `M3LECSClusterSummary` — `clusterArn`, `clusterName` always present;
