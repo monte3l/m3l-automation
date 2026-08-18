@@ -234,6 +234,11 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/config/deriveSecretsSpecifier.ts"
   },
+  "M3LConfigSchemaValidators": {
+    "submodule": "config",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/config/M3LConfigSchemaValidator.ts"
+  },
   "M3LConfigAccessorOptions": {
     "submodule": "config",
     "namespace": "core",
@@ -1436,6 +1441,26 @@
     "submodule": "prompt",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/prompt/types.ts"
+  },
+  "M3LDestructiveTarget": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts"
+  },
+  "M3LDestructiveTargetPredicate": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts"
+  },
+  "M3LSensitiveTargetSpec": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts"
+  },
+  "sensitiveTargets": {
+    "submodule": "prompt",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts"
   },
   "M3LScript": {
     "submodule": "script",

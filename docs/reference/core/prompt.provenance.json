@@ -8,12 +8,12 @@
         {
           "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
           "symbol": "confirmDestructive",
-          "blob": "ff64fe6d48a532364e74672e970b6e3cb08ab509"
+          "blob": "c0d491a135bf0c83b97e08f40f1dc5110b9a5536"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
           "symbol": "M3LConfirmDestructiveOptions",
-          "blob": "ff64fe6d48a532364e74672e970b6e3cb08ab509"
+          "blob": "c0d491a135bf0c83b97e08f40f1dc5110b9a5536"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
@@ -74,9 +74,29 @@
           "file": "packages/m3l-common/src/core/prompt/types.ts",
           "symbol": "M3LSuggestFn",
           "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
+          "symbol": "M3LDestructiveTarget",
+          "blob": "c0d491a135bf0c83b97e08f40f1dc5110b9a5536"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
+          "symbol": "M3LDestructiveTargetPredicate",
+          "blob": "c0d491a135bf0c83b97e08f40f1dc5110b9a5536"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
+          "symbol": "M3LSensitiveTargetSpec",
+          "blob": "c0d491a135bf0c83b97e08f40f1dc5110b9a5536"
+        },
+        {
+          "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
+          "symbol": "sensitiveTargets",
+          "blob": "c0d491a135bf0c83b97e08f40f1dc5110b9a5536"
         }
       ],
-      "retrieved": "2026-07-30"
+      "retrieved": "2026-08-18"
     },
     {
       "heading": "`M3LPrompt`",
