@@ -320,6 +320,13 @@ export interface M3LEKSUpdate {
  * data (`"TIMEOUT"`/`"ABORTED"`) rather than throwing, since a caller
  * legitimately wants to distinguish "still not ready" from "the SDK call
  * itself failed".
+ *
+ * @remarks
+ * The `"ABORTED"` state is retained for backwards compatibility but is now
+ * reachable only when an `AbortError` arrives with no *aborted* caller signal
+ * (i.e. an SDK-internal abort path). A caller-initiated abort — when
+ * `options.signal` is supplied and fires — rejects with
+ * {@link M3LOperationAbortedError} instead of resolving with this shape.
  */
 export interface M3LEKSWaiterResult {
   /** The waiter's terminal outcome. */
@@ -344,4 +351,10 @@ export interface M3LEKSWaiterOptions {
    * omitted — see the corresponding `waitUntil*` method's TSDoc.
    */
   readonly maxWaitTime?: number;
+  /**
+   * When aborted while the SDK waiter is polling, the method throws
+   * {@link M3LOperationAbortedError} instead of resolving. Forwarded to the
+   * SDK waiter's `abortSignal` field in `WaiterConfiguration`.
+   */
+  readonly signal?: AbortSignal;
 }

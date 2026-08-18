@@ -18,6 +18,14 @@ Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
 - Poller event map + payloads: `M3LPollerEventMap`, `M3LPollAttemptPayload`, `M3LPollWaitPayload`, `M3LPollSuccessPayload`, `M3LPollExhaustedPayload`
 - Retry event map + payloads: `M3LRetryEventMap`, `M3LRetryAttemptPayload`, `M3LRetryScheduledPayload`, `M3LRetrySuccessPayload`, `M3LRetryFatalPayload`, `M3LRetryExhaustedPayload`
 
+The constructor option interfaces (`M3LPollerOptions`, `M3LRetryRunnerOptions`) and
+the backoff-strategy contract are **deliberately not re-exported** — callers build
+options with the `M3LBackoff`/`M3LPollingPolicies` factories and pass them
+opaquely (`src/core/polling/index.ts`). They are named throughout this page to
+describe the shape you pass, not as importable symbols. Note `check:doc-exports`
+validates code → doc (every export is documented), not doc → code, so a page that
+claims a non-existent export is not machine-caught.
+
 Both `M3LPoller` and `M3LRetryRunner` extend `M3LEventEmitterBase`, so they inherit the public `on` / `off` subscription methods (see [Events](#events)).
 
 ## `M3LPoller` vs. `M3LRetryRunner`
@@ -69,6 +77,40 @@ const runner = new Core.M3LRetryRunner({
 
 const data = await runner.run(async () => callThrottledApi());
 ```
+
+### Cooperative cancellation
+
+Both `M3LPollerOptions` and `M3LRetryRunnerOptions` accept an optional
+`signal?: AbortSignal`. Passing one makes a long wait interruptible; omitting one
+leaves behavior exactly as it was before the option existed.
+
+```typescript
+import { Core } from "@m3l-automation/m3l-common";
+
+// `script.signal` aborts on the first SIGTERM/SIGINT/SIGQUIT.
+const poller = new Core.M3LPoller({
+  backoff: Core.M3LBackoff.exponentialJittered(500, 10_000),
+  signal: script.signal,
+});
+
+// Rejects with `M3LOperationAbortedError` if the signal aborts mid-wait.
+const job = await poller.poll(checkJob);
+```
+
+When the signal aborts, the wait rejects with
+[`M3LOperationAbortedError`](./errors.md) (`ERR_OPERATION_ABORTED`, `origin:
+"caller"`, `retryable: false`) as soon as the abort is observed. A pending
+backoff delay is abandoned immediately rather than slept out, so cancellation
+does not wait for the current delay to elapse.
+
+`M3LRetryRunner` checks the signal **before** consulting its
+`M3LRetryClassifier`. This is deliberate: a classifier that judged the abort
+`"retriable"` would otherwise cause the runner to retry the very operation the
+operator just cancelled. No classifier can observe or reclassify the abort — see
+[ADR-0049](../../adr/0049-cooperative-cancellation-contract.md).
+
+The signal is checked at attempt boundaries and while delaying. It does not
+interrupt CPU-bound synchronous work inside a check function or operation.
 
 ## Events
 
@@ -267,6 +309,7 @@ const runner = new Core.M3LRetryRunner(Core.M3LPollingPolicies.awsThrottling());
 - Choose `M3LPoller` when you are checking a value that changes externally; choose `M3LRetryRunner` when the same call may fail transiently and should be re-attempted.
 - A `delayMs` override from a classifier (via `M3LRetryAdvice`) takes precedence over the configured backoff for that attempt.
 - Prefer `exponentialJittered` over `exponential` when many clients may retry simultaneously.
+- An `AbortSignal` passed as `signal` is checked at attempt boundaries and during backoff delays; an abort rejects with `M3LOperationAbortedError` and is never routed through the classifier.
 
 ## See also
 

@@ -18,6 +18,7 @@ import {
   map,
   mapErr,
   M3LError,
+  M3LOperationAbortedError,
   ok,
   toError,
   tryCatch,
@@ -27,6 +28,7 @@ import {
 } from "../src/core/errors/index.js";
 import {
   classifyErrorCode,
+  isM3LErrorCode,
   M3L_ERROR_CATALOG,
 } from "../src/core/errors/catalog.js";
 import type {
@@ -963,10 +965,100 @@ describe("M3LErrorCode type", () => {
     >().toMatchTypeOf<M3LErrorCode>();
     expectTypeOf<M3LAWSIdentityError["code"]>().toMatchTypeOf<M3LErrorCode>();
     expectTypeOf<M3LCheckpointError["code"]>().toMatchTypeOf<M3LErrorCode>();
+    expectTypeOf<
+      M3LOperationAbortedError["code"]
+    >().toMatchTypeOf<M3LErrorCode>();
   });
 
   test("does not narrow M3LError.code itself, which stays string", () => {
     expectTypeOf<M3LError["code"]>().toEqualTypeOf<string>();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LOperationAbortedError (ADR-0049 — cooperative cancellation seam)
+//
+// This error class represents a caller-initiated abort of a cooperative wait
+// (poll, retry, or AWS waiter). Unlike most library errors it deliberately does
+// NOT chain a cause, because @smithy/core embeds the last observed response body
+// in its AbortError message — chaining it would carry that content into every log
+// and run report.
+// ---------------------------------------------------------------------------
+describe("M3LOperationAbortedError", () => {
+  test("is an instance of Error and M3LError", () => {
+    const e = new M3LOperationAbortedError();
+    expect(e).toBeInstanceOf(Error);
+    expect(e).toBeInstanceOf(M3LError);
+  });
+
+  test("code is ERR_OPERATION_ABORTED", () => {
+    const e = new M3LOperationAbortedError();
+    expect(e.code).toBe("ERR_OPERATION_ABORTED");
+  });
+
+  test("name equals 'M3LOperationAbortedError'", () => {
+    const e = new M3LOperationAbortedError();
+    expect(e.name).toBe("M3LOperationAbortedError");
+  });
+
+  test("ERR_OPERATION_ABORTED is a member of M3L_ERROR_CODES", () => {
+    // isM3LErrorCode is the runtime vocabulary guard — if the code is absent from
+    // M3L_ERROR_CODES, the function returns false regardless of the catalog.
+    expect(isM3LErrorCode("ERR_OPERATION_ABORTED")).toBe(true);
+  });
+
+  test("catalog entry for ERR_OPERATION_ABORTED is { origin: 'caller', retryable: false }", () => {
+    // classifyErrorCode takes string, so no TypeScript error in RED.
+    // Returns undefined when the code is absent from the catalog — fails the toEqual.
+    expect(classifyErrorCode("ERR_OPERATION_ABORTED")).toEqual({
+      origin: "caller",
+      retryable: false,
+    });
+  });
+
+  test("origin resolves to 'caller' from the catalog without any explicit option", () => {
+    // Following the established pattern from the fault-origin classification suite
+    // (compare M3LConfigMissingError's and M3LFileCopyError's tests above).
+    const e = new M3LOperationAbortedError();
+    expect(e.origin).toBe("caller");
+  });
+
+  test("retryable resolves to false from the catalog — load-bearing: a retriable abort would re-run the cancelled operation", () => {
+    const e = new M3LOperationAbortedError();
+    expect(e.retryable).toBe(false);
+  });
+
+  // Security contract: M3LOperationAbortedError deliberately omits cause.
+  // @smithy/core builds its AbortError message by serializing the waiter result,
+  // which can embed the last observed response body. Chaining it would carry that
+  // content into every log line and run report — a data-leak risk.
+  test("[security] cause is undefined and the error message contains no text from the underlying SDK abort error", () => {
+    const plantedSecret = "SENSITIVE_SDK_WAITER_RESPONSE_PAYLOAD_abc123XYZ";
+    // Build a realistic SDK-style abort error that embeds the secret.
+    const sdkAbortError = new Error(
+      `AbortError: WaiterResult{${plantedSecret}: 'FAILURE', statusCode: 400}`,
+    );
+    sdkAbortError.name = "AbortError";
+
+    // M3LOperationAbortedError takes no cause: the fixed message is
+    // library-controlled, not derived from any external payload.
+    const abortedError = new M3LOperationAbortedError();
+
+    // Sanity: the SDK error does contain the secret (proves leak would be visible).
+    expect(sdkAbortError.message).toContain(plantedSecret);
+
+    // Contract: the library error must NOT expose the secret.
+    expect(abortedError.cause).toBeUndefined();
+    expect(abortedError.message).not.toContain(plantedSecret);
+    const serialized = JSON.stringify(abortedError.toJSON());
+    expect(serialized).not.toContain(plantedSecret);
+  });
+
+  test("toJSON carries origin:caller and retryable:false", () => {
+    const e = new M3LOperationAbortedError();
+    const json = e.toJSON();
+    expect(json.origin).toBe("caller");
+    expect(json.retryable).toBe(false);
   });
 });
 

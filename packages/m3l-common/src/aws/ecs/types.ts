@@ -84,10 +84,47 @@ export interface M3LECSUpdateServiceInput {
   readonly networkConfiguration?: M3LECSNetworkConfiguration;
 }
 
-/** Result of {@link M3LECSOperations.waitUntilServicesStable}. */
+/**
+ * Result of {@link M3LECSOperations.waitUntilServicesStable}.
+ *
+ * The `"ABORTED"` state is retained for backwards compatibility but is now
+ * reachable only when an `AbortError` arrives with no *aborted* caller signal
+ * (i.e. an SDK-internal abort path). A caller-initiated abort — when
+ * `options.signal` is supplied and fires — rejects with
+ * {@link M3LOperationAbortedError} instead of resolving with this shape.
+ */
 export interface M3LECSWaiterResult {
   readonly state: "SUCCESS" | "ABORTED" | "TIMEOUT";
   readonly reason?: string;
+}
+
+/**
+ * Options for {@link M3LECSOperations.waitUntilServicesStable}.
+ *
+ * @example
+ * ```ts
+ * import { M3LECSOperations } from "@m3l-automation/m3l-common/aws";
+ *
+ * const controller = new AbortController();
+ * const ecs = new M3LECSOperations(client);
+ * const result = await ecs.waitUntilServicesStable("my-cluster", ["my-svc"], {
+ *   maxWaitTime: 300,
+ *   signal: controller.signal,
+ * });
+ * ```
+ */
+export interface M3LECSWaiterOptions {
+  /**
+   * Bounds the wait, in seconds. Defaults to 600 (10 minutes) when omitted —
+   * see {@link M3LECSOperations.waitUntilServicesStable}.
+   */
+  readonly maxWaitTime?: number;
+  /**
+   * When aborted while the SDK waiter is polling, the method throws
+   * {@link M3LOperationAbortedError} instead of resolving. Forwarded to the
+   * SDK waiter's `abortSignal` field in `WaiterConfiguration`.
+   */
+  readonly signal?: AbortSignal;
 }
 
 /** Read-only cluster summary ({@link M3LECSOperations.listClusters}/`describeCluster` context). */

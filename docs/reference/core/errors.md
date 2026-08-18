@@ -15,7 +15,7 @@ A set of `M3LErrorUtils` helper functions normalize `unknown` thrown values (as 
 
 Public surface (`errors/index.ts`):
 
-- Types and classes: `M3LError`, `M3LErrorCode`, `M3LErrorOptions`, `M3LResult`, `M3LResultOk`, `M3LResultErr`
+- Types and classes: `M3LError`, `M3LErrorCode`, `M3LErrorOptions`, `M3LOperationAbortedError`, `M3LResult`, `M3LResultOk`, `M3LResultErr`
 - `M3L_ERROR_CODES` — the runtime `as const` tuple of every built-in error code (the source of truth `M3LErrorCode` derives from)
 - `M3LErrorUtils` functions: `getErrorMessage`, `toError`, `wrapError`, `getErrorStack`, `hasErrorName`, `errorMessageContains`
 - Result operators: `ok`, `err`, `isOk`, `isErr`, `unwrap`, `unwrapOr`, `map`, `mapErr`, `andThen`, `fromPromise`, `tryCatch`
@@ -200,6 +200,7 @@ carries a recognised `code` but no `origin`.
 | `ERR_LOG_TABLE_BORDER`            | `core/logging` (`M3LTableFormatter`)                  | Table border/frame constraint violated                                                            | caller   | false       |
 | `ERR_LOGS_INSIGHTS_QUERY_FAILED`  | `aws/cloudwatch-logs-insights`                        | Query reached terminal Failed/Cancelled/Timeout/Unknown                                           | external | situational |
 | `ERR_LOGS_INSIGHTS_START_QUERY`   | `aws/cloudwatch-logs-insights`                        | `StartQuery` yielded no query id after retries                                                    | external | true        |
+| `ERR_OPERATION_ABORTED`           | `core/errors` (`M3LOperationAbortedError`)            | A caller-supplied `AbortSignal` aborted a poll, retry, or AWS waiter                              | caller   | false       |
 | `ERR_PATH_RESOLUTION`             | `core/utils` (`M3LPathResolutionError`)               | Directory path resolution failed                                                                  | external | false       |
 | `ERR_PIPELINE_INVALID_OPTION`     | `internal/pipeline` (`M3LPipelineInvalidOptionError`) | Pipeline options invalid: empty/duplicate operations, or destructive ops outside the union        | caller   | false       |
 | `ERR_POLL_EXHAUSTED`              | `internal/polling` (`M3LPollExhaustedError`)          | Poller used all attempts while the check kept returning `continue`                                | external | true        |
@@ -234,6 +235,30 @@ Classification notes:
   it as potentially adversarial data, not a typo.
 - `WRAPPED_ERROR` and `PROMISE_REJECTED` inherit the true classification of
   their `cause` — walk the chain to the root before triaging.
+
+### `M3LOperationAbortedError`
+
+Thrown when a caller-supplied `AbortSignal` aborts a cooperative wait — a
+[`core/polling`](./polling.md) poll or retry, or one of the `aws/**` waiters and
+query polls. Its code is `ERR_OPERATION_ABORTED`, classified `origin: "caller"`,
+`retryable: false`.
+
+The `retryable: false` classification is load-bearing rather than descriptive.
+`M3LRetryRunner` retries whatever its classifier judges retriable, so an abort
+treated as retriable would make cancelling a run re-attempt the cancelled
+operation. **No classifier may reclassify this code**, and `M3LRetryRunner`
+enforces that structurally by checking the signal before its classifier runs
+([ADR-0049](../../adr/0049-cooperative-cancellation-contract.md)).
+
+A run terminated this way resolves to the `interrupted`
+[`M3LRunOutcome`](./diagnostics.md) and exit code `5`, not `failure` —
+cancellation is an operator decision, not a fault.
+
+Unlike most of the hierarchy, this error deliberately does **not** chain the
+underlying SDK abort as `cause`. `@smithy/core` builds its `AbortError` message
+by serializing the whole waiter result, which can embed the last observed
+response body; chaining it would carry that content into every log and run
+report. The message is a fixed, library-constructed string instead.
 
 ### `M3LResult<T, E>`
 
@@ -328,6 +353,7 @@ const port = Core.mapErr(
 - Never throw bare strings and never swallow errors silently; subclass `M3LError` per failure mode and chain underlying failures through `cause`.
 - `toError` and `getErrorMessage` are designed for `catch (error: unknown)` blocks — use them to narrow `unknown` instead of using `any`.
 - `hasErrorName` and `errorMessageContains` are predicates useful for branching on error identity without instanceof chains; `getErrorStack` safely extracts a stack when present.
+- `M3LOperationAbortedError` is the one built-in error that intentionally omits `cause`; see its section above for why.
 - `isOk` / `isErr` are type guards that narrow `M3LResult<T, E>` to `M3LResultOk<T>` / `M3LResultErr<E>`.
 - `unwrap()` throws on an error result; prefer `unwrapOr` (or `isOk` narrowing) when you want to stay exception-free.
 

@@ -18,5 +18,6 @@ export type {
   M3LECSNetworkConfiguration,
   M3LECSServiceDescription,
   M3LECSUpdateServiceInput,
+  M3LECSWaiterOptions,
   M3LECSWaiterResult,
 } from "./types.js";

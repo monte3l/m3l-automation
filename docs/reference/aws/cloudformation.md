@@ -216,16 +216,34 @@ construction — indistinguishable by identity from any other unclassified
 waiter rejection, so it surfaces as `M3LCloudFormationOperationError` like
 any other misconfiguration, not a dedicated validation error.
 
-**Only the two terminal states the SDK identifies by a distinct error name
-resolve rather than throw**: a caught error named `"TimeoutError"` resolves
-`{ state: "TIMEOUT", reason: error.message }`; a caught error named
-`"AbortError"` resolves `{ state: "ABORTED", reason: error.message }`. This
-`AbortError` arm is **unreachable in this v1**: the SDK's `createWaiter` only
-produces it from a caller-supplied `abortSignal`/`abortController`, and none
-of the three wrapper methods accepts or forwards one — the arm exists for
-type-completeness and forward-compatibility (a future revision could accept
-an abort signal), not because a caller can trigger it today. Every other
-rejection — including the SDK's `FAILURE` terminal waiter state (e.g. a stack
+**A caught error named `"TimeoutError"` resolves `{ state: "TIMEOUT", reason }`**,
+where `reason` is a fresh, static, library-constructed string naming the stack
+that was waited on. (The method name reaches the thrown
+`M3LCloudFormationOperationError` on the fault path, but not the resolved
+`reason`.) It is deliberately **not** the SDK error's own
+`message`: `@smithy/core`'s `checkExceptions` builds that message by serializing
+the whole waiter result, which can embed the last observed `DescribeStacks`
+response — including caller-supplied parameter and output values. This mirrors
+the treatment `aws/eks`'s waiters already apply for the same reason.
+
+**A caller-signal abort rejects rather than resolving.** All three methods accept
+`options.signal` and forward it to the SDK waiter's `abortSignal`, so a
+cancellation stops the in-flight request. When the signal aborts, the method
+rejects with
+[`M3LOperationAbortedError`](../core/errors.md#m3loperationabortederror)
+(`ERR_OPERATION_ABORTED`, `origin: "caller"`, `retryable: false`) — not with a
+resolved `{ state: "ABORTED" }`. Rejecting is what lets `runScript()` recognise
+the run as `interrupted` rather than reporting it as a success or a failure
+([ADR-0049](../../adr/0049-cooperative-cancellation-contract.md)).
+
+The `"ABORTED"` member of `M3LCloudFormationWaiterResult` is therefore reachable only when an `AbortError` arrives with no _aborted_ caller signal —
+a signal that was supplied but has not fired still takes the resolving path.
+Before this change it was unreachable outright, because no method accepted a
+signal. The member is retained rather than removed because narrowing an exported
+union is a breaking change; removal is deferred to the next major. A caller that
+passes a signal should handle cancellation via `catch`, never via `state`.
+
+Every other rejection — including the SDK's `FAILURE` terminal waiter state (e.g. a stack
 that rolled back) — throws `M3LCloudFormationOperationError` chaining the
 cause. This is narrower than "any non-success outcome resolves": like ECS's
 `checkExceptions`, a `FAILURE` terminal state surfaces as a plain, unnamed
@@ -339,9 +357,13 @@ receives, not the SDK's input-construction key requirement.
   `logicalResourceId`, `physicalResourceId`, `resourceType`, `resourceStatus`,
   `resourceStatusReason` present only when the SDK response includes them.
 - `M3LCloudFormationWaitOptions` — `maxWaitTime` (seconds) optional, defaults
-  to 3600 when omitted (see the Waiters section above).
+  to 3600 when omitted (see the Waiters section above); `signal?: AbortSignal`
+  optional, forwarded to the SDK waiter's `abortSignal` for cooperative
+  cancellation.
 - `M3LCloudFormationWaiterResult` — `state` is one of `"SUCCESS" | "ABORTED" |
-"TIMEOUT"`; `reason` is present only when the waiter supplies one.
+"TIMEOUT"`; `reason` is present only when the waiter supplies one, and is
+  always a fresh, static, library-constructed string — never the raw SDK
+  waiter error's own `message` (see the Waiters section).
 - `M3LCloudFormationKeyValue` — the plain `{ key, value }` shape used for
   stack parameters and tags; both fields default to `""` when the SDK omits
   either half (see the convention paragraph above).

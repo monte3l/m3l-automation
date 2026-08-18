@@ -83,7 +83,9 @@ composes its own SDK client or waits for a future revision of this wrapper.
   `waitUntil*` methods. Defaults to `1200` (20 minutes) when the caller omits
   it, chosen to allow several poll intervals at EKS's own 30s/120s min/max
   delay cadence rather than `@smithy/core`'s generic 2s/120s default (see
-  "Waiters" below).
+  "Waiters" below). Also carries an optional
+  `signal?: AbortSignal`, forwarded to the SDK waiter's `abortSignal` for
+  cooperative cancellation.
 
 ### Cluster listing and lookup
 
@@ -139,10 +141,25 @@ list above — same "out of scope for v1" rationale, not an oversight.
 `waitUntilNodegroupActive`/`waitUntilNodegroupDeleted` wrap the SDK's own
 `waitUntilClusterActive`/`waitUntilClusterDeleted`/`waitUntilNodegroupActive`/
 `waitUntilNodegroupDeleted` waiters (mirrors `aws/ecs`'s
-`waitUntilServicesStable` shape): a `TimeoutError`/`AbortError` resolves as
-data (`{ state: "TIMEOUT" | "ABORTED", reason }`) instead of throwing, so a
-caller can distinguish "still not ready" from "the SDK call itself failed".
-Any other rejection throws `M3LEKSOperationError`.
+`waitUntilServicesStable` shape): a `TimeoutError` resolves as data
+(`{ state: "TIMEOUT", reason }`) instead of throwing, so a caller can
+distinguish "still not ready" from "the SDK call itself failed". Any other
+rejection throws `M3LEKSOperationError`.
+
+**A caller-signal abort rejects rather than resolving.** All four methods accept
+`options.signal` and forward it to the SDK waiter's `abortSignal`, so cancelling
+stops the in-flight request. On abort the method rejects with
+[`M3LOperationAbortedError`](../core/errors.md#m3loperationabortederror)
+(`ERR_OPERATION_ABORTED`, `origin: "caller"`, `retryable: false`) rather than
+resolving `{ state: "ABORTED" }` — rejecting is what lets `runScript()` recognise
+the run as `interrupted` instead of reporting a success or a failure
+([ADR-0049](../../adr/0049-cooperative-cancellation-contract.md)).
+
+The `"ABORTED"` member of `M3LEKSWaiterResult` is consequently reachable only when an `AbortError` arrives with no _aborted_ caller signal —
+a signal that was supplied but has not fired still takes the resolving path.
+It is retained rather than removed because narrowing an exported union is a
+breaking change; removal is deferred to the next major. A caller that passes a
+signal should handle cancellation via `catch`, never via `state`.
 
 `maxWaitTime` is **required** by the SDK's `WaiterConfiguration` (not
 optional, per `@smithy/types`) — this wrapper's `options?.maxWaitTime` must

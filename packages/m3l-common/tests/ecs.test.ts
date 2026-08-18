@@ -95,6 +95,8 @@ import {
   M3LECSOperations,
 } from "../src/aws/ecs/index.js";
 
+import { M3LOperationAbortedError } from "../src/core/errors/index.js";
+
 import type { ECSClient } from "@aws-sdk/client-ecs";
 
 const CLUSTER = "test-cluster";
@@ -782,8 +784,19 @@ describe("M3LECSOperations", () => {
       expect(result).toEqual<M3LECSWaiterResult>({ state: "SUCCESS" });
     });
 
-    test("resolves with state TIMEOUT (rather than throwing) when the waiter rejects with a TimeoutError", async () => {
-      const timeoutError = new Error("Waiter has timed out");
+    // B.6 — TimeoutError reason sanitization (mirrors EKS's established contract):
+    // reason must be a fresh, static, library-constructed string naming the
+    // cluster and services, NEVER the SDK error's own message (which can embed
+    // the last DescribeServices response via @smithy/core's checkExceptions).
+    test("resolves { state: 'TIMEOUT' } with a static, library-constructed reason — never the raw SDK waiter error's own message", async () => {
+      const timeoutError = new Error(
+        JSON.stringify({
+          state: "TIMEOUT",
+          cluster: CLUSTER,
+          services: [SERVICE],
+          secret: "PLANTED-ECS-TIMEOUT-SECRET",
+        }),
+      );
       timeoutError.name = "TimeoutError";
       h.waitUntilServicesStable.mockRejectedValueOnce(timeoutError);
 
@@ -794,14 +807,25 @@ describe("M3LECSOperations", () => {
         { maxWaitTime: 5 },
       );
 
+      expect(result.state).toBe("TIMEOUT");
+      // Must NOT forward the SDK error's message (which embeds the planted secret).
+      expect(result.reason).not.toContain("PLANTED-ECS-TIMEOUT-SECRET");
+      // Must name the resource (cluster + services), matching the EKS pattern.
       expect(result).toEqual<M3LECSWaiterResult>({
         state: "TIMEOUT",
-        reason: timeoutError.message,
+        reason: `waiter timed out before services [${SERVICE}] in cluster ${CLUSTER} reached the expected state`,
       });
     });
 
-    test("resolves with state ABORTED (rather than throwing) when the waiter rejects with an AbortError", async () => {
-      const abortError = new Error("Request aborted");
+    // B.6 — ABORTED reason sanitization (no-signal case: AbortError without a
+    // caller-supplied signal still resolves ABORTED, but with a static reason).
+    test("resolves { state: 'ABORTED' } with a static, library-constructed reason — never the raw SDK waiter error's own message", async () => {
+      const abortError = new Error(
+        JSON.stringify({
+          state: "ABORTED",
+          secret: "PLANTED-ECS-ABORT-SECRET",
+        }),
+      );
       abortError.name = "AbortError";
       h.waitUntilServicesStable.mockRejectedValueOnce(abortError);
 
@@ -810,10 +834,136 @@ describe("M3LECSOperations", () => {
         SERVICE,
       ]);
 
+      expect(result.state).toBe("ABORTED");
+      expect(result.reason).not.toContain("PLANTED-ECS-ABORT-SECRET");
       expect(result).toEqual<M3LECSWaiterResult>({
         state: "ABORTED",
-        reason: abortError.message,
+        reason: `waiter aborted before services [${SERVICE}] in cluster ${CLUSTER} reached the expected state`,
       });
+    });
+
+    // A.1 — signal forwarded to the SDK waiter's abortSignal field.
+    test("forwards options.signal to the SDK waiter's abortSignal (first-argument waiter config)", async () => {
+      const controller = new AbortController();
+      h.waitUntilServicesStable.mockResolvedValueOnce({ state: "SUCCESS" });
+
+      const operations = new M3LECSOperations(fakeClient());
+      await operations.waitUntilServicesStable(CLUSTER, [SERVICE], {
+        signal: controller.signal,
+      });
+
+      const [config] = h.waitUntilServicesStable.mock.calls[0] as [
+        Record<string, unknown>,
+        unknown,
+        unknown,
+      ];
+      expect(config["abortSignal"]).toBe(controller.signal);
+    });
+
+    // A.4 — no signal → abortSignal key must be entirely absent (exactOptionalPropertyTypes).
+    test("does not set abortSignal on the waiter config when signal is omitted", async () => {
+      h.waitUntilServicesStable.mockResolvedValueOnce({ state: "SUCCESS" });
+
+      const operations = new M3LECSOperations(fakeClient());
+      await operations.waitUntilServicesStable(CLUSTER, [SERVICE]);
+
+      const [config] = h.waitUntilServicesStable.mock.calls[0] as [
+        Record<string, unknown>,
+        unknown,
+        unknown,
+      ];
+      expect(config).not.toHaveProperty("abortSignal");
+    });
+
+    // A.2/A.3 — caller-signal abort rejects with M3LOperationAbortedError,
+    // never resolves { state: "ABORTED" }.
+    test("rejects with M3LOperationAbortedError (not a resolved ABORTED state) when the caller's signal is aborted and the waiter throws AbortError", async () => {
+      const controller = new AbortController();
+      controller.abort();
+      const abortError = Object.assign(new Error("Request aborted"), {
+        name: "AbortError",
+      });
+      h.waitUntilServicesStable.mockRejectedValueOnce(abortError);
+
+      const operations = new M3LECSOperations(fakeClient());
+      await expect(
+        operations.waitUntilServicesStable(CLUSTER, [SERVICE], {
+          signal: controller.signal,
+        }),
+      ).rejects.toBeInstanceOf(M3LOperationAbortedError);
+    });
+
+    // A.3 — adversarial: M3LOperationAbortedError message must not contain
+    // anything from the SDK AbortError (which can embed the last SDK response).
+    test("adversarial: M3LOperationAbortedError message does not contain the SDK AbortError's planted secret", async () => {
+      const controller = new AbortController();
+      controller.abort();
+      const secret = "PLANTED-ECS-ABORT-REJECT-SECRET";
+      const abortError = Object.assign(
+        new Error(
+          JSON.stringify({ state: "ABORTED", cluster: CLUSTER, secret }),
+        ),
+        { name: "AbortError" },
+      );
+      h.waitUntilServicesStable.mockRejectedValueOnce(abortError);
+
+      const operations = new M3LECSOperations(fakeClient());
+      let thrown: unknown;
+      try {
+        await operations.waitUntilServicesStable(CLUSTER, [SERVICE], {
+          signal: controller.signal,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LOperationAbortedError);
+      const err = thrown as M3LOperationAbortedError;
+      expect(err.message).not.toContain(secret);
+      // cause must not chain the raw SDK error (it embeds the Describe* response)
+      expect(err.cause).toBeUndefined();
+    });
+
+    // A.2 — the rejected error has the right code, origin, and retryable.
+    test("M3LOperationAbortedError carries ERR_OPERATION_ABORTED code, origin caller, retryable false", async () => {
+      const controller = new AbortController();
+      controller.abort();
+      h.waitUntilServicesStable.mockRejectedValueOnce(
+        Object.assign(new Error("aborted"), { name: "AbortError" }),
+      );
+
+      const operations = new M3LECSOperations(fakeClient());
+      let thrown: unknown;
+      try {
+        await operations.waitUntilServicesStable(CLUSTER, [SERVICE], {
+          signal: controller.signal,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LOperationAbortedError);
+      const err = thrown as M3LOperationAbortedError;
+      expect(err.code).toBe("ERR_OPERATION_ABORTED");
+      expect(err.origin).toBe("caller");
+      expect(err.retryable).toBe(false);
+    });
+
+    // A.5 — non-aborted signal leaves success path unchanged.
+    test("non-aborted signal does not interfere with a successful wait", async () => {
+      const controller = new AbortController(); // NOT aborted
+      h.waitUntilServicesStable.mockResolvedValueOnce({ state: "SUCCESS" });
+
+      const operations = new M3LECSOperations(fakeClient());
+      const result = await operations.waitUntilServicesStable(
+        CLUSTER,
+        [SERVICE],
+        {
+          signal: controller.signal,
+        },
+      );
+
+      expect(result).toEqual<M3LECSWaiterResult>({ state: "SUCCESS" });
     });
 
     test("throws M3LECSOperationError, chaining the cause, when the waiter rejects with an unclassified error (e.g. the SDK's FAILURE terminal state, or a genuine polling call failure)", async () => {

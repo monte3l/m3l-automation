@@ -8,37 +8,37 @@
         {
           "file": "packages/m3l-common/src/core/polling/M3LPoller.ts",
           "symbol": "M3LPoller",
-          "blob": "e06f5a4fcc1596533dd9a0acb31898356b9c8d52"
+          "blob": "1d84b301b4a8757fdd9857f1f8dd7fb2fd2cbf1b"
         },
         {
           "file": "packages/m3l-common/src/core/polling/M3LPoller.ts",
           "symbol": "M3LPollCheckFn",
-          "blob": "e06f5a4fcc1596533dd9a0acb31898356b9c8d52"
+          "blob": "1d84b301b4a8757fdd9857f1f8dd7fb2fd2cbf1b"
         },
         {
           "file": "packages/m3l-common/src/core/polling/M3LPoller.ts",
           "symbol": "M3LPollDecision",
-          "blob": "e06f5a4fcc1596533dd9a0acb31898356b9c8d52"
+          "blob": "1d84b301b4a8757fdd9857f1f8dd7fb2fd2cbf1b"
         },
         {
           "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
           "symbol": "M3LRetryRunner",
-          "blob": "29e27da886f45d9c036790aad5115c5aab5cf0e5"
+          "blob": "8dc9eab4ce7dcf43c6c099561d8c3c5254573e6f"
         },
         {
           "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
           "symbol": "M3LRetryClassifier",
-          "blob": "29e27da886f45d9c036790aad5115c5aab5cf0e5"
+          "blob": "8dc9eab4ce7dcf43c6c099561d8c3c5254573e6f"
         },
         {
           "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
           "symbol": "M3LRetryDecision",
-          "blob": "29e27da886f45d9c036790aad5115c5aab5cf0e5"
+          "blob": "8dc9eab4ce7dcf43c6c099561d8c3c5254573e6f"
         },
         {
           "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
           "symbol": "M3LRetryAdvice",
-          "blob": "29e27da886f45d9c036790aad5115c5aab5cf0e5"
+          "blob": "8dc9eab4ce7dcf43c6c099561d8c3c5254573e6f"
         },
         {
           "file": "packages/m3l-common/src/core/polling/M3LBackoff.ts",
@@ -126,7 +126,7 @@
           "blob": "495b7d141c7c5404805cf4a558f5e9a748e4bc3a"
         }
       ],
-      "retrieved": "2026-08-15"
+      "retrieved": "2026-08-18"
     },
     {
       "heading": "Events",
@@ -189,15 +189,15 @@
         {
           "file": "packages/m3l-common/src/core/polling/M3LPoller.ts",
           "symbol": "M3LPoller",
-          "blob": "e06f5a4fcc1596533dd9a0acb31898356b9c8d52"
+          "blob": "1d84b301b4a8757fdd9857f1f8dd7fb2fd2cbf1b"
         },
         {
           "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
           "symbol": "M3LRetryRunner",
-          "blob": "29e27da886f45d9c036790aad5115c5aab5cf0e5"
+          "blob": "8dc9eab4ce7dcf43c6c099561d8c3c5254573e6f"
         }
       ],
-      "retrieved": "2026-08-15"
+      "retrieved": "2026-08-18"
     },
     {
       "heading": "`M3LPoller` vs. `M3LRetryRunner`",
@@ -205,15 +205,15 @@
         {
           "file": "packages/m3l-common/src/core/polling/M3LPoller.ts",
           "symbol": "M3LPoller",
-          "blob": "e06f5a4fcc1596533dd9a0acb31898356b9c8d52"
+          "blob": "1d84b301b4a8757fdd9857f1f8dd7fb2fd2cbf1b"
         },
         {
           "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
           "symbol": "M3LRetryRunner",
-          "blob": "29e27da886f45d9c036790aad5115c5aab5cf0e5"
+          "blob": "8dc9eab4ce7dcf43c6c099561d8c3c5254573e6f"
         }
       ],
-      "retrieved": "2026-08-15"
+      "retrieved": "2026-08-18"
     },
     {
       "heading": "Classifiers",
@@ -221,20 +221,20 @@
         {
           "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
           "symbol": "M3LRetryClassifier",
-          "blob": "29e27da886f45d9c036790aad5115c5aab5cf0e5"
+          "blob": "8dc9eab4ce7dcf43c6c099561d8c3c5254573e6f"
         },
         {
           "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
           "symbol": "M3LRetryDecision",
-          "blob": "29e27da886f45d9c036790aad5115c5aab5cf0e5"
+          "blob": "8dc9eab4ce7dcf43c6c099561d8c3c5254573e6f"
         },
         {
           "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
           "symbol": "M3LRetryAdvice",
-          "blob": "29e27da886f45d9c036790aad5115c5aab5cf0e5"
+          "blob": "8dc9eab4ce7dcf43c6c099561d8c3c5254573e6f"
         }
       ],
-      "retrieved": "2026-08-15"
+      "retrieved": "2026-08-18"
     },
     {
       "heading": "Composing classifiers",
@@ -296,12 +296,12 @@
         {
           "file": "packages/m3l-common/src/core/polling/M3LPoller.ts",
           "symbol": "M3LPoller",
-          "blob": "e06f5a4fcc1596533dd9a0acb31898356b9c8d52"
+          "blob": "1d84b301b4a8757fdd9857f1f8dd7fb2fd2cbf1b"
         },
         {
           "file": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
           "symbol": "M3LRetryRunner",
-          "blob": "29e27da886f45d9c036790aad5115c5aab5cf0e5"
+          "blob": "8dc9eab4ce7dcf43c6c099561d8c3c5254573e6f"
         },
         {
           "file": "packages/m3l-common/src/core/polling/M3LBackoff.ts",
@@ -309,7 +309,7 @@
           "blob": "b31f14c8321bcad8b9f9eeff6afb00507a393d3d"
         }
       ],
-      "retrieved": "2026-08-15"
+      "retrieved": "2026-08-18"
     }
   ]
 }

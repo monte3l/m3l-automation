@@ -221,6 +221,46 @@ duration of a `runScript()` call it is `5` (`INTERRUPTED`), and the previous
 value is restored when that call settles — so a bare `run()` in the same
 process keeps forcing `1`, exactly as it did before the wrapper existed.
 
+### Cooperative cancellation (`script.signal`)
+
+`M3LScript` owns an `AbortController` and exposes its signal through the
+`signal` accessor, shaped like the existing [`paths`](#notes-and-behavior)
+accessor:
+
+```typescript
+get signal(): AbortSignal;
+```
+
+On the **first** shutdown signal the controller is aborted _before_
+`runCleanup("signal-shutdown")` is invoked. The ordering is deliberate: a
+cleanup hook may itself await a poller or waiter, and aborting first means it
+observes an already-cancelled signal instead of starting a fresh multi-minute
+wait while the process is shutting down.
+
+Pass `script.signal` into anything that blocks — a
+[`M3LPoller`/`M3LRetryRunner`](./polling.md#cooperative-cancellation), or an
+`aws/**` waiter or query poll — and Ctrl-C becomes cooperative instead of
+merely abandoning the process:
+
+```typescript
+await script.aws.services.ecsOperations.waitUntilServicesStable(
+  cluster,
+  services,
+  { signal: script.signal },
+);
+```
+
+An aborted wait rejects with
+[`M3LOperationAbortedError`](./errors.md#m3loperationabortederror), which
+`runScript()` maps to the `interrupted` outcome and exit code `5` rather than a
+failure (see [diagnostics](./diagnostics.md)).
+
+Because signal handlers are registered only outside AWS execution environments,
+in Lambda the accessor still exists and simply never aborts — callers need no
+environment-specific branch. The signal is observed at operation and step
+boundaries; it does not interrupt CPU-bound synchronous code
+([ADR-0049](../../adr/0049-cooperative-cancellation-contract.md)).
+
 ## Process guards
 
 `installProcessGuards()` is a process-global singleton that installs `unhandledRejection`, `uncaughtException`, `warning`, and `beforeExit` handlers. In Lambda, call `setProcessGuardRequestId(requestId)` to attribute guard-caught errors to the current invocation. `serializeError` produces a serializable representation of an error for these guard paths.
@@ -465,7 +505,7 @@ export const handler = script.createLambdaHandler<MyEvent, MyResult>(
 - The provisioning seam looks up its values under the exported constants `AWS_PROFILE_PARAM_NAME` (`"aws.profile"`) and `AWS_REGION_PARAM_NAME` (`"aws.region"`). Declare the parameter with the constant — `new M3LConfigParameter({ name: AWS_PROFILE_PARAM_NAME, type: M3LConfigParameterType.STRING })` — rather than a hand-typed `"aws.profile"` string, so a typo is a compile error instead of a silent no-op (the provisioning stage simply never fires for a mis-named parameter). The resolved values are validated through `parseAWSProfile`/`parseAWSRegion`, so a malformed configured value fails loud with `M3LAWSIdentityError`.
 - `script.paths` exposes the script's own [`M3LPaths`](./utils.md) instance (the one `M3LScript` builds at construction and uses for run archival), so `mainFn` and hooks resolve the canonical `data/` tree — including `paths.resolveInput(name)` / `paths.resolveOutput(name)` — without constructing a second `new M3LPaths()`.
 - Per-invocation Lambda reset clears `initialized`, `configLoaded`, and the config store; it does not tear down client providers.
-- Signal handlers exist only outside AWS environments.
+- Signal handlers exist only outside AWS environments; `script.signal` is always present regardless, and simply never aborts where they are not installed.
 
 ## See also
 

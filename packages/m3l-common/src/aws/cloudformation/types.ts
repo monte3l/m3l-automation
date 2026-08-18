@@ -202,6 +202,12 @@ export interface M3LCloudFormationStackEvent {
  */
 export interface M3LCloudFormationWaitOptions {
   readonly maxWaitTime?: number;
+  /**
+   * When aborted while the SDK waiter is polling, the method throws
+   * {@link M3LOperationAbortedError} instead of resolving. Forwarded to the
+   * SDK waiter's `abortSignal` field in `WaiterConfiguration`.
+   */
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -211,6 +217,13 @@ export interface M3LCloudFormationWaitOptions {
  * the SDK's unclassifiable `FAILURE` state) throws
  * {@link M3LCloudFormationOperationError} instead of resolving — see the
  * spec page's "Waiters" section.
+ *
+ * @remarks
+ * The `"ABORTED"` state is retained for backwards compatibility but is now
+ * reachable only when an `AbortError` arrives with no *aborted* caller signal
+ * (i.e. an SDK-internal abort path). A caller-initiated abort — when
+ * `options.signal` is supplied and fires — rejects with
+ * {@link M3LOperationAbortedError} instead.
  */
 export interface M3LCloudFormationWaiterResult {
   readonly state: "SUCCESS" | "ABORTED" | "TIMEOUT";

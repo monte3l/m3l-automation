@@ -5,7 +5,11 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
-import { M3L_ERROR_CODES, M3LError } from "../src/core/errors/index.js";
+import {
+  M3L_ERROR_CODES,
+  M3LError,
+  M3LOperationAbortedError,
+} from "../src/core/errors/index.js";
 import type { M3LErrorCode } from "../src/core/errors/index.js";
 import {
   classifyErrorCode,
@@ -369,6 +373,18 @@ describe("mapErrorToExitCode()", () => {
     for (const input of inputs) {
       expect(mapErrorToExitCode(input)).not.toBe(5);
     }
+  });
+
+  // ADR-0049: M3LOperationAbortedError has origin:"caller" and
+  // code:"ERR_OPERATION_ABORTED", so mapErrorToExitCode classifies it as
+  // CONFIG_USAGE (2) — NOT INTERRUPTED (5). The INTERRUPTED assignment for a
+  // cancelled run is handled inside runScript() (which tests for the abort
+  // code BEFORE routing through this function), so mapErrorToExitCode remains
+  // unchanged and M3LErrorExitCode stays `1|2|3|4`.
+  test("M3LOperationAbortedError (origin:caller, code:ERR_OPERATION_ABORTED) maps to CONFIG_USAGE (2) via mapErrorToExitCode — never INTERRUPTED (5)", () => {
+    const error = new M3LOperationAbortedError("operation cancelled by signal");
+    expect(mapErrorToExitCode(error)).toBe(2);
+    expect(mapErrorToExitCode(error)).not.toBe(5);
   });
 
   test("an explicit M3LError.origin beats the catalog classification for its code (disagreement case)", () => {

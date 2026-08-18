@@ -70,6 +70,19 @@ Per the Claude API/Agent SDK reference (`platform.claude.com/docs/en/build-with-
   only and a heuristic over text, not a parse of `stop_reason`/`subtype` (the
   hook payload doesn't expose those) — treat its absence of a warning as "no
   signal," not as proof the report is trustworthy.
+- **The one deterministic detector: diff the tree against the expected file
+  list.** Every heuristic above reads the spoke's _text_. Run
+  `git diff --stat` (plus `git status --short`) and compare against the files
+  the dispatch was supposed to touch — this is the only check that catches the
+  worst shape, where a spoke reports work, truncates, and has made **zero
+  functional progress**. `2026-08-18-a1-cooperative-cancellation-seam.md` §2: an
+  AWS implementer spent ~98k tokens and 67 tool calls adding a field to five
+  options interfaces, never reached a single `client.ts`, and left the failing
+  test count byte-identical to the RED baseline. The prose heuristic flagged the
+  truncation; only the diff revealed the work was hollow. Corollary: re-run the
+  spoke's own gates from the hub afterwards — a truncated spoke that finished
+  its edits and a truncated spoke that did not are indistinguishable from their
+  transcript tail.
 - Recovery for a turn-limit exhaustion: resume the session (capture and reuse
   its ID / call `SendMessage` to the **same** spoke) rather than starting a
   fresh agent — a fresh dispatch has no memory of the prior exploration and

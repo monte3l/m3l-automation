@@ -15,7 +15,8 @@ This submodule is the ADR-0029 W4 prerequisite for the `athena-query` consumer s
 Exported from `@m3l-automation/m3l-common/aws` (and re-exported under the `AWS` namespace):
 
 - `M3LAthenaClient` — the query wrapper class.
-- `AthenaAwaitOptions` — optional-override type for `awaitResults`/`runQuery`.
+- `AthenaAwaitOptions` — optional-override type for `awaitResults`/`runQuery`, carrying `pollerOptions` and an
+  optional `signal` (see Cooperative cancellation).
 - `StartAthenaQueryInput` — `startQuery`/`runQuery` input shape.
 - `AthenaQueryResult` — the successful result shape.
 - `AthenaQueryStatistics`, `AthenaQueryStatus`, `AthenaRow`, `AthenaColumnInfo` — supporting types.
@@ -179,6 +180,38 @@ partially-compiled result.
 `M3LAthenaQueryFailedError` is likewise thrown when a `GetQueryExecution` or `GetQueryResults` SDK call itself fails after retries are exhausted: both are retried under AWS throttling (`M3LRetryRunner` + `M3LPollingPolicies.awsThrottling()`). A genuine send failure is reported with `status: "UNKNOWN"` and the original error chained via `cause`. This is in addition to its existing terminal-AWS-status case (`FAILED`/`CANCELLED`), which still carries no `cause` — a successful response carrying a terminal status has no exception to chain.
 
 Poll-attempt exhaustion (the attempt bound reached while the query is still `QUEUED`/`RUNNING`) is **not** wrapped: the `M3LPoller`-thrown plain `M3LError` with `code === "ERR_POLL_EXHAUSTED"` propagates unchanged. Callers narrow by `code`, never by `instanceof` on a poller-internal class (that class is intentionally not exported from the public barrel).
+
+### Cooperative cancellation
+
+`AthenaAwaitOptions` accepts an optional `signal?: AbortSignal`, threaded into **three** places, so no
+layer of the wait can outlive the abort:
+
+1. the `M3LPoller` that drives `awaitResults` (and therefore `runQuery`), so a
+   pending backoff is abandoned rather than slept out;
+2. the inner `M3LRetryRunner` that wraps each `GetQueryExecution`/`GetQueryResults` call for
+   throttling retries (built from `M3LPollingPolicies.athenaQuery()`) — without this, an
+   abort landing mid-throttle-backoff would sleep out the remaining delay (up to
+   the 5s cap) before being honoured;
+3. the **per-command** `abortSignal` on each `GetQueryExecution`/`GetQueryResults` `send()`, so the
+   in-flight HTTP request is cancelled rather than merely ignored.
+
+An `AbortError` surfacing from an aborted `send()` is re-classified as
+`M3LOperationAbortedError` **before** the query-failed wrapper runs, so a
+cancellation is never reported as a failed query.
+
+When both `signal` and `pollerOptions` are supplied, the dedicated `signal` wins.
+`pollerOptions` is typed `Omit<M3LPollerOptions, "signal">` so the ambiguous
+case cannot be written as an object literal at all; the runtime precedence remains
+as a guard for a caller passing a pre-typed variable. When the
+signal aborts, the poll rejects with
+[`M3LOperationAbortedError`](../core/errors.md#m3loperationabortederror)
+(`ERR_OPERATION_ABORTED`, `origin: "caller"`, `retryable: false`) and abandons
+any pending backoff delay rather than sleeping it out. Omitting the signal leaves
+behavior exactly as before.
+
+Cancelling stops this client waiting; it does not cancel the query
+Athena-side. Use the service's own cancellation call if the query itself must
+be stopped ([ADR-0049](../../adr/0049-cooperative-cancellation-contract.md)).
 
 ## See also
 

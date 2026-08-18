@@ -11,6 +11,7 @@ import {
   collectDiagnostics,
   mapErrorToExitCode,
 } from "../diagnostics/index.js";
+import { hasProperty } from "../utils/guards.js";
 import type {
   M3LBreadcrumbTrail,
   M3LConfigSchemaPort,
@@ -100,6 +101,23 @@ async function persistBestEffort(
   }
 }
 
+/**
+ * Returns `true` when `error` is a cooperative-cancellation abort, identified
+ * by code `"ERR_OPERATION_ABORTED"` rather than by class — a structurally-
+ * equivalent abort produced across a module boundary still classifies
+ * correctly without relying on prototype-chain identity (ADR-0049).
+ *
+ * This is the single predicate shared by the exit-code and outcome branches
+ * in {@link runScript} — duplication is the defect it prevents.
+ */
+function isAbortError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  // Code-based classification per ADR-0049: a structurally-equivalent abort
+  // produced across a module boundary (different prototype chain) still
+  // classifies correctly. `hasProperty` narrows safely without casting.
+  return hasProperty(error, "code") && error.code === "ERR_OPERATION_ABORTED";
+}
+
 /** The `timeline` entry, when a `trail` was supplied — omitted otherwise. */
 function timelineEntry(
   trail: Pick<M3LBreadcrumbTrail, "entries"> | undefined,
@@ -175,7 +193,13 @@ function buildSuccessInput(
   };
 }
 
-/** Builds the persisted report input for a failed outcome. */
+/**
+ * Builds the persisted report input for a failed or interrupted outcome.
+ *
+ * When `error` is a cooperative-cancellation abort (identified by
+ * `isAbortError`), the outcome is `"interrupted"` — a cancelled run is an
+ * operator decision, not a fault. All other errors produce `"failure"`.
+ */
 function buildFailureInput(
   script: M3LScript,
   startedAt: Date,
@@ -186,12 +210,56 @@ function buildFailureInput(
     script: script.metadata,
     correlationId: script.correlationId ?? UNRESOLVED_CORRELATION_ID,
     startedAt,
-    outcome: "failure",
+    outcome: isAbortError(error) ? "interrupted" : "failure",
     stage: script.getLastFailureStage() ?? "unknown",
     error,
     ...timelineEntry(options?.trail),
     ...environmentEntry(script),
   };
+}
+
+/**
+ * Handles the failure path of a {@link runScript} run: logs the error, sets
+ * `process.exitCode` (FIRST, before any report work — see the ordering
+ * guarantee in {@link runScript}'s TSDoc), then best-effort persists a
+ * failure/interrupted report.
+ *
+ * Extracted from `runScript`'s `catch` block to keep that function's
+ * complexity within the enforced threshold while preserving every behavioral
+ * guarantee exactly — including the exit-code-first ordering that protects
+ * against a throw in the reporting path losing the exit code.
+ */
+async function handleRunFailure(
+  error: unknown,
+  script: M3LScript,
+  startedAt: Date,
+  reporter: M3LRunReporter | undefined,
+  options: M3LRunScriptOptions | undefined,
+): Promise<void> {
+  script.logger.errorFrom(error);
+  // Assigned immediately and BEFORE any report construction/persistence —
+  // a throw in the reporting path must never cost the exit code.
+  //
+  // `persistBestEffort`'s payload construction (`buildFailureInput`) is as
+  // fallible as the I/O call itself — a caller-supplied `options.trail` whose
+  // `entries()` throws is one concrete example. Assigning `process.exitCode`
+  // before entering `persistBestEffort` (not merely before `reporter.persist`)
+  // ensures that even a build-phase throw cannot lose the exit code.
+  // `mapErrorToExitCode` needs only `error`, so assigning first costs nothing.
+  // This matches the library-src rule: a best-effort wrapper must guard the
+  // construction of its payload, not only the I/O call. A prior incident
+  // (logged) showed a real failure silently becoming exit-0 when this
+  // ordering was not upheld.
+  process.exitCode = isAbortError(error)
+    ? M3L_EXIT_CODES.INTERRUPTED
+    : mapErrorToExitCode(error);
+
+  if (reporter !== undefined) {
+    const reportStartedAt = script.runStartedAt ?? startedAt;
+    await persistBestEffort(reporter, () =>
+      buildFailureInput(script, reportStartedAt, options, error),
+    );
+  }
 }
 
 /**
@@ -297,25 +365,7 @@ export async function runScript(
       );
     }
   } catch (error) {
-    script.logger.errorFrom(error);
-    // Assigned immediately after `errorFrom` and BEFORE any report
-    // construction/persistence below — `mapErrorToExitCode` needs only
-    // `error`, so nothing is lost by resolving it first. This guarantees the
-    // exit code is set even if building or persisting the failure report
-    // itself throws (e.g. a hostile `options.trail.entries()`), since
-    // `persistBestEffort` already isolates that failure on its own but this
-    // removes any dependency on it doing so.
-    process.exitCode = mapErrorToExitCode(error);
-
-    if (reporter !== undefined) {
-      // See the success branch above: prefer the script's own per-run
-      // timestamp so the failure report lands in the same per-run directory
-      // stage-9 archival (if it ran before failing) used.
-      const reportStartedAt = script.runStartedAt ?? startedAt;
-      await persistBestEffort(reporter, () =>
-        buildFailureInput(script, reportStartedAt, options, error),
-      );
-    }
+    await handleRunFailure(error, script, startedAt, reporter, options);
   } finally {
     releaseForcedSignalExitCode();
   }
