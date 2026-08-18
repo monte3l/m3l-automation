@@ -296,20 +296,32 @@ interface M3LOperationPipelineCoreOptions<
     TResult,
     TContext
   >;
-  /** Runs after dispatch, before `finalize`, to persist the handler's result. */
+  /**
+   * Runs after dispatch, before `finalize`, to persist the handler's result.
+   *
+   * @param operation - The operation that was dispatched. Appended last
+   *   (unlike other pipeline callbacks where operation comes first) so
+   *   existing 3-argument persist implementations remain source-compatible.
+   */
   readonly persist?: (
     result: TResult,
     settings: TSettings,
     deps: TDeps,
+    operation: TOp,
   ) => Promise<void>;
   /**
    * Runs after `persist`, so a post-dispatch assertion that throws still
    * leaves the persisted result on disk.
+   *
+   * @param operation - The operation that was dispatched. Appended last
+   *   (unlike other pipeline callbacks where operation comes first) so
+   *   existing 3-argument finalize implementations remain source-compatible.
    */
   readonly finalize?: (
     result: TResult,
     settings: TSettings,
     deps: TDeps,
+    operation: TOp,
   ) => void | Promise<void>;
 }
 

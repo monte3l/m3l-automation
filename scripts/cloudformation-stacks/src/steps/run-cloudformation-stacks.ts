@@ -446,21 +446,6 @@ async function dispatchWrite(
 }
 
 /**
- * True when `result` is a `wait-stack-*-complete` outcome — the only member
- * of {@link DispatchResult} carrying a `state` field.`finalize` is not
- * passed `operation` (it is not part of the engine's `finalize` contract),
- * so this structural check is how it recognizes a wait result to assert
- * against.
- */
-function isWaiterResult(
-  result: DispatchResult,
-): result is AWS.M3LCloudFormationWaiterResult {
-  return (
-    result !== undefined && typeof result === "object" && "state" in result
-  );
-}
-
-/**
  * The `cloudformation-stacks` pipeline: resolve settings → (for every
  * operation) plan a write dispatch → (for `create-stack`/`update-stack`/
  * `delete-stack`) the destructive-operation gate → the operation-appropriate
@@ -515,15 +500,24 @@ const pipeline = new Core.M3LOperationPipeline<
     });
     await exporter.export(result);
   },
-  finalize: (result, _settings, deps) => {
-    if (!isWaiterResult(result) || result.state === "SUCCESS") return;
+  finalize: (result, _settings, deps, operation) => {
+    if (
+      operation !== "wait-stack-create-complete" &&
+      operation !== "wait-stack-update-complete" &&
+      operation !== "wait-stack-delete-complete"
+    )
+      return;
+    const waiterResult = result as AWS.M3LCloudFormationWaiterResult;
+    if (waiterResult.state === "SUCCESS") return;
     throw new Core.M3LError(
-      `cloudformation-stacks run ${deps.correlationId}: wait operation resolved '${result.state}', not SUCCESS`,
+      `cloudformation-stacks run ${deps.correlationId}: wait operation resolved '${waiterResult.state}', not SUCCESS`,
       {
         code: "ERR_CLOUDFORMATION_STACKS_WAIT_NOT_COMPLETE",
         context: {
-          state: result.state,
-          ...(result.reason !== undefined && { reason: result.reason }),
+          state: waiterResult.state,
+          ...(waiterResult.reason !== undefined && {
+            reason: waiterResult.reason,
+          }),
         },
       },
     );

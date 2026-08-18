@@ -160,10 +160,10 @@ export class M3LOperationPipeline<
     // finalize (e.g. a wait that did not stabilize) still leaves the
     // persisted result on disk.
     if (options.persist) {
-      await options.persist(result, settings, deps);
+      await options.persist(result, settings, deps, operation);
     }
     if (options.finalize) {
-      await options.finalize(result, settings, deps);
+      await options.finalize(result, settings, deps, operation);
     }
 
     // Phase 10: outcome.
