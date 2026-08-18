@@ -107,6 +107,8 @@ import {
 
 import type { CloudFormationClient } from "@aws-sdk/client-cloudformation";
 
+import { M3LOperationAbortedError } from "../src/core/errors/index.js";
+
 const STACK_NAME = "test-stack";
 const STACK_ID = `arn:aws:cloudformation:eu-south-1:123456789012:stack/${STACK_NAME}/abc-123`;
 
@@ -992,31 +994,166 @@ describe("M3LCloudFormationOperations", () => {
       });
     });
 
-    test("resolves { state: 'TIMEOUT', reason } when the waiter rejects with a TimeoutError", async () => {
-      const timeoutError = new Error("Waiter has timed out");
+    // B.6 — TimeoutError reason sanitization (mirrors EKS's established contract):
+    // reason must be a fresh, static, library-constructed string naming the
+    // method and stack, NEVER the SDK error's own message (which can embed the
+    // last DescribeStacks response via @smithy/core's checkExceptions, including
+    // caller-supplied parameter/output values).
+    test("resolves { state: 'TIMEOUT' } with a static, library-constructed reason — never the raw SDK waiter error's own message", async () => {
+      const timeoutError = new Error(
+        JSON.stringify({
+          state: "TIMEOUT",
+          stackName: STACK_NAME,
+          secret: "PLANTED-CF-TIMEOUT-SECRET",
+        }),
+      );
       timeoutError.name = "TimeoutError";
       spy().mockRejectedValueOnce(timeoutError);
 
       const operations = new M3LCloudFormationOperations(fakeClient());
       const result = await operations[methodName](STACK_NAME);
 
+      expect(result.state).toBe("TIMEOUT");
+      // Must NOT forward the SDK error's message (which embeds the planted secret).
+      expect(result.reason).not.toContain("PLANTED-CF-TIMEOUT-SECRET");
+      // Must name the resource (stack name), matching the EKS pattern.
       expect(result).toEqual<M3LCloudFormationWaiterResult>({
         state: "TIMEOUT",
-        reason: timeoutError.message,
+        reason: `waiter timed out before stack ${STACK_NAME} reached the expected state`,
       });
     });
 
-    test("resolves { state: 'ABORTED', reason } when the waiter rejects with an AbortError", async () => {
-      const abortError = new Error("Request aborted");
+    // B.6 — ABORTED reason sanitization (no-signal case: AbortError without a
+    // caller-supplied signal still resolves ABORTED, but with a static reason).
+    test("resolves { state: 'ABORTED' } with a static, library-constructed reason — never the raw SDK waiter error's own message", async () => {
+      const abortError = new Error(
+        JSON.stringify({
+          state: "ABORTED",
+          secret: "PLANTED-CF-ABORT-SECRET",
+        }),
+      );
       abortError.name = "AbortError";
       spy().mockRejectedValueOnce(abortError);
 
       const operations = new M3LCloudFormationOperations(fakeClient());
       const result = await operations[methodName](STACK_NAME);
 
+      expect(result.state).toBe("ABORTED");
+      expect(result.reason).not.toContain("PLANTED-CF-ABORT-SECRET");
       expect(result).toEqual<M3LCloudFormationWaiterResult>({
         state: "ABORTED",
-        reason: abortError.message,
+        reason: `waiter aborted before stack ${STACK_NAME} reached the expected state`,
+      });
+    });
+
+    // A.1 — signal forwarded to the SDK waiter's abortSignal field.
+    test("forwards options.signal to the SDK waiter's abortSignal (first-argument waiter config)", async () => {
+      const controller = new AbortController();
+      spy().mockResolvedValueOnce({ state: "SUCCESS" });
+
+      const operations = new M3LCloudFormationOperations(fakeClient());
+      await operations[methodName](STACK_NAME, { signal: controller.signal });
+
+      const [config] = spy().mock.calls[0] as [
+        Record<string, unknown>,
+        unknown,
+        unknown,
+      ];
+      expect(config["abortSignal"]).toBe(controller.signal);
+    });
+
+    // A.4 — no signal → abortSignal key must be entirely absent.
+    test("does not set abortSignal on the waiter config when signal is omitted", async () => {
+      spy().mockResolvedValueOnce({ state: "SUCCESS" });
+
+      const operations = new M3LCloudFormationOperations(fakeClient());
+      await operations[methodName](STACK_NAME);
+
+      const [config] = spy().mock.calls[0] as [
+        Record<string, unknown>,
+        unknown,
+        unknown,
+      ];
+      expect(config).not.toHaveProperty("abortSignal");
+    });
+
+    // A.2/A.3 — caller-signal abort rejects with M3LOperationAbortedError.
+    test("rejects with M3LOperationAbortedError (not a resolved ABORTED state) when the caller's signal is aborted and the waiter throws AbortError", async () => {
+      const controller = new AbortController();
+      controller.abort();
+      const abortError = Object.assign(new Error("Request aborted"), {
+        name: "AbortError",
+      });
+      spy().mockRejectedValueOnce(abortError);
+
+      const operations = new M3LCloudFormationOperations(fakeClient());
+      await expect(
+        operations[methodName](STACK_NAME, { signal: controller.signal }),
+      ).rejects.toBeInstanceOf(M3LOperationAbortedError);
+    });
+
+    // A.3 — adversarial: thrown error's message must not contain SDK payload.
+    test("adversarial: M3LOperationAbortedError message does not contain the SDK AbortError's planted secret, and cause is not chained", async () => {
+      const controller = new AbortController();
+      controller.abort();
+      const secret = "PLANTED-CF-ABORT-REJECT-SECRET";
+      const abortError = Object.assign(
+        new Error(
+          JSON.stringify({ state: "ABORTED", stackName: STACK_NAME, secret }),
+        ),
+        { name: "AbortError" },
+      );
+      spy().mockRejectedValueOnce(abortError);
+
+      const operations = new M3LCloudFormationOperations(fakeClient());
+      let thrown: unknown;
+      try {
+        await operations[methodName](STACK_NAME, { signal: controller.signal });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LOperationAbortedError);
+      const err = thrown as M3LOperationAbortedError;
+      expect(err.message).not.toContain(secret);
+      expect(err.cause).toBeUndefined();
+    });
+
+    // A.2 — M3LOperationAbortedError classification contract.
+    test("M3LOperationAbortedError carries ERR_OPERATION_ABORTED code, origin caller, retryable false", async () => {
+      const controller = new AbortController();
+      controller.abort();
+      spy().mockRejectedValueOnce(
+        Object.assign(new Error("aborted"), { name: "AbortError" }),
+      );
+
+      const operations = new M3LCloudFormationOperations(fakeClient());
+      let thrown: unknown;
+      try {
+        await operations[methodName](STACK_NAME, { signal: controller.signal });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LOperationAbortedError);
+      const err = thrown as M3LOperationAbortedError;
+      expect(err.code).toBe("ERR_OPERATION_ABORTED");
+      expect(err.origin).toBe("caller");
+      expect(err.retryable).toBe(false);
+    });
+
+    // A.5 — non-aborted signal leaves success path unchanged.
+    test("non-aborted signal does not interfere with a successful wait", async () => {
+      const controller = new AbortController(); // NOT aborted
+      spy().mockResolvedValueOnce({ state: "SUCCESS" });
+
+      const operations = new M3LCloudFormationOperations(fakeClient());
+      const result = await operations[methodName](STACK_NAME, {
+        signal: controller.signal,
+      });
+
+      expect(result).toEqual<M3LCloudFormationWaiterResult>({
+        state: "SUCCESS",
       });
     });
 

@@ -18,6 +18,8 @@ import type { M3LPollerOptions } from "../../core/polling/M3LPoller.js";
 import { M3LPollingPolicies } from "../../core/polling/M3LPollingPolicies.js";
 import { M3LRetryRunner } from "../../core/polling/M3LRetryRunner.js";
 
+import { M3LOperationAbortedError } from "../../core/errors/index.js";
+
 import {
   M3LLogsInsightsQueryFailedError,
   M3LLogsInsightsStartQueryError,
@@ -27,6 +29,24 @@ import type {
   LogsInsightsRow,
   StartLogsInsightsQueryInput,
 } from "./types.js";
+
+/**
+ * Returns `true` when `signal` is defined and has fired. A named function
+ * rather than an inline `signal?.aborted` check prevents TypeScript's
+ * control-flow narrowing from producing a TS2367 false-alarm on a second
+ * check that follows an `await`.
+ */
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal !== undefined && signal.aborted;
+}
+
+/**
+ * Returns `true` when `err` is an `AbortError` thrown by the AWS SDK when
+ * an `abortSignal` fires during an in-flight `send()`.
+ */
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === "AbortError";
+}
 
 /**
  * Collapses one AWS `ResultField[]` row into a plain record, preserving every
@@ -51,6 +71,18 @@ export interface LogsInsightsAwaitOptions {
    * itself is not part of the public barrel.
    */
   readonly pollerOptions?: M3LPollerOptions;
+  /**
+   * Optional `AbortSignal` for cooperative cancellation (ADR-0049).
+   *
+   * When supplied the signal is forwarded to the underlying {@link M3LPoller}
+   * (so a pending backoff is abandoned immediately on abort) and to every
+   * `GetQueryResults` `send()` call as its `abortSignal`.
+   *
+   * When both `signal` and `pollerOptions.signal` are present, `signal` wins.
+   * Omitting this option leaves behaviour exactly as it was before the option
+   * existed.
+   */
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -140,17 +172,26 @@ export class M3LLogsInsightsClient {
    * within the project's cyclomatic-complexity budget.
    *
    * @param queryId - The AWS-assigned query identifier to poll.
+   * @param signal - Optional abort signal forwarded to the `send()` call.
+   * @throws {@link M3LOperationAbortedError} When the signal aborts during an
+   *   in-flight `send()`.
    * @throws {@link M3LLogsInsightsQueryFailedError} (`status: "Unknown"`) when
    *   the send itself fails after any throttling retries are exhausted.
    */
   async #fetchQueryResults(
     queryId: string,
+    signal?: AbortSignal,
   ): Promise<GetQueryResultsCommandOutput> {
+    const cmd = new GetQueryResultsCommand({ queryId });
     try {
       return await new M3LRetryRunner(M3LPollingPolicies.awsThrottling()).run(
-        () => this.#client.send(new GetQueryResultsCommand({ queryId })),
+        signal !== undefined
+          ? () => this.#client.send(cmd, { abortSignal: signal })
+          : () => this.#client.send(cmd),
       );
     } catch (cause) {
+      if (isAborted(signal) && isAbortError(cause))
+        throw new M3LOperationAbortedError();
       throw new M3LLogsInsightsQueryFailedError(
         `GetQueryResults failed for query ${queryId}`,
         { queryId, status: "Unknown", cause },
@@ -177,13 +218,16 @@ export class M3LLogsInsightsClient {
     queryId: string,
     options?: LogsInsightsAwaitOptions,
   ): Promise<LogsInsightsQueryResult> {
-    const poller = new M3LPoller(
-      options?.pollerOptions ?? M3LPollingPolicies.cloudWatchLogsQuery(),
-    );
+    const signal = options?.signal;
+    const baseOptions =
+      options?.pollerOptions ?? M3LPollingPolicies.cloudWatchLogsQuery();
+    const effectiveOptions: M3LPollerOptions =
+      signal !== undefined ? { ...baseOptions, signal } : baseOptions;
+    const poller = new M3LPoller(effectiveOptions);
 
     const response = await poller.poll<GetQueryResultsCommandOutput>(
       async () => {
-        const result = await this.#fetchQueryResults(queryId);
+        const result = await this.#fetchQueryResults(queryId, signal);
         switch (result.status) {
           case "Complete":
             return { type: "success", value: result };

@@ -35,7 +35,10 @@ import {
   type CloudWatchLogsClient,
 } from "@aws-sdk/client-cloudwatch-logs";
 
-import { M3LError } from "../src/core/errors/index.js";
+import {
+  M3LError,
+  M3LOperationAbortedError,
+} from "../src/core/errors/index.js";
 import { M3LBackoff } from "../src/core/polling/index.js";
 
 import {
@@ -369,9 +372,145 @@ describe("M3LLogsInsightsClient.awaitResults", () => {
 
     expect(Object.hasOwn(result, "statistics")).toBe(false);
   });
+
+  // ── Cooperative cancellation (ADR-0049) ─────────────────────────────────
+
+  // C.7 / C.8 — signal reaches M3LPoller; abort abandons pending backoff.
+  // Assert WITHOUT advancing past the 300s backoff to prove abandonment.
+  test("rejects with M3LOperationAbortedError when the caller's signal is aborted, without waiting out the backoff delay", async () => {
+    const controller = new AbortController();
+    controller.abort(); // pre-aborted
+    const send = vi.fn().mockResolvedValue({ status: "Running", results: [] });
+    const client = new M3LLogsInsightsClient(fakeClient(send));
+
+    const promise = client.awaitResults("q-preaborted", {
+      signal: controller.signal,
+      pollerOptions: { backoff: M3LBackoff.constant(300_000), maxAttempts: 3 },
+    });
+
+    const result = await Promise.race([
+      promise.catch((e: unknown) => e),
+      vi.advanceTimersByTimeAsync(100).then(() => "no-rejection"),
+    ]);
+
+    expect(result).toBeInstanceOf(M3LOperationAbortedError);
+  });
+
+  // C.9 — signal forwarded to the GetQueryResults send() second argument.
+  test("forwards options.signal to the GetQueryResults send() call as the second argument's abortSignal", async () => {
+    const controller = new AbortController();
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({ status: "Complete", results: [] });
+    const client = new M3LLogsInsightsClient(fakeClient(send));
+
+    await settleWithTimers(
+      client.awaitResults("q-signal-send", { signal: controller.signal }),
+    );
+
+    // GetQueryResults send — second arg must carry abortSignal.
+    const [, sendOptions] = send.mock.calls[0] as [
+      unknown,
+      { abortSignal?: AbortSignal } | undefined,
+    ];
+    expect(sendOptions?.abortSignal).toBe(controller.signal);
+  });
+
+  // C.10 — AbortError from send + aborted signal → M3LOperationAbortedError,
+  // NOT M3LLogsInsightsQueryFailedError.
+  test("surfaces as M3LOperationAbortedError (not M3LLogsInsightsQueryFailedError) when GetQueryResults send rejects with AbortError while the signal is aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const abortError = Object.assign(new Error("aborted by signal"), {
+      name: "AbortError",
+    });
+    const send = vi.fn().mockRejectedValue(abortError);
+    const client = new M3LLogsInsightsClient(fakeClient(send));
+
+    const thrown = await settleWithTimers(
+      client
+        .awaitResults("q-abort-send", { signal: controller.signal })
+        .catch((e: unknown) => e),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LOperationAbortedError);
+    expect(thrown).not.toBeInstanceOf(M3LLogsInsightsQueryFailedError);
+  });
+
+  // C.11 — options.signal wins over pollerOptions.signal when both provided.
+  test("options.signal wins over pollerOptions.signal when both are supplied", async () => {
+    const mainController = new AbortController();
+    mainController.abort(); // options.signal is aborted
+    const pollerController = new AbortController(); // NOT aborted
+    const send = vi.fn().mockResolvedValue({ status: "Running", results: [] });
+    const client = new M3LLogsInsightsClient(fakeClient(send));
+
+    const thrown = await settleWithTimers(
+      client
+        .awaitResults("q-signal-wins", {
+          signal: mainController.signal,
+          pollerOptions: {
+            backoff: M3LBackoff.constant(1),
+            signal: pollerController.signal,
+          },
+        })
+        .catch((e: unknown) => e),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LOperationAbortedError);
+  });
+
+  // C.12 — omitting signal leaves behavior unchanged.
+  test("omitting signal leaves awaitResults behavior unchanged — no abortSignal on send calls", async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({ status: "Complete", results: [] });
+    const client = new M3LLogsInsightsClient(fakeClient(send));
+
+    await settleWithTimers(client.awaitResults("q-nosig"));
+
+    const [, secondArg] = send.mock.calls[0] as [
+      unknown,
+      Record<string, unknown> | undefined,
+    ];
+    const hasAbortSignal =
+      secondArg != null && Object.hasOwn(secondArg, "abortSignal");
+    expect(hasAbortSignal).toBe(false);
+  });
 });
 
 describe("M3LLogsInsightsClient.runQuery", () => {
+  // C.7 — signal threads through runQuery → awaitResults.
+  test("rejects with M3LOperationAbortedError when the caller's signal is aborted (threaded through to awaitResults)", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const send = vi.fn().mockResolvedValue({ queryId: "q-run-abort" });
+    const client = new M3LLogsInsightsClient(fakeClient(send));
+
+    const promise = client.runQuery(
+      {
+        logGroupNames: ["/aws/lambda/example"],
+        queryString: "fields @timestamp",
+        startTime: 0,
+        endTime: 60,
+      },
+      {
+        signal: controller.signal,
+        pollerOptions: {
+          backoff: M3LBackoff.constant(300_000),
+          maxAttempts: 3,
+        },
+      },
+    );
+
+    const result = await Promise.race([
+      promise.catch((e: unknown) => e),
+      vi.advanceTimersByTimeAsync(100).then(() => "no-rejection"),
+    ]);
+
+    expect(result).toBeInstanceOf(M3LOperationAbortedError);
+  });
+
   test("composes startQuery + awaitResults into one call", async () => {
     const send = vi
       .fn()

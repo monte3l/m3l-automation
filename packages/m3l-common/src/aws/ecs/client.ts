@@ -29,6 +29,7 @@ import {
   waitUntilServicesStable,
 } from "@aws-sdk/client-ecs";
 
+import { M3LOperationAbortedError } from "../../core/errors/index.js";
 import { M3LECSOperationError } from "./error.js";
 import type {
   M3LECSClusterSummary,
@@ -39,6 +40,7 @@ import type {
   M3LECSNetworkConfiguration,
   M3LECSServiceDescription,
   M3LECSUpdateServiceInput,
+  M3LECSWaiterOptions,
   M3LECSWaiterResult,
 } from "./types.js";
 
@@ -49,6 +51,55 @@ import type {
  * attempts at a 15-second poll delay.
  */
 const DEFAULT_MAX_WAIT_TIME_SECONDS = 600;
+
+/**
+ * Returns `true` when the given signal is both defined and already aborted.
+ * Module-private helper used to avoid the TS2367 false alarm that arises from
+ * re-checking `signal.aborted` after an `await` (TS unsoundly narrows it to
+ * `false` across an await boundary).
+ */
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal !== undefined && signal.aborted;
+}
+
+/**
+ * Classifies a caught error from the SDK's `waitUntilServicesStable` waiter
+ * into a resolved {@link M3LECSWaiterResult} (for `TimeoutError`/`AbortError`)
+ * or re-throws as a typed error. Extracted to keep the calling method's
+ * cognitive complexity within the project's ESLint limit.
+ *
+ * A `TimeoutError`/`AbortError`'s `reason` is always a fresh, static,
+ * library-constructed string — never the raw SDK error message, which can
+ * embed the last `DescribeServices` response via `@smithy/core`'s
+ * `checkExceptions`.
+ */
+function handleEcsWaiterCatch(
+  error: unknown,
+  cluster: string,
+  services: readonly string[],
+  signal: AbortSignal | undefined,
+): M3LECSWaiterResult {
+  const serviceList = [...services].join(", ");
+  if (error instanceof Error && error.name === "TimeoutError") {
+    return {
+      state: "TIMEOUT",
+      reason: `waiter timed out before services [${serviceList}] in cluster ${cluster} reached the expected state`,
+    };
+  }
+  if (error instanceof Error && error.name === "AbortError") {
+    if (isAborted(signal)) {
+      throw new M3LOperationAbortedError();
+    }
+    return {
+      state: "ABORTED",
+      reason: `waiter aborted before services [${serviceList}] in cluster ${cluster} reached the expected state`,
+    };
+  }
+  throw new M3LECSOperationError(
+    "M3LECSOperations.waitUntilServicesStable: DescribeServices polling failed",
+    { cause: error },
+  );
+}
 
 /**
  * Translates an SDK `LoadBalancer`-shaped object into the plain
@@ -495,27 +546,20 @@ export class M3LECSOperations {
   async waitUntilServicesStable(
     cluster: string,
     services: readonly string[],
-    options?: { readonly maxWaitTime?: number },
+    options?: M3LECSWaiterOptions,
   ): Promise<M3LECSWaiterResult> {
+    const signal = options?.signal;
     try {
       await waitUntilServicesStable(
         {
           client: this.client,
           maxWaitTime: options?.maxWaitTime ?? DEFAULT_MAX_WAIT_TIME_SECONDS,
+          ...(signal !== undefined ? { abortSignal: signal } : {}),
         },
         { cluster, services: [...services] },
       );
     } catch (error) {
-      if (error instanceof Error && error.name === "TimeoutError") {
-        return { state: "TIMEOUT", reason: error.message };
-      }
-      if (error instanceof Error && error.name === "AbortError") {
-        return { state: "ABORTED", reason: error.message };
-      }
-      throw new M3LECSOperationError(
-        "M3LECSOperations.waitUntilServicesStable: DescribeServices polling failed",
-        { cause: error },
-      );
+      return handleEcsWaiterCatch(error, cluster, services, signal);
     }
 
     return { state: "SUCCESS" };

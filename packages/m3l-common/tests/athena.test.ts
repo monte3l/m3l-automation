@@ -36,7 +36,10 @@ import {
   type AthenaClient,
 } from "@aws-sdk/client-athena";
 
-import { M3LError } from "../src/core/errors/index.js";
+import {
+  M3LError,
+  M3LOperationAbortedError,
+} from "../src/core/errors/index.js";
 import { M3LBackoff } from "../src/core/polling/index.js";
 
 import {
@@ -485,9 +488,159 @@ describe("M3LAthenaClient.awaitResults", () => {
     expect(thrown).not.toBeInstanceOf(M3LAthenaQueryFailedError);
     expect(send).toHaveBeenCalledTimes(2);
   });
+
+  // ── Cooperative cancellation (ADR-0049) ─────────────────────────────────
+
+  // C.7 / C.8 — signal reaches M3LPoller; abort abandons the pending backoff
+  // delay. Assert WITHOUT advancing past the 300s backoff to prove abandonment.
+  test("rejects with M3LOperationAbortedError when the caller's signal is aborted, without waiting out the backoff delay", async () => {
+    const controller = new AbortController();
+    controller.abort(); // pre-aborted: check happens before any poll
+    const send = vi
+      .fn()
+      .mockResolvedValue({ QueryExecution: { Status: { State: "RUNNING" } } });
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    // Use a 300s backoff — the test must NOT advance 300 000ms for this to pass.
+    const promise = client.awaitResults("q-preaborted", {
+      signal: controller.signal,
+      pollerOptions: { backoff: M3LBackoff.constant(300_000), maxAttempts: 3 },
+    });
+
+    // Race: if signal abandons the delay, promise rejects well within 100ms of
+    // fake time; if not, "no-rejection" sentinel wins and the assertion fails.
+    const result = await Promise.race([
+      promise.catch((e: unknown) => e),
+      vi.advanceTimersByTimeAsync(100).then(() => "no-rejection"),
+    ]);
+
+    expect(result).toBeInstanceOf(M3LOperationAbortedError);
+  });
+
+  // C.9 — signal forwarded to each GetQueryExecution send() as second arg.
+  test("forwards options.signal to the GetQueryExecution send() call as the second argument's abortSignal", async () => {
+    const controller = new AbortController();
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({
+        QueryExecution: { Status: { State: "SUCCEEDED" } },
+      })
+      .mockResolvedValueOnce({
+        ResultSet: { Rows: [], ResultSetMetadata: { ColumnInfo: [] } },
+      });
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    await settleWithTimers(
+      client.awaitResults("q-signal-send", { signal: controller.signal }),
+    );
+
+    // First send is GetQueryExecution — its second arg must carry abortSignal.
+    const [, sendOptions] = send.mock.calls[0] as [
+      unknown,
+      { abortSignal?: AbortSignal } | undefined,
+    ];
+    expect(sendOptions?.abortSignal).toBe(controller.signal);
+  });
+
+  // C.10 — AbortError from send + aborted signal → M3LOperationAbortedError,
+  // NOT M3LAthenaQueryFailedError (most likely implementation mistake).
+  test("surfaces as M3LOperationAbortedError (not M3LAthenaQueryFailedError) when GetQueryExecution send rejects with AbortError while the signal is aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const abortError = Object.assign(new Error("aborted by signal"), {
+      name: "AbortError",
+    });
+    const send = vi.fn().mockRejectedValue(abortError);
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    const thrown = await settleWithTimers(
+      client
+        .awaitResults("q-abort-send", { signal: controller.signal })
+        .catch((e: unknown) => e),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LOperationAbortedError);
+    expect(thrown).not.toBeInstanceOf(M3LAthenaQueryFailedError);
+  });
+
+  // C.11 — options.signal wins over pollerOptions.signal when both provided.
+  test("options.signal wins over pollerOptions.signal when both are supplied", async () => {
+    const mainController = new AbortController();
+    mainController.abort(); // options.signal is aborted
+    const pollerController = new AbortController(); // NOT aborted
+    const send = vi
+      .fn()
+      .mockResolvedValue({ QueryExecution: { Status: { State: "RUNNING" } } });
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    const thrown = await settleWithTimers(
+      client
+        .awaitResults("q-signal-wins", {
+          signal: mainController.signal,
+          // pollerOptions carries its own (non-aborted) signal; options.signal wins
+          pollerOptions: {
+            backoff: M3LBackoff.constant(1),
+            signal: pollerController.signal,
+          },
+        })
+        .catch((e: unknown) => e),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LOperationAbortedError);
+  });
+
+  // C.12 — omitting signal leaves behavior exactly as today.
+  test("omitting signal leaves awaitResults behavior unchanged — no abortSignal on send calls", async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({
+        QueryExecution: { Status: { State: "SUCCEEDED" } },
+      })
+      .mockResolvedValueOnce({
+        ResultSet: { Rows: [], ResultSetMetadata: { ColumnInfo: [] } },
+      });
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    await settleWithTimers(client.awaitResults("q-nosig"));
+
+    // No second arg, or second arg without abortSignal.
+    const [, secondArg] = send.mock.calls[0] as [
+      unknown,
+      Record<string, unknown> | undefined,
+    ];
+    const hasAbortSignal =
+      secondArg != null && Object.hasOwn(secondArg, "abortSignal");
+    expect(hasAbortSignal).toBe(false);
+  });
 });
 
 describe("M3LAthenaClient.runQuery", () => {
+  // C.7 — signal threads through runQuery → awaitResults.
+  test("rejects with M3LOperationAbortedError when the caller's signal is aborted (signal is threaded through to awaitResults)", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const send = vi.fn().mockResolvedValue({ QueryExecutionId: "q-run-abort" });
+    const client = new M3LAthenaClient(fakeClient(send));
+
+    const promise = client.runQuery(
+      { queryString: "SELECT 1" },
+      {
+        signal: controller.signal,
+        pollerOptions: {
+          backoff: M3LBackoff.constant(300_000),
+          maxAttempts: 3,
+        },
+      },
+    );
+
+    const result = await Promise.race([
+      promise.catch((e: unknown) => e),
+      vi.advanceTimersByTimeAsync(100).then(() => "no-rejection"),
+    ]);
+
+    expect(result).toBeInstanceOf(M3LOperationAbortedError);
+  });
+
   test("sends StartQueryExecution, then GetQueryExecution, then GetQueryResults in sequence", async () => {
     const send = vi
       .fn()

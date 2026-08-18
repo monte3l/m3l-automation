@@ -344,4 +344,10 @@ export interface M3LEKSWaiterOptions {
    * omitted — see the corresponding `waitUntil*` method's TSDoc.
    */
   readonly maxWaitTime?: number;
+  /**
+   * When aborted while the SDK waiter is polling, the method throws
+   * {@link M3LOperationAbortedError} instead of resolving. Forwarded to the
+   * SDK waiter's `abortSignal` field in `WaiterConfiguration`.
+   */
+  readonly signal?: AbortSignal;
 }

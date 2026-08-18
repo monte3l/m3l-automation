@@ -39,6 +39,7 @@ import {
   waitUntilNodegroupDeleted,
 } from "@aws-sdk/client-eks";
 
+import { M3LOperationAbortedError } from "../../core/errors/index.js";
 import { M3LEKSOperationError } from "./error.js";
 import type {
   M3LEKSClusterSummary,
@@ -535,12 +536,30 @@ function buildCreateNodegroupInput(
 }
 
 /**
+ * Returns `true` when `signal` is defined and its `aborted` flag is set.
+ * Extracted as a named helper to avoid a TS2367 false alarm: TypeScript
+ * narrows `signal.aborted` to `false` after an inline check and unsoundly
+ * keeps that narrowing across an `await` — reading it through a function call
+ * bypasses the stale narrowing without deleting the check.
+ */
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal !== undefined && signal.aborted;
+}
+
+/**
  * Runs one of the SDK's standalone `waitUntil*` waiter functions, translating
  * its own `TimeoutError`/`AbortError` rejections into a resolved
  * {@link M3LEKSWaiterResult} and wrapping any other rejection as a thrown
  * {@link M3LEKSOperationError}. Shared by all four `waitUntil*` methods to
  * keep each one a thin, one-line delegation (see
  * `docs/reference/aws/eks.md`'s "Waiters" section).
+ *
+ * **Caller-signal abort:** when `signal` is provided and the SDK waiter throws
+ * an `AbortError` while `signal` is already aborted, this function rejects
+ * with {@link M3LOperationAbortedError} instead of resolving. The
+ * `"ABORTED"` resolved state is therefore only reachable when the SDK waiter
+ * throws an `AbortError` with **no** matching caller signal (e.g. the SDK's
+ * own internal abort path).
  *
  * @param invoke - Calls the underlying SDK waiter function.
  * @param methodName - The calling method's name, folded into the thrown
@@ -549,8 +568,14 @@ function buildCreateNodegroupInput(
  *   being waited on (e.g. `cluster name=my-cluster`), built by the caller
  *   from parameters it already has — never derived from the SDK error.
  *   Folded into the `TIMEOUT`/`ABORTED` `reason` string.
+ * @param signal - The caller's `AbortSignal`, forwarded to the SDK waiter and
+ *   inspected in the `AbortError` arm to distinguish a caller-initiated abort
+ *   from an SDK-internal one.
  * @returns `{ state: "SUCCESS" }`, or a resolved `TIMEOUT`/`ABORTED` state
- *   whose `reason` is always a fresh, library-constructed string.
+ *   whose `reason` is always a fresh, library-constructed string. The
+ *   `"ABORTED"` state is only reachable when no caller signal was provided.
+ * @throws {@link M3LOperationAbortedError} when `signal` is aborted and the
+ *   SDK waiter throws `AbortError`.
  * @throws {@link M3LEKSOperationError} on any other rejection. The SDK's own
  *   `FAILURE` terminal waiter state surfaces as a plain `Error` with
  *   `name === "Error"` — indistinguishable by identity from a genuine
@@ -570,6 +595,7 @@ async function runEksWaiter(
   invoke: () => Promise<unknown>,
   methodName: string,
   resourceDescription: string,
+  signal?: AbortSignal,
 ): Promise<M3LEKSWaiterResult> {
   try {
     await invoke();
@@ -581,6 +607,9 @@ async function runEksWaiter(
       };
     }
     if (error instanceof Error && error.name === "AbortError") {
+      if (isAborted(signal)) {
+        throw new M3LOperationAbortedError();
+      }
       return {
         state: "ABORTED",
         reason: `waiter aborted before ${resourceDescription} reached the expected state`,
@@ -850,11 +879,15 @@ export class M3LEKSOperations {
           {
             client: this.client,
             maxWaitTime: options?.maxWaitTime ?? DEFAULT_MAX_WAIT_TIME_SECONDS,
+            ...(options?.signal !== undefined
+              ? { abortSignal: options.signal }
+              : {}),
           },
           { name },
         ),
       "waitUntilClusterActive",
       `cluster name=${name}`,
+      options?.signal,
     );
   }
 
@@ -878,11 +911,15 @@ export class M3LEKSOperations {
           {
             client: this.client,
             maxWaitTime: options?.maxWaitTime ?? DEFAULT_MAX_WAIT_TIME_SECONDS,
+            ...(options?.signal !== undefined
+              ? { abortSignal: options.signal }
+              : {}),
           },
           { name },
         ),
       "waitUntilClusterDeleted",
       `cluster name=${name}`,
+      options?.signal,
     );
   }
 
@@ -1116,11 +1153,15 @@ export class M3LEKSOperations {
           {
             client: this.client,
             maxWaitTime: options?.maxWaitTime ?? DEFAULT_MAX_WAIT_TIME_SECONDS,
+            ...(options?.signal !== undefined
+              ? { abortSignal: options.signal }
+              : {}),
           },
           { clusterName, nodegroupName },
         ),
       "waitUntilNodegroupActive",
       `nodegroup clusterName=${clusterName}, nodegroupName=${nodegroupName}`,
+      options?.signal,
     );
   }
 
@@ -1146,11 +1187,15 @@ export class M3LEKSOperations {
           {
             client: this.client,
             maxWaitTime: options?.maxWaitTime ?? DEFAULT_MAX_WAIT_TIME_SECONDS,
+            ...(options?.signal !== undefined
+              ? { abortSignal: options.signal }
+              : {}),
           },
           { clusterName, nodegroupName },
         ),
       "waitUntilNodegroupDeleted",
       `nodegroup clusterName=${clusterName}, nodegroupName=${nodegroupName}`,
+      options?.signal,
     );
   }
 }
