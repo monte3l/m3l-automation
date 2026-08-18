@@ -1,6 +1,6 @@
 # Script docs standardization — READMEs and reference pages
 
-**Status: shipped** — PR #??? (`feat/script-docs-standardization`)
+**Status: shipped** — PR #464 (`feat/script-docs-standardization`)
 
 ## Context
 
