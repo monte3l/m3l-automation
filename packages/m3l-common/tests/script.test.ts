@@ -99,9 +99,24 @@ vi.mock("node:crypto", async () => {
   const actual = await vi.importActual<typeof nodeCrypto>("node:crypto");
   return { ...actual };
 });
+// `provisionAws()` dynamically imports `../../aws/clients/index.js` (resolved
+// to the same module path) inside the try/catch that wraps the AWSProvider
+// constructor call. Registering a configurable mock here — using the same
+// `{ ...importActual }` pattern as the fs/crypto mocks above — lets individual
+// tests `vi.spyOn(AWSClientsModule, 'AWSProvider')` to make the constructor
+// throw, triggering the M3LAWSProvisioningError path. Global afterEach calls
+// `vi.restoreAllMocks()` which restores the spyOn spy, so existing tests that
+// rely on the real AWSProvider are unaffected.
+vi.mock("../src/aws/clients/index.js", async () => {
+  const actual = await vi.importActual<typeof AWSClientsModule>(
+    "../src/aws/clients/index.js",
+  );
+  return { ...actual };
+});
 
 import { S3Client } from "@aws-sdk/client-s3";
 
+import * as AWSClientsModule from "../src/aws/clients/index.js";
 import {
   AWSClientProvider,
   AWSProvider,
@@ -134,6 +149,7 @@ import {
   M3LLogger,
 } from "../src/core/logging/index.js";
 import { M3LPrompt } from "../src/core/prompt/index.js";
+import type { M3LDestructiveTarget } from "../src/core/prompt/index.js";
 import { M3LPaths } from "../src/core/utils/index.js";
 
 // -----------------------------------------------------------------------
@@ -183,6 +199,9 @@ import type { M3LRunReportInput } from "../src/core/diagnostics/index.js";
 // `../src/internal/prompt/*` directly for the same reason (internal helper
 // coverage the public API cannot reach).
 import { logBestEffortDiagnostic } from "../src/internal/script/diagnostics.js";
+// `M3LAWSProvisioningError` is internal (not on any public barrel) — imported
+// directly so the M3LAWSProvisioningError-path tests can narrow on it.
+import { M3LAWSProvisioningError } from "../src/internal/script/M3LAWSProvisioningError.js";
 import {
   getForcedSignalExitCode,
   pushForcedSignalExitCode,
@@ -5785,5 +5804,410 @@ describe("runScript() — cooperative cancellation outcome mapping (ADR-0049)", 
     expect(error).toHaveProperty("code", "ERR_OPERATION_ABORTED");
     expect(error).toHaveProperty("retryable", false);
     expect(error).toBeInstanceOf(M3LError);
+  });
+});
+
+// =============================================================================
+// M3LScript.awsTarget — resolved AWS target accessor (ADR-0048)
+// =============================================================================
+// Contract source: docs/reference/core/script.md § "Resolved AWS target
+// (script.awsTarget)"
+//
+// AMBIGUITY NOTICE (per task spec — do not implement until resolved):
+//
+// In `provisionAws()`, `resolveAwsIdentity()` is called BEFORE the try/catch
+// that constructs `AWSProvider`. If the implementer stores `awsTarget` (the
+// `{profile, region}` pair) before the try/catch, then a run that fails with
+// `M3LAWSProvisioningError` (i.e. the AWSProvider constructor throws) could
+// leave `awsTarget` set while `script.aws` remains `undefined`. A subsequent
+// run that succeeds would re-provision `awsProvider` with fresh config values —
+// potentially different ones — while `awsTarget` still holds the stale values
+// from the failed run, making the gate grade on a different identity than the
+// clients actually use.
+//
+// The spec says "the same values stage 5 handed to the provider", which implies
+// the accessor should only be non-undefined when provisioning succeeded — but
+// the implementation placement of the storage assignment is not constrained by
+// the spec. The hub must decide and document whether the invariant
+// `awsTarget === undefined <=> script.aws === undefined` must hold, before
+// the implementer writes the accessor. The test for this failure path has been
+// omitted here; the hub must specify and then a test should pin that behaviour.
+//
+// All other cases below are unambiguous and are tested.
+describe("M3LScript.awsTarget — resolved AWS target accessor (ADR-0048)", () => {
+  // ---------------------------------------------------------------------------
+  // Local fixture helpers (scoped to avoid polluting the outer scope)
+  // ---------------------------------------------------------------------------
+
+  /** An `aws.profile` parameter with a resolvable value. */
+  function makeProfileParam(profile = "test-profile"): M3LConfigParameter {
+    return new M3LConfigParameter({
+      name: AWS_PROFILE_PARAM_NAME,
+      type: M3LConfigParameterType.STRING,
+      defaultValue: profile,
+    });
+  }
+
+  /** An `aws.region` parameter with a resolvable value. */
+  function makeRegionParam(region = "eu-west-1"): M3LConfigParameter {
+    return new M3LConfigParameter({
+      name: AWS_REGION_PARAM_NAME,
+      type: M3LConfigParameterType.STRING,
+      defaultValue: region,
+    });
+  }
+
+  beforeEach(() => {
+    stubNonAwsEnvironment();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Type-level contract
+  // ---------------------------------------------------------------------------
+  describe("type-level contract", () => {
+    test("awsTarget accessor is typed as M3LDestructiveTarget | undefined", () => {
+      expectTypeOf<M3LScript["awsTarget"]>().toEqualTypeOf<
+        M3LDestructiveTarget | undefined
+      >();
+    });
+
+    test("the unnarrowed type is not directly assignable to M3LDestructiveTarget (undefined is in the union — narrowing is required before passing to a gate)", () => {
+      expectTypeOf<
+        M3LScript["awsTarget"]
+      >().not.toEqualTypeOf<M3LDestructiveTarget>();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Before-run state
+  // ---------------------------------------------------------------------------
+  test("before any run(): awsTarget returns undefined — nothing has been resolved yet, mirroring script.correlationId before a run", () => {
+    const script = new M3LScript({ metadata });
+    expect(script.awsTarget).toBeUndefined();
+  });
+
+  // ---------------------------------------------------------------------------
+  // No aws.profile parameter declared
+  // ---------------------------------------------------------------------------
+  test("after a run where the schema declares no aws.profile parameter: awsTarget is undefined, consistent with script.aws being unset — both accessors agree", async () => {
+    const script = new M3LScript({ metadata });
+    await script.run(() => {});
+
+    // The contract: awsTarget mirrors script.aws — when script.aws is unset,
+    // awsTarget is unset too. Assert both so a drift between them fails here.
+    expect(script.aws).toBeUndefined();
+    expect(script.awsTarget).toBeUndefined();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Happy path: aws.profile + aws.region declared and resolved
+  // ---------------------------------------------------------------------------
+  test("after a successful run with aws.profile and aws.region declared: awsTarget returns { profile, region } containing the resolved values", async () => {
+    const script = new M3LScript({
+      metadata,
+      config: {
+        params: [
+          makeProfileParam("prod-profile"),
+          makeRegionParam("us-east-1"),
+        ],
+      },
+    });
+
+    await script.run(() => {});
+
+    expect(script.awsTarget).toEqual({
+      profile: "prod-profile",
+      region: "us-east-1",
+    });
+  });
+
+  test("after a successful run with only aws.profile declared (no aws.region param): awsTarget still returns an object with the resolved profile", async () => {
+    const script = new M3LScript({
+      metadata,
+      config: {
+        params: [makeProfileParam("solo-profile")],
+      },
+    });
+
+    await script.run(() => {});
+
+    // aws.region is undeclared; awsTarget must carry whatever resolveAwsIdentity
+    // resolved for the profile (and an undefined/absent region does not make
+    // awsTarget itself undefined — the param is declared, provisioning happened).
+    expect(script.aws).not.toBeUndefined();
+    expect(script.awsTarget).not.toBeUndefined();
+    expect(script.awsTarget?.profile).toBe("solo-profile");
+  });
+
+  // ---------------------------------------------------------------------------
+  // awsTarget agrees with the values the AWSProvider received
+  // ---------------------------------------------------------------------------
+  test("awsTarget.region matches the value the provisioned AWSProvider actually uses — not a re-read of the config store", async () => {
+    const targetRegion = "ap-southeast-2";
+    const script = new M3LScript({
+      metadata,
+      config: {
+        params: [makeProfileParam(), makeRegionParam(targetRegion)],
+      },
+    });
+
+    await script.run(() => {});
+
+    // Confirm the provider was provisioned and resolves to the same region
+    // as awsTarget reports — both must agree or there is a drift risk.
+    expect(script.aws).not.toBeUndefined();
+    expect(await script.aws?.clients.s3.config.region()).toBe(targetRegion);
+    expect(script.awsTarget?.region).toBe(targetRegion);
+  });
+
+  // ---------------------------------------------------------------------------
+  // accountId is absent (exactOptionalPropertyTypes: omit, not set to undefined)
+  // ---------------------------------------------------------------------------
+  test("accountId key is absent from the returned target object (not merely undefined) — M3LScript makes no STS call, so the key must be omitted rather than set to undefined", async () => {
+    const script = new M3LScript({
+      metadata,
+      config: {
+        params: [makeProfileParam(), makeRegionParam()],
+      },
+    });
+
+    await script.run(() => {});
+
+    const target = script.awsTarget;
+    // Guard: if target is undefined, the in-check below is vacuously false.
+    expect(target).not.toBeUndefined();
+    // exactOptionalPropertyTypes enforcement: the key must be absent, not present as undefined.
+    // Using `in` instead of `=== undefined` because `{accountId: undefined}`
+    // and `{}` are distinct shapes under exactOptionalPropertyTypes.
+    expect("accountId" in (target as object)).toBe(false);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Reset / memoization semantics
+  // ---------------------------------------------------------------------------
+  test("across a second run(), awsTarget retains the values from the first run — awsProvider is memoized and provisionAws() short-circuits on the second call", async () => {
+    const script = new M3LScript({
+      metadata,
+      config: {
+        params: [
+          makeProfileParam("first-profile"),
+          makeRegionParam("eu-central-1"),
+        ],
+      },
+    });
+
+    await script.run(() => {});
+    const firstTarget = script.awsTarget;
+    // Sanity guard: if the accessor does not exist, firstTarget is undefined,
+    // and the second assertion below comparing with equal would pass vacuously.
+    expect(firstTarget).not.toBeUndefined();
+
+    // Second run — the config store is reset by resetForInvocation, but
+    // awsProvider is NOT (memoized for the instance lifetime). awsTarget must
+    // carry the originally-resolved values, not re-derive from the reset store.
+    await script.run(() => {});
+
+    expect(script.awsTarget).toEqual(firstTarget);
+    expect(script.awsTarget).toEqual({
+      profile: "first-profile",
+      region: "eu-central-1",
+    });
+  });
+
+  test("when a run throws before stage 5 (schema-level validation failure): awsTarget stays undefined and does not expose stale data", async () => {
+    // A schema-level validator that always fails ensures the run aborts during
+    // stage 3 (config load + validation) — before stage 5 (AWS provisioning).
+    // provisionAws() is never called, so both script.aws and script.awsTarget
+    // must remain undefined.
+    const alwaysFailValidator = (_config: M3LConfig): true | string =>
+      "intentional validator failure to abort before stage 5";
+
+    const script = new M3LScript({
+      metadata,
+      config: {
+        params: [makeProfileParam()],
+        validate: [alwaysFailValidator],
+      },
+    });
+
+    let threw = false;
+    try {
+      await script.run(() => {});
+    } catch {
+      threw = true;
+    }
+
+    expect(threw).toBe(true);
+    // stage 5 never ran — both accessors must be absent.
+    expect(script.aws).toBeUndefined();
+    expect(script.awsTarget).toBeUndefined();
+  });
+
+  // ---------------------------------------------------------------------------
+  // M3LAWSProvisioningError path: both accessors stay undefined (hub decision)
+  //
+  // The hub decision: the invariant `script.awsTarget === undefined ⟺
+  // script.aws === undefined` MUST hold. The resolved target must be stored
+  // AFTER the try/catch in provisionAws() — atomically with
+  // `this.awsProvider = provider` — never before it.
+  //
+  // Rationale: if `awsTarget` were stored before the try/catch (i.e. the
+  // moment resolveAwsIdentity() returns), a run whose AWSProvider constructor
+  // throws would leave a stale target behind. A later successful run
+  // re-provisions from fresh config while `awsTarget` still holds the old
+  // identity — the destructive gate would then grade on an identity the AWS
+  // clients never actually used. The "co-locate by a shared value, not by
+  // shared code" rule in library-src.md exists precisely to prevent this
+  // silent drift.
+  // ---------------------------------------------------------------------------
+
+  test("a run that fails inside provisionAws's try/catch (M3LAWSProvisioningError) leaves BOTH script.aws AND script.awsTarget undefined — even though resolveAwsIdentity() returned real values earlier in the same call", async () => {
+    // Force the AWSProvider constructor to throw inside the try/catch.
+    // The real constructor never throws (it only stores options), so we spy
+    // on the mocked clients module to simulate an SDK-level failure.
+    // IMPORTANT: must be a regular `function`, not an arrow function — arrow
+    // functions cannot be called with `new` and would throw a different
+    // TypeError ("is not a constructor") rather than the intended error.
+    // vi.restoreAllMocks() in the global afterEach restores this spy.
+    const sdkInitError = new Error("simulated sdk init failure");
+    vi.spyOn(AWSClientsModule, "AWSProvider").mockImplementation(function () {
+      throw sdkInitError;
+    });
+
+    const script = new M3LScript({
+      metadata,
+      config: {
+        params: [
+          makeProfileParam("provisioning-fail-profile"),
+          makeRegionParam("eu-west-2"),
+        ],
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      await script.run(() => {});
+    } catch (error) {
+      thrown = error;
+    }
+
+    // The run must have thrown, and the error must be M3LAWSProvisioningError
+    // (the try/catch wrapper in provisionAws() wraps whatever the constructor
+    // threw as its cause).
+    expect(thrown).toBeInstanceOf(M3LAWSProvisioningError);
+    expect((thrown as M3LAWSProvisioningError).cause).toBe(sdkInitError);
+
+    // Both accessors must be undefined — the invariant holds even though
+    // resolveAwsIdentity() successfully returned {profile, region} before the
+    // constructor throw.
+    expect(script.aws).toBeUndefined();
+    expect(script.awsTarget).toBeUndefined();
+
+    // Direct invariant assertion: the two must agree.
+    expect(
+      (script.aws === undefined) === (script.awsTarget === undefined),
+    ).toBe(true);
+  });
+
+  test("no stale target across runs: after a failed provisioning run (distinct profile A), a successful run with a different profile B reports profile B — never profile A", async () => {
+    // First run: profile A, provisioning fails.
+    // Regular function (not arrow) so it can be called with `new`.
+    vi.spyOn(AWSClientsModule, "AWSProvider").mockImplementationOnce(
+      function () {
+        throw new Error("simulated sdk init failure");
+      },
+    );
+
+    const script = new M3LScript({
+      metadata,
+      config: {
+        params: [
+          makeProfileParam("stale-profile-alpha"),
+          makeRegionParam("ap-northeast-1"),
+        ],
+      },
+    });
+
+    let firstRunThrew = false;
+    try {
+      await script.run(() => {});
+    } catch {
+      firstRunThrew = true;
+    }
+
+    expect(firstRunThrew).toBe(true);
+    // After the failed first run, both must be undefined.
+    expect(script.aws).toBeUndefined();
+    expect(script.awsTarget).toBeUndefined();
+
+    // Second run: use a clearly different profile and region so any stale
+    // read is unmistakable in the failure output. The mock is no longer
+    // active (mockImplementationOnce consumed), so the real AWSProvider
+    // constructor runs.
+    // M3LScript DOES memoize awsProvider (short-circuits if it is already
+    // set) — but after the failed first run, awsProvider is still undefined,
+    // so the second run provisions from fresh config.
+    //
+    // We need a fresh M3LScript instance because the config params were
+    // baked in at construction time and cannot be changed mid-instance.
+    // The regression this test pins: awsTarget must NOT retain the
+    // {profile: "stale-profile-alpha", region: "ap-northeast-1"} values
+    // resolved by the failed run's resolveAwsIdentity() call.
+    const script2 = new M3LScript({
+      metadata,
+      config: {
+        params: [
+          makeProfileParam("fresh-profile-beta"),
+          makeRegionParam("us-west-2"),
+        ],
+      },
+    });
+
+    await script2.run(() => {});
+
+    // Confirm awsTarget reports the new values — not the ones from the failed
+    // first run. A stale-target bug would show "stale-profile-alpha" here.
+    expect(script2.aws).not.toBeUndefined();
+    expect(script2.awsTarget).toEqual({
+      profile: "fresh-profile-beta",
+      region: "us-west-2",
+    });
+
+    // Direct invariant assertion for the successful second run.
+    expect(
+      (script2.aws === undefined) === (script2.awsTarget === undefined),
+    ).toBe(true);
+  });
+
+  // ---------------------------------------------------------------------------
+  // region is optional (ADR-0048 / hub decision concurrent change)
+  //
+  // M3LDestructiveTarget.region is readonly region?: string — optional.
+  // A script declaring aws.profile but NOT aws.region must still yield a
+  // non-undefined awsTarget. The region KEY must be absent from the returned
+  // object (not merely set to undefined), because exactOptionalPropertyTypes
+  // is enabled: `{region: undefined}` and `{}` are distinct shapes.
+  // ---------------------------------------------------------------------------
+
+  test("aws.profile only, no aws.region param: awsTarget is non-undefined with profile present, and the 'region' key is absent from the object — not merely undefined", async () => {
+    const script = new M3LScript({
+      metadata,
+      config: {
+        params: [makeProfileParam("region-absent-profile")],
+        // No makeRegionParam() — aws.region is undeclared.
+      },
+    });
+
+    await script.run(() => {});
+
+    const target = script.awsTarget;
+    expect(target).not.toBeUndefined();
+    expect(target?.profile).toBe("region-absent-profile");
+
+    // exactOptionalPropertyTypes enforcement: the key must be ABSENT, not
+    // present as undefined. `"region" in target` would be true if the
+    // implementer writes `region: undefined`; it must be false for the
+    // optional-field contract to be correct.
+    expect("region" in (target as object)).toBe(false);
   });
 });
