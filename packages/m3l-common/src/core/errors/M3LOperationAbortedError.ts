@@ -56,6 +56,15 @@ export class M3LOperationAbortedError extends M3LError {
   override readonly code = "ERR_OPERATION_ABORTED" as const;
 
   /**
+   * Narrows `cause` to `undefined`: this error never chains an underlying SDK
+   * error, so a generic log formatter gets a compile-time signal rather than a
+   * runtime surprise. Structurally enforced because the constructor passes only
+   * `{ code }` with no `cause` field; this declaration just makes the
+   * narrowing visible to consumers.
+   */
+  declare readonly cause: undefined;
+
+  /**
    * Creates a new `M3LOperationAbortedError`.
    *
    * @param message - Optional human-readable description of the abort.

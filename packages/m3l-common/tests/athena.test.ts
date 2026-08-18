@@ -41,6 +41,7 @@ import {
   M3LOperationAbortedError,
 } from "../src/core/errors/index.js";
 import { M3LBackoff } from "../src/core/polling/index.js";
+import type { M3LPollerOptions } from "../src/core/polling/M3LPoller.js";
 
 import {
   compileAthenaQueryTemplate,
@@ -563,8 +564,12 @@ describe("M3LAthenaClient.awaitResults", () => {
     expect(thrown).not.toBeInstanceOf(M3LAthenaQueryFailedError);
   });
 
-  // C.11 — options.signal wins over pollerOptions.signal when both provided.
-  test("options.signal wins over pollerOptions.signal when both are supplied", async () => {
+  // C.11 — options.signal wins over a signal smuggled in via a pre-typed
+  // pollerOptions variable. Omit<M3LPollerOptions, "signal"> rejects a fresh
+  // literal that contains `signal`, but a caller can still pass a pre-typed
+  // M3LPollerOptions variable (no excess-property check on non-fresh objects).
+  // The runtime implementation must still give precedence to options.signal.
+  test("a signal smuggled into pollerOptions through a pre-typed variable is still overridden by the dedicated signal option", async () => {
     const mainController = new AbortController();
     mainController.abort(); // options.signal is aborted
     const pollerController = new AbortController(); // NOT aborted
@@ -573,15 +578,20 @@ describe("M3LAthenaClient.awaitResults", () => {
       .mockResolvedValue({ QueryExecution: { Status: { State: "RUNNING" } } });
     const client = new M3LAthenaClient(fakeClient(send));
 
+    // Pre-typed as M3LPollerOptions so TypeScript allows `signal` on this
+    // variable; when passed as pollerOptions (typed Omit<M3LPollerOptions,
+    // "signal">), no excess-property check fires — the runtime object still
+    // carries `signal`, exercising the defence-in-depth smuggling path.
+    const pollerOpts: M3LPollerOptions = {
+      backoff: M3LBackoff.constant(1),
+      signal: pollerController.signal,
+    };
+
     const thrown = await settleWithTimers(
       client
         .awaitResults("q-signal-wins", {
           signal: mainController.signal,
-          // pollerOptions carries its own (non-aborted) signal; options.signal wins
-          pollerOptions: {
-            backoff: M3LBackoff.constant(1),
-            signal: pollerController.signal,
-          },
+          pollerOptions: pollerOpts,
         })
         .catch((e: unknown) => e),
     );

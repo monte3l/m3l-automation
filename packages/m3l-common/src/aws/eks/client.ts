@@ -573,7 +573,8 @@ function isAborted(signal: AbortSignal | undefined): boolean {
  *   from an SDK-internal one.
  * @returns `{ state: "SUCCESS" }`, or a resolved `TIMEOUT`/`ABORTED` state
  *   whose `reason` is always a fresh, library-constructed string. The
- *   `"ABORTED"` state is only reachable when no caller signal was provided.
+ *   `"ABORTED"` state is only reachable when an `AbortError` arrives with
+ *   no aborted caller signal (i.e. an SDK-internal abort path).
  * @throws {@link M3LOperationAbortedError} when `signal` is aborted and the
  *   SDK waiter throws `AbortError`.
  * @throws {@link M3LEKSOperationError} on any other rejection. The SDK's own
@@ -865,7 +866,11 @@ export class M3LEKSOperations {
    *
    * @param name - The cluster's name.
    * @param options - `maxWaitTime` bounds the wait, in seconds; defaults to
-   *   `1200` (see {@link DEFAULT_MAX_WAIT_TIME_SECONDS}).
+   *   `1200` (see {@link DEFAULT_MAX_WAIT_TIME_SECONDS}). When `options.signal`
+   *   is supplied and aborts while the SDK waiter is polling, this method throws
+   *   {@link M3LOperationAbortedError} instead of resolving.
+   * @throws {@link M3LOperationAbortedError} when `options.signal` is aborted
+   *   while the SDK waiter is polling.
    * @throws {@link M3LEKSOperationError} for any rejection other than the
    *   waiter's own timeout/abort.
    */
@@ -896,7 +901,11 @@ export class M3LEKSOperations {
    *
    * @param name - The cluster's name.
    * @param options - `maxWaitTime` bounds the wait, in seconds; defaults to
-   *   `1200` (see {@link DEFAULT_MAX_WAIT_TIME_SECONDS}).
+   *   `1200` (see {@link DEFAULT_MAX_WAIT_TIME_SECONDS}). When `options.signal`
+   *   is supplied and aborts while the SDK waiter is polling, this method throws
+   *   {@link M3LOperationAbortedError} instead of resolving.
+   * @throws {@link M3LOperationAbortedError} when `options.signal` is aborted
+   *   while the SDK waiter is polling.
    * @throws {@link M3LEKSOperationError} for any rejection other than the
    *   waiter's own timeout/abort.
    */
@@ -1136,7 +1145,11 @@ export class M3LEKSOperations {
    * @param clusterName - The owning cluster's name.
    * @param nodegroupName - The nodegroup's name.
    * @param options - `maxWaitTime` bounds the wait, in seconds; defaults to
-   *   `1200` (see {@link DEFAULT_MAX_WAIT_TIME_SECONDS}).
+   *   `1200` (see {@link DEFAULT_MAX_WAIT_TIME_SECONDS}). When `options.signal`
+   *   is supplied and aborts while the SDK waiter is polling, this method throws
+   *   {@link M3LOperationAbortedError} instead of resolving.
+   * @throws {@link M3LOperationAbortedError} when `options.signal` is aborted
+   *   while the SDK waiter is polling.
    * @throws {@link M3LEKSOperationError} for any rejection other than the
    *   waiter's own timeout/abort.
    */
@@ -1169,7 +1182,11 @@ export class M3LEKSOperations {
    * @param clusterName - The owning cluster's name.
    * @param nodegroupName - The nodegroup's name.
    * @param options - `maxWaitTime` bounds the wait, in seconds; defaults to
-   *   `1200` (see {@link DEFAULT_MAX_WAIT_TIME_SECONDS}).
+   *   `1200` (see {@link DEFAULT_MAX_WAIT_TIME_SECONDS}). When `options.signal`
+   *   is supplied and aborts while the SDK waiter is polling, this method throws
+   *   {@link M3LOperationAbortedError} instead of resolving.
+   * @throws {@link M3LOperationAbortedError} when `options.signal` is aborted
+   *   while the SDK waiter is polling.
    * @throws {@link M3LEKSOperationError} for any rejection other than the
    *   waiter's own timeout/abort.
    */

@@ -8,17 +8,17 @@
         {
           "file": "packages/m3l-common/src/aws/cloudformation/client.ts",
           "symbol": "M3LCloudFormationOperations",
-          "blob": "48906fc69cc4ba0eb79c25f310f7292bda256ad6"
+          "blob": "0ce11e3d7a2a9882752ee65f91ab407a7272642e"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/client.ts",
           "symbol": "M3LCloudFormationListStacksOptions",
-          "blob": "48906fc69cc4ba0eb79c25f310f7292bda256ad6"
+          "blob": "0ce11e3d7a2a9882752ee65f91ab407a7272642e"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/client.ts",
           "symbol": "M3LCloudFormationDescribeStackEventsOptions",
-          "blob": "48906fc69cc4ba0eb79c25f310f7292bda256ad6"
+          "blob": "0ce11e3d7a2a9882752ee65f91ab407a7272642e"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/error.ts",
@@ -28,77 +28,77 @@
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationListStacksResult",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationStack",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationStackSummary",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationCreateStackInput",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationCreateStackResult",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationUpdateStackInput",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationUpdateStackResult",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationDeleteStackOptions",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationDescribeStackEventsResult",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationStackEvent",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationWaiterResult",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationWaitOptions",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationKeyValue",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationOutput",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationCapability",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         }
       ],
       "retrieved": "2026-08-18"
@@ -109,7 +109,7 @@
         {
           "file": "packages/m3l-common/src/aws/cloudformation/client.ts",
           "symbol": "M3LCloudFormationOperations",
-          "blob": "48906fc69cc4ba0eb79c25f310f7292bda256ad6"
+          "blob": "0ce11e3d7a2a9882752ee65f91ab407a7272642e"
         }
       ],
       "retrieved": "2026-08-18"
@@ -120,72 +120,72 @@
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationListStacksResult",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationStack",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationStackSummary",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationCreateStackInput",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationCreateStackResult",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationUpdateStackInput",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationUpdateStackResult",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationDeleteStackOptions",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationDescribeStackEventsResult",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationStackEvent",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationWaiterResult",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationKeyValue",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationOutput",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
           "symbol": "M3LCloudFormationCapability",
-          "blob": "455b41667fa8daee966eb020fd7786786ad1a666"
+          "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         }
       ],
       "retrieved": "2026-08-18"

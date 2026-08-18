@@ -11,12 +11,20 @@ The `polling` module separates two concerns that are often conflated. `M3LPoller
 Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
 
 - Primitives: `M3LPoller`, `M3LRetryRunner`, `M3LBackoff`, `M3LPollingPolicies`
-- Poller types: `M3LPollerOptions`, `M3LPollCheckFn`, `M3LPollDecision`
-- Retry types: `M3LRetryRunnerOptions`, `M3LRetryClassifier`, `M3LRetryDecision`, `M3LRetryAdvice`, `M3LUnknownDecision`
+- Poller types: `M3LPollCheckFn`, `M3LPollDecision`
+- Retry types: `M3LRetryClassifier`, `M3LRetryDecision`, `M3LRetryAdvice`
 - Classifier composition: `combineClassifiers`
 - Built-in classifiers: `awsThrottlingClassifier`, `awsNetworkClassifier`, `httpRetryAfterClassifier`
 - Poller event map + payloads: `M3LPollerEventMap`, `M3LPollAttemptPayload`, `M3LPollWaitPayload`, `M3LPollSuccessPayload`, `M3LPollExhaustedPayload`
 - Retry event map + payloads: `M3LRetryEventMap`, `M3LRetryAttemptPayload`, `M3LRetryScheduledPayload`, `M3LRetrySuccessPayload`, `M3LRetryFatalPayload`, `M3LRetryExhaustedPayload`
+
+The constructor option interfaces (`M3LPollerOptions`, `M3LRetryRunnerOptions`) and
+the backoff-strategy contract are **deliberately not re-exported** — callers build
+options with the `M3LBackoff`/`M3LPollingPolicies` factories and pass them
+opaquely (`src/core/polling/index.ts`). They are named throughout this page to
+describe the shape you pass, not as importable symbols. Note `check:doc-exports`
+validates code → doc (every export is documented), not doc → code, so a page that
+claims a non-existent export is not machine-caught.
 
 Both `M3LPoller` and `M3LRetryRunner` extend `M3LEventEmitterBase`, so they inherit the public `on` / `off` subscription methods (see [Events](#events)).
 

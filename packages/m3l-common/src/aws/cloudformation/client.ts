@@ -510,8 +510,14 @@ function buildUpdateStackInput(input: M3LCloudFormationUpdateStackInput): {
  * @param methodName - The calling method's name, folded into both the
  *   thrown error's message and the `M3LCloudFormationOperationError` prefix.
  * @param stackName - The stack name or ID to wait on.
- * @param options - Optional `maxWaitTime` (seconds; defaults to 3600).
- * @returns `{ state: "SUCCESS" }`, or a resolved `TIMEOUT`/`ABORTED` state.
+ * @param options - Optional `maxWaitTime` (seconds; defaults to 3600). When
+ *   `options.signal` is supplied and aborts while the SDK waiter is polling,
+ *   this function throws {@link M3LOperationAbortedError} instead of resolving.
+ * @returns `{ state: "SUCCESS" }`, or a resolved `TIMEOUT`/`ABORTED` state
+ *   (the `"ABORTED"` state is reachable only when an `AbortError` arrives
+ *   with no aborted caller signal).
+ * @throws {@link M3LOperationAbortedError} when `options.signal` is aborted
+ *   while the SDK waiter is polling.
  * @throws {@link M3LCloudFormationOperationError} on any other non-`SUCCESS`
  *   terminal state. On the SDK's `FAILURE` terminal state specifically, the
  *   thrown error's `cause` embeds the entire last `DescribeStacksCommand`
@@ -812,8 +818,12 @@ export class M3LCloudFormationOperations {
    * section).
    *
    * @param stackName - The stack name or ID to wait on.
-   * @param options - Optional `maxWaitTime` (seconds; defaults to 3600).
+   * @param options - Optional `maxWaitTime` (seconds; defaults to 3600). When
+   *   `options.signal` is supplied and aborts while the SDK waiter is polling,
+   *   this method throws {@link M3LOperationAbortedError} instead of resolving.
    * @returns `{ state: "SUCCESS" }`, or a resolved `TIMEOUT`/`ABORTED` state.
+   * @throws {@link M3LOperationAbortedError} when `options.signal` is aborted
+   *   while the SDK waiter is polling.
    * @throws {@link M3LCloudFormationOperationError} on any other non-`SUCCESS`
    *   terminal state.
    */
@@ -836,8 +846,12 @@ export class M3LCloudFormationOperations {
    * section).
    *
    * @param stackName - The stack name or ID to wait on.
-   * @param options - Optional `maxWaitTime` (seconds; defaults to 3600).
+   * @param options - Optional `maxWaitTime` (seconds; defaults to 3600). When
+   *   `options.signal` is supplied and aborts while the SDK waiter is polling,
+   *   this method throws {@link M3LOperationAbortedError} instead of resolving.
    * @returns `{ state: "SUCCESS" }`, or a resolved `TIMEOUT`/`ABORTED` state.
+   * @throws {@link M3LOperationAbortedError} when `options.signal` is aborted
+   *   while the SDK waiter is polling.
    * @throws {@link M3LCloudFormationOperationError} on any other non-`SUCCESS`
    *   terminal state.
    */
@@ -860,8 +874,12 @@ export class M3LCloudFormationOperations {
    * section).
    *
    * @param stackName - The stack name or ID to wait on.
-   * @param options - Optional `maxWaitTime` (seconds; defaults to 3600).
+   * @param options - Optional `maxWaitTime` (seconds; defaults to 3600). When
+   *   `options.signal` is supplied and aborts while the SDK waiter is polling,
+   *   this method throws {@link M3LOperationAbortedError} instead of resolving.
    * @returns `{ state: "SUCCESS" }`, or a resolved `TIMEOUT`/`ABORTED` state.
+   * @throws {@link M3LOperationAbortedError} when `options.signal` is aborted
+   *   while the SDK waiter is polling.
    * @throws {@link M3LCloudFormationOperationError} on any other non-`SUCCESS`
    *   terminal state.
    */

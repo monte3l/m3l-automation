@@ -220,10 +220,10 @@ export interface M3LCloudFormationWaitOptions {
  *
  * @remarks
  * The `"ABORTED"` state is retained for backwards compatibility but is now
- * unreachable when a caller-supplied `signal` is used: a caller-initiated
- * abort rejects with {@link M3LOperationAbortedError} instead. An `AbortError`
- * thrown by the underlying SDK waiter without a matching caller signal still
- * resolves as `"ABORTED"`.
+ * reachable only when an `AbortError` arrives with no *aborted* caller signal
+ * (i.e. an SDK-internal abort path). A caller-initiated abort — when
+ * `options.signal` is supplied and fires — rejects with
+ * {@link M3LOperationAbortedError} instead.
  */
 export interface M3LCloudFormationWaiterResult {
   readonly state: "SUCCESS" | "ABORTED" | "TIMEOUT";

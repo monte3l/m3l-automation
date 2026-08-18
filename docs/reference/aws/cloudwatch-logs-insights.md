@@ -67,8 +67,26 @@ Poll-attempt exhaustion (the attempt bound reached while the query is still `Run
 
 ### Cooperative cancellation
 
-`LogsInsightsAwaitOptions` accepts an optional `signal?: AbortSignal`, threaded into the
-`M3LPoller` that drives `awaitResults` (and therefore `runQuery`). When the
+`LogsInsightsAwaitOptions` accepts an optional `signal?: AbortSignal`, threaded into **three** places, so no
+layer of the wait can outlive the abort:
+
+1. the `M3LPoller` that drives `awaitResults` (and therefore `runQuery`), so a
+   pending backoff is abandoned rather than slept out;
+2. the inner `M3LRetryRunner` that wraps each `GetQueryResults` call for
+   throttling retries (built from `M3LPollingPolicies.cloudWatchLogsQuery()`) — without this, an
+   abort landing mid-throttle-backoff would sleep out the remaining delay (up to
+   the 5s cap) before being honoured;
+3. the **per-command** `abortSignal` on each `GetQueryResults` `send()`, so the
+   in-flight HTTP request is cancelled rather than merely ignored.
+
+An `AbortError` surfacing from an aborted `send()` is re-classified as
+`M3LOperationAbortedError` **before** the query-failed wrapper runs, so a
+cancellation is never reported as a failed query.
+
+When both `signal` and `pollerOptions` are supplied, the dedicated `signal` wins.
+`pollerOptions` is typed `Omit<M3LPollerOptions, "signal">` so the ambiguous
+case cannot be written as an object literal at all; the runtime precedence remains
+as a guard for a caller passing a pre-typed variable. When the
 signal aborts, the poll rejects with
 [`M3LOperationAbortedError`](../core/errors.md#m3loperationabortederror)
 (`ERR_OPERATION_ABORTED`, `origin: "caller"`, `retryable: false`) and abandons

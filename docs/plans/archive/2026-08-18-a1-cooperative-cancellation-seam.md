@@ -38,7 +38,8 @@ Decisions settled with the maintainer before implementation:
   resolving `{ state: "ABORTED" }`. This was the pivotal call: resolving would
   mean `runScript` never observes the abort, leaving the `interrupted` outcome
   unreachable and defeating the ADR's own outcome mapping. The `"ABORTED"` union
-  member was retained (documented as reachable only without a caller signal),
+  member was retained (reachable only when an `AbortError` arrives with no
+  _aborted_ caller signal),
   because narrowing an exported union is breaking.
 - **The abort error accepts no `cause`.** `@smithy/core` builds its `AbortError`
   message by serializing the whole waiter result, which can embed the last

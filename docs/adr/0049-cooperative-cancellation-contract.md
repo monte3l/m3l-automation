@@ -157,9 +157,10 @@ in `aws/**` passed an `abortSignal`, making `"ABORTED"` unreachable —
 in this v1 … for forward-compatibility". Resolved in favour of rejecting, since
 resolving would mean `runScript` never observes the abort and the `interrupted`
 outcome stays unreachable, defeating the Outcome mapping section above. The
-`"ABORTED"` member is retained in all three exported unions, documented as
-reachable only without a caller signal; removing it would be a breaking change
-and is deferred to the next major.
+`"ABORTED"` member is retained in all three exported unions, reachable only when
+an `AbortError` arrives with no _aborted_ caller signal — a signal that was
+supplied but has not fired still takes the resolving path. Removing it would be a
+breaking change and is deferred to the next major.
 
 **A consequence for sequencing.** Because no consumer call site is wired, A1
 lands as a library PR plus a follow-up fleet retrofit, following the two-PR

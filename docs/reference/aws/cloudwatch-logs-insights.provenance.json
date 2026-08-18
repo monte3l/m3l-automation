@@ -8,12 +8,12 @@
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/client.ts",
           "symbol": "M3LLogsInsightsClient",
-          "blob": "9ce72e87604b303ef741014036bb40885827a9d8"
+          "blob": "589b3979a5064ef8a9e7e04ee428039673f70553"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/client.ts",
           "symbol": "LogsInsightsAwaitOptions",
-          "blob": "9ce72e87604b303ef741014036bb40885827a9d8"
+          "blob": "589b3979a5064ef8a9e7e04ee428039673f70553"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/types.ts",
@@ -59,7 +59,7 @@
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/client.ts",
           "symbol": "M3LLogsInsightsClient",
-          "blob": "9ce72e87604b303ef741014036bb40885827a9d8"
+          "blob": "589b3979a5064ef8a9e7e04ee428039673f70553"
         }
       ],
       "retrieved": "2026-08-18"

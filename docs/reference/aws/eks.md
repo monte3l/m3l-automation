@@ -155,10 +155,11 @@ resolving `{ state: "ABORTED" }` — rejecting is what lets `runScript()` recogn
 the run as `interrupted` instead of reporting a success or a failure
 ([ADR-0049](../../adr/0049-cooperative-cancellation-contract.md)).
 
-The `"ABORTED"` member of `M3LEKSWaiterResult` is consequently **unreachable**:
-before this change no method accepted a signal, and now a signal abort takes the
-rejecting path. It is retained rather than removed because narrowing an exported
-union is a breaking change; removal is deferred to the next major.
+The `"ABORTED"` member of `M3LEKSWaiterResult` is consequently reachable only when an `AbortError` arrives with no _aborted_ caller signal —
+a signal that was supplied but has not fired still takes the resolving path.
+It is retained rather than removed because narrowing an exported union is a
+breaking change; removal is deferred to the next major. A caller that passes a
+signal should handle cancellation via `catch`, never via `state`.
 
 `maxWaitTime` is **required** by the SDK's `WaiterConfiguration` (not
 optional, per `@smithy/types`) — this wrapper's `options?.maxWaitTime` must

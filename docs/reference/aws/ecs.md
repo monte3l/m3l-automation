@@ -100,9 +100,11 @@ stops the in-flight request. On abort it rejects with
 resolving `{ state: "ABORTED" }` — rejecting is what lets `runScript()` recognise
 the run as `interrupted` instead of reporting a success or a failure
 ([ADR-0049](../../adr/0049-cooperative-cancellation-contract.md)). The
-`"ABORTED"` member of `M3LECSWaiterResult` is therefore unreachable; it is
+`"ABORTED"` member of `M3LECSWaiterResult` is therefore reachable only when an `AbortError` arrives with no _aborted_ caller signal —
+a signal that was supplied but has not fired still takes the resolving path. It is
 retained rather than removed because narrowing an exported union is a breaking
-change.
+change. A caller that passes a signal should handle cancellation via `catch`,
+never via `state`.
 
 Every other rejection — including the SDK's `FAILURE` terminal waiter state (a service
 that definitively cannot stabilize, e.g. a task repeatedly failing its health

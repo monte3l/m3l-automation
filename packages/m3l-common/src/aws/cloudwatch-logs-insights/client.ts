@@ -70,7 +70,7 @@ export interface LogsInsightsAwaitOptions {
    * a `M3LPollingPolicies` factory and pass it opaquely — the option type
    * itself is not part of the public barrel.
    */
-  readonly pollerOptions?: M3LPollerOptions;
+  readonly pollerOptions?: Omit<M3LPollerOptions, "signal">;
   /**
    * Optional `AbortSignal` for cooperative cancellation (ADR-0049).
    *
@@ -209,8 +209,12 @@ export class M3LLogsInsightsClient {
    * resume/re-attach case — no fresh `StartQuery` is issued).
    *
    * @param queryId - The AWS-assigned query identifier to poll.
-   * @param options - Optional poller override.
+   * @param options - Optional poller and abort-signal overrides. When
+   *   `options.signal` is supplied and aborts while the query is being polled,
+   *   this method throws {@link M3LOperationAbortedError}.
    * @returns The normalized query result once the query reaches `Complete`.
+   * @throws {@link M3LOperationAbortedError} when `options.signal` is aborted
+   *   while polling.
    * @throws {@link M3LLogsInsightsQueryFailedError} When the query reaches a
    *   terminal non-`Complete` status, or when the `GetQueryResults` SDK call
    *   itself fails (after any throttling retries are exhausted; reported with
@@ -278,8 +282,12 @@ export class M3LLogsInsightsClient {
    * the common non-resumable case (submit and wait for one query).
    *
    * @param input - The query definition.
-   * @param options - Optional poller override.
+   * @param options - Optional poller and abort-signal overrides. When
+   *   `options.signal` is supplied and aborts while the query is being polled,
+   *   this method throws {@link M3LOperationAbortedError}.
    * @returns The normalized query result once the query reaches `Complete`.
+   * @throws {@link M3LOperationAbortedError} when `options.signal` is aborted
+   *   while polling.
    */
   async runQuery(
     input: StartLogsInsightsQueryInput,

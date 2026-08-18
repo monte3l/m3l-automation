@@ -524,24 +524,28 @@ export class M3LECSOperations {
 
   /**
    * Waits for one or more services to reach a stable state, wrapping the
-   * SDK's own `waitUntilServicesStable` waiter (which throws on a non-`SUCCESS`
-   * terminal state) in a `try`/`catch` that resolves the two states the SDK
-   * identifies by a distinct error name instead.
+   * SDK's own `waitUntilServicesStable` waiter in a `try`/`catch` that
+   * resolves a `TimeoutError` as `{ state: "TIMEOUT" }` and resolves an
+   * `AbortError` (with no aborted caller signal) as `{ state: "ABORTED" }`,
+   * rather than throwing.
    *
    * @param cluster - The cluster hosting the services (short name or ARN).
    * @param services - The service names or ARNs to wait on (up to 10, the
    *   `DescribeServices` limit).
    * @param options - `maxWaitTime` bounds the wait, in seconds; defaults to
    *   `600` (matches the AWS CLI's own default ECS `services-stable` wait
-   *   budget: 40 attempts at a 15-second poll delay).
+   *   budget: 40 attempts at a 15-second poll delay). When `options.signal`
+   *   is supplied and aborts while the waiter is polling, this method throws
+   *   {@link M3LOperationAbortedError} instead of resolving.
+   * @throws {@link M3LOperationAbortedError} when `options.signal` is aborted
+   *   while the SDK waiter is polling.
    * @throws {@link M3LECSOperationError} for any rejection other than the
    *   waiter's own `TimeoutError`/`AbortError` — including the SDK's
    *   `FAILURE` terminal waiter state, which surfaces as a plain, unnamed
    *   `Error` indistinguishable by identity from a genuine `DescribeServices`
    *   call failure, so it is treated as a fault rather than resolved as data
    *   (see `docs/reference/aws/ecs.md`'s waiter section for the full
-   *   rationale). A `TimeoutError` resolves with `state: "TIMEOUT"` and an
-   *   `AbortError` resolves with `state: "ABORTED"` instead.
+   *   rationale).
    */
   async waitUntilServicesStable(
     cluster: string,

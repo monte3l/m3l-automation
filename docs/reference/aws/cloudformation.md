@@ -217,8 +217,10 @@ waiter rejection, so it surfaces as `M3LCloudFormationOperationError` like
 any other misconfiguration, not a dedicated validation error.
 
 **A caught error named `"TimeoutError"` resolves `{ state: "TIMEOUT", reason }`**,
-where `reason` is a fresh, static, library-constructed string naming the method
-and stack that was waited on. It is deliberately **not** the SDK error's own
+where `reason` is a fresh, static, library-constructed string naming the stack
+that was waited on. (The method name reaches the thrown
+`M3LCloudFormationOperationError` on the fault path, but not the resolved
+`reason`.) It is deliberately **not** the SDK error's own
 `message`: `@smithy/core`'s `checkExceptions` builds that message by serializing
 the whole waiter result, which can embed the last observed `DescribeStacks`
 response — including caller-supplied parameter and output values. This mirrors
@@ -234,12 +236,12 @@ resolved `{ state: "ABORTED" }`. Rejecting is what lets `runScript()` recognise
 the run as `interrupted` rather than reporting it as a success or a failure
 ([ADR-0049](../../adr/0049-cooperative-cancellation-contract.md)).
 
-The `"ABORTED"` member therefore **remains unreachable** in
-`M3LCloudFormationWaiterResult`. It was previously unreachable because no method
-accepted a signal; it is now unreachable because a signal abort takes the
-rejecting path instead. The member is retained rather than removed because
-narrowing an exported union is a breaking change; removal is deferred to the
-next major.
+The `"ABORTED"` member of `M3LCloudFormationWaiterResult` is therefore reachable only when an `AbortError` arrives with no _aborted_ caller signal —
+a signal that was supplied but has not fired still takes the resolving path.
+Before this change it was unreachable outright, because no method accepted a
+signal. The member is retained rather than removed because narrowing an exported
+union is a breaking change; removal is deferred to the next major. A caller that
+passes a signal should handle cancellation via `catch`, never via `state`.
 
 Every other rejection — including the SDK's `FAILURE` terminal waiter state (e.g. a stack
 that rolled back) — throws `M3LCloudFormationOperationError` chaining the

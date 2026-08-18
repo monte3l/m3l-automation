@@ -64,7 +64,7 @@ export interface AthenaAwaitOptions {
    * `M3LPollingPolicies` factory and pass it opaquely — the option type
    * itself is not part of the public barrel.
    */
-  readonly pollerOptions?: M3LPollerOptions;
+  readonly pollerOptions?: Omit<M3LPollerOptions, "signal">;
   /**
    * Optional `AbortSignal` for cooperative cancellation (ADR-0049).
    *
@@ -462,8 +462,12 @@ export class M3LAthenaClient {
    *
    * @param queryExecutionId - The AWS-assigned query execution identifier to
    *   poll.
-   * @param options - Optional poller override.
+   * @param options - Optional poller and abort-signal overrides. When
+   *   `options.signal` is supplied and aborts while the query is being polled,
+   *   this method throws {@link M3LOperationAbortedError}.
    * @returns The normalized query result once the query reaches `SUCCEEDED`.
+   * @throws {@link M3LOperationAbortedError} when `options.signal` is aborted
+   *   while polling.
    * @throws {@link M3LAthenaQueryFailedError} When the query reaches a
    *   terminal non-`SUCCEEDED` status, when the `GetQueryExecution`/
    *   `GetQueryResults` SDK call itself fails (after any throttling retries
@@ -509,8 +513,12 @@ export class M3LAthenaClient {
    * the common non-resumable case (submit and wait for one query).
    *
    * @param input - The query definition.
-   * @param options - Optional poller override.
+   * @param options - Optional poller and abort-signal overrides. When
+   *   `options.signal` is supplied and aborts while the query is being polled,
+   *   this method throws {@link M3LOperationAbortedError}.
    * @returns The normalized query result once the query reaches `SUCCEEDED`.
+   * @throws {@link M3LOperationAbortedError} when `options.signal` is aborted
+   *   while polling.
    */
   async runQuery(
     input: StartAthenaQueryInput,
