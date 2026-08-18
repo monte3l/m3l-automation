@@ -278,7 +278,7 @@ async function runEscalatedEcho(
  * and optional target-graded escalation.
  *
  * Five behaviors determined by whether a target is supplied and whether it is
- * sensitive (`target` supplied and `isSensitiveTarget(target)` returns `true`):
+ * sensitive (`target` supplied and `isSensitiveTarget(target)` returns a **truthy** value):
  *
  * 1. No `target` — exactly the ungraded behavior below; `yesSensitive` is
  *    ignored.

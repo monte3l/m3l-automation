@@ -254,6 +254,16 @@ export interface M3LPipelineDestructiveOptions<
    * (via `prompt.text`) instead of the standard yes/no `prompt.confirm`
    * call.
    *
+   * Both {@link target}`(...)` and `isSensitiveTarget(...)` are called
+   * **exactly once**, **before** the gate's `try`. The engine pre-computes the
+   * sensitivity verdict and forwards that pre-computed value, rather than
+   * handing the predicate itself to `confirmDestructive`. This is
+   * load-bearing: were either called inside the `try`, a throw carrying the
+   * gate's own `abortCode` would be absorbed as an operator decline —
+   * soft-landing the run to `status: "declined"`, discarding the real cause,
+   * and never prompting anyone. A throw from `isSensitiveTarget` therefore
+   * propagates to the caller, exactly as a throw from {@link target} does.
+   *
    * Ignored when {@link target} is absent.
    */
   readonly isSensitiveTarget?: M3LDestructiveTargetPredicate;

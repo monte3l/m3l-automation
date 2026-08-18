@@ -186,14 +186,6 @@ export class M3LOperationPipeline<
   }
 
   /**
-   * Phase 6: the destructive-confirmation gate. Resolves `undefined` when
-   * the operation isn't gated or confirmation succeeds (the run should
-   * continue to dispatch); resolves a `"declined"` outcome when
-   * `onDecline: { kind: "soft-land" }` absorbed the decline. Any other gate
-   * failure — including `onDecline: { kind: "throw" }`'s decline error —
-   * propagates by throwing.
-   */
-  /**
    * Builds the {@link M3LConfirmDestructiveOptions} to pass into
    * `confirmDestructive`. When {@link M3LPipelineDestructiveOptions.target} is
    * present, calls it with all four run arguments and forwards the result
@@ -251,6 +243,14 @@ export class M3LOperationPipeline<
     };
   }
 
+  /**
+   * Phase 6: the destructive-confirmation gate. Resolves `undefined` when
+   * the operation isn't gated or confirmation succeeds (the run should
+   * continue to dispatch); resolves a `"declined"` outcome when
+   * `onDecline: { kind: "soft-land" }` absorbed the decline. Any other gate
+   * failure — including `onDecline: { kind: "throw" }`'s decline error —
+   * propagates by throwing.
+   */
   async #runGate(
     operation: TOp,
     settings: TSettings,

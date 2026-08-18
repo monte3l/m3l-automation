@@ -105,7 +105,7 @@ Per [ADR-0048](../../adr/0048-target-graded-destructive-confirmation.md), a call
   - `sensitiveTargets` matching is **OR** across the three lists — a target is sensitive if _any_ supplied list contains the corresponding field. A field that is **absent** on the target is never matched, so a `regions`-only spec never grades a region-less target, and an `accountIds`-only spec never grades a target without an `accountId`. An all-omitted spec (`{}`) matches **nothing** — a silently inert policy, so supply at least one list.
 - `yesSensitive?: boolean` — the separately-named opt-in that bypasses a **sensitive** target. Deliberately distinct from `yes`: a flag added for convenience on routine work must not silently carry the same authority on the most consequential target.
 
-A target counts as **sensitive** when `target` is supplied **and** `isSensitiveTarget(target)` returns `true`. The five resulting states:
+A target counts as **sensitive** when `target` is supplied **and** `isSensitiveTarget(target)` returns a **truthy** value. The five resulting states:
 
 | State | Condition                                                | Behavior                                                                                                        |
 | ----- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
@@ -123,7 +123,7 @@ A sensitive target is confirmed by **typing the target profile**, not by a keypr
 
 1. A banner names the target — `profile`, plus `region` and `accountId` when present — alongside the description, so the operator confirms against the blast radius rather than the verb alone. The banner degrades gracefully, omitting the fragment for any absent field.
 2. `prompt.text` asks for the target profile.
-3. The input, trimmed, is compared against the profile. An exact match resolves; a mismatch or empty input throws the same `aborted: <description>` `M3LError` a decline throws, carrying the caller-supplied `code`.
+3. The input, trimmed, is compared against the **raw** profile. An exact match resolves; a mismatch or empty input throws the same `aborted: <description>` `M3LError` a decline throws, carrying the caller-supplied `code`. Because only the input is trimmed, a profile with **leading or trailing whitespace is unconfirmable by any input** — the trimmed input can never carry the padding back. That is intentional and stricter than "type it exactly".
 
 **A blank echo token fails closed.** `target` is caller-supplied, so a hand-built target can carry a blank or whitespace-only `profile`. Such a token can never be echoed successfully — **no** input satisfies it, so the gate always declines. Without this, an empty input would compare equal to an empty profile and a single keystroke would confirm a sensitive target. The operator is still prompted; the confirmation simply cannot succeed, which fails in the safe direction: a sensitive target with no usable echo token is unusable rather than trivially confirmable. (`M3LScript.awsTarget` never produces this — it treats an empty resolved profile as absent.)
 
