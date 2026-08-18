@@ -155,6 +155,32 @@ const MUTATING_NO_INPUT: ReadonlySet<EksOperation> = new Set([
 ] as const);
 
 /**
+ * The four `wait-*` operations whose dispatch handler returns
+ * `AWS.M3LEKSWaiterResult`. Used in `persist` and `finalize` to discriminate
+ * by operation rather than by structural predicates, collapsing a four-arm
+ * `||` chain to a single `Set.has` call.
+ */
+const WAIT_OPERATIONS: ReadonlySet<EksOperation> = new Set([
+  "wait-cluster-active",
+  "wait-cluster-deleted",
+  "wait-nodegroup-active",
+  "wait-nodegroup-deleted",
+] as const);
+
+/**
+ * The four `update-*` operations whose dispatch handler returns
+ * `AWS.M3LEKSUpdate`. Used in `persist` and `finalize` to discriminate
+ * by operation rather than by structural predicates, collapsing a four-arm
+ * `||` chain to a single `Set.has` call.
+ */
+const UPDATE_OPERATIONS: ReadonlySet<EksOperation> = new Set([
+  "update-cluster-config",
+  "update-cluster-version",
+  "update-nodegroup-config",
+  "update-nodegroup-version",
+] as const);
+
+/**
  * Resolves the raw, per-operation-optional config values the pipeline reads
  * once, up front. Must not re-read `"operation"` or apply its own
  * required-field guards — those are owned by the engine's own "Operation"
@@ -436,27 +462,6 @@ async function dispatchWriteNodegroup(
 }
 
 /**
- * True when `result` is a `wait-*` outcome — the only members of
- * {@link DispatchResult} carrying a `state` field. `finalize` is not passed
- * `operation` (it is not part of the engine's `finalize` contract), so this
- * structural check is how it recognizes a wait result.
- */
-function isWaiterResult(
-  result: DispatchResult,
-): result is AWS.M3LEKSWaiterResult {
-  return "state" in result;
-}
-
-/**
- * True when `result` is an `update-*` outcome — the only members of
- * {@link DispatchResult} carrying an `id` field (which `M3LEKSWaiterResult`
- * and the summary types do not).
- */
-function isUpdateResult(result: DispatchResult): result is AWS.M3LEKSUpdate {
-  return "id" in result;
-}
-
-/**
  * Builds the run-summary log fields (and the persisted-output shape) for a
  * `wait-*` or `update-*` result, deliberately allowlisting only the fields
  * each type actually declares. Never spreads or `JSON.stringify`s `result`
@@ -541,10 +546,14 @@ const pipeline = new Core.M3LOperationPipeline<
     "wait-nodegroup-active": dispatchWaitNodegroup,
     "wait-nodegroup-deleted": dispatchWaitNodegroup,
   },
-  persist: async (result, settings, deps) => {
+  persist: async (result, settings, deps, operation) => {
+    const isWaitOrUpdate =
+      WAIT_OPERATIONS.has(operation) || UPDATE_OPERATIONS.has(operation);
     let summaryFields: Record<string, unknown> = {};
-    if (isWaiterResult(result) || isUpdateResult(result)) {
-      summaryFields = buildSafeSummaryFields(result);
+    if (isWaitOrUpdate) {
+      summaryFields = buildSafeSummaryFields(
+        result as AWS.M3LEKSWaiterResult | AWS.M3LEKSUpdate,
+      );
     }
     deps.logger.step(`eks-ops operation '${settings.operation}' complete`, {
       operation: settings.operation,
@@ -555,34 +564,41 @@ const pipeline = new Core.M3LOperationPipeline<
       ...summaryFields,
     });
     if (settings.output === undefined) return;
-    const safeResult: DispatchResult | Record<string, unknown> =
-      isWaiterResult(result) || isUpdateResult(result) ? summaryFields : result;
+    const safeResult: DispatchResult | Record<string, unknown> = isWaitOrUpdate
+      ? summaryFields
+      : result;
     const exporter = new Core.M3LJSONFileExporter({
       filePath: deps.paths.resolveOutput(settings.output),
     });
     await exporter.export(safeResult);
   },
-  finalize: (result, _settings, _deps) => {
-    if (isWaiterResult(result)) {
-      if (result.state === "SUCCESS") return;
+  finalize: (result, _settings, _deps, operation) => {
+    if (WAIT_OPERATIONS.has(operation)) {
+      const waiterResult = result as AWS.M3LEKSWaiterResult;
+      if (waiterResult.state === "SUCCESS") return;
       throw new Core.M3LError(
-        `eks-ops: wait resolved state '${result.state}'`,
+        `eks-ops: wait resolved state '${waiterResult.state}'`,
         {
           code: "ERR_EKS_OPS_WAIT_NOT_COMPLETE",
           context: {
-            state: result.state,
-            ...(result.reason !== undefined && { reason: result.reason }),
+            state: waiterResult.state,
+            ...(waiterResult.reason !== undefined && {
+              reason: waiterResult.reason,
+            }),
           },
         },
       );
     }
-    if (isUpdateResult(result)) {
-      if (result.status !== "Failed") return;
+    if (UPDATE_OPERATIONS.has(operation)) {
+      const updateResult = result as AWS.M3LEKSUpdate;
+      if (updateResult.status !== "Failed") return;
       throw new Core.M3LError(`eks-ops: update resolved status 'Failed'`, {
         code: "ERR_EKS_OPS_UPDATE_FAILED",
         context: {
-          status: result.status,
-          ...(result.errors !== undefined && { errors: result.errors }),
+          status: updateResult.status,
+          ...(updateResult.errors !== undefined && {
+            errors: updateResult.errors,
+          }),
         },
       });
     }

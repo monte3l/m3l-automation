@@ -341,19 +341,6 @@ async function dispatchWriteService(
 }
 
 /**
- * True when `result` is a `wait-services-stable` outcome — the only member
- * of {@link DispatchResult} carrying a `state` field. `finalize` is not
- * passed `operation` (it is not part of the engine's `finalize` contract),
- * so this structural check is how it recognizes a wait result to assert
- * against.
- */
-function isWaiterResult(
-  result: DispatchResult,
-): result is AWS.M3LECSWaiterResult {
-  return "state" in result;
-}
-
-/**
  * The `ecs-ops` pipeline: resolve settings -&gt; (for every operation) plan
  * a write dispatch -&gt; (for `create-service`/`update-service`/`delete-service`)
  * the destructive-operation gate -&gt; the operation-appropriate step -&gt;
@@ -408,15 +395,19 @@ const pipeline = new Core.M3LOperationPipeline<
     });
     await exporter.export(result);
   },
-  finalize: (result, _settings, deps) => {
-    if (!isWaiterResult(result) || result.state === "SUCCESS") return;
+  finalize: (result, _settings, deps, operation) => {
+    if (operation !== "wait-services-stable") return;
+    const waiterResult = result as AWS.M3LECSWaiterResult;
+    if (waiterResult.state === "SUCCESS") return;
     throw new Core.M3LError(
-      `ecs-ops run ${deps.correlationId}: wait-services-stable resolved '${result.state}', not SUCCESS`,
+      `ecs-ops run ${deps.correlationId}: wait-services-stable resolved '${waiterResult.state}', not SUCCESS`,
       {
         code: "ERR_ECS_OPS_WAIT_NOT_STABLE",
         context: {
-          state: result.state,
-          ...(result.reason !== undefined && { reason: result.reason }),
+          state: waiterResult.state,
+          ...(waiterResult.reason !== undefined && {
+            reason: waiterResult.reason,
+          }),
         },
       },
     );

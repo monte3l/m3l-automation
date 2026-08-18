@@ -1641,12 +1641,13 @@ describe("core/pipeline", () => {
       expect(finalize).not.toHaveBeenCalled();
     });
 
-    test("B35a persist is called once with (result, settings, deps), awaited", async () => {
+    test("B35a persist is called once with (result, settings, deps, operation), awaited", async () => {
       const settings: TestSettings = { bucket: "b", yes: false };
       const result: TestResult = { processed: 9 };
       const { deps, config } = makeHarness();
       config.set("operation", "read");
       const persist = vi.fn(() => Promise.resolve(undefined));
+      const finalize = vi.fn(() => undefined);
 
       const pipeline = new M3LOperationPipeline<
         TestOp,
@@ -1664,11 +1665,15 @@ describe("core/pipeline", () => {
           write: () => Promise.resolve(result),
         },
         persist,
+        finalize,
       });
 
       await pipeline.run(deps);
       expect(persist).toHaveBeenCalledTimes(1);
-      expect(persist).toHaveBeenCalledWith(result, settings, deps);
+      // F12: persist receives operation as 4th argument
+      expect(persist).toHaveBeenCalledWith(result, settings, deps, "read");
+      // F12: finalize receives operation as 4th argument
+      expect(finalize).toHaveBeenCalledWith(result, settings, deps, "read");
     });
 
     test("B35b persist is skipped when omitted — the run still completes", async () => {
@@ -2615,6 +2620,27 @@ describe("core/pipeline", () => {
           write: () => Promise.resolve({ count: 0 }),
         },
       });
+    });
+
+    test("T15 persist and finalize 4th parameter is TOp (F12)", () => {
+      // F12: persist and finalize receive operation as 4th argument.
+      // These type-level assertions verify the callback signatures include
+      // `operation: TOp` as parameter index [3].
+      type Opts = M3LOperationPipelineOptions<
+        "list" | "get",
+        T1Settings,
+        M3LOperationPipelineBaseDeps,
+        T1Result,
+        undefined
+      >;
+
+      expectTypeOf<Parameters<NonNullable<Opts["persist"]>>[3]>().toEqualTypeOf<
+        "list" | "get"
+      >();
+
+      expectTypeOf<
+        Parameters<NonNullable<Opts["finalize"]>>[3]
+      >().toEqualTypeOf<"list" | "get">();
     });
   });
 });

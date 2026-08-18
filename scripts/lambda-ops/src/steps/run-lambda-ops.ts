@@ -232,18 +232,6 @@ async function dispatchWrite(
 }
 
 /**
- * True when `result` is an `invoke` outcome — the only member of
- * {@link DispatchResult} carrying a `statusCode` field. `finalize` is not
- * passed `operation`, so this structural check is how it distinguishes an
- * invoke result from the read/write types in the union.
- */
-function isInvokeResult(
-  result: DispatchResult,
-): result is AWS.M3LLambdaInvokeResult {
-  return result !== undefined && "statusCode" in result;
-}
-
-/**
  * The `lambda-ops` pipeline: resolve settings → (for `invoke`/`create`/
  * `update-code`/`update-configuration`/`delete`) the destructive-operation
  * gate → the operation-appropriate step → persist the result to `output`
@@ -294,13 +282,15 @@ const pipeline = new Core.M3LOperationPipeline<
     });
     await exporter.export(result);
   },
-  finalize: (result, _settings, deps) => {
-    if (!isInvokeResult(result) || result.functionError === undefined) return;
+  finalize: (result, _settings, deps, operation) => {
+    if (operation !== "invoke") return;
+    const invokeResult = result as AWS.M3LLambdaInvokeResult;
+    if (invokeResult.functionError === undefined) return;
     throw new Core.M3LError(
       `lambda-ops run ${deps.correlationId}: invoke returned a function error`,
       {
         code: "ERR_LAMBDA_OPS_FUNCTION_ERROR",
-        context: { functionError: result.functionError },
+        context: { functionError: invokeResult.functionError },
       },
     );
   },
@@ -356,9 +346,10 @@ export async function runLambdaOps(deps: Deps): Promise<void> {
   // effect — same as ecs-ops's post-run accessor pattern).
   const accessor = buildAccessor(deps);
   const functionName = accessor.optionalString("functionName");
-  const invokeResult = isInvokeResult(outcome.result)
-    ? outcome.result
-    : undefined;
+  const invokeResult =
+    outcome.operation === "invoke"
+      ? (outcome.result as AWS.M3LLambdaInvokeResult)
+      : undefined;
 
   deps.logger.step(`lambda-ops run ${deps.correlationId} complete`, {
     operation: outcome.operation,
