@@ -139,6 +139,8 @@ const IMPLEMENTATION_ANCHORS = {
   postComparisonHardeningWave:
     "#post-comparison-hardening-wave--adr-0040004100420043",
   m3lCliBuildOut: "#m3l-cli-build-out--adr-0042-activation-issue-333",
+  codifiedProcedureWave:
+    "#codified-procedure-engine-wave--adr-0046004700480049",
   gated: "#gated-library-modules--deferred-decisions-p2",
 };
 
@@ -540,6 +542,27 @@ export function actionableItems(roadmap, implementation) {
         priority: resolvePriority(row[priorityIndex], key),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.m3lCliBuildOut,
+        detail: buildDetail(header, row, new Set([itemIndex, statusIndex])),
+      });
+    }
+  }
+
+  if (implementation.codifiedProcedureWave) {
+    const { header, rows } = implementation.codifiedProcedureWave;
+    const itemIndex = columnIndex(header, "Item");
+    const priorityIndex = columnIndex(header, "Priority");
+    const statusIndex = columnIndex(header, "Status");
+    const changeIndex = columnIndex(header, "Change");
+    for (const row of rows) {
+      const strippedItem = stripMarkdown(row[itemIndex] ?? "");
+      const key = `impl:${slug(row[itemIndex] ?? "")}`;
+      addItem({
+        key,
+        title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
+        status: resolveStatus(row[statusIndex], key, "Implementation"),
+        priority: resolvePriority(row[priorityIndex], key),
+        sourcePath: IMPLEMENTATION_PATH,
+        sourceAnchor: IMPLEMENTATION_ANCHORS.codifiedProcedureWave,
         detail: buildDetail(header, row, new Set([itemIndex, statusIndex])),
       });
     }

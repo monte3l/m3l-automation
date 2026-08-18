@@ -164,6 +164,34 @@ checkpoint) rather than a structural invariant the guard alone can express.
   breaking, since a future external consumer's hand-built writer (were one
   to exist) would need the same update.
 
+## Update (2026-08-18) — checkpoints bind to the definition that wrote them
+
+This ADR settled how a resumable consumer records _where it stopped_. A capability
+audit found the adjacent gap: nothing records _what it was doing_ when it stopped.
+
+`M3LCheckpointStore`'s envelope carries a `checksum` computed as
+`canonicalJsonHash(payload)` — payload **integrity** only. No field binds a
+checkpoint to the configuration that produced it. Editing an Athena query, or a
+CloudWatch Logs Insights time window, and then resuming will therefore succeed
+silently and continue from an offset that no longer means what it meant when it was
+written.
+
+The envelope gains an **optional** `fingerprint`, computed with the same existing
+`canonicalJsonHash` over a caller-supplied definition value — the resolved settings
+that give the stored offsets their meaning. On read, a mismatch fails with a
+dedicated error code rather than resuming.
+
+This applies the stance already accepted for the shape-validation half of this same
+class of defect, where `isLogsInsightsCheckpoint`'s validation was tightened and a
+previously-resumable checkpoint was allowed to start failing: **failing loud beats
+resuming into a corrupt offset.**
+
+Backward compatibility is preserved on every axis. An envelope with no
+`fingerprint` reads exactly as it does today; a caller that supplies no definition
+writes none; and the legacy no-envelope path is untouched. Only opting in changes
+behaviour. Named adopters: `athena-query`, `cloudwatch-logs-insights`,
+`dynamodb-crud`.
+
 ## Links
 
 - Related: issue #427 (F11, `docs/plans/IMPLEMENTATION.md`); PR #425 (the

@@ -83,6 +83,11 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 | Item | Priority | Status | Change | Source / notes |
 | ---- | -------- | ------ | ------ | ----------------- |
 
+## Codified-procedure engine wave — ADR-0046/0047/0048/0049
+
+| Item | Priority | Status | Change |
+| ---- | -------- | ------ | ------- |
+
 ## AWS getter reality
 
 | Provider getter | AWS service | Status | Wrapper submodule | Consuming script(s) | ADR / precedent |
@@ -138,6 +143,11 @@ const EMPTY_IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automatio
 
 | Item | Priority | Status | Change | Source / notes |
 | ---- | -------- | ------ | ------ | ----------------- |
+
+## Codified-procedure engine wave — ADR-0046/0047/0048/0049
+
+| Item | Priority | Status | Change |
+| ---- | -------- | ------ | ------- |
 
 ## AWS getter reality
 

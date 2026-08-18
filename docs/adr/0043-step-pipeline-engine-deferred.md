@@ -148,6 +148,31 @@ The three capabilities this ADR closed outright (LLM/Bedrock, canonical-JSON
 contracts, internal-alerting-service client) remain closed — this update
 opens only the engine gate.
 
+## Update (2026-08-18) — a second, distinct engine adopted; this one is unchanged
+
+A capability audit, and a maintainer decision following it, named a consumer for
+an engine of a **different shape**: a step sequence with identity, engine-owned
+flow control, an accumulating execution context, and termination by matching
+gathered evidence against prioritised named cases. That engine is adopted as
+`core/procedure` by [ADR-0046](./0046-codified-procedure-engine.md).
+
+**`M3LOperationPipeline` is unchanged by that decision** — not replaced, not
+deprecated, and not migrated. It remains the multi-operation dispatcher for the
+consumer fleet, and the six remaining `run-*.ts` migration rows tracked since this
+ADR's 2026-08-16 update proceed exactly as filed.
+
+The two engines cannot absorb one another. This one runs a **fixed ten-phase
+order** with exactly one handler per operation and an outcome of
+`{ operation, status, result }`; it has no step identity, no flow control, and no
+context that accumulates across steps. Adding those would not extend its design,
+it would replace it — while destabilising the eight scripts already dispatching
+through it. ADR-0046 records the full comparison.
+
+The three capabilities this ADR closed outright — LLM/Bedrock invocation, a
+canonical-JSON contracts package, and a typed client for an internal alerting
+service — **remain closed**. This update opens nothing beyond noting the adjacent
+engine.
+
 ## Links
 
 - Related: [ADR-0021 (post-1.0 deepen-first strategy — the broadening intake

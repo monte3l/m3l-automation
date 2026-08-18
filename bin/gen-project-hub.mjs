@@ -205,6 +205,7 @@ function runGenerator(reporter) {
     backlog.capabilityDeepeningWave,
     backlog.postComparisonHardeningWave,
     backlog.m3lCliBuildOut,
+    backlog.codifiedProcedureWave,
     backlog.getterReality,
     backlog.gated,
     ledger.barrels,
