@@ -370,6 +370,39 @@ guarantee — it is allowlisted per event and has survived every adversarial
 pass — so it remains suitable for sharing where the full report is not. That
 asymmetry is deliberate.
 
+## Update (2026-08-18) — a partial run outcome, and cancellation that reaches `interrupted`
+
+Two gaps in this ADR's outcome model were found by a capability audit, and both are
+being closed.
+
+**1. There is no partial arm.** `M3LRunOutcome` is
+`"success" | "failure" | "dry-run" | "interrupted"`, and the pipeline outcome it
+sits above is `completed | declined`. A run that processed 997 of 1000 records and
+a run that processed none therefore report **identically** as `failure`; the
+difference survives only inside each script's private result shape (for example
+`dynamodb-crud`'s `failed.jsonl`, or `s3-objects`' `finalize`, which throws
+whenever any key failed). `M3LRunOutcome` gains a partial arm with its own entry in
+`M3L_EXIT_CODES` — a partially-failed run is not a success and must not exit `0` —
+and the run report carries the absorbed failures as structured recovery entries
+rather than free text.
+
+Widening these unions is technically breaking for an exhaustive `switch`. Every
+consumer is in-repo, so `pnpm typecheck` makes the blast radius visible, and the
+version treatment follows ADR-0020's hand-managed policy. `pnpm check:api` does not
+move: both symbols are barrel-surfaced, not `exports`-map entries.
+
+**2. `interrupted` was only best-effort reachable.** Nothing in the library
+observed a cancellation, so the arm existed without a mechanism that could
+truthfully produce it. [ADR-0049](./0049-cooperative-cancellation-contract.md)
+supplies one, and a run terminated by a shutdown signal now resolves to
+`interrupted` rather than `failure` — cancellation is an operator decision, not a
+fault, and this ADR's own premise (that the report is the record of what happened)
+requires the report to say so.
+
+The 2026-07-23 reclassification above is untouched: the run report remains a
+sensitive artifact, and every field added here is allowlisted-scalar shaped rather
+than free text, following the evidence recorded in that update.
+
 ## Links
 
 - Related: [ADR-0005](./0005-error-hierarchy.md) (M3LError/M3LResult model —
