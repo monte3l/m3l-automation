@@ -270,6 +270,7 @@ A run that processed 997 of 1000 records is neither a success nor a failure.
 ```typescript
 reportRecovery(entry: M3LRunRecoveryEntry): void;
 get recovery(): readonly M3LRunRecoveryEntry[];
+get recoveryTotal(): number;
 ```
 
 Each entry names the item that failed, the flattened cause chain, and when it
@@ -291,6 +292,12 @@ survived, the other is what ended it.
 The getter returns a snapshot, so a caller cannot mutate the script's state
 through it, and a later `reportRecovery` never retroactively changes an array
 already handed out.
+
+`recovery` is bounded at `M3L_RECOVERY_LIMIT` (100), keeping the most recent
+entries — a thousand-item batch failure must not write a thousand cause chains
+into the run report. `recoveryTotal` counts every entry reported, retained or
+evicted, so `recoveryTotal > recovery.length` is how a reader knows the list was
+truncated. Both flow into the run report unchanged.
 
 ## Resolved AWS target (`script.awsTarget`)
 

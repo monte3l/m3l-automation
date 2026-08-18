@@ -356,12 +356,16 @@ interface M3LRunRecoveryEntry {
   readonly recordedAt: string; // ISO-8601 timestamp the failure was absorbed
 }
 
+/** Entries retained in a report before the oldest are evicted. */
+const M3L_RECOVERY_LIMIT = 100;
+
 type M3LRunReport = M3LRunReportBase &
   (
     | { readonly outcome: "failure"; readonly failure: M3LRunReportFailure }
     | {
         readonly outcome: "partial";
         readonly recovery: readonly M3LRunRecoveryEntry[];
+        readonly recoveryTotal: number;
         readonly failure?: undefined;
       }
     | {
@@ -377,13 +381,31 @@ Narrow on `outcome`, not on `failure !== undefined`:
 if (report.outcome === "failure") {
   report.failure.chain; // no optional access needed
 } else if (report.outcome === "partial") {
-  report.recovery.length; // always present, and always non-empty
+  report.recoveryTotal; // how many failures the run absorbed
+  report.recovery; // the retained subset, newest first-evicted-last
 }
 ```
 
 `recovery` is **required** on the `partial` arm and absent from every other one,
 so "partial with nothing recorded" is unrepresentable — the same
 present-if-and-only-if discipline `failure` already follows.
+
+### Bounded recovery entries
+
+A batch that fails a thousand times would otherwise write a thousand full cause
+chains into an artifact this module already classifies as sensitive. `recovery`
+is therefore a ring buffer bounded at `M3L_RECOVERY_LIMIT` (100), keeping the
+**most recent** entries and evicting the oldest — the same discipline, and the
+same default, as [`M3LBreadcrumbTrail`](#breadcrumbs).
+
+`recoveryTotal` is the number of failures actually **reported**, which is not
+the same as the number retained. `recoveryTotal > recovery.length` means the
+report was truncated, and the report says so rather than quietly presenting 100
+failures as though they were all of them — an unrecorded truncation is exactly
+the silent gap ADR-0046's mandatory-fallback discipline forbids.
+
+Read `recoveryTotal`, never `recovery.length`, when reporting how much a run
+absorbed.
 
 **Behavioral contracts:**
 

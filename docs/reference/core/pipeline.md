@@ -309,13 +309,25 @@ interface M3LOperationPipelineCoreOptions<
   ) => readonly M3LRunRecoveryEntry[];
 }
 
-interface M3LOperationPipelineOutcome<TOp extends string, TResult> {
+interface M3LOperationPipelineOutcomeBase<TOp extends string, TResult> {
   readonly operation: TOp;
-  readonly status: "completed" | "declined" | "partial";
   readonly result: TResult;
-  /** Present, and non-empty, if and only if `status === "partial"`. */
-  readonly recovery?: readonly M3LRunRecoveryEntry[];
 }
+
+type M3LOperationPipelineOutcome<
+  TOp extends string,
+  TResult,
+> = M3LOperationPipelineOutcomeBase<TOp, TResult> &
+  (
+    | {
+        readonly status: "partial";
+        readonly recovery: readonly M3LRunRecoveryEntry[];
+      }
+    | {
+        readonly status: "completed" | "declined";
+        readonly recovery?: undefined;
+      }
+  );
 
 class M3LOperationPipeline<
   TOp extends string,
