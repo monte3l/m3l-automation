@@ -208,7 +208,7 @@ wrong" from "my logic is wrong".
 after the `onError`/`onCleanup` hooks, and the process falls through to Node's
 default unhandled-rejection behavior (exit code `1`) unless the composition
 root intervenes. The differentiated exit-code contract — `2` caller/config,
-`3` external, `4` library, `5` interrupted — is provided by the opt-in
+`3` external, `4` library, `5` interrupted, `6` partial — is provided by the opt-in
 [`runScript()` wrapper](#runscript), which sets `process.exitCode` from
 `mapErrorToExitCode`; bare `run()` behavior is unchanged.
 
@@ -260,6 +260,37 @@ in Lambda the accessor still exists and simply never aborts — callers need no
 environment-specific branch. The signal is observed at operation and step
 boundaries; it does not interrupt CPU-bound synchronous code
 ([ADR-0049](../../adr/0049-cooperative-cancellation-contract.md)).
+
+## Absorbed failures (`script.reportRecovery`)
+
+A run that processed 997 of 1000 records is neither a success nor a failure.
+`M3LScript` accumulates the per-item failures a run absorbed, shaped like the
+[`signal`](#cooperative-cancellation-scriptsignal) accessor:
+
+```typescript
+reportRecovery(entry: M3LRunRecoveryEntry): void;
+get recovery(): readonly M3LRunRecoveryEntry[];
+```
+
+Each entry names the item that failed, the flattened cause chain, and when it
+was absorbed. The classification is always **reported by the caller** — the
+library never inspects a result to decide a run was degraded, because only the
+caller knows what "an item" means for its work.
+
+[`runScript()`](#runscript) consults `script.recovery` on the non-throwing path:
+with no entries the outcome is `success` (or `dry-run`) exactly as before, and
+with one or more it is `partial`, carrying the entries into the run report and
+exiting `6` — never `0`.
+
+**A propagating throw still wins.** `recovery` describes failures the run
+_absorbed_ and continued past; an error that escapes `mainFn` is a real failure
+and resolves to `failure` (or `interrupted` for a cooperative abort) regardless
+of what was recorded. The two are not in competition: one is what the run
+survived, the other is what ended it.
+
+The getter returns a snapshot, so a caller cannot mutate the script's state
+through it, and a later `reportRecovery` never retroactively changes an array
+already handed out.
 
 ## Resolved AWS target (`script.awsTarget`)
 
