@@ -39,6 +39,11 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/analysis/M3LThresholdRuleValidationError.ts"
   },
+  "M3LThresholdVerdict": {
+    "submodule": "analysis",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts"
+  },
   "M3LCheckpointStore": {
     "submodule": "checkpoint",
     "namespace": "core",
@@ -435,6 +440,16 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
     "lines": "947-1189"
+  },
+  "M3LRunRecoveryEntry": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/run-report.ts"
+  },
+  "M3L_RECOVERY_LIMIT": {
+    "submodule": "diagnostics",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/diagnostics/run-report.ts"
   },
   "M3LExecutionEnvironment": {
     "submodule": "environment",
@@ -1248,6 +1263,11 @@
     "file": "packages/m3l-common/src/core/pipeline/types.ts"
   },
   "M3LOperationPipelineOutcome": {
+    "submodule": "pipeline",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/pipeline/types.ts"
+  },
+  "M3LOperationPipelineOutcomeBase": {
     "submodule": "pipeline",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/pipeline/types.ts"

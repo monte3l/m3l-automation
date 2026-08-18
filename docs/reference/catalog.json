@@ -14,7 +14,8 @@
       "M3LThresholdOperator",
       "M3LThresholdAggregation",
       "M3LThresholdSeverity",
-      "M3LThresholdRuleValidationError"
+      "M3LThresholdRuleValidationError",
+      "M3LThresholdVerdict"
     ]
   },
   {
@@ -117,7 +118,9 @@
       "M3LRunReportBase",
       "M3LRunReport",
       "M3LRunReporterOptions",
-      "M3LRunReporter"
+      "M3LRunReporter",
+      "M3LRunRecoveryEntry",
+      "M3L_RECOVERY_LIMIT"
     ]
   },
   {
@@ -378,7 +381,8 @@
       "M3LPipelineDeclinePolicy",
       "M3LPipelineDestructiveOptions",
       "M3LOperationPipelineOptions",
-      "M3LOperationPipelineOutcome"
+      "M3LOperationPipelineOutcome",
+      "M3LOperationPipelineOutcomeBase"
     ]
   },
   {

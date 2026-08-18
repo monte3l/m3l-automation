@@ -8,45 +8,50 @@
         {
           "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts",
           "symbol": "M3LThresholdEvaluator",
-          "blob": "64d46cc9c76175eed34e35b3cc97e96892ab3b25"
+          "blob": "df0f51764c74944aad30878faa6cc40b66b8c292"
         },
         {
           "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts",
           "symbol": "M3LThresholdRule",
-          "blob": "64d46cc9c76175eed34e35b3cc97e96892ab3b25"
+          "blob": "df0f51764c74944aad30878faa6cc40b66b8c292"
         },
         {
           "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts",
           "symbol": "M3LThresholdRuleResult",
-          "blob": "64d46cc9c76175eed34e35b3cc97e96892ab3b25"
+          "blob": "df0f51764c74944aad30878faa6cc40b66b8c292"
         },
         {
           "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts",
           "symbol": "M3LThresholdEvaluation",
-          "blob": "64d46cc9c76175eed34e35b3cc97e96892ab3b25"
+          "blob": "df0f51764c74944aad30878faa6cc40b66b8c292"
         },
         {
           "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts",
           "symbol": "M3LThresholdOperator",
-          "blob": "64d46cc9c76175eed34e35b3cc97e96892ab3b25"
+          "blob": "df0f51764c74944aad30878faa6cc40b66b8c292"
         },
         {
           "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts",
           "symbol": "M3LThresholdAggregation",
-          "blob": "64d46cc9c76175eed34e35b3cc97e96892ab3b25"
+          "blob": "df0f51764c74944aad30878faa6cc40b66b8c292"
         },
         {
           "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts",
           "symbol": "M3LThresholdSeverity",
-          "blob": "64d46cc9c76175eed34e35b3cc97e96892ab3b25"
+          "blob": "df0f51764c74944aad30878faa6cc40b66b8c292"
         },
         {
           "file": "packages/m3l-common/src/core/analysis/M3LThresholdRuleValidationError.ts",
           "symbol": "M3LThresholdRuleValidationError",
           "blob": "a82921675a870a82a594a748360a12833d544be3"
+        },
+        {
+          "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts",
+          "symbol": "M3LThresholdVerdict",
+          "blob": "df0f51764c74944aad30878faa6cc40b66b8c292"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-08-18"
     },
     {
       "heading": "Notes and behavior",
@@ -54,7 +59,7 @@
         {
           "file": "packages/m3l-common/src/core/analysis/M3LThresholdEvaluator.ts",
           "symbol": "M3LThresholdEvaluator",
-          "blob": "64d46cc9c76175eed34e35b3cc97e96892ab3b25"
+          "blob": "df0f51764c74944aad30878faa6cc40b66b8c292"
         },
         {
           "file": "packages/m3l-common/src/core/analysis/M3LThresholdRuleValidationError.ts",
@@ -62,7 +67,7 @@
           "blob": "a82921675a870a82a594a748360a12833d544be3"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-08-18"
     }
   ]
 }
