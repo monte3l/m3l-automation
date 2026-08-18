@@ -203,6 +203,7 @@ export class M3LScript {
   private readonly schema: M3LConfigSchema | undefined;
   private readonly configLoader = new M3LScriptConfigLoader();
   readonly #paths = new M3LPaths();
+  readonly #controller = new AbortController();
 
   /** The caller-supplied `options.metadata`, returned verbatim by {@link M3LScript.metadata}. */
   private readonly scriptMetadata: M3LScriptMetadata;
@@ -365,6 +366,47 @@ export class M3LScript {
   }
 
   /**
+   * The `AbortSignal` from this script's internally owned `AbortController`.
+   *
+   * On the **first** shutdown signal (`SIGTERM`/`SIGINT`/`SIGQUIT`), the
+   * controller is aborted before {@link M3LScript.run}'s cleanup hook is
+   * invoked — so a cleanup hook that itself awaits a poll or AWS waiter can
+   * observe `signal.aborted === true` and stop immediately rather than
+   * starting a fresh multi-minute wait during shutdown (ADR-0049).
+   *
+   * Thread this signal into a {@link M3LPoller} or AWS waiter option bag via
+   * `signal: script.signal` to make long-running operations cooperative with
+   * the script lifecycle. In an AWS-managed environment the controller is
+   * never aborted (Lambda does not honour process signals), but the accessor
+   * is still present and always returns a non-aborted signal — callers need
+   * no environment-specific branch.
+   *
+   * The returned instance is stable: every call returns the same `AbortSignal`
+   * object, mirroring the accessor identity guarantee of {@link M3LScript.paths}.
+   *
+   * @returns This script's `AbortSignal`.
+   *
+   * @example
+   * ```ts
+   * import { M3LScript, runScript } from "@m3l-automation/m3l-common/core";
+   * import { M3LPoller, M3LBackoff } from "@m3l-automation/m3l-common/core";
+   *
+   * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
+   *
+   * await runScript(script, async () => {
+   *   const poller = new M3LPoller({
+   *     backoff: M3LBackoff.constant(5_000),
+   *     signal: script.signal,
+   *   });
+   *   await poller.poll(checkJobStatus);
+   * });
+   * ```
+   */
+  get signal(): AbortSignal {
+    return this.#controller.signal;
+  }
+
+  /**
    * Creates a new `M3LScript`.
    *
    * Construction wires the logger and prompt facilities, and — outside
@@ -412,7 +454,13 @@ export class M3LScript {
       // `SIGTERM`/`SIGINT`/`SIGQUIT` listeners on every call, so constructing
       // multiple `M3LScript`s in one process accumulates listeners rather
       // than replacing them.
-      registerShutdownSignals(() => this.runCleanup("signal-shutdown"));
+      registerShutdownSignals(() => {
+        // Abort BEFORE cleanup so a cleanup hook observing `signal.aborted`
+        // already sees `true` — preventing it from starting a fresh long-running
+        // wait while the process is shutting down (ADR-0049).
+        this.#controller.abort();
+        return this.runCleanup("signal-shutdown");
+      });
     }
   }
 
