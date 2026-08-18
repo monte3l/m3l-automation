@@ -3603,6 +3603,67 @@ describe("core/pipeline", () => {
       expect(order).toEqual(["handler", "persist", "finalize", "recovery"]);
     });
 
+    // -----------------------------------------------------------------------
+    // P1 regression: unguarded .length emits a bare TypeError instead of an
+    // M3LError when the recovery callback returns a non-array value.
+    // Fix: guard with Array.isArray at M3LOperationPipeline.ts:183 and throw
+    // an M3LError (ERR_INVALID_ARGUMENT or the pipeline's existing invalid-
+    // option code) instead of letting .length blow up as a plain TypeError.
+    // -----------------------------------------------------------------------
+    test.each<[string, unknown]>([
+      ["undefined", undefined],
+      ["null", null],
+      ["a string", "oops"],
+      ["a number", 42],
+      ["a plain object", { length: 0 }],
+    ])(
+      "REC-P1 [REGRESSION P1] recovery returning %s rejects with M3LError, not a bare TypeError",
+      async (_label, badReturn) => {
+        // Simulate a JavaScript caller (or a TypeScript caller using `as`)
+        // returning a non-array from the recovery callback. Before the fix,
+        // `recoveryEntries.length` throws a bare TypeError that escapes
+        // pipeline.run() — violating the one-hierarchy rule that every throw
+        // from library code must be an M3LError subclass.
+        const { deps, config } = makeHarness();
+        config.set("operation", "read");
+
+        const pipeline = new M3LOperationPipeline<
+          TestOp,
+          TestSettings,
+          TestDeps,
+          TestResult,
+          undefined
+        >({
+          operations: TEST_OPS,
+          configCode: "ERR_TEST_CONFIG",
+          resolveSettings: () => ({ yes: false }),
+          requiredFields: { read: [], write: [] },
+          handlers: {
+            read: () => Promise.resolve({ processed: 1 }),
+            write: () => Promise.resolve({ processed: 1 }),
+          },
+          // Force a bad return value through a type assertion — the same path
+          // a JavaScript caller would take at runtime.
+          recovery: () => badReturn as readonly M3LRunRecoveryEntry[],
+        });
+
+        let thrown: unknown;
+        try {
+          await pipeline.run(deps);
+        } catch (error) {
+          thrown = error;
+        }
+
+        // The engine must wrap the guard failure in an M3LError — not propagate
+        // a raw TypeError from .length on a non-array.
+        expect(thrown).toBeInstanceOf(M3LError);
+        // The discriminating assertion: checking only "it throws" would silently
+        // pass even with the defect present (TypeError IS thrown, just the wrong
+        // class). This assertion is what makes the test actually catch P1.
+        expect(thrown).not.toBeInstanceOf(TypeError);
+      },
+    );
+
     describe("type-level", () => {
       test("REC-T1 status union on M3LOperationPipelineOutcome is exactly 'completed' | 'declined' | 'partial'", () => {
         expectTypeOf<
@@ -3610,14 +3671,16 @@ describe("core/pipeline", () => {
         >().toEqualTypeOf<"completed" | "declined" | "partial">();
       });
 
-      test("REC-T2a narrowing to status === 'partial' makes recovery a required non-optional array", () => {
+      test("REC-T2a narrowing to status === 'partial' makes recovery a required non-empty tuple", () => {
         type PartialArm = Extract<
           M3LOperationPipelineOutcome<TestOp, TestResult>,
           { status: "partial" }
         >;
-        // Required — not `readonly M3LRunRecoveryEntry[] | undefined`.
+        // Required and non-empty — not `readonly M3LRunRecoveryEntry[] | undefined`,
+        // and not the broad array (which would re-admit [] and reopen the P2 hole
+        // that REC-T2g exists to close). toEqualTypeOf keeps the pin exact.
         expectTypeOf<PartialArm["recovery"]>().toEqualTypeOf<
-          readonly M3LRunRecoveryEntry[]
+          readonly [M3LRunRecoveryEntry, ...M3LRunRecoveryEntry[]]
         >();
       });
 
@@ -3724,6 +3787,29 @@ describe("core/pipeline", () => {
         >();
         expectTypeOf<ReturnType<RecoveryFn>>().toEqualTypeOf<
           readonly M3LRunRecoveryEntry[]
+        >();
+      });
+
+      test("REC-T2g [REGRESSION P2] empty array is not assignable to the partial arm's recovery (must be a non-empty tuple)", () => {
+        // The doc at types.ts:566 says "at least one recovery entry". The fix
+        // tightens `readonly recovery: readonly M3LRunRecoveryEntry[]` to
+        // `readonly recovery: readonly [M3LRunRecoveryEntry, ...M3LRunRecoveryEntry[]]`.
+        //
+        // Before the fix this test FAILS at tsc: [] IS assignable to
+        // `readonly M3LRunRecoveryEntry[]`, so the `.not` constraint fires a
+        // compile-time type error. After the fix [] is no longer assignable to
+        // the non-empty tuple and the assertion passes.
+        type PartialArm = Extract<
+          M3LOperationPipelineOutcome<TestOp, TestResult>,
+          { status: "partial" }
+        >;
+        // An empty array must NOT satisfy the partial arm's recovery type.
+        expectTypeOf<[]>().not.toMatchTypeOf<PartialArm["recovery"]>();
+        // Non-vacuous control: a single-entry tuple IS assignable (ensures the
+        // assertion above fails only on the empty case, not on some unrelated
+        // structural mismatch in PartialArm["recovery"]).
+        expectTypeOf<readonly [M3LRunRecoveryEntry]>().toMatchTypeOf<
+          PartialArm["recovery"]
         >();
       });
     });

@@ -1020,13 +1020,24 @@ describe("M3LThresholdEvaluator", () => {
       >().returns.toEqualTypeOf<M3LThresholdEvaluation>();
     });
 
-    test("M3LThresholdEvaluation has the verdict/breached/summary/results shape", () => {
-      expectTypeOf<M3LThresholdEvaluation>().toEqualTypeOf<{
-        readonly verdict: M3LThresholdVerdict;
-        readonly breached: boolean;
-        readonly summary: string;
-        readonly results: readonly M3LThresholdRuleResult[];
-      }>();
+    test("M3LThresholdEvaluation has the verdict/breached/summary/results shape (union form)", () => {
+      // The type is a discriminated union — breached correlates with verdict.
+      // A flat { verdict: M3LThresholdVerdict; breached: boolean } would allow
+      // illegal states; the union makes them unrepresentable.
+      expectTypeOf<M3LThresholdEvaluation>().toEqualTypeOf<
+        | {
+            readonly verdict: "breached";
+            readonly breached: true;
+            readonly summary: string;
+            readonly results: readonly M3LThresholdRuleResult[];
+          }
+        | {
+            readonly verdict: "clear" | "no-rules";
+            readonly breached: false;
+            readonly summary: string;
+            readonly results: readonly M3LThresholdRuleResult[];
+          }
+      >();
     });
 
     test("M3LThresholdRuleResult has the name/breached/severity/actual shape", () => {
@@ -1060,6 +1071,101 @@ describe("M3LThresholdEvaluator", () => {
       expectTypeOf<M3LThresholdVerdict>().toEqualTypeOf<
         "breached" | "clear" | "no-rules"
       >();
+    });
+
+    // -------------------------------------------------------------------------
+    // Illegal-state regression: verdict/breached biconditional (union-type fix)
+    //
+    // These three tests are RED against the pre-fix flat interface (which allows
+    // every combination) and GREEN once the discriminated union lands.
+    // -------------------------------------------------------------------------
+
+    test("illegal state: { verdict: 'clear', breached: true } is not assignable to M3LThresholdEvaluation", () => {
+      // A flat interface accepts this; the union must reject it.
+      expectTypeOf<{
+        readonly verdict: "clear";
+        readonly breached: true;
+        readonly summary: string;
+        readonly results: readonly M3LThresholdRuleResult[];
+      }>().not.toMatchTypeOf<M3LThresholdEvaluation>();
+    });
+
+    test("illegal state: { verdict: 'no-rules', breached: true } is not assignable to M3LThresholdEvaluation", () => {
+      expectTypeOf<{
+        readonly verdict: "no-rules";
+        readonly breached: true;
+        readonly summary: string;
+        readonly results: readonly M3LThresholdRuleResult[];
+      }>().not.toMatchTypeOf<M3LThresholdEvaluation>();
+    });
+
+    test("illegal state: { verdict: 'breached', breached: false } is not assignable to M3LThresholdEvaluation", () => {
+      expectTypeOf<{
+        readonly verdict: "breached";
+        readonly breached: false;
+        readonly summary: string;
+        readonly results: readonly M3LThresholdRuleResult[];
+      }>().not.toMatchTypeOf<M3LThresholdEvaluation>();
+    });
+
+    // -------------------------------------------------------------------------
+    // Control assertions: each legal combination IS assignable — prevents the
+    // illegal-state tests above from passing vacuously (e.g. if the type became
+    // `never`).
+    // -------------------------------------------------------------------------
+
+    test("legal state: { verdict: 'breached', breached: true } is assignable to M3LThresholdEvaluation", () => {
+      expectTypeOf<{
+        readonly verdict: "breached";
+        readonly breached: true;
+        readonly summary: string;
+        readonly results: readonly M3LThresholdRuleResult[];
+      }>().toMatchTypeOf<M3LThresholdEvaluation>();
+    });
+
+    test("legal state: { verdict: 'clear', breached: false } is assignable to M3LThresholdEvaluation", () => {
+      expectTypeOf<{
+        readonly verdict: "clear";
+        readonly breached: false;
+        readonly summary: string;
+        readonly results: readonly M3LThresholdRuleResult[];
+      }>().toMatchTypeOf<M3LThresholdEvaluation>();
+    });
+
+    test("legal state: { verdict: 'no-rules', breached: false } is assignable to M3LThresholdEvaluation", () => {
+      expectTypeOf<{
+        readonly verdict: "no-rules";
+        readonly breached: false;
+        readonly summary: string;
+        readonly results: readonly M3LThresholdRuleResult[];
+      }>().toMatchTypeOf<M3LThresholdEvaluation>();
+    });
+
+    // -------------------------------------------------------------------------
+    // Narrowing: the practical payoff of the discriminated union.
+    // With a flat interface, narrowing on verdict does NOT narrow breached.
+    // With the union, verdict === "breached" narrows breached to the literal true.
+    // -------------------------------------------------------------------------
+
+    test("narrowing on verdict === 'breached' narrows breached to the literal type true", () => {
+      const rules: readonly M3LThresholdRule[] = [
+        {
+          name: "r",
+          field: "v",
+          operator: ">",
+          value: 0,
+          aggregation: "avg",
+          severity: "critical",
+        },
+      ];
+      const evaluation = new M3LThresholdEvaluator().evaluate(rules, [
+        { v: 1 },
+      ]);
+      if (evaluation.verdict === "breached") {
+        // With a flat interface: breached is boolean here — toEqualTypeOf<true> fails.
+        // With the union: breached is narrowed to the literal true.
+        expectTypeOf(evaluation.breached).toEqualTypeOf<true>();
+      }
     });
   });
 });

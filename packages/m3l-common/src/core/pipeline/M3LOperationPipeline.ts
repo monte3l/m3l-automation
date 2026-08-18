@@ -9,6 +9,7 @@
  */
 
 import { validatePipelineOptions } from "../../internal/pipeline/validate.js";
+import { M3LPipelineInvalidOptionError } from "../../internal/pipeline/errors.js";
 import { M3LError } from "../errors/index.js";
 import { M3LConfigAccessor } from "../config/M3LConfigAccessor.js";
 import { confirmDestructive } from "../prompt/M3LDestructiveGate.js";
@@ -20,6 +21,15 @@ import type {
   M3LOperationPipelineOutcome,
   M3LPipelineDestructiveOptions,
 } from "./types.js";
+
+/**
+ * Narrows a `readonly T[]` to a non-empty tuple when the array contains at
+ * least one element. Used in the recovery phase to earn the `"partial"` arm's
+ * type without an `as` assertion while preserving reference identity.
+ */
+function isNonEmpty<T>(arr: readonly T[]): arr is readonly [T, ...T[]] {
+  return arr.length > 0;
+}
 
 /**
  * Runs the fixed eleven-phase order documented in `docs/reference/core/pipeline.md`
@@ -180,7 +190,21 @@ export class M3LOperationPipeline<
         deps,
         operation,
       );
-      if (recoveryEntries.length > 0) {
+      // P1 guard: the callback must return an array. A non-array return (e.g.
+      // from a JavaScript caller or a TypeScript assertion) would otherwise let
+      // `.length` access below produce a bare TypeError, violating the rule
+      // that every throw from library code must be an M3LError subclass.
+      if (!Array.isArray(recoveryEntries)) {
+        throw new M3LPipelineInvalidOptionError(
+          "M3LOperationPipeline: 'recovery' callback must return a readonly array of M3LRunRecoveryEntry",
+        );
+      }
+      // P2: earn the partial arm — a first entry must be present for the run
+      // to be classified "partial". An empty array falls through to "completed",
+      // matching the runtime contract. The type predicate narrows the array to
+      // the non-empty tuple type without an unsafe assertion and preserves the
+      // original array reference so callers can compare by identity.
+      if (isNonEmpty(recoveryEntries)) {
         return {
           status: "partial",
           operation,

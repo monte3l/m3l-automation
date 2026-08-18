@@ -6307,7 +6307,13 @@ describe("M3LScript — absorbed-failure recovery seam (A3)", () => {
 
     // Internal state must not reflect the external mutation.
     expect(script.recovery).toHaveLength(1);
-    expect(script.recovery[0]).toBe(entry);
+    // reportRecovery stores a projected copy so reference identity is not
+    // guaranteed; assert structural equality instead.
+    expect(script.recovery[0]).toEqual(entry);
+    // Projected-copy guarantee: mutating the original entry object after the
+    // call must not change what was stored.
+    (entry as { item: string }).item = "tampered-after-call";
+    expect(script.recovery[0]?.item).toBe("record-1");
   });
 
   test("a later reportRecovery does not retroactively mutate a previously-returned snapshot", () => {
@@ -6332,7 +6338,8 @@ describe("M3LScript — absorbed-failure recovery seam (A3)", () => {
 
     // The snapshot captured before the second call must remain length-1.
     expect(priorSnapshot).toHaveLength(1);
-    expect(priorSnapshot[0]).toBe(firstEntry);
+    // reportRecovery stores a projected copy; assert structural equality.
+    expect(priorSnapshot[0]).toEqual(firstEntry);
     // The live getter now reflects both entries.
     expect(script.recovery).toHaveLength(2);
   });
@@ -6609,16 +6616,22 @@ describe("runScript() — partial outcome (A3)", () => {
   // "partial" wins over "dry-run" when entries are present.
   // ---------------------------------------------------------------------------
 
-  test('"partial" beats "dry-run": a dry run that already has recorded recovery entries persists outcome "partial", not "dry-run"', async () => {
+  test('"partial" beats "dry-run": a dry run that records an entry inside an eligible lifecycle hook persists outcome "partial", not "dry-run"', async () => {
     const persistSpy = vi
       .spyOn(M3LRunReporter.prototype, "persist")
       .mockResolvedValue("/fake/dry-run-report.json");
-    const script = new M3LScript({ metadata });
-
-    // reportRecovery is callable at any time — record an absorbed failure
-    // before the dry-run so the seam can observe it on the non-throwing path.
-    // (A dry run never calls mainFn, but the script instance is caller-managed.)
-    script.reportRecovery(makeRecoveryEntry("preflight-record"));
+    // `onCleanup` runs on every path including dry runs (mainFn, onBeforeRun,
+    // and onAfterRun are all skipped in a dry run — onCleanup is not).
+    // It is the only lifecycle point within the run where a dry run can absorb
+    // a per-item failure; record from there to exercise the real lifecycle.
+    const script = new M3LScript({
+      metadata,
+      hooks: {
+        onCleanup: () => {
+          script.reportRecovery(makeRecoveryEntry("dry-run-cleanup-issue"));
+        },
+      },
+    });
 
     await runScript(script, () => {}, { dryRun: true });
 
@@ -6629,4 +6642,308 @@ describe("runScript() — partial outcome (A3)", () => {
     // Exit code must be PARTIAL (6), not 0 (success).
     expect(process.exitCode).toBe(6);
   });
+});
+
+// =============================================================================
+// runScript() — cross-run recovery-buffer isolation (M2 regression)
+//
+// Regression tests for the confirmed defect: `M3LScript.recoveryEntries` is
+// never reset between `runScript` calls on the same instance, so a second
+// run inherits the first run's absorbed-failure entries and is incorrectly
+// reported as "partial" even when it recorded no entries at all.
+//
+// Reference: M3LScript.ts:336 (recoveryEntries), run-script.ts:375 + :191
+// Probe result: run2 outcome=partial exitCode=6 carriesRun1Item=true
+// =============================================================================
+describe("runScript() — cross-run recovery-buffer isolation (M2 regression)", () => {
+  beforeEach(() => {
+    stubNonAwsEnvironment();
+  });
+
+  afterEach(() => {
+    // Prevent a leaked non-zero exitCode from corrupting the suite's own exit.
+    process.exitCode = undefined;
+  });
+
+  /** Minimal recovery-entry fixture (mirrors the helper in the A3 block above). */
+  function makeRecoveryEntry(item: string): M3LRunRecoveryEntry {
+    return {
+      item,
+      error: [{ name: "Error", message: `${item} failed` }],
+      recordedAt: new Date().toISOString(),
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Test 1 — forward bleed: run1 partial → run2 must be "success"
+  // ---------------------------------------------------------------------------
+  test(
+    "[M2 regression] a second runScript call on the same instance that records" +
+      ' no entries resolves "success" with an untouched exit code,' +
+      ' even when the first call was "partial"',
+    async () => {
+      const persistSpy = vi
+        .spyOn(M3LRunReporter.prototype, "persist")
+        .mockResolvedValue("/fake/m2-report.json");
+      const script = new M3LScript({ metadata });
+
+      // ── Run 1: mainFn records one recovery entry → "partial" ──
+      await runScript(script, () => {
+        script.reportRecovery(makeRecoveryEntry("run1-item-A"));
+      });
+      expect(persistSpy).toHaveBeenCalledTimes(1);
+      const [run1Input] = persistSpy.mock.calls[0] as [M3LRunReportInput];
+      // Confirm run 1 is itself partial (validates the fixture is useful).
+      expect(run1Input.outcome).toBe("partial");
+      // Reset exit code so run 2 starts from a clean slate.
+      process.exitCode = undefined;
+
+      // ── Run 2: mainFn does nothing → must be "success" ──
+      const exitCodeBeforeRun2 = process.exitCode;
+      await runScript(script, () => {
+        // deliberate no-op: no reportRecovery calls
+      });
+
+      expect(persistSpy).toHaveBeenCalledTimes(2);
+      const [run2Input] = persistSpy.mock.calls[1] as [M3LRunReportInput];
+      // M2 regression assertion: outcome must NOT bleed from run 1.
+      expect(run2Input.outcome).toBe("success");
+      expect(run2Input.outcome).not.toBe("partial");
+      // Exit code must be untouched (i.e. undefined), never PARTIAL (6).
+      expect(process.exitCode).toBe(exitCodeBeforeRun2);
+      expect(process.exitCode).not.toBe(M3L_EXIT_CODES.PARTIAL);
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Test 2 — artifact bleed: run2's report must not carry run1's item values
+  // ---------------------------------------------------------------------------
+  test(
+    "[M2 regression] run 2's persisted report does not contain" +
+      " run 1's item values in its recovery field",
+    async () => {
+      const persistSpy = vi
+        .spyOn(M3LRunReporter.prototype, "persist")
+        .mockResolvedValue("/fake/m2-artifact.json");
+      const script = new M3LScript({ metadata });
+      const RUN1_ITEM = "run1-sentinel-item";
+
+      // ── Run 1: records a sentinel item ──
+      await runScript(script, () => {
+        script.reportRecovery(makeRecoveryEntry(RUN1_ITEM));
+      });
+      process.exitCode = undefined;
+
+      // ── Run 2: no entries ──
+      await runScript(script, () => {});
+
+      expect(persistSpy).toHaveBeenCalledTimes(2);
+      const [run2Raw] = persistSpy.mock.calls[1] as [M3LRunReportInput];
+      // The report must not expose the bleed via the `recovery` field.
+      const run2WithRecovery = run2Raw as unknown as {
+        readonly recovery?: readonly M3LRunRecoveryEntry[];
+      };
+      const bledItems =
+        run2WithRecovery.recovery?.map((e: M3LRunRecoveryEntry) => e.item) ??
+        [];
+      expect(bledItems).not.toContain(RUN1_ITEM);
+      // The report must not be "partial" either (redundant guard, explicit for diagnostics).
+      expect(run2Raw.outcome).not.toBe("partial");
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Test 3 — recoveryTotal must be scoped to the current run
+  // ---------------------------------------------------------------------------
+  test(
+    "[M2 regression] recoveryTotal in run 2's report reflects only" +
+      " run 2's recorded entries, not the cumulative total across both runs",
+    async () => {
+      const persistSpy = vi
+        .spyOn(M3LRunReporter.prototype, "persist")
+        .mockResolvedValue("/fake/m2-total.json");
+      const script = new M3LScript({ metadata });
+
+      // ── Run 1: records 2 entries ──
+      await runScript(script, () => {
+        script.reportRecovery(makeRecoveryEntry("run1-entry-1"));
+        script.reportRecovery(makeRecoveryEntry("run1-entry-2"));
+      });
+      process.exitCode = undefined;
+
+      // ── Run 2: records 3 entries ──
+      await runScript(script, () => {
+        script.reportRecovery(makeRecoveryEntry("run2-entry-1"));
+        script.reportRecovery(makeRecoveryEntry("run2-entry-2"));
+        script.reportRecovery(makeRecoveryEntry("run2-entry-3"));
+      });
+
+      expect(persistSpy).toHaveBeenCalledTimes(2);
+      const [run2Raw] = persistSpy.mock.calls[1] as [M3LRunReportInput];
+      expect(run2Raw.outcome).toBe("partial");
+      const run2WithRecovery = run2Raw as unknown as {
+        readonly recovery: readonly M3LRunRecoveryEntry[];
+        readonly recoveryTotal: number;
+      };
+      // Must be 3 (run 2 only), not 5 (run 1 + run 2).
+      expect(run2WithRecovery.recoveryTotal).toBe(3);
+      expect(run2WithRecovery.recovery).toHaveLength(3);
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Test 4 — failed run does not leave entries for the next run
+  // ---------------------------------------------------------------------------
+  test(
+    "[M2 regression] a failed run 1 (throwing mainFn) does not leave its" +
+      ' recovery entries visible to run 2, which resolves "success"',
+    async () => {
+      const persistSpy = vi
+        .spyOn(M3LRunReporter.prototype, "persist")
+        .mockResolvedValue("/fake/m2-fail.json");
+      const script = new M3LScript({ metadata });
+
+      // ── Run 1: records an entry then throws → "failure" ──
+      await runScript(script, () => {
+        script.reportRecovery(makeRecoveryEntry("run1-fail-item"));
+        throw new Error("run1 exploded");
+      });
+      expect(persistSpy).toHaveBeenCalledTimes(1);
+      const [run1Input] = persistSpy.mock.calls[0] as [M3LRunReportInput];
+      expect(run1Input.outcome).toBe("failure");
+      process.exitCode = undefined;
+
+      // ── Run 2: no entries, no throw ──
+      const exitCodeBeforeRun2 = process.exitCode;
+      await runScript(script, () => {});
+
+      expect(persistSpy).toHaveBeenCalledTimes(2);
+      const [run2Input] = persistSpy.mock.calls[1] as [M3LRunReportInput];
+      // M2 regression: run 2 must not inherit run 1's recovery entries.
+      expect(run2Input.outcome).toBe("success");
+      expect(run2Input.outcome).not.toBe("partial");
+      expect(process.exitCode).toBe(exitCodeBeforeRun2);
+      expect(process.exitCode).not.toBe(M3L_EXIT_CODES.PARTIAL);
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Test 5 — dry run does not poison a later real run
+  // ---------------------------------------------------------------------------
+  test(
+    "[M2 regression] a dry run 1 that records an entry inside onCleanup does" +
+      " not leave that entry visible to run 2, which must resolve" +
+      ' "success" with an untouched exit code',
+    async () => {
+      const persistSpy = vi
+        .spyOn(M3LRunReporter.prototype, "persist")
+        .mockResolvedValue("/fake/m2-dryrun.json");
+
+      // A counter gates recording: only run 1 absorbs a failure; run 2 does
+      // not — onCleanup fires on every run, so the gate is required.
+      let runCount = 0;
+      const script = new M3LScript({
+        metadata,
+        hooks: {
+          onCleanup: () => {
+            runCount += 1;
+            if (runCount === 1) {
+              script.reportRecovery(makeRecoveryEntry("dryrun-cleanup-item"));
+            }
+          },
+        },
+      });
+
+      // ── Dry run 1: onCleanup records an entry → "partial" ──
+      await runScript(script, () => {}, { dryRun: true });
+      expect(persistSpy).toHaveBeenCalledTimes(1);
+      const [dryRunInput] = persistSpy.mock.calls[0] as [M3LRunReportInput];
+      expect(dryRunInput.outcome).toBe("partial"); // confirms fixture is valid
+      process.exitCode = undefined;
+
+      // ── Real run 2: no entries (hook is gated) ──
+      const exitCodeBeforeRun2 = process.exitCode;
+      await runScript(script, () => {});
+
+      expect(persistSpy).toHaveBeenCalledTimes(2);
+      const [run2Input] = persistSpy.mock.calls[1] as [M3LRunReportInput];
+      // M2 regression: dry run 1's entry must not bleed into run 2.
+      expect(run2Input.outcome).toBe("success");
+      expect(run2Input.outcome).not.toBe("partial");
+      expect(process.exitCode).toBe(exitCodeBeforeRun2);
+      expect(process.exitCode).not.toBe(M3L_EXIT_CODES.PARTIAL);
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Test 6 — reverse direction: clean run 1 → partial run 2 (guards fix polarity)
+  //
+  // A fix that clears at the wrong lifecycle point (e.g., clears the current
+  // run's own entries before the report is built) would make run 2 silently
+  // report "success" even though it recorded entries. This test catches it.
+  // ---------------------------------------------------------------------------
+  test(
+    "[M2 regression — guard] a clean run 1 followed by a run 2 that records" +
+      ' entries still resolves "partial" carrying only run 2\'s entries',
+    async () => {
+      const persistSpy = vi
+        .spyOn(M3LRunReporter.prototype, "persist")
+        .mockResolvedValue("/fake/m2-reverse.json");
+      const script = new M3LScript({ metadata });
+      const RUN2_ITEM = "run2-only-item";
+
+      // ── Run 1: clean ──
+      await runScript(script, () => {});
+      expect(persistSpy).toHaveBeenCalledTimes(1);
+      const [run1Input] = persistSpy.mock.calls[0] as [M3LRunReportInput];
+      expect(run1Input.outcome).toBe("success");
+      process.exitCode = undefined;
+
+      // ── Run 2: records one entry ──
+      await runScript(script, () => {
+        script.reportRecovery(makeRecoveryEntry(RUN2_ITEM));
+      });
+
+      expect(persistSpy).toHaveBeenCalledTimes(2);
+      const [run2Raw] = persistSpy.mock.calls[1] as [M3LRunReportInput];
+      expect(run2Raw.outcome).toBe("partial");
+      expect(process.exitCode).toBe(M3L_EXIT_CODES.PARTIAL);
+
+      const run2WithRecovery = run2Raw as unknown as {
+        readonly recovery: readonly M3LRunRecoveryEntry[];
+        readonly recoveryTotal: number;
+      };
+      // Only run 2's own entry must appear.
+      expect(run2WithRecovery.recovery).toHaveLength(1);
+      expect(run2WithRecovery.recovery[0]?.item).toBe(RUN2_ITEM);
+      expect(run2WithRecovery.recoveryTotal).toBe(1);
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Test 7 — script.recovery at the run 2 boundary is empty when run 2 is clean
+  // ---------------------------------------------------------------------------
+  test(
+    "[M2 regression] script.recovery observed after a clean run 2 is empty," +
+      " confirming the buffer is scoped to the run",
+    async () => {
+      vi.spyOn(M3LRunReporter.prototype, "persist").mockResolvedValue(
+        "/fake/m2-boundary.json",
+      );
+      const script = new M3LScript({ metadata });
+
+      // ── Run 1: records an entry ──
+      await runScript(script, () => {
+        script.reportRecovery(makeRecoveryEntry("run1-boundary-item"));
+      });
+      process.exitCode = undefined;
+
+      // ── Run 2: no entries ──
+      await runScript(script, () => {});
+
+      // M2 regression: the getter must reflect the current run's state only.
+      expect(script.recovery).toHaveLength(0);
+      expect(script.recoveryTotal).toBe(0);
+    },
+  );
 });

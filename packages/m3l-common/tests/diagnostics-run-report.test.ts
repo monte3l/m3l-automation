@@ -2757,7 +2757,7 @@ describe("M3LRunReport — partial arm type contract", () => {
       if (report.outcome === "partial") {
         // recovery and recoveryTotal must both be non-optional after narrowing
         expectTypeOf(report.recovery).toEqualTypeOf<
-          readonly M3LRunRecoveryEntry[]
+          readonly [M3LRunRecoveryEntry, ...M3LRunRecoveryEntry[]]
         >();
         expectTypeOf(report.recoveryTotal).toEqualTypeOf<number>();
         return `${String(report.recovery.length)} of ${String(report.recoveryTotal)} absorbed failures`;
@@ -3816,5 +3816,724 @@ describe("M3LRunReporter — object-KEY URL scrubbing (new fix, no coverage yet)
     expect(raw).not.toContain("SIGKEY");
     expect(raw).not.toContain("AKIAEX");
     expect(raw).toContain("https://bkt.s3.amazonaws.com/o");
+  });
+});
+
+// =============================================================================
+// A3 security regression tests (feat/partial-run-outcome) — M1, S1, S2, S3, S4
+//
+// Each defect was confirmed against built dist/ by a security-review probe.
+// All tests are written test-first against the CORRECT contract so they fail
+// now (defect present) and pass once the fix lands (defect removed).
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// M1 — `error` inside a recovery entry is embedded by reference, never
+// sanitized.  The failure arm's `chain` IS sanitized (via serializeErrorChain);
+// recovery should be equivalent.  Tests: plant a distinctive secret in
+// error[].message, error[].stack, and error[].context.apiKey, persist, read
+// back from disk, and assert absence.  A symmetry test then verifies parity
+// between the failure arm and the recovery arm against the same secret.
+// -----------------------------------------------------------------------------
+describe("M1 — recovery entry error is sanitized before persisting (security regression)", () => {
+  let outDir: string;
+
+  beforeEach(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-m1-"));
+  });
+
+  afterEach(async () => {
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  function partialInputWith(
+    recovery: readonly M3LRunRecoveryEntry[],
+  ): M3LRunReportInput {
+    return {
+      script: { name: "m1-script", version: "1.0.0" },
+      correlationId: "m1-corr",
+      startedAt: new Date("2026-08-19T12:00:00.000Z"),
+      outcome: "partial",
+      recovery,
+    };
+  }
+
+  async function persistAndReadBack(input: M3LRunReportInput): Promise<string> {
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const writtenPath = await reporter.persist(input);
+    expect(writtenPath).toBeDefined();
+    return readFile(writtenPath as string, "utf8");
+  }
+
+  test("a key=value credential in recovery error[].message is redacted (bare free text is best-effort per ADR-0035/A7)", async () => {
+    // The redactor matches `key=value` shapes and URL signatures — not arbitrary
+    // bare tokens. Plant the secret in `token=<value>` form, which IS matched.
+    // A bare token (no surrounding key or `=`) is out of scope per ADR-0035/A7.
+    const entry: M3LRunRecoveryEntry = {
+      item: "item-001",
+      error: [
+        {
+          name: "Error",
+          message: "request failed: tok\u0065n=RECOVSIG_MESSAGE_SECRET",
+        },
+      ],
+      recordedAt: "2026-08-19T12:00:01.000Z",
+    };
+    const raw = await persistAndReadBack(partialInputWith([entry]));
+    expect(raw).not.toContain("RECOVSIG_MESSAGE_SECRET");
+  });
+
+  test("a secret in recovery error[].stack must not appear in the written report", async () => {
+    const entry: M3LRunRecoveryEntry = {
+      item: "item-002",
+      error: [
+        {
+          name: "Error",
+          message: "download failed",
+          stack:
+            "Error: download failed\n    at https://api.example.com/path?tok\u0065n=RECOVSIG_STACK_SECRET",
+        },
+      ],
+      recordedAt: "2026-08-19T12:00:02.000Z",
+    };
+    const raw = await persistAndReadBack(partialInputWith([entry]));
+    expect(raw).not.toContain("RECOVSIG_STACK_SECRET");
+  });
+
+  test.each([
+    ["apiKey", "ghp_RECOVSIG_APIKEY_SECRET"],
+    ["token", "RECOVSIG_TOKEN_SECRET"],
+    ["password", "RECOVSIG_PASSWORD_SECRET"],
+  ] as const)(
+    "a secret in recovery error[].context.%s must be masked in the written report",
+    async (contextKey, secret) => {
+      const entry: M3LRunRecoveryEntry = {
+        item: "item-context",
+        error: [
+          {
+            name: "Error",
+            message: "context check",
+            context: { [contextKey]: secret },
+          },
+        ],
+        recordedAt: "2026-08-19T12:00:03.000Z",
+      };
+      const raw = await persistAndReadBack(partialInputWith([entry]));
+      expect(raw).not.toContain(secret);
+    },
+  );
+
+  test("symmetry: recovery[].error and failure.chain apply identical redaction to the same key=value secret", async () => {
+    // The redactor is pattern/key-based: it catches `key=value` shapes, known
+    // sensitive key names (apiKey/token/password), and URL signatures.
+    // Bare free text (no key, no `=`) is best-effort per ADR-0035/A7 — both
+    // arms leave it unchanged, so they remain at parity. This test pins that
+    // parity using a `token=<value>` shape that IS matched.
+    const SECRET_VALUE = "SYMMETRY_SECRET_ghp_0123456789abcdef";
+    const SECRET_IN_MESSAGE = `token=${SECRET_VALUE}`;
+
+    // Failure arm (control): secret embedded via M3LError message
+    const failureInput: M3LRunReportInput = {
+      script: { name: "m1-sym-script", version: "1.0.0" },
+      correlationId: "m1-sym-fail",
+      startedAt: new Date("2026-08-19T12:01:00.000Z"),
+      outcome: "failure",
+      stage: "mainFn",
+      error: new M3LError(`request: ${SECRET_IN_MESSAGE}`, {
+        code: "ERR_CONFIG_MISSING",
+      }),
+    };
+    const failureRaw = await persistAndReadBack(failureInput);
+    // Failure arm must not contain the raw value (the `token=` prefix is consumed by the pattern)
+    expect(failureRaw).not.toContain(SECRET_VALUE);
+
+    // Recovery arm (subject): same secret in recovery error[].message
+    const entry: M3LRunRecoveryEntry = {
+      item: "item-sym",
+      error: [{ name: "Error", message: `request: ${SECRET_IN_MESSAGE}` }],
+      recordedAt: "2026-08-19T12:01:01.000Z",
+    };
+
+    // Fresh outDir so we don't hit the leaf-exists check
+    const outDir2 = await mkdtemp(join(tmpdir(), "m3l-run-report-m1-sym-"));
+    try {
+      const reporter = new M3LRunReporter({
+        paths: { getOutputDir: () => outDir2 },
+      });
+      const writtenPath = await reporter.persist(partialInputWith([entry]));
+      expect(writtenPath).toBeDefined();
+      const recoveryRaw = await readFile(writtenPath as string, "utf8");
+      // Recovery arm must be identically clean — same redaction as failure arm
+      expect(recoveryRaw).not.toContain(SECRET_VALUE);
+    } finally {
+      await rm(outDir2, { recursive: true, force: true });
+    }
+  });
+});
+
+// -----------------------------------------------------------------------------
+// S1 — `sanitizeValue(entry.item) as string` is a false cast.
+// A non-string `item` (object, number, null, array) must emerge as a string
+// in the built report, not as the original non-string value.
+// -----------------------------------------------------------------------------
+describe("S1 — recovery entry item is always a string in the built report (regression)", () => {
+  let outDir: string;
+
+  beforeEach(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-s1-"));
+  });
+
+  afterEach(async () => {
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  function reporter(): M3LRunReporter {
+    return new M3LRunReporter({ paths: { getOutputDir: () => outDir } });
+  }
+
+  test.each([
+    ["object", { id: 42 }],
+    ["number", 99],
+    ["null", null],
+    ["array", ["a", "b"]],
+  ] as const)(
+    "a hostile item of type %s produces a string item in the built report",
+    (_label, hostileItem) => {
+      const recovery = [
+        {
+          item: hostileItem as unknown as string,
+          error: [{ name: "Error", message: "bad item" }],
+          recordedAt: "2026-08-19T13:00:00.000Z",
+        },
+      ];
+      const input: M3LRunReportInput = {
+        script: { name: "s1-script", version: "1.0.0" },
+        correlationId: "s1-corr",
+        startedAt: new Date("2026-08-19T13:00:00.000Z"),
+        outcome: "partial",
+        recovery,
+      };
+      const report = reporter().build(input);
+      if (report.outcome === "partial") {
+        const builtItem = report.recovery[0]?.item;
+        expect(typeof builtItem).toBe("string");
+      } else {
+        // Should still produce a report (fallback outcome) — if there's no recovery
+        // because item coercion failed, that's a separate issue; assert no throw here
+        expect(["success", "failure", "dry-run", "interrupted"]).toContain(
+          report.outcome,
+        );
+      }
+    },
+  );
+});
+
+// -----------------------------------------------------------------------------
+// S2 — `build()` must never throw.
+// A throwing getter on `item`, `error`, or `recordedAt`, or a non-array
+// `recovery`, must not propagate out of build().
+// -----------------------------------------------------------------------------
+describe("S2 — build() never throws for hostile recovery input (regression)", () => {
+  let outDir: string;
+
+  beforeEach(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-s2-"));
+  });
+
+  afterEach(async () => {
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  function reporter(): M3LRunReporter {
+    return new M3LRunReporter({ paths: { getOutputDir: () => outDir } });
+  }
+
+  function baseInput(
+    overrides: Partial<M3LRunReportInput> = {},
+  ): M3LRunReportInput {
+    return {
+      script: { name: "s2-script", version: "1.0.0" },
+      correlationId: "s2-corr",
+      startedAt: new Date("2026-08-19T14:00:00.000Z"),
+      outcome: "partial",
+      recovery: [
+        {
+          item: "safe-item",
+          error: [{ name: "Error", message: "ok" }],
+          recordedAt: "2026-08-19T14:00:01.000Z",
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  test("build() does not throw when item has a throwing getter", () => {
+    const hostileEntry = Object.defineProperty(
+      {
+        error: [
+          { name: "Error", message: "ok" },
+        ] as readonly M3LSerializedError[],
+        recordedAt: "2026-08-19T14:00:02.000Z",
+      },
+      "item",
+      {
+        get(): string {
+          throw new Error("hostile item getter");
+        },
+        enumerable: true,
+        configurable: true,
+      },
+    ) as M3LRunRecoveryEntry;
+
+    expect(() =>
+      reporter().build(baseInput({ recovery: [hostileEntry] })),
+    ).not.toThrow();
+    // Must still return a usable report (not undefined)
+    const report = reporter().build(baseInput({ recovery: [hostileEntry] }));
+    expect(report).toBeDefined();
+    expect(typeof report.outcome).toBe("string");
+  });
+
+  test("build() does not throw when error has a throwing getter", () => {
+    const hostileEntry = Object.defineProperty(
+      {
+        item: "safe-item",
+        recordedAt: "2026-08-19T14:00:03.000Z",
+      },
+      "error",
+      {
+        get(): readonly M3LSerializedError[] {
+          throw new Error("hostile error getter");
+        },
+        enumerable: true,
+        configurable: true,
+      },
+    ) as M3LRunRecoveryEntry;
+
+    expect(() =>
+      reporter().build(baseInput({ recovery: [hostileEntry] })),
+    ).not.toThrow();
+    const report = reporter().build(baseInput({ recovery: [hostileEntry] }));
+    expect(report).toBeDefined();
+    expect(typeof report.outcome).toBe("string");
+  });
+
+  test("build() does not throw when recordedAt has a throwing getter", () => {
+    const hostileEntry = Object.defineProperty(
+      {
+        item: "safe-item",
+        error: [
+          { name: "Error", message: "ok" },
+        ] as readonly M3LSerializedError[],
+      },
+      "recordedAt",
+      {
+        get(): string {
+          throw new Error("hostile recordedAt getter");
+        },
+        enumerable: true,
+        configurable: true,
+      },
+    ) as M3LRunRecoveryEntry;
+
+    expect(() =>
+      reporter().build(baseInput({ recovery: [hostileEntry] })),
+    ).not.toThrow();
+    const report = reporter().build(baseInput({ recovery: [hostileEntry] }));
+    expect(report).toBeDefined();
+    expect(typeof report.outcome).toBe("string");
+  });
+
+  test("build() does not throw when recovery is a non-array (e.g. a plain object)", () => {
+    const hostileInput = baseInput({
+      recovery: {
+        0: { item: "a", error: [], recordedAt: "now" },
+      } as unknown as M3LRunRecoveryEntry[],
+    });
+    expect(() => reporter().build(hostileInput)).not.toThrow();
+    const report = reporter().build(hostileInput);
+    expect(report).toBeDefined();
+    expect(typeof report.outcome).toBe("string");
+  });
+});
+
+// -----------------------------------------------------------------------------
+// S3 — a circular object or BigInt inside error must not destroy the report.
+// The same shape inside `archive` already survives (sanitizeValue normalizes it).
+// Assert persist() still resolves a path, and non-hostile fields are present.
+// -----------------------------------------------------------------------------
+describe("S3 — hostile value in recovery error does not prevent persist() from writing a report (regression)", () => {
+  let outDir: string;
+
+  beforeEach(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-s3-"));
+  });
+
+  afterEach(async () => {
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  function reporter(): M3LRunReporter {
+    return new M3LRunReporter({ paths: { getOutputDir: () => outDir } });
+  }
+
+  test("a circular reference inside recovery error[].context does not cause persist() to return undefined", async () => {
+    const circular: Record<string, unknown> = { label: "loop" };
+    circular["self"] = circular;
+
+    const entry: M3LRunRecoveryEntry = {
+      item: "circular-item",
+      error: [{ name: "Error", message: "circular test", context: circular }],
+      recordedAt: "2026-08-19T15:00:00.000Z",
+    };
+    const input: M3LRunReportInput = {
+      script: { name: "s3-script", version: "1.0.0" },
+      correlationId: "s3-corr",
+      startedAt: new Date("2026-08-19T15:00:00.000Z"),
+      outcome: "partial",
+      recovery: [entry],
+    };
+    const writtenPath = await reporter().persist(input);
+    // persist() must not return undefined — the report must be written
+    expect(writtenPath).toBeDefined();
+    // The written file must be valid JSON
+    const raw = await readFile(writtenPath as string, "utf8");
+    expect(() => {
+      JSON.parse(raw);
+    }).not.toThrow();
+    // Non-hostile fields survive
+    const parsed = JSON.parse(raw) as {
+      correlationId?: string;
+      outcome?: string;
+    };
+    expect(parsed.correlationId).toBe("s3-corr");
+  });
+
+  test("a BigInt inside recovery error[].context does not cause persist() to return undefined", async () => {
+    const entry: M3LRunRecoveryEntry = {
+      item: "bigint-item",
+      error: [
+        {
+          name: "Error",
+          message: "bigint test",
+          context: { count: BigInt(9007199254740991) },
+        },
+      ],
+      recordedAt: "2026-08-19T15:00:01.000Z",
+    };
+    const input: M3LRunReportInput = {
+      script: { name: "s3-script", version: "1.0.0" },
+      correlationId: "s3-bigint-corr",
+      startedAt: new Date("2026-08-19T15:00:01.000Z"),
+      outcome: "partial",
+      recovery: [entry],
+    };
+    const writtenPath = await reporter().persist(input);
+    expect(writtenPath).toBeDefined();
+    const raw = await readFile(writtenPath as string, "utf8");
+    expect(() => {
+      JSON.parse(raw);
+    }).not.toThrow();
+    const parsed = JSON.parse(raw) as { correlationId?: string };
+    expect(parsed.correlationId).toBe("s3-bigint-corr");
+  });
+});
+
+// -----------------------------------------------------------------------------
+// S4 — inconsistent partial fallback: outcome:"success" + exitCode:6
+// When outcome:"partial" has an EMPTY recovery, build() falls back to a
+// non-partial outcome but inherits the PARTIAL exit code (6).
+// Invariant: the resolved outcome and exit code must be mutually consistent —
+// whatever outcome build() settles on, its exit code must match.
+// -----------------------------------------------------------------------------
+describe("S4 — outcome and exit code are mutually consistent after partial fallback (invariant regression)", () => {
+  const outcomeExitCodes: Record<string, number> = {
+    success: 0,
+    "dry-run": 0,
+    failure: 1, // mapErrorToExitCode default — but for no-error fallback the code should not be 6
+    interrupted: 5,
+    partial: 6,
+  };
+
+  test.each([
+    ["empty recovery array", []],
+    ["undefined recovery", undefined],
+  ] as const)(
+    "outcome:partial with %s — resolved outcome's exit code must match the outcome, not the discarded 'partial' code",
+    (_label, recovery) => {
+      const reporter = new M3LRunReporter({
+        paths: { getOutputDir: () => "/dev/null" },
+      });
+      const input: M3LRunReportInput = {
+        script: { name: "s4-script", version: "1.0.0" },
+        correlationId: "s4-corr",
+        startedAt: new Date("2026-08-19T16:00:00.000Z"),
+        outcome: "partial",
+        ...(recovery !== undefined ? { recovery } : {}),
+      };
+      const report = reporter.build(input);
+      // Whatever outcome build() settled on, its exit code must be the one
+      // that outcome maps to — never 6 (PARTIAL) when outcome is not "partial".
+      if (report.outcome !== "partial") {
+        const expectedExitCode = outcomeExitCodes[report.outcome];
+        // If the outcome isn't in our map, we can't validate — but we can
+        // still assert it isn't 6 (which would be inconsistent with any
+        // non-partial outcome).
+        if (expectedExitCode !== undefined) {
+          expect(report.exitCode).toBe(expectedExitCode);
+        } else {
+          expect(report.exitCode).not.toBe(6);
+        }
+      }
+      // Consistency invariant: exitCode:6 ↔ outcome:"partial" (bidirectional)
+      if (report.exitCode === 6) {
+        expect(report.outcome).toBe("partial");
+      }
+      if (report.outcome === "partial") {
+        expect(report.exitCode).toBe(6);
+      }
+    },
+  );
+});
+
+// =============================================================================
+// T1 — non-partial arms must close recovery and recoveryTotal
+//
+// The "failure" arm and the Exclude<…> arm both carry failure?: undefined,
+// but neither closes recovery or recoveryTotal. A variable assignment escapes
+// the excess-property check so a misshapen value slips through.
+//
+// The fix: declare recovery?: undefined and recoveryTotal?: undefined on
+// both non-partial arms. The structural proof is an intersection:
+//   Arm & { recovery: X } = never   (only after the fix)
+// Without the fix, the intersection is non-empty (not never), so
+// toEqualTypeOf<never>() fails at tsc. After the fix it equals never and passes.
+// =============================================================================
+describe("T1 — non-partial arms of M3LRunReport close recovery and recoveryTotal (type regression)", () => {
+  test("the failure arm closes recovery — FailureArm & { recovery: X } is never (structural invariant)", () => {
+    // Control: FailureArm itself is non-never (the arm exists and is a real type)
+    expectTypeOf<
+      Extract<M3LRunReport, { outcome: "failure" }>
+    >().not.toEqualTypeOf<never>();
+    // Subject: intersecting with a required recovery field must be never once
+    // the arm properly declares recovery?: undefined. Before the fix the
+    // intersection is non-empty (extra property allowed), so this fails at tsc.
+    expectTypeOf<
+      Extract<M3LRunReport, { outcome: "failure" }> & {
+        readonly recovery: readonly unknown[];
+      }
+    >().toEqualTypeOf<never>();
+  });
+
+  test("the failure arm closes recoveryTotal — FailureArm & { recoveryTotal: number } is never (structural invariant)", () => {
+    // Control
+    expectTypeOf<
+      Extract<M3LRunReport, { outcome: "failure" }>
+    >().not.toEqualTypeOf<never>();
+    // Subject
+    expectTypeOf<
+      Extract<M3LRunReport, { outcome: "failure" }> & {
+        readonly recoveryTotal: number;
+      }
+    >().toEqualTypeOf<never>();
+  });
+
+  test("the non-failure non-partial arm closes recovery — a success-shaped report with recovery is not assignable to M3LRunReport", () => {
+    // The third arm uses outcome: Exclude<M3LRunOutcome, "failure"|"partial">,
+    // so Extract<M3LRunReport, { outcome: "success" }> = never (the literal
+    // "success" doesn't distribute over the multi-literal union). Use the
+    // structural form instead: assert that an object carrying recovery is NOT
+    // assignable to M3LRunReport, with a control proving the same object
+    // without recovery IS assignable (keeping the test non-vacuous).
+    const clean = {
+      script: { name: "test", version: "1.0.0" },
+      correlationId: "c1",
+      startedAt: "2026-08-19T00:00:00.000Z",
+      finishedAt: "2026-08-19T00:00:01.000Z",
+      exitCode: 0,
+      outcome: "success" as const,
+      environment: {} as M3LDiagnosticsSnapshot,
+      timeline: [] as const,
+    };
+    // Control: the clean shape IS a valid report
+    expectTypeOf(clean).toMatchTypeOf<M3LRunReport>();
+    // Subject: adding a required recovery field makes it NOT a valid report
+    const withRecovery = { ...clean, recovery: [] as readonly unknown[] };
+    expectTypeOf(withRecovery).not.toMatchTypeOf<M3LRunReport>();
+  });
+
+  test("the non-failure non-partial arm closes recoveryTotal — a success-shaped report with recoveryTotal is not assignable to M3LRunReport", () => {
+    const clean = {
+      script: { name: "test", version: "1.0.0" },
+      correlationId: "c2",
+      startedAt: "2026-08-19T00:00:00.000Z",
+      finishedAt: "2026-08-19T00:00:01.000Z",
+      exitCode: 0,
+      outcome: "success" as const,
+      environment: {} as M3LDiagnosticsSnapshot,
+      timeline: [] as const,
+    };
+    // Control
+    expectTypeOf(clean).toMatchTypeOf<M3LRunReport>();
+    // Subject
+    const withTotal = { ...clean, recoveryTotal: 5 };
+    expectTypeOf(withTotal).not.toMatchTypeOf<M3LRunReport>();
+  });
+});
+
+// =============================================================================
+// T2 — the partial arm's recovery must be a non-empty tuple
+//
+// `readonly M3LRunRecoveryEntry[]` admits `[]`. The fix makes it:
+//   readonly [M3LRunRecoveryEntry, ...M3LRunRecoveryEntry[]]
+// Assert that [] is not assignable to the partial arm's recovery field, and
+// that a plain `readonly M3LRunRecoveryEntry[]` (length unproven) is not
+// assignable either (the latter forces build() to earn the arm).
+// =============================================================================
+describe("T2 — partial arm recovery is non-empty (type regression)", () => {
+  test("an empty readonly array is not assignable to the partial arm's recovery field", () => {
+    // If recovery were readonly M3LRunRecoveryEntry[], the empty tuple [] would
+    // be assignable. The fix narrows to a non-empty tuple so [] is rejected.
+    // Control: a one-element tuple IS assignable (it satisfies non-empty)
+    expectTypeOf<readonly [M3LRunRecoveryEntry]>().toMatchTypeOf<
+      Extract<M3LRunReport, { outcome: "partial" }>["recovery"]
+    >();
+    // Subject: the empty tuple must NOT be assignable — fails at tsc before fix
+    expectTypeOf<readonly []>().not.toMatchTypeOf<
+      Extract<M3LRunReport, { outcome: "partial" }>["recovery"]
+    >();
+  });
+
+  test("a plain readonly M3LRunRecoveryEntry[] (length unproven) is not assignable to the partial arm's recovery", () => {
+    // This prevents build() from trivially asserting the non-empty arm
+    // without actually checking the array has at least one element.
+    // Control: a non-empty tuple satisfies the type
+    expectTypeOf<
+      readonly [M3LRunRecoveryEntry, ...M3LRunRecoveryEntry[]]
+    >().toMatchTypeOf<
+      Extract<M3LRunReport, { outcome: "partial" }>["recovery"]
+    >();
+    // Subject: a generic array (length unknown) must not satisfy it — fails at tsc before fix
+    expectTypeOf<readonly M3LRunRecoveryEntry[]>().not.toMatchTypeOf<
+      Extract<M3LRunReport, { outcome: "partial" }>["recovery"]
+    >();
+  });
+});
+
+// =============================================================================
+// T3 — recoveryTotal must be clamped to at least recovery.length
+//
+// The fix: Math.max(total, recovery.length). Assert the clamp: a recoveryTotal
+// below recovery.length comes back as at least recovery.length, and a
+// non-finite input does not produce null in the persisted JSON.
+// =============================================================================
+describe("T3 — recoveryTotal is clamped to at least recovery.length (regression)", () => {
+  let outDir: string;
+
+  beforeEach(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-t3-"));
+  });
+
+  afterEach(async () => {
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  function reporter(): M3LRunReporter {
+    return new M3LRunReporter({ paths: { getOutputDir: () => outDir } });
+  }
+
+  function makeRecovery(count: number): readonly M3LRunRecoveryEntry[] {
+    return Array.from({ length: count }, (_, i) => ({
+      item: `item-${String(i)}`,
+      error: [{ name: "Error", message: "ok" }],
+      recordedAt: "2026-08-19T17:00:00.000Z",
+    }));
+  }
+
+  test("a recoveryTotal below recovery.length is clamped up to recovery.length", () => {
+    const recovery = makeRecovery(3);
+    const input: M3LRunReportInput = {
+      script: { name: "t3-script", version: "1.0.0" },
+      correlationId: "t3-clamp",
+      startedAt: new Date("2026-08-19T17:00:00.000Z"),
+      outcome: "partial",
+      recovery,
+      recoveryTotal: 1, // hostile: below recovery.length (3)
+    };
+    const report = reporter().build(input);
+    if (report.outcome === "partial") {
+      // Must be clamped: recoveryTotal >= recovery.length
+      expect(report.recoveryTotal).toBeGreaterThanOrEqual(
+        report.recovery.length,
+      );
+      // Specifically, must be at least 3
+      expect(report.recoveryTotal).toBeGreaterThanOrEqual(3);
+    } else {
+      expect.fail("expected outcome to be 'partial'");
+    }
+  });
+
+  test("recoveryTotal: 0 alongside a non-empty recovery is clamped to recovery.length", () => {
+    const recovery = makeRecovery(2);
+    const input: M3LRunReportInput = {
+      script: { name: "t3-script", version: "1.0.0" },
+      correlationId: "t3-zero",
+      startedAt: new Date("2026-08-19T17:00:01.000Z"),
+      outcome: "partial",
+      recovery,
+      recoveryTotal: 0,
+    };
+    const report = reporter().build(input);
+    if (report.outcome === "partial") {
+      expect(report.recoveryTotal).toBeGreaterThanOrEqual(2);
+    } else {
+      expect.fail("expected outcome to be 'partial'");
+    }
+  });
+
+  test("a non-finite recoveryTotal (e.g. NaN) does not produce null in the persisted JSON", async () => {
+    const recovery = makeRecovery(1);
+    const input: M3LRunReportInput = {
+      script: { name: "t3-script", version: "1.0.0" },
+      correlationId: "t3-nan",
+      startedAt: new Date("2026-08-19T17:00:02.000Z"),
+      outcome: "partial",
+      recovery,
+      recoveryTotal: Number.NaN,
+    };
+    const writtenPath = await reporter().persist(input);
+    expect(writtenPath).toBeDefined();
+    const raw = await readFile(writtenPath as string, "utf8");
+    const parsed = JSON.parse(raw) as {
+      recoveryTotal?: unknown;
+      outcome?: string;
+    };
+    if (parsed.outcome === "partial") {
+      // Must not be null (JSON.stringify(NaN) === "null" — the un-clamped bug)
+      expect(parsed.recoveryTotal).not.toBeNull();
+      // Must be a finite number
+      expect(typeof parsed.recoveryTotal).toBe("number");
+      expect(Number.isFinite(parsed.recoveryTotal)).toBe(true);
+    }
+  });
+
+  test("a negative recoveryTotal is clamped to at least recovery.length", () => {
+    const recovery = makeRecovery(2);
+    const input: M3LRunReportInput = {
+      script: { name: "t3-script", version: "1.0.0" },
+      correlationId: "t3-neg",
+      startedAt: new Date("2026-08-19T17:00:03.000Z"),
+      outcome: "partial",
+      recovery,
+      recoveryTotal: -7,
+    };
+    const report = reporter().build(input);
+    if (report.outcome === "partial") {
+      expect(report.recoveryTotal).toBeGreaterThanOrEqual(2);
+    } else {
+      expect.fail("expected outcome to be 'partial'");
+    }
   });
 });

@@ -118,13 +118,20 @@ export interface M3LThresholdRuleResult {
  * - `"clear"` — one or more rules evaluated, none breached (`breached: false`).
  * - `"no-rules"` — the rules array was empty; nothing was checked (`breached: false`).
  *
- * Invariant: `verdict === "breached"` is exactly equivalent to
- * `breached === true`, for every input.
+ * The biconditional `verdict === "breached"` ↔ `breached === true` is enforced
+ * at compile time by the {@link M3LThresholdEvaluation} discriminated union —
+ * illegal combinations such as `{ verdict: "clear", breached: true }` do not
+ * compile.
  */
 export type M3LThresholdVerdict = "breached" | "clear" | "no-rules";
 
 /**
  * Overall outcome of evaluating a set of rules against a set of rows.
+ *
+ * `verdict` and `breached` are correlated by construction — the compiler
+ * enforces the biconditional: `verdict === "breached"` if and only if
+ * `breached === true`. The illegal state `{ verdict: "clear", breached: true }`
+ * is unrepresentable.
  *
  * @example
  * ```typescript
@@ -139,20 +146,23 @@ export type M3LThresholdVerdict = "breached" | "clear" | "no-rules";
  * }
  * ```
  */
-export interface M3LThresholdEvaluation {
-  /**
-   * Named outcome of the evaluation. Prefer this over `breached` when
-   * distinguishing "rules ran and passed" from "no rules ran at all" — see
-   * {@link M3LThresholdVerdict} for the full mapping.
-   */
-  readonly verdict: M3LThresholdVerdict;
-  /** `true` if at least one rule's result breached, regardless of severity. */
-  readonly breached: boolean;
-  /** A non-empty, human-readable description of the outcome. */
-  readonly summary: string;
-  /** One result per input rule, in input order. */
-  readonly results: readonly M3LThresholdRuleResult[];
-}
+export type M3LThresholdEvaluation =
+  | {
+      readonly verdict: "breached";
+      readonly breached: true;
+      /** A non-empty, human-readable description of the outcome. */
+      readonly summary: string;
+      /** One result per input rule, in input order. */
+      readonly results: readonly M3LThresholdRuleResult[];
+    }
+  | {
+      readonly verdict: "clear" | "no-rules";
+      readonly breached: false;
+      /** A non-empty, human-readable description of the outcome. */
+      readonly summary: string;
+      /** One result per input rule, in input order. */
+      readonly results: readonly M3LThresholdRuleResult[];
+    };
 
 /**
  * Coerces a single row cell to a number for numeric comparison/aggregation.
@@ -485,7 +495,7 @@ export class M3LThresholdEvaluator {
    * @param rules - The threshold rules to evaluate, in the order results
    *   should appear.
    * @param rows - The tabular data rows to evaluate the rules against.
-   * @returns The overall evaluation: `breached`, `summary`, and one
+   * @returns The overall evaluation: `verdict`, `breached`, `summary`, and one
    *   {@link M3LThresholdRuleResult} per input rule.
    */
   evaluate(
@@ -497,7 +507,11 @@ export class M3LThresholdEvaluator {
     const results = rules.map((rule) => evaluateRule(rule, rows));
     const breached = results.some((r) => r.breached);
     const verdict = deriveVerdict(results, breached);
+    const summary = buildSummary(results);
 
-    return { verdict, breached, summary: buildSummary(results), results };
+    if (verdict === "breached") {
+      return { verdict, breached: true, summary, results };
+    }
+    return { verdict, breached: false, summary, results };
   }
 }

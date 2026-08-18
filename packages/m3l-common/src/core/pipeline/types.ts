@@ -489,11 +489,18 @@ export type M3LOperationPipelineOptions<
 
 /**
  * The fields shared by every arm of {@link M3LOperationPipelineOutcome}: the
- * resolved operation name and the result value. Exposed so callers that only
- * need `result` unconditionally (a thin wrapper preserving a legacy signature)
- * can type their variable against the base and call `outcome.result` without
- * narrowing — the discriminated union guarantees `result` is always present
- * regardless of `status`.
+ * resolved operation name and the result value. Its role is as a composition
+ * primitive: {@link M3LOperationPipelineOutcome} is defined as
+ * `M3LOperationPipelineOutcomeBase & (arm_A | arm_B | arm_C)`, so every arm
+ * of the discriminated union automatically carries `operation` and `result`
+ * without those fields being repeated on each arm.
+ *
+ * Accessing `outcome.result` or `outcome.operation` unconditionally — without
+ * first narrowing on `status` — is valid on the union itself
+ * ({@link M3LOperationPipelineOutcome}) because the base fields are present
+ * on every arm. Type against the union directly for that use case; reserve
+ * this base type for building a richer outcome type that must share the same
+ * common fields.
  *
  * @typeParam TOp - The closed operation-name union.
  * @typeParam TResult - The result type every arm carries.
@@ -502,18 +509,11 @@ export type M3LOperationPipelineOptions<
  * ```ts
  * import type { Core } from "@m3l-automation/m3l-common";
  *
- * async function runAndReturn(
- *   pipeline: Core.M3LOperationPipeline<
- *     "list",
- *     { readonly bucket: string },
- *     Core.M3LOperationPipelineBaseDeps,
- *     { readonly count: number }
- *   >,
- *   deps: Core.M3LOperationPipelineBaseDeps,
- * ): Promise<{ readonly count: number }> {
- *   const outcome: Core.M3LOperationPipelineOutcomeBase<"list", { readonly count: number }> =
- *     await pipeline.run(deps);
- *   return outcome.result;
+ * // Extend the base to add cross-cutting fields that every arm should carry.
+ * interface TimedOutcome<TOp extends string, TResult>
+ *   extends Core.M3LOperationPipelineOutcomeBase<TOp, TResult> {
+ *   /** Wall-clock milliseconds consumed by the run. *\/
+ *   readonly elapsedMs: number;
  * }
  * ```
  */
@@ -565,8 +565,16 @@ export type M3LOperationPipelineOutcome<
     | {
         /** The run dispatched and some items failed — at least one recovery entry. */
         readonly status: "partial";
-        /** The per-item failures the `recovery` callback returned. */
-        readonly recovery: readonly M3LRunRecoveryEntry[];
+        /**
+         * The per-item failures the `recovery` callback returned.
+         * A non-empty tuple — the engine only produces this arm when the
+         * callback's return contains at least one entry; an empty array yields
+         * `status: "completed"` instead.
+         */
+        readonly recovery: readonly [
+          M3LRunRecoveryEntry,
+          ...M3LRunRecoveryEntry[],
+        ];
       }
     | {
         /** The run dispatched and every item succeeded. */

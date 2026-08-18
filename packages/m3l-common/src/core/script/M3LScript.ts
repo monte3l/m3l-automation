@@ -330,16 +330,17 @@ export class M3LScript {
    * Ring buffer of absorbed per-item failures recorded via
    * {@link M3LScript.reportRecovery}. Bounded at {@link M3L_RECOVERY_LIMIT}:
    * when the buffer is full, the oldest entry is evicted so the most recent
-   * ones are always retained. NOT reset between invocations — recovery entries
-   * are instance-scoped and accumulate until the instance is discarded.
+   * ones are always retained. Reset at the start of each invocation by
+   * {@link M3LScript.resetForInvocation} so entries are strictly per-run.
    */
   private recoveryEntries: M3LRunRecoveryEntry[] = [];
 
   /**
-   * The total count of every entry ever passed to {@link M3LScript.reportRecovery},
-   * retained or evicted. Stays strictly non-decreasing; when it exceeds
-   * {@link M3LScript.recoveryEntries}.length the ring buffer has been truncated
-   * and a reader can detect it via `recoveryTotal > recovery.length`.
+   * The total count of every entry passed to {@link M3LScript.reportRecovery}
+   * in the current run, retained or evicted. Reset at the start of each
+   * invocation by {@link M3LScript.resetForInvocation}. When it exceeds
+   * {@link M3LScript.recoveryEntries}.length the ring buffer has been
+   * truncated and a reader can detect it via `recoveryTotal > recovery.length`.
    */
   private recoveryTotalCount = 0;
 
@@ -792,15 +793,39 @@ export class M3LScript {
     if (
       entry === null ||
       typeof entry !== "object" ||
-      !Object.hasOwn(entry, "item") ||
-      typeof (entry as unknown as Record<string, unknown>)["item"] !== "string"
+      !Object.hasOwn(entry, "item")
     ) {
       throw new M3LError(
         "reportRecovery: entry must be a non-null object with a string 'item' field",
         { code: "ERR_INVALID_ARGUMENT" },
       );
     }
-    this.recoveryEntries.push(entry);
+    // Guard the `item` read: a hostile getter can throw a raw Error here.
+    // Absorb it and surface as M3LError, matching `readInputError`'s pattern
+    // in `core/diagnostics/run-report.ts`.
+    let item: unknown;
+    try {
+      item = (entry as unknown as Record<string, unknown>)["item"];
+    } catch {
+      throw new M3LError(
+        "reportRecovery: entry must be a non-null object with a string 'item' field",
+        { code: "ERR_INVALID_ARGUMENT" },
+      );
+    }
+    if (typeof item !== "string") {
+      throw new M3LError(
+        "reportRecovery: entry must be a non-null object with a string 'item' field",
+        { code: "ERR_INVALID_ARGUMENT" },
+      );
+    }
+    // Store a projected copy so a caller mutating the original object after
+    // this call cannot change what later gets persisted or returned.
+    const stored: M3LRunRecoveryEntry = {
+      item,
+      error: entry.error,
+      recordedAt: entry.recordedAt,
+    };
+    this.recoveryEntries.push(stored);
     this.recoveryTotalCount += 1;
     if (this.recoveryEntries.length > M3L_RECOVERY_LIMIT) {
       this.recoveryEntries.shift();
@@ -835,15 +860,16 @@ export class M3LScript {
   }
 
   /**
-   * The total count of every entry ever passed to
-   * {@link M3LScript.reportRecovery}, whether retained in the ring buffer or
-   * evicted. Strictly non-decreasing; never reset between invocations.
+   * The total count of every entry passed to
+   * {@link M3LScript.reportRecovery} in the current run, whether retained in
+   * the ring buffer or evicted. Reset to zero at the start of each run by
+   * {@link M3LScript.resetForInvocation}.
    *
    * `recoveryTotal > recovery.length` means the buffer was truncated — the
-   * full failure count is this value even though only the most recent
+   * full per-run failure count is this value even though only the most recent
    * {@link M3L_RECOVERY_LIMIT} entries are kept.
    *
-   * @returns The cumulative count of reported recovery entries.
+   * @returns The per-run count of reported recovery entries.
    *
    * @example
    * ```ts
@@ -1046,6 +1072,11 @@ export class M3LScript {
     this.configLoaded = false;
     this.config = new M3LConfig();
     this.currentLambdaEvent = event;
+    // Recovery state is per-run: a second invocation on the same instance
+    // (warm Lambda container, test harness) must not inherit absorbed
+    // failures from an earlier run.
+    this.recoveryEntries = [];
+    this.recoveryTotalCount = 0;
   }
 
   /**
