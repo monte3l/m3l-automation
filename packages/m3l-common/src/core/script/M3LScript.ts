@@ -18,6 +18,10 @@ import {
   M3LYAMLConfigProvider,
   type M3LConfigProvider,
 } from "../config/index.js";
+import {
+  M3L_RECOVERY_LIMIT,
+  type M3LRunRecoveryEntry,
+} from "../diagnostics/index.js";
 import { M3LError } from "../errors/index.js";
 import { M3LExecutionEnvironment } from "../environment/index.js";
 import type { M3LFileCopyReport } from "../files/index.js";
@@ -321,6 +325,23 @@ export class M3LScript {
    * {@link M3LScript.buildConfigFileProviders}.
    */
   private readonly configFiles: readonly string[] | undefined;
+
+  /**
+   * Ring buffer of absorbed per-item failures recorded via
+   * {@link M3LScript.reportRecovery}. Bounded at {@link M3L_RECOVERY_LIMIT}:
+   * when the buffer is full, the oldest entry is evicted so the most recent
+   * ones are always retained. NOT reset between invocations — recovery entries
+   * are instance-scoped and accumulate until the instance is discarded.
+   */
+  private recoveryEntries: M3LRunRecoveryEntry[] = [];
+
+  /**
+   * The total count of every entry ever passed to {@link M3LScript.reportRecovery},
+   * retained or evicted. Stays strictly non-decreasing; when it exceeds
+   * {@link M3LScript.recoveryEntries}.length the ring buffer has been truncated
+   * and a reader can detect it via `recoveryTotal > recovery.length`.
+   */
+  private recoveryTotalCount = 0;
 
   /** The logger facade wired for this script instance. */
   readonly logger: M3LLogger;
@@ -719,6 +740,121 @@ export class M3LScript {
    */
   get runStartedAt(): Date | undefined {
     return this.currentRunStartedAt;
+  }
+
+  /**
+   * Records an absorbed per-item failure into this script's bounded ring
+   * buffer of recovery entries, incrementing {@link M3LScript.recoveryTotal}
+   * regardless of whether the entry was retained or evicted.
+   *
+   * Call this from `mainFn` for every item-level failure the run absorbs and
+   * continues past. {@link runScript} consults {@link M3LScript.recovery} on
+   * the non-throwing path: one or more entries shift the outcome from
+   * `"success"` to `"partial"` with exit code `6` (`M3L_EXIT_CODES.PARTIAL`).
+   *
+   * A propagating throw still wins: an error that escapes `mainFn` resolves
+   * to `"failure"` (or `"interrupted"` for a cooperative abort) regardless of
+   * how many recovery entries were recorded — recovery describes failures the
+   * run survived, not what ended it.
+   *
+   * The buffer is bounded at {@link M3L_RECOVERY_LIMIT}: once full, the
+   * oldest entry is evicted to make room for the newest one. Read
+   * `recoveryTotal > recovery.length` to detect truncation.
+   *
+   * @param entry - The absorbed failure to record. Must be a non-null object
+   *   with at least a non-null `item` field (the caller-supplied identifier of
+   *   what failed).
+   * @throws {@link M3LError} with code `ERR_INVALID_ARGUMENT` when `entry` is
+   *   `null`, not an object, or is missing the required `item` field.
+   *
+   * @example
+   * ```ts
+   * import { M3LScript, runScript } from "@m3l-automation/m3l-common/core";
+   *
+   * const script = new M3LScript({ metadata: { name: "batch", version: "1.0.0" } });
+   *
+   * await runScript(script, async () => {
+   *   for (const id of ["a", "b", "c"]) {
+   *     try {
+   *       await processRecord(id);
+   *     } catch (cause) {
+   *       script.reportRecovery({
+   *         item: id,
+   *         error: [{ name: "Error", message: String(cause) }],
+   *         recordedAt: new Date().toISOString(),
+   *       });
+   *     }
+   *   }
+   * });
+   * ```
+   */
+  reportRecovery(entry: M3LRunRecoveryEntry): void {
+    if (
+      entry === null ||
+      typeof entry !== "object" ||
+      !Object.hasOwn(entry, "item") ||
+      typeof (entry as unknown as Record<string, unknown>)["item"] !== "string"
+    ) {
+      throw new M3LError(
+        "reportRecovery: entry must be a non-null object with a string 'item' field",
+        { code: "ERR_INVALID_ARGUMENT" },
+      );
+    }
+    this.recoveryEntries.push(entry);
+    this.recoveryTotalCount += 1;
+    if (this.recoveryEntries.length > M3L_RECOVERY_LIMIT) {
+      this.recoveryEntries.shift();
+    }
+  }
+
+  /**
+   * A snapshot of the absorbed per-item failures recorded via
+   * {@link M3LScript.reportRecovery}, oldest first, bounded at
+   * {@link M3L_RECOVERY_LIMIT}.
+   *
+   * A fresh array is returned on every call — caller mutations never reach
+   * internal state, and a later {@link M3LScript.reportRecovery} call never
+   * retroactively changes an array already returned.
+   *
+   * When `recovery.length < recoveryTotal`, the buffer was truncated: the
+   * oldest entries were evicted and only the most recent ones were retained.
+   *
+   * @returns A snapshot of the current recovery entries, empty before the
+   *   first {@link M3LScript.reportRecovery} call.
+   *
+   * @example
+   * ```ts
+   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   *
+   * const script = new M3LScript({ metadata: { name: "batch", version: "1.0.0" } });
+   * console.log(script.recovery.length); // 0 before any reportRecovery call
+   * ```
+   */
+  get recovery(): readonly M3LRunRecoveryEntry[] {
+    return [...this.recoveryEntries];
+  }
+
+  /**
+   * The total count of every entry ever passed to
+   * {@link M3LScript.reportRecovery}, whether retained in the ring buffer or
+   * evicted. Strictly non-decreasing; never reset between invocations.
+   *
+   * `recoveryTotal > recovery.length` means the buffer was truncated — the
+   * full failure count is this value even though only the most recent
+   * {@link M3L_RECOVERY_LIMIT} entries are kept.
+   *
+   * @returns The cumulative count of reported recovery entries.
+   *
+   * @example
+   * ```ts
+   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   *
+   * const script = new M3LScript({ metadata: { name: "batch", version: "1.0.0" } });
+   * console.log(script.recoveryTotal); // 0 before any reportRecovery call
+   * ```
+   */
+  get recoveryTotal(): number {
+    return this.recoveryTotalCount;
   }
 
   /**
