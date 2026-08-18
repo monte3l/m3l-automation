@@ -27,10 +27,7 @@ import {
   readmeStructureErrors,
   referenceStructureErrors,
 } from "./lib/script-docs.mjs";
-import {
-  SCRIPT_DOCS_DIR,
-  scriptPackageDirs,
-} from "./lib/script-scaffold.mjs";
+import { SCRIPT_DOCS_DIR, scriptPackageDirs } from "./lib/script-scaffold.mjs";
 import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 
 const { json } = parseJsonFlag();

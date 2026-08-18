@@ -81,9 +81,7 @@ export function readmeStructureErrors(text, _name) {
 
   const headingMatch = EXAMPLES_HEADING_RE.exec(text);
   if (!headingMatch) {
-    problems.push(
-      'missing "### Examples" section (required, item 5 in spec).',
-    );
+    problems.push('missing "### Examples" section (required, item 5 in spec).');
   } else {
     if (EXAMPLES_PLACEHOLDER_RE.test(text)) {
       problems.push(
@@ -135,8 +133,7 @@ export function readmeStructureErrors(text, _name) {
 // ---------------------------------------------------------------------------
 
 /** The "This page is the script's contract" blockquote. */
-const REF_BLOCKQUOTE_RE =
-  />\s+\*\*This page is the script's contract\*\*/;
+const REF_BLOCKQUOTE_RE = />\s+\*\*This page is the script's contract\*\*/;
 
 /** `## Purpose and scope` H2 heading. */
 const PURPOSE_SECTION_RE = /^## Purpose and scope\s*$/m;
@@ -203,9 +200,7 @@ export function referenceStructureErrors(text, _name) {
   }
 
   if (!SEE_ALSO_SECTION_RE.test(text)) {
-    problems.push(
-      'missing "## See also" section (required, item 9 in spec).',
-    );
+    problems.push('missing "## See also" section (required, item 9 in spec).');
   }
 
   if (DECLARATIVE_VALIDATE_COLUMN_RE.test(text)) {
