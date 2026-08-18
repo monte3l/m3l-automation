@@ -53,6 +53,17 @@ the mechanics.
 - Because `perFile` is on, adding code to a file without covering it can fail the
   file even if the repo aggregate is healthy. Read `coverage-final.json`, not the
   text table, when hunting the missing lines.
+- **Read the JSON from the library pass only.** `pnpm test:coverage` runs **two**
+  passes — `vitest run --coverage && vitest run --coverage --config
+vitest.bin.config.ts` — and the second **overwrites `coverage/`** with bin-only
+  data. So inspecting `coverage/coverage-final.json` after the composite script
+  tells you nothing about `packages/*/src`, and a library file's _absence_ from
+  that JSON is **not** evidence it is fully covered. Coverage is also not written
+  at all when tests fail. To hunt a library gap, run
+  `pnpm exec vitest run --coverage` (library config alone) and read the JSON
+  immediately; treat the run's own `ERROR: Coverage … does not meet` lines as the
+  authoritative gate signal
+  (`docs/logs/2026-08-18-a1-cooperative-cancellation-seam.md` §6).
 - Thresholds are deliberately modest for a young library — raise them as real code
   lands rather than lowering them to pass.
 
