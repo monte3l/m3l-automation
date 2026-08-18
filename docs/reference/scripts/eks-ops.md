@@ -41,7 +41,7 @@ enforced at **config-load time**, throwing `Core.M3LConfigValidationError`
 narrow `string | undefined` to `string`.
 
 **Two distinct validation mechanisms are in play — do not conflate them:**
-the "Declarative `validate:`" column is a **factory attached in `config.ts`**,
+the "Validation" column is a **factory attached in `config.ts`**,
 evaluated by `M3LConfigParameter` at `getConfiguration()` time — it fires only
 when the provider resolves a raw value for that parameter (an `undefined`/
 absent optional parameter never runs its validator). The "Required for"
@@ -62,7 +62,7 @@ build their (small) request entirely from flat config parameters
 (`kubernetesVersion`/`releaseVersion`/`force`) rather than requiring an input
 file for a one- or two-field change.
 
-| Parameter           | Type           | Default | Declarative `validate:`                                                                        | Required for                                                                                                                                                           | Description                                                                                                                              |
+| Parameter           | Type           | Default | Validation                                                                                     | Required for                                                                                                                                                           | Description                                                                                                                              |
 | ------------------- | -------------- | ------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `aws.profile`       | `STRING`       | —       | `required: true`, `nonEmpty`                                                                   | all                                                                                                                                                                    | AWS profile name; declaring it enables the `script.aws` dynamic-provisioning seam (`Core.AWS_PROFILE_PARAM_NAME`)                        |
 | `operation`         | `STRING`       | —       | `required: true`, `oneOf(EKS_OPS_OPERATIONS)` (16 values)                                      | all                                                                                                                                                                    | Selects which of the 16 `M3LEKSOperations` methods this run dispatches                                                                   |

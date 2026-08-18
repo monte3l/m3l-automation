@@ -171,6 +171,11 @@ export const COMMAND_CATALOG = [
       "Verifies every scripts/<name>/ package matches the ADR-0022 shape (modular src/, contract page, README, package.json script values, tsconfig extends/references shape, root tsconfig ref, smoke test). Run after scaffolding or editing a consumer script's structure.",
   },
   {
+    name: "check:script-docs",
+    description:
+      "Verifies every script README and reference page follows the canonical structure spec (docs/contributing/script-docs-structure.md): required sections present, contract blockquotes, ≥3 runnable examples, Validation config-table column, Operation column in Operations-at-a-glance. Run after editing a script README or docs/reference/scripts/ page.",
+  },
+  {
     name: "check:script-deps",
     description:
       "Verifies every scripts/*/package.json declares exactly the ADR-0029 dependency boundary (@m3l-automation/m3l-common via workspace:*, no devDependencies). Run after editing a consumer script's package.json.",

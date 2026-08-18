@@ -39,8 +39,8 @@ schema and semantics.
 
 Every script composes through `Core.runScript` (ADR-0035), so these work uniformly:
 
-- `--dry-run` — validate environment, configuration, and AWS credentials
-  (pipeline stages 1–5) without running the script: `node dist/main.js --dry-run`.
+- `--dry-run` — validate environment and configuration (pipeline stages 1–5)
+  without running the script: `node dist/main.js --dry-run`.
 - `--log-level=<level>` / `--debug`, or `M3L_LOG_LEVEL=<level>` / `M3L_DEBUG=1` —
   set the log severity floor (`debug`/`info`/`success`/`warning`/`error`/`fatal`).
   CLI wins over env; an unknown value fails loud.

@@ -28,6 +28,23 @@ API. The library's `Core.M3LHttpClient` is transport-only (the body is sent
 verbatim, with no serialization and no inferred `Content-Type`), so shaping the
 request body and headers is the caller's responsibility.
 
+Deferred for future iterations:
+
+- **Named request "presets" library** (a reusable catalog of named request
+  templates) is deferred — v1 uses explicit config fields (`method`/`path`/
+  `body`) plus per-record JSONL parameters only.
+- **Per-record `method`/`headers` overrides in batch mode** — the configured
+  `method` applies uniformly to every record, which is exactly what lets the
+  destructive gate run once up front rather than per record.
+- **Checkpoint/resume** for a killed `batch` run (it restarts rather than
+  resuming) — mirrors `sqs-etl`'s deferral; filed as a friction candidate, not
+  silently dropped.
+- **Client-side rate capping / throttle backoff** — v1 has no retry layer
+  (`Core.M3LHttpClient` is transport-only), so a `429`/`5xx` surfaces as a
+  per-request failure to `failed.jsonl` rather than being retried.
+- **Response transformation/projection** (`fields`/`filters`) — responses are
+  persisted verbatim.
+
 ## Configuration schema
 
 Declared in `src/config.ts` (`configParameters`); config is the script's only
@@ -127,23 +144,6 @@ deliberately distinguished from a request failure: blindly re-driving a
 `failed.jsonl` entry with a mutating `method` would re-issue an
 already-successful call, so operators should treat `"output-write-failed"`
 rows differently (re-fetch/reconcile, not resend).
-
-## Out of scope for this iteration
-
-- **Named request "presets" library** (a reusable catalog of named request
-  templates) is deferred — v1 uses explicit config fields (`method`/`path`/
-  `body`) plus per-record JSONL parameters only.
-- **Per-record `method`/`headers` overrides in batch mode** — the configured
-  `method` applies uniformly to every record, which is exactly what lets the
-  destructive gate run once up front rather than per record.
-- **Checkpoint/resume** for a killed `batch` run (it restarts rather than
-  resuming) — mirrors `sqs-etl`'s deferral; filed as a friction candidate, not
-  silently dropped.
-- **Client-side rate capping / throttle backoff** — v1 has no retry layer
-  (`Core.M3LHttpClient` is transport-only), so a `429`/`5xx` surfaces as a
-  per-request failure to `failed.jsonl` rather than being retried.
-- **Response transformation/projection** (`fields`/`filters`) — responses are
-  persisted verbatim.
 
 ## See also
 

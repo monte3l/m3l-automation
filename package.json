@@ -48,6 +48,7 @@
     "check:scaffold": "node bin/check-scaffold.mjs",
     "check:scaffold-seam": "node bin/check-scaffold-seam.mjs",
     "check:script-scaffold": "node bin/check-script-scaffold.mjs",
+    "check:script-docs": "node bin/check-script-docs.mjs",
     "check:script-deps": "node bin/check-script-deps.mjs",
     "scaffold:script": "node bin/scaffold-script.mjs",
     "check:agents": "node bin/check-agents.mjs",

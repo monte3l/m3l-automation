@@ -68,7 +68,7 @@ enforced at **config-load time**, throwing `Core.M3LConfigValidationError`
 narrow `string | undefined` to `string`.
 
 **Two distinct validation mechanisms are in play — do not conflate them:**
-the "Declarative `validate:`" column below is evaluated by
+the "Validation" column below is evaluated by
 `M3LConfigParameter` at `getConfiguration()` time — it fires only when the
 provider resolves a raw value for that parameter (an `undefined`/absent
 optional parameter never runs its validator). The "Required for" column is
@@ -80,7 +80,7 @@ still throws `ERR_CODEPIPELINE_OPS_CONFIG`, but under `M3LScript` that path
 is now unreachable: it is observable only when a step is invoked directly in
 a unit test that bypasses the schema (as this script's own tests do).
 
-| Parameter             | Type     | Default | Declarative `validate:`                                                                                                                                                                                                                                                       | Required for                                                       | Description                                                                                                                                                                |
+| Parameter             | Type     | Default | Validation                                                                                                                                                                                                                                                                    | Required for                                                       | Description                                                                                                                                                                |
 | --------------------- | -------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `aws.profile`         | `STRING` | —       | `required: true`, `nonEmpty`                                                                                                                                                                                                                                                  | all                                                                | AWS profile name; declaring it enables the `script.aws` dynamic-provisioning seam (`Core.AWS_PROFILE_PARAM_NAME`)                                                          |
 | `operation`           | `STRING` | —       | `required: true`, `oneOf(list-pipelines, describe-pipeline, get-pipeline-state, list-executions, describe-execution, create-pipeline, update-pipeline, delete-pipeline, start-execution, stop-execution, enable-stage-transition, disable-stage-transition, watch-execution)` | all                                                                | Selects which of the 13 dispatched operations this run performs                                                                                                            |

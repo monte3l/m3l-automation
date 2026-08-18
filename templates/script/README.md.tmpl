@@ -19,7 +19,46 @@ pnpm --filter @m3l-automation/__SCRIPT_NAME__ start
 
 ### Examples
 
-<!-- Add 2-4 examples here: Minimal / Common / Production / Edge case -->
+<!-- Add examples here — at least 3, labelled in-fence, spanning read-only →
+     mutating → destructive/interactive. Scale the count to the script's
+     operation count and complexity. See docs/contributing/script-docs-structure.md. -->
+
+```bash
+# Minimal — <describe what the simplest case shows>
+node dist/main.js ...
+
+# Common — <describe the most frequently reached case>
+node dist/main.js ...
+
+# Production — <describe a tuned, unattended run>
+node dist/main.js ...
+
+# Edge case — <describe a rare or destructive path and any caveats>
+node dist/main.js ...
+```
+
+### Operations at a glance
+
+<!-- Delete this section for single-purpose scripts with only one operation.
+     For multi-operation scripts, list every operation and which example covers it.
+     Column header must be "Operation" (not "Command" or "Mode"). -->
+
+| Operation  | Demonstrated by |
+| ---------- | --------------- |
+| `example`  | Minimal         |
+
+### Operational flags
+
+Every script composes through `Core.runScript` (ADR-0035), so these work uniformly:
+
+- `--dry-run` — validate environment and configuration without running the
+  script: `node dist/main.js --dry-run`.
+- `--log-level=<level>` / `--debug`, or `M3L_LOG_LEVEL=<level>` / `M3L_DEBUG=1` —
+  set the log severity floor (`debug`/`info`/`success`/`warning`/`error`/`fatal`).
+  CLI wins over env; an unknown value fails loud.
+- **Exit codes** map the failure origin: `0` success, `2` config/validation, `3`
+  script-local error, `4` unhandled/unexpected. A non-zero exit always accompanies
+  a logged error.
 
 ## Environment (`.env`)
 
