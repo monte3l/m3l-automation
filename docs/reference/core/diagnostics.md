@@ -128,15 +128,26 @@ into its text output. Without it, a truncated chain in `run-report.json` or an
 ### Run report
 
 - `M3LRunReport` — the run-report document, a discriminated union on `outcome`.
-- `M3LRunReportBase` — the fields common to both arms.
+- `M3LRunReportBase` — the fields common to every arm.
 - `M3LRunReportFailure` — the failure block (`stage` + `chain`).
-- `M3LRunOutcome` — `"success" | "failure" | "dry-run" | "interrupted"`.
+- `M3LRunOutcome` — `"success" | "failure" | "dry-run" | "interrupted" | "partial"`.
   `interrupted` is produced when the run was cancelled — a shutdown signal
   aborted [`script.signal`](./script.md#cooperative-cancellation-scriptsignal)
   and an in-flight wait rejected with
   [`M3LOperationAbortedError`](./errors.md#m3loperationabortederror).
   Cancellation is an operator decision, so the report must not present it as
   a `failure`.
+  `partial` is produced when a run absorbed one or more per-item failures but
+  still completed its remaining work — a run that processed 997 of 1000 records
+  is neither a `success` nor a `failure`, and reporting it as either discards
+  the distinction the operator needs. A `partial` report carries the absorbed
+  failures as structured `recovery` entries rather than free text, and exits
+  `6` (`PARTIAL`) — never `0`.
+- `M3LRunRecoveryEntry` — one absorbed, non-fatal failure: `item` (the
+  caller-supplied identity of what failed), `error` (the flattened cause chain,
+  serialized exactly as `M3LRunReportFailure.chain` is), and `recordedAt` (an
+  ISO-8601 timestamp). The classification is always **reported by the caller**,
+  never inferred by the library.
 - `M3LRunReportInput` — what `build`/`persist` accept.
 - `M3LRunReporter` — builds and persists a run report.
 - `M3LRunReporterOptions` — `{ paths?, fileName? }`.
@@ -167,6 +178,7 @@ and the run report:
 | `3`       | `EXTERNAL`     | External-system failure                         | `external`       |
 | `4`       | `LIBRARY`      | Library-internal fault                          | `library`        |
 | `5`       | `INTERRUPTED`  | Signal-forced shutdown, or a cancelled run      | —                |
+| `6`       | `PARTIAL`      | Run completed with absorbed per-item failures   | —                |
 
 `mapErrorToExitCode(error: unknown): M3LErrorExitCode` resolves in order: the
 error's `origin` field (see [`errors` → Fault origin](./errors.md#fault-origin),
@@ -175,10 +187,10 @@ only an `M3LError`) → the error-code catalog's classification for `error.code`
 → `1`. It never throws — a `null`, a string, a circular object, or an object
 whose `origin`/`code` getter throws all resolve to `1`.
 
-The return type is `M3LErrorExitCode` (`1 | 2 | 3 | 4`), not `number`: `SUCCESS`
-and `INTERRUPTED` describe how a run ended, not what an error was, so they are
-set by the caller and are unreachable from this function by construction rather
-than by convention.
+The return type is `M3LErrorExitCode` (`1 | 2 | 3 | 4`), not `number`: `SUCCESS`,
+`INTERRUPTED` and `PARTIAL` describe how a run ended, not what an error was, so
+they are set by the caller and are unreachable from this function by
+construction rather than by convention.
 
 This is why a **cancelled** run is recognised in `runScript()` rather than here.
 `M3LOperationAbortedError` carries `origin: "caller"`, so routing it through
@@ -187,6 +199,12 @@ as a configuration fault. Instead `runScript()` tests for the abort _before_
 mapping and assigns `INTERRUPTED` directly, exactly as it already does for a
 signal-forced shutdown. `M3LErrorExitCode` stays `1 | 2 | 3 | 4`
 ([ADR-0049](../../adr/0049-cooperative-cancellation-contract.md)).
+
+`PARTIAL` follows exactly this precedent. It is subtracted from
+`M3LErrorExitCode` alongside `SUCCESS` and `INTERRUPTED`, so adding it to
+`M3L_EXIT_CODES` does not widen what `mapErrorToExitCode` can return: a partial
+run is a caller-assigned conclusion about the run, not a classification of an
+error.
 
 **Contract:** nothing in the library calls `process.exit()` on this path.
 [`runScript()`](./script.md#runscript) assigns `process.exitCode` so in-flight
@@ -332,11 +350,22 @@ interface M3LRunReportFailure {
   readonly chain: readonly M3LSerializedError[]; // the full walked cause chain
 }
 
+interface M3LRunRecoveryEntry {
+  readonly item: string; // caller-supplied identity of what failed
+  readonly error: readonly M3LSerializedError[]; // the full walked cause chain
+  readonly recordedAt: string; // ISO-8601 timestamp the failure was absorbed
+}
+
 type M3LRunReport = M3LRunReportBase &
   (
     | { readonly outcome: "failure"; readonly failure: M3LRunReportFailure }
     | {
-        readonly outcome: Exclude<M3LRunOutcome, "failure">;
+        readonly outcome: "partial";
+        readonly recovery: readonly M3LRunRecoveryEntry[];
+        readonly failure?: undefined;
+      }
+    | {
+        readonly outcome: Exclude<M3LRunOutcome, "failure" | "partial">;
         readonly failure?: undefined;
       }
   );
@@ -347,8 +376,14 @@ Narrow on `outcome`, not on `failure !== undefined`:
 ```typescript
 if (report.outcome === "failure") {
   report.failure.chain; // no optional access needed
+} else if (report.outcome === "partial") {
+  report.recovery.length; // always present, and always non-empty
 }
 ```
+
+`recovery` is **required** on the `partial` arm and absent from every other one,
+so "partial with nothing recorded" is unrepresentable — the same
+present-if-and-only-if discipline `failure` already follows.
 
 **Behavioral contracts:**
 

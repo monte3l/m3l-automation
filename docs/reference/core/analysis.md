@@ -14,6 +14,7 @@ Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
 - `M3LThresholdRule` — a single threshold-check definition.
 - `M3LThresholdRuleResult` — the per-rule outcome.
 - `M3LThresholdEvaluation` — the overall evaluation result.
+- `M3LThresholdVerdict` — the named outcome of an evaluation.
 - `M3LThresholdRuleValidationError` — thrown for a malformed rule.
 - `M3LThresholdOperator` — the comparison-operator union.
 - `M3LThresholdAggregation` — the aggregation union.
@@ -38,9 +39,32 @@ The `aggregation` determines what the operator compares: `any-row` tests each ro
 
 `M3LThresholdEvaluator.evaluate(rules, rows)` applies each rule independently and returns a `M3LThresholdEvaluation`:
 
-- `breached` — overall boolean (true if any rule was breached).
+- `verdict` — the named outcome: `"breached"`, `"clear"`, or `"no-rules"`.
+- `breached` — overall boolean (true if any rule was breached). Equivalent to
+  `verdict === "breached"`, retained for callers that only need the flag.
 - `summary` — a human-readable description of the outcome.
 - `results` — an array of `M3LThresholdRuleResult`, one per rule.
+
+### The named verdict
+
+`breached: false` conflates two genuinely different conclusions: **rules ran and
+none breached**, and **no rules ran at all**. The second is not a clean result —
+it usually means a misconfigured or empty rule set, and a caller that gates on
+`breached` alone will silently pass a run that checked nothing.
+
+`verdict` separates them, applying ADR-0046's mandatory-fallback discipline:
+every terminal path resolves to a _named_ outcome, and "no case matched" is a
+first-class structured result rather than a silent gap.
+
+| `verdict`    | Meaning                                      | `breached` |
+| ------------ | -------------------------------------------- | ---------- |
+| `"breached"` | At least one rule breached                   | `true`     |
+| `"clear"`    | One or more rules evaluated, none breached   | `false`    |
+| `"no-rules"` | The rule set was empty — nothing was checked | `false`    |
+
+`no-rules` is reported for an empty `rules` array regardless of how many rows
+were supplied: evaluating a thousand rows against zero rules still checks
+nothing.
 
 Each `M3LThresholdRuleResult` carries:
 

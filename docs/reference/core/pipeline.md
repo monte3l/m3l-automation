@@ -88,9 +88,13 @@ operation)`, producing the message `'<name>' is required for operation
 9. **Finalize** — `finalize?.(result, settings, deps, operation)`. Runs **after**
    persist, so a post-dispatch assertion that throws (e.g. a wait operation
    that did not stabilize) still leaves the persisted result on disk.
-10. **Outcome** — resolves `{ status: "completed", operation, result }`.
+10. **Recovery** — `recovery?.(result, settings, deps, operation)`. Returns the
+    per-item failures the handler absorbed, as `M3LRunRecoveryEntry[]`.
+11. **Outcome** — resolves `{ status: "completed", operation, result }`, or
+    `{ status: "partial", operation, result, recovery }` when phase 10 returned
+    a non-empty array.
 
-Any throw from phases 1–9 (other than a soft-landed decline) propagates to
+Any throw from phases 1–10 (other than a soft-landed decline) propagates to
 the caller unmodified — the engine never swallows, wraps, or re-codes errors.
 
 A pipeline instance is **stateless across runs**: `run()` keeps all per-run
@@ -126,6 +130,25 @@ result(operation, settings, deps) }` without dispatching. A declined run
 The outcome's `status` field makes a declined run first-class: callers that
 care can branch on it; thin wrappers that preserve a legacy signature can
 return `outcome.result` unconditionally.
+
+## Partial runs
+
+`recovery` is the **only** way a run becomes `"partial"`. The engine never
+inspects a result to decide whether it was degraded — it cannot, since only the
+handler knows what "an item" is for its operation. A pipeline that declares no
+`recovery` callback can never resolve `"partial"`, and its behavior is
+byte-identical to before this phase existed.
+
+The engine's sole contribution is the emptiness test: an empty array is a clean
+run (`"completed"`), a non-empty one is `"partial"`. This keeps the
+classification honest in both directions — a handler cannot report a degraded
+run as clean by omission, and the engine cannot invent a degradation the
+handler never reported.
+
+A `"partial"` run **still ran `persist` and `finalize`**: it dispatched
+successfully and produced a real result. This is the distinction the outcome
+exists to preserve — a run that processed 997 of 1000 keys deleted 997 keys,
+and reporting it as a `failure` implies it deleted none.
 
 ## Types
 
@@ -278,12 +301,20 @@ interface M3LOperationPipelineCoreOptions<
     deps: TDeps,
     operation: TOp,
   ) => void | Promise<void>;
+  readonly recovery?: (
+    result: TResult,
+    settings: TSettings,
+    deps: TDeps,
+    operation: TOp,
+  ) => readonly M3LRunRecoveryEntry[];
 }
 
 interface M3LOperationPipelineOutcome<TOp extends string, TResult> {
   readonly operation: TOp;
-  readonly status: "completed" | "declined";
+  readonly status: "completed" | "declined" | "partial";
   readonly result: TResult;
+  /** Present, and non-empty, if and only if `status === "partial"`. */
+  readonly recovery?: readonly M3LRunRecoveryEntry[];
 }
 
 class M3LOperationPipeline<
