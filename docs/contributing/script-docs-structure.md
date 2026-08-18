@@ -206,8 +206,10 @@ is intentional and approved:
 - The reference page's `## Presets` section documents the preset schema; the
   README's `### Presets` section explains how to invoke a preset — these are
   complementary, not duplicated.
-- The gate (`check:script-docs`) explicitly allows this deviation via the
-  `SCRIPT_DOCS_EXCEPTIONS` allowlist.
+- `bin/lib/script-docs.mjs` exports `SCRIPT_DOCS_EXCEPTIONS` as a named set
+  for future callers; the current gate runner does not consult it because
+  json-etl passes all structural checks as-is — the allowlist is
+  future-proofing infrastructure, not an active escape hatch today.
 
 What is **not** a sanctioned deviation for json-etl:
 
@@ -223,18 +225,17 @@ machine-checkably. It is run in pre-push and CI. The gate checks:
 
 **Per README:**
 
-- All mandatory sections present, in order.
+- Required sections present (heading-based check; ordering is not enforced by the gate).
 - Contract blockquote present.
 - `### Examples` heading exists and has ≥3 runnable `node dist/main.js` examples.
 - No leftover scaffold placeholder.
-- `### Operations at a glance` column header is `Operation` (not `Command`).
+- `### Operations at a glance` column header is `Operation` (not `Command`), when the section is present.
 
 **Per reference page:**
 
-- All mandatory sections present, in order.
+- Required sections present (heading-based check; ordering is not enforced by the gate).
 - Contract blockquote present.
 - Config table header contains `Validation` (not `Declarative \`validate:\``).
-- `## Error codes` H2 present when a script-local code family exists.
 
 Scaffold templates (`templates/script/README.md.tmpl` and
 `templates/script/docs-page.md.tmpl`) are the canonical starting points for new
