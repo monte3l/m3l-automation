@@ -1,7 +1,7 @@
 # Plan: A1 — the cooperative cancellation seam
 
-**Status: shipped** — landed on `feat/cooperative-cancellation-seam`, closing
-issue #468. Work log:
+**Status: shipped** — landed on `feat/cooperative-cancellation-seam` (PR #478),
+closing issue #468. Work log:
 [`docs/logs/2026-08-18-a1-cooperative-cancellation-seam.md`](../../logs/2026-08-18-a1-cooperative-cancellation-seam.md).
 Decision: [ADR-0049](../../adr/0049-cooperative-cancellation-contract.md).
 
