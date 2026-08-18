@@ -28,6 +28,22 @@ EventBridge Scheduler service (a separate AWS service from EventBridge rules)
 is out of scope entirely — see `aws/eventbridge`'s own scope note, which this
 script inherits unchanged.
 
+Deferred for future iterations:
+
+- **Standalone target management** (`list-targets`/`put-targets`/
+  `remove-targets` as independent operations) — only the `create`/`update`
+  `targets` attach convenience is exposed; the wrapper's full target surface
+  is available to a future iteration that needs it.
+- **Per-service target parameter blocks** (Kinesis, ECS, Batch, SQS DLQ,
+  retry policy, AppSync, input transformer, run-command, etc.) — mirrors
+  `aws/eventbridge`'s own deliberate scope limit; `targets` here only carries
+  `id`/`arn`/`roleArn`/`input`/`inputPath`.
+- **Cross-account/cross-region rule management** — one profile, one region,
+  per run.
+- **Rule/target diffing or drift detection** — `create`/`update` always
+  issue a `PutRule` (EventBridge's own idempotent upsert); this script does
+  not compare against the existing rule state first.
+
 ## Configuration schema
 
 Declared in `src/config.ts` (`configParameters`); config is the script's only
@@ -110,24 +126,6 @@ JSON array (when set); `describe` writes the rule detail as a single JSON
 document (when set). `create`/`update`/`delete`/`enable`/`disable` write
 nothing — their result is logged, not persisted (there is no bulk
 success/failure ledger to reconcile, unlike a batch/ETL script).
-
-## Out of scope for this iteration
-
-- **Standalone target management** (`list-targets`/`put-targets`/
-  `remove-targets` as independent operations) — only the `create`/`update`
-  `targets` attach convenience is exposed; the wrapper's full target surface
-  is available to a future iteration that needs it.
-- **EventBridge Scheduler** — a separate AWS service from EventBridge rules;
-  `aws/eventbridge` itself is scoped to rules only (see its own doc page).
-- **Per-service target parameter blocks** (Kinesis, ECS, Batch, SQS DLQ,
-  retry policy, AppSync, input transformer, run-command, etc.) — mirrors
-  `aws/eventbridge`'s own deliberate scope limit; `targets` here only carries
-  `id`/`arn`/`roleArn`/`input`/`inputPath`.
-- **Cross-account/cross-region rule management** — one profile, one region,
-  per run.
-- **Rule/target diffing or drift detection** — `create`/`update` always
-  issue a `PutRule` (EventBridge's own idempotent upsert); this script does
-  not compare against the existing rule state first.
 
 ## See also
 

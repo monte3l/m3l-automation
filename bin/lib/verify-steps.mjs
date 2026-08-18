@@ -175,6 +175,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:script-scaffold",
   },
   {
+    ciStepName: "Check script doc structure",
+    id: "check-script-docs",
+    cmd: () => "pnpm check:script-docs",
+  },
+  {
     ciStepName: "Check script dependency boundary",
     id: "check-script-deps",
     cmd: () => "pnpm check:script-deps",
