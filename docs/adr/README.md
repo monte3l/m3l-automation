@@ -90,3 +90,7 @@ surface).
 | 0043 | [Defer a step-pipeline engine; close out the remaining reference capabilities](./0043-step-pipeline-engine-deferred.md)                                   | Accepted                         |
 | 0044 | [Remove three deprecated `AWSClientProvider` wrapper getters](./0044-remove-deprecated-client-wrapper-getters.md)                                         | Accepted                         |
 | 0045 | [Byte-offset streaming resume for list exporters](./0045-streaming-safe-resume-contract.md)                                                               | Accepted                         |
+| 0046 | [Adopt a codified-procedure engine (`core/procedure`)](./0046-codified-procedure-engine.md)                                                               | Accepted                         |
+| 0047 | [Cross-script orchestration belongs to `m3l-cli`, and is deferred](./0047-cross-script-orchestration-deferred.md)                                         | Accepted                         |
+| 0048 | [Grade the destructive confirmation by target, not only by action](./0048-target-graded-destructive-confirmation.md)                                      | Accepted                         |
+| 0049 | [A cooperative cancellation contract for long-running operations](./0049-cooperative-cancellation-contract.md)                                            | Accepted                         |

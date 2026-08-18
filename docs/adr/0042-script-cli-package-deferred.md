@@ -212,6 +212,24 @@ real consumer via a new optional `M3LRedactOptions`. See
 specifier") for the shipped contract. This closes issue #337 and the
 corresponding `docs/plans/IMPLEMENTATION.md` tracker row.
 
+## Update (2026-08-18) — the CLI's remit is not extended to orchestration
+
+A maintainer decision recorded in
+[ADR-0047](./0047-cross-script-orchestration-deferred.md) establishes that
+**cross-script orchestration — sequencing whole consumer scripts and branching on
+what each concluded — belongs to `packages/m3l-cli`** when it is built, because
+this package already owns workspace discovery, parameter translation, process
+spawning and invocation history, and because driving scripts as processes keeps
+ADR-0029's dependency boundary intact.
+
+**It is not being built in this programme.** ADR-0047 defers it on the standing
+intake gate, with a named multi-script flow as the revisit trigger. This package's
+remit therefore stays exactly as the 8b–8g build-out left it; nothing in the
+current CLI surface changes.
+
+Recorded here so that a future reader of this ADR does not conclude, from the
+placement decision alone, that the orchestrator is in scope for `m3l-cli` today.
+
 ## Links
 
 - Related: [ADR-0021 (post-1.0 deepen-first strategy — the broadening intake

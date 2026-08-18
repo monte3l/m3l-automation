@@ -119,6 +119,13 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 | **ADR-0042 activation record**                     | P2       | Done   | tracker section added               | ADR-0042, issue #333                          |
 | **8b — scaffold + discovery (\`list\`, \`inspect\`)** | P2       | To Do  | \`packages/m3l-cli\` skeleton         | ADR-0042 phasing 8b                           |
 
+## Codified-procedure engine wave — ADR-0046/0047/0048/0049
+
+| Item   | Priority | Status      | Change                       |
+| ------ | -------- | ----------- | ------------------------------ |
+| **B1** | P0       | In Progress | ADR-0046 activation record     |
+| **A1** | P0       | To Do       | ADR-0047 scoping               |
+
 ## AWS getter reality
 
 | Provider getter | AWS service (ADR-0028 name) | Status | Wrapper submodule       | Consuming script(s)  | ADR / precedent                 |
@@ -714,7 +721,32 @@ describe("extractImplementation", () => {
     expect(activationRow?.[statusIndex]).toBe("Done");
   });
 
-  test("all seven sections produce no errors when every heading is present", () => {
+  test("codifiedProcedureWave table is parsed with its header and rows", () => {
+    const result = extractImplementation(IMPLEMENTATION_FIXTURE);
+    expect(result.codifiedProcedureWave).not.toBeNull();
+    expect(result.codifiedProcedureWave?.header).toEqual([
+      "Item",
+      "Priority",
+      "Status",
+      "Change",
+    ]);
+    expect(result.codifiedProcedureWave?.rows).toHaveLength(2);
+    const itemIndex = columnIndex(
+      result.codifiedProcedureWave?.header ?? [],
+      "Item",
+    );
+    const statusIndex = columnIndex(
+      result.codifiedProcedureWave?.header ?? [],
+      "Status",
+    );
+    const b1Row = result.codifiedProcedureWave?.rows.find(
+      (row) => row[itemIndex] === "**B1**",
+    );
+    expect(b1Row).toBeDefined();
+    expect(b1Row?.[statusIndex]).toBe("In Progress");
+  });
+
+  test("all eight sections produce no errors when every heading is present", () => {
     const result = extractImplementation(IMPLEMENTATION_FIXTURE);
     expect(result.errors).toEqual([]);
   });
@@ -838,7 +870,7 @@ Just some prose, no table here at all.
     ]);
   });
 
-  test("regression lock: the real IMPLEMENTATION_SECTION_HEADINGS registry covers all seven real headings", () => {
+  test("regression lock: the real IMPLEMENTATION_SECTION_HEADINGS registry covers all eight real headings", () => {
     const content = `## Library friction (F-series)
 
 | Item | Status |
@@ -868,6 +900,12 @@ Just some prose, no table here at all.
 | Item | Status |
 | ---- | ------ |
 | 8b   | To Do  |
+
+## Codified-procedure engine wave — ADR-0046/0047/0048/0049
+
+| Item | Status      |
+| ---- | ----------- |
+| B1   | In Progress |
 
 ## AWS getter reality
 

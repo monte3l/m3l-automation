@@ -64,6 +64,32 @@ docs-only workstream.
 - **Semver impact:** none — ratifies the existing surface; no `exports`-map or
   signature change.
 
+## Update (2026-08-18) — the event-source half of the bag is deliberately dormant
+
+A capability audit established that the event-source half of the shared options bag
+this ADR ratified is **built, documented, and entirely unconsumed**.
+
+`M3LScript.createLambdaHandler()` and `M3LLambdaEventConfigProvider` both exist and
+are documented, and the config-precedence work of 2026-08-13 wired the handler's
+event into the provider chain. Yet there are **zero references to either symbol
+under `scripts/*/src/`** (the only matches in the tree are gitignored
+`.tsbuildinfo` build artifacts). There is additionally no packaging path — no
+bundle, archive, or container build for any consumer script — and no scheduled
+trigger anywhere that executes one; the two cron-triggered workflows in
+`.github/workflows/` are repository maintenance, not script execution.
+
+**This is recorded as deliberate, not as a defect.** The seam was built so that one
+`main()` could serve both a terminal and an event source, and that design remains
+correct; it simply has no consumer yet. Recording it here stops the observation
+being re-derived as a finding at every audit, and stops it being mistaken for dead
+code to remove.
+
+**Activation trigger:** a consumer script that must run from an event source or on
+a schedule. Until then the seam stays as-is — unconsumed, and not exercised
+end-to-end outside its own tests. Anything that presupposes unattended dispatch
+(deadline budgeting, execution fencing, pinning a definition digest into a
+dispatched command) is gated behind this same trigger.
+
 ## Links
 
 - Related: `docs/plans/archive/2026-07-05-pre-1.0.0-release-audit.md` (SF-10),
