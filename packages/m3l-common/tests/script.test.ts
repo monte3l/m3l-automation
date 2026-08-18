@@ -6409,7 +6409,6 @@ describe("M3LScript — absorbed-failure recovery seam (A3)", () => {
     // interface) — `unknown → T` is always a valid single cast.
     const badInput: unknown = null;
     expect(() => {
-       
       script.reportRecovery(badInput as M3LRunRecoveryEntry);
     }).toThrowError(M3LError);
   });
@@ -6423,7 +6422,6 @@ describe("M3LScript — absorbed-failure recovery seam (A3)", () => {
       recordedAt: "2026-08-19T10:00:00.000Z",
     };
     expect(() => {
-       
       script.reportRecovery(badEntry as M3LRunRecoveryEntry);
     }).toThrowError(M3LError);
   });
