@@ -261,6 +261,65 @@ environment-specific branch. The signal is observed at operation and step
 boundaries; it does not interrupt CPU-bound synchronous code
 ([ADR-0049](../../adr/0049-cooperative-cancellation-contract.md)).
 
+## Resolved AWS target (`script.awsTarget`)
+
+Stage 5 validates `aws.profile` / `aws.region` before constructing the
+`AWSProvider`. Those resolved values are also readable on their own, shaped like
+the [`signal`](#cooperative-cancellation-scriptsignal) accessor:
+
+```typescript
+get awsTarget(): M3LDestructiveTarget | undefined;
+```
+
+It returns `{ profile }`, plus `region` when one resolved — the **same** values
+stage 5 handed to the provider, not a re-read of the config store. `region` is
+omitted when the script declares no `aws.region` parameter or it resolves empty,
+which is why `M3LDestructiveTarget.region` is optional. `accountId` is always
+omitted: `M3LScript` makes no STS call, so an account id is not cheaply
+available at this point.
+
+A resolved target implies a provisioned provider — `awsTarget !== undefined`
+⟹ `aws !== undefined` — but **not** the converse. Stage 5 also provisions when
+an `aws.profile` parameter is declared and resolves empty, deferring to the SDK's
+default credential chain; there is no identity to grade on in that case, so
+`awsTarget` stays `undefined` while `script.aws` is set. That is the safe
+direction: the gate falls back to its ungraded path rather than escalating
+against a blank profile that no typed echo could satisfy.
+
+It is `undefined` before stage 5 has run. Across warm Lambda invocations it
+survives alongside the memoized provider — `resetForInvocation` clears the
+config store but neither the provider nor the resolved target, and
+`provisionAws` early-returns on a warm provider — so the pair stays consistent
+and the target always describes the identity the live clients use.
+
+The resolved target is stored **atomically with the `AWSProvider`**, after the
+construction `try`/`catch`, so a run that fails with `M3LAWSProvisioningError`
+leaves neither set. Were it stored earlier, a later successful run would
+reprovision from fresh config while a stale target still reported the previous
+identity, and the gate would grade on an identity the clients never used.
+
+Its purpose is the [destructive gate's](./prompt.md#confirmdestructive)
+target-grading dimension. Pass it straight through, so the identity the gate
+grades on cannot disagree with the identity the script's clients actually use:
+
+```typescript
+await Core.confirmDestructive({
+  prompt: script.prompt,
+  logger,
+  description: `delete stack ${stackName}`,
+  yes,
+  yesSensitive,
+  code: "ERR_CFN_STACKS_ABORTED",
+  ...(script.awsTarget !== undefined ? { target: script.awsTarget } : {}),
+  isSensitiveTarget: Core.sensitiveTargets({ profiles: ["prod"] }),
+});
+```
+
+Reading the profile out of the config store by hand works too, but re-derives a
+value that stage 5 already owns — the drift risk
+[ADR-0048](../../adr/0048-target-graded-destructive-confirmation.md) exists to
+close.
+
 ## Process guards
 
 `installProcessGuards()` is a process-global singleton that installs `unhandledRejection`, `uncaughtException`, `warning`, and `beforeExit` handlers. In Lambda, call `setProcessGuardRequestId(requestId)` to attribute guard-caught errors to the current invocation. `serializeError` produces a serializable representation of an error for these guard paths.

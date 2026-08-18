@@ -28,6 +28,7 @@ Exported from `@m3l-automation/m3l-common/core` (the `config` sub-module):
 - `M3LConfigValidator` (type: a `(value) => true | string` schema-time validator)
 - `M3LConfigValidators` (stock validators: `range`, `regex`, `oneOf`, `nonEmpty`, `minLength`)
 - `M3LConfigSchemaValidator` (type: a `(config) => true | string` cross-parameter, schema-level validator)
+- `M3LConfigSchemaValidators` (stock schema-level validators: `requires`)
 - `M3LConfigAccessor` (defensive typed re-reads of an already-resolved `M3LConfig` value, plus `M3LConfigAccessorOptions`)
 - Errors: `M3LConfigCoercionError`, `M3LConfigParseError`, `M3LUnsafeConfigKeyError`, `M3LConfigValidationError`, `M3LConfigMissingError`
 
@@ -456,6 +457,40 @@ const schema = new M3LConfigSchema(
 );
 ```
 
+### Stock schema validators (`M3LConfigSchemaValidators`)
+
+The commonest cross-parameter shape — "flag A is only meaningful alongside flag
+B" — is available as a factory rather than hand-written per script:
+
+```typescript
+export const M3LConfigSchemaValidators: {
+  readonly requires: (
+    dependent: string,
+    required: string,
+  ) => M3LConfigSchemaValidator;
+};
+```
+
+`requires(dependent, required)` passes when `dependent` is unset, or when both
+are set; it fails with the reason `'<dependent>' requires '<required>' to be
+set`, naming the supported alternative rather than echoing either value.
+"**Set**" means `config.get(name) !== undefined` — any stored value counts,
+including a falsy one (`false`, `0`, `""`) and a parameter not declared in the
+schema. So an explicitly-supplied `--flag=false` is _set_, and the constraint
+still fires. It
+follows the same curried shape as the per-parameter `M3LConfigValidators`
+factories, and the same secret-safety discipline: the reason string describes
+the constraint, never a value.
+
+Its motivating use is the destructive gate's sensitive-target opt-in
+(`M3LConfigSchemaValidators.requires("yesSensitive", "yes")`), where an
+opt-in passed without the plain bypass must be rejected **when flags are
+parsed** rather than after a run has begun doing work — see
+[ADR-0048](../../adr/0048-target-graded-destructive-confirmation.md) and
+[Core / prompt](./prompt.md#confirmdestructive). Because it is a plain
+`M3LConfigSchemaValidator`, it composes with hand-written validators in the
+same `validate` array.
+
 ### When schema-level validation runs
 
 Schema-level validation runs **once**, after every declared parameter has been
@@ -489,9 +524,10 @@ itself never places a config value into `context` — but `reason` is entirely
 author-controlled free text, and it reaches both `message` and `context.reason`
 with no redaction applied downstream. A schema-level validator's blast radius
 is wider than a per-parameter one, too: it can read the **whole** resolved
-store rather than one already-typed value, and there is no `M3LConfigValidators`
-equivalent at the schema level to fall back on — every schema-level validator
-is hand-written. The same secret-values caveat above applies with equal force
+store rather than one already-typed value, and only the commonest shape has a
+stock factory (`M3LConfigSchemaValidators.requires`) to fall back on — every
+other schema-level validator is hand-written. The same secret-values caveat
+above applies with equal force
 here: don't embed a value in the reason string, for any parameter the
 validator reads, not only the ones it is nominally checking.
 

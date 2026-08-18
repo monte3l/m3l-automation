@@ -24,6 +24,7 @@ import type { M3LFileCopyReport } from "../files/index.js";
 import { M3LFileCopier, getDefaultSubdirForPathType } from "../files/index.js";
 import { M3LConsoleLoggerHandler, M3LLogger } from "../logging/index.js";
 import { M3LPrompt } from "../prompt/index.js";
+import type { M3LDestructiveTarget } from "../prompt/index.js";
 import { M3LPaths, isEnoentError } from "../utils/index.js";
 
 import { runDirectoryName } from "../../internal/diagnostics/runDirectoryName.js";
@@ -224,6 +225,21 @@ export class M3LScript {
   private awsProvider: AWSProvider | undefined;
 
   /**
+   * The resolved AWS target, stored atomically with {@link M3LScript.awsProvider}
+   * inside {@link M3LScript.provisionAws} once the `AWSProvider` construction
+   * `try`/`catch` succeeds. Undefined before stage 5 runs, when the
+   * `AWSProvider` constructor threw (`M3LAWSProvisioningError`), or when
+   * `aws.profile` resolved empty (deferring to the SDK's default credential
+   * chain — no identity to grade on).
+   *
+   * Stored separately from {@link M3LScript.awsProvider} only so that
+   * {@link M3LScript.awsTarget} can surface the already-resolved identity
+   * without re-reading the config store — see the atomic-storage rationale in
+   * that accessor's TSDoc.
+   */
+  private resolvedAwsTarget: M3LDestructiveTarget | undefined;
+
+  /**
    * Whether the run currently in progress was started with `{ dryRun: true }`
    * — mirrored onto every {@link M3LScriptHookContext.dryRun} built during
    * that run. Reset at the top of every {@link M3LScript.runPipeline} call
@@ -337,6 +353,60 @@ export class M3LScript {
    */
   get aws(): AWSProvider | undefined {
     return this.awsProvider;
+  }
+
+  /**
+   * The resolved AWS identity this script's clients were provisioned with,
+   * shaped as an {@link M3LDestructiveTarget} for direct use with
+   * {@link confirmDestructive}. Returns `{ profile }`, plus `region` only when
+   * one resolved — the **same** values stage 5 handed to the
+   * {@link AWSProvider}, not a re-read of the config store.
+   *
+   * Returns `undefined` when no AWS identity was provisioned. A resolved
+   * target implies a provisioned provider — `awsTarget !== undefined` ⟹
+   * `aws !== undefined` — but **not** the converse. Stage 5 also provisions
+   * when an `aws.profile` parameter is declared and resolves empty, deferring
+   * to the SDK's default credential chain; there is no identity to grade on
+   * in that case, so `awsTarget` stays `undefined` while `script.aws` is
+   * set. The `region` key is **absent** (not merely `undefined`) when no
+   * region was declared, because `exactOptionalPropertyTypes` is enabled and
+   * an explicit `{ region: undefined }` would be a distinct, rejected shape.
+   *
+   * The resolved target is stored **atomically with the {@link AWSProvider}**
+   * after the construction `try`/`catch` in {@link M3LScript.provisionAws}
+   * succeeds. Were it stored before that `try`/`catch`, a run whose
+   * `AWSProvider` constructor throws (`M3LAWSProvisioningError`) would leave a
+   * stale target behind; a later successful run would reprovision from fresh
+   * config while the stale target still reported the previous identity — the
+   * gate would then grade on an identity the clients never used. This is the
+   * "co-locate by a shared value, not by shared code" rule applied to a
+   * pair of fields that must always agree.
+   *
+   * @returns The resolved {@link M3LDestructiveTarget}, or `undefined` when
+   *   no AWS identity was provisioned.
+   *
+   * @example
+   * ```ts
+   * import { M3LLogger, M3LScript, confirmDestructive, runScript, sensitiveTargets } from "@m3l-automation/m3l-common/core";
+   *
+   * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
+   * const logger = new M3LLogger([]);
+   *
+   * await runScript(script, async () => {
+   *   await confirmDestructive({
+   *     prompt: script.prompt,
+   *     logger,
+   *     description: "delete stack my-stack",
+   *     yes: false,
+   *     code: "ERR_ABORTED",
+   *     ...(script.awsTarget !== undefined ? { target: script.awsTarget } : {}),
+   *     isSensitiveTarget: sensitiveTargets({ profiles: ["prod"] }),
+   *   });
+   * });
+   * ```
+   */
+  get awsTarget(): M3LDestructiveTarget | undefined {
+    return this.resolvedAwsTarget;
   }
 
   /**
@@ -1093,7 +1163,17 @@ export class M3LScript {
         { cause },
       );
     }
+    // Store the resolved target atomically with the provider: both are set
+    // here, after the try/catch, so a constructor throw leaves NEITHER set.
+    // Were resolvedAwsTarget stored before the try/catch, a failed run would
+    // leave a stale target while awsProvider stayed undefined — the pair
+    // would be out of sync and `awsTarget !== undefined` would no longer
+    // imply `aws !== undefined`.
     this.awsProvider = provider;
+    this.resolvedAwsTarget =
+      profile !== undefined
+        ? { profile, ...(region !== undefined ? { region } : {}) }
+        : undefined;
   }
 
   /**

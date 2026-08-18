@@ -74,6 +74,7 @@
       "M3LConfigSchemaValidator",
       "deriveSecretsSpecifier",
       "M3LDeriveSecretsSpecifierOptions",
+      "M3LConfigSchemaValidators",
       "M3LConfigAccessorOptions"
     ]
   },
@@ -435,7 +436,11 @@
       "M3LChoice",
       "M3LChoices",
       "M3LNumberPromptOptions",
-      "M3LSuggestFn"
+      "M3LSuggestFn",
+      "M3LDestructiveTarget",
+      "M3LDestructiveTargetPredicate",
+      "M3LSensitiveTargetSpec",
+      "sensitiveTargets"
     ]
   },
   {

@@ -17,8 +17,9 @@
  * breaks the redactor's word-boundary matching, letting a secret survive.
  * `confirmDestructive` is a concrete instance of this ordering constraint —
  * it deliberately leaves the string used to build its thrown `M3LError`
- * unescaped for exactly this reason, while it does escape the two purely
- * display channels (the bypass-warning log line and the confirm prompt).
+ * unescaped for exactly this reason, while it does escape the four purely
+ * display channels (the bypass-warning log line, the confirm prompt, the
+ * state-3 sensitive-bypass warning, and the escalated `prompt.text` message).
  * This module is private to `core/prompt` — it never strips a code point, it
  * replaces each offending one with a visible escape literal.
  *
@@ -41,7 +42,9 @@
  * (`deps.yes === false`): `confirmDestructive` builds `Confirm: ...?` from an
  * already-escaped description and passes it to `deps.prompt.confirm`, which
  * escapes it again — safely, because escaping an already-escaped string
- * renders identically either way.
+ * renders identically either way. The same idempotence is load-bearing
+ * through `M3LPrompt.text`, which re-escapes an already-escaped message on
+ * the escalated prompt path.
  *
  * @packageDocumentation
  */

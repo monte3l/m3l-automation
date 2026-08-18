@@ -66,11 +66,23 @@ operation)`, producing the message `'<name>' is required for operation
 6. **Gate** — when `destructive` is configured and the operation is a member
    of `destructive.operations`, the engine calls `Core.confirmDestructive`
    with `deps.prompt`, `deps.logger`, `destructive.describe(...)`,
-   `destructive.yes(settings)`, and `destructive.abortCode`. Behavior on
-   decline follows `onDecline` (below). Only an `M3LError` whose `code`
-   equals `abortCode` is treated as a decline; any other failure from the
-   gate propagates unmodified. (The `yes: true` bypass warning on this path
-   is emitted by `confirmDestructive` itself, not authored by the engine.)
+   `destructive.yes(settings)`, and `destructive.abortCode` — plus, when
+   configured, `destructive.target(...)`, the `destructive.isSensitiveTarget`
+   verdict and `destructive.yesSensitive(settings)`, which forward the ADR-0048
+   target-grading dimension unchanged (see
+   [Core / prompt](./prompt.md#confirmdestructive) for the five states). With
+   no `target` configured, this phase behaves exactly as it did before target
+   grading. Behavior on decline follows `onDecline` (below). Only an `M3LError`
+   whose `code` equals `abortCode` **raised by the confirmation itself** is
+   treated as a decline — including the failed-typed-echo decline on a
+   sensitive target; any other failure from the gate propagates unmodified,
+   and so does an `abortCode`-carrying throw from `target(...)` or
+   `isSensitiveTarget(...)`, since those run before the `try`. (The bypass warning on this path is emitted by
+   `confirmDestructive` itself, not authored by the engine. It names the target
+   only for a **sensitive** one bypassed via `yesSensitive`; a supplied but
+   non-sensitive target takes the ungraded branch and logs the plain
+   `destructive confirmation bypassed (yes=true): <description>` with no target
+   fields.)
 7. **Dispatch** — `handlers[operation](operation, settings, context, deps)`.
 8. **Persist** — `persist?.(result, settings, deps, operation)`.
 9. **Finalize** — `finalize?.(result, settings, deps, operation)`. Runs **after**
@@ -85,6 +97,16 @@ A pipeline instance is **stateless across runs**: `run()` keeps all per-run
 state in its own call frame, so an instance is reusable for sequential runs
 and safe under concurrent `run()` calls (mirroring `core/polling`'s per-call
 isolation).
+
+**Both `destructive.target(...)` and `destructive.isSensitiveTarget(...)` run
+before the gate's `try`, and each exactly once.** The engine pre-computes the
+sensitivity verdict and forwards that, rather than handing the predicate itself
+to `confirmDestructive`. This is load-bearing, not incidental: a throw from
+either callback must reach the caller, and were either invoked inside the
+`try`, a throw carrying the gate's own `abortCode` would be absorbed as an
+operator decline — soft-landing the run to `status: "declined"`, discarding the
+real cause, and never prompting anyone. Do not move either call inside the
+`try`.
 
 ## Decline policy
 
@@ -171,6 +193,16 @@ interface M3LPipelineDestructiveOptions<
   readonly yes: (settings: TSettings) => boolean;
   readonly abortCode: string;
   readonly onDecline: M3LPipelineDeclinePolicy<TOp, TSettings, TDeps, TResult>;
+  // ADR-0048 target grading — all optional; omitting them leaves the gate
+  // phase byte-identical to its pre-grading behavior.
+  readonly target?: (
+    operation: TOp,
+    settings: TSettings,
+    context: TContext,
+    deps: TDeps,
+  ) => M3LDestructiveTarget;
+  readonly isSensitiveTarget?: M3LDestructiveTargetPredicate;
+  readonly yesSensitive?: (settings: TSettings) => boolean;
 }
 
 // The exported options type is an intersection: a core shape carrying every

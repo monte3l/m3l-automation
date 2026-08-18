@@ -119,6 +119,22 @@ paths:
   inputs and trusting others, and the parameter name silently lies about its
   contract (found A5: `run-report.ts`'s report-path builder sanitized for one
   caller and double-sanitized the other after a partial extraction).
+- **Pick a guard's comparison polarity from which direction is safe, not from a
+  habit of strict equality.** `x === true` is correct for an **opt-in** (only an
+  explicit `true` may bypass) and wrong for a **verdict** (anything unexpected
+  must escalate, not silently downgrade). A2's
+  `isSensitiveTarget?.(target) !== true` let a predicate returning a truthy
+  non-`true` value (`1`, `"yes"`, `{}`) fall to the ungraded path where a plain
+  `--yes` then bypassed — fail-open on the one check ADR-0048 calls load-bearing.
+  Escalate on truthiness for a guard; require strict `true` for an opt-in. When
+  both sit in one function the asymmetry is deliberate — comment it, or the next
+  reader "harmonises" them and reopens the hole.
+- **Never put a URL in TSDoc.** This repo references sibling modules with a bare
+  `{@link Symbol}` or a backticked relative path (`` `docs/reference/core/x.md` ``).
+  Nothing validates link targets, so an invented host survives review by eye:
+  A2 shipped `https://m3l-automation.internal/...` and A1 left
+  `https://m3l-automation.github.io/...` on `main`. Grep new source for `http`
+  before committing.
 - **`interface` for shapes callers implement/extend; `type` for unions,
   intersections, mapped/branded types.**
 - **Constrain a row-shaped generic with `extends object`, not
@@ -205,7 +221,18 @@ number>` already relies on (found A4b: `LOG_LEVEL_FLOORS`).
   regression tests. Full rationale:
   [style guide § Parsing untrusted text](../../docs/contributing/style-guide.md#parsing-untrusted-text).
 - **A TSDoc sentence asserting a security property is a claim to verify, not
-  prose to write.** Probe the built output before writing it; under-claim by
+  prose to write.** This extends to **any** documented guarantee, in TSDoc _or_ a
+  `docs/reference` page — an invariant, an implication, a "confirmable by" claim.
+  A2 shipped four over-claims in one run (a false
+  `awsTarget === undefined ⟺ aws === undefined` biconditional; a "whitespace-padded
+  profile is confirmable by typing it exactly" property that no input could
+  satisfy; two mis-scoped statements about which state names the target), none
+  caught by a gate and three written by the hub. Prose fails no test, so after the
+  **last** contract change of a task, re-read every guarantee sentence against the
+  code — not against the plan — and dispatch `spec-conformance-reviewer` after the
+  final code change, never before
+  (`docs/logs/2026-08-18-a2-target-graded-destructive-confirmation.md`).
+  Probe the built output before writing it; under-claim by
   default. A false mechanism in a doc comment propagates into the next
   reader's reasoning (three `core/diagnostics` fix rounds shipped ones that
   were wrong). A "never surfaced to the caller"-style claim needs a
