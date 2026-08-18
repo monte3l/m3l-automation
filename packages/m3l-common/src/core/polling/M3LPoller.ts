@@ -13,6 +13,7 @@ import {
 } from "../../internal/polling/errors.js";
 import type { M3LBackoffStrategy } from "../../internal/polling/strategy.js";
 import { M3LEventEmitterBase } from "../events/index.js";
+import { M3LOperationAbortedError } from "../errors/index.js";
 
 import type { M3LPollerEventMap } from "./events.js";
 
@@ -43,10 +44,35 @@ export interface M3LPollerOptions {
    * {@link DEFAULT_POLL_MAX_ATTEMPTS}.
    */
   readonly maxAttempts?: number;
+  /**
+   * Optional `AbortSignal` for cooperative cancellation (ADR-0049).
+   *
+   * When supplied, the signal is checked at the start of each attempt
+   * (before invoking `check`) and during every backoff delay. If the signal
+   * aborts, `poll()` rejects with {@link M3LOperationAbortedError}
+   * (`ERR_OPERATION_ABORTED`, `origin: "caller"`, `retryable: false`) —
+   * a pending backoff is abandoned immediately rather than slept out.
+   *
+   * Omitting this option leaves behaviour exactly as it was before the option
+   * existed — no signal is registered, no listener overhead is incurred.
+   */
+  readonly signal?: AbortSignal;
 }
 
 /** Default attempt bound when `maxAttempts` is omitted. */
 const DEFAULT_POLL_MAX_ATTEMPTS = 30;
+
+/**
+ * Returns `true` when `signal` is defined and has fired.
+ *
+ * A module-level function rather than an inline `signal?.aborted === true`
+ * check so TypeScript's control-flow narrowing cannot cause a TS2367
+ * false-alarm on a second check that appears later in the same control-flow
+ * path (e.g. inside a `catch` block following a top-of-loop guard).
+ */
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal !== undefined && signal.aborted;
+}
 
 /**
  * Polls external state until a terminal decision or attempt exhaustion.
@@ -78,6 +104,7 @@ const DEFAULT_POLL_MAX_ATTEMPTS = 30;
 export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
   readonly #backoff: M3LBackoffStrategy;
   readonly #maxAttempts: number;
+  readonly #signal: AbortSignal | undefined;
 
   /**
    * @param options - The backoff strategy and optional attempt bound.
@@ -89,6 +116,7 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
     assertPositiveInteger(maxAttempts, "maxAttempts");
     this.#backoff = options.backoff;
     this.#maxAttempts = maxAttempts;
+    this.#signal = options.signal;
   }
 
   /**
@@ -98,6 +126,8 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
    * @typeParam T - The success value type.
    * @param check - The per-attempt check function (sync or async).
    * @returns The resolved success value.
+   * @throws {@link M3LOperationAbortedError} (code `ERR_OPERATION_ABORTED`) when
+   *   the signal aborts — either before the first check or during a backoff delay.
    * @throws An internal `M3LError` (code `ERR_POLL_FAILURE`) on a `failure`
    *   decision, or (code `ERR_POLL_EXHAUSTED`) when `maxAttempts` is reached
    *   while still `continue`.
@@ -106,6 +136,12 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
     let prevDelay: number | undefined;
 
     for (let attempt = 0; attempt < this.#maxAttempts; attempt++) {
+      // Check signal before invoking check() — an already-aborted signal
+      // must reject without calling the check function at all.
+      if (isAborted(this.#signal)) {
+        throw new M3LOperationAbortedError();
+      }
+
       this.emit("poll:attempt", {
         attempt: attempt + 1,
         maxAttempts: this.#maxAttempts,
@@ -132,7 +168,8 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
               attempt: attempt + 1,
               delayMs: nextDelay,
             });
-            await delay(nextDelay);
+            // Pass signal so an abort during the backoff abandons it immediately.
+            await delay(nextDelay, this.#signal);
           }
           break;
         }

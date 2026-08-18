@@ -13,6 +13,7 @@ import {
 } from "../../internal/polling/guards.js";
 import type { M3LBackoffStrategy } from "../../internal/polling/strategy.js";
 import { M3LEventEmitterBase } from "../events/index.js";
+import { M3LOperationAbortedError } from "../errors/index.js";
 
 import { M3LBackoff } from "./M3LBackoff.js";
 import type { M3LRetryEventMap } from "./events.js";
@@ -80,6 +81,24 @@ export interface M3LRetryRunnerOptions {
    * {@link DEFAULT_RETRY_MAX_ATTEMPTS}.
    */
   readonly maxAttempts?: number;
+  /**
+   * Optional `AbortSignal` for cooperative cancellation (ADR-0049).
+   *
+   * When supplied, the signal is checked at the start of each attempt
+   * (before invoking the operation) and as the **first** action inside the
+   * `catch` block — before the classifier runs. This ordering is the entire
+   * point: a classifier that judged the abort "retriable" would otherwise
+   * cause the runner to retry the very operation the operator just cancelled.
+   *
+   * An abort during a backoff delay rejects promptly without sleeping out the
+   * remaining delay. The thrown error is always {@link M3LOperationAbortedError}
+   * (`ERR_OPERATION_ABORTED`, `origin: "caller"`, `retryable: false`), never
+   * routed through the classifier.
+   *
+   * Omitting this option leaves behaviour exactly as it was before the option
+   * existed — no signal is registered, no listener overhead is incurred.
+   */
+  readonly signal?: AbortSignal;
 }
 
 /** Default retry attempt bound when `maxAttempts` is omitted. */
@@ -94,6 +113,20 @@ const DEFAULT_CAP_MS = 5_000;
 /** Normalise a classifier return value to a {@link M3LRetryAdvice}. */
 function toAdvice(result: M3LRetryDecision | M3LRetryAdvice): M3LRetryAdvice {
   return typeof result === "string" ? { decision: result } : result;
+}
+
+/**
+ * Returns `true` when `signal` is defined and has fired.
+ *
+ * A module-level function rather than an inline `this.#signal?.aborted === true`
+ * check: TypeScript's control-flow narrowing tracks the truthiness of
+ * `optional?.property` across the `try`/`catch` boundary within a single loop
+ * iteration, which would make the second check in the `catch` block a TS2367
+ * false-alarm ("types 'false | undefined' and 'true' have no overlap"). A call
+ * site returns a plain `boolean` that TypeScript cannot narrow away.
+ */
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal !== undefined && signal.aborted;
 }
 
 /**
@@ -236,10 +269,11 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
   readonly #backoff: M3LBackoffStrategy;
   readonly #unknownDecision: M3LUnknownDecision;
   readonly #maxAttempts: number;
+  readonly #signal: AbortSignal | undefined;
 
   /**
    * @param options - The classifier plus optional backoff, unknown-resolution,
-   *   and attempt bound.
+   *   attempt bound, and cancellation signal.
    * @throws When `maxAttempts` is provided but is not a finite positive integer.
    */
   constructor(options: M3LRetryRunnerOptions) {
@@ -252,6 +286,7 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
       M3LBackoff.exponentialJittered(DEFAULT_START_MS, DEFAULT_CAP_MS);
     this.#unknownDecision = options.unknownDecision ?? "fatal";
     this.#maxAttempts = maxAttempts;
+    this.#signal = options.signal;
   }
 
   /**
@@ -268,6 +303,12 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
     const lastAttempt = this.#maxAttempts - 1;
 
     for (let attempt = 0; ; attempt++) {
+      // Check signal before invoking op() — an already-aborted signal
+      // must reject without calling the operation at all.
+      if (isAborted(this.#signal)) {
+        throw new M3LOperationAbortedError();
+      }
+
       this.emit("retry:attempt", {
         attempt: attempt + 1,
         maxAttempts: this.#maxAttempts,
@@ -277,6 +318,13 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
         this.emit("retry:success", { attempt: attempt + 1 });
         return result;
       } catch (error) {
+        // Signal checked FIRST — before the classifier — so no classifier
+        // can reclassify the abort as retriable and cause the runner to retry
+        // the very operation the operator just cancelled (ADR-0049).
+        if (isAborted(this.#signal)) {
+          throw new M3LOperationAbortedError();
+        }
+
         const resolved = resolveAction(
           toAdvice(this.#classifier(error)),
           this.#unknownDecision,
@@ -304,7 +352,8 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
           delayMs,
           classification: resolved.classification,
         });
-        await delay(delayMs);
+        // Pass signal so an abort during the backoff abandons it immediately.
+        await delay(delayMs, this.#signal);
       }
     }
   }
