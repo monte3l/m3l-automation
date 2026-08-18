@@ -128,6 +128,34 @@ paths:
   output. Use `extends object`: `Record<string, unknown>` rejects declared
   `interface` item types (no implicit index signature), a worse DX regression than
   the internal cast it removes.
+- **Re-check a mutable external property through a function, never inline —
+  TypeScript's narrowing is unsound across an `await`.** After
+  `if (signal?.aborted) throw …`, TS narrows `aborted` to `false` and **keeps
+  that narrowing past an `await`**, so a later re-check reports TS2367
+  ("types 'false | undefined' and 'true' have no overlap") even though the value
+  genuinely can have changed. The dangerous resolution is deleting the re-check.
+  Route it through a module-private `function isAborted(signal: AbortSignal |
+undefined): boolean` — a call returns a plain `boolean` TS cannot narrow away.
+  This matters most where the re-check _is_ the contract: in `M3LRetryRunner`,
+  the abort check in the `catch` must precede the classifier, because a
+  classifier judging the abort "retriable" would retry the operation the operator
+  just cancelled (ADR-0049, `2026-08-18-a1-cooperative-cancellation-seam.md`).
+  Never "fix" a TS2367 on a mutable external property by removing the guard.
+- **Enabling a previously unreachable branch means auditing it as new code.** A
+  dead branch can carry a latent leak indefinitely because nothing can reach it.
+  `aws/ecs` and `aws/cloudformation` built their waiter `reason` from the raw SDK
+  error message — which `@smithy/core` constructs by serializing the entire
+  waiter result, so it can embed the last observed response — and that arm was
+  unreachable only because nothing passed an `abortSignal`. Threading one turned
+  dead code into a live channel (`aws/eks` had already been hardened; the other
+  two had not). Before wiring up an option that makes a branch reachable, review
+  that branch as if it were being written now.
+- **Prefer a constructor that cannot carry a payload over call sites that
+  decline to pass one.** `M3LOperationAbortedError` accepts an optional message
+  and **no `cause`** at all, so an SDK abort error whose message embeds a
+  response body cannot enter the chain by any route — a property verifiable by
+  grepping the constructor, not by auditing every call site. When a type's whole
+  job is to be safe to log or persist, make the unsafe input unrepresentable.
 - **Exhaustive `switch`** over finite sets; handle every case and fail on the
   unexpected.
 - **Track a string-literal union at runtime with `Record<Union, true>`, not an

@@ -26,6 +26,8 @@ import type {
 import { M3LPollingPolicies } from "../../core/polling/M3LPollingPolicies.js";
 import { M3LRetryRunner } from "../../core/polling/M3LRetryRunner.js";
 
+import { M3LOperationAbortedError } from "../../core/errors/index.js";
+
 import {
   M3LAthenaQueryFailedError,
   M3LAthenaStartQueryError,
@@ -36,6 +38,24 @@ import type {
   StartAthenaQueryInput,
 } from "./types.js";
 
+/**
+ * Returns `true` when `signal` is defined and has fired. A named function
+ * rather than an inline `signal?.aborted` check prevents TypeScript's
+ * control-flow narrowing from producing a TS2367 false-alarm on a second
+ * check that follows an `await`.
+ */
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal !== undefined && signal.aborted;
+}
+
+/**
+ * Returns `true` when `err` is an `AbortError` thrown by the AWS SDK when
+ * an `abortSignal` fires during an in-flight `send()`.
+ */
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === "AbortError";
+}
+
 /** Optional overrides for {@link M3LAthenaClient.awaitResults} / `.runQuery`. */
 export interface AthenaAwaitOptions {
   /**
@@ -44,7 +64,19 @@ export interface AthenaAwaitOptions {
    * `M3LPollingPolicies` factory and pass it opaquely — the option type
    * itself is not part of the public barrel.
    */
-  readonly pollerOptions?: M3LPollerOptions;
+  readonly pollerOptions?: Omit<M3LPollerOptions, "signal">;
+  /**
+   * Optional `AbortSignal` for cooperative cancellation (ADR-0049).
+   *
+   * When supplied the signal is forwarded to the underlying {@link M3LPoller}
+   * (so a pending backoff is abandoned immediately on abort) and to every
+   * `GetQueryExecution`/`GetQueryResults` `send()` call as its `abortSignal`.
+   *
+   * When both `signal` and `pollerOptions.signal` are present, `signal` wins.
+   * Omitting this option leaves behaviour exactly as it was before the option
+   * existed.
+   */
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -151,22 +183,32 @@ export class M3LAthenaClient {
    *
    * @param queryExecutionId - The AWS-assigned query execution identifier to
    *   poll.
+   * @param signal - Optional abort signal forwarded to the `send()` call.
+   * @throws {@link M3LOperationAbortedError} When the signal aborts during an
+   *   in-flight `send()`.
    * @throws {@link M3LAthenaQueryFailedError} (`status: "UNKNOWN"`) when the
    *   send itself fails after any throttling retries are exhausted.
    */
   async #fetchQueryExecution(
     queryExecutionId: string,
+    signal?: AbortSignal,
   ): Promise<GetQueryExecutionCommandOutput> {
+    const cmd = new GetQueryExecutionCommand({
+      QueryExecutionId: queryExecutionId,
+    });
     try {
-      return await new M3LRetryRunner(M3LPollingPolicies.awsThrottling()).run(
-        () =>
-          this.#client.send(
-            new GetQueryExecutionCommand({
-              QueryExecutionId: queryExecutionId,
-            }),
-          ),
+      return await new M3LRetryRunner({
+        ...M3LPollingPolicies.awsThrottling(),
+        ...(signal !== undefined ? { signal } : {}),
+      }).run(
+        signal !== undefined
+          ? () => this.#client.send(cmd, { abortSignal: signal })
+          : () => this.#client.send(cmd),
       );
     } catch (cause) {
+      if (cause instanceof M3LOperationAbortedError) throw cause;
+      if (isAborted(signal) && isAbortError(cause))
+        throw new M3LOperationAbortedError();
       throw new M3LAthenaQueryFailedError(
         `GetQueryExecution failed for query ${queryExecutionId}`,
         { queryExecutionId, status: "UNKNOWN", cause },
@@ -180,24 +222,34 @@ export class M3LAthenaClient {
    * @param queryExecutionId - The AWS-assigned query execution identifier.
    * @param nextToken - The pagination token from the previous page, when
    *   fetching a page after the first.
+   * @param signal - Optional abort signal forwarded to the `send()` call.
+   * @throws {@link M3LOperationAbortedError} When the signal aborts during an
+   *   in-flight `send()`.
    * @throws {@link M3LAthenaQueryFailedError} (`status: "UNKNOWN"`) when the
    *   send itself fails after any throttling retries are exhausted.
    */
   async #fetchQueryResultsPage(
     queryExecutionId: string,
     nextToken?: string,
+    signal?: AbortSignal,
   ): Promise<GetQueryResultsCommandOutput> {
+    const cmd = new GetQueryResultsCommand({
+      QueryExecutionId: queryExecutionId,
+      ...(nextToken !== undefined && { NextToken: nextToken }),
+    });
     try {
-      return await new M3LRetryRunner(M3LPollingPolicies.awsThrottling()).run(
-        () =>
-          this.#client.send(
-            new GetQueryResultsCommand({
-              QueryExecutionId: queryExecutionId,
-              ...(nextToken !== undefined && { NextToken: nextToken }),
-            }),
-          ),
+      return await new M3LRetryRunner({
+        ...M3LPollingPolicies.awsThrottling(),
+        ...(signal !== undefined ? { signal } : {}),
+      }).run(
+        signal !== undefined
+          ? () => this.#client.send(cmd, { abortSignal: signal })
+          : () => this.#client.send(cmd),
       );
     } catch (cause) {
+      if (cause instanceof M3LOperationAbortedError) throw cause;
+      if (isAborted(signal) && isAbortError(cause))
+        throw new M3LOperationAbortedError();
       throw new M3LAthenaQueryFailedError(
         `GetQueryResults failed for query ${queryExecutionId}`,
         { queryExecutionId, status: "UNKNOWN", cause },
@@ -218,8 +270,9 @@ export class M3LAthenaClient {
    */
   async #checkQueryExecution(
     queryExecutionId: string,
+    signal?: AbortSignal,
   ): Promise<M3LPollDecision<GetQueryExecutionCommandOutput>> {
-    const result = await this.#fetchQueryExecution(queryExecutionId);
+    const result = await this.#fetchQueryExecution(queryExecutionId, signal);
     const state = result.QueryExecution?.Status?.State;
     switch (state) {
       case "QUEUED":
@@ -330,6 +383,7 @@ export class M3LAthenaClient {
    */
   async #collectResults(
     queryExecutionId: string,
+    signal?: AbortSignal,
   ): Promise<Pick<AthenaQueryResult, "columns" | "rows">> {
     const rows: AthenaRow[] = [];
     let columns: AthenaQueryResult["columns"] = [];
@@ -339,6 +393,7 @@ export class M3LAthenaClient {
       const page = await this.#fetchQueryResultsPage(
         queryExecutionId,
         nextToken,
+        signal,
       );
       const pageResult = this.#normalizePage(
         page,
@@ -407,8 +462,12 @@ export class M3LAthenaClient {
    *
    * @param queryExecutionId - The AWS-assigned query execution identifier to
    *   poll.
-   * @param options - Optional poller override.
+   * @param options - Optional poller and abort-signal overrides. When
+   *   `options.signal` is supplied and aborts while the query is being polled,
+   *   this method throws {@link M3LOperationAbortedError}.
    * @returns The normalized query result once the query reaches `SUCCEEDED`.
+   * @throws {@link M3LOperationAbortedError} when `options.signal` is aborted
+   *   while polling.
    * @throws {@link M3LAthenaQueryFailedError} When the query reaches a
    *   terminal non-`SUCCEEDED` status, when the `GetQueryExecution`/
    *   `GetQueryResults` SDK call itself fails (after any throttling retries
@@ -422,14 +481,20 @@ export class M3LAthenaClient {
     queryExecutionId: string,
     options?: AthenaAwaitOptions,
   ): Promise<AthenaQueryResult> {
-    const poller = new M3LPoller(
-      options?.pollerOptions ?? M3LPollingPolicies.athenaQuery(),
-    );
+    const signal = options?.signal;
+    const baseOptions =
+      options?.pollerOptions ?? M3LPollingPolicies.athenaQuery();
+    const effectiveOptions: M3LPollerOptions =
+      signal !== undefined ? { ...baseOptions, signal } : baseOptions;
+    const poller = new M3LPoller(effectiveOptions);
 
     const execution = await poller.poll<GetQueryExecutionCommandOutput>(() =>
-      this.#checkQueryExecution(queryExecutionId),
+      this.#checkQueryExecution(queryExecutionId, signal),
     );
-    const { columns, rows } = await this.#collectResults(queryExecutionId);
+    const { columns, rows } = await this.#collectResults(
+      queryExecutionId,
+      signal,
+    );
     const statistics = this.#mapStatistics(
       execution.QueryExecution?.Statistics,
     );
@@ -448,8 +513,12 @@ export class M3LAthenaClient {
    * the common non-resumable case (submit and wait for one query).
    *
    * @param input - The query definition.
-   * @param options - Optional poller override.
+   * @param options - Optional poller and abort-signal overrides. When
+   *   `options.signal` is supplied and aborts while the query is being polled,
+   *   this method throws {@link M3LOperationAbortedError}.
    * @returns The normalized query result once the query reaches `SUCCEEDED`.
+   * @throws {@link M3LOperationAbortedError} when `options.signal` is aborted
+   *   while polling.
    */
   async runQuery(
     input: StartAthenaQueryInput,

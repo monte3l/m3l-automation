@@ -107,7 +107,10 @@ import {
   AWSProvider,
   M3LAWSIdentityError,
 } from "../src/aws/index.js";
-import { M3LError } from "../src/core/errors/index.js";
+import {
+  M3LError,
+  M3LOperationAbortedError,
+} from "../src/core/errors/index.js";
 import {
   M3LConfig,
   M3LConfigParameter,
@@ -1873,6 +1876,48 @@ describe("M3LScript — signal handling", () => {
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
+  // ADR-0049: on the first shutdown signal, the AbortController is aborted
+  // BEFORE runCleanup fires — a cleanup hook may itself await a poller or
+  // waiter, and aborting first means it observes an already-cancelled signal
+  // instead of starting a fresh multi-minute wait while the process is shutting
+  // down. Verified here by reading `script.signal.aborted` from inside the hook.
+  test("on the first shutdown signal, the AbortController is aborted BEFORE runCleanup fires (cleanup hook sees signal.aborted === true)", async () => {
+    stubNonAwsEnvironment();
+    const handlers = new Map<string | symbol, (...args: unknown[]) => void>();
+    vi.spyOn(process, "on").mockImplementation(
+      (eventName: string | symbol, listener: (...args: unknown[]) => void) => {
+        handlers.set(eventName, listener);
+        return process;
+      },
+    );
+
+    let signalAbortedInCleanup: boolean | undefined;
+    const script = new M3LScript({
+      metadata,
+      hooks: {
+        onCleanup: () => {
+          // If abort-before-cleanup ordering is correct, `signal.aborted` must
+          // already be `true` here — the controller was aborted before this
+          // hook was ever invoked.
+          signalAbortedInCleanup = script.signal.aborted;
+        },
+      },
+    });
+
+    const sigtermHandler = handlers.get("SIGTERM");
+    expect(sigtermHandler).toBeDefined();
+    sigtermHandler?.();
+
+    // Fire-and-forget promise chain: let all microtasks (including the
+    // onCleanup invocation inside runCleanup) settle before asserting.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(signalAbortedInCleanup).toBe(true);
+  });
+
   test("internal/script/registerShutdownSignals: a rejecting onShutdown is swallowed by the handler's own .catch() (whitebox)", async () => {
     // `M3LScript` always wraps its own `onShutdown` in a try/catch (its
     // private `runCleanup` method), so this module's internal `.catch()` for
@@ -1906,6 +1951,53 @@ describe("M3LScript — signal handling", () => {
     // Nothing further to assert observably — the .catch() branch's entire
     // contract is "a rejection here must not throw/crash the process", which
     // the `not.toThrow()` above already proves.
+  });
+});
+
+// =============================================================================
+// M3LScript — signal accessor (cooperative cancellation, ADR-0049)
+// =============================================================================
+// `M3LScript.signal` exposes an `AbortSignal` from an internally owned
+// `AbortController`, mirroring the `paths` accessor pattern: present on a
+// fresh instance, returns the same object on every call, and exists even in
+// AWS-managed environments where shutdown handlers are never registered.
+// =============================================================================
+describe("M3LScript — signal accessor (cooperative cancellation, ADR-0049)", () => {
+  test("exposes a `signal` accessor returning an AbortSignal on a fresh instance", () => {
+    stubNonAwsEnvironment();
+    const script = new M3LScript({ metadata });
+    expect(script.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  test("`signal` is not aborted on a fresh instance (no shutdown has occurred)", () => {
+    stubNonAwsEnvironment();
+    const script = new M3LScript({ metadata });
+    expect(script.signal.aborted).toBe(false);
+  });
+
+  test("`signal` returns the same AbortSignal instance on every access (stable identity, mirroring `paths`)", () => {
+    stubNonAwsEnvironment();
+    const script = new M3LScript({ metadata });
+    const first = script.signal;
+    // Guard: if signal is not an AbortSignal, the identity check below is
+    // trivially true (undefined === undefined) and proves nothing.
+    // This assertion fails in RED when the accessor does not exist yet.
+    expect(first).toBeInstanceOf(AbortSignal);
+    expect(script.signal).toBe(first);
+  });
+
+  test("type-level: `signal` accessor returns AbortSignal", () => {
+    expectTypeOf<M3LScript["signal"]>().toEqualTypeOf<AbortSignal>();
+  });
+
+  // Contract: in AWS-managed environments (Lambda), signal handlers are NOT
+  // registered, but the `signal` accessor must still be present and return a
+  // non-aborted AbortSignal — callers need no environment-specific branch.
+  test("in an AWS-managed environment, `signal` accessor exists and returns a non-aborted AbortSignal (it simply never aborts in Lambda)", () => {
+    stubAwsLambdaEnvironment();
+    const script = new M3LScript({ metadata });
+    expect(script.signal).toBeInstanceOf(AbortSignal);
+    expect(script.signal.aborted).toBe(false);
   });
 });
 
@@ -5605,5 +5697,93 @@ describe("M3LScript constructor — default logger honors the resolved log-level
 
     customLogger.info("still admitted — the custom logger is exempt");
     expect(stdoutSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// =============================================================================
+// runScript() — cooperative cancellation outcome mapping (ADR-0049)
+//
+// Contract: when mainFn rejects with M3LOperationAbortedError
+// (code ERR_OPERATION_ABORTED, origin "caller"), runScript() must NOT route
+// it through mapErrorToExitCode (which would return 2 / CONFIG_USAGE for a
+// caller-origin error). Instead it tests for the abort code BEFORE the
+// mapping, assigns INTERRUPTED (5) to process.exitCode, and persists a report
+// with outcome "interrupted" — the existing "failure" path is unchanged for
+// all other errors.
+//
+// mapErrorToExitCode itself is UNCHANGED and remains unable to return 5 —
+// that invariant is asserted here as a non-regression check. The special
+// handling lives only inside runScript().
+// =============================================================================
+describe("runScript() — cooperative cancellation outcome mapping (ADR-0049)", () => {
+  beforeEach(() => {
+    stubNonAwsEnvironment();
+  });
+
+  afterEach(() => {
+    // Prevent a leaked non-zero exitCode from corrupting the suite's own exit.
+    process.exitCode = undefined;
+  });
+
+  test("a thrown M3LOperationAbortedError sets process.exitCode to INTERRUPTED (5), not CONFIG_USAGE (2)", async () => {
+    vi.spyOn(M3LRunReporter.prototype, "persist").mockResolvedValue(
+      "/fake/report.json",
+    );
+    const script = new M3LScript({ metadata });
+
+    await runScript(script, () => {
+      throw new M3LOperationAbortedError(
+        "operation cancelled by shutdown signal",
+      );
+    });
+
+    expect(process.exitCode).toBe(M3L_EXIT_CODES.INTERRUPTED);
+    // Confirm it is NOT misclassified as CONFIG_USAGE (the value
+    // mapErrorToExitCode would return for origin:"caller").
+    expect(process.exitCode).not.toBe(M3L_EXIT_CODES.CONFIG_USAGE);
+  });
+
+  test('a thrown M3LOperationAbortedError persists a run report with outcome "interrupted", not "failure"', async () => {
+    const persistSpy = vi
+      .spyOn(M3LRunReporter.prototype, "persist")
+      .mockResolvedValue("/fake/report.json");
+    const script = new M3LScript({ metadata });
+
+    await runScript(script, () => {
+      throw new M3LOperationAbortedError("operation cancelled");
+    });
+
+    expect(persistSpy).toHaveBeenCalledTimes(1);
+    const [input] = persistSpy.mock.calls[0] as [M3LRunReportInput];
+    expect(input.outcome).toBe("interrupted");
+  });
+
+  test("a normal caller-origin failure (non-abort) still maps to CONFIG_USAGE (2) — abort mapping is scoped to M3LOperationAbortedError only", async () => {
+    vi.spyOn(M3LRunReporter.prototype, "persist").mockResolvedValue(
+      "/fake/report.json",
+    );
+    const script = new M3LScript({ metadata });
+
+    await runScript(script, () => {
+      throw new M3LError("bad config", { code: "ERR_CONFIG_MISSING" });
+    });
+
+    expect(process.exitCode).toBe(M3L_EXIT_CODES.CONFIG_USAGE);
+    expect(process.exitCode).not.toBe(M3L_EXIT_CODES.INTERRUPTED);
+  });
+
+  // Non-regression: M3LOperationAbortedError must carry origin "caller" and
+  // code "ERR_OPERATION_ABORTED". This is load-bearing: it is what lets
+  // runScript() recognise an abort error (test for the specific code BEFORE
+  // calling mapErrorToExitCode), and what keeps mapErrorToExitCode unchanged —
+  // because a caller-origin error would otherwise route to CONFIG_USAGE (2).
+  // The dedicated assertion that mapErrorToExitCode itself never returns 5
+  // for this error lives in diagnostics.test.ts (which owns that function).
+  test("M3LOperationAbortedError carries origin:caller and code:ERR_OPERATION_ABORTED (these properties are the basis for runScript's special-case detection)", () => {
+    const error = new M3LOperationAbortedError("operation cancelled by signal");
+    expect(error).toHaveProperty("origin", "caller");
+    expect(error).toHaveProperty("code", "ERR_OPERATION_ABORTED");
+    expect(error).toHaveProperty("retryable", false);
+    expect(error).toBeInstanceOf(M3LError);
   });
 });

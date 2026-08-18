@@ -172,6 +172,8 @@ import {
   M3LEKSOperations,
 } from "../src/aws/eks/index.js";
 
+import { M3LOperationAbortedError } from "../src/core/errors/index.js";
+
 const CLUSTER = "test-cluster";
 const NODEGROUP = "test-nodegroup";
 const SECRET = "SECRET-ACTIVATION-CODE-DO-NOT-LEAK";
@@ -784,6 +786,137 @@ describe("M3LEKSOperations", () => {
   // -------------------------------------------------------------------
 
   /**
+   * Registers the cooperative-cancellation (ADR-0049) contract for one of the
+   * four `waitUntil*` methods: signal forwarding, AbortError+aborted-signal →
+   * M3LOperationAbortedError rejection (never resolving ABORTED), adversarial
+   * message isolation, and non-aborted-signal success-path unchanged.
+   *
+   * @param label - Describe-block label (matches the method name).
+   * @param waiterMock - The hoisted `vi.fn()` standing in for the SDK's
+   *   top-level waiter function.
+   * @param invoke - Calls the method under test with the given options.
+   */
+  function testSignalContract(
+    label: string,
+    waiterMock: { mockResolvedValueOnce: (v: unknown) => unknown } & {
+      mockRejectedValueOnce: (v: unknown) => unknown;
+    } & { mock: { calls: unknown[][] } },
+    invoke: (
+      operations: M3LEKSOperations,
+      options?: M3LEKSWaiterOptions,
+    ) => Promise<M3LEKSWaiterResult>,
+  ): void {
+    describe(`${label} (cooperative cancellation)`, () => {
+      // A.1 — signal forwarded to the SDK waiter's abortSignal.
+      test("forwards options.signal to the SDK waiter's abortSignal (first-argument waiter config)", async () => {
+        const controller = new AbortController();
+        waiterMock.mockResolvedValueOnce({ state: "SUCCESS" });
+
+        const operations = new M3LEKSOperations(fakeClient());
+        await invoke(operations, { signal: controller.signal });
+
+        const [config] = waiterMock.mock.calls[0] as [
+          Record<string, unknown>,
+          unknown,
+        ];
+        expect(config["abortSignal"]).toBe(controller.signal);
+      });
+
+      // A.4 — no signal → abortSignal key must be absent.
+      test("does not set abortSignal on the waiter config when signal is omitted", async () => {
+        waiterMock.mockResolvedValueOnce({ state: "SUCCESS" });
+
+        const operations = new M3LEKSOperations(fakeClient());
+        await invoke(operations);
+
+        const [config] = waiterMock.mock.calls[0] as [
+          Record<string, unknown>,
+          unknown,
+        ];
+        expect(config).not.toHaveProperty("abortSignal");
+      });
+
+      // A.2 — AbortError + aborted signal → rejects M3LOperationAbortedError.
+      test("rejects with M3LOperationAbortedError (not a resolved ABORTED state) when the caller's signal is aborted and the waiter throws AbortError", async () => {
+        const controller = new AbortController();
+        controller.abort();
+        waiterMock.mockRejectedValueOnce(
+          Object.assign(new Error("Request aborted"), { name: "AbortError" }),
+        );
+
+        const operations = new M3LEKSOperations(fakeClient());
+        await expect(
+          invoke(operations, { signal: controller.signal }),
+        ).rejects.toBeInstanceOf(M3LOperationAbortedError);
+      });
+
+      // A.3 — adversarial: thrown error message does not forward SDK payload.
+      test("adversarial: M3LOperationAbortedError message does not contain the SDK AbortError's planted secret, and cause is not chained", async () => {
+        const controller = new AbortController();
+        controller.abort();
+        const secret = "PLANTED-EKS-ABORT-REJECT-SECRET";
+        waiterMock.mockRejectedValueOnce(
+          Object.assign(
+            new Error(
+              JSON.stringify({
+                cluster: { connectorConfig: { activationCode: secret } },
+              }),
+            ),
+            { name: "AbortError" },
+          ),
+        );
+
+        const operations = new M3LEKSOperations(fakeClient());
+        let thrown: unknown;
+        try {
+          await invoke(operations, { signal: controller.signal });
+        } catch (error) {
+          thrown = error;
+        }
+
+        expect(thrown).toBeInstanceOf(M3LOperationAbortedError);
+        const err = thrown as M3LOperationAbortedError;
+        expect(err.message).not.toContain(secret);
+        expect(err.cause).toBeUndefined();
+      });
+
+      // A.2 — M3LOperationAbortedError classification.
+      test("M3LOperationAbortedError carries ERR_OPERATION_ABORTED code, origin caller, retryable false", async () => {
+        const controller = new AbortController();
+        controller.abort();
+        waiterMock.mockRejectedValueOnce(
+          Object.assign(new Error("aborted"), { name: "AbortError" }),
+        );
+
+        const operations = new M3LEKSOperations(fakeClient());
+        let thrown: unknown;
+        try {
+          await invoke(operations, { signal: controller.signal });
+        } catch (error) {
+          thrown = error;
+        }
+
+        expect(thrown).toBeInstanceOf(M3LOperationAbortedError);
+        const err = thrown as M3LOperationAbortedError;
+        expect(err.code).toBe("ERR_OPERATION_ABORTED");
+        expect(err.origin).toBe("caller");
+        expect(err.retryable).toBe(false);
+      });
+
+      // A.5 — non-aborted signal leaves success path unchanged.
+      test("non-aborted signal does not interfere with a successful wait", async () => {
+        const controller = new AbortController(); // NOT aborted
+        waiterMock.mockResolvedValueOnce({ state: "SUCCESS" });
+
+        const operations = new M3LEKSOperations(fakeClient());
+        const result = await invoke(operations, { signal: controller.signal });
+
+        expect(result).toEqual<M3LEKSWaiterResult>({ state: "SUCCESS" });
+      });
+    });
+  }
+
+  /**
    * Registers the shared waiter contract (SUCCESS/TIMEOUT/ABORTED/FAILURE +
    * maxWaitTime defaulting) for one of the four `waitUntil*` methods.
    *
@@ -937,6 +1070,13 @@ describe("M3LEKSOperations", () => {
     `cluster name=${CLUSTER}`,
   );
 
+  testSignalContract(
+    "waitUntilClusterActive",
+    h.waitUntilClusterActive,
+    (operations, options) =>
+      operations.waitUntilClusterActive(CLUSTER, options),
+  );
+
   test("waitUntilClusterActive resolves TIMEOUT — not a fast SUCCESS or FAILURE — when the cluster no longer exists, since checkState RETRYs every DescribeCluster exception including ResourceNotFoundException", async () => {
     const timeoutError = new Error("Waiter has timed out");
     timeoutError.name = "TimeoutError";
@@ -955,6 +1095,13 @@ describe("M3LEKSOperations", () => {
       operations.waitUntilClusterDeleted(CLUSTER, options),
     'cluster status "ACTIVE", "CREATING", or "PENDING" (waitForClusterDeleted checkState) — resource unexpectedly still exists',
     `cluster name=${CLUSTER}`,
+  );
+
+  testSignalContract(
+    "waitUntilClusterDeleted",
+    h.waitUntilClusterDeleted,
+    (operations, options) =>
+      operations.waitUntilClusterDeleted(CLUSTER, options),
   );
 
   test("waitUntilClusterDeleted resolves SUCCESS specifically when the underlying DescribeCluster call rejects with ResourceNotFoundException (deletion confirmed)", async () => {
@@ -978,6 +1125,13 @@ describe("M3LEKSOperations", () => {
     `nodegroup clusterName=${CLUSTER}, nodegroupName=${NODEGROUP}`,
   );
 
+  testSignalContract(
+    "waitUntilNodegroupActive",
+    h.waitUntilNodegroupActive,
+    (operations, options) =>
+      operations.waitUntilNodegroupActive(CLUSTER, NODEGROUP, options),
+  );
+
   test("waitUntilNodegroupActive resolves TIMEOUT — not a fast SUCCESS or FAILURE — when the nodegroup no longer exists, since checkState RETRYs every DescribeNodegroup exception including ResourceNotFoundException", async () => {
     const timeoutError = new Error("Waiter has timed out");
     timeoutError.name = "TimeoutError";
@@ -999,6 +1153,13 @@ describe("M3LEKSOperations", () => {
       operations.waitUntilNodegroupDeleted(CLUSTER, NODEGROUP, options),
     'nodegroup status "DELETE_FAILED" only (waitForNodegroupDeleted checkState has no ACTIVE/CREATING/PENDING branch, unlike the doc\'s symmetric prose)',
     `nodegroup clusterName=${CLUSTER}, nodegroupName=${NODEGROUP}`,
+  );
+
+  testSignalContract(
+    "waitUntilNodegroupDeleted",
+    h.waitUntilNodegroupDeleted,
+    (operations, options) =>
+      operations.waitUntilNodegroupDeleted(CLUSTER, NODEGROUP, options),
   );
 
   test("waitUntilNodegroupDeleted resolves SUCCESS specifically when the underlying DescribeNodegroup call rejects with ResourceNotFoundException (deletion confirmed)", async () => {

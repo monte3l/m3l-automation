@@ -40,7 +40,12 @@ import {
   vi,
 } from "vitest";
 
-import { M3LError } from "../src/core/errors/index.js";
+import {
+  M3LError,
+  M3LOperationAbortedError,
+} from "../src/core/errors/index.js";
+import type { M3LPollerOptions } from "../src/core/polling/M3LPoller.js";
+import type { M3LRetryRunnerOptions } from "../src/core/polling/M3LRetryRunner.js";
 // `M3LPollFailureError` is internal (private to `core/polling`, no barrel
 // export — see the file banner above), so it is imported directly from its
 // path, mirroring the existing precedent in `tests/script.test.ts` and
@@ -49,6 +54,7 @@ import { M3LError } from "../src/core/errors/index.js";
 // never exercised by `M3LPoller`'s own two call sites (neither passes one),
 // so both constructor branches are covered directly here instead of relying
 // on the public API to happen to reach them.
+import { delay } from "../src/internal/polling/delay.js";
 import { M3LPollFailureError } from "../src/internal/polling/errors.js";
 import {
   awsNetworkClassifier,
@@ -1668,7 +1674,455 @@ describe("core/polling", () => {
       });
     });
   });
-});
+
+  // ===========================================================================
+  // Cooperative cancellation (ADR-0049)
+  //
+  // M3LPollerOptions and M3LRetryRunnerOptions gain `signal?: AbortSignal`.
+  // When a signal is provided:
+  //   - An already-aborted signal rejects immediately without invoking the
+  //     check or operation.
+  //   - A never-aborted signal changes nothing — behavior is identical to
+  //     absent.
+  //   - An abort during a backoff delay rejects promptly (does not sleep out
+  //     the remaining delay).
+  //   - M3LRetryRunner checks the signal BEFORE its classifier, so no
+  //     classifier may reclassify the abort as retriable.
+  //   - Abort listeners are cleaned up on both settle paths (timer-fired and
+  //     aborted), so long runs do not accumulate listeners.
+  // ===========================================================================
+  describe("cooperative cancellation (ADR-0049)", () => {
+    // ---------------------------------------------------------------------------
+    // Type-level contract — signal is optional AbortSignal | undefined on both
+    // option interfaces.
+    //
+    // M3LPollerOptions and M3LRetryRunnerOptions are not re-exported from the
+    // barrel (intentionally opaque); import them from their source files to assert
+    // the signal field. toMatchTypeOf is used (not toEqualTypeOf) because the
+    // interfaces carry other required/optional fields; we only assert the signal
+    // field shape here.
+    // ---------------------------------------------------------------------------
+    describe("type-level: signal field on option interfaces", () => {
+      test("M3LPollerOptions.signal is optional and typed AbortSignal | undefined", () => {
+        expectTypeOf<M3LPollerOptions["signal"]>().toEqualTypeOf<
+          AbortSignal | undefined
+        >();
+      });
+
+      test("M3LRetryRunnerOptions.signal is optional and typed AbortSignal | undefined", () => {
+        expectTypeOf<M3LRetryRunnerOptions["signal"]>().toEqualTypeOf<
+          AbortSignal | undefined
+        >();
+      });
+    });
+
+    describe("M3LPoller cooperative cancellation", () => {
+      // (a) absent signal — behavior identical to today
+      test("(a) absent signal: success resolves with value (no change from baseline)", async () => {
+        const poller = new M3LPoller({ backoff: M3LBackoff.constant(10) });
+        await expect(
+          settleWithTimers(
+            poller.poll<string>(() => ({ type: "success", value: "baseline" })),
+          ),
+        ).resolves.toBe("baseline");
+      });
+
+      // (b) never-aborted signal — same result as absent
+      test("(b) never-aborted signal: same resolved value and attempt count as absent signal", async () => {
+        const controller = new AbortController(); // never aborted
+        const poller = new M3LPoller({
+          backoff: M3LBackoff.constant(10),
+          signal: controller.signal,
+        });
+
+        let callCount = 0;
+        const check: M3LPollCheckFn<string> = () => {
+          callCount++;
+          if (callCount < 3) return { type: "continue" };
+          return { type: "success", value: "with-signal" };
+        };
+
+        await expect(settleWithTimers(poller.poll(check))).resolves.toBe(
+          "with-signal",
+        );
+        expect(callCount).toBe(3); // same attempt count as if no signal were provided
+      });
+
+      // (c) already-aborted signal — rejects immediately, check never called
+      test("(c) already-aborted signal: rejects with ERR_OPERATION_ABORTED without invoking the check", async () => {
+        const controller = new AbortController();
+        controller.abort();
+
+        const check = vi.fn<() => { type: "success"; value: string }>(() => ({
+          type: "success",
+          value: "should-not-reach",
+        }));
+        const poller = new M3LPoller({
+          backoff: M3LBackoff.constant(10),
+          signal: controller.signal,
+        });
+
+        let thrown: unknown;
+        try {
+          await settleWithTimers(
+            poller.poll(check as unknown as M3LPollCheckFn<string>),
+          );
+        } catch (e) {
+          thrown = e;
+        }
+
+        expect(thrown).toBeInstanceOf(M3LError);
+        expect((thrown as M3LError).code).toBe("ERR_OPERATION_ABORTED");
+        expect(check).not.toHaveBeenCalled();
+      });
+
+      // (d) abort mid-wait during backoff delay — rejects promptly, does NOT sleep
+      // out the remaining delay. The proof: we only advance 0ms of fake time after
+      // aborting; if the implementation sleeps the delay, `settled` stays false and
+      // the assertion fails cleanly (no hanging, no timeout needed).
+      test("(d) abort during backoff delay rejects promptly — does not sleep out the remaining delay", async () => {
+        const controller = new AbortController();
+        // Use a very long delay so we can prove it was NOT slept.
+        const poller = new M3LPoller({
+          backoff: M3LBackoff.constant(60_000),
+          signal: controller.signal,
+          maxAttempts: 10,
+        });
+
+        let checkCount = 0;
+        const check: M3LPollCheckFn<string> = () => {
+          checkCount++;
+          // Always continue so a backoff delay is always scheduled.
+          return { type: "continue" };
+        };
+
+        const pollPromise = poller.poll(check);
+
+        // Track settlement without blocking the test (avoids hanging in RED).
+        let settled = false;
+        let thrown: unknown;
+        void pollPromise.then(
+          () => {
+            settled = true;
+          },
+          (e: unknown) => {
+            settled = true;
+            thrown = e;
+          },
+        );
+
+        // Flush microtasks: the first check runs and the 60s delay starts.
+        await vi.advanceTimersByTimeAsync(0);
+        expect(checkCount).toBe(1);
+
+        // Abort while the 60s delay is pending.
+        controller.abort();
+
+        // Flush microtasks from the abort event (abort → delay rejects → poll rejects).
+        await vi.advanceTimersByTimeAsync(0);
+
+        // Must have settled already — zero timer advancement was needed.
+        // In RED: settled is false (delay still pending 60s) → assertion fails cleanly.
+        expect(settled).toBe(true);
+        expect(thrown).toBeInstanceOf(M3LError);
+        expect((thrown as M3LError).code).toBe("ERR_OPERATION_ABORTED");
+        // No second check ran — abort happened before the next attempt.
+        expect(checkCount).toBe(1);
+      });
+
+      // (f) no listener accumulation — timer-settled path
+      test("(f) abort listener is added and removed for each delay (timer-settled path — no accumulation)", async () => {
+        const controller = new AbortController();
+        const signal = controller.signal;
+        const addSpy = vi.spyOn(signal, "addEventListener");
+        const removeSpy = vi.spyOn(signal, "removeEventListener");
+
+        try {
+          const poller = new M3LPoller({
+            backoff: M3LBackoff.constant(10),
+            signal,
+            maxAttempts: 10,
+          });
+
+          // 4 continues then success → 4 delays, each adds then removes one listener.
+          let calls = 0;
+          const check: M3LPollCheckFn<string> = () => {
+            calls++;
+            if (calls <= 4) return { type: "continue" };
+            return { type: "success", value: "done" };
+          };
+
+          await expect(settleWithTimers(poller.poll(check))).resolves.toBe(
+            "done",
+          );
+
+          const abortAdds = addSpy.mock.calls.filter(
+            (args) => args[0] === "abort",
+          ).length;
+          const abortRemoves = removeSpy.mock.calls.filter(
+            (args) => args[0] === "abort",
+          ).length;
+
+          // At least one listener was added (proves signal was wired up at all).
+          // In RED: 0 (no signal support) → fails here with expected > 0.
+          expect(abortAdds).toBeGreaterThan(0);
+          // Each listener added must have a corresponding remove (no accumulation).
+          expect(abortRemoves).toBe(abortAdds);
+        } finally {
+          addSpy.mockRestore();
+          removeSpy.mockRestore();
+        }
+      });
+
+      // (f) no listener accumulation — abort-settled path
+      test("(f) abort listener is removed when the delay is aborted (not only when timer fires)", async () => {
+        const controller = new AbortController();
+        const signal = controller.signal;
+        const removeSpy = vi.spyOn(signal, "removeEventListener");
+
+        try {
+          const poller = new M3LPoller({
+            backoff: M3LBackoff.constant(60_000),
+            signal,
+            maxAttempts: 10,
+          });
+
+          const check: M3LPollCheckFn<string> = () => ({ type: "continue" });
+
+          const pollPromise = poller.poll(check);
+          let settled = false;
+          let thrown: unknown;
+          void pollPromise.then(
+            () => {
+              settled = true;
+            },
+            (e: unknown) => {
+              settled = true;
+              thrown = e;
+            },
+          );
+
+          await vi.advanceTimersByTimeAsync(0); // first check runs
+          controller.abort();
+          await vi.advanceTimersByTimeAsync(0); // abort propagates
+
+          expect(settled).toBe(true); // RED: false → fails first (see test d)
+          expect((thrown as M3LError).code).toBe("ERR_OPERATION_ABORTED");
+
+          // The abort-path listener cleanup: removeEventListener called for "abort".
+          const abortRemoves = removeSpy.mock.calls.filter(
+            (args) => args[0] === "abort",
+          ).length;
+          expect(abortRemoves).toBeGreaterThan(0);
+        } finally {
+          removeSpy.mockRestore();
+        }
+      });
+    });
+
+    describe("M3LRetryRunner cooperative cancellation", () => {
+      // (a) absent signal — behavior identical to today
+      test("(a) absent signal: resolves when operation succeeds (no change from baseline)", async () => {
+        const runner = new M3LRetryRunner({
+          classifier: awsThrottlingClassifier,
+          backoff: M3LBackoff.constant(10),
+        });
+        await expect(
+          settleWithTimers(runner.run(() => Promise.resolve(99))),
+        ).resolves.toBe(99);
+      });
+
+      // (b) never-aborted signal — same result as absent
+      test("(b) never-aborted signal: same resolved value and attempt count as absent signal", async () => {
+        const controller = new AbortController(); // never aborted
+        const classifier: M3LRetryClassifier = () => "retriable";
+        const runner = new M3LRetryRunner({
+          classifier,
+          backoff: M3LBackoff.constant(10),
+          signal: controller.signal,
+        });
+
+        let attempts = 0;
+        const op = (): Promise<string> => {
+          attempts++;
+          if (attempts < 3) return Promise.reject(new Error("transient"));
+          return Promise.resolve("with-signal");
+        };
+
+        await expect(settleWithTimers(runner.run(op))).resolves.toBe(
+          "with-signal",
+        );
+        expect(attempts).toBe(3); // same count as without signal
+      });
+
+      // (c) already-aborted signal — rejects immediately, op never called
+      test("(c) already-aborted signal: rejects with ERR_OPERATION_ABORTED without invoking the operation", async () => {
+        const controller = new AbortController();
+        controller.abort();
+
+        const classifier: M3LRetryClassifier = () => "retriable";
+        const runner = new M3LRetryRunner({
+          classifier,
+          backoff: M3LBackoff.constant(10),
+          signal: controller.signal,
+        });
+        const op = vi
+          .fn<() => Promise<never>>()
+          .mockRejectedValue(new Error("should-not-reach"));
+
+        let thrown: unknown;
+        try {
+          await settleWithTimers(runner.run(op));
+        } catch (e) {
+          thrown = e;
+        }
+
+        expect(thrown).toBeInstanceOf(M3LError);
+        expect((thrown as M3LError).code).toBe("ERR_OPERATION_ABORTED");
+        expect(op).not.toHaveBeenCalled();
+      });
+
+      // (d) abort mid-wait during backoff delay
+      test("(d) abort during backoff delay rejects promptly — does not sleep out the remaining delay", async () => {
+        const controller = new AbortController();
+        const classifier: M3LRetryClassifier = () => "retriable";
+        const runner = new M3LRetryRunner({
+          classifier,
+          backoff: M3LBackoff.constant(60_000),
+          signal: controller.signal,
+          maxAttempts: 10,
+        });
+
+        let opCallCount = 0;
+        const op = (): Promise<never> => {
+          opCallCount++;
+          return Promise.reject(new Error("transient"));
+        };
+
+        const runPromise = runner.run(op);
+        let settled = false;
+        let thrown: unknown;
+        void runPromise.then(
+          () => {
+            settled = true;
+          },
+          (e: unknown) => {
+            settled = true;
+            thrown = e;
+          },
+        );
+
+        // Flush microtasks: attempt 1 runs, fails, classified retriable, 60s delay starts.
+        await vi.advanceTimersByTimeAsync(0);
+        expect(opCallCount).toBe(1);
+
+        // Abort while the 60s delay is pending.
+        controller.abort();
+        await vi.advanceTimersByTimeAsync(0); // flush abort microtasks
+
+        // Must settle without advancing 60s.
+        // In RED: settled is false → assertion fails cleanly.
+        expect(settled).toBe(true);
+        expect(thrown).toBeInstanceOf(M3LError);
+        expect((thrown as M3LError).code).toBe("ERR_OPERATION_ABORTED");
+        // Operation was NOT retried (abort beats the scheduler).
+        expect(opCallCount).toBe(1);
+      });
+
+      // (e) retriable-always classifier with abort — proves "no classifier may
+      // reclassify the abort" structurally (ADR-0049). Covers two variants:
+      //   1. classifier is never called with the abort error (mid-wait abort)
+      //   2. already-aborted signal with retriable classifier (op + classifier never called)
+      test("(e) abort propagates as ERR_OPERATION_ABORTED even when classifier always returns 'retriable' — operation is not retried", async () => {
+        const controller = new AbortController();
+        const classifier = vi
+          .fn<(err: unknown) => M3LRetryDecision>()
+          .mockReturnValue("retriable");
+        const runner = new M3LRetryRunner({
+          classifier,
+          backoff: M3LBackoff.constant(60_000),
+          signal: controller.signal,
+          maxAttempts: 10,
+        });
+
+        let opCallCount = 0;
+        const op = (): Promise<never> => {
+          opCallCount++;
+          return Promise.reject(new Error("transient"));
+        };
+
+        const runPromise = runner.run(op);
+        let settled = false;
+        let thrown: unknown;
+        void runPromise.then(
+          () => {
+            settled = true;
+          },
+          (e: unknown) => {
+            settled = true;
+            thrown = e;
+          },
+        );
+
+        // Attempt 1 runs and the retriable classifier is called for the transient error.
+        await vi.advanceTimersByTimeAsync(0);
+        expect(opCallCount).toBe(1);
+
+        // Abort during the 60s backoff.
+        controller.abort();
+        await vi.advanceTimersByTimeAsync(0);
+
+        // Settled promptly with ERR_OPERATION_ABORTED.
+        // In RED: settled is false → fails cleanly.
+        expect(settled).toBe(true);
+        expect((thrown as M3LError).code).toBe("ERR_OPERATION_ABORTED");
+        // Operation was never retried — only one call total.
+        expect(opCallCount).toBe(1);
+        // The classifier was called for attempt 1's transient error but NEVER with
+        // the abort error — the abort bypasses the classifier entirely.
+        const callsWithAbortCode = classifier.mock.calls.filter(
+          ([err]) =>
+            err instanceof M3LError && err.code === "ERR_OPERATION_ABORTED",
+        );
+        expect(callsWithAbortCode).toHaveLength(0);
+      });
+
+      test("(e variant) already-aborted signal with retriable-always classifier: classifier is never called at all", async () => {
+        const controller = new AbortController();
+        controller.abort();
+
+        const classifier = vi
+          .fn<(err: unknown) => M3LRetryDecision>()
+          .mockReturnValue("retriable");
+        const runner = new M3LRetryRunner({
+          classifier,
+          backoff: M3LBackoff.constant(10),
+          signal: controller.signal,
+          maxAttempts: 10,
+        });
+        const op = vi
+          .fn<() => Promise<never>>()
+          .mockRejectedValue(new Error("transient"));
+
+        let thrown: unknown;
+        try {
+          await settleWithTimers(runner.run(op));
+        } catch (e) {
+          thrown = e;
+        }
+
+        expect((thrown as M3LError).code).toBe("ERR_OPERATION_ABORTED");
+        // Signal checked before op or classifier — neither is called.
+        expect(op).not.toHaveBeenCalled();
+        expect(classifier).not.toHaveBeenCalled();
+      });
+
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+    });
+  }); // close describe("cooperative cancellation (ADR-0049)")
+}); // close describe("core/polling")
 
 // =============================================================================
 // M3LPollFailureError — internal constructor's optional `context` param
@@ -1694,5 +2148,76 @@ describe("M3LPollFailureError (internal) — optional context", () => {
     expect(error).toBeInstanceOf(M3LError);
     expect(error.code).toBe("ERR_POLL_FAILURE");
     expect(error.context).toEqual(context);
+  });
+});
+
+// =============================================================================
+// delay (internal) — already-aborted signal fast path
+//
+// `addEventListener("abort", ...)` on an ALREADY-aborted AbortSignal never
+// fires because the abort event has already been dispatched. Without the
+// fast path at line 41–43 of delay.ts, `delay(30_000, alreadyAbortedSignal)`
+// would arm a timer, never receive the callback, sleep the full duration, and
+// then RESOLVE — silently completing work that should have been cancelled.
+// These tests pin the three facets of that fast path directly.
+// =============================================================================
+describe("delay (internal) — already-aborted signal fast path", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("already-aborted signal: rejects with M3LOperationAbortedError carrying ERR_OPERATION_ABORTED", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    let thrown: unknown;
+    try {
+      await delay(30_000, controller.signal);
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LOperationAbortedError);
+    expect((thrown as M3LOperationAbortedError).code).toBe(
+      "ERR_OPERATION_ABORTED",
+    );
+  });
+
+  test("already-aborted signal: rejects without arming a timer — no setTimeout is scheduled", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+
+    const promise = delay(30_000, controller.signal);
+
+    // The rejection must resolve without advancing fake timers at all.
+    // If a timer were armed we would need to advance them; the fact that
+    // awaiting the promise (via the micro-task queue only) is sufficient
+    // proves no timer was scheduled.
+    await expect(promise).rejects.toBeInstanceOf(M3LOperationAbortedError);
+
+    // Belt-and-suspenders: confirm setTimeout was never called on this path.
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
+  });
+
+  test("already-aborted signal: does not register an abort listener — fast path exits before addEventListener", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const addListenerSpy = vi.spyOn(controller.signal, "addEventListener");
+
+    await expect(delay(30_000, controller.signal)).rejects.toBeInstanceOf(
+      M3LOperationAbortedError,
+    );
+
+    // If a future refactor deletes the fast path and relies on the abort
+    // listener instead, this assertion catches it — an already-aborted signal
+    // never fires the listener, so the delay would silently resolve.
+    expect(addListenerSpy).not.toHaveBeenCalled();
   });
 });
