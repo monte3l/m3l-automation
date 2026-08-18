@@ -41,6 +41,7 @@ import type {
   M3LDestructiveTarget,
   M3LDestructiveTargetPredicate,
 } from "../src/core/prompt/M3LDestructiveGate.js";
+import type { M3LRunRecoveryEntry } from "../src/core/diagnostics/index.js";
 import { M3LOperationPipeline } from "../src/core/pipeline/index.js";
 import type {
   M3LGuardableKey,
@@ -48,6 +49,7 @@ import type {
   M3LOperationPipelineBaseDeps,
   M3LOperationPipelineOptions,
   M3LOperationPipelineOutcome,
+  M3LOperationPipelineOutcomeBase,
   M3LPipelineDeclinePolicy,
   M3LPipelineDestructiveOptions,
 } from "../src/core/pipeline/index.js";
@@ -2491,7 +2493,7 @@ describe("core/pipeline", () => {
         M3LOperationPipelineOutcome<"list" | "delete", { processed: number }>
       >();
       expectTypeOf<Outcome["status"]>().toEqualTypeOf<
-        "completed" | "declined"
+        "completed" | "declined" | "partial"
       >();
     });
 
@@ -3284,6 +3286,448 @@ describe("core/pipeline", () => {
       });
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Recovery phase (A3: issue #470)
+  // -------------------------------------------------------------------------
+  describe("recovery", () => {
+    // Minimal recovery entry fixtures — the error array uses M3LSerializedError
+    // structure (name + message required; all other fields optional per the
+    // format-error contract).
+    const RECOVERY_ENTRY_1: M3LRunRecoveryEntry = {
+      item: "item-a",
+      error: [{ name: "Error", message: "item-a failed" }],
+      recordedAt: "2026-08-19T00:00:00.000Z",
+    };
+    const RECOVERY_ENTRY_2: M3LRunRecoveryEntry = {
+      item: "item-b",
+      error: [{ name: "Error", message: "item-b failed" }],
+      recordedAt: "2026-08-19T00:00:01.000Z",
+    };
+
+    test("REC-1 no recovery callback: outcome status is 'completed', recovery field absent", async () => {
+      const { deps, config } = makeHarness();
+      config.set("operation", "read");
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        handlers: {
+          read: () => Promise.resolve({ processed: 3 }),
+          write: () => Promise.resolve({ processed: 3 }),
+        },
+        // No recovery callback — behavior must be byte-identical to pre-A3.
+      });
+
+      const outcome = await pipeline.run(deps);
+      expect(outcome.status).toBe("completed");
+      expect(outcome.operation).toBe("read");
+      // The recovery field must be absent (not an empty array, not undefined-but-present).
+      expect(Object.hasOwn(outcome, "recovery")).toBe(false);
+    });
+
+    test("REC-2 recovery returning empty array → status 'completed', outcome.recovery absent", async () => {
+      const { deps, config } = makeHarness();
+      config.set("operation", "read");
+      const recovery = vi.fn((): readonly M3LRunRecoveryEntry[] => []);
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        handlers: {
+          read: () => Promise.resolve({ processed: 5 }),
+          write: () => Promise.resolve({ processed: 5 }),
+        },
+        recovery,
+      });
+
+      const outcome = await pipeline.run(deps);
+      expect(recovery).toHaveBeenCalledTimes(1);
+      // Empty array → engine classifies as clean; status must be "completed".
+      expect(outcome.status).toBe("completed");
+      // The field must be absent — not an empty array sitting under the key.
+      expect(Object.hasOwn(outcome, "recovery")).toBe(false);
+      expect(outcome.recovery).toBeUndefined();
+    });
+
+    test("REC-3 recovery returning non-empty array → status 'partial', entries present reference-identically", async () => {
+      const entries: readonly M3LRunRecoveryEntry[] = [
+        RECOVERY_ENTRY_1,
+        RECOVERY_ENTRY_2,
+      ];
+      const { deps, config } = makeHarness();
+      config.set("operation", "read");
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        handlers: {
+          read: () => Promise.resolve({ processed: 10 }),
+          write: () => Promise.resolve({ processed: 10 }),
+        },
+        recovery: () => entries,
+      });
+
+      const outcome = await pipeline.run(deps);
+      expect(outcome.status).toBe("partial");
+      // The engine passes the returned array through reference-identically.
+      expect(outcome.recovery).toBe(entries);
+      expect(outcome.recovery).toHaveLength(2);
+    });
+
+    test("REC-4 a partial run still ran persist and finalize", async () => {
+      const { deps, config } = makeHarness();
+      config.set("operation", "read");
+      const persist = vi.fn(() => Promise.resolve(undefined));
+      const finalize = vi.fn(() => undefined);
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        handlers: {
+          read: () => Promise.resolve({ processed: 7 }),
+          write: () => Promise.resolve({ processed: 7 }),
+        },
+        persist,
+        finalize,
+        recovery: () => [RECOVERY_ENTRY_1],
+      });
+
+      const outcome = await pipeline.run(deps);
+      expect(outcome.status).toBe("partial");
+      // A partial run dispatched and produced a result — persist and finalize
+      // both ran.
+      expect(persist).toHaveBeenCalledTimes(1);
+      expect(finalize).toHaveBeenCalledTimes(1);
+    });
+
+    test("REC-5 recovery is called exactly once with (result, settings, deps, operation), and runs after finalize", async () => {
+      const handlerResult: TestResult = { processed: 2 };
+      const settings: TestSettings = { yes: false };
+      const { deps, config } = makeHarness();
+      config.set("operation", "write");
+      const order: string[] = [];
+
+      const finalize = vi.fn(() => {
+        order.push("finalize");
+      });
+      const recovery = vi.fn(
+        (
+          _result: TestResult,
+          _settings: TestSettings,
+          _deps: TestDeps,
+          _op: TestOp,
+        ): readonly M3LRunRecoveryEntry[] => {
+          order.push("recovery");
+          return [RECOVERY_ENTRY_1];
+        },
+      );
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => settings,
+        requiredFields: { read: [], write: [] },
+        handlers: {
+          read: () => Promise.resolve(handlerResult),
+          write: () => Promise.resolve(handlerResult),
+        },
+        finalize,
+        recovery,
+      });
+
+      await pipeline.run(deps);
+
+      expect(recovery).toHaveBeenCalledTimes(1);
+      // Phase 10 receives exactly the same four arguments as persist/finalize.
+      expect(recovery).toHaveBeenCalledWith(
+        handlerResult,
+        settings,
+        deps,
+        "write",
+      );
+      // Recovery runs AFTER finalize — order is load-bearing per the contract.
+      expect(order).toEqual(["finalize", "recovery"]);
+    });
+
+    test("REC-6 a soft-landed declined run never invokes the recovery callback", async () => {
+      // The gate fires, user declines (confirm returns false) → soft-land.
+      // Phases 8–10 are all skipped (persist, finalize, recovery).
+      const { deps, config } = makeHarness(() => Promise.resolve(false));
+      config.set("operation", "write");
+      const recovery = vi.fn((): readonly M3LRunRecoveryEntry[] => [
+        RECOVERY_ENTRY_1,
+      ]);
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        destructive: {
+          operations: new Set(["write"]),
+          describe: () => "delete all",
+          yes: () => false,
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: {
+            kind: "soft-land",
+            result: () => ({ processed: 0 }),
+          },
+        },
+        handlers: {
+          read: () => Promise.resolve({ processed: 0 }),
+          write: () => Promise.resolve({ processed: 0 }),
+        },
+        recovery,
+      });
+
+      const outcome = await pipeline.run(deps);
+      expect(outcome.status).toBe("declined");
+      expect(recovery).not.toHaveBeenCalled();
+    });
+
+    test("REC-7 a throwing recovery callback propagates the original error unmodified", async () => {
+      const recoveryError = new Error("recovery exploded");
+      const { deps, config } = makeHarness();
+      config.set("operation", "read");
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        handlers: {
+          read: () => Promise.resolve({ processed: 1 }),
+          write: () => Promise.resolve({ processed: 1 }),
+        },
+        recovery: (): readonly M3LRunRecoveryEntry[] => {
+          throw recoveryError;
+        },
+      });
+
+      // The engine never swallows, wraps, or re-codes errors from any phase.
+      await expect(pipeline.run(deps)).rejects.toBe(recoveryError);
+    });
+
+    test("REC-ORD full phase order when recovery is configured: handler → persist → finalize → recovery", async () => {
+      const order: string[] = [];
+      const { deps, config } = makeHarness();
+      config.set("operation", "read");
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        handlers: {
+          read: () => {
+            order.push("handler");
+            return Promise.resolve({ processed: 0 });
+          },
+          write: () => {
+            order.push("handler");
+            return Promise.resolve({ processed: 0 });
+          },
+        },
+        persist: () => {
+          order.push("persist");
+          return Promise.resolve(undefined);
+        },
+        finalize: () => {
+          order.push("finalize");
+        },
+        recovery: () => {
+          order.push("recovery");
+          return [RECOVERY_ENTRY_1];
+        },
+      });
+
+      await pipeline.run(deps);
+
+      expect(order).toEqual(["handler", "persist", "finalize", "recovery"]);
+    });
+
+    describe("type-level", () => {
+      test("REC-T1 status union on M3LOperationPipelineOutcome is exactly 'completed' | 'declined' | 'partial'", () => {
+        expectTypeOf<
+          M3LOperationPipelineOutcome<TestOp, TestResult>["status"]
+        >().toEqualTypeOf<"completed" | "declined" | "partial">();
+      });
+
+      test("REC-T2a narrowing to status === 'partial' makes recovery a required non-optional array", () => {
+        type PartialArm = Extract<
+          M3LOperationPipelineOutcome<TestOp, TestResult>,
+          { status: "partial" }
+        >;
+        // Required — not `readonly M3LRunRecoveryEntry[] | undefined`.
+        expectTypeOf<PartialArm["recovery"]>().toEqualTypeOf<
+          readonly M3LRunRecoveryEntry[]
+        >();
+      });
+
+      test("REC-T2b a completed outcome cannot carry recovery entries", () => {
+        // Extract<Base & (A | B), {status:"completed"}> resolves to `never`
+        // under an intersection-of-union shape, so indexing ["recovery"] on it
+        // is vacuously `never` — not a useful assertion. Instead use the same
+        // structural form as REC-T2d: a shape that IS the bad combination must
+        // not match the outcome type.
+        type CompletedWithRecovery = {
+          readonly operation: TestOp;
+          readonly result: TestResult;
+          readonly status: "completed";
+          readonly recovery: readonly M3LRunRecoveryEntry[];
+        };
+        expectTypeOf<CompletedWithRecovery>().not.toMatchTypeOf<
+          M3LOperationPipelineOutcome<TestOp, TestResult>
+        >();
+        // And the non-vacuous control: a completed outcome WITHOUT recovery
+        // IS assignable (ensures the assertion above fails only on the presence
+        // of recovery, not on some unrelated field mismatch).
+        type CompletedNoRecovery = {
+          readonly operation: TestOp;
+          readonly result: TestResult;
+          readonly status: "completed";
+        };
+        expectTypeOf<CompletedNoRecovery>().toMatchTypeOf<
+          M3LOperationPipelineOutcome<TestOp, TestResult>
+        >();
+      });
+
+      test("REC-T2c a declined outcome cannot carry recovery entries", () => {
+        type DeclinedWithRecovery = {
+          readonly operation: TestOp;
+          readonly result: TestResult;
+          readonly status: "declined";
+          readonly recovery: readonly M3LRunRecoveryEntry[];
+        };
+        expectTypeOf<DeclinedWithRecovery>().not.toMatchTypeOf<
+          M3LOperationPipelineOutcome<TestOp, TestResult>
+        >();
+        // Non-vacuous control: declined without recovery IS assignable.
+        type DeclinedNoRecovery = {
+          readonly operation: TestOp;
+          readonly result: TestResult;
+          readonly status: "declined";
+        };
+        expectTypeOf<DeclinedNoRecovery>().toMatchTypeOf<
+          M3LOperationPipelineOutcome<TestOp, TestResult>
+        >();
+      });
+
+      test("REC-T2d { status: 'completed', recovery: [...] } is not assignable to M3LOperationPipelineOutcome", () => {
+        // The discriminated union makes this combination unrepresentable.
+        // Construct the bad shape directly (no M3LOperationPipelineOutcomeBase
+        // intersection — that would resolve to `any` in RED and trip
+        // no-redundant-type-constituents before the type lands).
+        type BadOutcome = {
+          readonly operation: TestOp;
+          readonly result: TestResult;
+          readonly status: "completed";
+          readonly recovery: readonly M3LRunRecoveryEntry[];
+        };
+        expectTypeOf<BadOutcome>().not.toMatchTypeOf<
+          M3LOperationPipelineOutcome<TestOp, TestResult>
+        >();
+      });
+
+      test("REC-T2e result and operation are reachable on every arm without narrowing (base-type guarantee)", () => {
+        // A thin wrapper must be able to return `outcome.result` unconditionally
+        // regardless of status — moving these fields to the base type is what
+        // preserves that guarantee across the discriminated union.
+        expectTypeOf<
+          M3LOperationPipelineOutcome<TestOp, TestResult>["result"]
+        >().toEqualTypeOf<TestResult>();
+        expectTypeOf<
+          M3LOperationPipelineOutcome<TestOp, TestResult>["operation"]
+        >().toEqualTypeOf<TestOp>();
+      });
+
+      test("REC-T2f M3LOperationPipelineOutcomeBase is importable from the pipeline barrel", () => {
+        // The barrel uses explicit named exports; a missing entry makes this a
+        // compile error (TS2724) rather than a silent undefined. The assignment
+        // itself is the structural assertion — no member access needed.
+        const base: M3LOperationPipelineOutcomeBase<TestOp, TestResult> = {
+          operation: "read",
+          result: { processed: 0 },
+        };
+        void base;
+      });
+
+      test("REC-T3 recovery callback on options has signature (result, settings, deps, operation) => readonly M3LRunRecoveryEntry[]", () => {
+        type RecoveryFn = NonNullable<
+          M3LOperationPipelineOptions<
+            TestOp,
+            TestSettings,
+            TestDeps,
+            TestResult,
+            undefined
+          >["recovery"]
+        >;
+        expectTypeOf<Parameters<RecoveryFn>>().toEqualTypeOf<
+          [TestResult, TestSettings, TestDeps, TestOp]
+        >();
+        expectTypeOf<ReturnType<RecoveryFn>>().toEqualTypeOf<
+          readonly M3LRunRecoveryEntry[]
+        >();
+      });
+    });
+  });
 });
 
 // Re-export the imported types so an unused-import lint rule never flags a
@@ -3291,5 +3735,7 @@ describe("core/pipeline", () => {
 // positions above.
 export type {
   M3LGuardableKey as _M3LGuardableKey,
+  M3LOperationPipelineOutcomeBase as _M3LOperationPipelineOutcomeBase,
   M3LPipelineDeclinePolicy as _M3LPipelineDeclinePolicy,
+  M3LRunRecoveryEntry as _M3LRunRecoveryEntry,
 };
