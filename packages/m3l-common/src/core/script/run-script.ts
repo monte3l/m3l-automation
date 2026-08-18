@@ -11,6 +11,7 @@ import {
   collectDiagnostics,
   mapErrorToExitCode,
 } from "../diagnostics/index.js";
+import { hasProperty } from "../utils/guards.js";
 import type {
   M3LBreadcrumbTrail,
   M3LConfigSchemaPort,
@@ -111,8 +112,10 @@ async function persistBestEffort(
  */
 function isAbortError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
-  const rec: unknown = error;
-  return (rec as Record<string, unknown>)["code"] === "ERR_OPERATION_ABORTED";
+  // Code-based classification per ADR-0049: a structurally-equivalent abort
+  // produced across a module boundary (different prototype chain) still
+  // classifies correctly. `hasProperty` narrows safely without casting.
+  return hasProperty(error, "code") && error.code === "ERR_OPERATION_ABORTED";
 }
 
 /** The `timeline` entry, when a `trail` was supplied — omitted otherwise. */
@@ -236,6 +239,17 @@ async function handleRunFailure(
   script.logger.errorFrom(error);
   // Assigned immediately and BEFORE any report construction/persistence —
   // a throw in the reporting path must never cost the exit code.
+  //
+  // `persistBestEffort`'s payload construction (`buildFailureInput`) is as
+  // fallible as the I/O call itself — a caller-supplied `options.trail` whose
+  // `entries()` throws is one concrete example. Assigning `process.exitCode`
+  // before entering `persistBestEffort` (not merely before `reporter.persist`)
+  // ensures that even a build-phase throw cannot lose the exit code.
+  // `mapErrorToExitCode` needs only `error`, so assigning first costs nothing.
+  // This matches the library-src rule: a best-effort wrapper must guard the
+  // construction of its payload, not only the I/O call. A prior incident
+  // (logged) showed a real failure silently becoming exit-0 when this
+  // ordering was not upheld.
   process.exitCode = isAbortError(error)
     ? M3L_EXIT_CODES.INTERRUPTED
     : mapErrorToExitCode(error);

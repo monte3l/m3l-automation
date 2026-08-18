@@ -40,7 +40,10 @@ import {
   vi,
 } from "vitest";
 
-import { M3LError } from "../src/core/errors/index.js";
+import {
+  M3LError,
+  M3LOperationAbortedError,
+} from "../src/core/errors/index.js";
 import type { M3LPollerOptions } from "../src/core/polling/M3LPoller.js";
 import type { M3LRetryRunnerOptions } from "../src/core/polling/M3LRetryRunner.js";
 // `M3LPollFailureError` is internal (private to `core/polling`, no barrel
@@ -51,6 +54,7 @@ import type { M3LRetryRunnerOptions } from "../src/core/polling/M3LRetryRunner.j
 // never exercised by `M3LPoller`'s own two call sites (neither passes one),
 // so both constructor branches are covered directly here instead of relying
 // on the public API to happen to reach them.
+import { delay } from "../src/internal/polling/delay.js";
 import { M3LPollFailureError } from "../src/internal/polling/errors.js";
 import {
   awsNetworkClassifier,
@@ -2144,5 +2148,76 @@ describe("M3LPollFailureError (internal) — optional context", () => {
     expect(error).toBeInstanceOf(M3LError);
     expect(error.code).toBe("ERR_POLL_FAILURE");
     expect(error.context).toEqual(context);
+  });
+});
+
+// =============================================================================
+// delay (internal) — already-aborted signal fast path
+//
+// `addEventListener("abort", ...)` on an ALREADY-aborted AbortSignal never
+// fires because the abort event has already been dispatched. Without the
+// fast path at line 41–43 of delay.ts, `delay(30_000, alreadyAbortedSignal)`
+// would arm a timer, never receive the callback, sleep the full duration, and
+// then RESOLVE — silently completing work that should have been cancelled.
+// These tests pin the three facets of that fast path directly.
+// =============================================================================
+describe("delay (internal) — already-aborted signal fast path", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("already-aborted signal: rejects with M3LOperationAbortedError carrying ERR_OPERATION_ABORTED", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    let thrown: unknown;
+    try {
+      await delay(30_000, controller.signal);
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LOperationAbortedError);
+    expect((thrown as M3LOperationAbortedError).code).toBe(
+      "ERR_OPERATION_ABORTED",
+    );
+  });
+
+  test("already-aborted signal: rejects without arming a timer — no setTimeout is scheduled", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+
+    const promise = delay(30_000, controller.signal);
+
+    // The rejection must resolve without advancing fake timers at all.
+    // If a timer were armed we would need to advance them; the fact that
+    // awaiting the promise (via the micro-task queue only) is sufficient
+    // proves no timer was scheduled.
+    await expect(promise).rejects.toBeInstanceOf(M3LOperationAbortedError);
+
+    // Belt-and-suspenders: confirm setTimeout was never called on this path.
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
+  });
+
+  test("already-aborted signal: does not register an abort listener — fast path exits before addEventListener", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const addListenerSpy = vi.spyOn(controller.signal, "addEventListener");
+
+    await expect(delay(30_000, controller.signal)).rejects.toBeInstanceOf(
+      M3LOperationAbortedError,
+    );
+
+    // If a future refactor deletes the fast path and relies on the abort
+    // listener instead, this assertion catches it — an already-aborted signal
+    // never fires the listener, so the delay would silently resolve.
+    expect(addListenerSpy).not.toHaveBeenCalled();
   });
 });

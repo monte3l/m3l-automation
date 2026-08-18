@@ -477,6 +477,46 @@ describe("M3LLogsInsightsClient.awaitResults", () => {
       secondArg != null && Object.hasOwn(secondArg, "abortSignal");
     expect(hasAbortSignal).toBe(false);
   });
+
+  // ADR-0049 regression — inner throttle-retry runner in #fetchQueryResults
+  // must honour the abort signal in its delay, not just forward it to send().
+  // The inner runner is constructed without the caller's signal today, so when a
+  // ThrottlingException triggers a ≥200ms exponential backoff the abort fires
+  // but the runner sleeps out the full delay before the next send() attempt.
+  // The test asserts the promise rejects with M3LOperationAbortedError without
+  // advancing fake timers past the 200ms throttling backoff — if it has to wait
+  // out the backoff, the race returns the "no-rejection" sentinel and the
+  // assertion fails.
+  test("an abort during the throttle-retry backoff in #fetchQueryResults rejects immediately instead of sleeping out the delay", async () => {
+    const controller = new AbortController();
+    const throttlingError = Object.assign(new Error("ThrottlingException"), {
+      name: "ThrottlingException",
+    });
+    // send() always returns a ThrottlingException so the inner retry runner
+    // schedules a ≥200ms exponential backoff delay. Aborting here means the
+    // signal is already fired when that delay starts; a signal-aware delay
+    // abandons it immediately.
+    const send = vi.fn().mockImplementation(() => {
+      controller.abort();
+      return Promise.reject(throttlingError);
+    });
+    const client = new M3LLogsInsightsClient(fakeClient(send));
+
+    const promise = client.awaitResults("q-throttle-abort", {
+      signal: controller.signal,
+    });
+
+    // Advance only 100ms — less than the 200ms minimum awsThrottling backoff.
+    // A signal-aware inner runner abandons the delay immediately (0ms) and the
+    // race resolves to M3LOperationAbortedError. A signal-unaware runner is
+    // still sleeping and the sentinel wins instead.
+    const result = await Promise.race([
+      promise.catch((e: unknown) => e),
+      vi.advanceTimersByTimeAsync(100).then(() => "no-rejection"),
+    ]);
+
+    expect(result).toBeInstanceOf(M3LOperationAbortedError);
+  });
 });
 
 describe("M3LLogsInsightsClient.runQuery", () => {

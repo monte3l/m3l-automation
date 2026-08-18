@@ -53,7 +53,7 @@ import { M3LError } from "./M3LError.js";
  */
 export class M3LOperationAbortedError extends M3LError {
   /** Narrows the inherited `code` property to the literal `"ERR_OPERATION_ABORTED"`. */
-  override readonly code: "ERR_OPERATION_ABORTED";
+  override readonly code = "ERR_OPERATION_ABORTED" as const;
 
   /**
    * Creates a new `M3LOperationAbortedError`.
@@ -67,6 +67,5 @@ export class M3LOperationAbortedError extends M3LError {
     const msg =
       message ?? "the operation was aborted by a caller-supplied AbortSignal";
     super(msg, { code: "ERR_OPERATION_ABORTED" });
-    this.code = "ERR_OPERATION_ABORTED";
   }
 }

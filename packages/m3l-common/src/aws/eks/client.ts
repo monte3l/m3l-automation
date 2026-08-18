@@ -873,21 +873,20 @@ export class M3LEKSOperations {
     name: string,
     options?: M3LEKSWaiterOptions,
   ): Promise<M3LEKSWaiterResult> {
+    const signal = options?.signal;
     return runEksWaiter(
       () =>
         waitUntilClusterActive(
           {
             client: this.client,
             maxWaitTime: options?.maxWaitTime ?? DEFAULT_MAX_WAIT_TIME_SECONDS,
-            ...(options?.signal !== undefined
-              ? { abortSignal: options.signal }
-              : {}),
+            ...(signal !== undefined ? { abortSignal: signal } : {}),
           },
           { name },
         ),
       "waitUntilClusterActive",
       `cluster name=${name}`,
-      options?.signal,
+      signal,
     );
   }
 
@@ -905,21 +904,20 @@ export class M3LEKSOperations {
     name: string,
     options?: M3LEKSWaiterOptions,
   ): Promise<M3LEKSWaiterResult> {
+    const signal = options?.signal;
     return runEksWaiter(
       () =>
         waitUntilClusterDeleted(
           {
             client: this.client,
             maxWaitTime: options?.maxWaitTime ?? DEFAULT_MAX_WAIT_TIME_SECONDS,
-            ...(options?.signal !== undefined
-              ? { abortSignal: options.signal }
-              : {}),
+            ...(signal !== undefined ? { abortSignal: signal } : {}),
           },
           { name },
         ),
       "waitUntilClusterDeleted",
       `cluster name=${name}`,
-      options?.signal,
+      signal,
     );
   }
 
@@ -1147,21 +1145,20 @@ export class M3LEKSOperations {
     nodegroupName: string,
     options?: M3LEKSWaiterOptions,
   ): Promise<M3LEKSWaiterResult> {
+    const signal = options?.signal;
     return runEksWaiter(
       () =>
         waitUntilNodegroupActive(
           {
             client: this.client,
             maxWaitTime: options?.maxWaitTime ?? DEFAULT_MAX_WAIT_TIME_SECONDS,
-            ...(options?.signal !== undefined
-              ? { abortSignal: options.signal }
-              : {}),
+            ...(signal !== undefined ? { abortSignal: signal } : {}),
           },
           { clusterName, nodegroupName },
         ),
       "waitUntilNodegroupActive",
       `nodegroup clusterName=${clusterName}, nodegroupName=${nodegroupName}`,
-      options?.signal,
+      signal,
     );
   }
 
@@ -1181,21 +1178,20 @@ export class M3LEKSOperations {
     nodegroupName: string,
     options?: M3LEKSWaiterOptions,
   ): Promise<M3LEKSWaiterResult> {
+    const signal = options?.signal;
     return runEksWaiter(
       () =>
         waitUntilNodegroupDeleted(
           {
             client: this.client,
             maxWaitTime: options?.maxWaitTime ?? DEFAULT_MAX_WAIT_TIME_SECONDS,
-            ...(options?.signal !== undefined
-              ? { abortSignal: options.signal }
-              : {}),
+            ...(signal !== undefined ? { abortSignal: signal } : {}),
           },
           { clusterName, nodegroupName },
         ),
       "waitUntilNodegroupDeleted",
       `nodegroup clusterName=${clusterName}, nodegroupName=${nodegroupName}`,
-      options?.signal,
+      signal,
     );
   }
 }

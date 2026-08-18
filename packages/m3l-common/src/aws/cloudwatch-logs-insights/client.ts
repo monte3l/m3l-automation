@@ -184,12 +184,16 @@ export class M3LLogsInsightsClient {
   ): Promise<GetQueryResultsCommandOutput> {
     const cmd = new GetQueryResultsCommand({ queryId });
     try {
-      return await new M3LRetryRunner(M3LPollingPolicies.awsThrottling()).run(
+      return await new M3LRetryRunner({
+        ...M3LPollingPolicies.awsThrottling(),
+        ...(signal !== undefined ? { signal } : {}),
+      }).run(
         signal !== undefined
           ? () => this.#client.send(cmd, { abortSignal: signal })
           : () => this.#client.send(cmd),
       );
     } catch (cause) {
+      if (cause instanceof M3LOperationAbortedError) throw cause;
       if (isAborted(signal) && isAbortError(cause))
         throw new M3LOperationAbortedError();
       throw new M3LLogsInsightsQueryFailedError(

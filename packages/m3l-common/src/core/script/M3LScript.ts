@@ -388,8 +388,7 @@ export class M3LScript {
    *
    * @example
    * ```ts
-   * import { M3LScript, runScript } from "@m3l-automation/m3l-common/core";
-   * import { M3LPoller, M3LBackoff } from "@m3l-automation/m3l-common/core";
+   * import { M3LScript, runScript, M3LPoller, M3LBackoff } from "@m3l-automation/m3l-common/core";
    *
    * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
    *
