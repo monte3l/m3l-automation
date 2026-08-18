@@ -106,6 +106,7 @@ import { M3LPathResolutionError } from "../src/core/utils/index.js";
 // -----------------------------------------------------------------------
 import {
   collectDiagnostics,
+  M3L_RECOVERY_LIMIT,
   M3LBreadcrumbTrail,
   M3LRunReporter,
   mapErrorToExitCode,
@@ -122,9 +123,11 @@ import type {
   M3LDiagnosticsSnapshot,
   M3LPathsPort,
   M3LRunOutcome,
+  M3LRunRecoveryEntry,
   M3LRunReport,
   M3LRunReportFailure,
   M3LRunReportInput,
+  M3LSerializedError,
 } from "../src/core/diagnostics/index.js";
 
 afterEach(() => {
@@ -2616,9 +2619,9 @@ describe("M3LRunReporter — closing remaining branch coverage", () => {
 // M3LRunOutcome — type contract
 // =============================================================================
 describe("M3LRunOutcome — type contract", () => {
-  test("is exactly the 4-literal union", () => {
+  test("is exactly the 5-literal union (including 'partial')", () => {
     expectTypeOf<M3LRunOutcome>().toEqualTypeOf<
-      "success" | "failure" | "dry-run" | "interrupted"
+      "success" | "failure" | "dry-run" | "interrupted" | "partial"
     >();
   });
 });
@@ -2705,6 +2708,406 @@ describe("M3LRunReport — type contract", () => {
       return "not a failure";
     }
     expect(typeof describeOutcome).toBe("function");
+  });
+});
+
+// =============================================================================
+// M3LRunRecoveryEntry — type contract (A3 / issue #470)
+// =============================================================================
+describe("M3LRunRecoveryEntry — type contract", () => {
+  test("has the three required readonly fields", () => {
+    expectTypeOf<M3LRunRecoveryEntry>().toMatchTypeOf<{
+      readonly item: string;
+      readonly error: readonly M3LSerializedError[];
+      readonly recordedAt: string;
+    }>();
+  });
+
+  test("item is a string (caller-supplied identity)", () => {
+    expectTypeOf<M3LRunRecoveryEntry["item"]>().toEqualTypeOf<string>();
+  });
+
+  test("error is a readonly array of M3LSerializedError (same serialization as M3LRunReportFailure.chain)", () => {
+    expectTypeOf<M3LRunRecoveryEntry["error"]>().toEqualTypeOf<
+      readonly M3LSerializedError[]
+    >();
+  });
+
+  test("recordedAt is a string (ISO-8601 timestamp)", () => {
+    expectTypeOf<M3LRunRecoveryEntry["recordedAt"]>().toEqualTypeOf<string>();
+  });
+});
+
+// =============================================================================
+// M3LRunReport — partial arm type contract (A3 / issue #470)
+// =============================================================================
+describe("M3LRunReport — partial arm type contract", () => {
+  test("the 'partial' branch requires a readonly recovery array and recoveryTotal", () => {
+    expectTypeOf<
+      Extract<M3LRunReport, { outcome: "partial" }>
+    >().toMatchTypeOf<{
+      readonly outcome: "partial";
+      readonly recovery: readonly M3LRunRecoveryEntry[];
+      readonly recoveryTotal: number;
+    }>();
+  });
+
+  test("narrowing on outcome === 'partial' gives non-optional recovery and recoveryTotal access", () => {
+    function describePartial(report: M3LRunReport): string {
+      if (report.outcome === "partial") {
+        // recovery and recoveryTotal must both be non-optional after narrowing
+        expectTypeOf(report.recovery).toEqualTypeOf<
+          readonly M3LRunRecoveryEntry[]
+        >();
+        expectTypeOf(report.recoveryTotal).toEqualTypeOf<number>();
+        return `${String(report.recovery.length)} of ${String(report.recoveryTotal)} absorbed failures`;
+      }
+      return "not partial";
+    }
+    expect(typeof describePartial).toBe("function");
+  });
+
+  test("the 'partial' branch has failure?: undefined (coexistence is impossible)", () => {
+    expectTypeOf<
+      Extract<M3LRunReport, { outcome: "partial" }>
+    >().toMatchTypeOf<{
+      readonly failure?: undefined;
+    }>();
+  });
+
+  test("recoveryTotal is required on the partial arm and absent from every other arm", () => {
+    // partial arm must have recoveryTotal
+    expectTypeOf<
+      Extract<M3LRunReport, { outcome: "partial" }>
+    >().toMatchTypeOf<{ readonly recoveryTotal: number }>();
+    // non-partial arms must NOT have recoveryTotal
+    expectTypeOf<
+      Extract<M3LRunReport, { outcome: "failure" }>
+    >().not.toMatchTypeOf<{ readonly recoveryTotal: number }>();
+    expectTypeOf<
+      Extract<M3LRunReport, { outcome: "success" }>
+    >().not.toMatchTypeOf<{ readonly recoveryTotal: number }>();
+  });
+
+  test("illegal state unrepresentable: outcome 'partial' cannot carry a failure detail (structural check)", () => {
+    // Cannot use @ts-expect-error here — in RED the "partial" literal is not
+    // yet in M3LRunOutcome so the error lands on the interior `outcome` line,
+    // not the const declaration, leaving the directive unused. Use structural
+    // toMatchTypeOf instead: the partial arm must extend { failure?: undefined }
+    // (already asserted above) and must NOT extend { failure: M3LRunReportFailure }.
+    expectTypeOf<
+      Extract<M3LRunReport, { outcome: "partial" }>
+    >().not.toMatchTypeOf<{
+      readonly failure: M3LRunReportFailure;
+    }>();
+  });
+
+  test("illegal state unrepresentable: outcome 'failure' cannot carry a recovery array (structural check)", () => {
+    // The failure arm of M3LRunReport has no `recovery` field — it must never
+    // extend a type that requires one. In RED this also holds: the failure arm
+    // already exists and has no recovery.
+    expectTypeOf<
+      Extract<M3LRunReport, { outcome: "failure" }>
+    >().not.toMatchTypeOf<{
+      readonly recovery: readonly unknown[];
+    }>();
+  });
+});
+
+// =============================================================================
+// M3LRunReporter — partial outcome runtime behavior (A3 / issue #470)
+// =============================================================================
+describe("M3LRunReporter — partial outcome", () => {
+  let outDir: string;
+
+  beforeEach(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-partial-"));
+  });
+
+  afterEach(async () => {
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  function basePartialInput(
+    overrides: Partial<M3LRunReportInput> = {},
+  ): M3LRunReportInput {
+    return {
+      script: { name: "partial-script", version: "2.0.0" },
+      correlationId: "corr-partial-1",
+      startedAt: new Date("2026-08-19T09:00:00.000Z"),
+      outcome: "partial",
+      recovery: [
+        {
+          item: "record-42",
+          error: [{ name: "Error", message: "parse failed" }],
+          recordedAt: "2026-08-19T09:00:05.000Z",
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  test("build() with outcome 'partial' produces exit code 6 (PARTIAL)", () => {
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const report = reporter.build(basePartialInput());
+    expect(report.exitCode).toBe(6);
+  });
+
+  test("build() with outcome 'partial' sets outcome to 'partial'", () => {
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const report = reporter.build(basePartialInput());
+    expect(report.outcome).toBe("partial");
+  });
+
+  test("build() with outcome 'partial' carries failure: undefined", () => {
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const report = reporter.build(basePartialInput());
+    expect(report.failure).toBeUndefined();
+  });
+
+  test("build() with outcome 'partial' round-trips recovery entries intact", () => {
+    const recovery: readonly M3LRunRecoveryEntry[] = [
+      {
+        item: "record-1",
+        error: [{ name: "SyntaxError", message: "unexpected token" }],
+        recordedAt: "2026-08-19T09:00:03.000Z",
+      },
+      {
+        item: "record-99",
+        error: [
+          { name: "M3LError", message: "validation failed" },
+          { name: "Error", message: "inner cause" },
+        ],
+        recordedAt: "2026-08-19T09:00:07.000Z",
+      },
+    ];
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const report = reporter.build(basePartialInput({ recovery }));
+    if (report.outcome === "partial") {
+      expect(report.recovery).toHaveLength(2);
+      expect(report.recovery[0]?.item).toBe("record-1");
+      expect(report.recovery[1]?.item).toBe("record-99");
+      expect(report.recovery[1]?.error).toHaveLength(2);
+    } else {
+      expect.fail("expected outcome to be 'partial'");
+    }
+  });
+
+  test("a partial run never exits 0 — exit code 6, not 0", () => {
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const report = reporter.build(basePartialInput());
+    expect(report.exitCode).not.toBe(0);
+    expect(report.exitCode).toBe(6);
+  });
+
+  test("an explicit exitCode override wins over the outcome-derived 6", () => {
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const report = reporter.build(basePartialInput({ exitCode: 3 }));
+    // explicit exitCode: 3 (EXTERNAL) must win over the outcome-derived PARTIAL (6)
+    expect(report.exitCode).toBe(3);
+    expect(report.outcome).toBe("partial");
+  });
+
+  test("persist() with outcome 'partial' writes a report containing recovery entries", async () => {
+    const recovery: readonly M3LRunRecoveryEntry[] = [
+      {
+        item: "batch-item-7",
+        error: [{ name: "Error", message: "downstream timeout" }],
+        recordedAt: "2026-08-19T09:00:10.000Z",
+      },
+    ];
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const writtenPath = await reporter.persist(basePartialInput({ recovery }));
+    expect(writtenPath).toBeDefined();
+    const raw = await readFile(writtenPath as string, "utf8");
+    const parsed = JSON.parse(raw) as {
+      outcome?: string;
+      exitCode?: number;
+      recovery?: unknown[];
+      failure?: unknown;
+    };
+    expect(parsed.outcome).toBe("partial");
+    expect(parsed.exitCode).toBe(6);
+    expect(parsed.failure).toBeUndefined();
+    expect(Array.isArray(parsed.recovery)).toBe(true);
+    expect(parsed.recovery).toHaveLength(1);
+  });
+
+  test("build() with outcome 'partial' and empty recovery falls back to a non-partial outcome — 'partial with nothing recorded' is unreachable", () => {
+    // An empty recovery list means no failures were absorbed, so the run was
+    // effectively successful. build() must never emit outcome:"partial" with an
+    // empty recovery array; instead it must fall back to a safe non-partial
+    // outcome (e.g. "success"). build() never throws — that contract is
+    // load-bearing — so it must degrade gracefully rather than error.
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const report = reporter.build(basePartialInput({ recovery: [] }));
+    expect(report.outcome).not.toBe("partial");
+  });
+
+  test("build() with outcome 'partial' sets recoveryTotal to the entry count when caller omits it", () => {
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const report = reporter.build(basePartialInput());
+    if (report.outcome === "partial") {
+      // basePartialInput supplies 1 entry; recoveryTotal should default to 1
+      expect(report.recoveryTotal).toBe(1);
+    } else {
+      expect.fail("expected outcome to be 'partial'");
+    }
+  });
+
+  test("explicit recoveryTotal from caller is preserved in the built report", () => {
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    // Caller supplies recoveryTotal: 250 to signal pre-truncation count
+    const report = reporter.build(basePartialInput({ recoveryTotal: 250 }));
+    if (report.outcome === "partial") {
+      expect(report.recoveryTotal).toBe(250);
+    } else {
+      expect.fail("expected outcome to be 'partial'");
+    }
+  });
+});
+
+// =============================================================================
+// M3L_RECOVERY_LIMIT and ring-buffer eviction (A3 amendment / issue #470)
+// =============================================================================
+describe("M3L_RECOVERY_LIMIT", () => {
+  test("is exactly 100", () => {
+    expect(M3L_RECOVERY_LIMIT).toBe(100);
+  });
+});
+
+describe("M3LRunReporter — partial outcome ring-buffer eviction", () => {
+  let outDir: string;
+
+  beforeEach(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-ring-"));
+  });
+
+  afterEach(async () => {
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  /** Builds N recovery entries each with a distinguishable `item` field. */
+  function makeEntries(count: number): readonly M3LRunRecoveryEntry[] {
+    return Array.from({ length: count }, (_, i) => ({
+      item: `entry-${String(i)}`,
+      error: [{ name: "Error", message: `failure ${String(i)}` }],
+      recordedAt: "2026-08-19T09:00:00.000Z",
+    }));
+  }
+
+  test("under the limit (50 entries): recovery.length === recoveryTotal, nothing evicted", () => {
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const entries = makeEntries(50);
+    const report = reporter.build({
+      script: { name: "s", version: "1.0.0" },
+      correlationId: "c",
+      startedAt: new Date("2026-08-19T09:00:00.000Z"),
+      outcome: "partial",
+      recovery: entries,
+    });
+    if (report.outcome === "partial") {
+      expect(report.recovery).toHaveLength(50);
+      expect(report.recoveryTotal).toBe(50);
+    } else {
+      expect.fail("expected outcome to be 'partial'");
+    }
+  });
+
+  test("exactly at the limit (100 entries): still no eviction, recovery.length === recoveryTotal === 100", () => {
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const entries = makeEntries(100);
+    const report = reporter.build({
+      script: { name: "s", version: "1.0.0" },
+      correlationId: "c",
+      startedAt: new Date("2026-08-19T09:00:00.000Z"),
+      outcome: "partial",
+      recovery: entries,
+    });
+    if (report.outcome === "partial") {
+      expect(report.recovery).toHaveLength(100);
+      expect(report.recoveryTotal).toBe(100);
+    } else {
+      expect.fail("expected outcome to be 'partial'");
+    }
+  });
+
+  test("over the limit (250 entries): recovery.length === 100, recoveryTotal === 250, retained entries are the LAST 100 (most recent)", () => {
+    // This is the assertion that pins the eviction direction: a buffer that
+    // keeps the first 100 would fail the identity check below; only a buffer
+    // that keeps entries 150–249 passes it.
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const entries = makeEntries(250); // entry-0 … entry-249
+    const report = reporter.build({
+      script: { name: "s", version: "1.0.0" },
+      correlationId: "c",
+      startedAt: new Date("2026-08-19T09:00:00.000Z"),
+      outcome: "partial",
+      recovery: entries,
+    });
+    if (report.outcome === "partial") {
+      expect(report.recovery).toHaveLength(100);
+      expect(report.recoveryTotal).toBe(250);
+      // The retained set must be the LAST 100 (entries 150–249), not the first 100.
+      const retainedItems = report.recovery.map((e) => e.item);
+      // First retained: entry-150 (oldest surviving)
+      expect(retainedItems[0]).toBe("entry-150");
+      // Last retained: entry-249 (most recent)
+      expect(retainedItems[99]).toBe("entry-249");
+      // entry-0 (the oldest) must have been evicted
+      expect(retainedItems).not.toContain("entry-0");
+      // entry-149 (the last evicted) must also be gone
+      expect(retainedItems).not.toContain("entry-149");
+    } else {
+      expect.fail("expected outcome to be 'partial'");
+    }
+  });
+
+  test("recoveryTotal > recovery.length signals truncation to a reader", () => {
+    const reporter = new M3LRunReporter({
+      paths: { getOutputDir: () => outDir },
+    });
+    const entries = makeEntries(150);
+    const report = reporter.build({
+      script: { name: "s", version: "1.0.0" },
+      correlationId: "c",
+      startedAt: new Date("2026-08-19T09:00:00.000Z"),
+      outcome: "partial",
+      recovery: entries,
+    });
+    if (report.outcome === "partial") {
+      expect(report.recoveryTotal).toBeGreaterThan(report.recovery.length);
+      expect(report.recoveryTotal).toBe(150);
+      expect(report.recovery).toHaveLength(100);
+    } else {
+      expect.fail("expected outcome to be 'partial'");
+    }
   });
 });
 
