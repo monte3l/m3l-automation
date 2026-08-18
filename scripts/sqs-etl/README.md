@@ -48,7 +48,7 @@ iteration" note.
 
 ### Operations at a glance
 
-| Command               | Demonstrated by                                                    |
+| Operation             | Demonstrated by                                                    |
 | --------------------- | ------------------------------------------------------------------ |
 | `dump`                | Minimal                                                            |
 | `send`                | Common                                                             |

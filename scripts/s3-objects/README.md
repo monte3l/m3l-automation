@@ -1,7 +1,7 @@
 # s3-objects
 
 Thin op-dispatch over the `aws/s3` typed operations wrapper: list, describe,
-get, put, copy, and delete S3 objects
+get, put, copy, delete, and delete-batch S3 objects
 
 > **This README covers how to run the script.** The contract — configuration
 > schema, steps, inputs/outputs — lives in the reference page:

@@ -1,6 +1,6 @@
 # cloudformation-stacks
 
-Manage CloudFormation stacks (list, describe, create, update, delete, stack events, and lifecycle waiters) over AWS.M3LCloudFormationOperations
+Manage CloudFormation stacks (list, describe, create, update, delete, stack events, and lifecycle waiters) over the typed M3LCloudFormationOperations wrapper
 
 > **This README covers how to run the script.** The contract — configuration
 > schema, steps, inputs/outputs — lives in the reference page:

@@ -1,7 +1,7 @@
 # s3-objects
 
 Thin op-dispatch over the `aws/s3` typed operations wrapper: list, describe,
-get, put, copy, and delete S3 objects
+get, put, copy, delete, and delete-batch S3 objects
 
 > **This page is the script's contract** — configuration schema, steps, and
 > inputs/outputs. How to _run_ it lives in the colocated
@@ -31,34 +31,26 @@ and multipart upload for objects too large for a single `PutObjectCommand`
 (the library wrapper doesn't expose multipart; a future `aws/s3` addition if a
 consumer needs it).
 
-## Origin
-
-Filed as W3 in `docs/ROADMAP.md`, this script was blocked until the
-`aws/s3` library wrapper existed — the roadmap's original "existing getters ✓"
-premise for `s3-objects` was wrong (the `s3` getter is a raw `S3Client`; see
-[ADR-0033](../../adr/0033-aws-s3-operations-wrapper.md)). This page assumes
-that wrapper is already merged.
-
 ## Configuration schema
 
 Declared in `src/config.ts` (`configParameters`); config is the script's only
 input seam (never `process.env`). Resolution order is CLI > JSON > YAML >
 env/.env > preset > default.
 
-| Parameter      | Type     | Default   | Validation                                                    | Description                                                                                                                                  |
-| -------------- | -------- | --------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `aws.profile`  | `STRING` | _(req.)_  | non-empty                                                     | AWS named profile; declaring this parameter triggers the `script.aws` provisioning seam (`AWS_PROFILE_PARAM_NAME`).                          |
-| `operation`    | `STRING` | _(req.)_  | `oneOf(list, describe, get, put, copy, delete, delete-batch)` | Which of the seven operations this run performs.                                                                                             |
-| `bucket`       | `STRING` | _(req.)_  | non-empty                                                     | Target bucket for every operation — also `copy`'s destination bucket.                                                                        |
-| `key`          | `STRING` | _(unset)_ | non-empty when set                                            | Target object key for `describe`/`get`/`put`/`delete`, **and reused as `copy`'s destination key**.                                           |
-| `prefix`       | `STRING` | _(unset)_ | non-empty when set                                            | Restrict `list` to keys beginning with this prefix.                                                                                          |
-| `pageSize`     | `INT`    | _(unset)_ | `range(1, 1_000)`                                             | Page size (`MaxKeys`) for `list`; the SDK's own default (1000) applies when unset.                                                           |
-| `sourceBucket` | `STRING` | _(unset)_ | non-empty when set                                            | Source bucket for `copy`.                                                                                                                    |
-| `sourceKey`    | `STRING` | _(unset)_ | non-empty when set                                            | Source key for `copy`.                                                                                                                       |
-| `contentType`  | `STRING` | _(unset)_ | non-empty when set                                            | `Content-Type` for `put`.                                                                                                                    |
-| `input`        | `STRING` | _(unset)_ | non-empty when set                                            | Source file, resolved under `M3L_INPUT_DIR`: `put`'s object body (raw bytes), or `delete-batch`'s key list (JSONL `{"key": "..."}` records). |
-| `output`       | `STRING` | _(unset)_ | non-empty when set                                            | Destination file, resolved under `M3L_OUTPUT_DIR`: `list`'s JSONL object summaries, `describe`'s JSON metadata, or `get`'s raw body bytes.   |
-| `yes`          | `BOOL`   | `false`   | —                                                             | Bypass the destructive-operation confirmation prompt for `put`/`copy`/`delete`/`delete-batch` (bypass is logged as a warning).               |
+| Parameter      | Type     | Default   | Validation                                                    | Required for                               | Description                                                                                                                                  |
+| -------------- | -------- | --------- | ------------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `aws.profile`  | `STRING` | _(req.)_  | non-empty                                                     | all                                        | AWS named profile; declaring this parameter triggers the `script.aws` provisioning seam (`AWS_PROFILE_PARAM_NAME`).                          |
+| `operation`    | `STRING` | _(req.)_  | `oneOf(list, describe, get, put, copy, delete, delete-batch)` | all                                        | Which of the seven operations this run performs.                                                                                             |
+| `bucket`       | `STRING` | _(req.)_  | non-empty                                                     | all                                        | Target bucket for every operation — also `copy`'s destination bucket.                                                                        |
+| `key`          | `STRING` | _(unset)_ | non-empty when set                                            | `describe`, `get`, `put`, `delete`, `copy` | Target object key for `describe`/`get`/`put`/`delete`, **and reused as `copy`'s destination key**.                                           |
+| `prefix`       | `STRING` | _(unset)_ | non-empty when set                                            | `list` (optional)                          | Restrict `list` to keys beginning with this prefix.                                                                                          |
+| `pageSize`     | `INT`    | _(unset)_ | `range(1, 1_000)`                                             | `list` (optional)                          | Page size (`MaxKeys`) for `list`; the SDK's own default (1000) applies when unset.                                                           |
+| `sourceBucket` | `STRING` | _(unset)_ | non-empty when set                                            | `copy`                                     | Source bucket for `copy`.                                                                                                                    |
+| `sourceKey`    | `STRING` | _(unset)_ | non-empty when set                                            | `copy`                                     | Source key for `copy`.                                                                                                                       |
+| `contentType`  | `STRING` | _(unset)_ | non-empty when set                                            | `put` (optional)                           | `Content-Type` for `put`.                                                                                                                    |
+| `input`        | `STRING` | _(unset)_ | non-empty when set                                            | `put`, `delete-batch`                      | Source file, resolved under `M3L_INPUT_DIR`: `put`'s object body (raw bytes), or `delete-batch`'s key list (JSONL `{"key": "..."}` records). |
+| `output`       | `STRING` | _(unset)_ | non-empty when set                                            | `list`, `describe`, `get`                  | Destination file, resolved under `M3L_OUTPUT_DIR`: `list`'s JSONL object summaries, `describe`'s JSON metadata, or `get`'s raw body bytes.   |
+| `yes`          | `BOOL`   | `false`   | —                                                             | any destructive operation (optional)       | Bypass the destructive-operation confirmation prompt for `put`/`copy`/`delete`/`delete-batch` (bypass is logged as a warning).               |
 
 `operation`, `bucket`, and `aws.profile` are declared `required: true` with
 `Core.M3LConfigValidators.nonEmpty`/`oneOf`, so presence is enforced by the
@@ -70,20 +62,22 @@ retrofit-eligible pattern `dynamodb-crud`'s per-operation guard table carries
 via F1b's `Core.M3LConfigSchema` `configValidators` seam
 ([shipped](../../plans/IMPLEMENTATION.md)), not yet retrofitted here.
 
-| Operation      | Requires                                         |
-| -------------- | ------------------------------------------------ |
-| `list`         | `output`                                         |
-| `describe`     | `key`, `output`                                  |
-| `get`          | `key`, `output`                                  |
-| `put`          | `key`, `input`                                   |
-| `copy`         | `key` (destination), `sourceBucket`, `sourceKey` |
-| `delete`       | `key`                                            |
-| `delete-batch` | `input`                                          |
+## Steps
 
-## Behavioral contract
+One row per `src/steps/` module; each takes injected dependencies (config
+values, the `s3` client via `script.aws`, `script.paths`, `script.prompt`,
+logger) as a single options object and is unit-testable without the
+`M3LScript` lifecycle.
 
-Decisions that pin down what an implementer or test-author would otherwise
-have to guess:
+| Step                | Responsibility                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list-objects`      | `list`: paginated `AWS.listObjects`, streaming every `S3ObjectSummary` in every page to `output` as JSONL.                                                                                                                                                                                                                                                       |
+| `single-object-ops` | `describe`/`get`/`put`/`copy`/`delete`: one call each via `AWS.headObject`/`getObject`/`putObject`/`copyObject`/`deleteObject`. `put`/`copy`/`delete` are destructive — the orchestrator decides whether to route them through the gate; this step never gates itself.                                                                                           |
+| `delete-batch`      | `delete-batch`: reads keys from `input` (JSONL `{key}` records) via `Core.M3LJSONListImporter`, chunks into 1000-key groups (S3's own `DeleteObjects` cap), calls `AWS.deleteObjects` per chunk, aggregates `deleted`/`errors` across every chunk, and writes the collected failures once to `<output-dir>/failed.jsonl`. Destructive — routes through the gate. |
+| `destructive-gate`  | Shared confirm-gate for `put`/`copy`/`delete`/`delete-batch`: prompts via `script.prompt.confirm(description)` unless `yes` is `true`, in which case the bypass is logged as a warning (fleet convention from `sqs-etl`, W5 promotion candidate).                                                                                                                |
+| `run-s3-objects`    | Composes the pipeline — the only module that knows operation dispatch order: resolve + guard-check config → (destructive gate if applicable) → the operation-appropriate step → the run summary.                                                                                                                                                                 |
+
+### Behavioral notes
 
 - **Run summary.** Every dispatch path returns
   `{ processed: number, failed: number }`. `processed` counts: total object
@@ -116,8 +110,8 @@ have to guess:
   the SDK call itself throws (e.g. throttling, a mid-run permissions
   change), `delete-batch` writes whatever chunk errors were already
   collected to `failed.jsonl`, then throws `ERR_S3_OBJECTS_OUTPUT`
-  chaining the original error as `cause`, with `{ deleted, priorErrorCount
-}` in `context` so the operator can see how much of the run completed
+  chaining the original error as `cause`, with `{ deleted, priorErrorCount }`
+  in `context` so the operator can see how much of the run completed
   before the abort.
 - **Destructive-gate decline soft-lands.** When the operator declines the
   confirmation prompt (`destructiveGate` throws `ERR_S3_OBJECTS_ABORTED`),
@@ -126,29 +120,18 @@ have to guess:
   not as a crash. Any other error from the gate (e.g. a config error)
   propagates unmodified. This mirrors `dynamodb-crud`'s
   `ERR_DYNAMO_CRUD_ABORTED` handling, not `sqs-etl`'s.
-- **Error codes.** The script's own `M3LError`s (never `aws/s3`'s
-  `M3LS3OperationError`, which propagates unmodified) use this code family:
-  `ERR_S3_OBJECTS_CONFIG` (missing/malformed cross-parameter requirement),
-  `ERR_S3_OBJECTS_ABORTED` (destructive-gate decline),
-  `ERR_S3_OBJECTS_OUTPUT` (a local read/write failure, e.g. writing
-  `output`/`failed.jsonl`), and `ERR_S3_OBJECTS_FAILED_KEYS` (thrown at the
-  end of a run when `delete-batch` leaves `failed > 0` — a partial batch
-  failure must never be silent).
 
-## Steps
+## Error codes
 
-One row per `src/steps/` module; each takes injected dependencies (config
-values, the `s3` client via `script.aws`, `script.paths`, `script.prompt`,
-logger) as a single options object and is unit-testable without the
-`M3LScript` lifecycle.
+The script's own `M3LError`s (never `aws/s3`'s `M3LS3OperationError`, which
+propagates unmodified) use this code family:
 
-| Step                | Responsibility                                                                                                                                                                                                                                                                                                                                                   |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list-objects`      | `list`: paginated `AWS.listObjects`, streaming every `S3ObjectSummary` in every page to `output` as JSONL.                                                                                                                                                                                                                                                       |
-| `single-object-ops` | `describe`/`get`/`put`/`copy`/`delete`: one call each via `AWS.headObject`/`getObject`/`putObject`/`copyObject`/`deleteObject`. `put`/`copy`/`delete` are destructive — the orchestrator decides whether to route them through the gate; this step never gates itself.                                                                                           |
-| `delete-batch`      | `delete-batch`: reads keys from `input` (JSONL `{key}` records) via `Core.M3LJSONListImporter`, chunks into 1000-key groups (S3's own `DeleteObjects` cap), calls `AWS.deleteObjects` per chunk, aggregates `deleted`/`errors` across every chunk, and writes the collected failures once to `<output-dir>/failed.jsonl`. Destructive — routes through the gate. |
-| `destructive-gate`  | Shared confirm-gate for `put`/`copy`/`delete`/`delete-batch`: prompts via `script.prompt.confirm(description)` unless `yes` is `true`, in which case the bypass is logged as a warning (fleet convention from `sqs-etl`, W5 promotion candidate).                                                                                                                |
-| `run-s3-objects`    | Composes the pipeline — the only module that knows operation dispatch order: resolve + guard-check config → (destructive gate if applicable) → the operation-appropriate step → the run summary.                                                                                                                                                                 |
+| Code                         | Meaning                                                                                                      |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `ERR_S3_OBJECTS_CONFIG`      | Missing or malformed cross-parameter requirement (e.g. `key` absent for `describe`)                          |
+| `ERR_S3_OBJECTS_ABORTED`     | Destructive-gate confirmation declined by the operator                                                       |
+| `ERR_S3_OBJECTS_OUTPUT`      | Local read/write failure (e.g. writing `output` or `failed.jsonl`); chains the original I/O error as `cause` |
+| `ERR_S3_OBJECTS_FAILED_KEYS` | Thrown at the end of a `delete-batch` run when `failed > 0` — a partial batch failure must never be silent   |
 
 ## Inputs and outputs
 
@@ -162,9 +145,9 @@ logger) as a single options object and is unit-testable without the
   collecting every chunk's per-key failures (no in-script retry — retry
   policy stays the operator's concern, consistent with `aws/s3`'s own
   no-internal-retry design).
-- **Reports:** a run summary — `{ processed, failed }` (see "Behavioral
-  contract" above) — so a partial `delete-batch` failure is never silent; the
-  run exits non-zero (`ERR_S3_OBJECTS_FAILED_KEYS`) when `failed > 0`.
+- **Reports:** a run summary — `{ processed, failed }` (see Error codes) —
+  so a partial `delete-batch` failure is never silent; the run exits non-zero
+  (`ERR_S3_OBJECTS_FAILED_KEYS`) when `failed > 0`.
 
 ## See also
 

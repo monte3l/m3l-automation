@@ -18,6 +18,17 @@ touching SQS). It is out of scope for this script to manage queue
 infrastructure (creation, redrive-policy configuration, DLQ wiring) — that is
 `eventbridge-schedules`/CloudFormation territory (W3).
 
+Deferred for future iterations:
+
+- **Checkpoint/resume** for `dump`/`redrive` (the general fleet convention
+  documented in `docs/plans/archive/2026-07-09-consumer-scripts-implementation-plan.md`
+  Sec 1.2) is deferred — a killed multi-page run restarts rather than
+  resuming. Filed as a W5 friction candidate in `IMPLEMENTATION.md` once this
+  script ships; not silently dropped.
+- **Client-side rate capping** (`maxPagesPerSecond`) is deferred; retry/backoff
+  on throttling is still handled by `M3LSQSOperations`' internal
+  `M3LRetryRunner`.
+
 ## Configuration schema
 
 Declared in `src/config.ts` (`configParameters`); config is the script's only
@@ -100,17 +111,6 @@ Script-local error codes are plain `M3LError.code` strings, all prefixed
   particular used to fall back to its default of `100` for any wrong-typed
   value; it now throws.
 - `ERR_SQS_ETL_ABORTED` — the destructive-gate confirmation was declined.
-
-## Out of scope for this iteration
-
-- **Checkpoint/resume** for `dump`/`redrive` (the general fleet convention
-  documented in `docs/plans/archive/2026-07-09-consumer-scripts-implementation-plan.md`
-  Sec 1.2) is deferred — a killed multi-page run restarts rather than
-  resuming. Filed as a W5 friction candidate in `IMPLEMENTATION.md` once this
-  script ships; not silently dropped.
-- **Client-side rate capping** (`maxPagesPerSecond`) is deferred; retry/backoff
-  on throttling is still handled by `M3LSQSOperations`' internal
-  `M3LRetryRunner`.
 
 ## See also
 
