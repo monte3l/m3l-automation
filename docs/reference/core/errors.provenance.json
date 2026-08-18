@@ -9,7 +9,7 @@
           "file": "packages/m3l-common/src/core/errors/M3LError.ts",
           "symbol": "M3LError",
           "lines": "59-123",
-          "blob": "d11422d41908c5ebfe3c7425dc1e990b26e2b155"
+          "blob": "5b99d20e9e1677f5ff1812c82e7dbb0488fbc598"
         },
         {
           "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
@@ -27,13 +27,13 @@
           "file": "packages/m3l-common/src/core/errors/M3LError.ts",
           "symbol": "M3LErrorCode",
           "lines": "172-172",
-          "blob": "d11422d41908c5ebfe3c7425dc1e990b26e2b155"
+          "blob": "5b99d20e9e1677f5ff1812c82e7dbb0488fbc598"
         },
         {
           "file": "packages/m3l-common/src/core/errors/M3LError.ts",
           "symbol": "M3L_ERROR_CODES",
           "lines": "88-147",
-          "blob": "d11422d41908c5ebfe3c7425dc1e990b26e2b155"
+          "blob": "5b99d20e9e1677f5ff1812c82e7dbb0488fbc598"
         },
         {
           "file": "packages/m3l-common/src/core/errors/M3LResult.ts",
@@ -129,40 +129,45 @@
           "file": "packages/m3l-common/src/core/errors/catalog.ts",
           "symbol": "M3LErrorOrigin",
           "lines": "37-67",
-          "blob": "e2c8d220323f1874f12f6bfed33f332f9a55085d"
+          "blob": "c3d018a78d0bb34c01f040ab04bcda56468889f9"
         },
         {
           "file": "packages/m3l-common/src/core/errors/catalog.ts",
           "symbol": "M3LErrorRetryable",
           "lines": "68-82",
-          "blob": "e2c8d220323f1874f12f6bfed33f332f9a55085d"
+          "blob": "c3d018a78d0bb34c01f040ab04bcda56468889f9"
         },
         {
           "file": "packages/m3l-common/src/core/errors/catalog.ts",
           "symbol": "M3LErrorClassification",
           "lines": "83-109",
-          "blob": "e2c8d220323f1874f12f6bfed33f332f9a55085d"
+          "blob": "c3d018a78d0bb34c01f040ab04bcda56468889f9"
         },
         {
           "file": "packages/m3l-common/src/core/errors/catalog.ts",
           "symbol": "M3L_ERROR_CATALOG",
           "lines": "110-204",
-          "blob": "e2c8d220323f1874f12f6bfed33f332f9a55085d"
+          "blob": "c3d018a78d0bb34c01f040ab04bcda56468889f9"
         },
         {
           "file": "packages/m3l-common/src/core/errors/catalog.ts",
           "symbol": "isM3LErrorCode",
           "lines": "205-226",
-          "blob": "e2c8d220323f1874f12f6bfed33f332f9a55085d"
+          "blob": "c3d018a78d0bb34c01f040ab04bcda56468889f9"
         },
         {
           "file": "packages/m3l-common/src/core/errors/catalog.ts",
           "symbol": "classifyErrorCode",
           "lines": "227-232",
-          "blob": "e2c8d220323f1874f12f6bfed33f332f9a55085d"
+          "blob": "c3d018a78d0bb34c01f040ab04bcda56468889f9"
+        },
+        {
+          "file": "packages/m3l-common/src/core/errors/M3LOperationAbortedError.ts",
+          "symbol": "M3LOperationAbortedError",
+          "blob": "485fb57d73c07722dc7ec55edf375d450391e1e1"
         }
       ],
-      "retrieved": "2026-08-16"
+      "retrieved": "2026-08-18"
     },
     {
       "heading": "`M3LError`",
@@ -171,16 +176,26 @@
           "file": "packages/m3l-common/src/core/errors/M3LError.ts",
           "symbol": "M3LError",
           "lines": "59-123",
-          "blob": "d11422d41908c5ebfe3c7425dc1e990b26e2b155"
+          "blob": "5b99d20e9e1677f5ff1812c82e7dbb0488fbc598"
         },
         {
           "file": "packages/m3l-common/src/core/errors/M3LError.ts",
           "symbol": "M3LErrorOptions",
           "lines": "25-38",
-          "blob": "d11422d41908c5ebfe3c7425dc1e990b26e2b155"
+          "blob": "5b99d20e9e1677f5ff1812c82e7dbb0488fbc598"
         }
       ],
-      "retrieved": "2026-08-16"
+      "retrieved": "2026-08-18"
+    },
+    {
+      "heading": "`M3LOperationAbortedError`",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/errors/M3LOperationAbortedError.ts",
+          "symbol": "M3LOperationAbortedError",
+          "blob": "485fb57d73c07722dc7ec55edf375d450391e1e1"
+        }
+      ]
     },
     {
       "heading": "`M3LResult<T, E>`",

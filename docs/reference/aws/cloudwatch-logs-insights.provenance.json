@@ -8,12 +8,12 @@
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/client.ts",
           "symbol": "M3LLogsInsightsClient",
-          "blob": "93ba14551ae1ea8e1bc5764e7e3428f028fb409c"
+          "blob": "9ce72e87604b303ef741014036bb40885827a9d8"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/client.ts",
           "symbol": "LogsInsightsAwaitOptions",
-          "blob": "93ba14551ae1ea8e1bc5764e7e3428f028fb409c"
+          "blob": "9ce72e87604b303ef741014036bb40885827a9d8"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/types.ts",
@@ -51,7 +51,7 @@
           "blob": "4e8542fb2bd81ae290765fb7eccbecbe61ab686a"
         }
       ],
-      "retrieved": "2026-07-15"
+      "retrieved": "2026-08-18"
     },
     {
       "heading": "`M3LLogsInsightsClient`",
@@ -59,10 +59,10 @@
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/client.ts",
           "symbol": "M3LLogsInsightsClient",
-          "blob": "93ba14551ae1ea8e1bc5764e7e3428f028fb409c"
+          "blob": "9ce72e87604b303ef741014036bb40885827a9d8"
         }
       ],
-      "retrieved": "2026-07-15"
+      "retrieved": "2026-08-18"
     },
     {
       "heading": "Error handling",

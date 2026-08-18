@@ -635,6 +635,11 @@
     "file": "packages/m3l-common/src/core/errors/catalog.ts",
     "lines": "227-232"
   },
+  "M3LOperationAbortedError": {
+    "submodule": "errors",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/errors/M3LOperationAbortedError.ts"
+  },
   "M3LErrorOptions": {
     "submodule": "errors",
     "namespace": "core",
@@ -2567,6 +2572,11 @@
     "file": "packages/m3l-common/src/aws/ecs/types.ts"
   },
   "M3LECSNetworkConfiguration": {
+    "submodule": "ecs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/ecs/types.ts"
+  },
+  "M3LECSWaiterOptions": {
     "submodule": "ecs",
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/ecs/types.ts"

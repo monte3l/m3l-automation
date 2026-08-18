@@ -129,6 +129,55 @@ signal the design is wrong, not that the zone is — `pnpm check:zones` is the g
 - **Semver impact:** **additive minor.** Optional fields on existing options
   interfaces, one new accessor, one new error code; the `exports` map is untouched.
 
+## Update (2026-08-18) — two corrections found while implementing
+
+Implementing this ADR disproved two of its factual claims about the tree. Both
+are recorded here rather than edited away, so the decision record shows what was
+believed at the time and what turned out to be true.
+
+**1. There is no CodePipeline waiter to thread a signal through.** The Decision's
+propagation path names "`M3LCodePipelineOperations`' execution watch" as an
+`aws/**` call site. No such method exists: `aws/codepipeline/client.ts:7`
+states outright that CodePipeline ships no package-level waiter, and the whole
+directory contains zero `M3LPoller`/`M3LRetryRunner` references. The execution
+watch is a **consumer-script** composition at
+`scripts/codepipeline-ops/src/steps/watch-execution.ts:120`. It inherits the
+capability for free once `M3LPollerOptions.signal` exists, because it already
+passes a caller-supplied options bag — but it is not wired by the library
+change. The `aws/**` surface is therefore **8 waiters + 2 query polls**, not
+"8 waiters + a CodePipeline watch + 2 query polls".
+
+**2. An aborted wait had nowhere to reject from without a decision.** The
+Classification contract says an aborted wait "rejects with an `M3LError`". All
+three waiter families instead **resolved** `{ state: "ABORTED", reason }` as
+data, with a documented rationale (a caller wants to distinguish "still not
+ready" from "the SDK call failed"). The conflict was invisible because nothing
+in `aws/**` passed an `abortSignal`, making `"ABORTED"` unreachable —
+`docs/reference/aws/cloudformation.md` had even recorded the arm as "unreachable
+in this v1 … for forward-compatibility". Resolved in favour of rejecting, since
+resolving would mean `runScript` never observes the abort and the `interrupted`
+outcome stays unreachable, defeating the Outcome mapping section above. The
+`"ABORTED"` member is retained in all three exported unions, documented as
+reachable only without a caller signal; removing it would be a breaking change
+and is deferred to the next major.
+
+**A consequence for sequencing.** Because no consumer call site is wired, A1
+lands as a library PR plus a follow-up fleet retrofit, following the two-PR
+chain the implementation plan already prescribes for A2/A4/A5. The ADR's
+end-to-end verification ("`SIGINT` during a waiter yields `interrupted` in
+`run-report.json`") is met by a library-level integration test rather than by a
+retrofitted script.
+
+**A latent leak this made reachable.** `aws/ecs` and `aws/cloudformation` built
+their waiter `reason` from the raw SDK error message. `@smithy/core`'s
+`checkExceptions` constructs that message by serializing the entire waiter
+result, so it can embed the last observed response — including caller-supplied
+CloudFormation parameter and output values. `aws/eks` had already been hardened
+against exactly this; the other two had not, and their `ABORTED` arm was
+unreachable only until a signal was threaded. Both arms were sanitized in the
+same change set. The abort error accepts no `cause` parameter at all, so the SDK
+payload cannot enter the error chain by any route.
+
 ## Links
 
 - Related: [ADR-0035 (fault-origin classification, exit codes, the run report and

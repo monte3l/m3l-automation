@@ -8,12 +8,12 @@
         {
           "file": "packages/m3l-common/src/aws/athena/client.ts",
           "symbol": "M3LAthenaClient",
-          "blob": "68f181a4fbb8da38eef29619e886120fc0a464b5"
+          "blob": "47c05123698698de216c25d25d361f2e4beb77c8"
         },
         {
           "file": "packages/m3l-common/src/aws/athena/client.ts",
           "symbol": "AthenaAwaitOptions",
-          "blob": "68f181a4fbb8da38eef29619e886120fc0a464b5"
+          "blob": "47c05123698698de216c25d25d361f2e4beb77c8"
         },
         {
           "file": "packages/m3l-common/src/aws/athena/types.ts",
@@ -71,7 +71,7 @@
           "blob": "b93b4761ae6ce6539429d71376d04cad1fda63f7"
         }
       ],
-      "retrieved": "2026-08-11"
+      "retrieved": "2026-08-18"
     },
     {
       "heading": "`M3LAthenaClient`",
@@ -79,10 +79,10 @@
         {
           "file": "packages/m3l-common/src/aws/athena/client.ts",
           "symbol": "M3LAthenaClient",
-          "blob": "68f181a4fbb8da38eef29619e886120fc0a464b5"
+          "blob": "47c05123698698de216c25d25d361f2e4beb77c8"
         }
       ],
-      "retrieved": "2026-07-18"
+      "retrieved": "2026-08-18"
     },
     {
       "heading": "Row normalization contract (Athena-specific pagination hazard)",
@@ -90,10 +90,10 @@
         {
           "file": "packages/m3l-common/src/aws/athena/client.ts",
           "symbol": "M3LAthenaClient",
-          "blob": "68f181a4fbb8da38eef29619e886120fc0a464b5"
+          "blob": "47c05123698698de216c25d25d361f2e4beb77c8"
         }
       ],
-      "retrieved": "2026-07-18"
+      "retrieved": "2026-08-18"
     },
     {
       "heading": "Named-placeholder query templating",
