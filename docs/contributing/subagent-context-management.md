@@ -104,6 +104,17 @@ deterministic backstop, `.claude/hooks/guard-writer-dispatch-journal.mjs`, warns
 when a writer-spoke dispatch omits a journal path — closing the exact gap
 `2026-07-11-core-script-preset-seam.md` hit.
 
+**Parallelise by file, never by concern within a file.** Sizing a dispatch small
+is necessary but not sufficient — two spokes writing the _same_ file are
+independently correct and jointly broken. A2 dispatched two `test-author` spokes
+in parallel against one contract; the first pinned a field as required, the
+second (written after the contract changed) pinned it optional, both landed in
+`prompt-destructive-target.test.ts`, and `typecheck` then failed `TS2344`
+regardless of the implementation. Disjoint files parallelised cleanly across the
+same run. When a contract changes mid-run, **re-dispatch the spoke that pinned the
+old shape** rather than adding a second alongside it
+(`docs/logs/2026-08-18-a2-target-graded-destructive-confirmation.md`).
+
 ## Prevent: durable external memory (the journal pattern)
 
 The writer spokes' "Journal as you go (survive a turn limit)" section
