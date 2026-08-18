@@ -13,10 +13,12 @@ import { M3LError } from "../errors/index.js";
 import { M3LConfigAccessor } from "../config/M3LConfigAccessor.js";
 import { confirmDestructive } from "../prompt/M3LDestructiveGate.js";
 
+import type { M3LConfirmDestructiveOptions } from "../prompt/M3LDestructiveGate.js";
 import type {
   M3LOperationPipelineBaseDeps,
   M3LOperationPipelineOptions,
   M3LOperationPipelineOutcome,
+  M3LPipelineDestructiveOptions,
 } from "./types.js";
 
 /**
@@ -191,6 +193,52 @@ export class M3LOperationPipeline<
    * failure — including `onDecline: { kind: "throw" }`'s decline error —
    * propagates by throwing.
    */
+  /**
+   * Builds the {@link M3LConfirmDestructiveOptions} to pass into
+   * `confirmDestructive`. When {@link M3LPipelineDestructiveOptions.target} is
+   * present, calls it with all four run arguments and forwards the result
+   * plus `isSensitiveTarget` and `yesSensitive` into the options bag using
+   * conditional spreads so absent optional fields are never present-but-undefined
+   * (`exactOptionalPropertyTypes`). A throw from `target()` propagates to
+   * the caller before `confirmDestructive` is ever invoked.
+   */
+  #buildGateOptions(
+    destructive: M3LPipelineDestructiveOptions<
+      TOp,
+      TSettings,
+      TDeps,
+      TResult,
+      TContext
+    >,
+    operation: TOp,
+    settings: TSettings,
+    context: TContext,
+    deps: TDeps,
+  ): M3LConfirmDestructiveOptions {
+    const base: M3LConfirmDestructiveOptions = {
+      prompt: deps.prompt,
+      logger: deps.logger,
+      description: destructive.describe(operation, settings, context, deps),
+      yes: destructive.yes(settings),
+      code: destructive.abortCode,
+    };
+    if (destructive.target === undefined) {
+      return base;
+    }
+    // A throw from target() propagates here, skipping confirmDestructive (TG-8).
+    const target = destructive.target(operation, settings, context, deps);
+    return {
+      ...base,
+      target,
+      ...(destructive.isSensitiveTarget !== undefined
+        ? { isSensitiveTarget: destructive.isSensitiveTarget }
+        : {}),
+      ...(destructive.yesSensitive !== undefined
+        ? { yesSensitive: destructive.yesSensitive(settings) }
+        : {}),
+    };
+  }
+
   async #runGate(
     operation: TOp,
     settings: TSettings,
@@ -202,21 +250,17 @@ export class M3LOperationPipeline<
       return undefined;
     }
 
-    const description = destructive.describe(
+    // #buildGateOptions calls destructive.target() when present; a throw from
+    // the callback propagates before confirmDestructive is invoked (TG-8).
+    const confirmOptions = this.#buildGateOptions(
+      destructive,
       operation,
       settings,
       context,
       deps,
     );
-    const bypass = destructive.yes(settings);
     try {
-      await confirmDestructive({
-        prompt: deps.prompt,
-        logger: deps.logger,
-        description,
-        yes: bypass,
-        code: destructive.abortCode,
-      });
+      await confirmDestructive(confirmOptions);
       return undefined;
     } catch (error) {
       // Only an M3LError carrying the gate's own abortCode is a decline;

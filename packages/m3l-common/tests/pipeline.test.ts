@@ -37,6 +37,10 @@ import { M3LError } from "../src/core/errors/index.js";
 import { M3LLogger } from "../src/core/logging/M3LLogger.js";
 import { M3LPrompt } from "../src/core/prompt/M3LPrompt.js";
 import type { M3LPromptAdapter } from "../src/core/prompt/types.js";
+import type {
+  M3LDestructiveTarget,
+  M3LDestructiveTargetPredicate,
+} from "../src/core/prompt/M3LDestructiveGate.js";
 import { M3LOperationPipeline } from "../src/core/pipeline/index.js";
 import type {
   M3LGuardableKey,
@@ -2641,6 +2645,502 @@ describe("core/pipeline", () => {
       expectTypeOf<
         Parameters<NonNullable<Opts["finalize"]>>[3]
       >().toEqualTypeOf<"list" | "get">();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Gate — target-graded confirmation (ADR-0048 forwarding) (TG-1–TG-8)
+  // ---------------------------------------------------------------------------
+  describe("gate — target-graded confirmation (ADR-0048 forwarding)", () => {
+    /**
+     * A fixture AWS target used by every target-grading test. The profile is
+     * "prod" so TG-6's matching echo can return the profile literally.
+     */
+    const PROD_TARGET: M3LDestructiveTarget = {
+      profile: "prod",
+      region: "us-east-1",
+      accountId: "111122223333",
+    };
+
+    /** A predicate that always classifies the target as sensitive (state 4/5). */
+    const alwaysSensitive: M3LDestructiveTargetPredicate = () => true;
+
+    /** A predicate that always classifies the target as non-sensitive (state 2). */
+    const neverSensitive: M3LDestructiveTargetPredicate = () => false;
+
+    /**
+     * Extends makeHarness to also expose an `inputMock` that backs
+     * `prompt.text` (routed through `adapter.input` inside M3LPrompt).
+     */
+    function makeTargetHarness(opts: {
+      readonly confirmImpl?: () => Promise<boolean>;
+      readonly inputImpl?: () => Promise<string>;
+    }): {
+      readonly deps: TestDeps;
+      readonly config: M3LConfig;
+      readonly logger: M3LLogger;
+      readonly warningSpy: MockInstance;
+      readonly confirmMock: Mock;
+      readonly inputMock: Mock;
+    } {
+      const config = new M3LConfig();
+      const logger = new M3LLogger([]);
+      const warningSpy = vi.spyOn(logger, "warning");
+      const confirmMock = vi.fn(
+        opts.confirmImpl ?? (() => Promise.resolve(true)),
+      );
+      const inputMock = vi.fn(opts.inputImpl ?? (() => Promise.resolve("")));
+      const adapter = {
+        input: inputMock,
+        password: vi.fn(),
+        number: vi.fn(),
+        confirm: confirmMock,
+        select: vi.fn(),
+        checkbox: vi.fn(),
+        search: vi.fn(),
+      } as unknown as M3LPromptAdapter;
+      const prompt = new M3LPrompt({ adapter });
+      const deps: TestDeps = { config, logger, prompt };
+      return { deps, config, logger, warningSpy, confirmMock, inputMock };
+    }
+
+    test("TG-1 no target in destructive config — prompt.confirm used, adapter.input (prompt.text) never called", async () => {
+      const { deps, config, confirmMock, inputMock } = makeTargetHarness({});
+      config.set("operation", "write");
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        destructive: {
+          operations: new Set(["write"]),
+          describe: () => "delete bucket my-bucket",
+          yes: () => false,
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: { kind: "throw" },
+          // no target / isSensitiveTarget / yesSensitive
+        },
+        handlers: {
+          read: () => Promise.resolve({ processed: 0 }),
+          write: () => Promise.resolve({ processed: 0 }),
+        },
+      });
+
+      await pipeline.run(deps);
+      expect(confirmMock).toHaveBeenCalledTimes(1);
+      expect(inputMock).not.toHaveBeenCalled();
+    });
+
+    test("TG-2 target callback receives all four args (operation, settings, context, deps) — context by reference", async () => {
+      const context: TestContext = { note: "shared-target-ctx" };
+      const { deps, config } = makeTargetHarness({
+        // Return matching profile so the escalated echo succeeds.
+        inputImpl: () => Promise.resolve(PROD_TARGET.profile),
+      });
+      config.set("operation", "write");
+
+      let capturedOperation: string | undefined;
+      let capturedSettings: TestSettings | undefined;
+      let capturedContext: TestContext | undefined;
+      let capturedDeps: TestDeps | undefined;
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        TestContext
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        prepare: () => Promise.resolve(context),
+        destructive: {
+          operations: new Set(["write"]),
+          describe: () => "destroy",
+          yes: () => false,
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: { kind: "throw" },
+          target: (op, settings, ctx, d) => {
+            capturedOperation = op;
+            capturedSettings = settings;
+            capturedContext = ctx;
+            capturedDeps = d;
+            return PROD_TARGET;
+          },
+          isSensitiveTarget: alwaysSensitive,
+        },
+        handlers: {
+          read: () => Promise.resolve({ processed: 0 }),
+          write: () => Promise.resolve({ processed: 0 }),
+        },
+      });
+
+      await pipeline.run(deps);
+
+      expect(capturedOperation).toBe("write");
+      expect(capturedSettings).toMatchObject({ yes: false });
+      expect(capturedContext).toBe(context);
+      expect(capturedDeps).toBe(deps);
+    });
+
+    test("TG-3 non-sensitive target + yes=true → normal yes-bypass (prompt.confirm bypassed, prompt.text not called)", async () => {
+      const { deps, config, confirmMock, inputMock, warningSpy } =
+        makeTargetHarness({});
+      config.set("operation", "write");
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: true }),
+        requiredFields: { read: [], write: [] },
+        destructive: {
+          operations: new Set(["write"]),
+          describe: () => "delete bucket my-bucket",
+          yes: (settings) => settings.yes,
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: { kind: "throw" },
+          target: () => PROD_TARGET,
+          isSensitiveTarget: neverSensitive,
+        },
+        handlers: {
+          read: () => Promise.resolve({ processed: 0 }),
+          write: () => Promise.resolve({ processed: 5 }),
+        },
+      });
+
+      await expect(pipeline.run(deps)).resolves.toMatchObject({
+        status: "completed",
+        result: { processed: 5 },
+      });
+      expect(confirmMock).not.toHaveBeenCalled();
+      expect(inputMock).not.toHaveBeenCalled();
+      // The normal yes-bypass warning is still emitted by confirmDestructive.
+      expect(warningSpy).toHaveBeenCalledTimes(1);
+      expect(warningSpy).toHaveBeenCalledWith(
+        expect.stringContaining("yes=true"),
+      );
+    });
+
+    test("TG-4 sensitive target + yes=true only → still prompts via prompt.text (load-bearing ADR-0048 clause reaching the pipeline)", async () => {
+      // yesSensitive is absent: the routine --yes flag must NOT bypass a
+      // sensitive-target prompt.  The escalated typed-echo (adapter.input)
+      // must be called instead of the normal confirm.
+      const { deps, config, confirmMock, inputMock } = makeTargetHarness({
+        inputImpl: () => Promise.resolve(PROD_TARGET.profile),
+      });
+      config.set("operation", "write");
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: true }),
+        requiredFields: { read: [], write: [] },
+        destructive: {
+          operations: new Set(["write"]),
+          describe: () => "delete bucket my-bucket",
+          yes: (settings) => settings.yes,
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: { kind: "throw" },
+          target: () => PROD_TARGET,
+          isSensitiveTarget: alwaysSensitive,
+          // yesSensitive intentionally absent — yes alone must not bypass
+        },
+        handlers: {
+          read: () => Promise.resolve({ processed: 0 }),
+          write: () => Promise.resolve({ processed: 0 }),
+        },
+      });
+
+      await pipeline.run(deps);
+
+      expect(inputMock).toHaveBeenCalledTimes(1);
+      expect(confirmMock).not.toHaveBeenCalled();
+    });
+
+    test("TG-5 sensitive + yes=true + yesSensitive=true → bypassed, one warning naming the target, no prompt call", async () => {
+      const { deps, config, confirmMock, inputMock, warningSpy } =
+        makeTargetHarness({});
+      config.set("operation", "write");
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: true }),
+        requiredFields: { read: [], write: [] },
+        destructive: {
+          operations: new Set(["write"]),
+          describe: () => "delete bucket my-bucket",
+          yes: (settings) => settings.yes,
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: { kind: "throw" },
+          target: () => PROD_TARGET,
+          isSensitiveTarget: alwaysSensitive,
+          yesSensitive: () => true,
+        },
+        handlers: {
+          read: () => Promise.resolve({ processed: 0 }),
+          write: () => Promise.resolve({ processed: 3 }),
+        },
+      });
+
+      await expect(pipeline.run(deps)).resolves.toMatchObject({
+        status: "completed",
+        result: { processed: 3 },
+      });
+      expect(confirmMock).not.toHaveBeenCalled();
+      expect(inputMock).not.toHaveBeenCalled();
+      // Exactly one warning; it must name both the bypass mode and the target profile.
+      expect(warningSpy).toHaveBeenCalledTimes(1);
+      expect(warningSpy).toHaveBeenCalledWith(
+        expect.stringContaining("yesSensitive=true"),
+      );
+      expect(warningSpy).toHaveBeenCalledWith(
+        expect.stringContaining(PROD_TARGET.profile),
+      );
+    });
+
+    test("TG-6 sensitive + typed echo matching profile → handler runs (inputMock called, confirmMock not called)", async () => {
+      const handler = vi.fn(() => Promise.resolve({ processed: 7 }));
+      const { deps, config, confirmMock, inputMock } = makeTargetHarness({
+        inputImpl: () => Promise.resolve(PROD_TARGET.profile),
+      });
+      config.set("operation", "write");
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        destructive: {
+          operations: new Set(["write"]),
+          describe: () => "delete bucket my-bucket",
+          yes: () => false,
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: { kind: "throw" },
+          target: () => PROD_TARGET,
+          isSensitiveTarget: alwaysSensitive,
+        },
+        handlers: {
+          read: handler,
+          write: handler,
+        },
+      });
+
+      await expect(pipeline.run(deps)).resolves.toMatchObject({
+        status: "completed",
+        result: { processed: 7 },
+      });
+      // The escalated typed-echo path must be used, not the normal yes/no confirm.
+      expect(inputMock).toHaveBeenCalledTimes(1);
+      expect(confirmMock).not.toHaveBeenCalled();
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    test("TG-7a sensitive + mismatched echo + onDecline throw → throws with abortCode (must classify as a decline)", async () => {
+      // This is the most important integration assertion: a failed typed-echo
+      // carries abortCode and must be treated as a decline, exactly like a
+      // confirm-false decline.
+      const handler = vi.fn(() => Promise.resolve({ processed: 0 }));
+      const { deps, config } = makeTargetHarness({
+        inputImpl: () => Promise.resolve("wrong-profile"),
+      });
+      config.set("operation", "write");
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        destructive: {
+          operations: new Set(["write"]),
+          describe: () => "delete bucket my-bucket",
+          yes: () => false,
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: { kind: "throw" },
+          target: () => PROD_TARGET,
+          isSensitiveTarget: alwaysSensitive,
+        },
+        handlers: { read: handler, write: handler },
+      });
+
+      let thrown: unknown;
+      try {
+        await pipeline.run(deps);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_TEST_ABORTED");
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    test("TG-7b sensitive + mismatched echo + soft-land → resolves status:declined, persist/finalize and handler skipped", async () => {
+      const handler = vi.fn(() => Promise.resolve({ processed: 0 }));
+      const persist = vi.fn(() => Promise.resolve());
+      const finalize = vi.fn(() => Promise.resolve());
+      const { deps, config } = makeTargetHarness({
+        inputImpl: () => Promise.resolve("wrong-profile"),
+      });
+      config.set("operation", "write");
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        persist,
+        finalize,
+        destructive: {
+          operations: new Set(["write"]),
+          describe: () => "delete bucket my-bucket",
+          yes: () => false,
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: {
+            kind: "soft-land",
+            result: () => ({ processed: 0 }),
+          },
+          target: () => PROD_TARGET,
+          isSensitiveTarget: alwaysSensitive,
+        },
+        handlers: { read: handler, write: handler },
+      });
+
+      await expect(pipeline.run(deps)).resolves.toMatchObject({
+        status: "declined",
+        operation: "write",
+      });
+      expect(handler).not.toHaveBeenCalled();
+      expect(persist).not.toHaveBeenCalled();
+      expect(finalize).not.toHaveBeenCalled();
+    });
+
+    test("TG-8 target callback that throws propagates reference-identically; prompt and handler are skipped", async () => {
+      const targetError = new Error("target callback blew up");
+      const { deps, config, confirmMock, inputMock } = makeTargetHarness({});
+      config.set("operation", "write");
+      const handler = vi.fn(() => Promise.resolve({ processed: 0 }));
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        destructive: {
+          operations: new Set(["write"]),
+          describe: () => "destroy",
+          yes: () => false,
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: { kind: "throw" },
+          target: () => {
+            throw targetError;
+          },
+          isSensitiveTarget: alwaysSensitive,
+        },
+        handlers: { read: handler, write: handler },
+      });
+
+      let thrown: unknown;
+      try {
+        await pipeline.run(deps);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBe(targetError);
+      expect(confirmMock).not.toHaveBeenCalled();
+      expect(inputMock).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    describe("type-level", () => {
+      test("TG-T1 existing destructive config without target/isSensitiveTarget/yesSensitive is still well-typed (backwards compat)", () => {
+        const destructive: M3LPipelineDestructiveOptions<
+          TestOp,
+          TestSettings,
+          TestDeps,
+          TestResult,
+          TestContext
+        > = {
+          operations: new Set(["write"]),
+          describe: () => "destroy",
+          yes: () => false,
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: { kind: "throw" },
+          // target, isSensitiveTarget, yesSensitive all absent — must type-check
+        };
+        void destructive;
+      });
+
+      test("TG-T2 target return type is M3LDestructiveTarget", () => {
+        type TargetCallback = NonNullable<
+          M3LPipelineDestructiveOptions<
+            TestOp,
+            TestSettings,
+            TestDeps,
+            TestResult,
+            TestContext
+          >["target"]
+        >;
+        expectTypeOf<
+          ReturnType<TargetCallback>
+        >().toEqualTypeOf<M3LDestructiveTarget>();
+      });
+
+      test("TG-T3 isSensitiveTarget is typed as M3LDestructiveTargetPredicate", () => {
+        type IsSensitive = NonNullable<
+          M3LPipelineDestructiveOptions<
+            TestOp,
+            TestSettings,
+            TestDeps,
+            TestResult,
+            TestContext
+          >["isSensitiveTarget"]
+        >;
+        expectTypeOf<IsSensitive>().toEqualTypeOf<M3LDestructiveTargetPredicate>();
+      });
     });
   });
 });

@@ -9,6 +9,10 @@ import type { M3LConfig } from "../config/M3LConfig.js";
 import type { M3LConfigAccessor } from "../config/M3LConfigAccessor.js";
 import type { M3LLogger } from "../logging/M3LLogger.js";
 import type { M3LPrompt } from "../prompt/M3LPrompt.js";
+import type {
+  M3LDestructiveTarget,
+  M3LDestructiveTargetPredicate,
+} from "../prompt/M3LDestructiveGate.js";
 
 /**
  * The minimum dependency shape every {@link M3LOperationPipeline} run
@@ -226,6 +230,45 @@ export interface M3LPipelineDestructiveOptions<
   readonly abortCode: string;
   /** What to do when the gate reports a decline. */
   readonly onDecline: M3LPipelineDeclinePolicy<TOp, TSettings, TDeps, TResult>;
+  /**
+   * Builds the {@link M3LDestructiveTarget} the operation is directed at.
+   * Called with the same four arguments as {@link describe} — including the
+   * same by-reference `context` value. When absent, the gate runs without
+   * target-graded escalation; when supplied, the result is forwarded to
+   * {@link https://m3l-automation.internal/core/prompt | confirmDestructive}
+   * together with {@link isSensitiveTarget} and {@link yesSensitive}.
+   *
+   * A throw from this callback propagates unchanged and skips the prompt
+   * and the handler, exactly as a throw from {@link describe} does.
+   */
+  readonly target?: (
+    operation: TOp,
+    settings: TSettings,
+    context: TContext,
+    deps: TDeps,
+  ) => M3LDestructiveTarget;
+  /**
+   * Caller-owned policy that classifies the resolved {@link target} as
+   * sensitive. Only consulted when {@link target} is supplied; a sensitive
+   * classification triggers the escalated typed-echo confirmation path
+   * (via `prompt.text`) instead of the standard yes/no `prompt.confirm`
+   * call.
+   *
+   * Ignored when {@link target} is absent.
+   */
+  readonly isSensitiveTarget?: M3LDestructiveTargetPredicate;
+  /**
+   * Reads the settings' own sensitive-bypass flag — analogous to
+   * {@link yes} but for the escalated typed-echo path. When this returns
+   * `true` together with {@link yes} returning `true`, the gate is bypassed
+   * even for a sensitive target and logs a single warning naming the target.
+   * When absent or returning `false`, {@link yes} alone is insufficient to
+   * bypass a sensitive-target gate — the escalated echo is always required.
+   *
+   * Ignored when {@link target} is absent or the resolved target is not
+   * classified as sensitive by {@link isSensitiveTarget}.
+   */
+  readonly yesSensitive?: (settings: TSettings) => boolean;
 }
 
 /**
