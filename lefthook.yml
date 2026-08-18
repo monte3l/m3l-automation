@@ -60,6 +60,12 @@ pre-push:
     # to them; see docs/logs/2026-07-23-core-script-run-wrapper.md:203-206.
     check-test-counts:
       run: pnpm check:test-counts
+    # Catch script README / reference-page structure drift locally instead of
+    # first in CI (section presence, contract blockquote, example count,
+    # Operation column header, Validation column header). See
+    # docs/contributing/script-docs-structure.md.
+    check-script-docs:
+      run: pnpm check:script-docs
 
 # Fire after `git rebase` completes (including a no-op rebase with nothing to
 # replay) and after `git merge` completes. Regenerates the derived files the

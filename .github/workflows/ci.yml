@@ -182,6 +182,13 @@ jobs:
       - name: Check script scaffold conformance
         run: pnpm check:script-scaffold
 
+      # Every script README and reference page must follow the canonical
+      # structure spec (docs/contributing/script-docs-structure.md): required
+      # sections present, contract blockquotes present, ≥3 examples, Validation
+      # column header, Operation column header in Operations at a glance.
+      - name: Check script doc structure
+        run: pnpm check:script-docs
+
       # Every scripts/*/package.json must declare exactly the ADR-0029
       # dependency boundary — @m3l-automation/m3l-common via workspace:* and
       # no devDependencies. The @aws-sdk/* import ban (eslint.config.js) is

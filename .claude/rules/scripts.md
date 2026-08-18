@@ -76,14 +76,15 @@ paths:
   the templates + manifest together — a hand-added or hand-dropped file fails
   `check:script-scaffold` in CI.
 - **Fill in the README's `### Examples` section before calling a script
-  done:** 2–4 runnable examples in one ` ```bash ` fence, labelled in-fence
-  `# Minimal —` / `# Common —` / `# Production —` / `# Edge case —`, spanning
-  read-only → mutating → destructive/interactive. Enforcement:
-  `check:script-scaffold` (via `readmeExamplesErrors`,
-  `bin/lib/script-scaffold.mjs`) fails on a leftover scaffold placeholder or
-  no runnable `node dist/main.js` invocation after the heading — it does not
-  check example count or the tier labels, so a thin or unlabelled section
-  still passes and needs reviewer judgment.
+  done:** at least 3 runnable examples spanning read-only → mutating →
+  destructive/interactive; scale the count to the script's operation count
+  and complexity (a 6-operation script typically warrants 6 examples).
+  Enforcement: `check:script-docs` (`bin/lib/script-docs.mjs`) requires ≥3
+  runnable `node dist/main.js` invocations after the `### Examples` heading and
+  rejects a leftover scaffold placeholder. `check:script-scaffold` (via
+  `readmeExamplesErrors`) still verifies the heading exists and has at least one
+  invocation as a backstop. The full README and reference-page structure spec is
+  [`docs/contributing/script-docs-structure.md`](../../docs/contributing/script-docs-structure.md).
 
 ## Library usage
 
