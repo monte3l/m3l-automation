@@ -2,20 +2,23 @@
 // Verifies every consumer-script README and reference page against the
 // canonical structure spec (docs/contributing/script-docs-structure.md).
 // Complements check-script-scaffold.mjs (which checks file layout, package
-// shape, and the basic "Examples section is populated" rule) with a deeper
-// section-structure check enforcing the spec's full section requirements and
-// style rules.
+// shape, and the basic "Examples section is populated" rule) with a heading-
+// presence and style check. Does not enforce section ordering.
 //
 // Per script package:
-//   - README.md: all required sections present and in order, contract
-//     blockquote present, ≥3 runnable examples, "Operations at a glance" table
-//     uses "Operation" column header (not "Command"), no scaffold placeholder.
-//   - docs/reference/scripts/<name>.md: all required sections present,
-//     contract blockquote present, config table uses "Validation" column (not
-//     "Declarative `validate:`").
+//   - README.md: contract blockquote present; ## Run, ### Examples,
+//     ### Operational flags, ## Environment, ## Data directories headings
+//     present; ≥3 runnable examples after ### Examples; no scaffold
+//     placeholder; "### Operations at a glance" uses "Operation" not "Command"
+//     when present.
+//   - docs/reference/scripts/<name>.md: contract blockquote present;
+//     ## Purpose and scope, ## Configuration schema, ## Steps,
+//     ## Inputs and outputs, ## See also headings present; config table uses
+//     "Validation" column (not "Declarative `validate:`").
 //
-// Sanctioned exceptions are listed in SCRIPT_DOCS_EXCEPTIONS (bin/lib/script-docs.mjs);
-// see docs/contributing/script-docs-structure.md §Sanctioned deviations.
+// SCRIPT_DOCS_EXCEPTIONS is exported from bin/lib/script-docs.mjs as
+// future-proofing infrastructure. This runner does not currently consult it
+// because json-etl passes all structural checks identically to other scripts.
 //
 // Usage:
 //   node bin/check-script-docs.mjs   # exits 0 on success, 1 on any mismatch

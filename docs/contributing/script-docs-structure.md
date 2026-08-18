@@ -225,15 +225,19 @@ machine-checkably. It is run in pre-push and CI. The gate checks:
 
 **Per README:**
 
-- Required sections present (heading-based check; ordering is not enforced by the gate).
+- These headings are present: `## Run`, `### Examples`, `### Operational flags`,
+  `## Environment`, `## Data directories` (heading-based; ordering, H1, and
+  `### Operations at a glance` are not enforced by the gate).
 - Contract blockquote present.
-- `### Examples` heading exists and has ≥3 runnable `node dist/main.js` examples.
+- `### Examples` heading has ≥3 runnable `node dist/main.js` examples.
 - No leftover scaffold placeholder.
-- `### Operations at a glance` column header is `Operation` (not `Command`), when the section is present.
+- `### Operations at a glance` column header is `Operation` (not `Command`), when present.
 
 **Per reference page:**
 
-- Required sections present (heading-based check; ordering is not enforced by the gate).
+- These headings are present: `## Purpose and scope`, `## Configuration schema`,
+  `## Steps`, `## Inputs and outputs`, `## See also` (heading-based; ordering and
+  `## Error codes` are not enforced by the gate).
 - Contract blockquote present.
 - Config table header contains `Validation` (not `Declarative \`validate:\``).
 

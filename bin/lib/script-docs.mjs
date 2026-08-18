@@ -3,14 +3,12 @@
 // Consumed by bin/check-script-docs.mjs and bin/tests/check-script-docs.test.ts.
 
 /**
- * Script names whose documented structural deviations are sanctioned and must
- * not fail the gate. See docs/contributing/script-docs-structure.md
- * §Sanctioned deviations.
+ * Script names with sanctioned structural deviations.
+ * See docs/contributing/script-docs-structure.md §Sanctioned deviations.
  *
- * Currently only `json-etl`, whose richer/longer README shape and
- * numbered-example subsections are intentional — the gate still checks that all
- * required sections are present; it only suppresses count/format checks that
- * the standard enforces differently for this script.
+ * Exported as future-proofing infrastructure. The current gate runner
+ * (bin/check-script-docs.mjs) does not consult this set — json-etl passes
+ * all structural checks identically to every other script.
  */
 export const SCRIPT_DOCS_EXCEPTIONS = new Set(["json-etl"]);
 
