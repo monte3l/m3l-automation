@@ -6,8 +6,8 @@
  * and the `parseLocaleNumber` utils helper).
  *
  * Exports under test: M3LThresholdEvaluator, M3LThresholdRule,
- *   M3LThresholdRuleResult, M3LThresholdEvaluation,
- *   M3LThresholdRuleValidationError (5 symbols), plus `parseLocaleNumber`
+ *   M3LThresholdRuleResult, M3LThresholdEvaluation, M3LThresholdVerdict,
+ *   M3LThresholdRuleValidationError (6 symbols), plus `parseLocaleNumber`
  *   from core/utils.
  *
  * Key behavioral contracts:
@@ -16,6 +16,8 @@
  *    satisfies operator+value); reducing aggregations (count/sum/avg/min/max)
  *    collapse the field column to one number first, then compare once.
  *  - Every rule produces exactly one result, in input order; no short-circuit.
+ *  - `verdict` is "breached"/"clear"/"no-rules"; `breached` is true iff verdict
+ *    === "breached", regardless of severity. Empty rules → "no-rules".
  *  - `breached` is true iff >=1 result breached, regardless of severity.
  *  - Numeric cell parsing is locale-aware (comma decimal separator) and never
  *    throws; non-numeric cells are skipped by reducers.
@@ -35,6 +37,7 @@ import type {
   M3LThresholdEvaluation,
   M3LThresholdRule,
   M3LThresholdRuleResult,
+  M3LThresholdVerdict,
 } from "../src/core/analysis/index.js";
 import { parseLocaleNumber } from "../src/core/utils/index.js";
 
@@ -432,6 +435,7 @@ describe("M3LThresholdEvaluator", () => {
 
       const { summary, ...rest } = evaluation;
       expect(rest).toEqual({
+        verdict: "no-rules",
         breached: false,
         results: [],
       });
@@ -854,6 +858,159 @@ describe("M3LThresholdEvaluator", () => {
   });
 
   // ===========================================================================
+  // verdict — named outcome (ADR-0046 mandatory-fallback discipline)
+  // ===========================================================================
+  describe("evaluate() — verdict field", () => {
+    test('empty rules + empty rows → verdict "no-rules", breached false', () => {
+      const evaluation = new M3LThresholdEvaluator().evaluate([], []);
+
+      expect(evaluation.verdict).toBe("no-rules");
+      expect(evaluation.breached).toBe(false);
+      expect(evaluation.summary).toBeTruthy();
+    });
+
+    test('empty rules + many rows → verdict "no-rules" regardless of row count', () => {
+      const rows = Array.from({ length: 100 }, (_, i) => ({
+        errorRate: i * 0.001,
+      }));
+      const evaluation = new M3LThresholdEvaluator().evaluate([], rows);
+
+      expect(evaluation.verdict).toBe("no-rules");
+      expect(evaluation.breached).toBe(false);
+    });
+
+    test('all rules pass → verdict "clear", breached false', () => {
+      const rules: readonly M3LThresholdRule[] = [
+        {
+          name: "low-error-rate",
+          field: "errorRate",
+          operator: ">",
+          value: 0.5,
+          aggregation: "avg",
+          severity: "critical",
+        },
+      ];
+      const rows = [{ errorRate: 0.1 }, { errorRate: 0.2 }];
+
+      const evaluation = new M3LThresholdEvaluator().evaluate(rules, rows);
+
+      expect(evaluation.verdict).toBe("clear");
+      expect(evaluation.breached).toBe(false);
+      expect(evaluation.summary).toBeTruthy();
+    });
+
+    test('at least one rule breaches → verdict "breached", breached true', () => {
+      const rules: readonly M3LThresholdRule[] = [
+        {
+          name: "error-rate-too-high",
+          field: "errorRate",
+          operator: ">",
+          value: 0.05,
+          aggregation: "avg",
+          severity: "critical",
+        },
+      ];
+      const rows = [{ errorRate: 0.1 }, { errorRate: 0.2 }];
+
+      const evaluation = new M3LThresholdEvaluator().evaluate(rules, rows);
+
+      expect(evaluation.verdict).toBe("breached");
+      expect(evaluation.breached).toBe(true);
+      expect(evaluation.summary).toBeTruthy();
+    });
+
+    test('mixed rules (some pass, one breaches) → verdict "breached"', () => {
+      const rules: readonly M3LThresholdRule[] = [
+        {
+          name: "low-error-rate-ok",
+          field: "errorRate",
+          operator: "<",
+          value: 1.0,
+          aggregation: "avg",
+          severity: "info",
+        },
+        {
+          name: "any-failed-row",
+          field: "status",
+          operator: "==",
+          value: "FAILED",
+          aggregation: "any-row",
+          severity: "warning",
+        },
+      ];
+      const rows = [{ errorRate: 0.5, status: "FAILED" }];
+
+      const evaluation = new M3LThresholdEvaluator().evaluate(rules, rows);
+
+      expect(evaluation.verdict).toBe("breached");
+      expect(evaluation.breached).toBe(true);
+      expect(evaluation.results).toHaveLength(2);
+    });
+
+    test('info-severity breach still yields verdict "breached" (severity does not gate verdict)', () => {
+      const rules: readonly M3LThresholdRule[] = [
+        {
+          name: "info-breach",
+          field: "count",
+          operator: ">",
+          value: 0,
+          aggregation: "count",
+          severity: "info",
+        },
+      ];
+      const rows = [{ count: 1 }];
+
+      const evaluation = new M3LThresholdEvaluator().evaluate(rules, rows);
+
+      expect(evaluation.verdict).toBe("breached");
+      expect(evaluation.breached).toBe(true);
+    });
+
+    test('verdict === "breached" is exactly equivalent to breached === true (exhaustive)', () => {
+      const scenarios: Array<{
+        rules: readonly M3LThresholdRule[];
+        rows: Record<string, unknown>[];
+      }> = [
+        // no-rules
+        { rules: [], rows: [] },
+        // clear
+        {
+          rules: [
+            {
+              name: "r",
+              field: "v",
+              operator: "<",
+              value: 100,
+              aggregation: "avg",
+              severity: "info",
+            },
+          ],
+          rows: [{ v: 1 }],
+        },
+        // breached
+        {
+          rules: [
+            {
+              name: "r",
+              field: "v",
+              operator: ">",
+              value: 0,
+              aggregation: "avg",
+              severity: "critical",
+            },
+          ],
+          rows: [{ v: 5 }],
+        },
+      ];
+
+      for (const { rules, rows } of scenarios) {
+        const ev = new M3LThresholdEvaluator().evaluate(rules, rows);
+        expect(ev.verdict === "breached").toBe(ev.breached);
+      }
+    });
+  });
+
+  // ===========================================================================
   // Type-level contract
   // ===========================================================================
   describe("type-level contract", () => {
@@ -863,8 +1020,9 @@ describe("M3LThresholdEvaluator", () => {
       >().returns.toEqualTypeOf<M3LThresholdEvaluation>();
     });
 
-    test("M3LThresholdEvaluation has the breached/summary/results shape", () => {
+    test("M3LThresholdEvaluation has the verdict/breached/summary/results shape", () => {
       expectTypeOf<M3LThresholdEvaluation>().toEqualTypeOf<{
+        readonly verdict: M3LThresholdVerdict;
         readonly breached: boolean;
         readonly summary: string;
         readonly results: readonly M3LThresholdRuleResult[];
@@ -896,6 +1054,12 @@ describe("M3LThresholdEvaluator", () => {
 
     test("M3LThresholdRuleValidationError is an M3LError subclass", () => {
       expectTypeOf<M3LThresholdRuleValidationError>().toMatchTypeOf<M3LError>();
+    });
+
+    test('M3LThresholdVerdict is exactly the "breached" | "clear" | "no-rules" union', () => {
+      expectTypeOf<M3LThresholdVerdict>().toEqualTypeOf<
+        "breached" | "clear" | "no-rules"
+      >();
     });
   });
 });

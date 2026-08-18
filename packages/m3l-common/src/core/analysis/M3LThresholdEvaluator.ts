@@ -108,6 +108,22 @@ export interface M3LThresholdRuleResult {
 }
 
 /**
+ * Named outcome of a threshold evaluation, applying ADR-0046's
+ * mandatory-fallback discipline: "no case matched" must be a first-class
+ * structured result, never a silent gap. `breached: false` alone conflates
+ * "rules ran and none breached" with "no rules ran at all" — callers gating
+ * on `breached` would silently pass a run that checked nothing.
+ *
+ * - `"breached"` — at least one rule's comparison matched (`breached: true`).
+ * - `"clear"` — one or more rules evaluated, none breached (`breached: false`).
+ * - `"no-rules"` — the rules array was empty; nothing was checked (`breached: false`).
+ *
+ * Invariant: `verdict === "breached"` is exactly equivalent to
+ * `breached === true`, for every input.
+ */
+export type M3LThresholdVerdict = "breached" | "clear" | "no-rules";
+
+/**
  * Overall outcome of evaluating a set of rules against a set of rows.
  *
  * @example
@@ -115,11 +131,21 @@ export interface M3LThresholdRuleResult {
  * import type { M3LThresholdEvaluation } from "@m3l-automation/m3l-common/core";
  *
  * function report(evaluation: M3LThresholdEvaluation): void {
- *   if (evaluation.breached) console.error(evaluation.summary);
+ *   if (evaluation.verdict === "no-rules") {
+ *     console.warn("No threshold rules configured — run checked nothing.");
+ *   } else if (evaluation.breached) {
+ *     console.error(evaluation.summary);
+ *   }
  * }
  * ```
  */
 export interface M3LThresholdEvaluation {
+  /**
+   * Named outcome of the evaluation. Prefer this over `breached` when
+   * distinguishing "rules ran and passed" from "no rules ran at all" — see
+   * {@link M3LThresholdVerdict} for the full mapping.
+   */
+  readonly verdict: M3LThresholdVerdict;
   /** `true` if at least one rule's result breached, regardless of severity. */
   readonly breached: boolean;
   /** A non-empty, human-readable description of the outcome. */
@@ -374,6 +400,24 @@ function evaluateRule(
   return { name: rule.name, breached, severity: rule.severity, actual };
 }
 
+/**
+ * Derives the named {@link M3LThresholdVerdict} from the evaluated results,
+ * ensuring the mandatory-fallback discipline (ADR-0046): "no rules ran" is
+ * always distinguishable from "rules ran and all passed".
+ *
+ * Single source of truth for the `verdict` ↔ `breached` equivalence:
+ * `"breached"` iff `breached === true`; `"no-rules"` iff the rules array was
+ * empty; `"clear"` otherwise.
+ */
+function deriveVerdict(
+  results: readonly M3LThresholdRuleResult[],
+  breached: boolean,
+): M3LThresholdVerdict {
+  if (breached) return "breached";
+  if (results.length === 0) return "no-rules";
+  return "clear";
+}
+
 /** Builds the non-empty, deterministic summary string for an evaluation. */
 function buildSummary(results: readonly M3LThresholdRuleResult[]): string {
   const breachedNames = results.filter((r) => r.breached).map((r) => r.name);
@@ -452,7 +496,8 @@ export class M3LThresholdEvaluator {
 
     const results = rules.map((rule) => evaluateRule(rule, rows));
     const breached = results.some((r) => r.breached);
+    const verdict = deriveVerdict(results, breached);
 
-    return { breached, summary: buildSummary(results), results };
+    return { verdict, breached, summary: buildSummary(results), results };
   }
 }
