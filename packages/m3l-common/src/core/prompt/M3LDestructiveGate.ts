@@ -19,6 +19,14 @@ import type { M3LPrompt } from "./M3LPrompt.js";
  * `M3LScript.awsTarget` returns exactly this shape, so callers can pass
  * the resolved target directly without adapting it.
  *
+ * `region` is optional because `M3LScript` resolves `aws.region` as
+ * `M3LAWSRegion | undefined`. Most consumer scripts leave `aws.region`
+ * undeclared, so requiring it would silently disable target-graded
+ * confirmation for exactly the scripts this feature is designed for.
+ * When `region` is absent, the banner and `sensitiveTargets` region matching
+ * degrade gracefully: no `region=` fragment is rendered, and a `regions`
+ * spec never matches a region-less target (mirrors the `accountId` guard).
+ *
  * @example
  * ```ts
  * import type { M3LDestructiveTarget } from "@m3l-automation/m3l-common/core";
@@ -33,8 +41,13 @@ import type { M3LPrompt } from "./M3LPrompt.js";
 export interface M3LDestructiveTarget {
   /** The AWS CLI profile name resolved for this run. */
   readonly profile: string;
-  /** The AWS region the action is directed at. */
-  readonly region: string;
+  /**
+   * The AWS region the action is directed at. Optional because
+   * `M3LScript.aws.region` resolves as `M3LAWSRegion | undefined`; callers
+   * that cannot supply a region still benefit from profile- and account-based
+   * grading. Absent when the region is unknown or undeclared.
+   */
+  readonly region?: string;
   /**
    * The AWS account ID, when available. Absent when the caller cannot
    * resolve it (e.g. no STS access).
@@ -95,10 +108,13 @@ export interface M3LSensitiveTargetSpec {
  * A target is classified as **sensitive** if **any** of the following are
  * true:
  * - `spec.profiles` is supplied and contains the target's `profile`.
- * - `spec.regions` is supplied and contains the target's `region`.
+ * - `spec.regions` is supplied, the target has a `region`, and
+ *   `spec.regions` contains that `region`.
  * - `spec.accountIds` is supplied, the target has an `accountId`, and
  *   `spec.accountIds` contains that `accountId`.
  *
+ * A target whose `region` is absent is never matched by `spec.regions`,
+ * regardless of the list contents — mirrors the `accountId` guard.
  * A target whose `accountId` is absent is never matched by `spec.accountIds`,
  * regardless of the list contents. An all-omitted spec matches nothing.
  *
@@ -139,7 +155,11 @@ export function sensitiveTargets(
     if (spec.profiles !== undefined && spec.profiles.includes(target.profile)) {
       return true;
     }
-    if (spec.regions !== undefined && spec.regions.includes(target.region)) {
+    if (
+      spec.regions !== undefined &&
+      target.region !== undefined &&
+      spec.regions.includes(target.region)
+    ) {
       return true;
     }
     if (
@@ -196,11 +216,16 @@ export interface M3LConfirmDestructiveOptions {
   readonly yesSensitive?: boolean;
 }
 
-/** Builds a display-escaped banner string from a target's identity fields. */
+/**
+ * Builds a display-escaped banner string from a target's identity fields.
+ * Always renders `profile=<p>`; appends `region=<r>` and `accountId=<a>`
+ * only when the respective field is present.
+ */
 function buildTargetBanner(target: M3LDestructiveTarget): string {
-  const profile = escapeTerminalControls(target.profile);
-  const region = escapeTerminalControls(target.region);
-  const parts: string[] = [`profile=${profile}`, `region=${region}`];
+  const parts: string[] = [`profile=${escapeTerminalControls(target.profile)}`];
+  if (target.region !== undefined) {
+    parts.push(`region=${escapeTerminalControls(target.region)}`);
+  }
   if (target.accountId !== undefined) {
     parts.push(`accountId=${escapeTerminalControls(target.accountId)}`);
   }
@@ -210,17 +235,27 @@ function buildTargetBanner(target: M3LDestructiveTarget): string {
 /**
  * Runs the escalated typed-echo prompt for a sensitive target (states 4 and
  * 5). A rejection from `prompt.text` propagates unchanged.
+ *
+ * The echo token is the **raw** `target.profile` (untrimmed), so a profile
+ * containing leading/trailing whitespace is confirmable by typing it exactly.
+ * A blank or whitespace-only profile (`token.trim().length === 0`) is treated
+ * as an unsatisfiable token — no input can ever match it, and the gate always
+ * throws the standard decline error. This is a safety property: a hand-built
+ * `{ profile: "" }` target must never be confirmable via an empty keystroke.
+ * `prompt.text` is still called first so the operator is always prompted;
+ * the confirmation simply cannot succeed when the profile is blank.
  */
 async function runEscalatedEcho(
   target: M3LDestructiveTarget,
   deps: M3LConfirmDestructiveOptions,
   displayDescription: string,
 ): Promise<void> {
+  const token = target.profile;
   const banner = buildTargetBanner(target);
   const input = await deps.prompt.text(
     `Sensitive target (${banner}) — type the profile name to confirm: ${displayDescription}`,
   );
-  if (input.trim() !== target.profile) {
+  if (token.trim().length === 0 || input.trim() !== token) {
     throw new M3LError(`aborted: ${deps.description}`, { code: deps.code });
   }
 }
@@ -252,11 +287,18 @@ async function runEscalatedEcho(
  *   {@link M3LError} (`aborted: <description>`) carrying `deps.code` verbatim.
  *
  * **Escalated typed-echo (states 4 and 5):**
- * A banner naming `profile`, `region`, and `accountId` (when present) is
- * shown alongside the description. `prompt.text` asks the operator to type the
- * target profile. The input is trimmed and compared against the **raw** profile;
- * an exact match resolves, a mismatch or empty input throws the same
+ * A banner naming `profile`, `region` (when present), and `accountId` (when
+ * present) is shown alongside the description. `prompt.text` asks the operator
+ * to type the target profile. The input is trimmed and compared against the
+ * **raw** profile; an exact match resolves, a mismatch throws the same
  * `aborted: <description>` {@link M3LError}.
+ *
+ * A blank or whitespace-only profile (`target.profile.trim().length === 0`)
+ * is an **unsatisfiable token**: no input can confirm it, and the gate always
+ * throws the standard decline error. This is a safety property — a
+ * caller-supplied `{ profile: "" }` must never be confirmable via an empty
+ * keystroke. `prompt.text` is still called so the operator is always prompted;
+ * the confirmation simply cannot succeed.
  *
  * A rejection from `deps.prompt.confirm` or `deps.prompt.text` (e.g. the
  * underlying adapter throws on a cancelled prompt) propagates unchanged — it

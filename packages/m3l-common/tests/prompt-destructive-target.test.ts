@@ -832,16 +832,17 @@ describe("type-level contract", () => {
       .toMatchTypeOf<M3LSensitiveTargetSpec>();
   });
 
-  test("M3LDestructiveTarget requires both profile and region as string fields", () => {
+  test("M3LDestructiveTarget requires profile as a string field (region and accountId are optional)", () => {
     // A positive structural assertion: M3LDestructiveTarget must be a subtype of
-    // { profile: string; region: string }, meaning both fields are required.
+    // { profile: string }, meaning profile is required.
+    // region and accountId are optional per the current interface — callers that
+    // cannot supply a region still benefit from profile- and account-based grading.
     // (@ts-expect-error negative assertions are not used here because in RED
     // the type resolves to `any`, making every assignment succeed and the
     // directive "unused" → TS2578. The positive check below is self-consistent
     // in both RED and GREEN and correctly specifies the contract.)
     expectTypeOf<M3LDestructiveTarget>().toMatchTypeOf<{
       readonly profile: string;
-      readonly region: string;
     }>();
   });
 
@@ -854,5 +855,367 @@ describe("type-level contract", () => {
 
   test("confirmDestructive still returns Promise<void> with target-graded options", () => {
     expectTypeOf(confirmDestructive).returns.toEqualTypeOf<Promise<void>>();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Decision 1 — region becomes optional on M3LDestructiveTarget
+// ---------------------------------------------------------------------------
+//
+// Contract change: M3LDestructiveTarget.region changes from `string` to
+// `string | undefined` (optional). M3LScript resolves aws.region as
+// M3LAWSRegion | undefined, so requiring region would silently disable
+// target-graded confirmation for scripts that leave aws.region optional.
+//
+// RED signals:
+// - pnpm typecheck: REGION_LESS_TARGET declaration, expectTypeOf positive test →
+//   TS2741 (region required) and TS2344 (not assignable), respectively.
+// - Runtime: tests that pass through buildTargetBanner with region-less target
+//   throw TypeError (escapeTerminalControls(undefined) calls undefined.replace).
+//   Tests that exercise only the sensitiveTargets predicate pass at runtime.
+
+describe("Decision 1 — region becomes optional on M3LDestructiveTarget", () => {
+  // region is now optional on M3LDestructiveTarget — this assignment compiles
+  // without a cast now that the interface ships `region?: string`.
+  const REGION_LESS_TARGET: M3LDestructiveTarget = {
+    profile: "staging",
+    // region intentionally omitted — this is the contract under test
+  };
+
+  // -------------------------------------------------------------------------
+  // sensitiveTargets matching semantics with optional region
+  // -------------------------------------------------------------------------
+
+  describe("sensitiveTargets — matching semantics with region-less target", () => {
+    test("regions spec does NOT match a target whose region is omitted — mirrors the accountIds+omitted-accountId behaviour", () => {
+      // Runtime: passes even in RED — includes(undefined) returns false on string[]
+      // Typecheck: fails in RED — region is still required on M3LDestructiveTarget
+      const predicate = sensitiveTargets({
+        regions: ["us-east-1", "eu-west-1"],
+      });
+      expect(predicate(REGION_LESS_TARGET)).toBe(false);
+    });
+
+    test("profiles spec still matches a region-less target — profile matching is region-agnostic", () => {
+      // Runtime: passes in RED — profile comparison does not touch region
+      // Typecheck: fails in RED (same REGION_LESS_TARGET diagnostic)
+      const predicate = sensitiveTargets({ profiles: ["staging"] });
+      expect(predicate(REGION_LESS_TARGET)).toBe(true);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Escalated echo with region-less sensitive target
+  // -------------------------------------------------------------------------
+
+  describe("escalated echo with region-less sensitive target", () => {
+    test("region-less sensitive target enters typed-echo path and resolves on profile match", async () => {
+      // Runtime RED: TypeError in buildTargetBanner (escapeTerminalControls(undefined))
+      // Runtime GREEN: resolves after profile "staging" matches
+      // Typecheck RED: TS2741 on REGION_LESS_TARGET
+      const { prompt, logger } = makePromptAndLogger();
+      const text = vi.spyOn(prompt, "text").mockResolvedValue("staging");
+      // confirm returns false: if unimplemented path falls to confirm, it would throw;
+      // in GREEN the correct path calls text (returns "staging"), matches, resolves.
+      vi.spyOn(prompt, "confirm").mockResolvedValue(false);
+
+      await expect(
+        confirmDestructive({
+          prompt,
+          logger,
+          description: "delete staging cluster",
+          yes: false,
+          code: "ERR_D1_ABORTED",
+          target: REGION_LESS_TARGET,
+          isSensitiveTarget: sensitiveTargets({ profiles: ["staging"] }),
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(text).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Banner degradation
+  // -------------------------------------------------------------------------
+
+  describe("banner degrades gracefully — region= fragment present iff region is supplied", () => {
+    test("banner omits region= fragment when region is absent — only profile= rendered", async () => {
+      // Runtime RED: TypeError from escapeTerminalControls(undefined) in buildTargetBanner
+      // Runtime GREEN: banner contains "profile=staging" and no "region=" substring
+      // Typecheck RED: TS2741 on REGION_LESS_TARGET
+      const { prompt, logger } = makePromptAndLogger();
+      const text = vi.spyOn(prompt, "text").mockResolvedValue("staging");
+      vi.spyOn(prompt, "confirm").mockResolvedValue(false);
+
+      await confirmDestructive({
+        prompt,
+        logger,
+        description: "delete staging cluster",
+        yes: false,
+        code: "ERR_D1_ABORTED",
+        target: REGION_LESS_TARGET,
+        isSensitiveTarget: alwaysSensitive,
+      });
+
+      expect(text).toHaveBeenCalledTimes(1);
+      const msg = text.mock.calls[0]?.[0] as string;
+      expect(msg).toContain("profile=staging");
+      expect(msg).not.toContain("region=");
+    });
+
+    test("banner renders both profile= and region= when region is present", async () => {
+      // This test passes in RED at runtime (region is present; existing path unchanged)
+      // Typecheck: passes in RED (the object literal satisfies the current type)
+      const { prompt, logger } = makePromptAndLogger();
+      const text = vi.spyOn(prompt, "text").mockResolvedValue("staging");
+      vi.spyOn(prompt, "confirm").mockResolvedValue(false);
+
+      await confirmDestructive({
+        prompt,
+        logger,
+        description: "delete staging cluster",
+        yes: false,
+        code: "ERR_D1_ABORTED",
+        target: { profile: "staging", region: "eu-west-1" },
+        isSensitiveTarget: alwaysSensitive,
+      });
+
+      const msg = text.mock.calls[0]?.[0] as string;
+      expect(msg).toContain("profile=staging");
+      expect(msg).toContain("region=eu-west-1");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // State-3 bypass warning with region-less target
+  // -------------------------------------------------------------------------
+
+  describe("state-3 bypass warning with region-less target", () => {
+    test("bypass warning omits region= fragment when region is absent", async () => {
+      // Runtime RED: TypeError from escapeTerminalControls(undefined) in buildTargetBanner
+      // Runtime GREEN: warning contains "staging" but no "region=" substring
+      // Typecheck RED: TS2741 on REGION_LESS_TARGET
+      const { prompt, logger } = makePromptAndLogger();
+      const warning = vi.spyOn(logger, "warning");
+
+      await confirmDestructive({
+        prompt,
+        logger,
+        description: "nuke staging",
+        yes: true,
+        yesSensitive: true,
+        code: "ERR_D1_ABORTED",
+        target: REGION_LESS_TARGET,
+        isSensitiveTarget: alwaysSensitive,
+      });
+
+      expect(warning).toHaveBeenCalledTimes(1);
+      const msg = warning.mock.calls[0]?.[0] as string;
+      expect(msg).toContain("staging");
+      expect(msg).not.toContain("region=");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Type-level contract for optional region
+  // -------------------------------------------------------------------------
+
+  describe("type-level contract — region optional, profile required", () => {
+    test("{ profile } alone satisfies M3LDestructiveTarget — region is optional in the new contract", () => {
+      // In RED: typecheck fails — M3LDestructiveTarget.region is still required,
+      // so { profile: string } is not assignable to M3LDestructiveTarget (TS2344).
+      // In GREEN: region is optional → passes.
+      expectTypeOf<{ profile: string }>().toMatchTypeOf<M3LDestructiveTarget>();
+    });
+
+    test("object without profile does not satisfy M3LDestructiveTarget — profile stays required in both contracts", () => {
+      // @ts-expect-error -- { region?: string } missing profile must never satisfy M3LDestructiveTarget; valid in RED and GREEN
+      const _invalid: M3LDestructiveTarget = { region: "us-east-1" };
+      // Runtime assertion just to make the test non-empty; the contract check is the @ts-expect-error above.
+      expect(_invalid).toBeDefined();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Decision 2 — a blank echo token FAILS CLOSED
+// ---------------------------------------------------------------------------
+//
+// Contract change: in runEscalatedEcho, a blank or whitespace-only profile
+// must never match any input. The current comparison `input.trim() !== target.profile`
+// lets empty input confirm a blank profile ("".trim() === "" → resolves).
+// Fix direction: add a guard that rejects a blank token BEFORE the comparison,
+// so the comparison guard is still run after prompt.text — no short-circuit.
+//
+// RED signals (runtime):
+// - All tests with profile="" fail: function resolves (no throw) instead of throwing.
+// - Tests with profile="   " already pass (trim never equals "   ").
+// - "prompt.text IS called" test passes in both RED and GREEN.
+
+describe("Decision 2 — blank echo token fails closed", () => {
+  const DESCRIPTION = "delete all prod data";
+  const CODE = "ERR_BLANK_PROFILE";
+
+  // Helper to invoke confirmDestructive on a sensitive target with a given profile.
+  // Callers mock prompt.text to control what the simulated user types.
+  async function attemptWithBlankProfile(
+    profile: string,
+    prompt: M3LPrompt,
+    logger: M3LLogger,
+  ): Promise<void> {
+    return confirmDestructive({
+      prompt,
+      logger,
+      description: DESCRIPTION,
+      yes: false,
+      code: CODE,
+      target: { profile, region: "us-east-1" },
+      isSensitiveTarget: alwaysSensitive,
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Blank profile — "" (the specific hole)
+  // -------------------------------------------------------------------------
+
+  describe('blank profile ""', () => {
+    test('empty input "" cannot satisfy a blank profile — throws aborted error', async () => {
+      // RED: "".trim() === "" → resolves (bug) → rejects assertion fails
+      // GREEN: blank-token guard fires → throws M3LError
+      const { prompt, logger } = makePromptAndLogger();
+      vi.spyOn(prompt, "text").mockResolvedValue("");
+      // confirm returns true: if impl falls through to confirm-path and resolves,
+      // the rejects assertion fails, proving the bug is present.
+      vi.spyOn(prompt, "confirm").mockResolvedValue(true);
+
+      let thrown: unknown;
+      try {
+        await attemptWithBlankProfile("", prompt, logger);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).message).toBe(`aborted: ${DESCRIPTION}`);
+      expect((thrown as M3LError).code).toBe(CODE);
+    });
+
+    test('whitespace input "   " cannot satisfy a blank profile — throws aborted error', async () => {
+      // RED: "   ".trim() === "" === "" → resolves (bug)
+      // GREEN: blank-token guard fires → throws M3LError
+      const { prompt, logger } = makePromptAndLogger();
+      vi.spyOn(prompt, "text").mockResolvedValue("   ");
+      vi.spyOn(prompt, "confirm").mockResolvedValue(true);
+
+      let thrown: unknown;
+      try {
+        await attemptWithBlankProfile("", prompt, logger);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).message).toBe(`aborted: ${DESCRIPTION}`);
+      expect((thrown as M3LError).code).toBe(CODE);
+    });
+
+    test("input equal to the raw blank profile cannot confirm — the specific hole being closed", async () => {
+      // This test encodes the exact hole: raw blank profile + equal raw input resolves today.
+      // The fix: a blank token makes confirmation impossible regardless of what input was typed.
+      // RED: "".trim() === "" → resolves (bug). GREEN: throws.
+      const { prompt, logger } = makePromptAndLogger();
+      const RAW_BLANK = "";
+      vi.spyOn(prompt, "text").mockResolvedValue(RAW_BLANK);
+      vi.spyOn(prompt, "confirm").mockResolvedValue(true);
+
+      await expect(
+        attemptWithBlankProfile(RAW_BLANK, prompt, logger),
+      ).rejects.toBeInstanceOf(M3LError);
+    });
+
+    test("thrown message is exactly 'aborted: <raw description>' — no target fields leak in", async () => {
+      // RED: resolves (no throw) → rejects assertion fails, proving the hole
+      const { prompt, logger } = makePromptAndLogger();
+      vi.spyOn(prompt, "text").mockResolvedValue("anything");
+      vi.spyOn(prompt, "confirm").mockResolvedValue(true);
+
+      await expect(
+        attemptWithBlankProfile("", prompt, logger),
+      ).rejects.toMatchObject({
+        message: `aborted: ${DESCRIPTION}`,
+        code: CODE,
+      });
+    });
+
+    test("prompt.text IS still called — fix must be a comparison guard, not an early throw that skips the prompt", async () => {
+      // This test passes in BOTH RED and GREEN: prompt.text is called before the
+      // (missing in RED, present in GREEN) blank-token guard. A fix that short-circuits
+      // before prompt.text would make this test fail in GREEN, surfacing the wrong approach.
+      const { prompt, logger } = makePromptAndLogger();
+      const text = vi.spyOn(prompt, "text").mockResolvedValue("");
+      vi.spyOn(prompt, "confirm").mockResolvedValue(true);
+
+      try {
+        await attemptWithBlankProfile("", prompt, logger);
+      } catch {
+        // Either the bug (resolves in RED) or the fix (throws in GREEN) — we only verify text was called.
+      }
+
+      expect(text).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Whitespace-only profile — "   " (three spaces)
+  // -------------------------------------------------------------------------
+
+  describe('whitespace-only profile "   "', () => {
+    const WS_PROFILE = "   ";
+
+    test('empty input "" cannot satisfy a whitespace-only profile — throws aborted error', async () => {
+      // Passes in RED already: "".trim() === "" !== "   " → throws (existing comparison catches it)
+      // GREEN: blank-token guard also catches it (belt-and-suspenders)
+      const { prompt, logger } = makePromptAndLogger();
+      vi.spyOn(prompt, "text").mockResolvedValue("");
+      vi.spyOn(prompt, "confirm").mockResolvedValue(true);
+
+      let thrown: unknown;
+      try {
+        await attemptWithBlankProfile(WS_PROFILE, prompt, logger);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).message).toBe(`aborted: ${DESCRIPTION}`);
+    });
+
+    test('input equal to the raw whitespace-only profile "   " cannot confirm — no input satisfies a blank token', async () => {
+      // Passes in RED: "   ".trim() === "" !== "   " → throws (existing comparison catches it)
+      // GREEN: blank-token guard fires before comparison
+      const { prompt, logger } = makePromptAndLogger();
+      vi.spyOn(prompt, "text").mockResolvedValue(WS_PROFILE);
+      vi.spyOn(prompt, "confirm").mockResolvedValue(true);
+
+      await expect(
+        attemptWithBlankProfile(WS_PROFILE, prompt, logger),
+      ).rejects.toBeInstanceOf(M3LError);
+    });
+
+    test("prompt.text IS called for whitespace-only profile — fix must not short-circuit before prompting", async () => {
+      // Passes in RED and GREEN: text is called in the existing code path too.
+      const { prompt, logger } = makePromptAndLogger();
+      const text = vi.spyOn(prompt, "text").mockResolvedValue(WS_PROFILE);
+      vi.spyOn(prompt, "confirm").mockResolvedValue(true);
+
+      try {
+        await attemptWithBlankProfile(WS_PROFILE, prompt, logger);
+      } catch {
+        // We only care that text was called, not whether the function threw or resolved.
+      }
+
+      expect(text).toHaveBeenCalledTimes(1);
+    });
   });
 });

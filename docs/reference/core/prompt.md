@@ -35,7 +35,7 @@ Public surface (`prompt/index.ts`):
   destructive action depending on a caller-supplied `yes` flag, graded by the
   target the action is pointed at.
 - `M3LDestructiveTarget` — the resolved identity a destructive action is pointed
-  at: `{ profile, region, accountId? }`. `M3LScript.awsTarget` returns this shape.
+  at: `{ profile, region?, accountId? }`. `M3LScript.awsTarget` returns this shape.
 - `M3LDestructiveTargetPredicate` — `(target: M3LDestructiveTarget) => boolean`,
   the caller-owned sensitivity classification.
 - `sensitiveTargets`, `M3LSensitiveTargetSpec` — a factory building the common
@@ -100,7 +100,7 @@ A standalone function (not a method on `M3LPrompt`) that gates a destructive act
 
 Per [ADR-0048](../../adr/0048-target-graded-destructive-confirmation.md), a caller may supply the resolved target identity together with a policy that classifies it:
 
-- `target?: M3LDestructiveTarget` — `{ profile, region, accountId? }`, the resolved identity the action is pointed at. `M3LScript.awsTarget` returns exactly this shape.
+- `target?: M3LDestructiveTarget` — `{ profile, region?, accountId? }`, the resolved identity the action is pointed at. Only `profile` is required: `aws.region` is optional in most consumer scripts, so requiring a region would silently disable grading for them. `M3LScript.awsTarget` returns exactly this shape.
 - `isSensitiveTarget?: M3LDestructiveTargetPredicate` — `(target) => boolean`, the caller-owned classification. Build the common declarative case with `sensitiveTargets({ profiles, regions, accountIds })`, or supply any predicate.
 - `yesSensitive?: boolean` — the separately-named opt-in that bypasses a **sensitive** target. Deliberately distinct from `yes`: a flag added for convenience on routine work must not silently carry the same authority on the most consequential target.
 
@@ -120,9 +120,11 @@ A sensitive bypass requires **both** flags. `yesSensitive` alone never bypasses,
 
 A sensitive target is confirmed by **typing the target profile**, not by a keypress:
 
-1. A banner names the target — `profile`, `region`, and `accountId` when present — alongside the description, so the operator confirms against the blast radius rather than the verb alone.
+1. A banner names the target — `profile`, plus `region` and `accountId` when present — alongside the description, so the operator confirms against the blast radius rather than the verb alone. The banner degrades gracefully, omitting the fragment for any absent field.
 2. `prompt.text` asks for the target profile.
 3. The input, trimmed, is compared against the profile. An exact match resolves; a mismatch or empty input throws the same `aborted: <description>` `M3LError` a decline throws, carrying the caller-supplied `code`.
+
+**A blank echo token fails closed.** `target` is caller-supplied, so a hand-built target can carry a blank or whitespace-only `profile`. Such a token can never be echoed successfully — **no** input satisfies it, so the gate always declines. Without this, an empty input would compare equal to an empty profile and a single keystroke would confirm a sensitive target. The operator is still prompted; the confirmation simply cannot succeed, which fails in the safe direction: a sensitive target with no usable echo token is unusable rather than trivially confirmable. (`M3LScript.awsTarget` never produces this — it treats an empty resolved profile as absent.)
 
 A yes/no keypress cannot be carried through this step by muscle memory, which is the point of the escalation.
 
