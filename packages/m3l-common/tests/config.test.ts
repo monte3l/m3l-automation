@@ -86,6 +86,7 @@ import {
   M3LConfigProvider,
   M3LConfigReader,
   M3LConfigSchema,
+  M3LConfigSchemaValidators,
   M3LConfigValidationError,
   M3LConfigValidators,
   M3LEnvironmentConfigProvider,
@@ -3444,5 +3445,239 @@ describe("M3LConfigHelpFormatter", () => {
     expectTypeOf(
       new M3LConfigHelpFormatter().format,
     ).returns.toEqualTypeOf<string>();
+  });
+});
+
+// =============================================================================
+// M3LConfigSchemaValidators — stock schema-level validator factory object.
+// Spec: docs/reference/core/config.md "Stock schema validators" section and
+// the surrounding "Cross-parameter validation" / "When schema-level validation
+// runs" sections.
+// RED until M3LConfigSchemaValidators is exported from
+// packages/m3l-common/src/core/config/M3LConfigSchemaValidator.ts.
+// =============================================================================
+describe("M3LConfigSchemaValidators", () => {
+  describe("requires(dependent, required)", () => {
+    test("dependent unset → returns true (vacuous: required is irrelevant)", () => {
+      const validator = M3LConfigSchemaValidators.requires(
+        "yesSensitive",
+        "yes",
+      );
+      const config = new M3LConfig();
+      // "yesSensitive" is not set — constraint is vacuous
+      expect(validator(config)).toBe(true);
+    });
+
+    test("both dependent and required unset → returns true", () => {
+      const validator = M3LConfigSchemaValidators.requires(
+        "yesSensitive",
+        "yes",
+      );
+      const config = new M3LConfig();
+      // neither parameter is set
+      expect(validator(config)).toBe(true);
+    });
+
+    test("dependent set and required set → returns true", () => {
+      const validator = M3LConfigSchemaValidators.requires(
+        "yesSensitive",
+        "yes",
+      );
+      const config = new M3LConfig();
+      config.set("yesSensitive", "true");
+      config.set("yes", "true");
+      expect(validator(config)).toBe(true);
+    });
+
+    test("dependent set and required unset → returns exact reason string", () => {
+      const validator = M3LConfigSchemaValidators.requires(
+        "yesSensitive",
+        "yes",
+      );
+      const config = new M3LConfig();
+      config.set("yesSensitive", "true");
+      // "yes" is not set
+      const result = validator(config);
+      expect(result).toBe("'yesSensitive' requires 'yes' to be set");
+    });
+
+    test("reason string uses the parameter names passed to requires(), not hardcoded text", () => {
+      // Different parameter names — ensure the factory embeds the exact
+      // strings passed to requires(), not any hardcoded alternative.
+      const validator = M3LConfigSchemaValidators.requires("sort", "limit");
+      const config = new M3LConfig();
+      config.set("sort", "asc");
+      // "limit" is not set
+      const result = validator(config);
+      expect(result).toBe("'sort' requires 'limit' to be set");
+    });
+
+    test("reason never embeds the dependent parameter's value (secret-safety discipline)", () => {
+      // A secret value passed as the dependent must never appear in the reason.
+      const secretValue = "s3cr3t-token-value";
+      const validator = M3LConfigSchemaValidators.requires(
+        "yesSensitive",
+        "yes",
+      );
+      const config = new M3LConfig();
+      config.set("yesSensitive", secretValue);
+      // "yes" is not set — triggers the failure reason
+      const result = validator(config);
+      expect(typeof result).toBe("string");
+      expect(result as string).not.toContain(secretValue);
+    });
+
+    test("reason never embeds any resolved value — describes the constraint only", () => {
+      // The returned string must describe the constraint (parameter names),
+      // never echo the actual stored value for any parameter it reads.
+      const validator = M3LConfigSchemaValidators.requires("sort", "limit");
+      const config = new M3LConfig();
+      config.set("sort", "desc-s3cr3t");
+      // "limit" is unset — failure reason must not contain the sort value
+      const result = validator(config);
+      expect(typeof result).toBe("string");
+      expect(result as string).not.toContain("desc-s3cr3t");
+    });
+  });
+
+  describe("integration: used inside M3LConfigSchema.validate()", () => {
+    test("schema.validate throws M3LConfigValidationError (ERR_CONFIG_VALIDATION) when dependent is set without required", () => {
+      const schema = new M3LConfigSchema(
+        [],
+        [M3LConfigSchemaValidators.requires("yesSensitive", "yes")],
+      );
+      const config = new M3LConfig();
+      config.set("yesSensitive", "true");
+      // "yes" is not set
+
+      let thrown: unknown;
+      try {
+        schema.validate(config);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LConfigValidationError);
+      expect((thrown as M3LConfigValidationError).code).toBe(
+        "ERR_CONFIG_VALIDATION",
+      );
+      expect((thrown as M3LConfigValidationError).context).toEqual({
+        validatorIndex: 0,
+        reason: "'yesSensitive' requires 'yes' to be set",
+      });
+    });
+
+    test("schema.validate does not throw when both dependent and required are set", () => {
+      const schema = new M3LConfigSchema(
+        [],
+        [M3LConfigSchemaValidators.requires("yesSensitive", "yes")],
+      );
+      const config = new M3LConfig();
+      config.set("yesSensitive", "true");
+      config.set("yes", "true");
+
+      expect(() => {
+        schema.validate(config);
+      }).not.toThrow();
+    });
+
+    test("schema.validate does not throw when dependent is unset (vacuous pass)", () => {
+      const schema = new M3LConfigSchema(
+        [],
+        [M3LConfigSchemaValidators.requires("yesSensitive", "yes")],
+      );
+      const config = new M3LConfig();
+      // neither parameter is set
+
+      expect(() => {
+        schema.validate(config);
+      }).not.toThrow();
+    });
+
+    test("composes with a hand-written validator in the same array; fail-fast on requires() when listed first", () => {
+      const handWritten = vi.fn(
+        (_cfg: M3LConfig): true | string => "hand-written failure",
+      );
+      const schema = new M3LConfigSchema(
+        [],
+        [
+          M3LConfigSchemaValidators.requires("yesSensitive", "yes"),
+          handWritten,
+        ],
+      );
+      const config = new M3LConfig();
+      config.set("yesSensitive", "true");
+      // "yes" is not set — requires() fires first
+
+      let thrown: unknown;
+      try {
+        schema.validate(config);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LConfigValidationError);
+      expect((thrown as M3LConfigValidationError).context).toEqual({
+        validatorIndex: 0,
+        reason: "'yesSensitive' requires 'yes' to be set",
+      });
+      // fail-fast: the hand-written validator after it never runs
+      expect(handWritten).not.toHaveBeenCalled();
+    });
+
+    test("a requires() validator listed after a passing validator carries its own validatorIndex", () => {
+      const schema = new M3LConfigSchema(
+        [],
+        [
+          (): true | string => true,
+          M3LConfigSchemaValidators.requires("sort", "limit"),
+        ],
+      );
+      const config = new M3LConfig();
+      config.set("sort", "asc");
+      // "limit" is not set — second validator fires
+
+      let thrown: unknown;
+      try {
+        schema.validate(config);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LConfigValidationError);
+      expect((thrown as M3LConfigValidationError).context).toEqual({
+        validatorIndex: 1,
+        reason: "'sort' requires 'limit' to be set",
+      });
+    });
+  });
+
+  describe("type-level", () => {
+    test("requires() return type is assignable to M3LConfigSchemaValidator", () => {
+      expectTypeOf(
+        M3LConfigSchemaValidators.requires("a", "b"),
+      ).toEqualTypeOf<M3LConfigSchemaValidator>();
+    });
+
+    test("M3LConfigSchemaValidator return type is true | string (a plain boolean-returning predicate is not assignable)", () => {
+      // true | string means a stray `false` can never be mistaken for "valid".
+      // A boolean-returning predicate must NOT be assignable.
+      expectTypeOf<
+        (config: M3LConfig) => boolean
+      >().not.toMatchTypeOf<M3LConfigSchemaValidator>();
+      // The canonical return type is exactly true | string
+      expectTypeOf<M3LConfigSchemaValidator>().toEqualTypeOf<
+        (config: M3LConfig) => true | string
+      >();
+    });
+
+    test("M3LConfigSchemaValidators.requires is typed as a two-parameter factory returning M3LConfigSchemaValidator", () => {
+      expectTypeOf(M3LConfigSchemaValidators.requires).parameters.toEqualTypeOf<
+        [dependent: string, required: string]
+      >();
+      expectTypeOf(
+        M3LConfigSchemaValidators.requires,
+      ).returns.toEqualTypeOf<M3LConfigSchemaValidator>();
+    });
   });
 });
