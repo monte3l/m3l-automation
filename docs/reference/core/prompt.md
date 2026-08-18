@@ -101,7 +101,8 @@ A standalone function (not a method on `M3LPrompt`) that gates a destructive act
 Per [ADR-0048](../../adr/0048-target-graded-destructive-confirmation.md), a caller may supply the resolved target identity together with a policy that classifies it:
 
 - `target?: M3LDestructiveTarget` — `{ profile, region?, accountId? }`, the resolved identity the action is pointed at. Only `profile` is required: `aws.region` is optional in most consumer scripts, so requiring a region would silently disable grading for them. `M3LScript.awsTarget` returns exactly this shape.
-- `isSensitiveTarget?: M3LDestructiveTargetPredicate` — `(target) => boolean`, the caller-owned classification. Build the common declarative case with `sensitiveTargets({ profiles, regions, accountIds })`, or supply any predicate.
+- `isSensitiveTarget?: M3LDestructiveTargetPredicate` — `(target) => boolean`, the caller-owned classification. Any **truthy** return grades the target sensitive; only a falsy return takes the ungraded path, so a mis-typed predicate escalates rather than silently downgrading. Build the common declarative case with `sensitiveTargets({ profiles, regions, accountIds })`, or supply any predicate.
+  - `sensitiveTargets` matching is **OR** across the three lists — a target is sensitive if _any_ supplied list contains the corresponding field. A field that is **absent** on the target is never matched, so a `regions`-only spec never grades a region-less target, and an `accountIds`-only spec never grades a target without an `accountId`. An all-omitted spec (`{}`) matches **nothing** — a silently inert policy, so supply at least one list.
 - `yesSensitive?: boolean` — the separately-named opt-in that bypasses a **sensitive** target. Deliberately distinct from `yes`: a flag added for convenience on routine work must not silently carry the same authority on the most consequential target.
 
 A target counts as **sensitive** when `target` is supplied **and** `isSensitiveTarget(target)` returns `true`. The five resulting states:
@@ -116,7 +117,7 @@ A target counts as **sensitive** when `target` is supplied **and** `isSensitiveT
 
 A sensitive bypass requires **both** flags. `yesSensitive` alone never bypasses, so the parse-time rule pairing them (`M3LConfigSchemaValidators.requires("yesSensitive", "yes")`) states a real requirement of this function rather than a convention layered over it.
 
-#### The escalated prompt (state 5)
+#### The escalated prompt (states 4 and 5)
 
 A sensitive target is confirmed by **typing the target profile**, not by a keypress:
 
@@ -136,7 +137,7 @@ A yes/no keypress cannot be carried through this step by muscle memory, which is
 - **Confirmed** (`yes: false`, `prompt.confirm` resolves `true`) — prompts with `Confirm: <description>?` and resolves normally once confirmed.
 - **Declined** (`yes: false`, `prompt.confirm` resolves `false`) — throws an `M3LError` (`aborted: <description>`) carrying the caller-supplied `code` verbatim.
 
-A rejection from `prompt.confirm` (e.g. the adapter throws on a cancelled prompt) propagates unchanged and is never converted into the `aborted` error — callers that need to distinguish an explicit decline from a cancelled/failed prompt can rely on this passthrough. A rejection from `prompt.text` in state 5 propagates the same way.
+A rejection from `prompt.confirm` (e.g. the adapter throws on a cancelled prompt) propagates unchanged and is never converted into the `aborted` error — callers that need to distinguish an explicit decline from a cancelled/failed prompt can rely on this passthrough. A rejection from `prompt.text` propagates the same way.
 
 #### Not an authorization control
 

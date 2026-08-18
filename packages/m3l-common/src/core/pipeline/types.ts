@@ -235,8 +235,8 @@ export interface M3LPipelineDestructiveOptions<
    * Called with the same four arguments as {@link describe} — including the
    * same by-reference `context` value. When absent, the gate runs without
    * target-graded escalation; when supplied, the result is forwarded to
-   * {@link https://m3l-automation.internal/core/prompt | confirmDestructive}
-   * together with {@link isSensitiveTarget} and {@link yesSensitive}.
+   * {@link confirmDestructive} together with {@link isSensitiveTarget} and
+   * {@link yesSensitive}.
    *
    * A throw from this callback propagates unchanged and skips the prompt
    * and the handler, exactly as a throw from {@link describe} does.

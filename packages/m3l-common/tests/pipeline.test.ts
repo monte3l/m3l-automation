@@ -3095,6 +3095,147 @@ describe("core/pipeline", () => {
       expect(handler).not.toHaveBeenCalled();
     });
 
+    // -----------------------------------------------------------------------
+    // Finding 2 — throwing isSensitiveTarget misclassified as a decline
+    //
+    // isSensitiveTarget is called INSIDE confirmDestructive which is inside
+    // #runGate's try/catch.  The catch absorbs any M3LError whose code
+    // matches abortCode.  Under soft-land, such an error is returned as
+    // { status: "declined" } instead of propagating — the real cause is lost
+    // and the operator is never prompted.
+    //
+    // Under onDecline:throw the error also hits the catch, but is re-thrown,
+    // so that branch is already correct.  Both branches are tested here for
+    // documentation and regression protection.
+    //
+    // RED: TG-SF-P2 (soft-land) FAILS — run resolves with "declined".
+    // GREEN: error propagates reference-identically in both branches.
+    // -----------------------------------------------------------------------
+    test("TG-SF-P1 isSensitiveTarget throwing M3LError with abortCode under onDecline:throw — propagates reference-identically (control, passes in RED)", async () => {
+      const predicateError = new M3LError("predicate blew up", {
+        code: "ERR_TEST_ABORTED",
+      });
+      const { deps, config, confirmMock, inputMock } = makeTargetHarness({});
+      config.set("operation", "write");
+      const handler = vi.fn(() => Promise.resolve({ processed: 0 }));
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        destructive: {
+          operations: new Set(["write"]),
+          describe: () => "destroy",
+          yes: () => false,
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: { kind: "throw" },
+          target: () => PROD_TARGET,
+          isSensitiveTarget: () => {
+            throw predicateError;
+          },
+        },
+        handlers: { read: handler, write: handler },
+      });
+
+      await expect(pipeline.run(deps)).rejects.toBe(predicateError);
+      expect(confirmMock).not.toHaveBeenCalled();
+      expect(inputMock).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    test("TG-SF-P2 isSensitiveTarget throwing M3LError with abortCode under soft-land — propagates, NOT returned as declined [FINDING 2 — RED]", async () => {
+      // RED: the catch in #runGate absorbs the M3LError (code matches abortCode),
+      // soft-land policy fires, and run resolves with { status: "declined" }.
+      // The .rejects.toBe(...) assertion therefore fails in RED.
+      // GREEN: the error is re-thrown before the soft-land branch is reached.
+      const predicateError = new M3LError("predicate blew up", {
+        code: "ERR_TEST_ABORTED",
+      });
+      const { deps, config, confirmMock, inputMock } = makeTargetHarness({});
+      config.set("operation", "write");
+      const handler = vi.fn(() => Promise.resolve({ processed: 0 }));
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        destructive: {
+          operations: new Set(["write"]),
+          describe: () => "destroy",
+          yes: () => false,
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: {
+            kind: "soft-land",
+            result: () => ({ processed: 0 }),
+          },
+          target: () => PROD_TARGET,
+          isSensitiveTarget: () => {
+            throw predicateError;
+          },
+        },
+        handlers: { read: handler, write: handler },
+      });
+
+      await expect(pipeline.run(deps)).rejects.toBe(predicateError);
+      expect(confirmMock).not.toHaveBeenCalled();
+      expect(inputMock).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    test("TG-SF-P3 isSensitiveTarget throwing a plain Error propagates reference-identically (control — plain Error is never absorbed)", async () => {
+      const predicateError = new Error("plain predicate error");
+      const { deps, config, confirmMock, inputMock } = makeTargetHarness({});
+      config.set("operation", "write");
+      const handler = vi.fn(() => Promise.resolve({ processed: 0 }));
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        destructive: {
+          operations: new Set(["write"]),
+          describe: () => "destroy",
+          yes: () => false,
+          abortCode: "ERR_TEST_ABORTED",
+          onDecline: {
+            kind: "soft-land",
+            result: () => ({ processed: 0 }),
+          },
+          target: () => PROD_TARGET,
+          isSensitiveTarget: () => {
+            throw predicateError;
+          },
+        },
+        handlers: { read: handler, write: handler },
+      });
+
+      await expect(pipeline.run(deps)).rejects.toBe(predicateError);
+      expect(confirmMock).not.toHaveBeenCalled();
+      expect(inputMock).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+    });
+
     describe("type-level", () => {
       test("TG-T1 existing destructive config without target/isSensitiveTarget/yesSensitive is still well-typed (backwards compat)", () => {
         const destructive: M3LPipelineDestructiveOptions<

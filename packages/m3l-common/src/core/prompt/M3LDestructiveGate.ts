@@ -203,6 +203,16 @@ export interface M3LConfirmDestructiveOptions {
    * Caller-owned policy that classifies {@link target} as sensitive.
    * Only consulted when {@link target} is supplied; never called when
    * `target` is absent.
+   *
+   * A **truthy** return value (including non-`true` values such as `1`,
+   * `"yes"`, or `{}`) escalates to the sensitive path. Only a **falsy**
+   * return means "not sensitive". This deliberate asymmetry means the
+   * sensitivity check fails closed: a predicate accidentally returning a
+   * truthy non-`true` value escalates rather than bypassing.
+   *
+   * The companion {@link yesSensitive} bypass uses strict `=== true` — do
+   * **not** "harmonise" the two checks: one fails closed on truthiness,
+   * the other bypasses only on exact `true`.
    */
   readonly isSensitiveTarget?: M3LDestructiveTargetPredicate;
   /**
@@ -236,14 +246,17 @@ function buildTargetBanner(target: M3LDestructiveTarget): string {
  * Runs the escalated typed-echo prompt for a sensitive target (states 4 and
  * 5). A rejection from `prompt.text` propagates unchanged.
  *
- * The echo token is the **raw** `target.profile` (untrimmed), so a profile
- * containing leading/trailing whitespace is confirmable by typing it exactly.
- * A blank or whitespace-only profile (`token.trim().length === 0`) is treated
- * as an unsatisfiable token — no input can ever match it, and the gate always
- * throws the standard decline error. This is a safety property: a hand-built
- * `{ profile: "" }` target must never be confirmable via an empty keystroke.
- * `prompt.text` is still called first so the operator is always prompted;
- * the confirmation simply cannot succeed when the profile is blank.
+ * The echo token is the **raw** `target.profile`. A profile whose trimmed
+ * form is non-empty is confirmable only when the trimmed input equals the raw
+ * profile exactly. A profile with leading or trailing whitespace is therefore
+ * **unconfirmable** by any input — the trimmed input can never equal the raw
+ * whitespace-padded profile — which is intentional and stricter than "type it
+ * exactly". A blank or whitespace-only profile (`token.trim().length === 0`)
+ * is treated as an unsatisfiable token — no input can ever match it, and the
+ * gate always throws the standard decline error. This is a safety property: a
+ * hand-built `{ profile: "" }` target must never be confirmable via an empty
+ * keystroke. `prompt.text` is still called first so the operator is always
+ * prompted; the confirmation simply cannot succeed when the profile is blank.
  */
 async function runEscalatedEcho(
   target: M3LDestructiveTarget,
@@ -289,9 +302,13 @@ async function runEscalatedEcho(
  * **Escalated typed-echo (states 4 and 5):**
  * A banner naming `profile`, `region` (when present), and `accountId` (when
  * present) is shown alongside the description. `prompt.text` asks the operator
- * to type the target profile. The input is trimmed and compared against the
- * **raw** profile; an exact match resolves, a mismatch throws the same
- * `aborted: <description>` {@link M3LError}.
+ * to type the target profile. The input is trimmed before comparison; the
+ * comparison target is the **raw** profile. A profile whose trimmed form is
+ * non-empty is confirmable only when the trimmed input equals the raw profile
+ * exactly. A profile with leading or trailing whitespace is therefore
+ * **unconfirmable** by any input, which is intentional and stricter than
+ * "type it exactly". A mismatch throws the same `aborted: <description>`
+ * {@link M3LError}.
  *
  * A blank or whitespace-only profile (`target.profile.trim().length === 0`)
  * is an **unsatisfiable token**: no input can confirm it, and the gate always
@@ -367,7 +384,13 @@ export async function confirmDestructive(
   const { target } = deps;
 
   // States 1 & 2: no target, or target is not sensitive — existing ungraded path.
-  if (target === undefined || deps.isSensitiveTarget?.(target) !== true) {
+  // Truthy-escalates: any truthy return from isSensitiveTarget reaches the
+  // sensitive path; only a falsy return means "not sensitive" (fail-closed).
+  if (
+    target === undefined ||
+    deps.isSensitiveTarget === undefined ||
+    !deps.isSensitiveTarget(target)
+  ) {
     if (deps.yes) {
       deps.logger.warning(
         `destructive confirmation bypassed (yes=true): ${displayDescription}`,

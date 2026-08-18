@@ -286,6 +286,12 @@ default credential chain; there is no identity to grade on in that case, so
 direction: the gate falls back to its ungraded path rather than escalating
 against a blank profile that no typed echo could satisfy.
 
+It is `undefined` before stage 5 has run. Across warm Lambda invocations it
+survives alongside the memoized provider — `resetForInvocation` clears the
+config store but neither the provider nor the resolved target, and
+`provisionAws` early-returns on a warm provider — so the pair stays consistent
+and the target always describes the identity the live clients use.
+
 The resolved target is stored **atomically with the `AWSProvider`**, after the
 construction `try`/`catch`, so a run that fails with `M3LAWSProvisioningError`
 leaves neither set. Were it stored earlier, a later successful run would

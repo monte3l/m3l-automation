@@ -227,12 +227,24 @@ export class M3LOperationPipeline<
     }
     // A throw from target() propagates here, skipping confirmDestructive (TG-8).
     const target = destructive.target(operation, settings, context, deps);
+    if (destructive.isSensitiveTarget !== undefined) {
+      // Pre-compute the verdict here (outside the try/catch in #runGate) so a
+      // throwing predicate propagates before confirmDestructive is entered
+      // (TG-SF-P2). Forward a closure returning the pre-computed boolean so
+      // confirmDestructive never re-invokes the original predicate.
+      const isSensitive = destructive.isSensitiveTarget(target);
+      return {
+        ...base,
+        target,
+        isSensitiveTarget: () => isSensitive,
+        ...(destructive.yesSensitive !== undefined
+          ? { yesSensitive: destructive.yesSensitive(settings) }
+          : {}),
+      };
+    }
     return {
       ...base,
       target,
-      ...(destructive.isSensitiveTarget !== undefined
-        ? { isSensitiveTarget: destructive.isSensitiveTarget }
-        : {}),
       ...(destructive.yesSensitive !== undefined
         ? { yesSensitive: destructive.yesSensitive(settings) }
         : {}),

@@ -1219,3 +1219,144 @@ describe("Decision 2 — blank echo token fails closed", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Finding 1 — isSensitiveTarget truthiness guard (fail-OPEN, ADR-0048)
+//
+// The contract: the gate must escalate (call prompt.text, not bypass) whenever
+// isSensitiveTarget returns ANY truthy value, not only strict `true`.  The
+// current implementation uses `!== true`, so a predicate returning `1`, `"yes"`,
+// `{}`, or `[]` falls into the ungraded path — a security regression.
+//
+// RED: truthy non-true tests FAIL (bypass fires, text never called).
+// GREEN: truthiness check fires, text IS called.
+// ---------------------------------------------------------------------------
+
+describe("Finding 1 — isSensitiveTarget truthiness guard: truthy non-true return escalates", () => {
+  // -------------------------------------------------------------------------
+  // A: truthy non-`true` returns → must escalate (RED — will fail)
+  // -------------------------------------------------------------------------
+  test.each([
+    ["1 (number truthy)", 1],
+    ['"yes" (string truthy)', "yes"],
+    ["{} (object truthy)", {}],
+    ["[] (array truthy)", []],
+  ])(
+    "isSensitiveTarget returning %s with yes:true escalates instead of bypassing",
+    async (_label, value) => {
+      // Cast simulates an untyped JS consumer whose predicate returns a truthy
+      // non-boolean value.  The type is (target) => boolean; the cast is the
+      // narrowest possible and defends exactly the runtime pattern that triggers
+      // the fail-OPEN: an isSensitiveTarget that returns 1/"yes"/{}/[] from JS.
+      const isSensitiveTarget = (() =>
+        value) as unknown as M3LDestructiveTargetPredicate;
+      const { prompt, logger } = makePromptAndLogger();
+      // Return the profile so the escalated echo resolves successfully.
+      const text = vi
+        .spyOn(prompt, "text")
+        .mockResolvedValue(PROD_TARGET.profile);
+      const confirm = vi.spyOn(prompt, "confirm");
+      const warning = vi.spyOn(logger, "warning");
+
+      // RED: isSensitiveTarget() !== true → ungraded path → yes:true bypasses
+      //      via warning → text never called.  This assertion fails in RED.
+      // GREEN: truthiness check → escalates → text IS called.
+      await expect(
+        confirmDestructive({
+          prompt,
+          logger,
+          description: "nuke prod cluster",
+          yes: true,
+          code: "ERR_ABORTED",
+          target: PROD_TARGET,
+          isSensitiveTarget,
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(text).toHaveBeenCalled();
+      // No bypass warning must be emitted on the escalated path.
+      expect(warning).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // B: falsy returns → ungraded path (should already pass in RED)
+  //    Only a strictly falsy return means "not sensitive"; the gate DOES
+  //    correctly route these to the ungraded path even before the fix.
+  // -------------------------------------------------------------------------
+  test.each([
+    ["false", false],
+    ["0 (number)", 0],
+    ['""  (empty string)', ""],
+    ["undefined", undefined],
+    ["null", null],
+    ["NaN", NaN],
+  ])(
+    "isSensitiveTarget returning %s stays on the ungraded path (confirm IS called)",
+    async (_label, value) => {
+      // Same cast rationale: simulates JS consumer returning a falsy non-boolean.
+      const isSensitiveTarget = (() =>
+        value) as unknown as M3LDestructiveTargetPredicate;
+      const { prompt, logger } = makePromptAndLogger();
+      const confirm = vi.spyOn(prompt, "confirm").mockResolvedValue(true);
+      const text = vi.spyOn(prompt, "text");
+
+      await expect(
+        confirmDestructive({
+          prompt,
+          logger,
+          description: "nuke prod cluster",
+          yes: false,
+          code: "ERR_ABORTED",
+          target: PROD_TARGET,
+          isSensitiveTarget,
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(text).not.toHaveBeenCalled();
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // C: yesSensitive strict guard — `=== true` stays strict on the bypass side
+  //    A truthy non-`true` yesSensitive must NOT bypass; the escalated echo
+  //    must still run.  This direction uses a normally-true predicate so the
+  //    gate reaches the yesSensitive check.  Should PASS in RED (the === true
+  //    comparison for yesSensitive is already correct).
+  // -------------------------------------------------------------------------
+  test.each([
+    ["1 (number truthy)", 1],
+    ['"yes" (string truthy)', "yes"],
+  ])(
+    "yesSensitive set to truthy non-true %s does NOT bypass: escalated echo still runs",
+    async (_label, value) => {
+      const { prompt, logger } = makePromptAndLogger();
+      const text = vi
+        .spyOn(prompt, "text")
+        .mockResolvedValue(PROD_TARGET.profile);
+      const confirm = vi.spyOn(prompt, "confirm");
+      const warning = vi.spyOn(logger, "warning");
+
+      await expect(
+        confirmDestructive({
+          prompt,
+          logger,
+          description: "nuke prod cluster",
+          yes: true,
+          // Simulates a JS caller passing a truthy non-boolean.  yesSensitive is
+          // typed boolean so we need the narrowest cast.
+          yesSensitive: value as unknown as boolean,
+          code: "ERR_ABORTED",
+          target: PROD_TARGET,
+          isSensitiveTarget: alwaysSensitive,
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(text).toHaveBeenCalled();
+      expect(warning).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
+    },
+  );
+});

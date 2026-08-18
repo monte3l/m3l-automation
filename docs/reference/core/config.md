@@ -473,7 +473,11 @@ export const M3LConfigSchemaValidators: {
 
 `requires(dependent, required)` passes when `dependent` is unset, or when both
 are set; it fails with the reason `'<dependent>' requires '<required>' to be
-set`, naming the supported alternative rather than echoing either value. It
+set`, naming the supported alternative rather than echoing either value.
+"**Set**" means `config.get(name) !== undefined` — any stored value counts,
+including a falsy one (`false`, `0`, `""`) and a parameter not declared in the
+schema. So an explicitly-supplied `--flag=false` is _set_, and the constraint
+still fires. It
 follows the same curried shape as the per-parameter `M3LConfigValidators`
 factories, and the same secret-safety discipline: the reason string describes
 the constraint, never a value.
