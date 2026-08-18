@@ -31,8 +31,9 @@ Exported from `@m3l-automation/m3l-common/core` (the `script` sub-module):
 - `setProcessGuardRequestId`
 - `AWS_PROFILE_PARAM_NAME` / `AWS_REGION_PARAM_NAME` — the canonical config parameter names (`"aws.profile"` / `"aws.region"`) the AWS-provisioning seam looks up
 
-`M3LScript` additionally exposes five read accessors the wrapper uses to build
-a run report, all safe to call from consumer code: `metadata`, `correlationId`
+`M3LScript` additionally exposes seven read accessors the wrapper uses to build
+a run report (the five below plus `recovery`/`recoveryTotal`, covered under
+[Absorbed failures](#absorbed-failures-scriptreportrecovery)), all safe to call from consumer code: `metadata`, `correlationId`
 (`undefined` before the first run), `getLastFailureStage()` (the stage that
 was in progress when the most recent run threw; `undefined` on a fresh script
 and after a success), `configSchema` (the constructor-supplied
@@ -145,7 +146,9 @@ function runScript(
 3. **On failure:** logs the error via `logger.errorFrom` (code, context, and the
    full cause chain), sets `process.exitCode` from `mapErrorToExitCode`, then
    writes the failure run report.
-4. **On success:** writes the success run report and leaves `exitCode` at `0`.
+4. **On a non-throwing run:** writes the run report. With no absorbed failures
+   the outcome is `success` (or `dry-run`) and `exitCode` stays `0`; with one or
+   more it is `partial` and `exitCode` is set to `6` before the report is built.
 5. `dryRun: true` stops after stage 5 — see [Dry runs](#dry-runs).
 
 On both outcomes, when `script.configSchema` is defined, the persisted report's
@@ -209,8 +212,10 @@ after the `onError`/`onCleanup` hooks, and the process falls through to Node's
 default unhandled-rejection behavior (exit code `1`) unless the composition
 root intervenes. The differentiated exit-code contract — `2` caller/config,
 `3` external, `4` library, `5` interrupted, `6` partial — is provided by the opt-in
-[`runScript()` wrapper](#runscript), which sets `process.exitCode` from
-`mapErrorToExitCode`; bare `run()` behavior is unchanged.
+[`runScript()` wrapper](#runscript). Codes `2`-`4` come from
+`mapErrorToExitCode`; `5` and `6` are assigned by the wrapper directly and are
+unreachable from that function by construction. Bare `run()` behavior is
+unchanged.
 
 ## Signal handling
 
@@ -274,7 +279,10 @@ get recoveryTotal(): number;
 ```
 
 Each entry names the item that failed, the flattened cause chain, and when it
-was absorbed. The classification is always **reported by the caller** — the
+was absorbed. `reportRecovery` validates at the boundary and throws an
+`M3LError` (`ERR_INVALID_ARGUMENT`) when the entry is not an object or its
+`item` is missing or not a string; `error` and `recordedAt` are carried through
+as supplied. The classification is always **reported by the caller** — the
 library never inspects a result to decide a run was degraded, because only the
 caller knows what "an item" means for its work.
 
@@ -298,6 +306,19 @@ entries — a thousand-item batch failure must not write a thousand cause chains
 into the run report. `recoveryTotal` counts every entry reported, retained or
 evicted, so `recoveryTotal > recovery.length` is how a reader knows the list was
 truncated. Both flow into the run report unchanged.
+
+**Recovery state is per-run, not per-instance.** Both accessors are reset at the
+start of every `run()`, alongside the rest of the per-invocation state. This is
+load-bearing rather than incidental: `runScript` derives a **per-run** outcome
+from `recovery`, so an instance that accumulated across runs would report a
+second, clean run as `partial`, exit `6`, and carry the first run's
+caller-supplied `item` values into the second run's report. The same hazard is
+already guarded for the stage-9 archive manifest, which is likewise never
+carried between runs.
+
+This matters most for `createLambdaHandler`, where one `M3LScript` instance
+serves many invocations on a warm container — without the reset, invocation 2
+would inherit invocation 1's absorbed failures.
 
 ## Resolved AWS target (`script.awsTarget`)
 

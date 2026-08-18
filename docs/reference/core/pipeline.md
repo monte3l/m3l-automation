@@ -123,7 +123,8 @@ real cause, and never prompting anyone. Do not move either call inside the
   `warning(operation, settings, deps)` via `deps.logger.warning` (when
   provided), then resolves `{ status: "declined", operation, result:
 result(operation, settings, deps) }` without dispatching. A declined run
-  produced no handler result, so `persist` and `finalize` are **skipped** —
+  produced no handler result, so `persist`, `finalize` and `recovery` are
+  **skipped** —
   the run resolves immediately after the warning. This is `s3-objects`'s
   behavior (an empty `{ processed: 0, failed: 0 }` summary).
 
@@ -140,7 +141,10 @@ handler knows what "an item" is for its operation. A pipeline that declares no
 byte-identical to before this phase existed.
 
 The engine's sole contribution is the emptiness test: an empty array is a clean
-run (`"completed"`), a non-empty one is `"partial"`. This keeps the
+run (`"completed"`), a non-empty one is `"partial"`. A callback returning
+anything that is not an array — reachable from JavaScript, or from TypeScript
+via an assertion — is a caller error and fails loud with an `M3LError` rather
+than surfacing as a bare `TypeError` from inside the engine. This keeps the
 classification honest in both directions — a handler cannot report a degraded
 run as clean by omission, and the engine cannot invent a degradation the
 handler never reported.
@@ -321,7 +325,10 @@ type M3LOperationPipelineOutcome<
   (
     | {
         readonly status: "partial";
-        readonly recovery: readonly M3LRunRecoveryEntry[];
+        readonly recovery: readonly [
+          M3LRunRecoveryEntry,
+          ...M3LRunRecoveryEntry[],
+        ];
       }
     | {
         readonly status: "completed" | "declined";

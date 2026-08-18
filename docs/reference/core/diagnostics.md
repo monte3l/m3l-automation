@@ -33,7 +33,7 @@ behavior changes.
 >   there is nothing for a heuristic to miss. Header _names_ are kept, values
 >   never are; importer record contents are dropped entirely.
 > - **Free-text surfaces — best effort only.** Error `message`, `stack`, and
->   `context`, and the `archive` manifest, are redacted with
+>   `context`, and the `archive` manifest, and a recovery entry's `item` and `error`, are redacted with
 >   `redactSensitiveLogValue` / `redactSensitiveLogText` plus URL scrubbing.
 >   Those are heuristics over unbounded input. They catch the common shapes and
 >   are _not_ a guarantee.
@@ -52,10 +52,11 @@ Surfaced through `core` (the `diagnostics` sub-module).
 ### Exit codes
 
 - `M3L_EXIT_CODES` / `M3LExitCode` — the exit-code registry and its numeric
-  union (`0 | 1 | 2 | 3 | 4 | 5`).
+  union (`0 | 1 | 2 | 3 | 4 | 5 | 6`).
 - `M3LErrorExitCode` — the subset a thrown error can map to
-  (`Exclude<M3LExitCode, 0 | 5>`, i.e. `1 | 2 | 3 | 4`). `SUCCESS` and
-  `INTERRUPTED` are set by the caller, never derived from an error.
+  (`Exclude<M3LExitCode, 0 | 5 | 6>`, i.e. `1 | 2 | 3 | 4`). `SUCCESS`,
+  `INTERRUPTED` and `PARTIAL` are set by the caller, never derived from an
+  error.
 - `mapErrorToExitCode` — resolves an unknown thrown value to an
   `M3LErrorExitCode`.
 - `isM3LErrorOrigin` — type guard for the `origin` field read structurally off
@@ -141,8 +142,9 @@ into its text output. Without it, a truncated chain in `run-report.json` or an
   still completed its remaining work — a run that processed 997 of 1000 records
   is neither a `success` nor a `failure`, and reporting it as either discards
   the distinction the operator needs. A `partial` report carries the absorbed
-  failures as structured `recovery` entries rather than free text, and exits
-  `6` (`PARTIAL`) — never `0`.
+  failures as structured `recovery` entries rather than free text, and derives
+  exit code `6` (`PARTIAL`) rather than `0`. As with every other outcome, an
+  explicit `M3LRunReportInput.exitCode` still overrides the derived value.
 - `M3LRunRecoveryEntry` — one absorbed, non-fatal failure: `item` (the
   caller-supplied identity of what failed), `error` (the flattened cause chain,
   serialized exactly as `M3LRunReportFailure.chain` is), and `recordedAt` (an
@@ -356,21 +358,34 @@ interface M3LRunRecoveryEntry {
   readonly recordedAt: string; // ISO-8601 timestamp the failure was absorbed
 }
 
+// A partial report carries at least one entry — the type says so.
+type M3LRecoveryEntries = readonly [
+  M3LRunRecoveryEntry,
+  ...M3LRunRecoveryEntry[],
+];
+
 /** Entries retained in a report before the oldest are evicted. */
 const M3L_RECOVERY_LIMIT = 100;
 
 type M3LRunReport = M3LRunReportBase &
   (
-    | { readonly outcome: "failure"; readonly failure: M3LRunReportFailure }
+    | {
+        readonly outcome: "failure";
+        readonly failure: M3LRunReportFailure;
+        readonly recovery?: undefined;
+        readonly recoveryTotal?: undefined;
+      }
     | {
         readonly outcome: "partial";
-        readonly recovery: readonly M3LRunRecoveryEntry[];
+        readonly recovery: M3LRecoveryEntries;
         readonly recoveryTotal: number;
         readonly failure?: undefined;
       }
     | {
         readonly outcome: Exclude<M3LRunOutcome, "failure" | "partial">;
         readonly failure?: undefined;
+        readonly recovery?: undefined;
+        readonly recoveryTotal?: undefined;
       }
   );
 ```
@@ -386,9 +401,13 @@ if (report.outcome === "failure") {
 }
 ```
 
-`recovery` is **required** on the `partial` arm and absent from every other one,
-so "partial with nothing recorded" is unrepresentable — the same
-present-if-and-only-if discipline `failure` already follows.
+`recovery` is **required and non-empty** on the `partial` arm, and closed to
+`undefined` on every other one, so "partial with nothing recorded" and
+"a success carrying recovery entries" are both unrepresentable — the same
+present-if-and-only-if discipline `failure` already follows. The non-empty
+tuple is what makes the first claim true: a plain `readonly T[]` admits `[]`,
+so `build()` must **earn** the partial arm by destructuring a first entry
+rather than asserting it.
 
 ### Bounded recovery entries
 
@@ -405,7 +424,22 @@ failures as though they were all of them — an unrecorded truncation is exactly
 the silent gap ADR-0046's mandatory-fallback discipline forbids.
 
 Read `recoveryTotal`, never `recovery.length`, when reporting how much a run
-absorbed.
+absorbed. It is clamped to at least `recovery.length`, so a caller cannot invert
+the truncation signal by supplying a smaller count.
+
+### Recovery entries are sanitized, both fields
+
+`item` **and** every `M3LSerializedError` inside `error` are projected through
+the module's allowlist and sanitizer before being embedded — the same treatment
+`archive` and `failure.chain` already receive. This is not optional politeness:
+`error` carries `message`, `stack` and a free-form `context` record, all
+caller-supplied, and the run report is a sensitive artifact. An unsanitized
+`error` would be the only caller-controlled field in the document that reaches
+disk verbatim.
+
+Sanitizing also makes the entry safe to serialize: a circular value or a
+`BigInt` inside `error` would otherwise make the whole report fail to write,
+losing the report entirely rather than the one bad entry.
 
 **Behavioral contracts:**
 
