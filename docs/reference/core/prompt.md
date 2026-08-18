@@ -32,7 +32,14 @@ Public surface (`prompt/index.ts`):
 - `confirmDestructive`, `M3LConfirmDestructiveOptions` — the shared
   confirm-before-destroy step, promoted from an identical `destructive-gate.ts`
   step duplicated across 5 consumer scripts. Bypasses, prompts for, or aborts a
-  destructive action depending on a caller-supplied `yes` flag.
+  destructive action depending on a caller-supplied `yes` flag, graded by the
+  target the action is pointed at.
+- `M3LDestructiveTarget` — the resolved identity a destructive action is pointed
+  at: `{ profile, region, accountId? }`. `M3LScript.awsTarget` returns this shape.
+- `M3LDestructiveTargetPredicate` — `(target: M3LDestructiveTarget) => boolean`,
+  the caller-owned sensitivity classification.
+- `sensitiveTargets`, `M3LSensitiveTargetSpec` — a factory building the common
+  declarative predicate from `{ profiles?, regions?, accountIds? }`.
 
 ### `M3LPrompt`
 
@@ -87,17 +94,57 @@ Renders a progress bar with configurable fill characters (default `█` / `░`)
 
 ### `confirmDestructive`
 
-A standalone function (not a method on `M3LPrompt`) that gates a destructive action behind interactive confirmation, with a `yes`-flag bypass for non-interactive/scripted runs. Takes `{ prompt, logger, description, yes, code }` and has three behaviors:
+A standalone function (not a method on `M3LPrompt`) that gates a destructive action behind interactive confirmation, with a `yes`-flag bypass for non-interactive/scripted runs. Takes `{ prompt, logger, description, yes, code }` plus the three optional target fields below. It grades its behavior on **what the action is pointed at** as well as on what the action is.
+
+#### Target grading
+
+Per [ADR-0048](../../adr/0048-target-graded-destructive-confirmation.md), a caller may supply the resolved target identity together with a policy that classifies it:
+
+- `target?: M3LDestructiveTarget` — `{ profile, region, accountId? }`, the resolved identity the action is pointed at. `M3LScript.awsTarget` returns exactly this shape.
+- `isSensitiveTarget?: M3LDestructiveTargetPredicate` — `(target) => boolean`, the caller-owned classification. Build the common declarative case with `sensitiveTargets({ profiles, regions, accountIds })`, or supply any predicate.
+- `yesSensitive?: boolean` — the separately-named opt-in that bypasses a **sensitive** target. Deliberately distinct from `yes`: a flag added for convenience on routine work must not silently carry the same authority on the most consequential target.
+
+A target counts as **sensitive** when `target` is supplied **and** `isSensitiveTarget(target)` returns `true`. The five resulting states:
+
+| State | Condition                                                | Behavior                                                                                                        |
+| ----- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 1     | no `target`                                              | Exactly the ungraded behavior below. `isSensitiveTarget` is not consulted and `yesSensitive` is **ignored**.    |
+| 2     | `target` supplied, not sensitive                         | Exactly the ungraded behavior below, including the plain `yes` bypass and the same message text.                |
+| 3     | sensitive, `yes` **and** `yesSensitive` both `true`      | Bypassed. One warning is logged **naming the target**; `prompt` is never called.                                |
+| 4     | sensitive, `yes: true`, `yesSensitive` absent or `false` | **Still prompts.** The plain `yes` flag does not bypass a sensitive target — the load-bearing half of ADR-0048. |
+| 5     | sensitive, not bypassed                                  | The escalated typed-echo prompt below, instead of a yes/no `confirm`.                                           |
+
+A sensitive bypass requires **both** flags. `yesSensitive` alone never bypasses, so the parse-time rule pairing them (`M3LConfigSchemaValidators.requires("yesSensitive", "yes")`) states a real requirement of this function rather than a convention layered over it.
+
+#### The escalated prompt (state 5)
+
+A sensitive target is confirmed by **typing the target profile**, not by a keypress:
+
+1. A banner names the target — `profile`, `region`, and `accountId` when present — alongside the description, so the operator confirms against the blast radius rather than the verb alone.
+2. `prompt.text` asks for the target profile.
+3. The input, trimmed, is compared against the profile. An exact match resolves; a mismatch or empty input throws the same `aborted: <description>` `M3LError` a decline throws, carrying the caller-supplied `code`.
+
+A yes/no keypress cannot be carried through this step by muscle memory, which is the point of the escalation.
+
+**The comparison runs against the raw profile, while every rendered copy of it is escaped.** The banner and the prompt message pass target fields through the same display escape as `description` (below); the echo comparison does not, because the operator types the real value rather than an escaped rendering. Escaping the comparison operand would make a profile containing a control code point permanently unconfirmable.
+
+#### Ungraded behavior (states 1 and 2)
 
 - **Bypass** (`yes: true`) — skips confirmation entirely, logs a single warning (`destructive confirmation bypassed (yes=true): <description>`) via `logger.warning`, and resolves. `prompt.confirm` is never called.
 - **Confirmed** (`yes: false`, `prompt.confirm` resolves `true`) — prompts with `Confirm: <description>?` and resolves normally once confirmed.
 - **Declined** (`yes: false`, `prompt.confirm` resolves `false`) — throws an `M3LError` (`aborted: <description>`) carrying the caller-supplied `code` verbatim.
 
-A rejection from `prompt.confirm` (e.g. the adapter throws on a cancelled prompt) propagates unchanged and is never converted into the `aborted` error — callers that need to distinguish an explicit decline from a cancelled/failed prompt can rely on this passthrough.
+A rejection from `prompt.confirm` (e.g. the adapter throws on a cancelled prompt) propagates unchanged and is never converted into the `aborted` error — callers that need to distinguish an explicit decline from a cancelled/failed prompt can rely on this passthrough. A rejection from `prompt.text` in state 5 propagates the same way.
+
+#### Not an authorization control
+
+This is an **operator-safety prompt**. It does not authenticate, does not consult IAM, and can be bypassed by anyone able to pass `yesSensitive`. It reduces the chance of an accident; it does not defend against an adversary, and no downstream decision may treat a passed gate as proof of entitlement.
+
+#### Escaping and the thrown message
 
 `description` is escaped, through the same best-effort display escape
-`M3LPrompt`'s prompt messages use, in **two** of the three observable
-channels — the bypass warning and the `Confirm: …?` prompt — but
+`M3LPrompt`'s prompt messages use, in the observable **display** channels — the
+bypass warning and the `Confirm: …?` / escalated prompt messages — but
 **deliberately not** in the thrown `aborted: …` `M3LError` message. That
 message is a data value, not a render target: it flows downstream into
 `core/logging`'s name-based secret redaction (`redactSensitiveLogText`),
@@ -110,10 +157,16 @@ than the display issue this escape exists to close. The thrown message
 therefore carries `description` unchanged, exactly as before this escape was
 introduced, so redaction keeps operating on unmodified text. A `description`
 containing no control or format code points renders identically across all
-three channels regardless. The escape used in the other two channels is
+channels regardless. The escape used in the display channels is
 idempotent — passing an already-escaped value through it again is a no-op —
 and deliberately not reversible: a `description` containing the literal
 characters `\x1b` renders the same as one containing a real ESC byte.
+
+The thrown message also gains **no target fields**: a decline or a failed echo
+throws `aborted: <description>` exactly as it did before target grading, so the
+redaction contract above is unchanged. Target identity reaches the operator
+through the escaped display channels and the run report's bypass warning, never
+through the error message.
 
 ## Usage examples
 

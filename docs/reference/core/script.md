@@ -261,6 +261,44 @@ environment-specific branch. The signal is observed at operation and step
 boundaries; it does not interrupt CPU-bound synchronous code
 ([ADR-0049](../../adr/0049-cooperative-cancellation-contract.md)).
 
+## Resolved AWS target (`script.awsTarget`)
+
+Stage 5 validates `aws.profile` / `aws.region` before constructing the
+`AWSProvider`. Those resolved values are also readable on their own, shaped like
+the [`signal`](#cooperative-cancellation-scriptsignal) accessor:
+
+```typescript
+get awsTarget(): M3LDestructiveTarget | undefined;
+```
+
+It returns `{ profile, region }` — the **same** values stage 5 handed to the
+provider, not a re-read of the config store — and `undefined` when the script
+declared no `aws.profile` parameter, mirroring how `script.aws` is unset in that
+case. `accountId` is omitted: `M3LScript` makes no STS call, so an account id is
+not cheaply available at this point.
+
+Its purpose is the [destructive gate's](./prompt.md#confirmdestructive)
+target-grading dimension. Pass it straight through, so the identity the gate
+grades on cannot disagree with the identity the script's clients actually use:
+
+```typescript
+await Core.confirmDestructive({
+  prompt: script.prompt,
+  logger,
+  description: `delete stack ${stackName}`,
+  yes,
+  yesSensitive,
+  code: "ERR_CFN_STACKS_ABORTED",
+  ...(script.awsTarget !== undefined ? { target: script.awsTarget } : {}),
+  isSensitiveTarget: Core.sensitiveTargets({ profiles: ["prod"] }),
+});
+```
+
+Reading the profile out of the config store by hand works too, but re-derives a
+value that stage 5 already owns — the drift risk
+[ADR-0048](../../adr/0048-target-graded-destructive-confirmation.md) exists to
+close.
+
 ## Process guards
 
 `installProcessGuards()` is a process-global singleton that installs `unhandledRejection`, `uncaughtException`, `warning`, and `beforeExit` handlers. In Lambda, call `setProcessGuardRequestId(requestId)` to attribute guard-caught errors to the current invocation. `serializeError` produces a serializable representation of an error for these guard paths.

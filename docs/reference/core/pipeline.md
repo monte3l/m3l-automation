@@ -66,11 +66,18 @@ operation)`, producing the message `'<name>' is required for operation
 6. **Gate** — when `destructive` is configured and the operation is a member
    of `destructive.operations`, the engine calls `Core.confirmDestructive`
    with `deps.prompt`, `deps.logger`, `destructive.describe(...)`,
-   `destructive.yes(settings)`, and `destructive.abortCode`. Behavior on
-   decline follows `onDecline` (below). Only an `M3LError` whose `code`
-   equals `abortCode` is treated as a decline; any other failure from the
-   gate propagates unmodified. (The `yes: true` bypass warning on this path
-   is emitted by `confirmDestructive` itself, not authored by the engine.)
+   `destructive.yes(settings)`, and `destructive.abortCode` — plus, when
+   configured, `destructive.target(...)`, `destructive.isSensitiveTarget` and
+   `destructive.yesSensitive(settings)`, which forward the ADR-0048
+   target-grading dimension unchanged (see
+   [Core / prompt](./prompt.md#confirmdestructive) for the five states). With
+   no `target` configured, this phase behaves exactly as it did before target
+   grading. Behavior on decline follows `onDecline` (below). Only an `M3LError`
+   whose `code` equals `abortCode` is treated as a decline — including the
+   failed-typed-echo decline on a sensitive target; any other failure from the
+   gate propagates unmodified. (The bypass warning on this path, naming the
+   target when one is supplied, is emitted by `confirmDestructive` itself, not
+   authored by the engine.)
 7. **Dispatch** — `handlers[operation](operation, settings, context, deps)`.
 8. **Persist** — `persist?.(result, settings, deps, operation)`.
 9. **Finalize** — `finalize?.(result, settings, deps, operation)`. Runs **after**
@@ -171,6 +178,16 @@ interface M3LPipelineDestructiveOptions<
   readonly yes: (settings: TSettings) => boolean;
   readonly abortCode: string;
   readonly onDecline: M3LPipelineDeclinePolicy<TOp, TSettings, TDeps, TResult>;
+  // ADR-0048 target grading — all optional; omitting them leaves the gate
+  // phase byte-identical to its pre-grading behavior.
+  readonly target?: (
+    operation: TOp,
+    settings: TSettings,
+    context: TContext,
+    deps: TDeps,
+  ) => M3LDestructiveTarget;
+  readonly isSensitiveTarget?: M3LDestructiveTargetPredicate;
+  readonly yesSensitive?: (settings: TSettings) => boolean;
 }
 
 // The exported options type is an intersection: a core shape carrying every
