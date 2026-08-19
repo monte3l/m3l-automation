@@ -86,18 +86,44 @@ Constructor options (`M3LCheckpointStoreOptions<TCheckpoint>`):
   type-checks, because `undefined` is assignable to `unknown`, so a caller
   forwarding an optional config field opts out silently rather than failing).
 
-  **Rejected definitions.** A value whose canonical JSON form discards its
-  content would produce a fingerprint that can never mismatch — a check that
-  silently does nothing. Those are rejected at construction with
-  `ERR_CHECKPOINT_DEFINITION` rather than accepted and quietly neutered: a
-  `function` or a `symbol` (both canonicalise to `null`), and a non-array
-  object that has no `toJSON` method and no own enumerable properties — which
-  is `Map`, `Set`, `WeakMap`, `RegExp` and friends, whose entries
-  `canonicalJsonStringify` cannot see, so `new Map([["a", 1]])` would otherwise
-  fingerprint identically to `{}`. A `Date` (it has `toJSON`), a class instance
-  carrying own data properties, a primitive, and an honestly-empty `{}` are all
-  accepted — an empty settings object carries no information but does not
-  _lose_ any, so it is a legitimate, if uninformative, definition.
+  **An accepted definition is allowlisted, recursively.** A value whose
+  canonical JSON form discards its content would produce a fingerprint that can
+  never mismatch — a check that silently does nothing. So the definition is
+  validated by a recursive walk at construction, and anything not on the
+  allowlist is rejected with `ERR_CHECKPOINT_DEFINITION`. At **every depth**,
+  only these are accepted:
+
+  - a finite `number`, a `string`, a `boolean`, or `null`;
+  - an array whose every element is itself accepted;
+  - a plain object — prototype `Object.prototype` or `null` — whose every own
+    enumerable property value is itself accepted. A property whose value is
+    `undefined` is allowed and ignored: omitting a key and setting it to
+    `undefined` both mean "unset", so the two fingerprint identically by
+    design, which is how the adopters express an absent optional setting.
+
+  Everything else is rejected wherever it appears: a `function`, a `symbol`, a
+  `Map`, a `Set`, a `WeakMap`, a `RegExp`, a `Date`, and any class instance. An
+  honestly-empty `{}` and an empty `[]` are still accepted — they carry no
+  information but do not _lose_ any, so they are legitimate if uninformative.
+
+  **This is an allowlist rather than a list of known-bad shapes, deliberately.**
+  A denylist of recognisable types cannot converge here, and a first attempt
+  proved it: rejecting only top-level `Map`/`Set`/`RegExp` still accepted
+  `{ region: "eu-west-1", logGroups: new Set(["/aws/lambda/a"]) }` — the exact
+  shape this option documents — where the nested `Set` canonicalises to `{}`, so
+  two runs over different log groups fingerprinted identically and the second
+  resumed silently from the first's offsets. The general case is not detectable
+  by inspection at all: an object can hold state in `#private` fields or
+  prototype accessors that no serializer and no type test can see. Only
+  admitting values whose content is, by construction, entirely visible to
+  `canonicalJsonStringify` closes that. It also mirrors the rule the Style Guide
+  states outright — allowlist, never denylist — and the same conclusion ADR-0035
+  reached for redaction.
+
+  A `Date` is therefore passed as `date.toISOString()`, and any richer
+  collection as the plain array or object you want fingerprinted. This costs the
+  named adopters nothing: all four resolve their settings to strings, numbers,
+  booleans, `readonly string[]`, and nested plain objects already.
 
   **A definition is committed to by its hash, not concealed by it.** The hash
   is an unkeyed SHA-256 over canonical JSON, so a low-entropy definition is
