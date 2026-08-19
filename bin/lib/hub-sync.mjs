@@ -135,7 +135,7 @@ const IMPLEMENTATION_ANCHORS = {
   m3lCliBuildOut: "#m3l-cli-build-out--adr-0042-activation-issue-333",
   codifiedProcedureWave:
     "#codified-procedure-engine-wave--adr-0046004700480049",
-  gated: "#gated-library-modules--deferred-decisions-p2",
+  gated: "#gated-library-modules--deferred-decisions-later",
 };
 
 // The key namespace each docs/plans/IMPLEMENTATION.md section's items live
