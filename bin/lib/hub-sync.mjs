@@ -5,9 +5,14 @@
 // (bin/sync-hub-issues.mjs, bin/sync-hub-projects.mjs), which supply the
 // `gh` execution, auth preflight, and dry-run printing this module never does.
 //
-// Reuses classifyStatusCell/columnIndex/blobUrl from ./project-hub.mjs rather
-// than duplicating tracker-table parsing semantics.
-import { blobUrl, classifyStatusCell, columnIndex } from "./project-hub.mjs";
+// Reuses classifyStatusCell/classifyPriorityCell/columnIndex/blobUrl from
+// ./project-hub.mjs rather than duplicating tracker-table parsing semantics.
+import {
+  blobUrl,
+  classifyPriorityCell,
+  classifyStatusCell,
+  columnIndex,
+} from "./project-hub.mjs";
 
 /**
  * The fixed label every hub-sync-managed issue carries, so a maintainer can
@@ -75,14 +80,63 @@ export const MILESTONE_TITLES = {
   major: "2.0 / breaking",
 };
 
+const ROADMAP_PATH = "docs/ROADMAP.md";
+const IMPLEMENTATION_PATH = "docs/plans/IMPLEMENTATION.md";
+
+const ROADMAP_ANCHORS = {
+  p0: "#priority-0",
+  p1: "#priority-1",
+  governance: "#governance-follow-ups",
+};
+
+const IMPLEMENTATION_ANCHORS = {
+  friction: "#library-friction-f-series",
+  adr0035Rollout: "#adr-0035-rollout--failure-reporting--diagnostics",
+  capabilityDeepeningWave: "#capability-deepening-wave--adr-003700380039",
+  postComparisonHardeningWave:
+    "#post-comparison-hardening-wave--adr-0040004100420043",
+  m3lCliBuildOut: "#m3l-cli-build-out--adr-0042-activation-issue-333",
+  codifiedProcedureWave:
+    "#codified-procedure-engine-wave--adr-0046004700480049",
+  gated: "#gated-library-modules--deferred-decisions-p2",
+};
+
+// The key namespace each docs/plans/IMPLEMENTATION.md section's items live
+// in, keyed identically to IMPLEMENTATION_ANCHORS above so a new section
+// cannot gain an anchor without also gaining a namespace.
+//
+// An item label is only unique WITHIN its own table — the ADR-0035 rollout
+// and codified-procedure wave tables both restart at A1, so A1/A2/A3/A5/A6
+// each denote two entirely different items. A flat `impl:<label>` key made
+// those five pairs collide, and `addItem` merges a duplicate key silently,
+// so one of each pair would have been dropped from the planner while its
+// GitHub issue got closed as "removed from source trackers". (They did not
+// actually collide in practice, but only by accident: the rollout table was
+// the one table not passing its label through `slug()`, so its keys stayed
+// upper-case and the case-sensitive marker match kept them apart. Making
+// key derivation consistent — an obvious cleanup — would have triggered all
+// five at once.) docs/ROADMAP.md's keys were already namespaced this way
+// (`roadmap:p0:` / `roadmap:<wave>:` / `roadmap:gov:`); this brings
+// IMPLEMENTATION.md's in line. See issue #480 / F13 and ADR-0032's dated
+// Update.
+const IMPLEMENTATION_NAMESPACES = {
+  friction: "friction",
+  adr0035Rollout: "adr0035",
+  capabilityDeepeningWave: "capability",
+  postComparisonHardeningWave: "hardening",
+  m3lCliBuildOut: "cli",
+  codifiedProcedureWave: "procedure",
+  gated: "gated",
+};
+
 /**
  * {@link Item} keys routed to the `MILESTONE_TITLES.major` ("2.0 / breaking")
  * milestone regardless of their table-derived priority — work explicitly
  * recorded as needing a major-version bump before it can be built (F3's own
  * text: "Re-file against a real 2.0 milestone if one is ever opened"; the
  * `@deprecated` `AWSClientProvider` getter-removal row is the same class).
- * Keys are computed via {@link slug}/the literal `impl:F3` friction-table
- * key, not hand-typed, so this can never independently drift from the real
+ * Keys are computed via {@link slug} and each section's IMPLEMENTATION_NAMESPACES
+ * entry, not hand-typed, so this can never independently drift from the real
  * key-generation logic in {@link actionableItems} — only from the tracker
  * row's own identity-cell wording, which is the same dependency every
  * {@link hubMarker} key already has.
@@ -91,12 +145,12 @@ export const MILESTONE_TITLES = {
  * ```js
  * import { MAJOR_BUMP_ITEM_KEYS } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
  *
- * MAJOR_BUMP_ITEM_KEYS.has("impl:F3"); // true
+ * MAJOR_BUMP_ITEM_KEYS.has("impl:friction:f3"); // true
  * ```
  */
 export const MAJOR_BUMP_ITEM_KEYS = new Set([
-  "impl:F3",
-  `impl:${slug(
+  `impl:${IMPLEMENTATION_NAMESPACES.friction}:${slug("F3")}`,
+  `impl:${IMPLEMENTATION_NAMESPACES.gated}:${slug(
     "Removal of the 4 `@deprecated` `AWSClientProvider` convenience getters (`dynamoDBDocument`/`sqsOperations`/`eventBridgeOperations`/`requestSigner`)",
   )}`,
 ]);
@@ -121,27 +175,6 @@ export const MAJOR_BUMP_ITEM_KEYS = new Set([
 export const STATUS_LABELS = {
   deferred: "status:deferred",
   blocked: "status:blocked",
-};
-
-const ROADMAP_PATH = "docs/ROADMAP.md";
-const IMPLEMENTATION_PATH = "docs/plans/IMPLEMENTATION.md";
-
-const ROADMAP_ANCHORS = {
-  p0: "#priority-0",
-  p1: "#priority-1",
-  governance: "#governance-follow-ups",
-};
-
-const IMPLEMENTATION_ANCHORS = {
-  friction: "#library-friction-f-series",
-  adr0035Rollout: "#adr-0035-rollout--failure-reporting--diagnostics",
-  capabilityDeepeningWave: "#capability-deepening-wave--adr-003700380039",
-  postComparisonHardeningWave:
-    "#post-comparison-hardening-wave--adr-0040004100420043",
-  m3lCliBuildOut: "#m3l-cli-build-out--adr-0042-activation-issue-333",
-  codifiedProcedureWave:
-    "#codified-procedure-engine-wave--adr-0046004700480049",
-  gated: "#gated-library-modules--deferred-decisions-p2",
 };
 
 // Strip markdown links (keeping the label), backticks, and emphasis markers
@@ -220,28 +253,6 @@ function buildDetail(header, row, excludeIndices) {
     .join("\n\n");
 }
 
-// Map an F-series/wave-table row's raw Priority cell ("P0"/"P1"/"P2",
-// possibly markdown-wrapped) to an Item priority. Falls back to "p2" for
-// anything unrecognized (including the capability-deepening/post-comparison
-// wave tables' "—" placeholder, used on rows whose change isn't
-// priority-tiered) but reports `recognized: false` so the caller can surface
-// a warning instead of defaulting silently — a genuinely open row filed
-// under Priority 2 by a typo or a new placeholder convention should be loud,
-// not quiet.
-function mapFrictionPriority(cell) {
-  const normalized = stripMarkdown(cell).toUpperCase();
-  switch (normalized) {
-    case "P0":
-      return { priority: "p0", recognized: true };
-    case "P1":
-      return { priority: "p1", recognized: true };
-    case "P2":
-      return { priority: "p2", recognized: true };
-    default:
-      return { priority: "p2", recognized: false };
-  }
-}
-
 /**
  * Build the fixed HTML-comment marker embedded as the first line of every
  * hub-sync-managed issue body, identifying the {@link Item} `key` it tracks.
@@ -292,7 +303,17 @@ export function parseHubMarker(body) {
  *   sourcePath: string,
  *   sourceAnchor: string,
  *   detail: string,
+ *   legacyKeys?: string[],
  * }} Item
+ *
+ * `legacyKeys` lists every key this item used to be filed under, so an issue
+ * whose marker still carries an older key is matched to it instead of being
+ * read as an item that vanished from the trackers (which
+ * {@link planIssueSync} closes as "removed from source trackers"). Populated
+ * when `docs/plans/IMPLEMENTATION.md`'s keys were namespaced by section
+ * (issue #480 / F13). Resolution goes through {@link indexItemsByKey}, and
+ * matching on a legacy key is what makes an issue dirty, so the next
+ * `--apply` rewrites its marker to the current key and the alias goes inert.
  */
 
 /**
@@ -317,11 +338,18 @@ export function parseHubMarker(body) {
  *
  * @param {ReturnType<typeof import("./project-hub.mjs").extractRoadmap>} roadmap
  * @param {ReturnType<typeof import("./project-hub.mjs").extractImplementation>} implementation
- * @returns {{ items: Item[], warnings: string[] }} `warnings` reports a
- *   friction/wave-table row whose Priority cell wasn't one of "P0"/"P1"/"P2"
- *   (e.g. a new placeholder convention or a typo) and was defaulted to p2 —
- *   loud rather than silent, since a genuinely open row landing on the wrong
- *   milestone by accident should be noticed.
+ * @returns {{ items: Item[], warnings: string[], duplicateKeys: { key: string, first: string, second: string }[] }} `warnings` reports a
+ *   friction/wave-table row whose Priority cell was off-vocabulary (see
+ *   `classifyPriorityCell` — the untiered dash placeholder counts as
+ *   recognized) and was defaulted to p2, a row whose Status cell was
+ *   off-vocabulary, and two rows deriving the same {@link Item} key — all
+ *   loud rather than silent, since each one silently mis-files real work.
+ *   `pnpm check:tracker-status` and `pnpm check:hub-keys` are the hard
+ *   gates behind these warnings; a warning alone is the channel that let
+ *   issue #204 sit wrong for weeks (ADR-0032's 2026-08-15 Update).
+ *   `duplicateKeys` carries the same collisions structurally
+ *   (`{ key, first, second }`, naming both colliding rows' titles) so
+ *   `check:hub-keys` can gate on them without parsing warning prose.
  * @example
  * ```js
  * import { extractImplementation, extractRoadmap } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
@@ -336,11 +364,32 @@ export function parseHubMarker(body) {
 export function actionableItems(roadmap, implementation) {
   const items = [];
   const warnings = [];
+  const duplicateKeys = [];
   const byKey = new Map();
 
+  // First row with a given key wins every field; a later row with the same
+  // key only contributes extra detail lines. That merge is deliberate (two
+  // tracker rows genuinely describing one item), but it used to be entirely
+  // silent — so a key COLLISION (two unrelated rows that happen to derive
+  // the same key) was indistinguishable from it, and the loser simply
+  // stopped being planned while its GitHub issue got closed as removed.
+  // Namespacing the keys by section makes a collision far less likely; this
+  // warning is what makes the remaining case visible, and
+  // `pnpm check:hub-keys` is the hard gate behind it.
   function addItem(item) {
     const existing = byKey.get(item.key);
     if (existing) {
+      duplicateKeys.push({
+        key: item.key,
+        first: existing.title,
+        second: item.title,
+      });
+      warnings.push(
+        `Duplicate item key "${item.key}" — "${existing.title}" and ` +
+          `"${item.title}" derive the same key; the first row's fields win and ` +
+          `the second only contributes detail lines. Give the two rows ` +
+          `distinct labels, or namespace their sections apart.`,
+      );
       existing.detail = `${existing.detail}\n\n${item.detail}`;
       return;
     }
@@ -349,9 +398,10 @@ export function actionableItems(roadmap, implementation) {
   }
 
   // Resolve a friction/wave-table row's Priority cell, appending a warning
-  // when it wasn't recognized (see mapFrictionPriority).
+  // when it wasn't recognized (see classifyPriorityCell — the dash
+  // placeholder IS recognized, so only a genuine off-vocabulary cell warns).
   function resolvePriority(cell, key) {
-    const { priority, recognized } = mapFrictionPriority(cell ?? "");
+    const { priority, recognized } = classifyPriorityCell(cell ?? "");
     if (!recognized) {
       warnings.push(
         `Implementation: item "${key}" has an unrecognized Priority cell ("${cell ?? ""}") — defaulted to p2.`,
@@ -450,7 +500,7 @@ export function actionableItems(roadmap, implementation) {
     const titleIndex = columnIndex(header, "Title & change");
     for (const row of rows) {
       const strippedId = stripMarkdown(row[idIndex] ?? "");
-      const key = `impl:${strippedId}`;
+      const key = `impl:${IMPLEMENTATION_NAMESPACES.friction}:${slug(strippedId)}`;
       addItem({
         key,
         title: `${strippedId} — ${row[titleIndex] ?? ""}`,
@@ -458,6 +508,7 @@ export function actionableItems(roadmap, implementation) {
         priority: resolvePriority(row[priorityIndex], key),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.friction,
+        legacyKeys: [`impl:${strippedId}`],
         detail: buildDetail(header, row, new Set([idIndex, statusIndex])),
       });
     }
@@ -471,7 +522,7 @@ export function actionableItems(roadmap, implementation) {
     const changeIndex = columnIndex(header, "Change");
     for (const row of rows) {
       const strippedPhase = stripMarkdown(row[phaseIndex] ?? "");
-      const key = `impl:${strippedPhase}`;
+      const key = `impl:${IMPLEMENTATION_NAMESPACES.adr0035Rollout}:${slug(strippedPhase)}`;
       addItem({
         key,
         title: `${strippedPhase} — ${row[changeIndex] ?? ""}`,
@@ -479,6 +530,7 @@ export function actionableItems(roadmap, implementation) {
         priority: resolvePriority(row[priorityIndex], key),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.adr0035Rollout,
+        legacyKeys: [`impl:${strippedPhase}`],
         detail: buildDetail(header, row, new Set([phaseIndex, statusIndex])),
       });
     }
@@ -492,7 +544,7 @@ export function actionableItems(roadmap, implementation) {
     const changeIndex = columnIndex(header, "Change");
     for (const row of rows) {
       const strippedItem = stripMarkdown(row[itemIndex] ?? "");
-      const key = `impl:${slug(row[itemIndex] ?? "")}`;
+      const key = `impl:${IMPLEMENTATION_NAMESPACES.capabilityDeepeningWave}:${slug(row[itemIndex] ?? "")}`;
       addItem({
         key,
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
@@ -500,6 +552,7 @@ export function actionableItems(roadmap, implementation) {
         priority: resolvePriority(row[priorityIndex], key),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.capabilityDeepeningWave,
+        legacyKeys: [`impl:${slug(row[itemIndex] ?? "")}`],
         detail: buildDetail(header, row, new Set([itemIndex, statusIndex])),
       });
     }
@@ -513,7 +566,7 @@ export function actionableItems(roadmap, implementation) {
     const changeIndex = columnIndex(header, "Change");
     for (const row of rows) {
       const strippedItem = stripMarkdown(row[itemIndex] ?? "");
-      const key = `impl:${slug(row[itemIndex] ?? "")}`;
+      const key = `impl:${IMPLEMENTATION_NAMESPACES.postComparisonHardeningWave}:${slug(row[itemIndex] ?? "")}`;
       addItem({
         key,
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
@@ -521,6 +574,7 @@ export function actionableItems(roadmap, implementation) {
         priority: resolvePriority(row[priorityIndex], key),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.postComparisonHardeningWave,
+        legacyKeys: [`impl:${slug(row[itemIndex] ?? "")}`],
         detail: buildDetail(header, row, new Set([itemIndex, statusIndex])),
       });
     }
@@ -534,7 +588,7 @@ export function actionableItems(roadmap, implementation) {
     const changeIndex = columnIndex(header, "Change");
     for (const row of rows) {
       const strippedItem = stripMarkdown(row[itemIndex] ?? "");
-      const key = `impl:${slug(row[itemIndex] ?? "")}`;
+      const key = `impl:${IMPLEMENTATION_NAMESPACES.m3lCliBuildOut}:${slug(row[itemIndex] ?? "")}`;
       addItem({
         key,
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
@@ -542,6 +596,7 @@ export function actionableItems(roadmap, implementation) {
         priority: resolvePriority(row[priorityIndex], key),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.m3lCliBuildOut,
+        legacyKeys: [`impl:${slug(row[itemIndex] ?? "")}`],
         detail: buildDetail(header, row, new Set([itemIndex, statusIndex])),
       });
     }
@@ -555,7 +610,7 @@ export function actionableItems(roadmap, implementation) {
     const changeIndex = columnIndex(header, "Change");
     for (const row of rows) {
       const strippedItem = stripMarkdown(row[itemIndex] ?? "");
-      const key = `impl:${slug(row[itemIndex] ?? "")}`;
+      const key = `impl:${IMPLEMENTATION_NAMESPACES.codifiedProcedureWave}:${slug(row[itemIndex] ?? "")}`;
       addItem({
         key,
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
@@ -563,6 +618,7 @@ export function actionableItems(roadmap, implementation) {
         priority: resolvePriority(row[priorityIndex], key),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.codifiedProcedureWave,
+        legacyKeys: [`impl:${slug(row[itemIndex] ?? "")}`],
         detail: buildDetail(header, row, new Set([itemIndex, statusIndex])),
       });
     }
@@ -574,7 +630,7 @@ export function actionableItems(roadmap, implementation) {
     const statusIndex = columnIndex(header, "Status");
     for (const row of rows) {
       const idCell = row[idIndex] ?? "";
-      const key = `impl:${slug(idCell)}`;
+      const key = `impl:${IMPLEMENTATION_NAMESPACES.gated}:${slug(idCell)}`;
       addItem({
         key,
         title: stripMarkdown(idCell),
@@ -582,12 +638,13 @@ export function actionableItems(roadmap, implementation) {
         priority: "p2",
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.gated,
+        legacyKeys: [`impl:${slug(idCell)}`],
         detail: buildDetail(header, row, new Set([idIndex, statusIndex])),
       });
     }
   }
 
-  return { items, warnings };
+  return { items, warnings, duplicateKeys };
 }
 
 /**
@@ -732,6 +789,42 @@ function managedLabelsDiffer(currentLabels, payload) {
 }
 
 /**
+ * Index `items` by every key an issue marker might legitimately carry: each
+ * item's current `key`, plus each of its {@link Item} `legacyKeys`. Shared
+ * by {@link planIssueSync}, {@link planBackfill}, and
+ * `bin/sync-hub-projects.mjs` so the three marker consumers cannot resolve a
+ * marker differently from one another.
+ *
+ * Precedence is deterministic and one-directional: a **current** key always
+ * wins, and a legacy key never overwrites an existing entry. So an alias that
+ * happens to collide with some other item's real key is inert rather than
+ * hijacking it. That case is not merely tolerated here — it is a hard failure
+ * of `pnpm check:hub-keys` (`bin/check-hub-keys.mjs`), which is where key
+ * collisions are meant to be caught, before the planner ever runs.
+ *
+ * @param {Item[]} items
+ * @returns {Map<string, Item>}
+ * @example
+ * ```js
+ * import { indexItemsByKey } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ *
+ * const byKey = indexItemsByKey(items);
+ * const item = byKey.get(parseHubMarker(issue.body));
+ * const viaLegacy = item !== undefined && item.key !== parseHubMarker(issue.body);
+ * ```
+ */
+export function indexItemsByKey(items) {
+  const byKey = new Map();
+  for (const item of items) byKey.set(item.key, item);
+  for (const item of items) {
+    for (const legacy of item.legacyKeys ?? []) {
+      if (!byKey.has(legacy)) byKey.set(legacy, item);
+    }
+  }
+  return byKey;
+}
+
+/**
  * Plan the create/update/close/reopen actions that bring `existingIssues`
  * into sync with `items`. Matching is **only** by
  * `parseHubMarker(issue.body) === item.key` — never by title or label — so a
@@ -770,7 +863,7 @@ export function planIssueSync(items, existingIssues) {
   const reopen = [];
   const untouched = [];
 
-  const itemByKey = new Map(items.map((item) => [item.key, item]));
+  const itemByKey = indexItemsByKey(items);
   const matchedKeys = new Set();
 
   for (const issue of existingIssues) {
@@ -796,6 +889,10 @@ export function planIssueSync(items, existingIssues) {
     }
 
     matchedKeys.add(item.key);
+    // The issue's marker is an older key this item used to be filed under
+    // (see Item.legacyKeys). Its body therefore still opens with the stale
+    // marker, so it needs rewriting to the current one.
+    const viaLegacy = key !== item.key;
     const payload = buildIssuePayload(item);
     const isDirty =
       issue.title !== payload.title ||
@@ -804,9 +901,23 @@ export function planIssueSync(items, existingIssues) {
 
     if (issue.state === "closed") {
       if (isResolved(item.status)) {
-        untouched.push({ number: issue.number, reason: "in sync" });
+        // A closed-and-resolved issue is normally left completely alone —
+        // its payload is never recomputed, dirty or not (the deliberate gap
+        // ADR-0032's 2026-07-28 Update records, kept because reopening that
+        // door risks the idempotency law for cosmetic corrections). A stale
+        // marker is the one exception: it is not cosmetic, it is the join
+        // key, and the overwhelming majority of hub-sync issues are closed,
+        // so without this the aliases could never retire. Idempotent by
+        // construction — once rewritten the marker is current, so the very
+        // next run matches on `item.key`, `viaLegacy` is false, and this
+        // falls through to "in sync".
+        if (viaLegacy) {
+          update.push({ number: issue.number, key: item.key, payload });
+        } else {
+          untouched.push({ number: issue.number, reason: "in sync" });
+        }
       } else {
-        reopen.push({ number: issue.number, key, payload });
+        reopen.push({ number: issue.number, key: item.key, payload });
       }
       continue;
     }
@@ -814,12 +925,12 @@ export function planIssueSync(items, existingIssues) {
     if (isResolved(item.status)) {
       close.push({
         number: issue.number,
-        key,
+        key: item.key,
         comment: CLOSE_REASON[item.status],
         reason: CLOSE_STATE_REASON[item.status],
       });
     } else if (isDirty) {
-      update.push({ number: issue.number, key, payload });
+      update.push({ number: issue.number, key: item.key, payload });
     } else {
       untouched.push({ number: issue.number, reason: "in sync" });
     }
@@ -1032,8 +1143,18 @@ export function planBackfill(items, existingIssues, { threshold = 0.85 } = {}) {
       .filter((key) => key !== null),
   );
 
+  // An item whose issue still carries an OLD key is already filed, so it must
+  // not be backfilled a second time — resolve each marker through the shared
+  // index rather than comparing raw strings to `item.key`.
+  const itemByKey = indexItemsByKey(items);
+  const markedItemKeys = new Set(
+    [...markedKeys]
+      .map((key) => itemByKey.get(key)?.key)
+      .filter((key) => key !== undefined),
+  );
+
   for (const item of items) {
-    if (!isResolved(item.status) || markedKeys.has(item.key)) continue;
+    if (!isResolved(item.status) || markedItemKeys.has(item.key)) continue;
 
     const payload = buildIssuePayload(item);
     let bestMatch = null;

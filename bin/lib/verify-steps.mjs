@@ -134,6 +134,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:tracker-status",
   },
   {
+    ciStepName: "Check hub-sync key uniqueness",
+    id: "check-hub-keys",
+    cmd: () => "pnpm check:hub-keys",
+  },
+  {
     ciStepName: "Check implementation count",
     id: "check-impl-counts",
     cmd: () => "pnpm check:impl-counts",

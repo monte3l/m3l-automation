@@ -10,6 +10,7 @@ import {
   actionableItems,
   buildIssuePayload,
   hubMarker,
+  indexItemsByKey,
   parseHubMarker,
   planBackfill,
   planIssueSync,
@@ -149,15 +150,18 @@ const IMPLEMENTATION_DEDUPE_FIXTURE = `# Implementation backlog — m3l-automati
 | **D4** SSM config      | Deferred | a 2nd script hand-rolling SSM config fetch      |
 `;
 
-// A row whose Priority cell is neither "P0"/"P1"/"P2" (markdown-stripped,
-// case-insensitive) — exercises actionableItems's warnings channel.
+// A row whose Priority cell is a genuinely off-vocabulary value (P3 has no
+// P3 tier, label, or milestone) — exercises actionableItems's warnings
+// channel. Note: em-dash (—) is now the documented untiered placeholder
+// and IS recognized (produces p2 with recognized: true, no warning); only a
+// genuine non-P0/P1/P2/dash value like "P3" still warns.
 const IMPLEMENTATION_BAD_PRIORITY_FIXTURE = `# Implementation backlog — m3l-automation
 
 ## Library friction (F-series)
 
 | ID     | Priority | Status   | Title & change      | Source / call-site |
 | ------ | -------- | -------- | ---------------------- | --------------------- |
-| **F7** | —        | Deferred | still relevant          | json-etl log F7        |
+| **F7** | P3       | Deferred | still relevant          | json-etl log F7        |
 `;
 
 // Exercises the two new capability-deepening / post-comparison-hardening
@@ -233,6 +237,7 @@ interface TestItem {
   sourcePath: string;
   sourceAnchor: string;
   detail: string;
+  legacyKeys?: string[];
 }
 
 function makeItem(overrides: Partial<TestItem> = {}): TestItem {
@@ -298,10 +303,11 @@ describe("MILESTONE_TITLES", () => {
 
 describe("MAJOR_BUMP_ITEM_KEYS", () => {
   test("contains exactly the F3 friction key and the AWSClientProvider getter-removal key", () => {
-    expect(MAJOR_BUMP_ITEM_KEYS.has("impl:F3")).toBe(true);
+    // Keys are now namespaced by section: impl:<namespace>:<slug(identity)>.
+    expect(MAJOR_BUMP_ITEM_KEYS.has(`impl:friction:${slug("F3")}`)).toBe(true);
     expect(
       MAJOR_BUMP_ITEM_KEYS.has(
-        `impl:${slug(
+        `impl:gated:${slug(
           "Removal of the 4 `@deprecated` `AWSClientProvider` convenience getters (`dynamoDBDocument`/`sqsOperations`/`eventBridgeOperations`/`requestSigner`)",
         )}`,
       ),
@@ -375,7 +381,8 @@ describe("actionableItems", () => {
     expect(keys).toContain("roadmap:p0:p0a");
     expect(keys).toContain("roadmap:W3:ecs-ops");
     expect(keys).toContain("roadmap:gov:t1");
-    expect(keys).toContain("impl:F7");
+    // F-series keys are namespaced: impl:friction:<slug(ID)>
+    expect(keys).toContain("impl:friction:f7");
   });
 
   test("emits the gated (P2) item keyed off the slugged ID cell, priority p2", () => {
@@ -383,7 +390,8 @@ describe("actionableItems", () => {
     const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
     const { items, warnings } = actionableItems(roadmap, implementation);
     expect(warnings).toEqual([]);
-    const gated = items.find((item) => item.key === "impl:d4-ssm-config");
+    // Gated keys are namespaced: impl:gated:<slug(ID)>
+    const gated = items.find((item) => item.key === "impl:gated:d4-ssm-config");
 
     expect(gated).toBeDefined();
     expect(gated?.priority).toBe("p2");
@@ -416,7 +424,8 @@ describe("actionableItems", () => {
 
     const doneP0 = items.find((item) => item.key === "roadmap:p0:p0b");
     const doneW4 = items.find((item) => item.key === "roadmap:W4:sqs-etl");
-    const doneF9 = items.find((item) => item.key === "impl:F9");
+    // F-series keys are namespaced: impl:friction:<slug(ID)>
+    const doneF9 = items.find((item) => item.key === "impl:friction:f9");
 
     expect(doneP0?.status).toBe("done");
     expect(doneW4?.status).toBe("done");
@@ -443,7 +452,8 @@ describe("actionableItems", () => {
     const { items, warnings } = actionableItems(roadmap, implementation);
     expect(warnings).toEqual([]);
 
-    const f7 = items.find((item) => item.key === "impl:F7");
+    // F-series keys are namespaced: impl:friction:<slug(ID)>
+    const f7 = items.find((item) => item.key === "impl:friction:f7");
     expect(f7?.title).toBe(
       "F7 — Opt-in `onUnknownFormat` tolerant a | b handling",
     );
@@ -452,13 +462,14 @@ describe("actionableItems", () => {
     expect(f7?.sourcePath).toBe("docs/plans/IMPLEMENTATION.md");
   });
 
-  test("ADR-0035 rollout row is keyed 'impl:<Phase>', titled '<Phase> — <Change>', priority/status from its own columns", () => {
+  test("ADR-0035 rollout row is keyed 'impl:adr0035:<slug(Phase)>', titled '<Phase> — <Change>', priority/status from its own columns", () => {
     const roadmap = extractRoadmap(ROADMAP_FIXTURE);
     const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
     const { items, warnings } = actionableItems(roadmap, implementation);
     expect(warnings).toEqual([]);
 
-    const a7 = items.find((item) => item.key === "impl:A7");
+    // ADR-0035 rollout keys are namespaced: impl:adr0035:<slug(Phase)>
+    const a7 = items.find((item) => item.key === "impl:adr0035:a7");
     expect(a7).toBeDefined();
     expect(a7?.title).toBe("A7 — Residual free-text redaction gaps");
     expect(a7?.priority).toBe("p2");
@@ -493,10 +504,23 @@ describe("actionableItems", () => {
   test("dedupes rows sharing a key: keeps the first row's fields, merges the later row's detail", () => {
     const roadmap = extractRoadmap(ROADMAP_FIXTURE);
     const implementation = extractImplementation(IMPLEMENTATION_DEDUPE_FIXTURE);
-    const { items, warnings } = actionableItems(roadmap, implementation);
-    expect(warnings).toEqual([]);
+    // Both F7 rows are in the friction section → both derive impl:friction:f7.
+    // The collision is recorded in duplicateKeys AND emits exactly one warning.
+    const { items, warnings, duplicateKeys } = actionableItems(
+      roadmap,
+      implementation,
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("impl:friction:f7");
 
-    const f7Items = items.filter((item) => item.key === "impl:F7");
+    expect(duplicateKeys).toHaveLength(1);
+    expect(duplicateKeys[0]).toMatchObject({
+      key: "impl:friction:f7",
+      first: "F7 — First title for F7",
+      second: "F7 — Second title for F7",
+    });
+
+    const f7Items = items.filter((item) => item.key === "impl:friction:f7");
     expect(f7Items).toHaveLength(1);
     const f7 = f7Items[0];
     expect(f7?.title).toContain("First title for F7");
@@ -526,10 +550,13 @@ describe("actionableItems", () => {
     expect(items.some((item) => item.key.startsWith("roadmap:gov:"))).toBe(
       false,
     );
-    expect(items.some((item) => item.key.startsWith("impl:d4"))).toBe(false);
+    // Gated keys are namespaced impl:gated:*, not the old impl:d4 flat form.
+    expect(items.some((item) => item.key.startsWith("impl:gated:"))).toBe(
+      false,
+    );
     // The sections that ARE present must still be processed.
     expect(items.some((item) => item.key === "roadmap:p0:p0a")).toBe(true);
-    expect(items.some((item) => item.key === "impl:F7")).toBe(true);
+    expect(items.some((item) => item.key === "impl:friction:f7")).toBe(true);
   });
 
   test("an unrecognized Priority cell defaults the item to p2 and appends exactly one warning naming the row's key and raw cell", () => {
@@ -539,11 +566,35 @@ describe("actionableItems", () => {
     );
     const { items, warnings } = actionableItems(roadmap, implementation);
 
-    const f7 = items.find((item) => item.key === "impl:F7");
+    // F-series key is now namespaced: impl:friction:<slug(ID)>
+    const f7 = items.find((item) => item.key === "impl:friction:f7");
     expect(f7?.priority).toBe("p2");
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("impl:F7");
-    expect(warnings[0]).toContain("—");
+    expect(warnings[0]).toContain("impl:friction:f7");
+    // The fixture uses "P3" — a genuine off-vocabulary cell (em-dash is now
+    // recognized as the untiered placeholder, see classifyPriorityCell).
+    expect(warnings[0]).toContain("P3");
+  });
+
+  test("the em-dash untiered placeholder is recognized: produces p2 with no warning", () => {
+    // Verify classifyPriorityCell's new dash-is-recognized rule flows through
+    // actionableItems end-to-end: a row with "—" Priority should emit the
+    // item at p2 without adding any warning.
+    const fixture = `# Implementation backlog — m3l-automation
+
+## Library friction (F-series)
+
+| ID     | Priority | Status   | Title & change   | Source / call-site |
+| ------ | -------- | -------- | ----------------- | --------------------- |
+| **F7** | —        | Deferred | still relevant    | json-etl log F7       |
+`;
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(fixture);
+    const { items, warnings } = actionableItems(roadmap, implementation);
+
+    const f7 = items.find((item) => item.key === "impl:friction:f7");
+    expect(f7?.priority).toBe("p2");
+    expect(warnings).toEqual([]);
   });
 
   test("an unrecognized Roadmap Status cell defaults the item to todo and appends a Roadmap-labeled warning", () => {
@@ -566,21 +617,23 @@ describe("actionableItems", () => {
     );
     const { items, warnings } = actionableItems(roadmap, implementation);
 
-    const f7 = items.find((item) => item.key === "impl:F7");
+    // F-series key is now namespaced: impl:friction:<slug(ID)>
+    const f7 = items.find((item) => item.key === "impl:friction:f7");
     expect(f7?.status).toBe("todo");
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toBe(
-      'Implementation: item "impl:F7" has an unrecognized Status cell ("Reviewing") — treated as To Do.',
+      'Implementation: item "impl:friction:f7" has an unrecognized Status cell ("Reviewing") — treated as To Do.',
     );
   });
 
-  test("extracts capabilityDeepeningWave rows with key impl:<slug(Item)>, priority/status from their own columns", () => {
+  test("extracts capabilityDeepeningWave rows with key impl:capability:<slug(Item)>, priority/status from their own columns", () => {
     const roadmap = extractRoadmap(ROADMAP_FIXTURE);
     const implementation = extractImplementation(IMPLEMENTATION_WAVES_FIXTURE);
     const { items, warnings } = actionableItems(roadmap, implementation);
 
+    // Capability wave keys are namespaced: impl:capability:<slug(Item)>
     const wave = items.find(
-      (item) => item.key === `impl:${slug("`aws/rds-data` Aurora")}`,
+      (item) => item.key === `impl:capability:${slug("`aws/rds-data` Aurora")}`,
     );
     expect(wave).toBeDefined();
     expect(wave?.priority).toBe("p1");
@@ -592,13 +645,14 @@ describe("actionableItems", () => {
     expect(warnings).toEqual([]);
   });
 
-  test("extracts postComparisonHardeningWave rows with key impl:<slug(Item)>, priority/status from their own columns", () => {
+  test("extracts postComparisonHardeningWave rows with key impl:hardening:<slug(Item)>, priority/status from their own columns", () => {
     const roadmap = extractRoadmap(ROADMAP_FIXTURE);
     const implementation = extractImplementation(IMPLEMENTATION_WAVES_FIXTURE);
     const { items, warnings } = actionableItems(roadmap, implementation);
 
+    // Post-comparison hardening wave keys are namespaced: impl:hardening:<slug(Item)>
     const wave = items.find(
-      (item) => item.key === `impl:${slug("ReDoS hardening pass")}`,
+      (item) => item.key === `impl:hardening:${slug("ReDoS hardening pass")}`,
     );
     expect(wave).toBeDefined();
     expect(wave?.priority).toBe("p0");
@@ -609,13 +663,14 @@ describe("actionableItems", () => {
     expect(warnings).toEqual([]);
   });
 
-  test("extracts m3lCliBuildOut rows with key impl:<slug(Item)>, priority/status from their own columns", () => {
+  test("extracts m3lCliBuildOut rows with key impl:cli:<slug(Item)>, priority/status from their own columns", () => {
     const roadmap = extractRoadmap(ROADMAP_FIXTURE);
     const implementation = extractImplementation(IMPLEMENTATION_WAVES_FIXTURE);
     const { items, warnings } = actionableItems(roadmap, implementation);
 
+    // m3l-cli build-out keys are namespaced: impl:cli:<slug(Item)>
     const wave = items.find(
-      (item) => item.key === `impl:${slug("8b — scaffold + discovery")}`,
+      (item) => item.key === `impl:cli:${slug("8b — scaffold + discovery")}`,
     );
     expect(wave).toBeDefined();
     expect(wave?.priority).toBe("p2");
@@ -624,6 +679,59 @@ describe("actionableItems", () => {
       "#m3l-cli-build-out--adr-0042-activation-issue-333",
     );
     expect(warnings).toEqual([]);
+  });
+
+  test("duplicateKeys is empty when no two rows share a key", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
+    const { duplicateKeys, warnings } = actionableItems(
+      roadmap,
+      implementation,
+    );
+    expect(warnings).toEqual([]);
+    expect(duplicateKeys).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// indexItemsByKey
+// ---------------------------------------------------------------------------
+
+describe("indexItemsByKey", () => {
+  test("indexes every item by its current key", () => {
+    const item = makeItem({ key: "impl:friction:f7" });
+    const byKey = indexItemsByKey([item]);
+    expect(byKey.get("impl:friction:f7")).toBe(item);
+  });
+
+  test("indexes every item by each of its legacyKeys", () => {
+    const item = makeItem({
+      key: "impl:friction:f7",
+      legacyKeys: ["impl:F7"],
+    });
+    const byKey = indexItemsByKey([item]);
+    // Both the current key and the legacy key resolve to the same item.
+    expect(byKey.get("impl:friction:f7")).toBe(item);
+    expect(byKey.get("impl:F7")).toBe(item);
+  });
+
+  test("a current key always wins over a legacy alias of another item for the same string", () => {
+    // itemA holds "impl:old" as a legacy alias. itemB's CURRENT key is the
+    // same string "impl:old". The current key must win — the alias is inert.
+    const itemA = makeItem({ key: "impl:a", legacyKeys: ["impl:old"] });
+    const itemB = makeItem({ key: "impl:old" });
+    const byKey = indexItemsByKey([itemA, itemB]);
+    expect(byKey.get("impl:old")).toBe(itemB);
+    // itemA is still reachable via its own current key.
+    expect(byKey.get("impl:a")).toBe(itemA);
+  });
+
+  test("an item with no legacyKeys is indexed without error", () => {
+    const item = makeItem({ key: "roadmap:p0:x" });
+    // No legacyKeys property on the item at all (makeItem doesn't add it by
+    // default), so the ?? [] guard in indexItemsByKey must handle undefined.
+    expect(() => indexItemsByKey([item])).not.toThrow();
+    expect(indexItemsByKey([item]).get("roadmap:p0:x")).toBe(item);
   });
 });
 
@@ -710,8 +818,12 @@ describe("buildIssuePayload", () => {
     expect(payload.labels).toEqual(["hub-sync", "priority:governance"]);
   });
 
-  test("milestoneTitle is '2.0 / breaking' for an item keyed impl:F3, regardless of its priority", () => {
-    const item = makeItem({ key: "impl:F3", priority: "p2" });
+  test("milestoneTitle is '2.0 / breaking' for an item keyed impl:friction:f3, regardless of its priority", () => {
+    // MAJOR_BUMP_ITEM_KEYS now contains impl:friction:f3 (namespaced), not impl:F3.
+    const item = makeItem({
+      key: `impl:friction:${slug("F3")}`,
+      priority: "p2",
+    });
     const payload = buildIssuePayload(item) as {
       milestoneTitle: string | null;
     };
@@ -1205,6 +1317,107 @@ describe("planIssueSync", () => {
     expect(result.create).toEqual([]);
     expect(result.close).toEqual([]);
   });
+
+  // -------------------------------------------------------------------------
+  // Legacy-marker cases (issue #480 / F13 — namespaced keys)
+  // -------------------------------------------------------------------------
+
+  test("an OPEN issue with a legacy marker lands in update (not close), with the item's current key", () => {
+    // An issue whose body still carries the old flat impl:F7 marker must
+    // resolve to the friction item, not be treated as "removed" (which would
+    // close it as "not planned").
+    const item = makeItem({
+      key: "impl:friction:f7",
+      status: "todo",
+      legacyKeys: ["impl:F7"],
+    });
+    const issueBody = `${hubMarker("impl:F7")}\nsome body\n`;
+    const legacyIssue: TestIssue = {
+      number: 50,
+      title: "old title",
+      body: issueBody,
+      state: "open",
+      labels: [HUB_LABEL, PRIORITY_LABELS.p2],
+    };
+    const result = planIssueSync([item], [legacyIssue]) as IssueSyncResult;
+
+    // Must be an update (to rewrite the marker), never a close.
+    expect(result.update).toHaveLength(1);
+    expect(result.update[0]?.number).toBe(50);
+    // The reported key is the CURRENT key, not the legacy one.
+    expect(result.update[0]?.key).toBe("impl:friction:f7");
+    expect(result.close).toEqual([]);
+    expect(result.create).toEqual([]);
+  });
+
+  test("a CLOSED+resolved issue with a legacy marker lands in update (marker migration), with the item's current key", () => {
+    // The narrow exception in the closed-and-resolved branch: even a resolved
+    // issue needs its stale marker rewritten so the alias can eventually retire.
+    const item = makeItem({
+      key: "impl:friction:f7",
+      status: "done",
+      legacyKeys: ["impl:F7"],
+    });
+    const issueBody = `${hubMarker("impl:F7")}\nsome body\n`;
+    const legacyClosedIssue: TestIssue = {
+      number: 51,
+      title: "old title",
+      body: issueBody,
+      state: "closed",
+      labels: [HUB_LABEL, PRIORITY_LABELS.p2],
+    };
+    const result = planIssueSync(
+      [item],
+      [legacyClosedIssue],
+    ) as IssueSyncResult;
+
+    expect(result.update).toHaveLength(1);
+    expect(result.update[0]?.number).toBe(51);
+    expect(result.update[0]?.key).toBe("impl:friction:f7");
+    expect(result.untouched).toEqual([]);
+    expect(result.close).toEqual([]);
+  });
+
+  test("the same closed+resolved issue with a CURRENT marker is untouched (idempotency after migration)", () => {
+    // After the marker-migration update above, the body now opens with the
+    // current key. Re-running planIssueSync must take the untouched path.
+    const item = makeItem({
+      key: "impl:friction:f7",
+      status: "done",
+      legacyKeys: ["impl:F7"],
+    });
+    // Use buildIssuePayload to build the "already-migrated" issue body.
+    const currentIssue = issueFromPayload(52, item, "closed");
+    const result = planIssueSync([item], [currentIssue]) as IssueSyncResult;
+
+    expect(result.untouched).toEqual([{ number: 52, reason: "in sync" }]);
+    expect(result.update).toEqual([]);
+    expect(result.close).toEqual([]);
+    expect(result.reopen).toEqual([]);
+  });
+
+  test("an issue whose marker matches no item is still closed as 'removed', with the raw marker key", () => {
+    // Contrast with the legacy-marker case: a key that is genuinely absent
+    // from both current keys and legacyKeys has no item to migrate to —
+    // it was actually removed from the source trackers.
+    const issueBody = `${hubMarker("impl:friction:gone")}\nsome body\n`;
+    const removedIssue: TestIssue = {
+      number: 53,
+      title: "gone item",
+      body: issueBody,
+      state: "open",
+      labels: [HUB_LABEL],
+    };
+    const result = planIssueSync([], [removedIssue]) as IssueSyncResult;
+
+    expect(result.close).toHaveLength(1);
+    expect(result.close[0]?.number).toBe(53);
+    // The reported key is the RAW marker key, since there is no item to name.
+    expect(result.close[0]?.key).toBe("impl:friction:gone");
+    expect(result.close[0]?.comment).toMatch(/remov/i);
+    expect(result.update).toEqual([]);
+    expect(result.create).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1394,6 +1607,33 @@ describe("planBackfill", () => {
     expect(defaultResult.needsReview).toHaveLength(1);
     expect(highThresholdResult.create).toHaveLength(1);
     expect(highThresholdResult.needsReview).toEqual([]);
+  });
+
+  test("a resolved item whose existing issue carries only a LEGACY marker is not re-filed (create is empty)", () => {
+    // planBackfill must resolve each existing marker through indexItemsByKey so
+    // an item already tracked under its old key is not backfilled a second time.
+    const item = makeItem({
+      key: "impl:friction:f7",
+      status: "done",
+      legacyKeys: ["impl:F7"],
+    });
+    // The issue's body has the OLD marker — exactly what happens to pre-#480
+    // issues that have not yet been migrated by planIssueSync.
+    const legacyBody = `${hubMarker("impl:F7")}\nsome body\n`;
+    const trackedWithLegacyMarker: BackfillIssue = {
+      number: 60,
+      title: "old title",
+      body: legacyBody,
+      state: "closed",
+    };
+    const result = planBackfill(
+      [item],
+      [trackedWithLegacyMarker],
+    ) as BackfillResult;
+
+    // The item resolves through its legacy key → already tracked → no create.
+    expect(result.create).toEqual([]);
+    expect(result.needsReview).toEqual([]);
   });
 });
 

@@ -251,6 +251,11 @@ export const COMMAND_CATALOG = [
       "Verifies every Status cell in ROADMAP.md/IMPLEMENTATION.md is one of ADR-0032's six tracker values (Done/To Do/In Progress/Deferred/Blocked/Rejected), rejecting board-side tokens like 'In review' that classifyStatus would otherwise silently read as To Do. Run after editing a Status cell in either tracker.",
   },
   {
+    name: "check:hub-keys",
+    description:
+      "Verifies every sync:hub item key derived from ROADMAP.md/IMPLEMENTATION.md is unique — no two rows deriving the same key, no two keys differing only by case, no legacy alias shadowing another item's key. Run after adding a tracker row or renaming an item label.",
+  },
+  {
     name: "check:hub-drift",
     description:
       "CI-gated dry-run of sync:hub-issues that fails when the plan is non-empty — GitHub Issues/Milestones no longer match ROADMAP.md/IMPLEMENTATION.md. Needs gh auth; run push-only in CI (ci.yml), and locally before pushing to main if you have gh authenticated.",
