@@ -32,3 +32,8 @@ See the [`Style Guide`](../docs/contributing/style-guide.md) for how to write an
 refactor code and tests (code, tests, and refactoring, each rule tagged
 `[enforced]` vs `[advisory]`), and [`docs/adr/README.md`](../docs/adr/README.md)
 for the architecture decision log.
+
+**Have an idea before it's ready to be a PR?** See
+[Filing work](../docs/contributing/filing-work.md) for how a rough idea
+becomes a tracked issue, and [`SUPPORT.md`](./SUPPORT.md) if you just have a
+question.

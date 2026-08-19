@@ -257,5 +257,7 @@ Before you report a change as done:
 
 ## See also
 
+- [Filing work](./filing-work.md) — where an idea starts and how it becomes a
+  tracked issue, before you get here
 - [Coding Standards](./coding-standards.md)
 - [Architecture](../m3l-common-architecture.md)
