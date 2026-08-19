@@ -15,8 +15,8 @@ Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
 - Retry types: `M3LRetryClassifier`, `M3LRetryDecision`, `M3LRetryAdvice`
 - Classifier composition: `combineClassifiers`
 - Built-in classifiers: `awsThrottlingClassifier`, `awsNetworkClassifier`, `httpRetryAfterClassifier`
-- Poller event map + payloads: `M3LPollerEventMap`, `M3LPollAttemptPayload`, `M3LPollWaitPayload`, `M3LPollSuccessPayload`, `M3LPollExhaustedPayload`
-- Retry event map + payloads: `M3LRetryEventMap`, `M3LRetryAttemptPayload`, `M3LRetryScheduledPayload`, `M3LRetrySuccessPayload`, `M3LRetryFatalPayload`, `M3LRetryExhaustedPayload`
+- Poller event map + payloads: `M3LPollerEventMap`, `M3LPollAttemptPayload`, `M3LPollWaitPayload`, `M3LPollSuccessPayload`, `M3LPollExhaustedPayload`, `M3LPollNoProgressPayload`
+- Retry event map + payloads: `M3LRetryEventMap`, `M3LRetryAttemptPayload`, `M3LRetryScheduledPayload`, `M3LRetrySuccessPayload`, `M3LRetryFatalPayload`, `M3LRetryExhaustedPayload`, `M3LRetryNoProgressPayload`
 
 The constructor option interfaces (`M3LPollerOptions`, `M3LRetryRunnerOptions`) and
 the backoff-strategy contract are **deliberately not re-exported** — callers build
@@ -112,6 +112,130 @@ operator just cancelled. No classifier can observe or reclassify the abort — s
 The signal is checked at attempt boundaries and while delaying. It does not
 interrupt CPU-bound synchronous work inside a check function or operation.
 
+### No-progress detection
+
+An attempt ceiling bounds how _many_ times a loop runs, not whether it is getting
+anywhere. A poll whose remote state never changes, or a paginated read handed the
+same page token over and over, still burns every attempt in real remote calls
+before failing. Both `M3LPollerOptions` and `M3LRetryRunnerOptions` therefore
+accept an optional **progress witness** — a cheap comparable value the caller
+samples once per continuing attempt — and fail fast once that value stops moving.
+
+```typescript
+readonly progress?: {
+  readonly witness: () => string | number | bigint | boolean;
+  readonly maxStalledAttempts: number;
+};
+```
+
+`witness` must return a **primitive**. That is not an incidental restriction: an
+object witness would compare unequal on every attempt (each call returns a fresh
+reference), so the guard would silently never fire — precisely the failure this
+option exists to catch. A caller whose real cursor is composite keys it into a
+primitive itself, which also keeps the per-attempt cost `O(1)` and keeps the
+library from traversing a caller-controlled mutable graph.
+
+```typescript
+import { Core } from "@m3l-automation/m3l-common";
+
+let pageToken: string | undefined;
+
+const poller = new Core.M3LPoller({
+  backoff: Core.M3LBackoff.exponentialJittered(500, 10_000),
+  maxAttempts: 60,
+  progress: {
+    witness: () => pageToken ?? "",
+    maxStalledAttempts: 3,
+  },
+});
+```
+
+**Semantics.**
+
+- The witness is sampled **once per attempt that is about to continue** — never
+  on a `success` decision, never on a terminal `failure`, and never on the
+  attempt that exhausts the ceiling.
+- The first sample establishes a baseline. Each later sample equal to the
+  previous one (compared with `Object.is`) increments a stall counter; any change
+  resets it to `0`.
+- When the counter reaches `maxStalledAttempts`, the call rejects with
+  `M3LNoProgressError` ([`ERR_NO_PROGRESS`](./errors.md), `origin: "external"`,
+  `retryable: false`), carrying `context.attempts` (1-based, the attempt that
+  tripped the guard) and `context.stalledAttempts` (always equal to
+  `maxStalledAttempts`).
+- The rejection happens **before** the backoff delay is slept, so a stalled loop
+  surfaces in seconds instead of after the full ceiling of remote calls.
+- `maxStalledAttempts` must be a finite integer greater than 0; anything else is
+  rejected at construction with `ERR_POLLING_INVALID_OPTION`, exactly as
+  `maxAttempts` is.
+- The stall counter lives in the `poll()` / `run()` call frame, so concurrent
+  calls on one instance track progress independently — the same isolation the
+  backoff progression already has.
+
+**The counter counts unchanged _transitions_, not samples.** A baseline sample is
+not itself a stalled attempt, so tripping takes `maxStalledAttempts + 1` witness
+samples. Worked example with `maxStalledAttempts: 3` and a witness pinned to
+`"a"`:
+
+| Attempt | Sample | Counter | Outcome                      |
+| ------- | ------ | ------- | ---------------------------- |
+| 1       | `"a"`  | 0       | baseline, continue           |
+| 2       | `"a"`  | 1       | continue                     |
+| 3       | `"a"`  | 2       | continue                     |
+| 4       | `"a"`  | 3       | **reject** `ERR_NO_PROGRESS` |
+
+The rejecting call therefore made 4 attempts and reports
+`{ attempts: 4, stalledAttempts: 3 }`. This assumes `maxAttempts >= 5`: the
+witness is never sampled on the ceiling-exhausting attempt, so with
+`maxAttempts: 4` attempt 4 _is_ the ceiling and the call exhausts instead — see
+"Deliberately independent of the ceiling" below.
+
+**Deliberately independent of the ceiling.** The no-progress check runs _after_
+the exhaustion check in both primitives, so a run that would have exhausted still
+exhausts with its existing error (`M3LPollExhaustedError` for the poller, the
+original error for the runner). The witness can only ever shorten a run that was
+going to keep going; it never changes what a ceiling-bound run does at its
+ceiling, and it never converts an exhaustion into a different error.
+
+**Precedence.** A cancelled operation reports cancellation and nothing else: the
+signal is re-checked immediately before a no-progress rejection, so an abort
+observed on a stalled attempt rejects with `M3LOperationAbortedError`, not
+`M3LNoProgressError`. In `M3LRetryRunner` a fatal classifier verdict also wins —
+the guard is consulted only on an attempt that would otherwise schedule a retry.
+
+**Absent a `progress` option, behaviour is unchanged** — no witness is called, no
+counter is kept, and both primitives make exactly the calls and throw exactly the
+errors they did before the option existed.
+
+> `Object.is` is the comparison, so a witness that returns `NaN` counts as
+> unchanged against a previous `NaN` (the guard fires), while `0` and `-0` count
+> as _changed_ (the counter resets). Both follow from `Object.is` and are the
+> intended reading of "the same value". Note the practical consequence of the
+> second: a numeric witness whose arithmetic can produce `-0` (any subtraction
+> reaching zero) resets the counter against a previous `0` and defeats the
+> guard — prefer a string or a monotonically-derived integer for such cursors.
+
+**The witness is caller code, and the library treats it as untrusted.** It is
+read **once** per sampled attempt and its result is used only for the `Object.is`
+comparison — the sampled value never reaches an error message, an error
+`context`, an event payload, or a run report. Two failure modes are handled
+loudly rather than silently:
+
+- **A witness that throws** is wrapped in `M3LPollingInvalidOptionError`
+  (`ERR_POLLING_INVALID_OPTION`) with the thrown value as `cause`. In `run()`
+  this matters especially: the witness is sampled inside the runner's `catch`,
+  so an unwrapped throw would otherwise replace the operation's real error.
+- **A witness that returns a non-primitive** (reachable when the witness is
+  typed `any`, since a declared return type cannot be enforced at runtime) is
+  rejected with `ERR_POLLING_INVALID_OPTION` instead of being compared. An
+  object sample would compare unequal on every attempt, so the guard would
+  silently never fire — a safety guard that disables itself on bad input is the
+  exact failure this option exists to prevent.
+
+`witness` and `maxStalledAttempts` are both captured into private fields at
+construction, so mutating the options object after the constructor returns
+cannot change how a later `poll()` / `run()` behaves.
+
 ## Events
 
 `M3LPoller` and `M3LRetryRunner` both extend `M3LEventEmitterBase`, so a consumer
@@ -132,8 +256,9 @@ changes the value a `poll()`/`run()` call returns or the error it throws.
 attempt counts, delays (ms), and — for retry — the classifier's decision. **No
 payload carries the raw error object or its message**, which could embed
 caller-supplied data; the raw error still travels the throw path
-(`M3LPollFailureError` / `M3LPollExhaustedError` from `poll()`, the original
-error from `run()`), so a consumer that needs error detail catches it there.
+(`M3LPollFailureError` / `M3LPollExhaustedError` / `M3LNoProgressError` from
+`poll()`, the original error from `run()` — or, when `run()`'s no-progress guard
+trips, an `M3LNoProgressError` whose `cause` is the last operation error), so a consumer that needs error detail catches it there.
 Attempt numbers in payloads are **1-based** (`attempt` runs `1..maxAttempts`),
 matching the `attempts` count carried in the exhaustion error context.
 
@@ -154,12 +279,13 @@ the attempt it occurred on.
 
 ### `M3LPoller` events (`M3LPollerEventMap`)
 
-| Event            | Emitted when                                                             | Payload                   |
-| ---------------- | ------------------------------------------------------------------------ | ------------------------- |
-| `poll:attempt`   | Before each `check()` call                                               | `M3LPollAttemptPayload`   |
-| `poll:wait`      | After a non-final `continue` decision, before sleeping the backoff delay | `M3LPollWaitPayload`      |
-| `poll:success`   | The `check()` returns a `success` decision                               | `M3LPollSuccessPayload`   |
-| `poll:exhausted` | All `maxAttempts` are used without a `success`                           | `M3LPollExhaustedPayload` |
+| Event              | Emitted when                                                                                                                                       | Payload                    |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `poll:attempt`     | Before each `check()` call                                                                                                                         | `M3LPollAttemptPayload`    |
+| `poll:wait`        | After a non-final `continue` decision, before sleeping the backoff delay — unless the no-progress guard trips first, which throws before this emit | `M3LPollWaitPayload`       |
+| `poll:success`     | The `check()` returns a `success` decision                                                                                                         | `M3LPollSuccessPayload`    |
+| `poll:exhausted`   | All `maxAttempts` are used without a `success`                                                                                                     | `M3LPollExhaustedPayload`  |
+| `poll:no-progress` | The progress witness stayed unchanged for `maxStalledAttempts` consecutive attempts                                                                | `M3LPollNoProgressPayload` |
 
 ```typescript
 interface M3LPollAttemptPayload {
@@ -176,6 +302,10 @@ interface M3LPollSuccessPayload {
 interface M3LPollExhaustedPayload {
   readonly attempts: number; // total attempts made (= maxAttempts)
 }
+interface M3LPollNoProgressPayload {
+  readonly attempt: number; // 1-based, the stalled attempt that tripped the guard
+  readonly stalledAttempts: number; // consecutive unchanged observations (= maxStalledAttempts)
+}
 ```
 
 > A `failure` decision (which throws `M3LPollFailureError`) has **no** dedicated
@@ -190,13 +320,14 @@ interface M3LPollExhaustedPayload {
 
 ### `M3LRetryRunner` events (`M3LRetryEventMap`)
 
-| Event             | Emitted when                                                           | Payload                    |
-| ----------------- | ---------------------------------------------------------------------- | -------------------------- |
-| `retry:attempt`   | Before each operation invocation                                       | `M3LRetryAttemptPayload`   |
-| `retry:scheduled` | A retriable error schedules a delay before the next attempt            | `M3LRetryScheduledPayload` |
-| `retry:success`   | The operation resolves (mirrors the poller's `poll:success`)           | `M3LRetrySuccessPayload`   |
-| `retry:fatal`     | A fatal classification stops the runner (the original error is thrown) | `M3LRetryFatalPayload`     |
-| `retry:exhausted` | A retriable error on the final attempt exhausts the retry budget       | `M3LRetryExhaustedPayload` |
+| Event               | Emitted when                                                                        | Payload                     |
+| ------------------- | ----------------------------------------------------------------------------------- | --------------------------- |
+| `retry:attempt`     | Before each operation invocation                                                    | `M3LRetryAttemptPayload`    |
+| `retry:scheduled`   | A retriable error schedules a delay before the next attempt                         | `M3LRetryScheduledPayload`  |
+| `retry:success`     | The operation resolves (mirrors the poller's `poll:success`)                        | `M3LRetrySuccessPayload`    |
+| `retry:fatal`       | A fatal classification stops the runner (the original error is thrown)              | `M3LRetryFatalPayload`      |
+| `retry:exhausted`   | A retriable error on the final attempt exhausts the retry budget                    | `M3LRetryExhaustedPayload`  |
+| `retry:no-progress` | The progress witness stayed unchanged for `maxStalledAttempts` consecutive attempts | `M3LRetryNoProgressPayload` |
 
 ```typescript
 interface M3LRetryAttemptPayload {
@@ -217,6 +348,10 @@ interface M3LRetryFatalPayload {
 }
 interface M3LRetryExhaustedPayload {
   readonly attempts: number; // total attempts made (= maxAttempts)
+}
+interface M3LRetryNoProgressPayload {
+  readonly attempt: number; // 1-based, the stalled attempt that tripped the guard
+  readonly stalledAttempts: number; // consecutive unchanged observations (= maxStalledAttempts)
 }
 ```
 

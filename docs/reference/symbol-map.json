@@ -1362,6 +1362,11 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/polling/events.ts"
   },
+  "M3LPollNoProgressPayload": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/events.ts"
+  },
   "M3LRetryEventMap": {
     "submodule": "polling",
     "namespace": "core",
@@ -1388,6 +1393,11 @@
     "file": "packages/m3l-common/src/core/polling/events.ts"
   },
   "M3LRetryExhaustedPayload": {
+    "submodule": "polling",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/polling/events.ts"
+  },
+  "M3LRetryNoProgressPayload": {
     "submodule": "polling",
     "namespace": "core",
     "file": "packages/m3l-common/src/core/polling/events.ts"

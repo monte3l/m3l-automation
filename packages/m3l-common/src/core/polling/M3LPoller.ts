@@ -8,9 +8,15 @@
 import { delay } from "../../internal/polling/delay.js";
 import { assertPositiveInteger } from "../../internal/polling/guards.js";
 import {
+  M3LNoProgressError,
   M3LPollExhaustedError,
   M3LPollFailureError,
 } from "../../internal/polling/errors.js";
+import {
+  captureProgressConfig,
+  ProgressTracker,
+  type ProgressWitnessConfig,
+} from "../../internal/polling/progress.js";
 import type { M3LBackoffStrategy } from "../../internal/polling/strategy.js";
 import { M3LEventEmitterBase } from "../events/index.js";
 import { M3LOperationAbortedError } from "../errors/index.js";
@@ -57,6 +63,35 @@ export interface M3LPollerOptions {
    * existed — no signal is registered, no listener overhead is incurred.
    */
   readonly signal?: AbortSignal;
+  /**
+   * Optional no-progress guard (see `docs/reference/core/polling.md`,
+   * "No-progress detection").
+   *
+   * When supplied, `witness` is sampled once per attempt that is about to
+   * continue (never on `success`, never on a terminal `failure`, and never
+   * on the attempt that exhausts `maxAttempts`). The first sample is a
+   * baseline; each later sample equal to the previous one (`Object.is`)
+   * increments a stall counter, and any change resets it to `0`. Once the
+   * counter reaches `maxStalledAttempts`, `poll()` rejects with an internal
+   * `M3LError` (code `ERR_NO_PROGRESS`, `origin: "external"`,
+   * `retryable: false`) before the backoff delay for that attempt is slept,
+   * so a stalled loop surfaces in seconds instead of after the full ceiling
+   * of remote calls. An abort observed on the same attempt always wins over
+   * this guard.
+   *
+   * `witness` and `maxStalledAttempts` are captured by value at construction
+   * (validated once) — mutating the `progress` object after construction has
+   * no effect on a later `poll()` call. `witness` must be cheap and
+   * side-effect-free; the library treats it as untrusted caller code: a
+   * throw is wrapped in `M3LPollingInvalidOptionError` rather than allowed to
+   * propagate raw (or, worse, replace an in-flight operation error), and a
+   * non-primitive result is rejected the same way instead of being silently
+   * compared (see `M3LProgressWitness`).
+   *
+   * Omitting this option leaves behaviour exactly as it was before the option
+   * existed — no witness is called, no counter is kept.
+   */
+  readonly progress?: ProgressWitnessConfig;
 }
 
 /** Default attempt bound when `maxAttempts` is omitted. */
@@ -105,10 +140,14 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
   readonly #backoff: M3LBackoffStrategy;
   readonly #maxAttempts: number;
   readonly #signal: AbortSignal | undefined;
+  readonly #progress: ProgressWitnessConfig | undefined;
 
   /**
    * @param options - The backoff strategy and optional attempt bound.
-   * @throws When `maxAttempts` is provided but is not a finite positive integer.
+   * @throws When `maxAttempts` is provided but is not a finite positive
+   *   integer, or when `options.progress.maxStalledAttempts` is provided but
+   *   is not a finite positive integer, or when `options.progress.witness`
+   *   is provided but is not a function.
    */
   constructor(options: M3LPollerOptions) {
     super();
@@ -117,6 +156,9 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
     this.#backoff = options.backoff;
     this.#maxAttempts = maxAttempts;
     this.#signal = options.signal;
+    // Validated and captured once, by value — see captureProgressConfig's
+    // TSDoc for why poll() must never read options.progress again.
+    this.#progress = captureProgressConfig(options.progress);
   }
 
   /**
@@ -129,11 +171,18 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
    * @throws {@link M3LOperationAbortedError} (code `ERR_OPERATION_ABORTED`) when
    *   the signal aborts — either before the first check or during a backoff delay.
    * @throws An internal `M3LError` (code `ERR_POLL_FAILURE`) on a `failure`
-   *   decision, or (code `ERR_POLL_EXHAUSTED`) when `maxAttempts` is reached
-   *   while still `continue`.
+   *   decision, (code `ERR_POLL_EXHAUSTED`) when `maxAttempts` is reached
+   *   while still `continue`, (code `ERR_NO_PROGRESS`) when a configured
+   *   `progress` witness stays unchanged for `maxStalledAttempts` consecutive
+   *   attempts, or (code `ERR_POLLING_INVALID_OPTION`) when that witness
+   *   threw or returned a non-primitive value while sampling.
    */
   async poll<T>(check: M3LPollCheckFn<T>): Promise<T> {
     let prevDelay: number | undefined;
+    const tracker =
+      this.#progress !== undefined
+        ? new ProgressTracker(this.#progress)
+        : undefined;
 
     for (let attempt = 0; attempt < this.#maxAttempts; attempt++) {
       // Check signal before invoking check() — an already-aborted signal
@@ -160,19 +209,9 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
             "poll check returned a terminal failure decision",
             { attempt: attempt + 1 },
           );
-        case "continue": {
-          if (attempt < this.#maxAttempts - 1) {
-            const nextDelay = this.#backoff.nextDelay(attempt, prevDelay);
-            prevDelay = nextDelay;
-            this.emit("poll:wait", {
-              attempt: attempt + 1,
-              delayMs: nextDelay,
-            });
-            // Pass signal so an abort during the backoff abandons it immediately.
-            await delay(nextDelay, this.#signal);
-          }
+        case "continue":
+          prevDelay = await this.#continueAttempt(attempt, prevDelay, tracker);
           break;
-        }
         default: {
           const exhaustive: never = decision;
           throw new M3LPollFailureError(
@@ -186,6 +225,70 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
     throw new M3LPollExhaustedError(
       `poll exhausted after ${String(this.#maxAttempts)} attempts while still 'continue'`,
       { attempts: this.#maxAttempts },
+    );
+  }
+
+  /**
+   * Handle a non-final `continue` decision: consult the no-progress guard (if
+   * configured) and, absent a trip, compute, emit, and sleep the backoff
+   * delay for the next attempt. Extracted from {@link poll}'s loop body to
+   * keep both under the complexity/depth/length lint ceilings.
+   *
+   * @param attempt - The 0-based index of the attempt that just returned
+   *   `continue`.
+   * @param prevDelay - The previous backoff delay, seeding the progression.
+   * @param tracker - This call's stall tracker, or `undefined` when no
+   *   `progress` option was configured.
+   * @returns The delay just slept (the next `prevDelay` seed), or the
+   *   unchanged `prevDelay` when `attempt` is the ceiling-exhausting attempt
+   *   (no delay is slept for it).
+   * @throws {@link M3LOperationAbortedError} when the signal aborted on this
+   *   attempt (abort always wins over a no-progress trip).
+   * @throws An internal `M3LError` (code `ERR_NO_PROGRESS`) when the guard trips.
+   */
+  async #continueAttempt(
+    attempt: number,
+    prevDelay: number | undefined,
+    tracker: ProgressTracker | undefined,
+  ): Promise<number | undefined> {
+    if (attempt >= this.#maxAttempts - 1) {
+      return prevDelay;
+    }
+    if (tracker !== undefined) {
+      this.#checkProgress(tracker, attempt);
+    }
+    const nextDelay = this.#backoff.nextDelay(attempt, prevDelay);
+    this.emit("poll:wait", { attempt: attempt + 1, delayMs: nextDelay });
+    // Pass signal so an abort during the backoff abandons it immediately.
+    await delay(nextDelay, this.#signal);
+    return nextDelay;
+  }
+
+  /**
+   * Sample `tracker`'s witness and, when the guard trips, emit
+   * `poll:no-progress` and throw. Abort always wins: re-checked here before
+   * reporting no-progress, since a stalled attempt can also be the one that
+   * observed the abort.
+   *
+   * @param tracker - This call's stall tracker.
+   * @param attempt - The 0-based index of the stalled attempt.
+   * @throws {@link M3LOperationAbortedError} when the signal has aborted.
+   * @throws An internal `M3LError` (code `ERR_NO_PROGRESS`) when the guard
+   *   trips, or (code `ERR_POLLING_INVALID_OPTION`) when the witness threw
+   *   or returned a non-primitive value while sampling.
+   */
+  #checkProgress(tracker: ProgressTracker, attempt: number): void {
+    if (!tracker.record()) {
+      return;
+    }
+    if (isAborted(this.#signal)) {
+      throw new M3LOperationAbortedError();
+    }
+    const stalledAttempts = tracker.stalledAttempts;
+    this.emit("poll:no-progress", { attempt: attempt + 1, stalledAttempts });
+    throw new M3LNoProgressError(
+      `poll made no progress for ${String(stalledAttempts)} consecutive attempts`,
+      { attempts: attempt + 1, stalledAttempts },
     );
   }
 }

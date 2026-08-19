@@ -837,6 +837,57 @@ describe("M3LBreadcrumbTrail.attach() / detach", () => {
         .every((entry: M3LBreadcrumb) => entry.source === "M3LPoller"),
     ).toBe(true);
   });
+
+  // A5 no-progress detection (docs/reference/core/polling.md): the registry's
+  // 19 built-in summarizers include `poll:no-progress`/`retry:no-progress`, so
+  // a DEFAULT `attach(poller)`/`attach(runner)` — no explicit `events` list —
+  // must already capture them, keeping `attempt` and `stalledAttempts`.
+  test("attach(poller) with no explicit events list still captures poll:no-progress, keeping attempt and stalledAttempts", async () => {
+    const maxStalledAttempts = 2;
+    const poller = new M3LPoller({
+      backoff: M3LBackoff.constant(1),
+      maxAttempts: 50,
+      progress: { witness: () => "same", maxStalledAttempts },
+    });
+    const trail = new M3LBreadcrumbTrail();
+    trail.attach(poller);
+
+    await expect(poller.poll(() => ({ type: "continue" }))).rejects.toThrow();
+
+    const entry = trail
+      .entries()
+      .find((e: M3LBreadcrumb) => e.event === "poll:no-progress");
+    expect(entry).toBeDefined();
+    expect(entry?.payload).toEqual({
+      attempt: maxStalledAttempts + 1,
+      stalledAttempts: maxStalledAttempts,
+    });
+  });
+
+  test("attach(runner) with no explicit events list still captures retry:no-progress, keeping attempt and stalledAttempts", async () => {
+    const maxStalledAttempts = 2;
+    const runner = new M3LRetryRunner({
+      classifier: () => "retriable",
+      backoff: M3LBackoff.constant(1),
+      maxAttempts: 50,
+      progress: { witness: () => "same", maxStalledAttempts },
+    });
+    const trail = new M3LBreadcrumbTrail();
+    trail.attach(runner);
+
+    await expect(
+      runner.run(() => Promise.reject(new Error("still failing"))),
+    ).rejects.toThrow();
+
+    const entry = trail
+      .entries()
+      .find((e: M3LBreadcrumb) => e.event === "retry:no-progress");
+    expect(entry).toBeDefined();
+    expect(entry?.payload).toEqual({
+      attempt: maxStalledAttempts + 1,
+      stalledAttempts: maxStalledAttempts,
+    });
+  });
 });
 
 // =============================================================================
