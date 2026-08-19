@@ -9,31 +9,31 @@
           "file": "packages/m3l-common/src/core/diagnostics/exit-codes.ts",
           "symbol": "M3L_EXIT_CODES",
           "lines": "26-52",
-          "blob": "0d8c6089dbbe0c15a66c2042bfa9b51a732ffa59"
+          "blob": "cb35147738b28e1e1c0ef9606a76116403cdce24"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/exit-codes.ts",
           "symbol": "M3LExitCode",
           "lines": "53-71",
-          "blob": "0d8c6089dbbe0c15a66c2042bfa9b51a732ffa59"
+          "blob": "cb35147738b28e1e1c0ef9606a76116403cdce24"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/exit-codes.ts",
           "symbol": "M3LErrorExitCode",
           "lines": "72-98",
-          "blob": "0d8c6089dbbe0c15a66c2042bfa9b51a732ffa59"
+          "blob": "cb35147738b28e1e1c0ef9606a76116403cdce24"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/exit-codes.ts",
           "symbol": "isM3LErrorOrigin",
           "lines": "99-181",
-          "blob": "0d8c6089dbbe0c15a66c2042bfa9b51a732ffa59"
+          "blob": "cb35147738b28e1e1c0ef9606a76116403cdce24"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/exit-codes.ts",
           "symbol": "mapErrorToExitCode",
           "lines": "182-189",
-          "blob": "0d8c6089dbbe0c15a66c2042bfa9b51a732ffa59"
+          "blob": "cb35147738b28e1e1c0ef9606a76116403cdce24"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/format-error.ts",
@@ -159,46 +159,56 @@
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunOutcome",
           "lines": "52-64",
-          "blob": "06e3bf63ad13ab5412b9d9e98b42709353d2acd9"
+          "blob": "212e4ac19de15714e8251ecac5bba08b8828b363"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReportFailure",
           "lines": "65-87",
-          "blob": "06e3bf63ad13ab5412b9d9e98b42709353d2acd9"
+          "blob": "212e4ac19de15714e8251ecac5bba08b8828b363"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReportInput",
           "lines": "88-115",
-          "blob": "06e3bf63ad13ab5412b9d9e98b42709353d2acd9"
+          "blob": "212e4ac19de15714e8251ecac5bba08b8828b363"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReportBase",
           "lines": "116-150",
-          "blob": "06e3bf63ad13ab5412b9d9e98b42709353d2acd9"
+          "blob": "212e4ac19de15714e8251ecac5bba08b8828b363"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReport",
           "lines": "151-176",
-          "blob": "06e3bf63ad13ab5412b9d9e98b42709353d2acd9"
+          "blob": "212e4ac19de15714e8251ecac5bba08b8828b363"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReporterOptions",
           "lines": "177-946",
-          "blob": "06e3bf63ad13ab5412b9d9e98b42709353d2acd9"
+          "blob": "212e4ac19de15714e8251ecac5bba08b8828b363"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
           "symbol": "M3LRunReporter",
           "lines": "947-1189",
-          "blob": "06e3bf63ad13ab5412b9d9e98b42709353d2acd9"
+          "blob": "212e4ac19de15714e8251ecac5bba08b8828b363"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
+          "symbol": "M3LRunRecoveryEntry",
+          "blob": "212e4ac19de15714e8251ecac5bba08b8828b363"
+        },
+        {
+          "file": "packages/m3l-common/src/core/diagnostics/run-report.ts",
+          "symbol": "M3L_RECOVERY_LIMIT",
+          "blob": "212e4ac19de15714e8251ecac5bba08b8828b363"
         }
       ],
-      "retrieved": "2026-08-10"
+      "retrieved": "2026-08-19"
     }
   ]
 }

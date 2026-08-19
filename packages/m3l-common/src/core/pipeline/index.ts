@@ -18,6 +18,7 @@ export type {
   M3LOperationPipelineBaseDeps,
   M3LOperationPipelineOptions,
   M3LOperationPipelineOutcome,
+  M3LOperationPipelineOutcomeBase,
   M3LPipelineDeclinePolicy,
   M3LPipelineDestructiveOptions,
 } from "./types.js";
