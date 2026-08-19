@@ -139,7 +139,7 @@ test (`bin/tests/doc-provenance.test.ts`) covering both `function*` and `async
 function*`. No further action needed for future submodules — the tool now
 handles this pattern.
 
-### 3. The submodule-count tooling had a latent bug that only a non-degenerate total≠implemented state could surface
+### 3. The submodule-count tooling had a latent bug that only a non-degenerate total≠implemented state could surface _(promoted → .claude/rules/tests.md)_
 
 After marking `dynamodb`'s tests written (moving `total` from 22 to 23 while
 `implemented` stayed at 22 — the module's first non-reviewed intermediate

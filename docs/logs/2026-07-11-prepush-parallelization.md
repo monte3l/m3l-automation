@@ -85,4 +85,4 @@ reminder that the pre-push is only a backstop; `main`'s health depends on not
   and budgeting the push. _(promoted → .claude/skills/creating-prs/SKILL.md, CLAUDE.md)_
 - **A red trunk can hide until something re-runs the gate.** `main` sat red on a
   formatting failure; nothing forced a local re-check until the new hook ran it.
-  A periodic `main`-health glance (or not bypassing the hook) catches this sooner.
+  A periodic `main`-health glance (or not bypassing the hook) catches this sooner. _(promoted → .claude/rules/tests.md)_

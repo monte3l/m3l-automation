@@ -136,7 +136,7 @@ Update — treat ADR metrics as snapshots, never as current state.
   unfinished. _(promoted → .claude/rules/subagent-dispatch.md)_
 - **Re-derive a gating ADR's evidence before opening its gate** — ADR
   metrics are snapshots; the Update that opens a gate should carry the
-  corrected census so the next reader isn't planning against stale numbers.
+  corrected census so the next reader isn't planning against stale numbers. _(promoted → CLAUDE.md)_
 - **Soft-land vs throw as a discriminated policy union** — modeling the two
   existing decline behaviors as first-class `{kind}` variants (plus a
   status-carrying outcome) let both target scripts keep byte-identical

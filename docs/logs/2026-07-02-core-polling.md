@@ -216,7 +216,7 @@ indices, so a table-shape change fails loudly instead of silently no-op'ing.
 - **Positional table validators fail silently on shape drift** — a hard-coded
   column index (`check-test-counts.mjs`) silently skipped every row after the
   table gained a column; such validators should assert their header or key off
-  column names.
+  column names. _(promoted → .claude/rules/tests.md)_
 
 ## Follow-ups
 

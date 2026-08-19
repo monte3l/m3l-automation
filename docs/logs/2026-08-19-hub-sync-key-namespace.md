@@ -135,7 +135,7 @@ so a stale or over-broad annotation is invisible until a `.ts` file consumes it.
 the type expression and the prose together; and type a helper's `@param` to the
 fields it actually reads. Promoted to `.claude/rules/tests.md`.
 
-### 5. A `verify` step failed once, then passed on re-run
+### 5. A `verify` step failed once, then passed on re-run _(promoted → .claude/rules/tests.md; filed → IMPLEMENTATION.md F15)_
 
 The first full `pnpm verify` failed at `Check test counts`; the re-run passed all
 39 steps. That step spawns its own Vitest over `packages/m3l-common/tests` — a
@@ -149,15 +149,17 @@ output, well under its 10 MB `maxBuffer`).
 
 **Fix for future:** when a `verify` step fails in a tree the branch does not
 touch, re-run before investigating — but say so explicitly rather than
-reporting the first run as green. Not filed as friction on one observation; if
-it recurs, `check:test-counts`'s spawned run is the place to look.
+reporting the first run as green. It recurred the same day (blocking a `git
+push`), and the cause is structural: `lefthook.yml`'s parallel `pre-push` runs
+`check-test-counts`' own spawned Vitest concurrently with `test:coverage`'s two.
+Filed as **F15**.
 
 ## Lessons learned
 
 - **Reproduce the reported symptom before fixing it.** A filed item's "live
   evidence" is a claim, not a fact. Executing the real code path over real data
   took minutes here and changed the framing of the entire change — including
-  whether the defect was active or latent, which is what the ADR had to record.
+  whether the defect was active or latent, which is what the ADR had to record. _(promoted → CLAUDE.md)_
 
 - **An accident is not a safeguard.** Five key collisions were prevented only by
   one table forgetting to call `slug()`. Anything preserved by an inconsistency
