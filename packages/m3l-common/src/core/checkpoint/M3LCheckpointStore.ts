@@ -57,6 +57,26 @@ interface M3LCheckpointEnvelope<TPayload> {
 }
 
 // ---------------------------------------------------------------------------
+// NonFiniteNumberError — module-private write() sentinel
+// ---------------------------------------------------------------------------
+
+/**
+ * Module-private sentinel thrown inside the `write()` replacer when it
+ * encounters a non-finite number (`NaN`, `Infinity`, `-Infinity`). Propagates
+ * through `JSON.stringify` and is immediately caught by the snapshot `try`
+ * block, which re-throws it as `ERR_CHECKPOINT_IO` with no `cause` (the
+ * sentinel message must never reach a caller or a log sink).
+ *
+ * Using a named subclass satisfies the ESLint `only-throw-error` rule while
+ * keeping the sentinel unexported — callers cannot construct or catch it.
+ */
+class NonFiniteNumberError extends Error {
+  constructor() {
+    super("non-finite number in checkpoint payload");
+  }
+}
+
+// ---------------------------------------------------------------------------
 // isCheckpointEnvelope
 // ---------------------------------------------------------------------------
 
@@ -138,35 +158,55 @@ function isDefinitionPlainObject(value: object): boolean {
  * - **symbol keys** via `Object.getOwnPropertySymbols` (two arrays differing
  *   only in symbol-keyed data would produce identical fingerprints);
  * - **non-index enumerable properties** by comparing `Object.keys(arr).length`
- *   against `arr.length` (for a dense `[x, y, z]` they are equal; for an array
- *   carrying an extra own property such as `{ extra: true }` they differ).
+ *   against `capturedLength` (for a dense `[x, y, z]` they are equal; for an
+ *   array carrying an extra own property such as `{ extra: true }` they
+ *   differ).
+ *
+ * `capturedLength` is passed in by the caller — {@link projectDefinitionArray}
+ * — rather than re-reading `arr.length`, so that both the shape check and the
+ * iteration loop agree on exactly one observed value. A hostile accessor that
+ * mutates `arr.length` mid-walk cannot shrink the projection: the loop
+ * iterates to `capturedLength`, `Object.hasOwn` detects any resulting holes,
+ * and the call returns `REJECTED`.
  *
  * Guards both Proxy-trap-triggering calls under a single outer `try` — a
  * throw from either returns `false` (fail-closed). Extracted from
  * {@link projectDefinitionArray} to keep that function within the complexity
  * budget.
  */
-function isDefinitionArrayShapeValid(arr: unknown[]): boolean {
+function isDefinitionArrayShapeValid(
+  arr: unknown[],
+  capturedLength: number,
+): boolean {
   try {
     const symbols = Object.getOwnPropertySymbols(arr);
     if (symbols.length > 0) return false;
     const ownKeys = Object.keys(arr);
-    return ownKeys.length === arr.length;
+    return ownKeys.length === capturedLength;
   } catch {
     return false; // Proxy ownKeys/getOwnPropertySymbols trap — fail-closed
   }
 }
 
 /**
- * Array branch of {@link projectDefinitionValue}. Reads each element exactly
- * once, validates it, and copies it into a fresh `unknown[]`. Returns the
- * {@link REJECTED} sentinel when:
+ * Array branch of {@link projectDefinitionValue}. Reads `arr.length` exactly
+ * once into `capturedLength`, reads each element exactly once, validates it,
+ * and copies it into a fresh `unknown[]`. Returns the {@link REJECTED}
+ * sentinel when:
  *
  * - `arr`'s shape is invalid (own symbol keys or non-index enumerable
  *   properties — see {@link isDefinitionArrayShapeValid});
  * - the array is sparse — a hole at any index (detected via `Object.hasOwn`);
  * - any Proxy trap throws;
  * - any element is not on the allowlist.
+ *
+ * **Single `length` read.** `arr.length` is captured once before both the
+ * shape check and the loop, so a hostile accessor at e.g. index 0 that shrinks
+ * `arr.length` mid-walk cannot truncate the projection: the loop continues to
+ * `capturedLength`, and `Object.hasOwn` detects the resulting holes as
+ * sparse-array evidence, returning `REJECTED`. The shape check
+ * (`isDefinitionArrayShapeValid`) uses the same `capturedLength` rather than
+ * re-reading `arr.length`, so both observations are guaranteed to agree.
  *
  * Tracks `arr` in `visited` while recursing to detect cycles. Extracted from
  * {@link projectDefinitionValue} to keep each function within the project's
@@ -179,13 +219,19 @@ function projectDefinitionArray(
 ): unknown[] | typeof REJECTED {
   visited.add(arr);
   try {
+    // Read arr.length exactly once. On a hostile Proxy the `length` get trap
+    // can throw; the outer catch returns REJECTED (fail-closed). This single
+    // captured value is used by both the shape check and the loop — a
+    // mid-walk mutation of arr.length cannot shrink the projection.
+    const capturedLength = arr.length;
+
     // Reject arrays carrying own symbol keys or non-index enumerable
     // properties — both are invisible to indexed iteration and would cause two
     // arrays with different data to produce identical projections.
-    if (!isDefinitionArrayShapeValid(arr)) return REJECTED;
+    if (!isDefinitionArrayShapeValid(arr, capturedLength)) return REJECTED;
 
     const result: unknown[] = [];
-    for (let i = 0; i < arr.length; i++) {
+    for (let i = 0; i < capturedLength; i++) {
       // Detect holes: a sparse array has no own property at the hole index.
       // Object.hasOwn invokes the [[GetOwnProperty]] trap on a Proxy.
       let hasIndex: boolean;
@@ -881,14 +927,19 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
    * so `read()` can detect a configuration change between runs. When no
    * `definition` was supplied, the `fingerprint` key is omitted entirely.
    *
-   * **The checkpoint is snapshotted once** — `JSON.parse(JSON.stringify(checkpoint))`
-   * — so the stored `checksum` provably covers the exact bytes that are
-   * persisted. Without snapshotting, `canonicalJsonHash` and `JSON.stringify`
-   * could observe different representations for sparse arrays or non-idempotent
-   * `toJSON` getters, causing `write()` to persist a file whose stored checksum
-   * cannot match on `read()`, permanently deadlocking the resume. The snapshot
-   * is a plain JSON value; for any ordinary `TCheckpoint` the checksum is
-   * unchanged from prior versions.
+   * **The checkpoint is snapshotted once** —
+   * `JSON.parse(JSON.stringify(checkpoint, replacer))` — so the stored
+   * `checksum` provably covers the exact bytes that are persisted. Without
+   * snapshotting, `canonicalJsonHash` and `JSON.stringify` could observe
+   * different representations for sparse arrays or non-idempotent `toJSON`
+   * getters, causing `write()` to persist a file whose stored checksum cannot
+   * match on `read()`, permanently deadlocking the resume. The replacer rejects
+   * non-finite numbers (`NaN`, `Infinity`, `-Infinity`) with
+   * `ERR_CHECKPOINT_IO` rather than letting `JSON.stringify` silently render
+   * them as `null` — a value substitution that the resume logic would read back
+   * as real, violating the no-silent-failure rule. The snapshot is a plain JSON
+   * value; for any ordinary `TCheckpoint` the checksum is unchanged from prior
+   * versions.
    *
    * The checksum and fingerprint are not tamper-evidence or authentication
    * guarantees: both are unkeyed hashes over publicly canonical JSON
@@ -930,12 +981,31 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
     // so they are provably the same view — a sparse array or a non-idempotent
     // `toJSON` getter can no longer cause the stored checksum to disagree with
     // the persisted payload on a later `read()`.
+    //
+    // The replacer rejects non-finite numbers (`NaN`, `Infinity`, `-Infinity`)
+    // by throwing {@link NonFiniteNumberError}, which propagates through
+    // `JSON.stringify`. Without the replacer, `JSON.stringify` renders a
+    // non-finite number as `null`, so the stored file would silently carry
+    // `null` where the caller passed `Infinity` — a value substitution the
+    // resume logic reads back as real, violating the no-silent-failure rule.
+    // Circular references and `BigInt` throw natively from `JSON.stringify`,
+    // so no replacer handling is needed for those; all three fall through to
+    // the same catch block, which maps them to `ERR_CHECKPOINT_IO` with no
+    // `cause`.
     let snapshot: unknown;
     try {
-      snapshot = JSON.parse(JSON.stringify(checkpoint)) as unknown;
+      snapshot = JSON.parse(
+        JSON.stringify(checkpoint, (_key: string, value: unknown): unknown => {
+          if (typeof value === "number" && !Number.isFinite(value))
+            throw new NonFiniteNumberError();
+          return value;
+        }),
+      ) as unknown;
     } catch {
       // Never chain `cause`: JSON.stringify's thrown message can embed the
-      // caller's actual checkpoint value (e.g. a DynamoDB primary key).
+      // caller's actual checkpoint value (e.g. a DynamoDB primary key), and
+      // NonFiniteNumberError's message names the constraint without caller
+      // data — both must be suppressed to prevent leaking sensitive content.
       throw new M3LCheckpointError(
         `checkpoint at '${this.#path}' is not JSON-serializable and cannot be written: no circular references, BigInt, or non-finite numbers`,
         { code: "ERR_CHECKPOINT_IO", context: { path: this.#path } },

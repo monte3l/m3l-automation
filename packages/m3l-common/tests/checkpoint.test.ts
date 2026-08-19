@@ -3246,3 +3246,422 @@ describe("M3LCheckpointStore.write() — serialization failure arm (Fix B)", () 
     expect((thrown as M3LCheckpointError).cause).toBe(renameFailure);
   });
 });
+
+// ---------------------------------------------------------------------------
+// G. Fix S3 — write() rejects non-finite numbers loud (NaN / Infinity / -Infinity)
+//    Before this fix: JSON.stringify coerced non-finite numbers to null silently.
+//    The resume logic then read null back as real data — a silent value
+//    substitution. The replacer now throws NonFiniteNumberError, which propagates
+//    through JSON.stringify and is caught by the snapshot try block, re-thrown
+//    as ERR_CHECKPOINT_IO with no cause.
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore.write() — Fix S3: non-finite numbers fail loud", () => {
+  // Permissive validator for this section — write() never calls validate;
+  // the predicate just keeps TypeScript satisfied.
+  function isAnyObj(v: unknown): v is Record<string, unknown> {
+    return typeof v === "object" && v !== null;
+  }
+
+  test("Infinity at the top level of the payload throws ERR_CHECKPOINT_IO, cause undefined, no caller data in message", async () => {
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-infinity",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ z: Infinity });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    // cause must be undefined — the NonFiniteNumberError sentinel message must
+    // not reach any caller channel (it names the constraint, not a value).
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    // The payload field name must not appear in the message.
+    expect((thrown as M3LCheckpointError).message).not.toContain('"z"');
+  });
+
+  test.each([
+    ["NaN", NaN],
+    ["-Infinity", -Infinity],
+  ])(
+    "%s at the top level of the payload throws ERR_CHECKPOINT_IO, cause undefined",
+    async (_label, value) => {
+      const store = new M3LCheckpointStore<Record<string, unknown>>({
+        paths: makePathsPort(dir),
+        name: "run-s3-nonfinite",
+        validate: isAnyObj,
+        missing: { kind: "error" },
+      });
+
+      let thrown: unknown;
+      try {
+        await store.write({ z: value });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LCheckpointError);
+      expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+      expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    },
+  );
+
+  test("Infinity nested inside a plain object throws ERR_CHECKPOINT_IO — replacer runs at every depth", async () => {
+    // Before the fix, { a: { b: Infinity } } serialised as { a: { b: null } }
+    // and the store happily persisted it. The replacer visits every node in the
+    // JSON tree, so a non-finite number at any nesting level now throws.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-nested-obj",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ a: { b: Infinity } });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("NaN inside an array throws ERR_CHECKPOINT_IO — replacer runs for every array element", async () => {
+    // Before the fix, { a: [1, NaN] } serialised as { a: [1, null] } and the
+    // store persisted null silently. The replacer visits array elements too.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-array-nan",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ a: [1, NaN] });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("atomicity: after a failed non-finite write on a fresh store, no checkpoint file is left behind", async () => {
+    // The snapshot step throws before any I/O is attempted (writeFileAtomic is
+    // never called), so no file — not even a partial temp file — can exist.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-no-file",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ z: Infinity });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+
+    // The checkpoint file must not exist — ENOENT is the expected outcome.
+    let readErr: unknown;
+    try {
+      await readFile(store.path, "utf8");
+    } catch (error) {
+      readErr = error;
+    }
+    expect(readErr).toBeDefined();
+    expect((readErr as NodeJS.ErrnoException).code).toBe("ENOENT");
+  });
+
+  test("atomicity: after a failed non-finite write on an existing checkpoint, prior contents are byte-intact", async () => {
+    // If a prior checkpoint exists, the failed non-finite write must leave it
+    // untouched — the same guarantee the atomic-rename tests prove for I/O
+    // failures, but here the failure happens before any I/O.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-byte-intact",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ value: 42 });
+    const beforeBytes = await readFile(store.path, "utf8");
+
+    let thrown: unknown;
+    try {
+      await store.write({ value: NaN });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    const afterBytes = await readFile(store.path, "utf8");
+    expect(afterBytes).toBe(beforeBytes);
+  });
+
+  test("control: circular reference payload still throws ERR_CHECKPOINT_IO — replacer does not affect circular handling", async () => {
+    // JSON.stringify natively throws on circular references; the replacer never
+    // fires for them. The catch block maps both the replacer throw and the native
+    // throw to ERR_CHECKPOINT_IO — this test confirms the replacer did not break
+    // the existing circular handling.
+    const circular: CircularCheckpoint = { queryId: "q-s3-circ-control" };
+    circular.self = circular;
+
+    const store = new M3LCheckpointStore<CircularCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-s3-circ-control",
+      validate: isCircularCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write(circular);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("control: BigInt payload still throws ERR_CHECKPOINT_IO — JSON.stringify throws natively; the replacer is not involved", async () => {
+    // JSON.stringify natively throws a TypeError on BigInt values. The replacer
+    // calls `return value` for non-number types, so BigInt is handled by
+    // JSON.stringify itself. The snapshot catch block must still wrap it as
+    // ERR_CHECKPOINT_IO with no cause.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-bigint-control",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ n: BigInt(42) });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("control: an ordinary finite-number payload still succeeds — the replacer passes all valid JSON values through unchanged", async () => {
+    // Confirms the replacer did not accidentally gate valid payloads.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-finite-control",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    await expect(
+      store.write({ n: 42, s: "hello", b: true, nil: null }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("regression: replacer is transparent for ordinary payloads — stored checksum is byte-identical to canonicalJsonHash(payload) for a complex valid payload", async () => {
+    // The replacer must not alter the serialized form for any ordinary (finite,
+    // non-circular, non-BigInt) value. The payload deliberately mixes nested
+    // objects, arrays, strings with escapes and non-ASCII characters, integers,
+    // floats, null, and an undefined-valued property (skipped by JSON). The
+    // stored checksum must equal canonicalJsonHash(payload) byte-for-byte —
+    // this byte-identity is what keeps checkpoints written by earlier library
+    // versions readable after the replacer was introduced: the checksum both
+    // store and read agree on must not change for any ordinary payload.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-complex-compat",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    const payload: Record<string, unknown> = {
+      strings: {
+        escaped: 'line1\nline2\ttab"quote\\backslash',
+        unicode: "こんにちは",
+        plain: "hello",
+      },
+      numbers: { int: 42, negFloat: -1.5, zero: 0 },
+      arrays: [1, [2, 3], null, "item"],
+      nested: { deep: { deeper: true } },
+      empty: {},
+      // undefined-valued property is skipped by JSON.stringify and by
+      // canonicalJsonHash (both rely on the same JSON serialisation).
+      absent: undefined,
+    };
+
+    await store.write(payload);
+    const rawJson = await readFile(store.path, "utf8");
+    const envelope = JSON.parse(rawJson) as Record<string, unknown>;
+
+    // canonicalJsonHash(payload) and canonicalJsonHash(snapshot) both hash the
+    // same JSON text (undefined keys are omitted in both), so they must agree.
+    const expected = canonicalJsonHash(payload);
+    expect(envelope["checksum"]).toBe(expected);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// H. Fix S2 — definition arr.length is read exactly once
+//    A hostile enumerable accessor on an array element that mutates arr.length
+//    mid-walk could previously shrink the projection below what was validated
+//    and fingerprint a shorter array. The fix captures length once and uses
+//    that single value for both the shape check and the iteration bound.
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore constructor — Fix S2: definition arr.length read exactly once", () => {
+  test("hostile accessor shrinks arr.length mid-walk: detected as a hole and rejected with ERR_CHECKPOINT_DEFINITION", () => {
+    // The accessor at index 0 sets spy.length = 1 when read, removing indices 1
+    // and 2. Because capturedLength = 3 was captured before the loop, the loop
+    // still tries to read index 1 — Object.hasOwn detects the hole (the element
+    // was removed by the length truncation) and returns REJECTED.
+    // Before the fix: the loop used the live arr.length on each iteration, so
+    // after the accessor fired, capturedLength was effectively 1 and the
+    // projection only contained [1] — silent truncation.
+    const spy = [1, 2, 3];
+    Object.defineProperty(spy, "0", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        spy.length = 1; // truncates indices 1 and 2
+        return 1;
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-s2-shrink",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { q: spy },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("arr.length is read exactly once during definition projection — Proxy instrumentation confirms the single-capture contract", () => {
+    // A Proxy whose get trap counts accesses to "length". The implementation
+    // captures arr.length once into capturedLength at the top of
+    // projectDefinitionArray, then passes that single value to
+    // isDefinitionArrayShapeValid and uses it as the loop bound — no further
+    // reads of arr.length occur. Any hostile mutation of arr.length after the
+    // initial read cannot affect the projection.
+    let lengthReadCount = 0;
+    const arr = new Proxy([1, 2, 3], {
+      get(target: number[], p: string | symbol, receiver: unknown): unknown {
+        if (p === "length") {
+          lengthReadCount++;
+        }
+        return Reflect.get(target, p, receiver);
+      },
+    });
+
+    // Construction must succeed — the array is a valid dense [1, 2, 3].
+    expect(() => {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-s2-length-once",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { q: arr },
+      });
+    }).not.toThrow();
+
+    // length must have been read exactly once — the single capturedLength read.
+    expect(lengthReadCount).toBe(1);
+  });
+
+  test("length accessor reporting a larger-than-actual value (grows): rejected because shape check detects the discrepancy", () => {
+    // A Proxy whose get trap returns 6 for "length" when the array only has 3
+    // own index properties. The shape check compares Object.keys(arr).length
+    // (which reflects the actual 3 elements) against capturedLength (6) and
+    // finds them unequal — isDefinitionArrayShapeValid returns false → REJECTED.
+    // This proves that a hostile accessor cannot cause the projection to cover
+    // more indices than actually exist.
+    const arr = new Proxy([1, 2, 3], {
+      get(target: number[], p: string | symbol, receiver: unknown): unknown {
+        if (p === "length") return 6; // claims 6 elements, only indices 0-2 exist
+        return Reflect.get(target, p, receiver);
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-s2-grows",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { q: arr },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("length accessor returning a disallowed value (Set): rejected because the shape check fails without escaping as a raw error", () => {
+    // A Proxy whose get trap returns a Set for "length". capturedLength becomes
+    // a Set; isDefinitionArrayShapeValid compares Object.keys(arr).length
+    // (a number, 3) against capturedLength (a Set), producing false →
+    // REJECTED. The implementation never throws a raw error — the shape check
+    // always returns a boolean.
+    const arr = new Proxy([1, 2, 3], {
+      get(target: number[], p: string | symbol, receiver: unknown): unknown {
+        if (p === "length") return new Set([1, 2, 3]); // not a number
+        return Reflect.get(target, p, receiver);
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-s2-set-return",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { q: arr },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+});
