@@ -63,6 +63,12 @@ export const VERIFY_STEPS = [
     skipReason: "no local gitleaks CLI equivalent (see triaging-ci)",
   },
   {
+    ciStepName: "Cache turbo",
+    id: "cache-turbo",
+    skipReason:
+      "CI-only actions/cache plumbing for turbo's .turbo/ directory across jobs/runners; a local checkout already has a persistent .turbo/ across runs with nothing to restore",
+  },
+  {
     ciStepName: "Security audit",
     id: "audit",
     cmd: () => "pnpm audit --audit-level=high",
