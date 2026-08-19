@@ -45,11 +45,17 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
   - `review` — the job in `.github/workflows/claude-pr-review.yml`. It fails
     unless the reviewer writes `PASS` to `.claude-review-verdict`, so a failing
     review blocks the merge (fail-closed if the review never runs). The reviewer
-    runs **read-only** in `--safe-mode` (CLAUDE.md/skills/plugins/hooks/MCP
-    servers disabled) with a scoped `--allowedTools` allowlist, posts a
-    **single sticky comment** per PR (updated on each push rather than
-    re-posted), is capped at `--max-turns 35`, and **does not run on draft
-    PRs** — it fires on
+    runs in `--safe-mode` (CLAUDE.md/skills/plugins/hooks/MCP servers
+    disabled) with a scoped `--allowedTools` allowlist plus one narrow
+    `Edit(./.claude-review-verdict)` grant for the verdict file — a
+    command-prefix Bash rule like `Bash(echo:*)` authorizes the command but
+    not a `>` redirect target, which Claude Code checks separately against
+    `Edit` rules; the allowlist originally omitted that grant, which
+    produced 20+ permission denials per run and pushed real reviews past
+    the turn cap (see the 2026-08-19 addenda in
+    `docs/research/pr-review-action-tuning.md`) — posts a **single sticky
+    comment** per PR (updated on each push rather than re-posted), is capped
+    at `--max-turns 35`, and **does not run on draft PRs** — it fires on
     `ready_for_review` and on every subsequent push to a ready PR. The workflow
     pre-computes the PR diff (`.claude-pr-diff.patch`) and hands it to the
     reviewer, so it reviews the supplied patch instead of spending turns fetching
