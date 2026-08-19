@@ -76,7 +76,10 @@ tooling and docs only. ADR-0032 gained a 2026-08-19 Update;
 
 ## Operational follow-up
 
-The next `pnpm sync:hub -- --apply` rewrites 108 issue bodies' marker lines.
-It is mechanical, but it must follow the merge promptly: `check:hub-drift` fails
-on a non-empty plan on pushes to `main`, and `--apply` needs a PAT so it cannot
-run in CI.
+The next `pnpm sync:hub -- --apply` rewrites 107 of the 108 `impl:` issue
+bodies' marker lines and closes the 108th (#480, the F13 row this change marks
+Done). **Two `--apply` runs are needed to converge:** a close does not rewrite
+the body, so #480 keeps its legacy marker until the following run migrates it.
+Run until the dry-run plan is empty. Both runs are mechanical, but they must
+follow the merge promptly: `check:hub-drift` fails on a non-empty plan on pushes
+to `main`, and `--apply` needs a PAT so it cannot run in CI.

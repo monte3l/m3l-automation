@@ -38,7 +38,9 @@ Results: `pnpm verify` green — **39 steps passed, 3 skipped**. Tests **1050
 passing / 38 files**, up from 1009 / 37 (+41). `sync:hub` warnings **6 → 0**
 with the item count unchanged at 139. Live read-only dry runs confirmed the
 migration: **0 creates, 107 marker rewrites, 0 "removed from source trackers"
-closes**, and the board sync planned **0 adds**. F13 flipped to Done; F14 filed.
+closes**, and the board sync planned **0 adds**. The 108th `impl:` issue is
+issue #480 itself, which closes on that run and migrates its own marker on the
+next one — so `--apply` must be run until the plan is empty, not once. F13 flipped to Done; F14 filed.
 
 Skills used: starting-work, writing-commits, writing-work-logs.
 

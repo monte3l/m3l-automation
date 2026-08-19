@@ -773,6 +773,11 @@ stays loud.
 
 Both Priority fixes already resolved to `p2`, so that half produces zero
 GitHub drift. The namespacing half does not: the next `sync:hub --apply`
-rewrites 108 issue bodies' marker lines. That run is mechanical and must
-follow the merge promptly, since `check:hub-drift` fails on a non-empty plan
-and `--apply` cannot run in CI.
+rewrites 107 of the 108 `impl:` issue bodies' marker lines, and closes the
+108th (#480, whose own F13 row this Update marks Done). **It takes two
+`--apply` runs to converge, not one** — a close does not rewrite the body, so
+issue #480 still carries its legacy marker afterwards and only migrates on the
+following run, which then settles to "in sync". Run `--apply` until the dry-run
+plan is empty; a single run leaves `check:hub-drift` red. Both runs are
+mechanical and must follow the merge promptly, since `check:hub-drift` fails on
+a non-empty plan and `--apply` cannot run in CI.
