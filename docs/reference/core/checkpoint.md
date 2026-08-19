@@ -81,7 +81,30 @@ Constructor options (`M3LCheckpointStoreOptions<TCheckpoint>`):
   number) throws `ERR_CHECKPOINT_DEFINITION` straight out of the constructor
   rather than surfacing later on the first `read()` or `write()`. The value is
   never persisted and never reaches a message or `context` — only its hash is
-  stored. Omitting it preserves today's behaviour exactly.
+  stored. Omitting the field preserves today's behaviour exactly; passing an
+  explicit `definition: undefined` is treated identically to omitting it (it
+  type-checks, because `undefined` is assignable to `unknown`, so a caller
+  forwarding an optional config field opts out silently rather than failing).
+
+  **Rejected definitions.** A value whose canonical JSON form discards its
+  content would produce a fingerprint that can never mismatch — a check that
+  silently does nothing. Those are rejected at construction with
+  `ERR_CHECKPOINT_DEFINITION` rather than accepted and quietly neutered: a
+  `function` or a `symbol` (both canonicalise to `null`), and a non-array
+  object that has no `toJSON` method and no own enumerable properties — which
+  is `Map`, `Set`, `WeakMap`, `RegExp` and friends, whose entries
+  `canonicalJsonStringify` cannot see, so `new Map([["a", 1]])` would otherwise
+  fingerprint identically to `{}`. A `Date` (it has `toJSON`), a class instance
+  carrying own data properties, a primitive, and an honestly-empty `{}` are all
+  accepted — an empty settings object carries no information but does not
+  _lose_ any, so it is a legitimate, if uninformative, definition.
+
+  **A definition is committed to by its hash, not concealed by it.** The hash
+  is an unkeyed SHA-256 over canonical JSON, so a low-entropy definition is
+  recoverable by brute force from the stored `fingerprint` — a table name drawn
+  from a handful of candidates falls in well under a hundred guesses. Never put
+  a credential, a token, or a secret in a `definition`; put the resolved
+  settings that identify the work, which is what it is for.
 
 Methods:
 
@@ -146,13 +169,14 @@ failed its integrity check has an untrustworthy fingerprint, so
 `ERR_CHECKPOINT_CORRUPT` is thrown even when the fingerprint also disagrees.
 The full read matrix:
 
-| `definition` on the store | `fingerprint` on the envelope | `read()`                                                    |
-| ------------------------- | ----------------------------- | ----------------------------------------------------------- |
-| supplied                  | present, matches              | resumes                                                     |
-| supplied                  | present, differs              | throws `ERR_CHECKPOINT_FINGERPRINT_MISMATCH`                |
-| supplied                  | absent                        | resumes — reads exactly as it does without this feature     |
-| absent                    | present                       | resumes — there is no current definition to compare against |
-| either                    | no envelope at all (legacy)   | resumes — the legacy bare-JSON path is untouched            |
+| `definition` on the store | `fingerprint` on the envelope | `read()`                                                                                                   |
+| ------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| supplied                  | present, matches              | resumes                                                                                                    |
+| supplied                  | present, differs              | throws `ERR_CHECKPOINT_FINGERPRINT_MISMATCH`                                                               |
+| supplied                  | absent                        | resumes — reads exactly as it does without this feature                                                    |
+| absent                    | present, a string             | resumes — there is no current definition to compare against                                                |
+| either                    | present, not a string         | throws `ERR_CHECKPOINT_CORRUPT` — the type check is unconditional, so this fires even with no `definition` |
+| either                    | no envelope at all (legacy)   | resumes — the legacy bare-JSON path is untouched                                                           |
 
 **Backward compatible on every axis**, and only opting in changes behaviour: an
 envelope written before `fingerprint` existed has none and reads as before; a
@@ -164,6 +188,31 @@ access to the file can recompute a matching one, strip the field, or strip the
 whole envelope. It defends against the caller's own stale-configuration
 mistake, not against an adversary.
 
+Two consequences of that scope are worth stating outright, because each could
+otherwise be read as a stronger guarantee than it is:
+
+**The `checksum` does not cover the `fingerprint`.** It is computed over
+`payload` alone, so the `fingerprint` field carries no integrity protection —
+not even against accidental corruption. A bit flip or a truncated transfer
+that leaves the field a _different but still valid_ string reports
+`ERR_CHECKPOINT_FINGERPRINT_MISMATCH` — "written under a different
+definition" — pointing an operator at a configuration change when the real
+cause was file damage. Widening the checksum to cover the fingerprint would
+be an on-disk format break, so this is accepted rather than fixed.
+**`ERR_CHECKPOINT_FINGERPRINT_MISMATCH` is classified `origin: "caller"`**
+(see [Core / errors](./errors.md)), unlike its neighbours
+`ERR_CHECKPOINT_CORRUPT` and `ERR_CHECKPOINT_PARSE`, which are `"external"`.
+That is deliberate: the dominant real cause is an operator editing the query
+or the window between runs, which is a configuration fault and should surface
+as exit code `2` (`CONFIG_USAGE`) rather than `3` (`EXTERNAL`). An externally
+tampered `fingerprint` reaches the same code and is therefore reported as a
+caller fault too — a known consequence of grading by dominant cause. The
+parallel `ERR_CHECKPOINT_DEFINITION` is `"caller"` for the stronger reason
+that it can only ever be reached from a value the caller passed in, whereas
+`ERR_CHECKPOINT_IO`'s own unhashable-`checkpoint` arm stays `"external"`
+despite also originating in a caller value — a pre-existing classification
+this change deliberately did not disturb.
+
 - `delete(): Promise<void>` — deletes the checkpoint file; tolerant of it
   already being absent.
 
@@ -172,12 +221,18 @@ mistake, not against an adversary.
 One subclass, six codes — the `M3LFtsIndexError` convention. Constructor
 options stay unexported (callers catch, they don't construct).
 
-- `"ERR_CHECKPOINT_CORRUPT"` — `read()` detected a content-addressed envelope
-  (see above) whose stored checksum does not match the recomputed checksum of
-  its payload — the file was hand-edited or corrupted after being written.
-  Thrown before `validate` ever sees the payload. **Never chains a `cause`**
-  (there is no underlying thrown error to chain — the mismatch is a direct
-  comparison, not a caught exception) and `context` carries only the resolved
+- `"ERR_CHECKPOINT_CORRUPT"` — thrown from two distinct sites, both inside
+  envelope verification and both before `validate` ever sees the payload. (1)
+  `read()` detected a content-addressed envelope (see above) whose stored
+  `checksum` does not match the recomputed checksum of its `payload` — the file
+  was hand-edited or corrupted after being written. (2) The envelope's
+  `fingerprint` field is **present but not a string**, which is a corrupt
+  envelope rather than a legacy file (see the note under
+  [Notes and behavior](#notes-and-behavior) on why the envelope guard is
+  deliberately not widened to cover this). Arm (2) is unconditional — it fires
+  whether or not a `definition` was supplied. **Never chains a `cause`** on
+  either arm (there is no underlying thrown error to chain — both are direct
+  comparisons, not caught exceptions) and `context` carries only the resolved
   `path`, never file content, matching `"ERR_CHECKPOINT_PARSE"`'s rationale
   below.
 - `"ERR_CHECKPOINT_DEFINITION"` — the `definition` supplied to the constructor
@@ -286,10 +341,13 @@ await store.delete();
   rather than promoted into `core/files` until a second caller justifies the
   public surface.
 - **`cause` chaining is resolved by error kind and content risk, not by
-  caller option.** `ERR_CHECKPOINT_PARSE`, `ERR_CHECKPOINT_CORRUPT`,
-  `ERR_CHECKPOINT_FINGERPRINT_MISMATCH` and `ERR_CHECKPOINT_DEFINITION` never
-  chain — every one of those paths can only be reached from content or
-  configuration that may embed caller data.
+  caller option.** Four codes never chain, for **two different reasons** that
+  are worth keeping distinct. `ERR_CHECKPOINT_PARSE` and
+  `ERR_CHECKPOINT_DEFINITION` have an underlying error that must not be chained:
+  it can embed the malformed file's content or the caller's definition value.
+  `ERR_CHECKPOINT_CORRUPT` and `ERR_CHECKPOINT_FINGERPRINT_MISMATCH` have
+  **nothing to chain at all** — each is a direct comparison, not a caught
+  exception, so no `cause` exists to suppress in the first place.
   `ERR_CHECKPOINT_MISSING` and `ERR_CHECKPOINT_IO`'s underlying-I/O-failure
   arm chain an errno `Error` (safe — an errno carries no file content), but
   `ERR_CHECKPOINT_IO`'s other arm — a `write()`-time checksum-computation

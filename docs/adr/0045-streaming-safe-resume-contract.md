@@ -192,6 +192,51 @@ writes none; and the legacy no-envelope path is untouched. Only opting in change
 behaviour. Named adopters: `athena-query`, `cloudwatch-logs-insights`,
 `dynamodb-crud`.
 
+## Addendum (2026-08-19) — two codes, not one, and the hash lands at construction
+
+The Update above authorises a single dedicated error code, for the read-time
+mismatch. Implementing it (A4, `docs/plans/IMPLEMENTATION.md`) surfaced a
+second decision the Update did not contemplate, settled by the maintainer
+during that work and recorded here so the shipped public surface is not wider
+than its decision record.
+
+**The definition is hashed once, at construction, not lazily on first use.**
+`canonicalJsonHash` rejects a circular reference, a `BigInt` and a non-finite
+number, so an unusable definition has to surface somewhere. Deferring it to the
+first `read()`/`write()` would report a composition-time mistake as a runtime
+I/O-adjacent failure, minutes into a run. Hashing eagerly makes it a
+construction failure instead, which is where the caller can act on it.
+
+**That needs a second code: `ERR_CHECKPOINT_DEFINITION`** (`origin: caller`,
+non-retryable). Routing it through the read-time mismatch code would conflate
+"your configuration changed since this checkpoint was written" with "the value
+you passed cannot be hashed at all" — two different faults with two different
+fixes. Routing it through `ERR_CHECKPOINT_IO`, which already absorbs the
+equivalent failure for an unhashable _checkpoint_, would repeat a
+misclassification rather than extend one: that arm is `origin: external` even
+though its trigger is a caller value. The pre-existing arm is left alone;
+the new one is classified honestly.
+
+**The same code also rejects a definition whose canonical form discards its
+content.** Verified against the real `canonicalJsonHash`: a `function` and a
+`symbol` both canonicalise to `null`, and `new Map([["a", 1]])` and
+`new Set([1, 2, 3])` both canonicalise to `{}`. A caller passing any of those
+would opt into fingerprinting, get a stamped envelope, and get a comparison
+that can never mismatch — a silent no-op precisely where this Update's whole
+purpose is to fail loud. Rejecting them at construction applies the Update's
+own stance ("failing loud beats resuming into a corrupt offset") one level
+earlier. An honestly-empty `{}` is still accepted: it carries no information
+but, unlike a `Map`, it does not _lose_ any.
+
+**`ERR_CHECKPOINT_FINGERPRINT_MISMATCH` is `origin: caller`**, unlike the
+`external` classification its file-reading neighbours `ERR_CHECKPOINT_CORRUPT`
+and `ERR_CHECKPOINT_PARSE` carry. Graded by dominant cause: the case this
+Update exists for is an operator editing the query or the window between runs,
+which should exit `2` (`CONFIG_USAGE`), not `3` (`EXTERNAL`). Externally
+tampered fingerprints reach the same code and are therefore reported as caller
+faults — an accepted consequence, documented in
+`docs/reference/core/checkpoint.md`.
+
 ## Links
 
 - Related: issue #427 (F11, `docs/plans/IMPLEMENTATION.md`); PR #425 (the
