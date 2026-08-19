@@ -73,11 +73,12 @@ Constructor options (`M3LCheckpointStoreOptions<TCheckpoint>`):
 - `definition?: unknown` — **optional.** The resolved configuration that gives
   this run's stored offsets their meaning: an Athena SQL query, a
   Logs-Insights time window plus log-group list, a DynamoDB table plus segment
-  count. Supplying it opts into **fingerprinting** — `write()` stamps
-  `canonicalJsonHash(definition)` onto the envelope, and `read()` refuses to
-  resume from a checkpoint written under a different definition (see **On-disk
-  format** below). Hashed **once, at construction**, so a value
-  `canonicalJsonHash` rejects (a circular reference, a `BigInt`, a non-finite
+  count. Supplying it opts into **fingerprinting** — `write()` stamps the
+  `canonicalJsonHash` of the definition's projection onto the envelope, and
+  `read()` refuses to resume from a checkpoint written under a different
+  definition (see **On-disk format** below). Projected and hashed **once, at
+  construction**, so a value it rejects (a circular reference, a `BigInt`, a
+  non-finite
   number) throws `ERR_CHECKPOINT_DEFINITION` straight out of the constructor
   rather than surfacing later on the first `read()` or `write()`. The value is
   never persisted and never reaches a message or `context` — only its hash is
@@ -107,10 +108,23 @@ Constructor options (`M3LCheckpointStoreOptions<TCheckpoint>`):
   `bigint`, a non-finite number, a `Map`, a `Set`, a `WeakMap`, a `RegExp`, a
   `Date`, and any class instance. An honestly-empty `{}` or `[]` is still
   accepted — it carries no information but does not _lose_ any. A `toJSON`
-  method is **never consulted** for a definition, own or inherited: a definition
-  is identified by the data it holds, not by a serialisation hook. So a `Date`
-  is passed as `date.toISOString()`, and a richer collection as the plain array
-  or object you want fingerprinted.
+  method on the **caller's** value is never consulted, own or inherited: a
+  definition is identified by the data it holds, not by a serialisation hook, and
+  the projection is a fresh tree that shares no object with the caller. So a
+  `Date` is passed as `date.toISOString()`, and a richer collection as the plain
+  array or object you want fingerprinted.
+
+  **Scope limit — a poisoned realm is a precondition, not a threat this store
+  defends.** The projection's objects are `Object.create(null)` maps, but its
+  arrays are ordinary arrays, so a process that has polluted
+  `Array.prototype.toJSON` (or `String.prototype.toJSON`, or `Object.prototype`)
+  can still make the serializer collapse a projected value before it is hashed —
+  two definitions differing only in a nested array would then fingerprint alike
+  and resume on each other's offsets. Nothing here can prevent that: under the
+  same pollution `canonicalJsonHash`, `JSON.stringify`, the logger and the
+  persisted run report are all equally compromised, so realm integrity is the
+  consumer's precondition for the whole library, not a property this submodule
+  can establish on its own.
 
   **Why one traversal, and not a check followed by a hash.** Two earlier
   attempts validated the caller's object and then let `canonicalJsonHash` read
@@ -197,13 +211,20 @@ permanently dead. Snapshotting once removes the divergence. For any ordinary
 payload the stored checksum is unchanged, so checkpoints written by earlier
 versions stay readable.
 
+**A non-serialisable checkpoint fails loud rather than being coerced.** The
+snapshot rejects a non-finite number (`NaN`, `Infinity`, `-Infinity`) with
+`ERR_CHECKPOINT_IO` instead of letting `JSON.stringify` render it as `null`.
+Persisting `null` where the caller passed `Infinity` would silently substitute a
+value the resume logic then reads back as real — the store's own no-silent-failure
+rule. Circular references and `BigInt` values fail the same way.
+
 **The `fingerprint` binds a checkpoint to the definition that wrote it.** The
 `checksum` answers "is this payload intact"; it cannot answer "does this offset
 still mean what it meant". Editing an Athena query, or a Logs-Insights time
 window, and then resuming would otherwise succeed silently and continue from an
 offset that no longer refers to the same work. When a `definition` is supplied,
-`write()` stamps `fingerprint: canonicalJsonHash(definition)` onto the
-envelope, and `read()` compares it against the fingerprint the current
+`write()` stamps `fingerprint` — the `canonicalJsonHash` of the definition's
+projection — onto the envelope, and `read()` compares it against the fingerprint the current
 definition produces. Because the hash is computed over **canonical** JSON, two
 definition objects differing only in key order fingerprint identically — a
 settings-object reordering does not invalidate an in-flight checkpoint.
