@@ -10,16 +10,19 @@
 
 import { validatePipelineOptions } from "../../internal/pipeline/validate.js";
 import { M3LPipelineInvalidOptionError } from "../../internal/pipeline/errors.js";
+import { createPipelinePhaseTracer } from "../../internal/pipeline/trace.js";
 import { M3LError } from "../errors/index.js";
 import { M3LConfigAccessor } from "../config/M3LConfigAccessor.js";
 import { confirmDestructive } from "../prompt/M3LDestructiveGate.js";
 
+import type { M3LPipelinePhaseTracer } from "../../internal/pipeline/trace.js";
 import type { M3LConfirmDestructiveOptions } from "../prompt/M3LDestructiveGate.js";
 import type {
   M3LOperationPipelineBaseDeps,
   M3LOperationPipelineOptions,
   M3LOperationPipelineOutcome,
   M3LPipelineDestructiveOptions,
+  M3LPipelineTraceSnapshot,
 } from "./types.js";
 
 /**
@@ -30,6 +33,39 @@ import type {
 function isNonEmpty<T>(arr: readonly T[]): arr is readonly [T, ...T[]] {
   return arr.length > 0;
 }
+
+/**
+ * Array-ness check that deliberately does NOT use a `value is T[]` type
+ * predicate. `Array.isArray` itself has one (`arg is any[]`), and narrowing
+ * the `recovery` callback's return through it directly at the call site
+ * collapses that binding's static type to `any[]` for the rest of its scope
+ * — tripping the `no-unsafe-return` lint rule on the later `return entries`
+ * even though the value is soundly typed. Routing the check through this
+ * plain-`boolean`-returning wrapper keeps the caller's binding at its
+ * original `readonly M3LRunRecoveryEntry[]` type (reference identity
+ * included) while still rejecting a non-array return from a JavaScript
+ * caller or a TypeScript assertion.
+ */
+function isUnknownArray(value: unknown): boolean {
+  return Array.isArray(value);
+}
+
+/**
+ * The result of phases 5-7 (prepare, gate, dispatch), returned by
+ * {@link M3LOperationPipeline.#runPrepareGateDispatch} so `run()` can branch
+ * on a soft-landed decline without that branch itself counting against
+ * `run()`'s own size.
+ */
+type PrepareGateDispatchResult<TOp extends string, TResult, TContext> =
+  | {
+      readonly kind: "declined";
+      readonly outcome: M3LOperationPipelineOutcome<TOp, TResult>;
+    }
+  | {
+      readonly kind: "dispatched";
+      readonly context: TContext;
+      readonly result: TResult;
+    };
 
 /**
  * Runs the fixed eleven-phase order documented in `docs/reference/core/pipeline.md`
@@ -107,6 +143,9 @@ export class M3LOperationPipeline<
    * @throws An internal `M3LError` (code `ERR_PIPELINE_INVALID_OPTION`) when
    *   `operations` is empty or contains duplicates, or when
    *   `destructive.operations` names an operation absent from `operations`.
+   *   Every violation found is aggregated under the thrown error's
+   *   `context.problems` — a single throw reports all of them, not just the
+   *   first.
    */
   constructor(
     options: M3LOperationPipelineOptions<
@@ -124,8 +163,9 @@ export class M3LOperationPipeline<
   /**
    * Runs the eleven-phase pipeline over `deps` and resolves the outcome.
    *
-   * All per-run state lives in this call's own frame — nothing is written to
-   * the instance — so one pipeline instance is reusable across sequential
+   * All per-run state — including every tracing accumulator, when `trace` is
+   * configured — lives in this call's own frame; nothing is written to the
+   * instance. One pipeline instance is therefore reusable across sequential
    * runs and safe under concurrent `run()` calls.
    *
    * @param deps - The dependency bag; must extend {@link
@@ -135,90 +175,333 @@ export class M3LOperationPipeline<
    *   handled by `onDecline: { kind: "soft-land" }`.
    */
   async run(deps: TDeps): Promise<M3LOperationPipelineOutcome<TOp, TResult>> {
+    const tracer = createPipelinePhaseTracer<TOp, TSettings, TContext>(
+      this.#options.trace,
+      deps.logger,
+    );
+    // Every phase-running helper below receives `snapshot`/`operationForPayload`
+    // (closures over this call's own trace state) plus explicit setters,
+    // rather than reading or writing instance fields — see
+    // `#createTraceState`'s own doc and TR-17's concurrent-run proof.
+    const {
+      snapshot,
+      operationForPayload,
+      setOperation,
+      setSettings,
+      setContext,
+    } = this.#createTraceState();
+
+    // Phases 1-4: accessor, operation, settings, guards.
+    const { operation, settings } = await this.#runAccessorThroughGuards(
+      tracer,
+      snapshot,
+      operationForPayload,
+      deps,
+      setOperation,
+      setSettings,
+    );
+
+    // Phases 5-7: prepare, gate, dispatch.
+    const prepared = await this.#runPrepareGateDispatch(
+      tracer,
+      snapshot,
+      operationForPayload,
+      operation,
+      settings,
+      deps,
+      setContext,
+    );
+    if (prepared.kind === "declined") return prepared.outcome;
+    const { result } = prepared;
+
+    // Phases 8-9: persist, then finalize.
+    await this.#runPersistAndFinalize(
+      tracer,
+      snapshot,
+      operationForPayload,
+      result,
+      settings,
+      deps,
+      operation,
+    );
+
+    // Phases 10-11: recovery, then outcome.
+    return await this.#runRecoveryAndOutcome(
+      tracer,
+      snapshot,
+      operationForPayload,
+      result,
+      settings,
+      deps,
+      operation,
+    );
+  }
+
+  /**
+   * Builds this call's per-run trace state bundle: the mutable
+   * `knownOperation`/`knownSettings`/`knownContext` slots (never written to
+   * `this`), the `snapshot`/`operationForPayload` closures every
+   * phase-running helper reads, and the setters that update them as each
+   * phase resolves a new value. A fresh bundle is returned on every call —
+   * nothing here is shared across `run()` invocations, preserving the
+   * engine's statelessness across runs and safety under concurrent `run()`
+   * calls (TR-17).
+   */
+  #createTraceState(): {
+    readonly snapshot: () => M3LPipelineTraceSnapshot<TOp, TSettings, TContext>;
+    readonly operationForPayload: () => TOp | undefined;
+    readonly setOperation: (operation: TOp) => void;
+    readonly setSettings: (settings: TSettings) => void;
+    readonly setContext: (context: TContext) => void;
+  } {
+    let knownOperation: TOp | undefined;
+    let knownSettings: TSettings | undefined;
+    // Only ever read when `contextKnown` is true — the placeholder cast
+    // mirrors the type-system-guaranteed `undefined as TContext` pattern
+    // used inside `#runPrepareGateDispatch` for the no-`prepare` case.
+    let knownContext: TContext = undefined as TContext;
+    let contextKnown = false;
+
+    return {
+      snapshot: () => ({
+        ...(knownOperation !== undefined ? { operation: knownOperation } : {}),
+        ...(knownSettings !== undefined ? { settings: knownSettings } : {}),
+        ...(contextKnown ? { context: knownContext } : {}),
+      }),
+      operationForPayload: () => knownOperation,
+      setOperation: (operation) => {
+        knownOperation = operation;
+      },
+      setSettings: (settings) => {
+        knownSettings = settings;
+      },
+      setContext: (context) => {
+        knownContext = context;
+        contextKnown = true;
+      },
+    };
+  }
+
+  /**
+   * Phases 1-4: accessor, operation, settings, guards. `setOperation` and
+   * `setSettings` update `run()`'s own per-call-frame trace state as each
+   * value resolves — this method carries no state of its own beyond its
+   * local `accessor`.
+   */
+  async #runAccessorThroughGuards(
+    tracer: M3LPipelinePhaseTracer<TOp, TSettings, TContext>,
+    snapshot: () => M3LPipelineTraceSnapshot<TOp, TSettings, TContext>,
+    operationForPayload: () => TOp | undefined,
+    deps: TDeps,
+    setOperation: (operation: TOp) => void,
+    setSettings: (settings: TSettings) => void,
+  ): Promise<{ readonly operation: TOp; readonly settings: TSettings }> {
     const options = this.#options;
 
-    // Phase 1-2: accessor + operation.
-    const accessor = new M3LConfigAccessor({
-      config: deps.config,
-      code: options.configCode,
-    });
-    const operation = accessor.oneOf("operation", options.operations);
+    const accessor = await tracer.run(
+      "accessor",
+      snapshot,
+      operationForPayload,
+      () =>
+        new M3LConfigAccessor({
+          config: deps.config,
+          code: options.configCode,
+        }),
+    );
 
-    // Phase 3: settings (sync or async resolver, awaited either way).
-    const settings = await options.resolveSettings(accessor, operation);
+    // `knownOperation` (via `setOperation`) is set inside the traced body so
+    // this phase's own EXIT payload can carry it, even though it was absent
+    // from this same phase's ENTRY snapshot (docs/reference/core/pipeline.md
+    // § Tracing's asymmetry, TR-5).
+    const operation = await tracer.run(
+      "operation",
+      snapshot,
+      operationForPayload,
+      () => {
+        const resolved = accessor.oneOf("operation", options.operations);
+        setOperation(resolved);
+        return resolved;
+      },
+    );
 
-    // Phase 4: guards, checked in the row's array order; first miss throws.
-    this.#runGuards(accessor, operation, settings);
+    const settings = await tracer.run(
+      "settings",
+      snapshot,
+      operationForPayload,
+      async () => {
+        const resolved = await options.resolveSettings(accessor, operation);
+        setSettings(resolved);
+        return resolved;
+      },
+    );
 
-    // Phase 5: prepare, once, before the gate. M3LOperationPipelineOptions
-    // makes `prepare` required whenever TContext is not `undefined` (a
-    // conditional type keyed on TContext), so the only way to reach this
-    // branch with `options.prepare` absent is TContext === undefined — the
-    // cast below is type-system-guaranteed, not merely documented.
-    const context = options.prepare
-      ? await options.prepare(operation, settings, deps)
+    await tracer.run("guards", snapshot, operationForPayload, () =>
+      this.#runGuards(accessor, operation, settings),
+    );
+
+    return { operation, settings };
+  }
+
+  /**
+   * Phases 5-7: prepare, gate, dispatch. Returns a `"declined"` result (the
+   * gate soft-landed) or a `"dispatched"` result carrying `context` and the
+   * handler's `result`, so `run()` can branch without that branch counting
+   * against its own size. `setContext` updates `run()`'s per-call-frame trace
+   * state the same way `#runAccessorThroughGuards`'s setters do.
+   */
+  async #runPrepareGateDispatch(
+    tracer: M3LPipelinePhaseTracer<TOp, TSettings, TContext>,
+    snapshot: () => M3LPipelineTraceSnapshot<TOp, TSettings, TContext>,
+    operationForPayload: () => TOp | undefined,
+    operation: TOp,
+    settings: TSettings,
+    deps: TDeps,
+    setContext: (context: TContext) => void,
+  ): Promise<PrepareGateDispatchResult<TOp, TResult, TContext>> {
+    // Only when configured; an unconfigured `prepare` contributes no trace
+    // entry (TR-3). M3LOperationPipelineOptions makes `prepare` required
+    // whenever TContext is not `undefined` (a conditional type keyed on
+    // TContext), so the only way to reach the `else` branch is TContext ===
+    // undefined — the cast there is type-system-guaranteed, not merely
+    // documented.
+    const prepare = this.#options.prepare;
+    const context = prepare
+      ? await tracer.run("prepare", snapshot, operationForPayload, async () => {
+          const resolved = await prepare(operation, settings, deps);
+          setContext(resolved);
+          return resolved;
+        })
       : (undefined as TContext);
 
-    // Phase 6: the destructive gate, only for a member operation. A
-    // returned outcome means the gate soft-landed a decline — persist and
-    // finalize (phases 8-9) never run for a declined outcome (R1).
-    const declined = await this.#runGate(operation, settings, context, deps);
-    if (declined !== undefined) return declined;
-
-    // Phase 7: dispatch.
-    const result = await this.#dispatch(operation, settings, context, deps);
-
-    // Phase 8-9: persist, then finalize — strictly sequential so a throwing
-    // finalize (e.g. a wait that did not stabilize) still leaves the
-    // persisted result on disk.
-    if (options.persist) {
-      await options.persist(result, settings, deps, operation);
-    }
-    if (options.finalize) {
-      await options.finalize(result, settings, deps, operation);
-    }
-
-    // Phase 10: recovery — only invoked when the option is configured.
-    // A non-empty array classifies the run as "partial"; an empty array (or no
-    // callback) resolves as "completed". The engine never inspects `result` to
-    // decide — only the handler callback knows what "an item" means. A throw
-    // here propagates unmodified (no swallow, wrap, or re-code).
-    if (options.recovery) {
-      const recoveryEntries = options.recovery(
-        result,
-        settings,
-        deps,
-        operation,
+    // The gate, only for a member operation. A returned outcome means the
+    // gate soft-landed a decline — persist and finalize never run for a
+    // declined outcome (R1); the decline still records its own "outcome"
+    // entry here.
+    const declined = await tracer.run(
+      "gate",
+      snapshot,
+      operationForPayload,
+      () => this.#runGate(operation, settings, context, deps),
+    );
+    if (declined !== undefined) {
+      const outcome = await tracer.run(
+        "outcome",
+        snapshot,
+        operationForPayload,
+        () => declined,
       );
-      // P1 guard: the callback must return an array. A non-array return (e.g.
-      // from a JavaScript caller or a TypeScript assertion) would otherwise let
-      // `.length` access below produce a bare TypeError, violating the rule
-      // that every throw from library code must be an M3LError subclass.
-      if (!Array.isArray(recoveryEntries)) {
-        throw new M3LPipelineInvalidOptionError(
-          "M3LOperationPipeline: 'recovery' callback must return a readonly array of M3LRunRecoveryEntry",
-        );
-      }
+      return { kind: "declined", outcome };
+    }
+
+    const result = await tracer.run(
+      "dispatch",
+      snapshot,
+      operationForPayload,
+      () => this.#dispatch(operation, settings, context, deps),
+    );
+    return { kind: "dispatched", context, result };
+  }
+
+  /**
+   * Phases 8-9: persist, then finalize — strictly sequential so a throwing
+   * finalize (e.g. a wait that did not stabilize) still leaves the persisted
+   * result on disk. Each runs (and traces) only when configured; every
+   * argument is threaded through explicitly rather than read off `this` or a
+   * closure, so no per-run state escapes `run()`'s own call frame.
+   */
+  async #runPersistAndFinalize(
+    tracer: M3LPipelinePhaseTracer<TOp, TSettings, TContext>,
+    snapshot: () => M3LPipelineTraceSnapshot<TOp, TSettings, TContext>,
+    operationForPayload: () => TOp | undefined,
+    result: TResult,
+    settings: TSettings,
+    deps: TDeps,
+    operation: TOp,
+  ): Promise<void> {
+    const persist = this.#options.persist;
+    if (persist) {
+      await tracer.run("persist", snapshot, operationForPayload, () =>
+        persist(result, settings, deps, operation),
+      );
+    }
+    const finalize = this.#options.finalize;
+    if (finalize) {
+      await tracer.run("finalize", snapshot, operationForPayload, () =>
+        finalize(result, settings, deps, operation),
+      );
+    }
+  }
+
+  /**
+   * Phase 10: recovery — only invoked (and traced) when the option is
+   * configured. A non-empty array classifies the run as "partial"; an empty
+   * array (or no callback) resolves as "completed". The engine never
+   * inspects `result` to decide — only the handler callback knows what "an
+   * item" means. A throw here propagates unmodified (no swallow, wrap, or
+   * re-code).
+   *
+   * Phase 11: outcome — completed when no recovery entries were returned.
+   * The `recovery` key is intentionally omitted (not set to undefined) so
+   * `Object.hasOwn(outcome, "recovery") === false` on a completed run
+   * (`exactOptionalPropertyTypes` requires absence, not explicit undefined).
+   */
+  async #runRecoveryAndOutcome(
+    tracer: M3LPipelinePhaseTracer<TOp, TSettings, TContext>,
+    snapshot: () => M3LPipelineTraceSnapshot<TOp, TSettings, TContext>,
+    operationForPayload: () => TOp | undefined,
+    result: TResult,
+    settings: TSettings,
+    deps: TDeps,
+    operation: TOp,
+  ): Promise<M3LOperationPipelineOutcome<TOp, TResult>> {
+    const recovery = this.#options.recovery;
+    if (recovery) {
+      const recoveryEntries = await tracer.run(
+        "recovery",
+        snapshot,
+        operationForPayload,
+        () => {
+          const entries = recovery(result, settings, deps, operation);
+          // P1 guard: the callback must return an array. A non-array return
+          // (e.g. from a JavaScript caller or a TypeScript assertion) would
+          // otherwise let `.length` access below produce a bare TypeError,
+          // violating the rule that every throw from library code must be an
+          // M3LError subclass. `isUnknownArray` keeps `entries` at its
+          // declared type rather than collapsing it to `any[]` (see that
+          // helper's own doc).
+          if (!isUnknownArray(entries)) {
+            throw new M3LPipelineInvalidOptionError(
+              "M3LOperationPipeline: 'recovery' callback must return a readonly array of M3LRunRecoveryEntry",
+            );
+          }
+          return entries;
+        },
+      );
       // P2: earn the partial arm — a first entry must be present for the run
       // to be classified "partial". An empty array falls through to "completed",
       // matching the runtime contract. The type predicate narrows the array to
       // the non-empty tuple type without an unsafe assertion and preserves the
       // original array reference so callers can compare by identity.
       if (isNonEmpty(recoveryEntries)) {
-        return {
-          status: "partial",
-          operation,
-          result,
-          recovery: recoveryEntries,
-        };
+        return await tracer.run(
+          "outcome",
+          snapshot,
+          operationForPayload,
+          () => ({
+            status: "partial",
+            operation,
+            result,
+            recovery: recoveryEntries,
+          }),
+        );
       }
     }
 
-    // Phase 11: outcome — completed when no recovery entries were returned.
-    // The `recovery` key is intentionally omitted (not set to undefined) so
-    // Object.hasOwn(outcome, "recovery") === false on a completed run
-    // (exactOptionalPropertyTypes requires absence, not explicit undefined).
-    return { status: "completed", operation, result };
+    return await tracer.run("outcome", snapshot, operationForPayload, () => ({
+      status: "completed",
+      operation,
+      result,
+    }));
   }
 
   /** Phase 4: checks each `requiredFields[operation]` key in array order. */
