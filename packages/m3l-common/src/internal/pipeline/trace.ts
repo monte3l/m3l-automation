@@ -6,18 +6,25 @@
  *
  * Tracing is opt-in and never load-bearing: a throwing `describe` or a
  * throwing `sink.record` is guarded independently and can never change a
- * run's outcome (`docs/reference/core/pipeline.md` § Tracing).
+ * run's outcome (`docs/reference/core/pipeline.md` § Tracing). The phase
+ * body's own settlement (success or throw) is captured before any
+ * recording happens, and a failure from recording — anywhere in the
+ * `describe`/payload-assembly/`sink.record` chain — can never replace,
+ * wrap, or attach a `cause` to the phase's own error.
  *
  * Private to `core/pipeline`; never re-exported through a public barrel.
  */
 
-import { M3LError } from "../../core/errors/index.js";
+import { M3L_ERROR_CODES, M3LError } from "../../core/errors/index.js";
+import { isDangerousKey } from "../../core/security/index.js";
+import { isBoolean, isNumber, isString } from "../../core/utils/guards.js";
 
 import type { M3LBreadcrumbScalar } from "../../core/diagnostics/index.js";
 import type { M3LLogger } from "../../core/logging/M3LLogger.js";
 import type {
   M3LPipelinePhase,
   M3LPipelineTraceOptions,
+  M3LPipelineTraceSink,
   M3LPipelineTraceSnapshot,
 } from "../../core/pipeline/types.js";
 
@@ -27,13 +34,32 @@ const DEFAULT_TRACE_SOURCE = "M3LOperationPipeline";
 /** The fixed event name every traced phase entry is recorded under. */
 const PIPELINE_PHASE_EVENT = "pipeline:phase";
 
+/** The literal logged in place of an error `code` that isn't a recognized `M3LErrorCode`. */
+const UNCLASSIFIED_CODE = "unclassified";
+
 /**
- * The subset of {@link M3LPipelineTraceOptions.sink} a recording helper
- * needs — independent of `TOp`/`TSettings`/`TContext` since `sink.record`'s
- * own signature never depends on them.
+ * One phase body's settlement, captured before any tracing side effect runs
+ * so recording can never race with, replace, or observe a stale version of
+ * the outcome {@link M3LPipelinePhaseTracer.run} ultimately returns/throws.
  */
-interface PhaseSink {
-  record(source: string, event: string, payload?: unknown): void;
+type PhaseOutcome<TResult> =
+  | { readonly ok: true; readonly value: TResult }
+  | { readonly ok: false; readonly error: unknown };
+
+/**
+ * Runs `body` and captures its settlement — success or throw — as a plain
+ * value, without recording anything. Isolated in its own function (rather
+ * than inlined in `run`) so the generic result type is inferred from `body`
+ * itself instead of needing to be named at the call site.
+ */
+async function captureOutcome<TResult>(
+  body: () => TResult | Promise<TResult>,
+): Promise<PhaseOutcome<TResult>> {
+  try {
+    return { ok: true, value: await body() };
+  } catch (error) {
+    return { ok: false, error };
+  }
 }
 
 /**
@@ -69,8 +95,10 @@ export interface M3LPipelinePhaseTracer<
    *   entry-time snapshot.
    * @param body - The phase's actual work.
    * @returns Whatever `body` resolves.
-   * @throws Whatever `body` throws, unmodified. The failing phase's entry is
-   *   still recorded (with `failed: true`) before the error propagates.
+   * @throws Whatever `body` throws, unmodified — captured before recording
+   *   runs, so a tracing failure at record time never replaces, wraps, or
+   *   attaches a `cause` to it. The failing phase's entry is still recorded
+   *   (with `failed: true`) before the error propagates.
    */
   run<TResult>(
     phase: M3LPipelinePhase,
@@ -116,31 +144,24 @@ export function createPipelinePhaseTracer<
     async run(phase, snapshot, operationForPayload, body) {
       const extra = safeDescribe(describe, phase, snapshot, logger);
       const start = performance.now();
-      try {
-        const result = await body();
-        recordPhase(
-          sink,
-          source,
-          phase,
-          extra,
-          start,
-          operationForPayload(),
-          logger,
-        );
-        return result;
-      } catch (error) {
-        recordPhase(
-          sink,
-          source,
-          phase,
-          extra,
-          start,
-          operationForPayload(),
-          logger,
-          true,
-        );
-        throw error;
-      }
+      const outcome = await captureOutcome(body);
+
+      // Recorded exactly once, whichever branch above ran — a record-time
+      // failure is fully guarded inside recordPhase and can never reach
+      // here, so it can never pre-empt the `throw outcome.error` below.
+      recordPhase(
+        sink,
+        source,
+        phase,
+        extra,
+        start,
+        operationForPayload(),
+        logger,
+        !outcome.ok,
+      );
+
+      if (!outcome.ok) throw outcome.error;
+      return outcome.value;
     },
   };
 }
@@ -148,9 +169,14 @@ export function createPipelinePhaseTracer<
 /**
  * Invokes `describe` (when configured) with `phase`'s entry-time snapshot,
  * guarded independently from the eventual `sink.record` call. A throw is
- * warned about (naming the phase and the error's `name`/`code`, never its
- * `message`) and degrades to an empty extra-keys record — it never affects
- * the phase's own outcome.
+ * warned about (naming the phase and, when classifiable, the error's `code`
+ * — never its `message` or `name`) and degrades to an empty extra-keys
+ * record — it never affects the phase's own outcome.
+ *
+ * `snapshot()` itself runs OUTSIDE the `try`: it is the engine's own
+ * closure, not caller-supplied, so a bug in it must surface as a real
+ * failure rather than being silently swallowed and misreported as
+ * `describe` having thrown.
  */
 function safeDescribe<TOp extends string, TSettings extends object, TContext>(
   describe: M3LPipelineTraceOptions<TOp, TSettings, TContext>["describe"],
@@ -159,8 +185,9 @@ function safeDescribe<TOp extends string, TSettings extends object, TContext>(
   logger: M3LLogger,
 ): Readonly<Record<string, M3LBreadcrumbScalar>> {
   if (describe === undefined) return {};
+  const snap = snapshot();
   try {
-    return describe(phase, snapshot());
+    return describe(phase, snap);
   } catch (error) {
     warnTracingFailure(logger, phase, error);
     return {};
@@ -168,27 +195,57 @@ function safeDescribe<TOp extends string, TSettings extends object, TContext>(
 }
 
 /**
- * Assembles one phase's payload and records it via `sink.record`, guarded
- * independently from the `describe` call above.
- *
- * The engine's own `phase`/`operation`/`durationMs`/`failed` keys are applied
- * AFTER `extra` and each is explicitly set-or-deleted (never merely
- * conditionally spread) — a `describe` return that forges `failed: true` on
- * an otherwise-successful phase, or a stray `operation` on the `"accessor"`
- * phase, is removed rather than left standing.
+ * Narrows `value` to an {@link M3LBreadcrumbScalar} — the runtime
+ * enforcement of the type-level pinning `describe`'s return type declares.
+ * A JavaScript caller (or a TypeScript assertion) can still construct a
+ * payload holding a nested object, array, function, `Date`, or `Buffer`;
+ * without this check, a bare `record()`-shaped sink would receive such a
+ * value by reference, letting a later caller-side mutation change what a
+ * deferred sink serializes.
  */
-function recordPhase(
-  sink: PhaseSink,
-  source: string,
-  phase: M3LPipelinePhase,
+function isBreadcrumbScalarValue(value: unknown): value is M3LBreadcrumbScalar {
+  return (
+    value === null || isString(value) || isNumber(value) || isBoolean(value)
+  );
+}
+
+/**
+ * Projects `extra` (the `describe` return) plus the engine's own
+ * `phase`/`operation`/`durationMs`/`failed` keys into the payload recorded
+ * for one phase.
+ *
+ * Every property read on `extra` — including a hostile getter — happens
+ * here, inside the caller's guarded `try` (see {@link recordPhase}), so a
+ * throwing accessor can never escape unguarded. Each `extra` key is kept
+ * only when both:
+ * - it is not a dangerous prototype-pollution key (`__proto__`,
+ *   `constructor`, `prototype` — see `core/security`'s `isDangerousKey`),
+ *   and
+ * - its value is a genuine {@link M3LBreadcrumbScalar}; anything else
+ *   (object, array, function, `Date`, `Buffer`, …) is dropped rather than
+ *   stored by reference.
+ *
+ * The engine's own four keys are then applied AFTER `extra` and each is
+ * explicitly set-or-deleted (never merely conditionally spread) — a
+ * `describe` return that forges `failed: true` on an otherwise-successful
+ * phase, or a stray `operation` on the `"accessor"` phase, is removed
+ * rather than left standing.
+ */
+function buildPhasePayload(
   extra: Readonly<Record<string, M3LBreadcrumbScalar>>,
-  startedAt: number,
+  phase: M3LPipelinePhase,
   operation: string | undefined,
-  logger: M3LLogger,
-  failed = false,
-): void {
-  const durationMs = performance.now() - startedAt;
-  const payload: Record<string, M3LBreadcrumbScalar> = { ...extra };
+  durationMs: number,
+  failed: boolean,
+): Record<string, M3LBreadcrumbScalar> {
+  const payload: Record<string, M3LBreadcrumbScalar> = {};
+  for (const key of Object.keys(extra)) {
+    if (isDangerousKey(key)) continue;
+    const value: unknown = extra[key];
+    if (isBreadcrumbScalarValue(value)) {
+      payload[key] = value;
+    }
+  }
   payload["phase"] = phase;
   if (operation === undefined) {
     delete payload["operation"];
@@ -201,7 +258,38 @@ function recordPhase(
   } else {
     delete payload["failed"];
   }
+  return payload;
+}
+
+/**
+ * Assembles one phase's payload and records it via `sink.record`, guarded
+ * independently from the `describe` call above.
+ *
+ * Building the payload (every property read on `extra`) and calling
+ * `sink.record` are covered by the SAME `try` — a hostile `describe` return
+ * (e.g. a throwing getter) is only ever read here, never before this guard,
+ * so it can never escape unguarded regardless of whether the phase's own
+ * body succeeded or threw.
+ */
+function recordPhase(
+  sink: M3LPipelineTraceSink,
+  source: string,
+  phase: M3LPipelinePhase,
+  extra: Readonly<Record<string, M3LBreadcrumbScalar>>,
+  startedAt: number,
+  operation: string | undefined,
+  logger: M3LLogger,
+  failed = false,
+): void {
+  const durationMs = performance.now() - startedAt;
   try {
+    const payload = buildPhasePayload(
+      extra,
+      phase,
+      operation,
+      durationMs,
+      failed,
+    );
     sink.record(source, PIPELINE_PHASE_EVENT, payload);
   } catch (error) {
     warnTracingFailure(logger, phase, error);
@@ -209,8 +297,33 @@ function recordPhase(
 }
 
 /**
- * Logs a `deps.logger.warning` naming `phase` and the failure's `name`/`code`
- * — never its `message`, which can embed caller data (mirrors
+ * Classifies a tracing failure's `code` for the warning message, allowlisted
+ * against {@link M3L_ERROR_CODES} rather than echoed verbatim: `error.code`
+ * is caller-controlled (it comes from a `describe`/`sink.record` a caller
+ * configured), so an unrecognized or invented code must not reach the log.
+ * Reading `.code` itself is guarded — a hostile `code` getter must not
+ * propagate out of this classification step.
+ */
+function classifyTracingFailureCode(error: unknown): string {
+  try {
+    if (error instanceof M3LError) {
+      const code: string = error.code;
+      if ((M3L_ERROR_CODES as readonly string[]).includes(code)) {
+        return code;
+      }
+    }
+  } catch {
+    // A hostile `code` getter must not propagate — fall through to the
+    // unclassified literal, same as any other non-`M3LError`/unknown code.
+  }
+  return UNCLASSIFIED_CODE;
+}
+
+/**
+ * Logs a `logger.warning` naming `phase` and, when classifiable, the
+ * failure's `M3LError` `code` — allowlisted against {@link M3L_ERROR_CODES}
+ * so a caller-invented code can never be echoed. The error's `name` and
+ * `message` are never logged: both can embed caller data (mirrors
  * `breadcrumbs.ts`'s `import:error` summarizer, which withholds
  * `errorMessage` for the same reason). The logger call itself is guarded so
  * a failing logger cannot escalate a tracing failure into a run failure.
@@ -220,9 +333,7 @@ function warnTracingFailure(
   phase: M3LPipelinePhase,
   error: unknown,
 ): void {
-  const name = error instanceof Error ? error.name : "UnknownError";
-  const code = error instanceof M3LError ? error.code : undefined;
-  const detail = code === undefined ? name : `${name}, ${code}`;
+  const detail = classifyTracingFailureCode(error);
   try {
     logger.warning(
       `M3LOperationPipeline: tracing failed at phase '${phase}' (${detail})`,

@@ -8,62 +8,67 @@
         {
           "file": "packages/m3l-common/src/core/pipeline/M3LOperationPipeline.ts",
           "symbol": "M3LOperationPipeline",
-          "blob": "cb020b287285a375bf88b8d877ccc1930360d33b"
+          "blob": "3403ed0db04657973abdf9258aa888dab6d4f83f"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LOperationPipelineBaseDeps",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LGuardableKey",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LOperationHandlers",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LPipelineDeclinePolicy",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LPipelineDestructiveOptions",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LOperationPipelineOptions",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LOperationPipelineOutcome",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LOperationPipelineOutcomeBase",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LPipelinePhase",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LPipelineTraceSnapshot",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LPipelineTraceOptions",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
+        },
+        {
+          "file": "packages/m3l-common/src/core/pipeline/types.ts",
+          "symbol": "M3LPipelineTraceSink",
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         }
       ],
       "retrieved": "2026-08-19"
@@ -74,7 +79,7 @@
         {
           "file": "packages/m3l-common/src/core/pipeline/M3LOperationPipeline.ts",
           "symbol": "M3LOperationPipeline",
-          "blob": "cb020b287285a375bf88b8d877ccc1930360d33b"
+          "blob": "3403ed0db04657973abdf9258aa888dab6d4f83f"
         }
       ],
       "retrieved": "2026-08-19"
@@ -85,57 +90,62 @@
         {
           "file": "packages/m3l-common/src/core/pipeline/M3LOperationPipeline.ts",
           "symbol": "M3LOperationPipeline",
-          "blob": "cb020b287285a375bf88b8d877ccc1930360d33b"
+          "blob": "3403ed0db04657973abdf9258aa888dab6d4f83f"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LOperationPipelineBaseDeps",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LGuardableKey",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LOperationHandlers",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LPipelineDeclinePolicy",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LPipelineDestructiveOptions",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LOperationPipelineOptions",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LOperationPipelineOutcome",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LPipelinePhase",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LPipelineTraceSnapshot",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         },
         {
           "file": "packages/m3l-common/src/core/pipeline/types.ts",
           "symbol": "M3LPipelineTraceOptions",
-          "blob": "fdf9ca7ac590b19021b888b422dcb2e2f97da65c"
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
+        },
+        {
+          "file": "packages/m3l-common/src/core/pipeline/types.ts",
+          "symbol": "M3LPipelineTraceSink",
+          "blob": "c76ea8df69fa6ba2dc2afda728156bc2a0e00c25"
         }
       ],
       "retrieved": "2026-08-19"

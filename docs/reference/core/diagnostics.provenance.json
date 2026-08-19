@@ -69,37 +69,37 @@
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
           "symbol": "M3LBreadcrumb",
           "lines": "40-64",
-          "blob": "9e65eb73f9948ad75034530df4449d262f404570"
+          "blob": "ffa1395bd8613a07c78f4c953d13be327b6127c9"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
           "symbol": "M3LBreadcrumbScalar",
           "lines": "65-82",
-          "blob": "9e65eb73f9948ad75034530df4449d262f404570"
+          "blob": "ffa1395bd8613a07c78f4c953d13be327b6127c9"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
           "symbol": "M3LBreadcrumbSource",
           "lines": "83-99",
-          "blob": "9e65eb73f9948ad75034530df4449d262f404570"
+          "blob": "ffa1395bd8613a07c78f4c953d13be327b6127c9"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
           "symbol": "M3LBreadcrumbTrailOptions",
           "lines": "100-117",
-          "blob": "9e65eb73f9948ad75034530df4449d262f404570"
+          "blob": "ffa1395bd8613a07c78f4c953d13be327b6127c9"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
           "symbol": "M3LBreadcrumbAttachOptions",
           "lines": "118-600",
-          "blob": "9e65eb73f9948ad75034530df4449d262f404570"
+          "blob": "ffa1395bd8613a07c78f4c953d13be327b6127c9"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
           "symbol": "M3LBreadcrumbTrail",
           "lines": "601-768",
-          "blob": "9e65eb73f9948ad75034530df4449d262f404570"
+          "blob": "ffa1395bd8613a07c78f4c953d13be327b6127c9"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/collect.ts",

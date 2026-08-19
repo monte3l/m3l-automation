@@ -628,9 +628,16 @@ function defaultSourceLabel(source: unknown): string {
  * to passively collect a trail of its recent events — useful for attaching
  * to the last few operations leading up to a failure in a run report. Every
  * recorded payload is projected through a per-event summarizer (scalars
- * only) and then redacted via `redactSensitiveLogValue` before storage, so a
- * secret riding a raw header, error instance, or caller record can never
- * reach the trail.
+ * only) and then redacted via `redactSensitiveLogValue` before storage. For a
+ * library-emitted event with a named-field summarizer, this means a secret
+ * riding a raw header, error instance, or caller record cannot reach the
+ * trail through that event. For an event whose payload is caller-authored
+ * instead — `pipeline:phase` (every scalar-valued key survives its
+ * summarizer, by design), or any custom event recorded via {@link
+ * M3LBreadcrumbTrail.record} directly — protection is **best effort** only:
+ * `redactSensitiveLogValue`'s key-name heuristic does not recognize an
+ * arbitrary key name and does not catch a bare, context-free token in free
+ * text.
  *
  * @example
  * ```ts

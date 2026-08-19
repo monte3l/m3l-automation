@@ -32,13 +32,16 @@ Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
 - Contracts: `M3LOperationPipelineBaseDeps`, `M3LOperationHandlers`,
   `M3LGuardableKey`
 - Outcome: `M3LOperationPipelineOutcome`, `M3LOperationPipelineOutcomeBase`
-- Tracing: `M3LPipelineTraceOptions`, `M3LPipelineTraceSnapshot`,
-  `M3LPipelinePhase`
+- Tracing: `M3LPipelineTraceOptions`, `M3LPipelineTraceSink`,
+  `M3LPipelineTraceSnapshot`, `M3LPipelinePhase`
 
 No error class is exported. Guard and configuration failures throw `M3LError`
 with the **caller-supplied** `configCode`; construction-time option validation
 throws an internal `M3LError` subclass with code `ERR_PIPELINE_INVALID_OPTION`
-(origin `caller`, not retryable).
+(origin `caller`, not retryable). That same code is also thrown **at run time**
+in one case — a `recovery` callback that returns a non-array (see
+[Partial runs](#partial-runs)) — so `ERR_PIPELINE_INVALID_OPTION` is not
+exclusively a construction-time signal.
 
 ## The run contract
 
@@ -100,8 +103,9 @@ Any throw from phases 1–10 (other than a soft-landed decline) propagates to
 the caller unmodified — the engine never swallows, wraps, or re-codes errors.
 
 When `trace` is configured, each phase that runs contributes one entry to the
-sink (see [Tracing](#tracing)); the phase names above are exactly the
-`M3LPipelinePhase` values.
+sink (see [Tracing](#tracing)). The eleven phases above correspond one-to-one
+with the `M3LPipelinePhase` values, which are lowercase (`"accessor"`,
+`"operation"`, …).
 
 A pipeline instance is **stateless across runs**: `run()` keeps all per-run
 state in its own call frame, so an instance is reusable for sequential runs
@@ -185,20 +189,26 @@ await Core.runScript(main, { trail }); // the trail feeds the report `timeline`
 ### What is recorded
 
 One entry per phase that **actually executes**, recorded under the event name
-`pipeline:phase`. An optional phase with no callback configured (`prepare`,
-`persist`, `finalize`, `recovery`) contributes nothing — the trace reflects what
-ran, not what could have run. A soft-landed decline returns at phase 6, so
+`pipeline:phase`, against the source label `trace.source` — defaulting to
+`"M3LOperationPipeline"`. A phase whose optional callback is not configured
+(`prepare`, `persist`, `finalize`, `recovery`) contributes nothing — the trace
+reflects what ran, not what could have run.
+
+`guards` and `gate` are the exceptions: both are traced **unconditionally**,
+even with no `requiredFields` and no `destructive` configured. They are phases
+of the run that always execute (and no-op internally), not caller callbacks that
+may be absent. A soft-landed decline returns at phase 6, so
 phases 7–10 are absent from its trace; both the declined and the partial return
 paths still record their `outcome` entry.
 
 Each entry's payload carries:
 
-| Key          | Meaning                                                                                                                                                                                             |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `phase`      | The `M3LPipelinePhase` value.                                                                                                                                                                       |
-| `durationMs` | Wall-clock duration of that phase, from `performance.now()`.                                                                                                                                        |
-| `operation`  | The resolved operation — omitted only for the `accessor` phase. Present on the `operation` phase's own entry: the payload is recorded at phase **exit**, by which point that phase has resolved it. |
-| `failed`     | `true` only when the phase threw. Omitted otherwise.                                                                                                                                                |
+| Key          | Meaning                                                                                                                                                                                                                                                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `phase`      | The `M3LPipelinePhase` value.                                                                                                                                                                                                                                                                                                        |
+| `durationMs` | Wall-clock duration of that phase, from `performance.now()`.                                                                                                                                                                                                                                                                         |
+| `operation`  | The resolved operation. Present on the `operation` phase's own entry, because the payload is recorded at phase **exit**, by which point that phase has resolved it. Omitted for the `accessor` phase, and for a **failing** `operation` phase — an off-union value means no operation was ever resolved, so there is none to report. |
+| `failed`     | `true` only when the phase threw. Omitted otherwise.                                                                                                                                                                                                                                                                                 |
 
 Plus every key `describe` returned. **The engine's four keys are applied last
 and win** a name collision, so a `describe` return cannot forge `durationMs` or
@@ -219,33 +229,70 @@ so far:
   `prepare` is configured (`TContext` is `undefined`).
 
 The payload is pinned to `M3LBreadcrumbScalar` (`string | number | boolean |
-null`). That is the allowlist constraint from
+null`), and that pin is **enforced at run time as well as in the type**: the
+engine keeps only genuine scalar values and drops everything else — a nested
+object, an array, a function, a `Date` — before handing the payload to the sink.
+A `__proto__`-style dangerous key is skipped outright. So a JavaScript caller,
+or a TypeScript assertion, cannot smuggle a non-scalar through, and no sink
+receives a live reference to a caller's object.
+
+That is the allowlist constraint from
 [ADR-0035](../../adr/0035-failure-reporting-and-diagnostics.md)'s 2026-07-23
 update, where four adversarial rounds established that every allowlisted
 surface held and every denylisted one leaked.
 
 ### Tracing is never load-bearing
 
-A throwing `describe` or a throwing `sink.record` **cannot change a run's
-outcome**. Each call is guarded independently; on failure the engine emits a
-`deps.logger.warning` naming the phase and the error's `name`/`code` — never its
-`message`, which can embed caller data — and the run proceeds. A phase that
-throws still records its entry (with `failed: true`) before the error
-propagates, and the error itself is never modified.
+A tracing failure **cannot change a run's outcome**. This covers three distinct
+routes, each guarded independently: a throwing `describe` call, a **hostile
+`describe` return value** (a throwing getter fires when the payload is read, not
+when `describe` returns), and a throwing `sink.record`. On any of them the run
+proceeds unaffected.
+
+A phase that throws still records its entry with `failed: true`, and its own
+error **always** propagates unmodified — recording happens once, after the
+phase's outcome is captured, so a failure inside the tracing path can never
+replace, wrap, re-code, or attach a `cause` to the phase's real error.
+
+The warning the engine logs is deliberately minimal, because an error's fields
+are caller-controlled:
+
+- It **never** logs the error's `message` or `stack`.
+- It **never** logs the error's `name`.
+- It names the phase, plus the error's `code` **only** when that code is a
+  member of the library's own `M3L_ERROR_CODES`. An unrecognized or
+  caller-invented code renders as `unclassified` rather than being echoed.
+
+```text
+M3LOperationPipeline: tracing failed at phase 'guards' (ERR_INVALID_ARGUMENT)
+M3LOperationPipeline: tracing failed at phase 'guards' (unclassified)
+```
 
 ### Redaction is the sink's responsibility
 
-The scalar pinning bounds the _shape_ of a trace payload; it does not sanitize
-the _values_. `M3LBreadcrumbTrail` is the sink that adds redaction — it projects
-every payload through a per-event summarizer and `redactSensitiveLogValue`
-before storing it. Any other `record()`-shaped object receives the `describe`
-return **verbatim**, because the engine deliberately does not redact: that keeps
-`core/pipeline`'s import graph shallow and leaves one owner for the redaction
-policy.
+The engine enforces the payload's _shape_ (scalars only, dangerous keys
+dropped) but does not sanitize scalar _values_. It deliberately does not
+redact — that keeps `core/pipeline`'s import graph shallow and leaves one owner
+for the redaction policy — so a bare `record()`-shaped sink receives every
+surviving scalar verbatim.
 
-`describe` is caller-authored. Treat its return like anything else destined for
-a run report on disk, and prefer a trail sink when the payload derives from
-settings or context.
+`M3LBreadcrumbTrail` is the sink that adds redaction, and it is the recommended
+one. Be precise about what it does and does not cover:
+
+- It **does** mask values whose key names `redactSensitiveLogValue` recognizes
+  as sensitive by name.
+- It does **not** honor a caller-declared secrets specifier — the trail calls
+  `redactSensitiveLogValue` with no options, so a value a caller declared
+  sensitive elsewhere is still persisted verbatim if its key name is not one the
+  heuristic recognizes.
+- It does **not** recognize a bare, context-free secret in free text. The
+  redactor is pattern- and key-name-based; a lone token in a `describe` string
+  is not caught.
+
+So trail redaction is **best effort**, not a guarantee. `describe` is
+caller-authored, and its return reaches the run report on disk: the durable rule
+is to not put a secret in it in the first place, rather than to rely on the sink
+to remove one.
 
 ## Types
 
@@ -404,6 +451,7 @@ interface M3LOperationPipelineCoreOptions<
     deps: TDeps,
     operation: TOp,
   ) => readonly M3LRunRecoveryEntry[];
+  readonly trace?: M3LPipelineTraceOptions<TOp, TSettings, TContext>;
 }
 
 interface M3LOperationPipelineOutcomeBase<TOp extends string, TResult> {
@@ -424,7 +472,11 @@ type M3LOperationPipelineOutcome<
         ];
       }
     | {
-        readonly status: "completed" | "declined";
+        readonly status: "completed";
+        readonly recovery?: undefined;
+      }
+    | {
+        readonly status: "declined";
         readonly recovery?: undefined;
       }
   );
@@ -452,14 +504,16 @@ interface M3LPipelineTraceSnapshot<
   readonly context?: TContext;
 }
 
+interface M3LPipelineTraceSink {
+  record(source: string, event: string, payload?: unknown): void;
+}
+
 interface M3LPipelineTraceOptions<
   TOp extends string,
   TSettings extends object,
   TContext,
 > {
-  readonly sink: {
-    record(source: string, event: string, payload?: unknown): void;
-  };
+  readonly sink: M3LPipelineTraceSink;
   readonly describe?: (
     phase: M3LPipelinePhase,
     snapshot: M3LPipelineTraceSnapshot<TOp, TSettings, TContext>,

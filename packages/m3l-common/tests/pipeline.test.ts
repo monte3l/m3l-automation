@@ -33,7 +33,7 @@ import {
 
 import { M3LConfig } from "../src/core/config/M3LConfig.js";
 import type { M3LConfigAccessor } from "../src/core/config/M3LConfigAccessor.js";
-import { M3LError } from "../src/core/errors/index.js";
+import { M3L_ERROR_CODES, M3LError } from "../src/core/errors/index.js";
 import { M3LLogger } from "../src/core/logging/M3LLogger.js";
 import { M3LPrompt } from "../src/core/prompt/M3LPrompt.js";
 import type { M3LPromptAdapter } from "../src/core/prompt/types.js";
@@ -4105,7 +4105,7 @@ describe("core/pipeline", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Tracing (TR-1–TR-21, TR-T1–TR-T4)
+  // Tracing (TR-1–TR-28, TR-T1–TR-T4)
   //
   // Contract: docs/reference/core/pipeline.md § Tracing (RED — `trace` does
   // not exist on M3LOperationPipelineOptions yet; these tests must fail
@@ -4117,6 +4117,22 @@ describe("core/pipeline", () => {
   // DOES carry `operation` — only the "accessor" payload omits it. TR-5
   // asserts this asymmetry directly; do not assume snapshot and payload
   // agree at the "operation" phase.
+  //
+  // A6 regression round (2026-08-20, execution-based trace review): TR-22
+  // through TR-28 lock in five defects found by execution-based review of
+  // `internal/pipeline/trace.ts` — a hostile `describe` return value (a
+  // throwing getter) must never change a run's outcome on either the
+  // success or failure path (TR-22/23), must never abort a phase whose
+  // work already ran (TR-24), the tracing-failure warning must never leak
+  // a caller-controlled `name`/`code` and must gate the echoed `code` on
+  // the `M3L_ERROR_CODES` allowlist rather than echoing any `M3LError`
+  // code verbatim (TR-25–TR-27, plus TR-19/TR-21 updated below), and a
+  // `describe` return is scalar-enforced at runtime, not only at the type
+  // level (TR-28). TR-18–TR-21's expected warning text is updated in place
+  // to the new pinned shape (`(<code>)` for an allowlisted `M3LError` code,
+  // `(unclassified)` otherwise) — TR-15/TR-16 needed no change since they
+  // never asserted the classification text itself, only that the phase
+  // name is present and the secret is absent.
   // ---------------------------------------------------------------------------
   describe("tracing", () => {
     function makeSink(): { readonly record: Mock } {
@@ -5027,7 +5043,7 @@ describe("core/pipeline", () => {
       expect(allPhases.filter((phase) => phase === "accessor")).toHaveLength(2);
     });
 
-    test("TR-18 a throwing describe with a non-Error thrown value warns 'UnknownError' and never leaks the thrown value's contents", async () => {
+    test("TR-18 a throwing describe with a non-Error thrown value warns '(unclassified)' and never leaks the thrown value's contents", async () => {
       const SECRET = "SECRET_TOKEN_never_should_leak_non_error_describe";
       const { deps, config, warningSpy } = makeHarness();
       config.set("operation", "read");
@@ -5072,12 +5088,14 @@ describe("core/pipeline", () => {
         []) as unknown as readonly [string];
       const [warningMessage] = warningCall;
       expect(String(warningMessage)).toContain("guards");
-      expect(String(warningMessage)).toContain("UnknownError");
+      expect(String(warningMessage)).toContain("(unclassified)");
       expect(String(warningMessage)).not.toContain(SECRET);
     });
 
-    test("TR-19 a throwing describe with an M3LError subclass carrying a code warns '<name>, <code>' and never leaks the message", async () => {
+    test("TR-19 [R4b] a throwing describe with an M3LError subclass carrying an unregistered code warns '(unclassified)' and does not echo the code (allowlist gate, not a blanket M3LError pass-through)", async () => {
       const SECRET = "SECRET_TOKEN_never_should_leak_m3lerror_describe";
+      const FAKE_CODE = "ERR_TEST_TRACE_DESCRIBE";
+      expect(M3L_ERROR_CODES as readonly string[]).not.toContain(FAKE_CODE);
       const { deps, config, warningSpy } = makeHarness();
       config.set("operation", "read");
       const sink = makeSink();
@@ -5101,7 +5119,7 @@ describe("core/pipeline", () => {
           sink,
           describe: (phase: M3LPipelinePhase) => {
             if (phase === "guards") {
-              throw new M3LError(SECRET, { code: "ERR_TEST_TRACE_DESCRIBE" });
+              throw new M3LError(SECRET, { code: FAKE_CODE });
             }
             return {};
           },
@@ -5120,12 +5138,12 @@ describe("core/pipeline", () => {
         []) as unknown as readonly [string];
       const [warningMessage] = warningCall;
       expect(String(warningMessage)).toContain("guards");
-      expect(String(warningMessage)).toContain("M3LError");
-      expect(String(warningMessage)).toContain("ERR_TEST_TRACE_DESCRIBE");
+      expect(String(warningMessage)).toContain("(unclassified)");
+      expect(String(warningMessage)).not.toContain(FAKE_CODE);
       expect(String(warningMessage)).not.toContain(SECRET);
     });
 
-    test("TR-20 a throwing sink.record with a non-Error thrown value warns 'UnknownError' and never leaks the thrown value's contents", async () => {
+    test("TR-20 a throwing sink.record with a non-Error thrown value warns '(unclassified)' and never leaks the thrown value's contents", async () => {
       const SECRET = "SECRET_TOKEN_never_should_leak_non_error_sink";
       const { deps, config, warningSpy } = makeHarness();
       config.set("operation", "read");
@@ -5170,12 +5188,14 @@ describe("core/pipeline", () => {
         []) as unknown as readonly [string];
       const [warningMessage] = warningCall;
       expect(String(warningMessage)).toContain("dispatch");
-      expect(String(warningMessage)).toContain("UnknownError");
+      expect(String(warningMessage)).toContain("(unclassified)");
       expect(String(warningMessage)).not.toContain(SECRET);
     });
 
-    test("TR-21 a throwing sink.record with an M3LError subclass carrying a code warns '<name>, <code>' and never leaks the message", async () => {
+    test("TR-21 [R4b] a throwing sink.record with an M3LError subclass carrying an unregistered code warns '(unclassified)' and does not echo the code", async () => {
       const SECRET = "SECRET_TOKEN_never_should_leak_m3lerror_sink";
+      const FAKE_CODE = "ERR_TEST_TRACE_SINK";
+      expect(M3L_ERROR_CODES as readonly string[]).not.toContain(FAKE_CODE);
       const { deps, config, warningSpy } = makeHarness();
       config.set("operation", "read");
       const record = vi.fn(
@@ -5183,7 +5203,7 @@ describe("core/pipeline", () => {
           if (
             (payload as { phase?: string } | undefined)?.phase === "dispatch"
           ) {
-            throw new M3LError(SECRET, { code: "ERR_TEST_TRACE_SINK" });
+            throw new M3LError(SECRET, { code: FAKE_CODE });
           }
         },
       );
@@ -5218,9 +5238,480 @@ describe("core/pipeline", () => {
         []) as unknown as readonly [string];
       const [warningMessage] = warningCall;
       expect(String(warningMessage)).toContain("dispatch");
-      expect(String(warningMessage)).toContain("M3LError");
-      expect(String(warningMessage)).toContain("ERR_TEST_TRACE_SINK");
+      expect(String(warningMessage)).toContain("(unclassified)");
+      expect(String(warningMessage)).not.toContain(FAKE_CODE);
       expect(String(warningMessage)).not.toContain(SECRET);
+    });
+
+    test("TR-22 [R1] a describe return with a throwing getter cannot change a successful run's outcome", async () => {
+      // No cast: `bucket` is declared `get bucket(): string`, and `string`
+      // is already a member of `M3LBreadcrumbScalar`, so this literal is
+      // assignable as-is — a hostile getter reachable from fully type-legal
+      // code with no cast at all.
+      const hostileDescribe = () => ({
+        get bucket(): string {
+          throw new Error("hostile getter boom — must never propagate");
+        },
+      });
+
+      function buildOptions(
+        trace?: M3LPipelineTraceOptions<TestOp, TestSettings, undefined>,
+      ): M3LOperationPipelineOptions<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      > {
+        return {
+          operations: TEST_OPS,
+          configCode: "ERR_TEST_CONFIG",
+          resolveSettings: () => ({ yes: false }),
+          requiredFields: { read: [], write: [] },
+          handlers: {
+            read: () => Promise.resolve({ processed: 21 }),
+            write: () => Promise.resolve({ processed: 21 }),
+          },
+          ...(trace !== undefined ? { trace } : {}),
+        };
+      }
+
+      const sink = makeSink();
+      const tracedPipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >(buildOptions({ sink, describe: hostileDescribe }));
+      const untracedPipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >(buildOptions());
+
+      const { deps: tracedDeps, config: tracedConfig } = makeHarness();
+      tracedConfig.set("operation", "read");
+      const { deps: untracedDeps, config: untracedConfig } = makeHarness();
+      untracedConfig.set("operation", "read");
+
+      const [tracedOutcome, untracedOutcome] = await Promise.all([
+        tracedPipeline.run(tracedDeps),
+        untracedPipeline.run(untracedDeps),
+      ]);
+
+      expect(tracedOutcome).toEqual(untracedOutcome);
+      expect(tracedOutcome).toEqual({
+        status: "completed",
+        operation: "read",
+        result: { processed: 21 },
+      });
+    });
+
+    test("TR-23 [R2] a describe return with a throwing getter does not replace a handler's rejection — the caller receives the original error by identity", async () => {
+      const sentinel = new M3LError(
+        "sentinel handler failure — must reach the caller unmodified",
+        { code: "ERR_TEST_SENTINEL" },
+      );
+
+      // No cast: `bucket` is declared `get bucket(): string`, and `string`
+      // is already a member of `M3LBreadcrumbScalar`, so this literal is
+      // assignable as-is — a hostile getter reachable from fully type-legal
+      // code with no cast at all.
+      const hostileDescribe = () => ({
+        get bucket(): string {
+          throw new Error("hostile getter boom — must never propagate");
+        },
+      });
+
+      const { deps, config } = makeHarness();
+      config.set("operation", "read");
+      const sink = makeSink();
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        handlers: {
+          read: () => Promise.reject(sentinel),
+          write: () => Promise.reject(sentinel),
+        },
+        trace: { sink, describe: hostileDescribe },
+      });
+
+      let caught: unknown;
+      try {
+        await pipeline.run(deps);
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBe(sentinel);
+      expect((caught as M3LError).code).toBe("ERR_TEST_SENTINEL");
+      expect((caught as M3LError).message).toBe(
+        "sentinel handler failure — must reach the caller unmodified",
+      );
+      expect((caught as M3LError).cause).toBeUndefined();
+    });
+
+    test("TR-24 [R3] a describe return that only misbehaves at 'dispatch' does not abort persist/finalize — the run still completes", async () => {
+      const hostileDescribe = (
+        phase: M3LPipelinePhase,
+      ): Readonly<Record<string, M3LBreadcrumbScalar>> => {
+        if (phase !== "dispatch") return {};
+        // No cast: `poison` is declared `get poison(): string`, and `string`
+        // is already a member of `M3LBreadcrumbScalar`, so this literal is
+        // assignable as-is. That is the point — a hostile getter is
+        // reachable from fully type-legal code with no cast at all, which is
+        // exactly what makes this defect realistic rather than contrived.
+        // Don't "helpfully" re-add a cast here.
+        return {
+          get poison(): string {
+            throw new Error(
+              "dispatch-phase getter boom — must never propagate",
+            );
+          },
+        };
+      };
+
+      const { deps, config } = makeHarness();
+      config.set("operation", "read");
+      const sink = makeSink();
+      let handlerRan = false;
+      const persistCalls: unknown[] = [];
+      const finalizeCalls: unknown[] = [];
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        handlers: {
+          read: () => {
+            handlerRan = true;
+            return Promise.resolve({ processed: 22 });
+          },
+          write: () => Promise.resolve({ processed: 22 }),
+        },
+        persist: (result) => {
+          persistCalls.push(result);
+          return Promise.resolve();
+        },
+        finalize: (result) => {
+          finalizeCalls.push(result);
+        },
+        trace: { sink, describe: hostileDescribe },
+      });
+
+      const outcome = await pipeline.run(deps);
+
+      expect(handlerRan).toBe(true);
+      expect(persistCalls).toEqual([{ processed: 22 }]);
+      expect(finalizeCalls).toEqual([{ processed: 22 }]);
+      expect(outcome).toEqual({
+        status: "completed",
+        operation: "read",
+        result: { processed: 22 },
+      });
+    });
+
+    test("TR-25 [R4a] a plain Error whose distinctive 'name' is never echoed in the tracing-failure warning (unclassified — not an M3LError)", async () => {
+      const SECRET_NAME = "SECRET_NAME_9f3a_never_leak";
+      const SECRET_MESSAGE = "SECRET_MESSAGE_9f3a_never_leak";
+      const { deps, config, warningSpy } = makeHarness();
+      config.set("operation", "read");
+      const sink = makeSink();
+
+      const secretError = new Error(SECRET_MESSAGE);
+      secretError.name = SECRET_NAME;
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        handlers: {
+          read: () => Promise.resolve({ processed: 23 }),
+          write: () => Promise.resolve({ processed: 23 }),
+        },
+        trace: {
+          sink,
+          describe: (phase: M3LPipelinePhase) => {
+            if (phase === "guards") throw secretError;
+            return {};
+          },
+        },
+      });
+
+      const outcome = await pipeline.run(deps);
+      expect(outcome).toEqual({
+        status: "completed",
+        operation: "read",
+        result: { processed: 23 },
+      });
+
+      expect(warningSpy).toHaveBeenCalledTimes(1);
+      const warningCall = (warningSpy.mock.calls[0] ??
+        []) as unknown as readonly [string];
+      const [warningMessage] = warningCall;
+      expect(String(warningMessage)).toContain("guards");
+      expect(String(warningMessage)).toContain("(unclassified)");
+      expect(String(warningMessage)).not.toContain(SECRET_NAME);
+      expect(String(warningMessage)).not.toContain(SECRET_MESSAGE);
+    });
+
+    test("TR-26 [R4c] an M3LError carrying a genuine registered code IS included in the tracing-failure warning (non-vacuous control for the unclassified cases)", async () => {
+      const SECRET_MESSAGE = "SECRET_MESSAGE_registered_code_never_leak";
+      const REGISTERED_CODE = "ERR_INVALID_ARGUMENT";
+      expect(M3L_ERROR_CODES as readonly string[]).toContain(REGISTERED_CODE);
+
+      const { deps, config, warningSpy } = makeHarness();
+      config.set("operation", "read");
+      const sink = makeSink();
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        handlers: {
+          read: () => Promise.resolve({ processed: 24 }),
+          write: () => Promise.resolve({ processed: 24 }),
+        },
+        trace: {
+          sink,
+          describe: (phase: M3LPipelinePhase) => {
+            if (phase === "guards") {
+              throw new M3LError(SECRET_MESSAGE, { code: REGISTERED_CODE });
+            }
+            return {};
+          },
+        },
+      });
+
+      const outcome = await pipeline.run(deps);
+      expect(outcome).toEqual({
+        status: "completed",
+        operation: "read",
+        result: { processed: 24 },
+      });
+
+      expect(warningSpy).toHaveBeenCalledTimes(1);
+      const warningCall = (warningSpy.mock.calls[0] ??
+        []) as unknown as readonly [string];
+      const [warningMessage] = warningCall;
+      expect(String(warningMessage)).toContain("guards");
+      expect(String(warningMessage)).toContain(REGISTERED_CODE);
+      expect(String(warningMessage)).not.toContain("(unclassified)");
+      expect(String(warningMessage)).not.toContain(SECRET_MESSAGE);
+    });
+
+    test("TR-27 [R4e] an error whose 'name' getter itself throws does not abort the phase — the run still completes and the phase body still ran", async () => {
+      class HostileNameError extends Error {
+        override get name(): string {
+          throw new Error("name getter boom — must never propagate");
+        }
+      }
+
+      const { deps, config, warningSpy } = makeHarness();
+      config.set("operation", "read");
+      const sink = makeSink();
+      let handlerRan = false;
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        handlers: {
+          read: () => {
+            handlerRan = true;
+            return Promise.resolve({ processed: 25 });
+          },
+          write: () => Promise.resolve({ processed: 25 }),
+        },
+        trace: {
+          sink,
+          describe: (phase: M3LPipelinePhase) => {
+            if (phase === "guards") throw new HostileNameError("boom");
+            return {};
+          },
+        },
+      });
+
+      const outcome = await pipeline.run(deps);
+
+      expect(handlerRan).toBe(true);
+      expect(outcome).toEqual({
+        status: "completed",
+        operation: "read",
+        result: { processed: 25 },
+      });
+      expect(warningSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test("TR-28 [R5] describe's return is scalar-enforced at runtime for a bare record()-shaped sink — non-scalar keys are dropped while string/number/boolean/null (including null) survive", async () => {
+      const { deps, config } = makeHarness();
+      config.set("operation", "read");
+      const record = vi.fn();
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        handlers: {
+          read: () => Promise.resolve({ processed: 26 }),
+          write: () => Promise.resolve({ processed: 26 }),
+        },
+        trace: {
+          sink: { record },
+          describe: (phase: M3LPipelinePhase) => {
+            if (phase !== "guards") return {};
+            return {
+              str: "ok",
+              num: 42,
+              bool: true,
+              nil: null,
+              nested: { a: 1 },
+              arr: [1, 2, 3],
+              fn: () => "boom",
+              date: new Date(0),
+            } as unknown as Readonly<Record<string, M3LBreadcrumbScalar>>;
+          },
+        },
+      });
+
+      await pipeline.run(deps);
+
+      const guardsCall = (
+        record.mock.calls as unknown as readonly [string, string, unknown][]
+      ).find(
+        (call) =>
+          (call[2] as { phase?: string } | undefined)?.phase === "guards",
+      );
+      const guardsPayload = guardsCall?.[2] as
+        Record<string, unknown> | undefined;
+
+      expect(guardsPayload).toMatchObject({
+        str: "ok",
+        num: 42,
+        bool: true,
+        nil: null,
+      });
+      // Non-vacuous control: a nested object dropped entirely (not
+      // stringified to "[object Object]" nor shallow-copied under the same
+      // key) — the key itself must be absent, not merely non-object-typed.
+      expect(Object.hasOwn(guardsPayload ?? {}, "nested")).toBe(false);
+      expect(Object.hasOwn(guardsPayload ?? {}, "arr")).toBe(false);
+      expect(Object.hasOwn(guardsPayload ?? {}, "fn")).toBe(false);
+      expect(Object.hasOwn(guardsPayload ?? {}, "date")).toBe(false);
+    });
+
+    test("TR-29 [R6] describe's return carrying prototype-pollution vectors (__proto__/constructor/prototype) is dropped from a bare record()-shaped sink while an ordinary sibling key survives (non-vacuous control)", async () => {
+      const { deps, config } = makeHarness();
+      config.set("operation", "read");
+      const record = vi.fn();
+
+      const pipeline = new M3LOperationPipeline<
+        TestOp,
+        TestSettings,
+        TestDeps,
+        TestResult,
+        undefined
+      >({
+        operations: TEST_OPS,
+        configCode: "ERR_TEST_CONFIG",
+        resolveSettings: () => ({ yes: false }),
+        requiredFields: { read: [], write: [] },
+        handlers: {
+          read: () => Promise.resolve({ processed: 27 }),
+          write: () => Promise.resolve({ processed: 27 }),
+        },
+        trace: {
+          sink: { record },
+          describe: (phase: M3LPipelinePhase) => {
+            if (phase !== "guards") return {};
+            // Computed keys, not the `__proto__: value` literal form — the
+            // latter sets the created object's own prototype rather than an
+            // enumerable own property, which would make `Object.keys(extra)`
+            // never see "__proto__" at all and the guard's `continue` branch
+            // would go unexercised for the wrong reason.
+            return {
+              ["__proto__"]: "polluted-proto",
+              ["constructor"]: "polluted-ctor",
+              ["prototype"]: "polluted-proto-prop",
+              bucket: "ok",
+            };
+          },
+        },
+      });
+
+      await pipeline.run(deps);
+
+      const guardsCall = (
+        record.mock.calls as unknown as readonly [string, string, unknown][]
+      ).find(
+        (call) =>
+          (call[2] as { phase?: string } | undefined)?.phase === "guards",
+      );
+      const guardsPayload = guardsCall?.[2] as
+        Record<string, unknown> | undefined;
+
+      // Non-vacuous control: an ordinary sibling key survives, so this test
+      // cannot pass merely because the whole payload was dropped.
+      expect(guardsPayload).toMatchObject({ bucket: "ok" });
+      expect(Object.hasOwn(guardsPayload ?? {}, "__proto__")).toBe(false);
+      expect(Object.hasOwn(guardsPayload ?? {}, "constructor")).toBe(false);
+      expect(Object.hasOwn(guardsPayload ?? {}, "prototype")).toBe(false);
+
+      // No prototype pollution actually occurred: the global `Object.prototype`
+      // carries none of the poisoned values, and the recorded payload itself
+      // still has the normal, unpolluted `Object.prototype` in its chain.
+      expect(
+        (Object.prototype as Record<string, unknown>)["polluted-proto"],
+      ).toBeUndefined();
+      expect(({} as Record<string, unknown>)["polluted-ctor"]).toBeUndefined();
+      expect(Object.getPrototypeOf(guardsPayload ?? {})).toBe(Object.prototype);
     });
 
     describe("type-level", () => {

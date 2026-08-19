@@ -1287,6 +1287,11 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/pipeline/types.ts"
   },
+  "M3LPipelineTraceSink": {
+    "submodule": "pipeline",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/pipeline/types.ts"
+  },
   "M3LPoller": {
     "submodule": "polling",
     "namespace": "core",

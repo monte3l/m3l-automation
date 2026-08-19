@@ -23,5 +23,6 @@ export type {
   M3LPipelineDestructiveOptions,
   M3LPipelinePhase,
   M3LPipelineTraceOptions,
+  M3LPipelineTraceSink,
   M3LPipelineTraceSnapshot,
 } from "./types.js";

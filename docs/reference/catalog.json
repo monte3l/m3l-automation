@@ -385,7 +385,8 @@
       "M3LOperationPipelineOutcomeBase",
       "M3LPipelinePhase",
       "M3LPipelineTraceSnapshot",
-      "M3LPipelineTraceOptions"
+      "M3LPipelineTraceOptions",
+      "M3LPipelineTraceSink"
     ]
   },
   {

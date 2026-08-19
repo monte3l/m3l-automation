@@ -359,6 +359,29 @@ export interface M3LPipelineTraceSnapshot<
 }
 
 /**
+ * The minimal `record`-shaped sink a pipeline trace writes to — independent
+ * of the operation/settings/context type parameters {@link
+ * M3LPipelineTraceOptions} is generic over, since `sink.record`'s own
+ * signature never depends on them. Kept as a **structural** interface (not a
+ * branded/nominal type) so a real emitter can satisfy it with zero adapter:
+ * {@link M3LBreadcrumbTrail} satisfies this shape as-is, and so does any
+ * two-line test double exposing a matching `record` method.
+ *
+ * @example
+ * ```ts
+ * import type { M3LPipelineTraceSink } from "@m3l-automation/m3l-common/core";
+ *
+ * const sink: M3LPipelineTraceSink = {
+ *   record: (source, event, payload) => console.log(source, event, payload),
+ * };
+ * ```
+ */
+export interface M3LPipelineTraceSink {
+  /** Records one phase entry. `payload` carries the engine's own keys plus `describe`'s return, if any. */
+  record(source: string, event: string, payload?: unknown): void;
+}
+
+/**
  * Opt-in, additive tracing configuration for {@link M3LOperationPipeline}.
  * Absent `trace`, behavior is byte-identical to a pipeline without the
  * option and the engine performs no timing work at all.
@@ -402,10 +425,7 @@ export interface M3LPipelineTraceOptions<
    * `record`-shaped object receives the `describe` return **verbatim** — the
    * engine does not redact.
    */
-  readonly sink: {
-    /** Records one phase entry. `payload` carries the engine's own keys plus `describe`'s return, if any. */
-    record(source: string, event: string, payload?: unknown): void;
-  };
+  readonly sink: M3LPipelineTraceSink;
   /**
    * Builds extra payload keys from the phase's entry-time snapshot. Invoked
    * at each phase's **entry**, before that phase's body runs. The engine's
