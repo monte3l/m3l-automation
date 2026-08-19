@@ -93,42 +93,165 @@ function isCheckpointEnvelope(
 }
 
 // ---------------------------------------------------------------------------
-// isContentDiscardingObject
+// isDefinitionValueAccepted — recursive allowlist for definition validation
 // ---------------------------------------------------------------------------
 
 /**
- * Returns `true` when `value` is an object whose content would be silently
- * discarded by `JSON.stringify` — specifically, a non-array, non-plain object
- * with no `toJSON` method and no own enumerable properties (e.g. `Map`,
- * `Set`, `WeakMap`, `RegExp`). Such a value produces a canonical JSON hash
- * identical to `{}`, yielding a fingerprint that can never mismatch and
- * neutering the fingerprinting check silently.
- *
- * Returns `false` for plain objects (own enumerable properties ARE the
- * content), arrays, `null`, primitives, objects with a `toJSON` method, and
- * objects with at least one own enumerable property.
- *
- * Wraps `Object.keys` and the `in` operator in a `try`/`catch` so a hostile
- * `Proxy` with throwing traps cannot escape the constructor as a raw error —
- * it is treated as discarding content, which fails safe.
+ * Maximum recursion depth for {@link isDefinitionValueAccepted}. A definition
+ * nested more deeply than this is rejected with `ERR_CHECKPOINT_DEFINITION`
+ * rather than risking a call-stack overflow. The limit is generous enough to
+ * cover any realistic configuration structure.
  */
-function isContentDiscardingObject(value: unknown): boolean {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false; // primitive, null, or array — no discard concern
-  }
-  if (isPlainObject(value)) {
-    return false; // plain object: own enumerable properties are the content
-  }
-  // Non-plain, non-array object: check whether JSON.stringify can reach its
-  // content via toJSON or own enumerable properties.
+const DEFINITION_MAX_DEPTH = 512;
+
+/**
+ * Array branch of {@link isDefinitionValueAccepted}. Guards each element read
+ * (Proxy get trap) and tracks the array in the `visited` set for cycle
+ * detection. Extracted to keep the main function within the complexity budget.
+ */
+function isDefinitionArrayAccepted(
+  arr: unknown[],
+  visited: WeakSet<object>,
+  depth: number,
+): boolean {
+  visited.add(arr);
   try {
-    if ("toJSON" in value) return false; // controls its own serialisation
-    if (Object.keys(value).length > 0) return false; // has own data
-    return true; // no accessible content (Map, Set, WeakMap, RegExp, …)
-  } catch {
-    // Hostile Proxy with throwing traps — fail safe by treating as discarding.
+    for (let i = 0; i < arr.length; i++) {
+      let elem: unknown;
+      try {
+        elem = arr[i];
+      } catch {
+        return false; // Proxy get trap — fail-closed
+      }
+      if (!isDefinitionValueAccepted(elem, visited, depth + 1)) return false;
+    }
     return true;
+  } catch {
+    return false;
+  } finally {
+    visited.delete(arr);
   }
+}
+
+/**
+ * Plain-object branch of {@link isDefinitionValueAccepted}. Guards
+ * `Object.keys` (ownKeys trap) and each property read (get trap), and tracks
+ * the object in the `visited` set for cycle detection. Extracted to keep the
+ * main function within the complexity budget.
+ */
+function isDefinitionObjectAccepted(
+  obj: object,
+  visited: WeakSet<object>,
+  depth: number,
+): boolean {
+  visited.add(obj);
+  try {
+    let keys: string[];
+    try {
+      keys = Object.keys(obj);
+    } catch {
+      return false; // Proxy ownKeys trap — fail-closed
+    }
+    for (const key of keys) {
+      let propVal: unknown;
+      try {
+        propVal = (obj as Record<string, unknown>)[key];
+      } catch {
+        return false; // Proxy get trap — fail-closed
+      }
+      // An undefined-valued property is allowed and skipped — omitting a key
+      // and setting it to undefined both fingerprint identically by design.
+      if (propVal === undefined) continue;
+      if (!isDefinitionValueAccepted(propVal, visited, depth + 1)) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  } finally {
+    visited.delete(obj);
+  }
+}
+
+/**
+ * Returns `true` when `value`'s prototype is `Object.prototype` or `null`,
+ * confirming it is a plain object whose content is fully enumerable. Guards
+ * `Object.getPrototypeOf` (can throw on a revoked or hostile `Proxy`) and
+ * returns `false` on any trap error (fail-closed). Extracted from
+ * {@link isDefinitionValueAccepted} to keep that function within the project's
+ * cyclomatic-complexity budget.
+ */
+function isDefinitionPlainObject(value: object): boolean {
+  let proto: unknown;
+  try {
+    proto = Object.getPrototypeOf(value);
+  } catch {
+    return false; // Proxy getPrototypeOf trap — fail-closed
+  }
+  return proto === Object.prototype || proto === null;
+}
+
+/**
+ * Returns `true` when `value` is on the recursive allowlist for a checkpoint
+ * definition. At every depth the walk accepts only:
+ *
+ * - `null`, a finite `number`, a `string`, or a `boolean`;
+ * - an `Array` whose every element is itself accepted;
+ * - a **plain object** (prototype exactly `Object.prototype` or `null`) whose
+ *   every own enumerable property value is accepted — a property whose value
+ *   is `undefined` is allowed and skipped (omitting a key and setting it to
+ *   `undefined` both fingerprint identically by design).
+ *
+ * Everything else is rejected wherever it appears: `function`, `symbol`,
+ * `bigint`, non-finite numbers (`NaN`, `±Infinity`), `Map`, `Set`, `WeakMap`,
+ * `RegExp`, `Date`, and any other class instance.
+ *
+ * The walk is robust against three hostile input patterns:
+ *
+ * - **Cycles**: tracked via a `WeakSet` of objects currently on the visit
+ *   stack; a circular reference terminates immediately with `false`.
+ * - **Depth**: the `depth` counter is compared against `DEFINITION_MAX_DEPTH`
+ *   before any recursion; a 100 000-deep definition is rejected before the
+ *   call stack can overflow.
+ * - **Hostile `Proxy`**: every operation that can invoke a Proxy trap —
+ *   `Array.isArray`, `Object.getPrototypeOf`, `Object.keys`, and property
+ *   reads — is guarded; a throwing trap causes `false` to be returned
+ *   (fail-closed). Branches are split into dedicated helpers to keep each
+ *   function within the project complexity budget.
+ *
+ * @param value - The value to inspect.
+ * @param visited - The set of objects currently being visited (cycle guard).
+ * @param depth - The current recursion depth (overflow guard).
+ * @returns `true` when `value` is fully accepted; `false` otherwise.
+ */
+function isDefinitionValueAccepted(
+  value: unknown,
+  visited: WeakSet<object>,
+  depth: number,
+): boolean {
+  // Null is accepted unconditionally.
+  if (value === null) return true;
+  // Non-object types: handle without any Proxy trap involvement.
+  if (typeof value !== "object") {
+    if (typeof value === "number") return Number.isFinite(value);
+    return typeof value === "string" || typeof value === "boolean";
+  }
+
+  // Non-null object from here. Reject on depth limit or cycle.
+  if (depth >= DEFINITION_MAX_DEPTH || visited.has(value)) return false;
+
+  // Array.isArray invokes [[IsArray]] which throws on a revoked Proxy.
+  let isArr: boolean;
+  try {
+    isArr = Array.isArray(value);
+  } catch {
+    return false; // fail-closed
+  }
+  if (isArr)
+    return isDefinitionArrayAccepted(value as unknown[], visited, depth);
+
+  // Reject class instances, Map, Set, RegExp, Date, etc. Proxy-safe.
+  if (!isDefinitionPlainObject(value)) return false;
+  return isDefinitionObjectAccepted(value, visited, depth);
 }
 
 // ---------------------------------------------------------------------------
@@ -251,32 +374,38 @@ export interface M3LCheckpointStoreOptions<TCheckpoint extends object> {
    * definition (throws `"ERR_CHECKPOINT_FINGERPRINT_MISMATCH"`).
    *
    * The hash is computed **once, at construction**, so a value the
-   * constructor rejects (see below) throws `"ERR_CHECKPOINT_DEFINITION"` from
-   * the constructor rather than surfacing on the first `read()` or `write()`.
+   * constructor rejects throws `"ERR_CHECKPOINT_DEFINITION"` at construction
+   * rather than surfacing on the first `read()` or `write()`.
    * The value is never persisted and never reaches a `message`, `context`, or
    * `cause` — only its hash is stored.
    *
-   * **Rejected definitions.** The constructor rejects three categories:
-   * - `function` or `symbol` — both canonicalise to `null` and cannot
-   *   produce a meaningful fingerprint.
-   * - A non-array object with no `toJSON` method and no own enumerable
-   *   properties (e.g. `Map`, `Set`, `WeakMap`, `RegExp`) — such a value
-   *   canonicalises identically to `{}` regardless of its internal state,
-   *   so its fingerprint can never mismatch.
-   * - A value `canonicalJsonHash` cannot hash (circular reference, `BigInt`,
-   *   non-finite number).
+   * **Accepted definitions — an allowlist, applied recursively.** At every
+   * depth the constructor accepts only:
    *
-   * Accepted: `{ query: "SELECT 1" }`, an honestly-empty `{}`, `[]`, a
-   * `Date` (has `toJSON`), a class instance carrying own data properties,
-   * and primitives including `null`, `0`, `false`, `""`.
+   * - a finite `number`, a `string`, a `boolean`, or `null`;
+   * - an `Array` whose every element is accepted;
+   * - a plain object (prototype `Object.prototype` or `null`) whose every own
+   *   enumerable property value is accepted. A property whose value is
+   *   `undefined` is allowed and skipped — omitting a key and setting it to
+   *   `undefined` both fingerprint identically by design.
+   *
+   * Everything else is rejected wherever it appears: `function`, `symbol`,
+   * `bigint`, non-finite numbers, `Map`, `Set`, `WeakMap`, `RegExp`, `Date`,
+   * and any other class instance. An honestly-empty `{}` or `[]` is accepted.
+   * The walk also terminates safely on circular references and pathologically
+   * deep structures — both yield `ERR_CHECKPOINT_DEFINITION` rather than a
+   * raw error.
+   *
+   * Pass a `Date` as `date.toISOString()` and any richer collection as the
+   * plain array or object you want fingerprinted.
    *
    * Omitting this field preserves today's behaviour exactly (no
    * fingerprinting).
    *
    * @throws {@link M3LCheckpointError} `"ERR_CHECKPOINT_DEFINITION"` — from
-   *   the constructor — when the supplied value is a function, a symbol, a
-   *   non-array object with no accessible content, or unhashable by
-   *   `canonicalJsonHash`.
+   *   the constructor — when the supplied value is not on the allowlist at any
+   *   depth. Never chains a `cause` — the underlying error's message could
+   *   embed the caller's definition value.
    */
   readonly definition?: unknown;
 }
@@ -352,44 +481,30 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
    * @throws Whatever `options.paths.resolveOutput` throws (e.g.
    *   `M3LPathResolutionError` for an unsafe `name`) — propagated unchanged,
    *   never wrapped in `M3LCheckpointError`. Path resolution runs first;
-   *   definition hashing does not begin until the path succeeds.
+   *   definition validation does not begin until the path succeeds.
    * @throws {@link M3LCheckpointError} `"ERR_CHECKPOINT_DEFINITION"` when
-   *   `options.definition` is supplied but is a `function`, a `symbol`, a
-   *   non-array object with no `toJSON` and no own enumerable properties
-   *   (e.g. `Map`, `Set`, `WeakMap`, `RegExp`), or a value `canonicalJsonHash`
-   *   cannot hash (circular reference, `BigInt`, non-finite number). Never
-   *   chains a `cause` — the underlying error's message can embed the
+   *   `options.definition` is supplied but is not on the allowlist at any
+   *   depth (see {@link M3LCheckpointStoreOptions.definition}). Never chains
+   *   a `cause` — the underlying error's message could embed the caller's
    *   definition value.
    */
   constructor(options: M3LCheckpointStoreOptions<TCheckpoint>) {
     // Path resolution must come first — an unsafe name throws
-    // M3LPathResolutionError unwrapped, before definition hashing begins.
+    // M3LPathResolutionError unwrapped, before definition validation begins.
     this.#path = options.paths.resolveOutput(`${options.name}.checkpoint.json`);
     this.#validate = options.validate;
     this.#missing = options.missing;
 
     if (options.definition !== undefined) {
-      // Reject definitions whose canonical form silently discards content:
-      // functions and symbols both canonicalise to null, and non-plain objects
-      // with no toJSON and no own properties (Map, Set, WeakMap, RegExp, …)
-      // canonicalise identically to {} regardless of their internal state.
-      // Either case yields a fingerprint that can never mismatch — a no-op
-      // exactly where fingerprinting is supposed to fail loud.
-      if (
-        typeof options.definition === "function" ||
-        typeof options.definition === "symbol"
-      ) {
+      // Validate the definition against the recursive allowlist. Any value
+      // not accepted — at any depth, including circular structures and
+      // pathologically deep nesting — is rejected before hashing. This
+      // prevents fingerprints that can never mismatch (e.g. a nested Set
+      // canonicalises to {}, so two runs with different sets would resume
+      // from each other's offsets silently).
+      if (!isDefinitionValueAccepted(options.definition, new WeakSet(), 0)) {
         throw new M3LCheckpointError(
-          `checkpoint store at '${this.#path}': definition must be a JSON-serializable value — functions and symbols canonicalise to null and cannot produce a meaningful fingerprint`,
-          {
-            code: "ERR_CHECKPOINT_DEFINITION",
-            context: { path: this.#path },
-          },
-        );
-      }
-      if (isContentDiscardingObject(options.definition)) {
-        throw new M3LCheckpointError(
-          `checkpoint store at '${this.#path}': definition must expose its content as own enumerable properties or via a toJSON method — Map, Set, WeakMap, and RegExp instances fingerprint identically to {}`,
+          `checkpoint store at '${this.#path}': definition must contain only finite numbers, strings, booleans, null, plain arrays, and plain objects with accepted values at every depth — functions, symbols, class instances (Map, Set, Date, RegExp), non-finite numbers, circular references, and structures exceeding the depth limit are rejected`,
           {
             code: "ERR_CHECKPOINT_DEFINITION",
             context: { path: this.#path },
@@ -400,7 +515,9 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
         this.#fingerprint = canonicalJsonHash(options.definition);
       } catch {
         // Never chain `cause`: canonicalJsonHash's thrown message can embed
-        // the caller's actual (possibly sensitive) definition value.
+        // the caller's actual (possibly sensitive) definition value. This
+        // branch is a safety net — accepted definitions should always be
+        // hashable — but is kept for robustness.
         throw new M3LCheckpointError(
           `checkpoint store at '${this.#path}' could not hash the supplied definition: must be JSON-serializable (no circular references, BigInt, or non-finite numbers)`,
           {
@@ -613,19 +730,26 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
    * parent directory maps to `"ERR_CHECKPOINT_IO"`, never
    * `"ERR_CHECKPOINT_MISSING"` (that code is reserved for `read()`).
    *
-   * The checksum is computed inside its own `try`/`catch`: `canonicalJsonHash`
-   * throws on a circular, `BigInt`, or non-finite-number `checkpoint`, and its
-   * thrown message can embed the caller's actual value — so that failure is
-   * never chained as `cause` (it may carry sensitive checkpoint data, e.g. a
-   * DynamoDB primary key). The subsequent `writeFileAtomic` call carries no
-   * such risk (an I/O errno has no caller content) and safely chains `cause`.
-   * Both failures map to the same `"ERR_CHECKPOINT_IO"` code, but with
+   * Three distinct failure modes, all mapped to `"ERR_CHECKPOINT_IO"` with
    * distinct messages so a caller logging `code + message` can distinguish
-   * a hash failure from an I/O failure.
+   * them:
+   *
+   * 1. **Checksum failure** — `canonicalJsonHash` throws on a circular,
+   *    `BigInt`, or non-finite-number `checkpoint`. Never chains a `cause`:
+   *    `canonicalJsonHash`'s thrown message can embed the caller's actual
+   *    checkpoint value (e.g. a DynamoDB primary key).
+   * 2. **Serialization failure** — `JSON.stringify` throws on the assembled
+   *    envelope (e.g. a `checkpoint` whose properties have non-idempotent
+   *    `toJSON` getters that pass the hash but fail serialization). Never
+   *    chains a `cause`: the stringify error can embed caller property paths.
+   * 3. **I/O failure** — `writeFileAtomic` fails (e.g. `ENOSPC`, `EPERM`,
+   *    missing parent directory). Chains the OS `cause` — an errno has no
+   *    caller-supplied content.
    *
    * @param checkpoint - The checkpoint value to persist.
    * @throws {@link M3LCheckpointError} `"ERR_CHECKPOINT_IO"` on any write
-   *   failure, including a `checkpoint` value `canonicalJsonHash` cannot hash.
+   *   failure, including a `checkpoint` value `canonicalJsonHash` cannot hash
+   *   or `JSON.stringify` cannot serialize.
    */
   async write(checkpoint: TCheckpoint): Promise<void> {
     let checksum: string;
@@ -648,9 +772,29 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
         : {}),
       payload: checkpoint,
     };
+
+    // Serialize the envelope before the I/O try so that a JSON.stringify
+    // failure (e.g. a checkpoint with a non-idempotent toJSON that passes
+    // canonicalJsonHash but fails stringify) does not reach the I/O catch
+    // where its thrown message — which can embed caller property paths —
+    // would be chained as `cause`.
+    let body: string;
     try {
-      await writeFileAtomic(this.#path, JSON.stringify(envelope));
+      body = JSON.stringify(envelope);
+    } catch {
+      // Never chain `cause`: the stringify error can embed caller property
+      // paths (e.g. "property 'SEKRET-key' closes the circle").
+      throw new M3LCheckpointError(
+        `checkpoint at '${this.#path}' could not be serialized to JSON`,
+        { code: "ERR_CHECKPOINT_IO", context: { path: this.#path } },
+      );
+    }
+
+    try {
+      await writeFileAtomic(this.#path, body);
     } catch (cause) {
+      // An OS errno (ENOSPC, EPERM, missing parent dir) has no caller-supplied
+      // content — chaining cause is safe and provides actionable diagnostics.
       throw new M3LCheckpointError(
         `failed to write checkpoint file at '${this.#path}'`,
         { code: "ERR_CHECKPOINT_IO", context: { path: this.#path }, cause },

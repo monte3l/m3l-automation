@@ -35,6 +35,7 @@
 
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { inspect } from "node:util";
 
 import {
   afterEach,
@@ -1429,22 +1430,46 @@ describe("M3LCheckpointStore constructor — definition rejection / acceptance",
     },
   );
 
-  test("definition: Date (has toJSON) — accepted; write() stamps a fingerprint", async () => {
-    const store = new M3LCheckpointStore<TestCheckpoint>({
-      paths: makePathsPort(dir),
-      name: "run-def-date",
-      validate: isTestCheckpoint,
-      missing: { kind: "error" },
-      definition: new Date("2026-01-01T00:00:00Z"),
-    });
+  test("definition: Date — rejected with ERR_CHECKPOINT_DEFINITION (cause undefined, no value/type leak); a Date was accepted under the old toJSON rule but the new allowlist requires prototype === Object.prototype", () => {
+    // Under the old shape-based guard, Date was accepted because it has a
+    // callable toJSON — so canonicalJsonStringify serialised it as a string.
+    // The new recursive allowlist rejects it because Date.prototype is not
+    // Object.prototype or null: a class instance can hold state in #private
+    // fields or prototype accessors that no serialiser and no type-test can
+    // see. Pass a Date as date.toISOString() instead.
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-date",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: new Date("2026-01-01T00:00:00Z"),
+      });
+    } catch (error) {
+      thrown = error;
+    }
 
-    await store.write({ queryId: "q-date-def" });
-    const rawJson = await readFile(store.path, "utf8");
-    const parsed: unknown = JSON.parse(rawJson);
-    expect(Object.hasOwn(parsed as object, "fingerprint")).toBe(true);
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    // The Date value itself (e.g. "2026-01-01") must not appear in the message
+    // or context — the definition is never persisted or surfaced.
+    expect((thrown as M3LCheckpointError).message).not.toContain("2026-01-01");
+    const contextStr = JSON.stringify(
+      (thrown as M3LCheckpointError).context ?? {},
+    );
+    expect(contextStr).not.toContain("2026-01-01");
   });
 
-  test("definition: class instance with own data properties — accepted; write() stamps a fingerprint", async () => {
+  test("definition: class instance with own data properties — rejected with ERR_CHECKPOINT_DEFINITION (cause undefined); class instances can hold #private state no serialiser can see", () => {
+    // Under the old shape-based guard, a class with only plain own-data
+    // properties was accepted because Object.keys() enumerated those fields.
+    // The new recursive allowlist rejects it because the prototype is not
+    // Object.prototype or null — the allowlist cannot verify that the class
+    // holds no additional state in #private fields or prototype accessors.
     class WithOwnData {
       readonly query: string;
       readonly table: string;
@@ -1453,18 +1478,30 @@ describe("M3LCheckpointStore constructor — definition rejection / acceptance",
         this.table = table;
       }
     }
-    const store = new M3LCheckpointStore<TestCheckpoint>({
-      paths: makePathsPort(dir),
-      name: "run-def-own-data",
-      validate: isTestCheckpoint,
-      missing: { kind: "error" },
-      definition: new WithOwnData("SELECT 1", "t"),
-    });
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-own-data",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: new WithOwnData("SELECT 1", "t"),
+      });
+    } catch (error) {
+      thrown = error;
+    }
 
-    await store.write({ queryId: "q-own-data-def" });
-    const rawJson = await readFile(store.path, "utf8");
-    const parsed: unknown = JSON.parse(rawJson);
-    expect(Object.hasOwn(parsed as object, "fingerprint")).toBe(true);
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    // The class property values must not appear in the message or context.
+    expect((thrown as M3LCheckpointError).message).not.toContain("SELECT 1");
+    const contextStr = JSON.stringify(
+      (thrown as M3LCheckpointError).context ?? {},
+    );
+    expect(contextStr).not.toContain("SELECT 1");
   });
 
   test.each([
@@ -1737,5 +1774,842 @@ describe("M3LCheckpointStore — sixth read-matrix row (non-string fingerprint)"
 
     expect(thrown).toBeInstanceOf(M3LCheckpointError);
     expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_CORRUPT");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E. Definition allowlist — round-2 regression and walk-branch coverage
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore constructor — definition allowlist (round-2)", () => {
+  // -------------------------------------------------------------------------
+  // E1. The motivating regression: nested non-plain objects in a plain-object definition
+  // -------------------------------------------------------------------------
+
+  test("regression: { region, logGroups: new Set([...]) } — rejected at construction; the nested Set canonicalises to {} so two runs over different log groups would fingerprint identically under the old denylist", () => {
+    // This is the exact shape the spec documents as the motivating defect:
+    // a denylist checking only top-level Map/Set/RegExp still accepted this
+    // object, causing two runs over different log groups to resume from each
+    // other's offsets silently. The recursive allowlist closes this.
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-reg-nested-set",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: {
+          region: "eu-west-1",
+          logGroups: new Set(["/aws/lambda/a"]),
+        },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    // The definition value must not appear in the message or context.
+    expect((thrown as M3LCheckpointError).message).not.toContain("eu-west-1");
+    const contextStr = JSON.stringify(
+      (thrown as M3LCheckpointError).context ?? {},
+    );
+    expect(contextStr).not.toContain("eu-west-1");
+  });
+
+  test("regression sibling: nested Map in a plain object — rejected (Map entries are invisible to canonical JSON, so two runs with different Map contents fingerprint identically)", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-reg-nested-map",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { config: new Map([["key", "value"]]) },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("regression sibling: nested RegExp in a plain object — rejected", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-reg-nested-regexp",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { pattern: /^foo/ },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("regression sibling: nested function-valued property in a plain object — rejected (functions canonicalise to null, silently losing their identity)", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-reg-nested-fn",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { transform: (x: string) => x.toUpperCase() },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // E2. Rejection at depth — bad values nested 2-3 levels inside plain objects/arrays
+  // -------------------------------------------------------------------------
+
+  test("rejection at depth: a Set nested two levels inside plain objects — rejected", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-depth-bad-set",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { outer: { inner: new Set([1, 2]) } },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("rejection at depth: NaN nested inside an array inside a plain object — rejected (non-finite numbers are not accepted)", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-depth-bad-nan",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { values: [1, NaN, 3] },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // E3. Non-finite numbers: NaN, Infinity, -Infinity — top-level
+  // -------------------------------------------------------------------------
+
+  test.each([
+    ["NaN", NaN],
+    ["Infinity", Infinity],
+    ["-Infinity", -Infinity],
+  ])(
+    "definition: %s (top-level) — rejected with ERR_CHECKPOINT_DEFINITION (non-finite numbers are not accepted)",
+    (_label, badDef) => {
+      let thrown: unknown;
+      try {
+        new M3LCheckpointStore<TestCheckpoint>({
+          paths: makePathsPort(dir),
+          name: "run-def-nonfinite",
+          validate: isTestCheckpoint,
+          missing: { kind: "error" },
+          definition: badDef,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LCheckpointError);
+      expect((thrown as M3LCheckpointError).code).toBe(
+        "ERR_CHECKPOINT_DEFINITION",
+      );
+      expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // E4. bigint, Symbol, and functions — nested form (top-level already covered in A1)
+  // -------------------------------------------------------------------------
+
+  test("definition: bigint nested in a plain object — rejected with ERR_CHECKPOINT_DEFINITION", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-nested-bigint",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { count: BigInt(42) },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("definition: Symbol nested in a plain object — rejected with ERR_CHECKPOINT_DEFINITION", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-nested-symbol",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { tag: Symbol("tag") },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("definition: function nested inside an array — rejected with ERR_CHECKPOINT_DEFINITION", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-nested-fn-arr",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: [1, () => 2, 3],
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // E5. Map/Set subclass with own property — rejected (prototype is not Object.prototype)
+  // -------------------------------------------------------------------------
+
+  test("definition: Map subclass with an own data property — rejected; its Map entries are invisible to canonical JSON, and its prototype is not Object.prototype", () => {
+    // Previously a denylist checking instanceof Map might miss a subclass.
+    // The allowlist rejects all class instances since their prototype is not
+    // Object.prototype or null.
+    class TaggedMap extends Map<string, number> {
+      readonly label: string;
+      constructor(label: string) {
+        super();
+        this.label = label;
+      }
+    }
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-map-subclass",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: new TaggedMap("my-map"),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // E6. Class with non-callable toJSON on prototype — rejected
+  // -------------------------------------------------------------------------
+
+  test("definition: class whose prototype has a non-callable toJSON property — rejected; class instances are not plain objects regardless of toJSON", () => {
+    // Previously canonicalJsonStringify required a callable toJSON, so a
+    // non-callable toJSON fell through to {} serialisation — two different
+    // instances of this class would fingerprint identically. The allowlist
+    // rejects all class instances outright.
+    class WithNonCallableToJSON {
+      readonly toJSON: string = "not a function";
+    }
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-non-callable-tojson",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: new WithNonCallableToJSON(),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // E7. null-prototype object (Object.create(null)) — ACCEPTED
+  // -------------------------------------------------------------------------
+
+  test("definition: null-prototype plain object (Object.create(null)) — accepted; construction succeeds", () => {
+    // Object.create(null) has prototype === null, which is one of the two
+    // allowlisted prototypes alongside Object.prototype. Useful for config
+    // dicts parsed from YAML/TOML with no inherited properties.
+    const nullProtoObj = Object.create(null) as Record<string, unknown>;
+    nullProtoObj["region"] = "us-east-1";
+    nullProtoObj["limit"] = 100;
+
+    expect(() => {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-null-proto",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: nullProtoObj,
+      });
+    }).not.toThrow();
+  });
+
+  test("definition: null-prototype object — accepted; write() stamps a real 64-char hex fingerprint", async () => {
+    const nullProtoObj = Object.create(null) as Record<string, unknown>;
+    nullProtoObj["query"] = "SELECT 1";
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-def-null-proto-fp",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: nullProtoObj,
+    });
+
+    await store.write({ queryId: "q-null-proto" });
+    const rawJson = await readFile(store.path, "utf8");
+    const parsed = JSON.parse(rawJson) as Record<string, unknown>;
+    const fp = parsed["fingerprint"];
+    expect(typeof fp).toBe("string");
+    expect((fp as string).length).toBe(64);
+    expect(/^[0-9a-f]{64}$/.test(fp as string)).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // E8. Depth limit — structure exceeding DEFINITION_MAX_DEPTH (512)
+  // -------------------------------------------------------------------------
+
+  test("definition: structure nested deeper than DEFINITION_MAX_DEPTH — throws ERR_CHECKPOINT_DEFINITION, never a raw RangeError", () => {
+    // DEFINITION_MAX_DEPTH = 512. Build a 514-deep structure in a loop so
+    // fixture setup itself does not recurse — only the walk inside the
+    // constructor does. A raw RangeError escaping would fail the
+    // toBeInstanceOf(M3LCheckpointError) assertion.
+    let deep: unknown = "leaf";
+    for (let i = 0; i < 514; i++) {
+      deep = { nested: deep };
+    }
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-too-deep",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: deep,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).not.toBeInstanceOf(RangeError);
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // E9. Hostile Proxy — one test per trap the walk touches
+  //     (ownKeys trap already covered in describe block A above)
+  // -------------------------------------------------------------------------
+
+  test("definition: revoked Proxy — rejected with ERR_CHECKPOINT_DEFINITION, not a raw TypeError", () => {
+    // A revoked Proxy throws a TypeError on any operation. The walk's
+    // Array.isArray call invokes [[IsArray]] which throws on a revoked Proxy;
+    // the try/catch in isDefinitionValueAccepted catches it (fail-closed) and
+    // returns false → ERR_CHECKPOINT_DEFINITION.
+    const { proxy, revoke } = Proxy.revocable({}, {});
+    revoke();
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-revoked-proxy",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: proxy,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).not.toBeInstanceOf(TypeError);
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("definition: Proxy whose getPrototypeOf trap throws — rejected with ERR_CHECKPOINT_DEFINITION, raw error does not escape", () => {
+    // isDefinitionPlainObject wraps Object.getPrototypeOf in a try/catch —
+    // a throwing trap is caught and treated as fail-closed (returns false),
+    // surfaced as ERR_CHECKPOINT_DEFINITION. The raw trap error must not
+    // become the cause or otherwise escape the constructor.
+    const hostile = new Proxy(
+      {},
+      {
+        getPrototypeOf(): never {
+          throw new Error("getPrototypeOf trap — must not escape");
+        },
+      },
+    );
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-getprototypeof-trap",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: hostile,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    // The trap's own error must not be chained as cause.
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("definition: Proxy wrapping an array whose get trap throws on element access — rejected with ERR_CHECKPOINT_DEFINITION, raw error does not escape", () => {
+    // Array.isArray works correctly for Proxies wrapping arrays (it calls
+    // [[IsArray]] on the proxy target). The walk then enters isDefinitionArrayAccepted
+    // and tries to read arr[i] via the get trap, which throws — caught by the
+    // per-element try/catch (fail-closed). The `length` property must be let
+    // through (to allow the for-loop bound check) so the throw happens at the
+    // element-access step, exercising the inner catch rather than the outer one.
+    const hostile = new Proxy([1, 2, 3], {
+      get(target: number[], p: string | symbol, receiver: unknown): unknown {
+        if (p === "length") return Reflect.get(target, p, receiver);
+        throw new Error("array element get trap — must not escape");
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-array-get-trap",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: hostile,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("definition: Proxy wrapping a plain {} target whose ownKeys trap throws — rejected with ERR_CHECKPOINT_DEFINITION; the {} target makes Object.getPrototypeOf return Object.prototype so the walk reaches the ownKeys-catch branch in isDefinitionObjectAccepted", () => {
+    // The A1 ownKeys test uses a Map as the Proxy target, so the prototype
+    // check (isDefinitionPlainObject) rejects it before isDefinitionObjectAccepted
+    // is ever called. This test wraps {} (Object.prototype), ensuring the walk
+    // actually reaches Object.keys() and exercises the ownKeys-catch path there.
+    const hostile = new Proxy(
+      {},
+      {
+        ownKeys(): never {
+          throw new Error(
+            "ownKeys trap in plain-object walk — must not escape",
+          );
+        },
+        getOwnPropertyDescriptor(): never {
+          throw new Error("getOwnPropertyDescriptor trap — must not escape");
+        },
+      },
+    );
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-ownkeys-plain-target",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: hostile,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("definition: Proxy whose get trap throws on property access — rejected with ERR_CHECKPOINT_DEFINITION, raw error does not escape", () => {
+    // isDefinitionObjectAccepted wraps each property read in a try/catch —
+    // a throwing get trap must be caught (fail-closed) and surfaced as
+    // ERR_CHECKPOINT_DEFINITION, never as a raw Error.
+    // The {} target means getPrototypeOf returns Object.prototype (passes the
+    // plain-object check), and the ownKeys + getOwnPropertyDescriptor traps
+    // expose one enumerable key — reaching the per-property get branch.
+    const hostile = new Proxy(
+      {},
+      {
+        ownKeys(_target: object): string[] {
+          return ["data"];
+        },
+        getOwnPropertyDescriptor(
+          _target: object,
+          _key: string | symbol,
+        ): PropertyDescriptor {
+          return {
+            value: undefined,
+            writable: true,
+            enumerable: true,
+            configurable: true,
+          };
+        },
+        get(_target: object, _p: string | symbol, _receiver: unknown): never {
+          throw new Error("get trap — must not escape");
+        },
+      },
+    );
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-get-trap",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: hostile,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // E10. Accepted shapes — real 64-char hex fingerprint actually stamped
+  // -------------------------------------------------------------------------
+
+  test("definition: realistic adopter settings object (logGroups as string[], undefined optional) — accepted; write() stamps a real 64-char hex fingerprint", async () => {
+    // Mirrors the shape a Logs-Insights adopter would pass.
+    const definition = {
+      query: "fields @message | filter @message like /ERROR/",
+      logGroups: ["/aws/lambda/my-fn", "/aws/lambda/other-fn"],
+      limit: undefined, // undefined-valued properties are allowed and skipped
+      windowMinutes: 60,
+    };
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-def-adopter",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition,
+    });
+
+    await store.write({ queryId: "q-adopter" });
+    const rawJson = await readFile(store.path, "utf8");
+    const parsed = JSON.parse(rawJson) as Record<string, unknown>;
+    const fp = parsed["fingerprint"];
+    expect(typeof fp).toBe("string");
+    expect((fp as string).length).toBe(64);
+    expect(/^[0-9a-f]{64}$/.test(fp as string)).toBe(true);
+  });
+
+  test("definition: deeply nested plain object/array mix — accepted; write() stamps a fingerprint", async () => {
+    const definition = {
+      level1: {
+        level2: [{ level3: { level4: "deep-value" } }, null, 42, false, ""],
+      },
+    };
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-def-deep-mix",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition,
+    });
+
+    await store.write({ queryId: "q-deep-mix" });
+    const rawJson = await readFile(store.path, "utf8");
+    const parsed = JSON.parse(rawJson) as Record<string, unknown>;
+    expect(Object.hasOwn(parsed, "fingerprint")).toBe(true);
+    expect(typeof parsed["fingerprint"]).toBe("string");
+  });
+
+  test.each([
+    ["empty object {}", {}],
+    ["empty array []", []],
+    ["null", null],
+    ["0", 0],
+    ["false", false],
+    ["empty string ''", ""],
+    ["negative float -1.5", -1.5],
+  ])(
+    "definition: %s — accepted; write() stamps a real 64-char hex fingerprint",
+    async (_label, def) => {
+      const store = new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-primitive-fp",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: def,
+      });
+
+      await store.write({ queryId: "q-primitive-fp" });
+      const rawJson = await readFile(store.path, "utf8");
+      const parsed = JSON.parse(rawJson) as Record<string, unknown>;
+      const fp = parsed["fingerprint"];
+      expect(typeof fp).toBe("string");
+      expect((fp as string).length).toBe(64);
+      expect(/^[0-9a-f]{64}$/.test(fp as string)).toBe(true);
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // E11. Omitted key vs explicit undefined key — fingerprint identically
+  // -------------------------------------------------------------------------
+
+  test("definition: {a:1} and {a:1,b:undefined} produce the same stored fingerprint — load-bearing for adopters forwarding absent optional settings", async () => {
+    // A property whose value is undefined is allowed and skipped during the
+    // allowlist walk AND by JSON serialization. This means an adopter that
+    // forwards an absent optional setting as an undefined-valued key gets the
+    // same fingerprint as simply omitting the key — the two runs are
+    // compatible for --resume.
+    const storeWithout = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-omit",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: { a: 1 },
+    });
+
+    const storeWith = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-undef",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: { a: 1, b: undefined },
+    });
+
+    await storeWithout.write({ queryId: "q-omit" });
+    const rawWithout = await readFile(storeWithout.path, "utf8");
+    const parsedWithout = JSON.parse(rawWithout) as Record<string, unknown>;
+
+    await storeWith.write({ queryId: "q-undef" });
+    const rawWith = await readFile(storeWith.path, "utf8");
+    const parsedWith = JSON.parse(rawWith) as Record<string, unknown>;
+
+    // Both envelopes must carry the same fingerprint — the undefined-valued
+    // key is treated as absent for hashing purposes.
+    expect(parsedWithout["fingerprint"]).toBe(parsedWith["fingerprint"]);
+    expect(typeof parsedWithout["fingerprint"]).toBe("string");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F. write() — serialization failure arm (Fix B)
+//    JSON.stringify is hoisted out of the I/O try so its failure does not
+//    reach the I/O catch, where the thrown message (embedding caller property
+//    paths) would be chained as `cause`.
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore.write() — serialization failure arm (Fix B)", () => {
+  // Distinctive string planted as a PROPERTY NAME — that is the channel that
+  // leaked before the fix: JSON.stringify errors can include property names in
+  // their message (e.g. "Converting circular structure to JSON at property
+  // SEKRET_PROP..."), and chaining that error as cause exposed it through
+  // util.inspect.
+  const SEKRET_KEY = "SEKRET_PROP_NAME_DO_NOT_LEAK_9f3a";
+
+  test("non-idempotent toJSON: passes canonicalJsonHash on first call, returns circular structure (containing SEKRET_KEY) on second call so JSON.stringify fails → ERR_CHECKPOINT_IO with cause undefined, planted property name in no error output", async () => {
+    // canonicalJsonStringify (used by canonicalJsonHash) calls toJSON() exactly
+    // once on the checkpoint, then recursively canonicalizes the result.
+    // Native JSON.stringify also calls toJSON() when it reaches the payload.
+    // A non-idempotent toJSON that returns a safe value on call 1 (hash) and a
+    // circular structure on call 2 (stringify) exercises the serialization
+    // failure arm at line 787 of the implementation.
+    //
+    // The circular structure uses SEKRET_KEY as the property that closes the
+    // cycle — Node.js JSON.stringify includes the property path in its circular-
+    // structure error message. Before the fix, that error was caught inside the
+    // I/O try and chained as cause, leaking SEKRET_KEY through util.inspect.
+    // After the fix, the stringify step is outside the I/O try, cause is
+    // undefined, and the property name is contained.
+
+    let callCount = 0;
+    const circRef: Record<string, unknown> = {};
+
+    const checkpoint = {
+      queryId: "q-serialize-fail",
+      toJSON(): unknown {
+        callCount++;
+        if (callCount === 1) {
+          // First call (from canonicalJsonHash): return a safe serializable value.
+          return { queryId: "q-serialize-fail-safe" };
+        }
+        // Second call (from JSON.stringify on the envelope): return a circular
+        // structure. circRef[SEKRET_KEY] = circRef closes the cycle; JSON.stringify
+        // will include SEKRET_KEY in its error message.
+        circRef[SEKRET_KEY] = circRef;
+        return circRef;
+      },
+    };
+
+    // Use a permissive validator so the non-standard checkpoint shape passes.
+    function isAny(v: unknown): v is Record<string, unknown> {
+      return typeof v === "object" && v !== null;
+    }
+
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-serialize-fail",
+      validate: isAny,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write(checkpoint);
+    } catch (error) {
+      thrown = error;
+    }
+
+    // Must throw ERR_CHECKPOINT_IO from the serialization arm, not a raw Error.
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+
+    // cause MUST be undefined — chaining the stringify error would expose the
+    // property name through util.inspect(cause.message).
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+
+    const err = thrown as M3LCheckpointError;
+
+    // The planted property name must appear in none of the public error fields.
+    expect(err.message).not.toContain(SEKRET_KEY);
+    expect(JSON.stringify(err.context ?? {})).not.toContain(SEKRET_KEY);
+    if (err.stack !== undefined) {
+      expect(err.stack).not.toContain(SEKRET_KEY);
+    }
+    // util.inspect with getters:true reveals any getter that embeds the key.
+    const inspected = inspect(err, {
+      depth: 10,
+      showHidden: true,
+      getters: true,
+    });
+    expect(inspected).not.toContain(SEKRET_KEY);
+  });
+
+  test("rename-failure arm still chains the errno cause — the no-cause rule applies only to the serialization arm, not to OS I/O failures", async () => {
+    // Confirms the fix did not accidentally suppress the cause in the I/O arm
+    // too. An OS errno (EPERM from a failed rename) is safe to chain because
+    // it carries no caller-supplied content; chaining it provides actionable
+    // diagnostics.
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-rename-cause",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ queryId: "original" });
+
+    const renameFailure = Object.assign(
+      new Error("EPERM: operation not permitted"),
+      { code: "EPERM" },
+    );
+    vi.spyOn(fsp, "rename").mockRejectedValueOnce(renameFailure);
+
+    let thrown: unknown;
+    try {
+      await store.write({ queryId: "should-not-land" });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    // The I/O arm DOES chain the errno cause — the distinction from the
+    // serialization arm (cause === undefined) is the point.
+    expect((thrown as M3LCheckpointError).cause).toBe(renameFailure);
   });
 });
