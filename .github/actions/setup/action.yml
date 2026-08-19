@@ -1,26 +1,20 @@
-# Shared checkout + pnpm/Node setup + frozen-lockfile install for ci.yml's
-# parallel lanes (deps, lint, format, build, test, gates). The `secrets` lane
-# does its own lightweight checkout instead — gitleaks needs no pnpm install,
-# so bundling it here would cost every push a needless ~10s.
+# pnpm/Node setup + frozen-lockfile install for ci.yml's parallel lanes (deps,
+# lint, format, build, test, gates). Does NOT check out the repo — a local
+# composite action can't perform its own bootstrap checkout, since the runner
+# has to read this file off an already-checked-out workspace before it can
+# run any of these steps at all ("Can't find 'action.yml' … under '.github/
+# actions/setup'. Did you forget to run actions/checkout before running your
+# local action?"). Each calling lane runs its own `actions/checkout` (with
+# whatever fetch-depth it needs) immediately before `uses: ./.github/actions/setup`.
+# The `secrets` lane does its own lightweight checkout+gitleaks instead of
+# using this action at all — gitleaks needs no pnpm install, so bundling it
+# here would cost every push a needless ~10s.
 name: Setup pnpm workspace
-description: Checkout, pnpm + Node 24, pnpm store cache, and a frozen-lockfile install.
-
-inputs:
-  fetch-depth:
-    description: >
-      git fetch depth passed to actions/checkout. Lanes housing a PR-diff-range
-      step (build's "Check exports semver labeling", gates' "Validate commit
-      messages") need '0'; everything else only reads the current tree.
-    required: false
-    default: "2"
+description: pnpm + Node 24, pnpm store cache, and a frozen-lockfile install.
 
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      with:
-        fetch-depth: ${{ inputs.fetch-depth }}
-
     - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
     - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
