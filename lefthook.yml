@@ -37,8 +37,15 @@ pre-push:
       run: pnpm lint
     typecheck:
       run: pnpm typecheck
+    # check:test-counts is chained here rather than given its own lane: it spawns
+    # a Vitest collection pass, and as a sibling lane that ran concurrently with
+    # test:coverage's two full suite runs, contending for the same machine until
+    # it intermittently exited non-zero and blamed the tests (F15, issue #489).
+    # Chaining costs no wall-clock — the collection pass is ~5s against lint's
+    # ~26s, so this lane stays well off the critical path. `check:cadence`
+    # compares the token SET per stage, so both tokens still count as pre-push.
     test:
-      run: pnpm test:coverage
+      run: pnpm test:coverage && pnpm check:test-counts
     # build + check:exports catch a broken compile or exports map (publint / attw)
     # locally instead of first in CI. Kept in ONE command so build's dist/ output
     # precedes the pack — the single hard ordering dependency (lefthook has no
@@ -54,12 +61,6 @@ pre-push:
     # CI-only; see docs/contributing/model-selection.md "Enforcement").
     check-agents:
       run: pnpm check:agents
-    # Catch recorded-test-count drift locally instead of first in CI (was
-    # CI-only). Its own lane, not folded into `test:`, so its scoped Vitest run
-    # is hidden behind the slower test:coverage / lint lanes rather than added
-    # to them; see docs/logs/2026-07-23-core-script-run-wrapper.md:203-206.
-    check-test-counts:
-      run: pnpm check:test-counts
     # Catch script README / reference-page structure drift locally instead of
     # first in CI (section presence, contract blockquote, example count,
     # Operation column header, Validation column header). See
