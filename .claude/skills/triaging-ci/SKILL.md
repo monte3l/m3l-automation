@@ -69,13 +69,15 @@ the first failure, typically the last 50–100 lines before the run aborted.
 
 ### 3 — Map to the pipeline step
 
-Match the failure against the named steps in `.github/workflows/ci.yml` (in
-pipeline order):
+`.github/workflows/ci.yml` runs seven parallel lane jobs (`secrets`, `deps`,
+`lint`, `format`, `build`, `test`, `gates`) plus a `verify` aggregator — note
+which lane the failing step's job belongs to (`gh run view --json jobs` names
+it), then match the step itself against this table (steps within a lane still
+run in the order listed here; the lanes themselves run concurrently):
 
 | Step name                | Local command                     |
 | ------------------------ | --------------------------------- |
-| Secret scan              | — (gitleaks, no local equivalent) |
-| Install                  | `pnpm install --frozen-lockfile`  |
+| Secret scan (gitleaks)   | — (gitleaks, no local equivalent) |
 | Security audit           | `pnpm audit --audit-level=high`   |
 | Check dependencies       | `pnpm check:deps`                 |
 | Validate commit messages | `node bin/lint-commit.mjs`        |

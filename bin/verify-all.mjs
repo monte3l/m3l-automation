@@ -1,22 +1,24 @@
 #!/usr/bin/env node
-// Aggregate local reproduction of the CI `verify` job — one command instead
-// of chaining ~30 `pnpm check:*` invocations by hand. Runs bin/lib/verify-steps.mjs
-// (VERIFY_STEPS) in order, streaming each step's own output, then prints a
-// pass/fail summary table. `pnpm check:verify-parity` is the drift guard that
-// keeps this list honest against ci.yml; this script trusts that list.
+// Aggregate local reproduction of CI's project-check steps — one command
+// instead of chaining ~30 `pnpm check:*` invocations by hand. Runs
+// bin/lib/verify-steps.mjs (VERIFY_STEPS) in order, streaming each step's own
+// output, then prints a pass/fail summary table. `pnpm check:verify-parity`
+// is the drift guard that keeps this list honest against ci.yml's lane jobs;
+// this script trusts that list.
 //
 // Default behaviour: fail-fast (stop at the first failing step, matching how
 // CI itself behaves) and skip steps that declare a `skipReason` (no local
-// equivalent, or environment bootstrap — see bin/lib/verify-steps.mjs's
+// equivalent, or needs live GitHub state — see bin/lib/verify-steps.mjs's
 // header comment) plus PR-only steps when no base ref resolves.
 //
 // Flags:
 //   --continue   Run every step regardless of earlier failures; summarise at
 //                the end instead of stopping at the first red step.
 //   --full       Also run skip-by-default steps that DO have a local command
-//                (e.g. re-install with a frozen lockfile). A step with no
-//                local command at all (e.g. gitleaks) has nothing to run and
-//                stays skipped regardless of this flag.
+//                (e.g. "Check hub drift (push-only)", which needs a
+//                `gh`-authenticated session). A step with no local command at
+//                all (e.g. gitleaks) has nothing to run and stays skipped
+//                regardless of this flag.
 //
 // Usage:
 //   node bin/verify-all.mjs [--continue] [--full]

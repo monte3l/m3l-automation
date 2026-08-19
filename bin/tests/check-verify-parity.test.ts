@@ -8,39 +8,104 @@ import {
 describe("parseCiVerifyStepNames", () => {
   const yaml = [
     "jobs:",
-    "  verify:",
+    "  secrets:",
     "    runs-on: ubuntu-latest",
     "    steps:",
     "      - uses: actions/checkout@abc123",
     "      - name: Secret scan (gitleaks)",
     "        uses: gitleaks/gitleaks-action@abc123",
+    "  lint:",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - uses: ./.github/actions/setup",
     "      - name: Lint",
     "        run: pnpm lint",
-    "      - name: Build",
-    "        run: pnpm build",
-    "  other-job:",
+    "  verify:",
+    "    needs: [secrets, lint]",
+    "    if: always()",
+    "    runs-on: ubuntu-latest",
     "    steps:",
-    "      - name: Unrelated",
-    "        run: pnpm nope",
+    "      - name: Check lane results",
+    "        run: echo ok",
     "",
   ].join("\n");
 
-  test("extracts every named step from the verify job, in order", () => {
-    expect(parseCiVerifyStepNames(yaml)).toEqual([
-      "Secret scan (gitleaks)",
+  test("unions named steps across every non-verify job", () => {
+    expect(parseCiVerifyStepNames(yaml)).toEqual(
+      expect.arrayContaining(["Secret scan (gitleaks)", "Lint"]),
+    );
+    expect(parseCiVerifyStepNames(yaml)).toHaveLength(2);
+  });
+
+  test("excludes steps from the verify aggregator job", () => {
+    expect(parseCiVerifyStepNames(yaml)).not.toContain("Check lane results");
+  });
+
+  test("collects named steps from a single non-verify job, in order", () => {
+    const singleJobYaml = [
+      "jobs:",
+      "  lint:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - uses: ./.github/actions/setup",
+      "      - name: Lint",
+      "        run: pnpm lint",
+      "      - name: Format check",
+      "        run: pnpm format:check",
+      "",
+    ].join("\n");
+
+    expect(parseCiVerifyStepNames(singleJobYaml)).toEqual([
       "Lint",
-      "Build",
+      "Format check",
     ]);
   });
 
-  test("ignores steps from other jobs", () => {
-    expect(parseCiVerifyStepNames(yaml)).not.toContain("Unrelated");
+  test("dedups an identical step name declared in two different jobs", () => {
+    const dupYaml = [
+      "jobs:",
+      "  a:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Shared step",
+      "        run: pnpm shared",
+      "  b:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Shared step",
+      "        run: pnpm shared",
+      "",
+    ].join("\n");
+
+    expect(parseCiVerifyStepNames(dupYaml)).toEqual(["Shared step"]);
   });
 
-  test("throws when there is no verify job", () => {
-    expect(() =>
-      parseCiVerifyStepNames("jobs:\n  build:\n    steps: []\n"),
-    ).toThrow(/verify.*job/);
+  test("does not require a verify job to exist", () => {
+    expect(parseCiVerifyStepNames("jobs:\n  build:\n    steps: []\n")).toEqual(
+      [],
+    );
+
+    const withSteps = [
+      "jobs:",
+      "  build:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Build",
+      "        run: pnpm build",
+      "",
+    ].join("\n");
+    expect(parseCiVerifyStepNames(withSteps)).toEqual(["Build"]);
+  });
+
+  test("throws when there is no jobs section at all", () => {
+    expect(() => parseCiVerifyStepNames("")).toThrow(/jobs.*section/i);
+    expect(() => parseCiVerifyStepNames("name: CI\non: push\n")).toThrow(
+      /jobs.*section/i,
+    );
+  });
+
+  test("throws when jobs exists but has no job definitions under it", () => {
+    expect(() => parseCiVerifyStepNames("jobs:\n")).toThrow(/job definitions/i);
   });
 });
 
@@ -83,5 +148,26 @@ describe("diffVerifySteps", () => {
   test("every VERIFY_STEPS id is unique", () => {
     const ids = VERIFY_STEPS.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test("a conditional entry participates in the diff the same as any other", () => {
+    const conditionalSteps = [
+      {
+        ciStepName: "Lint",
+        id: "lint",
+        cmd: () => "pnpm lint",
+        conditional: true,
+      },
+      { ciStepName: "Build", id: "build", cmd: () => "pnpm build" },
+    ];
+
+    expect(diffVerifySteps(["Lint", "Build"], conditionalSteps)).toEqual({
+      missingFromList: [],
+      staleInList: [],
+    });
+    expect(diffVerifySteps(["Build"], conditionalSteps)).toEqual({
+      missingFromList: [],
+      staleInList: ["Lint"],
+    });
   });
 });

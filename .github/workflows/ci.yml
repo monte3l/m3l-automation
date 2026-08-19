@@ -13,39 +13,34 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Split from a single ~45-step serial job into parallel lanes (CI-perf audit,
+# CLAUDE.md CI/CD section) — the floor is max(lane), not sum(step), since
+# nothing here depends on anything outside its own lane. `verify` aggregates
+# the lane results and MUST keep this exact job id: branch protection's
+# required status check is named `verify`, not any lane's name.
 jobs:
-  verify:
+  secrets:
+    name: Secret scan
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    # Widens the workflow-level `contents: read` default with `issues: read`
-    # — needed only by the push-only "Check hub drift" step at the end of
-    # this job (reads Issues/Milestones; never writes). See that step's
-    # comment and ADR-0032's 2026-08-13 Update.
-    permissions:
-      contents: read
-      issues: read
+    timeout-minutes: 5
     steps:
+      # No pnpm install: gitleaks needs only the checked-out tree/history.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      # Secret scan runs first and independently (rules 05 / security.md):
-      # no committed secret should ever reach the build.
       - name: Secret scan (gitleaks)
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install (frozen lockfile)
-        run: pnpm install --frozen-lockfile
+  deps:
+    name: Dependency checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: ./.github/actions/setup
 
       # Block on HIGH/CRITICAL advisories before spending runner minutes on the
       # rest of the pipeline (rules 05 / security gate requirement).
@@ -64,19 +59,22 @@ jobs:
       - name: Check dependency licenses
         run: pnpm check:licenses
 
-      # bin/lib/verify-steps.mjs (the `pnpm verify` aggregate local gate) must
-      # track this job's step list exactly, or `pnpm verify` silently stops
-      # reproducing what CI actually gates.
-      - name: Check verify parity
-        run: pnpm check:verify-parity
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: ./.github/actions/setup
 
-      - name: Validate commit messages
-        if: github.event_name == 'pull_request'
-        run: node bin/lint-commit.mjs --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }}
-
-      # Fast-first ordering (rules 05): cheap checks short-circuit the slow ones.
       - name: Lint
         run: pnpm lint
+
+  format:
+    name: Format & Markdown
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: ./.github/actions/setup
 
       # Prettier only --write's in the pre-commit hook; this catches drift from
       # any commit that bypassed hooks.
@@ -85,6 +83,17 @@ jobs:
 
       - name: Lint Markdown
         run: pnpm lint:md
+
+  build:
+    name: Build & typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # fetch-depth 0: "Check exports semver labeling" below needs the PR
+      # base..head commit range.
+      - uses: ./.github/actions/setup
+        with:
+          fetch-depth: "0"
 
       - name: Type-check
         run: pnpm typecheck
@@ -100,6 +109,80 @@ jobs:
       - name: Check exports semver labeling
         if: github.event_name == 'pull_request'
         run: node bin/check-exports-semver.mjs --base ${{ github.event.pull_request.base.sha }} --head ${{ github.event.pull_request.head.sha }}
+
+      - name: Build
+        run: pnpm build
+
+      # Publish correctness (exports map / ESM / types resolution) and
+      # dead-code detection. Run after build so the dist/ artifacts exist.
+      - name: Check package exports (publint + are-the-types-wrong)
+        run: pnpm check:exports
+
+      # Barrel re-export completeness: every src/core|aws/<mod>/index.ts must
+      # appear in its namespace barrel and vice-versa. Runs after build so the
+      # barrel is proven to compile before we assert it is complete.
+      - name: Check barrel re-exports (scaffold)
+        run: pnpm check:scaffold
+
+      # Scaffold seam: every src/core|aws/<mod>/index.ts must carry its TDD test
+      # file (tests/<mod>.test.ts) and a row in docs/implementation-status.md.
+      # Backstop for the scaffolding-submodules scaffolding skill.
+      - name: Check scaffold seam (test + status row)
+        run: pnpm check:scaffold-seam
+
+      # Every public export surfaced through a namespace barrel must be
+      # documented — present in its reference page heading or provenance sidecar.
+      # Deterministic backstop for the spec-conformance / docs-consistency spokes.
+      - name: Check barrel vs docs exports
+        run: pnpm check:doc-exports
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: ./.github/actions/setup
+
+      # Run with coverage so the thresholds in vitest.config.ts (packages/*/src)
+      # and vitest.bin.config.ts (bin/**/*.mjs) actually gate CI (rules 02):
+      # `vitest run` alone never evaluates them.
+      - name: Test (with coverage gate)
+        run: pnpm test:coverage
+
+      # Per-file test counts recorded in docs/implementation-status.md must match
+      # the live suite. Derived from `vitest list` — a collection pass, not a
+      # full run (see bin/check-test-counts.mjs) — so this does not duplicate
+      # the coverage gate above.
+      - name: Check test counts
+        run: pnpm check:test-counts
+
+  gates:
+    name: Governance gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Widens the workflow-level `contents: read` default with `issues: read`
+    # — needed only by the push-only "Check hub drift" step at the end of
+    # this job (reads Issues/Milestones; never writes). See that step's
+    # comment and ADR-0032's 2026-08-13 Update.
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      # fetch-depth 0: "Validate commit messages" below needs the PR
+      # base..head commit range.
+      - uses: ./.github/actions/setup
+        with:
+          fetch-depth: "0"
+
+      # bin/lib/verify-steps.mjs (the `pnpm verify` aggregate local gate) must
+      # track this file's step names exactly, or `pnpm verify` silently stops
+      # reproducing what CI actually gates.
+      - name: Check verify parity
+        run: pnpm check:verify-parity
+
+      - name: Validate commit messages
+        if: github.event_name == 'pull_request'
+        run: node bin/lint-commit.mjs --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }}
 
       # Doc-provenance sidecars anchor reference-page headings to source symbols
       # at a git commit. Fail if a heading or symbol is missing; warn on staleness.
@@ -148,39 +231,6 @@ jobs:
       - name: Check reference index
         run: pnpm check:index
 
-      # Run with coverage so the thresholds in vitest.config.ts (packages/*/src)
-      # and vitest.bin.config.ts (bin/**/*.mjs) actually gate CI (rules 02):
-      # `vitest run` alone never evaluates them.
-      - name: Test (with coverage gate)
-        run: pnpm test:coverage
-
-      # Per-file test counts recorded in docs/implementation-status.md must match
-      # the live suite. Derived from `vitest list` — a collection pass, not a
-      # full run (see bin/check-test-counts.mjs) — so this does not duplicate
-      # the coverage gate above.
-      - name: Check test counts
-        run: pnpm check:test-counts
-
-      - name: Build
-        run: pnpm build
-
-      # Publish correctness (exports map / ESM / types resolution) and
-      # dead-code detection. Run after build so the dist/ artifacts exist.
-      - name: Check package exports (publint + are-the-types-wrong)
-        run: pnpm check:exports
-
-      # Barrel re-export completeness: every src/core|aws/<mod>/index.ts must
-      # appear in its namespace barrel and vice-versa. Runs after build so the
-      # barrel is proven to compile before we assert it is complete.
-      - name: Check barrel re-exports (scaffold)
-        run: pnpm check:scaffold
-
-      # Scaffold seam: every src/core|aws/<mod>/index.ts must carry its TDD test
-      # file (tests/<mod>.test.ts) and a row in docs/implementation-status.md.
-      # Backstop for the scaffolding-submodules scaffolding skill.
-      - name: Check scaffold seam (test + status row)
-        run: pnpm check:scaffold-seam
-
       # Consumer-script scaffold: every scripts/<name> package must match the
       # ADR-0022 shape (modular src/, package contract, root tsconfig ref,
       # smoke test, README + contract page) defined in the shared manifest.
@@ -201,12 +251,6 @@ jobs:
       # the source-level half of this same rule.
       - name: Check script dependency boundary
         run: pnpm check:script-deps
-
-      # Every public export surfaced through a namespace barrel must be
-      # documented — present in its reference page heading or provenance sidecar.
-      # Deterministic backstop for the spec-conformance / docs-consistency spokes.
-      - name: Check barrel vs docs exports
-        run: pnpm check:doc-exports
 
       # Subagent config: skill/CLAUDE.md references resolve to real agents or
       # built-ins, and no spoke is granted the Agent tool (no-nesting invariant).
@@ -264,10 +308,28 @@ jobs:
       # is a drift ALARM for main, not a merge-blocking gate for unrelated
       # work; the underlying sync itself stays maintainer-local (`pnpm
       # sync:hub -- --apply`), since GITHUB_TOKEN cannot write GitHub
-      # Projects v2 (see the ADR). Needs `issues: read`, scoped to this job
-      # only (the workflow default stays `contents: read`).
+      # Projects v2 (see the ADR).
       - name: Check hub drift (push-only)
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm check:hub-drift
+
+  # The required status check branch protection looks for. Fails if any lane
+  # failed or was cancelled; passes if every lane succeeded or was
+  # deliberately skipped (path-scoping lands in a later PR).
+  verify:
+    name: verify
+    needs: [secrets, deps, lint, format, build, test, gates]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check lane results
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "One or more lanes failed or were cancelled:"
+            echo '${{ toJSON(needs) }}'
+            exit 1
+          fi
+          echo "All lanes passed or were skipped."
