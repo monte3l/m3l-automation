@@ -45,9 +45,11 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
   - `review` — the job in `.github/workflows/claude-pr-review.yml`. It fails
     unless the reviewer writes `PASS` to `.claude-review-verdict`, so a failing
     review blocks the merge (fail-closed if the review never runs). The reviewer
-    runs **read-only** (`--allowedTools Bash,Read`), posts a **single sticky
-    comment** per PR (updated on each push rather than re-posted), is capped at
-    `--max-turns 100`, and **does not run on draft PRs** — it fires on
+    runs **read-only** in `--safe-mode` (CLAUDE.md/skills/plugins/hooks/MCP
+    servers disabled) with a scoped `--allowedTools` allowlist, posts a
+    **single sticky comment** per PR (updated on each push rather than
+    re-posted), is capped at `--max-turns 35`, and **does not run on draft
+    PRs** — it fires on
     `ready_for_review` and on every subsequent push to a ready PR. The workflow
     pre-computes the PR diff (`.claude-pr-diff.patch`) and hands it to the
     reviewer, so it reviews the supplied patch instead of spending turns fetching
