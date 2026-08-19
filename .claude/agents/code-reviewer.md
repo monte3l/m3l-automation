@@ -3,7 +3,7 @@ name: code-reviewer
 description: Read-only reviewer for m3l-common changes. Applies the four-part quality checklist and SOLID checks from the project standards to a diff. Use after writing or changing library code (packages/m3l-common) or consumer-script code (scripts/*/src), before commit.
 tools: Read, Grep, Glob, Bash
 disallowedTools: Agent
-model: sonnet
+model: claude-sonnet-5
 effort: high
 maxTurns: 40
 color: blue

@@ -626,9 +626,12 @@ only, never a new `exports` subpath.
    Subagents with frontmatter: name, description, tools, model.
    Run in isolated context — use for review and deep research so
    they don't bloat the main session.
-   MODEL ROUTING: set `model: opus` for API/architecture review,
-   `model: sonnet` for general work, `model: haiku` for fast,
-   bounded, well-specified tasks.
+   MODEL ROUTING: pin an exact model ID, never a bare alias —
+   `claude-opus-5` for API/architecture review, `claude-sonnet-5`
+   for general work, `claude-haiku-4-5` for fast, bounded,
+   well-specified tasks. docs/contributing/model-selection.md is
+   the source of truth; its MODEL-MATRIX block is machine-checked
+   against this frontmatter by `pnpm check:agents`.
 
  .claude/settings.json
    Hooks (PreToolUse, PostToolUse, Stop, SubagentStop,

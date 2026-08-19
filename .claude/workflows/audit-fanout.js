@@ -246,7 +246,7 @@ const verdicts =
         agent(refutePrompt(finding), {
           label: "verify",
           phase: "Verify",
-          model: "sonnet",
+          model: "claude-sonnet-5",
           effort: "medium",
           schema: VERDICT_SCHEMA,
         }),

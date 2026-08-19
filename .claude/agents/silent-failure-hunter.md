@@ -3,7 +3,7 @@ name: silent-failure-hunter
 description: Read-only error-handling auditor for m3l-common. Hunts for silent failures — swallowed exceptions, unchained causes, empty catch blocks, optional-chaining that masks errors, and retry/poll logic that exhausts without surfacing — against the project's M3LError hierarchy and error-handling rules. Use after implementing or changing any code — library or consumer script (scripts/*/src) — that has try/catch, async/await, optional chaining on fallible calls, or retry/poll loops. Complements code-reviewer (general quality) and security-reviewer (secret-in-log / redaction concerns).
 tools: Read, Grep, Glob, Bash
 disallowedTools: Agent
-model: sonnet
+model: claude-sonnet-5
 effort: high
 maxTurns: 40
 color: yellow

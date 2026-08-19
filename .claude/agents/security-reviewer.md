@@ -3,7 +3,7 @@ name: security-reviewer
 description: Read-only security auditor for m3l-common. Audits the security-sensitive surface — AWS SSO credential handling, secrets in configuration, log redaction, input validation at the public boundary, and the prototype-pollution guard — against the project's security rules. Use after implementing or changing anything under aws/, any consumer-script code under scripts/*/src (scripts handle .env secrets and the aws.profile seam), or any code touching secrets, credentials, deserialization of external input, or logging.
 tools: Read, Grep, Glob, Bash
 disallowedTools: Agent
-model: opus
+model: claude-opus-5
 effort: xhigh
 maxTurns: 40
 color: red

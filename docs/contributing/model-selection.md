@@ -39,19 +39,28 @@ opusplan` or `claude --model opusplan`) — Opus during plan mode, Sonnet once
    execution starts. This is a session-level `/model` choice, not per-agent
    frontmatter, so it cannot be machine-enforced the way spoke models are; the
    `starting-work` decision gate surfaces it as a recommendation instead.
-4. **Use aliases, not pinned IDs**, where the surface allows
-   (`fable` / `opus` / `sonnet` / `haiku`) so tiers auto-upgrade on release.
-   The trailer records the concrete model that ran, so provenance survives the
-   alias indirection. Aliases trade reproducibility for currency: the same
-   alias can resolve to a different underlying model after Anthropic ships a
-   new version, so a session pinned mid-task can see behavior shift between
-   runs. Pin a full model ID (e.g. `claude-opus-5`) or set
-   `ANTHROPIC_DEFAULT_OPUS_MODEL` / `ANTHROPIC_DEFAULT_SONNET_MODEL` /
-   `ANTHROPIC_DEFAULT_HAIKU_MODEL` / `ANTHROPIC_DEFAULT_FABLE_MODEL` instead
-   when a specific CI workflow needs a frozen snapshot (as
-   `claude-pr-review.yml` does via `--model claude-opus-5` and
-   `claude-assistant.yml` does via `--model claude-sonnet-5`) — not for spoke
-   frontmatter, where auto-upgrade is the point.
+4. **Pin full model IDs on every machine-enforced surface**, and keep the
+   aliases (`fable` / `opus` / `sonnet` / `haiku`) for the surfaces where a
+   floating tier is actually wanted. Aliases trade reproducibility for
+   currency: the same alias can resolve to a different underlying model once
+   Anthropic ships a new version, so two runs of the same spoke weeks apart can
+   execute on different models — which would make the matrix below a record of
+   intended _tier_ rather than of what ran. Every spoke in `.claude/agents/*.md`
+   therefore pins an exact ID (`claude-sonnet-5`, `claude-opus-5`,
+   `claude-haiku-4-5`), as do the CI workflows (`claude-pr-review.yml` via
+   `--model claude-opus-5`, `claude-assistant.yml` via
+   `--model claude-sonnet-5`) and the `audit-fanout.js` verify step. The cost is
+   deliberate and accepted: a new generation no longer reaches the spokes for
+   free, so an upgrade becomes an explicit commit that moves frontmatter and the
+   MODEL-MATRIX block together — which `check:agents` already forces. Unpinned
+   values still govern the surfaces that cannot or should not freeze: the
+   `inherit` directive (the `audit-fanout.js` file-level row), the hub's
+   user-selected `/model`, and the `availableModels` family wildcards. `ANTHROPIC_DEFAULT_OPUS_MODEL` /
+   `ANTHROPIC_DEFAULT_SONNET_MODEL` / `ANTHROPIC_DEFAULT_HAIKU_MODEL` /
+   `ANTHROPIC_DEFAULT_FABLE_MODEL` remain the way to redirect an alias
+   wholesale without touching pins. The `Co-Authored-By:` trailer records the
+   concrete model that ran either way, so provenance never depended on this
+   choice.
 5. **Escalate on evidence.** Raise effort first, then one tier, when output
    quality misses; step back down for routine work once results hold.
 
@@ -148,9 +157,13 @@ repo can select a model outside those four families, regardless of what a
 skill or prompt requests. Deliberately **family wildcards only, no specific
 model IDs** (e.g. not `claude-sonnet-5`): Anthropic's merge rule is that "an
 entry naming a specific model in a family … disables that family's wildcard
-entry", so pairing `sonnet` with `claude-sonnet-5` would have silently
-narrowed the `sonnet` alias to that one pinned version instead of letting it
-float — the opposite of step 4 above. `enforceAvailableModels` is
+entry", so pairing `sonnet` with `claude-sonnet-5` would silently narrow the
+`sonnet` alias to that one pinned version for every surface that still resolves
+through it — `inherit`, the hub's own `/model` selection, and any future spoke
+that wants a floating tier. This ceiling's job is to bound which _families_ may
+run at all, not to choose versions inside them; version pinning belongs in the
+per-spoke `model:` frontmatter and the `--model` flags (step 4), where it is
+visible in the matrix and machine-checked. `enforceAvailableModels` is
 deliberately unset: the four families already cover the entire current
 generally-available model catalog (limited-availability families, e.g.
 Mythos 5/Project Glasswing, are intentionally excluded until GA), so it would
@@ -215,25 +228,29 @@ task instead. GitHub-Actions `workflow` rows have no effort concept
 never relies on a default effort.
 
 `haiku`, `sonnet`, `opus`, and `fable` are aliases that float to the current
-generation on release (per step 4 below) — as of this writing that means
-Haiku 4.5, Sonnet 5, Opus 5, and Fable 5 respectively.
+generation on release — as of this writing Haiku 4.5, Sonnet 5, Opus 5, and
+Fable 5 respectively. The `agent` and `workflow` rows below no longer ride that
+float (step 4): they pin exact IDs, and `claude-haiku-4-5` resolves to the
+`claude-haiku-4-5-20251001` snapshot. The float still reaches the hub's
+`/model` selection and the `availableModels` family wildcards above, and
+`inherit` still defers to whichever family the session already resolved to.
 
 <!-- BEGIN MODEL-MATRIX -->
 
-| Surface         | Name                        | Model             | Effort   |
-| --------------- | --------------------------- | ----------------- | -------- |
-| agent           | `code-implementer`          | `sonnet`          | `high`   |
-| agent           | `test-author`               | `sonnet`          | `high`   |
-| agent           | `code-reviewer`             | `sonnet`          | `high`   |
-| agent           | `silent-failure-hunter`     | `sonnet`          | `high`   |
-| agent           | `security-reviewer`         | `opus`            | `xhigh`  |
-| agent           | `type-design-analyzer`      | `opus`            | `xhigh`  |
-| agent           | `spec-conformance-reviewer` | `opus`            | `xhigh`  |
-| agent           | `docs-consistency-reviewer` | `haiku`           | `medium` |
-| agent           | `Explore`                   | `haiku`           | `low`    |
-| workflow        | `claude-pr-review.yml`      | `claude-opus-5`   | `n/a`    |
-| workflow        | `claude-assistant.yml`      | `claude-sonnet-5` | `n/a`    |
-| workflow-script | `audit-fanout.js`           | `inherit`         | `n/a`    |
-| workflow-script | `audit-fanout.js:verify`    | `sonnet`          | `medium` |
+| Surface         | Name                        | Model              | Effort   |
+| --------------- | --------------------------- | ------------------ | -------- |
+| agent           | `code-implementer`          | `claude-sonnet-5`  | `high`   |
+| agent           | `test-author`               | `claude-sonnet-5`  | `high`   |
+| agent           | `code-reviewer`             | `claude-sonnet-5`  | `high`   |
+| agent           | `silent-failure-hunter`     | `claude-sonnet-5`  | `high`   |
+| agent           | `security-reviewer`         | `claude-opus-5`    | `xhigh`  |
+| agent           | `type-design-analyzer`      | `claude-opus-5`    | `xhigh`  |
+| agent           | `spec-conformance-reviewer` | `claude-opus-5`    | `xhigh`  |
+| agent           | `docs-consistency-reviewer` | `claude-haiku-4-5` | `medium` |
+| agent           | `Explore`                   | `claude-haiku-4-5` | `low`    |
+| workflow        | `claude-pr-review.yml`      | `claude-opus-5`    | `n/a`    |
+| workflow        | `claude-assistant.yml`      | `claude-sonnet-5`  | `n/a`    |
+| workflow-script | `audit-fanout.js`           | `inherit`          | `n/a`    |
+| workflow-script | `audit-fanout.js:verify`    | `claude-sonnet-5`  | `medium` |
 
 <!-- END MODEL-MATRIX -->
