@@ -100,7 +100,7 @@ literal the way a subclass's pinned `code` does.
 
 ### Error-code catalog
 
-All **82** built-in codes, with their normative classification (the
+All **83** built-in codes, with their normative classification (the
 implementation defaults for `origin`/`retryable` under ADR-0035). No built-in
 code is classified `library` today — the built-in surface is strictly
 caller/external; `library` is reserved for internal invariant violations,
@@ -208,6 +208,7 @@ carries a recognised `code` but no `origin`.
 | `ERR_LOGS_INSIGHTS_START_QUERY`       | `aws/cloudwatch-logs-insights`                                  | `StartQuery` yielded no query id after retries                                                    | external | true        |
 | `ERR_LOG_TABLE_ALIGN`                 | `core/logging` (`M3LTableFormatter`)                            | Table alignment constraint violated                                                               | caller   | false       |
 | `ERR_LOG_TABLE_BORDER`                | `core/logging` (`M3LTableFormatter`)                            | Table border/frame constraint violated                                                            | caller   | false       |
+| `ERR_NO_PROGRESS`                     | `internal/polling` (`M3LNoProgressError`)                       | A poll or retry progress witness stayed unchanged for `maxStalledAttempts` consecutive attempts   | external | false       |
 | `ERR_OPERATION_ABORTED`               | `core/errors` (`M3LOperationAbortedError`)                      | A caller-supplied `AbortSignal` aborted a poll, retry, or AWS waiter                              | caller   | false       |
 | `ERR_PATH_RESOLUTION`                 | `core/utils` (`M3LPathResolutionError`)                         | Directory path resolution failed                                                                  | external | false       |
 | `ERR_PIPELINE_INVALID_OPTION`         | `internal/pipeline` (`M3LPipelineInvalidOptionError`)           | Pipeline options invalid: empty/duplicate operations, or destructive ops outside the union        | caller   | false       |
