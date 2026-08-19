@@ -33,12 +33,15 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
   fallback; it still requires a genuine review.
 - **Require status checks to pass before merging**, and mark these as required:
   - `verify` — the aggregator job in `.github/workflows/ci.yml`. It carries no
-    checks itself (`needs:` on all seven parallel lane jobs — `secrets`,
-    `deps`, `lint`, `format`, `build`, `test`, `gates` — plus `if: always()`);
-    it passes when every lane succeeded or was skipped, and fails on any lane
-    failure or cancellation. The actual checks (lint, typecheck, public API
-    snapshot, coverage-gated tests, build, `check:exports`, `knip`, …) run
-    inside those lanes.
+    checks itself (`needs:` on all eight jobs — the `changes` path-classifier
+    plus the seven parallel lanes: `secrets`, `deps`, `lint`, `format`,
+    `build`, `test`, `gates` — plus `if: always()`); it passes when every
+    lane succeeded or was skipped, and fails on any lane failure or
+    cancellation, or if `changes` itself failed (checked explicitly, so a
+    classifier crash can't read as "every lane skipped" and pass). The
+    actual checks (lint, typecheck, public API snapshot, coverage-gated
+    tests, build, `check:exports`, `knip`, …) run inside those lanes, most
+    of them path-scoped on `changes`'s output.
   - `review` — the job in `.github/workflows/claude-pr-review.yml`. It fails
     unless the reviewer writes `PASS` to `.claude-review-verdict`, so a failing
     review blocks the merge (fail-closed if the review never runs). The reviewer

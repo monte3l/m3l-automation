@@ -69,11 +69,16 @@ the first failure, typically the last 50–100 lines before the run aborted.
 
 ### 3 — Map to the pipeline step
 
-`.github/workflows/ci.yml` runs seven parallel lane jobs (`secrets`, `deps`,
-`lint`, `format`, `build`, `test`, `gates`) plus a `verify` aggregator — note
-which lane the failing step's job belongs to (`gh run view --json jobs` names
-it), then match the step itself against this table (steps within a lane still
-run in the order listed here; the lanes themselves run concurrently):
+`.github/workflows/ci.yml` runs a `changes` job that classifies the diff
+(`bin/ci-changed-paths.mjs`), seven parallel lane jobs gated on its output
+(`secrets`, `deps`, `lint`, `format`, `build`, `test`, `gates` — `secrets`
+always runs regardless), and a `verify` aggregator. If a lane is missing from
+a run entirely rather than failing, check whether `changes` skipped it
+(compare the run's changed files against the categories in
+`bin/lib/changed-paths.mjs`) before assuming something is broken. Otherwise,
+note which lane the failing step's job belongs to (`gh run view --json jobs`
+names it), then match the step itself against this table (steps within a lane
+still run in the order listed here; the lanes themselves run concurrently):
 
 | Step name                | Local command                     |
 | ------------------------ | --------------------------------- |

@@ -18,13 +18,53 @@ concurrency:
 # nothing here depends on anything outside its own lane. `verify` aggregates
 # the lane results and MUST keep this exact job id: branch protection's
 # required status check is named `verify`, not any lane's name.
+#
+# Path-scoped: the `changes` job classifies what changed (bin/ci-changed-paths.mjs)
+# and every other lane/step gates on its outputs, so a docs-only or
+# .claude-only change skips the expensive lint/build/test lanes. The
+# classifier fails OPEN (defaults every category to true on any error), and
+# `verify` treats a `changes` job failure as a hard failure rather than
+# letting downstream lanes silently read as "skipped" — see `verify`'s own
+# comment.
 jobs:
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ts: ${{ steps.classify.outputs.ts }}
+      deps: ${{ steps.classify.outputs.deps }}
+      scripts: ${{ steps.classify.outputs.scripts }}
+      claude: ${{ steps.classify.outputs.claude }}
+      workflows: ${{ steps.classify.outputs.workflows }}
+      docs: ${{ steps.classify.outputs.docs }}
+      md: ${{ steps.classify.outputs.md }}
+    steps:
+      # Full history: bin/ci-changed-paths.mjs diffs against an arbitrary
+      # base sha (the PR base, or the pre-push sha on a push) that needs to
+      # be present in local history.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - id: classify
+        run: node bin/ci-changed-paths.mjs --base "$BASE_SHA" --head "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       # No pnpm install: gitleaks needs only the checked-out tree/history.
+      # Not gated on `changes` — a secret can be introduced by any file, and
+      # skipping secret scanning based on category is not worth the ~7s.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -37,6 +77,8 @@ jobs:
 
   deps:
     name: Dependency checks
+    needs: changes
+    if: needs.changes.outputs.deps == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -65,6 +107,10 @@ jobs:
 
   lint:
     name: Lint
+    needs: changes
+    # ts || claude: eslint also lints .claude/hooks/**/*.mjs
+    # (eslint.config.js), so a hooks-only change must not skip this lane.
+    if: needs.changes.outputs.ts == 'true' || needs.changes.outputs.claude == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -79,6 +125,7 @@ jobs:
 
   format:
     name: Format & Markdown
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -88,16 +135,22 @@ jobs:
 
       - uses: ./.github/actions/setup
 
-      # Prettier only --write's in the pre-commit hook; this catches drift from
-      # any commit that bypassed hooks.
+      # Not path-gated: prettier scans every tracked text extension, so
+      # scoping it to one category would rarely skip it anyway. Only
+      # Markdown-lint below is narrow enough to gate.
+      # Prettier only --write's in the pre-commit hook; this catches drift
+      # from any commit that bypassed hooks.
       - name: Format check
         run: pnpm format:check
 
       - name: Lint Markdown
+        if: needs.changes.outputs.md == 'true'
         run: pnpm lint:md
 
   build:
     name: Build & typecheck
+    needs: changes
+    if: needs.changes.outputs.ts == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -152,20 +205,15 @@ jobs:
       - name: Check barrel re-exports (scaffold)
         run: pnpm check:scaffold
 
-      # Scaffold seam: every src/core|aws/<mod>/index.ts must carry its TDD test
-      # file (tests/<mod>.test.ts) and a row in docs/implementation-status.md.
-      # Backstop for the scaffolding-submodules scaffolding skill.
-      - name: Check scaffold seam (test + status row)
-        run: pnpm check:scaffold-seam
-
-      # Every public export surfaced through a namespace barrel must be
-      # documented — present in its reference page heading or provenance sidecar.
-      # Deterministic backstop for the spec-conformance / docs-consistency spokes.
-      - name: Check barrel vs docs exports
-        run: pnpm check:doc-exports
-
   test:
     name: Test
+    needs: changes
+    # ts || claude: 8 bin/tests/*.test.ts files import .claude/hooks/*.mjs
+    # directly (guard-doc-path, guard-readonly-bash, guard-secret-writes,
+    # inject-decision-gate, guard-hub-src-writes, guard-branch-isolation,
+    # guard-no-commonjs, guard-eslint-disable), so a hooks-only change must
+    # not skip this lane — same reasoning as the `lint` lane's gate below.
+    if: needs.changes.outputs.ts == 'true' || needs.changes.outputs.claude == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -198,15 +246,9 @@ jobs:
       - name: Test (with coverage gate)
         run: pnpm test:coverage
 
-      # Per-file test counts recorded in docs/implementation-status.md must match
-      # the live suite. Derived from `vitest list` — a collection pass, not a
-      # full run (see bin/check-test-counts.mjs) — so this does not duplicate
-      # the coverage gate above.
-      - name: Check test counts
-        run: pnpm check:test-counts
-
   gates:
     name: Governance gates
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Widens the workflow-level `contents: read` default with `issues: read`
@@ -218,7 +260,18 @@ jobs:
       issues: read
     steps:
       # fetch-depth 0: "Validate commit messages" below needs the PR
-      # base..head commit range.
+      # base..head commit range. Not job-gated (unlike deps/lint/build/test):
+      # this lane bundles ~24 governance check:* steps whose combined cost is
+      # ~20s (see docs/plans/archive/2026-08-19-ci-performance.md's baseline),
+      # so none of them are individually path-gated either — four straight
+      # review rounds each found a different check whose real file-reads
+      # spanned a narrower category than its gate, because a check's true
+      # input footprint (a doc it happens to read, a config it happens to
+      # validate) can't be exhaustively audited against a 7-category scheme
+      # and kept correct as both evolve. Below ~20s of unconditional runtime
+      # is a strictly better trade than re-auditing this list every time a
+      # check's inputs change. Only the two genuinely event-scoped steps
+      # (not path-category-scoped) below keep an `if:`.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -240,7 +293,9 @@ jobs:
       - name: Check doc provenance
         run: pnpm check:provenance
 
-      # Submodule counts in prose must match the files in docs/reference/.
+      # Submodule counts in prose must match the files in docs/reference/,
+      # and the hand-authored barrel TSDoc submodule lists in
+      # packages/m3l-common/src/{core,aws}/index.ts (LIST_ASSERTION_SITES).
       - name: Check doc counts
         run: pnpm check:doc-counts
 
@@ -278,14 +333,40 @@ jobs:
         run: pnpm check:impl-counts
 
       # catalog.json, symbol-map.json, and README.md catalog block must match
-      # the current docs/reference/ + provenance sidecar state.
+      # the current docs/reference/ + provenance sidecar state, including the
+      # consumer-scripts catalog derived from the union of
+      # docs/reference/scripts/ pages AND scripts/ packages.
       - name: Check reference index
         run: pnpm check:index
+
+      # Every public export surfaced through a namespace barrel must be
+      # documented — present in its reference page heading or provenance
+      # sidecar. Moved here from the `build` lane (it reads src/ and docs/
+      # directly, never dist/, so it doesn't need that lane's build step).
+      - name: Check barrel vs docs exports
+        run: pnpm check:doc-exports
+
+      # Scaffold seam: every src/core|aws/<mod>/index.ts must carry its TDD test
+      # file (tests/<mod>.test.ts) and a row in docs/implementation-status.md.
+      # Backstop for the scaffolding-submodules scaffolding skill. Moved here
+      # from the `build` lane (it reads src/ and docs/ directly, never dist/).
+      - name: Check scaffold seam (test + status row)
+        run: pnpm check:scaffold-seam
+
+      # Per-file test counts recorded in docs/implementation-status.md must match
+      # the live suite. Derived from `vitest list` — a collection pass, not a
+      # full run (see bin/check-test-counts.mjs) — independent of the `test`
+      # lane's coverage run, so it doesn't need to live in that lane. Moved
+      # here from `test`.
+      - name: Check test counts
+        run: pnpm check:test-counts
 
       # Consumer-script scaffold: every scripts/<name> package must match the
       # ADR-0022 shape (modular src/, package contract, root tsconfig ref,
       # smoke test, README + contract page) defined in the shared manifest.
-      # Deterministic backstop for the scaffolding-scripts skill.
+      # Deterministic backstop for the scaffolding-scripts skill; also
+      # validates docs/reference/scripts/<name>.md and the root tsconfig.json
+      # project reference.
       - name: Check script scaffold conformance
         run: pnpm check:script-scaffold
 
@@ -359,25 +440,37 @@ jobs:
       # is a drift ALARM for main, not a merge-blocking gate for unrelated
       # work; the underlying sync itself stays maintainer-local (`pnpm
       # sync:hub -- --apply`), since GITHUB_TOKEN cannot write GitHub
-      # Projects v2 (see the ADR).
+      # Projects v2 (see the ADR). Not path-gated — a drift alarm for GitHub
+      # state, unrelated to what files this push happened to touch.
       - name: Check hub drift (push-only)
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm check:hub-drift
 
-  # The required status check branch protection looks for. Fails if any lane
+  # The required status check branch protection looks for. Fails if the
+  # changes job itself didn't succeed (see comment below), or if any lane
   # failed or was cancelled; passes if every lane succeeded or was
-  # deliberately skipped (path-scoping lands in a later PR).
+  # deliberately skipped by path-scoping.
   verify:
     name: verify
-    needs: [secrets, deps, lint, format, build, test, gates]
+    needs: [changes, secrets, deps, lint, format, build, test, gates]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Check lane results
         run: |
+          # A `changes` failure must never read as "every lane below it
+          # legitimately skipped" — its outputs would be unset, every
+          # `needs.changes.outputs.X == 'true'` condition would evaluate
+          # false, and every gated lane/step would report "skipped" (which
+          # this same check treats as passing) even though nothing was
+          # actually verified. Fail hard here instead.
+          if [[ "${{ needs.changes.result }}" != "success" ]]; then
+            echo "The changes (path classification) job did not succeed — treating this as a full failure rather than letting downstream lanes silently read as skipped."
+            exit 1
+          fi
           if [[ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
             echo "One or more lanes failed or were cancelled:"
             echo '${{ toJSON(needs) }}'
