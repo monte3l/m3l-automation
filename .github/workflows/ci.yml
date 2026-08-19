@@ -208,7 +208,12 @@ jobs:
   test:
     name: Test
     needs: changes
-    if: needs.changes.outputs.ts == 'true'
+    # ts || claude: 8 bin/tests/*.test.ts files import .claude/hooks/*.mjs
+    # directly (guard-doc-path, guard-readonly-bash, guard-secret-writes,
+    # inject-decision-gate, guard-hub-src-writes, guard-branch-isolation,
+    # guard-no-commonjs, guard-eslint-disable), so a hooks-only change must
+    # not skip this lane — same reasoning as the `lint` lane's gate below.
+    if: needs.changes.outputs.ts == 'true' || needs.changes.outputs.claude == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
