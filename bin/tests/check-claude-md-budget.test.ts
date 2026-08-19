@@ -53,7 +53,7 @@ describe("stripBlockComments", () => {
     //   fixed point  -> "beforetail"               (loops once more, strips it, converges)
     const input = "before<!<!--nested-->--after-->tail";
     expect(stripBlockComments(input)).toBe("beforetail");
-    expect(stripBlockComments(input)).not.toMatch(/<!--|-->/);
+    expect(stripBlockComments(input)).not.toMatch(/<!--|--!?>/);
   });
 
   test("still strips two separate, well-formed comments unaffected by the fixed-point loop", () => {
