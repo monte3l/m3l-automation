@@ -36,6 +36,20 @@
 // file's ci.yml-only parser cannot see and which is bootstrap, not a project
 // check, in any case.
 //
+// Path scoping: every entry marked `conditional: true` is gated in ci.yml on
+// bin/ci-changed-paths.mjs's category outputs, job-level for lint/build/test/
+// deps/format — CI may legitimately skip it when its category didn't change.
+// The `gates` lane deliberately carries NO step-level category gating (after
+// four review rounds each found a different check whose real inputs spanned
+// a category narrower than its gate — see that job's header comment in
+// ci.yml): its ~24 steps together cost only ~20s, so they all run
+// unconditionally rather than being individually audited against a
+// 7-category scheme forever. `pnpm verify` still runs every entry
+// unconditionally regardless of this flag; it exists purely so a CI-side
+// skip of a conditional step reads as expected behavior, not as parity
+// drift, when someone is reading this file to understand what "skipped"
+// means for a given step.
+//
 // Usage:
 //   node bin/verify-all.mjs            # pnpm verify
 //   node bin/check-verify-parity.mjs   # pnpm check:verify-parity
@@ -48,11 +62,9 @@
  *   absent for steps with no local equivalent (see `skipReason`)
  * @property {boolean} [prOnly]   - only meaningful against a PR diff range
  * @property {string} [skipReason] - why `pnpm verify` does not run this by default
- * @property {boolean} [conditional] - true once a later change makes this step
- *   path-gated in CI (skipped when its lane's inputs didn't change). `pnpm
- *   verify` still runs it unconditionally either way — this only documents
- *   that a CI skip of this step is expected, not parity drift. Unset today;
- *   populated when path-scoping lands.
+ * @property {boolean} [conditional] - true when this step is path-gated in CI
+ *   (skipped when its category's inputs didn't change — see the file header).
+ *   `pnpm verify` still runs it unconditionally either way.
  */
 
 /** @type {VerifyStep[]} */
@@ -72,16 +84,19 @@ export const VERIFY_STEPS = [
     ciStepName: "Security audit",
     id: "audit",
     cmd: () => "pnpm audit --audit-level=high",
+    conditional: true,
   },
   {
     ciStepName: "Check dependencies",
     id: "check-deps",
     cmd: () => "pnpm check:deps",
+    conditional: true,
   },
   {
     ciStepName: "Check dependency licenses",
     id: "check-licenses",
     cmd: () => "pnpm check:licenses",
+    conditional: true,
   },
   {
     ciStepName: "Check verify parity",
@@ -95,18 +110,34 @@ export const VERIFY_STEPS = [
     cmd: ({ baseRef }) =>
       `node bin/lint-commit.mjs --from ${baseRef} --to HEAD`,
   },
-  { ciStepName: "Lint", id: "lint", cmd: () => "pnpm lint" },
+  {
+    ciStepName: "Lint",
+    id: "lint",
+    cmd: () => "pnpm lint",
+    conditional: true,
+  },
   {
     ciStepName: "Format check",
     id: "format-check",
     cmd: () => "pnpm format:check",
   },
-  { ciStepName: "Lint Markdown", id: "lint-md", cmd: () => "pnpm lint:md" },
-  { ciStepName: "Type-check", id: "typecheck", cmd: () => "pnpm typecheck" },
+  {
+    ciStepName: "Lint Markdown",
+    id: "lint-md",
+    cmd: () => "pnpm lint:md",
+    conditional: true,
+  },
+  {
+    ciStepName: "Type-check",
+    id: "typecheck",
+    cmd: () => "pnpm typecheck",
+    conditional: true,
+  },
   {
     ciStepName: "Check public API snapshot",
     id: "check-api",
     cmd: () => "pnpm check:api",
+    conditional: true,
   },
   {
     ciStepName: "Check exports semver labeling",
@@ -114,6 +145,7 @@ export const VERIFY_STEPS = [
     prOnly: true,
     cmd: ({ baseRef }) =>
       `node bin/check-exports-semver.mjs --base ${baseRef} --head HEAD`,
+    conditional: true,
   },
   {
     ciStepName: "Check doc provenance",
@@ -164,22 +196,30 @@ export const VERIFY_STEPS = [
     ciStepName: "Test (with coverage gate)",
     id: "test-coverage",
     cmd: () => "pnpm test:coverage",
+    conditional: true,
   },
   {
     ciStepName: "Check test counts",
     id: "check-test-counts",
     cmd: () => "pnpm check:test-counts",
   },
-  { ciStepName: "Build", id: "build", cmd: () => "pnpm build" },
+  {
+    ciStepName: "Build",
+    id: "build",
+    cmd: () => "pnpm build",
+    conditional: true,
+  },
   {
     ciStepName: "Check package exports (publint + are-the-types-wrong)",
     id: "check-exports",
     cmd: () => "pnpm check:exports",
+    conditional: true,
   },
   {
     ciStepName: "Check barrel re-exports (scaffold)",
     id: "check-scaffold",
     cmd: () => "pnpm check:scaffold",
+    conditional: true,
   },
   {
     ciStepName: "Check scaffold seam (test + status row)",
