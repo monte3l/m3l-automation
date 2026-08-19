@@ -31,6 +31,7 @@ import {
   actionableItems,
   HUB_LABEL,
   HUB_PROJECT_TITLE,
+  indexItemsByKey,
   parseHubMarker,
   planProjectSync,
 } from "./lib/hub-sync.mjs";
@@ -347,6 +348,12 @@ function loadHubIssues(runGhFn, reporter) {
 // trackers (already closed by bin/sync-hub-issues.mjs, most likely) falls
 // back to "todo" -> "Pending", which only matters if the issue is somehow
 // still open. A markerless issue is never tracked, by construction.
+//
+// `itemByKey` is indexItemsByKey's map, so an issue whose marker still
+// carries a pre-namespacing key (Item.legacyKeys) resolves to its item
+// rather than reading as vanished — the board must keep showing real
+// statuses in the window between the key change landing and the next
+// `sync:hub --apply` rewriting the markers.
 function toTrackedIssue(issue, itemByKey) {
   const key = parseHubMarker(issue.body);
   if (key === null) return null;
@@ -583,7 +590,7 @@ export function runProjectSync({
 
     const { items, warnings } = actionableItems(roadmap, implementation);
     for (const message of warnings) reporter.warn(message);
-    const itemByKey = new Map(items.map((item) => [item.key, item]));
+    const itemByKey = indexItemsByKey(items);
 
     const hubIssues = loadHubIssues(runGhFn, reporter);
     if (hubIssues === null) {

@@ -132,6 +132,12 @@ jobs:
       - name: Check tracker status vocabulary
         run: pnpm check:tracker-status
 
+      # Every item key sync:hub derives from those same tables must be unique,
+      # case-insensitively and including legacy aliases — a collision makes two
+      # unrelated rows share one issue and silently closes the loser (#480).
+      - name: Check hub-sync key uniqueness
+        run: pnpm check:hub-keys
+
       # The implemented-count numerator ("N of 22") must match the ✅ rows in
       # docs/implementation-status.md across every badge / prose / HTML site.
       - name: Check implementation count

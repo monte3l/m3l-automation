@@ -63,6 +63,7 @@
     "check:cadence": "node bin/check-cadence-doc.mjs",
     "check:tracker-coverage": "node bin/check-tracker-coverage.mjs",
     "check:tracker-status": "node bin/check-tracker-status.mjs",
+    "check:hub-keys": "node bin/check-hub-keys.mjs",
     "check:worktree": "node bin/check-worktree-include.mjs",
     "check:signed-range": "node bin/verify-signed-range.mjs",
     "check:dup": "jscpd",
