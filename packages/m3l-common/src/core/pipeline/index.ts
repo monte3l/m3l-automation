@@ -21,4 +21,8 @@ export type {
   M3LOperationPipelineOutcomeBase,
   M3LPipelineDeclinePolicy,
   M3LPipelineDestructiveOptions,
+  M3LPipelinePhase,
+  M3LPipelineTraceOptions,
+  M3LPipelineTraceSink,
+  M3LPipelineTraceSnapshot,
 } from "./types.js";

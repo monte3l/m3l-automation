@@ -31,12 +31,17 @@ Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
   `M3LPipelineDeclinePolicy`
 - Contracts: `M3LOperationPipelineBaseDeps`, `M3LOperationHandlers`,
   `M3LGuardableKey`
-- Outcome: `M3LOperationPipelineOutcome`
+- Outcome: `M3LOperationPipelineOutcome`, `M3LOperationPipelineOutcomeBase`
+- Tracing: `M3LPipelineTraceOptions`, `M3LPipelineTraceSink`,
+  `M3LPipelineTraceSnapshot`, `M3LPipelinePhase`
 
 No error class is exported. Guard and configuration failures throw `M3LError`
 with the **caller-supplied** `configCode`; construction-time option validation
 throws an internal `M3LError` subclass with code `ERR_PIPELINE_INVALID_OPTION`
-(origin `caller`, not retryable).
+(origin `caller`, not retryable). That same code is also thrown **at run time**
+in one case — a `recovery` callback that returns a non-array (see
+[Partial runs](#partial-runs)) — so `ERR_PIPELINE_INVALID_OPTION` is not
+exclusively a construction-time signal.
 
 ## The run contract
 
@@ -97,6 +102,11 @@ operation)`, producing the message `'<name>' is required for operation
 Any throw from phases 1–10 (other than a soft-landed decline) propagates to
 the caller unmodified — the engine never swallows, wraps, or re-codes errors.
 
+When `trace` is configured, each phase that runs contributes one entry to the
+sink (see [Tracing](#tracing)). The eleven phases above correspond one-to-one
+with the `M3LPipelinePhase` values, which are lowercase (`"accessor"`,
+`"operation"`, …).
+
 A pipeline instance is **stateless across runs**: `run()` keeps all per-run
 state in its own call frame, so an instance is reusable for sequential runs
 and safe under concurrent `run()` calls (mirroring `core/polling`'s per-call
@@ -153,6 +163,145 @@ A `"partial"` run **still ran `persist` and `finalize`**: it dispatched
 successfully and produced a real result. This is the distinction the outcome
 exists to preserve — a run that processed 997 of 1000 keys deleted 997 keys,
 and reporting it as a `failure` implies it deleted none.
+
+## Tracing
+
+`trace` is opt-in and additive. **Absent `trace`, behavior is byte-identical**
+to a pipeline without the option, and the engine performs no timing work at all.
+
+```typescript
+const trail = new Core.M3LBreadcrumbTrail();
+
+const pipeline = new Core.M3LOperationPipeline({
+  // …operations, handlers, …
+  trace: {
+    sink: trail,
+    describe: (phase, snapshot) => ({
+      bucket: snapshot.settings?.bucket ?? null,
+      dryRun: snapshot.settings?.dryRun ?? false,
+    }),
+  },
+});
+
+await Core.runScript(main, { trail }); // the trail feeds the report `timeline`
+```
+
+### What is recorded
+
+One entry per phase that **actually executes**, recorded under the event name
+`pipeline:phase`, against the source label `trace.source` — defaulting to
+`"M3LOperationPipeline"`. A phase whose optional callback is not configured
+(`prepare`, `persist`, `finalize`, `recovery`) contributes nothing — the trace
+reflects what ran, not what could have run.
+
+`guards` and `gate` are the exceptions: both are traced **unconditionally**,
+even with no `requiredFields` and no `destructive` configured. They are phases
+of the run that always execute (and no-op internally), not caller callbacks that
+may be absent. A soft-landed decline returns at phase 6, so
+phases 7–10 are absent from its trace; both the declined and the partial return
+paths still record their `outcome` entry.
+
+Each entry's payload carries:
+
+| Key          | Meaning                                                                                                                                                                                                                                                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `phase`      | The `M3LPipelinePhase` value.                                                                                                                                                                                                                                                                                                        |
+| `durationMs` | Wall-clock duration of that phase, from `performance.now()`.                                                                                                                                                                                                                                                                         |
+| `operation`  | The resolved operation. Present on the `operation` phase's own entry, because the payload is recorded at phase **exit**, by which point that phase has resolved it. Omitted for the `accessor` phase, and for a **failing** `operation` phase — an off-union value means no operation was ever resolved, so there is none to report. |
+| `failed`     | `true` only when the phase threw. Omitted otherwise.                                                                                                                                                                                                                                                                                 |
+
+Plus every key `describe` returned. **The engine's four keys are applied last
+and win** a name collision, so a `describe` return cannot forge `durationMs` or
+mislabel `phase`.
+
+### `describe` runs at phase entry
+
+`describe` is invoked at each phase's **entry**, before the phase body, so it
+records the value the phase actually used rather than what was declared at
+construction time. Its `snapshot` therefore carries only what has been resolved
+so far:
+
+- `operation` — absent for `accessor` and for `operation` itself, since the
+  `operation` phase is the one that resolves it.
+- `settings` — absent until the `settings` phase has completed, so absent for
+  `accessor`, `operation`, and `settings` itself.
+- `context` — absent until `prepare` has completed; always absent when no
+  `prepare` is configured (`TContext` is `undefined`).
+
+The payload is pinned to `M3LBreadcrumbScalar` (`string | number | boolean |
+null`), and that pin is **enforced at run time as well as in the type**: the
+engine keeps only genuine scalar values and drops everything else — a nested
+object, an array, a function, a `Date` — before handing the payload to the sink.
+A `__proto__`-style dangerous key is skipped outright. So a JavaScript caller,
+or a TypeScript assertion, cannot smuggle a non-scalar through, and no sink
+receives a live reference to a caller's object.
+
+That is the allowlist constraint from
+[ADR-0035](../../adr/0035-failure-reporting-and-diagnostics.md)'s 2026-07-23
+update, where four adversarial rounds established that every allowlisted
+surface held and every denylisted one leaked.
+
+### Tracing is never load-bearing
+
+A tracing failure **cannot change a run's outcome**. This covers three distinct
+routes, each guarded independently: a throwing `describe` call, a **hostile
+`describe` return value** (a throwing getter fires when the payload is read, not
+when `describe` returns), and a throwing `sink.record`. On any of them the run
+proceeds unaffected.
+
+A phase that throws still records its entry with `failed: true`, and its own
+error **always** propagates unmodified — recording happens once, after the
+phase's outcome is captured, so a failure inside the tracing path can never
+replace, wrap, re-code, or attach a `cause` to the phase's real error.
+
+The warning the engine logs is deliberately minimal, because an error's fields
+are caller-controlled:
+
+- It **never** logs the error's `message` or `stack`.
+- It **never** logs the error's `name`.
+- It names the phase, plus the error's `code` **only** when that code is a
+  member of the library's own `M3L_ERROR_CODES`. An unrecognized or
+  caller-invented code renders as `unclassified` rather than being echoed.
+
+```text
+M3LOperationPipeline: tracing failed at phase 'guards' (ERR_INVALID_ARGUMENT)
+M3LOperationPipeline: tracing failed at phase 'guards' (unclassified)
+```
+
+That minimalism has a **diagnosability cost worth planning for**: because neither
+the message nor the error type is logged, every failure originating in a
+caller-authored `describe` — a `TypeError`, a bad property read, a throwing
+getter — logs identically as `(unclassified)`. The warning tells you _which
+phase_ failed to trace, not _why_. If a `describe` does anything non-trivial,
+instrument it yourself (its own `try`/`catch` and your own logging) rather than
+expecting the engine's warning to identify the fault. If the logger itself
+throws, the engine gives up silently — tracing must never affect the run.
+
+### Redaction is the sink's responsibility
+
+The engine enforces the payload's _shape_ (scalars only, dangerous keys
+dropped) but does not sanitize scalar _values_. It deliberately does not
+redact — that keeps `core/pipeline`'s import graph shallow and leaves one owner
+for the redaction policy — so a bare `record()`-shaped sink receives every
+surviving scalar verbatim.
+
+`M3LBreadcrumbTrail` is the sink that adds redaction, and it is the recommended
+one. Be precise about what it does and does not cover:
+
+- It **does** mask values whose key names `redactSensitiveLogValue` recognizes
+  as sensitive by name.
+- It does **not** honor a caller-declared secrets specifier — the trail calls
+  `redactSensitiveLogValue` with no options, so a value a caller declared
+  sensitive elsewhere is still persisted verbatim if its key name is not one the
+  heuristic recognizes.
+- It does **not** recognize a bare, context-free secret in free text. The
+  redactor is pattern- and key-name-based; a lone token in a `describe` string
+  is not caught.
+
+So trail redaction is **best effort**, not a guarantee. `describe` is
+caller-authored, and its return reaches the run report on disk: the durable rule
+is to not put a secret in it in the first place, rather than to rely on the sink
+to remove one.
 
 ## Types
 
@@ -311,6 +460,7 @@ interface M3LOperationPipelineCoreOptions<
     deps: TDeps,
     operation: TOp,
   ) => readonly M3LRunRecoveryEntry[];
+  readonly trace?: M3LPipelineTraceOptions<TOp, TSettings, TContext>;
 }
 
 interface M3LOperationPipelineOutcomeBase<TOp extends string, TResult> {
@@ -331,10 +481,54 @@ type M3LOperationPipelineOutcome<
         ];
       }
     | {
-        readonly status: "completed" | "declined";
+        readonly status: "completed";
+        readonly recovery?: undefined;
+      }
+    | {
+        readonly status: "declined";
         readonly recovery?: undefined;
       }
   );
+
+type M3LPipelinePhase =
+  | "accessor"
+  | "operation"
+  | "settings"
+  | "guards"
+  | "prepare"
+  | "gate"
+  | "dispatch"
+  | "persist"
+  | "finalize"
+  | "recovery"
+  | "outcome";
+
+interface M3LPipelineTraceSnapshot<
+  TOp extends string,
+  TSettings extends object,
+  TContext,
+> {
+  readonly operation?: TOp;
+  readonly settings?: TSettings;
+  readonly context?: TContext;
+}
+
+interface M3LPipelineTraceSink {
+  record(source: string, event: string, payload?: unknown): void;
+}
+
+interface M3LPipelineTraceOptions<
+  TOp extends string,
+  TSettings extends object,
+  TContext,
+> {
+  readonly sink: M3LPipelineTraceSink;
+  readonly describe?: (
+    phase: M3LPipelinePhase,
+    snapshot: M3LPipelineTraceSnapshot<TOp, TSettings, TContext>,
+  ) => Readonly<Record<string, M3LBreadcrumbScalar>>;
+  readonly source?: string;
+}
 
 class M3LOperationPipeline<
   TOp extends string,
@@ -390,6 +584,28 @@ when:
 
 Type-level exhaustiveness makes these unreachable from well-typed TypeScript;
 the runtime checks guard JavaScript callers and dynamic construction.
+
+**Every problem is reported at once.** Validation collects all violations before
+throwing, so constructing a pipeline with three malformed options surfaces three
+problems in one throw rather than one per fix-and-rerun cycle. The thrown
+error's `code` remains `ERR_PIPELINE_INVALID_OPTION`; each individual problem
+carries its own code in `context.problems`:
+
+| Problem code                                 | Raised when                                                                                           |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `ERR_PIPELINE_EMPTY_OPERATIONS`              | `operations` is empty.                                                                                |
+| `ERR_PIPELINE_DUPLICATE_OPERATION`           | `operations` repeats an entry. Reported once per duplicated name.                                     |
+| `ERR_PIPELINE_UNKNOWN_DESTRUCTIVE_OPERATION` | `destructive.operations` names an operation absent from `operations`. Reported once per unknown name. |
+
+`context.problems` is a non-empty array of `{ code, message }`, each entry also
+carrying `operation` where the problem names one. With exactly one problem the
+error's `message` is that problem's message; with several it is a summary line
+followed by each problem's message.
+
+Because collection replaces short-circuiting, an empty `operations` list no
+longer hides the `destructive` check — an empty list with a configured
+`destructive.operations` reports both the emptiness and every destructive name
+as unknown.
 
 ## Example — soft-landing pipeline (s3-objects shape)
 
