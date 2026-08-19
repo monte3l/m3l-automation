@@ -13,7 +13,10 @@ import type {
   M3LDestructiveTarget,
   M3LDestructiveTargetPredicate,
 } from "../prompt/M3LDestructiveGate.js";
-import type { M3LRunRecoveryEntry } from "../diagnostics/index.js";
+import type {
+  M3LBreadcrumbScalar,
+  M3LRunRecoveryEntry,
+} from "../diagnostics/index.js";
 
 /**
  * The minimum dependency shape every {@link M3LOperationPipeline} run
@@ -283,6 +286,146 @@ export interface M3LPipelineDestructiveOptions<
 }
 
 /**
+ * The fixed, ordered set of phases {@link M3LOperationPipeline.run} executes.
+ * A `trace` sink records at most one `"pipeline:phase"` entry per phase that
+ * actually runs; see `docs/reference/core/pipeline.md` § Tracing for the full
+ * per-phase contract.
+ *
+ * @example
+ * ```ts
+ * import type { Core } from "@m3l-automation/m3l-common";
+ *
+ * function label(phase: Core.M3LPipelinePhase): string {
+ *   return `phase: ${phase}`;
+ * }
+ * ```
+ */
+export type M3LPipelinePhase =
+  | "accessor"
+  | "operation"
+  | "settings"
+  | "guards"
+  | "prepare"
+  | "gate"
+  | "dispatch"
+  | "persist"
+  | "finalize"
+  | "recovery"
+  | "outcome";
+
+/**
+ * The partial run state a {@link M3LPipelineTraceOptions.describe} callback
+ * observes at a given phase's **entry**, before that phase's body runs.
+ *
+ * Every field is optional and its absence is meaningful, not incidental:
+ * `operation` is absent for the `"accessor"` phase and for `"operation"`
+ * itself (the phase that resolves it); `settings` is absent through
+ * `"settings"` itself; `context` is absent through `"prepare"` itself and
+ * always absent when no `prepare` is configured (`TContext` is `undefined`).
+ * See `docs/reference/core/pipeline.md` § Tracing for the exhaustive
+ * per-phase table.
+ *
+ * @typeParam TOp - The closed operation-name union.
+ * @typeParam TSettings - The resolved settings struct.
+ * @typeParam TContext - The value `prepare` produces, or `undefined` when no
+ *   `prepare` is configured.
+ *
+ * @example
+ * ```ts
+ * import type { Core } from "@m3l-automation/m3l-common";
+ *
+ * function describeSnapshot(
+ *   snapshot: Core.M3LPipelineTraceSnapshot<
+ *     "list" | "delete",
+ *     { readonly bucket?: string },
+ *     undefined
+ *   >,
+ * ): string {
+ *   return snapshot.settings?.bucket ?? "(no bucket yet)";
+ * }
+ * ```
+ */
+export interface M3LPipelineTraceSnapshot<
+  TOp extends string,
+  TSettings extends object,
+  TContext,
+> {
+  /** The resolved operation, absent for `"accessor"` and `"operation"` itself. */
+  readonly operation?: TOp;
+  /** The resolved settings struct, absent through `"settings"` itself. */
+  readonly settings?: TSettings;
+  /** `prepare`'s resolved return value, absent through `"prepare"` itself. */
+  readonly context?: TContext;
+}
+
+/**
+ * Opt-in, additive tracing configuration for {@link M3LOperationPipeline}.
+ * Absent `trace`, behavior is byte-identical to a pipeline without the
+ * option and the engine performs no timing work at all.
+ *
+ * When configured, the engine records one `"pipeline:phase"` entry per phase
+ * that actually executes via `sink.record`, guarding each `describe` and
+ * `sink.record` call independently so tracing can never change a run's
+ * outcome — see `docs/reference/core/pipeline.md` § Tracing.
+ *
+ * @typeParam TOp - The closed operation-name union.
+ * @typeParam TSettings - The resolved settings struct.
+ * @typeParam TContext - The value `prepare` produces, or `undefined` when no
+ *   `prepare` is configured.
+ *
+ * @example
+ * ```ts
+ * import type { Core } from "@m3l-automation/m3l-common";
+ *
+ * declare const trail: Core.M3LBreadcrumbTrail;
+ *
+ * const trace: Core.M3LPipelineTraceOptions<
+ *   "list" | "delete",
+ *   { readonly bucket?: string },
+ *   undefined
+ * > = {
+ *   sink: trail,
+ *   describe: (_phase, snapshot) => ({
+ *     bucket: snapshot.settings?.bucket ?? null,
+ *   }),
+ * };
+ * ```
+ */
+export interface M3LPipelineTraceOptions<
+  TOp extends string,
+  TSettings extends object,
+  TContext,
+> {
+  /**
+   * Receives every `"pipeline:phase"` entry the engine records. A
+   * {@link M3LBreadcrumbTrail} satisfies this structurally; any other
+   * `record`-shaped object receives the `describe` return **verbatim** — the
+   * engine does not redact.
+   */
+  readonly sink: {
+    /** Records one phase entry. `payload` carries the engine's own keys plus `describe`'s return, if any. */
+    record(source: string, event: string, payload?: unknown): void;
+  };
+  /**
+   * Builds extra payload keys from the phase's entry-time snapshot. Invoked
+   * at each phase's **entry**, before that phase's body runs. The engine's
+   * own `phase`/`durationMs`/`operation`/`failed` keys are applied last and
+   * win a name collision, so this return cannot forge them.
+   *
+   * A throw here is guarded independently from a throwing `sink.record` —
+   * the run's outcome and the phase's own recorded entry are unaffected; the
+   * engine logs a warning naming the phase and the error's `name`/`code`
+   * (never its `message`) and proceeds.
+   */
+  readonly describe?: (
+    phase: M3LPipelinePhase,
+    snapshot: M3LPipelineTraceSnapshot<TOp, TSettings, TContext>,
+  ) => Readonly<Record<string, M3LBreadcrumbScalar>>;
+  /** Overrides the default `"M3LOperationPipeline"` source label passed to `sink.record`. */
+  readonly source?: string;
+}
+
+/**
  * The members of {@link M3LOperationPipelineOptions} that don't depend on
  * whether `prepare` is required — kept as its own (unexported) shape so the
  * public type can intersect it with a `prepare` arm chosen conditionally on
@@ -401,6 +544,13 @@ interface M3LOperationPipelineCoreOptions<
     deps: TDeps,
     operation: TOp,
   ) => readonly M3LRunRecoveryEntry[];
+  /**
+   * Opt-in, additive phase tracing. Absent, the run is byte-identical to a
+   * pipeline built without this option and the engine performs no timing
+   * work at all. See {@link M3LPipelineTraceOptions} and
+   * `docs/reference/core/pipeline.md` § Tracing.
+   */
+  readonly trace?: M3LPipelineTraceOptions<TOp, TSettings, TContext>;
 }
 
 /**

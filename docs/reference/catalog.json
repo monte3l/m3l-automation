@@ -382,7 +382,10 @@
       "M3LPipelineDestructiveOptions",
       "M3LOperationPipelineOptions",
       "M3LOperationPipelineOutcome",
-      "M3LOperationPipelineOutcomeBase"
+      "M3LOperationPipelineOutcomeBase",
+      "M3LPipelinePhase",
+      "M3LPipelineTraceSnapshot",
+      "M3LPipelineTraceOptions"
     ]
   },
   {

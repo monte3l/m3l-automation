@@ -15,7 +15,11 @@ import { M3LError } from "../../core/errors/index.js";
  * `M3LOperationPipelineOptions` fails eager validation (an empty or
  * duplicate-containing `operations` list, or a `destructive.operations`
  * member absent from `operations`). Carries the stable code
- * `ERR_PIPELINE_INVALID_OPTION`.
+ * `ERR_PIPELINE_INVALID_OPTION`; validation collects every problem before
+ * throwing, so `context.problems` may hold more than one finding (each
+ * carrying its own `ERR_PIPELINE_EMPTY_OPERATIONS`,
+ * `ERR_PIPELINE_DUPLICATE_OPERATION`, or
+ * `ERR_PIPELINE_UNKNOWN_DESTRUCTIVE_OPERATION` code).
  */
 export class M3LPipelineInvalidOptionError extends M3LError {
   /** Narrows the inherited `code` to the literal `"ERR_PIPELINE_INVALID_OPTION"`. */

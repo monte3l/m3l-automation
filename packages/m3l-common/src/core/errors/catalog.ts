@@ -174,7 +174,13 @@ export const M3L_ERROR_CATALOG: Readonly<
   ERR_NO_PROGRESS: { origin: "external", retryable: false },
   ERR_OPERATION_ABORTED: { origin: "caller", retryable: false },
   ERR_PATH_RESOLUTION: { origin: "external", retryable: false },
+  ERR_PIPELINE_DUPLICATE_OPERATION: { origin: "caller", retryable: false },
+  ERR_PIPELINE_EMPTY_OPERATIONS: { origin: "caller", retryable: false },
   ERR_PIPELINE_INVALID_OPTION: { origin: "caller", retryable: false },
+  ERR_PIPELINE_UNKNOWN_DESTRUCTIVE_OPERATION: {
+    origin: "caller",
+    retryable: false,
+  },
   ERR_POLLING_INVALID_OPTION: { origin: "caller", retryable: false },
   ERR_POLL_EXHAUSTED: { origin: "external", retryable: true },
   ERR_POLL_FAILURE: { origin: "external", retryable: false },
