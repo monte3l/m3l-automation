@@ -124,9 +124,10 @@ governing decision is `docs/adr/0030-targeted-workflow-tooling-and-mcp.md`'s
 Two structural constraints apply to all five, independent of per-skill
 coverage (see `docs/contributing/agent-operating-model.md`): **MCP is
 hub-only** (no spoke holds an `mcp__*` tool grant), and **MCP is unavailable
-in headless CI** (`claude-pr-review.yml` pins `--allowedTools Bash,Read`). A
-skill that must run inside either context stays gh-CLI-based regardless of
-toolset coverage. The 2026-07-27 amendment's revisit trigger was retired by
+in headless CI** (`claude-pr-review.yml` pins a scoped `--allowedTools`
+allowlist with no `--mcp-config`). A skill that must run inside either context
+stays gh-CLI-based regardless of toolset coverage. The 2026-07-27 amendment's
+revisit trigger was retired by
 ADR-0030's 2026-08-14 amendment (issue #344) — don't migrate a skill's
 mechanism without re-reading that amendment's re-open condition first.
 
