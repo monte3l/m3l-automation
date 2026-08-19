@@ -256,9 +256,17 @@ jobs:
     steps:
       # fetch-depth 0: "Validate commit messages" below needs the PR
       # base..head commit range. Not job-gated (unlike deps/lint/build/test):
-      # this lane bundles steps spanning several different change categories,
-      # so it stays unconditional at the job level with each step gated on
-      # its own category below.
+      # this lane bundles ~24 governance check:* steps whose combined cost is
+      # ~20s (see docs/plans/archive/2026-08-19-ci-performance.md's baseline),
+      # so none of them are individually path-gated either — four straight
+      # review rounds each found a different check whose real file-reads
+      # spanned a narrower category than its gate, because a check's true
+      # input footprint (a doc it happens to read, a config it happens to
+      # validate) can't be exhaustively audited against a 7-category scheme
+      # and kept correct as both evolve. Below ~20s of unconditional runtime
+      # is a strictly better trade than re-auditing this list every time a
+      # check's inputs change. Only the two genuinely event-scoped steps
+      # (not path-category-scoped) below keep an `if:`.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -269,7 +277,6 @@ jobs:
       # track this file's step names exactly, or `pnpm verify` silently stops
       # reproducing what CI actually gates.
       - name: Check verify parity
-        if: needs.changes.outputs.workflows == 'true'
         run: pnpm check:verify-parity
 
       - name: Validate commit messages
@@ -278,117 +285,91 @@ jobs:
 
       # Doc-provenance sidecars anchor reference-page headings to source symbols
       # at a git commit. Fail if a heading or symbol is missing; warn on staleness.
-      # docs || ts: also verifies each sidecar's referenced symbol is still
-      # exported from packages/*/src, so a source-only rename/removal must
-      # not skip it.
       - name: Check doc provenance
-        if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.ts == 'true'
         run: pnpm check:provenance
 
-      # Submodule counts in prose must match the files in docs/reference/.
-      # docs || ts: also asserts the hand-authored barrel TSDoc submodule
-      # lists in packages/m3l-common/src/{core,aws}/index.ts
-      # (LIST_ASSERTION_SITES), so a barrel-only edit must not skip it.
+      # Submodule counts in prose must match the files in docs/reference/,
+      # and the hand-authored barrel TSDoc submodule lists in
+      # packages/m3l-common/src/{core,aws}/index.ts (LIST_ASSERTION_SITES).
       - name: Check doc counts
-        if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.ts == 'true'
         run: pnpm check:doc-counts
 
       # The CI/CD table in CLAUDE.md must document exactly the workflow files in
       # .github/workflows/ (count + one row each) — no undocumented or stale rows.
       - name: Check workflow docs
-        if: needs.changes.outputs.workflows == 'true'
         run: pnpm check:workflows-doc
 
       # The Commands cadence table in CLAUDE.md must match lefthook.yml — each
       # lefthook stage's checks documented exactly, so the cadence can't drift.
       - name: Check cadence docs
-        if: needs.changes.outputs.workflows == 'true'
         run: pnpm check:cadence
 
       # Every status-bearing ("## ", has a Status column) table in ROADMAP.md
       # and IMPLEMENTATION.md must be registered with the sync:hub extractor —
       # otherwise a newly added tracker table is a silent no-op forever.
       - name: Check tracker coverage
-        if: needs.changes.outputs.docs == 'true'
         run: pnpm check:tracker-coverage
 
       # Every Status cell in those same tables must be one of ADR-0032's six
       # tracker values — a board-side token ("In review") in a tracker cell
       # classifies as "todo" and leaves shipped work reading as open (#204).
       - name: Check tracker status vocabulary
-        if: needs.changes.outputs.docs == 'true'
         run: pnpm check:tracker-status
 
       # Every item key sync:hub derives from those same tables must be unique,
       # case-insensitively and including legacy aliases — a collision makes two
       # unrelated rows share one issue and silently closes the loser (#480).
       - name: Check hub-sync key uniqueness
-        if: needs.changes.outputs.docs == 'true'
         run: pnpm check:hub-keys
 
       # The implemented-count numerator ("N of 22") must match the ✅ rows in
       # docs/implementation-status.md across every badge / prose / HTML site.
       - name: Check implementation count
-        if: needs.changes.outputs.docs == 'true'
         run: pnpm check:impl-counts
 
       # catalog.json, symbol-map.json, and README.md catalog block must match
-      # the current docs/reference/ + provenance sidecar state. docs || scripts:
-      # the scripts catalog block is derived from the union of docs/reference/scripts/
-      # pages AND scripts/ packages, so an add/remove under scripts/ alone must
-      # not skip it.
+      # the current docs/reference/ + provenance sidecar state, including the
+      # consumer-scripts catalog derived from the union of
+      # docs/reference/scripts/ pages AND scripts/ packages.
       - name: Check reference index
-        if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.scripts == 'true'
         run: pnpm check:index
 
       # Every public export surfaced through a namespace barrel must be
       # documented — present in its reference page heading or provenance
       # sidecar. Moved here from the `build` lane (it reads src/ and docs/
-      # directly, never dist/, so it doesn't need that lane's build step) —
-      # gated on `ts` OR `docs` since either side of the barrel<->doc pairing
-      # can break it alone.
+      # directly, never dist/, so it doesn't need that lane's build step).
       - name: Check barrel vs docs exports
-        if: needs.changes.outputs.ts == 'true' || needs.changes.outputs.docs == 'true'
         run: pnpm check:doc-exports
 
       # Scaffold seam: every src/core|aws/<mod>/index.ts must carry its TDD test
       # file (tests/<mod>.test.ts) and a row in docs/implementation-status.md.
       # Backstop for the scaffolding-submodules scaffolding skill. Moved here
-      # from the `build` lane (it reads src/ and docs/ directly, never dist/)
-      # — gated on `ts` OR `docs`, same reasoning as the step above.
+      # from the `build` lane (it reads src/ and docs/ directly, never dist/).
       - name: Check scaffold seam (test + status row)
-        if: needs.changes.outputs.ts == 'true' || needs.changes.outputs.docs == 'true'
         run: pnpm check:scaffold-seam
 
       # Per-file test counts recorded in docs/implementation-status.md must match
       # the live suite. Derived from `vitest list` — a collection pass, not a
       # full run (see bin/check-test-counts.mjs) — independent of the `test`
       # lane's coverage run, so it doesn't need to live in that lane. Moved
-      # here from `test` — gated on `ts` OR `docs` since it validates a doc
-      # file against src-derived counts, either side can break it alone.
+      # here from `test`.
       - name: Check test counts
-        if: needs.changes.outputs.ts == 'true' || needs.changes.outputs.docs == 'true'
         run: pnpm check:test-counts
 
       # Consumer-script scaffold: every scripts/<name> package must match the
       # ADR-0022 shape (modular src/, package contract, root tsconfig ref,
       # smoke test, README + contract page) defined in the shared manifest.
-      # Deterministic backstop for the scaffolding-scripts skill. scripts ||
-      # docs: also validates docs/reference/scripts/<name>.md, so a
-      # contract-page-only edit must not skip it. || ts: also asserts the root
-      # tsconfig.json carries a `./scripts/*` project reference, so a
-      # tsconfig-only edit must not skip it either.
+      # Deterministic backstop for the scaffolding-scripts skill; also
+      # validates docs/reference/scripts/<name>.md and the root tsconfig.json
+      # project reference.
       - name: Check script scaffold conformance
-        if: needs.changes.outputs.scripts == 'true' || needs.changes.outputs.docs == 'true' || needs.changes.outputs.ts == 'true'
         run: pnpm check:script-scaffold
 
       # Every script README and reference page must follow the canonical
       # structure spec (docs/contributing/script-docs-structure.md): required
       # sections present, contract blockquotes present, ≥3 examples, Validation
       # column header, Operation column header in Operations at a glance.
-      # scripts || docs: same reasoning as the step above.
       - name: Check script doc structure
-        if: needs.changes.outputs.scripts == 'true' || needs.changes.outputs.docs == 'true'
         run: pnpm check:script-docs
 
       # Every scripts/*/package.json must declare exactly the ADR-0029
@@ -396,36 +377,29 @@ jobs:
       # no devDependencies. The @aws-sdk/* import ban (eslint.config.js) is
       # the source-level half of this same rule.
       - name: Check script dependency boundary
-        if: needs.changes.outputs.scripts == 'true'
         run: pnpm check:script-deps
 
       # Subagent config: skill/CLAUDE.md references resolve to real agents or
       # built-ins, and no spoke is granted the Agent tool (no-nesting invariant).
-      # claude || docs: also reads CLAUDE.md and docs/contributing/model-selection.md.
       - name: Check subagent configuration (agents)
-        if: needs.changes.outputs.claude == 'true' || needs.changes.outputs.docs == 'true'
         run: pnpm check:agents
 
       # Dynamic-workflow surface (ADR-0025): .claude/workflows/* model/effort
       # choices match the MODEL-MATRIX and every script declares its max-agents
       # guardrail. Distinct from "Check workflow docs" above, which reconciles
-      # the CLAUDE.md CI/CD table against .github/workflows/. claude || docs:
-      # also reads docs/contributing/model-selection.md.
+      # the CLAUDE.md CI/CD table against .github/workflows/.
       - name: Check dynamic-workflow surface (workflows)
-        if: needs.changes.outputs.claude == 'true' || needs.changes.outputs.docs == 'true'
         run: pnpm check:workflows
 
       # Hook wiring: every .claude/settings.json hook command resolves to a real
       # .claude/hooks/*.mjs, and no hook file is left unwired.
       - name: Check hook wiring (hooks)
-        if: needs.changes.outputs.claude == 'true'
         run: pnpm check:hooks
 
       # GitHub-integration stance (ADR-0030 amendment, 2026-07-27): every
       # GitHub-talking skill cites the governing ADR, carries no retired policy
       # claim, and names the mechanism (gh CLI vs GitHub MCP) it actually uses.
       - name: Check GitHub-integration stance (github-stance)
-        if: needs.changes.outputs.claude == 'true'
         run: pnpm check:github-stance
 
       # ADR-0009/ADR-0035 dependency direction: the import-x/no-restricted-paths
@@ -434,12 +408,10 @@ jobs:
       # eslint.config.js — a deleted zone or a deleted no-cycle rule would pass
       # lint silently.
       - name: Check dependency-direction zones (zones)
-        if: needs.changes.outputs.ts == 'true'
         run: pnpm check:zones
 
       # .worktreeinclude hygiene: no tracked files and no unresolvable literal
-      # paths, so worktree:setup provisions a fresh worktree correctly. Not
-      # path-gated — no single category owns it, and it's near-instant.
+      # paths, so worktree:setup provisions a fresh worktree correctly.
       - name: Check worktree include
         run: pnpm check:worktree
 
@@ -447,18 +419,15 @@ jobs:
       # one row per package.json script, in both directions — the non-drift
       # gate for the pnpm commands lister.
       - name: Check command catalog
-        if: needs.changes.outputs.ts == 'true'
         run: pnpm check:command-catalog
 
       # Copy-paste duplication density (ADR-0034) — the one Sonar-style metric
       # not covered by ESLint's per-function complexity rules. CI-only: not
       # in pre-push, to keep that lane's wall-clock unchanged.
       - name: Check code duplication (jscpd)
-        if: needs.changes.outputs.ts == 'true'
         run: pnpm check:dup
 
       - name: Unused files / exports / dependencies (knip)
-        if: needs.changes.outputs.ts == 'true'
         run: pnpm knip
 
       # ADR-0032's visibility hub: docs/ROADMAP.md + IMPLEMENTATION.md must
