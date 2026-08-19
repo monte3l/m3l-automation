@@ -19,7 +19,7 @@
   "scripts": {
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
-    "lint": "eslint .",
+    "lint": "eslint . --concurrency=2",
     "lint:commit": "node bin/lint-commit.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
