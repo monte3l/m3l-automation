@@ -505,6 +505,13 @@ one) is tracked in `docs/contributing/skills-catalog.md`.
    recommendations — run `researching-anthropic-guidance` first and fold its
    briefing into the plan; it complements `auditing` (which reads the repo)
    with a read of official Anthropic sources.
+   **Re-derive any authored claim you are about to act on** — an ADR's census,
+   a tracker row's scope, a filed issue's stated evidence, a reviewer's
+   must-fix. These are snapshots, and a fix scoped against one that has rotted
+   is wrong before it starts; executing the real path over real data usually
+   costs minutes (`docs/logs/2026-08-16-core-pipeline.md`,
+   `docs/logs/2026-08-17-descope-cwli-pipeline-migration.md`,
+   `docs/logs/2026-08-19-hub-sync-key-namespace.md`).
 2. **Plan** in plan mode for any change to an exported signature or
    the `exports` map (it has semver impact).
 3. **Implement** the smallest change that satisfies the task.

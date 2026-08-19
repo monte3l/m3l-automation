@@ -51,6 +51,15 @@ paths:
   fine; a rejecting one is not.
 - **Parameterize** when the same logic is exercised against multiple inputs.
 - **Never tolerate flaky tests** — diagnose and fix; do not mute or retry-mask.
+- **A gate failing outside your change's blast radius is presumed pre-existing
+  until disambiguated.** `git status` and `git diff origin/main -- <path>`
+  settle it in seconds — cheaper than debugging your own diff for someone
+  else's breakage. This is not licence to retry: if the re-run goes green with
+  no explanation, that is a flake, and per the rule above it gets diagnosed and
+  filed rather than pocketed
+  (`docs/logs/2026-07-11-prepush-parallelization.md`,
+  `docs/logs/2026-07-18-aws-lambda.md`,
+  `docs/logs/2026-08-19-hub-sync-key-namespace.md`).
 - **Mock Node built-ins via the async-factory form** that preserves real
   exports, then `vi.spyOn` individual methods:
   `vi.mock("fs", async () => { const actual = await vi.importActual<typeof import("fs")>("fs"); return { ...actual }; })`.
@@ -157,6 +166,14 @@ vi.spyOn<T, S>>`) against the first overload regardless of which one the
   because it imports untyped `.mjs`). Read the editor diagnostics before
   declaring a `bin/tests` change green; a passing `pnpm verify` does not mean
   the file type-checks.
+- **Test a `bin/` checker against synthetic state, not just the live repo.** A
+  generator/checker whose correctness depends on current repo state (a count, a
+  table's column order, an identifier pattern) can only be shown to pass
+  _today_ by running it here — a bug that manifests on the _next_ change stays
+  invisible. Drive its test with a synthetic bump: a differing total, a renamed
+  column, a digit-bearing name. Three count/index gates shipped as latent
+  no-ops for exactly this reason (`docs/logs/2026-07-02-core-polling.md`,
+  `docs/logs/2026-07-13-aws-sqs.md`, `docs/logs/2026-07-13-aws-dynamodb.md`).
 - **Type a `bin/` helper's JSDoc `@param` to the fields it actually reads**, not
   to a whole upstream return type. Declaring
   `@param {ReturnType<typeof actionableItems>}` when the function only touches
