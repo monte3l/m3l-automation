@@ -151,7 +151,20 @@ jobs:
     name: Build & typecheck
     needs: changes
     if: needs.changes.outputs.ts == 'true'
-    runs-on: ubuntu-latest
+    # ARM64 trial (CI-perf audit PR 4): ubuntu-24.04-arm is a standard, free
+    # runner at the same 4 vCPU / 16 GB as ubuntu-latest for public repos —
+    # not a core-count lever, a per-core-silicon bet being measured over
+    # >=10 runs before an adopt/revert decision. continue-on-error on the arm
+    # leg only: `needs.build.result` (read by `verify`) is forced to success
+    # for that leg regardless of its real outcome, so an ARM-specific failure
+    # during the trial can never block a merge — only the ubuntu-latest leg's
+    # real result gates `verify`.
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.runner == 'ubuntu-24.04-arm' }}
     timeout-minutes: 15
     steps:
       # fetch-depth 0: "Check exports semver labeling" below needs the PR
@@ -168,6 +181,12 @@ jobs:
       # from an earlier commit's cache instead of recompiling. Shared with
       # the `test` lane below, which also invokes `pnpm build` and needs the
       # same cache to avoid a second full compile on its own separate runner.
+      # The key intentionally omits `matrix.runner`/`runner.arch`: turbo's
+      # cached output here is compiled JS/.d.ts/.tsbuildinfo, not native
+      # binaries, so it's portable across the ARM64 trial's two arches — the
+      # x64 and arm64 legs can share (and race to write) the same entry
+      # safely; actions/cache no-ops a losing concurrent write rather than
+      # failing the job.
       - name: Cache turbo
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -214,7 +233,15 @@ jobs:
     # guard-no-commonjs, guard-eslint-disable), so a hooks-only change must
     # not skip this lane — same reasoning as the `lint` lane's gate below.
     if: needs.changes.outputs.ts == 'true' || needs.changes.outputs.claude == 'true'
-    runs-on: ubuntu-latest
+    # ARM64 trial (CI-perf audit PR 4) — same matrix/continue-on-error
+    # reasoning as the `build` lane above; `test` is the other lane that
+    # dominates wall clock, so it's the second of the two legs being A/B'd.
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.runner == 'ubuntu-24.04-arm' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -451,7 +478,11 @@ jobs:
   # The required status check branch protection looks for. Fails if the
   # changes job itself didn't succeed (see comment below), or if any lane
   # failed or was cancelled; passes if every lane succeeded or was
-  # deliberately skipped by path-scoping.
+  # deliberately skipped by path-scoping. `build`/`test` are matrixed for the
+  # ARM64 trial (PR 4) with `continue-on-error` on the ubuntu-24.04-arm leg
+  # only — an ARM-specific failure reads as success to this aggregator, so it
+  # never blocks a merge during the trial; only each lane's ubuntu-latest leg
+  # can fail `verify`.
   verify:
     name: verify
     needs: [changes, secrets, deps, lint, format, build, test, gates]
