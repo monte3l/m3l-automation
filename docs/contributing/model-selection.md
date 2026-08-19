@@ -117,13 +117,25 @@ mean 940.7 changes/14.6 files, median 424/10, p90 2,667/35) and deliberately
 **not** implemented — Anthropic publishes no diff-size threshold for
 turns/timeout/model tier (`researching-anthropic-guidance` pass, same date;
 see `docs/research/pr-review-action-tuning.md`), so a size-based cutoff here
-would be an unvalidated guess rather than a documented practice. The flat
-100-turn config stays; the model tier did change on 2026-07-25 — row 10's
-"if FAIL-verdict quality slips, the high-stakes rule argues for `opus`" was
-acted on, moving `claude-pr-review.yml` from `claude-sonnet-5` to
-`claude-opus-5` on release of Claude Opus 5. `claude-assistant.yml` was left
-on `claude-sonnet-5`: it's a lower-stakes, on-demand surface, not the
-mandatory merge gate.
+would be an unvalidated guess rather than a documented practice. The model
+tier did change on 2026-07-25 — row 10's "if FAIL-verdict quality slips, the
+high-stakes rule argues for `opus`" was acted on, moving `claude-pr-review.yml`
+from `claude-sonnet-5` to `claude-opus-5` on release of Claude Opus 5.
+`claude-assistant.yml` was left on `claude-sonnet-5`: it's a lower-stakes,
+on-demand surface, not the mandatory merge gate.
+
+**Update (2026-08-19):** the flat 100-turn cap and default `high` effort were
+reassessed once `ci.yml` itself dropped to 70–170s, making the review bot the
+new merge-latency floor (measured baseline: 8–28 turns actually used, median
+~215s, median $1.70/run). A follow-up `researching-anthropic-guidance` pass
+found the effort docs framing `medium` as Sonnet-5's/Opus-5's cost-saving
+step-down from default `high`, and the Code Review docs describing lower
+effort as reporting only the highest-confidence findings. `claude-pr-review.yml`
+now runs `claude-opus-5` at `--effort medium` with `--max-turns 35` (still
+above the observed max of 28) and `--safe-mode` to drop review-irrelevant
+context (CLAUDE.md, skills, hooks, MCP servers). Model tier is unchanged —
+only effort and turn cap moved; see the addendum in
+`docs/research/pr-review-action-tuning.md` for full sourcing.
 
 **Context/output limits per tier, and their bearing on truncation risk.**
 Subagent mid-turn truncation (a spoke hitting `maxTurns: 40` or an
