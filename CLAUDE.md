@@ -258,6 +258,12 @@ GitHub-native `.github/dependabot.yml`, which is config, not a workflow):
 | `security-audit.yml`    | weekly cron / manual dispatch       | Scheduled `pnpm audit --audit-level=high` + `pnpm check:licenses` — catches an advisory or license change published against an unchanged lockfile between pushes (ci.yml runs the same two checks on every push/PR) |
 | `pages.yml`             | push → main / manual dispatch       | Builds and deploys the GitHub Pages site — visibility-hub dashboard at `/` (ADR-0032) plus shields.io commit-stats endpoint-badge JSON at `/commit-stats/` (ADR-0032 addendum); supersedes `pages-commit-stats.yml` |
 
+**Required status checks** (branch protection on `main`): `verify` (ci.yml),
+`review` (claude-pr-review.yml), `Dependency Review` (dependency-review.yml),
+and **`CodeQL`** — GitHub default setup, not a file in `.github/workflows/`, so
+it has no row in the table above; it still runs on every push/PR and blocks
+merge like the other three.
+
 ## Coding, errors & tests (path-scoped)
 
 <!--
