@@ -296,6 +296,25 @@ function summarizeRetryFatal(
   };
 }
 
+/**
+ * Summarizes a `poll:no-progress` / `retry:no-progress` event, fired when a
+ * configured progress witness stayed unchanged for `maxStalledAttempts`
+ * consecutive attempts (`docs/reference/core/polling.md`, "No-progress
+ * detection"). Without this summarizer a default `trail.attach()` timeline
+ * fell silent at the last `poll:attempt`/`retry:attempt`, recording no
+ * evidence of why the run actually failed.
+ */
+function summarizeNoProgress(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const attempt = readNumber(payload, "attempt");
+  const stalledAttempts = readNumber(payload, "stalledAttempts");
+  return {
+    ...(attempt !== undefined && { attempt }),
+    ...(stalledAttempts !== undefined && { stalledAttempts }),
+  };
+}
+
 function summarizeImportStarted(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -458,7 +477,7 @@ function summarizeGenericFallback(
 }
 
 /**
- * The 17 built-in event summarizers, keyed by event name. This registry's
+ * The 19 built-in event summarizers, keyed by event name. This registry's
  * keys double as the default `events` list for {@link M3LBreadcrumbTrail.attach}
  * when `options.events` is omitted.
  */
@@ -468,10 +487,12 @@ const SUMMARIZERS: Readonly<Record<string, Summarizer>> = {
   "retry:success": summarizeAttemptOnly,
   "retry:fatal": summarizeRetryFatal,
   "retry:exhausted": summarizeAttemptsOnly,
+  "retry:no-progress": summarizeNoProgress,
   "poll:attempt": summarizeAttemptMax,
   "poll:wait": summarizeAttemptDelay,
   "poll:success": summarizeAttemptOnly,
   "poll:exhausted": summarizeAttemptsOnly,
+  "poll:no-progress": summarizeNoProgress,
   "import:started": summarizeImportStarted,
   "import:item": summarizeImportItem,
   "import:progress": summarizeImportProgress,
