@@ -127,7 +127,7 @@ describe("core/polling — no-progress detection (A5)", () => {
           witness: () => "same",
           maxStalledAttempts,
         },
-      } as M3LPollerOptions);
+      });
 
       const thrown = await captureRejection(poller.poll(check));
 
@@ -150,7 +150,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts,
         progress: { witness: () => "same", maxStalledAttempts },
-      } as M3LPollerOptions);
+      });
 
       const thrown = await captureRejection(poller.poll(check));
 
@@ -172,7 +172,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts: 50,
         progress: { witness: () => "same", maxStalledAttempts },
-      } as M3LPollerOptions);
+      });
 
       const thrown = await captureRejection(poller.poll(check));
 
@@ -195,7 +195,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts: 50,
         progress: { witness: () => "same", maxStalledAttempts },
-      } as M3LPollerOptions);
+      });
 
       const thrown = await captureRejection(poller.poll(check));
 
@@ -220,7 +220,7 @@ describe("core/polling — no-progress detection (A5)", () => {
           },
           maxStalledAttempts: 3,
         },
-      } as M3LPollerOptions);
+      });
 
       const thrown = await captureRejection(poller.poll(check));
 
@@ -243,7 +243,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts,
         progress: { witness, maxStalledAttempts },
-      } as M3LPollerOptions);
+      });
 
       const thrown = await captureRejection(poller.poll(check));
 
@@ -265,7 +265,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts: 10,
         progress: { witness, maxStalledAttempts: 10 },
-      } as M3LPollerOptions);
+      });
 
       await expect(settleWithTimers(poller.poll(check))).resolves.toBe("done");
       // Sampled only on the two `continue` attempts (1, 2), never on the
@@ -285,7 +285,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts: 10,
         progress: { witness, maxStalledAttempts: 10 },
-      } as M3LPollerOptions);
+      });
 
       const thrown = await captureRejection(poller.poll(check));
 
@@ -302,7 +302,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts,
         progress: { witness, maxStalledAttempts: 10 },
-      } as M3LPollerOptions);
+      });
 
       const thrown = await captureRejection(poller.poll(check));
 
@@ -327,7 +327,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts: 50,
         progress: { witness: () => "same", maxStalledAttempts },
-      } as M3LRetryRunnerOptions);
+      });
 
       const thrown = await captureRejection(runner.run(op));
 
@@ -350,7 +350,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts,
         progress: { witness: () => "same", maxStalledAttempts },
-      } as M3LRetryRunnerOptions);
+      });
 
       const thrown = await captureRejection(runner.run(op));
 
@@ -371,7 +371,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts: 50,
         progress: { witness: () => "same", maxStalledAttempts },
-      } as M3LRetryRunnerOptions);
+      });
 
       const thrown = await captureRejection(runner.run(op));
 
@@ -395,7 +395,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts: 50,
         progress: { witness: () => "same", maxStalledAttempts },
-      } as M3LRetryRunnerOptions);
+      });
 
       const thrown = await captureRejection(runner.run(op));
 
@@ -420,7 +420,7 @@ describe("core/polling — no-progress detection (A5)", () => {
           },
           maxStalledAttempts: 3,
         },
-      } as M3LRetryRunnerOptions);
+      });
 
       await expect(settleWithTimers(runner.run(op))).rejects.toBe(original);
     });
@@ -443,7 +443,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts,
         progress: { witness, maxStalledAttempts },
-      } as M3LRetryRunnerOptions);
+      });
 
       await expect(settleWithTimers(runner.run(op))).rejects.toBe(original);
     });
@@ -462,7 +462,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts: 10,
         progress: { witness, maxStalledAttempts: 10 },
-      } as M3LRetryRunnerOptions);
+      });
 
       await expect(settleWithTimers(runner.run(op))).resolves.toBe("done");
       // Sampled only on the two retried (failed) attempts, never the
@@ -484,7 +484,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts: 10,
         progress: { witness, maxStalledAttempts: 10 },
-      } as M3LRetryRunnerOptions);
+      });
 
       await expect(settleWithTimers(runner.run(op))).rejects.toBe(original);
       // Sampled on the two retried attempts only — never on the 3rd (fatal).
@@ -502,7 +502,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts,
         progress: { witness, maxStalledAttempts: 10 },
-      } as M3LRetryRunnerOptions);
+      });
 
       await expect(settleWithTimers(runner.run(op))).rejects.toBe(original);
       expect(witness).toHaveBeenCalledTimes(maxAttempts - 1);
@@ -577,7 +577,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         maxAttempts: 50,
         signal: controller.signal,
         progress: { witness: () => "same", maxStalledAttempts },
-      } as M3LPollerOptions);
+      });
 
       const thrown = await captureRejection(poller.poll(check));
 
@@ -605,7 +605,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts: 50,
         progress: { witness: () => "same", maxStalledAttempts },
-      } as M3LRetryRunnerOptions);
+      });
 
       await expect(settleWithTimers(runner.run(op))).rejects.toBe(original);
     });
@@ -621,7 +621,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts,
         progress: { witness: () => "same", maxStalledAttempts: maxAttempts },
-      } as M3LPollerOptions);
+      });
 
       const thrown = await captureRejection(poller.poll(check));
 
@@ -639,7 +639,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts,
         progress: { witness: () => "same", maxStalledAttempts: maxAttempts },
-      } as M3LRetryRunnerOptions);
+      });
 
       await expect(settleWithTimers(runner.run(op))).rejects.toBe(original);
     });
@@ -654,7 +654,7 @@ describe("core/polling — no-progress detection (A5)", () => {
           new M3LPoller({
             backoff: M3LBackoff.constant(10),
             progress: { witness: () => "x", maxStalledAttempts },
-          } as M3LPollerOptions);
+          });
         } catch (error) {
           thrown = error;
         }
@@ -672,7 +672,7 @@ describe("core/polling — no-progress detection (A5)", () => {
             classifier: awsThrottlingClassifier,
             backoff: M3LBackoff.constant(10),
             progress: { witness: () => "x", maxStalledAttempts },
-          } as M3LRetryRunnerOptions);
+          });
         } catch (error) {
           thrown = error;
         }
@@ -698,7 +698,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts: 50,
         progress: { witness, maxStalledAttempts },
-      } as M3LPollerOptions);
+      });
 
       let callsA = 0;
       let callsB = 0;
@@ -734,7 +734,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts: 50,
         progress: { witness, maxStalledAttempts },
-      } as M3LRetryRunnerOptions);
+      });
 
       let callsA = 0;
       let callsB = 0;
@@ -774,7 +774,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts: 50,
         progress: { witness: () => Number.NaN, maxStalledAttempts },
-      } as M3LPollerOptions);
+      });
 
       const thrown = await captureRejection(poller.poll(check));
 
@@ -797,7 +797,7 @@ describe("core/polling — no-progress detection (A5)", () => {
           },
           maxStalledAttempts: 3,
         },
-      } as M3LPollerOptions);
+      });
 
       const thrown = await captureRejection(poller.poll(check));
 
@@ -820,7 +820,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts: 50,
         progress: { witness: () => "same", maxStalledAttempts },
-      } as M3LPollerOptions);
+      });
 
       const received: M3LPollNoProgressPayload[] = [];
       poller.on("poll:no-progress", (payload) => {
@@ -850,7 +850,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts: 50,
         progress: { witness: () => "same", maxStalledAttempts },
-      } as M3LRetryRunnerOptions);
+      });
 
       const received: M3LRetryNoProgressPayload[] = [];
       runner.on("retry:no-progress", (payload) => {
@@ -874,7 +874,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts: 50,
         progress: { witness: () => "same", maxStalledAttempts },
-      } as M3LPollerOptions);
+      });
 
       const thrown = await captureRejection(poller.poll(check));
 
@@ -889,7 +889,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts: 50,
         progress: { witness: () => "same", maxStalledAttempts },
-      } as M3LPollerOptions);
+      });
       poller.on("poll:no-progress", () => {
         throw new Error("handler boom");
       });
@@ -910,7 +910,7 @@ describe("core/polling — no-progress detection (A5)", () => {
         backoff: M3LBackoff.constant(10),
         maxAttempts: 50,
         progress: { witness: () => "same", maxStalledAttempts },
-      } as M3LRetryRunnerOptions);
+      });
       runner.on("retry:no-progress", () => {
         throw new Error("handler boom");
       });
@@ -996,23 +996,18 @@ describe("core/polling — no-progress detection (A5)", () => {
       expect(bool).toBeTruthy();
     });
 
-    // NOTE (RED-only placement caveat): `progress` does not exist yet on
-    // `M3LPollerOptions`, so TypeScript already reports every `progress: {...}`
-    // object literal above as an unknown-property error (TS2353) at the
-    // `progress:` key itself — an expected "missing symbol" diagnostic per the
-    // RED contract. Because that error fires at the OUTER key, TypeScript never
-    // reaches contextual-typing the nested `witness` value against a real
-    // sibling type, so a `@ts-expect-error` placed on the `witness` line below
-    // would report as "unused" right now (TS2578) rather than suppressing a
-    // real error. These two tests are therefore written WITHOUT
-    // `@ts-expect-error` in RED; once `progress` exists and the outer error
-    // disappears, add `// @ts-expect-error witness must return a primitive`
-    // directly above each bad `witness:` line to turn this into the intended
-    // compile-error proof.
-    test("a witness returning an object is a type error (documented contract; add @ts-expect-error once `progress` exists)", () => {
+    // `witness` is typed to return only a primitive (`string | number | bigint
+    // | boolean`), never an object: an object witness would compare unequal on
+    // every call under `Object.is` (each invocation returns a fresh
+    // reference), so the stall counter would never see two consecutive equal
+    // samples and the guard would silently never fire — precisely the failure
+    // this option exists to catch. The two tests below are the compile-time
+    // proof of that constraint.
+    test("a witness returning an object is a type error", () => {
       const options: M3LPollerOptions = {
         backoff: M3LBackoff.constant(10),
         progress: {
+          // @ts-expect-error witness must return a primitive, not an object
           witness: () => ({ token: "x" }),
           maxStalledAttempts: 3,
         },
@@ -1020,10 +1015,11 @@ describe("core/polling — no-progress detection (A5)", () => {
       expect(options).toBeTruthy();
     });
 
-    test("a witness returning void is a type error (documented contract; add @ts-expect-error once `progress` exists)", () => {
+    test("a witness returning void is a type error", () => {
       const options: M3LPollerOptions = {
         backoff: M3LBackoff.constant(10),
         progress: {
+          // @ts-expect-error witness must return a primitive, not void
           witness: () => {
             /* no return */
           },

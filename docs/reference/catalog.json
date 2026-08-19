@@ -411,12 +411,14 @@
       "M3LPollWaitPayload",
       "M3LPollSuccessPayload",
       "M3LPollExhaustedPayload",
+      "M3LPollNoProgressPayload",
       "M3LRetryEventMap",
       "M3LRetryAttemptPayload",
       "M3LRetryScheduledPayload",
       "M3LRetrySuccessPayload",
       "M3LRetryFatalPayload",
-      "M3LRetryExhaustedPayload"
+      "M3LRetryExhaustedPayload",
+      "M3LRetryNoProgressPayload"
     ]
   },
   {
