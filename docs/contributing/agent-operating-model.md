@@ -22,9 +22,9 @@ that reviews it" structural, and keeps the hub's context lean.
   `resolving-pr-comments`) can use it. See
   `docs/adr/0030-targeted-workflow-tooling-and-mcp.md`'s 2026-07-27 amendment
   for the full GitHub-integration stance, including the parallel constraint
-  that `claude-pr-review.yml` pins `--allowedTools Bash,Read` — so a skill that
-  must also run headless in that workflow stays gh-CLI-based even when it runs
-  hub-only locally.
+  that `claude-pr-review.yml` pins a scoped `--allowedTools` allowlist with no
+  `--mcp-config` — so a skill that must also run headless in that workflow
+  stays gh-CLI-based even when it runs hub-only locally.
 - **Model tiering**: which Claude model runs which task category is documented
   in `docs/contributing/model-selection.md`; `pnpm check:agents` also enforces
   its MODEL-MATRIX block against agent `model:` frontmatter and workflow
