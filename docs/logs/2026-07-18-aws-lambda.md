@@ -82,7 +82,7 @@ implementing-submodules, syncing-docs, writing-work-logs.
 
 ## What didn't go as planned, and why
 
-### 1. Fixing a real Should-fix (dead optional-chaining) exposed a latent, unrelated test bug
+### 1. Fixing a real Should-fix (dead optional-chaining) exposed a latent, unrelated test bug _(promoted → .claude/rules/tests.md)_
 
 Two reviewers (`code-reviewer`, `silent-failure-hunter`) converged on the same
 finding from different angles: every method's `try`/`catch` should wrap

@@ -93,7 +93,7 @@ item is named out-of-scope in the same ADR is miscategorized from the start.
 - **Cross-check backlog rows against the authorizing ADR's out-of-scope list.**
   A batch of migration rows written from an ADR-triggered backlog may silently include items
   the same ADR names as out-of-scope. Verify each item both ways — that it satisfies the
-  scope criteria _and_ does not appear on the exclusion list — before opening the issue.
+  scope criteria _and_ does not appear on the exclusion list — before opening the issue. _(promoted → CLAUDE.md)_
 
 - **The six-value Status enum is the full vocabulary.** `Rejected` is the only in-vocabulary
   term for "won't do / out-of-scope" (`check:tracker-status` hard-fails on anything else).

@@ -89,7 +89,7 @@ item against the ADR's out-of-scope list explicitly, not just the scope criteria
 - **Slug-level exclusions in ADRs are absolute.** When an ADR names a specific
   component by its slug in the "out of scope" list, no amount of analysis of the
   component's actual shape can override it — the maintainer already performed that
-  analysis when writing the slug. Act on the exclusion directly; do not re-derive it.
+  analysis when writing the slug. Act on the exclusion directly; do not re-derive it. _(promoted → CLAUDE.md)_
 
 - **Batching related reclassifications in the same session is efficient.** Finding the
   cwli conflict (PR #459) immediately surfaced the dynamodb-crud conflict in the same

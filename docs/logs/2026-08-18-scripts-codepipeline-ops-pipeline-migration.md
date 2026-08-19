@@ -129,7 +129,7 @@ settings field is the cleanest discriminant.
 
 - **Verify pre-existing behavior before filing a regression fix** — when a
   reviewer flags a path as a "must-fix," confirm it was also present in the
-  pre-migration file before patching. `git show HEAD~2:path/to/file | grep
+  pre-migration file before patching. `git show HEAD~2:path/to/file | grep _(promoted → CLAUDE.md)_
 relevent_pattern` takes 10 seconds and can prevent a scope-expanding patch
   commit for a behavior that was already there. The sequential
   `persistOutput → assertWatchSucceeded` ordering was visible at a glance in the
