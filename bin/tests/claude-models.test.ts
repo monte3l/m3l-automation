@@ -4,6 +4,9 @@ import {
   CANONICAL_CLAUDE_MODELS,
   CO_AUTHOR_EMAIL,
   HISTORICAL_ALIASES,
+  isValidAgentModel,
+  isValidEffort,
+  isValidWorkflowModel,
   normalizeClaudeModel,
   parseCoAuthor,
 } from "../../bin/lib/claude-models.mjs";
@@ -49,6 +52,108 @@ describe("normalizeClaudeModel", () => {
     for (const canonical of Object.values(HISTORICAL_ALIASES)) {
       expect(CANONICAL_CLAUDE_MODELS).toContain(canonical);
     }
+  });
+});
+
+describe("isValidAgentModel", () => {
+  // Full model IDs now pinned by the nine spoke agents after the pin-to-exact-ID
+  // migration. These must match MODEL_ID_PATTERN (`/^claude-[a-z]+-[a-z0-9-]+$/`);
+  // a future narrowing of that pattern would silently break all nine spokes
+  // without a failing test.
+  test.each([["claude-sonnet-5"], ["claude-opus-5"], ["claude-haiku-4-5"]])(
+    "accepts the full ID %s",
+    (id) => {
+      expect(isValidAgentModel(id)).toBe(true);
+    },
+  );
+
+  test("accepts a dated full ID (e.g. claude-haiku-4-5-20251001)", () => {
+    // Dated IDs append a YYYYMMDD suffix; the pattern's `[a-z0-9-]+` covers them.
+    expect(isValidAgentModel("claude-haiku-4-5-20251001")).toBe(true);
+  });
+
+  test.each([["sonnet"], ["opus"], ["haiku"], ["fable"], ["inherit"]])(
+    "accepts the bare alias %s",
+    (alias) => {
+      expect(isValidAgentModel(alias)).toBe(true);
+    },
+  );
+
+  test("rejects undefined", () => {
+    expect(isValidAgentModel(undefined)).toBe(false);
+  });
+
+  test.each([
+    // Uppercase letters: MODEL_ID_PATTERN is lowercase-only (`[a-z]`).
+    ["Claude-Sonnet-5"],
+    // Missing version segment: pattern requires `claude-<family>-<version>`.
+    ["claude-sonnet"],
+    // Wrong vendor prefix: must start with `claude-`.
+    ["gpt-5"],
+    // Empty string.
+    [""],
+  ])("rejects malformed value %s", (value) => {
+    expect(isValidAgentModel(value)).toBe(false);
+  });
+});
+
+describe("isValidWorkflowModel", () => {
+  test.each([["claude-sonnet-5"], ["claude-opus-5"], ["claude-haiku-4-5"]])(
+    "accepts the full ID %s",
+    (id) => {
+      expect(isValidWorkflowModel(id)).toBe(true);
+    },
+  );
+
+  // Workflow model validation is a superset of agent model validation; every
+  // alias legal in an agent frontmatter must also be legal for a workflow pin.
+  test.each([["sonnet"], ["opus"], ["haiku"], ["fable"], ["inherit"]])(
+    "accepts the agent alias %s",
+    (alias) => {
+      expect(isValidWorkflowModel(alias)).toBe(true);
+    },
+  );
+
+  test.each([["default"], ["best"], ["opusplan"], ["opus[1m]"]])(
+    "accepts the workflow-only alias %s",
+    (alias) => {
+      expect(isValidWorkflowModel(alias)).toBe(true);
+    },
+  );
+
+  test("rejects undefined", () => {
+    expect(isValidWorkflowModel(undefined)).toBe(false);
+  });
+
+  test("rejects a malformed model string", () => {
+    expect(isValidWorkflowModel("gpt-5")).toBe(false);
+  });
+
+  // `opusplan` is a session-level alias documented only for workflow `--model`
+  // pins (opus during plan mode, sonnet for execution). It is intentionally
+  // absent from AGENT_MODEL_ALIASES so check-agents.mjs rejects it in agent
+  // frontmatter while check-workflows.mjs accepts it in workflow invocations.
+  // This asymmetry is the contract distinction between the two functions.
+  test("opusplan is valid for a workflow but not for an agent", () => {
+    expect(isValidWorkflowModel("opusplan")).toBe(true);
+    expect(isValidAgentModel("opusplan")).toBe(false);
+  });
+});
+
+describe("isValidEffort", () => {
+  test.each([["low"], ["medium"], ["high"], ["xhigh"], ["max"]])(
+    "accepts the effort level %s",
+    (level) => {
+      expect(isValidEffort(level)).toBe(true);
+    },
+  );
+
+  test("rejects undefined", () => {
+    expect(isValidEffort(undefined)).toBe(false);
+  });
+
+  test("rejects an unknown effort level", () => {
+    expect(isValidEffort("extreme")).toBe(false);
   });
 });
 

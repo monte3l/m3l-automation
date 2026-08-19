@@ -3,7 +3,7 @@ name: test-author
 description: Writes Vitest tests for an m3l-common export or a consumer-script package (scripts/*/tests — the ADR-0022 config smoke test and steps/ unit tests) — happy path, failure path, and expectTypeOf type-level tests where the type is the contract. This is the tests-first (RED) spoke of both the implementing-submodules and implementing-scripts pipelines; it writes tests from the documented contract before the implementation exists and confirms they fail for the right reason. Also usable to backfill tests for existing code. It writes tests only — never the implementation, and never reviews implementation quality.
 tools: Read, Grep, Glob, Edit, Write, Bash
 disallowedTools: Agent
-model: sonnet
+model: claude-sonnet-5
 effort: high
 permissionMode: acceptEdits
 maxTurns: 40

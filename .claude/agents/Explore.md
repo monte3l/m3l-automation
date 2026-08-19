@@ -3,7 +3,7 @@ name: Explore
 description: Fast read-only search agent for locating and understanding code. Use it to find files by pattern (e.g. "src/components/**/*.tsx"), grep for symbols or keywords (e.g. "API endpoints"), answer "where is X defined / which files reference Y," or read a bounded set of files in full when the caller says so. Do NOT use it for code review, design-doc auditing, or open-ended cross-file consistency judgment across the whole repo — those need a specialized reviewer. When calling, specify search breadth ("quick" for a single targeted lookup, "medium" for moderate exploration, "very thorough" to search across multiple locations and naming conventions) and say explicitly if the task requires reading matched files in full rather than excerpting them.
 tools: Read, Grep, Glob, Bash, WebSearch, WebFetch
 disallowedTools: Agent
-model: haiku
+model: claude-haiku-4-5
 effort: low
 maxTurns: 40
 color: gray

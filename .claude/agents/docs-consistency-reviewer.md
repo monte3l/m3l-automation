@@ -3,7 +3,7 @@ name: docs-consistency-reviewer
 description: Read-only cross-cutting doc consistency auditor for m3l-common. Checks version-floor consistency, submodule counts, implemented-vs-documented status, barrel exports vs docs, and orphaned/duplicate doc files. Complements the per-submodule spec-conformance-reviewer. Hub dispatches it before any docs: PR or after any batch of doc edits.
 tools: Read, Grep, Glob, Bash
 disallowedTools: Agent
-model: haiku
+model: claude-haiku-4-5
 effort: medium
 maxTurns: 40
 color: pink

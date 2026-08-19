@@ -3,7 +3,7 @@ name: code-implementer
 description: Writer spoke for both build pipelines — implementing-submodules (m3l-common Core/AWS library code) and implementing-scripts (consumer-script steps/ modules under scripts/*/src). Given a contract and a set of failing tests, writes the minimal src/** implementation to make those tests pass, then refactors while green. Use during the GREEN phase of TDD. It writes implementation only — it never writes tests and never reviews code.
 tools: Read, Write, Edit, Grep, Glob, Bash
 disallowedTools: Agent
-model: sonnet
+model: claude-sonnet-5
 effort: high
 permissionMode: acceptEdits
 maxTurns: 40
