@@ -1546,6 +1546,245 @@ describe("M3LCheckpointStore constructor — definition rejection / acceptance",
 });
 
 // ---------------------------------------------------------------------------
+// F2. Round-3 regressions — the three executed bypasses of round 2
+//     Each was a real bypass that caused two different definitions to share a
+//     fingerprint and silently resume on each other's offsets.
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore — round-3 regression: single-traversal projection", () => {
+  test("regression (round-3): non-enumerable own toJSON — two definitions with different data but a hidden toJSON returning {} now fingerprint DIFFERENTLY (round-2 bypass: both hashed as {})", async () => {
+    // Round-2 bypass: Object.keys() does not enumerate non-enumerable properties,
+    // so the allowlist walk missed the hidden toJSON. But canonicalJsonHash then
+    // invoked it (serialisers call toJSON before walking keys), causing BOTH
+    // definitions — { table: "prod-orders", segments: 4 } and
+    // { table: "prod-payments", segments: 16 } — to serialise as {} and share the
+    // fingerprint "44136fa3…". A store built with the second definition could read
+    // back the first's checkpoint without throwing ERR_CHECKPOINT_FINGERPRINT_MISMATCH.
+    //
+    // Round-3 fix: the single traversal uses Object.keys() exclusively (never
+    // invokes toJSON), and the fingerprint is computed over the PROJECTION — not
+    // the caller's object. The projection contains the actual enumerable data
+    // ({ table, segments }), so the two definitions now hash differently.
+    const hide = (cfg: Record<string, unknown>): Record<string, unknown> => {
+      const o = { ...cfg };
+      Object.defineProperty(o, "toJSON", {
+        value: (): Record<string, never> => ({}),
+        enumerable: false,
+      });
+      return o;
+    };
+
+    const defOrders = hide({ table: "prod-orders", segments: 4 });
+    const defPayments = hide({ table: "prod-payments", segments: 16 });
+
+    const storeOrders = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-orders-fp",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: defOrders,
+    });
+
+    const storePayments = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-payments-fp",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: defPayments,
+    });
+
+    // Write with orders store, read with payments store — must mismatch, not silently resume.
+    await storeOrders.write({ queryId: "q-orders" });
+
+    // Build a cross-reader: same file path (run-orders-fp) but the payments definition.
+    const crossReader = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-orders-fp",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: defPayments,
+    });
+
+    let thrown: unknown;
+    try {
+      await crossReader.read();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_FINGERPRINT_MISMATCH",
+    );
+
+    // Also verify the raw fingerprints differ — rules out the test passing
+    // because the store has no fingerprint at all (which would just resolve).
+    await storeOrders.write({ queryId: "q-orders-2" });
+    await storePayments.write({ queryId: "q-payments-2" });
+
+    const rawOrders = JSON.parse(
+      await readFile(storeOrders.path, "utf8"),
+    ) as Record<string, unknown>;
+    const rawPayments = JSON.parse(
+      await readFile(storePayments.path, "utf8"),
+    ) as Record<string, unknown>;
+
+    // Both envelopes must carry a fingerprint (the definition was non-undefined).
+    expect(typeof rawOrders["fingerprint"]).toBe("string");
+    expect(typeof rawPayments["fingerprint"]).toBe("string");
+    // And they must differ — the non-enumerable toJSON must not have collapsed both to {}.
+    expect(rawOrders["fingerprint"]).not.toBe(rawPayments["fingerprint"]);
+  });
+
+  test("regression (round-3): getter is read exactly once — round-2 read it twice, letting a getter return an allowed array first and a Set second", () => {
+    // Round-2 bypass: the allowlist pass read the getter (call 1, returned ["/a"]),
+    // then canonicalJsonHash read it again (call 2, could have returned a Set).
+    // The single-traversal fix reads each property value exactly once and
+    // fingerprints the projection, so a getter is invoked at most once.
+    let reads = 0;
+    const definition = {
+      region: "us-east-1",
+      get logGroups(): string[] {
+        reads++;
+        return ["/aws/lambda/my-fn"];
+      },
+    };
+
+    // Construction must succeed (logGroups returns a valid string[] on read).
+    expect(() => {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-getter-once",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition,
+      });
+    }).not.toThrow();
+
+    // The getter must have been invoked exactly once — not twice.
+    expect(reads).toBe(1);
+  });
+
+  test("regression (round-3): array with own non-index enumerable property — rejected (round-2 bypass: both traversals iterated by index and missed the extra property)", () => {
+    // Round-2 bypass: Object.assign([1,2], { groups: new Set(["a"]) }) adds
+    // an own enumerable property named "groups" to the array. Both the
+    // allowlist walk (iterating arr[0], arr[1]) and canonicalJsonHash
+    // (iterating the array by index) missed the "groups" property entirely.
+    // Two arrays with different extra properties produced identical fingerprints.
+    //
+    // Round-3 fix: isDefinitionArrayShapeValid compares Object.keys(arr).length
+    // against arr.length — for a normal dense array they are equal; for an array
+    // carrying an extra own property they differ → REJECTED.
+    const arrWithExtra = Object.assign([1, 2], {
+      groups: new Set(["a"]),
+    });
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-arr-extra-prop",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: arrWithExtra,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("regression (round-3): sparse array definition — rejected (a hole is invisible to both the old allowlist and the hash)", () => {
+    // A sparse array hole at any index is rejected. Sparse holes are rendered
+    // differently by different serialisers (JSON.stringify renders them as null;
+    // canonical JSON may drop them). Two definitions differing only in whether
+    // an element is a hole vs null would produce different canonical forms
+    // but identical results under JSON.stringify — a definiteness gap.
+    // Build the sparse array programmatically to avoid the no-sparse-arrays
+    // ESLint rule. new Array(3) creates [<3 empty>]; assigning only indices 0
+    // and 2 leaves index 1 as a genuine hole (Object.hasOwn returns false).
+    const sparse = new Array<number>(3);
+    sparse[0] = 1;
+    sparse[2] = 3; // index 1 is a hole
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-sparse-def",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: sparse,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("regression (round-3): own symbol key at top level — rejected (symbol-keyed content is invisible to Object.keys and to canonical JSON)", () => {
+    // A symbol key is invisible to Object.keys() and to JSON serialisation.
+    // Two objects differing only in a symbol-keyed property produce identical
+    // fingerprints — the symbol key and its value are silently lost.
+    const sym = Symbol("hidden");
+    const withSym = { a: 1, [sym]: "secret" };
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-sym-top",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: withSym,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("regression (round-3): own symbol key nested inside a plain object — rejected", () => {
+    // The symbol-key check is applied at every depth, not just the top level.
+    const sym = Symbol("nested-hidden");
+    const nested = { outer: { a: 1, [sym]: "deeply-secret" } };
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-sym-nested",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: nested,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // B. Object.hasOwn prototype-pollution guard — security must-fix
 // ---------------------------------------------------------------------------
 describe("M3LCheckpointStore — Object.hasOwn prototype-pollution guard", () => {
@@ -2447,6 +2686,331 @@ describe("M3LCheckpointStore constructor — definition allowlist (round-2)", ()
   );
 
   // -------------------------------------------------------------------------
+  // E11. Frozen objects — accepted (Object.isFrozen is runtime-only; the
+  //      allowlist never called it, but the projection helpers must not throw
+  //      when they encounter a frozen input).
+  // -------------------------------------------------------------------------
+
+  test("definition: Object.freeze({}) — accepted; construction succeeds and write() stamps a fingerprint", async () => {
+    const frozen = Object.freeze({ table: "orders", segments: 4 });
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-def-frozen",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: frozen,
+    });
+
+    await store.write({ queryId: "q-frozen" });
+    const raw = JSON.parse(await readFile(store.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    expect(typeof raw["fingerprint"]).toBe("string");
+  });
+
+  // -------------------------------------------------------------------------
+  // E12. JSON.parse output — accepted (no own symbols, prototype is Object.prototype)
+  // -------------------------------------------------------------------------
+
+  test("definition: JSON.parse(…) output — accepted; a value from JSON.parse is always a plain-JSON structure", async () => {
+    // JSON.parse always returns plain objects, plain arrays, strings, numbers,
+    // booleans, or null — all on the allowlist. This confirms the common idiom
+    // of passing a parsed-config value as the definition works correctly.
+    const parsed: unknown = JSON.parse(
+      '{"region":"us-east-1","logGroups":["/aws/lambda/fn"],"limit":null}',
+    );
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-def-parsed",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: parsed,
+    });
+
+    await store.write({ queryId: "q-parsed" });
+    const raw = JSON.parse(await readFile(store.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const fp = raw["fingerprint"];
+    expect(typeof fp).toBe("string");
+    expect((fp as string).length).toBe(64);
+  });
+
+  // -------------------------------------------------------------------------
+  // E13. Four adopter settings shapes — each must be accepted and stamp a
+  //      real 64-char hex fingerprint. Shapes mirror what the four adopting
+  //      scripts (athena-query, cloudwatch-logs-insights, dynamodb-crud,
+  //      rds-data-sql) would pass as `definition` when opting in to
+  //      fingerprinting.
+  // -------------------------------------------------------------------------
+
+  test("definition: athena-query adopter shape (queryString + optional fields as strings) — accepted; stamps a 64-char hex fingerprint", async () => {
+    const definition = {
+      queryString: "SELECT id, status FROM orders WHERE dt = '2026-08-01'",
+      database: "analytics",
+      catalog: "AwsDataCatalog",
+      workGroup: "primary",
+      // outputLocation omitted (undefined → skipped, which is the adopter pattern)
+    };
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-athena-def",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition,
+    });
+
+    await store.write({ queryId: "q-athena" });
+    const raw = JSON.parse(await readFile(store.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const fp = raw["fingerprint"];
+    expect(typeof fp).toBe("string");
+    expect(/^[0-9a-f]{64}$/.test(fp as string)).toBe(true);
+  });
+
+  test("definition: cloudwatch-logs-insights adopter shape (logGroups string[], windowMinutes, epoch seconds) — accepted; stamps a 64-char hex fingerprint", async () => {
+    const definition = {
+      query: "fields @message | filter @message like /ERROR/",
+      logGroups: ["/aws/lambda/my-fn", "/aws/lambda/other-fn"],
+      startEpochSeconds: 1_753_920_000,
+      endEpochSeconds: 1_754_006_400,
+      windowMinutes: 60,
+      // limit is undefined (adopter pattern: absent optional)
+    };
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-cwli-def",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition,
+    });
+
+    await store.write({ queryId: "q-cwli" });
+    const raw = JSON.parse(await readFile(store.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const fp = raw["fingerprint"];
+    expect(typeof fp).toBe("string");
+    expect(/^[0-9a-f]{64}$/.test(fp as string)).toBe(true);
+  });
+
+  test("definition: dynamodb-crud adopter shape (tableName, totalSegments, optional indexName/keyCondition) — accepted; stamps a 64-char hex fingerprint", async () => {
+    const definition = {
+      tableName: "prod-orders",
+      totalSegments: 4,
+      // indexName: undefined — absent optional, fingerprints identically to omitted
+      // keyCondition: undefined
+    };
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-dynamo-def",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition,
+    });
+
+    await store.write({ queryId: "q-dynamo" });
+    const raw = JSON.parse(await readFile(store.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const fp = raw["fingerprint"];
+    expect(typeof fp).toBe("string");
+    expect(/^[0-9a-f]{64}$/.test(fp as string)).toBe(true);
+  });
+
+  test("definition: rds-data-sql adopter shape (resourceArn, secretArn, database, sql, pageSize) — accepted; stamps a 64-char hex fingerprint", async () => {
+    const definition = {
+      resourceArn: "arn:aws:rds:eu-west-1:123456789012:cluster:my-cluster",
+      secretArn:
+        "arn:aws:secretsmanager:eu-west-1:123456789012:secret:my-db-creds",
+      database: "analytics",
+      sql: "SELECT id, status FROM orders WHERE updated_at > :since",
+      pageSize: 1000,
+    };
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-rds-def",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition,
+    });
+
+    await store.write({ queryId: "q-rds" });
+    const raw = JSON.parse(await readFile(store.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const fp = raw["fingerprint"];
+    expect(typeof fp).toBe("string");
+    expect(/^[0-9a-f]{64}$/.test(fp as string)).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // E14. Proxy whose ownKeys mutates between calls — safe, no bypass
+  //      (round-2 two-pass traversal re-called ownKeys on the second pass;
+  //       the single-traversal fix only calls Object.keys once per object)
+  // -------------------------------------------------------------------------
+
+  test("definition: Proxy whose ownKeys returns different keys on repeated calls — first call result is used; subsequent state irrelevant (no bypass, no raw escape)", () => {
+    // The ownKeys trap mutates on each invocation. Under round-2 (two passes),
+    // the second call could surface additional keys that the first pass accepted
+    // but the hash pass saw differently. Under round-3 (single traversal),
+    // Object.keys is called exactly once per object — whatever the trap returns
+    // on that call is the definitive set. The test asserts either accept or
+    // reject (implementation choice), but never a raw non-M3LCheckpointError
+    // escape.
+    let callCount = 0;
+    const hostile = new Proxy(
+      {},
+      {
+        getPrototypeOf(): typeof Object.prototype {
+          return Object.prototype;
+        },
+        ownKeys(): string[] {
+          callCount++;
+          if (callCount === 1) return ["a"];
+          // Second call: return a different set — under single traversal, this
+          // branch is never reached for the fingerprint computation.
+          return ["a", "b", "c"];
+        },
+        getOwnPropertyDescriptor(
+          _target: object,
+          _key: string | symbol,
+        ): PropertyDescriptor {
+          return {
+            value: "v",
+            enumerable: true,
+            configurable: true,
+            writable: true,
+          };
+        },
+        get(_target: object, _p: string | symbol, _receiver: unknown): unknown {
+          return "v";
+        },
+      },
+    );
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-ownkeys-mutate",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: hostile,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    // Either accepted (a plain { a: "v" } projection) or rejected — but
+    // never a raw Error that is not M3LCheckpointError.
+    if (thrown !== undefined) {
+      expect(thrown).toBeInstanceOf(M3LCheckpointError);
+      expect((thrown as M3LCheckpointError).code).toBe(
+        "ERR_CHECKPOINT_DEFINITION",
+      );
+    }
+    // The ownKeys trap fires for both Object.getOwnPropertySymbols and
+    // Object.keys (both use [[OwnPropertyKeys]] internally), so callCount
+    // is 2 at most in the single-traversal path — but critically the
+    // mutation on the second call affects at most one of those two reads,
+    // never the property-value reads that determine the projection.
+    // The important invariant is that no subsequent traversal re-reads
+    // property values — assert only that no raw escape occurred.
+    expect(callCount).toBeLessThanOrEqual(2);
+  });
+
+  // -------------------------------------------------------------------------
+  // E15. Array order discriminates — [1,2] and [2,1] must produce different
+  //      fingerprints (key-order invariance applies only to objects, not arrays)
+  // -------------------------------------------------------------------------
+
+  test("definition: array order discriminates — [1,2] and [2,1] produce different fingerprints", async () => {
+    const storeAB = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-arr-ab",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: [1, 2],
+    });
+
+    const storeBA = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-arr-ba",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: [2, 1],
+    });
+
+    await storeAB.write({ queryId: "q-ab" });
+    await storeBA.write({ queryId: "q-ba" });
+
+    const rawAB = JSON.parse(await readFile(storeAB.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const rawBA = JSON.parse(await readFile(storeBA.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+
+    // Both envelopes carry a fingerprint.
+    expect(typeof rawAB["fingerprint"]).toBe("string");
+    expect(typeof rawBA["fingerprint"]).toBe("string");
+
+    // Array order must discriminate — [1,2] !== [2,1] in canonical JSON.
+    expect(rawAB["fingerprint"]).not.toBe(rawBA["fingerprint"]);
+  });
+
+  test("definition: nested array order discriminates — a reordered nested array in an object definition produces a different fingerprint", async () => {
+    const defXY = { logGroups: ["/aws/lambda/x", "/aws/lambda/y"] };
+    const defYX = { logGroups: ["/aws/lambda/y", "/aws/lambda/x"] };
+
+    const storeXY = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-nested-arr-xy",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: defXY,
+    });
+
+    const storeYX = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-nested-arr-yx",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: defYX,
+    });
+
+    await storeXY.write({ queryId: "q-xy" });
+    await storeYX.write({ queryId: "q-yx" });
+
+    const rawXY = JSON.parse(await readFile(storeXY.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const rawYX = JSON.parse(await readFile(storeYX.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+
+    expect(rawXY["fingerprint"]).not.toBe(rawYX["fingerprint"]);
+  });
+
+  // -------------------------------------------------------------------------
   // E11. Omitted key vs explicit undefined key — fingerprint identically
   // -------------------------------------------------------------------------
 
@@ -2501,36 +3065,34 @@ describe("M3LCheckpointStore.write() — serialization failure arm (Fix B)", () 
   // util.inspect.
   const SEKRET_KEY = "SEKRET_PROP_NAME_DO_NOT_LEAK_9f3a";
 
-  test("non-idempotent toJSON: passes canonicalJsonHash on first call, returns circular structure (containing SEKRET_KEY) on second call so JSON.stringify fails → ERR_CHECKPOINT_IO with cause undefined, planted property name in no error output", async () => {
-    // canonicalJsonStringify (used by canonicalJsonHash) calls toJSON() exactly
-    // once on the checkpoint, then recursively canonicalizes the result.
-    // Native JSON.stringify also calls toJSON() when it reaches the payload.
-    // A non-idempotent toJSON that returns a safe value on call 1 (hash) and a
-    // circular structure on call 2 (stringify) exercises the serialization
-    // failure arm at line 787 of the implementation.
+  test("write() snapshots first: a toJSON that always returns a circular structure fails during the snapshot → ERR_CHECKPOINT_IO with cause undefined, planted property name absent from all channels", async () => {
+    // Round 3: write() now snapshots the checkpoint via
+    // JSON.parse(JSON.stringify(checkpoint)) BEFORE calling canonicalJsonHash.
+    // So a toJSON that produces an unserialisable structure fails immediately at
+    // the snapshot step — the hash never runs.
     //
-    // The circular structure uses SEKRET_KEY as the property that closes the
-    // cycle — Node.js JSON.stringify includes the property path in its circular-
-    // structure error message. Before the fix, that error was caught inside the
-    // I/O try and chained as cause, leaking SEKRET_KEY through util.inspect.
-    // After the fix, the stringify step is outside the I/O try, cause is
-    // undefined, and the property name is contained.
+    // Round 2's test relied on a call-count ordering (safe on call 1 for the
+    // hash, circular on call 2 for the stringify). That ordering is now inverted:
+    // JSON.stringify runs first (snapshot), then canonicalJsonHash receives only
+    // the plain snapshot. A toJSON that always returns a circular structure
+    // exercises the same ERR_CHECKPOINT_IO arm — but via the snapshot step.
+    //
+    // SEKRET_KEY is planted as the property NAME that closes the cycle:
+    // Node.js JSON.stringify includes the property path in its error message
+    // ("Converting circular structure to JSON … at property 'SEKRET_KEY'").
+    // Before the fix, that error was chained as cause, leaking SEKRET_KEY
+    // through util.inspect. With snapshot-first, the snapshot step throws and
+    // cause is never set.
 
-    let callCount = 0;
     const circRef: Record<string, unknown> = {};
+    circRef[SEKRET_KEY] = circRef; // cycle via SEKRET_KEY closes the loop
 
     const checkpoint = {
       queryId: "q-serialize-fail",
       toJSON(): unknown {
-        callCount++;
-        if (callCount === 1) {
-          // First call (from canonicalJsonHash): return a safe serializable value.
-          return { queryId: "q-serialize-fail-safe" };
-        }
-        // Second call (from JSON.stringify on the envelope): return a circular
-        // structure. circRef[SEKRET_KEY] = circRef closes the cycle; JSON.stringify
-        // will include SEKRET_KEY in its error message.
-        circRef[SEKRET_KEY] = circRef;
+        // Returns the circular structure on every call. JSON.stringify now runs
+        // first (snapshot), so the cycle is detected before canonicalJsonHash
+        // ever fires — no call-count trick required.
         return circRef;
       },
     };
@@ -2554,7 +3116,7 @@ describe("M3LCheckpointStore.write() — serialization failure arm (Fix B)", () 
       thrown = error;
     }
 
-    // Must throw ERR_CHECKPOINT_IO from the serialization arm, not a raw Error.
+    // Must throw ERR_CHECKPOINT_IO from the snapshot arm, not a raw Error.
     expect(thrown).toBeInstanceOf(M3LCheckpointError);
     expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
 
@@ -2577,6 +3139,77 @@ describe("M3LCheckpointStore.write() — serialization failure arm (Fix B)", () 
       getters: true,
     });
     expect(inspected).not.toContain(SEKRET_KEY);
+  });
+
+  test("regression (Fix B): sparse-array payload round-trips without ERR_CHECKPOINT_CORRUPT — snapshot normalises holes to null so checksum and persisted bytes agree", async () => {
+    // Before Fix B, write() called canonicalJsonHash(checkpoint) and then
+    // JSON.stringify(checkpoint) separately. For a sparse array,
+    // canonicalJsonHash uses its own canonical serialiser (which renders holes
+    // as nothing — JSON array holes), while JSON.stringify renders them as
+    // null. The stored checksum was computed over the canonical view while the
+    // persisted payload was the JSON.stringify view; read() recomputed
+    // canonicalJsonHash(payload) over the null-filled array — guaranteed
+    // mismatch → ERR_CHECKPOINT_CORRUPT on every resume, permanently deadlocked.
+    //
+    // Fix B: write() now snapshots via JSON.parse(JSON.stringify(checkpoint))
+    // first, so both the checksum and the payload are derived from the same
+    // null-filled array. The round-trip must resolve without ERR_CHECKPOINT_CORRUPT.
+
+    // A sparse array: index 0 has "cursor-a", indices 1-3 are holes.
+    const sparseSegments = new Array<string | undefined>(4);
+    sparseSegments[0] = "cursor-a";
+
+    function isSegmentsCheckpoint(
+      v: unknown,
+    ): v is { segments: (string | null | undefined)[] } {
+      return (
+        typeof v === "object" &&
+        v !== null &&
+        Array.isArray((v as Record<string, unknown>)["segments"])
+      );
+    }
+
+    const store = new M3LCheckpointStore<{
+      segments: (string | null | undefined)[];
+    }>({
+      paths: makePathsPort(dir),
+      name: "run-sparse-payload",
+      validate: isSegmentsCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ segments: sparseSegments });
+    // Must resolve — not ERR_CHECKPOINT_CORRUPT from a checksum mismatch.
+    const result = await store.read();
+    // Holes are normalised to null by JSON round-trip — verify structure.
+    expect(result.segments[0]).toBe("cursor-a");
+    expect(result.segments.length).toBe(4);
+  });
+
+  test("regression (Fix B): checksum stored in the envelope equals canonicalJsonHash of the plain payload — backward-compatible for any ordinary checkpoint", async () => {
+    // For any checkpoint that contains only plain JSON values (no toJSON, no
+    // sparse arrays, no non-idempotent getters), the snapshot produced by
+    // JSON.parse(JSON.stringify(checkpoint)) is identical to checkpoint itself,
+    // so the stored checksum must equal canonicalJsonHash(checkpoint) exactly.
+    // This verifies that the snapshotting fix does not break checkpoints written
+    // by earlier library versions (which stored canonicalJsonHash(checkpoint)
+    // directly, without snapshotting).
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-checksum-compat",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ cursor: "x", n: 1 } as unknown as TestCheckpoint);
+
+    const rawJson = await readFile(store.path, "utf8");
+    const envelope = JSON.parse(rawJson) as Record<string, unknown>;
+
+    // The stored checksum must equal the canonical hash of the same plain
+    // object — byte-identical, not just semantically equivalent.
+    const expected = canonicalJsonHash({ cursor: "x", n: 1 });
+    expect(envelope["checksum"]).toBe(expected);
   });
 
   test("rename-failure arm still chains the errno cause — the no-cause rule applies only to the serialization arm, not to OS I/O failures", async () => {
