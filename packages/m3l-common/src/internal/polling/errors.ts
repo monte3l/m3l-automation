@@ -43,15 +43,25 @@ export class M3LPollExhaustedError extends M3LError {
 }
 
 /**
- * Thrown when a numeric configuration value is non-finite or out of range.
- * Carries the stable code `ERR_POLLING_INVALID_OPTION`.
+ * Thrown when a numeric configuration value is non-finite or out of range,
+ * or when a `progress` witness throws or returns a non-primitive value while
+ * sampling. Carries the stable code `ERR_POLLING_INVALID_OPTION`.
  */
 export class M3LPollingInvalidOptionError extends M3LError {
   /** Narrows the inherited `code` to the literal `"ERR_POLLING_INVALID_OPTION"`. */
   override readonly code: "ERR_POLLING_INVALID_OPTION";
 
-  constructor(message: string) {
-    super(message, { code: "ERR_POLLING_INVALID_OPTION" });
+  /**
+   * @param message - Human-readable description of the failure. Never
+   *   includes the caller-supplied value itself (only the option name).
+   * @param options - Optional `cause`, e.g. the value a `progress.witness`
+   *   threw while sampling.
+   */
+  constructor(message: string, options?: { readonly cause?: unknown }) {
+    super(message, {
+      code: "ERR_POLLING_INVALID_OPTION",
+      ...(options?.cause !== undefined && { cause: options.cause }),
+    });
     this.code = "ERR_POLLING_INVALID_OPTION";
   }
 }
@@ -67,11 +77,25 @@ export class M3LNoProgressError extends M3LError {
   /** Narrows the inherited `code` to the literal `"ERR_NO_PROGRESS"`. */
   override readonly code: "ERR_NO_PROGRESS";
 
+  /**
+   * @param message - Human-readable description of the failure.
+   * @param context - `attempts` (1-based, the attempt that tripped the
+   *   guard) and `stalledAttempts` (the configured threshold reached).
+   * @param options - Optional `cause`. `M3LRetryRunner` threads the
+   *   operation's in-flight error through as `cause` so a no-progress
+   *   rejection still carries what the operation was actually failing with;
+   *   `M3LPoller` has no in-flight error and omits it.
+   */
   constructor(
     message: string,
     context: { readonly attempts: number; readonly stalledAttempts: number },
+    options?: { readonly cause?: unknown },
   ) {
-    super(message, { code: "ERR_NO_PROGRESS", context });
+    super(message, {
+      code: "ERR_NO_PROGRESS",
+      context,
+      ...(options?.cause !== undefined && { cause: options.cause }),
+    });
     this.code = "ERR_NO_PROGRESS";
   }
 }

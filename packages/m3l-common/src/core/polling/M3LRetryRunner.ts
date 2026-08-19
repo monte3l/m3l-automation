@@ -13,8 +13,8 @@ import {
 } from "../../internal/polling/guards.js";
 import { M3LNoProgressError } from "../../internal/polling/errors.js";
 import {
+  captureProgressConfig,
   ProgressTracker,
-  type M3LProgressWitness,
   type ProgressWitnessConfig,
 } from "../../internal/polling/progress.js";
 import type { M3LBackoffStrategy } from "../../internal/polling/strategy.js";
@@ -119,6 +119,17 @@ export interface M3LRetryRunnerOptions {
    * `origin: "external"`, `retryable: false`) before the backoff delay for
    * that attempt is slept. An abort observed on the same attempt, or a fatal
    * classifier verdict, always wins over this guard.
+   *
+   * `witness` and `maxStalledAttempts` are captured by value at construction
+   * (validated once) — mutating the `progress` object after construction has
+   * no effect on a later `run()` call. `witness` must be cheap and
+   * side-effect-free; the library treats it as untrusted caller code: a
+   * throw is wrapped in `M3LPollingInvalidOptionError` rather than allowed to
+   * propagate raw — which matters especially here, since the witness is
+   * sampled inside `run()`'s `catch` block and an unwrapped throw would
+   * otherwise replace the operation's real error — and a non-primitive
+   * result is rejected the same way instead of being silently compared (see
+   * `M3LProgressWitness`).
    *
    * Omitting this option leaves behaviour exactly as it was before the option
    * existed — no witness is called, no counter is kept.
@@ -302,18 +313,13 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
    *   attempt bound, and cancellation signal.
    * @throws When `maxAttempts` is provided but is not a finite positive
    *   integer, or when `options.progress.maxStalledAttempts` is provided but
-   *   is not a finite positive integer.
+   *   is not a finite positive integer, or when `options.progress.witness`
+   *   is provided but is not a function.
    */
   constructor(options: M3LRetryRunnerOptions) {
     super();
     const maxAttempts = options.maxAttempts ?? DEFAULT_RETRY_MAX_ATTEMPTS;
     assertPositiveInteger(maxAttempts, "maxAttempts");
-    if (options.progress !== undefined) {
-      assertPositiveInteger(
-        options.progress.maxStalledAttempts,
-        "maxStalledAttempts",
-      );
-    }
     this.#classifier = options.classifier;
     this.#backoff =
       options.backoff ??
@@ -321,7 +327,9 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
     this.#unknownDecision = options.unknownDecision ?? "fatal";
     this.#maxAttempts = maxAttempts;
     this.#signal = options.signal;
-    this.#progress = options.progress;
+    // Validated and captured once, by value — see captureProgressConfig's
+    // TSDoc for why run() must never read options.progress again.
+    this.#progress = captureProgressConfig(options.progress);
   }
 
   /**
@@ -334,9 +342,11 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
    *   `unknown` verdict, or retry exhaustion.
    * @throws {@link M3LOperationAbortedError} (code `ERR_OPERATION_ABORTED`) when
    *   the signal aborts.
-   * @throws An internal `M3LError` (code `ERR_NO_PROGRESS`) when a configured
-   *   `progress` witness stays unchanged for `maxStalledAttempts` consecutive
-   *   attempts.
+   * @throws An internal `M3LError` (code `ERR_NO_PROGRESS`, chaining the
+   *   in-flight operation error as `cause`) when a configured `progress`
+   *   witness stays unchanged for `maxStalledAttempts` consecutive attempts,
+   *   or (code `ERR_POLLING_INVALID_OPTION`) when that witness threw or
+   *   returned a non-primitive value while sampling.
    */
   async run<T>(op: () => Promise<T>): Promise<T> {
     const progression = new DelayProgression(this.#backoff);
@@ -390,7 +400,13 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
           throw error;
         }
 
-        await this.#scheduleRetry(attempt, resolved, progression, tracker);
+        await this.#scheduleRetry(
+          attempt,
+          resolved,
+          progression,
+          tracker,
+          error,
+        );
       }
     }
   }
@@ -406,18 +422,23 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
    * @param progression - This call's backoff progression.
    * @param tracker - This call's stall tracker, or `undefined` when no
    *   `progress` option was configured.
+   * @param error - The operation's in-flight error for this attempt, threaded
+   *   through as `cause` if the guard trips.
    * @throws {@link M3LOperationAbortedError} when the signal aborted on this
    *   attempt (abort always wins over a no-progress trip).
-   * @throws An internal `M3LError` (code `ERR_NO_PROGRESS`) when the guard trips.
+   * @throws An internal `M3LError` (code `ERR_NO_PROGRESS`) when the guard
+   *   trips, or (code `ERR_POLLING_INVALID_OPTION`) when the witness threw
+   *   or returned a non-primitive value while sampling.
    */
   async #scheduleRetry(
     attempt: number,
     resolved: Extract<ResolvedRetryAction, { action: "retry" }>,
     progression: DelayProgression,
     tracker: ProgressTracker | undefined,
+    error: unknown,
   ): Promise<void> {
-    if (tracker !== undefined && this.#progress !== undefined) {
-      this.#checkProgress(tracker, this.#progress.witness, attempt);
+    if (tracker !== undefined) {
+      this.#checkProgress(tracker, attempt, error);
     }
     const delayMs = progression.next(attempt, resolved.delayMs);
     this.emit("retry:scheduled", {
@@ -430,23 +451,27 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
   }
 
   /**
-   * Sample `witness` through `tracker` and, when the guard trips, emit
+   * Sample `tracker`'s witness and, when the guard trips, emit
    * `retry:no-progress` and throw. Abort always wins: re-checked here before
    * reporting no-progress, since a stalled attempt can also be the one that
    * observed the abort.
    *
    * @param tracker - This call's stall tracker.
-   * @param witness - The configured progress witness.
    * @param attempt - The 0-based index of the stalled attempt.
+   * @param error - The operation's in-flight error for this attempt, chained
+   *   as `cause` on the thrown `M3LNoProgressError` so a no-progress
+   *   rejection still carries what the operation was actually failing with.
    * @throws {@link M3LOperationAbortedError} when the signal has aborted.
-   * @throws An internal `M3LError` (code `ERR_NO_PROGRESS`) when the guard trips.
+   * @throws An internal `M3LError` (code `ERR_NO_PROGRESS`) when the guard
+   *   trips, or (code `ERR_POLLING_INVALID_OPTION`) when the witness threw
+   *   or returned a non-primitive value while sampling.
    */
   #checkProgress(
     tracker: ProgressTracker,
-    witness: M3LProgressWitness,
     attempt: number,
+    error: unknown,
   ): void {
-    if (!tracker.record(witness)) {
+    if (!tracker.record()) {
       return;
     }
     if (isAborted(this.#signal)) {
@@ -457,6 +482,7 @@ export class M3LRetryRunner extends M3LEventEmitterBase<M3LRetryEventMap> {
     throw new M3LNoProgressError(
       `retry made no progress for ${String(stalledAttempts)} consecutive attempts`,
       { attempts: attempt + 1, stalledAttempts },
+      { cause: error },
     );
   }
 }

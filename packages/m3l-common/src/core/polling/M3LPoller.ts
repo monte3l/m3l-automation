@@ -13,8 +13,8 @@ import {
   M3LPollFailureError,
 } from "../../internal/polling/errors.js";
 import {
+  captureProgressConfig,
   ProgressTracker,
-  type M3LProgressWitness,
   type ProgressWitnessConfig,
 } from "../../internal/polling/progress.js";
 import type { M3LBackoffStrategy } from "../../internal/polling/strategy.js";
@@ -79,6 +79,15 @@ export interface M3LPollerOptions {
    * of remote calls. An abort observed on the same attempt always wins over
    * this guard.
    *
+   * `witness` and `maxStalledAttempts` are captured by value at construction
+   * (validated once) — mutating the `progress` object after construction has
+   * no effect on a later `poll()` call. `witness` must be cheap and
+   * side-effect-free; the library treats it as untrusted caller code: a
+   * throw is wrapped in `M3LPollingInvalidOptionError` rather than allowed to
+   * propagate raw (or, worse, replace an in-flight operation error), and a
+   * non-primitive result is rejected the same way instead of being silently
+   * compared (see `M3LProgressWitness`).
+   *
    * Omitting this option leaves behaviour exactly as it was before the option
    * existed — no witness is called, no counter is kept.
    */
@@ -137,22 +146,19 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
    * @param options - The backoff strategy and optional attempt bound.
    * @throws When `maxAttempts` is provided but is not a finite positive
    *   integer, or when `options.progress.maxStalledAttempts` is provided but
-   *   is not a finite positive integer.
+   *   is not a finite positive integer, or when `options.progress.witness`
+   *   is provided but is not a function.
    */
   constructor(options: M3LPollerOptions) {
     super();
     const maxAttempts = options.maxAttempts ?? DEFAULT_POLL_MAX_ATTEMPTS;
     assertPositiveInteger(maxAttempts, "maxAttempts");
-    if (options.progress !== undefined) {
-      assertPositiveInteger(
-        options.progress.maxStalledAttempts,
-        "maxStalledAttempts",
-      );
-    }
     this.#backoff = options.backoff;
     this.#maxAttempts = maxAttempts;
     this.#signal = options.signal;
-    this.#progress = options.progress;
+    // Validated and captured once, by value — see captureProgressConfig's
+    // TSDoc for why poll() must never read options.progress again.
+    this.#progress = captureProgressConfig(options.progress);
   }
 
   /**
@@ -166,9 +172,10 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
    *   the signal aborts — either before the first check or during a backoff delay.
    * @throws An internal `M3LError` (code `ERR_POLL_FAILURE`) on a `failure`
    *   decision, (code `ERR_POLL_EXHAUSTED`) when `maxAttempts` is reached
-   *   while still `continue`, or (code `ERR_NO_PROGRESS`) when a configured
+   *   while still `continue`, (code `ERR_NO_PROGRESS`) when a configured
    *   `progress` witness stays unchanged for `maxStalledAttempts` consecutive
-   *   attempts.
+   *   attempts, or (code `ERR_POLLING_INVALID_OPTION`) when that witness
+   *   threw or returned a non-primitive value while sampling.
    */
   async poll<T>(check: M3LPollCheckFn<T>): Promise<T> {
     let prevDelay: number | undefined;
@@ -247,8 +254,8 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
     if (attempt >= this.#maxAttempts - 1) {
       return prevDelay;
     }
-    if (tracker !== undefined && this.#progress !== undefined) {
-      this.#checkProgress(tracker, this.#progress.witness, attempt);
+    if (tracker !== undefined) {
+      this.#checkProgress(tracker, attempt);
     }
     const nextDelay = this.#backoff.nextDelay(attempt, prevDelay);
     this.emit("poll:wait", { attempt: attempt + 1, delayMs: nextDelay });
@@ -258,23 +265,20 @@ export class M3LPoller extends M3LEventEmitterBase<M3LPollerEventMap> {
   }
 
   /**
-   * Sample `witness` through `tracker` and, when the guard trips, emit
+   * Sample `tracker`'s witness and, when the guard trips, emit
    * `poll:no-progress` and throw. Abort always wins: re-checked here before
    * reporting no-progress, since a stalled attempt can also be the one that
    * observed the abort.
    *
    * @param tracker - This call's stall tracker.
-   * @param witness - The configured progress witness.
    * @param attempt - The 0-based index of the stalled attempt.
    * @throws {@link M3LOperationAbortedError} when the signal has aborted.
-   * @throws An internal `M3LError` (code `ERR_NO_PROGRESS`) when the guard trips.
+   * @throws An internal `M3LError` (code `ERR_NO_PROGRESS`) when the guard
+   *   trips, or (code `ERR_POLLING_INVALID_OPTION`) when the witness threw
+   *   or returned a non-primitive value while sampling.
    */
-  #checkProgress(
-    tracker: ProgressTracker,
-    witness: M3LProgressWitness,
-    attempt: number,
-  ): void {
-    if (!tracker.record(witness)) {
+  #checkProgress(tracker: ProgressTracker, attempt: number): void {
+    if (!tracker.record()) {
       return;
     }
     if (isAborted(this.#signal)) {

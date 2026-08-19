@@ -941,6 +941,499 @@ describe("core/polling — no-progress detection (A5)", () => {
     });
   });
 
+  describe("capture-by-value: mutating the options object after construction is inert", () => {
+    // These tests hold `{ witness, maxStalledAttempts }` in a local mutable
+    // `cfg` object, pass it as `progress`, then mutate `cfg` AFTER
+    // construction — proving `captureProgressConfig()` copied the values at
+    // construction time rather than re-reading `cfg` on every `poll()`/`run()`.
+
+    test("M3LPoller: mutating maxStalledAttempts to 0 after construction has no effect — a changing witness still exhausts normally", async () => {
+      // Discriminator: if maxStalledAttempts were read live as 0, the guard
+      // would trip on the SECOND witness sample regardless of whether the
+      // witness changed (a reset-to-0 stall counter still satisfies `0 >= 0`).
+      // A witness that never repeats proves the captured value (3) is what's
+      // actually consulted: it never trips, so the poll must exhaust normally.
+      const maxAttempts = 6;
+      let counter = 0;
+      const cfg: { witness: () => number; maxStalledAttempts: number } = {
+        witness: () => {
+          counter += 1;
+          return counter;
+        },
+        maxStalledAttempts: 3,
+      };
+      const check: M3LPollCheckFn<never> = () => ({ type: "continue" });
+      const poller = new M3LPoller({
+        backoff: M3LBackoff.constant(10),
+        maxAttempts,
+        progress: cfg,
+      });
+      cfg.maxStalledAttempts = 0;
+
+      const thrown = await captureRejection(poller.poll(check));
+
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_POLL_EXHAUSTED");
+    });
+
+    test("M3LPoller: mutating maxStalledAttempts to NaN after construction has no effect — a constant witness still trips normally", async () => {
+      // Discriminator: NaN compared with >= is always false in either
+      // direction, so a LIVE-read NaN would silently defeat the guard
+      // (never trip). The captured value (3) must still govern.
+      const maxStalledAttempts = 3;
+      let calls = 0;
+      const cfg: { witness: () => string; maxStalledAttempts: number } = {
+        witness: () => "same",
+        maxStalledAttempts,
+      };
+      const check: M3LPollCheckFn<never> = () => {
+        calls += 1;
+        return { type: "continue" };
+      };
+      const poller = new M3LPoller({
+        backoff: M3LBackoff.constant(10),
+        maxAttempts: 50,
+        progress: cfg,
+      });
+      cfg.maxStalledAttempts = Number.NaN;
+
+      const thrown = await captureRejection(poller.poll(check));
+
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_NO_PROGRESS");
+      expect(calls).toBe(maxStalledAttempts + 1);
+    });
+
+    test("M3LPoller: swapping witness to a non-function after construction has no effect — the original witness still trips the guard", async () => {
+      const maxStalledAttempts = 3;
+      let calls = 0;
+      const cfg: { witness: () => string; maxStalledAttempts: number } = {
+        witness: () => "same",
+        maxStalledAttempts,
+      };
+      const check: M3LPollCheckFn<never> = () => {
+        calls += 1;
+        return { type: "continue" };
+      };
+      const poller = new M3LPoller({
+        backoff: M3LBackoff.constant(10),
+        maxAttempts: 50,
+        progress: cfg,
+      });
+      // @ts-expect-error runtime capture must be immune to this; the type
+      // only allows a `() => primitive` witness, but the point of this test
+      // is to prove a POST-construction mutation (which the type system
+      // cannot see coming) is inert.
+      cfg.witness = "not a function anymore";
+
+      const thrown = await captureRejection(poller.poll(check));
+
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_NO_PROGRESS");
+      expect(calls).toBe(maxStalledAttempts + 1);
+    });
+
+    // Regression lock: captureProgressConfig() reads every property of the
+    // caller's `progress` object exactly once, so a getter (or a Proxy) that
+    // returns a different value per read cannot validate one value and then
+    // install another. An earlier round of this same item shipped exactly
+    // that defect — `progress.maxStalledAttempts` was read twice (once via
+    // `assertPositiveInteger`, again when building the returned copy),
+    // letting a getter-backed value change between validation and capture.
+    test("M3LPoller: a getter-based maxStalledAttempts is read exactly once, at construction", () => {
+      const getter = vi.fn(() => 3);
+      const progressLike = {
+        witness: () => "same",
+        get maxStalledAttempts(): number {
+          return getter();
+        },
+      };
+      new M3LPoller({
+        backoff: M3LBackoff.constant(10),
+        progress: progressLike,
+      });
+      expect(getter).toHaveBeenCalledTimes(1);
+    });
+
+    test("M3LRetryRunner: mutating maxStalledAttempts to 0 after construction has no effect — a changing witness still exhausts to the original error", async () => {
+      const maxAttempts = 6;
+      const original = new Error("still failing");
+      let counter = 0;
+      const cfg: { witness: () => number; maxStalledAttempts: number } = {
+        witness: () => {
+          counter += 1;
+          return counter;
+        },
+        maxStalledAttempts: 3,
+      };
+      const classifier: M3LRetryClassifier = () => "retriable";
+      const op = (): Promise<never> => Promise.reject(original);
+      const runner = new M3LRetryRunner({
+        classifier,
+        backoff: M3LBackoff.constant(10),
+        maxAttempts,
+        progress: cfg,
+      });
+      cfg.maxStalledAttempts = 0;
+
+      await expect(settleWithTimers(runner.run(op))).rejects.toBe(original);
+    });
+
+    test("M3LRetryRunner: mutating maxStalledAttempts to NaN after construction has no effect — a constant witness still trips normally", async () => {
+      const maxStalledAttempts = 3;
+      let calls = 0;
+      const cfg: { witness: () => string; maxStalledAttempts: number } = {
+        witness: () => "same",
+        maxStalledAttempts,
+      };
+      const classifier: M3LRetryClassifier = () => "retriable";
+      const op = (): Promise<never> => {
+        calls += 1;
+        return Promise.reject(new Error("still failing"));
+      };
+      const runner = new M3LRetryRunner({
+        classifier,
+        backoff: M3LBackoff.constant(10),
+        maxAttempts: 50,
+        progress: cfg,
+      });
+      cfg.maxStalledAttempts = Number.NaN;
+
+      const thrown = await captureRejection(runner.run(op));
+
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_NO_PROGRESS");
+      expect(calls).toBe(maxStalledAttempts + 1);
+    });
+
+    test("M3LRetryRunner: swapping witness to a non-function after construction has no effect — the original witness still trips the guard", async () => {
+      const maxStalledAttempts = 3;
+      let calls = 0;
+      const cfg: { witness: () => string; maxStalledAttempts: number } = {
+        witness: () => "same",
+        maxStalledAttempts,
+      };
+      const classifier: M3LRetryClassifier = () => "retriable";
+      const op = (): Promise<never> => {
+        calls += 1;
+        return Promise.reject(new Error("still failing"));
+      };
+      const runner = new M3LRetryRunner({
+        classifier,
+        backoff: M3LBackoff.constant(10),
+        maxAttempts: 50,
+        progress: cfg,
+      });
+      // @ts-expect-error see the matching M3LPoller test above for rationale.
+      cfg.witness = "not a function anymore";
+
+      const thrown = await captureRejection(runner.run(op));
+
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_NO_PROGRESS");
+      expect(calls).toBe(maxStalledAttempts + 1);
+    });
+
+    // Regression lock: see the matching M3LPoller test above — the same
+    // read-exactly-once guarantee in the shared `captureProgressConfig()`
+    // helper, and the same earlier-round defect it now guards against.
+    test("M3LRetryRunner: a getter-based maxStalledAttempts is read exactly once, at construction", () => {
+      const getter = vi.fn(() => 3);
+      const progressLike = {
+        witness: () => "same",
+        get maxStalledAttempts(): number {
+          return getter();
+        },
+      };
+      new M3LRetryRunner({
+        classifier: awsThrottlingClassifier,
+        backoff: M3LBackoff.constant(10),
+        progress: progressLike,
+      });
+      expect(getter).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("construction-time witness validation", () => {
+    test("M3LPoller: a non-function witness throws ERR_POLLING_INVALID_OPTION at construction", () => {
+      let thrown: unknown;
+      try {
+        new M3LPoller({
+          backoff: M3LBackoff.constant(10),
+          progress: {
+            // @ts-expect-error the runtime guard must reject a non-function
+            // witness reachable through an `any`-typed caller; the declared
+            // `() => primitive` type cannot stop that at compile time.
+            witness: "not-a-function",
+            maxStalledAttempts: 3,
+          },
+        });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_POLLING_INVALID_OPTION");
+    });
+
+    test("M3LRetryRunner: a non-function witness throws ERR_POLLING_INVALID_OPTION at construction", () => {
+      let thrown: unknown;
+      try {
+        new M3LRetryRunner({
+          classifier: awsThrottlingClassifier,
+          backoff: M3LBackoff.constant(10),
+          progress: {
+            // @ts-expect-error see the matching M3LPoller test above.
+            witness: "not-a-function",
+            maxStalledAttempts: 3,
+          },
+        });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_POLLING_INVALID_OPTION");
+    });
+  });
+
+  describe("a throwing witness is wrapped, never left raw", () => {
+    test("M3LPoller: a witness that throws is wrapped in ERR_POLLING_INVALID_OPTION with the thrown value chained as cause", async () => {
+      const witnessError = new Error("witness boom");
+      const check: M3LPollCheckFn<never> = () => ({ type: "continue" });
+      const poller = new M3LPoller({
+        backoff: M3LBackoff.constant(10),
+        maxAttempts: 50,
+        progress: {
+          witness: () => {
+            throw witnessError;
+          },
+          maxStalledAttempts: 3,
+        },
+      });
+
+      const thrown = await captureRejection(poller.poll(check));
+
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_POLLING_INVALID_OPTION");
+      expect(thrown).not.toBe(witnessError);
+      expect((thrown as M3LError).cause).toBe(witnessError);
+    });
+
+    test("M3LRetryRunner: a witness that throws is wrapped in ERR_POLLING_INVALID_OPTION with the thrown value chained as cause", async () => {
+      const witnessError = new Error("witness boom");
+      const classifier: M3LRetryClassifier = () => "retriable";
+      const op = (): Promise<never> =>
+        Promise.reject(new Error("still failing"));
+      const runner = new M3LRetryRunner({
+        classifier,
+        backoff: M3LBackoff.constant(10),
+        maxAttempts: 50,
+        progress: {
+          witness: () => {
+            throw witnessError;
+          },
+          maxStalledAttempts: 3,
+        },
+      });
+
+      const thrown = await captureRejection(runner.run(op));
+
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_POLLING_INVALID_OPTION");
+      expect(thrown).not.toBe(witnessError);
+      expect((thrown as M3LError).cause).toBe(witnessError);
+    });
+
+    test("M3LRetryRunner: a witness thrown while sampling inside the catch() holding the operation's real failure does not leak the raw witness error, and does not silently substitute the operation error either", async () => {
+      // Must-fix 1: the witness is sampled from INSIDE run()'s `catch (error)`
+      // block, where `error` is the operation's real in-flight failure. A
+      // naive implementation could let the witness's raw throw propagate
+      // unwrapped (masking that it was a witness failure, not an operation
+      // failure) — or could accidentally let the operation's error win
+      // instead of surfacing the witness problem. Neither is acceptable.
+      const witnessError = new Error("witness boom");
+      const operationError = new Error("real operation failure");
+      const classifier: M3LRetryClassifier = () => "retriable";
+      const op = (): Promise<never> => Promise.reject(operationError);
+      const runner = new M3LRetryRunner({
+        classifier,
+        backoff: M3LBackoff.constant(10),
+        maxAttempts: 50,
+        progress: {
+          witness: () => {
+            throw witnessError;
+          },
+          maxStalledAttempts: 3,
+        },
+      });
+
+      const thrown = await captureRejection(runner.run(op));
+
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_POLLING_INVALID_OPTION");
+      // Not the raw witness error itself (it must be wrapped) ...
+      expect(thrown).not.toBe(witnessError);
+      // ... but its cause IS the witness error, not the operation error.
+      expect((thrown as M3LError).cause).toBe(witnessError);
+      // The caller must never receive the raw operation error unwrapped in
+      // its place, and the operation error must not silently vanish by
+      // being reported as if it were the cause of this rejection.
+      expect(thrown).not.toBe(operationError);
+      expect((thrown as M3LError).cause).not.toBe(operationError);
+    });
+  });
+
+  describe("M3LNoProgressError cause asymmetry (run() has an in-flight error, poll() does not)", () => {
+    test("M3LRetryRunner's no-progress error carries the last operation error as cause", async () => {
+      const maxStalledAttempts = 3;
+      const operationError = new Error("still failing");
+      const classifier: M3LRetryClassifier = () => "retriable";
+      const op = (): Promise<never> => Promise.reject(operationError);
+      const runner = new M3LRetryRunner({
+        classifier,
+        backoff: M3LBackoff.constant(10),
+        maxAttempts: 50,
+        progress: { witness: () => "same", maxStalledAttempts },
+      });
+
+      const thrown = await captureRejection(runner.run(op));
+
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_NO_PROGRESS");
+      expect((thrown as M3LError).cause).toBe(operationError);
+    });
+
+    test("M3LPoller's no-progress error has no cause (there is no in-flight operation error to carry)", async () => {
+      const maxStalledAttempts = 3;
+      const check: M3LPollCheckFn<never> = () => ({ type: "continue" });
+      const poller = new M3LPoller({
+        backoff: M3LBackoff.constant(10),
+        maxAttempts: 50,
+        progress: { witness: () => "same", maxStalledAttempts },
+      });
+
+      const thrown = await captureRejection(poller.poll(check));
+
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_NO_PROGRESS");
+      expect((thrown as M3LError).cause).toBeUndefined();
+    });
+  });
+
+  describe("a non-primitive witness result fails loud instead of silently never firing", () => {
+    // `null` is included explicitly: `typeof null === "object"`, so it must
+    // be rejected the same way as any other non-primitive, not treated as an
+    // accidental primitive-like special case.
+    test.each([
+      ["a plain object", { token: "x" }],
+      ["an array", ["x", "y"]],
+      ["a function", () => "x"],
+      ["null", null],
+    ])(
+      "M3LPoller: a witness returning %s is rejected with ERR_POLLING_INVALID_OPTION rather than silently never firing",
+      async (_label, badValue) => {
+        const check: M3LPollCheckFn<never> = () => ({ type: "continue" });
+        const poller = new M3LPoller({
+          backoff: M3LBackoff.constant(10),
+          maxAttempts: 50,
+          progress: {
+            // @ts-expect-error a non-primitive witness result is only
+            // reachable when the witness is typed `any`; the declared
+            // `() => primitive` return type cannot be enforced at runtime.
+            witness: () => badValue,
+            maxStalledAttempts: 3,
+          },
+        });
+
+        const thrown = await captureRejection(poller.poll(check));
+
+        expect(thrown).toBeInstanceOf(M3LError);
+        expect((thrown as M3LError).code).toBe("ERR_POLLING_INVALID_OPTION");
+      },
+    );
+
+    test.each([
+      ["a plain object", { token: "x" }],
+      ["an array", ["x", "y"]],
+      ["a function", () => "x"],
+      ["null", null],
+    ])(
+      "M3LRetryRunner: a witness returning %s is rejected with ERR_POLLING_INVALID_OPTION rather than silently never firing",
+      async (_label, badValue) => {
+        const classifier: M3LRetryClassifier = () => "retriable";
+        const op = (): Promise<never> =>
+          Promise.reject(new Error("still failing"));
+        const runner = new M3LRetryRunner({
+          classifier,
+          backoff: M3LBackoff.constant(10),
+          maxAttempts: 50,
+          progress: {
+            // @ts-expect-error see the matching M3LPoller case above.
+            witness: () => badValue,
+            maxStalledAttempts: 3,
+          },
+        });
+
+        const thrown = await captureRejection(runner.run(op));
+
+        expect(thrown).toBeInstanceOf(M3LError);
+        expect((thrown as M3LError).code).toBe("ERR_POLLING_INVALID_OPTION");
+      },
+    );
+  });
+
+  describe("the witness's sampled value never leaks into an error or event", () => {
+    test("M3LPoller: a recognizable marker returned by the witness appears in neither the thrown error's message/context nor the poll:no-progress payload", async () => {
+      const marker = "WITNESS-VALUE-MARKER-8f2c1a";
+      const maxStalledAttempts = 3;
+      const check: M3LPollCheckFn<never> = () => ({ type: "continue" });
+      const poller = new M3LPoller({
+        backoff: M3LBackoff.constant(10),
+        maxAttempts: 50,
+        progress: { witness: () => marker, maxStalledAttempts },
+      });
+      const received: M3LPollNoProgressPayload[] = [];
+      poller.on("poll:no-progress", (payload) => {
+        received.push(payload);
+      });
+
+      const thrown = await captureRejection(poller.poll(check));
+
+      expect((thrown as M3LError).code).toBe("ERR_NO_PROGRESS");
+      expect((thrown as M3LError).message).not.toContain(marker);
+      expect(JSON.stringify((thrown as M3LError).context)).not.toContain(
+        marker,
+      );
+      expect(JSON.stringify(received)).not.toContain(marker);
+    });
+
+    test("M3LRetryRunner: a recognizable marker returned by the witness appears in neither the thrown error's message/context nor the retry:no-progress payload", async () => {
+      const marker = "WITNESS-VALUE-MARKER-9d4e2b";
+      const maxStalledAttempts = 3;
+      const classifier: M3LRetryClassifier = () => "retriable";
+      const op = (): Promise<never> =>
+        Promise.reject(new Error("still failing"));
+      const runner = new M3LRetryRunner({
+        classifier,
+        backoff: M3LBackoff.constant(10),
+        maxAttempts: 50,
+        progress: { witness: () => marker, maxStalledAttempts },
+      });
+      const received: M3LRetryNoProgressPayload[] = [];
+      runner.on("retry:no-progress", (payload) => {
+        received.push(payload);
+      });
+
+      const thrown = await captureRejection(runner.run(op));
+
+      expect((thrown as M3LError).code).toBe("ERR_NO_PROGRESS");
+      expect((thrown as M3LError).message).not.toContain(marker);
+      expect(JSON.stringify((thrown as M3LError).context)).not.toContain(
+        marker,
+      );
+      expect(JSON.stringify(received)).not.toContain(marker);
+    });
+  });
+
   describe("type-level contract", () => {
     test("M3LPollerOptions.progress is optional", () => {
       expectTypeOf<M3LPollerOptions>().toHaveProperty("progress");
