@@ -208,6 +208,53 @@ export function classifyStatus(cell) {
   return classifyStatusCell(cell).kind;
 }
 
+/**
+ * Classify a tracker table's Priority cell into an {@link
+ * ./hub-sync.mjs} `Item` priority, reporting whether the cell was actually
+ * in-vocabulary. `P0`/`P1`/`P2` map to their tier; a cell that is nothing
+ * but dashes is the trackers' documented **untiered placeholder** — used on
+ * capability-deepening / post-comparison wave rows whose change isn't
+ * priority-tiered at all — and is recognized as a deliberate authoring
+ * choice that resolves to `p2`, not as a mistake.
+ *
+ * Anything else falls back to `p2` with `recognized: false` so a caller can
+ * surface it. That distinction is the point: the placeholder used to warn on
+ * every single `pnpm sync:hub` run despite being intentional, which buried
+ * the one genuinely off-vocabulary cell (`P3`, on the F12 row) in five lines
+ * of expected noise for long enough that nobody acted on it. There is no
+ * `p3` tier — `PRIORITY_LABELS`/`MILESTONE_TITLES` (`./hub-sync.mjs`) have
+ * no entry for one, and no GitHub milestone backs it.
+ *
+ * Lives here rather than in `./hub-sync.mjs` (which is where it is consumed)
+ * because `bin/check-tracker-status.mjs` needs the same vocabulary to gate
+ * it, and this module imports nothing local while `./hub-sync.mjs` imports
+ * *from* it — the reverse direction would be an import cycle. Mirrors
+ * {@link classifyStatusCell}'s shape exactly.
+ *
+ * @param {string} cell
+ * @returns {{ priority: "p0" | "p1" | "p2", recognized: boolean }}
+ * @example
+ * ```js
+ * import { classifyPriorityCell } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
+ *
+ * classifyPriorityCell("**P1**"); // { priority: "p1", recognized: true }
+ * classifyPriorityCell("—");      // { priority: "p2", recognized: true }
+ * classifyPriorityCell("P3");     // { priority: "p2", recognized: false }
+ * ```
+ */
+export function classifyPriorityCell(cell) {
+  const stripped = cell.replace(/[`*_]/g, "").trim();
+  if (/^p0$/i.test(stripped)) return { priority: "p0", recognized: true };
+  if (/^p1$/i.test(stripped)) return { priority: "p1", recognized: true };
+  if (/^p2$/i.test(stripped)) return { priority: "p2", recognized: true };
+  // The untiered placeholder, in any dash the authoring tools produce
+  // (em dash, en dash, hyphen, or a run of them). An *empty* cell is
+  // deliberately NOT recognized: a missing Priority is an omission, whereas
+  // a dash is someone stating "this row has no tier".
+  if (/^[—–-]+$/.test(stripped)) return { priority: "p2", recognized: true };
+  return { priority: "p2", recognized: false };
+}
+
 // Escape a string for literal use inside a RegExp source.
 function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -267,20 +314,33 @@ export function findUncoveredStatusHeadings(content, registeredHeadings) {
 }
 
 /**
- * Walk `content` line by line and report every Status cell, in every pipe
- * table under every `## `/`### ` heading, that {@link classifyStatusCell}
- * does not recognize. Unlike {@link parseMarkdownTable}/
- * {@link findUncoveredStatusHeadings} this is a plain line scan rather than a
- * per-heading regex lookup, for two reasons neither of those helpers can
- * give a caller: `parseMarkdownTable`'s `{ header, rows }` result carries no
- * line numbers, so it cannot report *where* a bad cell is; and it returns
- * only the first table after a heading, whereas `docs/ROADMAP.md` nests
- * status-bearing tables under `### `-level subsections (the ADR-0035
- * rollout, capability-deepening, and post-comparison hardening waves) that
- * `findUncoveredStatusHeadings` deliberately does not descend into (it scans
- * `## ` only). A vocabulary check has to cover every such table, so this
- * function tracks the nearest preceding heading of *either* level and finds
- * every table, not just the first one per `## ` section.
+ * Walk `content` line by line and report every cell in the `columnLabel`
+ * column, in every pipe table under every `## `/`### ` heading, that
+ * `classify` does not recognize. Shared engine behind
+ * {@link findOffVocabularyStatusCells} and
+ * {@link findOffVocabularyPriorityCells} — the walk itself is subtle enough
+ * (see the divider/back-to-back-table rules below) that maintaining two
+ * copies of it would be a standing drift risk, so the two exported finders
+ * differ only in which column they read and which vocabulary they read it
+ * against.
+ *
+ * Unlike {@link parseMarkdownTable}/{@link findUncoveredStatusHeadings} this
+ * is a plain line scan rather than a per-heading regex lookup, for two
+ * reasons neither of those helpers can give a caller: `parseMarkdownTable`'s
+ * `{ header, rows }` result carries no line numbers, so it cannot report
+ * *where* a bad cell is; and it returns only the first table after a
+ * heading, whereas `docs/ROADMAP.md` nests status-bearing tables under
+ * `### `-level subsections (the ADR-0035 rollout, capability-deepening,
+ * and post-comparison hardening waves) that {@link findUncoveredStatusHeadings}
+ * deliberately does not descend into (it scans `## ` only). A vocabulary
+ * check has to cover every such table, so this function tracks the nearest
+ * preceding heading of *either* level and finds every table, not just the
+ * first one per `## ` section.
+ *
+ * A table with no `columnLabel` column at all is skipped, not reported —
+ * that is what scopes {@link findOffVocabularyPriorityCells} to
+ * `docs/plans/IMPLEMENTATION.md` for free, since no table in
+ * `docs/ROADMAP.md` carries a Priority column.
  *
  * The divider row is identified by *content* — {@link isDividerRow}'s
  * all-dashes-cells check, the same one {@link parseMarkdownTable} already
@@ -292,26 +352,19 @@ export function findUncoveredStatusHeadings(content, registeredHeadings) {
  * between them apart correctly: a `|`-line whose own next line is itself a
  * divider row is a new table's header, even mid-scan — otherwise the second
  * table's header/divider text would be misread as data rows of the first,
- * against its stale `statusIndex`.
+ * against its stale column index.
  *
  * @param {string} content a tracker file's full contents
+ * @param {string} columnLabel the header cell naming the column to check
+ * @param {(cell: string) => { recognized: boolean }} classify the vocabulary
  * @returns {Array<{ line: number, heading: string, cell: string }>} one entry
- *   per off-vocabulary Status cell, in document order; `line` is 1-indexed
- * @example
- * ```js
- * import { findOffVocabularyStatusCells } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
- *
- * findOffVocabularyStatusCells(
- *   "## Wave\n\n| Item | Status |\n| --- | --- |\n| x | In review |\n",
- * );
- * // [{ line: 5, heading: "Wave", cell: "In review" }]
- * ```
+ *   per off-vocabulary cell, in document order; `line` is 1-indexed
  */
-export function findOffVocabularyStatusCells(content) {
+function findOffVocabularyCells(content, columnLabel, classify) {
   const lines = content.split("\n");
   const findings = [];
   let heading = "";
-  let statusIndex = -1;
+  let cellIndex = -1;
   let inTable = false;
 
   for (let index = 0; index < lines.length; index++) {
@@ -322,20 +375,20 @@ export function findOffVocabularyStatusCells(content) {
     if (headingMatch) {
       heading = headingMatch[1].trim();
       inTable = false;
-      statusIndex = -1;
+      cellIndex = -1;
       continue;
     }
 
     if (!trimmed.startsWith("|")) {
       inTable = false;
-      statusIndex = -1;
+      cellIndex = -1;
       continue;
     }
 
     if (!inTable) {
       // First `|`-prefixed line after a non-table line: the header row.
       inTable = true;
-      statusIndex = columnIndex(splitTableRow(line), "Status");
+      cellIndex = columnIndex(splitTableRow(line), columnLabel);
       continue;
     }
 
@@ -352,23 +405,72 @@ export function findOffVocabularyStatusCells(content) {
     // table's header, even mid-scan — otherwise two tables placed
     // back-to-back with no blank line between them would have the second
     // table's header/divider text misread as data rows of the first, against
-    // the first table's stale statusIndex.
+    // the first table's stale column index.
     const nextLine = lines[index + 1];
     if (nextLine !== undefined && isDividerRow(splitTableRow(nextLine))) {
-      statusIndex = columnIndex(cells, "Status");
+      cellIndex = columnIndex(cells, columnLabel);
       continue;
     }
 
-    if (statusIndex === -1) continue;
+    if (cellIndex === -1) continue;
 
-    const cell = cells[statusIndex] ?? "";
-    const { recognized } = classifyStatusCell(cell);
+    const cell = cells[cellIndex] ?? "";
+    const { recognized } = classify(cell);
     if (!recognized) {
       findings.push({ line: index + 1, heading, cell });
     }
   }
 
   return findings;
+}
+
+/**
+ * Every Status cell in `content` that {@link classifyStatusCell} does not
+ * recognize — a board-side token (`In review`) or a typo that would
+ * otherwise classify silently as `todo`. See
+ * {@link findOffVocabularyCells} for the scan's semantics.
+ *
+ * @param {string} content a tracker file's full contents
+ * @returns {Array<{ line: number, heading: string, cell: string }>} one entry
+ *   per off-vocabulary Status cell, in document order; `line` is 1-indexed
+ * @example
+ * ```js
+ * import { findOffVocabularyStatusCells } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
+ *
+ * findOffVocabularyStatusCells(
+ *   "## Wave\n\n| Item | Status |\n| --- | --- |\n| x | In review |\n",
+ * );
+ * // [{ line: 5, heading: "Wave", cell: "In review" }]
+ * ```
+ */
+export function findOffVocabularyStatusCells(content) {
+  return findOffVocabularyCells(content, "Status", classifyStatusCell);
+}
+
+/**
+ * Every Priority cell in `content` that {@link classifyPriorityCell} does not
+ * recognize — anything that is neither a `P0`/`P1`/`P2` tier nor the
+ * documented untiered dash placeholder, e.g. the `P3` that sat on the F12
+ * row emitting a warning on every `pnpm sync:hub` run with no `p3` tier,
+ * label, or milestone behind it. See {@link findOffVocabularyCells} for the
+ * scan's semantics — including why this is scoped to
+ * `docs/plans/IMPLEMENTATION.md` without naming it.
+ *
+ * @param {string} content a tracker file's full contents
+ * @returns {Array<{ line: number, heading: string, cell: string }>} one entry
+ *   per off-vocabulary Priority cell, in document order; `line` is 1-indexed
+ * @example
+ * ```js
+ * import { findOffVocabularyPriorityCells } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
+ *
+ * findOffVocabularyPriorityCells(
+ *   "## Wave\n\n| Item | Priority |\n| --- | --- |\n| x | P3 |\n",
+ * );
+ * // [{ line: 5, heading: "Wave", cell: "P3" }]
+ * ```
+ */
+export function findOffVocabularyPriorityCells(content) {
+  return findOffVocabularyCells(content, "Priority", classifyPriorityCell);
 }
 
 function classifyAdrStatusKind(statusText) {
