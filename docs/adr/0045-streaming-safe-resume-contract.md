@@ -217,38 +217,57 @@ misclassification rather than extend one: that arm is `origin: external` even
 though its trigger is a caller value. The pre-existing arm is left alone;
 the new one is classified honestly.
 
-**The same code also rejects any definition whose content is not fully visible
-to `canonicalJsonStringify`, decided by a recursive allowlist.** Verified
-against the real `canonicalJsonHash`: a `function` and a `symbol` both
-canonicalise to `null`, and `new Map([["a", 1]])` and `new Set([1, 2, 3])` both
-canonicalise to `{}`. A caller passing any of those would opt into
-fingerprinting, get a stamped envelope, and get a comparison that can never
-mismatch — a silent no-op precisely where this Update's whole purpose is to fail
-loud. Rejecting them at construction applies the Update's own stance ("failing
-loud beats resuming into a corrupt offset") one level earlier.
+**The same code also rejects any definition the library will not fingerprint,
+decided by a single-traversal validate-and-project.** Verified against the real
+`canonicalJsonHash`: a `function` and a `symbol` both canonicalise to `null`, and
+`new Map([["a", 1]])` and `new Set([1, 2, 3])` both canonicalise to `{}`. A
+caller passing any of those would opt into fingerprinting, get a stamped
+envelope, and get a comparison that can never mismatch — a silent no-op
+precisely where this Update's whole purpose is to fail loud. Rejecting them at
+construction applies the Update's own stance ("failing loud beats resuming into a
+corrupt offset") one level earlier.
 
-The mechanism is an **allowlist, not a list of known-bad shapes**, and the first
-attempt is why. A denylist rejecting only top-level `Map`/`Set`/`RegExp` still
-accepted `{ region: "eu-west-1", logGroups: new Set(["/aws/lambda/a"]) }`, where
-the nested `Set` canonicalises to `{}` — reproduced end-to-end: two runs over
-different log groups fingerprinted identically and the second resumed silently
-from the first's offsets, which is this Update's own motivating defect surviving
-inside its own fix. The general case is undetectable by inspection, since an
-object may hold state in `#private` fields or prototype accessors that no
-serializer and no type test can reach. So the walk admits, at every depth, only
-a finite number, a string, a boolean, `null`, an array of accepted values, or a
-plain object whose own enumerable property values are accepted
-(`undefined`-valued properties are allowed and ignored — omitted and
-explicitly-`undefined` mean the same thing and fingerprint alike by design).
-Everything else is rejected wherever it appears, `Date` and class instances
-included; a `Date` is passed as `toISOString()`. An honestly-empty `{}` or `[]`
-is still accepted: it carries no information but, unlike a `Map`, it does not
-_lose_ any.
+**The mechanism took three attempts, and the first two failed the same way.**
+Attempt 1 rejected recognisable bad shapes at the top level; a nested `Set`
+walked straight past it, so `{ region, logGroups: new Set([...]) }` — the
+adopters' own named shape — still cross-resumed silently. Attempt 2 made the walk
+recursive but still validated the caller's object and then let
+`canonicalJsonHash` read it _again_, so **the bytes that were checked were not
+the bytes that were hashed**. Three executed bypasses followed: a getter read
+twice, returning an allowed array first and a `Set` second; a **non-enumerable**
+own `toJSON`, invisible to `Object.keys` yet applied by the serializer, so two
+entirely different definitions both fingerprinted as `{}` and resumed on each
+other's offsets; and own non-index properties on an array, invisible to both
+traversals.
+
+Naming those three cases would have been a third denylist. The accepted design
+instead removes the divergence: **one traversal reads each value exactly once,
+validates it, and copies it into a fresh plain-JSON projection, and the
+fingerprint is computed over the projection.** There is a single observation, and
+the fingerprint provably covers exactly what was validated. The allowlist admits,
+at every depth, only a finite number, a string, a boolean, `null`, a dense array
+of accepted values, or a plain object with no own symbol keys whose own
+enumerable property values are accepted (`undefined`-valued properties allowed
+and skipped, so omitted and explicitly-`undefined` fingerprint alike by design).
+A `toJSON` is never consulted: a definition is identified by the data it holds,
+not by a serialisation hook, so a `Date` is passed as `toISOString()`. An
+honestly-empty `{}` or `[]` is still accepted — it carries no information but,
+unlike a `Map`, it does not _lose_ any.
 
 This is the same conclusion ADR-0035 reached for redaction — a denylist over
 open-ended input does not converge — and it costs the named adopters nothing:
 all four already resolve their settings to strings, numbers, booleans,
 `readonly string[]`, and nested plain objects.
+
+**One pre-existing defect was fixed in the same change.** `write()` hashed the
+caller's checkpoint and then serialised it separately for disk, and the two views
+are not always equal: a sparse array is `[1,,3]` canonically and `[1,null,3]` to
+`JSON.stringify`. The library therefore wrote files whose stored `checksum` did
+not match their own `payload`, and every later `read()` rejected its own output
+as `ERR_CHECKPOINT_CORRUPT` — a permanently dead resume, reproduced end to end.
+`write()` now snapshots the payload once and hashes that same snapshot. The
+stored checksum is unchanged for any ordinary payload, so existing checkpoints
+stay readable.
 
 **`ERR_CHECKPOINT_FINGERPRINT_MISMATCH` is `origin: caller`**, unlike the
 `external` classification its file-reading neighbours `ERR_CHECKPOINT_CORRUPT`

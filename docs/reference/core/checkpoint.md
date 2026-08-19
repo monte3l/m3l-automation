@@ -86,44 +86,49 @@ Constructor options (`M3LCheckpointStoreOptions<TCheckpoint>`):
   type-checks, because `undefined` is assignable to `unknown`, so a caller
   forwarding an optional config field opts out silently rather than failing).
 
-  **An accepted definition is allowlisted, recursively.** A value whose
-  canonical JSON form discards its content would produce a fingerprint that can
-  never mismatch — a check that silently does nothing. So the definition is
-  validated by a recursive walk at construction, and anything not on the
-  allowlist is rejected with `ERR_CHECKPOINT_DEFINITION`. At **every depth**,
-  only these are accepted:
+  **The definition is validated and projected in a single traversal.** A value
+  whose canonical JSON form discards its content would produce a fingerprint
+  that can never mismatch — a check that silently does nothing. So at
+  construction the definition is walked **once**: every value is read exactly
+  once, checked against the allowlist below, and copied into a fresh
+  plain-JSON structure. **The fingerprint is computed over that projection, not
+  over the caller's object.** At every depth the walk accepts only:
 
   - a finite `number`, a `string`, a `boolean`, or `null`;
-  - an array whose every element is itself accepted;
-  - a plain object — prototype `Object.prototype` or `null` — whose every own
-    enumerable property value is itself accepted. A property whose value is
-    `undefined` is allowed and ignored: omitting a key and setting it to
-    `undefined` both mean "unset", so the two fingerprint identically by
-    design, which is how the adopters express an absent optional setting.
+  - a **dense** array whose every element is accepted — a hole rejects;
+  - a plain object — prototype `Object.prototype` or `null` — with **no own
+    symbol keys**, whose every own enumerable property value is accepted. A
+    property whose value is `undefined` is allowed and skipped: omitting a key
+    and setting it to `undefined` both mean "unset", so the two fingerprint
+    identically by design, which is how the adopters express an absent optional
+    setting.
 
   Everything else is rejected wherever it appears: a `function`, a `symbol`, a
-  `Map`, a `Set`, a `WeakMap`, a `RegExp`, a `Date`, and any class instance. An
-  honestly-empty `{}` and an empty `[]` are still accepted — they carry no
-  information but do not _lose_ any, so they are legitimate if uninformative.
+  `bigint`, a non-finite number, a `Map`, a `Set`, a `WeakMap`, a `RegExp`, a
+  `Date`, and any class instance. An honestly-empty `{}` or `[]` is still
+  accepted — it carries no information but does not _lose_ any. A `toJSON`
+  method is **never consulted** for a definition, own or inherited: a definition
+  is identified by the data it holds, not by a serialisation hook. So a `Date`
+  is passed as `date.toISOString()`, and a richer collection as the plain array
+  or object you want fingerprinted.
 
-  **This is an allowlist rather than a list of known-bad shapes, deliberately.**
-  A denylist of recognisable types cannot converge here, and a first attempt
-  proved it: rejecting only top-level `Map`/`Set`/`RegExp` still accepted
-  `{ region: "eu-west-1", logGroups: new Set(["/aws/lambda/a"]) }` — the exact
-  shape this option documents — where the nested `Set` canonicalises to `{}`, so
-  two runs over different log groups fingerprinted identically and the second
-  resumed silently from the first's offsets. The general case is not detectable
-  by inspection at all: an object can hold state in `#private` fields or
-  prototype accessors that no serializer and no type test can see. Only
-  admitting values whose content is, by construction, entirely visible to
-  `canonicalJsonStringify` closes that. It also mirrors the rule the Style Guide
-  states outright — allowlist, never denylist — and the same conclusion ADR-0035
-  reached for redaction.
+  **Why one traversal, and not a check followed by a hash.** Two earlier
+  attempts validated the caller's object and then let `canonicalJsonHash` read
+  it again, and both were defeated — because the bytes that were _checked_ were
+  not the bytes that were _hashed_. A getter was read twice and could return an
+  allowed array the first time and a `Set` the second; a **non-enumerable** own
+  `toJSON` was invisible to `Object.keys` yet was applied by the serializer, so
+  two entirely different definitions both fingerprinted as `{}` and resumed on
+  each other's offsets; own non-index properties on an array were invisible to
+  both. Naming those three cases would have been a third denylist. Reading the
+  graph once and fingerprinting the projection removes the divergence itself:
+  there is only one observation, and the fingerprint provably covers exactly
+  what was validated.
 
-  A `Date` is therefore passed as `date.toISOString()`, and any richer
-  collection as the plain array or object you want fingerprinted. This costs the
-  named adopters nothing: all four resolve their settings to strings, numbers,
-  booleans, `readonly string[]`, and nested plain objects already.
+  This is the allowlist-never-denylist rule the Style Guide states outright, and
+  the same conclusion ADR-0035 reached for redaction. It costs the named
+  adopters nothing: all four already resolve their settings to strings, numbers,
+  booleans, `readonly string[]`, and nested plain objects.
 
   **A definition is committed to by its hash, not concealed by it.** The hash
   is an unkeyed SHA-256 over canonical JSON, so a low-entropy definition is
@@ -178,6 +183,19 @@ this envelope existed (bare `JSON.stringify(checkpoint)`, no envelope) is
 detected as legacy and read exactly as before, with no integrity check
 possible on it (there is nothing to compare against). Upgrading the library
 does not invalidate an in-flight checkpoint from an older version.
+
+**`write()` snapshots the payload once, so the `checksum` provably covers the
+persisted bytes.** The checkpoint is serialised a single time and the checksum is
+computed over that same serialisation, rather than hashing the caller's object
+and separately serialising it for disk. The two are not always the same view: a
+**sparse** array is rendered `[1,,3]` by canonical stringification and
+`[1,null,3]` by `JSON.stringify`, and a non-idempotent `toJSON` returns different
+content on a second call — either way `write()` used to persist a file whose
+stored `checksum` did not match its own `payload`, so every later `read()`
+rejected the library's own output with `ERR_CHECKPOINT_CORRUPT` and the resume was
+permanently dead. Snapshotting once removes the divergence. For any ordinary
+payload the stored checksum is unchanged, so checkpoints written by earlier
+versions stay readable.
 
 **The `fingerprint` binds a checkpoint to the definition that wrote it.** The
 `checksum` answers "is this payload intact"; it cannot answer "does this offset
