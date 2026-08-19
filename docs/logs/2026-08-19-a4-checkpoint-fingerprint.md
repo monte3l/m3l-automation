@@ -45,7 +45,10 @@ readable.
 **Gates.** `typecheck` 17/17, `build` 16/16, `lint`, `format:check`, `check:api`,
 `check:zones`, `check:doc-exports`, `check:doc-counts`, `check:impl-counts`,
 `check:test-counts`, `check:hub-keys`, `check:provenance`, `knip`, `lint:md` — all
-pass. Suite **8252** tests (219 files) plus **1095** bin tests. `checkpoint.test.ts`
+pass. Suite **7157** tests (180 files) plus **1100** bin tests — the branch rebased
+onto a `main` that stopped the primary vitest config from also executing
+`bin/tests/**` twice (#493), so the totals moved without any test being lost.
+`checkpoint.test.ts`
 **134** tests; `M3LCheckpointError.ts` 100% on all four metrics,
 `M3LCheckpointStore.ts` statements 93.5 / branches 98.7 / functions 100 (residue
 is array-specific hostile-`Proxy` arms and three safety nets the projection makes
