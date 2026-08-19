@@ -6,10 +6,10 @@
  * (prerequisite 2).
  *
  * Not to be confused with its name-sibling bin/check-workflows-doc.mjs
- * (`check:workflows-doc`), which reconciles the CLAUDE.md CI/CD table against
- * `.github/workflows/` — that one guards GitHub Actions documentation; this
- * one guards Claude Code dynamic-workflow scripts. The two are deliberately
- * separate checks; never merge them as "redundant."
+ * (`check:workflows-doc`), which reconciles the docs/contributing/ci-cd.md
+ * CI/CD table against `.github/workflows/` — that one guards GitHub Actions
+ * documentation; this one guards Claude Code dynamic-workflow scripts. The
+ * two are deliberately separate checks; never merge them as "redundant."
  *
  * Canonical rules (R1–R7), documented in the "Enforcement" section of
  * docs/contributing/model-selection.md:
