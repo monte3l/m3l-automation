@@ -286,8 +286,11 @@ jobs:
         run: pnpm check:provenance
 
       # Submodule counts in prose must match the files in docs/reference/.
+      # docs || ts: also asserts the hand-authored barrel TSDoc submodule
+      # lists in packages/m3l-common/src/{core,aws}/index.ts
+      # (LIST_ASSERTION_SITES), so a barrel-only edit must not skip it.
       - name: Check doc counts
-        if: needs.changes.outputs.docs == 'true'
+        if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.ts == 'true'
         run: pnpm check:doc-counts
 
       # The CI/CD table in CLAUDE.md must document exactly the workflow files in
