@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 // Asserts bin/lib/verify-steps.mjs (the `pnpm verify` aggregate gate's step
-// list) matches the CI `verify` job in .github/workflows/ci.yml exactly, in
-// both directions — no step in CI missing from the list, and no listed step
-// that no longer exists in CI. Without this, `pnpm verify` silently drifts
-// from what CI actually gates, the same failure mode check:cadence guards
-// for the lefthook/CLAUDE.md pair.
+// list) matches the union of project-check steps across every lane job in
+// .github/workflows/ci.yml exactly, in both directions — no step in CI
+// missing from the list, and no listed step that no longer exists in CI.
+// Without this, `pnpm verify` silently drifts from what CI actually gates,
+// the same failure mode check:cadence guards for the lefthook/CLAUDE.md pair.
 //
-// Canonical rule: ci.yml's `verify` job drives the set; VERIFY_STEPS must
-// track it exactly, joined on the `name:` field (`ciStepName`), not on the
-// command string — command strings drift in harmless ways (flags, wrapper
-// choice) that would otherwise read as false-positive drift.
+// Canonical rule: ci.yml's lane jobs (everything except the `verify`
+// aggregator) drive the set; VERIFY_STEPS must track them exactly, joined on
+// the `name:` field (`ciStepName`), not on the command string — command
+// strings drift in harmless ways (flags, wrapper choice) that would
+// otherwise read as false-positive drift.
 //
 // Usage:
 //   node bin/check-verify-parity.mjs   # exits 0 on match, 1 on drift
@@ -46,7 +47,7 @@ const { missingFromList, staleInList } = diffVerifySteps(ciStepNames);
 if (missingFromList.length > 0 || staleInList.length > 0) {
   if (!json) {
     console.error(
-      "✗  bin/lib/verify-steps.mjs drifted from ci.yml's verify job:",
+      "✗  bin/lib/verify-steps.mjs drifted from ci.yml's lane jobs:",
     );
   }
   for (const name of missingFromList) {
@@ -57,7 +58,7 @@ if (missingFromList.length > 0 || staleInList.length > 0) {
   }
   for (const name of staleInList) {
     reporter.error(
-      `VERIFY_STEPS lists "${name}" but ci.yml's verify job no longer runs it.`,
+      `VERIFY_STEPS lists "${name}" but no ci.yml lane job runs it anymore.`,
       { file: verifyStepsRel },
     );
   }
@@ -66,6 +67,6 @@ if (missingFromList.length > 0 || staleInList.length > 0) {
 }
 
 reporter.succeed(
-  `bin/lib/verify-steps.mjs matches ci.yml's verify job (${ciStepNames.length} step(s)).`,
+  `bin/lib/verify-steps.mjs matches ci.yml's lane jobs (${ciStepNames.length} step(s)).`,
 );
 reporter.finish();

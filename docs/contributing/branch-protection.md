@@ -32,8 +32,13 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
   changes alongside a workflow-gate edit does not ride along on this
   fallback; it still requires a genuine review.
 - **Require status checks to pass before merging**, and mark these as required:
-  - `verify` — the job in `.github/workflows/ci.yml` (lint, typecheck, public
-    API snapshot, coverage-gated tests, build, `check:exports`, `knip`).
+  - `verify` — the aggregator job in `.github/workflows/ci.yml`. It carries no
+    checks itself (`needs:` on all seven parallel lane jobs — `secrets`,
+    `deps`, `lint`, `format`, `build`, `test`, `gates` — plus `if: always()`);
+    it passes when every lane succeeded or was skipped, and fails on any lane
+    failure or cancellation. The actual checks (lint, typecheck, public API
+    snapshot, coverage-gated tests, build, `check:exports`, `knip`, …) run
+    inside those lanes.
   - `review` — the job in `.github/workflows/claude-pr-review.yml`. It fails
     unless the reviewer writes `PASS` to `.claude-review-verdict`, so a failing
     review blocks the merge (fail-closed if the review never runs). The reviewer

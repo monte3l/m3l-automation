@@ -1,33 +1,40 @@
-// Shared source of truth for the CI `verify` job's step list, consumed by both
-// the local aggregate runner (verify-all.mjs, `pnpm verify`) and the drift
+// Shared source of truth for CI's project-check steps, consumed by both the
+// local aggregate runner (verify-all.mjs, `pnpm verify`) and the drift
 // checker (check-verify-parity.mjs, `pnpm check:verify-parity`) — a gen/check
 // pair in the same spirit as bin/lib/count-sites.mjs and
-// bin/check-cadence-doc.mjs, but for the CI `verify` job instead of
+// bin/check-cadence-doc.mjs, but for `.github/workflows/ci.yml` instead of
 // lefthook.yml.
 //
-// Problem this solves: `.github/workflows/ci.yml`'s `verify` job runs ~35
-// ordered steps; `lefthook.yml` pre-push covers 8 of them. Nothing reproduces
-// the full CI gate in one local command, so a contributor either trusts a
-// stale mental model of "what CI checks" or chains ~30 `pnpm check:*`
-// invocations by hand. VERIFY_STEPS is the ordered, hand-authored mirror of
-// the `verify` job; `pnpm verify` runs it locally, `pnpm check:verify-parity`
-// asserts it still matches `ci.yml` in both directions.
+// Problem this solves: `.github/workflows/ci.yml` runs ~41 project-check
+// steps spread across parallel lane jobs (secrets, deps, lint, format, build,
+// test, gates — see that file's own header comment); `lefthook.yml` pre-push
+// covers 8 of them. Nothing reproduces the full CI gate in one local command,
+// so a contributor either trusts a stale mental model of "what CI checks" or
+// chains ~30 `pnpm check:*` invocations by hand. VERIFY_STEPS is the ordered,
+// hand-authored mirror of every lane's steps; `pnpm verify` runs it locally,
+// `pnpm check:verify-parity` asserts it still matches `ci.yml` in both
+// directions.
 //
-// Anchor field: each entry's `ciStepName` must match a `name:` value in
-// ci.yml's `verify` job EXACTLY — that is the join key the parity checker
-// diffs on, not the command string (command strings drift in harmless ways
-// — flags, wrapper choice — that would produce false-positive drift).
+// Anchor field: each entry's `ciStepName` must match a `name:` value
+// SOMEWHERE in ci.yml's lane jobs EXACTLY — that is the join key the parity
+// checker diffs on, not the command string (command strings drift in
+// harmless ways — flags, wrapper choice — that would produce false-positive
+// drift). The `verify` aggregator job itself carries no project checks and
+// is excluded from both the parser and this list (see
+// `parseCiVerifyStepNames`).
 //
-// Three steps are deliberately not run by `pnpm verify` by default even
-// though they are tracked for parity:
+// Two steps are deliberately not run by `pnpm verify` by default even though
+// they are tracked for parity:
 //   - "Secret scan (gitleaks)" has no local CLI equivalent (see
 //     `.claude/skills/triaging-ci/SKILL.md`'s reproduction table).
-//   - "Install (frozen lockfile)" is environment bootstrap, not a project
-//     check; a local checkout is assumed to already have deps installed.
 //   - PR-only steps ("Validate commit messages", "Check exports semver
 //     labeling") need a PR base/head range; they run against
 //     `origin/main...HEAD` when that range resolves, else are skipped with a
 //     printed note (mirrors ci.yml's `if: github.event_name == 'pull_request'`).
+// "Install (frozen lockfile)" is no longer tracked here — the job split moved
+// it into the shared `.github/actions/setup` composite action, which this
+// file's ci.yml-only parser cannot see and which is bootstrap, not a project
+// check, in any case.
 //
 // Usage:
 //   node bin/verify-all.mjs            # pnpm verify
@@ -41,6 +48,11 @@
  *   absent for steps with no local equivalent (see `skipReason`)
  * @property {boolean} [prOnly]   - only meaningful against a PR diff range
  * @property {string} [skipReason] - why `pnpm verify` does not run this by default
+ * @property {boolean} [conditional] - true once a later change makes this step
+ *   path-gated in CI (skipped when its lane's inputs didn't change). `pnpm
+ *   verify` still runs it unconditionally either way — this only documents
+ *   that a CI skip of this step is expected, not parity drift. Unset today;
+ *   populated when path-scoping lands.
  */
 
 /** @type {VerifyStep[]} */
@@ -51,10 +63,10 @@ export const VERIFY_STEPS = [
     skipReason: "no local gitleaks CLI equivalent (see triaging-ci)",
   },
   {
-    ciStepName: "Install (frozen lockfile)",
-    id: "install",
-    cmd: () => "pnpm install --frozen-lockfile",
-    skipReason: "environment bootstrap; assumes deps are already installed",
+    ciStepName: "Cache turbo",
+    id: "cache-turbo",
+    skipReason:
+      "CI-only actions/cache plumbing for turbo's .turbo/ directory across jobs/runners; a local checkout already has a persistent .turbo/ across runs with nothing to restore",
   },
   {
     ciStepName: "Security audit",
@@ -249,28 +261,50 @@ export const VERIFY_STEPS = [
 ];
 
 /**
- * Parse the ordered list of `name:` values from `.github/workflows/ci.yml`'s
- * `verify` job. Deliberately regex-based (no YAML dependency), matching the
- * style of check-workflows-doc.mjs / check-cadence-doc.mjs. Only steps that
- * declare a `name:` are picked up — the three `uses:`-only bootstrap steps
- * (checkout, pnpm/action-setup, actions/setup-node) have none and are
- * correctly excluded, the same way they're absent from VERIFY_STEPS.
+ * Parse the union of `name:` values across every job in
+ * `.github/workflows/ci.yml`'s `jobs:` section, EXCLUDING the `verify`
+ * aggregator job (which carries no project checks of its own — see that
+ * job's comment in ci.yml). Deliberately regex-based (no YAML dependency),
+ * matching the style of check-workflows-doc.mjs / check-cadence-doc.mjs.
+ * Only steps that declare a `name:` are picked up — `uses:`-only bootstrap
+ * steps (checkout, the local `./.github/actions/setup` composite action)
+ * have none and are correctly excluded, the same way they're absent from
+ * VERIFY_STEPS.
+ *
+ * Job boundaries are found by matching 2-space-indented `key:` lines
+ * directly under `jobs:` — every job's own body content (`runs-on:`,
+ * `steps:`, and everything nested under them) sits at 4-space indent or
+ * deeper, so this cannot false-positive on job-body content.
  *
  * @param {string} ciYamlText
  * @returns {string[]}
  */
 export function parseCiVerifyStepNames(ciYamlText) {
-  const jobMatch = /\n {2}verify:\n([\s\S]*?)(?:\n {2}\S|\n?$)/.exec(
-    `\n${ciYamlText}`,
-  );
-  if (!jobMatch) {
-    throw new Error("could not locate the `verify` job in ci.yml");
+  const jobsMatch = /\njobs:\n([\s\S]*)$/.exec(`\n${ciYamlText}`);
+  if (!jobsMatch) {
+    throw new Error("could not locate a `jobs:` section in ci.yml");
   }
-  const names = [];
-  for (const m of jobMatch[1].matchAll(/^ {6}- name:\s*(.+?)\s*$/gm)) {
-    names.push(m[1]);
+  const jobsSection = jobsMatch[1];
+
+  const jobBoundaries = [...jobsSection.matchAll(/^ {2}([\w-]+):\n/gm)];
+  if (jobBoundaries.length === 0) {
+    throw new Error("could not locate any job definitions in ci.yml");
   }
-  return names;
+
+  const names = new Set();
+  for (const [index, boundary] of jobBoundaries.entries()) {
+    const jobName = boundary[1];
+    if (jobName === "verify") continue;
+
+    const start = boundary.index + boundary[0].length;
+    const end = jobBoundaries[index + 1]?.index ?? jobsSection.length;
+    const jobBody = jobsSection.slice(start, end);
+
+    for (const m of jobBody.matchAll(/^ {6}- name:\s*(.+?)\s*$/gm)) {
+      names.add(m[1]);
+    }
+  }
+  return [...names];
 }
 
 /**
