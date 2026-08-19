@@ -211,6 +211,11 @@ export const COMMAND_CATALOG = [
       "Verifies the live repository's GitHub platform-feature flags (wiki/discussions/issues/projects) and metadata (description/homepage/topics) match ADR-0050's declared stance, and that .github/ISSUE_TEMPLATE/config.yml still links to the Discussions Ideas/Q&A categories. Needs gh auth; run push-only in CI (ci.yml), same as check:hub-drift.",
   },
   {
+    name: "check:label-drift",
+    description:
+      "Verifies every hub-managed GitHub label (bin/lib/label-defs.mjs) exists on the live repository with the exact name/description/color bin/sync-hub-issues.mjs would bootstrap it with (ADR-0051's semantic priority vocabulary). Needs gh auth; run push-only in CI (ci.yml), same as check:hub-drift.",
+  },
+  {
     name: "check:zones",
     description:
       "Verifies the ADR-0009 dependency-direction zones (import-x/no-restricted-paths) and the ADR-0035 repo-wide import-x/no-cycle rule are still present and correctly shaped in eslint.config.js — a deleted zone or rule would otherwise pass `pnpm lint` silently. Run after editing eslint.config.js.",

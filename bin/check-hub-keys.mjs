@@ -3,7 +3,10 @@
  * Asserts that every `Item` key `sync:hub` derives from `docs/ROADMAP.md` and
  * `docs/plans/IMPLEMENTATION.md` is unique — no two tracker rows may produce
  * the same key, no two keys may differ only by case, and no `Item.legacyKeys`
- * alias may shadow a different item's current key.
+ * alias may shadow a different item's current key. Also asserts (ADR-0051)
+ * that `bin/lib/hub-sync.mjs`'s `PRIORITY_LABELS`, `MILESTONE_TITLES`, and
+ * `ROADMAP_ANCHORS` constant tables stay mutually consistent — see
+ * {@link findPriorityVocabularyMismatches}.
  *
  * This is the durable fix for issue #480 / F13. An item key is written into
  * its GitHub issue body as `<!-- m3l-hub-sync:<key> -->` and is the ONLY
@@ -30,8 +33,10 @@
  * someone reading that log.
  *
  * Exit codes:
- *   0  Every derived key is unique, case-insensitively, aliases included.
- *   1  At least one collision, or a tracker file could not be read/parsed.
+ *   0  Every derived key is unique (case-insensitively, aliases included),
+ *      and the priority label/milestone/anchor tables agree.
+ *   1  At least one collision or vocabulary mismatch, or a tracker file
+ *      could not be read/parsed.
  *
  * Usage:
  *   node bin/check-hub-keys.mjs
@@ -42,7 +47,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractImplementation, extractRoadmap } from "./lib/project-hub.mjs";
-import { actionableItems } from "./lib/hub-sync.mjs";
+import {
+  actionableItems,
+  MILESTONE_TITLES,
+  PRIORITY_LABELS,
+  ROADMAP_ANCHORS,
+} from "./lib/hub-sync.mjs";
 import { createReporter, parseJsonFlag, repoRoot } from "./lib/report.mjs";
 
 const root = repoRoot(import.meta.url);
@@ -134,6 +144,65 @@ export function findKeyCollisions({ items, duplicateKeys }) {
   return findings;
 }
 
+/**
+ * Assert cross-module consistency between the priority vocabulary's
+ * independent constant tables in `bin/lib/hub-sync.mjs`: every
+ * {@link PRIORITY_LABELS} tier must resolve to a real {@link
+ * MILESTONE_TITLES} entry — otherwise `buildIssuePayload` silently resolves
+ * that tier's milestone to `undefined`, which only ever surfaces as a
+ * confusing `gh` failure at `--apply` time — and every {@link
+ * ROADMAP_ANCHORS} key must also be a `MILESTONE_TITLES` key, since an item
+ * sourced from that anchor needs a milestone to file under. Added under
+ * ADR-0051: a rename that updates three of these four tables (labels,
+ * milestones, anchors) previously failed only at runtime.
+ *
+ * Deliberately NOT blanket set equality: `MILESTONE_TITLES` legitimately
+ * carries an extra `major` bucket with no priority-label counterpart
+ * ({@link MAJOR_BUMP_ITEM_KEYS} routes to it independent of tier), and
+ * `ROADMAP_ANCHORS` legitimately omits `p2` — `docs/ROADMAP.md`'s Priority 2
+ * section is parsed but never converted into items.
+ *
+ * @param {{ priorityLabels: Record<string, string>, milestoneTitles: Record<string, string>, roadmapAnchors: Record<string, string> }} tables
+ * @returns {string[]}
+ * @example
+ * ```js
+ * import { findPriorityVocabularyMismatches } from "@m3l-automation/workspace/bin/check-hub-keys.mjs";
+ *
+ * findPriorityVocabularyMismatches({
+ *   priorityLabels: { p0: "priority:0-now" },
+ *   milestoneTitles: {},
+ *   roadmapAnchors: {},
+ * }); // ['PRIORITY_LABELS.p0 ("priority:0-now") has no MILESTONE_TITLES.p0 entry.']
+ * ```
+ */
+export function findPriorityVocabularyMismatches({
+  priorityLabels,
+  milestoneTitles,
+  roadmapAnchors,
+}) {
+  const findings = [];
+
+  for (const [key, label] of Object.entries(priorityLabels)) {
+    if (!(key in milestoneTitles)) {
+      findings.push(
+        `PRIORITY_LABELS.${key} ("${label}") has no MILESTONE_TITLES.${key} entry — ` +
+          `buildIssuePayload would silently resolve this tier's milestone to undefined.`,
+      );
+    }
+  }
+
+  for (const [key, anchor] of Object.entries(roadmapAnchors)) {
+    if (!(key in milestoneTitles)) {
+      findings.push(
+        `ROADMAP_ANCHORS.${key} ("${anchor}") has no MILESTONE_TITLES.${key} entry — ` +
+          `an item sourced from this anchor would point at a tier with no milestone to file under.`,
+      );
+    }
+  }
+
+  return findings;
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { json } = parseJsonFlag();
   const reporter = createReporter(json);
@@ -157,17 +226,26 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
     const result = actionableItems(roadmap, implementation);
     const findings = findKeyCollisions(result);
+    const vocabularyMismatches = findPriorityVocabularyMismatches({
+      priorityLabels: PRIORITY_LABELS,
+      milestoneTitles: MILESTONE_TITLES,
+      roadmapAnchors: ROADMAP_ANCHORS,
+    });
 
-    if (findings.length > 0) {
+    if (findings.length > 0 || vocabularyMismatches.length > 0) {
       for (const { message } of findings) {
         reporter.error(message, { file: IMPLEMENTATION_PATH });
+      }
+      for (const message of vocabularyMismatches) {
+        reporter.error(message, { file: "bin/lib/hub-sync.mjs" });
       }
       reporter.finish();
       process.exit(1);
     }
 
     reporter.succeed(
-      `${result.items.length} hub-sync item keys are unique (case-insensitively, aliases included).`,
+      `${result.items.length} hub-sync item keys are unique (case-insensitively, aliases included), ` +
+        `and the priority label/milestone/anchor tables agree.`,
     );
     reporter.finish();
   } catch (cause) {

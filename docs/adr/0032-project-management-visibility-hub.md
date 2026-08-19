@@ -4,9 +4,18 @@
   in favour of a comprehensive GitHub-native hub (a GitHub Pages site as the
   primary derived view over the entire documentation corpus, plus GitHub
   Projects and Issues/Milestones as one-way-synced read-only secondary
-  surfaces)
+  surfaces); the priority-taxonomy portion (labels, milestones, tracker
+  cells) partially superseded by [ADR-0051](0051-semantic-priority-vocabulary.md)
 - **Date:** 2026-07-17
 - **Deciders:** Enrico Lionello (maintainer); Claude (research)
+
+> **Partially superseded (2026-08-20).** [ADR-0051](0051-semantic-priority-vocabulary.md)
+> replaces the `priority:p0`/`p1`/`p2`/`governance` label vocabulary and
+> `Priority 0`/`1`/`2`/`Governance` milestone titles this ADR and its Updates
+> established with a semantic vocabulary (`priority:0-now`/`1-next`/`2-later`,
+> `type:governance`), and corrects the `ROADMAP_ANCHORS` values below. The
+> visibility-hub architecture, GitHub-projection design, and the key-namespacing
+> decisions in this ADR's Updates are unaffected and remain in force.
 
 ## Context and problem statement
 

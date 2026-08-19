@@ -61,7 +61,7 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 
 | ID     | Priority | Status | Title & change    | Source / call-site |
 | ------ | -------- | ------ | -------------------- | --------------------- |
-| **F1** | P1       | To Do  | friction change       | site                   |
+| **F1** | Next     | To Do  | friction change       | site                   |
 
 ## ADR-0035 rollout — failure reporting & diagnostics
 
@@ -94,7 +94,7 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 | ----------------- | ------------- | ------ | -------------------- | ----------------------- | ------------------ |
 | \`x\`               | X             | Done   | aws/x                  | script                   | ADR                 |
 
-## Gated library modules & deferred decisions (P2)
+## Gated library modules & deferred decisions (Later)
 
 | ID                  | Status   | Unblock condition |
 | --------------------- | -------- | -------------------- |
@@ -154,7 +154,7 @@ const EMPTY_IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automatio
 | Provider getter | AWS service | Status | Wrapper submodule | Consuming script(s) | ADR / precedent |
 | ----------------- | ------------- | ------ | -------------------- | ----------------------- | ------------------ |
 
-## Gated library modules & deferred decisions (P2)
+## Gated library modules & deferred decisions (Later)
 
 | ID                  | Status   | Unblock condition |
 | --------------------- | -------- | -------------------- |
@@ -639,10 +639,12 @@ describe("runIssueSync", () => {
     const issueCreateCalls = calls.filter(
       (a) => a[0] === "issue" && a[1] === "create",
     );
-    // HUB_LABEL + 4 priority labels + 2 status labels (deferred/blocked) + triage.
+    // HUB_LABEL + 3 priority labels + 1 governance type label + 2 status
+    // labels (deferred/blocked) + triage.
     expect(labelCalls).toHaveLength(8);
-    // Priority 0, Priority 1, Governance, Priority 2 — one per priority
-    // actually present among this fixture's items.
+    // Now — unblock first, Next — consumer fleet, Governance, Later —
+    // gated/deferred — one per priority/type actually present among this
+    // fixture's items.
     expect(milestoneCreateCalls).toHaveLength(4);
     expect(issueCreateCalls).toHaveLength(5);
 
@@ -694,21 +696,21 @@ describe("runIssueSync", () => {
         title: "Stale UA title",
         body: `${hubMarker("roadmap:p0:ua")}\nstale body\n`,
         state: "OPEN",
-        labels: [{ name: "hub-sync" }, { name: "priority:p0" }],
+        labels: [{ name: "hub-sync" }, { name: "priority:0-now" }],
       },
       {
         number: 302,
         title: "UB current title",
         body: `${hubMarker("roadmap:p0:ub")}\nwhatever\n`,
         state: "OPEN",
-        labels: [{ name: "hub-sync" }, { name: "priority:p0" }],
+        labels: [{ name: "hub-sync" }, { name: "priority:0-now" }],
       },
       {
         number: 303,
         title: "UC current title",
         body: `${hubMarker("roadmap:p0:uc")}\nwhatever\n`,
         state: "CLOSED",
-        labels: [{ name: "hub-sync" }, { name: "priority:p0" }],
+        labels: [{ name: "hub-sync" }, { name: "priority:0-now" }],
       },
     ];
     const { runGh, calls } = scriptedGh([
@@ -907,7 +909,7 @@ describe("runIssueSync", () => {
     ];
     const { runGh, calls } = scriptedGh([
       authOkRule(),
-      milestonesGetRule(["Priority 0"]),
+      milestonesGetRule(["Now — unblock first"]),
       issueListSyncRule(existingIssues),
     ]);
     const reporter = createFakeReporter();
@@ -1094,7 +1096,7 @@ describe("runIssueSync", () => {
         state: "OPEN",
         labels: [
           { name: "hub-sync" },
-          { name: "priority:p0" },
+          { name: "priority:0-now" },
           { name: "status:blocked" },
         ],
       },
@@ -1124,14 +1126,14 @@ describe("runIssueSync", () => {
     expect(editCall).toBeDefined();
     // Read every "--remove-label <value>" pair positionally, rather than
     // checking flag/value tokens independently — arrayContaining would pass
-    // even if "priority:p0" merely appeared elsewhere in argv (e.g. paired
+    // even if "priority:0-now" merely appeared elsewhere in argv (e.g. paired
     // with --add-label), which is exactly what a correct edit call does.
     const removedLabels = (editCall ?? [])
       .map((arg, index) => (arg === "--remove-label" ? index : -1))
       .filter((index) => index !== -1)
       .map((index) => editCall?.[index + 1]);
     expect(removedLabels).toEqual(["status:blocked"]);
-    expect(removedLabels).not.toContain("priority:p0");
+    expect(removedLabels).not.toContain("priority:0-now");
   });
 });
 
