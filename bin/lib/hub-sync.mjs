@@ -40,20 +40,47 @@ export const HUB_LABEL = "hub-sync";
 export const HUB_PROJECT_TITLE = "m3l-automation hub";
 
 /**
- * Maps every {@link Item} priority to the GitHub label string that encodes it.
+ * Maps every non-governance {@link Item} priority to the GitHub label string
+ * that encodes it — the numbered-semantic vocabulary adopted by ADR-0051
+ * (superseding the bare `p0`/`p1`/`p2` names ADR-0032 originally picked). The
+ * leading digit is deliberate: GitHub sorts labels alphabetically, and
+ * without it a semantic name (`now`/`next`/`later`) would not sort in tier
+ * order in the label sidebar. `governance` has no entry here — see
+ * {@link TYPE_LABELS}.
  *
  * @example
  * ```js
  * import { PRIORITY_LABELS } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
  *
- * PRIORITY_LABELS.p1; // "priority:p1"
+ * PRIORITY_LABELS.p1; // "priority:1-next"
  * ```
  */
 export const PRIORITY_LABELS = {
-  p0: "priority:p0",
-  p1: "priority:p1",
-  p2: "priority:p2",
-  governance: "priority:governance",
+  p0: "priority:0-now",
+  p1: "priority:1-next",
+  p2: "priority:2-later",
+};
+
+/**
+ * GitHub label strings for {@link Item} facets that are a *category*, not a
+ * priority tier. `governance` moved here under ADR-0051: it was previously
+ * `priority:governance`, but {@link classifyPriorityCell} has never had a
+ * governance branch (a governance row's Priority cell is always the
+ * untiered dash placeholder) — filing it under the `priority:` prefix
+ * claimed it was a fourth tier when it never behaved like one. A governance
+ * item now carries {@link TYPE_LABELS}.governance instead of any
+ * {@link PRIORITY_LABELS} entry; it keeps its own {@link MILESTONE_TITLES}
+ * entry unchanged.
+ *
+ * @example
+ * ```js
+ * import { TYPE_LABELS } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ *
+ * TYPE_LABELS.governance; // "type:governance"
+ * ```
+ */
+export const TYPE_LABELS = {
+  governance: "type:governance",
 };
 
 /**
@@ -63,19 +90,22 @@ export const PRIORITY_LABELS = {
  * milestone — governance items previously had none
  * ({@link buildIssuePayload} returned `null`), which left issue #194 the
  * only milestone-less issue while the "Priority 0" milestone held zero; see
- * the dated ADR-0032 Update for the rationale.
+ * the dated ADR-0032 Update for the rationale. Titles renamed under ADR-0051
+ * to match the {@link PRIORITY_LABELS} vocabulary; `governance` and `major`
+ * are untouched by that rename — governance was never a tier, and `major` was
+ * always its own semantic bucket.
  *
  * @example
  * ```js
  * import { MILESTONE_TITLES } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
  *
- * MILESTONE_TITLES.p0; // "Priority 0"
+ * MILESTONE_TITLES.p0; // "Now — unblock first"
  * ```
  */
 export const MILESTONE_TITLES = {
-  p0: "Priority 0",
-  p1: "Priority 1",
-  p2: "Priority 2",
+  p0: "Now — unblock first",
+  p1: "Next — consumer fleet",
+  p2: "Later — gated/deferred",
   governance: "Governance",
   major: "2.0 / breaking",
 };
@@ -83,10 +113,17 @@ export const MILESTONE_TITLES = {
 const ROADMAP_PATH = "docs/ROADMAP.md";
 const IMPLEMENTATION_PATH = "docs/plans/IMPLEMENTATION.md";
 
-const ROADMAP_ANCHORS = {
-  p0: "#priority-0",
-  p1: "#priority-1",
-  governance: "#governance-follow-ups",
+// Deep-link anchors into docs/ROADMAP.md's own `## Priority 0` / `## Priority 1`
+// / `## Governance follow-ups (...)` headings — unrenamed by ADR-0051 (only the
+// GitHub-side label/milestone/tracker-cell vocabulary moved, not the ROADMAP
+// headings themselves). Corrected here to GitHub's actual anchor slug, which
+// includes the full heading text after the em dash/parenthetical — the prior
+// `#priority-0`/`#priority-1` values never matched a real anchor and every
+// synced deep-link for those two sections landed at the top of the file.
+export const ROADMAP_ANCHORS = {
+  p0: "#priority-0--library-hardening-do-before-more-scripts",
+  p1: "#priority-1--consumer-fleet",
+  governance: "#governance-follow-ups-adr-0028--adr-0029",
 };
 
 const IMPLEMENTATION_ANCHORS = {
@@ -656,8 +693,10 @@ export function actionableItems(roadmap, implementation) {
  * `MAX_TITLE_LENGTH` — a tracker row's "Title & change" cell can run to
  * several sentences, and GitHub issue titles are meant to be scanned as
  * labels, not read as prose; the untruncated detail always survives in the
- * body. `labels` always carries {@link HUB_LABEL} + the priority label, plus
- * a {@link STATUS_LABELS} entry when the item is Deferred/Blocked. The
+ * body. `labels` always carries {@link HUB_LABEL} plus either the item's
+ * {@link PRIORITY_LABELS} entry (p0/p1/p2) or {@link TYPE_LABELS}.governance
+ * (governance is a category, not a tier, so it never carries both), plus a
+ * {@link STATUS_LABELS} entry when the item is Deferred/Blocked. The
  * milestone is {@link MAJOR_BUMP_ITEM_KEYS}'s `major` bucket when the item's
  * key is in that set, else the priority's {@link MILESTONE_TITLES} entry —
  * every item now resolves to a real milestone, including governance ones.
@@ -679,6 +718,16 @@ export function actionableItems(roadmap, implementation) {
  * });
  * ```
  */
+// The priority/category label for an item — governance is a category
+// (TYPE_LABELS.governance), every other priority is a tier (PRIORITY_LABELS
+// entry). Split out of buildIssuePayload so the "governance never gets a
+// priority:* label" rule lives in exactly one place.
+function facetLabel(priority) {
+  return priority === "governance"
+    ? TYPE_LABELS.governance
+    : PRIORITY_LABELS[priority];
+}
+
 export function buildIssuePayload(item) {
   const banner = `**Derived — do not edit.** Authored source: [${item.sourcePath}](${blobUrl(item.sourcePath)}${item.sourceAnchor}); re-synced by \`pnpm sync:hub\`.`;
   const body = [hubMarker(item.key), "", banner, "", item.detail].join("\n");
@@ -693,7 +742,7 @@ export function buildIssuePayload(item) {
     body,
     labels: [
       HUB_LABEL,
-      PRIORITY_LABELS[item.priority],
+      facetLabel(item.priority),
       ...(statusLabel ? [statusLabel] : []),
     ],
     milestoneTitle,
@@ -713,7 +762,7 @@ export function buildIssuePayload(item) {
  * ```js
  * import { planMilestones } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
  *
- * planMilestones(items, ["Priority 0"]); // { create: ["Priority 1", "Priority 2"] }
+ * planMilestones(items, ["Now — unblock first"]); // { create: ["Next — consumer fleet", "Later — gated/deferred"] }
  * ```
  */
 export function planMilestones(items, existingTitles) {
@@ -759,13 +808,14 @@ function isResolved(status) {
   return status === "done" || status === "rejected";
 }
 
-// The three label families planIssueSync's dirty-check tracks for drift —
-// HUB_LABEL, priority:*, status:*. Anything else on an issue (a human-added
-// label) is outside hub-sync's authority and never inspected here.
+// The label families planIssueSync's dirty-check tracks for drift — HUB_LABEL,
+// priority:*, type:* (governance), status:*. Anything else on an issue (a
+// human-added label) is outside hub-sync's authority and never inspected here.
 function isManagedLabel(label) {
   return (
     label === HUB_LABEL ||
     label.startsWith("priority:") ||
+    label.startsWith("type:") ||
     label.startsWith("status:")
   );
 }

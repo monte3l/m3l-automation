@@ -211,7 +211,8 @@ export function classifyStatus(cell) {
 /**
  * Classify a tracker table's Priority cell into an {@link
  * ./hub-sync.mjs} `Item` priority, reporting whether the cell was actually
- * in-vocabulary. `P0`/`P1`/`P2` map to their tier; a cell that is nothing
+ * in-vocabulary. `Now`/`Next`/`Later` map to their tier (ADR-0051's semantic
+ * vocabulary, replacing the original `P0`/`P1`/`P2`); a cell that is nothing
  * but dashes is the trackers' documented **untiered placeholder** — used on
  * capability-deepening / post-comparison wave rows whose change isn't
  * priority-tiered at all — and is recognized as a deliberate authoring
@@ -237,16 +238,16 @@ export function classifyStatus(cell) {
  * ```js
  * import { classifyPriorityCell } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
  *
- * classifyPriorityCell("**P1**"); // { priority: "p1", recognized: true }
- * classifyPriorityCell("—");      // { priority: "p2", recognized: true }
- * classifyPriorityCell("P3");     // { priority: "p2", recognized: false }
+ * classifyPriorityCell("**Next**"); // { priority: "p1", recognized: true }
+ * classifyPriorityCell("—");        // { priority: "p2", recognized: true }
+ * classifyPriorityCell("P3");       // { priority: "p2", recognized: false }
  * ```
  */
 export function classifyPriorityCell(cell) {
   const stripped = cell.replace(/[`*_]/g, "").trim();
-  if (/^p0$/i.test(stripped)) return { priority: "p0", recognized: true };
-  if (/^p1$/i.test(stripped)) return { priority: "p1", recognized: true };
-  if (/^p2$/i.test(stripped)) return { priority: "p2", recognized: true };
+  if (/^now$/i.test(stripped)) return { priority: "p0", recognized: true };
+  if (/^next$/i.test(stripped)) return { priority: "p1", recognized: true };
+  if (/^later$/i.test(stripped)) return { priority: "p2", recognized: true };
   // The untiered placeholder, in any dash the authoring tools produce
   // (em dash, en dash, hyphen, or a run of them). An *empty* cell is
   // deliberately NOT recognized: a missing Priority is an omission, whereas
@@ -607,7 +608,7 @@ export function extractRoadmap(content) {
  * ```js
  * import { IMPLEMENTATION_SECTION_HEADINGS } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
  *
- * IMPLEMENTATION_SECTION_HEADINGS.gated.label; // "Gated library modules & deferred decisions (P2)"
+ * IMPLEMENTATION_SECTION_HEADINGS.gated.label; // "Gated library modules & deferred decisions (Later)"
  * ```
  */
 export const IMPLEMENTATION_SECTION_HEADINGS = {
@@ -640,8 +641,9 @@ export const IMPLEMENTATION_SECTION_HEADINGS = {
     regex: /^## AWS getter reality(?=[\s(]|$)/m,
   },
   gated: {
-    label: "Gated library modules & deferred decisions (P2)",
-    regex: /^## Gated library modules & deferred decisions \(P2\)(?=[\s(]|$)/m,
+    label: "Gated library modules & deferred decisions (Later)",
+    regex:
+      /^## Gated library modules & deferred decisions \(Later\)(?=[\s(]|$)/m,
   },
 };
 
@@ -1206,7 +1208,7 @@ export function renderHubPage(model) {
     ),
     renderOptionalTable(
       "backlog-gated",
-      "Gated library modules & deferred decisions (P2)",
+      "Gated library modules & deferred decisions (Later)",
       backlog.gated,
       "docs/plans",
     ),
