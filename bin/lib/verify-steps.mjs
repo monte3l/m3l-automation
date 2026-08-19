@@ -303,6 +303,13 @@ export const VERIFY_STEPS = [
     skipReason:
       "needs a `gh`-authenticated session and live GitHub state; ci.yml also runs it push-only, not on PRs",
   },
+  {
+    ciStepName: "Check GitHub platform-feature stance (push-only)",
+    id: "check-github-features",
+    cmd: () => "pnpm check:github-features",
+    skipReason:
+      "needs a `gh`-authenticated session and live GitHub state; ci.yml also runs it push-only, not on PRs",
+  },
 ];
 
 /**
