@@ -37,8 +37,10 @@ Exported symbols:
   test can inject a bare object without constructing one.
 - `M3LCheckpointError` — thrown on every failure path; an `M3LError` subclass.
 - `M3LCheckpointErrorCode` — the narrowed code union carried by
-  `M3LCheckpointError`: `"ERR_CHECKPOINT_CORRUPT"`, `"ERR_CHECKPOINT_IO"`,
-  `"ERR_CHECKPOINT_MISSING"`, `"ERR_CHECKPOINT_PARSE"`.
+  `M3LCheckpointError`: `"ERR_CHECKPOINT_CORRUPT"`,
+  `"ERR_CHECKPOINT_DEFINITION"`, `"ERR_CHECKPOINT_FINGERPRINT_MISMATCH"`,
+  `"ERR_CHECKPOINT_IO"`, `"ERR_CHECKPOINT_MISSING"`,
+  `"ERR_CHECKPOINT_PARSE"`.
 
 ### `M3LCheckpointStore<TCheckpoint>`
 
@@ -68,6 +70,18 @@ Constructor options (`M3LCheckpointStoreOptions<TCheckpoint>`):
     `"ERR_CHECKPOINT_MISSING"`. This is the §1.2 contract for `--resume`: an
     absent checkpoint under an explicit resume request is a caller/config
     error, never a silent fresh start.
+- `definition?: unknown` — **optional.** The resolved configuration that gives
+  this run's stored offsets their meaning: an Athena SQL query, a
+  Logs-Insights time window plus log-group list, a DynamoDB table plus segment
+  count. Supplying it opts into **fingerprinting** — `write()` stamps
+  `canonicalJsonHash(definition)` onto the envelope, and `read()` refuses to
+  resume from a checkpoint written under a different definition (see **On-disk
+  format** below). Hashed **once, at construction**, so a value
+  `canonicalJsonHash` rejects (a circular reference, a `BigInt`, a non-finite
+  number) throws `ERR_CHECKPOINT_DEFINITION` straight out of the constructor
+  rather than surfacing later on the first `read()` or `write()`. The value is
+  never persisted and never reaches a message or `context` — only its hash is
+  stored. Omitting it preserves today's behaviour exactly.
 
 Methods:
 
@@ -78,8 +92,10 @@ containing a`..`segment) is rejected by`resolveOutput`itself, which
 throws`M3LPathResolutionError`— not`M3LCheckpointError` — directly out of
   the constructor.
 - `read(): Promise<TCheckpoint>` — reads, JSON-parses, verifies the
-  content-addressed envelope's checksum (see below), and validates the
-  checkpoint; applies the `missing` policy on `ENOENT`.
+  content-addressed envelope's checksum and then — when a `definition` was
+  supplied and the envelope carries a `fingerprint` — that the two agree (see
+  below), and validates the checkpoint; applies the `missing` policy on
+  `ENOENT`.
 - `write(checkpoint: TCheckpoint): Promise<void>` — persists `checkpoint`
   atomically (write-temp-then-rename), replacing any prior contents. **Does
   not create the output directory** — `M3LPaths` performs no filesystem I/O,
@@ -94,7 +110,7 @@ throws`M3LPathResolutionError`— not`M3LCheckpointError` — directly out of
   is designed to prevent.
 
 **On-disk format: a content-addressed envelope.** `write()` persists
-`{ __m3lCheckpointFormat: 1, checksum, payload }` — not the bare
+`{ __m3lCheckpointFormat: 1, checksum, fingerprint?, payload }` — not the bare
 `checkpoint` value — where `checksum` is `canonicalJsonHash(checkpoint)`
 (see [Core / json](./json.md)). `read()` detects this envelope shape,
 recomputes the checksum over `payload`, and compares it to the stored value
@@ -114,12 +130,46 @@ detected as legacy and read exactly as before, with no integrity check
 possible on it (there is nothing to compare against). Upgrading the library
 does not invalidate an in-flight checkpoint from an older version.
 
+**The `fingerprint` binds a checkpoint to the definition that wrote it.** The
+`checksum` answers "is this payload intact"; it cannot answer "does this offset
+still mean what it meant". Editing an Athena query, or a Logs-Insights time
+window, and then resuming would otherwise succeed silently and continue from an
+offset that no longer refers to the same work. When a `definition` is supplied,
+`write()` stamps `fingerprint: canonicalJsonHash(definition)` onto the
+envelope, and `read()` compares it against the fingerprint the current
+definition produces. Because the hash is computed over **canonical** JSON, two
+definition objects differing only in key order fingerprint identically — a
+settings-object reordering does not invalidate an in-flight checkpoint.
+
+`read()` verifies the `checksum` **before** the `fingerprint`: a payload that
+failed its integrity check has an untrustworthy fingerprint, so
+`ERR_CHECKPOINT_CORRUPT` is thrown even when the fingerprint also disagrees.
+The full read matrix:
+
+| `definition` on the store | `fingerprint` on the envelope | `read()`                                                    |
+| ------------------------- | ----------------------------- | ----------------------------------------------------------- |
+| supplied                  | present, matches              | resumes                                                     |
+| supplied                  | present, differs              | throws `ERR_CHECKPOINT_FINGERPRINT_MISMATCH`                |
+| supplied                  | absent                        | resumes — reads exactly as it does without this feature     |
+| absent                    | present                       | resumes — there is no current definition to compare against |
+| either                    | no envelope at all (legacy)   | resumes — the legacy bare-JSON path is untouched            |
+
+**Backward compatible on every axis**, and only opting in changes behaviour: an
+envelope written before `fingerprint` existed has none and reads as before; a
+caller that supplies no `definition` writes none and compares none; and the
+legacy no-envelope path is not touched. The **same
+not-a-tamper-evidence caveat** as the `checksum` applies verbatim — the
+fingerprint is an unkeyed hash over public canonical JSON, so anyone with write
+access to the file can recompute a matching one, strip the field, or strip the
+whole envelope. It defends against the caller's own stale-configuration
+mistake, not against an adversary.
+
 - `delete(): Promise<void>` — deletes the checkpoint file; tolerant of it
   already being absent.
 
 ### `M3LCheckpointError`
 
-One subclass, four codes — the `M3LFtsIndexError` convention. Constructor
+One subclass, six codes — the `M3LFtsIndexError` convention. Constructor
 options stay unexported (callers catch, they don't construct).
 
 - `"ERR_CHECKPOINT_CORRUPT"` — `read()` detected a content-addressed envelope
@@ -130,6 +180,25 @@ options stay unexported (callers catch, they don't construct).
   comparison, not a caught exception) and `context` carries only the resolved
   `path`, never file content, matching `"ERR_CHECKPOINT_PARSE"`'s rationale
   below.
+- `"ERR_CHECKPOINT_DEFINITION"` — the `definition` supplied to the constructor
+  could not be hashed (a circular reference, a `BigInt`, a non-finite number —
+  anything `canonicalJsonHash` rejects). Thrown **from the constructor**, so an
+  unusable definition surfaces at composition time rather than on the first
+  `read()`. **Never chains a `cause`**, for the same reason `write()`'s
+  checksum-computation arm of `"ERR_CHECKPOINT_IO"` does not: the underlying
+  error's message can embed the caller's actual definition value, which is
+  resolved configuration. `context` carries only the resolved `path`.
+- `"ERR_CHECKPOINT_FINGERPRINT_MISMATCH"` — `read()` found an envelope whose
+  stored `fingerprint` does not match the fingerprint the store's current
+  `definition` produces: the checkpoint is intact, but it was written under a
+  different configuration, so its offsets no longer mean what they meant.
+  Failing loud beats resuming into a meaningless offset. Thrown before
+  `validate` ever sees the payload, and **after** the `checksum` check, so a
+  file that is both corrupt and stale reports `"ERR_CHECKPOINT_CORRUPT"`.
+  **Never chains a `cause`** (the mismatch is a direct comparison, not a caught
+  exception), and neither the definition nor either fingerprint reaches the
+  message or `context` — only the resolved `path` does, matching
+  `"ERR_CHECKPOINT_CORRUPT"`.
 - `"ERR_CHECKPOINT_IO"` — thrown from two distinct sites, with different
   `cause` handling. (1) A read, write, or delete failed for a reason other
   than the file being absent (`EACCES`, `EPERM`, `ENOSPC`, a rejected
@@ -172,6 +241,7 @@ const EMPTY_CHECKPOINT: AthenaCheckpoint = {};
 
 const paths = new Core.M3LPaths();
 const resume = true; // from the script's `--resume` config parameter
+const settings = { queryString: "SELECT 1", database: "analytics" };
 
 const store = new Core.M3LCheckpointStore<AthenaCheckpoint>({
   paths,
@@ -180,6 +250,10 @@ const store = new Core.M3LCheckpointStore<AthenaCheckpoint>({
   missing: resume
     ? { kind: "error" }
     : { kind: "empty", value: EMPTY_CHECKPOINT },
+  // Opt in to fingerprinting: resuming after an edited query now fails loud
+  // with ERR_CHECKPOINT_FINGERPRINT_MISMATCH instead of reattaching to a
+  // query execution that answered a different question.
+  definition: settings,
 });
 
 const checkpoint = await store.read();
@@ -212,15 +286,26 @@ await store.delete();
   rather than promoted into `core/files` until a second caller justifies the
   public surface.
 - **`cause` chaining is resolved by error kind and content risk, not by
-  caller option.** `ERR_CHECKPOINT_PARSE` and `ERR_CHECKPOINT_CORRUPT` never
-  chain — both paths can only be reached from content that may embed caller
-  data. `ERR_CHECKPOINT_MISSING` and `ERR_CHECKPOINT_IO`'s underlying-I/O-failure
+  caller option.** `ERR_CHECKPOINT_PARSE`, `ERR_CHECKPOINT_CORRUPT`,
+  `ERR_CHECKPOINT_FINGERPRINT_MISMATCH` and `ERR_CHECKPOINT_DEFINITION` never
+  chain — every one of those paths can only be reached from content or
+  configuration that may embed caller data.
+  `ERR_CHECKPOINT_MISSING` and `ERR_CHECKPOINT_IO`'s underlying-I/O-failure
   arm chain an errno `Error` (safe — an errno carries no file content), but
   `ERR_CHECKPOINT_IO`'s other arm — a `write()`-time checksum-computation
   failure — never chains, since that underlying error's own message can embed
   the caller's checkpoint value. A toggle to disable any of this protection
   would be a security footgun, not a legitimate variation — see the Style
   Guide's rule on guarding the parse step.
+- **A present-but-non-string `fingerprint` is a corrupt envelope, not a
+  legacy file.** Envelope detection keys off `__m3lCheckpointFormat`, a string
+  `checksum`, and a `payload` — deliberately **not** off `fingerprint`'s type.
+  Widening that guard would be fail-open: a file whose `fingerprint` was
+  hand-edited to a number would stop looking like an envelope and be read down
+  the legacy bare-JSON path, which skips the `checksum` verification too. So
+  the guard's shape is unchanged and `fingerprint`'s type is checked **inside**
+  the envelope branch, where a non-string value throws
+  `ERR_CHECKPOINT_CORRUPT`.
 - **The checkpoint file is always flat at the output-directory root**,
   never nested under a per-run archival subdirectory. `M3LScript` derives a
   fresh, per-invocation `runStartedAt` on every run, and stage-9 archival
@@ -233,10 +318,12 @@ await store.delete();
 - **`validate` is required, not optional.** An optional validator makes
   "trust whatever is on disk" the path of least resistance; requiring it
   forces every caller to state the shape it expects to read back.
-- **A `{ kind: "empty" }` policy does not suppress `ERR_CHECKPOINT_PARSE` or
-  `ERR_CHECKPOINT_CORRUPT`.** The `missing` policy only governs what happens
-  when the file is **absent** (`ENOENT`). A _present-but-corrupt_ checkpoint
-  (fails `validate`, isn't valid JSON, or fails its envelope checksum) always
+- **A `{ kind: "empty" }` policy does not suppress `ERR_CHECKPOINT_PARSE`,
+  `ERR_CHECKPOINT_CORRUPT` or `ERR_CHECKPOINT_FINGERPRINT_MISMATCH`.** The
+  `missing` policy only governs what happens
+  when the file is **absent** (`ENOENT`). A _present-but-unusable_ checkpoint
+  (fails `validate`, isn't valid JSON, fails its envelope checksum, or was
+  written under a different `definition`) always
   throws, even for a fresh (non-`--resume`) run — the store cannot
   distinguish "this run doesn't care about resuming" from "this run should
   silently discard a corrupt file", and guessing wrong would hide real data
@@ -270,4 +357,7 @@ await store.delete();
 - [Core / script](./script.md) — `M3LScript`'s per-run `runStartedAt` and
   stage-9 archival, and why the checkpoint file must stay outside that
   per-run directory.
+- [ADR-0045](../../adr/0045-streaming-safe-resume-contract.md) — the
+  streaming-safe resume contract, whose 2026-08-18 Update decided that a
+  checkpoint binds to the definition that wrote it.
 - [Architecture overview](../../m3l-common-architecture.md)
