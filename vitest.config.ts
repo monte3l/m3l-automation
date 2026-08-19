@@ -5,7 +5,18 @@ export default defineConfig({
     include: ["**/tests/**/*.test.ts", "**/*.test.ts"],
     // `.claude/worktrees/**` holds nested checkouts of other branches; running
     // their tests from the main tree is wrong and pollutes the run.
-    exclude: ["**/dist/**", "**/node_modules/**", "**/.claude/worktrees/**"],
+    // `bin/tests/**` is excluded here because it is vitest.bin.config.ts's
+    // domain — without this exclude, the broad `**/*.test.ts` include above
+    // matches those files too, so `pnpm test:coverage` (which runs both
+    // configs back to back) executed all of bin/tests/** twice per run with
+    // no coverage benefit (the two configs' coverage `include` scopes were
+    // always disjoint; only the test *execution* overlapped).
+    exclude: [
+      "**/dist/**",
+      "**/node_modules/**",
+      "**/.claude/worktrees/**",
+      "bin/tests/**",
+    ],
     coverage: {
       provider: "v8",
       include: ["packages/*/src/**/*.ts"],

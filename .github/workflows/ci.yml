@@ -155,9 +155,9 @@ jobs:
         run: pnpm test:coverage
 
       # Per-file test counts recorded in docs/implementation-status.md must match
-      # the live suite. This derives them by running Vitest a second time — the
-      # duplicate run is deliberate (the coverage gate above cannot emit counts);
-      # do not "optimize" it away by folding it into the step above.
+      # the live suite. Derived from `vitest list` — a collection pass, not a
+      # full run (see bin/check-test-counts.mjs) — so this does not duplicate
+      # the coverage gate above.
       - name: Check test counts
         run: pnpm check:test-counts
 
