@@ -168,6 +168,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:cadence",
   },
   {
+    ciStepName: "Check CLAUDE.md budget",
+    id: "check-claude-md-budget",
+    cmd: () => "pnpm check:claude-md-budget",
+  },
+  {
     ciStepName: "Check tracker coverage",
     id: "check-tracker-coverage",
     cmd: () => "pnpm check:tracker-coverage",

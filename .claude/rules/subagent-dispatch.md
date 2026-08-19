@@ -10,8 +10,8 @@ paths:
 > [`docs/contributing/subagent-context-management.md`](../../docs/contributing/subagent-context-management.md).
 > This file is the terse checklist consulted when dispatching or resuming a
 > spoke. No natural path-glob covers "dispatching a subagent," so this rule is
-> also linked from `CLAUDE.md`'s Agent Operating Model section and from the
-> dispatching skills — read it there too.
+> also listed in `CLAUDE.md`'s "Coding, errors & tests" rules list and linked
+> from the dispatching skills — read it there too.
 
 Subagent mid-turn truncation (a spoke hitting `maxTurns: 40` or an output-token
 cap mid-thought) is this repo's most-recurring build divergence — 20+ logged

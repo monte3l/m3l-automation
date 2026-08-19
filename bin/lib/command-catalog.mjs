@@ -233,12 +233,17 @@ export const COMMAND_CATALOG = [
   {
     name: "check:workflows-doc",
     description:
-      "Verifies CLAUDE.md's CI/CD table documents exactly the workflow files under .github/workflows/ — count plus one row each. Run after adding/removing a GitHub Actions workflow.",
+      "Verifies docs/contributing/ci-cd.md's CI/CD table documents exactly the workflow files under .github/workflows/ — count plus one row each. Run after adding/removing a GitHub Actions workflow.",
   },
   {
     name: "check:cadence",
     description:
       "Verifies CLAUDE.md's Commands cadence table matches lefthook.yml's pre-commit/commit-msg/pre-push stages exactly. Run after editing lefthook.yml.",
+  },
+  {
+    name: "check:claude-md-budget",
+    description:
+      "Verifies CLAUDE.md's runtime content (HTML comments stripped) stays under its line/token budget, and warns on Prettier-padded table rows. Run after editing CLAUDE.md.",
   },
   {
     name: "check:tracker-coverage",

@@ -209,7 +209,7 @@ advisory only: tokens are not statically checkable, so budget-heavy workflows
 should consult `budget.remaining()` at run time instead. All of this is
 machine-verified by `pnpm check:workflows` (`bin/check-workflows.mjs`, a
 CI-only step — not to be confused with `check:workflows-doc`, which
-reconciles the CLAUDE.md CI/CD table against `.github/workflows/`). The check
+reconciles the docs/contributing/ci-cd.md CI/CD table against `.github/workflows/`). The check
 verifies per-step rows by literal presence, not call-site association — each
 step row's model/effort/label must all appear in the script, but binding a
 literal to its specific `agent()` call is beyond a regex scan (two calls with
