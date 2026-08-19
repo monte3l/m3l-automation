@@ -177,7 +177,9 @@ silently and continue from an offset that no longer means what it meant when it 
 written.
 
 The envelope gains an **optional** `fingerprint`, computed with the same existing
-`canonicalJsonHash` over a caller-supplied definition value — the resolved settings
+`canonicalJsonHash` over a caller-supplied definition value (superseded in detail
+by the 2026-08-19 Addendum below: the hash covers a validated _projection_ of
+that value, not the value itself) — the resolved settings
 that give the stored offsets their meaning. On read, a mismatch fails with a
 dedicated error code rather than resuming.
 
@@ -191,6 +193,98 @@ Backward compatibility is preserved on every axis. An envelope with no
 writes none; and the legacy no-envelope path is untouched. Only opting in changes
 behaviour. Named adopters: `athena-query`, `cloudwatch-logs-insights`,
 `dynamodb-crud`.
+
+## Addendum (2026-08-19) — two codes, not one, and the hash lands at construction
+
+The Update above authorises a single dedicated error code, for the read-time
+mismatch. Implementing it (A4, `docs/plans/IMPLEMENTATION.md`) surfaced a
+second decision the Update did not contemplate, settled by the maintainer
+during that work and recorded here so the shipped public surface is not wider
+than its decision record.
+
+**The definition is hashed once, at construction, not lazily on first use.**
+A definition the library will not fingerprint has to surface somewhere — and in
+the shipped design the traversal rejects it before `canonicalJsonHash` is
+reached at all. Deferring it to the
+first `read()`/`write()` would report a composition-time mistake as a runtime
+I/O-adjacent failure, minutes into a run. Hashing eagerly makes it a
+construction failure instead, which is where the caller can act on it.
+
+**That needs a second code: `ERR_CHECKPOINT_DEFINITION`** (`origin: caller`,
+non-retryable). Routing it through the read-time mismatch code would conflate
+"your configuration changed since this checkpoint was written" with "the value
+you passed cannot be hashed at all" — two different faults with two different
+fixes. Routing it through `ERR_CHECKPOINT_IO`, which already absorbs the
+equivalent failure for an unhashable _checkpoint_, would repeat a
+misclassification rather than extend one: that arm is `origin: external` even
+though its trigger is a caller value. The pre-existing arm is left alone;
+the new one is classified honestly.
+
+**The same code also rejects any definition the library will not fingerprint,
+decided by a single-traversal validate-and-project.** Verified against the real
+`canonicalJsonHash`: a `function` and a `symbol` both canonicalise to `null`, and
+`new Map([["a", 1]])` and `new Set([1, 2, 3])` both canonicalise to `{}`. A
+caller passing any of those would opt into fingerprinting, get a stamped
+envelope, and get a comparison that can never mismatch — a silent no-op
+precisely where this Update's whole purpose is to fail loud. Rejecting them at
+construction applies the Update's own stance ("failing loud beats resuming into a
+corrupt offset") one level earlier.
+
+**The mechanism took three attempts, and the first two failed the same way.**
+Attempt 1 rejected recognisable bad shapes at the top level; a nested `Set`
+walked straight past it, so `{ region, logGroups: new Set([...]) }` — the
+adopters' own named shape — still cross-resumed silently. Attempt 2 made the walk
+recursive but still validated the caller's object and then let
+`canonicalJsonHash` read it _again_, so **the bytes that were checked were not
+the bytes that were hashed**. Three executed bypasses followed: a getter read
+twice, returning an allowed array first and a `Set` second; a **non-enumerable**
+own `toJSON`, invisible to `Object.keys` yet applied by the serializer, so two
+entirely different definitions both fingerprinted as `{}` and resumed on each
+other's offsets; and own non-index properties on an array, invisible to both
+traversals.
+
+Naming those three cases would have been a third denylist. The accepted design
+instead removes the divergence: **one traversal reads each value exactly once,
+validates it, and copies it into a fresh plain-JSON projection, and the
+fingerprint is computed over the projection.** There is a single observation, and
+the fingerprint provably covers exactly what was validated. The allowlist admits,
+at every depth, only a finite number, a string, a boolean, `null`, a dense array
+of accepted values, or a plain object with no own symbol keys whose own
+enumerable property values are accepted (`undefined`-valued properties allowed
+and skipped, so omitted and explicitly-`undefined` fingerprint alike by design).
+A `toJSON` on the **caller's** value is never consulted: a definition is
+identified by the data it holds, not by a serialisation hook, so a `Date` is
+passed as `toISOString()`. That is a claim about the caller's objects, not about
+the realm — a process that has polluted `Array.prototype.toJSON` can still
+collapse a projected array before it is hashed, which
+`docs/reference/core/checkpoint.md` records as the consumer's precondition
+rather than something this submodule can establish. An
+honestly-empty `{}` or `[]` is still accepted — it carries no information but,
+unlike a `Map`, it does not _lose_ any.
+
+This is the same conclusion ADR-0035 reached for redaction — a denylist over
+open-ended input does not converge — and it costs the named adopters nothing:
+all four already resolve their settings to strings, numbers, booleans,
+`readonly string[]`, and nested plain objects.
+
+**One pre-existing defect was fixed in the same change.** `write()` hashed the
+caller's checkpoint and then serialised it separately for disk, and the two views
+are not always equal: a sparse array is `[1,,3]` canonically and `[1,null,3]` to
+`JSON.stringify`. The library therefore wrote files whose stored `checksum` did
+not match their own `payload`, and every later `read()` rejected its own output
+as `ERR_CHECKPOINT_CORRUPT` — a permanently dead resume, reproduced end to end.
+`write()` now snapshots the payload once and hashes that same snapshot. The
+stored checksum is unchanged for any ordinary payload, so existing checkpoints
+stay readable.
+
+**`ERR_CHECKPOINT_FINGERPRINT_MISMATCH` is `origin: caller`**, unlike the
+`external` classification its file-reading neighbours `ERR_CHECKPOINT_CORRUPT`
+and `ERR_CHECKPOINT_PARSE` carry. Graded by dominant cause: the case this
+Update exists for is an operator editing the query or the window between runs,
+which should exit `2` (`CONFIG_USAGE`), not `3` (`EXTERNAL`). Externally
+tampered fingerprints reach the same code and are therefore reported as caller
+faults — an accepted consequence, documented in
+`docs/reference/core/checkpoint.md`.
 
 ## Links
 

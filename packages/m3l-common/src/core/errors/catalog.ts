@@ -122,6 +122,8 @@ export const M3L_ERROR_CATALOG: Readonly<
   ERR_AWS_PROVISIONING: { origin: "external", retryable: false },
   ERR_BINARY_FILE_EXPORT: { origin: "external", retryable: false },
   ERR_CHECKPOINT_CORRUPT: { origin: "external", retryable: false },
+  ERR_CHECKPOINT_DEFINITION: { origin: "caller", retryable: false },
+  ERR_CHECKPOINT_FINGERPRINT_MISMATCH: { origin: "caller", retryable: false },
   ERR_CHECKPOINT_IO: { origin: "external", retryable: false },
   ERR_CHECKPOINT_MISSING: { origin: "caller", retryable: false },
   ERR_CHECKPOINT_PARSE: { origin: "external", retryable: false },
