@@ -8,22 +8,22 @@
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts",
           "symbol": "M3LCheckpointStore",
-          "blob": "ce187edb70800d22a451dc1c94a582104b65cdb5"
+          "blob": "4b4384b74e403607cd629cf5925c084e65ea2b65"
         },
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts",
           "symbol": "M3LCheckpointStoreOptions",
-          "blob": "ce187edb70800d22a451dc1c94a582104b65cdb5"
+          "blob": "4b4384b74e403607cd629cf5925c084e65ea2b65"
         },
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts",
           "symbol": "M3LCheckpointMissingPolicy",
-          "blob": "ce187edb70800d22a451dc1c94a582104b65cdb5"
+          "blob": "4b4384b74e403607cd629cf5925c084e65ea2b65"
         },
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts",
           "symbol": "M3LCheckpointPathsPort",
-          "blob": "ce187edb70800d22a451dc1c94a582104b65cdb5"
+          "blob": "4b4384b74e403607cd629cf5925c084e65ea2b65"
         },
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointError.ts",
@@ -44,17 +44,17 @@
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts",
           "symbol": "M3LCheckpointStore",
-          "blob": "ce187edb70800d22a451dc1c94a582104b65cdb5"
+          "blob": "4b4384b74e403607cd629cf5925c084e65ea2b65"
         },
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts",
           "symbol": "M3LCheckpointStoreOptions",
-          "blob": "ce187edb70800d22a451dc1c94a582104b65cdb5"
+          "blob": "4b4384b74e403607cd629cf5925c084e65ea2b65"
         },
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts",
           "symbol": "M3LCheckpointMissingPolicy",
-          "blob": "ce187edb70800d22a451dc1c94a582104b65cdb5"
+          "blob": "4b4384b74e403607cd629cf5925c084e65ea2b65"
         }
       ],
       "retrieved": "2026-08-19"
@@ -81,7 +81,7 @@
         {
           "file": "packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts",
           "symbol": "M3LCheckpointStore",
-          "blob": "ce187edb70800d22a451dc1c94a582104b65cdb5"
+          "blob": "4b4384b74e403607cd629cf5925c084e65ea2b65"
         },
         {
           "file": "packages/m3l-common/src/internal/files/atomicWrite.ts",
