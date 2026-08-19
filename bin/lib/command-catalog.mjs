@@ -83,7 +83,7 @@ export const COMMAND_CATALOG = [
   {
     name: "verify",
     description:
-      "Runs the CI `verify` job's step list locally in one command (bin/lib/verify-steps.mjs), fail-fast by default. `-- --continue` runs every step and summarises; `-- --full` also runs steps with no local equivalent by default (e.g. a frozen-lockfile reinstall). Use before opening a PR to reproduce the CI gate ahead of time.",
+      "Runs every ci.yml lane job's project-check steps locally in one command (bin/lib/verify-steps.mjs), fail-fast by default. `-- --continue` runs every step and summarises; `-- --full` also runs steps with no local equivalent by default (e.g. `pnpm check:hub-drift`, which needs a `gh`-authenticated session). Use before opening a PR to reproduce the CI gate ahead of time.",
   },
   {
     name: "commands",
@@ -98,7 +98,7 @@ export const COMMAND_CATALOG = [
   {
     name: "check:verify-parity",
     description:
-      "Verifies bin/lib/verify-steps.mjs (the `pnpm verify` aggregate gate's step list) matches the CI verify job in .github/workflows/ci.yml exactly, in both directions. Run after adding/removing/renaming a step in ci.yml's verify job.",
+      "Verifies bin/lib/verify-steps.mjs (the `pnpm verify` aggregate gate's step list) matches the union of project-check steps across every lane job in .github/workflows/ci.yml exactly, in both directions. Run after adding/removing/renaming a step in any ci.yml lane job.",
   },
   {
     name: "check:api",
