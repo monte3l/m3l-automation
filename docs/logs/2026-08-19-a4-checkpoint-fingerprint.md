@@ -49,8 +49,8 @@ pass. Suite **7157** tests (180 files) plus **1100** bin tests — the branch re
 onto a `main` that stopped the primary vitest config from also executing
 `bin/tests/**` twice (#493), so the totals moved without any test being lost.
 `checkpoint.test.ts`
-**134** tests; `M3LCheckpointError.ts` 100% on all four metrics,
-`M3LCheckpointStore.ts` statements 93.5 / branches 98.7 / functions 100 (residue
+**144** tests; `M3LCheckpointError.ts` 100% on all four metrics,
+`M3LCheckpointStore.ts` statements 93.6 / branches 98.7 / functions 100 (residue
 is array-specific hostile-`Proxy` arms and three safety nets the projection makes
 unreachable). `pnpm sync:docs` 13/13.
 

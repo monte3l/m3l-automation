@@ -91,8 +91,12 @@ Constructor options (`M3LCheckpointStoreOptions<TCheckpoint>`):
   whose canonical JSON form discards its content would produce a fingerprint
   that can never mismatch — a check that silently does nothing. So at
   construction the definition is walked **once**: every value is read exactly
-  once, checked against the allowlist below, and copied into a fresh
-  plain-JSON structure. **The fingerprint is computed over that projection, not
+  once per occurrence in the traversal, checked against the allowlist below,
+  and copied into a fresh plain-JSON structure. A value reachable by more than
+  one path is read once per path, with each occurrence validated and projected
+  independently — the checked bytes still equal the hashed bytes, and a second
+  read returning something different poisons the whole projection rather than
+  slipping past it. **The fingerprint is computed over that projection, not
   over the caller's object.** At every depth the walk accepts only:
 
   - a finite `number`, a `string`, a `boolean`, or `null`;
@@ -301,13 +305,20 @@ options stay unexported (callers catch, they don't construct).
   `path`, never file content, matching `"ERR_CHECKPOINT_PARSE"`'s rationale
   below.
 - `"ERR_CHECKPOINT_DEFINITION"` — the `definition` supplied to the constructor
-  could not be hashed (a circular reference, a `BigInt`, a non-finite number —
-  anything `canonicalJsonHash` rejects). Thrown **from the constructor**, so an
-  unusable definition surfaces at composition time rather than on the first
-  `read()`. **Never chains a `cause`**, for the same reason `write()`'s
-  checksum-computation arm of `"ERR_CHECKPOINT_IO"` does not: the underlying
-  error's message can embed the caller's actual definition value, which is
-  resolved configuration. `context` carries only the resolved `path`.
+  is **not on the allowlist** the single-traversal projection accepts (see the
+  `definition` option above). Rejection is by that positive criterion, not by
+  membership in a list of bad types — a `Date`, a `Map`, a `Set`, a `RegExp`, a
+  class instance, a sparse array, an array carrying own non-index properties, an
+  object with own symbol keys, a `function`, a `symbol`, a `bigint`, a
+  non-finite number, a cycle, and a structure deeper than the traversal's depth
+  bound are all simply values the walk will not project. A definition it cannot
+  inspect at all (a hostile `Proxy` whose traps throw) fails closed to the same
+  code. Thrown **from the constructor**, so an unusable definition surfaces at
+  composition time rather than on the first `read()`. **Never chains a
+  `cause`**: on the dominant path there is nothing to chain — the walk _returns_
+  a rejection sentinel rather than throwing — and on the residual safety-net arm
+  the underlying error's message could embed the caller's resolved
+  configuration. `context` carries only the resolved `path`.
 - `"ERR_CHECKPOINT_FINGERPRINT_MISMATCH"` — `read()` found an envelope whose
   stored `fingerprint` does not match the fingerprint the store's current
   `definition` produces: the checkpoint is intact, but it was written under a
@@ -319,15 +330,18 @@ options stay unexported (callers catch, they don't construct).
   exception), and neither the definition nor either fingerprint reaches the
   message or `context` — only the resolved `path` does, matching
   `"ERR_CHECKPOINT_CORRUPT"`.
-- `"ERR_CHECKPOINT_IO"` — thrown from two distinct sites, with different
-  `cause` handling. (1) A read, write, or delete failed for a reason other
-  than the file being absent (`EACCES`, `EPERM`, `ENOSPC`, a rejected
-  `rename`, …) — chains the underlying errno `Error` as `cause` (an errno
-  carries no file content, so chaining it is safe and useful). (2) `write()`
-  could not compute the envelope checksum for the supplied `checkpoint` (e.g.
-  a circular reference, a `BigInt`, or a non-finite number — anything
-  `canonicalJsonHash` rejects) — **never chains a `cause`**, since the
-  underlying error's message can embed the caller's actual checkpoint value.
+- `"ERR_CHECKPOINT_IO"` — two classes of site, distinguished by `cause`
+  handling. **OS class, chains a `cause`:** a read, write, or delete failed for
+  a reason other than the file being absent (`EACCES`, `EPERM`, `ENOSPC`, a
+  rejected `rename`, …) — the underlying errno `Error` is chained, safely, since
+  an errno carries no file content. **Serialisation class, never chains:**
+  `write()` could not turn the supplied `checkpoint` into JSON. Its live arm is
+  the payload snapshot, which rejects a circular reference, a `BigInt`, and a
+  non-finite number; the checksum and envelope-serialisation arms behind it are
+  safety nets that a successful snapshot makes unreachable. None of these chains
+  a `cause`, because the underlying error's message can embed the caller's
+  actual checkpoint value — `JSON.stringify`'s circular-structure error names
+  the offending property path.
 - `"ERR_CHECKPOINT_MISSING"` — `read()` was called under a `{ kind: "error" }`
   missing policy and no checkpoint file exists. Chains the `ENOENT` as
   `cause` (an errno carries no file content, so — like `ERR_CHECKPOINT_IO`'s
@@ -408,16 +422,16 @@ await store.delete();
 - **`cause` chaining is resolved by error kind and content risk, not by
   caller option.** Four codes never chain, for **two different reasons** that
   are worth keeping distinct. `ERR_CHECKPOINT_PARSE` and
-  `ERR_CHECKPOINT_DEFINITION` have an underlying error that must not be chained:
-  it can embed the malformed file's content or the caller's definition value.
-  `ERR_CHECKPOINT_CORRUPT` and `ERR_CHECKPOINT_FINGERPRINT_MISMATCH` have
-  **nothing to chain at all** — each is a direct comparison, not a caught
-  exception, so no `cause` exists to suppress in the first place.
-  `ERR_CHECKPOINT_MISSING` and `ERR_CHECKPOINT_IO`'s underlying-I/O-failure
-  arm chain an errno `Error` (safe — an errno carries no file content), but
-  `ERR_CHECKPOINT_IO`'s other arm — a `write()`-time checksum-computation
-  failure — never chains, since that underlying error's own message can embed
-  the caller's checkpoint value. A toggle to disable any of this protection
+  `ERR_CHECKPOINT_IO`'s serialisation-class arms have an underlying error that
+  must not be chained: it can embed the malformed file's content or the caller's
+  checkpoint value. `ERR_CHECKPOINT_CORRUPT`,
+  `ERR_CHECKPOINT_FINGERPRINT_MISMATCH` and `ERR_CHECKPOINT_DEFINITION` have
+  **nothing to chain at all** — the first two are direct comparisons rather than
+  caught exceptions, and the definition walk _returns_ a rejection sentinel
+  rather than throwing, so on each of those paths no `cause` exists to suppress
+  in the first place. `ERR_CHECKPOINT_MISSING` and `ERR_CHECKPOINT_IO`'s
+  OS-class arm chain an errno `Error` (safe — an errno carries no file
+  content). A toggle to disable any of this protection
   would be a security footgun, not a legitimate variation — see the Style
   Guide's rule on guarding the parse step.
 - **A present-but-non-string `fingerprint` is a corrupt envelope, not a

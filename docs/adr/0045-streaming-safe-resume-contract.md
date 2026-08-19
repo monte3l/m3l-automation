@@ -177,7 +177,9 @@ silently and continue from an offset that no longer means what it meant when it 
 written.
 
 The envelope gains an **optional** `fingerprint`, computed with the same existing
-`canonicalJsonHash` over a caller-supplied definition value — the resolved settings
+`canonicalJsonHash` over a caller-supplied definition value (superseded in detail
+by the 2026-08-19 Addendum below: the hash covers a validated _projection_ of
+that value, not the value itself) — the resolved settings
 that give the stored offsets their meaning. On read, a mismatch fails with a
 dedicated error code rather than resuming.
 
@@ -201,8 +203,9 @@ during that work and recorded here so the shipped public surface is not wider
 than its decision record.
 
 **The definition is hashed once, at construction, not lazily on first use.**
-`canonicalJsonHash` rejects a circular reference, a `BigInt` and a non-finite
-number, so an unusable definition has to surface somewhere. Deferring it to the
+A definition the library will not fingerprint has to surface somewhere — and in
+the shipped design the traversal rejects it before `canonicalJsonHash` is
+reached at all. Deferring it to the
 first `read()`/`write()` would report a composition-time mistake as a runtime
 I/O-adjacent failure, minutes into a run. Hashing eagerly makes it a
 construction failure instead, which is where the caller can act on it.
@@ -249,8 +252,13 @@ at every depth, only a finite number, a string, a boolean, `null`, a dense array
 of accepted values, or a plain object with no own symbol keys whose own
 enumerable property values are accepted (`undefined`-valued properties allowed
 and skipped, so omitted and explicitly-`undefined` fingerprint alike by design).
-A `toJSON` is never consulted: a definition is identified by the data it holds,
-not by a serialisation hook, so a `Date` is passed as `toISOString()`. An
+A `toJSON` on the **caller's** value is never consulted: a definition is
+identified by the data it holds, not by a serialisation hook, so a `Date` is
+passed as `toISOString()`. That is a claim about the caller's objects, not about
+the realm — a process that has polluted `Array.prototype.toJSON` can still
+collapse a projected array before it is hashed, which
+`docs/reference/core/checkpoint.md` records as the consumer's precondition
+rather than something this submodule can establish. An
 honestly-empty `{}` or `[]` is still accepted — it carries no information but,
 unlike a `Map`, it does not _lose_ any.
 

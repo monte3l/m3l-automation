@@ -356,11 +356,16 @@ function projectDefinitionPrimitive(value: unknown): unknown {
 }
 
 /**
- * Validates and projects `value` in a **single traversal**: every value is
- * read exactly once, checked against the allowlist below, and copied into a
- * fresh plain-JSON structure. Returns the projected value on success, or the
- * {@link REJECTED} sentinel when any value anywhere in the tree is not on the
- * allowlist.
+ * Validates and projects `value` in a **single traversal**: every occurrence
+ * in the walk is read exactly once per visit and projected into a fresh
+ * plain-JSON structure. A value reachable by N paths in the definition tree
+ * is visited N times — once per occurrence — with each occurrence
+ * independently validated and projected. A divergent second read (e.g. a
+ * getter that returns an accepted array the first time and a rejected `Set`
+ * the second) poisons the whole projection and returns {@link REJECTED},
+ * rather than letting the inconsistency pass silently.
+ * Returns the projected value on success, or the {@link REJECTED} sentinel
+ * when any value anywhere in the tree is not on the allowlist.
  *
  * **Why one traversal, not validate-then-hash.** Two earlier approaches
  * validated the caller's object and then let `canonicalJsonHash` read it
@@ -373,10 +378,14 @@ function projectDefinitionPrimitive(value: unknown): unknown {
  * removes the divergence: there is only one observation, and the fingerprint
  * provably covers exactly what was validated.
  *
- * **`toJSON` is never consulted** — own or inherited. Because the projection
- * is a fresh plain object/array tree built entirely from copied primitives and
- * new `Object.create(null)` maps, it contains no caller objects by reference;
- * `canonicalJsonHash` on the projection cannot reach any caller `toJSON`.
+ * **No caller object is consulted for `toJSON`** — own or inherited. No
+ * caller object appears in the projection by reference: plain objects are
+ * rebuilt as `Object.create(null)` maps (no prototype), and primitive values
+ * are copied directly. Projected arrays are ordinary `unknown[]` values and
+ * carry `Array.prototype`, however — a poisoned realm where
+ * `Array.prototype.toJSON` is defined remains a precondition for correct
+ * fingerprinting (accepted scope limit; see
+ * `docs/reference/core/checkpoint.md`).
  *
  * At every depth the walk accepts only:
  *
@@ -557,9 +566,11 @@ export interface M3LCheckpointStoreOptions<TCheckpoint extends object> {
    * `"ERR_CHECKPOINT_FINGERPRINT_MISMATCH"`).
    *
    * **Validated and projected in a single traversal at construction.** The
-   * definition is walked **once**: every value is read exactly once, checked
-   * against the allowlist below, and copied into a fresh plain-JSON structure.
-   * The fingerprint is computed as `canonicalJsonHash(projection)` — over the
+   * definition is walked **once**: every occurrence in the traversal is read
+   * exactly once per visit. A value reachable by N paths is visited N times
+   * — once per occurrence — with each occurrence independently validated and
+   * projected; a divergent second read poisons the whole projection. The
+   * fingerprint is computed as `canonicalJsonHash(projection)` — over the
    * projection, not the caller's object. This removes any divergence between
    * what is validated and what is hashed: two earlier approaches validated the
    * caller's object and then let the hasher read it again, and both were
@@ -568,11 +579,15 @@ export interface M3LCheckpointStoreOptions<TCheckpoint extends object> {
    * bytes to diverge. Reading the graph once and fingerprinting the projection
    * eliminates the gap by construction.
    *
-   * **`toJSON` is never consulted** — own or inherited. The projected tree is
-   * built entirely from copied primitives and fresh `Object.create(null)` maps
-   * with no inherited methods; `canonicalJsonHash` on the projection cannot
-   * reach any caller `toJSON`. Pass a `Date` as `date.toISOString()` and any
-   * richer collection as the plain array or object you want fingerprinted.
+   * **No caller object is consulted for `toJSON`** — own or inherited. No
+   * caller object appears in the projection by reference: plain objects are
+   * rebuilt as `Object.create(null)` maps (no prototype), and primitive
+   * values are copied directly. Projected arrays carry `Array.prototype` — a
+   * poisoned realm where `Array.prototype.toJSON` is defined remains a
+   * precondition for correct fingerprinting (accepted scope limit; see
+   * `docs/reference/core/checkpoint.md`). Pass a `Date` as
+   * `date.toISOString()` and any richer collection as the plain array or
+   * object you want fingerprinted.
    *
    * **Accepted definitions — an allowlist, applied recursively.** At every
    * depth the constructor accepts only:
@@ -698,8 +713,9 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
     this.#missing = options.missing;
 
     if (options.definition !== undefined) {
-      // Project the definition in one traversal: read every value exactly once,
-      // validate it, and copy it into a fresh plain-JSON structure. This
+      // Project the definition in one traversal: each occurrence is read
+      // exactly once per visit and copied into a fresh plain-JSON structure
+      // (a value reachable by N paths is visited N times independently). This
       // prevents fingerprints that can never mismatch (a nested Set, a
       // non-enumerable toJSON, a non-idempotent getter, or own non-index array
       // properties would all be invisible to a separate hash pass — causing two
@@ -998,6 +1014,17 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
         JSON.stringify(checkpoint, (_key: string, value: unknown): unknown => {
           if (typeof value === "number" && !Number.isFinite(value))
             throw new NonFiniteNumberError();
+          // A boxed Number (new Number(Infinity)) has typeof "object" so the
+          // guard above does not fire; JSON.stringify applies [[NumberData]]
+          // *after* the replacer and silently renders it as null. Catch it
+          // here with a realm-safe tag test (not instanceof) before the
+          // silent coercion can occur. Boxed String/Boolean are left alone —
+          // they serialise faithfully as their unwrapped primitive.
+          if (
+            Object.prototype.toString.call(value) === "[object Number]" &&
+            !Number.isFinite(Number(value))
+          )
+            throw new NonFiniteNumberError();
           return value;
         }),
       ) as unknown;
@@ -1016,10 +1043,13 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
     try {
       checksum = canonicalJsonHash(snapshot);
     } catch {
-      // After a successful JSON round-trip the snapshot is a plain JSON value;
-      // this arm is a safety net only. Never chain `cause`.
+      // After a successful JSON round-trip the snapshot is always hashable;
+      // this arm is a safety net for an internal invariant violation, not a
+      // caller-data problem. Never chain `cause` (distinct message from the
+      // snapshot arm above so a caller logging code + message can tell them
+      // apart).
       throw new M3LCheckpointError(
-        `checkpoint at '${this.#path}' is not JSON-serializable and cannot be written: no circular references, BigInt, or non-finite numbers`,
+        `checkpoint store at '${this.#path}': internal error — snapshot hash failed after a successful JSON round-trip (this is a bug)`,
         { code: "ERR_CHECKPOINT_IO", context: { path: this.#path } },
       );
     }

@@ -418,12 +418,13 @@ describe("M3LCheckpointStore.write()", () => {
     );
   });
 
-  test("regression: write() wraps a canonicalJsonHash failure (e.g. a circular checkpoint) as M3LCheckpointError, not a bare M3LError", async () => {
-    // write() computes `canonicalJsonHash(checkpoint)` to build the envelope
-    // checksum BEFORE entering its try/catch — a circular checkpoint value
-    // makes canonicalJsonHash throw a bare M3LError (ERR_INVALID_ARGUMENT),
-    // which today escapes write() unwrapped instead of being reported as the
-    // documented M3LCheckpointError ERR_CHECKPOINT_IO.
+  test("regression: write() wraps a circular-checkpoint JSON.stringify failure as ERR_CHECKPOINT_IO, not a bare Error", async () => {
+    // write() takes a snapshot first: JSON.parse(JSON.stringify(checkpoint, replacer))
+    // runs inside the outer try/catch. A circular checkpoint causes JSON.stringify
+    // to throw (via its native cycle detection) before canonicalJsonHash is ever
+    // called. That throw is caught and re-thrown as ERR_CHECKPOINT_IO with no cause
+    // — never as a bare Error, never as the bare M3LError that canonicalJsonHash
+    // would have produced in the pre-snapshot design.
     const circular: CircularCheckpoint = { queryId: "q-circular" };
     circular.self = circular;
 
@@ -825,8 +826,13 @@ describe("M3LCheckpointStore — fingerprint (definition binding)", () => {
     const rawJson = await readFile(store.path, "utf8");
     const parsed: unknown = JSON.parse(rawJson);
 
-    // In RED: the implementation ignores `definition` — no fingerprint is
-    // written. This assertion fails for the right reason.
+    // For this simple definition (a plain object with no getters, toJSON, or
+    // non-enumerable properties), projectDefinitionValue's projection is
+    // structurally identical to the caller's object, so canonicalJsonHash(definition)
+    // equals canonicalJsonHash(projection). The round-3 regression tests (the
+    // "single-traversal projection" describe block below) cover cases where the
+    // projection and the caller's original object diverge — those are the tests
+    // that actually discriminate the fingerprint-the-projection invariant.
     expect(parsed).toHaveProperty("fingerprint", canonicalJsonHash(definition));
 
     // Same definition → round-trip must also resolve.
@@ -1335,16 +1341,15 @@ describe("M3LCheckpointStore constructor — definition rejection / acceptance",
     expect((thrown as M3LCheckpointError).cause).toBeUndefined();
   });
 
-  test("definition: Proxy whose ownKeys trap throws — rejected (not a raw error escape) with ERR_CHECKPOINT_DEFINITION", () => {
-    // The isContentDiscardingObject helper wraps its checks in try/catch
-    // (line 128-130 of the impl): a hostile Proxy that throws must be treated
-    // as content-discarding (fail safe), surfaced as ERR_CHECKPOINT_DEFINITION
-    // from the constructor — never as a raw non-M3LCheckpointError.
-    //
-    // The target must be a NON-plain object (e.g. Map) so that isPlainObject()
-    // returns false and the helper enters the try block rather than short-
-    // circuiting at line 120. With a {} target, isPlainObject returns true and
-    // the catch path (line 130) is never reached.
+  test("definition: Proxy wrapping a class-instance target (Map) — rejected with ERR_CHECKPOINT_DEFINITION at the prototype check, not a raw error escape", () => {
+    // `projectDefinitionValue` calls `isDefinitionPlainObject`, which wraps
+    // `Object.getPrototypeOf` in a try/catch (fail-closed against a hostile
+    // getPrototypeOf trap). This Proxy has no getPrototypeOf trap, so the call
+    // delegates to the Map target: `Map.prototype` is neither `Object.prototype`
+    // nor `null`, so `isDefinitionPlainObject` returns `false` and
+    // `projectDefinitionValue` returns REJECTED without entering
+    // `projectDefinitionObject`. The ownKeys trap defined on this Proxy is never
+    // invoked — the prototype check rejects first, fail-closed.
     const hostile = new Proxy(new Map(), {
       ownKeys(): never {
         throw new Error("hostile trap");
@@ -2420,8 +2425,8 @@ describe("M3LCheckpointStore constructor — definition allowlist (round-2)", ()
   test("definition: revoked Proxy — rejected with ERR_CHECKPOINT_DEFINITION, not a raw TypeError", () => {
     // A revoked Proxy throws a TypeError on any operation. The walk's
     // Array.isArray call invokes [[IsArray]] which throws on a revoked Proxy;
-    // the try/catch in isDefinitionValueAccepted catches it (fail-closed) and
-    // returns false → ERR_CHECKPOINT_DEFINITION.
+    // the try/catch in projectDefinitionValue catches it (fail-closed) and
+    // returns REJECTED → ERR_CHECKPOINT_DEFINITION.
     const { proxy, revoke } = Proxy.revocable({}, {});
     revoke();
 
@@ -2483,7 +2488,7 @@ describe("M3LCheckpointStore constructor — definition allowlist (round-2)", ()
 
   test("definition: Proxy wrapping an array whose get trap throws on element access — rejected with ERR_CHECKPOINT_DEFINITION, raw error does not escape", () => {
     // Array.isArray works correctly for Proxies wrapping arrays (it calls
-    // [[IsArray]] on the proxy target). The walk then enters isDefinitionArrayAccepted
+    // [[IsArray]] on the proxy target). The walk then enters projectDefinitionArray
     // and tries to read arr[i] via the get trap, which throws — caught by the
     // per-element try/catch (fail-closed). The `length` property must be let
     // through (to allow the for-loop bound check) so the throw happens at the
@@ -2515,9 +2520,9 @@ describe("M3LCheckpointStore constructor — definition allowlist (round-2)", ()
     expect((thrown as M3LCheckpointError).cause).toBeUndefined();
   });
 
-  test("definition: Proxy wrapping a plain {} target whose ownKeys trap throws — rejected with ERR_CHECKPOINT_DEFINITION; the {} target makes Object.getPrototypeOf return Object.prototype so the walk reaches the ownKeys-catch branch in isDefinitionObjectAccepted", () => {
+  test("definition: Proxy wrapping a plain {} target whose ownKeys trap throws — rejected with ERR_CHECKPOINT_DEFINITION; the {} target makes Object.getPrototypeOf return Object.prototype so the walk reaches the ownKeys-catch branch in projectDefinitionObject", () => {
     // The A1 ownKeys test uses a Map as the Proxy target, so the prototype
-    // check (isDefinitionPlainObject) rejects it before isDefinitionObjectAccepted
+    // check (isDefinitionPlainObject) rejects it before projectDefinitionObject
     // is ever called. This test wraps {} (Object.prototype), ensuring the walk
     // actually reaches Object.keys() and exercises the ownKeys-catch path there.
     const hostile = new Proxy(
@@ -2555,7 +2560,7 @@ describe("M3LCheckpointStore constructor — definition allowlist (round-2)", ()
   });
 
   test("definition: Proxy whose get trap throws on property access — rejected with ERR_CHECKPOINT_DEFINITION, raw error does not escape", () => {
-    // isDefinitionObjectAccepted wraps each property read in a try/catch —
+    // projectDefinitionObject wraps each property read in a try/catch —
     // a throwing get trap must be caught (fail-closed) and surfaced as
     // ERR_CHECKPOINT_DEFINITION, never as a raw Error.
     // The {} target means getPrototypeOf returns Object.prototype (passes the
@@ -2863,14 +2868,19 @@ describe("M3LCheckpointStore constructor — definition allowlist (round-2)", ()
   //       the single-traversal fix only calls Object.keys once per object)
   // -------------------------------------------------------------------------
 
-  test("definition: Proxy whose ownKeys returns different keys on repeated calls — first call result is used; subsequent state irrelevant (no bypass, no raw escape)", () => {
-    // The ownKeys trap mutates on each invocation. Under round-2 (two passes),
-    // the second call could surface additional keys that the first pass accepted
-    // but the hash pass saw differently. Under round-3 (single traversal),
-    // Object.keys is called exactly once per object — whatever the trap returns
-    // on that call is the definitive set. The test asserts either accept or
-    // reject (implementation choice), but never a raw non-M3LCheckpointError
-    // escape.
+  test("definition: Proxy whose ownKeys returns different keys on repeated calls — definition is accepted; fingerprint reflects the key set observed during the single traversal", async () => {
+    // The ownKeys trap fires twice during projectDefinitionObject:
+    //   call 1 — via Object.getOwnPropertySymbols → returns ["a"] (all strings;
+    //             0 symbols → passes the symbol check).
+    //   call 2 — via Object.keys → returns ["a", "b", "c"] → these become the
+    //             keys iterated for the projection; every value is "v" (accepted).
+    // Result: projection = { a: "v", b: "v", c: "v" } (null-prototype object).
+    //
+    // An implementation that made a THIRD ownKeys call for a separate hash
+    // traversal would produce callCount = 3 — caught by the callCount assertion.
+    // The fingerprint assertion separately proves the stored hash matches the
+    // projection actually built during the single traversal, not a re-observed
+    // or stale key set.
     let callCount = 0;
     const hostile = new Proxy(
       {},
@@ -2881,8 +2891,8 @@ describe("M3LCheckpointStore constructor — definition allowlist (round-2)", ()
         ownKeys(): string[] {
           callCount++;
           if (callCount === 1) return ["a"];
-          // Second call: return a different set — under single traversal, this
-          // branch is never reached for the fingerprint computation.
+          // Second call (Object.keys): return a different set — this is the
+          // one that determines the projection under single traversal.
           return ["a", "b", "c"];
         },
         getOwnPropertyDescriptor(
@@ -2902,9 +2912,10 @@ describe("M3LCheckpointStore constructor — definition allowlist (round-2)", ()
       },
     );
 
+    let store: M3LCheckpointStore<TestCheckpoint> | undefined;
     let thrown: unknown;
     try {
-      new M3LCheckpointStore<TestCheckpoint>({
+      store = new M3LCheckpointStore<TestCheckpoint>({
         paths: makePathsPort(dir),
         name: "run-ownkeys-mutate",
         validate: isTestCheckpoint,
@@ -2915,22 +2926,37 @@ describe("M3LCheckpointStore constructor — definition allowlist (round-2)", ()
       thrown = error;
     }
 
-    // Either accepted (a plain { a: "v" } projection) or rejected — but
-    // never a raw Error that is not M3LCheckpointError.
+    // No raw error escapes — any throw must be an M3LCheckpointError.
     if (thrown !== undefined) {
       expect(thrown).toBeInstanceOf(M3LCheckpointError);
       expect((thrown as M3LCheckpointError).code).toBe(
         "ERR_CHECKPOINT_DEFINITION",
       );
     }
-    // The ownKeys trap fires for both Object.getOwnPropertySymbols and
-    // Object.keys (both use [[OwnPropertyKeys]] internally), so callCount
-    // is 2 at most in the single-traversal path — but critically the
-    // mutation on the second call affects at most one of those two reads,
-    // never the property-value reads that determine the projection.
-    // The important invariant is that no subsequent traversal re-reads
-    // property values — assert only that no raw escape occurred.
+
+    // The definition IS accepted: projectDefinitionObject accepted ["a","b","c"]
+    // and built a valid projection. Assert unconditionally — a buggy rejection
+    // would cause the expect above to pass but this one to fail visibly.
+    expect(thrown).toBeUndefined();
+
+    // callCount is exactly 2 (getOwnPropertySymbols + Object.keys). A third call
+    // would indicate a second traversal for hashing, violating single-traversal.
     expect(callCount).toBeLessThanOrEqual(2);
+
+    // The fingerprint must equal the hash of the key set observed during the
+    // single traversal. Object.keys returned ["a","b","c"] on call 2; the
+    // projection is { a: "v", b: "v", c: "v" }. This assertion fails for any
+    // implementation that fingerprints a different (re-observed or partial) set.
+    if (store === undefined) {
+      throw new Error("store must be defined when construction succeeds");
+    }
+    await store.write({ queryId: "q-ownkeys-mutate" });
+    const rawJson = await readFile(store.path, "utf8");
+    const envelope: unknown = JSON.parse(rawJson);
+    expect(envelope).toHaveProperty(
+      "fingerprint",
+      canonicalJsonHash({ a: "v", b: "v", c: "v" }),
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -3517,6 +3543,215 @@ describe("M3LCheckpointStore.write() — Fix S3: non-finite numbers fail loud", 
     // same JSON text (undefined keys are omitted in both), so they must agree.
     const expected = canonicalJsonHash(payload);
     expect(envelope["checksum"]).toBe(expected);
+  });
+
+  // --------------------------------------------------------------------------
+  // Fix S3 extension: boxed non-finite Number objects (new Number(Infinity) etc.)
+  //
+  // The original S3 guard used `typeof value === "number"`, which evaluates to
+  // false for wrapper objects (typeof new Number(Infinity) === "object"). Under
+  // ECMA-262, JSON.stringify applies [[NumberData]] *after* the replacer runs,
+  // so the wrapper survived the replacer and was coerced to null in the stored
+  // file — a silent substitution that produced a matching checksum, causing
+  // read() to return { n: null } under a heading that promises the opposite.
+  //
+  // The fix uses Object.prototype.toString.call(value) === "[object Number]"
+  // rather than `instanceof Number`. The tag-test form is realm-safe: a Number
+  // wrapper created inside a different realm (e.g. vm.runInNewContext) shares
+  // the same [[Symbol.toStringTag]] string but has a *different* constructor
+  // reference than the host realm's Number — `instanceof` would miss it.
+  // --------------------------------------------------------------------------
+
+  test.each([
+    ["new Number(Infinity)", new Number(Infinity)],
+    ["new Number(NaN)", new Number(Number.NaN)],
+  ] as const)(
+    "%s at the top level throws ERR_CHECKPOINT_IO, cause undefined, no caller data in message",
+    async (_label, boxed) => {
+      const store = new M3LCheckpointStore<Record<string, unknown>>({
+        paths: makePathsPort(dir),
+        name: "run-s3-boxed-toplevel",
+        validate: isAnyObj,
+        missing: { kind: "error" },
+      });
+
+      let thrown: unknown;
+      try {
+        await store.write({ n: boxed });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LCheckpointError);
+      expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+      // cause must be undefined — the sentinel error message must not reach
+      // any caller channel (it names the constraint, not a caller-supplied value).
+      expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+      // The payload field name must not appear in the message.
+      expect((thrown as M3LCheckpointError).message).not.toContain('"n"');
+    },
+  );
+
+  test("new Number(-Infinity) nested inside a plain object throws ERR_CHECKPOINT_IO — replacer visits every depth", async () => {
+    // The replacer recurses into every node in the JSON tree, so a boxed
+    // non-finite number at any nesting level must be caught.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-boxed-nested",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ a: { n: new Number(-Infinity) } });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("new Number(Infinity) inside an array throws ERR_CHECKPOINT_IO — replacer visits every array element", async () => {
+    // Array elements are visited by the replacer exactly like object values;
+    // a boxed non-finite number embedded in an array must not slip through.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-boxed-array",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ a: [1, new Number(Infinity)] });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("atomicity: after a failed boxed-non-finite write on a fresh store, no checkpoint file is left behind", async () => {
+    // The snapshot step throws before any I/O is attempted, so no file —
+    // not even a partial temp file — can exist after the rejection.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-boxed-no-file",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ n: new Number(Infinity) });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+
+    // The checkpoint file must not exist — ENOENT is the expected outcome.
+    let readErr: unknown;
+    try {
+      await readFile(store.path, "utf8");
+    } catch (error) {
+      readErr = error;
+    }
+    expect(readErr).toBeDefined();
+    expect((readErr as NodeJS.ErrnoException).code).toBe("ENOENT");
+  });
+
+  test("accepted: new Number(42) serialises faithfully — read() returns the primitive 42", async () => {
+    // A finite boxed Number is left alone by the replacer; JSON.stringify then
+    // applies [[NumberData]] and stores the primitive 42. read() must return
+    // the unwrapped form. Over-rejecting a valid boxed number would be a
+    // regression: the fix targets only non-finite wrappers.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-boxed-finite-num",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ n: new Number(42) });
+    await expect(store.read()).resolves.toEqual({ n: 42 });
+  });
+
+  test("accepted: new String('ok') serialises faithfully — read() returns the primitive string", async () => {
+    // String wrappers are left entirely alone by the replacer (the guard
+    // matches only [object Number]); JSON.stringify stores the primitive "ok".
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-boxed-string",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ s: new String("ok") });
+    await expect(store.read()).resolves.toEqual({ s: "ok" });
+  });
+
+  test("accepted: new Boolean(true) serialises faithfully — read() returns the primitive boolean", async () => {
+    // Boolean wrappers are left entirely alone by the replacer (the guard
+    // matches only [object Number]); JSON.stringify stores the primitive true.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-boxed-bool",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ b: new Boolean(true) });
+    await expect(store.read()).resolves.toEqual({ b: true });
+  });
+
+  test("control: primitive Infinity still throws ERR_CHECKPOINT_IO — the boxed fix does not interfere with the primitive guard", async () => {
+    // Confirms that adding the boxed-Number branch did not accidentally gate
+    // the primitive `typeof value === "number"` check. Both guards must fire
+    // for their respective inputs.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-prim-inf-control",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ z: Infinity });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("control: ordinary finite payload with boxed extension present — checksum is byte-identical to canonicalJsonHash(payload)", async () => {
+    // The boxed-Number branch must not alter the serialized form for any
+    // ordinary payload. The stored checksum must still equal
+    // canonicalJsonHash(payload) byte-for-byte for a valid finite payload,
+    // proving the branch is transparent when it does not fire.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-boxed-compat-checksum",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    const payload: Record<string, unknown> = { x: 1, y: "hello", z: false };
+
+    await store.write(payload);
+    const rawJson = await readFile(store.path, "utf8");
+    const envelope = JSON.parse(rawJson) as Record<string, unknown>;
+
+    expect(envelope["checksum"]).toBe(canonicalJsonHash(payload));
   });
 });
 
