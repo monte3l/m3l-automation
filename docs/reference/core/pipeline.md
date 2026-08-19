@@ -268,6 +268,15 @@ M3LOperationPipeline: tracing failed at phase 'guards' (ERR_INVALID_ARGUMENT)
 M3LOperationPipeline: tracing failed at phase 'guards' (unclassified)
 ```
 
+That minimalism has a **diagnosability cost worth planning for**: because neither
+the message nor the error type is logged, every failure originating in a
+caller-authored `describe` — a `TypeError`, a bad property read, a throwing
+getter — logs identically as `(unclassified)`. The warning tells you _which
+phase_ failed to trace, not _why_. If a `describe` does anything non-trivial,
+instrument it yourself (its own `try`/`catch` and your own logging) rather than
+expecting the engine's warning to identify the fault. If the logger itself
+throws, the engine gives up silently — tracing must never affect the run.
+
 ### Redaction is the sink's responsibility
 
 The engine enforces the payload's _shape_ (scalars only, dangerous keys
