@@ -483,6 +483,24 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm check:hub-drift
 
+      # ADR-0050's GitHub platform-feature stance: the live repo's
+      # wiki/discussions/issues/projects flags and description/homepage/
+      # topics metadata must still match the ADR, and the issue-template
+      # config must still link to the Discussions Ideas/Q&A categories.
+      # Push-only, same rationale as "Check hub drift" above — a drift
+      # ALARM for main, unrelated to what files this push happened to
+      # touch. Reads only `GET /repos/{owner}/{repo}` (repo metadata),
+      # which every GITHUB_TOKEN can read by default — no extra
+      # `permissions:` entry needed, unlike the hub-drift step's
+      # `issues: read`. Deliberately does NOT cover the Projects board's
+      # link/visibility/views — those need the `project` OAuth scope
+      # GITHUB_TOKEN never carries (see the script's own header).
+      - name: Check GitHub platform-feature stance (push-only)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm check:github-features
+
   # The required status check branch protection looks for. Fails if the
   # changes job itself didn't succeed (see comment below), or if any lane
   # failed or was cancelled; passes if every lane succeeded or was

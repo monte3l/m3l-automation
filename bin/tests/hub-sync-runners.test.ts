@@ -639,8 +639,8 @@ describe("runIssueSync", () => {
     const issueCreateCalls = calls.filter(
       (a) => a[0] === "issue" && a[1] === "create",
     );
-    // HUB_LABEL + 4 priority labels + 2 status labels (deferred/blocked).
-    expect(labelCalls).toHaveLength(7);
+    // HUB_LABEL + 4 priority labels + 2 status labels (deferred/blocked) + triage.
+    expect(labelCalls).toHaveLength(8);
     // Priority 0, Priority 1, Governance, Priority 2 — one per priority
     // actually present among this fixture's items.
     expect(milestoneCreateCalls).toHaveLength(4);

@@ -94,3 +94,4 @@ surface).
 | 0047 | [Cross-script orchestration belongs to `m3l-cli`, and is deferred](./0047-cross-script-orchestration-deferred.md)                                         | Accepted                         |
 | 0048 | [Grade the destructive confirmation by target, not only by action](./0048-target-graded-destructive-confirmation.md)                                      | Accepted                         |
 | 0049 | [A cooperative cancellation contract for long-running operations](./0049-cooperative-cancellation-contract.md)                                            | Accepted                         |
+| 0050 | [GitHub platform-feature stance](./0050-github-platform-feature-stance.md)                                                                                | Accepted                         |
