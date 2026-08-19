@@ -108,7 +108,9 @@ jobs:
   lint:
     name: Lint
     needs: changes
-    if: needs.changes.outputs.ts == 'true'
+    # ts || claude: eslint also lints .claude/hooks/**/*.mjs
+    # (eslint.config.js), so a hooks-only change must not skip this lane.
+    if: needs.changes.outputs.ts == 'true' || needs.changes.outputs.claude == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -289,8 +291,11 @@ jobs:
 
       # Doc-provenance sidecars anchor reference-page headings to source symbols
       # at a git commit. Fail if a heading or symbol is missing; warn on staleness.
+      # docs || ts: also verifies each sidecar's referenced symbol is still
+      # exported from packages/*/src, so a source-only rename/removal must
+      # not skip it.
       - name: Check doc provenance
-        if: needs.changes.outputs.docs == 'true'
+        if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.ts == 'true'
         run: pnpm check:provenance
 
       # Submodule counts in prose must match the files in docs/reference/.
@@ -356,17 +361,20 @@ jobs:
       # Consumer-script scaffold: every scripts/<name> package must match the
       # ADR-0022 shape (modular src/, package contract, root tsconfig ref,
       # smoke test, README + contract page) defined in the shared manifest.
-      # Deterministic backstop for the scaffolding-scripts skill.
+      # Deterministic backstop for the scaffolding-scripts skill. scripts ||
+      # docs: also validates docs/reference/scripts/<name>.md, so a
+      # contract-page-only edit must not skip it.
       - name: Check script scaffold conformance
-        if: needs.changes.outputs.scripts == 'true'
+        if: needs.changes.outputs.scripts == 'true' || needs.changes.outputs.docs == 'true'
         run: pnpm check:script-scaffold
 
       # Every script README and reference page must follow the canonical
       # structure spec (docs/contributing/script-docs-structure.md): required
       # sections present, contract blockquotes present, ≥3 examples, Validation
       # column header, Operation column header in Operations at a glance.
+      # scripts || docs: same reasoning as the step above.
       - name: Check script doc structure
-        if: needs.changes.outputs.scripts == 'true'
+        if: needs.changes.outputs.scripts == 'true' || needs.changes.outputs.docs == 'true'
         run: pnpm check:script-docs
 
       # Every scripts/*/package.json must declare exactly the ADR-0029
@@ -379,16 +387,18 @@ jobs:
 
       # Subagent config: skill/CLAUDE.md references resolve to real agents or
       # built-ins, and no spoke is granted the Agent tool (no-nesting invariant).
+      # claude || docs: also reads CLAUDE.md and docs/contributing/model-selection.md.
       - name: Check subagent configuration (agents)
-        if: needs.changes.outputs.claude == 'true'
+        if: needs.changes.outputs.claude == 'true' || needs.changes.outputs.docs == 'true'
         run: pnpm check:agents
 
       # Dynamic-workflow surface (ADR-0025): .claude/workflows/* model/effort
       # choices match the MODEL-MATRIX and every script declares its max-agents
       # guardrail. Distinct from "Check workflow docs" above, which reconciles
-      # the CLAUDE.md CI/CD table against .github/workflows/.
+      # the CLAUDE.md CI/CD table against .github/workflows/. claude || docs:
+      # also reads docs/contributing/model-selection.md.
       - name: Check dynamic-workflow surface (workflows)
-        if: needs.changes.outputs.claude == 'true'
+        if: needs.changes.outputs.claude == 'true' || needs.changes.outputs.docs == 'true'
         run: pnpm check:workflows
 
       # Hook wiring: every .claude/settings.json hook command resolves to a real
