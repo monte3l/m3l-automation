@@ -63,11 +63,6 @@ export type M3LExitCode = (typeof M3L_EXIT_CODES)[keyof typeof M3L_EXIT_CODES];
  * the "never returns 0, 5, or 6" invariant checkable by the type system,
  * not just by convention.
  *
- * Derived from an additive allowlist rather than an `Exclude<…>` so that a
- * future code added to {@link M3L_EXIT_CODES} does not silently join this
- * union and widen {@link mapErrorToExitCode}'s return type; growth here is
- * explicit and opt-in.
- *
  * @example
  * ```ts
  * import type { M3LErrorExitCode } from "@m3l-automation/m3l-common/core";
@@ -77,14 +72,33 @@ export type M3LExitCode = (typeof M3L_EXIT_CODES)[keyof typeof M3L_EXIT_CODES];
  * }
  * ```
  */
-const _M3L_ERROR_EXIT_CODES = [
-  M3L_EXIT_CODES.UNCLASSIFIED,
-  M3L_EXIT_CODES.CONFIG_USAGE,
-  M3L_EXIT_CODES.EXTERNAL,
-  M3L_EXIT_CODES.LIBRARY,
-] as const satisfies readonly M3LExitCode[];
+export type M3LErrorExitCode = Exclude<
+  M3LExitCode,
+  | typeof M3L_EXIT_CODES.SUCCESS
+  | typeof M3L_EXIT_CODES.INTERRUPTED
+  | typeof M3L_EXIT_CODES.PARTIAL
+>;
 
-export type M3LErrorExitCode = (typeof _M3L_ERROR_EXIT_CODES)[number];
+/**
+ * Compile-time pin: fails to compile (TS2322) if a future
+ * {@link M3L_EXIT_CODES} entry widens {@link M3LErrorExitCode} beyond the
+ * four error codes. `Exclude` is fail-open — a new registry code joins the
+ * union silently, because widening a return type is not a TypeScript error at
+ * any call site. This pin converts that silent widening into a build failure:
+ * when the conditional resolves to `never`, assigning `true` is TS2322.
+ *
+ * Expressed through the registry (`typeof M3L_EXIT_CODES.*`) so it is
+ * self-maintaining and carries no bare numeric literals. The `_` prefix
+ * satisfies `varsIgnorePattern: "^_"` in `no-unused-vars` without a
+ * suppression comment.
+ */
+const _m3lErrorExitCodePin: M3LErrorExitCode extends
+  | typeof M3L_EXIT_CODES.UNCLASSIFIED
+  | typeof M3L_EXIT_CODES.CONFIG_USAGE
+  | typeof M3L_EXIT_CODES.EXTERNAL
+  | typeof M3L_EXIT_CODES.LIBRARY
+  ? true
+  : never = true;
 
 /** Safely reads a string-valued own property from an unknown value. */
 function readStringProperty(value: unknown, key: string): string | undefined {

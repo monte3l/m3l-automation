@@ -21,6 +21,7 @@ import {
 import {
   M3L_RECOVERY_LIMIT,
   type M3LRunRecoveryEntry,
+  type M3LSerializedError,
 } from "../diagnostics/index.js";
 import { M3LError } from "../errors/index.js";
 import { M3LExecutionEnvironment } from "../environment/index.js";
@@ -173,6 +174,69 @@ function listRegularFiles(dir: string): readonly string[] {
   return entries
     .filter((entry) => entry.isFile())
     .map((entry) => `${dir}/${entry.name}`);
+}
+
+/**
+ * Reads one field from a possibly-hostile record, wrapping any thrown getter
+ * in an `M3LError` so raw errors never escape.
+ */
+function readRecoveryField(
+  raw: Record<string, unknown>,
+  key: string,
+  msg: string,
+): unknown {
+  try {
+    return raw[key];
+  } catch {
+    throw new M3LError(msg, { code: "ERR_INVALID_ARGUMENT" });
+  }
+}
+
+/**
+ * Validates and projects a raw {@link M3LRunRecoveryEntry} argument — guards
+ * every field read against a throwing getter, throws `M3LError` with
+ * `ERR_INVALID_ARGUMENT` on any violation, and returns a copy whose `error`
+ * array and per-element objects are independent of the caller's originals.
+ */
+function projectReportedRecoveryEntry(
+  entry: M3LRunRecoveryEntry,
+): M3LRunRecoveryEntry {
+  if (
+    entry === null ||
+    typeof entry !== "object" ||
+    !Object.hasOwn(entry, "item")
+  ) {
+    throw new M3LError(
+      "reportRecovery: entry must be a non-null object with a string 'item' field",
+      { code: "ERR_INVALID_ARGUMENT" },
+    );
+  }
+  const raw = entry as unknown as Record<string, unknown>;
+  const ITEM_MSG =
+    "reportRecovery: entry must be a non-null object with a string 'item' field";
+  const item = readRecoveryField(raw, "item", ITEM_MSG);
+  if (typeof item !== "string") {
+    throw new M3LError(ITEM_MSG, { code: "ERR_INVALID_ARGUMENT" });
+  }
+  const ERROR_MSG = "reportRecovery: entry must have an 'error' array field";
+  const errorRaw = readRecoveryField(raw, "error", ERROR_MSG);
+  if (!Array.isArray(errorRaw)) {
+    throw new M3LError(ERROR_MSG, { code: "ERR_INVALID_ARGUMENT" });
+  }
+  const AT_MSG = "reportRecovery: entry must have a string 'recordedAt' field";
+  const recordedAt = readRecoveryField(raw, "recordedAt", AT_MSG);
+  if (typeof recordedAt !== "string") {
+    throw new M3LError(AT_MSG, { code: "ERR_INVALID_ARGUMENT" });
+  }
+  // Shallow-copy the array and each element so caller mutations to the
+  // original cannot reach stored state.
+  const error: M3LSerializedError[] = (errorRaw as readonly unknown[]).map(
+    (e) =>
+      typeof e === "object" && e !== null
+        ? ({ ...e } as M3LSerializedError)
+        : (e as M3LSerializedError),
+  );
+  return { item, error, recordedAt };
 }
 
 /**
@@ -790,41 +854,7 @@ export class M3LScript {
    * ```
    */
   reportRecovery(entry: M3LRunRecoveryEntry): void {
-    if (
-      entry === null ||
-      typeof entry !== "object" ||
-      !Object.hasOwn(entry, "item")
-    ) {
-      throw new M3LError(
-        "reportRecovery: entry must be a non-null object with a string 'item' field",
-        { code: "ERR_INVALID_ARGUMENT" },
-      );
-    }
-    // Guard the `item` read: a hostile getter can throw a raw Error here.
-    // Absorb it and surface as M3LError, matching `readInputError`'s pattern
-    // in `core/diagnostics/run-report.ts`.
-    let item: unknown;
-    try {
-      item = (entry as unknown as Record<string, unknown>)["item"];
-    } catch {
-      throw new M3LError(
-        "reportRecovery: entry must be a non-null object with a string 'item' field",
-        { code: "ERR_INVALID_ARGUMENT" },
-      );
-    }
-    if (typeof item !== "string") {
-      throw new M3LError(
-        "reportRecovery: entry must be a non-null object with a string 'item' field",
-        { code: "ERR_INVALID_ARGUMENT" },
-      );
-    }
-    // Store a projected copy so a caller mutating the original object after
-    // this call cannot change what later gets persisted or returned.
-    const stored: M3LRunRecoveryEntry = {
-      item,
-      error: entry.error,
-      recordedAt: entry.recordedAt,
-    };
+    const stored = projectReportedRecoveryEntry(entry);
     this.recoveryEntries.push(stored);
     this.recoveryTotalCount += 1;
     if (this.recoveryEntries.length > M3L_RECOVERY_LIMIT) {
@@ -837,9 +867,12 @@ export class M3LScript {
    * {@link M3LScript.reportRecovery}, oldest first, bounded at
    * {@link M3L_RECOVERY_LIMIT}.
    *
-   * A fresh array is returned on every call — caller mutations never reach
-   * internal state, and a later {@link M3LScript.reportRecovery} call never
-   * retroactively changes an array already returned.
+   * A fresh snapshot is returned on every call — mutations to the returned
+   * array or to any entry's `error` array do not reach internal state, and a
+   * later {@link M3LScript.reportRecovery} call never retroactively changes a
+   * snapshot already returned. Each entry is a copy with its `error` array
+   * independently shallow-copied so that a caller cannot push to or remove
+   * from the stored chain.
    *
    * When `recovery.length < recoveryTotal`, the buffer was truncated: the
    * oldest entries were evicted and only the most recent ones were retained.
@@ -856,7 +889,7 @@ export class M3LScript {
    * ```
    */
   get recovery(): readonly M3LRunRecoveryEntry[] {
-    return [...this.recoveryEntries];
+    return this.recoveryEntries.map((e) => ({ ...e, error: [...e.error] }));
   }
 
   /**

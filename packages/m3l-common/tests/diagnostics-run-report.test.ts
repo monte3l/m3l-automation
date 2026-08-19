@@ -4537,3 +4537,317 @@ describe("T3 — recoveryTotal is clamped to at least recovery.length (regressio
     }
   });
 });
+
+// =============================================================================
+// L1 — projectSerializedError: code / origin / retryable copied raw
+// (adversarial refute-pass, round-5). The allowlist in projectSerializedError
+// covers name/message/stack/context but copies code, origin, and retryable
+// verbatim. A caller-supplied string secret in code (key=value or presigned-URL
+// form), an arbitrary string in origin, or a non-boolean in retryable all reach
+// the persisted report unsanitized. Every assertion reads the file back from
+// disk — not merely that persist() didn't throw.
+// =============================================================================
+describe("L1 — projectSerializedError raw-copy: code/origin/retryable must not leak into the persisted report", () => {
+  let outDir: string;
+
+  beforeEach(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-l1-"));
+  });
+
+  afterEach(async () => {
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  function reporter(): M3LRunReporter {
+    return new M3LRunReporter({ paths: { getOutputDir: () => outDir } });
+  }
+
+  // Constructs a partial run input with a single recovery entry whose error
+  // chain holds one level built from hostileFields (cast as M3LSerializedError
+  // to bypass TypeScript's field-level type checking for adversarial values).
+  function partialInputWith(
+    hostileFields: Record<string, unknown>,
+  ): M3LRunReportInput {
+    return {
+      script: { name: "l1-script", version: "1.0.0" },
+      correlationId: "l1-corr",
+      startedAt: new Date("2026-08-19T12:00:00.000Z"),
+      outcome: "partial",
+      recovery: [
+        {
+          item: "item-l1",
+          error: [
+            {
+              name: "Error",
+              message: "ok",
+              ...hostileFields,
+            },
+          ],
+          recordedAt: new Date().toISOString(),
+        },
+      ],
+    };
+  }
+
+  async function persistAndReadBack(input: M3LRunReportInput): Promise<string> {
+    const writtenPath = await reporter().persist(input);
+    expect(writtenPath).toBeDefined();
+    return readFile(writtenPath as string, "utf8");
+  }
+
+  // (a) code field: key=value form — redactSensitiveLogValue scrubs "token=…"
+  // patterns from free text, but projectSerializedError copies code raw so the
+  // pattern bypasses redaction.
+  test("a key=value secret in code is absent from the persisted report", async () => {
+    const raw = await persistAndReadBack(
+      partialInputWith({ code: "tok\u0065n=SEKRET_L1_code_kv" }),
+    );
+    expect(raw).not.toContain("SEKRET_L1_code_kv");
+  });
+
+  // (b) code field: presigned-URL X-Amz-Signature form — the URL scrubber
+  // covers this in free-text fields but not in a raw-copied code field.
+  test("an X-Amz-Signature in code is absent from the persisted report", async () => {
+    const raw = await persistAndReadBack(
+      partialInputWith({
+        code: "https://s3.amazonaws.com/b/k?X-Amz-Signature=SEKRET_L1_code_sig",
+      }),
+    );
+    expect(raw).not.toContain("SEKRET_L1_code_sig");
+  });
+
+  // (c) code field: an object value (hostile at runtime despite string type)
+  // must not land in the persisted JSON as a nested object — it must be
+  // sanitized or omitted, never passed through raw.
+  test("an object value in code does not land in the persisted JSON as a nested object", async () => {
+    const hostile = { apiKey: "SEKRET_L1_code_obj" };
+    const raw = await persistAndReadBack(partialInputWith({ code: hostile }));
+    expect(raw).not.toContain("SEKRET_L1_code_obj");
+  });
+
+  // (d) code field: an array value must not survive as a nested array.
+  test("an array value in code does not land in the persisted JSON as a nested array", async () => {
+    const hostile = ["SEKRET_L1_code_arr"];
+    const raw = await persistAndReadBack(partialInputWith({ code: hostile }));
+    expect(raw).not.toContain("SEKRET_L1_code_arr");
+  });
+
+  // (e) code field: an object with a __proto__ data property must not survive
+  // — either the key is dropped (prototype-pollution guard) or the value is
+  // omitted/sanitized before reaching the JSON.
+  test("a __proto__-keyed object in code does not survive into the persisted JSON", async () => {
+    const codeObj: Record<string, unknown> = { normal: "data" };
+    Object.defineProperty(codeObj, "__proto__", {
+      value: "SEKRET_L1_code_proto",
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+    const raw = await persistAndReadBack(partialInputWith({ code: codeObj }));
+    expect(raw).not.toContain("SEKRET_L1_code_proto");
+  });
+
+  // (f) origin field: an arbitrary string (not a known M3LErrorOrigin member)
+  // must not pass through — only "caller" | "library" | "external" are valid.
+  test("an arbitrary string in origin does not pass through to the persisted report", async () => {
+    const raw = await persistAndReadBack(
+      partialInputWith({ origin: "SEKRET_L1_origin_raw" }),
+    );
+    expect(raw).not.toContain("SEKRET_L1_origin_raw");
+  });
+
+  // (g) origin field: a presigned URL carrying X-Amz-Signature must not survive
+  // — origin is an enum field, not free text.
+  test("a presigned URL with X-Amz-Signature in origin is absent from the persisted report", async () => {
+    const raw = await persistAndReadBack(
+      partialInputWith({
+        origin:
+          "https://s3.amazonaws.com/b/k?X-Amz-Signature=SEKRET_L1_origin_sig",
+      }),
+    );
+    expect(raw).not.toContain("SEKRET_L1_origin_sig");
+  });
+
+  // (h) retryable field: a non-boolean hostile value (e.g. a key=value string)
+  // must not pass through — retryable is boolean | "situational", not free text.
+  test("a non-boolean hostile value in retryable is absent from the persisted report", async () => {
+    const raw = await persistAndReadBack(
+      partialInputWith({ retryable: "tok\u0065n=SEKRET_L1_retry" }),
+    );
+    expect(raw).not.toContain("SEKRET_L1_retry");
+  });
+
+  // Positive counterparts — prevent vacuous passes where "not present" holds
+  // only because the field is always omitted, not because it is validated.
+
+  // (i) A benign code string must survive into the report — distinguishes
+  // "sanitized hostile values" from "code field always dropped".
+  test("a benign code string survives into the persisted report (positive gate)", async () => {
+    const raw = await persistAndReadBack(
+      partialInputWith({ code: "ERR_CONFIG_MISSING" }),
+    );
+    expect(raw).toContain("ERR_CONFIG_MISSING");
+  });
+
+  // (j) A valid origin value must survive — distinguishes "invalid origin
+  // rejected" from "origin field always omitted".
+  test("a valid origin value (caller) survives into the persisted report (positive gate)", async () => {
+    const raw = await persistAndReadBack(
+      partialInputWith({ origin: "caller" }),
+    );
+    const parsed = JSON.parse(raw) as {
+      recovery?: Array<{ error?: Array<{ origin?: string }> }>;
+    };
+    expect(parsed.recovery?.[0]?.error?.[0]?.origin).toBe("caller");
+  });
+
+  // (k) A boolean retryable must survive — distinguishes "non-boolean dropped"
+  // from "retryable field always omitted".
+  test("a boolean retryable (true) survives into the persisted report (positive gate)", async () => {
+    const raw = await persistAndReadBack(partialInputWith({ retryable: true }));
+    const parsed = JSON.parse(raw) as {
+      recovery?: Array<{ error?: Array<{ retryable?: unknown }> }>;
+    };
+    expect(parsed.recovery?.[0]?.error?.[0]?.retryable).toBe(true);
+  });
+});
+
+// =============================================================================
+// L2 — hostile code field (circular / BigInt) must not destroy the report
+// (adversarial refute-pass, round-5). projectSerializedError copies code raw;
+// if code holds a circular reference or a BigInt, JSON.stringify throws inside
+// persist(), which catches and returns undefined — no file is written at all.
+// Post-fix expected behavior: the entry degrades (code is sanitized or omitted)
+// but the artifact is still written (writtenPath is not undefined).
+// =============================================================================
+describe("L2 — hostile code field does not destroy the persisted report", () => {
+  let outDir: string;
+
+  beforeEach(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-l2-"));
+  });
+
+  afterEach(async () => {
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  function reporter(): M3LRunReporter {
+    return new M3LRunReporter({ paths: { getOutputDir: () => outDir } });
+  }
+
+  function partialInputWithCode(hostileCode: unknown): M3LRunReportInput {
+    return {
+      script: { name: "l2-script", version: "1.0.0" },
+      correlationId: "l2-corr",
+      startedAt: new Date("2026-08-19T13:00:00.000Z"),
+      outcome: "partial",
+      recovery: [
+        {
+          item: "hostile-item-l2",
+          error: [
+            {
+              name: "E",
+              message: "ok",
+              code: hostileCode,
+            } as unknown as M3LSerializedError,
+          ],
+          recordedAt: new Date().toISOString(),
+        },
+      ],
+    };
+  }
+
+  test("a circular value in code still produces a written report (writtenPath is not undefined)", async () => {
+    const cyclic: Record<string, unknown> = { value: "something" };
+    cyclic["self"] = cyclic;
+    const writtenPath = await reporter().persist(partialInputWithCode(cyclic));
+    expect(writtenPath).toBeDefined();
+  });
+
+  test("a BigInt in code still produces a written report (writtenPath is not undefined)", async () => {
+    const writtenPath = await reporter().persist(
+      partialInputWithCode(BigInt(42)),
+    );
+    expect(writtenPath).toBeDefined();
+  });
+});
+
+// =============================================================================
+// L3 — explicit exitCode is preserved through the partial degrade path
+// (adversarial refute-pass, round-5). The degrade arm of buildReport
+// hard-codes `exitCode: M3L_EXIT_CODES.SUCCESS` after spreading base, which
+// overrides the explicit input.exitCode that base.exitCode already holds —
+// contradicting M3LRunReportInput.exitCode's documented "always wins" guarantee.
+// =============================================================================
+describe("L3 — explicit exitCode is preserved through the partial degrade path (regression)", () => {
+  let outDir: string;
+
+  beforeEach(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "m3l-run-report-l3-"));
+  });
+
+  afterEach(async () => {
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  function reporter(): M3LRunReporter {
+    return new M3LRunReporter({ paths: { getOutputDir: () => outDir } });
+  }
+
+  // The degrade path fires when the recovery array is empty (or all entries are
+  // hostile-dropped). An explicit input.exitCode must survive into the settled
+  // outcome — the arm must NOT override it with SUCCESS (0).
+  test("[L3-degrade] an explicit exitCode is preserved when partial degrades to success (empty recovery)", () => {
+    const report = reporter().build({
+      script: { name: "l3-script", version: "1.0.0" },
+      correlationId: "l3-degrade",
+      startedAt: new Date("2026-08-19T14:00:00.000Z"),
+      outcome: "partial",
+      recovery: [] as readonly M3LRunRecoveryEntry[],
+      exitCode: 42,
+    });
+    // The degrade path must fire (empty recovery → no valid entries → success).
+    expect(report.outcome).toBe("success");
+    // The explicit exitCode must NOT be reset to 0 by the degrade arm.
+    expect(report.exitCode).toBe(42);
+  });
+
+  // Regression lock: the normal (non-degrade) partial path must also preserve
+  // an explicit exitCode — guards against a future change that would break both
+  // arms simultaneously.
+  test("[L3-partial] an explicit exitCode is preserved in the normal partial path (non-degrade)", () => {
+    const report = reporter().build({
+      script: { name: "l3-script", version: "1.0.0" },
+      correlationId: "l3-partial",
+      startedAt: new Date("2026-08-19T14:01:00.000Z"),
+      outcome: "partial",
+      recovery: [
+        {
+          item: "ok-item",
+          error: [{ name: "Error", message: "ok" }],
+          recordedAt: new Date().toISOString(),
+        },
+      ],
+      exitCode: 77,
+    });
+    expect(report.outcome).toBe("partial");
+    expect(report.exitCode).toBe(77);
+  });
+
+  // Also verifies through persist() that the degrade path writes the correct
+  // exitCode into the persisted JSON — not 0.
+  test("[L3-persist] persist() writes the explicit exitCode (not 0) when partial degrades to success", async () => {
+    const writtenPath = await reporter().persist({
+      script: { name: "l3-script", version: "1.0.0" },
+      correlationId: "l3-persist-degrade",
+      startedAt: new Date("2026-08-19T14:02:00.000Z"),
+      outcome: "partial",
+      recovery: [] as readonly M3LRunRecoveryEntry[],
+      exitCode: 99,
+    });
+    expect(writtenPath).toBeDefined();
+    const raw = await readFile(writtenPath as string, "utf8");
+    const parsed = JSON.parse(raw) as { exitCode?: number };
+    expect(parsed.exitCode).toBe(99);
+  });
+});

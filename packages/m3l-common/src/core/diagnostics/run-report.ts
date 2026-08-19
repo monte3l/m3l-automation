@@ -27,7 +27,11 @@ import { M3LPaths, M3LPathResolutionError } from "../utils/index.js";
 import type { M3LBreadcrumb } from "./breadcrumbs.js";
 import { collectDiagnostics } from "./collect.js";
 import type { M3LDiagnosticsSnapshot, M3LPathsPort } from "./collect.js";
-import { M3L_EXIT_CODES, mapErrorToExitCode } from "./exit-codes.js";
+import {
+  M3L_EXIT_CODES,
+  isM3LErrorOrigin,
+  mapErrorToExitCode,
+} from "./exit-codes.js";
 import type { M3LSerializedError } from "./format-error.js";
 import { scrubUrlsInText, serializeErrorChain } from "./format-error.js";
 
@@ -1040,20 +1044,19 @@ function resolveSerializedErrorContext(
  * Sanitizes one level of a serialized error chain for safe embedding —
  * mirrors the allowlist discipline {@link projectArchiveReport} applies to
  * archive metadata. Keeps only the seven fields {@link M3LSerializedError}
- * declares and sanitizes the free-text ones (`message`, `stack`) through
- * {@link sanitizeString} and `context` through {@link sanitizeValue}, so
- * secrets carried in error text, stack traces, or diagnostic context are
- * redacted before the entry reaches the persisted report. Structured fields
- * (`code`, `origin`, `retryable`) are copied as-is — they are enum/catalog
- * values, not unbounded caller text. Any additional fields a caller attached
- * to the entry are dropped.
+ * declares and sanitizes every one before it reaches the persisted report:
  *
- * Fixing this also closes two previously separate defects at no extra cost:
- * a circular reference or `BigInt` inside `context` no longer causes
- * `JSON.stringify` to throw and lose the entire report (because
- * `sanitizeValue` cycle-breaks and coerces `BigInt` to `string`), and a
- * `__proto__` key inside `context` no longer survives into the persisted JSON
- * (because `sanitizeValue` → `normalizeForRedaction` drops dangerous keys).
+ * - `name`, `message`, `stack`: free text — run through {@link sanitizeString}.
+ * - `context`: arbitrary object — run through {@link sanitizeValue} (cycle-breaks
+ *   `BigInt`, drops `__proto__` keys).
+ * - `code`: caller-controlled string — run through {@link sanitizeString}.
+ * - `origin`: a closed {@link M3LErrorOrigin} union — validated with
+ *   {@link isM3LErrorOrigin}; omitted when the value does not match a known
+ *   member (a hostile or malformed caller cannot inject arbitrary text here).
+ * - `retryable`: must be a boolean literal — omitted when the value is not
+ *   `typeof === "boolean"` (prevents object or string values leaking).
+ *
+ * Any additional fields a caller attached to the entry are dropped.
  */
 function projectSerializedError(entry: M3LSerializedError): M3LSerializedError {
   const sanitizedContext =
@@ -1063,11 +1066,11 @@ function projectSerializedError(entry: M3LSerializedError): M3LSerializedError {
   return {
     name: sanitizeString(entry.name),
     message: sanitizeString(entry.message),
-    ...(entry.code !== undefined && { code: entry.code }),
+    ...(entry.code !== undefined && { code: sanitizeString(entry.code) }),
     ...(entry.stack !== undefined && { stack: sanitizeString(entry.stack) }),
     ...(context !== undefined && { context }),
-    ...(entry.origin !== undefined && { origin: entry.origin }),
-    ...(entry.retryable !== undefined && { retryable: entry.retryable }),
+    ...(isM3LErrorOrigin(entry.origin) && { origin: entry.origin }),
+    ...(typeof entry.retryable === "boolean" && { retryable: entry.retryable }),
   };
 }
 
@@ -1402,9 +1405,11 @@ export class M3LRunReporter {
       // entries were dropped as hostile), so it is effectively clean. Override
       // exitCode so the report is internally consistent: a "success" outcome
       // must carry exit code 0, not the "partial" code 6 that `base` holds.
+      // Explicit input.exitCode always wins (documented guarantee) even in this
+      // degrade path — so honour it before falling back to SUCCESS.
       return {
         ...base,
-        exitCode: M3L_EXIT_CODES.SUCCESS,
+        exitCode: input.exitCode ?? M3L_EXIT_CODES.SUCCESS,
         outcome: "success",
       };
     }
