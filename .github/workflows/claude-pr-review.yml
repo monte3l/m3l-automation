@@ -219,19 +219,20 @@ jobs:
           # the system prompt so a fresh runner's prefix can still hit a warm
           # cache from an earlier run on the same PR within the 1h TTL.
           # --max-turns 35 replaces the old 100 (observed max 28/100 used).
-          # --allowedTools is blanket Bash,Read, not scoped: a scoped
-          # allowlist was tried first (Bash(echo:*) etc.) but the verdict
-          # write's `>` redirect doesn't match a plain command-prefix
-          # pattern — Claude Code's permission matcher does not treat
-          # shell redirection as covered by the base command's allow rule,
-          # by design (a bare prefix match would let `echo:*` write
-          # anywhere). That produced 20-23 permission denials per run in
-          # production (PRs #501/#502, 2026-08-19), which burned most of
-          # the turn budget on retries and pushed real reviews past
-          # --max-turns despite `ci.yml`-scoped prompt content that should
-          # need only a handful of turns. --safe-mode still removes
-          # guard-readonly-bash.mjs, so this prompt is the only write
-          # barrier now (it explicitly says "Do not modify any files").
+          # --allowedTools stays scoped (no curl/wget/arbitrary exec against
+          # untrusted diff content) plus one narrow Edit(...) grant for the
+          # verdict file. The original scoped list (Bash(echo:*) etc. only)
+          # produced 20-23 permission denials per run in production (PRs
+          # #501/#502, 2026-08-19), burning most of the turn budget on
+          # retries: per Claude Code's permissions docs, a redirect target
+          # (the verdict write's `> path`) is checked separately as a file
+          # write against Edit(path) allow rules — a Bash command-prefix
+          # rule like Bash(echo:*) authorizes the command, never the
+          # redirect target. Write(path) rules are accepted but silently
+          # never consulted for this check, so Edit(...) is the only rule
+          # that actually grants it. --safe-mode still removes
+          # guard-readonly-bash.mjs; the scoped Bash list plus this one
+          # Edit grant are now the write barrier, not a blanket allowance.
           # See docs/research/pr-review-action-tuning.md for sourcing.
           claude_args: >-
             --safe-mode
@@ -239,7 +240,7 @@ jobs:
             --effort medium
             --exclude-dynamic-system-prompt-sections
             --max-turns 35
-            --allowedTools "Bash,Read"
+            --allowedTools "Read,Bash(gh pr comment:*),Bash(cat:*),Bash(echo:*),Bash(grep:*),Bash(rg:*),Bash(wc:*),Edit(./.claude-review-verdict)"
           use_sticky_comment: true
           prompt: |
             You are the blocking PR reviewer for this repo. Review ONLY what is visible in

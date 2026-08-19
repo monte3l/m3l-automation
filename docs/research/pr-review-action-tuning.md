@@ -172,7 +172,7 @@ revisits three conclusions from the original pass with what changed since:
 > (#501, #502) ran the new config and both failed the `review` required
 > check.
 
-The scoped `--allowedTools` from the first addendum
+The scoped `--allowedTools` shipped in PR #500
 (`Read,Bash(gh pr comment:*),Bash(cat:*),Bash(echo:*),Bash(grep:*),Bash(rg:*),Bash(wc:*)`)
 was live for exactly two PRs before both failed. Both runs logged
 `permission_denials_count` in the low twenties (20 and 23, against
@@ -183,35 +183,49 @@ prompt's own mandated final step:
 echo -n 'PASS' > "$GITHUB_WORKSPACE/.claude-review-verdict"
 ```
 
-`Bash(echo:*)` is a command-prefix pattern; it does not extend to cover
-shell redirection (`>`). Claude Code's permission matcher treats a
-redirect target as needing its own grant, by design — a bare prefix match
-covering `>` would let `Bash(echo:*)` write to any path. Nothing in the
-plan's allowlist granted write access to `.claude-review-verdict` itself,
-so every attempt to satisfy the prompt's required final action was denied,
-and the model kept retrying rather than giving up — each retry consumes a
-turn. PR #502 (17 files, 1,366 changed lines) ran out of turns entirely
-(`num_turns: 36` against the cap of 35) after already posting a complete,
-correct review comment with a PASS verdict — the required check still
-failed, because the wrapper's turn-budget enforcement is independent of
-whether a valid verdict was already posted. PR #501 (22 files, 2,797
-changed lines, 387,443-character patch — over the action's ~150k
-truncation threshold) finished at `num_turns: 40`, over the cap, so the
-action's own post-hoc bounds check (`claude reported a successful result
-after 40 turns, exceeding the configured maximum of 35`) failed the job
-even though the SDK's own execution completed normally (`subtype: success`).
+`Bash(echo:*)` is a command-prefix pattern; it authorizes the `echo`
+invocation, not the redirect. Per Claude Code's permissions docs
+(<https://code.claude.com/docs/en/permissions#redirections>), a shell
+redirect target (`>`, `>>`, `2>`) is checked separately, as a file write,
+against `Edit` allow/deny rules — never against the Bash rule that matched
+the command itself. Nothing in PR #500's allowlist granted write access to
+`.claude-review-verdict`, so every attempt to satisfy the prompt's required
+final action was denied, and the model kept retrying rather than giving
+up — each retry consumes a turn. PR #502 (17 files, 1,366 changed lines)
+ran out of turns entirely (`num_turns: 36` against the cap of 35) after
+already posting a complete, correct review comment with a PASS verdict —
+the required check still failed, because the wrapper's turn-budget
+enforcement is independent of whether a valid verdict was already posted.
+PR #501 (22 files, 2,797 changed lines, 387,443-character patch — over the
+action's ~150k truncation threshold) finished at `num_turns: 40`, over the
+cap, so the action's own post-hoc bounds check (`claude reported a
+successful result after 40 turns, exceeding the configured maximum of 35`)
+failed the job even though the SDK's own execution completed normally
+(`subtype: success`).
 
-This was the exact risk the original plan flagged for gate 2 ("does the
-verdict write survive the scoped allowlist?") with a pre-authorized
-fallback, applied here: `--allowedTools` reverted to blanket `"Bash,Read"`.
-`--safe-mode` already removed `guard-readonly-bash.mjs`, so the prompt's
-own "Do not modify any files" instruction is now the only write barrier —
-matching the posture the workflow ran under (successfully, for months)
-before this change. `--effort medium`, `--exclude-dynamic-system-prompt-
-sections`, and `--max-turns 35` are unchanged; once the permission-denial
-retry loop is gone, turn counts should return toward the original 8–28
-baseline, leaving headroom under 35 again. No new sources — this is an
-operational finding, not new external guidance.
+The plan's own gate 2 ("does the verdict write survive the scoped
+allowlist?") had flagged exactly this risk, with a pre-authorized fallback
+to blanket `--allowedTools "Bash,Read"`. A first pass applied that fallback,
+but a same-day security review of the fix correctly flagged it as a real
+control regression: blanket `Bash` also un-blocks `curl`/`wget`/arbitrary
+exec against untrusted PR-diff content, which the scoped list was blocking
+independently of the verdict-write bug — a broader rollback than the one
+bug required. The permissions docs research above shows the precise fix:
+keep the scoped Bash list (still no network egress, no arbitrary exec) and
+add one narrow grant, `Edit(./.claude-review-verdict)`, which is what
+`Edit` rules are for — the redirect-target check consults `Edit(path)` and
+`Read(path)` rules only; a `Write(path)` rule is accepted but silently
+never consulted for this check. `--safe-mode` still removed
+`guard-readonly-bash.mjs`, so the scoped Bash list plus this one `Edit`
+grant are the write barrier now, not a blanket allowance. `--effort
+medium`, `--exclude-dynamic-system-prompt-sections`, and `--max-turns 35`
+are unchanged; once the permission-denial retry loop is gone, turn counts
+should return toward the original 8–28 baseline, leaving headroom under 35
+again.
+
+### New source (this addendum)
+
+- T11: Configure permissions, Redirections — <https://code.claude.com/docs/en/permissions#redirections> (docs)
 
 ## Sources
 
