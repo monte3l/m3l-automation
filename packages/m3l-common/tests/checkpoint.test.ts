@@ -35,6 +35,7 @@
 
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { inspect } from "node:util";
 
 import {
   afterEach,
@@ -417,12 +418,13 @@ describe("M3LCheckpointStore.write()", () => {
     );
   });
 
-  test("regression: write() wraps a canonicalJsonHash failure (e.g. a circular checkpoint) as M3LCheckpointError, not a bare M3LError", async () => {
-    // write() computes `canonicalJsonHash(checkpoint)` to build the envelope
-    // checksum BEFORE entering its try/catch — a circular checkpoint value
-    // makes canonicalJsonHash throw a bare M3LError (ERR_INVALID_ARGUMENT),
-    // which today escapes write() unwrapped instead of being reported as the
-    // documented M3LCheckpointError ERR_CHECKPOINT_IO.
+  test("regression: write() wraps a circular-checkpoint JSON.stringify failure as ERR_CHECKPOINT_IO, not a bare Error", async () => {
+    // write() takes a snapshot first: JSON.parse(JSON.stringify(checkpoint, replacer))
+    // runs inside the outer try/catch. A circular checkpoint causes JSON.stringify
+    // to throw (via its native cycle detection) before canonicalJsonHash is ever
+    // called. That throw is caught and re-thrown as ERR_CHECKPOINT_IO with no cause
+    // — never as a bare Error, never as the bare M3LError that canonicalJsonHash
+    // would have produced in the pre-snapshot design.
     const circular: CircularCheckpoint = { queryId: "q-circular" };
     circular.self = circular;
 
@@ -748,13 +750,34 @@ describe("type-level contract", () => {
     await result;
   });
 
-  test("M3LCheckpointErrorCode is exactly the 3-member union (no wider, no narrower)", () => {
+  test("M3LCheckpointErrorCode is exactly the 6-member union (no wider, no narrower)", () => {
     expectTypeOf<M3LCheckpointErrorCode>().toEqualTypeOf<
       | "ERR_CHECKPOINT_CORRUPT"
+      | "ERR_CHECKPOINT_DEFINITION"
+      | "ERR_CHECKPOINT_FINGERPRINT_MISMATCH"
       | "ERR_CHECKPOINT_IO"
       | "ERR_CHECKPOINT_MISSING"
       | "ERR_CHECKPOINT_PARSE"
     >();
+  });
+
+  test("M3LCheckpointStoreOptions<T>['definition'] is genuinely optional and accepts unknown — omitting the key is valid under exactOptionalPropertyTypes", () => {
+    // When 'definition' is added as optional in GREEN: this type-checks clean
+    // (the key is omitted, satisfying exactOptionalPropertyTypes which disallows
+    // { definition: undefined } but permits key absence).
+    // In RED: the field does not exist in M3LCheckpointStoreOptions, which means
+    // the interface has no 'definition' member at all — a different kind of
+    // optionality, but key absence still compiles. The RED signal is in
+    // behavioral tests 1–11 that pass a definition value and prove the feature
+    // is absent from the implementation.
+    const options: M3LCheckpointStoreOptions<TestCheckpoint> = {
+      paths: makePathsPort(dir),
+      name: "run-type-no-def",
+      validate: isTestCheckpoint,
+      missing: { kind: "empty", value: EMPTY_CHECKPOINT },
+      // 'definition' deliberately omitted — must be valid in GREEN
+    };
+    expect(options).toBeDefined();
   });
 
   test("M3LCheckpointStoreOptions<T>['missing'] rejects the 'error' arm paired with an extra 'value' field", () => {
@@ -773,5 +796,3107 @@ describe("type-level contract", () => {
     expectTypeOf<
       M3LCheckpointError["code"]
     >().toEqualTypeOf<M3LCheckpointErrorCode>();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3LCheckpointStore — fingerprint (definition binding)
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore — fingerprint (definition binding)", () => {
+  test("write() with a definition stamps fingerprint: canonicalJsonHash(definition) on the envelope; read() with the same definition round-trips the payload", async () => {
+    const definition = {
+      query: "SELECT id FROM table_a",
+      database: "analytics",
+    };
+    // 'definition' is not yet in M3LCheckpointStoreOptions — TypeScript will
+    // flag the excess property below as an error (expected RED diagnostic for
+    // the not-yet-existing feature; the literal union at write's call site
+    // triggers excess-property checking). Vitest still runs and the test fails
+    // at runtime: the envelope has no fingerprint field.
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-write",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition,
+    });
+
+    await store.write({ queryId: "q-fp-1" });
+
+    const rawJson = await readFile(store.path, "utf8");
+    const parsed: unknown = JSON.parse(rawJson);
+
+    // For this simple definition (a plain object with no getters, toJSON, or
+    // non-enumerable properties), projectDefinitionValue's projection is
+    // structurally identical to the caller's object, so canonicalJsonHash(definition)
+    // equals canonicalJsonHash(projection). The round-3 regression tests (the
+    // "single-traversal projection" describe block below) cover cases where the
+    // projection and the caller's original object diverge — those are the tests
+    // that actually discriminate the fingerprint-the-projection invariant.
+    expect(parsed).toHaveProperty("fingerprint", canonicalJsonHash(definition));
+
+    // Same definition → round-trip must also resolve.
+    const storeForRead = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-write",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition,
+    });
+    await expect(storeForRead.read()).resolves.toEqual({ queryId: "q-fp-1" });
+  });
+
+  test("write() without a definition omits the 'fingerprint' key entirely — Object.hasOwn returns false, not merely === undefined", async () => {
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-absent",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ queryId: "q-no-fp" });
+
+    const rawJson = await readFile(store.path, "utf8");
+    const parsed: unknown = JSON.parse(rawJson);
+
+    // Absence of the key, not merely undefined value.
+    expect(Object.hasOwn(parsed as object, "fingerprint")).toBe(false);
+  });
+
+  test("read() with a definition differing from the writer's throws ERR_CHECKPOINT_FINGERPRINT_MISMATCH; no sensitive value in message or context", async () => {
+    const writerDefinition = {
+      query: "SELECT secret_column FROM sensitive_table",
+    };
+    const readerDefinition = { query: "SELECT id FROM public_table" };
+
+    const writerStore = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-mismatch",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: writerDefinition,
+    });
+    await writerStore.write({ queryId: "q-stale" });
+
+    const readerStore = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-mismatch",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: readerDefinition,
+    });
+
+    let thrown: unknown;
+    try {
+      await readerStore.read();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    // ERR_CHECKPOINT_FINGERPRINT_MISMATCH not yet in M3LCheckpointErrorCode —
+    // in RED the read() does not throw at all (the impl ignores definition),
+    // so this assertion never runs; the test fails at the toBeInstanceOf above.
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_FINGERPRINT_MISMATCH",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    // Neither definition value nor either fingerprint appears in message or context.
+    const SENSITIVE = "secret_column";
+    expect((thrown as M3LCheckpointError).message).not.toContain(SENSITIVE);
+    expect(
+      JSON.stringify((thrown as M3LCheckpointError).context ?? {}),
+    ).not.toContain(SENSITIVE);
+  });
+
+  test("read(): store has a definition but the on-disk envelope has no fingerprint → resumes (backward-compatible with pre-fingerprint envelopes)", async () => {
+    const payload: TestCheckpoint = { queryId: "q-no-fp-field" };
+    const envelope = {
+      __m3lCheckpointFormat: 1,
+      checksum: canonicalJsonHash(payload),
+      payload,
+      // no fingerprint field — simulates a file written before this feature existed
+    };
+    const filePath = path.join(dir, "run-fp-compat-read.checkpoint.json");
+    await writeFile(filePath, JSON.stringify(envelope), "utf8");
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-compat-read",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: { query: "SELECT 1" },
+    });
+
+    // An envelope without a fingerprint is backward-compatible regardless of
+    // whether the store has a definition.
+    await expect(store.read()).resolves.toEqual(payload);
+  });
+
+  test("read(): store has no definition but the on-disk envelope carries a fingerprint → resumes (no current definition to compare against)", async () => {
+    const payload: TestCheckpoint = { queryId: "q-fp-no-def" };
+    const envelope = {
+      __m3lCheckpointFormat: 1,
+      checksum: canonicalJsonHash(payload),
+      // A real fingerprint from a prior write — the store has no definition to
+      // compare against, so it is ignored.
+      fingerprint: canonicalJsonHash({ query: "SELECT 1" }),
+      payload,
+    };
+    const filePath = path.join(dir, "run-fp-no-def.checkpoint.json");
+    await writeFile(filePath, JSON.stringify(envelope), "utf8");
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-no-def",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    await expect(store.read()).resolves.toEqual(payload);
+  });
+
+  test("read(): a legacy bare-JSON checkpoint file combined with a store that has a definition still resolves — legacy path is untouched by fingerprinting", async () => {
+    const filePath = path.join(dir, "run-fp-legacy.checkpoint.json");
+    await writeFile(
+      filePath,
+      JSON.stringify({ queryId: "q-legacy-fp" }),
+      "utf8",
+    );
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-legacy",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: { query: "SELECT 2" },
+    });
+
+    await expect(store.read()).resolves.toEqual({ queryId: "q-legacy-fp" });
+  });
+
+  test("read(): an envelope with a valid checksum but a non-string (numeric) fingerprint throws ERR_CHECKPOINT_CORRUPT", async () => {
+    const payload: TestCheckpoint = { queryId: "q-num-fp" };
+    const envelope = {
+      __m3lCheckpointFormat: 1,
+      checksum: canonicalJsonHash(payload),
+      // A numeric fingerprint — present-but-non-string is a corrupt envelope,
+      // not a legacy file (the spec is explicit: widen the envelope guard to
+      // skip non-string fingerprints and the checksum check is also skipped).
+      fingerprint: 12345,
+      payload,
+    };
+    const filePath = path.join(dir, "run-fp-numeric.checkpoint.json");
+    await writeFile(filePath, JSON.stringify(envelope), "utf8");
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-numeric",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.read();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    // In RED: the impl does not check the fingerprint type. The checksum IS
+    // correct so the envelope passes, payload is returned, no error is thrown.
+    // The test fails at toBeInstanceOf above — right reason: non-string
+    // fingerprint check not implemented.
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_CORRUPT");
+  });
+
+  test("read(): a numeric fingerprint with a WRONG checksum still throws ERR_CHECKPOINT_CORRUPT — not silently resumed via legacy-path demotion", async () => {
+    // A legacy-path demotion (treating the object as the raw checkpoint because
+    // fingerprint is non-string) would also skip the checksum check, so a file
+    // that would normally be CORRUPT either resolves or throws ERR_CHECKPOINT_PARSE
+    // from validate — never ERR_CHECKPOINT_CORRUPT. This case proves the demotion
+    // did NOT happen regardless of checksum correctness.
+    // In the current RED impl: the envelope IS detected (format + string checksum
+    // + payload all present), the bad checksum makes it throw ERR_CHECKPOINT_CORRUPT
+    // — this test passes for the right behavioral reason even before fingerprint
+    // support is added, and remains valid in GREEN.
+    const payload: TestCheckpoint = { queryId: "q-num-fp-bad-cksum" };
+    const envelope = {
+      __m3lCheckpointFormat: 1,
+      checksum:
+        "0000000000000000000000000000000000000000000000000000000000000000",
+      fingerprint: 99,
+      payload,
+    };
+    const filePath = path.join(dir, "run-fp-numeric-bad.checkpoint.json");
+    await writeFile(filePath, JSON.stringify(envelope), "utf8");
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-numeric-bad",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.read();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    // ERR_CHECKPOINT_CORRUPT must be thrown (not PARSE from validate), confirming
+    // the envelope was not demoted to the legacy path.
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_CORRUPT");
+  });
+
+  test("read(): both checksum and fingerprint are wrong → ERR_CHECKPOINT_CORRUPT (integrity check wins over meaning check)", async () => {
+    const payload: TestCheckpoint = { queryId: "q-both-wrong" };
+    // wrongFingerprint is all a's — guaranteed to differ from
+    // canonicalJsonHash({ query: "SELECT 1" }) (the store's real fingerprint).
+    // A fingerprint-first implementation would see the mismatch and throw
+    // ERR_CHECKPOINT_FINGERPRINT_MISMATCH; the correct checksum-first
+    // implementation throws ERR_CHECKPOINT_CORRUPT (bad checksum) first.
+    // Having a definition in the store is what makes this test discriminate:
+    // without it #fingerprint is undefined, the mismatch branch never fires
+    // regardless of ordering, and the test proves nothing about priority.
+    const wrongFingerprint =
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const envelope = {
+      __m3lCheckpointFormat: 1,
+      checksum:
+        "0000000000000000000000000000000000000000000000000000000000000000",
+      fingerprint: wrongFingerprint,
+      payload,
+    };
+    const filePath = path.join(dir, "run-fp-both-wrong.checkpoint.json");
+    await writeFile(filePath, JSON.stringify(envelope), "utf8");
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-both-wrong",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      // definition whose hash definitely differs from wrongFingerprint
+      definition: { query: "SELECT 1" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.read();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    // ERR_CHECKPOINT_CORRUPT, not ERR_CHECKPOINT_FINGERPRINT_MISMATCH —
+    // checksum is verified before fingerprint per the spec's read matrix.
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_CORRUPT");
+  });
+
+  test("constructor: a circular reference in 'definition' throws ERR_CHECKPOINT_DEFINITION at construction time, with cause undefined and no value in the message", () => {
+    const circular: Record<string, unknown> = {};
+    circular["self"] = circular;
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-circular",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: circular,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    // In RED: the constructor ignores 'definition' entirely, does not throw.
+    // Test fails at toBeInstanceOf — right reason: DEFINITION validation absent.
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    // The definition value must not appear in the message — it's a circular
+    // object whose serialisation would be "[object Object]" at best.
+    expect((thrown as M3LCheckpointError).message).not.toContain(
+      "[object Object]",
+    );
+    // context carries only path, never the definition.
+    const contextStr = JSON.stringify(
+      (thrown as M3LCheckpointError).context ?? {},
+    );
+    expect(contextStr).not.toContain("self");
+  });
+
+  test("constructor: a BigInt 'definition' throws ERR_CHECKPOINT_DEFINITION at construction time, with cause undefined", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-bigint",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: BigInt(42),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("fingerprint stability: two definition objects with the same entries in different key order produce the same fingerprint — read() resumes, not ERR_CHECKPOINT_FINGERPRINT_MISMATCH", async () => {
+    const definitionA = { database: "analytics", query: "SELECT id FROM t" };
+    const definitionB = { query: "SELECT id FROM t", database: "analytics" };
+
+    const writerStore = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-key-order",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: definitionA,
+    });
+    await writerStore.write({ queryId: "q-key-order" });
+
+    const readerStore = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-key-order",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: definitionB,
+    });
+
+    // Canonical hashing: same content, different key order → identical fingerprint
+    // → resumes cleanly without ERR_CHECKPOINT_FINGERPRINT_MISMATCH.
+    // In RED: the impl ignores both definitions and resolves anyway — this test
+    // passes in RED and serves as a behavioral regression test in GREEN.
+    await expect(readerStore.read()).resolves.toEqual({
+      queryId: "q-key-order",
+    });
+  });
+
+  test("constructor: an unsafe name combined with a circular definition still throws M3LPathResolutionError — path resolution precedes definition hashing", () => {
+    const circular: Record<string, unknown> = {};
+    circular["self"] = circular;
+
+    const pathResolutionFailure = new M3LPathResolutionError(
+      "resolveOutput rejected an unsafe name",
+    );
+    const throwingPaths: M3LCheckpointPathsPort = {
+      resolveOutput: () => {
+        throw pathResolutionFailure;
+      },
+    };
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: throwingPaths,
+        name: "../escape",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: circular,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    // Path resolution runs first in the constructor — the M3LPathResolutionError
+    // propagates unwrapped before definition hashing even begins.
+    expect(thrown).toBe(pathResolutionFailure);
+    expect(thrown).toBeInstanceOf(M3LPathResolutionError);
+    expect(thrown).not.toBeInstanceOf(M3LCheckpointError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A. definition rejection / acceptance — covers lines 378-396 + helper
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore constructor — definition rejection / acceptance", () => {
+  // -------------------------------------------------------------------------
+  // A1. Rejected definitions
+  // -------------------------------------------------------------------------
+
+  test.each([
+    ["arrow function", () => 1],
+    [
+      "named function declaration",
+      function namedFn() {
+        return 1;
+      },
+    ],
+  ])(
+    "definition: %s — rejects with ERR_CHECKPOINT_DEFINITION (cause undefined, no definition value in message/context)",
+    (_label, badDef) => {
+      let thrown: unknown;
+      try {
+        new M3LCheckpointStore<TestCheckpoint>({
+          paths: makePathsPort(dir),
+          name: "run-def-fn",
+          validate: isTestCheckpoint,
+          missing: { kind: "error" },
+          definition: badDef,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LCheckpointError);
+      expect((thrown as M3LCheckpointError).code).toBe(
+        "ERR_CHECKPOINT_DEFINITION",
+      );
+      expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+      // The definition value itself must never appear in the public error output.
+      const contextStr = JSON.stringify(
+        (thrown as M3LCheckpointError).context ?? {},
+      );
+      expect((thrown as M3LCheckpointError).message).not.toContain("namedFn");
+      expect(contextStr).not.toContain("namedFn");
+    },
+  );
+
+  test("definition: symbol — rejects with ERR_CHECKPOINT_DEFINITION (cause undefined)", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-symbol",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: Symbol("test"),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test.each([
+    ["Map", new Map([["a", 1]])],
+    ["Set", new Set([1, 2, 3])],
+    ["RegExp", /x/],
+  ])(
+    "definition: %s — rejects with ERR_CHECKPOINT_DEFINITION (no accessible content → fingerprint identical to {})",
+    (_label, badDef) => {
+      let thrown: unknown;
+      try {
+        new M3LCheckpointStore<TestCheckpoint>({
+          paths: makePathsPort(dir),
+          name: "run-def-noop",
+          validate: isTestCheckpoint,
+          missing: { kind: "error" },
+          definition: badDef,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LCheckpointError);
+      expect((thrown as M3LCheckpointError).code).toBe(
+        "ERR_CHECKPOINT_DEFINITION",
+      );
+      expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    },
+  );
+
+  test("definition: class instance with only prototype accessors (no own enumerable props, no toJSON) — rejects with ERR_CHECKPOINT_DEFINITION", () => {
+    // Data lives only in prototype getters — Object.keys() returns 0 own props.
+    class ProtoAccessor {
+      get value(): number {
+        return 42;
+      }
+    }
+    const instance = new ProtoAccessor();
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-proto-accessor",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: instance,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("definition: Proxy wrapping a class-instance target (Map) — rejected with ERR_CHECKPOINT_DEFINITION at the prototype check, not a raw error escape", () => {
+    // `projectDefinitionValue` calls `isDefinitionPlainObject`, which wraps
+    // `Object.getPrototypeOf` in a try/catch (fail-closed against a hostile
+    // getPrototypeOf trap). This Proxy has no getPrototypeOf trap, so the call
+    // delegates to the Map target: `Map.prototype` is neither `Object.prototype`
+    // nor `null`, so `isDefinitionPlainObject` returns `false` and
+    // `projectDefinitionValue` returns REJECTED without entering
+    // `projectDefinitionObject`. The ownKeys trap defined on this Proxy is never
+    // invoked — the prototype check rejects first, fail-closed.
+    const hostile = new Proxy(new Map(), {
+      ownKeys(): never {
+        throw new Error("hostile trap");
+      },
+      getOwnPropertyDescriptor(): never {
+        throw new Error("hostile trap");
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-proxy",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: hostile,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    // The hostile proxy's raw error must not become the cause.
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // A2. Accepted definitions — construction succeeds; fingerprint is stamped
+  // -------------------------------------------------------------------------
+
+  test("definition: plain object { query: 'SELECT 1' } — accepted; write() stamps a fingerprint", async () => {
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-def-plain",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: { query: "SELECT 1" },
+    });
+
+    await store.write({ queryId: "q-plain-def" });
+    const rawJson = await readFile(store.path, "utf8");
+    const parsed: unknown = JSON.parse(rawJson);
+    expect(Object.hasOwn(parsed as object, "fingerprint")).toBe(true);
+    expect(typeof (parsed as Record<string, unknown>)["fingerprint"]).toBe(
+      "string",
+    );
+  });
+
+  test("definition: empty plain object {} — accepted; construction succeeds", () => {
+    expect(() => {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-empty-obj",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: {},
+      });
+    }).not.toThrow();
+  });
+
+  test.each([
+    ["empty array []", []],
+    ["non-empty array", [1, 2, 3]],
+  ])(
+    "definition: %s — accepted; write() stamps a fingerprint",
+    async (_label, def) => {
+      const store = new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-array",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: def,
+      });
+
+      await store.write({ queryId: "q-array-def" });
+      const rawJson = await readFile(store.path, "utf8");
+      const parsed: unknown = JSON.parse(rawJson);
+      expect(Object.hasOwn(parsed as object, "fingerprint")).toBe(true);
+    },
+  );
+
+  test("definition: Date — rejected with ERR_CHECKPOINT_DEFINITION (cause undefined, no value/type leak); a Date was accepted under the old toJSON rule but the new allowlist requires prototype === Object.prototype", () => {
+    // Under the old shape-based guard, Date was accepted because it has a
+    // callable toJSON — so canonicalJsonStringify serialised it as a string.
+    // The new recursive allowlist rejects it because Date.prototype is not
+    // Object.prototype or null: a class instance can hold state in #private
+    // fields or prototype accessors that no serialiser and no type-test can
+    // see. Pass a Date as date.toISOString() instead.
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-date",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: new Date("2026-01-01T00:00:00Z"),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    // The Date value itself (e.g. "2026-01-01") must not appear in the message
+    // or context — the definition is never persisted or surfaced.
+    expect((thrown as M3LCheckpointError).message).not.toContain("2026-01-01");
+    const contextStr = JSON.stringify(
+      (thrown as M3LCheckpointError).context ?? {},
+    );
+    expect(contextStr).not.toContain("2026-01-01");
+  });
+
+  test("definition: class instance with own data properties — rejected with ERR_CHECKPOINT_DEFINITION (cause undefined); class instances can hold #private state no serialiser can see", () => {
+    // Under the old shape-based guard, a class with only plain own-data
+    // properties was accepted because Object.keys() enumerated those fields.
+    // The new recursive allowlist rejects it because the prototype is not
+    // Object.prototype or null — the allowlist cannot verify that the class
+    // holds no additional state in #private fields or prototype accessors.
+    class WithOwnData {
+      readonly query: string;
+      readonly table: string;
+      constructor(query: string, table: string) {
+        this.query = query;
+        this.table = table;
+      }
+    }
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-own-data",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: new WithOwnData("SELECT 1", "t"),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    // The class property values must not appear in the message or context.
+    expect((thrown as M3LCheckpointError).message).not.toContain("SELECT 1");
+    const contextStr = JSON.stringify(
+      (thrown as M3LCheckpointError).context ?? {},
+    );
+    expect(contextStr).not.toContain("SELECT 1");
+  });
+
+  test.each([
+    ["null", null],
+    ["0", 0],
+    ["false", false],
+    ["empty string", ""],
+    ["version string 'v1'", "v1"],
+  ])(
+    "definition: primitive %s — accepted; construction succeeds (null opts in, gate is !== undefined)",
+    (_label, def) => {
+      expect(() => {
+        new M3LCheckpointStore<TestCheckpoint>({
+          paths: makePathsPort(dir),
+          name: "run-def-primitive",
+          validate: isTestCheckpoint,
+          missing: { kind: "error" },
+          definition: def,
+        });
+      }).not.toThrow();
+    },
+  );
+
+  test("definition: null — opts in to fingerprinting; write() stamps a real fingerprint (null !== undefined, gate is !== undefined)", async () => {
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-def-null",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: null,
+    });
+
+    await store.write({ queryId: "q-null-def" });
+    const rawJson = await readFile(store.path, "utf8");
+    const parsed: unknown = JSON.parse(rawJson);
+    // null opted in → fingerprint key must be present and must be a string
+    expect(Object.hasOwn(parsed as object, "fingerprint")).toBe(true);
+    expect(typeof (parsed as Record<string, unknown>)["fingerprint"]).toBe(
+      "string",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F2. Round-3 regressions — the three executed bypasses of round 2
+//     Each was a real bypass that caused two different definitions to share a
+//     fingerprint and silently resume on each other's offsets.
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore — round-3 regression: single-traversal projection", () => {
+  test("regression (round-3): non-enumerable own toJSON — two definitions with different data but a hidden toJSON returning {} now fingerprint DIFFERENTLY (round-2 bypass: both hashed as {})", async () => {
+    // Round-2 bypass: Object.keys() does not enumerate non-enumerable properties,
+    // so the allowlist walk missed the hidden toJSON. But canonicalJsonHash then
+    // invoked it (serialisers call toJSON before walking keys), causing BOTH
+    // definitions — { table: "prod-orders", segments: 4 } and
+    // { table: "prod-payments", segments: 16 } — to serialise as {} and share the
+    // fingerprint "44136fa3…". A store built with the second definition could read
+    // back the first's checkpoint without throwing ERR_CHECKPOINT_FINGERPRINT_MISMATCH.
+    //
+    // Round-3 fix: the single traversal uses Object.keys() exclusively (never
+    // invokes toJSON), and the fingerprint is computed over the PROJECTION — not
+    // the caller's object. The projection contains the actual enumerable data
+    // ({ table, segments }), so the two definitions now hash differently.
+    const hide = (cfg: Record<string, unknown>): Record<string, unknown> => {
+      const o = { ...cfg };
+      Object.defineProperty(o, "toJSON", {
+        value: (): Record<string, never> => ({}),
+        enumerable: false,
+      });
+      return o;
+    };
+
+    const defOrders = hide({ table: "prod-orders", segments: 4 });
+    const defPayments = hide({ table: "prod-payments", segments: 16 });
+
+    const storeOrders = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-orders-fp",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: defOrders,
+    });
+
+    const storePayments = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-payments-fp",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: defPayments,
+    });
+
+    // Write with orders store, read with payments store — must mismatch, not silently resume.
+    await storeOrders.write({ queryId: "q-orders" });
+
+    // Build a cross-reader: same file path (run-orders-fp) but the payments definition.
+    const crossReader = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-orders-fp",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: defPayments,
+    });
+
+    let thrown: unknown;
+    try {
+      await crossReader.read();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_FINGERPRINT_MISMATCH",
+    );
+
+    // Also verify the raw fingerprints differ — rules out the test passing
+    // because the store has no fingerprint at all (which would just resolve).
+    await storeOrders.write({ queryId: "q-orders-2" });
+    await storePayments.write({ queryId: "q-payments-2" });
+
+    const rawOrders = JSON.parse(
+      await readFile(storeOrders.path, "utf8"),
+    ) as Record<string, unknown>;
+    const rawPayments = JSON.parse(
+      await readFile(storePayments.path, "utf8"),
+    ) as Record<string, unknown>;
+
+    // Both envelopes must carry a fingerprint (the definition was non-undefined).
+    expect(typeof rawOrders["fingerprint"]).toBe("string");
+    expect(typeof rawPayments["fingerprint"]).toBe("string");
+    // And they must differ — the non-enumerable toJSON must not have collapsed both to {}.
+    expect(rawOrders["fingerprint"]).not.toBe(rawPayments["fingerprint"]);
+  });
+
+  test("regression (round-3): getter is read exactly once — round-2 read it twice, letting a getter return an allowed array first and a Set second", () => {
+    // Round-2 bypass: the allowlist pass read the getter (call 1, returned ["/a"]),
+    // then canonicalJsonHash read it again (call 2, could have returned a Set).
+    // The single-traversal fix reads each property value exactly once and
+    // fingerprints the projection, so a getter is invoked at most once.
+    let reads = 0;
+    const definition = {
+      region: "us-east-1",
+      get logGroups(): string[] {
+        reads++;
+        return ["/aws/lambda/my-fn"];
+      },
+    };
+
+    // Construction must succeed (logGroups returns a valid string[] on read).
+    expect(() => {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-getter-once",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition,
+      });
+    }).not.toThrow();
+
+    // The getter must have been invoked exactly once — not twice.
+    expect(reads).toBe(1);
+  });
+
+  test("regression (round-3): array with own non-index enumerable property — rejected (round-2 bypass: both traversals iterated by index and missed the extra property)", () => {
+    // Round-2 bypass: Object.assign([1,2], { groups: new Set(["a"]) }) adds
+    // an own enumerable property named "groups" to the array. Both the
+    // allowlist walk (iterating arr[0], arr[1]) and canonicalJsonHash
+    // (iterating the array by index) missed the "groups" property entirely.
+    // Two arrays with different extra properties produced identical fingerprints.
+    //
+    // Round-3 fix: isDefinitionArrayShapeValid compares Object.keys(arr).length
+    // against arr.length — for a normal dense array they are equal; for an array
+    // carrying an extra own property they differ → REJECTED.
+    const arrWithExtra = Object.assign([1, 2], {
+      groups: new Set(["a"]),
+    });
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-arr-extra-prop",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: arrWithExtra,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("regression (round-3): sparse array definition — rejected (a hole is invisible to both the old allowlist and the hash)", () => {
+    // A sparse array hole at any index is rejected. Sparse holes are rendered
+    // differently by different serialisers (JSON.stringify renders them as null;
+    // canonical JSON may drop them). Two definitions differing only in whether
+    // an element is a hole vs null would produce different canonical forms
+    // but identical results under JSON.stringify — a definiteness gap.
+    // Build the sparse array programmatically to avoid the no-sparse-arrays
+    // ESLint rule. new Array(3) creates [<3 empty>]; assigning only indices 0
+    // and 2 leaves index 1 as a genuine hole (Object.hasOwn returns false).
+    const sparse = new Array<number>(3);
+    sparse[0] = 1;
+    sparse[2] = 3; // index 1 is a hole
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-sparse-def",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: sparse,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("regression (round-3): own symbol key at top level — rejected (symbol-keyed content is invisible to Object.keys and to canonical JSON)", () => {
+    // A symbol key is invisible to Object.keys() and to JSON serialisation.
+    // Two objects differing only in a symbol-keyed property produce identical
+    // fingerprints — the symbol key and its value are silently lost.
+    const sym = Symbol("hidden");
+    const withSym = { a: 1, [sym]: "secret" };
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-sym-top",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: withSym,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("regression (round-3): own symbol key nested inside a plain object — rejected", () => {
+    // The symbol-key check is applied at every depth, not just the top level.
+    const sym = Symbol("nested-hidden");
+    const nested = { outer: { a: 1, [sym]: "deeply-secret" } };
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-sym-nested",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: nested,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// B. Object.hasOwn prototype-pollution guard — security must-fix
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore — Object.hasOwn prototype-pollution guard", () => {
+  test("polluted Object.prototype.fingerprint does not cause a false ERR_CHECKPOINT_FINGERPRINT_MISMATCH on a valid pre-fingerprint envelope (no own fingerprint key)", async () => {
+    // A legacy pre-fingerprint envelope has a valid checksum but no own
+    // 'fingerprint' property. Before the Object.hasOwn fix, a prototype-
+    // polluted 'fingerprint' was read as if it were the envelope's own field,
+    // causing a spurious ERR_CHECKPOINT_FINGERPRINT_MISMATCH and denying a
+    // valid resume.
+    const payload: TestCheckpoint = { queryId: "q-proto-polluted" };
+    const envelope = {
+      __m3lCheckpointFormat: 1,
+      checksum: canonicalJsonHash(payload),
+      // no own 'fingerprint' key — simulates a pre-fingerprint envelope
+      payload,
+    };
+    const filePath = path.join(dir, "run-proto-pollution.checkpoint.json");
+    await writeFile(filePath, JSON.stringify(envelope), "utf8");
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-proto-pollution",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: { query: "SELECT 1" },
+    });
+
+    // Pollute Object.prototype with an attacker-controlled fingerprint.
+    // Use Object.defineProperty so we can control configurability and clean
+    // up in finally regardless of how the test goes.
+    Object.defineProperty(Object.prototype, "fingerprint", {
+      configurable: true,
+      enumerable: false,
+      writable: true,
+      value: "ATTACKER",
+    });
+
+    let result: TestCheckpoint | undefined;
+    let thrown: unknown;
+    try {
+      result = await store.read();
+    } catch (error) {
+      thrown = error;
+    } finally {
+      delete (Object.prototype as Record<string, unknown>)["fingerprint"];
+    }
+
+    // Must resolve — the prototype-polluted value must never be treated as
+    // an own fingerprint on the envelope.
+    expect(thrown).toBeUndefined();
+    expect(result).toEqual(payload);
+  });
+
+  test("throwing getter on Object.prototype.fingerprint does not propagate a raw error from read()", async () => {
+    // If read() uses a plain property access (envelope.fingerprint) instead of
+    // Object.hasOwn, a throwing prototype getter would escape as a raw Error
+    // with no M3LCheckpointError code, breaking the documented contract.
+    const payload: TestCheckpoint = { queryId: "q-throwing-getter" };
+    const envelope = {
+      __m3lCheckpointFormat: 1,
+      checksum: canonicalJsonHash(payload),
+      // no own 'fingerprint' key
+      payload,
+    };
+    const filePath = path.join(dir, "run-throwing-getter.checkpoint.json");
+    await writeFile(filePath, JSON.stringify(envelope), "utf8");
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-throwing-getter",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: { query: "SELECT 1" },
+    });
+
+    Object.defineProperty(Object.prototype, "fingerprint", {
+      configurable: true,
+      enumerable: false,
+      get(): never {
+        throw new Error("getter trap — must not be invoked");
+      },
+    });
+
+    let result: TestCheckpoint | undefined;
+    let thrown: unknown;
+    try {
+      result = await store.read();
+    } catch (error) {
+      thrown = error;
+    } finally {
+      delete (Object.prototype as Record<string, unknown>)["fingerprint"];
+    }
+
+    // Must resolve normally — the getter is never invoked because Object.hasOwn
+    // confirms the envelope has no own 'fingerprint' property before accessing it.
+    expect(thrown).toBeUndefined();
+    expect(result).toEqual(payload);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C. write()'s two ERR_CHECKPOINT_IO arms produce distinct messages
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore.write() — ERR_CHECKPOINT_IO arm distinctness", () => {
+  test("unhashable-checkpoint arm and rename-failure arm both produce ERR_CHECKPOINT_IO but with DIFFERENT messages", async () => {
+    // Arm 1: hash failure (circular checkpoint)
+    const circular: CircularCheckpoint = { queryId: "q-circular-msg" };
+    circular.self = circular;
+
+    const hashStore = new M3LCheckpointStore<CircularCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-hash-msg",
+      validate: isCircularCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let hashThrown: unknown;
+    try {
+      await hashStore.write(circular);
+    } catch (error) {
+      hashThrown = error;
+    }
+
+    expect(hashThrown).toBeInstanceOf(M3LCheckpointError);
+    expect((hashThrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    const hashMessage = (hashThrown as M3LCheckpointError).message;
+
+    // Arm 2: rename failure (I/O error after hashing succeeds)
+    const ioStore = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-rename-msg",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    // Write once to set up the file, then fail the next rename.
+    await ioStore.write({ queryId: "original" });
+    const renameFailure = Object.assign(new Error("EPERM: rename failed"), {
+      code: "EPERM",
+    });
+    vi.spyOn(fsp, "rename").mockRejectedValueOnce(renameFailure);
+
+    let renameThrown: unknown;
+    try {
+      await ioStore.write({ queryId: "should-not-land" });
+    } catch (error) {
+      renameThrown = error;
+    }
+
+    expect(renameThrown).toBeInstanceOf(M3LCheckpointError);
+    expect((renameThrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    const renameMessage = (renameThrown as M3LCheckpointError).message;
+
+    // The two arms must produce diagnostically distinct messages —
+    // collapsing them back would be a diagnostic regression.
+    expect(hashMessage).not.toBe(renameMessage);
+    expect(hashMessage).not.toContain(renameMessage);
+  });
+
+  test("unhashable-checkpoint arm: cause is undefined and no caller data appears in the message", async () => {
+    // The hash-failure arm must never chain cause (canonicalJsonHash's thrown
+    // message can embed the caller's actual value, e.g. a DynamoDB primary key).
+    const SENSITIVE_MARKER = "sensitive-value-must-not-leak-9f3a";
+    const circular: CircularCheckpoint = { queryId: SENSITIVE_MARKER };
+    circular.self = circular;
+
+    const store = new M3LCheckpointStore<CircularCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-hash-no-leak",
+      validate: isCircularCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write(circular);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    expect((thrown as M3LCheckpointError).message).not.toContain(
+      SENSITIVE_MARKER,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D. Sixth read-matrix row: present-but-non-string fingerprint is ERR_CHECKPOINT_CORRUPT
+//    unconditionally (whether or not the store has a definition)
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore — sixth read-matrix row (non-string fingerprint)", () => {
+  test("a valid checksum with a non-string (numeric) fingerprint throws ERR_CHECKPOINT_CORRUPT even when the store HAS a definition — type check is unconditional", async () => {
+    // Complements the existing definition-less variant at line ~971.
+    // The corrupt-fingerprint check must fire before the fingerprint-mismatch
+    // check — ERR_CHECKPOINT_CORRUPT, not ERR_CHECKPOINT_FINGERPRINT_MISMATCH.
+    const payload: TestCheckpoint = { queryId: "q-num-fp-with-def" };
+    const envelope = {
+      __m3lCheckpointFormat: 1,
+      checksum: canonicalJsonHash(payload),
+      fingerprint: 99, // present-but-non-string → corrupt regardless of definition
+      payload,
+    };
+    const filePath = path.join(dir, "run-fp-numeric-with-def.checkpoint.json");
+    await writeFile(filePath, JSON.stringify(envelope), "utf8");
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-numeric-with-def",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      // A definition whose hash would match the envelope's numeric fingerprint
+      // if the type check were skipped — this ensures CORRUPT fires because of
+      // the non-string type, not because of a hash mismatch.
+      definition: { query: "SELECT 1" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.read();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_CORRUPT");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E. Definition allowlist — round-2 regression and walk-branch coverage
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore constructor — definition allowlist (round-2)", () => {
+  // -------------------------------------------------------------------------
+  // E1. The motivating regression: nested non-plain objects in a plain-object definition
+  // -------------------------------------------------------------------------
+
+  test("regression: { region, logGroups: new Set([...]) } — rejected at construction; the nested Set canonicalises to {} so two runs over different log groups would fingerprint identically under the old denylist", () => {
+    // This is the exact shape the spec documents as the motivating defect:
+    // a denylist checking only top-level Map/Set/RegExp still accepted this
+    // object, causing two runs over different log groups to resume from each
+    // other's offsets silently. The recursive allowlist closes this.
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-reg-nested-set",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: {
+          region: "eu-west-1",
+          logGroups: new Set(["/aws/lambda/a"]),
+        },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    // The definition value must not appear in the message or context.
+    expect((thrown as M3LCheckpointError).message).not.toContain("eu-west-1");
+    const contextStr = JSON.stringify(
+      (thrown as M3LCheckpointError).context ?? {},
+    );
+    expect(contextStr).not.toContain("eu-west-1");
+  });
+
+  test("regression sibling: nested Map in a plain object — rejected (Map entries are invisible to canonical JSON, so two runs with different Map contents fingerprint identically)", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-reg-nested-map",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { config: new Map([["key", "value"]]) },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("regression sibling: nested RegExp in a plain object — rejected", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-reg-nested-regexp",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { pattern: /^foo/ },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("regression sibling: nested function-valued property in a plain object — rejected (functions canonicalise to null, silently losing their identity)", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-reg-nested-fn",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { transform: (x: string) => x.toUpperCase() },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // E2. Rejection at depth — bad values nested 2-3 levels inside plain objects/arrays
+  // -------------------------------------------------------------------------
+
+  test("rejection at depth: a Set nested two levels inside plain objects — rejected", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-depth-bad-set",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { outer: { inner: new Set([1, 2]) } },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("rejection at depth: NaN nested inside an array inside a plain object — rejected (non-finite numbers are not accepted)", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-depth-bad-nan",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { values: [1, NaN, 3] },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // E3. Non-finite numbers: NaN, Infinity, -Infinity — top-level
+  // -------------------------------------------------------------------------
+
+  test.each([
+    ["NaN", NaN],
+    ["Infinity", Infinity],
+    ["-Infinity", -Infinity],
+  ])(
+    "definition: %s (top-level) — rejected with ERR_CHECKPOINT_DEFINITION (non-finite numbers are not accepted)",
+    (_label, badDef) => {
+      let thrown: unknown;
+      try {
+        new M3LCheckpointStore<TestCheckpoint>({
+          paths: makePathsPort(dir),
+          name: "run-def-nonfinite",
+          validate: isTestCheckpoint,
+          missing: { kind: "error" },
+          definition: badDef,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LCheckpointError);
+      expect((thrown as M3LCheckpointError).code).toBe(
+        "ERR_CHECKPOINT_DEFINITION",
+      );
+      expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // E4. bigint, Symbol, and functions — nested form (top-level already covered in A1)
+  // -------------------------------------------------------------------------
+
+  test("definition: bigint nested in a plain object — rejected with ERR_CHECKPOINT_DEFINITION", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-nested-bigint",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { count: BigInt(42) },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("definition: Symbol nested in a plain object — rejected with ERR_CHECKPOINT_DEFINITION", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-nested-symbol",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { tag: Symbol("tag") },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("definition: function nested inside an array — rejected with ERR_CHECKPOINT_DEFINITION", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-nested-fn-arr",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: [1, () => 2, 3],
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // E5. Map/Set subclass with own property — rejected (prototype is not Object.prototype)
+  // -------------------------------------------------------------------------
+
+  test("definition: Map subclass with an own data property — rejected; its Map entries are invisible to canonical JSON, and its prototype is not Object.prototype", () => {
+    // Previously a denylist checking instanceof Map might miss a subclass.
+    // The allowlist rejects all class instances since their prototype is not
+    // Object.prototype or null.
+    class TaggedMap extends Map<string, number> {
+      readonly label: string;
+      constructor(label: string) {
+        super();
+        this.label = label;
+      }
+    }
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-map-subclass",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: new TaggedMap("my-map"),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // E6. Class with non-callable toJSON on prototype — rejected
+  // -------------------------------------------------------------------------
+
+  test("definition: class whose prototype has a non-callable toJSON property — rejected; class instances are not plain objects regardless of toJSON", () => {
+    // Previously canonicalJsonStringify required a callable toJSON, so a
+    // non-callable toJSON fell through to {} serialisation — two different
+    // instances of this class would fingerprint identically. The allowlist
+    // rejects all class instances outright.
+    class WithNonCallableToJSON {
+      readonly toJSON: string = "not a function";
+    }
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-non-callable-tojson",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: new WithNonCallableToJSON(),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // E7. null-prototype object (Object.create(null)) — ACCEPTED
+  // -------------------------------------------------------------------------
+
+  test("definition: null-prototype plain object (Object.create(null)) — accepted; construction succeeds", () => {
+    // Object.create(null) has prototype === null, which is one of the two
+    // allowlisted prototypes alongside Object.prototype. Useful for config
+    // dicts parsed from YAML/TOML with no inherited properties.
+    const nullProtoObj = Object.create(null) as Record<string, unknown>;
+    nullProtoObj["region"] = "us-east-1";
+    nullProtoObj["limit"] = 100;
+
+    expect(() => {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-null-proto",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: nullProtoObj,
+      });
+    }).not.toThrow();
+  });
+
+  test("definition: null-prototype object — accepted; write() stamps a real 64-char hex fingerprint", async () => {
+    const nullProtoObj = Object.create(null) as Record<string, unknown>;
+    nullProtoObj["query"] = "SELECT 1";
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-def-null-proto-fp",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: nullProtoObj,
+    });
+
+    await store.write({ queryId: "q-null-proto" });
+    const rawJson = await readFile(store.path, "utf8");
+    const parsed = JSON.parse(rawJson) as Record<string, unknown>;
+    const fp = parsed["fingerprint"];
+    expect(typeof fp).toBe("string");
+    expect((fp as string).length).toBe(64);
+    expect(/^[0-9a-f]{64}$/.test(fp as string)).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // E8. Depth limit — structure exceeding DEFINITION_MAX_DEPTH (512)
+  // -------------------------------------------------------------------------
+
+  test("definition: structure nested deeper than DEFINITION_MAX_DEPTH — throws ERR_CHECKPOINT_DEFINITION, never a raw RangeError", () => {
+    // DEFINITION_MAX_DEPTH = 512. Build a 514-deep structure in a loop so
+    // fixture setup itself does not recurse — only the walk inside the
+    // constructor does. A raw RangeError escaping would fail the
+    // toBeInstanceOf(M3LCheckpointError) assertion.
+    let deep: unknown = "leaf";
+    for (let i = 0; i < 514; i++) {
+      deep = { nested: deep };
+    }
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-too-deep",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: deep,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).not.toBeInstanceOf(RangeError);
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // E9. Hostile Proxy — one test per trap the walk touches
+  //     (ownKeys trap already covered in describe block A above)
+  // -------------------------------------------------------------------------
+
+  test("definition: revoked Proxy — rejected with ERR_CHECKPOINT_DEFINITION, not a raw TypeError", () => {
+    // A revoked Proxy throws a TypeError on any operation. The walk's
+    // Array.isArray call invokes [[IsArray]] which throws on a revoked Proxy;
+    // the try/catch in projectDefinitionValue catches it (fail-closed) and
+    // returns REJECTED → ERR_CHECKPOINT_DEFINITION.
+    const { proxy, revoke } = Proxy.revocable({}, {});
+    revoke();
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-revoked-proxy",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: proxy,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).not.toBeInstanceOf(TypeError);
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("definition: Proxy whose getPrototypeOf trap throws — rejected with ERR_CHECKPOINT_DEFINITION, raw error does not escape", () => {
+    // isDefinitionPlainObject wraps Object.getPrototypeOf in a try/catch —
+    // a throwing trap is caught and treated as fail-closed (returns false),
+    // surfaced as ERR_CHECKPOINT_DEFINITION. The raw trap error must not
+    // become the cause or otherwise escape the constructor.
+    const hostile = new Proxy(
+      {},
+      {
+        getPrototypeOf(): never {
+          throw new Error("getPrototypeOf trap — must not escape");
+        },
+      },
+    );
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-getprototypeof-trap",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: hostile,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    // The trap's own error must not be chained as cause.
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("definition: Proxy wrapping an array whose get trap throws on element access — rejected with ERR_CHECKPOINT_DEFINITION, raw error does not escape", () => {
+    // Array.isArray works correctly for Proxies wrapping arrays (it calls
+    // [[IsArray]] on the proxy target). The walk then enters projectDefinitionArray
+    // and tries to read arr[i] via the get trap, which throws — caught by the
+    // per-element try/catch (fail-closed). The `length` property must be let
+    // through (to allow the for-loop bound check) so the throw happens at the
+    // element-access step, exercising the inner catch rather than the outer one.
+    const hostile = new Proxy([1, 2, 3], {
+      get(target: number[], p: string | symbol, receiver: unknown): unknown {
+        if (p === "length") return Reflect.get(target, p, receiver);
+        throw new Error("array element get trap — must not escape");
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-array-get-trap",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: hostile,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("definition: Proxy wrapping a plain {} target whose ownKeys trap throws — rejected with ERR_CHECKPOINT_DEFINITION; the {} target makes Object.getPrototypeOf return Object.prototype so the walk reaches the ownKeys-catch branch in projectDefinitionObject", () => {
+    // The A1 ownKeys test uses a Map as the Proxy target, so the prototype
+    // check (isDefinitionPlainObject) rejects it before projectDefinitionObject
+    // is ever called. This test wraps {} (Object.prototype), ensuring the walk
+    // actually reaches Object.keys() and exercises the ownKeys-catch path there.
+    const hostile = new Proxy(
+      {},
+      {
+        ownKeys(): never {
+          throw new Error(
+            "ownKeys trap in plain-object walk — must not escape",
+          );
+        },
+        getOwnPropertyDescriptor(): never {
+          throw new Error("getOwnPropertyDescriptor trap — must not escape");
+        },
+      },
+    );
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-ownkeys-plain-target",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: hostile,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("definition: Proxy whose get trap throws on property access — rejected with ERR_CHECKPOINT_DEFINITION, raw error does not escape", () => {
+    // projectDefinitionObject wraps each property read in a try/catch —
+    // a throwing get trap must be caught (fail-closed) and surfaced as
+    // ERR_CHECKPOINT_DEFINITION, never as a raw Error.
+    // The {} target means getPrototypeOf returns Object.prototype (passes the
+    // plain-object check), and the ownKeys + getOwnPropertyDescriptor traps
+    // expose one enumerable key — reaching the per-property get branch.
+    const hostile = new Proxy(
+      {},
+      {
+        ownKeys(_target: object): string[] {
+          return ["data"];
+        },
+        getOwnPropertyDescriptor(
+          _target: object,
+          _key: string | symbol,
+        ): PropertyDescriptor {
+          return {
+            value: undefined,
+            writable: true,
+            enumerable: true,
+            configurable: true,
+          };
+        },
+        get(_target: object, _p: string | symbol, _receiver: unknown): never {
+          throw new Error("get trap — must not escape");
+        },
+      },
+    );
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-get-trap",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: hostile,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // E10. Accepted shapes — real 64-char hex fingerprint actually stamped
+  // -------------------------------------------------------------------------
+
+  test("definition: realistic adopter settings object (logGroups as string[], undefined optional) — accepted; write() stamps a real 64-char hex fingerprint", async () => {
+    // Mirrors the shape a Logs-Insights adopter would pass.
+    const definition = {
+      query: "fields @message | filter @message like /ERROR/",
+      logGroups: ["/aws/lambda/my-fn", "/aws/lambda/other-fn"],
+      limit: undefined, // undefined-valued properties are allowed and skipped
+      windowMinutes: 60,
+    };
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-def-adopter",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition,
+    });
+
+    await store.write({ queryId: "q-adopter" });
+    const rawJson = await readFile(store.path, "utf8");
+    const parsed = JSON.parse(rawJson) as Record<string, unknown>;
+    const fp = parsed["fingerprint"];
+    expect(typeof fp).toBe("string");
+    expect((fp as string).length).toBe(64);
+    expect(/^[0-9a-f]{64}$/.test(fp as string)).toBe(true);
+  });
+
+  test("definition: deeply nested plain object/array mix — accepted; write() stamps a fingerprint", async () => {
+    const definition = {
+      level1: {
+        level2: [{ level3: { level4: "deep-value" } }, null, 42, false, ""],
+      },
+    };
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-def-deep-mix",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition,
+    });
+
+    await store.write({ queryId: "q-deep-mix" });
+    const rawJson = await readFile(store.path, "utf8");
+    const parsed = JSON.parse(rawJson) as Record<string, unknown>;
+    expect(Object.hasOwn(parsed, "fingerprint")).toBe(true);
+    expect(typeof parsed["fingerprint"]).toBe("string");
+  });
+
+  test.each([
+    ["empty object {}", {}],
+    ["empty array []", []],
+    ["null", null],
+    ["0", 0],
+    ["false", false],
+    ["empty string ''", ""],
+    ["negative float -1.5", -1.5],
+  ])(
+    "definition: %s — accepted; write() stamps a real 64-char hex fingerprint",
+    async (_label, def) => {
+      const store = new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-primitive-fp",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: def,
+      });
+
+      await store.write({ queryId: "q-primitive-fp" });
+      const rawJson = await readFile(store.path, "utf8");
+      const parsed = JSON.parse(rawJson) as Record<string, unknown>;
+      const fp = parsed["fingerprint"];
+      expect(typeof fp).toBe("string");
+      expect((fp as string).length).toBe(64);
+      expect(/^[0-9a-f]{64}$/.test(fp as string)).toBe(true);
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // E11. Frozen objects — accepted (Object.isFrozen is runtime-only; the
+  //      allowlist never called it, but the projection helpers must not throw
+  //      when they encounter a frozen input).
+  // -------------------------------------------------------------------------
+
+  test("definition: Object.freeze({}) — accepted; construction succeeds and write() stamps a fingerprint", async () => {
+    const frozen = Object.freeze({ table: "orders", segments: 4 });
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-def-frozen",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: frozen,
+    });
+
+    await store.write({ queryId: "q-frozen" });
+    const raw = JSON.parse(await readFile(store.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    expect(typeof raw["fingerprint"]).toBe("string");
+  });
+
+  // -------------------------------------------------------------------------
+  // E12. JSON.parse output — accepted (no own symbols, prototype is Object.prototype)
+  // -------------------------------------------------------------------------
+
+  test("definition: JSON.parse(…) output — accepted; a value from JSON.parse is always a plain-JSON structure", async () => {
+    // JSON.parse always returns plain objects, plain arrays, strings, numbers,
+    // booleans, or null — all on the allowlist. This confirms the common idiom
+    // of passing a parsed-config value as the definition works correctly.
+    const parsed: unknown = JSON.parse(
+      '{"region":"us-east-1","logGroups":["/aws/lambda/fn"],"limit":null}',
+    );
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-def-parsed",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: parsed,
+    });
+
+    await store.write({ queryId: "q-parsed" });
+    const raw = JSON.parse(await readFile(store.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const fp = raw["fingerprint"];
+    expect(typeof fp).toBe("string");
+    expect((fp as string).length).toBe(64);
+  });
+
+  // -------------------------------------------------------------------------
+  // E13. Four adopter settings shapes — each must be accepted and stamp a
+  //      real 64-char hex fingerprint. Shapes mirror what the four adopting
+  //      scripts (athena-query, cloudwatch-logs-insights, dynamodb-crud,
+  //      rds-data-sql) would pass as `definition` when opting in to
+  //      fingerprinting.
+  // -------------------------------------------------------------------------
+
+  test("definition: athena-query adopter shape (queryString + optional fields as strings) — accepted; stamps a 64-char hex fingerprint", async () => {
+    const definition = {
+      queryString: "SELECT id, status FROM orders WHERE dt = '2026-08-01'",
+      database: "analytics",
+      catalog: "AwsDataCatalog",
+      workGroup: "primary",
+      // outputLocation omitted (undefined → skipped, which is the adopter pattern)
+    };
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-athena-def",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition,
+    });
+
+    await store.write({ queryId: "q-athena" });
+    const raw = JSON.parse(await readFile(store.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const fp = raw["fingerprint"];
+    expect(typeof fp).toBe("string");
+    expect(/^[0-9a-f]{64}$/.test(fp as string)).toBe(true);
+  });
+
+  test("definition: cloudwatch-logs-insights adopter shape (logGroups string[], windowMinutes, epoch seconds) — accepted; stamps a 64-char hex fingerprint", async () => {
+    const definition = {
+      query: "fields @message | filter @message like /ERROR/",
+      logGroups: ["/aws/lambda/my-fn", "/aws/lambda/other-fn"],
+      startEpochSeconds: 1_753_920_000,
+      endEpochSeconds: 1_754_006_400,
+      windowMinutes: 60,
+      // limit is undefined (adopter pattern: absent optional)
+    };
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-cwli-def",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition,
+    });
+
+    await store.write({ queryId: "q-cwli" });
+    const raw = JSON.parse(await readFile(store.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const fp = raw["fingerprint"];
+    expect(typeof fp).toBe("string");
+    expect(/^[0-9a-f]{64}$/.test(fp as string)).toBe(true);
+  });
+
+  test("definition: dynamodb-crud adopter shape (tableName, totalSegments, optional indexName/keyCondition) — accepted; stamps a 64-char hex fingerprint", async () => {
+    const definition = {
+      tableName: "prod-orders",
+      totalSegments: 4,
+      // indexName: undefined — absent optional, fingerprints identically to omitted
+      // keyCondition: undefined
+    };
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-dynamo-def",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition,
+    });
+
+    await store.write({ queryId: "q-dynamo" });
+    const raw = JSON.parse(await readFile(store.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const fp = raw["fingerprint"];
+    expect(typeof fp).toBe("string");
+    expect(/^[0-9a-f]{64}$/.test(fp as string)).toBe(true);
+  });
+
+  test("definition: rds-data-sql adopter shape (resourceArn, secretArn, database, sql, pageSize) — accepted; stamps a 64-char hex fingerprint", async () => {
+    const definition = {
+      resourceArn: "arn:aws:rds:eu-west-1:123456789012:cluster:my-cluster",
+      secretArn:
+        "arn:aws:secretsmanager:eu-west-1:123456789012:secret:my-db-creds",
+      database: "analytics",
+      sql: "SELECT id, status FROM orders WHERE updated_at > :since",
+      pageSize: 1000,
+    };
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-rds-def",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition,
+    });
+
+    await store.write({ queryId: "q-rds" });
+    const raw = JSON.parse(await readFile(store.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const fp = raw["fingerprint"];
+    expect(typeof fp).toBe("string");
+    expect(/^[0-9a-f]{64}$/.test(fp as string)).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // E14. Proxy whose ownKeys mutates between calls — safe, no bypass
+  //      (round-2 two-pass traversal re-called ownKeys on the second pass;
+  //       the single-traversal fix only calls Object.keys once per object)
+  // -------------------------------------------------------------------------
+
+  test("definition: Proxy whose ownKeys returns different keys on repeated calls — definition is accepted; fingerprint reflects the key set observed during the single traversal", async () => {
+    // The ownKeys trap fires twice during projectDefinitionObject:
+    //   call 1 — via Object.getOwnPropertySymbols → returns ["a"] (all strings;
+    //             0 symbols → passes the symbol check).
+    //   call 2 — via Object.keys → returns ["a", "b", "c"] → these become the
+    //             keys iterated for the projection; every value is "v" (accepted).
+    // Result: projection = { a: "v", b: "v", c: "v" } (null-prototype object).
+    //
+    // An implementation that made a THIRD ownKeys call for a separate hash
+    // traversal would produce callCount = 3 — caught by the callCount assertion.
+    // The fingerprint assertion separately proves the stored hash matches the
+    // projection actually built during the single traversal, not a re-observed
+    // or stale key set.
+    let callCount = 0;
+    const hostile = new Proxy(
+      {},
+      {
+        getPrototypeOf(): typeof Object.prototype {
+          return Object.prototype;
+        },
+        ownKeys(): string[] {
+          callCount++;
+          if (callCount === 1) return ["a"];
+          // Second call (Object.keys): return a different set — this is the
+          // one that determines the projection under single traversal.
+          return ["a", "b", "c"];
+        },
+        getOwnPropertyDescriptor(
+          _target: object,
+          _key: string | symbol,
+        ): PropertyDescriptor {
+          return {
+            value: "v",
+            enumerable: true,
+            configurable: true,
+            writable: true,
+          };
+        },
+        get(_target: object, _p: string | symbol, _receiver: unknown): unknown {
+          return "v";
+        },
+      },
+    );
+
+    let store: M3LCheckpointStore<TestCheckpoint> | undefined;
+    let thrown: unknown;
+    try {
+      store = new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-ownkeys-mutate",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: hostile,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    // No raw error escapes — any throw must be an M3LCheckpointError.
+    if (thrown !== undefined) {
+      expect(thrown).toBeInstanceOf(M3LCheckpointError);
+      expect((thrown as M3LCheckpointError).code).toBe(
+        "ERR_CHECKPOINT_DEFINITION",
+      );
+    }
+
+    // The definition IS accepted: projectDefinitionObject accepted ["a","b","c"]
+    // and built a valid projection. Assert unconditionally — a buggy rejection
+    // would cause the expect above to pass but this one to fail visibly.
+    expect(thrown).toBeUndefined();
+
+    // callCount is exactly 2 (getOwnPropertySymbols + Object.keys). A third call
+    // would indicate a second traversal for hashing, violating single-traversal.
+    expect(callCount).toBeLessThanOrEqual(2);
+
+    // The fingerprint must equal the hash of the key set observed during the
+    // single traversal. Object.keys returned ["a","b","c"] on call 2; the
+    // projection is { a: "v", b: "v", c: "v" }. This assertion fails for any
+    // implementation that fingerprints a different (re-observed or partial) set.
+    if (store === undefined) {
+      throw new Error("store must be defined when construction succeeds");
+    }
+    await store.write({ queryId: "q-ownkeys-mutate" });
+    const rawJson = await readFile(store.path, "utf8");
+    const envelope: unknown = JSON.parse(rawJson);
+    expect(envelope).toHaveProperty(
+      "fingerprint",
+      canonicalJsonHash({ a: "v", b: "v", c: "v" }),
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // E15. Array order discriminates — [1,2] and [2,1] must produce different
+  //      fingerprints (key-order invariance applies only to objects, not arrays)
+  // -------------------------------------------------------------------------
+
+  test("definition: array order discriminates — [1,2] and [2,1] produce different fingerprints", async () => {
+    const storeAB = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-arr-ab",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: [1, 2],
+    });
+
+    const storeBA = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-arr-ba",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: [2, 1],
+    });
+
+    await storeAB.write({ queryId: "q-ab" });
+    await storeBA.write({ queryId: "q-ba" });
+
+    const rawAB = JSON.parse(await readFile(storeAB.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const rawBA = JSON.parse(await readFile(storeBA.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+
+    // Both envelopes carry a fingerprint.
+    expect(typeof rawAB["fingerprint"]).toBe("string");
+    expect(typeof rawBA["fingerprint"]).toBe("string");
+
+    // Array order must discriminate — [1,2] !== [2,1] in canonical JSON.
+    expect(rawAB["fingerprint"]).not.toBe(rawBA["fingerprint"]);
+  });
+
+  test("definition: nested array order discriminates — a reordered nested array in an object definition produces a different fingerprint", async () => {
+    const defXY = { logGroups: ["/aws/lambda/x", "/aws/lambda/y"] };
+    const defYX = { logGroups: ["/aws/lambda/y", "/aws/lambda/x"] };
+
+    const storeXY = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-nested-arr-xy",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: defXY,
+    });
+
+    const storeYX = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-nested-arr-yx",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: defYX,
+    });
+
+    await storeXY.write({ queryId: "q-xy" });
+    await storeYX.write({ queryId: "q-yx" });
+
+    const rawXY = JSON.parse(await readFile(storeXY.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const rawYX = JSON.parse(await readFile(storeYX.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+
+    expect(rawXY["fingerprint"]).not.toBe(rawYX["fingerprint"]);
+  });
+
+  // -------------------------------------------------------------------------
+  // E11. Omitted key vs explicit undefined key — fingerprint identically
+  // -------------------------------------------------------------------------
+
+  test("definition: {a:1} and {a:1,b:undefined} produce the same stored fingerprint — load-bearing for adopters forwarding absent optional settings", async () => {
+    // A property whose value is undefined is allowed and skipped during the
+    // allowlist walk AND by JSON serialization. This means an adopter that
+    // forwards an absent optional setting as an undefined-valued key gets the
+    // same fingerprint as simply omitting the key — the two runs are
+    // compatible for --resume.
+    const storeWithout = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-omit",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: { a: 1 },
+    });
+
+    const storeWith = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-undef",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: { a: 1, b: undefined },
+    });
+
+    await storeWithout.write({ queryId: "q-omit" });
+    const rawWithout = await readFile(storeWithout.path, "utf8");
+    const parsedWithout = JSON.parse(rawWithout) as Record<string, unknown>;
+
+    await storeWith.write({ queryId: "q-undef" });
+    const rawWith = await readFile(storeWith.path, "utf8");
+    const parsedWith = JSON.parse(rawWith) as Record<string, unknown>;
+
+    // Both envelopes must carry the same fingerprint — the undefined-valued
+    // key is treated as absent for hashing purposes.
+    expect(parsedWithout["fingerprint"]).toBe(parsedWith["fingerprint"]);
+    expect(typeof parsedWithout["fingerprint"]).toBe("string");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F. write() — serialization failure arm (Fix B)
+//    JSON.stringify is hoisted out of the I/O try so its failure does not
+//    reach the I/O catch, where the thrown message (embedding caller property
+//    paths) would be chained as `cause`.
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore.write() — serialization failure arm (Fix B)", () => {
+  // Distinctive string planted as a PROPERTY NAME — that is the channel that
+  // leaked before the fix: JSON.stringify errors can include property names in
+  // their message (e.g. "Converting circular structure to JSON at property
+  // SEKRET_PROP..."), and chaining that error as cause exposed it through
+  // util.inspect.
+  const SEKRET_KEY = "SEKRET_PROP_NAME_DO_NOT_LEAK_9f3a";
+
+  test("write() snapshots first: a toJSON that always returns a circular structure fails during the snapshot → ERR_CHECKPOINT_IO with cause undefined, planted property name absent from all channels", async () => {
+    // Round 3: write() now snapshots the checkpoint via
+    // JSON.parse(JSON.stringify(checkpoint)) BEFORE calling canonicalJsonHash.
+    // So a toJSON that produces an unserialisable structure fails immediately at
+    // the snapshot step — the hash never runs.
+    //
+    // Round 2's test relied on a call-count ordering (safe on call 1 for the
+    // hash, circular on call 2 for the stringify). That ordering is now inverted:
+    // JSON.stringify runs first (snapshot), then canonicalJsonHash receives only
+    // the plain snapshot. A toJSON that always returns a circular structure
+    // exercises the same ERR_CHECKPOINT_IO arm — but via the snapshot step.
+    //
+    // SEKRET_KEY is planted as the property NAME that closes the cycle:
+    // Node.js JSON.stringify includes the property path in its error message
+    // ("Converting circular structure to JSON … at property 'SEKRET_KEY'").
+    // Before the fix, that error was chained as cause, leaking SEKRET_KEY
+    // through util.inspect. With snapshot-first, the snapshot step throws and
+    // cause is never set.
+
+    const circRef: Record<string, unknown> = {};
+    circRef[SEKRET_KEY] = circRef; // cycle via SEKRET_KEY closes the loop
+
+    const checkpoint = {
+      queryId: "q-serialize-fail",
+      toJSON(): unknown {
+        // Returns the circular structure on every call. JSON.stringify now runs
+        // first (snapshot), so the cycle is detected before canonicalJsonHash
+        // ever fires — no call-count trick required.
+        return circRef;
+      },
+    };
+
+    // Use a permissive validator so the non-standard checkpoint shape passes.
+    function isAny(v: unknown): v is Record<string, unknown> {
+      return typeof v === "object" && v !== null;
+    }
+
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-serialize-fail",
+      validate: isAny,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write(checkpoint);
+    } catch (error) {
+      thrown = error;
+    }
+
+    // Must throw ERR_CHECKPOINT_IO from the snapshot arm, not a raw Error.
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+
+    // cause MUST be undefined — chaining the stringify error would expose the
+    // property name through util.inspect(cause.message).
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+
+    const err = thrown as M3LCheckpointError;
+
+    // The planted property name must appear in none of the public error fields.
+    expect(err.message).not.toContain(SEKRET_KEY);
+    expect(JSON.stringify(err.context ?? {})).not.toContain(SEKRET_KEY);
+    if (err.stack !== undefined) {
+      expect(err.stack).not.toContain(SEKRET_KEY);
+    }
+    // util.inspect with getters:true reveals any getter that embeds the key.
+    const inspected = inspect(err, {
+      depth: 10,
+      showHidden: true,
+      getters: true,
+    });
+    expect(inspected).not.toContain(SEKRET_KEY);
+  });
+
+  test("regression (Fix B): sparse-array payload round-trips without ERR_CHECKPOINT_CORRUPT — snapshot normalises holes to null so checksum and persisted bytes agree", async () => {
+    // Before Fix B, write() called canonicalJsonHash(checkpoint) and then
+    // JSON.stringify(checkpoint) separately. For a sparse array,
+    // canonicalJsonHash uses its own canonical serialiser (which renders holes
+    // as nothing — JSON array holes), while JSON.stringify renders them as
+    // null. The stored checksum was computed over the canonical view while the
+    // persisted payload was the JSON.stringify view; read() recomputed
+    // canonicalJsonHash(payload) over the null-filled array — guaranteed
+    // mismatch → ERR_CHECKPOINT_CORRUPT on every resume, permanently deadlocked.
+    //
+    // Fix B: write() now snapshots via JSON.parse(JSON.stringify(checkpoint))
+    // first, so both the checksum and the payload are derived from the same
+    // null-filled array. The round-trip must resolve without ERR_CHECKPOINT_CORRUPT.
+
+    // A sparse array: index 0 has "cursor-a", indices 1-3 are holes.
+    const sparseSegments = new Array<string | undefined>(4);
+    sparseSegments[0] = "cursor-a";
+
+    function isSegmentsCheckpoint(
+      v: unknown,
+    ): v is { segments: (string | null | undefined)[] } {
+      return (
+        typeof v === "object" &&
+        v !== null &&
+        Array.isArray((v as Record<string, unknown>)["segments"])
+      );
+    }
+
+    const store = new M3LCheckpointStore<{
+      segments: (string | null | undefined)[];
+    }>({
+      paths: makePathsPort(dir),
+      name: "run-sparse-payload",
+      validate: isSegmentsCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ segments: sparseSegments });
+    // Must resolve — not ERR_CHECKPOINT_CORRUPT from a checksum mismatch.
+    const result = await store.read();
+    // Holes are normalised to null by JSON round-trip — verify structure.
+    expect(result.segments[0]).toBe("cursor-a");
+    expect(result.segments.length).toBe(4);
+  });
+
+  test("regression (Fix B): checksum stored in the envelope equals canonicalJsonHash of the plain payload — backward-compatible for any ordinary checkpoint", async () => {
+    // For any checkpoint that contains only plain JSON values (no toJSON, no
+    // sparse arrays, no non-idempotent getters), the snapshot produced by
+    // JSON.parse(JSON.stringify(checkpoint)) is identical to checkpoint itself,
+    // so the stored checksum must equal canonicalJsonHash(checkpoint) exactly.
+    // This verifies that the snapshotting fix does not break checkpoints written
+    // by earlier library versions (which stored canonicalJsonHash(checkpoint)
+    // directly, without snapshotting).
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-checksum-compat",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ cursor: "x", n: 1 } as unknown as TestCheckpoint);
+
+    const rawJson = await readFile(store.path, "utf8");
+    const envelope = JSON.parse(rawJson) as Record<string, unknown>;
+
+    // The stored checksum must equal the canonical hash of the same plain
+    // object — byte-identical, not just semantically equivalent.
+    const expected = canonicalJsonHash({ cursor: "x", n: 1 });
+    expect(envelope["checksum"]).toBe(expected);
+  });
+
+  test("rename-failure arm still chains the errno cause — the no-cause rule applies only to the serialization arm, not to OS I/O failures", async () => {
+    // Confirms the fix did not accidentally suppress the cause in the I/O arm
+    // too. An OS errno (EPERM from a failed rename) is safe to chain because
+    // it carries no caller-supplied content; chaining it provides actionable
+    // diagnostics.
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-rename-cause",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ queryId: "original" });
+
+    const renameFailure = Object.assign(
+      new Error("EPERM: operation not permitted"),
+      { code: "EPERM" },
+    );
+    vi.spyOn(fsp, "rename").mockRejectedValueOnce(renameFailure);
+
+    let thrown: unknown;
+    try {
+      await store.write({ queryId: "should-not-land" });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    // The I/O arm DOES chain the errno cause — the distinction from the
+    // serialization arm (cause === undefined) is the point.
+    expect((thrown as M3LCheckpointError).cause).toBe(renameFailure);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// G. Fix S3 — write() rejects non-finite numbers loud (NaN / Infinity / -Infinity)
+//    Before this fix: JSON.stringify coerced non-finite numbers to null silently.
+//    The resume logic then read null back as real data — a silent value
+//    substitution. The replacer now throws NonFiniteNumberError, which propagates
+//    through JSON.stringify and is caught by the snapshot try block, re-thrown
+//    as ERR_CHECKPOINT_IO with no cause.
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore.write() — Fix S3: non-finite numbers fail loud", () => {
+  // Permissive validator for this section — write() never calls validate;
+  // the predicate just keeps TypeScript satisfied.
+  function isAnyObj(v: unknown): v is Record<string, unknown> {
+    return typeof v === "object" && v !== null;
+  }
+
+  test("Infinity at the top level of the payload throws ERR_CHECKPOINT_IO, cause undefined, no caller data in message", async () => {
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-infinity",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ z: Infinity });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    // cause must be undefined — the NonFiniteNumberError sentinel message must
+    // not reach any caller channel (it names the constraint, not a value).
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    // The payload field name must not appear in the message.
+    expect((thrown as M3LCheckpointError).message).not.toContain('"z"');
+  });
+
+  test.each([
+    ["NaN", NaN],
+    ["-Infinity", -Infinity],
+  ])(
+    "%s at the top level of the payload throws ERR_CHECKPOINT_IO, cause undefined",
+    async (_label, value) => {
+      const store = new M3LCheckpointStore<Record<string, unknown>>({
+        paths: makePathsPort(dir),
+        name: "run-s3-nonfinite",
+        validate: isAnyObj,
+        missing: { kind: "error" },
+      });
+
+      let thrown: unknown;
+      try {
+        await store.write({ z: value });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LCheckpointError);
+      expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+      expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    },
+  );
+
+  test("Infinity nested inside a plain object throws ERR_CHECKPOINT_IO — replacer runs at every depth", async () => {
+    // Before the fix, { a: { b: Infinity } } serialised as { a: { b: null } }
+    // and the store happily persisted it. The replacer visits every node in the
+    // JSON tree, so a non-finite number at any nesting level now throws.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-nested-obj",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ a: { b: Infinity } });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("NaN inside an array throws ERR_CHECKPOINT_IO — replacer runs for every array element", async () => {
+    // Before the fix, { a: [1, NaN] } serialised as { a: [1, null] } and the
+    // store persisted null silently. The replacer visits array elements too.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-array-nan",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ a: [1, NaN] });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("atomicity: after a failed non-finite write on a fresh store, no checkpoint file is left behind", async () => {
+    // The snapshot step throws before any I/O is attempted (writeFileAtomic is
+    // never called), so no file — not even a partial temp file — can exist.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-no-file",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ z: Infinity });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+
+    // The checkpoint file must not exist — ENOENT is the expected outcome.
+    let readErr: unknown;
+    try {
+      await readFile(store.path, "utf8");
+    } catch (error) {
+      readErr = error;
+    }
+    expect(readErr).toBeDefined();
+    expect((readErr as NodeJS.ErrnoException).code).toBe("ENOENT");
+  });
+
+  test("atomicity: after a failed non-finite write on an existing checkpoint, prior contents are byte-intact", async () => {
+    // If a prior checkpoint exists, the failed non-finite write must leave it
+    // untouched — the same guarantee the atomic-rename tests prove for I/O
+    // failures, but here the failure happens before any I/O.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-byte-intact",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ value: 42 });
+    const beforeBytes = await readFile(store.path, "utf8");
+
+    let thrown: unknown;
+    try {
+      await store.write({ value: NaN });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    const afterBytes = await readFile(store.path, "utf8");
+    expect(afterBytes).toBe(beforeBytes);
+  });
+
+  test("control: circular reference payload still throws ERR_CHECKPOINT_IO — replacer does not affect circular handling", async () => {
+    // JSON.stringify natively throws on circular references; the replacer never
+    // fires for them. The catch block maps both the replacer throw and the native
+    // throw to ERR_CHECKPOINT_IO — this test confirms the replacer did not break
+    // the existing circular handling.
+    const circular: CircularCheckpoint = { queryId: "q-s3-circ-control" };
+    circular.self = circular;
+
+    const store = new M3LCheckpointStore<CircularCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-s3-circ-control",
+      validate: isCircularCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write(circular);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("control: BigInt payload still throws ERR_CHECKPOINT_IO — JSON.stringify throws natively; the replacer is not involved", async () => {
+    // JSON.stringify natively throws a TypeError on BigInt values. The replacer
+    // calls `return value` for non-number types, so BigInt is handled by
+    // JSON.stringify itself. The snapshot catch block must still wrap it as
+    // ERR_CHECKPOINT_IO with no cause.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-bigint-control",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ n: BigInt(42) });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("control: an ordinary finite-number payload still succeeds — the replacer passes all valid JSON values through unchanged", async () => {
+    // Confirms the replacer did not accidentally gate valid payloads.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-finite-control",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    await expect(
+      store.write({ n: 42, s: "hello", b: true, nil: null }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("regression: replacer is transparent for ordinary payloads — stored checksum is byte-identical to canonicalJsonHash(payload) for a complex valid payload", async () => {
+    // The replacer must not alter the serialized form for any ordinary (finite,
+    // non-circular, non-BigInt) value. The payload deliberately mixes nested
+    // objects, arrays, strings with escapes and non-ASCII characters, integers,
+    // floats, null, and an undefined-valued property (skipped by JSON). The
+    // stored checksum must equal canonicalJsonHash(payload) byte-for-byte —
+    // this byte-identity is what keeps checkpoints written by earlier library
+    // versions readable after the replacer was introduced: the checksum both
+    // store and read agree on must not change for any ordinary payload.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-complex-compat",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    const payload: Record<string, unknown> = {
+      strings: {
+        escaped: 'line1\nline2\ttab"quote\\backslash',
+        unicode: "こんにちは",
+        plain: "hello",
+      },
+      numbers: { int: 42, negFloat: -1.5, zero: 0 },
+      arrays: [1, [2, 3], null, "item"],
+      nested: { deep: { deeper: true } },
+      empty: {},
+      // undefined-valued property is skipped by JSON.stringify and by
+      // canonicalJsonHash (both rely on the same JSON serialisation).
+      absent: undefined,
+    };
+
+    await store.write(payload);
+    const rawJson = await readFile(store.path, "utf8");
+    const envelope = JSON.parse(rawJson) as Record<string, unknown>;
+
+    // canonicalJsonHash(payload) and canonicalJsonHash(snapshot) both hash the
+    // same JSON text (undefined keys are omitted in both), so they must agree.
+    const expected = canonicalJsonHash(payload);
+    expect(envelope["checksum"]).toBe(expected);
+  });
+
+  // --------------------------------------------------------------------------
+  // Fix S3 extension: boxed non-finite Number objects (new Number(Infinity) etc.)
+  //
+  // The original S3 guard used `typeof value === "number"`, which evaluates to
+  // false for wrapper objects (typeof new Number(Infinity) === "object"). Under
+  // ECMA-262, JSON.stringify applies [[NumberData]] *after* the replacer runs,
+  // so the wrapper survived the replacer and was coerced to null in the stored
+  // file — a silent substitution that produced a matching checksum, causing
+  // read() to return { n: null } under a heading that promises the opposite.
+  //
+  // The fix uses Object.prototype.toString.call(value) === "[object Number]"
+  // rather than `instanceof Number`. The tag-test form is realm-safe: a Number
+  // wrapper created inside a different realm (e.g. vm.runInNewContext) shares
+  // the same [[Symbol.toStringTag]] string but has a *different* constructor
+  // reference than the host realm's Number — `instanceof` would miss it.
+  // --------------------------------------------------------------------------
+
+  test.each([
+    ["new Number(Infinity)", new Number(Infinity)],
+    ["new Number(NaN)", new Number(Number.NaN)],
+  ] as const)(
+    "%s at the top level throws ERR_CHECKPOINT_IO, cause undefined, no caller data in message",
+    async (_label, boxed) => {
+      const store = new M3LCheckpointStore<Record<string, unknown>>({
+        paths: makePathsPort(dir),
+        name: "run-s3-boxed-toplevel",
+        validate: isAnyObj,
+        missing: { kind: "error" },
+      });
+
+      let thrown: unknown;
+      try {
+        await store.write({ n: boxed });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LCheckpointError);
+      expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+      // cause must be undefined — the sentinel error message must not reach
+      // any caller channel (it names the constraint, not a caller-supplied value).
+      expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+      // The payload field name must not appear in the message.
+      expect((thrown as M3LCheckpointError).message).not.toContain('"n"');
+    },
+  );
+
+  test("new Number(-Infinity) nested inside a plain object throws ERR_CHECKPOINT_IO — replacer visits every depth", async () => {
+    // The replacer recurses into every node in the JSON tree, so a boxed
+    // non-finite number at any nesting level must be caught.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-boxed-nested",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ a: { n: new Number(-Infinity) } });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("new Number(Infinity) inside an array throws ERR_CHECKPOINT_IO — replacer visits every array element", async () => {
+    // Array elements are visited by the replacer exactly like object values;
+    // a boxed non-finite number embedded in an array must not slip through.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-boxed-array",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ a: [1, new Number(Infinity)] });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("atomicity: after a failed boxed-non-finite write on a fresh store, no checkpoint file is left behind", async () => {
+    // The snapshot step throws before any I/O is attempted, so no file —
+    // not even a partial temp file — can exist after the rejection.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-boxed-no-file",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ n: new Number(Infinity) });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+
+    // The checkpoint file must not exist — ENOENT is the expected outcome.
+    let readErr: unknown;
+    try {
+      await readFile(store.path, "utf8");
+    } catch (error) {
+      readErr = error;
+    }
+    expect(readErr).toBeDefined();
+    expect((readErr as NodeJS.ErrnoException).code).toBe("ENOENT");
+  });
+
+  test("accepted: new Number(42) serialises faithfully — read() returns the primitive 42", async () => {
+    // A finite boxed Number is left alone by the replacer; JSON.stringify then
+    // applies [[NumberData]] and stores the primitive 42. read() must return
+    // the unwrapped form. Over-rejecting a valid boxed number would be a
+    // regression: the fix targets only non-finite wrappers.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-boxed-finite-num",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ n: new Number(42) });
+    await expect(store.read()).resolves.toEqual({ n: 42 });
+  });
+
+  test("accepted: new String('ok') serialises faithfully — read() returns the primitive string", async () => {
+    // String wrappers are left entirely alone by the replacer (the guard
+    // matches only [object Number]); JSON.stringify stores the primitive "ok".
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-boxed-string",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ s: new String("ok") });
+    await expect(store.read()).resolves.toEqual({ s: "ok" });
+  });
+
+  test("accepted: new Boolean(true) serialises faithfully — read() returns the primitive boolean", async () => {
+    // Boolean wrappers are left entirely alone by the replacer (the guard
+    // matches only [object Number]); JSON.stringify stores the primitive true.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-boxed-bool",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    await store.write({ b: new Boolean(true) });
+    await expect(store.read()).resolves.toEqual({ b: true });
+  });
+
+  test("control: primitive Infinity still throws ERR_CHECKPOINT_IO — the boxed fix does not interfere with the primitive guard", async () => {
+    // Confirms that adding the boxed-Number branch did not accidentally gate
+    // the primitive `typeof value === "number"` check. Both guards must fire
+    // for their respective inputs.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-prim-inf-control",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write({ z: Infinity });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("control: ordinary finite payload with boxed extension present — checksum is byte-identical to canonicalJsonHash(payload)", async () => {
+    // The boxed-Number branch must not alter the serialized form for any
+    // ordinary payload. The stored checksum must still equal
+    // canonicalJsonHash(payload) byte-for-byte for a valid finite payload,
+    // proving the branch is transparent when it does not fire.
+    const store = new M3LCheckpointStore<Record<string, unknown>>({
+      paths: makePathsPort(dir),
+      name: "run-s3-boxed-compat-checksum",
+      validate: isAnyObj,
+      missing: { kind: "error" },
+    });
+
+    const payload: Record<string, unknown> = { x: 1, y: "hello", z: false };
+
+    await store.write(payload);
+    const rawJson = await readFile(store.path, "utf8");
+    const envelope = JSON.parse(rawJson) as Record<string, unknown>;
+
+    expect(envelope["checksum"]).toBe(canonicalJsonHash(payload));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// H. Fix S2 — definition arr.length is read exactly once
+//    A hostile enumerable accessor on an array element that mutates arr.length
+//    mid-walk could previously shrink the projection below what was validated
+//    and fingerprint a shorter array. The fix captures length once and uses
+//    that single value for both the shape check and the iteration bound.
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore constructor — Fix S2: definition arr.length read exactly once", () => {
+  test("hostile accessor shrinks arr.length mid-walk: detected as a hole and rejected with ERR_CHECKPOINT_DEFINITION", () => {
+    // The accessor at index 0 sets spy.length = 1 when read, removing indices 1
+    // and 2. Because capturedLength = 3 was captured before the loop, the loop
+    // still tries to read index 1 — Object.hasOwn detects the hole (the element
+    // was removed by the length truncation) and returns REJECTED.
+    // Before the fix: the loop used the live arr.length on each iteration, so
+    // after the accessor fired, capturedLength was effectively 1 and the
+    // projection only contained [1] — silent truncation.
+    const spy = [1, 2, 3];
+    Object.defineProperty(spy, "0", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        spy.length = 1; // truncates indices 1 and 2
+        return 1;
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-s2-shrink",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { q: spy },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("arr.length is read exactly once during definition projection — Proxy instrumentation confirms the single-capture contract", () => {
+    // A Proxy whose get trap counts accesses to "length". The implementation
+    // captures arr.length once into capturedLength at the top of
+    // projectDefinitionArray, then passes that single value to
+    // isDefinitionArrayShapeValid and uses it as the loop bound — no further
+    // reads of arr.length occur. Any hostile mutation of arr.length after the
+    // initial read cannot affect the projection.
+    let lengthReadCount = 0;
+    const arr = new Proxy([1, 2, 3], {
+      get(target: number[], p: string | symbol, receiver: unknown): unknown {
+        if (p === "length") {
+          lengthReadCount++;
+        }
+        return Reflect.get(target, p, receiver);
+      },
+    });
+
+    // Construction must succeed — the array is a valid dense [1, 2, 3].
+    expect(() => {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-s2-length-once",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { q: arr },
+      });
+    }).not.toThrow();
+
+    // length must have been read exactly once — the single capturedLength read.
+    expect(lengthReadCount).toBe(1);
+  });
+
+  test("length accessor reporting a larger-than-actual value (grows): rejected because shape check detects the discrepancy", () => {
+    // A Proxy whose get trap returns 6 for "length" when the array only has 3
+    // own index properties. The shape check compares Object.keys(arr).length
+    // (which reflects the actual 3 elements) against capturedLength (6) and
+    // finds them unequal — isDefinitionArrayShapeValid returns false → REJECTED.
+    // This proves that a hostile accessor cannot cause the projection to cover
+    // more indices than actually exist.
+    const arr = new Proxy([1, 2, 3], {
+      get(target: number[], p: string | symbol, receiver: unknown): unknown {
+        if (p === "length") return 6; // claims 6 elements, only indices 0-2 exist
+        return Reflect.get(target, p, receiver);
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-s2-grows",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { q: arr },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("length accessor returning a disallowed value (Set): rejected because the shape check fails without escaping as a raw error", () => {
+    // A Proxy whose get trap returns a Set for "length". capturedLength becomes
+    // a Set; isDefinitionArrayShapeValid compares Object.keys(arr).length
+    // (a number, 3) against capturedLength (a Set), producing false →
+    // REJECTED. The implementation never throws a raw error — the shape check
+    // always returns a boolean.
+    const arr = new Proxy([1, 2, 3], {
+      get(target: number[], p: string | symbol, receiver: unknown): unknown {
+        if (p === "length") return new Set([1, 2, 3]); // not a number
+        return Reflect.get(target, p, receiver);
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-s2-set-return",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: { q: arr },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
   });
 });

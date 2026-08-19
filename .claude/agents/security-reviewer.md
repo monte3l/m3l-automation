@@ -139,6 +139,18 @@ reading the code found zero of ten leaks; four refute passes executing against
 `dist/` found all ten — including a presigned-URL signature written verbatim
 into a persisted artifact.
 
+**Attack seams, not the diff.** The highest-value findings sit between two
+components' assumptions, where each is correct against its own contract: what
+`Object.keys` enumerates versus what the serializer applies; what
+`canonicalJsonStringify` renders versus what `JSON.stringify` renders; what a
+validator read versus what a hasher re-read. Ask what the changed code _hands to_
+and _receives from_, and attack that boundary — including code the diff never
+touched. In `core/checkpoint` (2026-08-19) this is how a pre-existing
+self-corrupting write was found: `write()` hashed one view of a sparse array and
+persisted another, so the library produced files its own `read()` rejected as
+corrupt. Three passes each broke a _fix_ the previous pass had motivated, so
+assume a fix round introduced a regression and probe the fix itself.
+
 **State plainly which attacks you did not run.** A refutation that silently
 skips a class of input reads as coverage it did not provide.
 
