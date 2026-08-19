@@ -108,6 +108,64 @@ research.
   review-only job's diff-content exclusion the way this repo needed
   (pre-computed single-patch-file architecture).
 
+## Addendum (2026-08-19) — effort, context stripping, and cache reuse
+
+> **Provenance** — Synthesized via `/researching-anthropic-guidance` from three
+> parallel facets (action config, model/effort/caching economics, agentic
+> review structure) against 40+ official sources. Synthesized: 2026-08-19.
+> Superseding sources are marked `T*` below; the original `S*` list is kept
+> unchanged above it for history.
+
+Once the 2026-08-19 CI performance work cut `ci.yml` to 70–170s, the review
+bot's ~215s median became the actual merge-latency floor. This addendum
+revisits three conclusions from the original pass with what changed since:
+
+- **The "prompt caching does not benefit this workflow's shape" conclusion
+  above was reasoned from a single-shot request model.** Measured runs
+  actually use 8–28 turns (median ~16) — a real multi-turn conversation, not
+  one-shot. Separately, `--exclude-dynamic-system-prompt-sections` did not
+  exist in the original pass; it moves per-machine context (cwd, platform,
+  shell, OS version) out of the system prompt specifically so a cached prefix
+  can be reused **across** machines/runners, not just within one [T5, T6].
+  Anthropic's caching docs describe the prefix as otherwise scoped to one
+  machine + one directory, meaning a fresh GitHub Actions runner starts cold
+  every time [T5] — this flag is the documented mitigation. Revised
+  conclusion: caching is still not a large lever for this workflow (each PR's
+  runs are typically >1h apart, cold-missing the TTL even with the flag), but
+  it is no longer correctly described as "out of scope" — it costs nothing to
+  enable and pays off on same-PR re-reviews landing inside the 1h TTL.
+- **Effort tuning, not model tuning, is the lever this workflow was missing.**
+  Opus 5 (and Sonnet 5) default to `high` effort unless overridden [T4]. The
+  cost/intelligence guide's internal measurements found `medium` on
+  long-horizon coding work gives up ~2 points of pass rate for roughly half
+  the cost [T3]; the Code Review docs separately describe low/medium effort as
+  a precision dial — "reports only the findings it's most confident in" [T7]
+  — which suits a blocking gate averaging 2.5 re-review rounds per PR. Neither
+  fact was in the original pass (the `effort` parameter's Code-Review framing
+  didn't exist in the 2026-07-13 source set).
+- **`--safe-mode` is the direct answer to the file-exclusion gap this doc
+  originally reported.** The original pass concluded there was "no
+  PR-review-specific file-exclusion guidance" beyond `permissions.deny` on
+  `Read`, which doesn't apply to this workflow's single-pre-computed-patch
+  architecture. `--safe-mode` (headless docs, [T8]) sidesteps the problem
+  entirely for a different reason: it was never about excluding _diff_
+  content, it was about **not loading CLAUDE.md, skills, agent definitions,
+  hooks, and MCP servers** that a diff-only review never needed in the first
+  place — none of that content is in the patch file to begin with.
+
+### New sources (this addendum)
+
+- T1: Optimizing for cost and intelligence — <https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence> (docs/best-practice)
+- T2: Effort — <https://platform.claude.com/docs/en/build-with-claude/effort> (docs)
+- T3: Optimizing for cost and intelligence, effort-sweep section (same as T1) — long-horizon coding cost/accuracy tradeoff figures
+- T4: Model configuration — <https://code.claude.com/docs/en/model-config> (docs)
+- T5: How Claude Code uses prompt caching — <https://code.claude.com/docs/en/prompt-caching> (docs)
+- T6: CLI reference (`--exclude-dynamic-system-prompt-sections`) — <https://code.claude.com/docs/en/cli-reference> (docs)
+- T7: Code Review — <https://code.claude.com/docs/en/code-review> (docs)
+- T8: Run Claude Code programmatically (headless), `--safe-mode` — <https://code.claude.com/docs/en/headless> (docs)
+- T9: Manage costs effectively — <https://code.claude.com/docs/en/costs> (docs)
+- T10: When to use multi-agent systems (and when not to) — <https://claude.com/blog/building-multi-agent-systems-when-and-how-to-use-them> (blog)
+
 ## Sources
 
 - S1: Claude Code GitHub Actions docs — <https://code.claude.com/docs/en/github-actions> (docs)
