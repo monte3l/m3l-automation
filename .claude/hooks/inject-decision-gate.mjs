@@ -5,7 +5,7 @@
  *
  * This is the repo's only UserPromptSubmit hook and the only one that *injects*
  * context (every other hook communicates via stderr + exit code). It surfaces
- * the four decisions the `/start-work` skill formalizes — location, branch, PR,
+ * the four decisions the `starting-work` skill formalizes — location, branch, PR,
  * push target — up front, so isolation is chosen deliberately instead of being
  * discovered when `guard-branch-isolation.mjs` blocks a src/test write on `main`.
  *
@@ -71,7 +71,7 @@ export function buildContext(branch) {
         : `on \`${branch}\``;
   return [
     "Decision gate (before editing code/tests/scripts) — currently " +
-      `${branchLine}. Settle these first, ideally via \`/start-work\`:`,
+      `${branchLine}. Settle these first, ideally via the \`starting-work\` skill:`,
     "  • Location — shared checkout, or an opt-in linked worktree for concurrent work?",
     "  • Branch — `feat/<slug>` or `fix/<slug>` off `main` (never `main`" +
       (onMain ? ", and you appear to be on/at `main` now" : "") +
