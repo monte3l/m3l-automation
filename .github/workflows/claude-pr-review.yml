@@ -230,7 +230,18 @@ jobs:
           # rule like Bash(echo:*) authorizes the command, never the
           # redirect target. Write(path) rules are accepted but silently
           # never consulted for this check, so Edit(...) is the only rule
-          # that actually grants it. --safe-mode still removes
+          # that actually grants it. Adding Edit(./.claude-review-verdict)
+          # alone did NOT resolve this in production (PR #502 re-ran with
+          # it present and still logged 19 denials, 2026-08-19): the
+          # verdict-write command below used to target
+          # "$GITHUB_WORKSPACE/.claude-review-verdict", and Claude Code's
+          # permission matcher evaluates the redirect target as written in
+          # the command, without resolving shell variables first — so the
+          # unexpanded literal never matched the Edit(...) rule's relative
+          # path. The prompt below now has the model write to the exact
+          # relative path ./.claude-review-verdict instead (the working
+          # directory is already the repo root), matching the allow rule
+          # by literal string. --safe-mode still removes
           # guard-readonly-bash.mjs; the scoped Bash list plus this one
           # Edit grant are now the write barrier, not a blanket allowance.
           # See docs/research/pr-review-action-tuning.md for sourcing.
@@ -367,11 +378,13 @@ jobs:
             After posting the comment, your FINAL action MUST be to run exactly
             one of these two Bash commands (choose based on your verdict):
 
-              echo -n 'PASS' > "$GITHUB_WORKSPACE/.claude-review-verdict"
-              echo -n 'FAIL' > "$GITHUB_WORKSPACE/.claude-review-verdict"
+              echo -n 'PASS' > ./.claude-review-verdict
+              echo -n 'FAIL' > ./.claude-review-verdict
 
             Use the Bash tool — do NOT use the Write tool for this step.
-            $GITHUB_WORKSPACE is the absolute path to the checked-out repo.
+            Use this exact relative path, not an absolute path or
+            `$GITHUB_WORKSPACE`-prefixed path — your working directory is
+            already the checked-out repo root.
             The job fails the merge gate unless the file contains exactly `PASS`.
 
             ## What to review

@@ -91,6 +91,24 @@ export interface M3LPollExhaustedPayload {
 }
 
 /**
+ * Payload carried by the `poll:no-progress` event, fired when the configured
+ * progress witness stayed unchanged (per `Object.is`) for `maxStalledAttempts`
+ * consecutive attempts.
+ *
+ * @example
+ * ```typescript
+ * import type { M3LPollNoProgressPayload } from "@m3l-automation/m3l-common/core";
+ * const payload: M3LPollNoProgressPayload = { attempt: 4, stalledAttempts: 3 };
+ * ```
+ */
+export interface M3LPollNoProgressPayload {
+  /** The 1-based attempt number that tripped the guard. */
+  readonly attempt: number;
+  /** Consecutive unchanged observations (equals the configured `maxStalledAttempts`). */
+  readonly stalledAttempts: number;
+}
+
+/**
  * Event map for {@link M3LPoller}. Subscribe with `poller.on(event, handler)`.
  *
  * @example
@@ -116,6 +134,11 @@ export interface M3LPollerEventMap {
   readonly "poll:success": M3LPollSuccessPayload;
   /** Fired when `maxAttempts` is reached while still `continue`. */
   readonly "poll:exhausted": M3LPollExhaustedPayload;
+  /**
+   * Fired when the configured progress witness stayed unchanged for
+   * `maxStalledAttempts` consecutive attempts.
+   */
+  readonly "poll:no-progress": M3LPollNoProgressPayload;
 }
 
 /**
@@ -232,6 +255,24 @@ export interface M3LRetryExhaustedPayload {
 }
 
 /**
+ * Payload carried by the `retry:no-progress` event, fired when the configured
+ * progress witness stayed unchanged (per `Object.is`) for `maxStalledAttempts`
+ * consecutive attempts.
+ *
+ * @example
+ * ```typescript
+ * import type { M3LRetryNoProgressPayload } from "@m3l-automation/m3l-common/core";
+ * const payload: M3LRetryNoProgressPayload = { attempt: 4, stalledAttempts: 3 };
+ * ```
+ */
+export interface M3LRetryNoProgressPayload {
+  /** The 1-based attempt number that tripped the guard. */
+  readonly attempt: number;
+  /** Consecutive unchanged observations (equals the configured `maxStalledAttempts`). */
+  readonly stalledAttempts: number;
+}
+
+/**
  * Event map for {@link M3LRetryRunner}. Subscribe with
  * `runner.on(event, handler)`.
  *
@@ -256,4 +297,9 @@ export interface M3LRetryEventMap {
   readonly "retry:fatal": M3LRetryFatalPayload;
   /** Fired when `maxAttempts` is reached on a retriable classification. */
   readonly "retry:exhausted": M3LRetryExhaustedPayload;
+  /**
+   * Fired when the configured progress witness stayed unchanged for
+   * `maxStalledAttempts` consecutive attempts.
+   */
+  readonly "retry:no-progress": M3LRetryNoProgressPayload;
 }
