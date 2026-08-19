@@ -150,6 +150,18 @@ vi.spyOn<T, S>>`) against the first overload regardless of which one the
   runtime call `vi.spyOn(obj, "methodName")` is correct. Fix: drop the explicit
   return-type annotation on the helper that returns the spy and let TypeScript
   infer it from the `return` statement.
+- **`bin/tests/**` is not type-checked by any gate.** `pnpm typecheck` runs
+  `tsc` per package via turbo, and no `tsconfig` includes `bin/tests`, so a real
+  type error there passes CI silently — only the IDE and type-aware ESLint see
+  it (and `eslint.config.js` turns the `no-unsafe-*` rules off for this tree
+  because it imports untyped `.mjs`). Read the editor diagnostics before
+  declaring a `bin/tests` change green; a passing `pnpm verify` does not mean
+  the file type-checks.
+- **Type a `bin/` helper's JSDoc `@param` to the fields it actually reads**, not
+  to a whole upstream return type. Declaring
+  `@param {ReturnType<typeof actionableItems>}` when the function only touches
+  two of its properties forces every test fixture to invent the rest; the real
+  caller still satisfies a narrowed structural type unchanged.
 
 ```typescript
 import { expect, test } from "vitest";
