@@ -227,6 +227,49 @@ again.
 
 - T11: Configure permissions, Redirections — <https://code.claude.com/docs/en/permissions#redirections> (docs)
 
+## Addendum (2026-08-19c) — the `Edit` grant didn't match: unexpanded `$GITHUB_WORKSPACE`
+
+> Written after PR #503 (the addendum above's fix) merged, and the very
+> next `review` run on PR #502 still failed the same way.
+
+`Edit(./.claude-review-verdict)` landed correctly in the resolved
+`--allowedTools` list (confirmed in the run's own `SDK options` log dump),
+but the run still logged 19 permission denials, still hit
+`error_max_turns` (`num_turns: 36`), and this time posted no review
+comment at all — worse than the addendum-b incident, where a comment had
+at least gone out before the run failed.
+
+The verdict-write command at the time was:
+
+```bash
+echo -n 'PASS' > "$GITHUB_WORKSPACE/.claude-review-verdict"
+```
+
+Claude Code's permission matcher checks a Bash redirect's target as
+written in the command — it does not resolve shell variables before
+matching. The rule `Edit(./.claude-review-verdict)` matches the literal
+string `./.claude-review-verdict`; the command's actual target string was
+`$GITHUB_WORKSPACE/.claude-review-verdict`, which never matches regardless
+of what the variable resolves to at runtime. Nothing in the permissions
+docs (T11, addendum b) states this explicitly for environment variables —
+it documents `~`-prefixed and glob-containing targets needing approval,
+but is silent on plain `$VAR` expansion — so this was inferred from the
+denial count being unchanged after the `Edit` grant was added, not
+confirmed from a specific line in the docs. Verify against a live run
+before relying on this further.
+
+**Fix:** the prompt's mandated final action now writes to the plain
+relative path `./.claude-review-verdict` with no shell variable, matching
+the `Edit(./.claude-review-verdict)` rule by literal string. The action's
+working directory is already the checked-out repo root, so no
+`$GITHUB_WORKSPACE` prefix is needed for a Bash-tool-issued command (the
+verdict-_read_ step later in the job is a plain `run:` shell step outside
+Claude Code's permission system, where `$GITHUB_WORKSPACE` still expands
+normally and is unaffected).
+
+No new sources — this is an operational finding pending confirmation on
+the next real PR review run.
+
 ## Sources
 
 - S1: Claude Code GitHub Actions docs — <https://code.claude.com/docs/en/github-actions> (docs)
