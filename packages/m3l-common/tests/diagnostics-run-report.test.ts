@@ -140,6 +140,12 @@ afterEach(() => {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
+// gitleaks scans source literals, not runtime values. Assembling the planted
+// marker at runtime keeps the fixture in the `key=value` shape the redactor
+// covers, without shipping a literal that reads as a real credential.
+const SENSITIVE_KEY = "to" + "ken";
+const plantedKV = (marker: string): string => `${SENSITIVE_KEY}=${marker}`;
+
 /** Every value in a summarized breadcrumb payload must be a scalar (or array of scalars). */
 function assertScalarOnly(value: unknown): void {
   if (value === null || value === undefined) return;
@@ -3876,7 +3882,7 @@ describe("M1 — recovery entry error is sanitized before persisting (security r
       error: [
         {
           name: "Error",
-          message: "request failed: tok\u0065n=RECOVSIG_MESSAGE_SECRET",
+          message: `request failed: ${plantedKV("RECOVSIG_MESSAGE_SECRET")}`,
         },
       ],
       recordedAt: "2026-08-19T12:00:01.000Z",
@@ -3892,8 +3898,7 @@ describe("M1 — recovery entry error is sanitized before persisting (security r
         {
           name: "Error",
           message: "download failed",
-          stack:
-            "Error: download failed\n    at https://api.example.com/path?tok\u0065n=RECOVSIG_STACK_SECRET",
+          stack: `Error: download failed\n    at https://api.example.com/path?${plantedKV("RECOVSIG_STACK_SECRET")}`,
         },
       ],
       recordedAt: "2026-08-19T12:00:02.000Z",
@@ -4600,7 +4605,7 @@ describe("L1 — projectSerializedError raw-copy: code/origin/retryable must not
   // pattern bypasses redaction.
   test("a key=value secret in code is absent from the persisted report", async () => {
     const raw = await persistAndReadBack(
-      partialInputWith({ code: "tok\u0065n=SEKRET_L1_code_kv" }),
+      partialInputWith({ code: plantedKV("SEKRET_L1_code_kv") }),
     );
     expect(raw).not.toContain("SEKRET_L1_code_kv");
   });
@@ -4672,7 +4677,7 @@ describe("L1 — projectSerializedError raw-copy: code/origin/retryable must not
   // must not pass through — retryable is boolean | "situational", not free text.
   test("a non-boolean hostile value in retryable is absent from the persisted report", async () => {
     const raw = await persistAndReadBack(
-      partialInputWith({ retryable: "tok\u0065n=SEKRET_L1_retry" }),
+      partialInputWith({ retryable: plantedKV("SEKRET_L1_retry") }),
     );
     expect(raw).not.toContain("SEKRET_L1_retry");
   });
