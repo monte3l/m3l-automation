@@ -10,25 +10,36 @@ import { M3LError } from "../errors/index.js";
 /**
  * The set of machine-readable codes carried by an {@link M3LCheckpointError}.
  *
- * - `"ERR_CHECKPOINT_CORRUPT"` — `read()` found a well-formed
- *   content-addressed envelope (see {@link M3LCheckpointStore.write}) whose
- *   stored `checksum` does not match the recomputed `canonicalJsonHash` of
- *   its `payload`, or whose `fingerprint` field is present but not a string.
- *   The file was hand-edited or corrupted after being written, even though it
- *   remains valid JSON and its payload would otherwise pass `validate`. Does
- *   **not** chain a `cause`: there is no underlying thrown error to chain —
- *   the mismatch or corrupt field is detected by a direct comparison, not a
- *   caught exception. Only the resolved `path` reaches `context`; `message`
- *   never includes file content.
+ * - `"ERR_CHECKPOINT_CORRUPT"` — thrown from **two distinct sites**, both
+ *   inside envelope verification and both before `validate` ever sees the
+ *   payload. (1) `read()` detected a content-addressed envelope (see
+ *   {@link M3LCheckpointStore.write}) whose stored `checksum` does not match
+ *   the recomputed `canonicalJsonHash` of its `payload` — the file was
+ *   hand-edited or corrupted after being written, even though it remains
+ *   valid JSON and its payload would otherwise pass `validate`. (2) The
+ *   envelope's `fingerprint` field is **present but not a string**, which is
+ *   a corrupt envelope rather than a legacy file (see the spec note on why
+ *   the envelope guard is not widened to cover this). Arm (2) is
+ *   unconditional — it fires whether or not a `definition` was supplied.
+ *   Does **not** chain a `cause` on either arm (there is no underlying thrown
+ *   error to chain — both are direct comparisons, not caught exceptions) and
+ *   `context` carries only the resolved `path`, never file content, matching
+ *   `"ERR_CHECKPOINT_PARSE"`'s rationale.
  * - `"ERR_CHECKPOINT_DEFINITION"` — the `definition` value supplied to the
- *   {@link M3LCheckpointStore} constructor could not be hashed (a circular
- *   reference, a `BigInt`, a non-finite number — anything `canonicalJsonHash`
- *   rejects). Thrown **from the constructor**, so an unusable definition
- *   surfaces at composition time rather than on the first `read()` or
- *   `write()`. Does **not** chain a `cause`: the underlying error's message
- *   can embed the caller's actual definition value, which is resolved
- *   configuration that must not appear in logs or error chains. Only the
- *   resolved `path` reaches `context`.
+ *   {@link M3LCheckpointStore} constructor was rejected for one of three
+ *   reasons: (1) it is a `function` or `symbol` (both canonicalise to `null`
+ *   and cannot produce a meaningful fingerprint); (2) it is a non-array
+ *   object with no `toJSON` method and no own enumerable properties (e.g.
+ *   `Map`, `Set`, `WeakMap`, `RegExp`) — such a value canonicalises
+ *   identically to `{}` regardless of its internal state, yielding a
+ *   fingerprint that can never mismatch; (3) `canonicalJsonHash` could not
+ *   hash the value (a circular reference, a `BigInt`, a non-finite number).
+ *   Thrown **from the constructor**, so an unusable definition surfaces at
+ *   composition time rather than on the first `read()` or `write()`. Does
+ *   **not** chain a `cause`: the underlying error's message can embed the
+ *   caller's actual definition value, which is resolved configuration that
+ *   must not appear in logs or error chains. Only the resolved `path`
+ *   reaches `context`.
  * - `"ERR_CHECKPOINT_FINGERPRINT_MISMATCH"` — `read()` found an envelope
  *   whose stored `fingerprint` does not match the fingerprint the store's
  *   current `definition` produces: the checkpoint is intact, but it was
@@ -38,17 +49,27 @@ import { M3LError } from "../errors/index.js";
  *   Does **not** chain a `cause`: the mismatch is a direct comparison, not a
  *   caught exception. Neither the definition nor either fingerprint reaches the
  *   `message` or `context` — only the resolved `path` does.
- * - `"ERR_CHECKPOINT_IO"` — a read, write, or delete failed for a reason
- *   other than the file being absent (`EACCES`, `EPERM`, `ENOSPC`, a
- *   rejected `rename`, an `ENOENT` from a missing *parent* directory on
- *   `write()`, …). Chains the underlying errno `Error` as `cause` — an errno
- *   carries no file content, so chaining it is safe and useful.
+ * - `"ERR_CHECKPOINT_IO"` — thrown from **two distinct sites**, with
+ *   different `cause` handling and different messages. (1) A read, write, or
+ *   delete failed for a reason other than the file being absent (`EACCES`,
+ *   `EPERM`, `ENOSPC`, a rejected `rename`, an `ENOENT` from a missing
+ *   *parent* directory on `write()`, …) — chains the underlying errno `Error`
+ *   as `cause` (an errno carries no file content, so chaining it is safe and
+ *   useful). (2) `write()` could not compute the envelope checksum for the
+ *   supplied `checkpoint` (e.g. a circular reference, a `BigInt`, or a
+ *   non-finite number) — **never chains a `cause`**, since the underlying
+ *   error's message can embed the caller's actual checkpoint value. The two
+ *   arms have distinct messages so a caller logging `code + message` can
+ *   distinguish a hash failure from an I/O failure.
  * - `"ERR_CHECKPOINT_MISSING"` — `read()` was called under a
  *   `{ kind: "error" }` missing policy and no checkpoint file exists. Chains
  *   the `ENOENT` as `cause` (safe and useful for the same reason as above).
- * - `"ERR_CHECKPOINT_PARSE"` — the file is not valid JSON, or `validate`
- *   returned `false`. **Never chains the underlying `SyntaxError` as
- *   `cause`**: its message embeds a snippet of the malformed file, and a
+ * - `"ERR_CHECKPOINT_PARSE"` — thrown on three paths: the file is not valid
+ *   JSON; `validate` returned `false`; or (for an enveloped file) the
+ *   checksum recomputation over `payload` itself failed (e.g. a `RangeError`
+ *   from an adversarially or accidentally deeply-nested payload). **Never
+ *   chains the underlying error as `cause`** on any of these three paths: a
+ *   `SyntaxError`'s message embeds a snippet of the malformed file, and a
  *   checkpoint may hold caller data (a scan cursor, a `LastEvaluatedKey`, a
  *   log row). Only the resolved `path` reaches `context`; `message` never
  *   includes a snippet of the raw content.

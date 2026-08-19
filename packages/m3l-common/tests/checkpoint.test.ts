@@ -1047,6 +1047,14 @@ describe("M3LCheckpointStore — fingerprint (definition binding)", () => {
 
   test("read(): both checksum and fingerprint are wrong → ERR_CHECKPOINT_CORRUPT (integrity check wins over meaning check)", async () => {
     const payload: TestCheckpoint = { queryId: "q-both-wrong" };
+    // wrongFingerprint is all a's — guaranteed to differ from
+    // canonicalJsonHash({ query: "SELECT 1" }) (the store's real fingerprint).
+    // A fingerprint-first implementation would see the mismatch and throw
+    // ERR_CHECKPOINT_FINGERPRINT_MISMATCH; the correct checksum-first
+    // implementation throws ERR_CHECKPOINT_CORRUPT (bad checksum) first.
+    // Having a definition in the store is what makes this test discriminate:
+    // without it #fingerprint is undefined, the mismatch branch never fires
+    // regardless of ordering, and the test proves nothing about priority.
     const wrongFingerprint =
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const envelope = {
@@ -1064,6 +1072,8 @@ describe("M3LCheckpointStore — fingerprint (definition binding)", () => {
       name: "run-fp-both-wrong",
       validate: isTestCheckpoint,
       missing: { kind: "error" },
+      // definition whose hash definitely differs from wrongFingerprint
+      definition: { query: "SELECT 1" },
     });
 
     let thrown: unknown;
@@ -1197,5 +1207,535 @@ describe("M3LCheckpointStore — fingerprint (definition binding)", () => {
     expect(thrown).toBe(pathResolutionFailure);
     expect(thrown).toBeInstanceOf(M3LPathResolutionError);
     expect(thrown).not.toBeInstanceOf(M3LCheckpointError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A. definition rejection / acceptance — covers lines 378-396 + helper
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore constructor — definition rejection / acceptance", () => {
+  // -------------------------------------------------------------------------
+  // A1. Rejected definitions
+  // -------------------------------------------------------------------------
+
+  test.each([
+    ["arrow function", () => 1],
+    [
+      "named function declaration",
+      function namedFn() {
+        return 1;
+      },
+    ],
+  ])(
+    "definition: %s — rejects with ERR_CHECKPOINT_DEFINITION (cause undefined, no definition value in message/context)",
+    (_label, badDef) => {
+      let thrown: unknown;
+      try {
+        new M3LCheckpointStore<TestCheckpoint>({
+          paths: makePathsPort(dir),
+          name: "run-def-fn",
+          validate: isTestCheckpoint,
+          missing: { kind: "error" },
+          definition: badDef,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LCheckpointError);
+      expect((thrown as M3LCheckpointError).code).toBe(
+        "ERR_CHECKPOINT_DEFINITION",
+      );
+      expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+      // The definition value itself must never appear in the public error output.
+      const contextStr = JSON.stringify(
+        (thrown as M3LCheckpointError).context ?? {},
+      );
+      expect((thrown as M3LCheckpointError).message).not.toContain("namedFn");
+      expect(contextStr).not.toContain("namedFn");
+    },
+  );
+
+  test("definition: symbol — rejects with ERR_CHECKPOINT_DEFINITION (cause undefined)", () => {
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-symbol",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: Symbol("test"),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test.each([
+    ["Map", new Map([["a", 1]])],
+    ["Set", new Set([1, 2, 3])],
+    ["RegExp", /x/],
+  ])(
+    "definition: %s — rejects with ERR_CHECKPOINT_DEFINITION (no accessible content → fingerprint identical to {})",
+    (_label, badDef) => {
+      let thrown: unknown;
+      try {
+        new M3LCheckpointStore<TestCheckpoint>({
+          paths: makePathsPort(dir),
+          name: "run-def-noop",
+          validate: isTestCheckpoint,
+          missing: { kind: "error" },
+          definition: badDef,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(M3LCheckpointError);
+      expect((thrown as M3LCheckpointError).code).toBe(
+        "ERR_CHECKPOINT_DEFINITION",
+      );
+      expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    },
+  );
+
+  test("definition: class instance with only prototype accessors (no own enumerable props, no toJSON) — rejects with ERR_CHECKPOINT_DEFINITION", () => {
+    // Data lives only in prototype getters — Object.keys() returns 0 own props.
+    class ProtoAccessor {
+      get value(): number {
+        return 42;
+      }
+    }
+    const instance = new ProtoAccessor();
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-proto-accessor",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: instance,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  test("definition: Proxy whose ownKeys trap throws — rejected (not a raw error escape) with ERR_CHECKPOINT_DEFINITION", () => {
+    // The isContentDiscardingObject helper wraps its checks in try/catch
+    // (line 128-130 of the impl): a hostile Proxy that throws must be treated
+    // as content-discarding (fail safe), surfaced as ERR_CHECKPOINT_DEFINITION
+    // from the constructor — never as a raw non-M3LCheckpointError.
+    //
+    // The target must be a NON-plain object (e.g. Map) so that isPlainObject()
+    // returns false and the helper enters the try block rather than short-
+    // circuiting at line 120. With a {} target, isPlainObject returns true and
+    // the catch path (line 130) is never reached.
+    const hostile = new Proxy(new Map(), {
+      ownKeys(): never {
+        throw new Error("hostile trap");
+      },
+      getOwnPropertyDescriptor(): never {
+        throw new Error("hostile trap");
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-proxy",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: hostile,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe(
+      "ERR_CHECKPOINT_DEFINITION",
+    );
+    // The hostile proxy's raw error must not become the cause.
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // A2. Accepted definitions — construction succeeds; fingerprint is stamped
+  // -------------------------------------------------------------------------
+
+  test("definition: plain object { query: 'SELECT 1' } — accepted; write() stamps a fingerprint", async () => {
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-def-plain",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: { query: "SELECT 1" },
+    });
+
+    await store.write({ queryId: "q-plain-def" });
+    const rawJson = await readFile(store.path, "utf8");
+    const parsed: unknown = JSON.parse(rawJson);
+    expect(Object.hasOwn(parsed as object, "fingerprint")).toBe(true);
+    expect(typeof (parsed as Record<string, unknown>)["fingerprint"]).toBe(
+      "string",
+    );
+  });
+
+  test("definition: empty plain object {} — accepted; construction succeeds", () => {
+    expect(() => {
+      new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-empty-obj",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: {},
+      });
+    }).not.toThrow();
+  });
+
+  test.each([
+    ["empty array []", []],
+    ["non-empty array", [1, 2, 3]],
+  ])(
+    "definition: %s — accepted; write() stamps a fingerprint",
+    async (_label, def) => {
+      const store = new M3LCheckpointStore<TestCheckpoint>({
+        paths: makePathsPort(dir),
+        name: "run-def-array",
+        validate: isTestCheckpoint,
+        missing: { kind: "error" },
+        definition: def,
+      });
+
+      await store.write({ queryId: "q-array-def" });
+      const rawJson = await readFile(store.path, "utf8");
+      const parsed: unknown = JSON.parse(rawJson);
+      expect(Object.hasOwn(parsed as object, "fingerprint")).toBe(true);
+    },
+  );
+
+  test("definition: Date (has toJSON) — accepted; write() stamps a fingerprint", async () => {
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-def-date",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: new Date("2026-01-01T00:00:00Z"),
+    });
+
+    await store.write({ queryId: "q-date-def" });
+    const rawJson = await readFile(store.path, "utf8");
+    const parsed: unknown = JSON.parse(rawJson);
+    expect(Object.hasOwn(parsed as object, "fingerprint")).toBe(true);
+  });
+
+  test("definition: class instance with own data properties — accepted; write() stamps a fingerprint", async () => {
+    class WithOwnData {
+      readonly query: string;
+      readonly table: string;
+      constructor(query: string, table: string) {
+        this.query = query;
+        this.table = table;
+      }
+    }
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-def-own-data",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: new WithOwnData("SELECT 1", "t"),
+    });
+
+    await store.write({ queryId: "q-own-data-def" });
+    const rawJson = await readFile(store.path, "utf8");
+    const parsed: unknown = JSON.parse(rawJson);
+    expect(Object.hasOwn(parsed as object, "fingerprint")).toBe(true);
+  });
+
+  test.each([
+    ["null", null],
+    ["0", 0],
+    ["false", false],
+    ["empty string", ""],
+    ["version string 'v1'", "v1"],
+  ])(
+    "definition: primitive %s — accepted; construction succeeds (null opts in, gate is !== undefined)",
+    (_label, def) => {
+      expect(() => {
+        new M3LCheckpointStore<TestCheckpoint>({
+          paths: makePathsPort(dir),
+          name: "run-def-primitive",
+          validate: isTestCheckpoint,
+          missing: { kind: "error" },
+          definition: def,
+        });
+      }).not.toThrow();
+    },
+  );
+
+  test("definition: null — opts in to fingerprinting; write() stamps a real fingerprint (null !== undefined, gate is !== undefined)", async () => {
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-def-null",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: null,
+    });
+
+    await store.write({ queryId: "q-null-def" });
+    const rawJson = await readFile(store.path, "utf8");
+    const parsed: unknown = JSON.parse(rawJson);
+    // null opted in → fingerprint key must be present and must be a string
+    expect(Object.hasOwn(parsed as object, "fingerprint")).toBe(true);
+    expect(typeof (parsed as Record<string, unknown>)["fingerprint"]).toBe(
+      "string",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// B. Object.hasOwn prototype-pollution guard — security must-fix
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore — Object.hasOwn prototype-pollution guard", () => {
+  test("polluted Object.prototype.fingerprint does not cause a false ERR_CHECKPOINT_FINGERPRINT_MISMATCH on a valid pre-fingerprint envelope (no own fingerprint key)", async () => {
+    // A legacy pre-fingerprint envelope has a valid checksum but no own
+    // 'fingerprint' property. Before the Object.hasOwn fix, a prototype-
+    // polluted 'fingerprint' was read as if it were the envelope's own field,
+    // causing a spurious ERR_CHECKPOINT_FINGERPRINT_MISMATCH and denying a
+    // valid resume.
+    const payload: TestCheckpoint = { queryId: "q-proto-polluted" };
+    const envelope = {
+      __m3lCheckpointFormat: 1,
+      checksum: canonicalJsonHash(payload),
+      // no own 'fingerprint' key — simulates a pre-fingerprint envelope
+      payload,
+    };
+    const filePath = path.join(dir, "run-proto-pollution.checkpoint.json");
+    await writeFile(filePath, JSON.stringify(envelope), "utf8");
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-proto-pollution",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: { query: "SELECT 1" },
+    });
+
+    // Pollute Object.prototype with an attacker-controlled fingerprint.
+    // Use Object.defineProperty so we can control configurability and clean
+    // up in finally regardless of how the test goes.
+    Object.defineProperty(Object.prototype, "fingerprint", {
+      configurable: true,
+      enumerable: false,
+      writable: true,
+      value: "ATTACKER",
+    });
+
+    let result: TestCheckpoint | undefined;
+    let thrown: unknown;
+    try {
+      result = await store.read();
+    } catch (error) {
+      thrown = error;
+    } finally {
+      delete (Object.prototype as Record<string, unknown>)["fingerprint"];
+    }
+
+    // Must resolve — the prototype-polluted value must never be treated as
+    // an own fingerprint on the envelope.
+    expect(thrown).toBeUndefined();
+    expect(result).toEqual(payload);
+  });
+
+  test("throwing getter on Object.prototype.fingerprint does not propagate a raw error from read()", async () => {
+    // If read() uses a plain property access (envelope.fingerprint) instead of
+    // Object.hasOwn, a throwing prototype getter would escape as a raw Error
+    // with no M3LCheckpointError code, breaking the documented contract.
+    const payload: TestCheckpoint = { queryId: "q-throwing-getter" };
+    const envelope = {
+      __m3lCheckpointFormat: 1,
+      checksum: canonicalJsonHash(payload),
+      // no own 'fingerprint' key
+      payload,
+    };
+    const filePath = path.join(dir, "run-throwing-getter.checkpoint.json");
+    await writeFile(filePath, JSON.stringify(envelope), "utf8");
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-throwing-getter",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      definition: { query: "SELECT 1" },
+    });
+
+    Object.defineProperty(Object.prototype, "fingerprint", {
+      configurable: true,
+      enumerable: false,
+      get(): never {
+        throw new Error("getter trap — must not be invoked");
+      },
+    });
+
+    let result: TestCheckpoint | undefined;
+    let thrown: unknown;
+    try {
+      result = await store.read();
+    } catch (error) {
+      thrown = error;
+    } finally {
+      delete (Object.prototype as Record<string, unknown>)["fingerprint"];
+    }
+
+    // Must resolve normally — the getter is never invoked because Object.hasOwn
+    // confirms the envelope has no own 'fingerprint' property before accessing it.
+    expect(thrown).toBeUndefined();
+    expect(result).toEqual(payload);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C. write()'s two ERR_CHECKPOINT_IO arms produce distinct messages
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore.write() — ERR_CHECKPOINT_IO arm distinctness", () => {
+  test("unhashable-checkpoint arm and rename-failure arm both produce ERR_CHECKPOINT_IO but with DIFFERENT messages", async () => {
+    // Arm 1: hash failure (circular checkpoint)
+    const circular: CircularCheckpoint = { queryId: "q-circular-msg" };
+    circular.self = circular;
+
+    const hashStore = new M3LCheckpointStore<CircularCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-hash-msg",
+      validate: isCircularCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let hashThrown: unknown;
+    try {
+      await hashStore.write(circular);
+    } catch (error) {
+      hashThrown = error;
+    }
+
+    expect(hashThrown).toBeInstanceOf(M3LCheckpointError);
+    expect((hashThrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    const hashMessage = (hashThrown as M3LCheckpointError).message;
+
+    // Arm 2: rename failure (I/O error after hashing succeeds)
+    const ioStore = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-rename-msg",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    // Write once to set up the file, then fail the next rename.
+    await ioStore.write({ queryId: "original" });
+    const renameFailure = Object.assign(new Error("EPERM: rename failed"), {
+      code: "EPERM",
+    });
+    vi.spyOn(fsp, "rename").mockRejectedValueOnce(renameFailure);
+
+    let renameThrown: unknown;
+    try {
+      await ioStore.write({ queryId: "should-not-land" });
+    } catch (error) {
+      renameThrown = error;
+    }
+
+    expect(renameThrown).toBeInstanceOf(M3LCheckpointError);
+    expect((renameThrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    const renameMessage = (renameThrown as M3LCheckpointError).message;
+
+    // The two arms must produce diagnostically distinct messages —
+    // collapsing them back would be a diagnostic regression.
+    expect(hashMessage).not.toBe(renameMessage);
+    expect(hashMessage).not.toContain(renameMessage);
+  });
+
+  test("unhashable-checkpoint arm: cause is undefined and no caller data appears in the message", async () => {
+    // The hash-failure arm must never chain cause (canonicalJsonHash's thrown
+    // message can embed the caller's actual value, e.g. a DynamoDB primary key).
+    const SENSITIVE_MARKER = "sensitive-value-must-not-leak-9f3a";
+    const circular: CircularCheckpoint = { queryId: SENSITIVE_MARKER };
+    circular.self = circular;
+
+    const store = new M3LCheckpointStore<CircularCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-hash-no-leak",
+      validate: isCircularCheckpoint,
+      missing: { kind: "error" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.write(circular);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_IO");
+    expect((thrown as M3LCheckpointError).cause).toBeUndefined();
+    expect((thrown as M3LCheckpointError).message).not.toContain(
+      SENSITIVE_MARKER,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D. Sixth read-matrix row: present-but-non-string fingerprint is ERR_CHECKPOINT_CORRUPT
+//    unconditionally (whether or not the store has a definition)
+// ---------------------------------------------------------------------------
+describe("M3LCheckpointStore — sixth read-matrix row (non-string fingerprint)", () => {
+  test("a valid checksum with a non-string (numeric) fingerprint throws ERR_CHECKPOINT_CORRUPT even when the store HAS a definition — type check is unconditional", async () => {
+    // Complements the existing definition-less variant at line ~971.
+    // The corrupt-fingerprint check must fire before the fingerprint-mismatch
+    // check — ERR_CHECKPOINT_CORRUPT, not ERR_CHECKPOINT_FINGERPRINT_MISMATCH.
+    const payload: TestCheckpoint = { queryId: "q-num-fp-with-def" };
+    const envelope = {
+      __m3lCheckpointFormat: 1,
+      checksum: canonicalJsonHash(payload),
+      fingerprint: 99, // present-but-non-string → corrupt regardless of definition
+      payload,
+    };
+    const filePath = path.join(dir, "run-fp-numeric-with-def.checkpoint.json");
+    await writeFile(filePath, JSON.stringify(envelope), "utf8");
+
+    const store = new M3LCheckpointStore<TestCheckpoint>({
+      paths: makePathsPort(dir),
+      name: "run-fp-numeric-with-def",
+      validate: isTestCheckpoint,
+      missing: { kind: "error" },
+      // A definition whose hash would match the envelope's numeric fingerprint
+      // if the type check were skipped — this ensures CORRUPT fires because of
+      // the non-string type, not because of a hash mismatch.
+      definition: { query: "SELECT 1" },
+    });
+
+    let thrown: unknown;
+    try {
+      await store.read();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCheckpointError);
+    expect((thrown as M3LCheckpointError).code).toBe("ERR_CHECKPOINT_CORRUPT");
   });
 });

@@ -13,14 +13,41 @@ import { writeFileAtomic } from "../../internal/files/atomicWrite.js";
 import { M3LCheckpointError } from "./M3LCheckpointError.js";
 
 // ---------------------------------------------------------------------------
-// M3LCheckpointEnvelope
+// M3LCheckpointRawEnvelope — untrusted parse-time shape
+// ---------------------------------------------------------------------------
+
+/**
+ * The JSON-parsed shape of a content-addressed envelope before any field
+ * types are trusted. Used only by {@link isCheckpointEnvelope} (as the
+ * narrowed type) and {@link M3LCheckpointStore.#verifyEnvelope} (as its
+ * parameter type). Not exported — the caller never sees this type directly.
+ *
+ * `fingerprint` is typed as `unknown` (not `string`) because `JSON.parse`
+ * can produce any JSON value; the `string` constraint is enforced at runtime
+ * inside `#verifyEnvelope`, allowing the method to throw
+ * `"ERR_CHECKPOINT_CORRUPT"` on a present-but-non-string value rather than
+ * silently accepting it.
+ */
+interface M3LCheckpointRawEnvelope {
+  readonly __m3lCheckpointFormat: 1;
+  readonly checksum: string;
+  readonly fingerprint?: unknown;
+  readonly payload: unknown;
+}
+
+// ---------------------------------------------------------------------------
+// M3LCheckpointEnvelope — trusted write-time shape
 // ---------------------------------------------------------------------------
 
 /**
  * The on-disk content-addressed envelope {@link M3LCheckpointStore.write}
- * persists and {@link M3LCheckpointStore.read} verifies. Not exported — an
- * implementation detail of the file format, never a value a caller
- * constructs or receives directly.
+ * persists. Not exported — an implementation detail of the file format, never
+ * a value a caller constructs or receives directly.
+ *
+ * `fingerprint` is narrowed to `string` here (the trusted write shape) because
+ * `write()` always sets it from `this.#fingerprint`, which is already a
+ * `string`. The complementary parsed/untrusted shape is
+ * {@link M3LCheckpointRawEnvelope}, used only on the read path.
  */
 interface M3LCheckpointEnvelope<TCheckpoint> {
   readonly __m3lCheckpointFormat: 1;
@@ -29,11 +56,21 @@ interface M3LCheckpointEnvelope<TCheckpoint> {
   readonly payload: TCheckpoint;
 }
 
+// ---------------------------------------------------------------------------
+// isCheckpointEnvelope
+// ---------------------------------------------------------------------------
+
 /**
- * Narrows a JSON-parsed value to {@link M3LCheckpointEnvelope}. Uses
+ * Narrows a JSON-parsed value to {@link M3LCheckpointRawEnvelope}. Uses
  * `Object.hasOwn` throughout rather than bracket access, since `value` came
  * from `JSON.parse` and must not be trusted to walk the prototype chain
  * safely (e.g. a field literally named `"__proto__"`).
+ *
+ * Deliberately does **not** check `fingerprint`'s presence or type — those
+ * checks live inside `#verifyEnvelope`, where a present-but-non-string value
+ * throws `"ERR_CHECKPOINT_CORRUPT"` rather than being ignored (widening the
+ * guard here would demote such a file to the legacy bare-JSON path, silently
+ * skipping the `checksum` check too).
  *
  * Edge case (accepted, not a design flaw): a legacy (pre-envelope)
  * `TCheckpoint` payload that happens to declare fields literally named
@@ -44,7 +81,7 @@ interface M3LCheckpointEnvelope<TCheckpoint> {
  */
 function isCheckpointEnvelope(
   value: unknown,
-): value is M3LCheckpointEnvelope<unknown> {
+): value is M3LCheckpointRawEnvelope {
   return (
     isPlainObject(value) &&
     Object.hasOwn(value, "__m3lCheckpointFormat") &&
@@ -53,6 +90,45 @@ function isCheckpointEnvelope(
     typeof value["checksum"] === "string" &&
     Object.hasOwn(value, "payload")
   );
+}
+
+// ---------------------------------------------------------------------------
+// isContentDiscardingObject
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns `true` when `value` is an object whose content would be silently
+ * discarded by `JSON.stringify` — specifically, a non-array, non-plain object
+ * with no `toJSON` method and no own enumerable properties (e.g. `Map`,
+ * `Set`, `WeakMap`, `RegExp`). Such a value produces a canonical JSON hash
+ * identical to `{}`, yielding a fingerprint that can never mismatch and
+ * neutering the fingerprinting check silently.
+ *
+ * Returns `false` for plain objects (own enumerable properties ARE the
+ * content), arrays, `null`, primitives, objects with a `toJSON` method, and
+ * objects with at least one own enumerable property.
+ *
+ * Wraps `Object.keys` and the `in` operator in a `try`/`catch` so a hostile
+ * `Proxy` with throwing traps cannot escape the constructor as a raw error —
+ * it is treated as discarding content, which fails safe.
+ */
+function isContentDiscardingObject(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false; // primitive, null, or array — no discard concern
+  }
+  if (isPlainObject(value)) {
+    return false; // plain object: own enumerable properties are the content
+  }
+  // Non-plain, non-array object: check whether JSON.stringify can reach its
+  // content via toJSON or own enumerable properties.
+  try {
+    if ("toJSON" in value) return false; // controls its own serialisation
+    if (Object.keys(value).length > 0) return false; // has own data
+    return true; // no accessible content (Map, Set, WeakMap, RegExp, …)
+  } catch {
+    // Hostile Proxy with throwing traps — fail safe by treating as discarding.
+    return true;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -174,18 +250,33 @@ export interface M3LCheckpointStoreOptions<TCheckpoint extends object> {
    * `read()` refuses to resume from a checkpoint written under a different
    * definition (throws `"ERR_CHECKPOINT_FINGERPRINT_MISMATCH"`).
    *
-   * The hash is computed **once, at construction**, so a value
-   * `canonicalJsonHash` rejects (a circular reference, a `BigInt`, a
-   * non-finite number) throws `"ERR_CHECKPOINT_DEFINITION"` from the
-   * constructor rather than surfacing on the first `read()` or `write()`. The
-   * value is never persisted and never reaches a `message`, `context`, or
+   * The hash is computed **once, at construction**, so a value the
+   * constructor rejects (see below) throws `"ERR_CHECKPOINT_DEFINITION"` from
+   * the constructor rather than surfacing on the first `read()` or `write()`.
+   * The value is never persisted and never reaches a `message`, `context`, or
    * `cause` — only its hash is stored.
    *
-   * Omitting this field preserves today's behaviour exactly (no fingerprinting).
+   * **Rejected definitions.** The constructor rejects three categories:
+   * - `function` or `symbol` — both canonicalise to `null` and cannot
+   *   produce a meaningful fingerprint.
+   * - A non-array object with no `toJSON` method and no own enumerable
+   *   properties (e.g. `Map`, `Set`, `WeakMap`, `RegExp`) — such a value
+   *   canonicalises identically to `{}` regardless of its internal state,
+   *   so its fingerprint can never mismatch.
+   * - A value `canonicalJsonHash` cannot hash (circular reference, `BigInt`,
+   *   non-finite number).
+   *
+   * Accepted: `{ query: "SELECT 1" }`, an honestly-empty `{}`, `[]`, a
+   * `Date` (has `toJSON`), a class instance carrying own data properties,
+   * and primitives including `null`, `0`, `false`, `""`.
+   *
+   * Omitting this field preserves today's behaviour exactly (no
+   * fingerprinting).
    *
    * @throws {@link M3LCheckpointError} `"ERR_CHECKPOINT_DEFINITION"` — from
-   *   the constructor — when `canonicalJsonHash` cannot hash the supplied
-   *   value.
+   *   the constructor — when the supplied value is a function, a symbol, a
+   *   non-array object with no accessible content, or unhashable by
+   *   `canonicalJsonHash`.
    */
   readonly definition?: unknown;
 }
@@ -251,7 +342,7 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
    * `canonicalJsonHash(definition)` when `definition` was supplied; otherwise
    * `undefined`. Stamped onto envelopes by `write()` and compared by `read()`.
    */
-  readonly #fingerprint: string | undefined;
+  readonly #fingerprint: string | undefined = undefined;
 
   /**
    * Creates a new `M3LCheckpointStore`.
@@ -263,9 +354,12 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
    *   never wrapped in `M3LCheckpointError`. Path resolution runs first;
    *   definition hashing does not begin until the path succeeds.
    * @throws {@link M3LCheckpointError} `"ERR_CHECKPOINT_DEFINITION"` when
-   *   `options.definition` is supplied but `canonicalJsonHash` cannot hash it
-   *   (circular reference, `BigInt`, non-finite number). Never chains a
-   *   `cause` — the underlying error's message can embed the definition value.
+   *   `options.definition` is supplied but is a `function`, a `symbol`, a
+   *   non-array object with no `toJSON` and no own enumerable properties
+   *   (e.g. `Map`, `Set`, `WeakMap`, `RegExp`), or a value `canonicalJsonHash`
+   *   cannot hash (circular reference, `BigInt`, non-finite number). Never
+   *   chains a `cause` — the underlying error's message can embed the
+   *   definition value.
    */
   constructor(options: M3LCheckpointStoreOptions<TCheckpoint>) {
     // Path resolution must come first — an unsafe name throws
@@ -275,21 +369,46 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
     this.#missing = options.missing;
 
     if (options.definition !== undefined) {
-      try {
-        this.#fingerprint = canonicalJsonHash(options.definition);
-      } catch {
-        // Never chain `cause`: canonicalJsonHash's thrown message can embed
-        // the caller's actual (possibly sensitive) definition value.
+      // Reject definitions whose canonical form silently discards content:
+      // functions and symbols both canonicalise to null, and non-plain objects
+      // with no toJSON and no own properties (Map, Set, WeakMap, RegExp, …)
+      // canonicalise identically to {} regardless of their internal state.
+      // Either case yields a fingerprint that can never mismatch — a no-op
+      // exactly where fingerprinting is supposed to fail loud.
+      if (
+        typeof options.definition === "function" ||
+        typeof options.definition === "symbol"
+      ) {
         throw new M3LCheckpointError(
-          `checkpoint store at '${this.#path}' could not hash the supplied definition`,
+          `checkpoint store at '${this.#path}': definition must be a JSON-serializable value — functions and symbols canonicalise to null and cannot produce a meaningful fingerprint`,
           {
             code: "ERR_CHECKPOINT_DEFINITION",
             context: { path: this.#path },
           },
         );
       }
-    } else {
-      this.#fingerprint = undefined;
+      if (isContentDiscardingObject(options.definition)) {
+        throw new M3LCheckpointError(
+          `checkpoint store at '${this.#path}': definition must expose its content as own enumerable properties or via a toJSON method — Map, Set, WeakMap, and RegExp instances fingerprint identically to {}`,
+          {
+            code: "ERR_CHECKPOINT_DEFINITION",
+            context: { path: this.#path },
+          },
+        );
+      }
+      try {
+        this.#fingerprint = canonicalJsonHash(options.definition);
+      } catch {
+        // Never chain `cause`: canonicalJsonHash's thrown message can embed
+        // the caller's actual (possibly sensitive) definition value.
+        throw new M3LCheckpointError(
+          `checkpoint store at '${this.#path}' could not hash the supplied definition: must be JSON-serializable (no circular references, BigInt, or non-finite numbers)`,
+          {
+            code: "ERR_CHECKPOINT_DEFINITION",
+            context: { path: this.#path },
+          },
+        );
+      }
     }
   }
 
@@ -306,9 +425,9 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
   /**
    * Reads, JSON-parses, verifies, and validates the checkpoint file.
    *
-   * Applies the `missing` policy only on `ENOENT` — a present-but-corrupt
-   * file (or one that fails `validate`) always throws
-   * `"ERR_CHECKPOINT_PARSE"`, regardless of the `missing` policy. When the
+   * Applies the `missing` policy only on `ENOENT` — a present-but-unusable
+   * file (fails validation, fails its integrity check, or carries a mismatched
+   * fingerprint) always throws, regardless of the `missing` policy. When the
    * parsed content is a content-addressed envelope (see {@link write}), its
    * stored `checksum` is recomputed and compared before the wrapped payload
    * is unwrapped and validated — a mismatch throws
@@ -390,6 +509,9 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
    * codes as the surrounding `read()` call.
    *
    * @param envelope - A value already narrowed by `isCheckpointEnvelope`.
+   *   Typed as {@link M3LCheckpointRawEnvelope} (the untrusted parse-time
+   *   shape) so `fingerprint` is `unknown` rather than `string`, avoiding
+   *   any cast to perform the runtime type check.
    * @returns The envelope's `payload` when all checks pass.
    * @throws {@link M3LCheckpointError} `"ERR_CHECKPOINT_PARSE"` when the
    *   payload cannot be hashed; `"ERR_CHECKPOINT_CORRUPT"` on a checksum
@@ -397,7 +519,7 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
    *   `"ERR_CHECKPOINT_FINGERPRINT_MISMATCH"` when the stored fingerprint
    *   differs from the store's current definition fingerprint.
    */
-  #verifyEnvelope(envelope: M3LCheckpointEnvelope<unknown>): unknown {
+  #verifyEnvelope(envelope: M3LCheckpointRawEnvelope): unknown {
     // Guard the checksum recomputation: canonicalJsonHash recurses per nesting
     // level of `envelope.payload`, which is untrusted external content that
     // may be deeply nested (a stack-overflow RangeError) or otherwise
@@ -419,16 +541,21 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
       );
     }
 
-    // Read the fingerprint field as `unknown` to perform a runtime type check:
-    // the TypeScript interface declares `fingerprint?: string`, but JSON.parse
-    // can produce any JSON value. A present-but-non-string fingerprint is a
-    // corrupt envelope — the envelope guard deliberately leaves fingerprint
-    // unchecked; widening it to reject non-strings would demote the file to
-    // the legacy bare-JSON path, silently skipping the checksum check too.
-    const rawFingerprint: unknown = (
-      envelope as unknown as { fingerprint?: unknown }
-    ).fingerprint;
+    // Read the fingerprint using Object.hasOwn — not direct property access —
+    // so a value literally named "fingerprint" on Object.prototype (prototype
+    // pollution) is never treated as an own property. A polluted prototype
+    // getter that throws would otherwise propagate a raw Error out of read()
+    // with no M3LCheckpointError code, breaking the documented contract.
+    // isCheckpointEnvelope already documents and follows this convention.
+    // The envelope type is M3LCheckpointRawEnvelope (fingerprint?: unknown),
+    // so no cast is needed to perform the runtime string check below.
+    const rawFingerprint: unknown = Object.hasOwn(envelope, "fingerprint")
+      ? envelope.fingerprint
+      : undefined;
 
+    // A present-but-non-string fingerprint is a corrupt envelope, not a
+    // legacy file — see the spec note on why the guard is not widened to
+    // cover fingerprint's type (it would skip the checksum check too).
     if (rawFingerprint !== undefined && typeof rawFingerprint !== "string") {
       throw new M3LCheckpointError(
         `checkpoint file at '${this.#path}' has a corrupt fingerprint field`,
@@ -436,6 +563,10 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
       );
     }
 
+    // After the throw above, rawFingerprint is narrowed to string | undefined.
+    // The typeof conjunct is not needed — the compiler narrows correctly
+    // through the negation of the previous guard.
+    //
     // Fingerprint mismatch: the envelope is intact but was written under a
     // different definition — its offsets no longer mean what they meant.
     // Only checked when both the store has a definition (this.#fingerprint)
@@ -443,7 +574,7 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
     // fall through and read as before (see spec read matrix).
     if (
       this.#fingerprint !== undefined &&
-      typeof rawFingerprint === "string" &&
+      rawFingerprint !== undefined &&
       rawFingerprint !== this.#fingerprint
     ) {
       throw new M3LCheckpointError(
@@ -471,12 +602,12 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
    * `read()` can detect a configuration change between runs. When no
    * `definition` was supplied, the `fingerprint` key is omitted entirely.
    *
-   * The checksum is not a tamper-evidence or authentication guarantee: the
-   * checksum is an unkeyed hash over publicly canonical JSON (computable via
-   * the exported `canonicalJsonHash`), so anyone with write access to the file
-   * can recompute a matching checksum, or simply strip the envelope back to
-   * the legacy bare format, either of which bypasses the check with no special
-   * knowledge.
+   * The checksum and fingerprint are not tamper-evidence or authentication
+   * guarantees: both are unkeyed hashes over publicly canonical JSON
+   * (computable via the exported `canonicalJsonHash`), so anyone with write
+   * access to the file can recompute matching values, or strip the envelope
+   * back to the legacy bare format — either bypasses the checks with no
+   * special knowledge.
    *
    * Does **not** create the output directory — an `ENOENT` from a missing
    * parent directory maps to `"ERR_CHECKPOINT_IO"`, never
@@ -488,7 +619,9 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
    * never chained as `cause` (it may carry sensitive checkpoint data, e.g. a
    * DynamoDB primary key). The subsequent `writeFileAtomic` call carries no
    * such risk (an I/O errno has no caller content) and safely chains `cause`.
-   * Both failures map to the same `"ERR_CHECKPOINT_IO"` code.
+   * Both failures map to the same `"ERR_CHECKPOINT_IO"` code, but with
+   * distinct messages so a caller logging `code + message` can distinguish
+   * a hash failure from an I/O failure.
    *
    * @param checkpoint - The checkpoint value to persist.
    * @throws {@link M3LCheckpointError} `"ERR_CHECKPOINT_IO"` on any write
@@ -502,7 +635,7 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
       // Never chain `cause` here: canonicalJsonHash's thrown message can
       // embed the caller's actual (possibly sensitive) checkpoint value.
       throw new M3LCheckpointError(
-        `failed to write checkpoint file at '${this.#path}'`,
+        `checkpoint at '${this.#path}' is not JSON-serializable and cannot be written: no circular references, BigInt, or non-finite numbers`,
         { code: "ERR_CHECKPOINT_IO", context: { path: this.#path } },
       );
     }
