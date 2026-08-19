@@ -36,6 +36,29 @@ describe("stripBlockComments", () => {
     ].join("\n");
     expect(stripBlockComments(text)).toBe("before\n\nafter");
   });
+
+  test("loops to a fixed point to fully strip a marker reassembled by removing a nested comment", () => {
+    // Regression for CodeQL js/incomplete-multi-character-sanitization: a
+    // single `.replace(/<!--[\s\S]*?-->/g, "")` pass scans the ORIGINAL
+    // string once, left to right, so it can never see a NEW "<!--...-->"
+    // span that only exists in the string the replacement produces.
+    //
+    // Input: "before<!" + "<!--nested-->" + "--after-->tail"
+    // A single pass matches only the inner, fully-formed "<!--nested-->"
+    // (the leftmost "<!--" it finds, up to the nearest "-->"), and removes
+    // just that. What's left before it ("before<!") and after it
+    // ("--after-->tail") sit directly adjacent in the result, which
+    // accidentally reconstructs a brand-new comment marker:
+    //   single pass  -> "before<!--after-->tail"  (still contains <!-- and -->)
+    //   fixed point  -> "beforetail"               (loops once more, strips it, converges)
+    const input = "before<!<!--nested-->--after-->tail";
+    expect(stripBlockComments(input)).toBe("beforetail");
+    expect(stripBlockComments(input)).not.toMatch(/<!--|-->/);
+  });
+
+  test("still strips two separate, well-formed comments unaffected by the fixed-point loop", () => {
+    expect(stripBlockComments("<!-- a --> text <!-- b -->")).toBe(" text ");
+  });
 });
 
 describe("normalizeRuntimeContent", () => {

@@ -35,11 +35,23 @@ export const MAX_TABLE_LINE_WIDTH = 200;
  * injecting CLAUDE.md into context — anything inside `<!-- ... -->` costs
  * zero runtime tokens, so it must not count toward the budget.
  *
+ * Repeats the strip to a fixed point rather than a single pass: a single
+ * non-greedy pass over adjacent/nested `<!--`/`-->` markers (e.g.
+ * `<!--<!---->`) can leave a dangling `<!--` behind, which a later read of
+ * this "sanitized" text could misinterpret as still-open markup (CodeQL
+ * js/incomplete-multi-character-sanitization).
+ *
  * @param {string} text
  * @returns {string}
  */
 export function stripBlockComments(text) {
-  return text.replace(/<!--[\s\S]*?-->/g, "");
+  let previous;
+  let result = text;
+  do {
+    previous = result;
+    result = result.replace(/<!--[\s\S]*?-->/g, "");
+  } while (result !== previous);
+  return result;
 }
 
 /**
