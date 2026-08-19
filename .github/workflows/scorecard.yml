@@ -18,6 +18,13 @@ on:
 permissions:
   contents: read
 
+# A push burst to main would otherwise queue multiple ~15-minute analyses;
+# only the latest push's result matters (cron runs are unaffected — the
+# schedule trigger has no ref to collide on, so it always gets its own group).
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analysis:
     name: Scorecard analysis

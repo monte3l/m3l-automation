@@ -15,6 +15,12 @@ on:
 permissions:
   contents: read
 
+# A repeated manual dispatch stacks runs otherwise; cancel-in-progress stays
+# false so a scheduled audit is never killed mid-run by a later trigger.
+concurrency:
+  group: security-audit
+  cancel-in-progress: false
+
 jobs:
   audit:
     name: Dependency audit + license check
@@ -43,3 +49,36 @@ jobs:
       # licenses" step.
       - name: Check dependency licenses
         run: pnpm check:licenses
+
+  # The repo's Actions cache budget (10 GB) was measured at 10.44 GB / 112
+  # active caches, with the pnpm store cache — the one that keeps ci.yml's
+  # install step at ~5s — as the LRU eviction candidate behind 63 CodeQL
+  # overlay databases (7.6 GB) and 27 claude-code-action `bun-*` caches
+  # (871 MB). This job prunes the two prefixes this repo's own workflows
+  # control, keeping only the 3 most-recently-accessed entries per prefix.
+  # Deliberately does NOT touch `codeql-overlay-*` — GitHub's own CodeQL
+  # default setup manages that cache family on its own schedule; deleting it
+  # out from under default setup is not this workflow's call to make.
+  prune-caches:
+    name: Prune stale Actions caches
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+    steps:
+      - name: Delete stale node-cache-* / bun-* entries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          for prefix in "node-cache-" "bun-"; do
+            gh api --paginate "repos/${REPO}/actions/caches?per_page=100" \
+              --jq ".actions_caches[] | select(.key | startswith(\"${prefix}\")) | \"\(.last_accessed_at)\t\(.id)\t\(.key)\"" \
+              | sort -r \
+              | tail -n +4 \
+              | while IFS=$'\t' read -r _ id key; do
+                  echo "Deleting stale cache: ${key} (id ${id})"
+                  gh api --method DELETE "repos/${REPO}/actions/caches/${id}" || true
+                done
+          done
