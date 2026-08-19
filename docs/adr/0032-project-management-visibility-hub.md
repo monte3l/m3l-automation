@@ -671,3 +671,108 @@ boundary instead of widening it:
 No live tracker row was off-vocabulary at the time this landed — the `In
 review` cell was already flipped to `Done` by #428 — so `check:tracker-status`
 starts green; this Update and the gate exist to keep it that way.
+
+## Update (2026-08-19): `impl:` item keys are namespaced by section, and the Priority vocabulary is complete
+
+An item key is the join key for the whole hub — it is written into its issue
+body as `<!-- m3l-hub-sync:<key> -->` and is the only thing `planIssueSync`
+matches an issue on. `docs/ROADMAP.md`'s keys were already namespaced by
+section (`roadmap:p0:` / `roadmap:<wave>:` / `roadmap:gov:`), but
+`docs/plans/IMPLEMENTATION.md`'s were flat: all seven of its tables emitted
+`impl:<label>`, while an item label is only unique _within_ its own table. The
+ADR-0035 rollout table and the codified-procedure wave table both restart at
+A1, so A1/A2/A3/A5/A6 each denoted two entirely different items (filed as F13,
+issue #480).
+
+**The collision was latent, not live — and F13's own description of it was
+wrong on one character.** F13 recorded issues #469 and #377 as both carrying
+`<!-- m3l-hub-sync:impl:a2 -->`. Running `actionableItems` against the real
+trackers shows zero exact duplicate keys: #377 carries `impl:A2` and #469
+carries `impl:a2`. The five pairs were separated purely by accident, because
+the rollout table was the one table not passing its label through `slug()`, so
+its keys stayed upper-case and the case-sensitive marker match kept them
+apart. Nothing was merged or orphaned. But making key derivation consistent —
+an obvious cleanup any contributor might make — would have merged all five
+pairs at once, and `addItem` merges a duplicate silently, so the loser of each
+pair would have stopped being planned while `planIssueSync` closed its issue
+with a "removed from source trackers" comment.
+
+Resolved as: **fix the namespace structurally rather than rely on the
+accident.** A gate alone was considered and rejected — it would force item
+labels to be globally unique across every table, which fights the repo's own
+established practice of restarting labels per wave (exactly what produced this
+collision). Namespacing keeps that practice safe:
+
+- **`IMPLEMENTATION_NAMESPACES` (`bin/lib/hub-sync.mjs`)**, keyed identically
+  to the existing `IMPLEMENTATION_ANCHORS` so a new section cannot gain an
+  anchor without also gaining a namespace. Every one of the seven key sites
+  now emits `impl:<namespace>:<slug(label)>`, and the friction and rollout
+  tables were brought onto `slug()` with the other five, so a case-variant
+  key is no longer expressible within a namespace. `MAJOR_BUMP_ITEM_KEYS` is
+  re-derived through the same map and `slug()` rather than hand-typed, as it
+  already was.
+- **A self-healing migration, not a migration script.** Each `Item` carries
+  the flat key it used to be filed under in a new `legacyKeys` field, and all
+  three marker consumers (`planIssueSync`, `planBackfill`, and
+  `bin/sync-hub-projects.mjs`) resolve markers through one shared
+  `indexItemsByKey`. An issue whose marker is stale therefore matches its item
+  instead of reading as vanished, and because the rewritten body opens with
+  the new marker it is already dirty, so the next `--apply` migrates it. No
+  separate script to forget to run, and no window in which a real issue could
+  be closed as "removed".
+- **One narrow exception to the closed-and-resolved rule.** That branch
+  pushes `untouched` unconditionally — the deliberate gap the 2026-07-28
+  Update above records. 97 of the 108 `impl:` issues are closed, so without an
+  exception the aliases could never retire. A stale marker now triggers an
+  `update`; everything else about the branch is untouched. It is idempotent by
+  construction: once rewritten the marker is current, so the next run falls
+  through to "in sync".
+- **`pnpm check:hub-keys`** (`bin/check-hub-keys.mjs`), a new hard gate
+  wired alongside `check:tracker-status` in `package.json`,
+  `bin/lib/command-catalog.mjs`, `bin/lib/verify-steps.mjs`, and `ci.yml`. It
+  fails on any exact duplicate key, any two keys differing only by case, and
+  any legacy alias shadowing another item's current key. It checks
+  case-insensitively precisely because that accident is what masked the
+  original collision. `addItem` also warns now, and `actionableItems` returns
+  the collisions structurally as `duplicateKeys` so the gate need not parse
+  warning prose — but per this ADR's own 2026-08-15 finding, the warning is
+  the diagnostic and the gate is the enforcement.
+
+**The Priority vocabulary, found while fixing the above.** Every `sync:hub`
+run emitted six `unrecognized Priority cell … defaulted to p2` warnings, all
+on Done rows, from two different causes. Five were the `—` placeholder used by
+the capability-deepening and post-comparison wave tables on rows whose change
+is not priority-tiered — a convention `mapFrictionPriority`'s own comment
+already documented as deliberate, but which the vocabulary never accepted. The
+sixth was `P3` on the F12 row: the only `P3` in either tracker, with no
+`PRIORITY_LABELS` entry, no `MILESTONE_TITLES` entry, and no GitHub milestone
+behind it.
+
+Resolved as: **complete the vocabulary, and correct the genuine typo at
+source.** This is deliberately _not_ the `In review` case from the 2026-08-15
+Update — that was a foreign vocabulary (the board's) leaking into a tracker
+cell, so aliasing it would have been wrong. The dash placeholder is this
+table's own documented convention, so recognizing it completes the vocabulary
+rather than widening it to absorb a mistake. `P3` is the actual mistake and
+stays loud.
+
+- `mapFrictionPriority` moved out of `bin/lib/hub-sync.mjs` and became
+  `classifyPriorityCell` in `bin/lib/project-hub.mjs`, mirroring
+  `classifyStatusCell`. It lives there because `check:tracker-status` needs
+  the same vocabulary and `project-hub.mjs` imports nothing local while
+  `hub-sync.mjs` imports _from_ it — the reverse direction would be a cycle.
+  A dash cell is now `recognized: true`; an _empty_ cell is not, since a
+  missing Priority is an omission rather than someone stating "no tier".
+- `docs/plans/IMPLEMENTATION.md`'s F12 row moved from `P3` to `P2`.
+- **`check:tracker-status` now gates Priority cells too**, rather than a
+  fourth wiring site: `findOffVocabularyPriorityCells` was added beside
+  `findOffVocabularyStatusCells`, both expressed over one extracted
+  `findOffVocabularyCells` walker so the two cannot drift and `check:dup`
+  stays quiet. Scoping is free — no table in `docs/ROADMAP.md` carries a
+  Priority column, so that file yields nothing without being special-cased.
+
+Both Priority fixes already resolved to `p2`, so that half produces zero
+GitHub drift. The namespacing half does not: the next `sync:hub --apply`
+rewrites 108 issue bodies' marker lines. That run is mechanical and must
+follow the merge promptly, since `check:hub-drift` fails on a non-empty plan
+and `--apply` cannot run in CI.
