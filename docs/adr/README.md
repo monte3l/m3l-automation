@@ -76,7 +76,7 @@ surface).
 | 0029 | [Consumer scripts depend only on @m3l-automation/m3l-common](./0029-script-dependency-boundary.md)                                                        | Accepted                         |
 | 0030 | [Targeted workflow tooling and MCP adoption](./0030-targeted-workflow-tooling-and-mcp.md)                                                                 | Accepted                         |
 | 0031 | [Relational and document data-engine access for the consumer fleet](./0031-relational-and-document-data-engine-access.md)                                 | Accepted                         |
-| 0032 | [Centralized project-state and roadmap visibility hub](./0032-project-management-visibility-hub.md)                                                       | Accepted                         |
+| 0032 | [Centralized project-state and roadmap visibility hub](./0032-project-management-visibility-hub.md)                                                       | Partially superseded by ADR-0051 |
 | 0033 | [Typed S3 operations wrapper over the raw SDK client](./0033-aws-s3-operations-wrapper.md)                                                                | Accepted                         |
 | 0034 | [Sonar/Act-Podman re-assessment: OSS complexity/duplication gates, Act/Podman declined](./0034-sonar-act-podman-reassessment.md)                          | Accepted                         |
 | 0035 | [Failure reporting and diagnostics architecture](./0035-failure-reporting-and-diagnostics.md)                                                             | Accepted                         |
@@ -95,3 +95,4 @@ surface).
 | 0048 | [Grade the destructive confirmation by target, not only by action](./0048-target-graded-destructive-confirmation.md)                                      | Accepted                         |
 | 0049 | [A cooperative cancellation contract for long-running operations](./0049-cooperative-cancellation-contract.md)                                            | Accepted                         |
 | 0050 | [GitHub platform-feature stance](./0050-github-platform-feature-stance.md)                                                                                | Accepted                         |
+| 0051 | [Semantic priority vocabulary for labels, milestones, and tracker cells](./0051-semantic-priority-vocabulary.md)                                          | Accepted                         |

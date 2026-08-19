@@ -55,6 +55,7 @@
     "check:hooks": "node bin/check-hooks.mjs",
     "check:github-stance": "node bin/check-github-stance.mjs",
     "check:github-features": "node bin/check-github-features.mjs",
+    "check:label-drift": "node bin/check-label-drift.mjs",
     "check:zones": "node bin/check-eslint-zones.mjs",
     "check:deps": "node bin/check-deps.mjs",
     "check:licenses": "node bin/check-licenses.mjs",

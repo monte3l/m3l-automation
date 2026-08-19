@@ -501,6 +501,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm check:github-features
 
+      # ADR-0051's live-label drift gate: every hub-managed label
+      # (bin/lib/label-defs.mjs) must exist on the live repo with the exact
+      # name/description/color bin/sync-hub-issues.mjs would bootstrap.
+      # check:hub-drift only ever inspects an issue's OWN labels against its
+      # tracker row, never the label objects themselves — a hand-renamed or
+      # hand-deleted managed label went undetected without this. Push-only,
+      # same rationale as the two steps above.
+      - name: Check label drift (push-only)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm check:label-drift
+
   # The required status check branch protection looks for. Fails if the
   # changes job itself didn't succeed (see comment below), or if any lane
   # failed or was cancelled; passes if every lane succeeded or was

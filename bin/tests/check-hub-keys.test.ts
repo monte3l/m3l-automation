@@ -1,5 +1,13 @@
 import { describe, expect, test } from "vitest";
-import { findKeyCollisions } from "../check-hub-keys.mjs";
+import {
+  findKeyCollisions,
+  findPriorityVocabularyMismatches,
+} from "../check-hub-keys.mjs";
+import {
+  MILESTONE_TITLES,
+  PRIORITY_LABELS,
+  ROADMAP_ANCHORS,
+} from "../lib/hub-sync.mjs";
 
 // ---------------------------------------------------------------------------
 // Fixtures — minimal Item-shaped objects covering each collision kind.
@@ -129,5 +137,75 @@ describe("findKeyCollisions", () => {
     expect(kinds).toContain("duplicate");
     expect(kinds).toContain("case-variant");
     expect(kinds).toContain("legacy-shadow");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findPriorityVocabularyMismatches
+// ---------------------------------------------------------------------------
+
+describe("findPriorityVocabularyMismatches", () => {
+  test("returns [] when every priorityLabels/roadmapAnchors key has a milestoneTitles entry", () => {
+    const findings = findPriorityVocabularyMismatches({
+      priorityLabels: { p0: "priority:0-now", p1: "priority:1-next" },
+      milestoneTitles: {
+        p0: "Now — unblock first",
+        p1: "Next — consumer fleet",
+      },
+      roadmapAnchors: { p0: "#priority-0" },
+    });
+    expect(findings).toEqual([]);
+  });
+
+  test("a priorityLabels key missing from milestoneTitles is reported with its key and value", () => {
+    const findings = findPriorityVocabularyMismatches({
+      priorityLabels: { p2: "priority:2-later" },
+      milestoneTitles: {},
+      roadmapAnchors: {},
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain("PRIORITY_LABELS.p2");
+    expect(findings[0]).toContain("priority:2-later");
+    expect(findings[0]).toContain("MILESTONE_TITLES.p2");
+  });
+
+  test("a roadmapAnchors key missing from milestoneTitles is reported with its key and value", () => {
+    const findings = findPriorityVocabularyMismatches({
+      priorityLabels: {},
+      milestoneTitles: {},
+      roadmapAnchors: { governance: "#governance-follow-ups" },
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain("ROADMAP_ANCHORS.governance");
+    expect(findings[0]).toContain("#governance-follow-ups");
+    expect(findings[0]).toContain("MILESTONE_TITLES.governance");
+  });
+
+  test("an extra milestoneTitles key with no priorityLabels/roadmapAnchors counterpart is NOT reported (not blanket set equality)", () => {
+    // MILESTONE_TITLES legitimately carries a "major" bucket that neither
+    // PRIORITY_LABELS nor ROADMAP_ANCHORS ever mirrors — asserting this stays
+    // silent locks in that findPriorityVocabularyMismatches only walks
+    // priorityLabels/roadmapAnchors -> milestoneTitles, never the reverse.
+    const findings = findPriorityVocabularyMismatches({
+      priorityLabels: { p0: "priority:0-now" },
+      milestoneTitles: {
+        p0: "Now — unblock first",
+        major: "2.0 / breaking",
+      },
+      roadmapAnchors: {},
+    });
+    expect(findings).toEqual([]);
+  });
+
+  // Regression lock: passing the REAL current tables through must stay []
+  // so a future partial ADR-0051-style rename (one table updated, another
+  // left stale) fails this test instead of only surfacing at `gh` call time.
+  test("the real PRIORITY_LABELS/MILESTONE_TITLES/ROADMAP_ANCHORS tables from hub-sync.mjs agree", () => {
+    const findings = findPriorityVocabularyMismatches({
+      priorityLabels: PRIORITY_LABELS,
+      milestoneTitles: MILESTONE_TITLES,
+      roadmapAnchors: ROADMAP_ANCHORS,
+    });
+    expect(findings).toEqual([]);
   });
 });

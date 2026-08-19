@@ -29,9 +29,8 @@ import {
   planBackfill,
   planIssueSync,
   planMilestones,
-  PRIORITY_LABELS,
-  STATUS_LABELS,
 } from "./lib/hub-sync.mjs";
+import { LABEL_DEFS } from "./lib/label-defs.mjs";
 import { createReporter, parseJsonFlag } from "./lib/report.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -43,76 +42,6 @@ const IMPLEMENTATION_PATH = "docs/plans/IMPLEMENTATION.md";
 // tracked issues would make the planner think removed issues are gone and
 // re-create them, so that case is a hard error, never a silent under-read.
 const LIST_LIMIT = 500;
-
-// The hub-sync label, the four priority labels, and the two status labels,
-// plus the `triage` label `.github/ISSUE_TEMPLATE/failure_report.yml`
-// declares but which GitHub never creates on its own — bootstrapped (create
-// or `--force` update) on every --apply run before any issue/milestone
-// action. `triage` is a literal, not a `bin/lib/hub-sync.mjs` constant: it
-// is never derived from a tracker row (nothing in ROADMAP.md/
-// IMPLEMENTATION.md maps to it), it exists purely so a template-filed
-// failure report doesn't silently drop a declared label.
-const LABEL_DEFS = [
-  {
-    name: HUB_LABEL,
-    color: "0e8a16",
-    description:
-      "Managed by the ADR-0032 visibility hub sync — do not edit manually.",
-  },
-  {
-    name: PRIORITY_LABELS.p0,
-    color: "b60205",
-    description: "Priority 0 item (top of the roadmap backlog).",
-  },
-  {
-    name: PRIORITY_LABELS.p1,
-    color: "d93f0b",
-    description: "Priority 1 item (near-term roadmap wave).",
-  },
-  {
-    name: PRIORITY_LABELS.p2,
-    color: "fbca04",
-    description: "Priority 2 item (deferred / gated backlog).",
-  },
-  {
-    name: PRIORITY_LABELS.governance,
-    color: "5319e7",
-    description: "Governance follow-up item (ADR/process work).",
-  },
-  {
-    name: STATUS_LABELS.deferred,
-    color: "8250df",
-    description: "Deferred — unscheduled until its gate opens.",
-  },
-  {
-    name: STATUS_LABELS.blocked,
-    color: "cf222e",
-    description: "Blocked — cannot proceed until an external condition clears.",
-  },
-  {
-    name: "triage",
-    color: "d4c5f9",
-    description:
-      "Needs a fault-origin decision. Applied by .github/ISSUE_TEMPLATE/failure_report.yml.",
-  },
-];
-
-// GitHub's `gh label create --description` hard cap. Asserted at module load
-// (not just documented) after a live `gh api` 422 during testing — the
-// original `status:blocked` description was 101 characters, one over the
-// limit, and `bootstrapLabels` iterates LABEL_DEFS in order, so the failure
-// surfaced only after `status:deferred` (86 chars, under the cap) had
-// already been created on the real repo. Fail fast, before any `gh` call,
-// rather than mutating GitHub partway through a label batch again.
-const LABEL_DESCRIPTION_MAX_LENGTH = 100;
-for (const { name, description } of LABEL_DEFS) {
-  if (description.length > LABEL_DESCRIPTION_MAX_LENGTH) {
-    throw new Error(
-      `LABEL_DEFS["${name}"].description is ${description.length} chars, over GitHub's ` +
-        `${LABEL_DESCRIPTION_MAX_LENGTH}-char label-description limit.`,
-    );
-  }
-}
 
 /**
  * The single injected `gh` execution seam: every runner call goes through
@@ -303,15 +232,18 @@ function createIssue(runGhFn, payload) {
   return parseInt(match[1], 10);
 }
 
-// A priority:*/status:* label the currently-fetched issue carries but the
-// desired payload does not — stale from a prior run whose item priority or
-// status (Deferred/Blocked) changed. HUB_LABEL is never stale (every
-// payload always carries it), so only these two prefixed families need
+// A priority:*/type:*/status:* label the currently-fetched issue carries but
+// the desired payload does not — stale from a prior run whose item priority
+// or status (Deferred/Blocked) changed, or a leftover `priority:*`/`type:*`
+// name from before the ADR-0051 rename. HUB_LABEL is never stale (every
+// payload always carries it), so only these three prefixed families need
 // pruning.
 function staleManagedLabels(currentLabels, payload) {
   return currentLabels.filter(
     (label) =>
-      (label.startsWith("priority:") || label.startsWith("status:")) &&
+      (label.startsWith("priority:") ||
+        label.startsWith("type:") ||
+        label.startsWith("status:")) &&
       !payload.labels.includes(label),
   );
 }

@@ -7,6 +7,7 @@ import {
   MILESTONE_TITLES,
   PRIORITY_LABELS,
   STATUS_LABELS,
+  TYPE_LABELS,
   actionableItems,
   buildIssuePayload,
   hubMarker,
@@ -91,14 +92,14 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 
 | ID     | Priority | Status   | Title & change                                          | Source / call-site |
 | ------ | -------- | -------- | ----------------------------------------------------------- | --------------------- |
-| **F7** | P2       | Deferred | Opt-in \`onUnknownFormat\` tolerant a \\| b handling           | json-etl log F7        |
-| **F9** | P1       | Done     | Some other change entirely                                 | some other log         |
+| **F7** | Later    | Deferred | Opt-in \`onUnknownFormat\` tolerant a \\| b handling           | json-etl log F7        |
+| **F9** | Next     | Done     | Some other change entirely                                 | some other log         |
 
 ## ADR-0035 rollout — failure reporting & diagnostics
 
 | Phase  | Priority | Status   | Change                            | Source / notes         |
 | ------ | -------- | -------- | ----------------------------------- | --------------------------- |
-| **A7** | P2       | Rejected | Residual free-text redaction gaps    | Accepted per ADR update      |
+| **A7** | Later    | Rejected | Residual free-text redaction gaps    | Accepted per ADR update      |
 
 ## AWS getter reality
 
@@ -106,7 +107,7 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 | ----------------- | ------------- | ------ | -------------------- | ----------------------- | ------------------ |
 | \`s3\`             | S3            | Done   | aws/s3                | s3-objects (done)         | ADR-0033            |
 
-## Gated library modules & deferred decisions (P2)
+## Gated library modules & deferred decisions (Later)
 
 | ID                  | Status   | Unblock condition                          |
 | --------------------- | -------- | ---------------------------------------------- |
@@ -119,7 +120,7 @@ const IMPLEMENTATION_MISSING_GATED_FIXTURE = `# Implementation backlog — m3l-a
 
 | ID     | Priority | Status   | Title & change      | Source / call-site |
 | ------ | -------- | -------- | ---------------------- | --------------------- |
-| **F7** | P2       | Deferred | still relevant          | json-etl log F7        |
+| **F7** | Later    | Deferred | still relevant          | json-etl log F7        |
 
 ## AWS getter reality
 
@@ -134,8 +135,8 @@ const IMPLEMENTATION_DEDUPE_FIXTURE = `# Implementation backlog — m3l-automati
 
 | ID     | Priority | Status   | Title & change            | Source / call-site |
 | ------ | -------- | -------- | ---------------------------- | --------------------- |
-| **F7** | P2       | Deferred | First title for F7             | first-call-site         |
-| **F7** | P1       | Done     | Second title for F7            | second-call-site        |
+| **F7** | Later    | Deferred | First title for F7             | first-call-site         |
+| **F7** | Next     | Done     | Second title for F7            | second-call-site        |
 
 ## AWS getter reality
 
@@ -143,7 +144,7 @@ const IMPLEMENTATION_DEDUPE_FIXTURE = `# Implementation backlog — m3l-automati
 | ----------------- | ------------- | ------ | -------------------- | ----------------------- | ------------------ |
 | \`s3\`             | S3            | Done   | aws/s3                | s3-objects (done)         | ADR-0033            |
 
-## Gated library modules & deferred decisions (P2)
+## Gated library modules & deferred decisions (Later)
 
 | ID                  | Status   | Unblock condition                          |
 | --------------------- | -------- | ---------------------------------------------- |
@@ -172,25 +173,25 @@ const IMPLEMENTATION_WAVES_FIXTURE = `# Implementation backlog — m3l-automatio
 
 | ID     | Priority | Status   | Title & change      | Source / call-site |
 | ------ | -------- | -------- | ---------------------- | --------------------- |
-| **F7** | P2       | Deferred | still relevant          | json-etl log F7        |
+| **F7** | Later    | Deferred | still relevant          | json-etl log F7        |
 
 ## Capability-deepening wave (ADR-0037/0038/0039)
 
 | Item                    | Priority | Status | Change                    |
 | ------------------------ | -------- | ------ | ---------------------------- |
-| \`aws/rds-data\` Aurora    | P1       | To Do  | add RDS Data API wrapper      |
+| \`aws/rds-data\` Aurora    | Next     | To Do  | add RDS Data API wrapper      |
 
 ## Post-comparison hardening wave (ADR-0040/0041/0042/0043)
 
 | Item                  | Priority | Status  | Change                     |
 | ---------------------- | -------- | ------- | ------------------------------- |
-| ReDoS hardening pass    | P0       | Blocked | close remaining regex risk       |
+| ReDoS hardening pass    | Now      | Blocked | close remaining regex risk       |
 
 ## m3l-cli build-out — ADR-0042 activation (issue #333)
 
 | Item                             | Priority | Status | Change                     |
 | ---------------------------------- | -------- | ------ | ------------------------------- |
-| 8b — scaffold + discovery          | P2       | To Do  | packages/m3l-cli skeleton        |
+| 8b — scaffold + discovery          | Later    | To Do  | packages/m3l-cli skeleton        |
 
 ## AWS getter reality
 
@@ -219,7 +220,7 @@ const IMPLEMENTATION_BAD_STATUS_FIXTURE = `# Implementation backlog — m3l-auto
 
 | ID     | Priority | Status    | Title & change      | Source / call-site |
 | ------ | -------- | --------- | ---------------------- | --------------------- |
-| **F7** | P2       | Reviewing | still relevant          | json-etl log F7        |
+| **F7** | Later    | Reviewing | still relevant          | json-etl log F7        |
 `;
 
 // ---------------------------------------------------------------------------
@@ -247,7 +248,7 @@ function makeItem(overrides: Partial<TestItem> = {}): TestItem {
     status: "todo",
     priority: "p0",
     sourcePath: "docs/ROADMAP.md",
-    sourceAnchor: "#priority-0",
+    sourceAnchor: "#priority-0--library-hardening-do-before-more-scripts",
     detail: "**What:** a sample item",
     ...overrides,
   };
@@ -270,12 +271,23 @@ describe("HUB_PROJECT_TITLE", () => {
 });
 
 describe("PRIORITY_LABELS", () => {
-  test("maps every priority to its 'priority:<x>' label string", () => {
+  test("maps every tiered priority to its 'priority:<n>-<name>' label string", () => {
     expect(PRIORITY_LABELS).toMatchObject({
-      p0: "priority:p0",
-      p1: "priority:p1",
-      p2: "priority:p2",
-      governance: "priority:governance",
+      p0: "priority:0-now",
+      p1: "priority:1-next",
+      p2: "priority:2-later",
+    });
+  });
+
+  test("has no governance member — governance is a category, not a tier", () => {
+    expect(PRIORITY_LABELS).not.toHaveProperty("governance");
+  });
+});
+
+describe("TYPE_LABELS", () => {
+  test("maps governance to its 'type:governance' label string", () => {
+    expect(TYPE_LABELS).toMatchObject({
+      governance: "type:governance",
     });
   });
 });
@@ -292,9 +304,9 @@ describe("STATUS_LABELS", () => {
 describe("MILESTONE_TITLES", () => {
   test("maps p0/p1/p2/governance to their milestone titles, plus a major bucket", () => {
     expect(MILESTONE_TITLES).toMatchObject({
-      p0: "Priority 0",
-      p1: "Priority 1",
-      p2: "Priority 2",
+      p0: "Now — unblock first",
+      p1: "Next — consumer fleet",
+      p2: "Later — gated/deferred",
       governance: "Governance",
       major: "2.0 / breaking",
     });
@@ -755,12 +767,12 @@ describe("buildIssuePayload", () => {
   test("body contains the 'Derived — do not edit' banner with a blobUrl link + anchor, and pnpm sync:hub", () => {
     const item = makeItem({
       sourcePath: "docs/ROADMAP.md",
-      sourceAnchor: "#priority-0",
+      sourceAnchor: "#priority-0--library-hardening-do-before-more-scripts",
     });
     const payload = buildIssuePayload(item) as { body: string };
     expect(payload.body).toContain("Derived — do not edit");
     expect(payload.body).toContain(
-      "https://github.com/monte3l/m3l-automation/blob/main/docs/ROADMAP.md#priority-0",
+      "https://github.com/monte3l/m3l-automation/blob/main/docs/ROADMAP.md#priority-0--library-hardening-do-before-more-scripts",
     );
     expect(payload.body).toContain("pnpm sync:hub");
   });
@@ -776,7 +788,7 @@ describe("buildIssuePayload", () => {
     (status) => {
       const item = makeItem({ priority: "p1", status });
       const payload = buildIssuePayload(item) as { labels: string[] };
-      expect(payload.labels).toEqual(["hub-sync", "priority:p1"]);
+      expect(payload.labels).toEqual(["hub-sync", "priority:1-next"]);
     },
   );
 
@@ -788,14 +800,18 @@ describe("buildIssuePayload", () => {
     (status, statusLabel) => {
       const item = makeItem({ priority: "p1", status });
       const payload = buildIssuePayload(item) as { labels: string[] };
-      expect(payload.labels).toEqual(["hub-sync", "priority:p1", statusLabel]);
+      expect(payload.labels).toEqual([
+        "hub-sync",
+        "priority:1-next",
+        statusLabel,
+      ]);
     },
   );
 
   test.each([
-    ["p0", "Priority 0"],
-    ["p1", "Priority 1"],
-    ["p2", "Priority 2"],
+    ["p0", "Now — unblock first"],
+    ["p1", "Next — consumer fleet"],
+    ["p2", "Later — gated/deferred"],
     ["governance", "Governance"],
   ] as const)(
     "milestoneTitle for priority %s is %j",
@@ -815,7 +831,7 @@ describe("buildIssuePayload", () => {
       labels: string[];
     };
     expect(payload.milestoneTitle).toBe("Governance");
-    expect(payload.labels).toEqual(["hub-sync", "priority:governance"]);
+    expect(payload.labels).toEqual(["hub-sync", "type:governance"]);
   });
 
   test("milestoneTitle is '2.0 / breaking' for an item keyed impl:friction:f3, regardless of its priority", () => {
@@ -835,7 +851,7 @@ describe("buildIssuePayload", () => {
     const payload = buildIssuePayload(item) as {
       milestoneTitle: string | null;
     };
-    expect(payload.milestoneTitle).toBe("Priority 2");
+    expect(payload.milestoneTitle).toBe("Later — gated/deferred");
   });
 });
 
@@ -979,8 +995,11 @@ describe("planMilestones", () => {
       makeItem({ key: "b", priority: "p1" }),
       makeItem({ key: "c", priority: "p2" }),
     ];
-    const result = planMilestones(items, ["Priority 0"]);
-    expect(result.create).toEqual(["Priority 1", "Priority 2"]);
+    const result = planMilestones(items, ["Now — unblock first"]);
+    expect(result.create).toEqual([
+      "Next — consumer fleet",
+      "Later — gated/deferred",
+    ]);
   });
 
   test("de-duplicates milestone titles required by multiple items", () => {
@@ -990,7 +1009,7 @@ describe("planMilestones", () => {
       makeItem({ key: "c", priority: "p0" }),
     ];
     const result = planMilestones(items, []);
-    expect(result.create).toEqual(["Priority 0"]);
+    expect(result.create).toEqual(["Now — unblock first"]);
   });
 
   test("plans the Governance milestone for governance items (no longer milestone-less)", () => {
@@ -1005,9 +1024,9 @@ describe("planMilestones", () => {
       makeItem({ key: "b", priority: "p1" }),
     ];
     const result = planMilestones(items, [
-      "Priority 0",
-      "Priority 1",
-      "Priority 2",
+      "Now — unblock first",
+      "Next — consumer fleet",
+      "Later — gated/deferred",
     ]);
     expect(result.create).toEqual([]);
   });

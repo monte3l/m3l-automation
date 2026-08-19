@@ -5,8 +5,9 @@
  * `docs/plans/IMPLEMENTATION.md` is in vocabulary. Status must be one of
  * ADR-0032's six documented tracker values — Done / To Do / In Progress /
  * Deferred / Blocked / Rejected (or one of the four legacy status emoji
- * `classifyStatusCell` also accepts). Priority must be P0, P1, P2, or the
- * dash placeholder marking a row as deliberately untiered.
+ * `classifyStatusCell` also accepts). Priority must be Now, Next, Later, or
+ * the dash placeholder marking a row as deliberately untiered (the
+ * ADR-0051 semantic vocabulary, replacing the original P0/P1/P2).
  *
  * This is the durable fix for issue #429: `classifyStatus`
  * (`bin/lib/project-hub.mjs`) silently classified any unrecognized cell as
@@ -31,6 +32,8 @@
  * rather than reported (`classifyPriorityCell`). Priority cells exist only in
  * `docs/plans/IMPLEMENTATION.md`; no table in `docs/ROADMAP.md` carries the
  * column, so that file simply yields nothing rather than being special-cased.
+ * Cell vocabulary renamed P0/P1/P2 -> Now/Next/Later under ADR-0051; the
+ * dash placeholder and the off-vocabulary-cell gate are otherwise unchanged.
  *
  * Exit codes:
  *   0  Every Status and Priority cell in both trackers is in-vocabulary.
@@ -83,9 +86,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
           line,
           message:
             `${path}:${line}: "## ${heading}" row's Priority cell ("${cell}") is not one of ` +
-            `P0/P1/P2, nor the untiered dash placeholder — there is no tier beyond P2 ` +
+            `Now/Next/Later, nor the untiered dash placeholder — there is no tier beyond Later ` +
             `(PRIORITY_LABELS/MILESTONE_TITLES in bin/lib/hub-sync.mjs have no entry for one, ` +
-            `and no GitHub milestone backs it), so sync:hub silently files this row under p2.`,
+            `and no GitHub milestone backs it), so sync:hub silently files this row under Later.`,
         });
       }
     }
@@ -105,7 +108,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
   reporter.succeed(
     "Every Status cell in both trackers is in the six-value vocabulary, and " +
-      "every Priority cell is P0/P1/P2 or the untiered placeholder.",
+      "every Priority cell is Now/Next/Later or the untiered placeholder.",
   );
   reporter.finish();
 }

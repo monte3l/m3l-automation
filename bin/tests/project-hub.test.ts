@@ -135,7 +135,7 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 | \`s3\`             | S3                             | Done   | \`aws/s3\`                  | \`s3-objects\` (done)     | ADR-0033                           |
 | \`ecs\`            | ECS                             | To Do  | — (raw, no wrapper yet)    | pending: \`ecs-ops\`      | ADR-0027 boundary rule applies     |
 
-## Gated library modules & deferred decisions (P2)
+## Gated library modules & deferred decisions (Later)
 
 | ID                                                            | Status   | Unblock condition                                                       |
 | ----------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------- |
@@ -163,7 +163,7 @@ const IMPLEMENTATION_MISSING_NEW_WAVES_FIXTURE = `# Implementation backlog — m
 | ----------------- | ------ | -------------------- |
 | \`s3\`             | Done   | \`aws/s3\`            |
 
-## Gated library modules & deferred decisions (P2)
+## Gated library modules & deferred decisions (Later)
 
 | ID     | Status   | Unblock condition                          |
 | ------ | -------- | --------------------------------------------- |
@@ -915,7 +915,7 @@ Just some prose, no table here at all.
 | ---- | ------ |
 | s3   | Done   |
 
-## Gated library modules & deferred decisions (P2)
+## Gated library modules & deferred decisions (Later)
 
 | Item | Status   |
 | ---- | -------- |
@@ -933,18 +933,18 @@ Just some prose, no table here at all.
 
 describe("classifyPriorityCell", () => {
   test.each([
-    ["P0", "p0"],
-    ["P1", "p1"],
-    ["P2", "p2"],
-    ["p0", "p0"],
-    ["p1", "p1"],
-    ["p2", "p2"],
+    ["Now", "p0"],
+    ["Next", "p1"],
+    ["Later", "p2"],
+    ["now", "p0"],
+    ["next", "p1"],
+    ["later", "p2"],
   ] as const)("%j is recognized as %j", (cell, priority) => {
     const result = classifyPriorityCell(cell);
     expect(result).toEqual({ priority, recognized: true });
   });
 
-  test.each(["**P0**", "`P1`", "**P2**", "`p0`"] as const)(
+  test.each(["**Now**", "`Next`", "**Later**", "`now`"] as const)(
     "markdown-wrapped %j is recognized",
     (cell) => {
       const { recognized } = classifyPriorityCell(cell);
@@ -975,6 +975,16 @@ describe("classifyPriorityCell", () => {
       recognized: false,
     });
   });
+
+  test.each(["P0", "P1", "P2"] as const)(
+    "the old %j vocabulary is NOT recognized post-rename (ADR-0051 replaced P0/P1/P2 with Now/Next/Later)",
+    (cell) => {
+      expect(classifyPriorityCell(cell)).toEqual({
+        priority: "p2",
+        recognized: false,
+      });
+    },
+  );
 
   test("an arbitrary off-vocabulary value is NOT recognized and defaults to p2", () => {
     expect(classifyPriorityCell("high")).toEqual({
@@ -1043,14 +1053,14 @@ describe("findOffVocabularyPriorityCells", () => {
     ]);
   });
 
-  test("recognized cells (P0/P1/P2/dash) produce no findings", () => {
+  test("recognized cells (Now/Next/Later/dash) produce no findings", () => {
     const content = `## Clean
 
 | Item | Priority |
 | ---- | -------- |
-| a    | P0       |
-| b    | P1       |
-| c    | P2       |
+| a    | Now      |
+| b    | Next     |
+| c    | Later    |
 | d    | —        |
 `;
     expect(findOffVocabularyPriorityCells(content)).toEqual([]);

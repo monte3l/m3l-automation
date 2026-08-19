@@ -63,20 +63,39 @@ Once an idea is actually ready to be worked on:
      `##`-level headings: `Library friction (F-series)`, `ADR-0035 rollout`,
      `Capability-deepening wave`, `Post-comparison hardening wave`,
      `m3l-cli build-out`, `Codified-procedure engine wave`,
-     `AWS getter reality`, `Gated library modules & deferred decisions (P2)`.
+     `AWS getter reality`, `Gated library modules & deferred decisions (Later)`.
    - **Adding a new `##`-level section to either file?** Run
      `pnpm check:tracker-coverage` right after — an unregistered heading with
      a `Status` column is a silent no-op to the sync, which is exactly the
      failure mode that check exists to catch.
    - Every row's `Status` cell must be one of six values: **Done · To Do · In
      Progress · Deferred · Blocked · Rejected** (`pnpm check:tracker-status`
-     enforces this). Priority is `P0`/`P1`/`P2` or a dash placeholder where
-     the table doesn't carry a Priority column.
+     enforces this). Priority is `Now`/`Next`/`Later` or a dash placeholder
+     where the table doesn't carry a Priority column — see the legend below
+     for what each tier means and how to pick one.
    - The row becomes the issue's join key: `sync-hub-issues.mjs` writes an
      `<!-- m3l-hub-sync:<key> -->` marker as the first line of the issue body
      and matches on that marker alone — never on title text. Run
      `pnpm check:hub-keys` after adding a row (or renaming an item's label) to
      catch a key collision before it reaches GitHub.
+
+   **Priority legend** (ADR-0051 — what each tier means and when to pick it;
+   `bin/lib/hub-sync.mjs`'s `PRIORITY_LABELS`/`MILESTONE_TITLES` are the
+   values the sync actually applies):
+
+   | Cell    | GitHub label       | Milestone                           | Pick this when…                                                                                |
+   | ------- | ------------------ | ----------------------------------- | ---------------------------------------------------------------------------------------------- |
+   | `Now`   | `priority:0-now`   | `Now — unblock first`               | the item blocks other work landing — do it before more scripts consume the library.            |
+   | `Next`  | `priority:1-next`  | `Next — consumer fleet`             | it's the near-term consumer-fleet wave — real, scheduled, not urgent.                          |
+   | `Later` | `priority:2-later` | `Later — gated/deferred`            | it's gated on a future trigger (a second consumer, an ADR intake gate) or explicitly deferred. |
+   | —       | (none)             | (none, unless another tier applies) | the row's table has no Priority column at all (untiered by design — e.g. a wave sub-table).    |
+
+   `Governance` is **not** a priority tier — it's a category for ADR/process
+   follow-up work that sits in its own `docs/ROADMAP.md` section and carries
+   `type:governance` (not a `priority:*` label) plus its own `Governance`
+   milestone. A governance row has no Priority column to fill in; don't force
+   one of the three tiers onto it.
+
 4. **Run `pnpm sync:hub`** (dry-run first to preview, then `-- --apply`,
    maintainer-local — it needs your own `gh` auth; `GITHUB_TOKEN` cannot write
    Projects v2). This reconciles the tracker row against the issue you already

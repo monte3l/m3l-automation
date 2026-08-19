@@ -310,6 +310,13 @@ export const VERIFY_STEPS = [
     skipReason:
       "needs a `gh`-authenticated session and live GitHub state; ci.yml also runs it push-only, not on PRs",
   },
+  {
+    ciStepName: "Check label drift (push-only)",
+    id: "check-label-drift",
+    cmd: () => "pnpm check:label-drift",
+    skipReason:
+      "needs a `gh`-authenticated session and live GitHub state; ci.yml also runs it push-only, not on PRs",
+  },
 ];
 
 /**
