@@ -4,6 +4,7 @@ import {
   REPO_BLOB_BASE,
   blobUrl,
   buildCorpusSections,
+  classifyPriorityCell,
   classifyStatus,
   classifyStatusCell,
   columnIndex,
@@ -11,6 +12,7 @@ import {
   extractImplementation,
   extractImplementationStatus,
   extractRoadmap,
+  findOffVocabularyPriorityCells,
   findOffVocabularyStatusCells,
   findUncoveredStatusHeadings,
   parseAdr,
@@ -922,6 +924,136 @@ Just some prose, no table here at all.
     expect(
       findUncoveredStatusHeadings(content, IMPLEMENTATION_SECTION_HEADINGS),
     ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// classifyPriorityCell
+// ---------------------------------------------------------------------------
+
+describe("classifyPriorityCell", () => {
+  test.each([
+    ["P0", "p0"],
+    ["P1", "p1"],
+    ["P2", "p2"],
+    ["p0", "p0"],
+    ["p1", "p1"],
+    ["p2", "p2"],
+  ] as const)("%j is recognized as %j", (cell, priority) => {
+    const result = classifyPriorityCell(cell);
+    expect(result).toEqual({ priority, recognized: true });
+  });
+
+  test.each(["**P0**", "`P1`", "**P2**", "`p0`"] as const)(
+    "markdown-wrapped %j is recognized",
+    (cell) => {
+      const { recognized } = classifyPriorityCell(cell);
+      expect(recognized).toBe(true);
+    },
+  );
+
+  test.each(["—", "–", "-", "---", "——"] as const)(
+    "dash placeholder %j is recognized as p2 (untiered, not an omission)",
+    (cell) => {
+      expect(classifyPriorityCell(cell)).toEqual({
+        priority: "p2",
+        recognized: true,
+      });
+    },
+  );
+
+  test("an empty string is NOT recognized (an omission, not a deliberate statement)", () => {
+    expect(classifyPriorityCell("")).toEqual({
+      priority: "p2",
+      recognized: false,
+    });
+  });
+
+  test("P3 is NOT recognized (no p3 tier, label, or milestone exists)", () => {
+    expect(classifyPriorityCell("P3")).toEqual({
+      priority: "p2",
+      recognized: false,
+    });
+  });
+
+  test("an arbitrary off-vocabulary value is NOT recognized and defaults to p2", () => {
+    expect(classifyPriorityCell("high")).toEqual({
+      priority: "p2",
+      recognized: false,
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findOffVocabularyPriorityCells
+// ---------------------------------------------------------------------------
+
+describe("findOffVocabularyPriorityCells", () => {
+  test("reports a P3 cell with the correct line, heading, and cell text", () => {
+    const content = `## Wave
+
+| Item | Priority |
+| ---- | -------- |
+| x    | P3       |
+`;
+    expect(findOffVocabularyPriorityCells(content)).toEqual([
+      { line: 5, heading: "Wave", cell: "P3" },
+    ]);
+  });
+
+  test("a dash placeholder does not produce a finding (it is recognized as p2)", () => {
+    const content = `## Wave
+
+| Item | Priority |
+| ---- | -------- |
+| x    | —        |
+`;
+    expect(findOffVocabularyPriorityCells(content)).toEqual([]);
+  });
+
+  test("a table with no Priority column is skipped entirely, returning no findings", () => {
+    // This is what naturally scopes the gate to IMPLEMENTATION.md: ROADMAP.md
+    // tables have no Priority column, so findOffVocabularyPriorityCells over
+    // the roadmap file produces an empty result without any special-casing.
+    const content = `## Wave
+
+| Item | Status |
+| ---- | ------ |
+| x    | Done   |
+`;
+    expect(findOffVocabularyPriorityCells(content)).toEqual([]);
+  });
+
+  test("multiple off-vocabulary Priority cells are all reported in document order", () => {
+    const content = `## First
+
+| Item | Priority |
+| ---- | -------- |
+| a    | P3       |
+
+## Second
+
+| Item | Priority |
+| ---- | -------- |
+| b    | high     |
+`;
+    expect(findOffVocabularyPriorityCells(content)).toEqual([
+      { line: 5, heading: "First", cell: "P3" },
+      { line: 11, heading: "Second", cell: "high" },
+    ]);
+  });
+
+  test("recognized cells (P0/P1/P2/dash) produce no findings", () => {
+    const content = `## Clean
+
+| Item | Priority |
+| ---- | -------- |
+| a    | P0       |
+| b    | P1       |
+| c    | P2       |
+| d    | —        |
+`;
+    expect(findOffVocabularyPriorityCells(content)).toEqual([]);
   });
 });
 

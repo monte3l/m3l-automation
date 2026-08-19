@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 /**
- * Asserts that every Status cell, in every pipe table under every `## `/
- * `### ` heading, in `docs/ROADMAP.md` and `docs/plans/IMPLEMENTATION.md` is
- * one of ADR-0032's six documented tracker values — Done / To Do /
- * In Progress / Deferred / Blocked / Rejected (or one of the four legacy
- * status emoji `classifyStatusCell` also accepts).
+ * Asserts that every Status cell, and every Priority cell, in every pipe
+ * table under every `## `/`### ` heading, in `docs/ROADMAP.md` and
+ * `docs/plans/IMPLEMENTATION.md` is in vocabulary. Status must be one of
+ * ADR-0032's six documented tracker values — Done / To Do / In Progress /
+ * Deferred / Blocked / Rejected (or one of the four legacy status emoji
+ * `classifyStatusCell` also accepts). Priority must be P0, P1, P2, or the
+ * dash placeholder marking a row as deliberately untiered.
  *
  * This is the durable fix for issue #429: `classifyStatus`
  * (`bin/lib/project-hub.mjs`) silently classified any unrecognized cell as
@@ -22,8 +24,16 @@
  * This check is the hard backstop: it fails the build the moment an
  * off-vocabulary Status cell lands, before it can reach `main`.
  *
+ * The Priority half was added with issue #480 / F13. `P3` sat on the F12 row
+ * with no `p3` tier, label, or milestone behind it, warning on every single
+ * `pnpm sync:hub` run — buried in five more warnings from the wave tables'
+ * dash placeholder, which was intentional all along and is now recognized
+ * rather than reported (`classifyPriorityCell`). Priority cells exist only in
+ * `docs/plans/IMPLEMENTATION.md`; no table in `docs/ROADMAP.md` carries the
+ * column, so that file simply yields nothing rather than being special-cased.
+ *
  * Exit codes:
- *   0  Every Status cell in both trackers is in-vocabulary.
+ *   0  Every Status and Priority cell in both trackers is in-vocabulary.
  *   1  At least one is not, or a tracker file could not be read.
  *
  * Usage:
@@ -34,7 +44,10 @@ import process from "node:process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { findOffVocabularyStatusCells } from "./lib/project-hub.mjs";
+import {
+  findOffVocabularyPriorityCells,
+  findOffVocabularyStatusCells,
+} from "./lib/project-hub.mjs";
 import { createReporter, parseJsonFlag, repoRoot } from "./lib/report.mjs";
 
 const root = repoRoot(import.meta.url);
@@ -62,6 +75,19 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
             `only in the GitHub Projects Status field, not this tracker (docs/adr/0032-project-management-visibility-hub.md).`,
         });
       }
+      for (const { line, heading, cell } of findOffVocabularyPriorityCells(
+        content,
+      )) {
+        errors.push({
+          file: path,
+          line,
+          message:
+            `${path}:${line}: "## ${heading}" row's Priority cell ("${cell}") is not one of ` +
+            `P0/P1/P2, nor the untiered dash placeholder — there is no tier beyond P2 ` +
+            `(PRIORITY_LABELS/MILESTONE_TITLES in bin/lib/hub-sync.mjs have no entry for one, ` +
+            `and no GitHub milestone backs it), so sync:hub silently files this row under p2.`,
+        });
+      }
     }
   } catch (cause) {
     reporter.error(cause instanceof Error ? cause.message : String(cause));
@@ -78,7 +104,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
 
   reporter.succeed(
-    "Every Status cell in both trackers is in the six-value vocabulary.",
+    "Every Status cell in both trackers is in the six-value vocabulary, and " +
+      "every Priority cell is P0/P1/P2 or the untiered placeholder.",
   );
   reporter.finish();
 }
