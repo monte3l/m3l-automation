@@ -208,6 +208,27 @@ number>` already relies on (found A4b: `LOG_LEVEL_FLOORS`).
   nothing, the denylist failed all four and regressed three times. Where the
   input is genuinely free text, say "best effort" in the TSDoc and reclassify
   the artifact instead of promising a guarantee.
+- **Never validate a caller value and then let something else re-read it.**
+  That is two observations of a mutable, caller-controlled graph, and it is
+  defeated by making them disagree — a non-idempotent getter, a non-enumerable
+  own `toJSON` invisible to `Object.keys` but applied by the serializer, own
+  non-index properties on an array, a `length` re-read mid-loop. Do the
+  traversal **once**: validate and project into a fresh structure, then derive
+  the downstream artifact (hash, digest, persisted bytes) from the projection,
+  never from the original. `core/checkpoint`'s A4 fingerprint proved it — three
+  guards were refuted in a row, each by a new route from the caller's object to
+  the hash, until the two reads were collapsed into one
+  (`docs/logs/2026-08-19-a4-checkpoint-fingerprint.md`).
+- **Two fix rounds bypassing the same mechanism means change the shape, not add
+  a case.** A third patch to the same guard is a denylist by another name. Stop,
+  name the structural property being violated, and fix that instead.
+- **A moved or re-scoped `try` invalidates every claim made about it.** When a
+  fix hoists a call across a guard boundary or changes call order, re-audit the
+  surrounding TSDoc and re-run any leak/`cause` audit from scratch — do not
+  carry the previous round's clean result forward. A4 shipped two regressions
+  this way: a `cause` chained around `JSON.stringify` leaked caller property
+  paths, and moving `JSON.stringify` ahead of `canonicalJsonHash` turned a loud
+  non-finite rejection into a silent `null` substitution.
 - **Parse untrusted text (caller input, file/HTTP/SDK payloads, model output)
   with a string-first approach** (`indexOf`/`slice`/`startsWith`/`codePointAt`)
   where it suffices; when a regex is the right tool, keep it structurally

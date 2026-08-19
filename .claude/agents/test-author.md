@@ -338,3 +338,20 @@ expect(new Set(names).size).toBe(names.length);
   its shape, and update every pin in the same pass — stale pins are silent
   until GREEN and cost a follow-up micro-pass each (three in the 2026-08-14
   m3l-cli build-out).
+
+## Ordering and precedence assertions
+
+A test whose name asserts a **precedence** ("X wins over Y", "checked before")
+must make **both arms reachable in that test's own setup**. Otherwise the losing
+branch cannot fire and the test passes identically under the inverted
+implementation — a tautology wearing a guarantee's name. Establish the
+precondition that makes Y possible, then assert X.
+
+`core/checkpoint` shipped exactly this defect: "both checksum and fingerprint are
+wrong → `ERR_CHECKPOINT_CORRUPT` (integrity wins over meaning)" built its store
+with **no** `definition`, so the fingerprint branch could never fire
+(`docs/logs/2026-08-19-a4-checkpoint-fingerprint.md`).
+
+The same check applies to any test that passes on the pre-implementation code: it
+is a regression lock, not a proof, until the feature exists — say so in a comment,
+and confirm after GREEN that it still discriminates.
