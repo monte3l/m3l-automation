@@ -112,13 +112,69 @@ Lint caught a third defect independently — the sanitizer's fallback would have
 stringified a non-string as `"[object Object]"`, corrupting the very field it
 exists to sanitize.
 
-### 6. Two test defects, one of which was passing vacuously
+### 5b. The adversarial refute pass broke the fix — and was right to
+
+The first fix round was reviewed by five confirmatory spokes and passed. A
+**mandatory adversarial refute pass** then broke it, making four for four
+against `core/diagnostics`.
+
+What it found that five confirmatory reviews and the hub had all missed:
+
+- **The allowlist covered four of seven fields.** `code`, `origin` and
+  `retryable` were copied raw. `M3LSerializedError.code` is declared
+  `readonly code?: string` — unbounded caller text reachable from a plain,
+  type-checking call — and a planted secret in it reached disk verbatim,
+  along with an arbitrary object, a `__proto__` data key, and an unscrubbed
+  presigned-URL signature in `origin`.
+- **The parity argument the fix rested on was false.** `failure.chain` never
+  carries a caller-controlled `code`: `serializeErrorChain` drops it even when
+  set on a real `Error`. So "recovery now matches failure" was not the safety
+  argument it looked like.
+- **The fix had introduced a fresh regression** — the degrade path began
+  discarding an explicit `input.exitCode`, contradicting its documented
+  "always wins".
+- It independently caught the `pnpm build` failure below.
+
+It also **confirmed the cross-run reset genuinely closed**, holding against
+eight vectors including both `createLambdaHandler` invocations, a throwing
+run, an aborted run, a dry run, and recording from `onCleanup`.
+
+**Lesson:** a confirmatory review answers "does this look right?"; a refute
+pass answers "can I break it?" Only the second one found either defect. On a
+security-sensitive surface, the refute pass is not optional polish — it is the
+step that works.
+
+### 5c. `pnpm typecheck` cannot catch what `pnpm build` catches
+
+The additive `as const satisfies` formulation for `M3LErrorExitCode` passed
+`pnpm typecheck` and failed `pnpm build` with TS9010. `isolatedDeclarations` is
+deliberately set only in `tsconfig.build.json`
+(`tsconfig.base.json:20-23` documents why), so the two commands check
+structurally different things. Verifying with typecheck alone pushed a broken
+build to the pre-push gate.
+
+The additive form could not satisfy both constraints — the const is pulled into
+the emitted `.d.ts` by `typeof …[number]`, and any annotation broad enough to
+write discards the literal inference. Resolved with the pinned-`Exclude` form
+plus a compile-time pin, **verified to fire** by temporarily adding a dummy
+registry code.
+
+**Lesson:** for any change touching exported types, `pnpm build` is a distinct
+gate from `pnpm typecheck`, not a slower version of it.
+
+### 6. Three test defects, all passing vacuously
 
 - Assertions built on `Extract<>` over an intersection-with-union resolved to
   `never`, so the subjects passed vacuously. **The control assertions caught
   it** — they were requested precisely for this, and they earned their keep.
   The cause is worth remembering: the third report arm's `outcome` is a
   three-literal union, so `Extract<…, { outcome: "success" }>` matches nothing.
+- Three assertions on `origin` and `retryable` passed trivially: those fields
+  are **omitted** when invalid rather than placeholder-substituted, so "the
+  planted secret is absent" held regardless of whether validation worked at
+  all. Positive gate tests now assert a valid `origin` and a real boolean
+  `retryable` survive, so the tests can tell correct validation from blanket
+  omission.
 - The leak tests planted a **bare, context-free token**. This repo's redactor is
   pattern- and key-based (`key=value`, known key names, URL signatures), so
   neither `recovery[].error` _nor_ `failure.chain` catches that — verified by
@@ -146,4 +202,13 @@ Prettier had done nothing — the implementation had changed underneath it.
   empty `avg`/`min`/`max` column yields `actual: null` forced to
   `breached: false`, indistinguishable from a genuine pass. Out of A3's scope.
 - Recovery entries are capped by **count**, not size; one entry can still be
-  large.
+  large. The refute pass wrote a **95 MB** `run-report.json` from 100 entries
+  carrying 1 MB messages each.
+- `M3LScript.recovery`'s snapshot protects the returned array and each entry's
+  `error` array, but the `M3LSerializedError` elements are shared, so
+  `recovery[0].error[0].message = …` still reaches stored state. The TSDoc is
+  scoped accurately and does not over-claim, so this is a known limit rather
+  than a false guarantee — but it is worth closing.
+- `build()` applies no runtime narrowing to `outcome`, `correlationId` or
+  `stage`, so a hostile `build({ outcome: "…" })` writes that string verbatim
+  into the persisted `outcome`. Pre-existing, wider than A3.
