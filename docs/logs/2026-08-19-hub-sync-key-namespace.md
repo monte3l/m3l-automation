@@ -7,7 +7,7 @@ every `sync:hub` run emitted. It ran through the hub-and-spoke model (hub writes
 `bin/**`, `test-author` writes `bin/tests/**`), and records what shipped, what
 matched the plan, what diverged, and the durable lessons.
 
-Plan of record: [`docs/plans/2026-08-19-hub-sync-key-namespace.md`](../plans/2026-08-19-hub-sync-key-namespace.md)
+Plan of record: [`docs/plans/archive/2026-08-19-hub-sync-key-namespace.md`](../plans/archive/2026-08-19-hub-sync-key-namespace.md)
 
 ## Summary
 
