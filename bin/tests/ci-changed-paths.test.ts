@@ -60,6 +60,28 @@ describe("classifyChangedPaths", () => {
     expect(flags.md).toBe(true);
   });
 
+  test("sets ts true for the committed exports-map snapshot", () => {
+    const flags = classifyChangedPaths([
+      "packages/m3l-common/api-exports.json",
+    ]);
+    expect(flags.ts).toBe(true);
+  });
+
+  test("sets ts true for knip.json", () => {
+    const flags = classifyChangedPaths(["knip.json"]);
+    expect(flags.ts).toBe(true);
+  });
+
+  test("sets ts true for .jscpd.json", () => {
+    const flags = classifyChangedPaths([".jscpd.json"]);
+    expect(flags.ts).toBe(true);
+  });
+
+  test("sets md true for .markdownlint.json", () => {
+    const flags = classifyChangedPaths([".markdownlint.json"]);
+    expect(flags.md).toBe(true);
+  });
+
   test("a path matching no predicate returns all-false", () => {
     const flags = classifyChangedPaths([".gitignore"]);
     expect(flags).toEqual({

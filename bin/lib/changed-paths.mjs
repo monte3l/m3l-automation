@@ -44,7 +44,15 @@ const PREDICATES = {
     path === "turbo.json" ||
     path.endsWith("tsconfig.json") ||
     path.endsWith("tsconfig.base.json") ||
-    path.endsWith("tsconfig.build.json"),
+    path.endsWith("tsconfig.build.json") ||
+    // The committed exports-map snapshot check:api/check:exports-semver diff
+    // against — matches no other predicate (not .ts, not package.json).
+    path === "packages/m3l-common/api-exports.json" ||
+    // Tool config files whose owning check has no other way to notice a
+    // config-only edit: knip.json configures `pnpm knip`, .jscpd.json
+    // configures `pnpm check:dup` — both gated on `ts`.
+    path === "knip.json" ||
+    path === ".jscpd.json",
   deps: (path) =>
     path === "package.json" ||
     path.endsWith("/package.json") ||
@@ -66,7 +74,11 @@ const PREDICATES = {
     path === "CLAUDE.md" ||
     path === "README.md" ||
     path.endsWith("/README.md"),
-  md: (path) => path.endsWith(".md"),
+  md: (path) =>
+    path.endsWith(".md") ||
+    // rumdl reads this file as its config (markdownlint-compatible format);
+    // configures `pnpm lint:md`, gated on `md`.
+    path === ".markdownlint.json",
 };
 
 /**

@@ -205,12 +205,6 @@ jobs:
       - name: Check barrel re-exports (scaffold)
         run: pnpm check:scaffold
 
-      # Scaffold seam: every src/core|aws/<mod>/index.ts must carry its TDD test
-      # file (tests/<mod>.test.ts) and a row in docs/implementation-status.md.
-      # Backstop for the scaffolding-submodules scaffolding skill.
-      - name: Check scaffold seam (test + status row)
-        run: pnpm check:scaffold-seam
-
   test:
     name: Test
     needs: changes
@@ -246,13 +240,6 @@ jobs:
       # `vitest run` alone never evaluates them.
       - name: Test (with coverage gate)
         run: pnpm test:coverage
-
-      # Per-file test counts recorded in docs/implementation-status.md must match
-      # the live suite. Derived from `vitest list` — a collection pass, not a
-      # full run (see bin/check-test-counts.mjs) — so this does not duplicate
-      # the coverage gate above.
-      - name: Check test counts
-        run: pnpm check:test-counts
 
   gates:
     name: Governance gates
@@ -357,6 +344,25 @@ jobs:
       - name: Check barrel vs docs exports
         if: needs.changes.outputs.ts == 'true' || needs.changes.outputs.docs == 'true'
         run: pnpm check:doc-exports
+
+      # Scaffold seam: every src/core|aws/<mod>/index.ts must carry its TDD test
+      # file (tests/<mod>.test.ts) and a row in docs/implementation-status.md.
+      # Backstop for the scaffolding-submodules scaffolding skill. Moved here
+      # from the `build` lane (it reads src/ and docs/ directly, never dist/)
+      # — gated on `ts` OR `docs`, same reasoning as the step above.
+      - name: Check scaffold seam (test + status row)
+        if: needs.changes.outputs.ts == 'true' || needs.changes.outputs.docs == 'true'
+        run: pnpm check:scaffold-seam
+
+      # Per-file test counts recorded in docs/implementation-status.md must match
+      # the live suite. Derived from `vitest list` — a collection pass, not a
+      # full run (see bin/check-test-counts.mjs) — independent of the `test`
+      # lane's coverage run, so it doesn't need to live in that lane. Moved
+      # here from `test` — gated on `ts` OR `docs` since it validates a doc
+      # file against src-derived counts, either side can break it alone.
+      - name: Check test counts
+        if: needs.changes.outputs.ts == 'true' || needs.changes.outputs.docs == 'true'
+        run: pnpm check:test-counts
 
       # Consumer-script scaffold: every scripts/<name> package must match the
       # ADR-0022 shape (modular src/, package contract, root tsconfig ref,
