@@ -114,6 +114,7 @@ import {
 import type {
   M3LBreadcrumb,
   M3LBreadcrumbAttachOptions,
+  M3LBreadcrumbSource,
   M3LBreadcrumbTrailOptions,
   M3LCollectDiagnosticsOptions,
   M3LConfigFingerprintEntry,
@@ -736,6 +737,113 @@ describe("M3LBreadcrumbTrail — generic fallback for unknown/foreign events", (
 });
 
 // =============================================================================
+// M3LBreadcrumbTrail — "pipeline:phase" (A6 pipeline trace, ADR-0035 §Tracing)
+//
+// `core/pipeline`'s `describe` callback is typed
+// `Readonly<Record<string, M3LBreadcrumbScalar>>` (docs/reference/core/pipeline.md
+// § Tracing), and `M3LBreadcrumbScalar` is `string | number | boolean | null`
+// (breadcrumbs.ts line 65) — a `describe` return may legitimately carry
+// `null`. Recorded under an event name absent from `SUMMARIZERS`, that `null`
+// would silently vanish through `summarizeGenericFallback`, which keeps only
+// `string | number | boolean`. A registered "pipeline:phase" summarizer must
+// keep `null` alongside the other three scalar kinds.
+// =============================================================================
+describe('M3LBreadcrumbTrail — "pipeline:phase" (A6 pipeline trace)', () => {
+  test("bucket: null survives the pipeline:phase summarizer (load-bearing: M3LBreadcrumbScalar includes null)", () => {
+    const trail = new M3LBreadcrumbTrail();
+    trail.record("M3LOperationPipeline", "pipeline:phase", {
+      phase: "settings",
+      durationMs: 3,
+      operation: "list",
+      bucket: null,
+    });
+    const [entry] = trail.entries();
+    expect(entry?.payload).toEqual({
+      phase: "settings",
+      durationMs: 3,
+      operation: "list",
+      bucket: null,
+    });
+  });
+
+  // Control proving the gap this registration closes is real and specific:
+  // the SAME payload, recorded under an event name absent from the registry,
+  // still drops `bucket`. This is current, unchanged `summarizeGenericFallback`
+  // behavior — it must stay true, since it demonstrates that registering
+  // "pipeline:phase" (not a change to the generic fallback) is what fixes the
+  // load-bearing case above.
+  test("[control] the identical payload under an UNREGISTERED event name drops the null key (generic-fallback gap, unchanged)", () => {
+    const trail = new M3LBreadcrumbTrail();
+    trail.record("custom-source", "custom:tick", {
+      phase: "settings",
+      durationMs: 3,
+      operation: "list",
+      bucket: null,
+    });
+    const [entry] = trail.entries();
+    expect(entry?.payload).toEqual({
+      phase: "settings",
+      durationMs: 3,
+      operation: "list",
+    });
+    expect(entry?.payload).not.toHaveProperty("bucket");
+  });
+
+  test("pipeline:phase keeps string/number/boolean/null and drops non-scalars (nested object, array-of-objects, function)", () => {
+    const trail = new M3LBreadcrumbTrail();
+    trail.record("M3LOperationPipeline", "pipeline:phase", {
+      phase: "persist",
+      durationMs: 12,
+      operation: "delete",
+      failed: true,
+      bucket: null,
+      settings: { nested: true },
+      items: [{ id: 1 }, { id: 2 }],
+      handler: () => {},
+    });
+    const [entry] = trail.entries();
+    expect(entry?.payload).toEqual({
+      phase: "persist",
+      durationMs: 12,
+      operation: "delete",
+      failed: true,
+      bucket: null,
+    });
+    assertAllScalarLeaves(entry?.payload ?? {});
+    expect(JSON.parse(JSON.stringify(entry?.payload))).toEqual(entry?.payload);
+  });
+
+  test("a sensitive key/value carried through a describe() return is still redacted by pipeline:phase", () => {
+    const trail = new M3LBreadcrumbTrail();
+    trail.record("M3LOperationPipeline", "pipeline:phase", {
+      phase: "settings",
+      durationMs: 3,
+      apiKey: "drop-me",
+    });
+    const [entry] = trail.entries();
+    expect(entry?.payload["apiKey"]).toBe("[REDACTED]");
+    expect(JSON.stringify(entry?.payload)).not.toContain("drop-me");
+  });
+
+  test("a hostile payload (throwing getter) recorded under pipeline:phase never throws, per record()'s never-throw guarantee", () => {
+    const trail = new M3LBreadcrumbTrail();
+    const hostilePayload: Record<string, unknown> = {};
+    Object.defineProperty(hostilePayload, "phase", {
+      get(): string {
+        throw new Error("boom");
+      },
+      enumerable: true,
+    });
+
+    expect(() =>
+      trail.record("M3LOperationPipeline", "pipeline:phase", hostilePayload),
+    ).not.toThrow();
+    const [entry] = trail.entries();
+    expect(entry?.event).toBe("pipeline:phase");
+  });
+});
+
+// =============================================================================
 // M3LBreadcrumbTrail.attach() / detach
 // =============================================================================
 describe("M3LBreadcrumbTrail.attach() / detach", () => {
@@ -811,6 +919,20 @@ describe("M3LBreadcrumbTrail.attach() / detach", () => {
     expect(trail.entries()[0]?.source).toBe("my-ticker");
   });
 
+  test("pipeline:phase is included in the default attach() event list (fake emitter records on() registrations)", () => {
+    const registeredEvents: string[] = [];
+    const fakeSource: M3LBreadcrumbSource = {
+      on: (event) => {
+        registeredEvents.push(event);
+      },
+      off: () => {},
+    };
+    const trail = new M3LBreadcrumbTrail();
+    trail.attach(fakeSource);
+
+    expect(registeredEvents).toContain("pipeline:phase");
+  });
+
   test("attaches to a real M3LPoller and records poll:attempt/poll:wait/poll:success", async () => {
     let attempts = 0;
     const poller = new M3LPoller({
@@ -839,7 +961,7 @@ describe("M3LBreadcrumbTrail.attach() / detach", () => {
   });
 
   // A5 no-progress detection (docs/reference/core/polling.md): the registry's
-  // 19 built-in summarizers include `poll:no-progress`/`retry:no-progress`, so
+  // 20 built-in summarizers include `poll:no-progress`/`retry:no-progress`, so
   // a DEFAULT `attach(poller)`/`attach(runner)` — no explicit `events` list —
   // must already capture them, keeping `attempt` and `stalledAttempts`.
   test("attach(poller) with no explicit events list still captures poll:no-progress, keeping attempt and stalledAttempts", async () => {
