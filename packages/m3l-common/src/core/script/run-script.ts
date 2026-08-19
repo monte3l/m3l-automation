@@ -170,13 +170,26 @@ function environmentEntry(
   };
 }
 
-/** Builds the persisted report input for a successful (or dry-run) outcome. */
+/**
+ * Builds the persisted report input for the non-throwing path: `"success"`,
+ * `"dry-run"`, or `"partial"`.
+ *
+ * Outcome precedence:
+ * - One or more absorbed recovery entries → `"partial"` (beats `"dry-run"`).
+ * - No entries, dry run → `"dry-run"`.
+ * - No entries, normal run → `"success"`.
+ *
+ * A propagating throw never reaches this function — that path is handled by
+ * {@link buildFailureInput}.
+ */
 function buildSuccessInput(
   script: M3LScript,
   startedAt: Date,
   options: M3LRunScriptOptions | undefined,
 ): M3LRunReportInput {
   const dryRun = options?.dryRun ?? false;
+  const recoveryEntries = script.recovery;
+  const isPartial = recoveryEntries.length > 0;
   // A dry run skips stage 9 (file archival) entirely, so `getLastArchiveReport()`
   // — never reset per run — would otherwise still return a PRIOR real run's
   // archive manifest on an instance that already ran once. Omit `archive`
@@ -186,10 +199,14 @@ function buildSuccessInput(
     script: script.metadata,
     correlationId: script.correlationId ?? UNRESOLVED_CORRELATION_ID,
     startedAt,
-    outcome: dryRun ? "dry-run" : "success",
+    outcome: isPartial ? "partial" : dryRun ? "dry-run" : "success",
     ...timelineEntry(options?.trail),
     ...(archive !== undefined && { archive }),
     ...environmentEntry(script),
+    ...(isPartial && {
+      recovery: recoveryEntries,
+      recoveryTotal: script.recoveryTotal,
+    }),
   };
 }
 
@@ -351,6 +368,13 @@ export async function runScript(
 
   try {
     await script.run(mainFn, runOptions);
+
+    // Partial outcome: a run that absorbed one or more per-item failures exits
+    // PARTIAL (6), never 0 — set the exit code first, before any report work,
+    // so a throw in the reporting path can never cost the scheduler signal.
+    if (script.recovery.length > 0) {
+      process.exitCode = M3L_EXIT_CODES.PARTIAL;
+    }
 
     if (reporter !== undefined) {
       // `script.runStartedAt` is co-located with stage-9 archival's own

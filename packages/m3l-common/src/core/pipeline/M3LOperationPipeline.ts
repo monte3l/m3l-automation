@@ -9,6 +9,7 @@
  */
 
 import { validatePipelineOptions } from "../../internal/pipeline/validate.js";
+import { M3LPipelineInvalidOptionError } from "../../internal/pipeline/errors.js";
 import { M3LError } from "../errors/index.js";
 import { M3LConfigAccessor } from "../config/M3LConfigAccessor.js";
 import { confirmDestructive } from "../prompt/M3LDestructiveGate.js";
@@ -22,9 +23,18 @@ import type {
 } from "./types.js";
 
 /**
- * Runs the fixed ten-phase order documented in `docs/reference/core/pipeline.md`
+ * Narrows a `readonly T[]` to a non-empty tuple when the array contains at
+ * least one element. Used in the recovery phase to earn the `"partial"` arm's
+ * type without an `as` assertion while preserving reference identity.
+ */
+function isNonEmpty<T>(arr: readonly T[]): arr is readonly [T, ...T[]] {
+  return arr.length > 0;
+}
+
+/**
+ * Runs the fixed eleven-phase order documented in `docs/reference/core/pipeline.md`
  * (accessor, operation, settings, guards, prepare, gate, dispatch, persist,
- * finalize, outcome) over a script-supplied
+ * finalize, recovery, outcome) over a script-supplied
  * {@link M3LOperationPipelineOptions}. The script keeps everything genuinely
  * script-specific — the operation list, the settings resolver, the handler
  * functions, the error codes, and log text — while the engine owns the
@@ -112,7 +122,7 @@ export class M3LOperationPipeline<
   }
 
   /**
-   * Runs the ten-phase pipeline over `deps` and resolves the outcome.
+   * Runs the eleven-phase pipeline over `deps` and resolves the outcome.
    *
    * All per-run state lives in this call's own frame — nothing is written to
    * the instance — so one pipeline instance is reusable across sequential
@@ -120,8 +130,8 @@ export class M3LOperationPipeline<
    *
    * @param deps - The dependency bag; must extend {@link
    *   M3LOperationPipelineBaseDeps}.
-   * @returns The completed or declined outcome.
-   * @throws Any error from phases 1–9 propagates unmodified, except a decline
+   * @returns The completed, partial, or declined outcome.
+   * @throws Any error from phases 1–10 propagates unmodified, except a decline
    *   handled by `onDecline: { kind: "soft-land" }`.
    */
   async run(deps: TDeps): Promise<M3LOperationPipelineOutcome<TOp, TResult>> {
@@ -168,7 +178,46 @@ export class M3LOperationPipeline<
       await options.finalize(result, settings, deps, operation);
     }
 
-    // Phase 10: outcome.
+    // Phase 10: recovery — only invoked when the option is configured.
+    // A non-empty array classifies the run as "partial"; an empty array (or no
+    // callback) resolves as "completed". The engine never inspects `result` to
+    // decide — only the handler callback knows what "an item" means. A throw
+    // here propagates unmodified (no swallow, wrap, or re-code).
+    if (options.recovery) {
+      const recoveryEntries = options.recovery(
+        result,
+        settings,
+        deps,
+        operation,
+      );
+      // P1 guard: the callback must return an array. A non-array return (e.g.
+      // from a JavaScript caller or a TypeScript assertion) would otherwise let
+      // `.length` access below produce a bare TypeError, violating the rule
+      // that every throw from library code must be an M3LError subclass.
+      if (!Array.isArray(recoveryEntries)) {
+        throw new M3LPipelineInvalidOptionError(
+          "M3LOperationPipeline: 'recovery' callback must return a readonly array of M3LRunRecoveryEntry",
+        );
+      }
+      // P2: earn the partial arm — a first entry must be present for the run
+      // to be classified "partial". An empty array falls through to "completed",
+      // matching the runtime contract. The type predicate narrows the array to
+      // the non-empty tuple type without an unsafe assertion and preserves the
+      // original array reference so callers can compare by identity.
+      if (isNonEmpty(recoveryEntries)) {
+        return {
+          status: "partial",
+          operation,
+          result,
+          recovery: recoveryEntries,
+        };
+      }
+    }
+
+    // Phase 11: outcome — completed when no recovery entries were returned.
+    // The `recovery` key is intentionally omitted (not set to undefined) so
+    // Object.hasOwn(outcome, "recovery") === false on a completed run
+    // (exactOptionalPropertyTypes requires absence, not explicit undefined).
     return { status: "completed", operation, result };
   }
 

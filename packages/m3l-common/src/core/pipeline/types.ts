@@ -13,6 +13,7 @@ import type {
   M3LDestructiveTarget,
   M3LDestructiveTargetPredicate,
 } from "../prompt/M3LDestructiveGate.js";
+import type { M3LRunRecoveryEntry } from "../diagnostics/index.js";
 
 /**
  * The minimum dependency shape every {@link M3LOperationPipeline} run
@@ -376,6 +377,30 @@ interface M3LOperationPipelineCoreOptions<
     deps: TDeps,
     operation: TOp,
   ) => void | Promise<void>;
+  /**
+   * Runs after `finalize` and returns the per-item failures the handler
+   * absorbed during this run. An empty array means every item succeeded
+   * (the outcome resolves as `"completed"`); a non-empty array means some
+   * items were handled but at least one failed (the outcome resolves as
+   * `"partial"`).
+   *
+   * The engine never inspects `result` to decide classification — only this
+   * callback knows what "an item" means for the operation. A pipeline that
+   * declares no `recovery` callback can never resolve `"partial"`, and its
+   * behavior is byte-identical to before this phase existed.
+   *
+   * A throw from this callback propagates to the caller unmodified — the
+   * engine never swallows, wraps, or re-codes errors raised here.
+   *
+   * @param operation - The operation that was dispatched. Appended last,
+   *   mirroring the `persist` and `finalize` argument order.
+   */
+  readonly recovery?: (
+    result: TResult,
+    settings: TSettings,
+    deps: TDeps,
+    operation: TOp,
+  ) => readonly M3LRunRecoveryEntry[];
 }
 
 /**
@@ -463,34 +488,104 @@ export type M3LOperationPipelineOptions<
       });
 
 /**
- * The value resolved by {@link M3LOperationPipeline.run}.
+ * The fields shared by every arm of {@link M3LOperationPipelineOutcome}: the
+ * resolved operation name and the result value. Its role is as a composition
+ * primitive: {@link M3LOperationPipelineOutcome} is defined as
+ * `M3LOperationPipelineOutcomeBase & (arm_A | arm_B | arm_C)`, so every arm
+ * of the discriminated union automatically carries `operation` and `result`
+ * without those fields being repeated on each arm.
  *
- * `status` makes a declined run first-class: a caller that cares can branch
- * on it, while a thin wrapper that preserves a legacy signature can return
- * `outcome.result` unconditionally regardless of `status`.
+ * Accessing `outcome.result` or `outcome.operation` unconditionally — without
+ * first narrowing on `status` — is valid on the union itself
+ * ({@link M3LOperationPipelineOutcome}) because the base fields are present
+ * on every arm. Type against the union directly for that use case; reserve
+ * this base type for building a richer outcome type that must share the same
+ * common fields.
  *
  * @typeParam TOp - The closed operation-name union.
- * @typeParam TResult - The result type carried by both a completed and a
- *   soft-landed declined run.
+ * @typeParam TResult - The result type every arm carries.
+ *
+ * @example
+ * ```ts
+ * import type { Core } from "@m3l-automation/m3l-common";
+ *
+ * // Extend the base to add cross-cutting fields that every arm should carry.
+ * interface TimedOutcome<TOp extends string, TResult>
+ *   extends Core.M3LOperationPipelineOutcomeBase<TOp, TResult> {
+ *   /** Wall-clock milliseconds consumed by the run. *\/
+ *   readonly elapsedMs: number;
+ * }
+ * ```
+ */
+export interface M3LOperationPipelineOutcomeBase<TOp extends string, TResult> {
+  /** The operation that was resolved from config for this run. */
+  readonly operation: TOp;
+  /** The handler's result, or the decline policy's soft-landed result. */
+  readonly result: TResult;
+}
+
+/**
+ * The value resolved by {@link M3LOperationPipeline.run}.
+ *
+ * A discriminated union on `status` — three arms:
+ * - `"completed"`: every item succeeded; `recovery` is absent.
+ * - `"partial"`: the handler absorbed some failures; `recovery` holds them.
+ * - `"declined"`: a soft-landed destructive-gate decline; no handler ran;
+ *   `recovery` is absent.
+ *
+ * The base fields (`operation` and `result`) are common to all three arms via
+ * {@link M3LOperationPipelineOutcomeBase}, so a thin wrapper that preserves a
+ * legacy signature can return `outcome.result` unconditionally regardless of
+ * `status`.
+ *
+ * @typeParam TOp - The closed operation-name union.
+ * @typeParam TResult - The result type carried by every arm.
  *
  * @example
  * ```ts
  * import type { Core } from "@m3l-automation/m3l-common";
  *
  * function summarize(
- *   outcome: Core.M3LOperationPipelineOutcome<"list", { readonly count: number }>,
+ *   outcome: Core.M3LOperationPipelineOutcome<"list" | "delete", { readonly count: number }>,
  * ): string {
+ *   if (outcome.status === "partial") {
+ *     return `partial: ${String(outcome.recovery.length)} failures`;
+ *   }
  *   return outcome.status === "declined"
  *     ? `declined before '${outcome.operation}'`
  *     : `completed '${outcome.operation}' with ${String(outcome.result.count)}`;
  * }
  * ```
  */
-export interface M3LOperationPipelineOutcome<TOp extends string, TResult> {
-  /** The operation that was resolved from config for this run. */
-  readonly operation: TOp;
-  /** Whether the run dispatched to a handler or soft-landed on a decline. */
-  readonly status: "completed" | "declined";
-  /** The handler's result, or the decline policy's soft-landed result. */
-  readonly result: TResult;
-}
+export type M3LOperationPipelineOutcome<
+  TOp extends string,
+  TResult,
+> = M3LOperationPipelineOutcomeBase<TOp, TResult> &
+  (
+    | {
+        /** The run dispatched and some items failed — at least one recovery entry. */
+        readonly status: "partial";
+        /**
+         * The per-item failures the `recovery` callback returned.
+         * A non-empty tuple — the engine only produces this arm when the
+         * callback's return contains at least one entry; an empty array yields
+         * `status: "completed"` instead.
+         */
+        readonly recovery: readonly [
+          M3LRunRecoveryEntry,
+          ...M3LRunRecoveryEntry[],
+        ];
+      }
+    | {
+        /** The run dispatched and every item succeeded. */
+        readonly status: "completed";
+        /** Absent on a completed run — do not set to `undefined`. */
+        readonly recovery?: undefined;
+      }
+    | {
+        /** A soft-landed destructive-gate decline; no handler ran. */
+        readonly status: "declined";
+        /** Absent on a declined run — do not set to `undefined`. */
+        readonly recovery?: undefined;
+      }
+  );

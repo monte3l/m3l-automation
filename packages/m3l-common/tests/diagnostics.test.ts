@@ -153,7 +153,7 @@ describe("M3LErrorClassification type", () => {
 // core/diagnostics/exit-codes.ts
 // ---------------------------------------------------------------------------
 describe("M3L_EXIT_CODES", () => {
-  test("has the six documented numeric values", () => {
+  test("has the seven documented numeric values (including PARTIAL: 6)", () => {
     expect(M3L_EXIT_CODES).toEqual({
       SUCCESS: 0,
       UNCLASSIFIED: 1,
@@ -161,22 +161,52 @@ describe("M3L_EXIT_CODES", () => {
       EXTERNAL: 3,
       LIBRARY: 4,
       INTERRUPTED: 5,
+      PARTIAL: 6,
     });
   });
 
   test("M3LExitCode is the numeric union of its values", () => {
-    expectTypeOf<M3LExitCode>().toEqualTypeOf<0 | 1 | 2 | 3 | 4 | 5>();
+    expectTypeOf<M3LExitCode>().toEqualTypeOf<0 | 1 | 2 | 3 | 4 | 5 | 6>();
+  });
+
+  test("PARTIAL is exactly 6", () => {
+    expect(M3L_EXIT_CODES.PARTIAL).toBe(6);
   });
 });
 
 describe("M3LErrorExitCode", () => {
-  test("is exactly the 1|2|3|4 subset — never 0 (SUCCESS) or 5 (INTERRUPTED)", () => {
+  // Contract item 6 regression guard: M3LErrorExitCode is derived by
+  // Exclude<M3LExitCode, SUCCESS | INTERRUPTED | PARTIAL>. Adding PARTIAL (6)
+  // to M3L_EXIT_CODES would silently widen M3LErrorExitCode to 1|2|3|4|6
+  // unless PARTIAL is also subtracted. This assertion proves it stays exactly
+  // 1|2|3|4 even after PARTIAL is added to the registry.
+  test("is exactly the 1|2|3|4 subset — never 0 (SUCCESS), 5 (INTERRUPTED), or 6 (PARTIAL)", () => {
     expectTypeOf<M3LErrorExitCode>().toEqualTypeOf<1 | 2 | 3 | 4>();
   });
 
   test("mapErrorToExitCode()'s return type is M3LErrorExitCode, not the wider `number`", () => {
     expectTypeOf(mapErrorToExitCode).returns.toEqualTypeOf<M3LErrorExitCode>();
     expectTypeOf(mapErrorToExitCode).returns.not.toEqualTypeOf<number>();
+  });
+
+  test("mapErrorToExitCode never returns 6 (PARTIAL) for any thrown value", () => {
+    // PARTIAL is set by the caller (for a run that absorbed per-item failures),
+    // never derived from an error — same pattern as SUCCESS and INTERRUPTED.
+    const inputs: unknown[] = [
+      null,
+      undefined,
+      "a string",
+      42,
+      new Error("generic"),
+      new M3LError("lib fault", { code: "ERR_S3_OPERATION" }),
+      new M3LOperationAbortedError("aborted"),
+      { origin: "caller" },
+      { origin: "external" },
+      { origin: "library" },
+    ];
+    for (const input of inputs) {
+      expect(mapErrorToExitCode(input)).not.toBe(6);
+    }
   });
 });
 

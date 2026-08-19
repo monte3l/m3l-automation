@@ -12,9 +12,10 @@ import { M3LError } from "../errors/index.js";
 /**
  * The library's exit-code registry, keyed by category.
  *
- * `SUCCESS` and `INTERRUPTED` are never produced by {@link mapErrorToExitCode}
- * — they are set directly by the phase-4 `runScript` lifecycle (a clean run,
- * or a signal-driven interruption) rather than derived from a caught error.
+ * `SUCCESS`, `INTERRUPTED`, and `PARTIAL` are never produced by
+ * {@link mapErrorToExitCode} — they are set directly by the caller (a clean
+ * run, a signal-driven interruption, or a run that absorbed per-item failures)
+ * rather than derived from a caught error.
  *
  * @example
  * ```ts
@@ -36,6 +37,8 @@ export const M3L_EXIT_CODES = {
   LIBRARY: 4,
   /** The run was interrupted by a process signal. */
   INTERRUPTED: 5,
+  /** The run completed with absorbed per-item failures — neither success nor failure. */
+  PARTIAL: 6,
 } as const;
 
 /**
@@ -54,10 +57,10 @@ export type M3LExitCode = (typeof M3L_EXIT_CODES)[keyof typeof M3L_EXIT_CODES];
 
 /**
  * The subset of {@link M3LExitCode} that {@link mapErrorToExitCode} can
- * actually produce. `SUCCESS` (`0`) and `INTERRUPTED` (`5`) are set directly
- * by the `runScript` lifecycle rather than derived from a caught error (see
- * {@link M3L_EXIT_CODES}), so this narrower union excludes them — making the
- * documented "never returns 0 or 5" invariant checkable by the type system,
+ * actually produce. `SUCCESS` (`0`), `INTERRUPTED` (`5`), and `PARTIAL` (`6`)
+ * are set directly by the caller rather than derived from a caught error (see
+ * {@link M3L_EXIT_CODES}), so this narrower union excludes all three — making
+ * the "never returns 0, 5, or 6" invariant checkable by the type system,
  * not just by convention.
  *
  * @example
@@ -71,8 +74,31 @@ export type M3LExitCode = (typeof M3L_EXIT_CODES)[keyof typeof M3L_EXIT_CODES];
  */
 export type M3LErrorExitCode = Exclude<
   M3LExitCode,
-  typeof M3L_EXIT_CODES.SUCCESS | typeof M3L_EXIT_CODES.INTERRUPTED
+  | typeof M3L_EXIT_CODES.SUCCESS
+  | typeof M3L_EXIT_CODES.INTERRUPTED
+  | typeof M3L_EXIT_CODES.PARTIAL
 >;
+
+/**
+ * Compile-time pin: fails to compile (TS2322) if a future
+ * {@link M3L_EXIT_CODES} entry widens {@link M3LErrorExitCode} beyond the
+ * four error codes. `Exclude` is fail-open — a new registry code joins the
+ * union silently, because widening a return type is not a TypeScript error at
+ * any call site. This pin converts that silent widening into a build failure:
+ * when the conditional resolves to `never`, assigning `true` is TS2322.
+ *
+ * Expressed through the registry (`typeof M3L_EXIT_CODES.*`) so it is
+ * self-maintaining and carries no bare numeric literals. The `_` prefix
+ * satisfies `varsIgnorePattern: "^_"` in `no-unused-vars` without a
+ * suppression comment.
+ */
+const _m3lErrorExitCodePin: M3LErrorExitCode extends
+  | typeof M3L_EXIT_CODES.UNCLASSIFIED
+  | typeof M3L_EXIT_CODES.CONFIG_USAGE
+  | typeof M3L_EXIT_CODES.EXTERNAL
+  | typeof M3L_EXIT_CODES.LIBRARY
+  ? true
+  : never = true;
 
 /** Safely reads a string-valued own property from an unknown value. */
 function readStringProperty(value: unknown, key: string): string | undefined {
@@ -159,8 +185,8 @@ function resolveExitCode(error: unknown): M3LErrorExitCode | undefined {
  *
  * Never throws — every read is guarded, so a hostile getter on `origin` or
  * `code` (or a circular object) still yields `1` rather than propagating.
- * Never returns `0` (`SUCCESS`) or `5` (`INTERRUPTED`): those are set
- * directly by the `runScript` lifecycle, not derived from a caught error.
+ * Never returns `0` (`SUCCESS`), `5` (`INTERRUPTED`), or `6` (`PARTIAL`):
+ * those are set directly by the caller, not derived from a caught error.
  * Never calls `process.exit()` — mapping an error to a code is a pure
  * computation; exiting the process is the caller's responsibility.
  *

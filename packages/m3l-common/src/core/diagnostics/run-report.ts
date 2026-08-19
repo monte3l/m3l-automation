@@ -27,7 +27,11 @@ import { M3LPaths, M3LPathResolutionError } from "../utils/index.js";
 import type { M3LBreadcrumb } from "./breadcrumbs.js";
 import { collectDiagnostics } from "./collect.js";
 import type { M3LDiagnosticsSnapshot, M3LPathsPort } from "./collect.js";
-import { M3L_EXIT_CODES, mapErrorToExitCode } from "./exit-codes.js";
+import {
+  M3L_EXIT_CODES,
+  isM3LErrorOrigin,
+  mapErrorToExitCode,
+} from "./exit-codes.js";
 import type { M3LSerializedError } from "./format-error.js";
 import { scrubUrlsInText, serializeErrorChain } from "./format-error.js";
 
@@ -44,6 +48,10 @@ const JSON_INDENT = 2;
 /**
  * The terminal outcome of a script run.
  *
+ * `"partial"` is produced when a run absorbed one or more per-item failures
+ * but still completed its remaining work. A partial report carries the
+ * absorbed failures as structured `recovery` entries and exits `6` (`PARTIAL`).
+ *
  * @example
  * ```ts
  * import type { M3LRunOutcome } from "@m3l-automation/m3l-common/core";
@@ -53,7 +61,8 @@ const JSON_INDENT = 2;
  * }
  * ```
  */
-export type M3LRunOutcome = "success" | "failure" | "dry-run" | "interrupted";
+export type M3LRunOutcome =
+  "success" | "failure" | "dry-run" | "interrupted" | "partial";
 
 /**
  * The failure detail embedded in an {@link M3LRunReport}, present if and
@@ -72,6 +81,58 @@ export interface M3LRunReportFailure {
   /** The flattened, serialized error-cause chain (never an array of arrays). */
   readonly chain: readonly M3LSerializedError[];
 }
+
+/**
+ * One absorbed, non-fatal per-item failure carried by a `"partial"` run
+ * report. The `error` field is the already-serialized cause chain (exactly
+ * as {@link M3LRunReportFailure.chain} is), serialized at record time so
+ * redaction happens while the failure is fresh. `item` is the caller-supplied
+ * identity of what failed; it is sanitized before being embedded in the
+ * report (URLs scrubbed, sensitive-key values redacted). `recordedAt` is an
+ * ISO-8601 timestamp the failure was absorbed.
+ *
+ * @example
+ * ```ts
+ * import type { M3LRunRecoveryEntry } from "@m3l-automation/m3l-common/core";
+ *
+ * const entry: M3LRunRecoveryEntry = {
+ *   item: "record-42",
+ *   error: [{ name: "Error", message: "parse failed" }],
+ *   recordedAt: new Date().toISOString(),
+ * };
+ * ```
+ */
+export interface M3LRunRecoveryEntry {
+  /** The caller-supplied identity of the item that failed. Sanitized before embedding. */
+  readonly item: string;
+  /**
+   * The flattened, serialized error-cause chain — the same structure
+   * {@link M3LRunReportFailure.chain} uses. Serialized at record time so
+   * redaction occurs while the failure context is still available.
+   */
+  readonly error: readonly M3LSerializedError[];
+  /** ISO-8601 timestamp when the failure was absorbed. */
+  readonly recordedAt: string;
+}
+
+/**
+ * The maximum number of {@link M3LRunRecoveryEntry} entries retained in a
+ * `"partial"` run report before the oldest are evicted — the same ring-buffer
+ * discipline and default as `M3LBreadcrumbTrail`.
+ *
+ * A batch that fails a thousand times would otherwise write a thousand full
+ * cause chains into an artifact already classified as sensitive.
+ * `recoveryTotal` records the true count of reported failures even when
+ * `recovery.length` is capped here.
+ *
+ * @example
+ * ```ts
+ * import { M3L_RECOVERY_LIMIT } from "@m3l-automation/m3l-common/core";
+ *
+ * console.log(M3L_RECOVERY_LIMIT); // 100
+ * ```
+ */
+export const M3L_RECOVERY_LIMIT = 100;
 
 /**
  * Input to {@link M3LRunReporter.build}, describing a completed (or
@@ -102,8 +163,26 @@ export interface M3LRunReportInput {
   readonly outcome: M3LRunOutcome;
   /** The named stage a failure occurred in; defaults to `"unknown"` when omitted. */
   readonly stage?: string;
-  /** The failure, when `outcome === "failure"`. Ignored for every other outcome. */
+  /**
+   * The failure, when `outcome === "failure"`. Ignored for every other
+   * outcome. Per-item failures absorbed by a partial run travel in
+   * {@link M3LRunReportInput.recovery} instead.
+   */
   readonly error?: unknown;
+  /**
+   * The absorbed per-item failures, when `outcome === "partial"`. Ignored for
+   * every other outcome. Bounded at {@link M3L_RECOVERY_LIMIT}: entries beyond
+   * the limit are evicted oldest-first; the true reported count is
+   * `recoveryTotal`.
+   */
+  readonly recovery?: readonly M3LRunRecoveryEntry[];
+  /**
+   * The total number of failures reported (not capped). When omitted,
+   * defaults to the length of the supplied `recovery` array. Supply an
+   * explicit value when the caller has already truncated the array before
+   * passing it in.
+   */
+  readonly recoveryTotal?: number;
   /** An explicit exit code, overriding the outcome-derived default. */
   readonly exitCode?: number;
   /** A diagnostics snapshot; defaults to `collectDiagnostics()` when omitted. */
@@ -115,7 +194,7 @@ export interface M3LRunReportInput {
 }
 
 /**
- * Fields shared by both `outcome` branches of {@link M3LRunReport}.
+ * Fields shared by every `outcome` branch of {@link M3LRunReport}.
  */
 export interface M3LRunReportBase {
   /** The identity of the script that ran. */
@@ -155,16 +234,51 @@ export interface M3LRunReportBase {
 export type M3LRunReport = M3LRunReportBase &
   (
     | {
-        /** The run failed. */
+        /** The run failed with a single fatal error. */
         readonly outcome: "failure";
         /** The failure detail — always present when `outcome === "failure"`. */
         readonly failure: M3LRunReportFailure;
+        /** Always `undefined` for a failure outcome — per-item failures travel in `recovery`. */
+        readonly recovery?: undefined;
+        /** Always `undefined` for a failure outcome. */
+        readonly recoveryTotal?: undefined;
       }
     | {
-        /** Every non-failure terminal outcome. */
-        readonly outcome: Exclude<M3LRunOutcome, "failure">;
+        /**
+         * The run completed with absorbed per-item failures. `recovery` holds
+         * the retained entries (up to {@link M3L_RECOVERY_LIMIT}); `recoveryTotal`
+         * is the true count of reported failures (may exceed `recovery.length`
+         * when truncation occurred). Narrow on `outcome === "partial"` to access
+         * these fields without optional chaining.
+         *
+         * `recovery` is a non-empty tuple: a `"partial"` report always carries
+         * at least one absorbed failure. A `build()` input that resolves to
+         * zero recovery entries degrades to a non-partial outcome instead of
+         * emitting a partial report with an empty list.
+         */
+        readonly outcome: "partial";
+        /** The retained absorbed-failure entries, at least one, bounded at {@link M3L_RECOVERY_LIMIT}. */
+        readonly recovery: readonly [
+          M3LRunRecoveryEntry,
+          ...M3LRunRecoveryEntry[],
+        ];
+        /**
+         * The total number of failures reported — not capped by the ring buffer.
+         * `recoveryTotal > recovery.length` signals truncation.
+         */
+        readonly recoveryTotal: number;
+        /** Always `undefined` for a partial outcome — failures travel in `recovery`. */
+        readonly failure?: undefined;
+      }
+    | {
+        /** Every non-failure, non-partial terminal outcome. */
+        readonly outcome: Exclude<M3LRunOutcome, "failure" | "partial">;
         /** Always `undefined` for a non-failure outcome. */
         readonly failure?: undefined;
+        /** Always `undefined` for a non-partial outcome. */
+        readonly recovery?: undefined;
+        /** Always `undefined` for a non-partial outcome. */
+        readonly recoveryTotal?: undefined;
       }
   );
 
@@ -294,7 +408,8 @@ async function assertNoSymlinkEscape(
 /**
  * Resolves the exit code: an explicit `input.exitCode` always wins; otherwise
  * `"failure"` maps through {@link mapErrorToExitCode}, `"interrupted"` maps to
- * {@link M3L_EXIT_CODES.INTERRUPTED}, and every other outcome defaults to `0`.
+ * {@link M3L_EXIT_CODES.INTERRUPTED}, `"partial"` maps to
+ * {@link M3L_EXIT_CODES.PARTIAL}, and `"success"` / `"dry-run"` default to `0`.
  *
  * @throws {@link M3LError} On a non-literal `outcome` that reaches the
  *   exhaustiveness `default` branch — never called directly by `build()`,
@@ -312,6 +427,8 @@ function resolveExitCode(input: M3LRunReportInput): number {
       return mapErrorToExitCode(input.error);
     case "interrupted":
       return M3L_EXIT_CODES.INTERRUPTED;
+    case "partial":
+      return M3L_EXIT_CODES.PARTIAL;
     default: {
       const _exhaustive: never = input.outcome;
       throw new M3LError(
@@ -672,6 +789,21 @@ function sanitizeValue(value: unknown): unknown {
   }
 }
 
+/**
+ * Sanitizes `value` and guarantees a `string` result — the typed counterpart
+ * of `sanitizeValue(value) as string`. When `sanitizeValue` returns a
+ * non-string (which happens when redaction of a non-string input yields a
+ * non-string shape, e.g. an object whose `toJSON` returns a record), the
+ * function falls back to {@link UNREDACTABLE_PLACEHOLDER} rather than
+ * coercing with `String()` — coercion would silently produce `"[object Object]"`
+ * for an object, which corrupts the field without any signal that the value
+ * could not be stringified cleanly.
+ */
+function sanitizeString(value: unknown): string {
+  const sanitized = sanitizeValue(value);
+  return typeof sanitized === "string" ? sanitized : UNREDACTABLE_PLACEHOLDER;
+}
+
 // ---------------------------------------------------------------------------
 // archive projection — allowlist the one known `archive` shape
 // ---------------------------------------------------------------------------
@@ -885,6 +1017,171 @@ function buildArchiveEntry(
 }
 
 /**
+ * Resolves a sanitized context value to its embeddable form. When the
+ * sanitized value is a plain record it is used directly. When `sanitizeValue`
+ * returned a non-record (e.g. `UNREDACTABLE_PLACEHOLDER` as a string because
+ * the whole pipeline failed), we degrade to an empty record rather than
+ * omitting the field — an empty `{}` signals that context existed but could
+ * not be safely projected, whereas omitting it entirely would make the entry
+ * look as though the error had no context at all. Returns `undefined` when
+ * no context was present in the original entry.
+ */
+function resolveSerializedErrorContext(
+  sanitizedContext: unknown,
+): Record<string, unknown> | undefined {
+  if (sanitizedContext === undefined) return undefined;
+  if (
+    typeof sanitizedContext === "object" &&
+    sanitizedContext !== null &&
+    !Array.isArray(sanitizedContext)
+  ) {
+    return sanitizedContext as Record<string, unknown>;
+  }
+  return {};
+}
+
+/**
+ * Sanitizes one level of a serialized error chain for safe embedding —
+ * mirrors the allowlist discipline {@link projectArchiveReport} applies to
+ * archive metadata. Keeps only the seven fields {@link M3LSerializedError}
+ * declares and sanitizes every one before it reaches the persisted report:
+ *
+ * - `name`, `message`, `stack`: free text — run through {@link sanitizeString}.
+ * - `context`: arbitrary object — run through {@link sanitizeValue} (cycle-breaks
+ *   `BigInt`, drops `__proto__` keys).
+ * - `code`: caller-controlled string — run through {@link sanitizeString}.
+ * - `origin`: a closed {@link M3LErrorOrigin} union — validated with
+ *   {@link isM3LErrorOrigin}; omitted when the value does not match a known
+ *   member (a hostile or malformed caller cannot inject arbitrary text here).
+ * - `retryable`: must be a boolean literal — omitted when the value is not
+ *   `typeof === "boolean"` (prevents object or string values leaking).
+ *
+ * Any additional fields a caller attached to the entry are dropped.
+ */
+function projectSerializedError(entry: M3LSerializedError): M3LSerializedError {
+  const sanitizedContext =
+    entry.context !== undefined ? sanitizeValue(entry.context) : undefined;
+  const context = resolveSerializedErrorContext(sanitizedContext);
+
+  return {
+    name: sanitizeString(entry.name),
+    message: sanitizeString(entry.message),
+    ...(entry.code !== undefined && { code: sanitizeString(entry.code) }),
+    ...(entry.stack !== undefined && { stack: sanitizeString(entry.stack) }),
+    ...(context !== undefined && { context }),
+    ...(isM3LErrorOrigin(entry.origin) && { origin: entry.origin }),
+    ...(typeof entry.retryable === "boolean" && { retryable: entry.retryable }),
+  };
+}
+
+/**
+ * Safely reads one field from a recovery entry, absorbing a throwing getter
+ * — the same guard {@link readInputError} applies to `input.error`, applied
+ * here to per-entry fields so a hostile `item`/`error`/`recordedAt` accessor
+ * cannot make {@link buildRecoverySection} (and transitively
+ * {@link M3LRunReporter.build}) throw.
+ */
+function safeReadEntryField(
+  entry: M3LRunRecoveryEntry,
+  key: keyof M3LRunRecoveryEntry,
+): unknown {
+  try {
+    return entry[key];
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Projects one caller-supplied {@link M3LRunRecoveryEntry} to a safe,
+ * allowlist-shaped form before embedding it in the persisted report — the
+ * same allowlist discipline {@link projectArchiveReport} applies to archive
+ * metadata. Only `item`, `error`, and `recordedAt` are kept; any additional
+ * caller-supplied fields are dropped. `item` is sanitized through
+ * {@link sanitizeString} (URL scrubbing + key-based redaction) because it is
+ * unbounded, caller-supplied text. `error` is each level projected through
+ * {@link projectSerializedError} so free-text fields (`message`, `stack`,
+ * `context`) are redacted. `recordedAt` is a plain ISO-8601 string copied
+ * as-is. Field reads are guarded against throwing getters via
+ * {@link safeReadEntryField} so {@link M3LRunReporter.build}'s
+ * never-throws contract holds even for hostile input.
+ */
+function projectRecoveryEntry(entry: M3LRunRecoveryEntry): M3LRunRecoveryEntry {
+  const item = sanitizeString(safeReadEntryField(entry, "item"));
+  const rawError = safeReadEntryField(entry, "error");
+  const error = Array.isArray(rawError)
+    ? (rawError as readonly M3LSerializedError[]).map(projectSerializedError)
+    : [];
+  const rawRecordedAt = safeReadEntryField(entry, "recordedAt");
+  const recordedAt =
+    typeof rawRecordedAt === "string"
+      ? rawRecordedAt
+      : new Date().toISOString();
+  return { item, error, recordedAt };
+}
+
+/**
+ * Applies the ring-buffer eviction policy to a recovery array: returns the
+ * most-recent {@link M3L_RECOVERY_LIMIT} entries (the last N in the
+ * caller-supplied order), dropping the oldest when the array exceeds the
+ * cap — matching {@link M3LBreadcrumbTrail}'s eviction direction.
+ *
+ * `recoveryTotal` is clamped to at least `recovery.length` — a
+ * caller-supplied value below the array length (e.g. a negative number,
+ * `NaN`, or a stale count from a pre-truncated array) would otherwise
+ * invert the documented truncation signal (`recoveryTotal > recovery.length`)
+ * or serialize as `null` (for non-finite values, which `JSON.stringify`
+ * coerces to `null`). Access to `input.recovery` and `input.recoveryTotal`
+ * is guarded against throwing getters so `build()`'s never-throws contract
+ * holds even for hostile input.
+ */
+function buildRecoverySection(input: M3LRunReportInput): {
+  readonly recovery: readonly M3LRunRecoveryEntry[];
+  readonly recoveryTotal: number;
+} {
+  let rawInput: unknown;
+  try {
+    rawInput = input.recovery;
+  } catch {
+    rawInput = undefined;
+  }
+  const raw: readonly M3LRunRecoveryEntry[] = Array.isArray(rawInput)
+    ? (rawInput as readonly M3LRunRecoveryEntry[])
+    : [];
+
+  const sliced =
+    raw.length > M3L_RECOVERY_LIMIT
+      ? raw.slice(raw.length - M3L_RECOVERY_LIMIT)
+      : raw;
+
+  const recovery: M3LRunRecoveryEntry[] = [];
+  for (const entry of sliced) {
+    try {
+      recovery.push(projectRecoveryEntry(entry));
+    } catch {
+      // Skip a hostile entry that projectRecoveryEntry could not safely project.
+    }
+  }
+
+  let rawTotal: unknown;
+  try {
+    rawTotal = input.recoveryTotal ?? raw.length;
+  } catch {
+    rawTotal = raw.length;
+  }
+
+  // Clamp: non-finite values serialize as null; any value below recovery.length
+  // inverts the documented truncation signal.
+  const safeTotal =
+    typeof rawTotal === "number" && Number.isFinite(rawTotal)
+      ? rawTotal
+      : recovery.length;
+  const recoveryTotal = Math.max(recovery.length, safeTotal);
+
+  return { recovery, recoveryTotal };
+}
+
+/**
  * The shape {@link logBestEffortDiagnostic} accepts, describing a
  * `persist()` failure.
  */
@@ -1078,6 +1375,45 @@ export class M3LRunReporter {
         failure: buildFailureDetail(input),
       };
     }
+
+    // Partial arm: branch on data (non-empty recovery array), not on the label
+    // alone — "partial with nothing recorded" is unrepresentable per the
+    // contract (ADR-0046 mandatory-fallback rule). An empty or absent recovery
+    // array (or one where all entries had throwing getters and were dropped)
+    // degrades to a non-partial outcome rather than throwing, preserving
+    // build()'s never-throwing contract.
+    //
+    // Destructure the first entry (D3): the partial arm's recovery field is
+    // typed as a non-empty tuple, so we earn the arm by proving at least one
+    // element exists rather than asserting with a non-null assertion.
+    //
+    // Fix D2: the fallback path must override exitCode to match the settled
+    // outcome — `base.exitCode` was computed for "partial" (exit code 6) and
+    // must not bleed into a "success" (exit code 0) fallback report.
+    if (input.outcome === "partial") {
+      const { recovery: recoveryRaw, recoveryTotal } =
+        buildRecoverySection(input);
+      const [first, ...rest] = recoveryRaw;
+      if (first !== undefined) {
+        const recovery: readonly [
+          M3LRunRecoveryEntry,
+          ...M3LRunRecoveryEntry[],
+        ] = [first, ...rest];
+        return { ...base, outcome: "partial", recovery, recoveryTotal };
+      }
+      // Fallback: treat as "success" — the run absorbed nothing (or all
+      // entries were dropped as hostile), so it is effectively clean. Override
+      // exitCode so the report is internally consistent: a "success" outcome
+      // must carry exit code 0, not the "partial" code 6 that `base` holds.
+      // Explicit input.exitCode always wins (documented guarantee) even in this
+      // degrade path — so honour it before falling back to SUCCESS.
+      return {
+        ...base,
+        exitCode: input.exitCode ?? M3L_EXIT_CODES.SUCCESS,
+        outcome: "success",
+      };
+    }
+
     return { ...base, outcome: input.outcome };
   }
 

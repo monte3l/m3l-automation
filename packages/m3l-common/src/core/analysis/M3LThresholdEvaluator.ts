@@ -108,25 +108,61 @@ export interface M3LThresholdRuleResult {
 }
 
 /**
+ * Named outcome of a threshold evaluation, applying ADR-0046's
+ * mandatory-fallback discipline: "no case matched" must be a first-class
+ * structured result, never a silent gap. `breached: false` alone conflates
+ * "rules ran and none breached" with "no rules ran at all" — callers gating
+ * on `breached` would silently pass a run that checked nothing.
+ *
+ * - `"breached"` — at least one rule's comparison matched (`breached: true`).
+ * - `"clear"` — one or more rules evaluated, none breached (`breached: false`).
+ * - `"no-rules"` — the rules array was empty; nothing was checked (`breached: false`).
+ *
+ * The biconditional `verdict === "breached"` ↔ `breached === true` is enforced
+ * at compile time by the {@link M3LThresholdEvaluation} discriminated union —
+ * illegal combinations such as `{ verdict: "clear", breached: true }` do not
+ * compile.
+ */
+export type M3LThresholdVerdict = "breached" | "clear" | "no-rules";
+
+/**
  * Overall outcome of evaluating a set of rules against a set of rows.
+ *
+ * `verdict` and `breached` are correlated by construction — the compiler
+ * enforces the biconditional: `verdict === "breached"` if and only if
+ * `breached === true`. The illegal state `{ verdict: "clear", breached: true }`
+ * is unrepresentable.
  *
  * @example
  * ```typescript
  * import type { M3LThresholdEvaluation } from "@m3l-automation/m3l-common/core";
  *
  * function report(evaluation: M3LThresholdEvaluation): void {
- *   if (evaluation.breached) console.error(evaluation.summary);
+ *   if (evaluation.verdict === "no-rules") {
+ *     console.warn("No threshold rules configured — run checked nothing.");
+ *   } else if (evaluation.breached) {
+ *     console.error(evaluation.summary);
+ *   }
  * }
  * ```
  */
-export interface M3LThresholdEvaluation {
-  /** `true` if at least one rule's result breached, regardless of severity. */
-  readonly breached: boolean;
-  /** A non-empty, human-readable description of the outcome. */
-  readonly summary: string;
-  /** One result per input rule, in input order. */
-  readonly results: readonly M3LThresholdRuleResult[];
-}
+export type M3LThresholdEvaluation =
+  | {
+      readonly verdict: "breached";
+      readonly breached: true;
+      /** A non-empty, human-readable description of the outcome. */
+      readonly summary: string;
+      /** One result per input rule, in input order. */
+      readonly results: readonly M3LThresholdRuleResult[];
+    }
+  | {
+      readonly verdict: "clear" | "no-rules";
+      readonly breached: false;
+      /** A non-empty, human-readable description of the outcome. */
+      readonly summary: string;
+      /** One result per input rule, in input order. */
+      readonly results: readonly M3LThresholdRuleResult[];
+    };
 
 /**
  * Coerces a single row cell to a number for numeric comparison/aggregation.
@@ -374,6 +410,24 @@ function evaluateRule(
   return { name: rule.name, breached, severity: rule.severity, actual };
 }
 
+/**
+ * Derives the named {@link M3LThresholdVerdict} from the evaluated results,
+ * ensuring the mandatory-fallback discipline (ADR-0046): "no rules ran" is
+ * always distinguishable from "rules ran and all passed".
+ *
+ * Single source of truth for the `verdict` ↔ `breached` equivalence:
+ * `"breached"` iff `breached === true`; `"no-rules"` iff the rules array was
+ * empty; `"clear"` otherwise.
+ */
+function deriveVerdict(
+  results: readonly M3LThresholdRuleResult[],
+  breached: boolean,
+): M3LThresholdVerdict {
+  if (breached) return "breached";
+  if (results.length === 0) return "no-rules";
+  return "clear";
+}
+
 /** Builds the non-empty, deterministic summary string for an evaluation. */
 function buildSummary(results: readonly M3LThresholdRuleResult[]): string {
   const breachedNames = results.filter((r) => r.breached).map((r) => r.name);
@@ -441,7 +495,7 @@ export class M3LThresholdEvaluator {
    * @param rules - The threshold rules to evaluate, in the order results
    *   should appear.
    * @param rows - The tabular data rows to evaluate the rules against.
-   * @returns The overall evaluation: `breached`, `summary`, and one
+   * @returns The overall evaluation: `verdict`, `breached`, `summary`, and one
    *   {@link M3LThresholdRuleResult} per input rule.
    */
   evaluate(
@@ -452,7 +506,12 @@ export class M3LThresholdEvaluator {
 
     const results = rules.map((rule) => evaluateRule(rule, rows));
     const breached = results.some((r) => r.breached);
+    const verdict = deriveVerdict(results, breached);
+    const summary = buildSummary(results);
 
-    return { breached, summary: buildSummary(results), results };
+    if (verdict === "breached") {
+      return { verdict, breached: true, summary, results };
+    }
+    return { verdict, breached: false, summary, results };
   }
 }

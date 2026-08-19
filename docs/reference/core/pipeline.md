@@ -88,9 +88,13 @@ operation)`, producing the message `'<name>' is required for operation
 9. **Finalize** — `finalize?.(result, settings, deps, operation)`. Runs **after**
    persist, so a post-dispatch assertion that throws (e.g. a wait operation
    that did not stabilize) still leaves the persisted result on disk.
-10. **Outcome** — resolves `{ status: "completed", operation, result }`.
+10. **Recovery** — `recovery?.(result, settings, deps, operation)`. Returns the
+    per-item failures the handler absorbed, as `M3LRunRecoveryEntry[]`.
+11. **Outcome** — resolves `{ status: "completed", operation, result }`, or
+    `{ status: "partial", operation, result, recovery }` when phase 10 returned
+    a non-empty array.
 
-Any throw from phases 1–9 (other than a soft-landed decline) propagates to
+Any throw from phases 1–10 (other than a soft-landed decline) propagates to
 the caller unmodified — the engine never swallows, wraps, or re-codes errors.
 
 A pipeline instance is **stateless across runs**: `run()` keeps all per-run
@@ -119,13 +123,36 @@ real cause, and never prompting anyone. Do not move either call inside the
   `warning(operation, settings, deps)` via `deps.logger.warning` (when
   provided), then resolves `{ status: "declined", operation, result:
 result(operation, settings, deps) }` without dispatching. A declined run
-  produced no handler result, so `persist` and `finalize` are **skipped** —
+  produced no handler result, so `persist`, `finalize` and `recovery` are
+  **skipped** —
   the run resolves immediately after the warning. This is `s3-objects`'s
   behavior (an empty `{ processed: 0, failed: 0 }` summary).
 
 The outcome's `status` field makes a declined run first-class: callers that
 care can branch on it; thin wrappers that preserve a legacy signature can
 return `outcome.result` unconditionally.
+
+## Partial runs
+
+`recovery` is the **only** way a run becomes `"partial"`. The engine never
+inspects a result to decide whether it was degraded — it cannot, since only the
+handler knows what "an item" is for its operation. A pipeline that declares no
+`recovery` callback can never resolve `"partial"`, and its behavior is
+byte-identical to before this phase existed.
+
+The engine's sole contribution is the emptiness test: an empty array is a clean
+run (`"completed"`), a non-empty one is `"partial"`. A callback returning
+anything that is not an array — reachable from JavaScript, or from TypeScript
+via an assertion — is a caller error and fails loud with an `M3LError` rather
+than surfacing as a bare `TypeError` from inside the engine. This keeps the
+classification honest in both directions — a handler cannot report a degraded
+run as clean by omission, and the engine cannot invent a degradation the
+handler never reported.
+
+A `"partial"` run **still ran `persist` and `finalize`**: it dispatched
+successfully and produced a real result. This is the distinction the outcome
+exists to preserve — a run that processed 997 of 1000 keys deleted 997 keys,
+and reporting it as a `failure` implies it deleted none.
 
 ## Types
 
@@ -278,13 +305,36 @@ interface M3LOperationPipelineCoreOptions<
     deps: TDeps,
     operation: TOp,
   ) => void | Promise<void>;
+  readonly recovery?: (
+    result: TResult,
+    settings: TSettings,
+    deps: TDeps,
+    operation: TOp,
+  ) => readonly M3LRunRecoveryEntry[];
 }
 
-interface M3LOperationPipelineOutcome<TOp extends string, TResult> {
+interface M3LOperationPipelineOutcomeBase<TOp extends string, TResult> {
   readonly operation: TOp;
-  readonly status: "completed" | "declined";
   readonly result: TResult;
 }
+
+type M3LOperationPipelineOutcome<
+  TOp extends string,
+  TResult,
+> = M3LOperationPipelineOutcomeBase<TOp, TResult> &
+  (
+    | {
+        readonly status: "partial";
+        readonly recovery: readonly [
+          M3LRunRecoveryEntry,
+          ...M3LRunRecoveryEntry[],
+        ];
+      }
+    | {
+        readonly status: "completed" | "declined";
+        readonly recovery?: undefined;
+      }
+  );
 
 class M3LOperationPipeline<
   TOp extends string,
