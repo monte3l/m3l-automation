@@ -45,8 +45,13 @@ const IMPLEMENTATION_PATH = "docs/plans/IMPLEMENTATION.md";
 const LIST_LIMIT = 500;
 
 // The hub-sync label, the four priority labels, and the two status labels,
-// bootstrapped (create or `--force` update) on every --apply run before any
-// issue/milestone action.
+// plus the `triage` label `.github/ISSUE_TEMPLATE/failure_report.yml`
+// declares but which GitHub never creates on its own — bootstrapped (create
+// or `--force` update) on every --apply run before any issue/milestone
+// action. `triage` is a literal, not a `bin/lib/hub-sync.mjs` constant: it
+// is never derived from a tracker row (nothing in ROADMAP.md/
+// IMPLEMENTATION.md maps to it), it exists purely so a template-filed
+// failure report doesn't silently drop a declared label.
 const LABEL_DEFS = [
   {
     name: HUB_LABEL,
@@ -83,6 +88,12 @@ const LABEL_DEFS = [
     name: STATUS_LABELS.blocked,
     color: "cf222e",
     description: "Blocked — cannot proceed until an external condition clears.",
+  },
+  {
+    name: "triage",
+    color: "d4c5f9",
+    description:
+      "Needs a fault-origin decision. Applied by .github/ISSUE_TEMPLATE/failure_report.yml.",
   },
 ];
 

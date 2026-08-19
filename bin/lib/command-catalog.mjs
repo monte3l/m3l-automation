@@ -206,6 +206,11 @@ export const COMMAND_CATALOG = [
       "Verifies every GitHub-talking .claude/skills/*/SKILL.md carries an ADR-0030 stance reference, contains no retired policy claim, and names the mechanism (gh CLI vs GitHub MCP) it actually uses. Run after editing a GitHub-facing skill.",
   },
   {
+    name: "check:github-features",
+    description:
+      "Verifies the live repository's GitHub platform-feature flags (wiki/discussions/issues/projects) and metadata (description/homepage/topics) match ADR-0050's declared stance, and that .github/ISSUE_TEMPLATE/config.yml still links to the Discussions Ideas/Q&A categories. Needs gh auth; run push-only in CI (ci.yml), same as check:hub-drift.",
+  },
+  {
     name: "check:zones",
     description:
       "Verifies the ADR-0009 dependency-direction zones (import-x/no-restricted-paths) and the ADR-0035 repo-wide import-x/no-cycle rule are still present and correctly shaped in eslint.config.js — a deleted zone or rule would otherwise pass `pnpm lint` silently. Run after editing eslint.config.js.",

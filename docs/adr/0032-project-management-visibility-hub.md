@@ -781,3 +781,46 @@ following run, which then settles to "in sync". Run `--apply` until the dry-run
 plan is empty; a single run leaves `check:hub-drift` red. Both runs are
 mechanical and must follow the merge promptly, since `check:hub-drift` fails on
 a non-empty plan and `--apply` cannot run in CI.
+
+## Update (2026-08-19): the board's owner scope is recorded, it gets linked to the repo, and draft items become the private half of idea capture
+
+Two gaps surfaced auditing whether this Project could move inside the repo
+(it can't — see ADR-0050 for the schema-level reason): this ADR never recorded
+_which_ owner scope the board should live under, and the board was never
+actually linked to the repository — `repository.projectsV2.totalCount`
+returned `0` over the GraphQL API, so the repo's own Projects tab showed
+nothing despite this ADR's decision treating the board as a real secondary
+surface.
+
+**Owner scope, now recorded:** the board stays org-owned (`monte3l`), per
+ADR-0050. **Linked:** `gh project link 2 --owner monte3l -R
+monte3l/m3l-automation` — maintainer-local, one-time, no code change (the
+board is already resolved by title at runtime, not by a stored node ID; see
+the 2026-07-22 Update above). **Visibility:** kept private, unchanged from
+today — the board mirrors internal roadmap/priority detail at finer grain
+than the public Pages dashboard.
+
+**New use for draft items:** the board gains a second role, as the private
+half of a two-lane idea-capture surface (`docs/contributing/filing-work.md`
+documents the full procedure; ADR-0050 records why Discussions is the public
+half). A **draft item** — `+ Add item`, typed straight into a board view, no
+issue attached — is the private jotting surface: zero-friction, invisible
+outside the board, and promoted to a tracked item only by converting it to a
+real issue and adding the corresponding tracker row.
+
+This is safe against `sync-hub-projects.mjs` **without any code change**,
+verified by reading rather than assumed: `loadProjectItems` filters
+`.filter((item) => typeof item.issueNumber === "number")` before returning,
+and `planProjectSync` (`bin/lib/hub-sync.mjs`) only ever iterates
+`trackedIssues` — a list built from tracker items, never from raw project
+items. A draft has no issue number, so it is invisible to `loadProjectItems`'s
+return value and can appear in none of `planProjectSync`'s three action
+buckets (`add`, `setStatus`, `archive`). It is never added a second time,
+never status-flipped, and never archived by the sync.
+
+Scripting the draft→issue conversion itself is left undone: GraphQL exposes
+`addProjectV2DraftIssue` and `convertProjectV2DraftIssueItemToIssue`, so
+automating it later is available if the manual step (Project UI → convert to
+issue → add the tracker row → `sync:hub --apply`) turns out to be worth
+removing. Not built now — the manual path is rare enough (one idea at a time,
+maintainer-only) that scripting it would be speculative.

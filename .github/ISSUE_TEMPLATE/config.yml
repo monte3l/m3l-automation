@@ -3,3 +3,9 @@ contact_links:
   - name: Security vulnerability
     url: https://github.com/monte3l/m3l-automation/security/advisories/new
     about: Report a security issue privately via GitHub Security Advisories.
+  - name: Idea or proposal
+    url: https://github.com/monte3l/m3l-automation/discussions/categories/ideas
+    about: Jot down a rough idea before it's ready to become an issue — see docs/contributing/filing-work.md.
+  - name: Question or support
+    url: https://github.com/monte3l/m3l-automation/discussions/categories/q-a
+    about: Ask a question that isn't a bug report or feature request.
