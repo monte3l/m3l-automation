@@ -25,6 +25,7 @@ import { M3LCheckpointError } from "./M3LCheckpointError.js";
 interface M3LCheckpointEnvelope<TCheckpoint> {
   readonly __m3lCheckpointFormat: 1;
   readonly checksum: string;
+  readonly fingerprint?: string;
   readonly payload: TCheckpoint;
 }
 
@@ -164,6 +165,29 @@ export interface M3LCheckpointStoreOptions<TCheckpoint extends object> {
   readonly validate: (value: unknown) => value is TCheckpoint;
   /** What `read()` returns when the checkpoint file does not exist. */
   readonly missing: M3LCheckpointMissingPolicy<TCheckpoint>;
+  /**
+   * **Optional.** The resolved configuration that gives this run's stored
+   * offsets their meaning — an Athena SQL query, a Logs-Insights time window
+   * plus log-group list, a DynamoDB table plus segment count. Supplying it
+   * opts into **fingerprinting**: `write()` stamps
+   * `canonicalJsonHash(definition)` onto the envelope as `fingerprint`, and
+   * `read()` refuses to resume from a checkpoint written under a different
+   * definition (throws `"ERR_CHECKPOINT_FINGERPRINT_MISMATCH"`).
+   *
+   * The hash is computed **once, at construction**, so a value
+   * `canonicalJsonHash` rejects (a circular reference, a `BigInt`, a
+   * non-finite number) throws `"ERR_CHECKPOINT_DEFINITION"` from the
+   * constructor rather than surfacing on the first `read()` or `write()`. The
+   * value is never persisted and never reaches a `message`, `context`, or
+   * `cause` — only its hash is stored.
+   *
+   * Omitting this field preserves today's behaviour exactly (no fingerprinting).
+   *
+   * @throws {@link M3LCheckpointError} `"ERR_CHECKPOINT_DEFINITION"` — from
+   *   the constructor — when `canonicalJsonHash` cannot hash the supplied
+   *   value.
+   */
+  readonly definition?: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -224,18 +248,49 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
   readonly #missing: M3LCheckpointMissingPolicy<TCheckpoint>;
 
   /**
+   * `canonicalJsonHash(definition)` when `definition` was supplied; otherwise
+   * `undefined`. Stamped onto envelopes by `write()` and compared by `read()`.
+   */
+  readonly #fingerprint: string | undefined;
+
+  /**
    * Creates a new `M3LCheckpointStore`.
    *
    * @param options - Constructor options; see
    *   {@link M3LCheckpointStoreOptions}.
    * @throws Whatever `options.paths.resolveOutput` throws (e.g.
    *   `M3LPathResolutionError` for an unsafe `name`) — propagated unchanged,
-   *   never wrapped in `M3LCheckpointError`.
+   *   never wrapped in `M3LCheckpointError`. Path resolution runs first;
+   *   definition hashing does not begin until the path succeeds.
+   * @throws {@link M3LCheckpointError} `"ERR_CHECKPOINT_DEFINITION"` when
+   *   `options.definition` is supplied but `canonicalJsonHash` cannot hash it
+   *   (circular reference, `BigInt`, non-finite number). Never chains a
+   *   `cause` — the underlying error's message can embed the definition value.
    */
   constructor(options: M3LCheckpointStoreOptions<TCheckpoint>) {
+    // Path resolution must come first — an unsafe name throws
+    // M3LPathResolutionError unwrapped, before definition hashing begins.
     this.#path = options.paths.resolveOutput(`${options.name}.checkpoint.json`);
     this.#validate = options.validate;
     this.#missing = options.missing;
+
+    if (options.definition !== undefined) {
+      try {
+        this.#fingerprint = canonicalJsonHash(options.definition);
+      } catch {
+        // Never chain `cause`: canonicalJsonHash's thrown message can embed
+        // the caller's actual (possibly sensitive) definition value.
+        throw new M3LCheckpointError(
+          `checkpoint store at '${this.#path}' could not hash the supplied definition`,
+          {
+            code: "ERR_CHECKPOINT_DEFINITION",
+            context: { path: this.#path },
+          },
+        );
+      }
+    } else {
+      this.#fingerprint = undefined;
+    }
   }
 
   /**
@@ -267,10 +322,14 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
    * @throws {@link M3LCheckpointError} `"ERR_CHECKPOINT_MISSING"` when the
    *   file is absent under a `{ kind: "error" }` policy;
    *   `"ERR_CHECKPOINT_CORRUPT"` when an envelope's stored `checksum` does
-   *   not match the recomputed hash of its `payload`; `"ERR_CHECKPOINT_PARSE"`
+   *   not match the recomputed hash of its `payload`, or when the envelope's
+   *   `fingerprint` field is present but not a string; `"ERR_CHECKPOINT_PARSE"`
    *   when the file is present but not valid JSON, fails `validate`, or its
    *   envelope's `payload` cannot be hashed for checksum verification (e.g. a
    *   deeply-nested external payload overflows the call stack);
+   *   `"ERR_CHECKPOINT_FINGERPRINT_MISMATCH"` when a `definition` was
+   *   supplied to the constructor and the envelope carries a `fingerprint` that
+   *   does not match — checked after the `checksum` succeeds;
    *   `"ERR_CHECKPOINT_IO"` for any other read failure.
    */
   async read(): Promise<TCheckpoint> {
@@ -308,31 +367,9 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
       );
     }
 
-    let payload: unknown = parsed;
-    if (isCheckpointEnvelope(parsed)) {
-      // Guard the checksum recomputation separately: canonicalJsonHash
-      // recurses per nesting level of `parsed.payload`, which is untrusted
-      // external content that may be adversarially or accidentally deeply
-      // nested (a stack-overflow RangeError) or otherwise unhashable — never
-      // propagate the raw error or chain it as `cause`, matching the
-      // JSON.parse guard above.
-      let recomputed: string;
-      try {
-        recomputed = canonicalJsonHash(parsed.payload);
-      } catch {
-        throw new M3LCheckpointError(
-          `checkpoint file at '${this.#path}' could not be verified`,
-          { code: "ERR_CHECKPOINT_PARSE", context: { path: this.#path } },
-        );
-      }
-      if (recomputed !== parsed.checksum) {
-        throw new M3LCheckpointError(
-          `checkpoint file at '${this.#path}' failed its integrity check: stored content does not match its checksum`,
-          { code: "ERR_CHECKPOINT_CORRUPT", context: { path: this.#path } },
-        );
-      }
-      payload = parsed.payload;
-    }
+    const payload = isCheckpointEnvelope(parsed)
+      ? this.#verifyEnvelope(parsed)
+      : parsed;
 
     if (!this.#validate(payload)) {
       throw new M3LCheckpointError(
@@ -345,18 +382,100 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
   }
 
   /**
+   * Verifies the checksum and fingerprint of a detected content-addressed
+   * envelope and returns its `payload`.
+   *
+   * Separated from {@link read} to keep each method within the project's
+   * complexity budget. All thrown errors use the same `"ERR_CHECKPOINT_*"`
+   * codes as the surrounding `read()` call.
+   *
+   * @param envelope - A value already narrowed by `isCheckpointEnvelope`.
+   * @returns The envelope's `payload` when all checks pass.
+   * @throws {@link M3LCheckpointError} `"ERR_CHECKPOINT_PARSE"` when the
+   *   payload cannot be hashed; `"ERR_CHECKPOINT_CORRUPT"` on a checksum
+   *   mismatch or a non-string `fingerprint` field;
+   *   `"ERR_CHECKPOINT_FINGERPRINT_MISMATCH"` when the stored fingerprint
+   *   differs from the store's current definition fingerprint.
+   */
+  #verifyEnvelope(envelope: M3LCheckpointEnvelope<unknown>): unknown {
+    // Guard the checksum recomputation: canonicalJsonHash recurses per nesting
+    // level of `envelope.payload`, which is untrusted external content that
+    // may be deeply nested (a stack-overflow RangeError) or otherwise
+    // unhashable — never chain as `cause`, matching the JSON.parse guard.
+    let recomputed: string;
+    try {
+      recomputed = canonicalJsonHash(envelope.payload);
+    } catch {
+      throw new M3LCheckpointError(
+        `checkpoint file at '${this.#path}' could not be verified`,
+        { code: "ERR_CHECKPOINT_PARSE", context: { path: this.#path } },
+      );
+    }
+
+    if (recomputed !== envelope.checksum) {
+      throw new M3LCheckpointError(
+        `checkpoint file at '${this.#path}' failed its integrity check: stored content does not match its checksum`,
+        { code: "ERR_CHECKPOINT_CORRUPT", context: { path: this.#path } },
+      );
+    }
+
+    // Read the fingerprint field as `unknown` to perform a runtime type check:
+    // the TypeScript interface declares `fingerprint?: string`, but JSON.parse
+    // can produce any JSON value. A present-but-non-string fingerprint is a
+    // corrupt envelope — the envelope guard deliberately leaves fingerprint
+    // unchecked; widening it to reject non-strings would demote the file to
+    // the legacy bare-JSON path, silently skipping the checksum check too.
+    const rawFingerprint: unknown = (
+      envelope as unknown as { fingerprint?: unknown }
+    ).fingerprint;
+
+    if (rawFingerprint !== undefined && typeof rawFingerprint !== "string") {
+      throw new M3LCheckpointError(
+        `checkpoint file at '${this.#path}' has a corrupt fingerprint field`,
+        { code: "ERR_CHECKPOINT_CORRUPT", context: { path: this.#path } },
+      );
+    }
+
+    // Fingerprint mismatch: the envelope is intact but was written under a
+    // different definition — its offsets no longer mean what they meant.
+    // Only checked when both the store has a definition (this.#fingerprint)
+    // and the envelope carries a string fingerprint; all other combinations
+    // fall through and read as before (see spec read matrix).
+    if (
+      this.#fingerprint !== undefined &&
+      typeof rawFingerprint === "string" &&
+      rawFingerprint !== this.#fingerprint
+    ) {
+      throw new M3LCheckpointError(
+        `checkpoint file at '${this.#path}' was written under a different definition`,
+        {
+          code: "ERR_CHECKPOINT_FINGERPRINT_MISMATCH",
+          context: { path: this.#path },
+        },
+      );
+    }
+
+    return envelope.payload;
+  }
+
+  /**
    * Persists `checkpoint` atomically (write-temp-then-rename), replacing any
    * prior contents.
    *
    * Wraps `checkpoint` in a content-addressed envelope (format marker,
-   * `canonicalJsonHash` checksum, and the checkpoint itself as `payload`)
-   * rather than persisting the bare value. This lets a later `read()` verify
-   * the file's integrity against **accidental** corruption — it is not a
-   * tamper-evidence or authentication guarantee: the checksum is an unkeyed
-   * hash over publicly canonical JSON (computable via the exported
-   * `canonicalJsonHash`), so anyone with write access to the file can
-   * recompute a matching checksum, or simply strip the envelope back to the
-   * legacy bare format, either of which bypasses the check with no special
+   * `canonicalJsonHash` checksum, optional `fingerprint`, and the checkpoint
+   * itself as `payload`) rather than persisting the bare value. This lets a
+   * later `read()` verify the file's integrity against **accidental**
+   * corruption. When a `definition` was supplied to the constructor, the
+   * envelope also carries `fingerprint: canonicalJsonHash(definition)` so
+   * `read()` can detect a configuration change between runs. When no
+   * `definition` was supplied, the `fingerprint` key is omitted entirely.
+   *
+   * The checksum is not a tamper-evidence or authentication guarantee: the
+   * checksum is an unkeyed hash over publicly canonical JSON (computable via
+   * the exported `canonicalJsonHash`), so anyone with write access to the file
+   * can recompute a matching checksum, or simply strip the envelope back to
+   * the legacy bare format, either of which bypasses the check with no special
    * knowledge.
    *
    * Does **not** create the output directory — an `ENOENT` from a missing
@@ -391,6 +510,9 @@ export class M3LCheckpointStore<TCheckpoint extends object> {
     const envelope: M3LCheckpointEnvelope<TCheckpoint> = {
       __m3lCheckpointFormat: 1,
       checksum,
+      ...(this.#fingerprint !== undefined
+        ? { fingerprint: this.#fingerprint }
+        : {}),
       payload: checkpoint,
     };
     try {

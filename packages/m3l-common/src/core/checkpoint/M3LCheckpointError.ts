@@ -13,12 +13,31 @@ import { M3LError } from "../errors/index.js";
  * - `"ERR_CHECKPOINT_CORRUPT"` — `read()` found a well-formed
  *   content-addressed envelope (see {@link M3LCheckpointStore.write}) whose
  *   stored `checksum` does not match the recomputed `canonicalJsonHash` of
- *   its `payload` — the file was hand-edited or corrupted after being
- *   written, even though it remains valid JSON and its payload would
- *   otherwise pass `validate`. Does **not** chain a `cause`: there is no
- *   underlying thrown error to chain, unlike `"ERR_CHECKPOINT_IO"` and
- *   `"ERR_CHECKPOINT_MISSING"` above. Only the resolved `path` reaches
- *   `context`; `message` never includes file content.
+ *   its `payload`, or whose `fingerprint` field is present but not a string.
+ *   The file was hand-edited or corrupted after being written, even though it
+ *   remains valid JSON and its payload would otherwise pass `validate`. Does
+ *   **not** chain a `cause`: there is no underlying thrown error to chain —
+ *   the mismatch or corrupt field is detected by a direct comparison, not a
+ *   caught exception. Only the resolved `path` reaches `context`; `message`
+ *   never includes file content.
+ * - `"ERR_CHECKPOINT_DEFINITION"` — the `definition` value supplied to the
+ *   {@link M3LCheckpointStore} constructor could not be hashed (a circular
+ *   reference, a `BigInt`, a non-finite number — anything `canonicalJsonHash`
+ *   rejects). Thrown **from the constructor**, so an unusable definition
+ *   surfaces at composition time rather than on the first `read()` or
+ *   `write()`. Does **not** chain a `cause`: the underlying error's message
+ *   can embed the caller's actual definition value, which is resolved
+ *   configuration that must not appear in logs or error chains. Only the
+ *   resolved `path` reaches `context`.
+ * - `"ERR_CHECKPOINT_FINGERPRINT_MISMATCH"` — `read()` found an envelope
+ *   whose stored `fingerprint` does not match the fingerprint the store's
+ *   current `definition` produces: the checkpoint is intact, but it was
+ *   written under a different configuration, so its offsets no longer mean
+ *   what they meant. Thrown **after** the `checksum` check succeeds, so a
+ *   file that is both corrupt and stale reports `"ERR_CHECKPOINT_CORRUPT"`.
+ *   Does **not** chain a `cause`: the mismatch is a direct comparison, not a
+ *   caught exception. Neither the definition nor either fingerprint reaches the
+ *   `message` or `context` — only the resolved `path` does.
  * - `"ERR_CHECKPOINT_IO"` — a read, write, or delete failed for a reason
  *   other than the file being absent (`EACCES`, `EPERM`, `ENOSPC`, a
  *   rejected `rename`, an `ENOENT` from a missing *parent* directory on
@@ -36,6 +55,8 @@ import { M3LError } from "../errors/index.js";
  */
 export type M3LCheckpointErrorCode =
   | "ERR_CHECKPOINT_CORRUPT"
+  | "ERR_CHECKPOINT_DEFINITION"
+  | "ERR_CHECKPOINT_FINGERPRINT_MISMATCH"
   | "ERR_CHECKPOINT_IO"
   | "ERR_CHECKPOINT_MISSING"
   | "ERR_CHECKPOINT_PARSE";
