@@ -19,10 +19,12 @@ permissions:
   contents: read
 
 # A push burst to main would otherwise queue multiple ~15-minute analyses;
-# only the latest push's result matters (cron runs are unaffected — the
-# schedule trigger has no ref to collide on, so it always gets its own group).
+# only the latest push's result matters. Keyed on event_name as well as ref:
+# for a `schedule` event github.ref IS the default branch (same as a push to
+# main), so without the event_name a push could cancel the weekly cron run
+# that this file's header says needs the full scheduled-run context.
 concurrency:
-  group: scorecard-${{ github.ref }}
+  group: scorecard-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
