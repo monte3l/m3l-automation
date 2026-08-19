@@ -36,6 +36,14 @@
 // file's ci.yml-only parser cannot see and which is bootstrap, not a project
 // check, in any case.
 //
+// Path scoping: every entry marked `conditional: true` is gated in ci.yml on
+// bin/ci-changed-paths.mjs's category outputs (job-level for lint/build/test/
+// deps, step-level within `gates`) — CI may legitimately skip it when its
+// category didn't change. `pnpm verify` still runs every entry unconditionally
+// regardless of this flag; it exists purely so a CI-side skip of a conditional
+// step reads as expected behavior, not as parity drift, when someone is
+// reading this file to understand what "skipped" means for a given step.
+//
 // Usage:
 //   node bin/verify-all.mjs            # pnpm verify
 //   node bin/check-verify-parity.mjs   # pnpm check:verify-parity
@@ -48,11 +56,9 @@
  *   absent for steps with no local equivalent (see `skipReason`)
  * @property {boolean} [prOnly]   - only meaningful against a PR diff range
  * @property {string} [skipReason] - why `pnpm verify` does not run this by default
- * @property {boolean} [conditional] - true once a later change makes this step
- *   path-gated in CI (skipped when its lane's inputs didn't change). `pnpm
- *   verify` still runs it unconditionally either way — this only documents
- *   that a CI skip of this step is expected, not parity drift. Unset today;
- *   populated when path-scoping lands.
+ * @property {boolean} [conditional] - true when this step is path-gated in CI
+ *   (skipped when its category's inputs didn't change — see the file header).
+ *   `pnpm verify` still runs it unconditionally either way.
  */
 
 /** @type {VerifyStep[]} */
@@ -72,21 +78,25 @@ export const VERIFY_STEPS = [
     ciStepName: "Security audit",
     id: "audit",
     cmd: () => "pnpm audit --audit-level=high",
+    conditional: true,
   },
   {
     ciStepName: "Check dependencies",
     id: "check-deps",
     cmd: () => "pnpm check:deps",
+    conditional: true,
   },
   {
     ciStepName: "Check dependency licenses",
     id: "check-licenses",
     cmd: () => "pnpm check:licenses",
+    conditional: true,
   },
   {
     ciStepName: "Check verify parity",
     id: "check-verify-parity",
     cmd: () => "pnpm check:verify-parity",
+    conditional: true,
   },
   {
     ciStepName: "Validate commit messages",
@@ -95,18 +105,34 @@ export const VERIFY_STEPS = [
     cmd: ({ baseRef }) =>
       `node bin/lint-commit.mjs --from ${baseRef} --to HEAD`,
   },
-  { ciStepName: "Lint", id: "lint", cmd: () => "pnpm lint" },
+  {
+    ciStepName: "Lint",
+    id: "lint",
+    cmd: () => "pnpm lint",
+    conditional: true,
+  },
   {
     ciStepName: "Format check",
     id: "format-check",
     cmd: () => "pnpm format:check",
   },
-  { ciStepName: "Lint Markdown", id: "lint-md", cmd: () => "pnpm lint:md" },
-  { ciStepName: "Type-check", id: "typecheck", cmd: () => "pnpm typecheck" },
+  {
+    ciStepName: "Lint Markdown",
+    id: "lint-md",
+    cmd: () => "pnpm lint:md",
+    conditional: true,
+  },
+  {
+    ciStepName: "Type-check",
+    id: "typecheck",
+    cmd: () => "pnpm typecheck",
+    conditional: true,
+  },
   {
     ciStepName: "Check public API snapshot",
     id: "check-api",
     cmd: () => "pnpm check:api",
+    conditional: true,
   },
   {
     ciStepName: "Check exports semver labeling",
@@ -114,122 +140,151 @@ export const VERIFY_STEPS = [
     prOnly: true,
     cmd: ({ baseRef }) =>
       `node bin/check-exports-semver.mjs --base ${baseRef} --head HEAD`,
+    conditional: true,
   },
   {
     ciStepName: "Check doc provenance",
     id: "check-provenance",
     cmd: () => "pnpm check:provenance",
+    conditional: true,
   },
   {
     ciStepName: "Check doc counts",
     id: "check-doc-counts",
     cmd: () => "pnpm check:doc-counts",
+    conditional: true,
   },
   {
     ciStepName: "Check workflow docs",
     id: "check-workflows-doc",
     cmd: () => "pnpm check:workflows-doc",
+    conditional: true,
   },
   {
     ciStepName: "Check cadence docs",
     id: "check-cadence",
     cmd: () => "pnpm check:cadence",
+    conditional: true,
   },
   {
     ciStepName: "Check tracker coverage",
     id: "check-tracker-coverage",
     cmd: () => "pnpm check:tracker-coverage",
+    conditional: true,
   },
   {
     ciStepName: "Check tracker status vocabulary",
     id: "check-tracker-status",
     cmd: () => "pnpm check:tracker-status",
+    conditional: true,
   },
   {
     ciStepName: "Check hub-sync key uniqueness",
     id: "check-hub-keys",
     cmd: () => "pnpm check:hub-keys",
+    conditional: true,
   },
   {
     ciStepName: "Check implementation count",
     id: "check-impl-counts",
     cmd: () => "pnpm check:impl-counts",
+    conditional: true,
   },
   {
     ciStepName: "Check reference index",
     id: "check-index",
     cmd: () => "pnpm check:index",
+    conditional: true,
   },
   {
     ciStepName: "Test (with coverage gate)",
     id: "test-coverage",
     cmd: () => "pnpm test:coverage",
+    conditional: true,
   },
   {
     ciStepName: "Check test counts",
     id: "check-test-counts",
     cmd: () => "pnpm check:test-counts",
+    conditional: true,
   },
-  { ciStepName: "Build", id: "build", cmd: () => "pnpm build" },
+  {
+    ciStepName: "Build",
+    id: "build",
+    cmd: () => "pnpm build",
+    conditional: true,
+  },
   {
     ciStepName: "Check package exports (publint + are-the-types-wrong)",
     id: "check-exports",
     cmd: () => "pnpm check:exports",
+    conditional: true,
   },
   {
     ciStepName: "Check barrel re-exports (scaffold)",
     id: "check-scaffold",
     cmd: () => "pnpm check:scaffold",
+    conditional: true,
   },
   {
     ciStepName: "Check scaffold seam (test + status row)",
     id: "check-scaffold-seam",
     cmd: () => "pnpm check:scaffold-seam",
+    conditional: true,
   },
   {
     ciStepName: "Check script scaffold conformance",
     id: "check-script-scaffold",
     cmd: () => "pnpm check:script-scaffold",
+    conditional: true,
   },
   {
     ciStepName: "Check script doc structure",
     id: "check-script-docs",
     cmd: () => "pnpm check:script-docs",
+    conditional: true,
   },
   {
     ciStepName: "Check script dependency boundary",
     id: "check-script-deps",
     cmd: () => "pnpm check:script-deps",
+    conditional: true,
   },
   {
     ciStepName: "Check barrel vs docs exports",
     id: "check-doc-exports",
     cmd: () => "pnpm check:doc-exports",
+    conditional: true,
   },
   {
     ciStepName: "Check subagent configuration (agents)",
     id: "check-agents",
     cmd: () => "pnpm check:agents",
+    conditional: true,
   },
   {
     ciStepName: "Check dynamic-workflow surface (workflows)",
     id: "check-workflows",
     cmd: () => "pnpm check:workflows",
+    conditional: true,
   },
   {
     ciStepName: "Check hook wiring (hooks)",
     id: "check-hooks",
     cmd: () => "pnpm check:hooks",
+    conditional: true,
   },
   {
     ciStepName: "Check GitHub-integration stance (github-stance)",
     id: "check-github-stance",
     cmd: () => "pnpm check:github-stance",
+    conditional: true,
   },
   {
     ciStepName: "Check dependency-direction zones (zones)",
     id: "check-zones",
     cmd: () => "pnpm check:zones",
+    conditional: true,
   },
   {
     ciStepName: "Check worktree include",
@@ -240,16 +295,19 @@ export const VERIFY_STEPS = [
     ciStepName: "Check command catalog",
     id: "check-command-catalog",
     cmd: () => "pnpm check:command-catalog",
+    conditional: true,
   },
   {
     ciStepName: "Check code duplication (jscpd)",
     id: "check-dup",
     cmd: () => "pnpm check:dup",
+    conditional: true,
   },
   {
     ciStepName: "Unused files / exports / dependencies (knip)",
     id: "knip",
     cmd: () => "pnpm knip",
+    conditional: true,
   },
   {
     ciStepName: "Check hub drift (push-only)",

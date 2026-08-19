@@ -18,13 +18,53 @@ concurrency:
 # nothing here depends on anything outside its own lane. `verify` aggregates
 # the lane results and MUST keep this exact job id: branch protection's
 # required status check is named `verify`, not any lane's name.
+#
+# Path-scoped: the `changes` job classifies what changed (bin/ci-changed-paths.mjs)
+# and every other lane/step gates on its outputs, so a docs-only or
+# .claude-only change skips the expensive lint/build/test lanes. The
+# classifier fails OPEN (defaults every category to true on any error), and
+# `verify` treats a `changes` job failure as a hard failure rather than
+# letting downstream lanes silently read as "skipped" — see `verify`'s own
+# comment.
 jobs:
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ts: ${{ steps.classify.outputs.ts }}
+      deps: ${{ steps.classify.outputs.deps }}
+      scripts: ${{ steps.classify.outputs.scripts }}
+      claude: ${{ steps.classify.outputs.claude }}
+      workflows: ${{ steps.classify.outputs.workflows }}
+      docs: ${{ steps.classify.outputs.docs }}
+      md: ${{ steps.classify.outputs.md }}
+    steps:
+      # Full history: bin/ci-changed-paths.mjs diffs against an arbitrary
+      # base sha (the PR base, or the pre-push sha on a push) that needs to
+      # be present in local history.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - id: classify
+        run: node bin/ci-changed-paths.mjs --base "$BASE_SHA" --head "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       # No pnpm install: gitleaks needs only the checked-out tree/history.
+      # Not gated on `changes` — a secret can be introduced by any file, and
+      # skipping secret scanning based on category is not worth the ~7s.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -37,6 +77,8 @@ jobs:
 
   deps:
     name: Dependency checks
+    needs: changes
+    if: needs.changes.outputs.deps == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -65,6 +107,8 @@ jobs:
 
   lint:
     name: Lint
+    needs: changes
+    if: needs.changes.outputs.ts == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -79,6 +123,7 @@ jobs:
 
   format:
     name: Format & Markdown
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -88,16 +133,22 @@ jobs:
 
       - uses: ./.github/actions/setup
 
-      # Prettier only --write's in the pre-commit hook; this catches drift from
-      # any commit that bypassed hooks.
+      # Not path-gated: prettier scans every tracked text extension, so
+      # scoping it to one category would rarely skip it anyway. Only
+      # Markdown-lint below is narrow enough to gate.
+      # Prettier only --write's in the pre-commit hook; this catches drift
+      # from any commit that bypassed hooks.
       - name: Format check
         run: pnpm format:check
 
       - name: Lint Markdown
+        if: needs.changes.outputs.md == 'true'
         run: pnpm lint:md
 
   build:
     name: Build & typecheck
+    needs: changes
+    if: needs.changes.outputs.ts == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -158,14 +209,10 @@ jobs:
       - name: Check scaffold seam (test + status row)
         run: pnpm check:scaffold-seam
 
-      # Every public export surfaced through a namespace barrel must be
-      # documented — present in its reference page heading or provenance sidecar.
-      # Deterministic backstop for the spec-conformance / docs-consistency spokes.
-      - name: Check barrel vs docs exports
-        run: pnpm check:doc-exports
-
   test:
     name: Test
+    needs: changes
+    if: needs.changes.outputs.ts == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -207,6 +254,7 @@ jobs:
 
   gates:
     name: Governance gates
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Widens the workflow-level `contents: read` default with `issues: read`
@@ -218,7 +266,10 @@ jobs:
       issues: read
     steps:
       # fetch-depth 0: "Validate commit messages" below needs the PR
-      # base..head commit range.
+      # base..head commit range. Not job-gated (unlike deps/lint/build/test):
+      # this lane bundles steps spanning several different change categories,
+      # so it stays unconditional at the job level with each step gated on
+      # its own category below.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -229,6 +280,7 @@ jobs:
       # track this file's step names exactly, or `pnpm verify` silently stops
       # reproducing what CI actually gates.
       - name: Check verify parity
+        if: needs.changes.outputs.workflows == 'true'
         run: pnpm check:verify-parity
 
       - name: Validate commit messages
@@ -238,55 +290,75 @@ jobs:
       # Doc-provenance sidecars anchor reference-page headings to source symbols
       # at a git commit. Fail if a heading or symbol is missing; warn on staleness.
       - name: Check doc provenance
+        if: needs.changes.outputs.docs == 'true'
         run: pnpm check:provenance
 
       # Submodule counts in prose must match the files in docs/reference/.
       - name: Check doc counts
+        if: needs.changes.outputs.docs == 'true'
         run: pnpm check:doc-counts
 
       # The CI/CD table in CLAUDE.md must document exactly the workflow files in
       # .github/workflows/ (count + one row each) — no undocumented or stale rows.
       - name: Check workflow docs
+        if: needs.changes.outputs.workflows == 'true'
         run: pnpm check:workflows-doc
 
       # The Commands cadence table in CLAUDE.md must match lefthook.yml — each
       # lefthook stage's checks documented exactly, so the cadence can't drift.
       - name: Check cadence docs
+        if: needs.changes.outputs.workflows == 'true'
         run: pnpm check:cadence
 
       # Every status-bearing ("## ", has a Status column) table in ROADMAP.md
       # and IMPLEMENTATION.md must be registered with the sync:hub extractor —
       # otherwise a newly added tracker table is a silent no-op forever.
       - name: Check tracker coverage
+        if: needs.changes.outputs.docs == 'true'
         run: pnpm check:tracker-coverage
 
       # Every Status cell in those same tables must be one of ADR-0032's six
       # tracker values — a board-side token ("In review") in a tracker cell
       # classifies as "todo" and leaves shipped work reading as open (#204).
       - name: Check tracker status vocabulary
+        if: needs.changes.outputs.docs == 'true'
         run: pnpm check:tracker-status
 
       # Every item key sync:hub derives from those same tables must be unique,
       # case-insensitively and including legacy aliases — a collision makes two
       # unrelated rows share one issue and silently closes the loser (#480).
       - name: Check hub-sync key uniqueness
+        if: needs.changes.outputs.docs == 'true'
         run: pnpm check:hub-keys
 
       # The implemented-count numerator ("N of 22") must match the ✅ rows in
       # docs/implementation-status.md across every badge / prose / HTML site.
       - name: Check implementation count
+        if: needs.changes.outputs.docs == 'true'
         run: pnpm check:impl-counts
 
       # catalog.json, symbol-map.json, and README.md catalog block must match
       # the current docs/reference/ + provenance sidecar state.
       - name: Check reference index
+        if: needs.changes.outputs.docs == 'true'
         run: pnpm check:index
+
+      # Every public export surfaced through a namespace barrel must be
+      # documented — present in its reference page heading or provenance
+      # sidecar. Moved here from the `build` lane (it reads src/ and docs/
+      # directly, never dist/, so it doesn't need that lane's build step) —
+      # gated on `ts` OR `docs` since either side of the barrel<->doc pairing
+      # can break it alone.
+      - name: Check barrel vs docs exports
+        if: needs.changes.outputs.ts == 'true' || needs.changes.outputs.docs == 'true'
+        run: pnpm check:doc-exports
 
       # Consumer-script scaffold: every scripts/<name> package must match the
       # ADR-0022 shape (modular src/, package contract, root tsconfig ref,
       # smoke test, README + contract page) defined in the shared manifest.
       # Deterministic backstop for the scaffolding-scripts skill.
       - name: Check script scaffold conformance
+        if: needs.changes.outputs.scripts == 'true'
         run: pnpm check:script-scaffold
 
       # Every script README and reference page must follow the canonical
@@ -294,6 +366,7 @@ jobs:
       # sections present, contract blockquotes present, ≥3 examples, Validation
       # column header, Operation column header in Operations at a glance.
       - name: Check script doc structure
+        if: needs.changes.outputs.scripts == 'true'
         run: pnpm check:script-docs
 
       # Every scripts/*/package.json must declare exactly the ADR-0029
@@ -301,11 +374,13 @@ jobs:
       # no devDependencies. The @aws-sdk/* import ban (eslint.config.js) is
       # the source-level half of this same rule.
       - name: Check script dependency boundary
+        if: needs.changes.outputs.scripts == 'true'
         run: pnpm check:script-deps
 
       # Subagent config: skill/CLAUDE.md references resolve to real agents or
       # built-ins, and no spoke is granted the Agent tool (no-nesting invariant).
       - name: Check subagent configuration (agents)
+        if: needs.changes.outputs.claude == 'true'
         run: pnpm check:agents
 
       # Dynamic-workflow surface (ADR-0025): .claude/workflows/* model/effort
@@ -313,17 +388,20 @@ jobs:
       # guardrail. Distinct from "Check workflow docs" above, which reconciles
       # the CLAUDE.md CI/CD table against .github/workflows/.
       - name: Check dynamic-workflow surface (workflows)
+        if: needs.changes.outputs.claude == 'true'
         run: pnpm check:workflows
 
       # Hook wiring: every .claude/settings.json hook command resolves to a real
       # .claude/hooks/*.mjs, and no hook file is left unwired.
       - name: Check hook wiring (hooks)
+        if: needs.changes.outputs.claude == 'true'
         run: pnpm check:hooks
 
       # GitHub-integration stance (ADR-0030 amendment, 2026-07-27): every
       # GitHub-talking skill cites the governing ADR, carries no retired policy
       # claim, and names the mechanism (gh CLI vs GitHub MCP) it actually uses.
       - name: Check GitHub-integration stance (github-stance)
+        if: needs.changes.outputs.claude == 'true'
         run: pnpm check:github-stance
 
       # ADR-0009/ADR-0035 dependency direction: the import-x/no-restricted-paths
@@ -332,10 +410,12 @@ jobs:
       # eslint.config.js — a deleted zone or a deleted no-cycle rule would pass
       # lint silently.
       - name: Check dependency-direction zones (zones)
+        if: needs.changes.outputs.ts == 'true'
         run: pnpm check:zones
 
       # .worktreeinclude hygiene: no tracked files and no unresolvable literal
-      # paths, so worktree:setup provisions a fresh worktree correctly.
+      # paths, so worktree:setup provisions a fresh worktree correctly. Not
+      # path-gated — no single category owns it, and it's near-instant.
       - name: Check worktree include
         run: pnpm check:worktree
 
@@ -343,15 +423,18 @@ jobs:
       # one row per package.json script, in both directions — the non-drift
       # gate for the pnpm commands lister.
       - name: Check command catalog
+        if: needs.changes.outputs.ts == 'true'
         run: pnpm check:command-catalog
 
       # Copy-paste duplication density (ADR-0034) — the one Sonar-style metric
       # not covered by ESLint's per-function complexity rules. CI-only: not
       # in pre-push, to keep that lane's wall-clock unchanged.
       - name: Check code duplication (jscpd)
+        if: needs.changes.outputs.ts == 'true'
         run: pnpm check:dup
 
       - name: Unused files / exports / dependencies (knip)
+        if: needs.changes.outputs.ts == 'true'
         run: pnpm knip
 
       # ADR-0032's visibility hub: docs/ROADMAP.md + IMPLEMENTATION.md must
@@ -359,25 +442,37 @@ jobs:
       # is a drift ALARM for main, not a merge-blocking gate for unrelated
       # work; the underlying sync itself stays maintainer-local (`pnpm
       # sync:hub -- --apply`), since GITHUB_TOKEN cannot write GitHub
-      # Projects v2 (see the ADR).
+      # Projects v2 (see the ADR). Not path-gated — a drift alarm for GitHub
+      # state, unrelated to what files this push happened to touch.
       - name: Check hub drift (push-only)
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm check:hub-drift
 
-  # The required status check branch protection looks for. Fails if any lane
+  # The required status check branch protection looks for. Fails if the
+  # changes job itself didn't succeed (see comment below), or if any lane
   # failed or was cancelled; passes if every lane succeeded or was
-  # deliberately skipped (path-scoping lands in a later PR).
+  # deliberately skipped by path-scoping.
   verify:
     name: verify
-    needs: [secrets, deps, lint, format, build, test, gates]
+    needs: [changes, secrets, deps, lint, format, build, test, gates]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Check lane results
         run: |
+          # A `changes` failure must never read as "every lane below it
+          # legitimately skipped" — its outputs would be unset, every
+          # `needs.changes.outputs.X == 'true'` condition would evaluate
+          # false, and every gated lane/step would report "skipped" (which
+          # this same check treats as passing) even though nothing was
+          # actually verified. Fail hard here instead.
+          if [[ "${{ needs.changes.result }}" != "success" ]]; then
+            echo "The changes (path classification) job did not succeed — treating this as a full failure rather than letting downstream lanes silently read as skipped."
+            exit 1
+          fi
           if [[ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
             echo "One or more lanes failed or were cancelled:"
             echo '${{ toJSON(needs) }}'
