@@ -10,7 +10,12 @@
 // Same rule for a change under `bin/**` here: the check scripts' own logic
 // lives there, so a change to any one of them sets every category true
 // rather than trusting this classifier to know which single category its
-// own edit belongs to.
+// own edit belongs to. Same rule again for any path that matches NO
+// predicate at all: an unclassified path (e.g. a new top-level directory
+// like `templates/`) is exactly the case this classifier can't yet reason
+// about, so it forces every category true rather than silently reading as
+// all-false — three review rounds each found a different unmatched path
+// (a config file, a snapshot, a template) before this net was added.
 
 /** @typedef {"ts" | "deps" | "scripts" | "claude" | "workflows" | "docs" | "md"} ChangeCategory */
 
@@ -89,11 +94,14 @@ const PREDICATES = {
  */
 export function classifyChangedPaths(paths) {
   const anyBinChange = paths.some((p) => p.startsWith("bin/"));
+  const anyUnclassified = paths.some(
+    (p) => !CHANGE_CATEGORIES.some((category) => PREDICATES[category](p)),
+  );
+  const forceAll = anyBinChange || anyUnclassified;
   /** @type {Record<ChangeCategory, boolean>} */
   const flags = /** @type {any} */ ({});
   for (const category of CHANGE_CATEGORIES) {
-    flags[category] =
-      anyBinChange || paths.some((p) => PREDICATES[category](p));
+    flags[category] = forceAll || paths.some((p) => PREDICATES[category](p));
   }
   return flags;
 }

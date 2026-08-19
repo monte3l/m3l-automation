@@ -82,17 +82,15 @@ describe("classifyChangedPaths", () => {
     expect(flags.md).toBe(true);
   });
 
-  test("a path matching no predicate returns all-false", () => {
+  test("a path matching no predicate forces every category true (fail-open)", () => {
+    // .gitignore matches none of the 7 predicates individually (not .ts,
+    // not scripts/, not .claude/, not a listed workflows exact match, not
+    // docs/, not .md) — so if this comes back all-true, it can only be the
+    // unclassified-path safety net firing, not any predicate.
     const flags = classifyChangedPaths([".gitignore"]);
-    expect(flags).toEqual({
-      ts: false,
-      deps: false,
-      scripts: false,
-      claude: false,
-      workflows: false,
-      docs: false,
-      md: false,
-    });
+    for (const category of CHANGE_CATEGORIES) {
+      expect(flags[category]).toBe(true);
+    }
   });
 
   test("empty input returns all-false", () => {
@@ -143,6 +141,21 @@ describe("classifyChangedPaths", () => {
 
   test("the bin/ safety net applies to every category even when other changed paths match nothing", () => {
     const flags = classifyChangedPaths(["bin/lib/report.mjs", ".gitignore"]);
+    for (const category of CHANGE_CATEGORIES) {
+      expect(flags[category]).toBe(true);
+    }
+  });
+
+  test("an unclassified path forces every category true even alongside a path that would otherwise classify narrowly", () => {
+    // templates/script/foo.tmpl matches none of the 7 predicates individually
+    // (not .ts, not scripts/, not .claude/, not a listed workflows exact
+    // match, not docs/, not .md), while the .ts path alone would only ever
+    // set `ts` true — so if this comes back all-true, it can only be the
+    // unclassified-path safety net firing, not any predicate combination.
+    const flags = classifyChangedPaths([
+      "templates/script/foo.tmpl",
+      "packages/m3l-common/src/core/errors/index.ts",
+    ]);
     for (const category of CHANGE_CATEGORIES) {
       expect(flags[category]).toBe(true);
     }

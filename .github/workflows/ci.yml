@@ -330,9 +330,12 @@ jobs:
         run: pnpm check:impl-counts
 
       # catalog.json, symbol-map.json, and README.md catalog block must match
-      # the current docs/reference/ + provenance sidecar state.
+      # the current docs/reference/ + provenance sidecar state. docs || scripts:
+      # the scripts catalog block is derived from the union of docs/reference/scripts/
+      # pages AND scripts/ packages, so an add/remove under scripts/ alone must
+      # not skip it.
       - name: Check reference index
-        if: needs.changes.outputs.docs == 'true'
+        if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.scripts == 'true'
         run: pnpm check:index
 
       # Every public export surfaced through a namespace barrel must be
@@ -369,9 +372,11 @@ jobs:
       # smoke test, README + contract page) defined in the shared manifest.
       # Deterministic backstop for the scaffolding-scripts skill. scripts ||
       # docs: also validates docs/reference/scripts/<name>.md, so a
-      # contract-page-only edit must not skip it.
+      # contract-page-only edit must not skip it. || ts: also asserts the root
+      # tsconfig.json carries a `./scripts/*` project reference, so a
+      # tsconfig-only edit must not skip it either.
       - name: Check script scaffold conformance
-        if: needs.changes.outputs.scripts == 'true' || needs.changes.outputs.docs == 'true'
+        if: needs.changes.outputs.scripts == 'true' || needs.changes.outputs.docs == 'true' || needs.changes.outputs.ts == 'true'
         run: pnpm check:script-scaffold
 
       # Every script README and reference page must follow the canonical
