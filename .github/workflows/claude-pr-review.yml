@@ -219,18 +219,27 @@ jobs:
           # the system prompt so a fresh runner's prefix can still hit a warm
           # cache from an earlier run on the same PR within the 1h TTL.
           # --max-turns 35 replaces the old 100 (observed max 28/100 used).
-          # --allowedTools is scoped rather than blanket Bash,Read because
-          # --safe-mode also removes guard-readonly-bash.mjs, so the allowlist
-          # is now the only write barrier; echo/cat/grep/rg/wc/gh pr comment
-          # cover everything the prompt below actually does. See
-          # docs/research/pr-review-action-tuning.md for sourcing.
+          # --allowedTools is blanket Bash,Read, not scoped: a scoped
+          # allowlist was tried first (Bash(echo:*) etc.) but the verdict
+          # write's `>` redirect doesn't match a plain command-prefix
+          # pattern — Claude Code's permission matcher does not treat
+          # shell redirection as covered by the base command's allow rule,
+          # by design (a bare prefix match would let `echo:*` write
+          # anywhere). That produced 20-23 permission denials per run in
+          # production (PRs #501/#502, 2026-08-19), which burned most of
+          # the turn budget on retries and pushed real reviews past
+          # --max-turns despite `ci.yml`-scoped prompt content that should
+          # need only a handful of turns. --safe-mode still removes
+          # guard-readonly-bash.mjs, so this prompt is the only write
+          # barrier now (it explicitly says "Do not modify any files").
+          # See docs/research/pr-review-action-tuning.md for sourcing.
           claude_args: >-
             --safe-mode
             --model claude-opus-5
             --effort medium
             --exclude-dynamic-system-prompt-sections
             --max-turns 35
-            --allowedTools "Read,Bash(gh pr comment:*),Bash(cat:*),Bash(echo:*),Bash(grep:*),Bash(rg:*),Bash(wc:*)"
+            --allowedTools "Bash,Read"
           use_sticky_comment: true
           prompt: |
             You are the blocking PR reviewer for this repo. Review ONLY what is visible in

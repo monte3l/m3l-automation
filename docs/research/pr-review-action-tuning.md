@@ -166,6 +166,53 @@ revisits three conclusions from the original pass with what changed since:
 - T9: Manage costs effectively — <https://code.claude.com/docs/en/costs> (docs)
 - T10: When to use multi-agent systems (and when not to) — <https://claude.com/blog/building-multi-agent-systems-when-and-how-to-use-them> (blog)
 
+## Addendum (2026-08-19b) — scoped `--allowedTools` regressed in production
+
+> Written same day as the addendum above, after the first two real PRs
+> (#501, #502) ran the new config and both failed the `review` required
+> check.
+
+The scoped `--allowedTools` from the first addendum
+(`Read,Bash(gh pr comment:*),Bash(cat:*),Bash(echo:*),Bash(grep:*),Bash(rg:*),Bash(wc:*)`)
+was live for exactly two PRs before both failed. Both runs logged
+`permission_denials_count` in the low twenties (20 and 23, against
+`--max-turns 35`) — the model was denied on nearly every attempt to run the
+prompt's own mandated final step:
+
+```bash
+echo -n 'PASS' > "$GITHUB_WORKSPACE/.claude-review-verdict"
+```
+
+`Bash(echo:*)` is a command-prefix pattern; it does not extend to cover
+shell redirection (`>`). Claude Code's permission matcher treats a
+redirect target as needing its own grant, by design — a bare prefix match
+covering `>` would let `Bash(echo:*)` write to any path. Nothing in the
+plan's allowlist granted write access to `.claude-review-verdict` itself,
+so every attempt to satisfy the prompt's required final action was denied,
+and the model kept retrying rather than giving up — each retry consumes a
+turn. PR #502 (17 files, 1,366 changed lines) ran out of turns entirely
+(`num_turns: 36` against the cap of 35) after already posting a complete,
+correct review comment with a PASS verdict — the required check still
+failed, because the wrapper's turn-budget enforcement is independent of
+whether a valid verdict was already posted. PR #501 (22 files, 2,797
+changed lines, 387,443-character patch — over the action's ~150k
+truncation threshold) finished at `num_turns: 40`, over the cap, so the
+action's own post-hoc bounds check (`claude reported a successful result
+after 40 turns, exceeding the configured maximum of 35`) failed the job
+even though the SDK's own execution completed normally (`subtype: success`).
+
+This was the exact risk the original plan flagged for gate 2 ("does the
+verdict write survive the scoped allowlist?") with a pre-authorized
+fallback, applied here: `--allowedTools` reverted to blanket `"Bash,Read"`.
+`--safe-mode` already removed `guard-readonly-bash.mjs`, so the prompt's
+own "Do not modify any files" instruction is now the only write barrier —
+matching the posture the workflow ran under (successfully, for months)
+before this change. `--effort medium`, `--exclude-dynamic-system-prompt-
+sections`, and `--max-turns 35` are unchanged; once the permission-denial
+retry loop is gone, turn counts should return toward the original 8–28
+baseline, leaving headroom under 35 again. No new sources — this is an
+operational finding, not new external guidance.
+
 ## Sources
 
 - S1: Claude Code GitHub Actions docs — <https://code.claude.com/docs/en/github-actions> (docs)
