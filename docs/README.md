@@ -108,4 +108,5 @@ Utilities
 
 - [Contributing](contributing/contributing.md) — setup, commands, testing, and commit conventions
 - [Coding standards](contributing/coding-standards.md) — TypeScript style and conventions
+- [CI/CD workflows](contributing/ci-cd.md) — the seven GitHub Actions workflows, triggers, and purpose
 - [Model selection](contributing/model-selection.md) — which Claude model runs which task category, and how it is enforced

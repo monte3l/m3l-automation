@@ -2,187 +2,77 @@
 
 <!--
 ================================================================
- CLAUDE.md — TypeScript Library Edition
-================================================================
- SCOPE
-   Project-level instruction file read by Claude Code at the
-   start of every session. Lives at ./CLAUDE.md or
-   ./.claude/CLAUDE.md (both are valid; ./.claude/CLAUDE.md
-   keeps the repo root clean). Shared with the team via source
-   control. For personal, gitignored overrides use
-   ./CLAUDE.local.md.
+ CLAUDE.md maintainer notes — stripped before injection, costs 0 runtime
+ tokens. Design rationale: Anthropic's docs.claude.com/en/memory + best-practices.
 
- PROJECT SHAPE (drives every section below)
-   Internal library (not published to npm) · TypeScript (strict) ·
-   ESM only · built with tsc (no bundler) · pnpm · Node.js 24 LTS
-   floor · Vitest · ESLint + Prettier · public API exposed via
-   package.json subpath exports.
+ BUDGET: keep runtime content (everything outside HTML comments) under
+ ~200 lines / ~3,000 tokens — longer files reduce Claude's instruction
+ adherence ("Bloated CLAUDE.md files cause Claude to ignore your actual
+ instructions," docs.claude.com/en/best-practices). Every custom subagent
+ in this repo's spoke roster reloads this file at launch (only the built-in
+ Explore/Plan agents skip it), so its size is paid per-dispatch, not once
+ per session. `pnpm check:claude-md-budget` enforces the line/token budget
+ in CI; it also warns when a table row's Prettier alignment padding exceeds
+ 200 chars — the recurring cause of this file's largest blocks historically.
 
- HOW THIS TEMPLATE WORKS
-   Every section is wrapped in an HTML comment that documents:
-     - Scope/usage     — what the section is for
-     - Status          — Mandatory | Recommended | Optional | Niche
-     - Best practices  — how to write it well
-     - Model notes     — how Fable 5 / Opus 5 / Sonnet 4.6 /
-                          Haiku 4.5 consume it
-   Block-level HTML comments are STRIPPED before CLAUDE.md is
-   injected into the model's context, so this documentation
-   costs ZERO context tokens at runtime. It is visible only to
-   humans editing the file (and via the Read tool).
-   NOTE: comments INSIDE fenced code blocks are NOT stripped —
-   keep docs outside code fences if you want them free.
+ EVICTION RULES: a multi-step procedure -> a skill (.claude/skills/); a
+ constraint scoped to one path -> a rule with `paths:` frontmatter
+ (.claude/rules/*.md); a rule that must ALWAYS hold -> a
+ .claude/settings.json hook, not prose (CLAUDE.md is advisory context, never
+ enforced config). Keep here only facts every session needs. `@path`
+ imports do NOT save context — they expand in full at launch; prefer a
+ pointer sentence over an import when the target is large.
 
- LENGTH DISCIPLINE
-   This file is a SUPERSET menu of every standard, recommended,
-   and niche section. A real project should keep the
-   runtime-visible content (everything outside HTML comments)
-   under ~200 lines: longer files consume more context and
-   reduce adherence. Delete sections you don't need; push
-   multi-step procedures into skills (.claude/skills/) and
-   file-type-specific rules into path-scoped .claude/rules/*.md.
-
- ENFORCEMENT vs GUIDANCE
-   CLAUDE.md is ADVISORY — Claude reads it as context, not
-   enforced config. For anything that MUST happen every time
-   (lint, tests, blocked paths), use a PreToolUse / PostToolUse
-   / Stop hook in .claude/settings.json instead.
-
- PLACEHOLDERS LEFT TO FILL
-   <PROJECT_NAME>, <ONE_LINE_PURPOSE>, <CONSUMERS>, <CONSTRAINT>,
-   <pkg-scope>/<pkg-name>, and the Domain Glossary term. These
-   are project-identity facts; fill them in, do not guess.
+ WARNING — three scripts parse this file's exact prose; do not restructure
+ the sections below without updating them:
+   bin/check-cadence-doc.mjs     reads "## Commands" here — the stage cell
+                                  + backticked check tokens per lefthook
+                                  stage (the `ci.yml` row is skipped).
+   bin/check-claude-md-budget.mjs reads this whole file (comments stripped).
+   bin/lib/count-sites.mjs       reads the literal "Core namespace barrel
+                                  (N documented submodules)" / "AWS
+                                  namespace barrel (N documented submodules)"
+                                  phrases here.
+ The CI/CD workflow table used to live here too; it moved to
+ docs/contributing/ci-cd.md and bin/check-workflows-doc.mjs was repointed
+ there — see that file's header for why.
 ================================================================
 -->
 
-<!--
-================================================================
- SECTION: Project Identity / Overview
- Scope/usage   : One-paragraph orientation. What this is, who
-                 uses it, the stack.
- Status        : Mandatory.
- Best practices: 3-5 sentences max. State the runtime, the
-                 domain, and the single most important
-                 constraint. No marketing prose.
- Model notes   : Haiku 4.5 leans heavily on this to disambiguate
-                 intent — be concrete. Opus 5 and Fable 5 infer
-                 architecture from terse framing; Sonnet 4.6 sits
-                 between. Name the language/version explicitly for
-                 every tier.
-================================================================
--->
+A utilities library designed to support automation scripts with enterprise-grade abstractions for configuration management, logging, error handling, data import/export, asynchronous polling/retry mechanisms, and cross-cutting concerns. Package @m3l-automation/m3l-common, written in **TypeScript 6.x** (`strict: true`), compiled with `tsc` to **ESM-only** output, managed with `pnpm`, targeting **Node.js 24 LTS+**. Primary consumers: automation scripts. The non-negotiable constraint is: minimal runtime dependencies, no breaking changes outside a major release, strict semver, no `any` in the public API, Node 24+ only.
 
-A utilities library designed to support automation scripts with
-enterprise-grade abstractions for configuration management, logging,
-error handling, data import/export, asynchronous polling/retry mechanisms,
-and cross-cutting concern. Package @m3l-automation/m3l-common, written
-in **TypeScript 6.x** (`strict: true`), compiled with `tsc`
-to **ESM-only** output, managed with `pnpm`, targeting **Node.js 24
-LTS+**. Primary consumers: automation scripts. The non-negotiable
-constraint is: minimal runtime dependencies, no breaking changes outside
-a major release, strict semver, no any in the public API, Node 24+ only
-
-**Owner:** the repo maintainer (single-maintainer project). Review this file
-whenever a submodule/script pipeline ships, or every ~6 months, whichever
-comes first.
+**Owner:** the repo maintainer (single-maintainer project). Review this file whenever a submodule/script pipeline ships, or every ~6 months, whichever comes first.
 
 ## Tech Stack
 
-<!--
-================================================================
- SECTION: Tech Stack
- Scope/usage   : Pin the versions and tools Claude must target,
-                 not discover.
- Status        : Recommended.
- Best practices: List only what changes Claude's output
-                 (language version, module format, package
-                 manager, runtime). Avoid an exhaustive
-                 dependency dump — that lives in package.json
-                 (import it).
- Model notes   : All tiers; prevents Claude from emitting the
-                 wrong module system (e.g. CommonJS `require` in
-                 an ESM package) by anchoring to a concrete
-                 target.
-================================================================
--->
-
-- Language: TypeScript 6.x, `strict: true`, compiled with `tsc`
-  (no bundler — tsc emits faithful `.d.ts`)
-- Module format: **ESM only** (`"type": "module"`; no bundler)
-- Runtime floor: Node.js 24 LTS (pinned in `.node-version`)
-- Package manager: `pnpm` (lockfile is authoritative; never edit by hand;
-  pinned via `packageManager` + Corepack)
-- Task runner: `turbo` (orchestrates/caches `build` + `typecheck`)
-- Test: `vitest`
-- Lint/format: `eslint` (flat config) + `prettier`
-- Git hooks: `lefthook` (`lefthook.yml`; replaces husky + lint-staged)
-- Dep/exports hygiene: `knip` (unused files/exports/deps),
-  `publint` + `@arethetypeswrong/cli` (exports-map / ESM / types resolution)
-- Versioning: manual — `version` in package.json is hand-managed; the package
-  is internal and not published to npm (see ADR-0020)
+- TypeScript 6.x, `strict: true`, compiled with `tsc` (no bundler); ESM only
+  (`"type": "module"`); Node.js 24 LTS floor (`.node-version`)
+- `pnpm` (lockfile authoritative, pinned via `packageManager` + Corepack);
+  `turbo` orchestrates/caches `build` + `typecheck`
+- Test: `vitest`. Lint/format: `eslint` (flat config) + `prettier`. Git
+  hooks: `lefthook` (replaces husky + lint-staged)
+- Dep/exports hygiene: `knip`, `publint` + `@arethetypeswrong/cli`
+- Versioning is manual (`version` hand-managed; internal, unpublished
+  package, ADR-0020)
 
 See @package.json for the full dependency set, scripts, and the
 `exports` map.
 
 ## Repository Layout
 
-<!--
-================================================================
- SECTION: Repository Layout
- Scope/usage   : Tells Claude where things live so it edits the
-                 right file and places new files correctly.
- Status        : Recommended (Mandatory for monorepos).
- Best practices: Show the top 1-2 levels only, annotate intent.
-                 Don't paste a full `tree` dump. For monorepos,
-                 prefer nested CLAUDE.md files per package
-                 (lazy-loaded) over one giant root layout.
- Model notes   : High value for Haiku 4.5 (reduces
-                 wrong-directory edits). Opus 5 / Fable 5 will
-                 explore if omitted, but stating it saves
-                 tokens/time.
-================================================================
--->
-
-This is a **pnpm monorepo**. The `pnpm-workspace.yaml` at the root is also
-what the library's `M3LExecutionEnvironment` detects to switch into MONOREPO
-mode (so `M3LPaths` anchors `data/` at the workspace root).
+This is a **pnpm monorepo** — `pnpm-workspace.yaml` also triggers
+`M3LExecutionEnvironment`'s MONOREPO mode, anchoring `data/` at the workspace
+root.
 
 ```text
-pnpm-workspace.yaml     # packages/* + scripts/* (also triggers MONOREPO mode)
-tsconfig.base.json      # shared strict/ESM/Node24 compiler options
-packages/
-  m3l-common/           # the published library (@m3l-automation/m3l-common)
-    src/
-      index.ts          # main entry / public barrel (re-exports Core + AWS)
-      core/index.ts     # Core namespace barrel (22 documented submodules)
-      aws/index.ts      # AWS namespace barrel (19 documented submodules)
-      internal/         # NOT exported; no "exports" entry; may change freely
-    dist/               # tsc output (ESM .js + .d.ts) — generated, never edit
-    tests/              # *.test.ts (Vitest)
-scripts/                # automations consuming the library via workspace:*
-  <name>/src/           # main.ts composition root + config.ts + steps/ (ADR-0022)
-data/{config,input,output}/   # M3LPaths dirs (output/ holds run archives)
+packages/m3l-common/    # @m3l-automation/m3l-common — the library
+packages/m3l-cli/       # @m3l-automation/m3l-cli
+scripts/<name>/src/     # automations consuming the library via workspace:*
 ```
 
-The package.json `exports` map exposes exactly three entries — `.`, `./core`,
-and `./aws`. New Core/AWS submodules are surfaced through the namespace barrel
-(`src/core/index.ts` / `src/aws/index.ts`), NOT as new subpath entries. Adding,
-removing, or retyping one of the three entries is a semver event. Anything under
-`internal/` is private API.
+`exports` exposes exactly `.`, `./core`, `./aws` — Core namespace barrel (22 documented submodules) and AWS namespace barrel (19 documented submodules) surface through it; a new submodule joins the barrel, never a new subpath (semver event). `internal/` is NOT exported, may change freely. Full tree: `docs/contributing/contributing.md` § Repository Layout.
 
 ## Environment Setup
-
-<!--
-================================================================
- SECTION: Environment Setup
- Scope/usage   : The exact commands to get from clone to a
-                 runnable state.
- Status        : Recommended.
- Best practices: Copy-pasteable, idempotent commands. State env
-                 vars by name only, never values/secrets.
- Model notes   : All tiers. Critical for Haiku-driven subagents
-                 doing setup.
-================================================================
--->
 
 ```bash
 corepack enable     # activate the pnpm version pinned in packageManager
@@ -191,498 +81,107 @@ pnpm build          # turbo -> tsc -> dist/ (ESM .js + .d.ts)
 pnpm test           # run the suite once
 ```
 
-Node is pinned in `.node-version` (24); use a manager that reads it
-(fnm/nvm/mise) plus `corepack enable` for pnpm. Git hooks install
-automatically via the `prepare` script (`lefthook install`).
-In CI, use `pnpm install --frozen-lockfile`. A pure library needs no
-services and no publish credentials. CI uses only the auto-provided
-`GITHUB_TOKEN`; never commit any secret — the `guard-secret-writes` hook and
-`gitleaks` scan defensively block token literals (`NPM_TOKEN`, `GITHUB_TOKEN`,
-AWS keys) at write time and in CI.
+Node is pinned in `.node-version` (24). In CI, use
+`pnpm install --frozen-lockfile`. A pure library needs no services to run
+locally. Full setup detail: `docs/contributing/contributing.md`
+§ Environment Setup.
 
 ## Commands
 
-<!--
-================================================================
- SECTION: Build / Test / Run Commands
- Scope/usage   : The single highest-leverage section. The exact
-                 verified commands Claude should run per task.
- Status        : Mandatory.
- Best practices: Use real, working invocations. Pair each with
-                 WHEN to run it. If a command MUST run (e.g.
-                 tests before commit), back it with a
-                 PostToolUse/Stop hook — CLAUDE.md alone is
-                 advisory and Claude may skip it.
- Model notes   : All tiers rely on this. Haiku 4.5 in particular
-                 will not infer your test runner — name it. The
-                 stronger tiers still benefit by avoiding the
-                 wrong flag.
-================================================================
--->
+Run any task with `pnpm <script>` (`pnpm commands` lists every one with its
+scope). The table is the pre-push cadence, machine-verified against
+`lefthook.yml` by `pnpm check:cadence`; CI runs every pre-push check plus
+every `check:*`, `knip`, `lint:md`, `gitleaks`, `audit` — see
+`docs/contributing/ci-cd.md`. `pre-push` takes minutes — background it rather
+than `--no-verify`, since CI re-runs everything anyway.
 
-Run any task with `pnpm <script>`; the full list is in `package.json` `scripts`.
-Run `pnpm commands` to list every one grouped by family with a description of
-its scope and intended usage (`bin/lib/command-catalog.mjs`, non-drift-checked
-by `pnpm check:command-catalog`). The table below is the source of truth for
-the git-hook cadence, machine-verified against `lefthook.yml` by
-`pnpm check:cadence`.
+| Stage                   | Checks                                                                                                                                                          | Scope  |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `pre-commit` (lefthook) | `eslint`, `prettier`                                                                                                                                            | staged |
+| `commit-msg` (lefthook) | `lint-commit`                                                                                                                                                   | commit |
+| `pre-push` (lefthook)   | `format:check`, `lint`, `typecheck`, `test:coverage`, `build`, `check:exports`, `verify-signed-range`, `check:agents`, `check:test-counts`, `check:script-docs` | repo   |
 
-| Stage                                                                    | Checks run                                                                                                                                                                                                                                                                                                                  | Scope                     |
-| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| `pre-commit` (lefthook)                                                  | `eslint --fix`, `prettier --write`                                                                                                                                                                                                                                                                                          | staged files only         |
-| `commit-msg` (lefthook)                                                  | `lint-commit`                                                                                                                                                                                                                                                                                                               | the commit message        |
-| `pre-push` (lefthook)                                                    | `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test:coverage`, `pnpm build`, `pnpm check:exports`, `verify-signed-range`, `pnpm check:agents`, `pnpm check:test-counts`, `pnpm check:script-docs`                                                                                                                | whole repo                |
-| `ci.yml` (`secrets`/`deps`/`lint`/`format`/`build`/`test`/`gates` lanes) | every pre-push check **except** `verify-signed-range` (branch protection enforces signed commits at the platform level instead), **plus** every `check:*` script, `pnpm build`, `pnpm knip`, `pnpm lint:md`, `gitleaks`, and `pnpm audit`, split across seven parallel lane jobs — see `ci.yml` for the per-lane step lists | whole repo, authoritative |
-
-There is no pre-publish hook (package is internal/unpublished, ADR-0020); every
-gate beyond pre-push runs only in CI. `pre-push` runs in parallel but still
-takes minutes (`test:coverage`/`lint` are the slowest lanes) — budget for it
-(background or a longer timeout) rather than `--no-verify`, since CI re-runs
-everything anyway. `pnpm verify` reproduces every lane's project-check steps
-locally in one command (fail-fast by default); `pnpm check:verify-parity`
-keeps its step list (`bin/lib/verify-steps.mjs`) from drifting out of sync
-with `ci.yml`'s lane jobs. `ci.yml`'s own `verify` job is the required-status-check
-aggregator (`needs:` on all seven lanes) — it carries no project checks itself.
+`pnpm verify` reproduces every CI check locally; `pnpm check:verify-parity`
+keeps its step list in sync with `ci.yml`.
 
 ## CI/CD
 
-Seven GitHub Actions workflows in `.github/workflows/` (plus Dependabot via the
-GitHub-native `.github/dependabot.yml`, which is config, not a workflow):
-
-| Workflow                | Trigger                             | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ----------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ci.yml`                | push / PR → main                    | Full quality-gate pipeline: an eighth job (`changes`, `bin/ci-changed-paths.mjs`) classifies the diff and path-scopes the other seven parallel lanes (`secrets` always runs; `deps`/`lint`/`build`/`test` gate at the job level; `format`/`gates` stay unconditional with individual steps gated) — a docs-only or `.claude`-only change skips the lanes it can't affect. `verify` aggregates the results and is the required status check; a `changes` job failure fails `verify` directly rather than letting downstream lanes read as a false "skipped" pass. |
-| `claude-pr-review.yml`  | PR opened / sync / reopened / ready | **Mandatory blocking gate** — produces PASS/FAIL verdict; merge requires PASS; skips re-review when a prior PASS still applies (no reviewable files changed)                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `claude-assistant.yml`  | @claude in issues / PRs             | On-demand Claude Code assistant                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `dependency-review.yml` | PR → main                           | Blocks HIGH/CRITICAL vulnerability advisories                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `scorecard.yml`         | push → main / weekly cron           | OpenSSF Scorecard supply-chain posture scoring (ADR-0015); uploads SARIF to the Security tab                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `security-audit.yml`    | weekly cron / manual dispatch       | Scheduled `pnpm audit --audit-level=high` + `pnpm check:licenses` — catches an advisory or license change published against an unchanged lockfile between pushes (ci.yml runs the same two checks on every push/PR)                                                                                                                                                                                                                                                                                                                                              |
-| `pages.yml`             | push → main / manual dispatch       | Builds and deploys the GitHub Pages site — visibility-hub dashboard at `/` (ADR-0032) plus shields.io commit-stats endpoint-badge JSON at `/commit-stats/` (ADR-0032 addendum); supersedes `pages-commit-stats.yml`                                                                                                                                                                                                                                                                                                                                              |
-
-**Required status checks** (branch protection on `main`): `verify` (ci.yml),
-`review` (claude-pr-review.yml), `Dependency Review` (dependency-review.yml),
-and **`CodeQL`** — GitHub default setup, not a file in `.github/workflows/`, so
-it has no row in the table above; it still runs on every push/PR and blocks
-merge like the other three.
+Seven GitHub Actions workflows in `.github/workflows/` (plus Dependabot).
+Full table — triggers, purpose, required status checks:
+`docs/contributing/ci-cd.md`.
 
 ## Coding, errors & tests (path-scoped)
 
-<!--
-================================================================
- SECTION: Code Style & Conventions
- Scope/usage   : Project-specific rules Claude wouldn't infer
-                 from the linter.
- Status        : Recommended.
- Best practices: Encode ONLY what the formatter/linter can't, or
-                 what Claude repeatedly gets wrong. Be verifiable.
-                 Defer mechanical rules to Prettier/ESLint config
-                 and say so.
- Model notes   : Haiku 4.5 needs explicit, enumerated rules plus
-                 an example. Sonnet 4.6, Opus 5, and Fable 5
-                 generalize from one canonical example.
-================================================================
--->
+Canonical **Style Guide**: `docs/contributing/style-guide.md` (`[enforced]` vs `[advisory]` per rule). Its `.claude/rules/*.md` extracts load only on matching files (cost nothing otherwise):
 
-The canonical code/test/refactoring **Style Guide** is
-`docs/contributing/style-guide.md` (each rule tagged `[enforced]` vs `[advisory]`).
-Its terse extracts live in `.claude/rules/` and load only when you touch matching
-files (so they cost nothing in unrelated sessions):
-
-- `packages/m3l-common/src/**` → `.claude/rules/library-src.md` — ESM `.js`
-  imports, no `any`/`!`, named exports, `readonly`/`const`, the `M3LError`
-  hierarchy (chain with `cause`), TSDoc, `internal/` privacy, the `exports`
-  contract.
-- `**/tests/**`, `*.test.ts` → `.claude/rules/tests.md` — Vitest, a happy +
-  failure path per export, `expectTypeOf` where the type is the contract, the
-  per-file coverage gate (lines 90 / functions 83 / branches 80 / statements 89).
-- source/scripts/tests → `.claude/rules/refactoring.md` — behavior-preserving
-  changes: test-safety-net first, small isolated `refactor:` commits, the
-  Boy-Scout rule, and the semver hazard of touching the public surface.
-- `scripts/**` → `.claude/rules/scripts.md` — consuming the library via
-  `workspace:*` (the only dependency, ADR-0029), service naming (ADR-0028),
-  and the `M3LScript` lifecycle.
-- Deeper reference: `.claude/rules/domain-knowledge.md`.
+- `packages/m3l-common/src/**` → `library-src.md` — ESM imports, no `any`, TSDoc, `M3LError`, `internal/` privacy
+- `**/tests/**`, `*.test.ts` → `tests.md` — Vitest, coverage gate
+- `packages/m3l-common/src/**`, `scripts/**`, `**/tests/**` → `refactoring.md` — behavior-preserving changes
+- `scripts/**` → `scripts.md` — `workspace:*` (ADR-0029), naming (ADR-0028)
+- `packages/**/*.ts`, `scripts/**/*.ts`, `**/*.test.ts` → `domain-knowledge.md`
+- `.claude/skills/**`, `.claude/agents/**` → `subagent-dispatch.md` — truncation recovery
 
 ## Interaction Style
 
-- **Before planning or implementing:** ask 5–7 clarifying questions to surface
-  constraints, preferences, and edge cases before committing to an approach.
-- **When multiple valid approaches exist:** present 3–5 solutions with a brief
-  rationale and tradeoff for each; do not pick one without user input.
-- Input-collection prompts (e.g. "what is the script name?") are exempt — they
-  are required-parameter asks, not planning clarifications.
-
-### Response Style
-
-- Keep chat responses concise. For a long deliverable (audit report, plan, ADR,
-  triage report), write it to a file and give only a short summary in chat —
-  don't paste the whole thing inline.
-- If a response would still run very large, split it across turns rather than
-  emitting it in one oversized reply.
+- **Before planning or implementing:** ask 5–7 clarifying questions to surface constraints, preferences, and edge cases before committing to an approach.
+- **When multiple valid approaches exist:** present 3–5 solutions with a brief rationale and tradeoff for each; do not pick one without user input.
+- Input-collection prompts (e.g. "what is the script name?") are exempt.
+- **Response style:** keep chat responses concise — a long deliverable (audit, plan, ADR, report) goes to a file with a short chat summary; split an oversized response across turns rather than one long reply.
 
 ## Git Workflow
 
-<!--
-================================================================
- SECTION: Git Workflow & Commit Conventions
- Scope/usage   : Branching, commit message format, PR
-                 expectations.
- Status        : Mandatory here — a named commit convention keeps
-                 history readable and machine-scannable.
- Best practices: State the commit convention and the hard rules.
-                 Enforce with a commit-msg hook (bin/lint-commit.mjs) or
-                 branch protection, not prose alone.
- Model notes   : All tiers follow a named convention reliably;
-                 ambiguous phrasing ("write good commits") is
-                 ignored across tiers.
-================================================================
--->
-
-- **Conventional Commits (required)**, with an AI co-authorship trailer when
-  Claude authored/assisted. Enforced by the `commit-msg` hook. Trailer
-  mechanics and canonical model names: `docs/contributing/contributing.md`.
-- **Before change-work, run `/start-work`** — the pre-work decision gate that
-  settles location / branch / PR / push (ADR-0016). Branch from `main`:
-  `feat/<slug>`, `fix/<slug>`; `guard-branch-isolation.mjs` blocks
-  `packages/*/src/**`, `scripts/*/src/**`, `**/tests/**` writes while `HEAD` is
-  `main`.
-- Never `git push --force` to a shared branch. Commits should be small,
-  incremental, and meaningful.
-- **Worktrees** (ADR-0013/0014): `pnpm worktree:new <slug>` creates and
-  provisions an isolated sibling checkout; `pnpm worktree:remove <slug>` tears
-  it down. Full day-to-day mechanics (native `--worktree`, cleanup/prune
-  semantics, merge-driver regen) live in the ADRs — don't duplicate them here.
+- **Conventional Commits (required)**, with an AI co-authorship trailer when Claude authored/assisted. Enforced by the `commit-msg` hook. Trailer mechanics and canonical model names: `docs/contributing/contributing.md`.
+- **Before change-work, run the `starting-work` skill** — the pre-work decision gate that settles location / branch / PR / push (ADR-0016). Branch from `main`: `feat/<slug>`, `fix/<slug>`; `guard-branch-isolation.mjs` blocks `packages/*/src/**`, `scripts/*/src/**`, `**/tests/**` writes while `HEAD` is `main`.
+- Never `git push --force` to a shared branch. Commits should be small, incremental, and meaningful.
+- **Worktrees** (ADR-0013/0014): `pnpm worktree:new <slug>` / `pnpm worktree:remove <slug>` create/tear down an isolated sibling checkout. Full mechanics: the ADRs.
 
 ## Architecture & Decisions
 
-<!--
-================================================================
- SECTION: Architecture & Design Decisions
- Scope/usage   : The "why" behind structure so Claude doesn't
-                 fight conventions.
- Status        : Optional (Recommended for non-trivial systems).
- Best practices: Record decisions + rationale + what's explicitly
-                 out of scope. Link to ADRs rather than inlining.
- Model notes   : Opus 5 and Fable 5 extract the most value here
-                 — they reason about trade-offs and respect
-                 boundaries. Keep terse for Haiku 4.5.
-================================================================
--->
+The `exports` map is the public contract (semver-gated); `internal/` is private and may change freely. Full rationale: `docs/contributing/contributing.md` § The `exports` Map / § `internal/` Is Private.
 
-- The `exports` map IS the public contract: adding, removing, or
-  retyping a subpath is a semver event.
-- Everything under `internal/` is private and may change without a
-  major bump; never re-export it.
-- Stay environment-agnostic; keep runtime dependencies minimal so the
-  package tree-shakes cleanly.
-- Consumer scripts depend only on `@m3l-automation/m3l-common` — no
-  script-local dependencies (ADR-0029); AWS-scoped scripts/submodules carry
-  full official service names (ADR-0028).
-- Decisions live in `docs/adr/`; see @docs/adr/README.md.
+Decisions live in `docs/adr/`.
+See @docs/adr/README.md
 
 ## Security
 
-<!--
-================================================================
- SECTION: Security & Secrets
- Scope/usage   : Hard data-handling and secrets rules.
- Status        : Recommended.
- Best practices: State what must NEVER happen. Back the critical
-                 rules with a PreToolUse hook (e.g. block writes
-                 to .env). CLAUDE.md is advisory.
- Model notes   : All tiers; phrase as absolute prohibitions.
-================================================================
--->
-
-- The library does not log by default; never log secrets, tokens, or
-  caller data.
-- CI's only credential is the auto-provided `GITHUB_TOKEN`; tokens of any kind
-  (`NPM_TOKEN`, `GITHUB_TOKEN`, AWS keys) must never land in source, tests, or
-  fixtures.
+- The library does not log by default; never log secrets, tokens, or caller data.
+- CI has no publish credentials; tokens of any kind (`NPM_TOKEN`, `GITHUB_TOKEN`, AWS keys, `CLAUDE_CODE_OAUTH_TOKEN`) must never land in source, tests, or fixtures.
 - Validate all external input at the public API boundary before use.
-- Commits pushed to the remote must be signed (valid `%G?`). Enforced in three
-  layers — the `guard-git-push-signed` Bash hook, the `verify-signed-range`
-  `pre-push` backstop, and branch-protection "Require signed commits" (the
-  authoritative one). See ADR-0016 and `docs/contributing/branch-protection.md`.
+- Commits pushed to the remote must be signed (valid `%G?`). Enforced in three layers — the `guard-git-push-signed` Bash hook, the `verify-signed-range` `pre-push` backstop, and branch-protection "Require signed commits" (the authoritative one). See ADR-0016 and `docs/contributing/branch-protection.md`.
 
 ## Performance
 
-<!--
-================================================================
- SECTION: Performance
- Scope/usage   : Budgets and hot-path constraints.
- Status        : Optional / Niche.
- Best practices: Give measurable budgets, not "make it fast". For
-                 a library, the relevant budget is import cost and
-                 tree-shakeability.
- Model notes   : Opus 5 and Fable 5 reason about complexity
-                 trade-offs from budgets; Haiku 4.5 needs the
-                 explicit threshold to act on.
-================================================================
--->
-
-- No top-level side effects in modules, so consumers can tree-shake.
-- Keep the import graph shallow; avoid pulling a heavy dependency into
-  the main entry.
+No top-level side effects (tree-shaking); keep the import graph shallow. Full rules: `docs/contributing/style-guide.md` § Imports & modules (ESM).
 
 ## Documentation
 
-<!--
-================================================================
- SECTION: Documentation Conventions
- Scope/usage   : Docstring/comment expectations.
- Status        : Optional.
- Best practices: State the doc style and when comments are
-                 required ("why", not "what"). Keep short.
- Model notes   : All tiers honor a named style.
-================================================================
--->
-
-- Comment the _why_, not the _what_. The TSDoc rules (every exported symbol,
-  `@example` on primary entry points) live in the
-  [Style Guide](docs/contributing/style-guide.md#tsdoc) and its
-  `.claude/rules/library-src.md` extract, loaded when editing `src/**`.
+Comment the _why_, not the _what_. TSDoc rules (every exported symbol, `@example` on primary entry points): `docs/contributing/style-guide.md#tsdoc` and its `.claude/rules/library-src.md` extract.
 
 ## Agent Operating Model
 
-<!--
-================================================================
- SECTION: Agent Operating Model (hub-and-spoke)
- Scope/usage   : How Claude should organize work in this repo —
-                 the main agent coordinates; isolated subagents
-                 do the substantive work.
- Status        : Recommended.
- Best practices: Keep code-writing and code-review in different
-                 agents; track build-vs-spec progress in the
-                 living status file so isolated spokes stay in sync.
-================================================================
--->
+This repo runs a **hub-and-spoke** model: the hub plans and dispatches to isolated spokes but never writes `src/`/test code or reviews it itself — enforced by `guard-hub-src-writes.mjs` (blocks the hub, any branch) and `disallowedTools: Agent` on every spoke (`pnpm check:agents`). Model tiering: `docs/contributing/model-selection.md`. Full spoke roster, TDD loop, and recurring-failure lessons: `docs/contributing/agent-operating-model.md`.
 
-This repo runs a **hub-and-spoke** model: the main agent (hub) plans and
-dispatches to isolated subagents ("spokes") but never writes `src/`/test code
-or reviews it itself — that split is structural (every spoke carries
-`disallowedTools: Agent`, enforced by `pnpm check:agents`). Model tiering per
-spoke is in `docs/contributing/model-selection.md`. Full detail — the spoke
-roster, TDD loop, live-status trackers, and submodule/script pipelines — lives
-in `docs/contributing/agent-operating-model.md`.
-
-**The hub itself writing to a guarded path is a recurring violation, not a
-one-off** (`docs/logs/2026-07-24-w5-promote-destructive-gate.md`,
-`docs/logs/2026-07-26-w5-promote-checkpoint-store.md`,
-`docs/logs/2026-07-27-scripts-codepipeline-ops.md` — three separate
-sessions). The test is a path check with zero exceptions:
-"is this `Write`/`Edit` call touching `packages/*/src/**`, `scripts/*/src/**`,
-or `**/tests/**`?" A "yes" always means dispatch `code-implementer`/
-`test-author` — never a judgment call about the edit's size, an already-approved
-plan, a followed scaffold, or momentum coming out of plan mode.
-
-**Claude Code hooks** (`.claude/settings.json`) add deterministic enforcement
-on top of this advisory file — the full 21-hook inventory is
-`docs/contributing/hooks-reference.md`; `check:hooks` validates the wiring.
-Subagent mid-turn truncation — this repo's most-recurring build divergence —
-is covered in `docs/contributing/agent-operating-model.md`'s "Lessons
-learned" bullet, backed by the full playbook at
-`docs/contributing/subagent-context-management.md`. Which skills are expected
-to fire often versus rarely (and why a quiet skill isn't necessarily a broken
-one) is tracked in `docs/contributing/skills-catalog.md`.
+**Hooks** (`.claude/settings.json`) add deterministic enforcement on top of this advisory file — full inventory: `docs/contributing/hooks-reference.md` (`check:hooks` validates wiring). Subagent mid-turn truncation, this repo's other recurring failure mode: `docs/contributing/subagent-context-management.md`.
 
 ## Task Workflow
 
-<!--
-================================================================
- SECTION: Task Workflow (Explore -> Plan -> Implement -> Verify)
- Scope/usage   : The loop Claude should follow for non-trivial
-                 work.
- Status        : Recommended.
- Best practices: Make verification explicit and tie "done" to the
-                 Commands section. Encourage plan mode for risky
-                 areas (anything touching the public API).
- Model notes   : Opus 5 and Fable 5 self-direct this loop with
-                 light prompting and are the right choice for the
-                 Plan step on ambiguous tasks. Sonnet 4.6 is the
-                 day-to-day default for Implement. Haiku 4.5 suits
-                 narrow, well-specified Implement/Verify subtasks
-                 — give it a plan rather than asking for one.
-================================================================
--->
-
-1. **Explore** the public API and the `exports` map before editing. When the
-   task hinges on external Anthropic guidance rather than repo state — agent
-   design, model-config practices, SDK/API usage, engineering-blog
-   recommendations — run `researching-anthropic-guidance` first and fold its
-   briefing into the plan; it complements `auditing` (which reads the repo)
-   with a read of official Anthropic sources.
-   **Re-derive any authored claim you are about to act on** — an ADR's census,
-   a tracker row's scope, a filed issue's stated evidence, a reviewer's
-   must-fix. These are snapshots, and a fix scoped against one that has rotted
-   is wrong before it starts; executing the real path over real data usually
-   costs minutes (`docs/logs/2026-08-16-core-pipeline.md`,
-   `docs/logs/2026-08-17-descope-cwli-pipeline-migration.md`,
-   `docs/logs/2026-08-19-hub-sync-key-namespace.md`).
-2. **Plan** in plan mode for any change to an exported signature or
-   the `exports` map (it has semver impact).
+1. **Explore** the public API and `exports` map before editing; run `researching-anthropic-guidance` first when the task hinges on external Anthropic guidance rather than repo state. **Re-derive any authored claim** you're about to act on (an ADR's census, a tracker's scope) — these rot between authoring and use (`docs/logs/2026-08-19-hub-sync-key-namespace.md`).
+2. **Plan** in plan mode for any change to an exported signature or the `exports` map (it has semver impact).
 3. **Implement** the smallest change that satisfies the task.
-4. **Verify**: type-check, lint, tests, and `pnpm build` before
-   reporting done.
+4. **Verify**: type-check, lint, tests, and `pnpm build` before reporting done.
 
 ## Definition of Done
 
-<!--
-================================================================
- SECTION: Definition of Done
- Scope/usage   : The checklist that gates "complete".
- Status        : Optional (pairs well with a Stop hook).
- Best practices: Make every item machine-checkable. Enforce with
-                 a Stop hook so the session can't end red.
- Model notes   : All tiers; the more concrete the checklist, the
-                 higher the adherence — Haiku 4.5 especially.
-================================================================
--->
-
-- `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm build` all
-  pass.
-- Public API changes carry a Conventional Commit reflecting the
-  correct semver impact.
-- New or changed exports have TSDoc and tests.
+`pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm build` all pass; a public API change carries a Conventional Commit with the correct semver impact; new/changed exports have TSDoc and tests. Full checklist: `docs/contributing/contributing.md` § Definition of Done.
 
 ## Forbidden Patterns
 
-<!--
-================================================================
- SECTION: Forbidden Patterns / Anti-patterns
- Scope/usage   : Explicit "never do this" list for recurring
-                 mistakes.
- Status        : Optional but high-value.
- Best practices: Add an entry the SECOND time Claude makes the
-                 same mistake. Phrase as absolutes. Move anything
-                 that must be guaranteed into a hook.
- Model notes   : All tiers respond well to short, absolute
-                 prohibitions. Long rationale dilutes them.
-================================================================
--->
+**Enforced at write time or in CI:** `any` in the public API, a missing `.js` extension, CommonJS (`require`/`module.exports`/`__dirname`), hand-edits to `dist/`, non-Conventional commits, committed secrets/tokens, an unsigned/invalid-signature push, and adding a dependency without updating the lockfile. The `.js`-extension and CommonJS bans are guarded twice (a PreToolUse hook plus ESLint/CI) — don't remove either as "redundant."
 
-**Enforced at write time or in CI:** `any` in the public API, a missing `.js`
-extension, CommonJS (`require`/`module.exports`/`__dirname`), hand-edits to
-`dist/`, non-Conventional commits, committed secrets/tokens, an
-unsigned/invalid-signature push, and adding a dependency without updating the
-lockfile. The `.js`-extension and CommonJS bans are guarded twice (a
-PreToolUse hook plus ESLint/CI) — don't remove either as "redundant."
-
-**No automated guard — need conscious care:** never swallow errors silently;
-no top-level side effects; keep the import graph shallow; never
-`git push --force`; surface new Core/AWS exports through the namespace barrel
-only, never a new `exports` subpath.
+**No automated guard — need conscious care:** never swallow errors silently; no top-level side effects; keep the import graph shallow; never `git push --force`; surface new Core/AWS exports through the namespace barrel only, never a new `exports` subpath.
 
 ## Known Gotchas
 
-<!--
-================================================================
- SECTION: Known Issues / Gotchas
- Scope/usage   : Traps that waste time if undocumented.
- Status        : Niche.
- Best practices: Capture the trap + the workaround. Prune once
-                 fixed.
- Model notes   : All tiers; prevents repeated debugging loops.
-================================================================
--->
-
-- A new public subpath needs BOTH `src/<path>/index.ts` and an `exports` entry,
-  or consumers cannot import it — but per the layout above, new submodules go
-  through the namespace barrel, not a new subpath.
-- A fresh dependency bump can trip pnpm's `minimumReleaseAge` and block every
-  command. Add the exact `name@version` to `minimumReleaseAgeExclude` in the
-  same change (own `build:` commit); never weaken the policy. If pnpm suddenly
-  rejects the lockfile, check the release-age policy before suspecting the
-  lockfile itself.
-- What a `check:*` gate enforces is defined by its `bin/*.mjs` source, not by
-  prose near it (e.g. `check:doc-counts` counts `.md` files; `check:doc-exports`
-  enforces documented exports; `check:api` moves only on an `exports`-map
-  subpath change, never a barrel-surfaced symbol; `check:cadence` compares the
-  token set of checks, so reordering lefthook lanes needs no doc edit). Read
-  the script before designing a contract or plan around the gate.
-
-<!--
-================================================================
- EXTENSION POINTS — reference, don't inline
-================================================================
- The sections below document Claude Code mechanisms that
- COMPLEMENT CLAUDE.md. Prefer them over growing this file. They
- are not pasted into context the way CLAUDE.md is.
-
- .claude/rules/*.md
-   Path-scoped instructions via YAML `paths:` frontmatter. Load
-   only when Claude touches matching files — ideal for "exported
-   symbols need TSDoc" tied to src/**/index.ts. Rules WITHOUT
-   `paths:` load every session at the same priority as
-   .claude/CLAUDE.md.
-
- .claude/skills/<name>/
-   SKILL.md + optional scripts/assets. Load ON DEMAND when
-   relevant to the prompt. Put multi-step procedures here
-   (codemod, adding a subpath export, syncing docs). Keep
-   SKILL.md < ~500 lines; split long reference into siblings.
-
- .claude/agents/<name>.md
-   Subagents with frontmatter: name, description, tools, model.
-   Run in isolated context — use for review and deep research so
-   they don't bloat the main session.
-   MODEL ROUTING: pin an exact model ID, never a bare alias —
-   `claude-opus-5` for API/architecture review, `claude-sonnet-5`
-   for general work, `claude-haiku-4-5` for fast, bounded,
-   well-specified tasks. docs/contributing/model-selection.md is
-   the source of truth; its MODEL-MATRIX block is machine-checked
-   against this frontmatter by `pnpm check:agents`.
-
- .claude/settings.json
-   Hooks (PreToolUse, PostToolUse, Stop, SubagentStop,
-   SessionStart/End, UserPromptSubmit, PreCompact,
-   InstructionsLoaded, ...). DETERMINISTIC enforcement — use for
-   anything that must happen every time. The highest-value hook
-   here is a PostToolUse running `pnpm typecheck` (or tests)
-   after edits.
-
- Plugins
-   Bundle skills + hooks + subagents + MCP servers into one
-   installable unit. Browse with /plugin.
-
- MCP servers
-   External tools/data. Configure per project; keep them off
-   unless needed (always-on servers cost context).
-================================================================
--->
-
-<!--
-================================================================
- IMPORTS — pull in shared/contextual files at launch
-================================================================
- `@path` imports expand into context AT LAUNCH (they do NOT save
- context — the imported file is loaded in full). Relative paths
- resolve from THIS file. Max recursion depth: 4 hops. First use
- prompts a one-time approval dialog.
-
- Examples (uncomment and adapt):
-   See @README.md for the project overview.
-   Contributing guide: @docs/contributing/contributing.md
-   Personal prefs across worktrees: @~/.claude/my-notes.md
-================================================================
--->
-
-<!--
-================================================================
- AGENTS.md INTEROP (niche)
-================================================================
- Claude Code reads CLAUDE.md, NOT AGENTS.md. If the repo already
- maintains an AGENTS.md for other agents, avoid duplication by
- importing it as the FIRST line of this file and adding
- Claude-specific notes below:
-
-     @AGENTS.md
-
-     ## Claude Code
-     Use plan mode for changes to the package.json exports map.
-
- A symlink (ln -s AGENTS.md CLAUDE.md) also works when you need
- no Claude-specific additions. On Windows, prefer the @AGENTS.md
- import (symlinks need elevated privileges).
-================================================================
--->
+- A new public subpath needs BOTH `src/<path>/index.ts` and an `exports` entry, or consumers cannot import it — but per the layout above, new submodules go through the namespace barrel, not a new subpath.
+- A fresh dependency bump can trip pnpm's `minimumReleaseAge` and block every command. Add the exact `name@version` to `minimumReleaseAgeExclude` (own `build:` commit); never weaken the policy.
+- What a `check:*` gate enforces is defined by its `bin/*.mjs` source, not nearby prose (e.g. `check:api` moves only on an `exports`-map subpath change, never a barrel-surfaced symbol). Read the script before designing a plan around a gate.

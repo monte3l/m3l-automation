@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // Derives the canonical workflow set from .github/workflows/*.yml and asserts
-// that the CLAUDE.md "CI/CD" section documents exactly those workflows — the
-// spelled-out count in the section header plus one table row per workflow file.
-// Prevents CI-table drift caused by adding or removing a workflow without
-// updating CLAUDE.md (e.g. scorecard.yml shipping undocumented).
+// that docs/contributing/ci-cd.md's "CI/CD" section documents exactly those
+// workflows — the spelled-out count in the section header plus one table row
+// per workflow file. Prevents CI-table drift caused by adding or removing a
+// workflow without updating that doc (e.g. scorecard.yml shipping undocumented).
 //
-// Canonical rule: .github/workflows/*.yml (and *.yaml) drives the set; CLAUDE.md
+// Canonical rule: .github/workflows/*.yml (and *.yaml) drives the set; the doc
 // prose must match it in both directions — no undocumented workflow, no stale
-// row for a workflow that no longer exists.
+// row for a workflow that no longer exists. CLAUDE.md carries only a one-line
+// pointer to this file (moved out to shrink the always-loaded preamble — see
+// CLAUDE.md's maintainer header); this gate was repointed alongside that move.
 //
 // Not to be confused with its name-sibling bin/check-workflows.mjs
 // (`check:workflows`), which validates the .claude/workflows/ dynamic-workflow
@@ -23,7 +25,7 @@ import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
 const root = repoRoot(import.meta.url);
 const workflowsRel = ".github/workflows";
-const claudeMdRel = "CLAUDE.md";
+const docRel = "docs/contributing/ci-cd.md";
 const { json } = parseJsonFlag();
 const reporter = createReporter(json);
 
@@ -60,14 +62,14 @@ try {
 const workflowFiles = new Set(files);
 const count = files.length;
 
-const content = readFileSync(join(root, claudeMdRel), "utf8");
+const content = readFileSync(join(root, docRel), "utf8");
 
 // 2 — isolate the "## CI/CD" section so the table parse can't pick up unrelated
 // *.yml mentions (lefthook.yml, dependabot.yml, pnpm-workspace.yaml, …).
 const sectionMatch = /## CI\/CD\n([\s\S]*?)(?:\n## |\n?$)/.exec(content);
 if (!sectionMatch) {
-  reporter.error(`${claudeMdRel}: could not locate the "## CI/CD" section.`, {
-    file: claudeMdRel,
+  reporter.error(`${docRel}: could not locate the "## CI/CD" section.`, {
+    file: docRel,
   });
   reporter.finish();
   process.exit(1);
@@ -79,7 +81,7 @@ const headerMatch =
   /(\w+) GitHub Actions workflows in `\.github\/workflows\/`/.exec(section);
 if (!headerMatch) {
   errors.push(
-    `${claudeMdRel}: could not find the "<N> GitHub Actions workflows in ` +
+    `${docRel}: could not find the "<N> GitHub Actions workflows in ` +
       '`.github/workflows/`" header sentence.',
   );
 } else {
@@ -88,7 +90,7 @@ if (!headerMatch) {
     expectedWord.charAt(0).toUpperCase() + expectedWord.slice(1);
   if (headerMatch[1].toLowerCase() !== expectedWord) {
     errors.push(
-      `${claudeMdRel}: header says "${headerMatch[1]} GitHub Actions workflows" ` +
+      `${docRel}: header says "${headerMatch[1]} GitHub Actions workflows" ` +
         `but .github/workflows/ has ${count} — expected "${capitalized}".`,
     );
   }
@@ -104,7 +106,7 @@ for (const m of section.matchAll(/^\|\s*`([\w.-]+\.ya?ml)`/gm)) {
 for (const f of files) {
   if (!documented.has(f)) {
     errors.push(
-      `${claudeMdRel}: workflow \`${f}\` exists in ${workflowsRel}/ but has no row ` +
+      `${docRel}: workflow \`${f}\` exists in ${workflowsRel}/ but has no row ` +
         "in the CI/CD table.",
     );
   }
@@ -114,7 +116,7 @@ for (const f of files) {
 for (const name of documented) {
   if (!workflowFiles.has(name)) {
     errors.push(
-      `${claudeMdRel}: CI/CD table lists \`${name}\` but no such file exists in ` +
+      `${docRel}: CI/CD table lists \`${name}\` but no such file exists in ` +
         `${workflowsRel}/ — remove the stale row.`,
     );
   }
@@ -122,12 +124,12 @@ for (const name of documented) {
 
 if (errors.length > 0) {
   if (!json) console.error(`✗  ${errors.length} workflow-doc mismatch(es):`);
-  for (const e of errors) reporter.error(e, { file: claudeMdRel });
+  for (const e of errors) reporter.error(e, { file: docRel });
   reporter.finish();
   process.exit(1);
 }
 
 reporter.succeed(
-  `CLAUDE.md CI/CD table matches ${count} workflow file(s) in ${workflowsRel}/.`,
+  `${docRel} CI/CD table matches ${count} workflow file(s) in ${workflowsRel}/.`,
 );
 reporter.finish();

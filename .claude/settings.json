@@ -1,5 +1,49 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "cleanupPeriodDays": 14,
+  "claudeMdExcludes": ["/home/enri3l/CLAUDE.md"],
+  "permissions": {
+    "allow": [
+      "Bash(pnpm check:*)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm lint *)",
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm typecheck *)",
+      "Bash(pnpm lint:md)",
+      "Bash(pnpm lint:md *)",
+      "Bash(pnpm build)",
+      "Bash(pnpm build *)",
+      "Bash(pnpm test:coverage)",
+      "Bash(pnpm test:coverage *)",
+      "Bash(pnpm format:check)",
+      "Bash(pnpm format:check *)",
+      "Bash(gh pr view *)",
+      "Bash(git fetch *)",
+      "Bash(git rev-list *)",
+      "Bash(pnpm test)",
+      "Bash(pnpm test *)",
+      "Bash(pnpm exec tsc *)",
+      "Bash(pnpm exec vitest run *)",
+      "Bash(gh auth status)",
+      "Bash(gh auth *)",
+      "Bash(gh api *)",
+      "Bash(gh repo *)",
+      "Bash(gh run list *)",
+      "Bash(pnpm vitest run *)",
+      "Bash(pnpm exec eslint *)",
+      "Bash(gh run view *)",
+      "Bash(node_modules/.bin/prettier --check *)",
+      "mcp__m3l__repo_verify",
+      "mcp__m3l__catalog_query",
+      "mcp__m3l__commit_lint",
+      "mcp__github__pull_request_read",
+      "mcp__github__list_pull_requests",
+      "mcp__github__search_pull_requests",
+      "mcp__github__get_me",
+      "mcp__github__add_issue_comment"
+    ]
+  },
+  "availableModels": ["fable", "opus", "sonnet", "haiku"],
   "hooks": {
     "SessionStart": [
       {
@@ -155,53 +199,19 @@
       }
     ]
   },
-  "enabledPlugins": {
-    "typescript-lsp@claude-plugins-official": true
-  },
-  "permissions": {
-    "allow": [
-      "Bash(pnpm check:*)",
-      "Bash(pnpm lint)",
-      "Bash(pnpm lint *)",
-      "Bash(pnpm typecheck)",
-      "Bash(pnpm typecheck *)",
-      "Bash(pnpm lint:md)",
-      "Bash(pnpm lint:md *)",
-      "Bash(pnpm build)",
-      "Bash(pnpm build *)",
-      "Bash(pnpm test:coverage)",
-      "Bash(pnpm test:coverage *)",
-      "Bash(pnpm format:check)",
-      "Bash(pnpm format:check *)",
-      "Bash(gh pr view *)",
-      "Bash(git fetch *)",
-      "Bash(git rev-list *)",
-      "Bash(pnpm test)",
-      "Bash(pnpm test *)",
-      "Bash(pnpm exec tsc *)",
-      "Bash(pnpm exec vitest run *)",
-      "Bash(gh auth status)",
-      "Bash(gh auth *)",
-      "Bash(gh api *)",
-      "Bash(gh repo *)",
-      "Bash(gh run list *)",
-      "Bash(pnpm vitest run *)",
-      "Bash(pnpm exec eslint *)",
-      "Bash(gh run view *)",
-      "Bash(node_modules/.bin/prettier --check *)",
-      "mcp__m3l__repo_verify",
-      "mcp__m3l__catalog_query",
-      "mcp__m3l__commit_lint",
-      "mcp__github__pull_request_read",
-      "mcp__github__list_pull_requests",
-      "mcp__github__search_pull_requests",
-      "mcp__github__get_me",
-      "mcp__github__add_issue_comment"
-    ]
-  },
-  "availableModels": ["fable", "opus", "sonnet", "haiku"],
   "worktree": {
     "baseRef": "fresh"
   },
-  "cleanupPeriodDays": 14
+  "enabledPlugins": {
+    "typescript-lsp@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": true,
+    "claude-code-setup@claude-plugins-official": true,
+    "commit-commands@claude-plugins-official": true,
+    "remember@claude-plugins-official": true,
+    "mcp-server-dev@claude-plugins-official": true,
+    "session-report@claude-plugins-official": true
+  }
 }
