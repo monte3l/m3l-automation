@@ -111,6 +111,13 @@ export const VERIFY_STEPS = [
       `node bin/lint-commit.mjs --from ${baseRef} --to HEAD`,
   },
   {
+    ciStepName: "Check review size",
+    id: "check-review-size",
+    prOnly: true,
+    cmd: ({ baseRef }) =>
+      `node bin/check-review-size.mjs --base ${baseRef} --head HEAD`,
+  },
+  {
     ciStepName: "Lint",
     id: "lint",
     cmd: () => "pnpm lint",

@@ -236,6 +236,11 @@ export const COMMAND_CATALOG = [
       "Verifies the per-submodule test counts recorded in docs/implementation-status.md's Notes column match the live Vitest suite. CI and pre-push both run this. Run after adding/removing tests for an implemented submodule.",
   },
   {
+    name: "check:review-size",
+    description:
+      "Reproduces claude-pr-review.yml's reviewable-size measurement locally against origin/main...HEAD (ADR-0072): warns above the 75,000-char soft target, fails above the workflow's MAX_REVIEWABLE_BYTES ceiling. Run before opening a PR.",
+  },
+  {
     name: "check:workflows",
     description:
       "Verifies the .claude/workflows/ dynamic-workflow surface against the MODEL-MATRIX in docs/contributing/model-selection.md and the per-script agent-count guardrail (ADR-0025). Run after adding/editing a workflow script.",

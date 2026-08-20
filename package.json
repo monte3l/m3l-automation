@@ -60,6 +60,7 @@
     "check:deps": "node bin/check-deps.mjs",
     "check:licenses": "node bin/check-licenses.mjs",
     "check:test-counts": "node bin/check-test-counts.mjs",
+    "check:review-size": "node bin/check-review-size.mjs",
     "check:workflows": "node bin/check-workflows.mjs",
     "check:workflows-doc": "node bin/check-workflows-doc.mjs",
     "check:cadence": "node bin/check-cadence-doc.mjs",
