@@ -390,6 +390,49 @@ Sourcing note: P1-P12 are local observations of Claude Code 2.1.237, not
 documentation. The action pinned in the workflow installs 2.1.233. Re-probe
 before relying on them across a major CLI bump.
 
+## Addendum (2026-08-20b) — `gh pr diff --patch` returns the commit series, not a diff
+
+> Found while landing PR #523 under a temporarily raised
+> `MAX_REVIEWABLE_BYTES`. The gate rejected it at 696,940 reviewable chars
+> against a 550,000 ceiling, while two independent local measurements of the
+> same PR said 501,4xx. The gap was the measurement, not the PR.
+
+`gh pr diff <n> --patch` emits the **per-commit patch series**, not a unified
+diff. On #523 (23 commits, 44 changed files):
+
+| Form                   | `diff --git` headers | Unique files | Total chars | Reviewable chars |
+| ---------------------- | -------------------- | ------------ | ----------- | ---------------- |
+| `gh pr diff --patch`   | 104                  | 44           | 1,102,980   | 696,940          |
+| `gh pr diff` (default) | 44                   | 44           | 745,096     | 501,454          |
+
+`M3LProcedure.ts` appeared **8 times**, `internal/procedure/errors.ts` 6,
+`core/errors/catalog.ts` and `M3LError.ts` 5 each — 309,876 reviewable chars
+of pure duplication, 39% inflation.
+
+Two consequences, both harmful and both live since PR #500 introduced the
+pre-computed patch:
+
+1. **The reviewer paged through the same file once per commit that touched
+   it.** A large hidden turn sink on exactly the PRs already closest to the
+   cap — and it fed the reviewer _superseded intermediate states_, including
+   code a later commit on the same branch had already fixed. #523's own
+   history contains a fix (`f4ffb94`) to code introduced earlier on the
+   branch; both versions were in the patch.
+2. **The size gate over-measured every multi-commit PR** in proportion to its
+   commit count, so it rejected at an effective threshold 28-39% stricter
+   than intended. The 300,000 calibration was never affected — it was
+   computed from `git show --format= --patch <merge-sha>`, i.e. squashed
+   single-commit diffs, which cannot duplicate.
+
+**Fix:** drop `--patch`. The default output is the same unified-diff format,
+so the ignore-predicate filter and the review prompt are unchanged; the
+limit stays 300000, and the gate now measures what the calibration assumed.
+
+This also revises the previous addendum's headline figure: #523's reviewable
+patch is **501,454**, not 696,940. The irreducible-closure argument for why
+it cannot be split (~375,000, bound by per-file coverage thresholds) is
+computed from unique file sizes and is unaffected.
+
 ## Sources
 
 - S1: Claude Code GitHub Actions docs — <https://code.claude.com/docs/en/github-actions> (docs)
