@@ -108,12 +108,12 @@ Once an idea is actually ready to be worked on:
    GitHub label, applied to every issue unconditionally alongside its
    Priority/Status labels — ADR-0052's 2026-08-20 Update):
 
-   | Issue Type        | GitHub label           | Tracker series   | Source section(s)                                                           |
-   | ----------------- | ---------------------- | ---------------- | --------------------------------------------------------------------------- |
-   | `Capability`      | `type:capability`      | A/B/C/U/V-series | ROADMAP Priority 0; every IMPLEMENTATION.md section except Library friction |
-   | `Consumer script` | `type:consumer-script` | W-series         | ROADMAP Priority 1 (the Wave/Scripts table)                                 |
-   | `Friction`        | `type:friction`        | F-series         | IMPLEMENTATION.md's Library friction table                                  |
-   | `Governance`      | `type:governance`      | T-series         | ROADMAP Governance follow-ups                                               |
+   | Issue Type        | GitHub label           | Tracker series     | Source section(s)                                                           |
+   | ----------------- | ---------------------- | ------------------ | --------------------------------------------------------------------------- |
+   | `Capability`      | `type:capability`      | A/B/C/U/V/X-series | ROADMAP Priority 0; every IMPLEMENTATION.md section except Library friction |
+   | `Consumer script` | `type:consumer-script` | W-series           | ROADMAP Priority 1 (the Wave/Scripts table)                                 |
+   | `Friction`        | `type:friction`        | F-series           | IMPLEMENTATION.md's Library friction table                                  |
+   | `Governance`      | `type:governance`      | T-series           | ROADMAP Governance follow-ups                                               |
 
    **Status legend** — every one of the six `Status` cell values now carries
    a matching GitHub label too (ADR-0052's 2026-08-20 Update; originally
