@@ -223,15 +223,16 @@ export class M3LProcedureBuilder<
   }
 
   /**
-   * Combines each validated step's scalar fields — every one already read
-   * exactly once by {@link validateProcedureDefinition} — with the real
-   * `execute`/`describeTrace` closures, read directly off the matching raw
-   * entry. Functions are never part of the digest (they are not
-   * canonical-JSON serialisable) and were never touched during validation,
-   * so reading them here, once, does not reopen the "validate then re-read"
-   * hazard the rest of this method closes: every scalar field the digest
-   * hashes comes from `definition`, never from a second look at the raw
-   * step.
+   * Combines each validated step's scalar fields with its `execute`
+   * closure — both already read exactly once by {@link
+   * validateProcedureDefinition}, during `normalizeStep` — and with
+   * `describeTrace`, read directly off the matching raw entry.
+   * `describeTrace` is never touched during validation (only `execute` is,
+   * to confirm it is a function), so reading it here — through a single
+   * local binding shared by the presence check and the value used below —
+   * does not reopen the "validate then re-read" hazard the rest of this
+   * method closes: `execute` and every digest-hashed scalar come from
+   * `definition`, never from a second look at the raw step.
    */
   #buildRuntimeSteps(
     definition: ValidatedProcedureDefinition,
@@ -242,6 +243,7 @@ export class M3LProcedureBuilder<
         TShape["stepId"],
         TShape["stepId"]
       >;
+      const describeTrace = typedRaw.describeTrace;
       return {
         id: validated.id,
         label: validated.label,
@@ -249,36 +251,29 @@ export class M3LProcedureBuilder<
         continueOnFailure: validated.continueOnFailure,
         jumpsTo: validated.jumpsTo,
         ...(validated.loop !== undefined ? { loop: validated.loop } : {}),
-        execute: typedRaw.execute,
-        ...(typedRaw.describeTrace !== undefined
-          ? { describeTrace: typedRaw.describeTrace }
-          : {}),
+        execute: validated.execute,
+        ...(describeTrace !== undefined ? { describeTrace } : {}),
       } as M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>;
     });
   }
 
   /**
-   * Combines each validated case's scalar fields with the real `action`
-   * closure, read directly off the matching raw entry — see {@link
-   * M3LProcedureBuilder.#buildRuntimeSteps} for why reading a function
-   * reference here does not reopen the validate-then-re-read hazard.
+   * Combines each validated case's scalar fields with its `action` closure
+   * — both already read exactly once by {@link validateProcedureDefinition},
+   * during `normalizeCase`. Unlike {@link M3LProcedureBuilder.#buildRuntimeSteps},
+   * nothing here needs a second look at the raw case: a case has no
+   * `describeTrace`-style field left unvalidated.
    */
   #buildRuntimeCases(
     definition: ValidatedProcedureDefinition,
   ): readonly M3LProcedureCase<TShape, TShape["caseId"]>[] {
-    return definition.cases.map((validated, index) => {
-      const typedRaw = this.#cases[index] as M3LProcedureCase<
-        TShape,
-        TShape["caseId"]
-      >;
-      return {
-        id: validated.id,
-        description: validated.description,
-        prose: validated.prose,
-        condition: validated.condition,
-        priority: validated.priority,
-        action: typedRaw.action,
-      } as M3LProcedureCase<TShape, TShape["caseId"]>;
-    });
+    return definition.cases.map((validated) => ({
+      id: validated.id,
+      description: validated.description,
+      prose: validated.prose,
+      condition: validated.condition,
+      priority: validated.priority,
+      action: validated.action,
+    })) as readonly M3LProcedureCase<TShape, TShape["caseId"]>[];
   }
 }

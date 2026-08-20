@@ -794,8 +794,8 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
 
   /**
    * Phase 1: walks the declared steps starting at index 0, interpreting each
-   * returned flow directive as {@link https://en.wikipedia.org/wiki/N/A |
-   * the contract's Flow directives} section defines. Ends the run early
+   * returned flow directive as `docs/reference/core/procedure.md` § Flow
+   * directives defines. Ends the run early
    * (`"failed"`) on an unabsorbed step throw; concludes early (`"matched"`)
    * on a `"resolve"` pass that matched; otherwise ends ordinarily
    * (`"ended"`) once `"stop"` fires or the last declared step returns

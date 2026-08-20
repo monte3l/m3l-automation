@@ -189,6 +189,26 @@ function buildProcedureWithFallbackAsGiven(
   return builder.build(fallback, options);
 }
 
+/**
+ * Identical untyped-builder chain to `buildProcedure`, but declares
+ * `"threshold"` via `.parameters()` first — needed only by tests that go on
+ * to call `.run()`, since `TestShape["parameters"]` makes `run()`'s
+ * `parameters` option type-required, and the runtime rejects an undeclared
+ * parameter key regardless of what the type allows.
+ */
+function buildRunnableProcedure(
+  steps: readonly unknown[],
+  cases: readonly unknown[],
+  fallback: unknown = FALLBACK,
+): M3LProcedure<TestShape> {
+  let builder = createProcedureBuilder<TestShape>(
+    "accessor-fixture",
+  ).parameters(["threshold"]) as unknown as UntypedProcedureBuilder;
+  for (const step of steps) builder = builder.step(step);
+  for (const entry of cases) builder = builder.case(entry);
+  return builder.build(fallback);
+}
+
 /** Builds `count` linear steps `s0..s(count-1)`, each forwarding to the next. */
 function linearSteps(count: number): AnyTestStep[] {
   const steps: AnyTestStep[] = [];
@@ -906,6 +926,323 @@ describe("core/procedure — build-time validation", () => {
       );
       expect(error.code).toBe("ERR_PROCEDURE_INVALID_DEFINITION");
       expect(error.code).not.toBe("ERR_INVALID_ARGUMENT");
+    });
+
+    // -----------------------------------------------------------------------
+    // Bug-under-test: `build()` validates the fallback's `action` function
+    // (see the "MISSING_FALLBACK" block above and `validate.ts`'s
+    // `normalizeFallback`) but never mirrors that check for a step's
+    // `execute` or a case's `action` — `normalizeStep`/`normalizeCase` never
+    // read those fields at all. Left unvalidated, a declaration missing
+    // either one passes `build()` clean and only fails at RUN time with a
+    // bare (non-`M3LError`) `TypeError` — exactly the class of caller-input
+    // validation gap `ERR_PROCEDURE_INVALID_DECLARATION` exists to catch at
+    // the boundary. These pin the required fix: both fields must be checked
+    // by `build()`, contributing an aggregate-reported declaration problem
+    // that identifies the offending step/case by id, mirroring the fallback
+    // pattern exactly.
+    //
+    // Reached the malformed shapes the same two ways the rest of this file
+    // does: `makeStep`/`makeCase` overridden with a non-function value cast
+    // through the file's own "[untyped path] ... as unknown as ..." idiom
+    // for "present but wrong type", and a bare object literal (typed
+    // `unknown`, exactly how `buildProcedure`'s untyped builder view accepts
+    // every fixture in this file) for "field entirely absent" — going
+    // through `makeStep`/`makeCase` cannot express "absent" since both
+    // helpers default-fill `execute`/`action` before applying overrides.
+    describe("step.execute and case.action are validated declarations", () => {
+      test("[untyped path] a step with no execute function is a problem, identifying that step", () => {
+        const stepWithoutExecute: unknown = {
+          id: "a",
+          label: "a",
+          kind: "gather",
+        };
+        const { problems } = captureProblems(() =>
+          buildProcedure(
+            [stepWithoutExecute],
+            [caseWithCondition(ALWAYS_TRUE_CONDITION)],
+          ),
+        );
+        const declared = problems.filter(
+          (candidate) => candidate.code === "ERR_PROCEDURE_INVALID_DECLARATION",
+        );
+        expect(declared.length).toBeGreaterThan(0);
+        expect(declared.some((candidate) => candidate.stepId === "a")).toBe(
+          true,
+        );
+      });
+
+      test("[untyped path] a step whose execute is present but not a function is a problem, identifying that step", () => {
+        const { problems } = captureProblems(() =>
+          buildProcedure(
+            [
+              makeStep({
+                id: "a",
+                execute: "not-a-function" as unknown as AnyTestStep["execute"],
+              }),
+            ],
+            [caseWithCondition(ALWAYS_TRUE_CONDITION)],
+          ),
+        );
+        const declared = problems.filter(
+          (candidate) => candidate.code === "ERR_PROCEDURE_INVALID_DECLARATION",
+        );
+        expect(declared.length).toBeGreaterThan(0);
+        expect(declared.some((candidate) => candidate.stepId === "a")).toBe(
+          true,
+        );
+      });
+
+      test("[untyped path] a case with no action function is a problem, identifying that case", () => {
+        const caseWithoutAction: unknown = {
+          id: "case-a",
+          description: "d",
+          prose: "p",
+          priority: 1,
+          condition: ALWAYS_TRUE_CONDITION,
+        };
+        const { problems } = captureProblems(() =>
+          buildProcedure([makeStep({ id: "a" })], [caseWithoutAction]),
+        );
+        const declared = problems.filter(
+          (candidate) => candidate.code === "ERR_PROCEDURE_INVALID_DECLARATION",
+        );
+        expect(declared.length).toBeGreaterThan(0);
+        expect(
+          declared.some((candidate) => candidate.caseId === "case-a"),
+        ).toBe(true);
+      });
+
+      test("[untyped path] a case whose action is present but not a function is a problem, identifying that case", () => {
+        const { problems } = captureProblems(() =>
+          buildProcedure(
+            [makeStep({ id: "a" })],
+            [
+              makeCase({
+                id: "case-a",
+                priority: 1,
+                condition: ALWAYS_TRUE_CONDITION,
+                action: "not-a-function" as unknown as AnyTestCase["action"],
+              }),
+            ],
+          ),
+        );
+        const declared = problems.filter(
+          (candidate) => candidate.code === "ERR_PROCEDURE_INVALID_DECLARATION",
+        );
+        expect(declared.length).toBeGreaterThan(0);
+        expect(
+          declared.some((candidate) => candidate.caseId === "case-a"),
+        ).toBe(true);
+      });
+
+      test("a step missing execute AND a case missing action are both reported by one build() call, not just the first", () => {
+        const stepWithoutExecute: unknown = {
+          id: "a",
+          label: "a",
+          kind: "gather",
+        };
+        const caseWithoutAction: unknown = {
+          id: "case-a",
+          description: "d",
+          prose: "p",
+          priority: 1,
+          condition: ALWAYS_TRUE_CONDITION,
+        };
+        const { problems } = captureProblems(() =>
+          buildProcedure([stepWithoutExecute], [caseWithoutAction]),
+        );
+        const declared = problems.filter(
+          (candidate) => candidate.code === "ERR_PROCEDURE_INVALID_DECLARATION",
+        );
+        expect(declared.some((candidate) => candidate.stepId === "a")).toBe(
+          true,
+        );
+        expect(
+          declared.some((candidate) => candidate.caseId === "case-a"),
+        ).toBe(true);
+      });
+
+      test("[near miss] a step with a real execute function and a case with a real action function build clean", () => {
+        expect(() =>
+          buildProcedure(
+            [makeStep({ id: "a" })],
+            [caseWithCondition(ALWAYS_TRUE_CONDITION, "case-a", 1)],
+          ),
+        ).not.toThrow();
+      });
+    });
+
+    // -----------------------------------------------------------------------
+    // `execute`/`action` must be read exactly once off the caller's raw
+    // declaration — never validated on one read and re-fetched off the same
+    // (possibly accessor-backed) object for the runtime step/case. Mirrors
+    // the already-correct `normalizeFallback`/`fallbackAction` pattern this
+    // module's own header comment documents. These use `Object.defineProperty`-
+    // style getters directly on the raw fixture (never through
+    // `makeStep`/`makeCase`, whose object-spread would evaluate a getter once
+    // and freeze the result onto a plain data property, defeating the whole
+    // point of an accessor that can drift between reads).
+    // -----------------------------------------------------------------------
+    describe("execute/action getters are read exactly once (no validate-then-re-read)", () => {
+      test("a step's execute getter is accessed exactly once across build()", () => {
+        let accessCount = 0;
+        const execute = () => ({ flow: "continue" });
+        const stepWithAccessorExecute: unknown = {
+          id: "a",
+          label: "a",
+          kind: "gather",
+          get execute() {
+            accessCount += 1;
+            return execute;
+          },
+        };
+        buildProcedure(
+          [stepWithAccessorExecute],
+          [caseWithCondition(ALWAYS_TRUE_CONDITION)],
+        );
+        expect(accessCount).toBe(1);
+      });
+
+      test("a case's action getter is accessed exactly once across build()", () => {
+        let accessCount = 0;
+        const action = () => ({ verdict: "case-a" });
+        const caseWithAccessorAction: unknown = {
+          id: "case-a",
+          description: "d",
+          prose: "p",
+          priority: 1,
+          condition: ALWAYS_TRUE_CONDITION,
+          get action() {
+            accessCount += 1;
+            return action;
+          },
+        };
+        buildProcedure([makeStep({ id: "a" })], [caseWithAccessorAction]);
+        expect(accessCount).toBe(1);
+      });
+
+      // RED (Must-fix, two-spoke review): `validate.ts` reads `execute` once
+      // to decide validity, then `M3LProcedureBuilder.#buildRuntimeSteps`
+      // re-reads `typedRaw.execute` off the same raw object for the runtime
+      // closure (M3LProcedureBuilder.ts:252). A getter that returns a real
+      // function on the validation read and a non-function on every later
+      // read passes `build()` and lands a non-function at run time, where
+      // `await step.execute(context)` throws a bare `TypeError` that
+      // surfaces, un-normalized, as the "failed" outcome's `error`. Written
+      // against the correct contract (a non-`M3LError` must never escape as
+      // a run outcome's `error`) — expected to fail RED until the fix
+      // captures `execute` once and forwards it.
+      test("an execute getter returning a function then a non-function must not surface a bare TypeError as the run outcome's error", async () => {
+        let accessCount = 0;
+        const stepWithDriftingExecute: unknown = {
+          id: "a",
+          label: "a",
+          kind: "gather",
+          get execute() {
+            accessCount += 1;
+            return accessCount === 1
+              ? () => ({ flow: "continue" })
+              : "not-a-function";
+          },
+        };
+        let procedure: M3LProcedure<TestShape> | undefined;
+        let buildError: unknown;
+        try {
+          procedure = buildRunnableProcedure(
+            [stepWithDriftingExecute],
+            [caseWithCondition(ALWAYS_TRUE_CONDITION)],
+          );
+        } catch (error) {
+          buildError = error;
+        }
+        if (procedure === undefined) {
+          // build() itself rejected the drifting declaration — acceptable
+          // closure of the hole, as long as it does so via the documented
+          // M3LError, not a bare TypeError.
+          expect(buildError).toBeInstanceOf(M3LError);
+          return;
+        }
+        const outcome = await procedure.run({
+          deps: {},
+          parameters: { threshold: 0 },
+        });
+        if (outcome.status === "failed") {
+          expect(outcome.error).toBeInstanceOf(M3LError);
+        }
+      });
+
+      // RED (Must-fix, two-spoke review): same hazard via a case's `action`
+      // (M3LProcedureBuilder.ts:280) — but `#conclude` never catches a throw
+      // from `pass.primaryCase.action(...)`, so the failure mode is `run()`
+      // rejecting outright with the bare TypeError rather than folding it
+      // into a "failed" outcome.
+      test("a case action getter returning a function then a non-function must not reject run() with a bare TypeError", async () => {
+        let accessCount = 0;
+        const caseWithDriftingAction: unknown = {
+          id: "case-a",
+          description: "d",
+          prose: "p",
+          priority: 1,
+          condition: ALWAYS_TRUE_CONDITION,
+          get action() {
+            accessCount += 1;
+            return accessCount === 1
+              ? () => ({ verdict: "case-a" })
+              : "not-a-function";
+          },
+        };
+        let procedure: M3LProcedure<TestShape> | undefined;
+        let buildError: unknown;
+        try {
+          procedure = buildRunnableProcedure(
+            [makeStep({ id: "a" })],
+            [caseWithDriftingAction],
+          );
+        } catch (error) {
+          buildError = error;
+        }
+        if (procedure === undefined) {
+          expect(buildError).toBeInstanceOf(M3LError);
+          return;
+        }
+        let rejection: unknown;
+        try {
+          await procedure.run({ deps: {}, parameters: { threshold: 0 } });
+        } catch (error) {
+          rejection = error;
+        }
+        if (rejection !== undefined) {
+          expect(rejection).toBeInstanceOf(M3LError);
+        }
+      });
+
+      test("regression guard: the fallback's action getter remains accessed exactly once, unaffected by the step/case fix", async () => {
+        let accessCount = 0;
+        const action = () => ({ verdict: "unrecognized" });
+        const fallbackWithAccessorAction: unknown = {
+          description: "no case matched",
+          prose: "Unrecognized pattern. Investigate.",
+          get action() {
+            accessCount += 1;
+            return action;
+          },
+        };
+        // The sole case's condition is `not(exists literal 0)` — always
+        // false — so it never matches and phase 3 falls through to the
+        // fallback, the only path that reads `fallbackAction`.
+        const procedure = buildRunnableProcedure(
+          [makeStep({ id: "a" })],
+          [caseWithCondition(nestedNot(1), "case-a", 1)],
+          fallbackWithAccessorAction,
+        );
+        const outcome = await procedure.run({
+          deps: {},
+          parameters: { threshold: 0 },
+        });
+        expect(outcome.status).toBe("unrecognized");
+        expect(accessCount).toBe(1);
+      });
     });
   });
 

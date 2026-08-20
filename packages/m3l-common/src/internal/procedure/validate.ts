@@ -95,7 +95,14 @@ export interface RawProcedureInput {
   readonly revision: string | undefined;
 }
 
-/** One summary-projection step, already validated - see `M3LProcedureSummary`. */
+/**
+ * One summary-projection step, already validated - see
+ * `M3LProcedureSummary`. `execute` is carried alongside the digest-relevant
+ * scalars purely so `M3LProcedureBuilder` never has to re-read it off the
+ * caller's raw step - it is excluded from the digest projection itself (see
+ * `internal/procedure/digest.ts`'s `buildProcedureSummary`, which selects
+ * fields explicitly and never spreads this shape).
+ */
 interface ValidatedStepProjection {
   readonly id: string;
   readonly label: string;
@@ -104,15 +111,23 @@ interface ValidatedStepProjection {
   readonly jumpsTo: readonly string[];
   readonly loop:
     { readonly reason: string; readonly maxRevisits: number } | undefined;
+  /** Read exactly once by {@link normalizeStep}; never re-read off the caller's raw step afterward. */
+  readonly execute: unknown;
 }
 
-/** One summary-projection case, already validated - see `M3LProcedureSummary`. */
+/**
+ * One summary-projection case, already validated - see
+ * `M3LProcedureSummary`. `action` is carried the same way {@link
+ * ValidatedStepProjection.execute} is - see that field's TSDoc.
+ */
 interface ValidatedCaseProjection {
   readonly id: string;
   readonly description: string;
   readonly prose: string;
   readonly priority: number;
   readonly condition: unknown;
+  /** Read exactly once by {@link normalizeCase}; never re-read off the caller's raw case afterward. */
+  readonly action: unknown;
 }
 
 /** The validated pieces this module hands back once zero problems were found. */
@@ -158,6 +173,8 @@ interface NormalizedStep {
   readonly hasLoop: boolean;
   readonly loop:
     { readonly reason: string; readonly maxRevisits: number } | undefined;
+  /** Read exactly once here; never re-read off the caller's raw step afterward. */
+  readonly execute: unknown;
   readonly declarationProblems: readonly M3LProcedureValidationProblem[];
 }
 
@@ -208,6 +225,29 @@ function checkStepKindDeclaration(
     problem({
       code: "ERR_PROCEDURE_INVALID_DECLARATION",
       message: `M3LProcedure: step '${id}' has an empty or non-string kind`,
+      ...(hasValidId ? { stepId: id } : {}),
+    }),
+  ];
+}
+
+/**
+ * The missing-or-not-a-function step `execute` declaration problem, or
+ * nothing when `execute` is a function. Mirrors {@link
+ * normalizeFallback}'s `action` check for the fallback: without this,
+ * a malformed `execute` passes `build()` and fails only at run time as a
+ * bare, non-`M3LError` `TypeError` surfaced through `M3LProcedure`'s
+ * `"failed"` outcome.
+ */
+function checkStepExecuteDeclaration(
+  hasValidExecute: boolean,
+  id: string,
+  hasValidId: boolean,
+): readonly M3LProcedureValidationProblem[] {
+  if (hasValidExecute) return [];
+  return [
+    problem({
+      code: "ERR_PROCEDURE_INVALID_DECLARATION",
+      message: `M3LProcedure: step '${id}' must declare an 'execute' function`,
       ...(hasValidId ? { stepId: id } : {}),
     }),
   ];
@@ -302,6 +342,9 @@ function normalizeStep(raw: unknown, index: number): NormalizedStep {
   const jumpsTo = normalizeJumpsTo(raw);
   const loopInfo = normalizeLoop(raw);
 
+  const rawExecute = field(raw, "execute");
+  const hasValidExecute = typeof rawExecute === "function";
+
   return {
     index,
     rawId,
@@ -313,11 +356,13 @@ function normalizeStep(raw: unknown, index: number): NormalizedStep {
     jumpsTo,
     hasLoop: loopInfo.hasLoop,
     loop: loopInfo.loop,
+    execute: rawExecute,
     declarationProblems: [
       ...checkStepIdDeclaration(hasValidId, index),
       ...checkStepLabelDeclaration(hasValidLabel, id, hasValidId),
       ...checkStepKindDeclaration(hasValidKind, id, hasValidId),
       ...checkStepLoopDeclaration(loopInfo.isValidMaxRevisits, id, hasValidId),
+      ...checkStepExecuteDeclaration(hasValidExecute, id, hasValidId),
     ],
   };
 }
@@ -336,7 +381,61 @@ interface NormalizedCase {
   readonly priority: number;
   readonly hasValidPriority: boolean;
   readonly condition: unknown;
+  /** Read exactly once here; never re-read off the caller's raw case afterward. */
+  readonly action: unknown;
   readonly declarationProblems: readonly M3LProcedureValidationProblem[];
+}
+
+/** The empty-or-non-string case id declaration problem, or nothing when `id` is valid. */
+function checkCaseIdDeclaration(
+  hasValidId: boolean,
+  index: number,
+): readonly M3LProcedureValidationProblem[] {
+  if (hasValidId) return [];
+  return [
+    problem({
+      code: "ERR_PROCEDURE_INVALID_DECLARATION",
+      message: `M3LProcedure: case at index ${index} has an empty or non-string id`,
+    }),
+  ];
+}
+
+/** The not-a-finite-number case `priority` declaration problem, or nothing when `priority` is valid. */
+function checkCasePriorityDeclaration(
+  hasValidPriority: boolean,
+  id: string,
+  hasValidId: boolean,
+): readonly M3LProcedureValidationProblem[] {
+  if (hasValidPriority) return [];
+  return [
+    problem({
+      code: "ERR_PROCEDURE_INVALID_DECLARATION",
+      message: `M3LProcedure: case '${id}' has a priority that is not a finite number`,
+      ...(hasValidId ? { caseId: id } : {}),
+    }),
+  ];
+}
+
+/**
+ * The missing-or-not-a-function case `action` declaration problem, or
+ * nothing when `action` is a function. Mirrors {@link
+ * checkStepExecuteDeclaration} for the case side; without this, a malformed
+ * `action` passes `build()` and fails only at run time by rejecting `run()`
+ * with a bare, non-`M3LError` `TypeError`.
+ */
+function checkCaseActionDeclaration(
+  hasValidAction: boolean,
+  id: string,
+  hasValidId: boolean,
+): readonly M3LProcedureValidationProblem[] {
+  if (hasValidAction) return [];
+  return [
+    problem({
+      code: "ERR_PROCEDURE_INVALID_DECLARATION",
+      message: `M3LProcedure: case '${id}' must declare an 'action' function`,
+      ...(hasValidId ? { caseId: id } : {}),
+    }),
+  ];
 }
 
 /**
@@ -362,24 +461,8 @@ function normalizeCase(raw: unknown, index: number): NormalizedCase {
 
   const condition = field(raw, "condition");
 
-  const problems: M3LProcedureValidationProblem[] = [];
-  if (!hasValidId) {
-    problems.push(
-      problem({
-        code: "ERR_PROCEDURE_INVALID_DECLARATION",
-        message: `M3LProcedure: case at index ${index} has an empty or non-string id`,
-      }),
-    );
-  }
-  if (!hasValidPriority) {
-    problems.push(
-      problem({
-        code: "ERR_PROCEDURE_INVALID_DECLARATION",
-        message: `M3LProcedure: case '${id}' has a priority that is not a finite number`,
-        ...(hasValidId ? { caseId: id } : {}),
-      }),
-    );
-  }
+  const rawAction = field(raw, "action");
+  const hasValidAction = typeof rawAction === "function";
 
   return {
     index,
@@ -391,7 +474,12 @@ function normalizeCase(raw: unknown, index: number): NormalizedCase {
     priority,
     hasValidPriority,
     condition,
-    declarationProblems: problems,
+    action: rawAction,
+    declarationProblems: [
+      ...checkCaseIdDeclaration(hasValidId, index),
+      ...checkCasePriorityDeclaration(hasValidPriority, id, hasValidId),
+      ...checkCaseActionDeclaration(hasValidAction, id, hasValidId),
+    ],
   };
 }
 
@@ -1106,6 +1194,7 @@ function buildValidatedDefinition(
       continueOnFailure: step.continueOnFailure,
       jumpsTo: step.jumpsTo,
       loop: step.loop,
+      execute: step.execute,
     })),
     cases: cases.map((entry) => ({
       id: entry.id,
@@ -1113,6 +1202,7 @@ function buildValidatedDefinition(
       prose: entry.prose,
       priority: entry.priority,
       condition: entry.condition,
+      action: entry.action,
     })),
     fallback: { description: fallback.description, prose: fallback.prose },
     parameters: [...input.declaredParameters],
