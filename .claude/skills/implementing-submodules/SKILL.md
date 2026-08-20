@@ -64,14 +64,17 @@ ADR-0013 (its durable home), not a per-plan caveat.
       (skip for dep-free modules)
 - [ ] Step 4 — Contract: `spec-conformance-reviewer` → extract exact exports +
       behavioral contracts; save the contract text
-- [ ] Step 5 — RED: `test-author` → writes failing tests; update status file → 🧪
-- [ ] Step 6 — GREEN: `code-implementer` → writes `src/` until tests pass;
+- [ ] Step 5 — Seam plan (ADR-0072): partition the surface into
+      independently-testable subsets; project reviewable size per subset;
+      record the sequence on the contract page's `## Landing plan`
+- [ ] Step 6 — RED: `test-author` → writes failing tests; update status file → 🧪
+- [ ] Step 7 — GREEN: `code-implementer` → writes `src/` until tests pass;
       update status file → 🟢
-- [ ] Step 7 — Review: select every applicable reviewer first, then dispatch the
+- [ ] Step 8 — Review: select every applicable reviewer first, then dispatch the
       whole set in **one message** so they run in parallel (Phase 4) —
       `code-reviewer` + `spec-conformance-reviewer` (always); + `security-reviewer` for the aws/secrets/logging surface; + `type-design-analyzer` whenever the module introduces or changes public types (every Core/AWS module qualifies); + `silent-failure-hunter` when the module has error-handling or async paths;
       iterate until clean; update status file → ✅
-- [ ] Step 8 — Final verify: `pnpm build && pnpm test && pnpm lint && pnpm typecheck`;
+- [ ] Step 9 — Final verify: `pnpm build && pnpm test && pnpm lint && pnpm typecheck`;
       generate provenance sidecar (exported symbols only); then invoke `/syncing-docs`
       (after the status file flips to ✅) for the full doc-reconciliation stack
 - [ ] Report: new exports, review verdict, deps (if any), state-file transitions
@@ -163,21 +166,47 @@ ADR-0013 (its durable home), not a per-plan caveat.
    dispatching `test-author`/`code-implementer`, so both spokes work from one
    settled contract instead of guessing independently and diverging.
 
-   **Size the dispatch now, before RED/GREEN.** If the contract implies a large
-   surface — many exports, or a module that clearly needs more than roughly
-   6–8 source/test files — plan Phases 2 and 3 as **multiple bounded
-   sub-dispatches** (e.g. GREEN split into "core exports" then "edge-case
-   handling") rather than one open-ended turn per phase, and say so explicitly
-   when dispatching. This is the proactive complement to the journal +
-   write-files-first discipline in Phases 2/3 below: Anthropic's guidance is
-   to scale the number/scope of dispatches to task complexity rather than hand
-   one spoke an indivisible, oversized turn — see
-   `docs/contributing/subagent-context-management.md`. The
-   `2026-07-11-scripts-json-etl.md` `test-author` truncation (zero files
-   written across its entire 150k-token budget) is exactly the failure this
-   catches before it happens, not after.
+5. **Seam plan (ADR-0072) — before RED/GREEN, not after review.** Non-convergent
+   review on `core/procedure` (B2/#523, five rounds, abandoned — see
+   [ADR-0072](../../../docs/adr/0072-reviewable-slice-discipline.md)) cost
+   ~$12.75 of gate spend and shipped nothing; retrofitting a split after
+   implementation was structurally impossible because `perFile` v8 coverage
+   binds an implementation file to every test file exercising it. Do this
+   before either writer spoke is dispatched:
 
-5. **Phase 2 — RED.** Dispatch `test-author` with the contract and the target
+   - **Partition the contract's public surface into independently-testable
+     subsets.** Each subset's tests must import **only** the symbols that
+     subset ships — not the whole module's public barrel — so coverage binds
+     within the slice instead of across the whole module. B2's own contract
+     had exactly this seam and never used it:
+     `procedure-conditions.test.ts` imported only `evaluateProcedureCondition`
+     plus two constants, and could have shipped alone.
+   - **Project each slice's reviewable size** against ADR-0072's 75,000-char
+     soft target (`pnpm check:review-size` once a slice's branch exists;
+     estimate from source/test byte counts before then).
+   - If the contract implies a large surface — many exports, or a module that
+     clearly needs more than roughly 6–8 source/test files — plan Phases 2
+     and 3 as **multiple bounded sub-dispatches** along the slice boundaries
+     you just drew (e.g. GREEN split into "core exports" then "edge-case
+     handling"), and say so explicitly when dispatching. This is the
+     proactive complement to the journal + write-files-first discipline in
+     Phases 2/3 below: Anthropic's guidance is to scale the number/scope of
+     dispatches to task complexity rather than hand one spoke an indivisible,
+     oversized turn — see `docs/contributing/subagent-context-management.md`.
+     The `2026-07-11-scripts-json-etl.md` `test-author` truncation (zero
+     files written across its entire 150k-token budget) is exactly the
+     failure this catches before it happens, not after.
+   - **Record the sequence on the contract page** under a `## Landing plan`
+     heading — the slice order, what each slice ships, and which slices are
+     separate PRs vs. one PR. A single-PR module still gets the heading, even
+     if it just states "lands as one PR" — `check:scaffold-seam` is being
+     extended (ADR-0072) to look for it on any module not yet ✅.
+   - A module whose seam plan projects more than one slice is **never**
+     dispatched as a single RED/GREEN pair — each slice gets its own bounded
+     Phase 2/3 dispatch and its own Phase 4 review, landing as its own PR
+     before the next slice starts.
+
+6. **Phase 2 — RED.** Dispatch `test-author` with the contract and the target
    test path (`packages/m3l-common/tests/<module>.test.ts`). It writes happy +
    failure + `expectTypeOf` tests against the contract and confirms they **fail
    for the right reason** (the symbols don't exist yet). **Hand the spoke a
@@ -190,7 +219,7 @@ ADR-0013 (its durable home), not a per-plan caveat.
    write the tests now") rather than re-dispatching fresh — its exploration
    context is still loaded. Update the state file: that module → 🧪 tests-written.
 
-6. **Phase 3 — GREEN.** Dispatch `code-implementer` with the contract and
+7. **Phase 3 — GREEN.** Dispatch `code-implementer` with the contract and
    the failing tests. It writes the minimal `src/<ns>/<module>/index.ts`
    (private helpers under `src/internal/`), re-exports from the namespace barrel
    `src/<ns>/index.ts`, and drives `pnpm test` + `pnpm typecheck` to green
@@ -224,7 +253,7 @@ ADR-0013 (its durable home), not a per-plan caveat.
    untracked `scratch*` / stray `*.test.ts` debug files before the review
    fan-out. (The `Stop` hook also flags these, but sweep proactively here.)
 
-7. **Phase 4 — Review (fan out in parallel).** In one message, dispatch
+8. **Phase 4 — Review (fan out in parallel).** In one message, dispatch
    `code-reviewer` and `spec-conformance-reviewer` (now in _conformance mode_),
    plus `security-reviewer` if the surface is security-sensitive (anything under
    `aws`, or touching secrets, credentials, deserialization, or logging),
@@ -264,7 +293,7 @@ ADR-0013 (its durable home), not a per-plan caveat.
 
    Update the state file: → ✅ reviewed/done.
 
-8. **Final verify, reconcile docs, and report.** Run
+9. **Final verify, reconcile docs, and report.** Run
    `pnpm -C packages/m3l-common build && pnpm test && pnpm lint && pnpm typecheck`.
    Generate or update the module's provenance sidecar
    (`docs/reference/<ns>/<name>.provenance.json`). **Every `symbol` entry must

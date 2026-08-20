@@ -118,6 +118,21 @@ paths:
   matches the live Vitest count; a mismatch discovered at `pnpm verify` time
   forces a standalone `chore:` commit. Include the Notes update in the same
   feat/refactor commit that adds the test.
+- **Per-file test size is ratcheted, not capped (ADR-0072).**
+  `pnpm check:file-budget` enforces test files ≤ 60,000 chars against a
+  committed baseline; a baselined file may not grow, and any other file must
+  stay under the ceiling from the start. When a module's seam plan
+  (`implementing-submodules` Step 5) partitions its public surface into
+  several independently testable slices, name each slice's test file
+  `<mod>-<facet>.test.ts` (e.g. `procedure-conditions.test.ts`), and that
+  file must import **only the symbols its own slice ships** — never the
+  whole module's public barrel. `perFile` v8 coverage
+  (`vitest.config.ts`) binds a `src/` file to every test file that imports
+  from it; a slice's test importing outside its own slice defeats the split
+  by re-binding coverage across the whole module. `check:test-counts` keys
+  its recorded count on the file's path relative to the tests root (not a
+  shared basename), so sibling files like this are counted independently,
+  not summed into one row.
 - **Justify intentional `eslint-disable` on the error channel.** A module that
   tests its error channel throws/rejects non-`Error` values to prove
   normalization, which trips `only-throw-error` / `prefer-promise-reject-errors`.

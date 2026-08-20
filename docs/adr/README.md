@@ -116,3 +116,4 @@ surface).
 | 0069 | [Console embedded persistence: `node:sqlite` behind a repository seam](./0069-console-embedded-persistence.md)                                            | Accepted                         |
 | 0070 | [Console audit, self-observability, and the display-vs-persist rule](./0070-console-audit-and-observability.md)                                           | Accepted                         |
 | 0071 | [Console containerization and local-first deployment](./0071-console-containerization-deployment.md)                                                      | Accepted                         |
+| 0072 | [Reviewable-slice discipline for PRs and submodule landings](./0072-reviewable-slice-discipline.md)                                                       | Accepted                         |

@@ -2,12 +2,14 @@
 name: starting-work
 description: >-
   The pre-work decision gate for m3l-automation. Before any change-work begins,
-  it inspects git state, infers and recommends four decisions — where to work
+  it inspects git state, infers and recommends five decisions — where to work
   (shared checkout vs an opt-in linked worktree), the branch (feat/<slug> or
-  fix/<slug> off main), whether the change must land via PR, and the push target
-  — then confirms every one with the user before a single file is written or a
-  branch is created. Invoke this whenever a task will edit code, tests, or
-  scripts: the user says "implement", "build", "add", "fix", "edit", "refactor",
+  fix/<slug> off main), whether the change must land via PR, the push target,
+  and — when the inferred scope spans several independently-landable units —
+  the PR sequence (ADR-0072) — then confirms every one with the user before a
+  single file is written or a branch is created. Invoke this whenever a task
+  will edit code, tests, or scripts: the user says "implement", "build",
+  "add", "fix", "edit", "refactor",
   "scaffold", "write the code for", or otherwise starts real work — even when
   they don't name a branch or say "starting-work". It is the mandatory Step 0 that
   implementing-submodules, scaffolding-submodules, scaffolding-scripts, and auditing all run first, so
@@ -39,10 +41,14 @@ lands on `main`.
 
 ## The contract
 
-**Infer and recommend all four decisions, then confirm every one with the user
-in a single round. Do not write files, create a branch, or create a worktree
-until the user has confirmed.** The user is always free to override a
+**Infer and recommend all decisions, then confirm every one with the user in a
+single round. Do not write files, create a branch, or create a worktree until
+the user has confirmed.** The user is always free to override a
 recommendation; your job is to make the right default obvious, not to force it.
+Location, branch, PR-required, and push target are always decided. The fifth
+decision — PR sequence — is decided only when Step 2 finds the scope spans
+several independently-landable units; otherwise it is silently skipped rather
+than asked about.
 
 ## Steps
 
@@ -72,9 +78,17 @@ required. A docs-only or `.claude/`-only change touches no guarded path, so the
 guard won't fire and a PR may be optional; a change under `src/` or `tests/`
 always needs isolation and a PR.
 
+Also decide whether the scope is **one landable unit or several.** It spans
+several when the task already implies independently mergeable slices — a
+process/tooling change with a docs-only part and a code part (ADR-0072's
+docs-vs-code split, which measures ~0 reviewable chars and should default to
+splitting), a submodule whose seam plan (`implementing-submodules`) projects
+more than one PR, or a batch of same-shaped changes across unrelated paths. A
+single bug fix or a small, cohesive feature is one unit — most tasks are.
+
 ### 3 — Recommend each decision
 
-Derive a concrete default for all four from steps 1–2:
+Derive a concrete default for all decisions from steps 1–2:
 
 - **Location** — default to the **shared checkout**. Recommend a linked worktree
   (`pnpm worktree:new <slug>`) only when the user signalled concurrent/parallel
@@ -89,25 +103,32 @@ Derive a concrete default for all four from steps 1–2:
   `docs/contributing/branch-protection.md`). For docs/config-only changes, note
   that a PR is optional but still recommended.
 - **Push target** — `origin <the recommended branch>`. Never `origin main`.
+- **PR sequence** — only surfaced when Step 2 found several landable units.
+  Recommend the order (docs-first when the scope mixes docs and code — that
+  slice is free to review and unblocks the rest; otherwise by path cluster or
+  by the seam plan's projected order) and name each slice's branch. This is
+  the ADR-0072 discipline applied at plan time, before the first commit exists
+  to split.
 - **Model tier (advisory only)** — name the recommended model + effort for this
   task category from the matrix in `docs/contributing/model-selection.md`
   (e.g. "matrix row 2: Opus 5 at `xhigh` for a single-sitting implementation").
   For a plan-then-implement task (rows 1–2 — an audit/plan skill like
   `/auditing` followed by implementation in the same or a later session),
   recommend `/model opusplan` instead of a single fixed tier: Opus during
-  plan mode, Sonnet once execution starts. State it alongside the four
+  plan mode, Sonnet once execution starts. State it alongside the other
   decisions in your summary; do **not** add it to the Step-4 confirmation
   questions — the hub model is user-selected via `/model`, so this is a
   recommendation the user may act on, not a decision to confirm.
 
 ### 4 — Confirm with the user (blocking)
 
-Ask all four in **one** `AskUserQuestion` call, one question per decision, with
-your inferred recommendation listed **first** and labelled "(Recommended)". For
-the branch, offer the inferred `feat/<slug>` plus an "Other" path for a custom
-slug. Make it explicit in your framing that **nothing is written and no
-branch/worktree is created until they confirm** — this is the whole point of the
-gate.
+Ask every decision that applies in **one** `AskUserQuestion` call — always
+location, branch, PR-required, and push target; PR sequence only when Step 2
+found several landable units — one question per decision, with your inferred
+recommendation listed **first** and labelled "(Recommended)". For the branch,
+offer the inferred `feat/<slug>` plus an "Other" path for a custom slug. Make
+it explicit in your framing that **nothing is written and no branch/worktree
+is created until they confirm** — this is the whole point of the gate.
 
 If the user has _already_ told you the branch/worktree to use (e.g. "do it on
 `fix/foo`"), don't re-ask that dimension — treat it as confirmed and only
@@ -130,9 +151,10 @@ Once confirmed:
 ### 6 — Hand back
 
 Report a one-line summary of the confirmed decisions — location, branch, PR
-(yes/no), push target — so the calling skill or the user proceeds with the
-context recorded. The enforcement backdrop (why this matters) lives in
-`guard-branch-isolation.mjs` and ADR-0013/0014.
+(yes/no), push target, and the PR sequence when one was confirmed — so the
+calling skill or the user proceeds with the context recorded. The enforcement
+backdrop (why this matters) lives in `guard-branch-isolation.mjs` and
+ADR-0013/0014; the PR-sequence rationale lives in ADR-0072.
 
 ## Notes for callers
 
@@ -140,4 +162,6 @@ context recorded. The enforcement backdrop (why this matters) lives in
 as their first step instead of re-deriving isolation inline — it's the single
 source of truth for the decision. When one of them calls it, the "infer scope"
 step is easy: the caller already knows it will write `src/`/`tests/`, so the PR
-answer is yes and isolation is required.
+answer is yes and isolation is required. `implementing-submodules` also feeds
+its own seam plan (its "Seam plan" step, ADR-0072) into the PR-sequence
+recommendation when that plan projects more than one PR.
