@@ -251,6 +251,23 @@ function staleManagedLabels(currentLabels, payload) {
   );
 }
 
+// Sync only the managed label set (add missing / remove stale priority:*,
+// type:*, status:* labels) — no --title/--body/--milestone/--type, unlike
+// editIssue. Called right before closeIssue when the plan says labels are
+// stale (issuePlan.close[].labelsStale), so a Done/Rejected issue's status
+// label reflects the closing state instead of retaining whatever it had
+// while open — gh issue close has no --add-label/--remove-label of its own
+// (ADR-0052's 2026-08-20 Update: every STATUS_LABELS value is now labeled,
+// including done/rejected).
+function syncManagedLabels(runGhFn, number, payload, currentIssue) {
+  const args = ["issue", "edit", String(number), "-R", REPO];
+  for (const label of payload.labels) args.push("--add-label", label);
+  for (const label of staleManagedLabels(currentIssue?.labels ?? [], payload)) {
+    args.push("--remove-label", label);
+  }
+  runGhFn(args);
+}
+
 function editIssue(runGhFn, number, payload, currentIssue) {
   const args = [
     "issue",
@@ -527,7 +544,22 @@ export function runIssueSync({
       reporter.change("updated", `issue #${number} [${key}]`);
     }
 
-    for (const { number, key, comment, reason } of issuePlan.close) {
+    for (const {
+      number,
+      key,
+      comment,
+      reason,
+      payload,
+      labelsStale,
+    } of issuePlan.close) {
+      if (labelsStale) {
+        syncManagedLabels(
+          runGhFn,
+          number,
+          payload,
+          existingIssuesByNumber.get(number),
+        );
+      }
       closeIssue(runGhFn, number, comment, reason);
       reporter.change(
         "removed",

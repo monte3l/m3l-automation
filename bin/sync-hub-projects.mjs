@@ -69,11 +69,16 @@ const STATUS_OPTION_RENAME_SOURCE = {
   Done: "Done",
 };
 
-// The Priority single-select's desired options, mirroring PRIORITY_LABELS'
-// own "0-now"/"1-next"/"2-later" vocabulary exactly (ADR-0052) — the board's
-// own Priority field existed with zero options before this. Governance
-// items never get one of these; planProjectSync clears the field for them
-// instead (see PROJECT_PRIORITY_OPTIONS in bin/lib/hub-sync.mjs).
+// The Priority single-select's desired options: the three tiers mirroring
+// PRIORITY_LABELS' own "0-now"/"1-next"/"2-later" vocabulary exactly
+// (ADR-0052), plus a dedicated "Governance" option (ADR-0052's 2026-08-20
+// Update) — governance items get this instead of a null-cleared field or a
+// reused tier, so the board's Priority column is never blank and never
+// conflates governance rows with real Later-tier work under a sort/filter
+// (see PROJECT_PRIORITY_OPTIONS in bin/lib/hub-sync.mjs for the full
+// rationale). "Governance" is board-only, with no `priority:*` label
+// counterpart — ADR-0051's "governance is a category, not a tier" rule is
+// unaffected.
 const DESIRED_PRIORITY_OPTIONS = [
   { name: "0-now", color: "RED", description: "Now — unblock-first work." },
   {
@@ -85,6 +90,12 @@ const DESIRED_PRIORITY_OPTIONS = [
     name: "2-later",
     color: "YELLOW",
     description: "Later — gated or deferred backlog.",
+  },
+  {
+    name: "Governance",
+    color: "PURPLE",
+    description:
+      "Governance — ADR/process follow-up work; outside the priority tiers.",
   },
 ];
 
@@ -218,11 +229,23 @@ function resolveSingleSelectField(runGhFn, projectNumber, fieldName) {
 // dynamic user input beyond the field id, which comes from GitHub's own
 // field-list response) — the "straightforward" case; anything more
 // elaborate (e.g. preserving existing option colors) is left to the manual
-// fallback below. `renameSource` (default `{}`) maps a desired option's name
-// to the pre-migration name it replaces; when the old name still resolves in
-// `optionIdByName`, that option's own id is included so the mutation renames
-// it in place (preserving every item's current value) instead of dropping
-// and recreating it.
+// fallback below.
+//
+// `updateProjectV2Field`'s `singleSelectOptions` is a full REPLACE, not a
+// merge: any desired option submitted with NO `id` is treated as brand new,
+// even when an option under that exact name already exists — the old
+// option (and every item's value pointing at its id) is silently orphaned.
+// So an existing option's id is preserved whenever `optionIdByName` already
+// has an entry under its `option.name` — covering both "unchanged" (found
+// under its own name) and "renamed" (found via `renameSource`, which maps a
+// desired name to the pre-migration name it replaces) in one lookup, own-name
+// checked first since that's the common case and needs no renameSource
+// entry at all. Confirmed live (2026-08-20): adding a 4th Priority option
+// with no renameSource churned the ids of the three unchanged options and
+// wiped all 21 items' board Priority values, recovered only because the
+// very next planProjectSync --apply happened to re-set every value from the
+// tracker's own source of truth — a renameSource gap here has no such safety
+// net in general.
 function updateSingleSelectOptions(
   runGhFn,
   fieldId,
@@ -233,7 +256,9 @@ function updateSingleSelectOptions(
   const optionsLiteral = desiredOptions
     .map((option) => {
       const oldName = renameSource[option.name];
-      const existingId = oldName ? optionIdByName.get(oldName) : undefined;
+      const existingId =
+        optionIdByName.get(option.name) ??
+        (oldName ? optionIdByName.get(oldName) : undefined);
       const idField = existingId ? `id: ${JSON.stringify(existingId)}, ` : "";
       return (
         `{${idField}name: ${JSON.stringify(option.name)}, ` +

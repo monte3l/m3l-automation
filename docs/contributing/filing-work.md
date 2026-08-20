@@ -95,21 +95,33 @@ Once an idea is actually ready to be worked on:
    follow-up work that sits in its own `docs/ROADMAP.md` section and carries
    `type:governance` (not a `priority:*` label) plus its own `Governance`
    milestone. A governance row has no Priority column to fill in; don't force
-   one of the three tiers onto it. The board's Priority field is **cleared**
-   for a governance item, never given a `Governance` option — the same rule,
-   projected onto the new field (ADR-0052).
+   one of the three tiers onto it. The board's Priority field gets its own
+   dedicated `Governance` option instead (ADR-0052's 2026-08-20 Update) — not
+   `2-later` (which would conflate it with real Later-tier work under a
+   sort/filter) and no longer cleared/blank; `priority:*` labels are
+   unaffected, still exactly the three tiers above.
 
    **Type legend** (ADR-0052 — assigned as the item's GitHub Issue Type, not
    a label; `bin/lib/hub-sync.mjs`'s `TYPE_BY_ROADMAP_SECTION`/
    `TYPE_BY_IMPLEMENTATION_SECTION` derive it per tracker section, never
-   hand-picked per row):
+   hand-picked per row. Each Issue Type also carries a matching `type:*`
+   GitHub label, applied to every issue unconditionally alongside its
+   Priority/Status labels — ADR-0052's 2026-08-20 Update):
 
-   | Issue Type        | Tracker series | Source section(s)                                                           |
-   | ----------------- | -------------- | --------------------------------------------------------------------------- |
-   | `Capability`      | A/B/C-series   | ROADMAP Priority 0; every IMPLEMENTATION.md section except Library friction |
-   | `Consumer script` | W-series       | ROADMAP Priority 1 (the Wave/Scripts table)                                 |
-   | `Friction`        | F-series       | IMPLEMENTATION.md's Library friction table                                  |
-   | `Governance`      | T-series       | ROADMAP Governance follow-ups                                               |
+   | Issue Type        | GitHub label           | Tracker series | Source section(s)                                                           |
+   | ----------------- | ---------------------- | -------------- | --------------------------------------------------------------------------- |
+   | `Capability`      | `type:capability`      | A/B/C-series   | ROADMAP Priority 0; every IMPLEMENTATION.md section except Library friction |
+   | `Consumer script` | `type:consumer-script` | W-series       | ROADMAP Priority 1 (the Wave/Scripts table)                                 |
+   | `Friction`        | `type:friction`        | F-series       | IMPLEMENTATION.md's Library friction table                                  |
+   | `Governance`      | `type:governance`      | T-series       | ROADMAP Governance follow-ups                                               |
+
+   **Status legend** — every one of the six `Status` cell values now carries
+   a matching GitHub label too (ADR-0052's 2026-08-20 Update; originally
+   Deferred/Blocked only): `status:todo`, `status:in-progress`,
+   `status:deferred`, `status:blocked`, `status:done`, `status:rejected`
+   (`bin/lib/hub-sync.mjs`'s `STATUS_LABELS`). A Done/Rejected issue still
+   closes as before — the label is additional context on the closed issue,
+   not a substitute for its closed state.
 
 4. **Run `pnpm sync:hub`** (dry-run first to preview, then `-- --apply`,
    maintainer-local — it needs your own `gh` auth; `GITHUB_TOKEN` cannot write

@@ -229,3 +229,91 @@ abstract, not that every layout accepts it in practice:
 The board's own Type/Status/Priority _fields_ (the org Issue Type assignment,
 the Status/Priority single-selects) are unaffected — this only trims which
 **views** exist and which columns they request.
+
+## Update (2026-08-20): complete `status:`/`type:` label coverage, and a board Priority value for Governance
+
+The original label vocabulary was partial: `status:*` covered only 2 of the
+6 Status values (`deferred`/`blocked` — Deferred/Blocked/To Do were
+otherwise visually identical on GitHub), and `type:*` covered only 1 of the
+4 Type values (`governance`, added by ADR-0051 specifically to keep it out
+of the `priority:` prefix). Governance items also had no board Priority
+value at all — the field was cleared for them, per the original Decision.
+Requested directly: complete both label families to full coverage, and give
+Governance a board Priority value.
+
+**`status:*` — all 6 values now labeled**
+(`bin/lib/hub-sync.mjs`'s `STATUS_LABELS`): `status:todo`, `status:in-progress`,
+`status:deferred`, `status:blocked`, `status:done`, `status:rejected`.
+`buildIssuePayload`'s status-label lookup is now an exhaustiveness throw
+(matching the existing `projectStatusOption`/`projectPriorityOption`
+pattern) rather than a silent-omit ternary — every status is now expected
+to always resolve a label, so a table gap must fail loud.
+
+This creates a close-flow gap: `planIssueSync`'s `close` path (Done/
+Rejected items) never called `editIssue` — only `closeIssue`, which cannot
+set labels (`gh issue close` has no `--add-label`/`--remove-label`,
+confirmed via `gh issue close --help`). Without a fix, a closed issue would
+retain whatever stale `status:*` label it had while open (e.g.
+`status:in-progress` on an issue that's now Done). Fixed: `planIssueSync`'s
+resolved-item `close` entries now carry `payload` and `labelsStale`
+(`managedLabelsDiffer(issue.labels, payload)`); `sync-hub-issues.mjs` gained
+`syncManagedLabels()` (a label-only `gh issue edit` — no title/body/
+milestone/type) called before `closeIssue` only when `labelsStale` is true,
+avoiding an unconditional extra API call on every close.
+`planBackfill`'s create+close path is unaffected — it already calls
+`buildIssuePayload` before creating, so a backfilled Done/Rejected issue
+gets the right label from creation.
+
+**`type:*` — all 4 values now labeled**
+(`type:capability`, `type:consumer-script`, `type:friction`,
+`type:governance`, unchanged). `TYPE_LABELS` is re-keyed by the
+`ISSUE_TYPES` display-name values (matching how `Item.type` is actually
+stored) so `TYPE_LABELS[item.type]` resolves directly. `facetLabel()`
+simplifies to just the priority label (or nothing for governance) — the
+type label that used to stand in for governance's missing priority label
+(`TYPE_LABELS.governance`) is now applied unconditionally to every item via
+a separate, always-present lookup, also an exhaustiveness throw.
+
+**Governance's board Priority: a dedicated `"Governance"` option, not
+`2-later` and not a `null`-cleared field.** Asked directly whether to reuse
+`2-later` or add a lower value: reusing `2-later` would make governance rows
+indistinguishable from real Later-tier roadmap work under any Priority
+sort/filter — exactly the conflation ADR-0051 eliminated at the label layer,
+reintroduced at the board layer. `DESIRED_PRIORITY_OPTIONS`
+(`bin/sync-hub-projects.mjs`) gains a 4th option, `Governance` (color
+`PURPLE`); `PROJECT_PRIORITY_OPTIONS.governance` (`bin/lib/hub-sync.mjs`)
+changes from `null` to `"Governance"`. This is board-only, with no
+`priority:*` label counterpart — ADR-0051's "governance is a category, not
+a tier" rule is unaffected; the board just no longer leaves governance rows
+blank. `setItemSingleSelect`'s `null`-clearing branch
+(`clearProjectV2ItemFieldValue`) stays in the code as generic, correct,
+currently-unreached-by-callers capability — not worth stripping for a
+now-dead path.
+
+**Live migration:** `bin/lib/label-defs.mjs` gained 7 new `LABEL_DEFS`
+entries (4 status + 3 type) plus a module-load coverage assertion — every
+`PRIORITY_LABELS`/`TYPE_LABELS`/`STATUS_LABELS` value must have a matching
+`LABEL_DEFS` entry, or the module throws at import time. This closes a real
+failure mode: `gh issue edit --add-label <name>` fails if the label doesn't
+already exist on the repo, so a table entry with no `LABEL_DEFS` counterpart
+would have passed every local check silently and then hard-failed the very
+first live `--apply` that needed it.
+
+**Bug found and fixed during the live apply:** `updateSingleSelectOptions`
+(`bin/sync-hub-projects.mjs`) only ever preserved an existing option's id
+when the desired name appeared as a `renameSource` key (a genuine rename,
+like Status's `Pending`→`To Do`). Adding the `Governance` option to a
+Priority field that already had three existing, _unrenamed_ options
+(`0-now`/`1-next`/`2-later`, no `renameSource` entry — nothing about them
+was changing) submitted all four options with no `id`; `updateProjectV2Field`'s
+`singleSelectOptions` is a full replace, not a merge, so GitHub minted four
+brand-new ids and silently orphaned the three old ones — wiping every
+tracked item's board Priority value. Recovered only because the very next
+`planProjectSync --apply` happened to re-set every value from the tracker's
+own source of truth (verified live: all 21 items' Priority values correct
+afterward) — there is no such safety net in general. Fixed: the id lookup
+now checks whether an option already exists under its own desired name
+**first**, falling back to `renameSource` only for an actual rename — this
+one change covers "add a new option alongside unchanged ones" (today's bug)
+and "rename an option" (the pre-existing, still-correct Status behavior) in
+a single code path.
