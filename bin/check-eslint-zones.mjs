@@ -15,21 +15,26 @@
 //                            core/logging/{M3LLogEvent,M3LLogEventCategory}.ts
 //                            (ADR-0009, ADR-0040, ADR-0041).
 //   3. core/script root    — no other core module may import core/script (ADR-0009).
-//   4. no-cycle            — packages/m3l-common/src/**/*.ts AND scripts/*/src/**/*.ts
+//   4. core-not-to-aws     — the reverse of the island: no core module may import
+//                            aws/**, except core/script (excluded via the config
+//                            block's `ignores`, not via a path `except`). ADR-0046
+//                            § Import constraints asserted this was already
+//                            enforced when it was not.
+//   5. no-cycle            — packages/m3l-common/src/**/*.ts AND scripts/*/src/**/*.ts
 //                            are a DAG, `maxDepth: Infinity` (ADR-0035 A8) — see
 //                            eslint.config.js's own comment on why this covers
 //                            every shipped module rather than an allowlist of
 //                            modules known to be clean.
-//   5. script cross-import — one zone per scripts/ directory entry; a script may
+//   6. script cross-import — one zone per scripts/ directory entry; a script may
 //                            import only itself and @m3l-automation/m3l-common,
 //                            never a sibling script's src (ADR-0029 backstop).
-//   6. prod-not-to-test    — packages/m3l-common/src and scripts/*/src may not
+//   7. prod-not-to-test    — packages/m3l-common/src and scripts/*/src may not
 //                            import from a tests/ tree.
-//   7. type-stripping zone — scripts/*/src/config.ts bans type-directed emit
+//   8. type-stripping zone — scripts/*/src/config.ts bans type-directed emit
 //                            (enum, runtime namespace, decorators, parameter
 //                            properties) so the m3l CLI's native
 //                            type-stripping fallback stays loadable (ADR-0042).
-//   8. m3l-cli boundary    — packages/m3l-cli/src may import only
+//   9. m3l-cli boundary    — packages/m3l-cli/src may import only
 //                            @m3l-automation/m3l-common and node: builtins,
 //                            and is covered by the no-cycle rule (ADR-0042).
 //
@@ -117,6 +122,21 @@ requireZone(
   (zone) =>
     norm(zone.target).endsWith("/src/core") &&
     norm(zone.from).endsWith("/src/core/script"),
+);
+
+// The reverse of the aws island. ADR-0046 § Import constraints claimed this was
+// already enforced; it was not — the island zone above only constrains
+// aws -> core, so nothing stopped a core module from importing aws/** and
+// inverting the layering. Asserted here so deleting the zone fails CI rather
+// than silently passing `pnpm lint` (there would be nothing left to catch).
+// `except` must be ABSENT: the sole legitimate exception, core/script, is
+// carried by the config block's `ignores`, not by a path exception.
+requireZone(
+  "core-not-to-aws (no core module except core/script may import aws/**)",
+  (zone) =>
+    norm(zone.target).endsWith("/src/core") &&
+    norm(zone.from).endsWith("/src/aws") &&
+    zone.except === undefined,
 );
 
 // The no-cycle rule isn't a `no-restricted-paths` zone, so it needs its own
@@ -271,6 +291,6 @@ if (errors > 0) {
 }
 
 reporter.succeed(
-  `ADR-0009/ADR-0035 dependency-direction guards intact: internal sealing, aws island, core/script root, no-cycle (${zones.length} zone(s) + no-cycle).`,
+  `ADR-0009/ADR-0035 dependency-direction guards intact: internal sealing, aws island, core-not-to-aws, core/script root, no-cycle (${zones.length} zone(s) + no-cycle).`,
 );
 reporter.finish();

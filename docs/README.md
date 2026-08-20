@@ -2,13 +2,13 @@
 
 `@m3l-automation/m3l-common` is a shared infrastructure library for every automation script, Lambda handler, and tool that needs enterprise-grade building blocks — application scaffolding, multi-source configuration, structured logging, interactive prompts, file import/export, full-text search, polling/retry resilience, and AWS credential and client management. It is written in TypeScript (strict), ships ESM-only, targets Node.js 24+, and keeps runtime dependencies minimal.
 
-> **Development status:** Internal package, not published to npm (`version` is hand-managed). 41 submodules documented;
+> **Development status:** Internal package, not published to npm (`version` is hand-managed). 42 submodules documented;
 > <!-- BEGIN GENERATED SUBMODULE-LIST -->
 >
 > `errors`, `events`, `security`, `environment`, `utils`, `json`, `analysis`, `messaging`, `config`, `logging`, `files`, `network`, `polling`, `prompt`, `importers`, `exporters`, `storage`, `text`, `script`, `diagnostics`, `checkpoint`, `pipeline`, `aws/models`, `aws/credentials`, `aws/clients`, `aws/dynamodb`, `aws/cloudwatch-logs-insights`, `aws/sqs`, `aws/signing`, `aws/s3`, `aws/athena`, `aws/eventbridge`, `aws/lambda`, `aws/ecs`, `aws/codepipeline`, `aws/cloudformation`, `aws/eks`, `aws/cloudwatch-alarms`, `aws/cloudwatch-metrics`, `aws/secrets-manager`, `aws/rds-data`
 > <!-- END GENERATED SUBMODULE-LIST -->
 >
-> implemented (41 of 41). See [Implementation status](implementation-status.md) for the per-module breakdown.
+> implemented (41 of 42). See [Implementation status](implementation-status.md) for the per-module breakdown.
 
 ## Import paths
 

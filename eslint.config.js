@@ -581,6 +581,15 @@ export default tseslint.config(
     // import it. Scoped to core/** but excluding core/script itself (its own
     // intra-module imports are legitimate) and the core barrel (which re-exports
     // it). See the ADR-0009 layering comment above.
+    //
+    // The same block carries the reverse of the aws island: core/** may not
+    // import aws/** at all. ADR-0046 § Import constraints asserted this was
+    // already "enforced by the existing ESLint zones and pnpm check:zones" when
+    // it was not — the aws island zone only constrains aws → core, so nothing
+    // stopped a core module from reaching into the island and inverting the
+    // layering. core/script is the sole legitimate exception (it is the
+    // composition root and imports AWSProvider/M3LAWSProfile by type), and it is
+    // already excluded from this block by `ignores`.
     files: ["packages/m3l-common/src/core/**/*.ts"],
     ignores: [
       "packages/m3l-common/src/core/script/**",
@@ -596,6 +605,12 @@ export default tseslint.config(
               from: "./packages/m3l-common/src/core/script",
               message:
                 "core/script is the composition root; no other core module may import it (ADR-0009 layering).",
+            },
+            {
+              target: "./packages/m3l-common/src/core",
+              from: "./packages/m3l-common/src/aws",
+              message:
+                "core/* may not import aws/* — the aws island sits above core in the ADR-0009 layering, and only core/script (the composition root, excluded from this zone) may reach it. Enforces ADR-0046 § Import constraints.",
             },
             {
               target: "./packages/m3l-common/src",
