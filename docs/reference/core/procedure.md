@@ -537,7 +537,46 @@ so a test can assert it exactly.
 
 `evaluateProcedureCondition` is public because a consumer must be able to
 unit-test its own case list without standing up a whole procedure. It is pure:
-no `deps`, no signal, no I/O.
+no `deps`, no signal, no I/O. It is also **total**: it returns a boolean for any
+input and never throws — not on an unresolved reference, not on a type mismatch,
+not on a self-referential value, and not on a malformed `matches` pattern.
+(`build()` rejects a malformed pattern, but this function is reachable without
+`build()`, so it carries its own guarantee.)
+
+### Rendered forms
+
+Both rendered strings are part of the contract, because a run report quotes them.
+
+`reference` is `<source>:<name>` with `.` plus the dotted `path` appended when
+present. A `literal` renders its value unquoted, with `null` as the word:
+
+```text
+value:count        value:tags.0        parameter:threshold
+step:count-errors  step:count-errors.count
+literal:5          literal:first       literal:null
+```
+
+`detail` states the **assertion**, not the outcome, so it reads the same whether
+it held or not:
+
+| Node         | `detail`                                                      |
+| ------------ | ------------------------------------------------------------- |
+| `compare`    | `12 > 5`                                                      |
+| `matches`    | `"conn refused" matches /refused/i`                           |
+| `contains`   | `["a","b"] contains "a"`                                      |
+| `exists`     | `value:count exists` — the canonical reference, not the value |
+| `and` / `or` | children's `detail` joined with `and` / `or`                  |
+| `not`        | `not (<operand detail>)`                                      |
+
+`detail` is capped at 200 characters, truncated with a trailing `…`. The cap is
+an implementation constant, not an exported one — a caller must not branch on it.
+
+### Depth bounds are inclusive
+
+`M3L_PROCEDURE_CONDITION_MAX_DEPTH` (16) is **inclusive** everywhere it applies —
+path-walk depth, condition-tree nesting, and equality recursion. A structure at
+exactly that depth resolves, evaluates, or compares normally; only strictly
+deeper is refused.
 
 > **Safety classification.** An evaluation tree carries **resolved caller data
 > verbatim** — that is the point of explainability — so it is _run-report grade_,
