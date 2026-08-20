@@ -403,6 +403,30 @@ The 2026-07-23 reclassification above is untouched: the run report remains a
 sensitive artifact, and every field added here is allowlisted-scalar shaped rather
 than free text, following the evidence recorded in that update.
 
+## Update (2026-08-20) — a third artifact class: the agent decision log
+
+[ADR-0061](./0061-agent-decision-log.md) adds an append-only **agent
+decision log** (`data/agent-log/`, JSONL) recording every agent-operator
+policy verdict — including denied and escalated actions that produce no
+run at all — with agent identity, tool/operation, parameter **names never
+values**, outcome, and token/cost figures.
+
+Registered here so this ADR stays the authoritative artifact taxonomy:
+
+- **Run report** (`data/output/<startedAt>/run-report.json`) — sensitive,
+  crash-dump class, best-effort redaction (2026-07-23 update above).
+- **Breadcrumb trail** — allowlisted-scalar shaped, stronger sharing
+  guarantee (2026-07-23 update above).
+- **Agent decision log** (new) — **non-sensitive by construction**
+  (names-never-values, allowlisted scalars), append-only with **loud**
+  write-failure semantics (an unauditable action escalates rather than
+  running unaudited) — deliberately the opposite of the run report's
+  best-effort stance, because it is an audit record, not a diagnostic.
+
+The 2026-07-23 reclassification is again untouched; ADR-0063's structured
+run envelope likewise derives from the report under the allowlisted-scalar
+rule rather than re-emitting it.
+
 ## Links
 
 - Related: [ADR-0005](./0005-error-hierarchy.md) (M3LError/M3LResult model —

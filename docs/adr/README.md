@@ -102,3 +102,9 @@ surface).
 | 0055 | [Declarative, enumerable operations in script config](./0055-declarative-operation-introspection.md)                                                      | Accepted                         |
 | 0056 | [Cross-script orchestration engine in `m3l-cli` (`m3l flow`)](./0056-cross-script-orchestration-engine.md)                                                | Accepted                         |
 | 0057 | [Distribute the CLI and its fleet via a private GitHub Packages registry](./0057-private-registry-distribution.md)                                        | Accepted                         |
+| 0058 | [Agent-operator programme: staged AI-agent operation of the m3l fleet](./0058-agent-operator-programme.md)                                                | Accepted                         |
+| 0059 | [`aws/bedrock-runtime` typed wrapper and tool-use loop primitives](./0059-bedrock-runtime-wrapper-and-loop-primitives.md)                                 | Accepted                         |
+| 0060 | [Agent policy layer: graded autonomy as a real authorization control](./0060-agent-policy-layer.md)                                                       | Accepted                         |
+| 0061 | [Agent decision log: an append-only audit artifact class](./0061-agent-decision-log.md)                                                                   | Accepted                         |
+| 0062 | [Runtime MCP surface: `packages/m3l-mcp`](./0062-runtime-mcp-surface.md)                                                                                  | Accepted                         |
+| 0063 | [CLI structured run results: completing the machine surface](./0063-cli-structured-run-results.md)                                                        | Accepted                         |
