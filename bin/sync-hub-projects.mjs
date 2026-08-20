@@ -169,6 +169,24 @@ function findProjectByTitle(projects) {
   );
 }
 
+// Shared by both runProjectSync (non-init path) and runInit: when the
+// title lookup misses, a lone existing project on the owner is far more
+// likely a hand-renamed board than a genuinely missing one — the owner is
+// not expected to run more than the one hub board. Returns the loud-fail
+// message for that case, or `null` when the miss looks like a genuinely
+// missing board (0 or 2+ projects), in which case the caller's normal
+// "not found" / "would create" handling applies instead.
+function renameDetectionMessage(projects) {
+  if (projects.length !== 1) return null;
+  return (
+    `Project board "${HUB_PROJECT_TITLE}" not found, but the owner has exactly ` +
+    `one project: "${projects[0].title}" (#${projects[0].number}). The board may ` +
+    `have been renamed on GitHub without updating HUB_PROJECT_TITLE ` +
+    `(bin/lib/hub-sync.mjs) to match — fix the constant rather than running --init, ` +
+    `which would create a second, empty board.`
+  );
+}
+
 /** Resolve any single-select field's id and its option-name -> option-id map. */
 function resolveSingleSelectField(runGhFn, projectNumber, fieldName) {
   const raw = runGhFn([
@@ -478,6 +496,20 @@ function previewViews(runGhFn, reporter, projectNumber) {
  */
 function runInit({ runGh: runGhFn, reporter, apply, projects }) {
   const existingProject = findProjectByTitle(projects);
+
+  // Run the same rename-detection guard runProjectSync's non-init path
+  // uses, before splitting on apply — otherwise a title miss here would
+  // (in preview) misleadingly report "would create" or (with --apply)
+  // actually create a second, empty board, in exactly the scenario this
+  // guard exists to catch.
+  if (!existingProject) {
+    const renameMessage = renameDetectionMessage(projects);
+    if (renameMessage) {
+      reporter.error(renameMessage);
+      reporter.finish();
+      return { ok: false };
+    }
+  }
 
   if (!apply) {
     if (existingProject) {
@@ -912,26 +944,14 @@ export function runProjectSync({
 
     const project = findProjectByTitle(projects);
     if (!project) {
-      // A title miss with exactly one existing project on the owner is far
-      // more likely a hand-renamed board than a genuinely missing one — the
-      // owner is not expected to run more than the one hub board. Treat it
-      // as a rename and fail loud rather than letting --init --apply create
-      // a second, empty board (the one drift class nothing else detects,
-      // since the board is resolved by title, not by its stored node ID —
-      // see ADR-0032's 2026-07-22 Update).
-      if (projects.length === 1) {
-        reporter.error(
-          `Project board "${HUB_PROJECT_TITLE}" not found, but the owner has exactly ` +
-            `one project: "${projects[0].title}" (#${projects[0].number}). The board may ` +
-            `have been renamed on GitHub without updating HUB_PROJECT_TITLE ` +
-            `(bin/lib/hub-sync.mjs) to match — fix the constant rather than running --init, ` +
-            `which would create a second, empty board.`,
-        );
-      } else {
-        reporter.error(
+      // See renameDetectionMessage: the same guard runInit uses (the one
+      // drift class nothing else detects, since the board is resolved by
+      // title, not by its stored node ID — see ADR-0032's 2026-07-22
+      // Update).
+      reporter.error(
+        renameDetectionMessage(projects) ??
           `Project board "${HUB_PROJECT_TITLE}" not found — run with --init to create it.`,
-        );
-      }
+      );
       reporter.finish();
       return { ok: false };
     }
