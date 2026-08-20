@@ -102,6 +102,19 @@ the baseline contract.
   CLI-internal (no `m3l-common` export change); any library seam it turns
   out to need gets its own recorded decision.
 
+## Update 2026-08-20 — the deferred artifact convention has a designer
+
+The "on-disk artifact convention" this ADR deferred to U10's design phase
+is now designed elsewhere: [ADR-0068](./0068-workbench-sessions.md)'s
+workbench sessions define the addressable-step-result and typed
+data-binding convention (console programme, X6), and **U10 consumes that
+convention** for inter-step data in flow definitions rather than
+designing its own — a deliberately reversed dependency, recorded in
+U10's tracker row. Session→flow export (X13) is the bridge: an
+exploratory session graduates into a flow definition using the same
+references. Nothing else in this ADR changes; the engine, command name,
+and acceptance flow stand as decided.
+
 ## Links
 
 - Fires the trigger of: [ADR-0047](./0047-cross-script-orchestration-deferred.md)

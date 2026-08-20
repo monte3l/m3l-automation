@@ -184,6 +184,43 @@ per-phase detail in
 | **V11** | Headless/scheduled operation                                    | To Do    |
 | **V12** | Remote/HTTP MCP (gated on a future ADR)                         | Deferred |
 
+### m3l console wave (X-series) — ADR-0064/0065/0066/0067/0068/0069/0070/0071
+
+The third programme on the shared section: **the m3l console** — a
+full-stack application for AWS monitoring, operations, and troubleshooting.
+Two new packages (`m3l-console-server`: modular core with hard runs/
+sessions/audit/policy boundaries, microservice-READY; `m3l-console-web`:
+React SPA under a scoped ADR-0001 bundler exception), the ADR-0054 hybrid
+seam's third consumer, REST + SSE, workbench sessions whose
+addressable-artifact convention U10 consumes, `node:sqlite` persistence
+behind a repository seam, human-action audit + self-telemetry under the
+display-vs-persist exposure rule, and local-first two-container compose
+deployment. Remote/multi-user, the microservice split, and Aurora
+migration stay gated. Coarse summary only — the item source for sync is
+the X-series in
+[`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#m3l-cli-build-out--adr-0042-activation-issue-333);
+per-phase detail in
+[`2026-08-20-m3l-console.md`](./plans/2026-08-20-m3l-console.md).
+
+| Item    | What                                                             | Status   |
+| ------- | ---------------------------------------------------------------- | -------- |
+| **X1**  | Decisions & governance docs — ADR-0064…0071 + trackers           | Done     |
+| **X2**  | `m3l-console-server` skeleton (HTTP, health, auth seam, drain)   | To Do    |
+| **X3**  | Persistence foundation (`node:sqlite` + repository seam)         | To Do    |
+| **X4**  | Run orchestration (registry, concurrency, SSE streams)           | To Do    |
+| **X5**  | `sqs-etl` list-queues operation (fleet PR)                       | To Do    |
+| **X6**  | Workbench sessions (addressable results, bindings; U10 consumes) | To Do    |
+| **X7**  | Human-action audit + correlation threading                       | To Do    |
+| **X8**  | Self-telemetry + retention tooling                               | To Do    |
+| **X9**  | `m3l-console-web` skeleton (Vite/React/Playwright, zones)        | To Do    |
+| **X10** | Run-launcher UI MVP (button-press launch + live tail)            | To Do    |
+| **X11** | Drill-down UI — SQS scenario e2e acceptance                      | To Do    |
+| **X12** | Containerization + compose (fires the ADR-0015 update)           | To Do    |
+| **X13** | Session → flow export (shared X6/U10 convention)                 | To Do    |
+| **X14** | Remote/multi-user deployment (gated on a future OIDC ADR)        | Deferred |
+| **X15** | Microservice split (gated on ADR-0065's trigger)                 | Deferred |
+| **X16** | Aurora table migration (gated per ADR-0069)                      | Deferred |
+
 ## Priority 1 — Consumer fleet
 
 Before scoping or starting any AWS-consumer-script item below, check its

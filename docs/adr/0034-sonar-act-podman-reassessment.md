@@ -151,3 +151,17 @@ Both `eslint-disable-next-line sonarjs/cognitive-complexity` suppressions are
 removed. Neither function's public signature changed; no new export was
 added. See `docs/plans/IMPLEMENTATION.md`'s "Gated library modules & deferred
 decisions (P2)" table for the closed tracker row.
+
+## Amendment (2026-08-20): "container-free" scoped to the toolchain
+
+The m3l console programme ([ADR-0064](./0064-m3l-console-programme.md))
+introduces **application containers** — the console's two images and
+compose definition, decided in
+[ADR-0071](./0071-console-containerization-deployment.md). This amendment
+records the boundary so the stances are not conflated: this ADR's
+"deliberately container-free" observation described the **development
+toolchain**, and its actual decision — declining Act + Podman as a
+local-CI affordance — **stands unchanged** (nothing in the toolchain or
+CI gains a container-engine prerequisite; contributors still never need
+one to develop, test, or push). App containers are a new artifact class
+governed by ADR-0071, built and run only by operators of the console.
