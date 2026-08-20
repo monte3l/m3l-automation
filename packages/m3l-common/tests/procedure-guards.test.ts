@@ -109,7 +109,14 @@ function asM3LError(value: unknown): M3LError {
 }
 
 function buildOptProcedure(spy: Mock): M3LProcedure<OptShape> {
+  // Declaring "threshold" is load-bearing for the excess-key test below: it
+  // makes `threshold` a legitimately declared parameter, so a run rejecting
+  // `{ threshold, unknownKey }` is provably rejecting on `unknownKey` alone.
+  // Without this declaration, EVERY key (including `threshold`) would be
+  // undeclared, and the throw would be indistinguishable from a blanket
+  // rejection — do not remove this as "redundant".
   return createProcedureBuilder<OptShape>("opt-test")
+    .parameters(["threshold"])
     .step({
       id: "s1",
       label: "step one",
@@ -302,6 +309,7 @@ describe("core/procedure — guards and tracing", () => {
 
       const { outcome, thrown } = await runCapturing(async () => {
         const procedure = createProcedureBuilder<TS>("capture-params")
+          .parameters(["flag"])
           .step({
             id: "s1",
             label: "s1",
@@ -338,6 +346,7 @@ describe("core/procedure — guards and tracing", () => {
 
       const { outcome, thrown } = await runCapturing(async () => {
         const procedure = createProcedureBuilder<TS>("mutate-after-entry")
+          .parameters(["count"])
           .step({
             id: "s1",
             label: "s1",

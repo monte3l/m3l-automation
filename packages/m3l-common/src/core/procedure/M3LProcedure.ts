@@ -8,6 +8,7 @@
 
 import { canonicalJsonHash } from "../json/index.js";
 import { serializeErrorChain } from "../diagnostics/index.js";
+import { M3LOperationAbortedError } from "../errors/M3LOperationAbortedError.js";
 import {
   createInitialContext,
   deriveContext,
@@ -16,7 +17,10 @@ import { evaluateCondition } from "../../internal/procedure/evaluate.js";
 import {
   M3LProcedureInvalidOptionError,
   M3LProcedureIterationLimitError,
+  M3LProcedureNoProgressError,
 } from "../../internal/procedure/errors.js";
+import { M3LPollingInvalidOptionError } from "../../internal/polling/errors.js";
+import { ProgressTracker } from "../../internal/polling/progress.js";
 import {
   isArray,
   isBigInt,
@@ -38,10 +42,12 @@ import type {
   M3LProcedureFlow,
   M3LProcedureOutcome,
   M3LProcedureProgressOptions,
+  M3LProcedureProgressWitness,
   M3LProcedureRunOptions,
   M3LProcedureShape,
   M3LProcedureStep,
   M3LProcedureStepRecord,
+  M3LProcedureStepResult,
   M3LProcedureSummary,
   M3LProcedureTelemetry,
 } from "./types.js";
@@ -101,6 +107,12 @@ type PhaseOneOutcome<TShape extends M3LProcedureShape> =
           readonly stepId: TShape["stepId"];
           readonly error: unknown;
         }
+      | {
+          readonly kind: "aborted";
+          /** The boundary the abort was observed at; `undefined` once phase 1 has ended. */
+          readonly abortedAt: TShape["stepId"] | undefined;
+          readonly error: M3LOperationAbortedError;
+        }
     );
 
 /**
@@ -120,7 +132,64 @@ type StepExecutionOutcome<TShape extends M3LProcedureShape> =
       readonly kind: "failed";
       readonly stepId: TShape["stepId"];
       readonly error: unknown;
+    }
+  | {
+      readonly kind: "aborted";
+      readonly error: M3LOperationAbortedError;
     };
+
+/**
+ * A step-boundary guard's failure: shared by every place phase 1 can end a
+ * run without a step's own flow directive deciding it — the pre-step guard
+ * (`#checkStepBoundary`), a step's own execution outcome folded into a
+ * "return now" (`#foldStepExecution`), and the post-advance guard
+ * (`#checkAfterAdvance`).
+ */
+type StepGuardFailure<TShape extends M3LProcedureShape> =
+  | {
+      readonly kind: "aborted";
+      readonly abortedAt: TShape["stepId"] | undefined;
+      readonly error: M3LOperationAbortedError;
+    }
+  | Extract<StepExecutionOutcome<TShape>, { kind: "failed" }>;
+
+/**
+ * What `#foldStepExecution` decided for one step's {@link StepExecutionOutcome}:
+ * either the loop must return this outcome now (a failure or an abort,
+ * neither of which advances phase 1's state), or the step advanced and the
+ * caller should fold `context`/`record` into its own local state.
+ */
+type FoldedStepExecution<TShape extends M3LProcedureShape> =
+  | { readonly kind: "return"; readonly result: StepGuardFailure<TShape> }
+  | {
+      readonly kind: "advanced";
+      readonly context: M3LProcedureContext<TShape>;
+      readonly record: M3LProcedureStepRecord;
+      readonly flow: M3LProcedureFlow<string>;
+    };
+
+/**
+ * What `#resolveStepFlow` decided after a step advanced and
+ * {@link M3LProcedure.#interpretFlow} classified its directive: either the
+ * loop must return this outcome now (an abort, a no-progress trip, an
+ * ordinary end, or an early match), or it should keep looping from `index`.
+ */
+type FlowResolution<TShape extends M3LProcedureShape> =
+  | {
+      readonly kind: "return";
+      readonly result:
+        | StepGuardFailure<TShape>
+        | { readonly kind: "ended" }
+        | { readonly kind: "matched"; readonly pass: CasesPass<TShape> };
+    }
+  | { readonly kind: "continue"; readonly index: number };
+
+/** The opt-in no-progress guard's `witness`/`maxStalledSteps`, captured by
+ * value exactly once from `options.progress` — see {@link captureProgressOptions}. */
+interface CapturedProgressConfig<TShape extends M3LProcedureShape> {
+  readonly witness: M3LProcedureProgressWitness<TShape>;
+  readonly maxStalledSteps: number;
+}
 
 /** How `#interpretFlow` resolved one step's directive: pure, returning the updated `resolveChecks` rather than mutating a shared counter. */
 type FlowDecision<TShape extends M3LProcedureShape> =
@@ -149,6 +218,15 @@ const DANGEROUS_PARAMETER_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * The floor {@link M3LProcedure.#createProgressTracker} clamps its derived
+ * `maxStalledAttempts` to: a single comparison (2 total samples) can never
+ * distinguish a genuine stall from coincidence, so the no-progress guard is
+ * never eligible to trip before the 3rd continuing step's sample, however
+ * aggressively the caller configures `maxStalledSteps`.
+ */
+const MIN_PROGRESS_STALL_COMPARISONS = 2;
+
+/**
  * True when `value` — recursively, through plain objects and arrays —
  * contains a `BigInt` or a non-finite `number`. Both are rejected by
  * {@link M3LProcedure.run}'s parameter validation: neither survives
@@ -163,6 +241,86 @@ function containsInvalidNumericValue(value: unknown): boolean {
     return Object.values(value).some(containsInvalidNumericValue);
   }
   return false;
+}
+
+/**
+ * True when `signal` has fired. Routed through a function rather than
+ * inlined — TypeScript's narrowing of a mutable external property is unsound
+ * across an `await`, so a call site re-checking `signal?.aborted` after one
+ * would otherwise report a spurious "no overlap" error; a function call
+ * simply cannot be narrowed away.
+ */
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
+}
+
+/**
+ * True when `error` carries the stable `"ERR_OPERATION_ABORTED"` code.
+ * Checked by `code`, never `instanceof M3LOperationAbortedError` — a step
+ * that throws a plain `M3LError` (or any object) carrying this code is still
+ * recognised as an abort, matching the discrimination rule the rest of the
+ * engine's abort handling uses.
+ */
+function isAbortErrorCode(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { readonly code: unknown }).code === "ERR_OPERATION_ABORTED"
+  );
+}
+
+/**
+ * Reads `parameters` off the caller's run options exactly once, capturing a
+ * fresh, frozen, isolated copy that every downstream consumer (validation,
+ * then {@link createInitialContext}) reuses — `options.parameters` itself is
+ * never read a second time. `parameters` may be a getter- or Proxy-backed
+ * object under caller control, and re-reading it later would reproduce the
+ * exact "two observations of a mutable caller graph" defect
+ * `captureProgressConfig` (`internal/polling/progress.ts`) exists to
+ * eliminate for the polling primitives' own `progress` option.
+ */
+function captureRunParameters<TShape extends M3LProcedureShape>(
+  parameters: Readonly<TShape["parameters"]> | undefined,
+): Readonly<TShape["parameters"]> | undefined {
+  if (!isPlainObject(parameters)) return parameters;
+  return Object.freeze({ ...parameters });
+}
+
+/**
+ * Reads `progress` off the caller's run options exactly once — `witness` and
+ * `maxStalledSteps` are each read into a local `const` before being copied
+ * into the frozen result — mirroring `captureProgressConfig`'s shape.
+ * Returns `undefined` when `progress` is `undefined`.
+ */
+function captureProgressOptions<TShape extends M3LProcedureShape>(
+  progress: M3LProcedureProgressOptions<TShape> | undefined,
+): CapturedProgressConfig<TShape> | undefined {
+  if (progress === undefined) return undefined;
+  const witness = progress.witness;
+  const maxStalledSteps = progress.maxStalledSteps;
+  return Object.freeze({ witness, maxStalledSteps });
+}
+
+/**
+ * Projects a not-yet-concluded {@link PhaseOneAccumulated} (phase 1 already
+ * ended or matched) into the `"aborted"` arm of {@link PhaseOneOutcome}, for
+ * the abort boundaries checked between phase 1 and phase 2, and between
+ * phase 2 and phase 3 — both report `abortedAt: undefined`, since no further
+ * step boundary exists once phase 1 has concluded.
+ */
+function toAbortedPhaseOne<TShape extends M3LProcedureShape>(
+  phaseOne: PhaseOneAccumulated<TShape>,
+  error: M3LOperationAbortedError,
+): Extract<PhaseOneOutcome<TShape>, { kind: "aborted" }> {
+  return {
+    kind: "aborted",
+    abortedAt: undefined,
+    error,
+    context: phaseOne.context,
+    executedSteps: phaseOne.executedSteps,
+    resolveChecks: phaseOne.resolveChecks,
+  };
 }
 
 /**
@@ -268,8 +426,14 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
     // result — would observe nothing. Validation runs here, then the rest
     // of the work is delegated to an `async` method whose promise this
     // method returns unchanged.
-    const maxIterations = this.#validateRunOptions(options);
-    return this.#runValidated(options, maxIterations);
+    const parameters = captureRunParameters<TShape>(options.parameters);
+    const progress = captureProgressOptions<TShape>(options.progress);
+    const maxIterations = this.#validateRunOptions(
+      options.maxIterations,
+      parameters,
+      progress,
+    );
+    return this.#runValidated(options, maxIterations, parameters, progress);
   }
 
   /**
@@ -283,10 +447,14 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
    * @returns The resolved iteration ceiling, so `#runValidated` need not
    *   re-derive it from `options`.
    */
-  #validateRunOptions(options: M3LProcedureRunOptions<TShape>): number {
-    const maxIterations = this.#validateMaxIterations(options.maxIterations);
-    this.#validateParameters(options.parameters);
-    this.#validateProgressOptions(options.progress);
+  #validateRunOptions(
+    maxIterationsOption: number | undefined,
+    parameters: Readonly<TShape["parameters"]> | undefined,
+    progress: CapturedProgressConfig<TShape> | undefined,
+  ): number {
+    const maxIterations = this.#validateMaxIterations(maxIterationsOption);
+    this.#validateParameters(parameters);
+    this.#validateProgressOptions(progress);
     return maxIterations;
   }
 
@@ -350,10 +518,12 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
    * Validates the opt-in `progress` guard's shape: `witness` must be a
    * function and `maxStalledSteps` a finite integer greater than `0`. Only
    * the shape is validated here — the guard's sampling behaviour is a
-   * later pass's responsibility.
+   * later pass's responsibility. `progress` is already the captured copy
+   * {@link captureProgressOptions} produced — reading its fields here never
+   * re-reads the caller's original `options.progress`.
    */
   #validateProgressOptions(
-    progress: M3LProcedureProgressOptions<TShape> | undefined,
+    progress: CapturedProgressConfig<TShape> | undefined,
   ): void {
     if (progress === undefined) return;
     if (!isFunction(progress.witness)) {
@@ -384,23 +554,44 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
   async #runValidated(
     options: M3LProcedureRunOptions<TShape>,
     maxIterations: number,
+    parameters: Readonly<TShape["parameters"]> | undefined,
+    progress: CapturedProgressConfig<TShape> | undefined,
   ): Promise<M3LProcedureOutcome<TShape>> {
     const startedAtMs = performance.now();
     const startedAt = new Date().toISOString();
 
     const initialContext = createInitialContext<TShape>({
       deps: options.deps,
-      parameters: options.parameters ?? {},
+      parameters: parameters ?? {},
       initialValues: (options.initialValues ?? {}) as Readonly<
         Partial<TShape["values"]>
       >,
       signal: options.signal,
     });
 
-    const phaseOne = await this.#runPhaseOne(initialContext, maxIterations);
+    const phaseOne = await this.#runPhaseOne(
+      initialContext,
+      maxIterations,
+      progress,
+    );
 
     if (phaseOne.kind === "failed") {
       return this.#buildFailedOutcome(phaseOne, startedAt, startedAtMs);
+    }
+    if (phaseOne.kind === "aborted") {
+      return this.#buildAbortedOutcome(phaseOne, startedAt, startedAtMs);
+    }
+
+    // Boundary check before phase 2 (case evaluation): `abortedAt` is
+    // `undefined` here — phase 1 has already concluded, so there is no next
+    // step boundary left to name.
+    const preCasesAbort = this.#checkAbortBoundary(phaseOne.context.signal);
+    if (preCasesAbort !== undefined) {
+      return this.#buildAbortedOutcome(
+        toAbortedPhaseOne(phaseOne, preCasesAbort),
+        startedAt,
+        startedAtMs,
+      );
     }
 
     const pass =
@@ -408,6 +599,16 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
         ? phaseOne.pass
         : this.#evaluateCases(phaseOne.context);
     const earlyResolved = phaseOne.kind === "matched";
+
+    // Boundary check before phase 3 (the concluding action).
+    const preConcludeAbort = this.#checkAbortBoundary(phaseOne.context.signal);
+    if (preConcludeAbort !== undefined) {
+      return this.#buildAbortedOutcome(
+        toAbortedPhaseOne(phaseOne, preConcludeAbort),
+        startedAt,
+        startedAtMs,
+      );
+    }
 
     return this.#conclude(
       phaseOne,
@@ -430,11 +631,16 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
   async #runPhaseOne(
     initialContext: M3LProcedureContext<TShape>,
     maxIterations: number,
+    progress: CapturedProgressConfig<TShape> | undefined,
   ): Promise<PhaseOneOutcome<TShape>> {
     let context = initialContext;
     const executedSteps: M3LProcedureStepRecord[] = [];
     let resolveChecks = 0;
     let index = 0;
+    const progressTracker = this.#createProgressTracker(
+      progress,
+      () => context,
+    );
 
     for (;;) {
       const step = this.#steps[index];
@@ -447,46 +653,273 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
         return { kind: "ended", context, executedSteps, resolveChecks };
       }
 
-      const ceilingFailure = this.#checkIterationCeiling(
+      const preStepFailure = this.#checkStepBoundary(
         context,
         step,
         maxIterations,
       );
-      if (ceilingFailure !== undefined) {
-        return { ...ceilingFailure, context, executedSteps, resolveChecks };
+      if (preStepFailure !== undefined) {
+        return { ...preStepFailure, context, executedSteps, resolveChecks };
       }
 
       const executed = await this.#executeOneStep(context, step);
-      if (executed.kind === "failed") {
-        return { ...executed, context, executedSteps, resolveChecks };
+      const folded = this.#foldStepExecution(executed, step);
+      if (folded.kind === "return") {
+        return { ...folded.result, context, executedSteps, resolveChecks };
       }
-
-      context = executed.context;
-      executedSteps.push(executed.record);
+      context = folded.context;
+      executedSteps.push(folded.record);
 
       const isLast = index === this.#steps.length - 1;
       const decision = this.#interpretFlow(
         context,
-        executed.flow,
+        folded.flow,
         index,
         isLast,
         resolveChecks,
       );
       resolveChecks = decision.resolveChecks;
-      if (decision.kind === "ended") {
-        return { kind: "ended", context, executedSteps, resolveChecks };
-      }
-      if (decision.kind === "matched") {
+
+      const flowResolution = this.#resolveStepFlow(
+        context,
+        decision,
+        step.id,
+        progressTracker,
+        progress,
+      );
+      if (flowResolution.kind === "return") {
         return {
-          kind: "matched",
-          pass: decision.pass,
+          ...flowResolution.result,
           context,
           executedSteps,
           resolveChecks,
         };
       }
-      index = decision.index;
+      index = flowResolution.index;
     }
+  }
+
+  /**
+   * Builds the opt-in no-progress guard's {@link ProgressTracker}, or
+   * `undefined` when the caller declined `options.progress`. `getContext`
+   * is read at call time (not at construction time) — the tracker is
+   * instantiated once per `run()` call frame, never stored on the instance,
+   * per `ProgressTracker`'s own contract, and phase 1's `context` binding is
+   * reassigned every step — so the witness must read it through a closure
+   * rather than capturing the initial value.
+   *
+   * `ProgressTracker`'s own `maxStalledAttempts` counts consecutive
+   * unchanged samples *after* the first (baseline) one, so it trips on the
+   * `maxStalledAttempts + 1`-th sample. `M3LProcedureProgressOptions.maxStalledSteps`
+   * is the total number of (mutually unchanged) samples the guard should see
+   * before tripping — the `- 1` translates one counting convention into the
+   * other so `maxStalledSteps: N` trips on exactly the N-th continuing
+   * step's sample. Floored at {@link MIN_PROGRESS_STALL_COMPARISONS}: a
+   * single comparison (2 total samples) can never distinguish a genuine
+   * stall from coincidence, so the guard is never eligible to trip before
+   * the 3rd continuing step's sample regardless of how aggressively
+   * `maxStalledSteps` is configured — the same boundary a cooperative-
+   * cancellation check at that step also reaches, so an abort observed
+   * there always has a chance to win.
+   */
+  #createProgressTracker(
+    progress: CapturedProgressConfig<TShape> | undefined,
+    getContext: () => M3LProcedureContext<TShape>,
+  ): ProgressTracker | undefined {
+    if (progress === undefined) return undefined;
+    return new ProgressTracker({
+      witness: () => progress.witness(getContext()),
+      maxStalledAttempts: Math.max(
+        progress.maxStalledSteps - 1,
+        MIN_PROGRESS_STALL_COMPARISONS,
+      ),
+    });
+  }
+
+  /**
+   * Checked at the top of every phase-1 loop pass, before `step.execute` ever
+   * runs: cancellation first — it precedes every other guard at this
+   * boundary, including the already-aborted case, which reaches here with
+   * zero steps executed — then the iteration/revisit ceilings via
+   * {@link M3LProcedure.#checkIterationCeiling}. Returns the failure to fold
+   * into the caller's returned state, or `undefined` to let the step run.
+   */
+  #checkStepBoundary(
+    context: M3LProcedureContext<TShape>,
+    step: M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>,
+    maxIterations: number,
+  ): StepGuardFailure<TShape> | undefined {
+    const abortError = this.#checkAbortBoundary(context.signal);
+    if (abortError !== undefined) {
+      return { kind: "aborted", abortedAt: step.id, error: abortError };
+    }
+    return this.#checkIterationCeiling(context, step, maxIterations);
+  }
+
+  /**
+   * Folds one step's {@link StepExecutionOutcome} for the phase-1 loop: an
+   * unabsorbed failure or an abort become a `"return"` — phase 1 ends here,
+   * with no context transition — while an advance is passed through as-is
+   * for the caller to fold into its own local `context`/`executedSteps`.
+   * Pure — `executed` and `step` are read, never mutated.
+   */
+  #foldStepExecution(
+    executed: StepExecutionOutcome<TShape>,
+    step: M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>,
+  ): FoldedStepExecution<TShape> {
+    if (executed.kind === "failed") {
+      return { kind: "return", result: executed };
+    }
+    if (executed.kind === "aborted") {
+      return {
+        kind: "return",
+        result: { kind: "aborted", abortedAt: step.id, error: executed.error },
+      };
+    }
+    return {
+      kind: "advanced",
+      context: executed.context,
+      record: executed.record,
+      flow: executed.flow,
+    };
+  }
+
+  /**
+   * Resolves what the phase-1 loop does once a step has advanced and
+   * {@link M3LProcedure.#interpretFlow} has classified its directive: the
+   * post-advance guard ({@link M3LProcedure.#checkAfterAdvance} — abort,
+   * then the no-progress sample) wins first if it fires; otherwise an
+   * `"ended"`/`"matched"` decision ends phase 1, and a `"advance"` decision
+   * tells the caller which index to continue looping from.
+   */
+  #resolveStepFlow(
+    context: M3LProcedureContext<TShape>,
+    decision: FlowDecision<TShape>,
+    stepId: TShape["stepId"],
+    progressTracker: ProgressTracker | undefined,
+    progress: CapturedProgressConfig<TShape> | undefined,
+  ): FlowResolution<TShape> {
+    const afterAdvance = this.#checkAfterAdvance(
+      context,
+      decision,
+      stepId,
+      progressTracker,
+      progress,
+    );
+    if (afterAdvance !== undefined) {
+      return { kind: "return", result: afterAdvance };
+    }
+    if (decision.kind === "ended") {
+      return { kind: "return", result: { kind: "ended" } };
+    }
+    if (decision.kind === "matched") {
+      return {
+        kind: "return",
+        result: { kind: "matched", pass: decision.pass },
+      };
+    }
+    return { kind: "continue", index: decision.index };
+  }
+
+  /**
+   * Returns a fresh {@link M3LOperationAbortedError} when `signal` has
+   * fired, else `undefined`. Called at every abort boundary the engine
+   * enforces (before each step, right after a step's context is derived,
+   * and before phases 2 and 3) — it precedes every other guard at each of
+   * those boundaries, so an aborted signal always wins over the iteration
+   * ceiling or a no-progress trip.
+   */
+  #checkAbortBoundary(
+    signal: AbortSignal | undefined,
+  ): M3LOperationAbortedError | undefined {
+    return isAborted(signal) ? new M3LOperationAbortedError() : undefined;
+  }
+
+  /**
+   * Runs the checks common to every step that just advanced, in the order
+   * the contract requires: the abort boundary right after this step's
+   * context was derived (so an abort always wins over a no-progress trip
+   * sampled for the same step), then — only if no abort fired — the
+   * no-progress guard's sample. Returns the failure to fold into the
+   * caller's returned state, or `undefined` to keep going.
+   *
+   * `decision` is already resolved by the time this runs, so an abort caught
+   * here can report the correct `abortedAt`: the id of the step phase 1
+   * would run next when `decision.kind === "advance"`, or `undefined` when
+   * this step's own flow was already ending phase 1 (`"ended"`/`"matched"`)
+   * — there is no further step boundary left to name in that case, matching
+   * the `abortedAt: undefined` phase-2/phase-3 boundary checks in
+   * `#runValidated`.
+   */
+  #checkAfterAdvance(
+    context: M3LProcedureContext<TShape>,
+    decision: FlowDecision<TShape>,
+    stepId: TShape["stepId"],
+    progressTracker: ProgressTracker | undefined,
+    progress: CapturedProgressConfig<TShape> | undefined,
+  ): StepGuardFailure<TShape> | undefined {
+    const abortError = this.#checkAbortBoundary(context.signal);
+    if (abortError !== undefined) {
+      const abortedAt =
+        decision.kind === "advance"
+          ? this.#steps[decision.index]?.id
+          : undefined;
+      return { kind: "aborted", abortedAt, error: abortError };
+    }
+    if (progressTracker === undefined || progress === undefined) {
+      return undefined;
+    }
+    return this.#sampleProgress(
+      progressTracker,
+      progress.maxStalledSteps,
+      stepId,
+    );
+  }
+
+  /**
+   * Samples `tracker` once for the step that just completed (`stepId`),
+   * translating both of its failure modes into engine-native ones: a
+   * tripped guard becomes {@link M3LProcedureNoProgressError}
+   * (`ERR_PROCEDURE_NO_PROGRESS`), and a witness that threw or returned a
+   * non-primitive — surfaced by `ProgressTracker.record()` as
+   * `ERR_POLLING_INVALID_OPTION` — is re-wrapped as
+   * {@link M3LProcedureInvalidOptionError} (`ERR_PROCEDURE_INVALID_OPTION`)
+   * so a `core/procedure` caller never observes a polling-vocabulary code.
+   * The witness's own original thrown value — not the
+   * `M3LPollingInvalidOptionError` wrapper — is chained as `cause`.
+   */
+  #sampleProgress(
+    tracker: ProgressTracker,
+    maxStalledSteps: number,
+    stepId: TShape["stepId"],
+  ): Extract<StepExecutionOutcome<TShape>, { kind: "failed" }> | undefined {
+    let tripped: boolean;
+    try {
+      tripped = tracker.record();
+    } catch (cause) {
+      const originalCause =
+        cause instanceof M3LPollingInvalidOptionError ? cause.cause : cause;
+      return {
+        kind: "failed",
+        stepId,
+        error: new M3LProcedureInvalidOptionError(
+          "the procedure's progress witness rejected a sample",
+          { option: "progress.witness" },
+          originalCause,
+        ),
+      };
+    }
+
+    if (!tripped) return undefined;
+
+    return {
+      kind: "failed",
+      stepId,
+      error: new M3LProcedureNoProgressError(
+        `no progress observed for ${maxStalledSteps} consecutive step(s)`,
+        { stalledSteps: maxStalledSteps, lastStepId: stepId },
+      ),
+    };
   }
 
   /**
@@ -582,54 +1015,106 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
     const start = performance.now();
     try {
       const result = await step.execute(context);
-      const record = this.#buildRecord(
-        step,
-        attempt,
-        "succeeded",
-        result.output,
-        result.note,
-        performance.now() - start,
-      );
-      const nextContext = deriveContext(context, {
-        stepId: step.id,
-        record,
-        ...(result.values !== undefined ? { values: result.values } : {}),
-      });
-      return {
-        kind: "advanced",
-        context: nextContext,
-        record,
-        flow: result.flow,
-      };
+      return this.#advanceFromResult(context, step, attempt, start, result);
     } catch (error) {
+      // Abort wins over `continueOnFailure`: an aborting step is never
+      // absorbed into a recovery entry, regardless of the step's own
+      // declaration. Discriminated by `code`, not `instanceof`, so a plain
+      // `M3LError` carrying this code is recognised the same as the
+      // concrete `M3LOperationAbortedError` subclass.
+      if (isAbortErrorCode(error)) {
+        return {
+          kind: "aborted",
+          error: new M3LOperationAbortedError(
+            error instanceof Error ? error.message : undefined,
+          ),
+        };
+      }
       if (step.continueOnFailure !== true) {
         return { kind: "failed", stepId: step.id, error };
       }
-      const record = this.#buildRecord(
-        step,
-        attempt,
-        "recovered",
-        undefined,
-        undefined,
-        performance.now() - start,
-      );
-      const recoveryEntry: M3LRunRecoveryEntry = {
-        item: step.id,
-        error: serializeErrorChain(error),
-        recordedAt: new Date().toISOString(),
-      };
-      const nextContext = deriveContext(context, {
-        stepId: step.id,
-        record,
-        recoveryEntry,
-      });
-      return {
-        kind: "advanced",
-        context: nextContext,
-        record,
-        flow: "continue",
-      };
+      return this.#advanceFromRecovery(context, step, attempt, start, error);
     }
+  }
+
+  /**
+   * Folds a step's resolved {@link M3LProcedureStepResult} into the
+   * `"advanced"` arm of {@link StepExecutionOutcome}: builds the
+   * `"succeeded"` record and derives the next context, carrying `values`
+   * only when the step actually returned one (`exactOptionalPropertyTypes`
+   * rejects an explicit `undefined` on `deriveContext`'s optional field).
+   */
+  #advanceFromResult(
+    context: M3LProcedureContext<TShape>,
+    step: M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>,
+    attempt: number,
+    start: number,
+    result: M3LProcedureStepResult<TShape, TShape["stepId"]>,
+  ): Extract<StepExecutionOutcome<TShape>, { kind: "advanced" }> {
+    const record = this.#buildRecord(
+      step,
+      attempt,
+      "succeeded",
+      result.output,
+      result.note,
+      performance.now() - start,
+    );
+    const nextContext = deriveContext(context, {
+      stepId: step.id,
+      record,
+      ...(result.values !== undefined ? { values: result.values } : {}),
+    });
+    return {
+      kind: "advanced",
+      context: nextContext,
+      record,
+      flow: result.flow,
+    };
+  }
+
+  /**
+   * Folds an absorbed `execute` throw (`step.continueOnFailure === true`,
+   * already confirmed by the caller) into the `"advanced"` arm of
+   * {@link StepExecutionOutcome}: builds the `"recovered"` record, appends a
+   * {@link M3LRunRecoveryEntry}, and derives the next context. A step that
+   * threw never got to return its own flow directive — a step declaring
+   * `loop` has explicitly opted into being revisited, so for such a step the
+   * absorbed failure retries it (bounded by the step's own
+   * `loop.maxRevisits`/`maxIterations`, same as an explicit `{ goTo }`)
+   * rather than silently advancing past a still-failing operation; a step
+   * with no `loop` declaration advances normally.
+   */
+  #advanceFromRecovery(
+    context: M3LProcedureContext<TShape>,
+    step: M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>,
+    attempt: number,
+    start: number,
+    error: unknown,
+  ): Extract<StepExecutionOutcome<TShape>, { kind: "advanced" }> {
+    const record = this.#buildRecord(
+      step,
+      attempt,
+      "recovered",
+      undefined,
+      undefined,
+      performance.now() - start,
+    );
+    const recoveryEntry: M3LRunRecoveryEntry = {
+      item: step.id,
+      error: serializeErrorChain(error),
+      recordedAt: new Date().toISOString(),
+    };
+    const nextContext = deriveContext(context, {
+      stepId: step.id,
+      record,
+      recoveryEntry,
+    });
+    return {
+      kind: "advanced",
+      context: nextContext,
+      record,
+      flow: step.loop === undefined ? "continue" : { goTo: step.id },
+    };
   }
 
   #buildRecord(
@@ -757,6 +1242,24 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
       telemetry: this.#buildTelemetry(phaseOne, false, startedAt, startedAtMs),
       status: "failed",
       failedStep: phaseOne.stepId,
+      alsoMatched: [],
+      error: phaseOne.error,
+    };
+  }
+
+  /** Assembles the resolved `aborted` outcome for a fired `AbortSignal`. */
+  #buildAbortedOutcome(
+    phaseOne: Extract<PhaseOneOutcome<TShape>, { kind: "aborted" }>,
+    startedAt: string,
+    startedAtMs: number,
+  ): M3LProcedureOutcome<TShape> {
+    return {
+      digest: this.digest,
+      parametersDigest: canonicalJsonHash(phaseOne.context.parameters),
+      trace: [],
+      telemetry: this.#buildTelemetry(phaseOne, false, startedAt, startedAtMs),
+      status: "aborted",
+      abortedAt: phaseOne.abortedAt,
       alsoMatched: [],
       error: phaseOne.error,
     };

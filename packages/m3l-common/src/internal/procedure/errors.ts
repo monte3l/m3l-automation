@@ -41,15 +41,32 @@ export class M3LProcedureInvalidDefinitionError extends M3LError {
  * run option violates its contract — before any step executes. Distinct
  * from `ERR_PROCEDURE_INVALID_DEFINITION`, which is a `build()`-time problem
  * with the procedure's own declaration, not with a particular run's options.
+ *
+ * Also resolved (never rejected) as a run's `"failed"` outcome `error` when
+ * an in-flight `progress.witness` rejects a sample — `ProgressTracker`
+ * (`internal/polling/progress.ts`) reports that as `ERR_POLLING_INVALID_OPTION`,
+ * a polling-vocabulary code a `core/procedure` caller must never observe; the
+ * optional `cause` lets the run() caller chain the witness's own thrown value.
  */
 export class M3LProcedureInvalidOptionError extends M3LError {
   /** Narrows the inherited `code` to the literal `"ERR_PROCEDURE_INVALID_OPTION"`. */
   override readonly code: "ERR_PROCEDURE_INVALID_OPTION";
 
-  constructor(message: string, context?: Record<string, unknown>) {
+  /**
+   * @param message - Human-readable description of the failure.
+   * @param context - Structured diagnostic context.
+   * @param cause - The underlying failure, when this instance re-wraps one
+   *   (e.g. the value a `progress.witness` threw while sampling).
+   */
+  constructor(
+    message: string,
+    context?: Record<string, unknown>,
+    cause?: unknown,
+  ) {
     super(message, {
       code: "ERR_PROCEDURE_INVALID_OPTION",
       ...(context !== undefined ? { context } : {}),
+      ...(cause !== undefined ? { cause } : {}),
     });
     this.code = "ERR_PROCEDURE_INVALID_OPTION";
   }
@@ -70,5 +87,23 @@ export class M3LProcedureIterationLimitError extends M3LError {
   constructor(message: string, context: Record<string, unknown>) {
     super(message, { code: "ERR_PROCEDURE_ITERATION_LIMIT", context });
     this.code = "ERR_PROCEDURE_ITERATION_LIMIT";
+  }
+}
+
+/**
+ * Resolved as a `"failed"` outcome's `error` (never a rejection) by
+ * {@link M3LProcedure.run} when the opt-in no-progress guard's
+ * `ProgressTracker` reports `maxStalledSteps` consecutive unchanged samples.
+ * `context["stalledSteps"]` carries the configured threshold that was
+ * reached; `context["lastStepId"]` names the step whose completion produced
+ * the tripping sample.
+ */
+export class M3LProcedureNoProgressError extends M3LError {
+  /** Narrows the inherited `code` to the literal `"ERR_PROCEDURE_NO_PROGRESS"`. */
+  override readonly code: "ERR_PROCEDURE_NO_PROGRESS";
+
+  constructor(message: string, context: Record<string, unknown>) {
+    super(message, { code: "ERR_PROCEDURE_NO_PROGRESS", context });
+    this.code = "ERR_PROCEDURE_NO_PROGRESS";
   }
 }
