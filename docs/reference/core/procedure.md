@@ -650,6 +650,24 @@ class M3LProcedureBuilder<
   ): M3LProcedureBuilder<TShape, TPendingSteps, Exclude<TPendingCases, TId>>;
 
   /**
+   * Declares the parameter names this procedure reads, **at run time**.
+   *
+   * `TShape["parameters"]` gives the compiler the names, but types are erased,
+   * so without this call `build()` has no way to know a `parameter` reference
+   * addresses something real, `describe()` has no `parameters` list to project
+   * into the digest, and `run()` cannot reject an undeclared key. The element
+   * type is constrained to the shape's own keys, so this cannot drift from the
+   * type — it can only be incomplete.
+   *
+   * Omitting it declares **none**, which is a loud failure rather than a quiet
+   * one: every `parameter` reference then fails `build()` under
+   * `ERR_PROCEDURE_UNKNOWN_REFERENCE`, and every key passed to `run()` fails
+   * under `ERR_PROCEDURE_INVALID_OPTION`. Both messages name this method as the
+   * remedy.
+   */
+  parameters(names: readonly (keyof TShape["parameters"] & string)[]): this;
+
+  /**
    * Validates and freezes. `fallback` is required, so a procedure without a
    * defined outcome cannot be constructed.
    *
@@ -737,6 +755,20 @@ const M3L_PROCEDURE_CONDITION_MAX_DEPTH = 16;
 const M3L_PROCEDURE_MAX_PATTERN_LENGTH = 512;
 const M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH = 8192;
 ```
+
+### The compile-time guarantees cover a hand-written chain
+
+`step()`'s and `case()`'s `Exclude`-based narrowing is **positional**: it makes a
+duplicate id a compile error in a literal, hand-written fluent chain, which is
+how a procedure is meant to be authored. It cannot cover a procedure assembled
+dynamically — from a loop, or from a pre-built array — because there the ids are
+not literals the compiler can track, and the pending union collapses.
+
+That is not a gap; it is the division of labour. The eleven build-time problem
+codes exist precisely because the dynamic path is reachable, and they check at
+run time exactly what the fluent chain checks at compile time. State the
+consequence plainly rather than discovering it: **a dynamically-assembled
+procedure gets the same guarantees, just from `build()` instead of from `tsc`.**
 
 There is deliberately **no public constructor and no public definition type**.
 `build()` is the only way to obtain an `M3LProcedure`, so there is no path by
@@ -1138,6 +1170,7 @@ interface M3LProcedureSummary {
     readonly condition: M3LProcedureCondition<M3LProcedureShape>;
   }[];
   readonly fallback: { readonly description: string; readonly prose: string };
+  /** The names declared via the builder's `parameters()`, sorted. */
   readonly parameters: readonly string[];
 }
 ```
