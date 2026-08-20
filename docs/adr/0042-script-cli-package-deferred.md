@@ -230,6 +230,21 @@ current CLI surface changes.
 Recorded here so that a future reader of this ADR does not conclude, from the
 placement decision alone, that the orchestrator is in scope for `m3l-cli` today.
 
+## Update 2026-08-20 — remit extended by the CLI-first evolution programme
+
+The 2026-08-18 update above recorded that this package's remit stayed
+"exactly as the 8b–8g build-out left it." That is no longer the standing
+state: the CLI-first evolution programme
+([ADR-0053](./0053-cli-first-evolution-programme.md)) extends the remit with
+a typed command-module contract and hybrid execution
+([ADR-0054](./0054-command-module-contract-and-hybrid-execution.md)), the
+cross-script orchestration engine — ADR-0047's trigger has now fired
+([ADR-0056](./0056-cross-script-orchestration-engine.md)) — declarative
+operation introspection ([ADR-0055](./0055-declarative-operation-introspection.md)),
+and a distribution story ([ADR-0057](./0057-private-registry-distribution.md)).
+The 8b–8g record above is unchanged history; new work is tracked as the
+U-series in `docs/plans/IMPLEMENTATION.md`'s m3l-cli build-out section.
+
 ## Links
 
 - Related: [ADR-0021 (post-1.0 deepen-first strategy — the broadening intake

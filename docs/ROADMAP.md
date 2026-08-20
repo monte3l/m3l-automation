@@ -122,6 +122,38 @@ the consumer script is W7 under Priority 1 and the two deferrals are in Priority
 | **A6** | Per-phase trace on `M3LOperationPipeline` (+ aggregate option validation)                  | To Do  | The pipeline outcome carries no timing or phase record though `M3LBreadcrumbTrail` and the report `timeline` are ready seams. Payloads allowlisted per ADR-0035's 2026-07-23 update.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | **B2** | `core/procedure` — the codified-procedure engine                                           | To Do  | ADR-0046. Step identity, copy-on-write context, flow control, early resolution, prioritised unique-priority cases, serialisable explainable conditions, mandatory fallback. Core count 22 → 23, total 41 → 42.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
+### CLI evolution wave (U-series) — ADR-0053/0054/0055/0056/0057
+
+The CLI-first evolution programme: `packages/m3l-cli` evolves from the
+shipped 8b–8g launcher into the project's product — a typed `commandModule`
+contract with hybrid (spawn-default, opt-in in-process) execution,
+declarative enumerable operations, the cross-script orchestration engine
+(`m3l flow` — ADR-0047's trigger fired with a named queue-reconciliation
+flow), `m3l new`, shell completion, retry/resume surfacing, CLI gates, and
+phased distribution to a private GitHub Packages registry (single-file
+binary recorded but gated). Coarse summary only — the item source for sync
+is the U-series in
+[`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#m3l-cli-build-out--adr-0042-activation-issue-333);
+per-phase detail in
+[`2026-08-20-cli-evolution.md`](./plans/2026-08-20-cli-evolution.md).
+
+| Item    | What                                                         | Status   |
+| ------- | ------------------------------------------------------------ | -------- |
+| **U1**  | Decisions & governance docs — ADR-0053…0057 + trackers       | Done     |
+| **U2**  | `check:cli-scaffold` + `check:cli-docs` gates                | To Do    |
+| **U3**  | `core/cli-contract` promotion (Core 22 → 23, additive minor) | To Do    |
+| **U4**  | Declarative operations — library half (`core/config`)        | To Do    |
+| **U5**  | Declarative operations — fleet retrofit                      | To Do    |
+| **U6**  | `commandModule` adoption — template + pilot scripts          | To Do    |
+| **U7**  | Hybrid execution in the CLI; discovery over dependencies     | To Do    |
+| **U8**  | Operation introspection in `inspect`/`--help`/wizard         | To Do    |
+| **U9**  | `m3l new` + Lambda scaffold variant                          | To Do    |
+| **U10** | `m3l flow` — orchestration engine + the named flow           | To Do    |
+| **U11** | Retry/resume/cancellation surfacing at the CLI layer         | To Do    |
+| **U12** | `m3l completion` (bash/zsh/fish)                             | To Do    |
+| **U13** | Phase B — private GitHub Packages publishing                 | To Do    |
+| **U14** | Phase C — single-file binary (gated on a future ADR)         | Deferred |
+
 ## Priority 1 — Consumer fleet
 
 Before scoping or starting any AWS-consumer-script item below, check its
