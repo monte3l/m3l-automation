@@ -43,37 +43,75 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     tests, build, `check:exports`, `knip`, …) run inside those lanes, most
     of them path-scoped on `changes`'s output.
   - `review` — the job in `.github/workflows/claude-pr-review.yml`. It fails
-    unless the reviewer writes `PASS` to `.claude-review-verdict`, so a failing
-    review blocks the merge (fail-closed if the review never runs). The reviewer
-    runs in `--safe-mode` (CLAUDE.md/skills/plugins/hooks/MCP servers
-    disabled) with a scoped `--allowedTools` allowlist plus one narrow
-    `Edit(./.claude-review-verdict)` grant for the verdict file — a
-    command-prefix Bash rule like `Bash(echo:*)` authorizes the command but
-    not a `>` redirect target, which Claude Code checks separately against
-    `Edit` rules; the allowlist originally omitted that grant, which
-    produced 20+ permission denials per run and pushed real reviews past
-    the turn cap (see the 2026-08-19 addenda in
-    `docs/research/pr-review-action-tuning.md`) — posts a **single sticky
-    comment** per PR (updated on each push rather than re-posted), is capped
-    at `--max-turns 35`, and **does not run on draft PRs** — it fires on
-    `ready_for_review` and on every subsequent push to a ready PR. The workflow
-    pre-computes the PR diff (`.claude-pr-diff.patch`) and hands it to the
-    reviewer, so it reviews the supplied patch instead of spending turns fetching
-    it — a typical review uses only a few of those turns. The job itself runs
-    unconditionally on every non-draft PR (no trigger-level path filter) so the
-    required `review` check always reports; a guard step decides whether an
-    actual Claude review is needed. It's **skipped** (the verdict is written as
-    `PASS` directly, or carried forward from a prior `PASS`) in two cases: the
-    PR's entire diff is docs/config-only per the guard step's `is_ignored`
-    predicate (no library code to review at all), or the latest verdict was
-    `PASS` and only `is_ignored`-matching files changed since the reviewed
-    commit, tracked via a `claude-review-sha` marker in the sticky comment; any
-    reviewable change re-triggers a full review. This does not weaken the
-    fail-closed gate. The verdict-file mechanism and fail-closed behavior are
-    unchanged. A separate, non-blocking step logs run metrics (turns used
-    against the cap, wall/API duration, cost, prompt-cache read/write tokens,
-    and diff size) to the run's step summary and annotations — purely for
-    tuning the turn cap over time, with no effect on the verdict.
+    unless the verdict is `PASS`, so a failing review blocks the merge
+    (fail-closed if the review never runs). The reviewer runs in `--safe-mode`
+    (CLAUDE.md/skills/plugins/hooks/MCP servers disabled) with a scoped
+    `--allowedTools` allowlist, is capped at `--max-turns` (the `MAX_TURNS`
+    job env), and **does not run on draft PRs** — it fires on
+    `ready_for_review` and on every subsequent push to a ready PR. It posts
+    its review as a PR comment. The job itself runs unconditionally on every
+    non-draft PR (no trigger-level path filter) so the required `review` check
+    always reports; a guard step decides whether an actual Claude review is
+    needed.
+
+    **What the reviewer is given.** The workflow pre-computes the PR diff into
+    `.claude-pr-diff.patch` and hands it over, so the reviewer never spends
+    turns fetching it. That patch is filtered to what this gate actually
+    reviews: `*.md`, `docs/**`, `.github/dependabot.yml` and `pnpm-lock.yaml`
+    keep their `diff --git` header but have their hunks replaced by a
+    `(diff omitted — …)` marker, and `.claude-pr-changed-files.txt` is
+    filtered the same way. The filter deliberately mirrors the guard step's
+    `is_ignored` predicate — that one decides _whether_ to review, this one
+    decides _what_ is handed over, and the two must keep meaning the same
+    thing.
+
+    **Size limit.** If the _reviewable_ patch exceeds `MAX_REVIEWABLE_BYTES`
+    (300,000 chars), Claude never starts: the job posts a comment naming the
+    size and the largest contributing files, writes `FAIL`, and fails the
+    check. A diff that large cannot get a faithful single-pass review, and the
+    previous behaviour was to spend a full turn budget and report nothing —
+    PR #523 burned three runs and ~$8.15 that way. Split the PR and each
+    slice reviews normally. The limit is ~2.1x the largest reviewable patch
+    in the measured window and rejected none of the 14 PRs merged before it
+    landed.
+
+    **Where the verdict comes from.** Primarily `.claude-review-verdict`, a
+    file the reviewer writes as its final action. Because a `>` redirect
+    target is checked separately from the command — a command-prefix rule
+    like `Bash(echo:*)` authorizes `echo` but never the redirect target, and
+    `Write(path)` rules are silently not consulted — every writable path needs
+    its own `Edit(...)` grant, matched against the literal string in the
+    command (the matcher does not expand shell variables). There are two:
+    `Edit(./.claude-review-verdict)` and `Edit(./.claude-review-comment.md)`
+    for the comment body, which the reviewer posts with
+    `gh pr comment --body-file`. The Bash allowlist is scoped the same way:
+    `gh pr comment` to post and `gh pr diff` for the one fallback path (used
+    only if pre-computing the patch failed), with no other `gh` subcommand,
+    no `curl`/`wget`, and nothing that can write in place such as `sed` or
+    `tee`. If that file is missing, the gate falls back to
+    reading the verdict out of the posted `claude[bot]` comment, but **only**
+    when the comment's `claude-review-sha` marker matches the commit under
+    test. The SHA pin is what keeps this fail-closed: a stale `PASS` from an
+    earlier push can never satisfy the gate. The fallback exists because a
+    review that converges and then exhausts its turn budget one call later
+    used to be discarded entirely — on PR #523 the reviewer twice posted a
+    complete, correct `FAIL` that the gate threw away in favour of reporting
+    infrastructure failure.
+
+    **When it's skipped** (the verdict is written as `PASS` directly, or
+    carried forward from a prior `PASS`), in two cases: the PR's entire diff
+    is docs/config-only per `is_ignored` (nothing to review at all), or the
+    latest verdict was `PASS` and only `is_ignored`-matching files changed
+    since the reviewed commit, tracked via the `claude-review-sha` marker. Any
+    reviewable change re-triggers a full review. None of this weakens the
+    fail-closed gate.
+
+    A separate, non-blocking step logs run metrics (turns used against the
+    cap, wall/API duration, cost, prompt-cache read/write tokens, reviewable
+    diff size, and **which** tools hit permission denials) to the run's step
+    summary and annotations — purely for tuning, with no effect on the
+    verdict.
+
   - **CodeQL code scanning** — added as a required check under ADR-0015 so a
     high-severity SAST finding blocks the merge. CodeQL runs via GitHub
     **default setup**; on human PRs and direct `main` pushes it still surfaces
@@ -172,3 +210,14 @@ The original `claude-pr-review` workflow only posted a comment — it never set 
 failing check, so the review was advisory. The workflow now writes a verdict
 (`PASS`/`FAIL`) and a follow-up step fails the job on anything other than
 `PASS`. Marking `review` as a required check turns that into a true merge gate.
+
+The comment fallback added on 2026-08-20 does **not** walk that back. The
+distinction that mattered was never "file vs comment" as a data source — it was
+that nothing failed the check. The enforcing step still fails the job, still
+fail-closed, and still refuses anything that isn't `PASS`; it just no longer
+throws away a verdict the reviewer demonstrably reached because the process
+died a turn later. The SHA pin is what makes a comment trustworthy enough to
+read: it must name the exact commit under test, and a PR author cannot post as
+`claude[bot]`. The guard step at the top of the same job already trusts that
+signal to skip a review outright, which concedes strictly more than reading a
+verdict from it.
