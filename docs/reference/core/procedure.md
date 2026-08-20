@@ -176,12 +176,22 @@ not exist a **compile** error; and the `literal` arm makes `compare` symmetric �
 both sides are references — so the evaluator resolves and reports both sides
 uniformly, which is what makes the explanation readable.
 
-`path` walks into an object or array (`["items", "0", "count"]`). Resolution
-reads **own** properties only, and a `__proto__`, `constructor` or `prototype`
-segment never resolves. A path that does not resolve — a missing key, or a
-segment applied to a scalar — yields `undefined`, which is exactly what `exists`
+`path` walks into an object or array (`["items", "0", "count"]`), and every
+segment is bounded by exactly these rules:
+
+- Only an **own enumerable** property resolves. A `__proto__`, `constructor` or
+  `prototype` segment never resolves, and neither does an inherited property.
+- An array resolves a segment only when it is a **canonical decimal index**
+  (`"0"`, `"12"` — not `"01"`, `"-1"`, `"1.0"`) that is in range. `"length"`
+  does **not** resolve: it is array metadata, not data.
+- A **string** value resolves no segment at all. `["0"]` against `"abc"` is
+  `undefined`, not `"a"` — a string is a scalar here, and indexing into one
+  would make `exists` answer differently for a string than for a number.
+- Walking stops at the first unresolved segment.
+
+A path that does not resolve yields `undefined`, which is exactly what `exists`
 tests and what makes `compare` against a missing value evaluate `false` rather
-than throw.
+than throw. Path depth is bounded by `M3L_PROCEDURE_CONDITION_MAX_DEPTH`.
 
 ## Steps
 
@@ -424,13 +434,26 @@ values and never throws, never coerces.
 
 ### Deep structural equality
 
-Used by `==`, `!=` and array `contains`. Two values are equal when: both are the
-same scalar (`Object.is`, except that `NaN` is never equal to anything); or both
-are arrays of the same length whose elements are pairwise equal **in order** —
-array order **is** significant; or both are objects with the same set of own
-enumerable keys whose values are pairwise equal — object key order is **not**
-significant. Nothing else is equal, and comparison is depth-bounded by
-`M3L_PROCEDURE_CONDITION_MAX_DEPTH`.
+Used by `==`, `!=` and array `contains`. Two values are equal when, and only
+when, one of the following holds:
+
+- Both are the same scalar, compared with `Object.is` — **except** that `NaN`
+  is never equal to anything (including another `NaN`), and `+0` and `-0` **are**
+  equal. Both departures from `Object.is` are deliberate: `NaN` follows
+  IEEE-754, which is what a numeric condition should mean, and `±0` follows
+  `canonicalJsonStringify`, which renders both as `0`.
+- Both are arrays of the same length whose elements are pairwise equal **in
+  order** — array order **is** significant.
+- Both are objects with the same set of own enumerable string keys whose values
+  are pairwise equal — object key order is **not** significant. A key present
+  with value `null` is **not** equal to an absent key.
+
+Nothing else is equal — a scalar never equals a container, and an array never
+equals an object. Comparison is depth-bounded by
+`M3L_PROCEDURE_CONDITION_MAX_DEPTH`; beyond it the comparison yields `false`
+rather than recursing. `M3LProcedureValue` is a recursive type, so a caller
+_can_ build a self-referential value; that bound is what keeps it from
+overflowing the stack.
 
 ### Pattern safety
 
@@ -589,10 +612,16 @@ investigated, never a silent gap. It is a **required positional argument** to
 belt-and-braces pairing `core/pipeline` applies to its non-empty `operations`
 tuple.)
 
+The fallback deliberately has **no** `id` and no `priority`. There is exactly
+one per procedure, so `status === "unrecognized"` already identifies it, and
+giving it an id would invite a second.
+
 ## Builder, definition, engine
 
 ```typescript
 function createProcedureBuilder<TShape extends M3LProcedureShape>(
+  /** Non-empty; part of the digest. An empty or non-string name is a
+   *  build-time `ERR_PROCEDURE_INVALID_DECLARATION` problem. */
   name: string,
 ): M3LProcedureBuilder<TShape, TShape["stepId"], TShape["caseId"]>;
 
@@ -698,12 +727,49 @@ const M3L_PROCEDURE_MAX_PATTERN_LENGTH = 512;
 const M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH = 8192;
 ```
 
-A definition is inert and reusable: one `M3LProcedure` may be `run` repeatedly
+There is deliberately **no public constructor and no public definition type**.
+`build()` is the only way to obtain an `M3LProcedure`, so there is no path by
+which a hand-assembled definition reaches the engine and skips validation —
+every guarantee on this page holds for every instance that exists.
+
+A procedure is inert and reusable: one `M3LProcedure` may be `run` repeatedly
 **and concurrently**. Everything run-scoped — the context chain, visit counts,
 step records, the trace buffer, the progress tracker — lives in the `run()` call
-frame, never on the instance. The two things that _are_ instance state are
-immutable and shared safely: the digest (a string) and the compiled patterns
-(never `g`/`y`, so they hold no `lastIndex`).
+frame, never on the instance. Exactly two things are instance state, both
+immutable after `build()` and therefore shared safely: the digest (a string) and
+the compiled `matches` patterns (compiled once, never with the `g` or `y` flag,
+so they carry no `lastIndex` between runs).
+
+### Option validation
+
+`run()` reads and validates its options **before** anything observable happens,
+and throws `ERR_PROCEDURE_INVALID_OPTION` on any of:
+
+- `maxIterations` that is not a finite integer in `[1, Number.MAX_SAFE_INTEGER]`.
+  Exactly `maxIterations` step executions are permitted; the guard trips when the
+  run is about to begin execution number `maxIterations + 1`.
+- `progress.witness` that is not a function, or `progress.maxStalledSteps` that
+  is not a finite integer greater than `0`.
+- a `parameters` key the shape never declared, a `parameters` value containing a
+  non-finite number or a `BigInt` (it would fail `parametersDigest`), or a
+  dangerous parameter name (`__proto__`, `constructor`, `prototype`).
+
+`parameters` and `initialValues` are read **exactly once**, each property into a
+local, and copied into fresh frozen objects. A caller's object may be getter- or
+`Proxy`-backed and free to return a different value on every access, so
+validating one read and then storing a second, separate read would reproduce the
+"two observations of a mutable caller graph" defect `captureProgressConfig` was
+extracted to eliminate. Mutating the caller's object after `run()` is entered
+cannot change the run.
+
+### What "frozen" means here
+
+`Object.freeze` is shallow, so the guarantee is stated exactly: the context
+object **and** its `results`, `values`, `parameters` and `recovered` containers
+are frozen. The values _inside_ those containers are **not** deep-frozen — a
+caller that puts a mutable array into a step output can still mutate it, and
+this page does not claim otherwise. `deps` is never frozen and never touched:
+freezing a caller's SDK-client or logger bag would be a real breakage.
 
 ## The run contract
 
@@ -749,9 +815,23 @@ Starting at the first declared step, for each iteration:
 Phase 1 also ends when the last declared step returns `"continue"`.
 
 An abort **always wins**: over `continueOnFailure`, over a no-progress trip, and
-over a step's own thrown error. A step that forwards the signal to an SDK call
-and rethrows `M3LOperationAbortedError` produces the `aborted` outcome, not
-`failed`.
+over a step's own thrown error. A step that declares `continueOnFailure` and
+throws an abort is **not** absorbed — absorbing it would continue past a
+cancellation the operator asked for, and ADR-0049's whole posture is that a
+cancelled operation is never retried.
+
+The abort is recognised by `code === "ERR_OPERATION_ABORTED"`, not by
+`instanceof` — the library rule is to discriminate on the machine-readable code.
+A raw `AbortError` `DOMException` from an SDK maps to `failed`, not `aborted`:
+the engine cannot tell it from an abort the caller never requested. A step that
+throws `ERR_OPERATION_ABORTED` while `options.signal` is **not** aborted still
+produces `aborted` — the step is reporting that something it owns was
+cancelled, and the engine takes it at its word.
+
+`abortedAt` is the id of the step at whose boundary the abort was observed: the
+step about to run when a boundary check fired, or the step that threw. It is
+`undefined` for an abort observed after phase 1 — at the phase-2 or phase-3
+check.
 
 ### Phase 2 — cases
 
@@ -763,6 +843,16 @@ because evidence satisfying three cases is worth knowing about and suppressing
 it is how a case list silently rots. On an early `"resolve"` this is the same
 evaluation, run mid-procedure.
 
+A procedure may therefore evaluate its case list several times — once per
+`"resolve"` that did not match, plus once at the end. Only the **final** pass is
+reported: `investigated` holds one entry per case, from the pass that concluded
+the run, and `alsoMatched` comes from that same pass. `resolveChecks` counts how
+many passes ran, so a run that checked four times is distinguishable from one
+that checked once. `earlyResolved` is `true` **iff** the run concluded from a
+`"resolve"`-triggered pass — including when the last declared step is the one
+that returned `"resolve"`, because what the flag reports is _which pass
+concluded_, not whether steps remained.
+
 ### Phase 3 — conclusion
 
 The primary case's `action` runs, or the fallback's when nothing matched. Either
@@ -770,20 +860,33 @@ way the run produces an outcome; no path terminates without one.
 
 A throw from a case action or from the fallback action **propagates unmodified**
 — it is a caller bug in the conclusion, not a run conclusion, and folding it
-into `unrecognised` would report the wrong thing. Same posture as the pipeline's
+into `unrecognized` would report the wrong thing. Same posture as the pipeline's
 `recovery` callback.
 
 ## Outcome
 
-`run()` **resolves** for all four arms. A failed, aborted or unrecognised run is
+`run()` **resolves** for all four arms. A failed, aborted or unrecognized run is
 a structured result, because a procedure's whole purpose is to make its
 conclusion inspectable — including the conclusion "this failed". Only a
 **contract violation** throws: a `build()` problem, or a malformed `run` option.
 
-The guard against a silently swallowed failure is structural rather than
-advisory: `conclusion` exists **only** on the `matched` and `unrecognised` arms,
-so a caller that never narrows on `status` cannot reach a conclusion value at
-all — the read does not compile.
+Three properties keep "resolves rather than rejects" from becoming a swallowed
+error:
+
+1. **Nothing is discarded.** `error` on the `failed` arm is the thrown value
+   **verbatim** — typed `unknown` because a step may throw anything, never
+   wrapped and never re-coded, so its `cause` chain is intact. A guard failure
+   carries the `M3LError` the guard constructed.
+2. **The read does not compile without the narrow.** `conclusion` exists **only**
+   on the `matched` and `unrecognized` arms, so a caller that never narrows on
+   `status` cannot reach a conclusion value at all.
+3. **`failed` and `aborted` are terminal.** The engine never continues past
+   either; no further step, case or action runs.
+
+The caller-side obligation is therefore to narrow, and to map a non-success arm
+onto a non-zero exit — `M3LRunOutcome`'s `partial` / `failed` and their
+`M3L_EXIT_CODES` entries are what [`core/diagnostics`](./diagnostics.md) provides
+for that.
 
 ```typescript
 interface M3LProcedureOutcomeBase<TShape extends M3LProcedureShape> {
@@ -808,7 +911,7 @@ type M3LProcedureOutcome<TShape extends M3LProcedureShape> =
           readonly error?: undefined;
         }
       | {
-          readonly status: "unrecognised";
+          readonly status: "unrecognized";
           readonly primary?: undefined;
           readonly alsoMatched: readonly [];
           /** Every case checked, with its full evaluation tree. */
@@ -872,11 +975,12 @@ Every code below is registered in `M3L_ERROR_CODES` and `M3L_ERROR_CATALOG`
 
 ### Carried by a `failed` outcome's `error`
 
-| Code                            | Fires when                                                                                                 |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `ERR_PROCEDURE_ITERATION_LIMIT` | the iteration ceiling, or a `loop` step's `maxRevisits`; `context.limit` is `"iterations"` or `"revisits"` |
-| `ERR_PROCEDURE_NO_PROGRESS`     | the stall guard tripped; `context` carries `stalledSteps` and `lastStepId`                                 |
-| `ERR_PROCEDURE_UNDECLARED_JUMP` | a `goTo` outside the step's `jumpsTo` — unreachable from typed TypeScript                                  |
+| Code                            | Fires when                                                                                                                                                                                                                                 |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ERR_PROCEDURE_ITERATION_LIMIT` | the iteration ceiling, or a `loop` step's `maxRevisits`; `context.limit` is `"iterations"` or `"revisits"`                                                                                                                                 |
+| `ERR_PROCEDURE_NO_PROGRESS`     | the stall guard tripped; `context` carries `stalledSteps` and `lastStepId`                                                                                                                                                                 |
+| `ERR_PROCEDURE_INVALID_OPTION`  | the progress witness **threw**, or returned a non-primitive, mid-run. The option was only provably bad once sampled, so it surfaces as a `failed` outcome with the thrown value chained as `cause` rather than breaking "`run()` resolves" |
+| `ERR_PROCEDURE_UNDECLARED_JUMP` | a `goTo` outside the step's `jumpsTo` — unreachable from typed TypeScript                                                                                                                                                                  |
 
 `ERR_PROCEDURE_NO_PROGRESS` is deliberately **not**
 [`core/polling`](./polling.md)'s `ERR_NO_PROGRESS`, which is
@@ -902,7 +1006,7 @@ One throw, code `ERR_PROCEDURE_INVALID_DEFINITION`, with `context.problems` an
 array of `M3LProcedureValidationProblem`:
 
 ```typescript
-/** The ten per-problem codes, narrowed away from the full `M3LErrorCode`. */
+/** The eleven per-problem codes, narrowed away from the full `M3LErrorCode`. */
 type M3LProcedureProblemCode =
   | "ERR_PROCEDURE_EMPTY_STEPS"
   | "ERR_PROCEDURE_DUPLICATE_STEP_ID"
@@ -913,7 +1017,8 @@ type M3LProcedureProblemCode =
   | "ERR_PROCEDURE_MISSING_FALLBACK"
   | "ERR_PROCEDURE_INVALID_PATTERN"
   | "ERR_PROCEDURE_CONDITION_TOO_DEEP"
-  | "ERR_PROCEDURE_UNKNOWN_REFERENCE";
+  | "ERR_PROCEDURE_UNKNOWN_REFERENCE"
+  | "ERR_PROCEDURE_INVALID_DECLARATION";
 
 interface M3LProcedureValidationProblem {
   readonly code: M3LProcedureProblemCode;
@@ -925,18 +1030,29 @@ interface M3LProcedureValidationProblem {
 }
 ```
 
-| Per-problem code                        | Fires when                                                                                        |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `ERR_PROCEDURE_EMPTY_STEPS`             | no step was declared                                                                              |
-| `ERR_PROCEDURE_DUPLICATE_STEP_ID`       | two steps share an `id` (reported once per duplicated id, however many repeats)                   |
-| `ERR_PROCEDURE_INVALID_JUMP_TARGET`     | a `jumpsTo` entry names no declared step                                                          |
-| `ERR_PROCEDURE_CYCLE_DETECTED`          | an unacknowledged cycle; carries `path`                                                           |
-| `ERR_PROCEDURE_DUPLICATE_CASE_ID`       | two cases share an `id`                                                                           |
-| `ERR_PROCEDURE_DUPLICATE_CASE_PRIORITY` | two cases share a `priority`; names both                                                          |
-| `ERR_PROCEDURE_MISSING_FALLBACK`        | the fallback is absent or malformed (untyped callers only)                                        |
-| `ERR_PROCEDURE_INVALID_PATTERN`         | a `matches` pattern is over-long, uncompilable, or contains a quantified group                    |
-| `ERR_PROCEDURE_CONDITION_TOO_DEEP`      | a condition nests past `M3L_PROCEDURE_CONDITION_MAX_DEPTH`                                        |
-| `ERR_PROCEDURE_UNKNOWN_REFERENCE`       | a condition references a step / value / parameter name that does not exist (untyped callers only) |
+| Per-problem code                        | Fires when                                                                                                                                                                                                                                                                                                                                         |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ERR_PROCEDURE_EMPTY_STEPS`             | no step was declared                                                                                                                                                                                                                                                                                                                               |
+| `ERR_PROCEDURE_DUPLICATE_STEP_ID`       | two steps share an `id` (reported once per duplicated id, however many repeats)                                                                                                                                                                                                                                                                    |
+| `ERR_PROCEDURE_INVALID_JUMP_TARGET`     | a `jumpsTo` entry names no declared step                                                                                                                                                                                                                                                                                                           |
+| `ERR_PROCEDURE_CYCLE_DETECTED`          | an unacknowledged cycle; carries `path`                                                                                                                                                                                                                                                                                                            |
+| `ERR_PROCEDURE_DUPLICATE_CASE_ID`       | two cases share an `id`                                                                                                                                                                                                                                                                                                                            |
+| `ERR_PROCEDURE_DUPLICATE_CASE_PRIORITY` | two cases share a `priority`; names both                                                                                                                                                                                                                                                                                                           |
+| `ERR_PROCEDURE_MISSING_FALLBACK`        | the fallback is absent or malformed (untyped callers only)                                                                                                                                                                                                                                                                                         |
+| `ERR_PROCEDURE_INVALID_PATTERN`         | a `matches` pattern is over-long, uncompilable, or contains a quantified group                                                                                                                                                                                                                                                                     |
+| `ERR_PROCEDURE_CONDITION_TOO_DEEP`      | a condition nests past `M3L_PROCEDURE_CONDITION_MAX_DEPTH`                                                                                                                                                                                                                                                                                         |
+| `ERR_PROCEDURE_UNKNOWN_REFERENCE`       | a condition references a step / value / parameter name that does not exist (untyped callers only)                                                                                                                                                                                                                                                  |
+| `ERR_PROCEDURE_INVALID_DECLARATION`     | a malformed declaration: an empty or non-string `id` / `label` / parameter name; a dangerous parameter or `values` key (`__proto__`, `constructor`, `prototype`); a duplicate parameter name; a non-finite or non-number case `priority`; a `loop.maxRevisits` that is not a finite integer > 0; a condition `literal` that is a non-finite number |
+
+`ERR_PROCEDURE_INVALID_DECLARATION` exists because `build()` calls
+`canonicalJsonHash`, which rejects a non-finite number or a `BigInt` anywhere
+in the tree with `ERR_INVALID_ARGUMENT`. A `priority: NaN` or a
+`{ literal: Infinity }` would otherwise leak that code out of `build()` — a
+code this contract does not name and a caller cannot act on. The declaration
+check therefore runs **before** the digest is computed, so `build()` only ever
+throws `ERR_PROCEDURE_INVALID_DEFINITION`. A `NaN` priority would also make
+descending-priority ordering undefined, so rejecting it is not only about the
+hash.
 
 The problem list is **deterministic**: checks run in the table's order, and each
 check reports in declaration order. A single problem renders inline; several
@@ -949,8 +1065,12 @@ Nodes are step ids. Edges are of two kinds:
 
 - **implicit sequential** — step _i_ → step _i+1_, contributed unconditionally,
   because the engine advances on `"continue"` and no declaration proves a step
-  never returns it. These edges are strictly forward, so a linear procedure is
-  trivially acyclic and a cycle requires at least one non-forward `jumpsTo`.
+  never returns it. Every step except the last contributes one. These edges are
+  strictly forward, so a linear procedure is trivially acyclic — and the direct
+  consequence, worth stating because it is what an author trips over: **any
+  `jumpsTo` entry naming the declaring step itself or an earlier one is a
+  cycle**, so every backward jump and every self-jump requires `loop`. A
+  forward-only `jumpsTo` never needs it.
 - **explicit** — one edge per `jumpsTo` entry, **excluded** when the step carries
   `loop`. That exclusion is what keeps a deliberate re-gather expressible while
   an accidental cycle stays a build error — and it is what gives the iteration
@@ -1055,6 +1175,16 @@ interface M3LProcedureTraceEntry {
   readonly attempt: number;
   readonly durationMs: number;
   readonly failed: boolean;
+  /**
+   * The flow directive, **projected to a scalar**: `"continue"`, `"stop"`,
+   * `"resolve"`, or `"goTo:<targetId>"`. `undefined` when the step threw.
+   *
+   * `M3LProcedureFlow`'s `{ goTo }` arm is an object, and a breadcrumb sink
+   * drops a non-scalar payload entry — so the structured form would silently
+   * vanish from exactly the trace that is supposed to explain the jump.
+   * `M3LProcedureStepRecord.flow` keeps the structured value.
+   */
+  readonly flow: string | undefined;
   readonly payload: Readonly<Record<string, M3LBreadcrumbScalar>>;
 }
 ```
@@ -1069,10 +1199,16 @@ script can hand the same object to both engines.
 
 Two events are recorded:
 
-- **`procedure:step`** — one entry per step that actually executes, carrying the
-  engine's own `stepId`/`label`/`kind`/`attempt`/`durationMs`/`failed` keys plus
-  `describeTrace`'s allowlist-projected return. The engine's keys are applied
-  **last**, so a `describeTrace` return cannot forge them.
+- **`procedure:step`** — one entry per step that actually executes, recorded
+  against the source label `trace.source` (default `"M3LProcedure"`), carrying
+  the engine's own `stepId`/`label`/`kind`/`attempt`/`durationMs`/`flow`/`failed`
+  keys plus `describeTrace`'s allowlist-projected return. The engine's keys are
+  applied **last**, so a `describeTrace` return cannot forge them: a return
+  claiming `failed: true` on a clean step is overwritten, not left standing.
+  `failed` is present as `false` on a clean step rather than omitted, so a
+  payload-equality assertion has one shape to match. A step whose `execute`
+  **threw** still records its entry, with `failed: true` and `flow: undefined`,
+  before the run ends.
 - **`procedure:outcome`** — engine-owned scalars only: `status`,
   `primaryCaseId`, `alsoMatchedCount`, `iterations`, `resolveChecks`,
   `earlyResolved`, `digest`. Case ids are author-written code, not caller data.
@@ -1183,8 +1319,8 @@ const procedure = Core.createProcedureBuilder<Triage>("log-triage")
   })
   .build({
     description: "Evidence matched no known case",
-    prose: "Unrecognised pattern. Capture the trace and add a case for it.",
-    action: () => ({ verdict: "unrecognised" }),
+    prose: "Unrecognized pattern. Capture the trace and add a case for it.",
+    action: () => ({ verdict: "unrecognized" }),
   });
 
 const outcome = await procedure.run({
