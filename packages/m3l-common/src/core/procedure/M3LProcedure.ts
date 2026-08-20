@@ -13,6 +13,18 @@ import {
   deriveContext,
 } from "../../internal/procedure/context.js";
 import { evaluateCondition } from "../../internal/procedure/evaluate.js";
+import {
+  M3LProcedureInvalidOptionError,
+  M3LProcedureIterationLimitError,
+} from "../../internal/procedure/errors.js";
+import {
+  isArray,
+  isBigInt,
+  isFunction,
+  isNumber,
+  isPlainObject,
+} from "../utils/guards.js";
+import { M3L_PROCEDURE_MAX_ITERATIONS } from "./types.js";
 
 import type { M3LRunRecoveryEntry } from "../diagnostics/index.js";
 import type { M3LProcedureBuiltDefinition } from "../../internal/procedure/definition.js";
@@ -25,6 +37,7 @@ import type {
   M3LProcedureFallback,
   M3LProcedureFlow,
   M3LProcedureOutcome,
+  M3LProcedureProgressOptions,
   M3LProcedureRunOptions,
   M3LProcedureShape,
   M3LProcedureStep,
@@ -124,6 +137,35 @@ type FlowDecision<TShape extends M3LProcedureShape> =
     };
 
 /**
+ * Parameter names that could pollute `Object.prototype` if ever forwarded
+ * into an unguarded merge. Rejected outright by {@link M3LProcedure.run}'s
+ * option validation, regardless of whether the shape happens to declare
+ * them.
+ */
+const DANGEROUS_PARAMETER_NAMES: ReadonlySet<string> = new Set([
+  "__proto__",
+  "constructor",
+  "prototype",
+]);
+
+/**
+ * True when `value` — recursively, through plain objects and arrays —
+ * contains a `BigInt` or a non-finite `number`. Both are rejected by
+ * {@link M3LProcedure.run}'s parameter validation: neither survives
+ * `canonicalJsonHash` (used to compute `parametersDigest`) or a JSON
+ * round-trip.
+ */
+function containsInvalidNumericValue(value: unknown): boolean {
+  if (isBigInt(value)) return true;
+  if (isNumber(value)) return !Number.isFinite(value);
+  if (isArray(value)) return value.some(containsInvalidNumericValue);
+  if (isPlainObject(value)) {
+    return Object.values(value).some(containsInvalidNumericValue);
+  }
+  return false;
+}
+
+/**
  * A built, validated procedure: "gather evidence, then conclude". Every
  * guarantee this engine makes holds for every instance that exists, because
  * there is deliberately no public constructor and no public definition
@@ -215,8 +257,133 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
    *   progress guard, tracing, logger, and initial values.
    * @returns The resolved outcome.
    */
-  async run(
+  run(
     options: M3LProcedureRunOptions<TShape>,
+  ): Promise<M3LProcedureOutcome<TShape>> {
+    // Deliberately not `async`: option validation below must throw
+    // *synchronously* out of `run()` itself. An `async` method turns every
+    // throw in its body into a rejected promise instead of a synchronous
+    // throw, and a caller relying on `try { procedure.run(...) } catch`
+    // (or `captureSyncThrow`) around the call — before ever awaiting the
+    // result — would observe nothing. Validation runs here, then the rest
+    // of the work is delegated to an `async` method whose promise this
+    // method returns unchanged.
+    const maxIterations = this.#validateRunOptions(options);
+    return this.#runValidated(options, maxIterations);
+  }
+
+  /**
+   * Validates `options` synchronously, throwing
+   * {@link M3LProcedureInvalidOptionError} on the first problem found —
+   * before any step executes: an out-of-range `maxIterations`, a
+   * `parameters` key the shape never declared (or a dangerous one, or a
+   * value containing a non-finite number or a `BigInt`), or a malformed
+   * `progress` guard.
+   *
+   * @returns The resolved iteration ceiling, so `#runValidated` need not
+   *   re-derive it from `options`.
+   */
+  #validateRunOptions(options: M3LProcedureRunOptions<TShape>): number {
+    const maxIterations = this.#validateMaxIterations(options.maxIterations);
+    this.#validateParameters(options.parameters);
+    this.#validateProgressOptions(options.progress);
+    return maxIterations;
+  }
+
+  /**
+   * Validates `maxIterations`: when present, it must be a finite integer in
+   * `[1, Number.MAX_SAFE_INTEGER]`. Returns the effective ceiling —
+   * `maxIterations` itself, or {@link M3L_PROCEDURE_MAX_ITERATIONS} when
+   * absent.
+   */
+  #validateMaxIterations(maxIterations: number | undefined): number {
+    if (maxIterations === undefined) return M3L_PROCEDURE_MAX_ITERATIONS;
+    if (
+      !Number.isInteger(maxIterations) ||
+      maxIterations < 1 ||
+      maxIterations > Number.MAX_SAFE_INTEGER
+    ) {
+      throw new M3LProcedureInvalidOptionError(
+        `maxIterations must be a finite integer in [1, ${Number.MAX_SAFE_INTEGER}]`,
+        { option: "maxIterations", value: maxIterations },
+      );
+    }
+    return maxIterations;
+  }
+
+  /**
+   * Validates `parameters`: every own key must be declared by this
+   * procedure's shape (per {@link M3LProcedure.describe}'s `parameters`
+   * list), must not be a dangerous name (`__proto__`, `constructor`,
+   * `prototype`), and its value must not contain a non-finite number or a
+   * `BigInt`. A `parameters` that isn't a plain object is left for
+   * `createInitialContext` — this method only validates the shape it can
+   * meaningfully inspect.
+   */
+  #validateParameters(parameters: unknown): void {
+    if (!isPlainObject(parameters)) return;
+
+    const declared = new Set(this.#summary.parameters);
+    for (const key of Object.keys(parameters)) {
+      if (DANGEROUS_PARAMETER_NAMES.has(key)) {
+        throw new M3LProcedureInvalidOptionError(
+          `parameter "${key}" is not a permitted parameter name`,
+          { option: "parameters", parameter: key },
+        );
+      }
+      if (!declared.has(key)) {
+        throw new M3LProcedureInvalidOptionError(
+          `parameter "${key}" was not declared by this procedure's shape`,
+          { option: "parameters", parameter: key },
+        );
+      }
+      if (containsInvalidNumericValue(parameters[key])) {
+        throw new M3LProcedureInvalidOptionError(
+          `parameter "${key}" contains a non-finite number or a BigInt`,
+          { option: "parameters", parameter: key },
+        );
+      }
+    }
+  }
+
+  /**
+   * Validates the opt-in `progress` guard's shape: `witness` must be a
+   * function and `maxStalledSteps` a finite integer greater than `0`. Only
+   * the shape is validated here — the guard's sampling behaviour is a
+   * later pass's responsibility.
+   */
+  #validateProgressOptions(
+    progress: M3LProcedureProgressOptions<TShape> | undefined,
+  ): void {
+    if (progress === undefined) return;
+    if (!isFunction(progress.witness)) {
+      throw new M3LProcedureInvalidOptionError(
+        "progress.witness must be a function",
+        { option: "progress.witness" },
+      );
+    }
+    if (
+      !Number.isInteger(progress.maxStalledSteps) ||
+      progress.maxStalledSteps <= 0
+    ) {
+      throw new M3LProcedureInvalidOptionError(
+        "progress.maxStalledSteps must be a finite integer greater than 0",
+        {
+          option: "progress.maxStalledSteps",
+          value: progress.maxStalledSteps,
+        },
+      );
+    }
+  }
+
+  /**
+   * The awaited body of {@link M3LProcedure.run}, invoked only once
+   * `#validateRunOptions` has passed. Kept as a separate `async` method so
+   * `run()` itself can stay synchronous through its validation step.
+   */
+  async #runValidated(
+    options: M3LProcedureRunOptions<TShape>,
+    maxIterations: number,
   ): Promise<M3LProcedureOutcome<TShape>> {
     const startedAtMs = performance.now();
     const startedAt = new Date().toISOString();
@@ -230,7 +397,7 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
       signal: options.signal,
     });
 
-    const phaseOne = await this.#runPhaseOne(initialContext);
+    const phaseOne = await this.#runPhaseOne(initialContext, maxIterations);
 
     if (phaseOne.kind === "failed") {
       return this.#buildFailedOutcome(phaseOne, startedAt, startedAtMs);
@@ -262,6 +429,7 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
    */
   async #runPhaseOne(
     initialContext: M3LProcedureContext<TShape>,
+    maxIterations: number,
   ): Promise<PhaseOneOutcome<TShape>> {
     let context = initialContext;
     const executedSteps: M3LProcedureStepRecord[] = [];
@@ -277,6 +445,15 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
       // `noUncheckedIndexedAccess` rather than asserting the lookup.
       if (step === undefined) {
         return { kind: "ended", context, executedSteps, resolveChecks };
+      }
+
+      const ceilingFailure = this.#checkIterationCeiling(
+        context,
+        step,
+        maxIterations,
+      );
+      if (ceilingFailure !== undefined) {
+        return { ...ceilingFailure, context, executedSteps, resolveChecks };
       }
 
       const executed = await this.#executeOneStep(context, step);
@@ -342,6 +519,51 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
     }
     if (isLast) return { kind: "ended", resolveChecks: checks };
     return { kind: "advance", index: index + 1, resolveChecks: checks };
+  }
+
+  /**
+   * Checked at the top of every phase-1 loop pass, before `step.execute`
+   * ever runs: refuses the run once `context.iteration` (the run's total
+   * executions so far — `deriveContext` increments it on every execution,
+   * success or `continueOnFailure`-recovered alike) has already reached
+   * `maxIterations`, or once `step`'s own declared `loop.maxRevisits`
+   * ceiling has already been reached by its prior executions — read off
+   * `context.results[step.id].attempt`, the same per-step execution counter
+   * {@link M3LProcedure.#executeOneStep} maintains, so no separate counter
+   * needs to be threaded through the loop. Pure — returns a failure for the
+   * caller to fold into its own local state rather than throwing or
+   * mutating anything.
+   */
+  #checkIterationCeiling(
+    context: M3LProcedureContext<TShape>,
+    step: M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>,
+    maxIterations: number,
+  ): Extract<StepExecutionOutcome<TShape>, { kind: "failed" }> | undefined {
+    if (context.iteration >= maxIterations) {
+      return {
+        kind: "failed",
+        stepId: step.id,
+        error: new M3LProcedureIterationLimitError(
+          `procedure exceeded its iteration ceiling of ${maxIterations} step execution(s)`,
+          { limit: "iterations", maxIterations },
+        ),
+      };
+    }
+
+    const { loop } = step;
+    if (loop === undefined) return undefined;
+
+    const priorExecutions = context.results[step.id]?.attempt ?? 0;
+    if (priorExecutions <= loop.maxRevisits) return undefined;
+
+    return {
+      kind: "failed",
+      stepId: step.id,
+      error: new M3LProcedureIterationLimitError(
+        `step "${step.id}" exceeded its revisit ceiling of ${loop.maxRevisits}`,
+        { limit: "revisits", stepId: step.id, maxRevisits: loop.maxRevisits },
+      ),
+    };
   }
 
   /**

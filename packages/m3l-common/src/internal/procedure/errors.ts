@@ -4,11 +4,10 @@
  * narrow on `instanceof M3LError` and the machine-readable `code`, not on a
  * subclass identity — see `docs/reference/core/procedure.md` § Public API.
  *
- * Only the subclass this scaffold's stub bodies actually construct lives
- * here today. The remaining fifteen `ERR_PROCEDURE_*` codes documented in
+ * Additional `ERR_PROCEDURE_*` codes documented in
  * `docs/reference/core/procedure.md` § Errors and § Build-time validation
- * are added — each in the subclass and validation logic that emits it — by
- * the GREEN pass that fills in `build()`, `run()`, and
+ * are added — each in the subclass and validation logic that emits it — as
+ * the remaining GREEN passes fill in `build()`, `run()`, and
  * `evaluateProcedureCondition`.
  *
  * Private to `core/procedure`; never re-exported through a public barrel.
@@ -34,5 +33,42 @@ export class M3LProcedureInvalidDefinitionError extends M3LError {
       ...(context !== undefined ? { context } : {}),
     });
     this.code = "ERR_PROCEDURE_INVALID_DEFINITION";
+  }
+}
+
+/**
+ * Thrown synchronously by {@link M3LProcedure.run} when a caller-supplied
+ * run option violates its contract — before any step executes. Distinct
+ * from `ERR_PROCEDURE_INVALID_DEFINITION`, which is a `build()`-time problem
+ * with the procedure's own declaration, not with a particular run's options.
+ */
+export class M3LProcedureInvalidOptionError extends M3LError {
+  /** Narrows the inherited `code` to the literal `"ERR_PROCEDURE_INVALID_OPTION"`. */
+  override readonly code: "ERR_PROCEDURE_INVALID_OPTION";
+
+  constructor(message: string, context?: Record<string, unknown>) {
+    super(message, {
+      code: "ERR_PROCEDURE_INVALID_OPTION",
+      ...(context !== undefined ? { context } : {}),
+    });
+    this.code = "ERR_PROCEDURE_INVALID_OPTION";
+  }
+}
+
+/**
+ * Resolved as a `"failed"` outcome's `error` (never a rejection) by
+ * {@link M3LProcedure.run} when a run's step executions exceed a ceiling:
+ * either the overall run's iteration ceiling (`options.maxIterations`,
+ * defaulting to `M3L_PROCEDURE_MAX_ITERATIONS`) or one step's own declared
+ * `loop.maxRevisits` ceiling. `context["limit"]` discriminates the two —
+ * `"iterations"` or `"revisits"`.
+ */
+export class M3LProcedureIterationLimitError extends M3LError {
+  /** Narrows the inherited `code` to the literal `"ERR_PROCEDURE_ITERATION_LIMIT"`. */
+  override readonly code: "ERR_PROCEDURE_ITERATION_LIMIT";
+
+  constructor(message: string, context: Record<string, unknown>) {
+    super(message, { code: "ERR_PROCEDURE_ITERATION_LIMIT", context });
+    this.code = "ERR_PROCEDURE_ITERATION_LIMIT";
   }
 }
