@@ -754,7 +754,7 @@ describe("core/procedure — conditions", () => {
         scope,
       );
       expect(evaluation.satisfied).toBe(false);
-      expect(evaluation.references[0]?.oversized).toBe(true);
+      expect(evaluation.references[0]?.refused).toBe("oversized");
     });
 
     test("adversarial-padding: a ~500,000-character subject is refused in bounded time, not scanned", () => {
@@ -772,7 +772,7 @@ describe("core/procedure — conditions", () => {
       const elapsedMs = performance.now() - start;
       expect(elapsedMs).toBeLessThan(200);
       expect(evaluation.satisfied).toBe(false);
-      expect(evaluation.references[0]?.oversized).toBe(true);
+      expect(evaluation.references[0]?.refused).toBe("oversized");
     });
 
     test("a malformed pattern (one `new RegExp` rejects) makes the arm false, not a throw — reachable without build()", () => {
@@ -799,6 +799,26 @@ describe("core/procedure — conditions", () => {
         scope,
       );
       expect(evaluation.satisfied).toBe(false);
+    });
+
+    test('a malformed pattern marks the resolved reference `refused: "invalid-pattern"`, distinguishing it from a legitimate no-match', () => {
+      // Same malformed source as the previous test — "(" genuinely rejects
+      // in `new RegExp` (verified out-of-band). A malformed pattern and a
+      // pattern that simply fails to match both yield `satisfied: false`;
+      // without a distinct refusal marker on the resolved reference the two
+      // are indistinguishable to a caller inspecting `references`.
+      const scope = buildScope({ output: "anything" });
+      const condition: M3LProcedureCondition<TestShape> = {
+        kind: "matches",
+        subject: { source: "step", step: "count-errors" },
+        pattern: "(",
+      };
+      const evaluation = evaluateProcedureCondition<TestShape>(
+        condition,
+        scope,
+      );
+      expect(evaluation.satisfied).toBe(false);
+      expect(evaluation.references[0]?.refused).toBe("invalid-pattern");
     });
 
     test("evaluating the same matches condition twice yields the same result (no lastIndex carry)", () => {
@@ -1329,10 +1349,13 @@ describe("core/procedure — conditions", () => {
         EMPTY_SCOPE,
       );
       expect(evaluation.satisfied).toBe(false);
-      expect(evaluation.references[0]).toMatchObject({
-        present: false,
-        resolved: undefined,
-      });
+      const reference = evaluation.references[0];
+      expect(reference).toMatchObject({ present: false });
+      // `exactOptionalPropertyTypes` means the `present: false` arm omits
+      // `resolved` entirely rather than setting it to `undefined` — assert
+      // the key is genuinely absent, not merely `undefined`-valued, since
+      // `toMatchObject` treats the two differently.
+      expect(reference !== undefined && "resolved" in reference).toBe(false);
     });
 
     test('detail renders a short explanation, e.g. "12 > 5"', () => {

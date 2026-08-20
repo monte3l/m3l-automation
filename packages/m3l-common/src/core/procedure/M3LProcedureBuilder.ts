@@ -6,14 +6,15 @@
  * @packageDocumentation
  */
 
+import { createBuiltDefinition } from "../../internal/procedure/definition.js";
 import {
   buildProcedureSummary,
   computeProcedureDigest,
 } from "../../internal/procedure/digest.js";
 import { M3LProcedureInvalidDefinitionError } from "../../internal/procedure/errors.js";
 import {
-  collectProcedureProblems,
   renderProcedureProblemsMessage,
+  validateProcedureDefinition,
 } from "../../internal/procedure/validate.js";
 
 import { M3LProcedure } from "./M3LProcedure.js";
@@ -186,7 +187,7 @@ export class M3LProcedureBuilder<
     fallback: M3LProcedureFallback<TShape>,
     options?: M3LProcedureBuildOptions,
   ): M3LProcedure<TShape> {
-    const problems = collectProcedureProblems({
+    const outcome = validateProcedureDefinition({
       name: this.#name,
       steps: this.#steps,
       cases: this.#cases,
@@ -195,82 +196,89 @@ export class M3LProcedureBuilder<
       revision: options?.revision,
     });
 
-    if (problems.length > 0) {
+    if (outcome.kind === "invalid") {
       throw new M3LProcedureInvalidDefinitionError(
-        renderProcedureProblemsMessage(problems),
-        { problems },
+        renderProcedureProblemsMessage(outcome.problems),
+        { problems: outcome.problems },
       );
     }
 
-    const validated = this.#toValidatedDefinition(fallback, options);
-    const summary = buildProcedureSummary(validated);
+    const { definition, fallbackAction } = outcome;
+    const summary = buildProcedureSummary(definition);
     const digest = computeProcedureDigest(summary);
 
-    // Every raw entry pushed by `.step()`/`.case()` already satisfies its own
-    // typed `M3LProcedureStep`/`M3LProcedureCase` shape at its call site; the
-    // cast here just restores that type after it passed through the
-    // internal `unknown[]` accumulator, the same pattern
-    // `#toValidatedDefinition` already uses for the summary projection.
-    const steps = this.#steps.map(
-      (raw) =>
-        raw as M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>,
+    return new M3LProcedure<TShape>(
+      createBuiltDefinition<TShape>({
+        digest,
+        summary,
+        steps: this.#buildRuntimeSteps(definition),
+        cases: this.#buildRuntimeCases(definition),
+        fallback: {
+          description: definition.fallback.description,
+          prose: definition.fallback.prose,
+          action: fallbackAction,
+        } as M3LProcedureFallback<TShape>,
+      }),
     );
-    const cases = this.#cases.map(
-      (raw) => raw as M3LProcedureCase<TShape, TShape["caseId"]>,
-    );
+  }
 
-    return new M3LProcedure<TShape>({
-      digest,
-      summary,
-      steps,
-      cases,
-      fallback,
+  /**
+   * Combines each validated step's scalar fields — every one already read
+   * exactly once by {@link validateProcedureDefinition} — with the real
+   * `execute`/`describeTrace` closures, read directly off the matching raw
+   * entry. Functions are never part of the digest (they are not
+   * canonical-JSON serialisable) and were never touched during validation,
+   * so reading them here, once, does not reopen the "validate then re-read"
+   * hazard the rest of this method closes: every scalar field the digest
+   * hashes comes from `definition`, never from a second look at the raw
+   * step.
+   */
+  #buildRuntimeSteps(
+    definition: ValidatedProcedureDefinition,
+  ): readonly M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>[] {
+    return definition.steps.map((validated, index) => {
+      const typedRaw = this.#steps[index] as M3LProcedureStep<
+        TShape,
+        TShape["stepId"],
+        TShape["stepId"]
+      >;
+      return {
+        id: validated.id,
+        label: validated.label,
+        kind: validated.kind,
+        continueOnFailure: validated.continueOnFailure,
+        jumpsTo: validated.jumpsTo,
+        ...(validated.loop !== undefined ? { loop: validated.loop } : {}),
+        execute: typedRaw.execute,
+        ...(typedRaw.describeTrace !== undefined
+          ? { describeTrace: typedRaw.describeTrace }
+          : {}),
+      } as M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>;
     });
   }
 
   /**
-   * Projects the raw, accumulated steps/cases/fallback into the validated
-   * shape {@link buildProcedureSummary} consumes. Only ever called once
-   * {@link collectProcedureProblems} confirmed zero problems, so every field
-   * read here is trusted to already satisfy its documented invariant.
+   * Combines each validated case's scalar fields with the real `action`
+   * closure, read directly off the matching raw entry — see {@link
+   * M3LProcedureBuilder.#buildRuntimeSteps} for why reading a function
+   * reference here does not reopen the validate-then-re-read hazard.
    */
-  #toValidatedDefinition(
-    fallback: M3LProcedureFallback<TShape>,
-    options: M3LProcedureBuildOptions | undefined,
-  ): ValidatedProcedureDefinition {
-    return {
-      name: this.#name,
-      revision: options?.revision,
-      steps: this.#steps.map((raw) => {
-        const step = raw as M3LProcedureStep<
-          TShape,
-          TShape["stepId"],
-          TShape["stepId"]
-        >;
-        return {
-          id: step.id,
-          label: step.label,
-          kind: step.kind,
-          continueOnFailure: step.continueOnFailure ?? false,
-          jumpsTo: step.jumpsTo ?? [],
-          loop: step.loop,
-        };
-      }),
-      cases: this.#cases.map((raw) => {
-        const entry = raw as M3LProcedureCase<TShape, TShape["caseId"]>;
-        return {
-          id: entry.id,
-          description: entry.description,
-          prose: entry.prose,
-          priority: entry.priority,
-          condition: entry.condition,
-        };
-      }),
-      fallback: {
-        description: fallback.description,
-        prose: fallback.prose,
-      },
-      parameters: this.#parameters,
-    };
+  #buildRuntimeCases(
+    definition: ValidatedProcedureDefinition,
+  ): readonly M3LProcedureCase<TShape, TShape["caseId"]>[] {
+    return definition.cases.map((validated, index) => {
+      const typedRaw = this.#cases[index] as M3LProcedureCase<
+        TShape,
+        TShape["caseId"]
+      >;
+      return {
+        id: validated.id,
+        description: validated.description,
+        prose: validated.prose,
+        condition: validated.condition,
+        priority: validated.priority,
+        action: typedRaw.action,
+      } as M3LProcedureCase<TShape, TShape["caseId"]>;
+    });
   }
 }

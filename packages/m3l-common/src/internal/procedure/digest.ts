@@ -43,10 +43,12 @@ export function buildProcedureSummary(
       id: step.id,
       label: step.label,
       // `M3LProcedureStepKind` is a closed string union at the type level;
-      // this projection is validated only up to "is a non-empty string" at
-      // runtime (an untyped caller's `kind` is not otherwise checked), so
-      // the cast mirrors what the rest of this module already assumes about
-      // a definition that passed `collectProcedureProblems`.
+      // `collectProcedureProblems`'s `checkStepKindDeclaration` enforces the
+      // runtime floor — "is a non-empty string" — before this projection
+      // ever runs, so an untyped caller's malformed `kind` is already an
+      // `ERR_PROCEDURE_INVALID_DECLARATION` problem and never reaches here.
+      // The cast below only recovers the type-level literal union from a
+      // value already known to be a validated string.
       kind: step.kind as M3LProcedureSummary["steps"][number]["kind"],
       continueOnFailure: step.continueOnFailure,
       jumpsTo: step.jumpsTo,

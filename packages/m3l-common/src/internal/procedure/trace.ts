@@ -6,20 +6,27 @@
  * transliterates).
  *
  * Tracing is opt-in and never load-bearing: a throwing `describeTrace`, a
- * throwing getter on its return, or a throwing `sink.record` is guarded
+ * throwing getter on its return, a throwing `classify` (including one raised
+ * by a hostile `flow.goTo` getter), or a throwing `sink.record` is guarded
  * independently and can never change a run's outcome
  * (`docs/reference/core/procedure.md` § Tracing). A step's own settlement —
  * success, absorbed recovery, or unabsorbed failure/abort — is decided
  * entirely by the engine before this module is consulted; only the tracing
- * side effects (the `describeTrace` call and the `sink.record` call) are
- * guarded here.
+ * side effects (the `describeTrace` call, the `classify` call, and the
+ * `sink.record` call) are guarded here — never as an argument expression
+ * evaluated ahead of a guard, always inside one.
  *
  * Private to `core/procedure`; never re-exported through a public barrel.
  */
 
 import { M3L_ERROR_CODES, M3LError } from "../../core/errors/index.js";
 import { isDangerousKey } from "../../core/security/index.js";
-import { isBoolean, isNumber, isString } from "../../core/utils/guards.js";
+import {
+  isBoolean,
+  isNumber,
+  isPlainObject,
+  isString,
+} from "../../core/utils/guards.js";
 
 import type { M3LBreadcrumbScalar } from "../../core/diagnostics/index.js";
 import type { M3LLogger } from "../../core/logging/M3LLogger.js";
@@ -29,6 +36,7 @@ import type {
   M3LProcedureOutcome,
   M3LProcedureShape,
   M3LProcedureStep,
+  M3LProcedureTraceEntry,
   M3LProcedureTraceOptions,
   M3LProcedureTraceSink,
 } from "../../core/procedure/types.js";
@@ -61,15 +69,33 @@ export interface M3LProcedureStepTraceClassification {
 
 /**
  * Projects a step's {@link M3LProcedureFlow} directive to the scalar form a
- * breadcrumb-shaped sink can retain: `"continue"`, `"stop"`, and `"resolve"`
- * pass through verbatim, while the `{ goTo }` object form — which a scalar
- * sink would otherwise silently drop — becomes `"goTo:<targetId>"`.
+ * breadcrumb-shaped sink can retain: the exact strings `"continue"`,
+ * `"stop"`, and `"resolve"` pass through verbatim, and the `{ goTo }` object
+ * form — which a scalar sink would otherwise silently drop — becomes
+ * `"goTo:<targetId>"`, but only when `goTo` itself is genuinely a string.
+ *
+ * `flow` is declared as {@link M3LProcedureFlow}, but this function does not
+ * trust that declaration at runtime: a step's own `execute` is caller code,
+ * so `flow` can in practice be `null`, hold a non-string `goTo` (a `Symbol`,
+ * for instance — interpolating one throws `TypeError`), or expose a `goTo`
+ * accessor that throws. Every one of those degrades to `undefined` rather
+ * than propagating a throw or a bogus string; the caller is responsible for
+ * guarding the property read that can still throw (a hostile `goTo` getter)
+ * — see {@link recordStep}.
  *
  * @param flow - The step's resolved flow directive.
- * @returns The scalar projection.
+ * @returns The scalar projection, or `undefined` when `flow` does not
+ *   conform to the exact-string or `{ goTo: string }` shapes above.
  */
-export function projectFlowToScalar(flow: M3LProcedureFlow<string>): string {
-  return typeof flow === "object" ? `goTo:${flow.goTo}` : flow;
+export function projectFlowToScalar(
+  flow: M3LProcedureFlow<string>,
+): string | undefined {
+  if (flow === "continue" || flow === "stop" || flow === "resolve") {
+    return flow;
+  }
+  if (typeof flow !== "object" || flow === null) return undefined;
+  const goTo: unknown = flow.goTo;
+  return isString(goTo) ? `goTo:${goTo}` : undefined;
 }
 
 /**
@@ -94,7 +120,11 @@ export interface M3LProcedureTracer<TShape extends M3LProcedureShape> {
    *   internally — never expected to throw.
    * @param classify - Reads `body`'s resolved result into the `failed`/`flow`
    *   this entry records. Called AFTER `body` settles, so the recorded
-   *   `durationMs` covers the whole execution.
+   *   `durationMs` covers the whole execution, and INSIDE the same guarded
+   *   region as the payload build and `sink.record` call — a throw from
+   *   `classify` itself, or from a property read it triggers (e.g. a hostile
+   *   `flow.goTo` getter), is warned about and dropped like any other
+   *   tracing failure; it can never affect the `result` this method returns.
    * @returns Whatever `body` resolved, unchanged.
    */
   runStep<TResult>(
@@ -112,6 +142,20 @@ export interface M3LProcedureTracer<TShape extends M3LProcedureShape> {
    * @param outcome - The run's fully resolved outcome.
    */
   recordOutcome(outcome: M3LProcedureOutcome<TShape>): void;
+
+  /**
+   * The {@link M3LProcedureTraceEntry} built for every `runStep` call so
+   * far, in execution order — the SAME entries `runStep` derives the sink's
+   * flattened payload from, never a second, independently-rebuilt
+   * projection. The engine reads this once, when assembling
+   * `outcome.trace`, instead of re-invoking a step's `describeTrace` itself;
+   * that "one call, one projection, two consumers" shape is what keeps a
+   * caller-supplied `describeTrace` from running twice per step (once for
+   * the sink, once for the retained outcome), which would let a
+   * non-idempotent or getter-backed return disagree between the two.
+   * Always `[]` when tracing isn't configured for this run.
+   */
+  entries(): readonly M3LProcedureTraceEntry[];
 }
 
 /**
@@ -141,11 +185,15 @@ export function createProcedureTracer<TShape extends M3LProcedureShape>(
       recordOutcome() {
         // Tracing not configured — no sink is ever touched.
       },
+      entries() {
+        return [];
+      },
     };
   }
 
   const source = options.source ?? DEFAULT_TRACE_SOURCE;
   const sink = options.sink;
+  const entries: M3LProcedureTraceEntry[] = [];
 
   return {
     async runStep(step, context, attempt, body, classify) {
@@ -153,8 +201,14 @@ export function createProcedureTracer<TShape extends M3LProcedureShape>(
       const start = performance.now();
       const result = await body();
 
-      // Recorded exactly once — a record-time failure is fully guarded
-      // inside recordStep and can never affect `result` returned below.
+      // Recorded exactly once. `classify(result)` is evaluated INSIDE
+      // recordStep's own guarded `try` (passed through unevaluated, along
+      // with `result`) — a record-time failure, including one raised by
+      // `classify` reading a hostile property on `result`, is fully guarded
+      // and can never affect `result` returned below. The entry built here
+      // is pushed onto `entries` BEFORE `sink.record` is attempted, so a
+      // failing `sink.record` call warns but never discards the entry the
+      // outcome's `trace` array will read back via {@link entries}.
       recordStep(
         sink,
         source,
@@ -162,13 +216,18 @@ export function createProcedureTracer<TShape extends M3LProcedureShape>(
         extra,
         attempt,
         start,
-        classify(result),
+        result,
+        classify,
+        entries,
         logger,
       );
       return result;
     },
     recordOutcome(outcome) {
-      recordOutcomeEntry(sink, source, outcome);
+      recordOutcomeEntry(sink, source, outcome, logger);
+    },
+    entries() {
+      return entries;
     },
   };
 }
@@ -179,18 +238,37 @@ export function createProcedureTracer<TShape extends M3LProcedureShape>(
  * call. A throw is warned about (naming the step and, when classifiable, the
  * error's `code` — never its `message` or `name`) and degrades to an empty
  * extra-keys record — it never affects the step's own execution.
+ *
+ * Both the `step.describeTrace` read and the `step.id` read used to build the
+ * warning label happen INSIDE the `try`, alongside the call itself — a
+ * throwing `describeTrace` accessor or a throwing `id` getter is guarded the
+ * same way a throwing `describeTrace()` call is. `stepId` is read once into
+ * `stepRef`, reused by the `catch` below instead of re-reading `step.id` a
+ * second time (which could itself throw, or diverge from the first read).
+ *
+ * The return is also shape-narrowed: a `describeTrace` that returns anything
+ * other than a plain object (e.g. it falls off the end and returns
+ * `undefined`, or returns a string/array) degrades to `{}` rather than
+ * reaching `Object.keys` downstream, so a malformed return only drops the
+ * `describeTrace` extras — never the engine-owned `stepId`/`failed`/
+ * `durationMs` keys {@link buildStepPayload} applies afterward.
  */
 function safeDescribeStep<TShape extends M3LProcedureShape>(
   step: M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>,
   context: M3LProcedureContext<TShape>,
   logger: M3LLogger | undefined,
 ): Readonly<Record<string, M3LBreadcrumbScalar>> {
-  const describeTrace = step.describeTrace;
-  if (describeTrace === undefined) return {};
+  let stepRef = "step";
   try {
-    return describeTrace(context);
+    stepRef = `step '${String(step.id)}'`;
+    const describeTrace = step.describeTrace;
+    if (describeTrace === undefined) return {};
+    const described: unknown = describeTrace(context);
+    return isPlainObject(described)
+      ? (described as Readonly<Record<string, M3LBreadcrumbScalar>>)
+      : {};
   } catch (error) {
-    warnTracingFailure(logger, `step '${step.id}'`, error);
+    warnTracingFailure(logger, stepRef, error);
     return {};
   }
 }
@@ -210,86 +288,136 @@ function isBreadcrumbScalarValue(value: unknown): value is M3LBreadcrumbScalar {
 }
 
 /**
- * Projects `extra` (the `describeTrace` return) plus the engine's own
- * `stepId`/`label`/`kind`/`attempt`/`durationMs`/`failed`/`flow` keys into
- * the payload recorded for one step.
- *
- * Every property read on `extra` — including a hostile getter — happens
- * here, inside the caller's guarded `try` (see {@link recordStep}), so a
- * throwing accessor can never escape unguarded. Each `extra` key is kept
- * only when both:
- * - it is not a dangerous prototype-pollution key (`__proto__`,
- *   `constructor`, `prototype` — see `core/security`'s `isDangerousKey`),
- *   and
- * - its value is a genuine {@link M3LBreadcrumbScalar}; anything else is
- *   dropped rather than stored by reference.
- *
- * The engine's own keys are applied AFTER `extra` — a `describeTrace` return
- * forging `failed: true` on an otherwise-successful step is overwritten
- * rather than left standing. `failed` is always set (never omitted, even
- * when `false`); `flow` is set when defined and otherwise removed, since
- * `undefined` is not itself a valid {@link M3LBreadcrumbScalar}.
+ * Sanitizes `extra` (the `describeTrace` return) into a genuine
+ * breadcrumb-safe payload, dropping any dangerous prototype-pollution key
+ * (`__proto__`, `constructor`, `prototype` — see `core/security`'s
+ * `isDangerousKey`) and any non-{@link M3LBreadcrumbScalar} value — every
+ * property read on `extra`, including a hostile getter, happens here, inside
+ * the caller's guarded `try` (see {@link recordStep}), so a throwing
+ * accessor can never escape unguarded. The result becomes the retained
+ * {@link M3LProcedureTraceEntry}'s own `payload` field — never stored by
+ * reference from the caller's original return.
  */
-function buildStepPayload<TShape extends M3LProcedureShape>(
+function sanitizeTraceExtras(
+  extra: Readonly<Record<string, M3LBreadcrumbScalar>>,
+): Record<string, M3LBreadcrumbScalar> {
+  const sanitized: Record<string, M3LBreadcrumbScalar> = {};
+  for (const key of Object.keys(extra)) {
+    if (isDangerousKey(key)) continue;
+    const value: unknown = extra[key];
+    if (isBreadcrumbScalarValue(value)) {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized;
+}
+
+/**
+ * Builds the single {@link M3LProcedureTraceEntry} for one step attempt —
+ * the ONE projection both the sink payload ({@link flattenEntryForSink}) and
+ * the retained `outcome.trace` entry ({@link M3LProcedureTracer.entries})
+ * are derived from, so a caller-supplied `describeTrace` is read exactly
+ * once per step rather than once per consumer.
+ */
+function buildTraceEntry<TShape extends M3LProcedureShape>(
   extra: Readonly<Record<string, M3LBreadcrumbScalar>>,
   step: M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>,
   attempt: number,
   durationMs: number,
   classification: M3LProcedureStepTraceClassification,
+): M3LProcedureTraceEntry {
+  return {
+    stepId: step.id,
+    label: step.label,
+    kind: step.kind,
+    attempt,
+    durationMs,
+    failed: classification.failed,
+    flow: classification.flow,
+    payload: sanitizeTraceExtras(extra),
+  };
+}
+
+/**
+ * Flattens `entry` into the single-level payload `sink.record` expects: the
+ * sanitized `describeTrace` extras plus the engine's own scalar fields,
+ * applied AFTER the extras so a `describeTrace` return forging e.g.
+ * `failed: true` on an otherwise-successful step is overwritten rather than
+ * left standing. `flow` is included only when defined — `entry.flow` is
+ * already the scalar-or-`undefined` projection {@link projectFlowToScalar}
+ * guarantees, so no further allowlist check is needed here.
+ */
+function flattenEntryForSink(
+  entry: M3LProcedureTraceEntry,
 ): Record<string, M3LBreadcrumbScalar> {
-  const payload: Record<string, M3LBreadcrumbScalar> = {};
-  for (const key of Object.keys(extra)) {
-    if (isDangerousKey(key)) continue;
-    const value: unknown = extra[key];
-    if (isBreadcrumbScalarValue(value)) {
-      payload[key] = value;
-    }
-  }
-  payload["stepId"] = step.id;
-  payload["label"] = step.label;
-  payload["kind"] = step.kind;
-  payload["attempt"] = attempt;
-  payload["durationMs"] = durationMs;
-  payload["failed"] = classification.failed;
-  if (classification.flow === undefined) {
-    delete payload["flow"];
+  const payload: Record<string, M3LBreadcrumbScalar> = { ...entry.payload };
+  payload["stepId"] = entry.stepId;
+  payload["label"] = entry.label;
+  payload["kind"] = entry.kind;
+  payload["attempt"] = entry.attempt;
+  payload["durationMs"] = entry.durationMs;
+  payload["failed"] = entry.failed;
+  if (entry.flow !== undefined) {
+    payload["flow"] = entry.flow;
   } else {
-    payload["flow"] = classification.flow;
+    delete payload["flow"];
   }
   return payload;
 }
 
 /**
- * Assembles one step's payload and records it via `sink.record`, guarded
- * independently from the `describeTrace` call above.
+ * Classifies `result`, builds the one {@link M3LProcedureTraceEntry} for
+ * this attempt, retains it on `entries`, and records its flattened form via
+ * `sink.record` — guarded independently from the `describeTrace` call above.
  *
- * Building the payload (every property read on `extra`) and calling
- * `sink.record` are covered by the SAME `try` — a hostile `describeTrace`
- * return (e.g. a throwing getter) is only ever read here, never before this
- * guard, so it can never escape unguarded.
+ * `classify(result)` is passed through unevaluated and invoked HERE, inside
+ * the same `try` that covers building the entry (every property read on
+ * `extra`) and the `sink.record` call itself — a throw from `classify`, or
+ * from any property read it triggers on `result` (e.g. a hostile `flow.goTo`
+ * getter reached through {@link projectFlowToScalar}), is guarded exactly
+ * like a hostile `describeTrace` return, so it can never escape unguarded
+ * and can never affect the already-settled `result` the caller returns; on
+ * such a throw, no entry is pushed at all — both consumers lose the same
+ * attempt uniformly, rather than one seeing a partial record the other
+ * doesn't.
+ *
+ * The entry is pushed onto `entries` BEFORE `sink.record` is attempted, so a
+ * failing `sink.record` call — warned about below — never discards the
+ * entry the outcome's `trace` array will read back.
+ *
+ * `step.id` is read once into `stepRef`, inside the same `try`, and reused by
+ * the `catch` below instead of being re-read there — the warning names the
+ * step from a single observation, never a second one that could diverge from
+ * (or itself throw independently of) the first.
  */
-function recordStep<TShape extends M3LProcedureShape>(
+function recordStep<TShape extends M3LProcedureShape, TResult>(
   sink: M3LProcedureTraceSink,
   source: string,
   step: M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>,
   extra: Readonly<Record<string, M3LBreadcrumbScalar>>,
   attempt: number,
   startedAt: number,
-  classification: M3LProcedureStepTraceClassification,
+  result: TResult,
+  classify: (result: TResult) => M3LProcedureStepTraceClassification,
+  entries: M3LProcedureTraceEntry[],
   logger: M3LLogger | undefined,
 ): void {
   const durationMs = performance.now() - startedAt;
+  let stepRef = "step";
   try {
-    const payload = buildStepPayload(
+    stepRef = `step '${String(step.id)}'`;
+    const classification = classify(result);
+    const entry = buildTraceEntry(
       extra,
       step,
       attempt,
       durationMs,
       classification,
     );
-    sink.record(source, STEP_EVENT, payload);
+    entries.push(entry);
+    sink.record(source, STEP_EVENT, flattenEntryForSink(entry));
   } catch (error) {
-    warnTracingFailure(logger, `step '${step.id}'`, error);
+    warnTracingFailure(logger, stepRef, error);
   }
 }
 
@@ -331,23 +459,22 @@ function buildOutcomePayload<TShape extends M3LProcedureShape>(
 
 /**
  * Assembles the run's outcome payload and records it via `sink.record`,
- * guarded the same way {@link recordStep} guards its own payload
- * build + record pair — except a failure here is swallowed without a
- * `logger.warning` call: the documented warning contract names *the step*
- * a tracing failure occurred at, and the single per-run outcome event has
- * no step to name.
+ * guarded exactly the way {@link recordStep} guards its own payload
+ * build + record pair, including the same `logger.warning` call on failure —
+ * `warnTracingFailure`'s `label` parameter is free-form, so the single
+ * per-run outcome event is named `"run outcome"` in place of a step id.
  */
 function recordOutcomeEntry<TShape extends M3LProcedureShape>(
   sink: M3LProcedureTraceSink,
   source: string,
   outcome: M3LProcedureOutcome<TShape>,
+  logger: M3LLogger | undefined,
 ): void {
   try {
     const payload = buildOutcomePayload(outcome);
     sink.record(source, OUTCOME_EVENT, payload);
-  } catch {
-    // Best-effort, unlogged: see the TSDoc above for why this differs from
-    // `recordStep`'s guarded-and-warned failure path.
+  } catch (error) {
+    warnTracingFailure(logger, "run outcome", error);
   }
 }
 

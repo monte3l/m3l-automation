@@ -7,9 +7,16 @@
  * constructor and no public definition type" for `M3LProcedure` — `build()`
  * is meant to be the only path to an instance. This module is the mechanism:
  * `M3LProcedure`'s constructor takes this interface as its only parameter,
- * and this interface is never re-exported from a public barrel, so no caller
- * outside this package can name the parameter type (short of an explicit
- * `as` escape hatch, which no amount of API design can prevent).
+ * and every field of that interface is gated behind {@link kBuilt}, a
+ * module-private `unique symbol` that is never exported. A caller outside
+ * this module cannot name the key, so it cannot spell an object literal
+ * that satisfies the interface — construction is unforgeable, not merely
+ * unexported, and no `as` escape hatch changes that: casting a value to this
+ * type does not summon a value _for_ the `[kBuilt]` property, since nothing
+ * outside this module can produce one to assign. {@link createBuiltDefinition}
+ * is the sole producer of that value — `M3LProcedureBuilder.build()` calls
+ * it once it has confirmed zero validation problems, and no other module can
+ * write the witness itself.
  *
  * Widened by the engine-loop GREEN pass to carry the runtime step/case/
  * fallback tables `M3LProcedure.run()` needs, alongside the digest and
@@ -27,11 +34,21 @@ import type {
 } from "../../core/procedure/types.js";
 
 /**
+ * Module-private witness key. Never exported: only code inside this module
+ * can write a property keyed by this symbol, so {@link createBuiltDefinition}
+ * — the sole producer of a value satisfying {@link
+ * M3LProcedureBuiltDefinition} — is the only place one can be constructed.
+ */
+const kBuilt: unique symbol = Symbol("M3LProcedureBuiltDefinition.kBuilt");
+
+/**
  * The validated, frozen shape `build()` hands to `new M3LProcedure(...)`.
  *
  * @typeParam TShape - The procedure's declared shape.
  */
 export interface M3LProcedureBuiltDefinition<TShape extends M3LProcedureShape> {
+  /** Module-private witness: no external caller can name or produce this key. */
+  readonly [kBuilt]: true;
   /** `canonicalJsonHash` over the built definition's serialisable projection. */
   readonly digest: string;
   /** The exact projection `digest` hashes; returned verbatim by `describe()`. */
@@ -56,4 +73,26 @@ export interface M3LProcedureBuiltDefinition<TShape extends M3LProcedureShape> {
   readonly cases: readonly M3LProcedureCase<TShape, TShape["caseId"]>[];
   /** The mandatory "no case matched" conclusion, with its real `action`. */
   readonly fallback: M3LProcedureFallback<TShape>;
+}
+
+/**
+ * The sole producer of a value satisfying {@link
+ * M3LProcedureBuiltDefinition}. Stamps the module-private {@link kBuilt}
+ * witness onto the caller-supplied fields — since {@link kBuilt} is never
+ * exported, no module other than this one can spell the property this
+ * function attaches, so no caller of `M3LProcedureBuilder.build()` (nor
+ * `build()`'s own object-literal syntax, were it to try) can construct a
+ * {@link M3LProcedureBuiltDefinition} by any route except calling this
+ * function.
+ *
+ * @typeParam TShape - The procedure's declared shape.
+ * @param fields - Every field of {@link M3LProcedureBuiltDefinition} except
+ *   the witness itself: the digest, the summary, and the validated runtime
+ *   steps/cases/fallback tables.
+ * @returns The witnessed, built definition — ready for `new M3LProcedure(...)`.
+ */
+export function createBuiltDefinition<TShape extends M3LProcedureShape>(
+  fields: Omit<M3LProcedureBuiltDefinition<TShape>, typeof kBuilt>,
+): M3LProcedureBuiltDefinition<TShape> {
+  return { ...fields, [kBuilt]: true };
 }

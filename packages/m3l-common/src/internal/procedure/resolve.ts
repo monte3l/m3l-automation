@@ -165,14 +165,18 @@ export function resolveReference<TShape extends M3LProcedureShape>(
   reference: M3LProcedureReference<TShape>,
   scope: M3LProcedureConditionScope<TShape>,
 ): M3LProcedureResolvedReference {
+  const referenceString = renderReferenceString(reference);
   const resolved =
     reference.source === "literal"
       ? reference.literal
       : resolveNonLiteral(reference, scope);
+  if (resolved === undefined) {
+    return { reference: referenceString, present: false };
+  }
   return {
-    reference: renderReferenceString(reference),
-    present: resolved !== undefined,
-    resolved: resolved as M3LProcedureValue | undefined,
+    reference: referenceString,
+    present: true,
+    resolved: resolved as M3LProcedureValue,
   };
 }
 
@@ -190,7 +194,11 @@ function resolveNonLiteral<TShape extends M3LProcedureShape>(
 /** The result of applying a `matches` pattern to an already-resolved subject. */
 export interface MatchesApplicationResult {
   readonly satisfied: boolean;
-  /** The subject's resolved reference, `oversized: true` when refused unscanned. */
+  /**
+   * The subject's resolved reference, `refused: "oversized"` or
+   * `refused: "invalid-pattern"` when a resolved value was declined rather
+   * than scanned.
+   */
   readonly reference: M3LProcedureResolvedReference;
 }
 
@@ -198,12 +206,16 @@ export interface MatchesApplicationResult {
  * Applies a `matches` pattern to an already-resolved subject, honouring the
  * input-length bound: a string longer than
  * {@link M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH} is refused, not scanned — the
- * arm is `false` and the returned reference is marked `oversized: true`, so
- * "no match" is never silently indistinguishable from "not checked". Total:
- * a non-string subject and a pattern that fails to compile both degrade to
- * `false` rather than throwing — `matches` patterns are validated at
- * `build()` time (a later pass), but this evaluator must stay total even
- * when called directly, bypassing `build()`.
+ * arm is `false` and the returned reference is marked `refused: "oversized"`,
+ * so "no match" is never silently indistinguishable from "not checked". A
+ * pattern that fails to compile degrades the same way, marked
+ * `refused: "invalid-pattern"` — `matches` patterns are validated at
+ * `build()` time (a later pass), but this evaluator is public and documented
+ * as callable directly, bypassing `build()`, so a malformed pattern reaching
+ * it here must stay distinguishable from a genuine no-match rather than
+ * collapsing to the same unmarked `false`. Total: a non-string subject
+ * degrades to `false` with no refusal marker, since there was nothing to
+ * refuse — the subject was simply never a candidate for scanning.
  */
 export function applyMatchesPattern(
   subject: M3LProcedureResolvedReference,
@@ -214,7 +226,10 @@ export function applyMatchesPattern(
     return { satisfied: false, reference: subject };
   }
   if (subject.resolved.length > M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH) {
-    return { satisfied: false, reference: { ...subject, oversized: true } };
+    return {
+      satisfied: false,
+      reference: { ...subject, refused: "oversized" },
+    };
   }
   try {
     const regex = new RegExp(pattern, ignoreCase ? "i" : "");
@@ -222,7 +237,11 @@ export function applyMatchesPattern(
   } catch {
     // A malformed pattern is a build-time `ERR_PROCEDURE_INVALID_PATTERN`
     // problem elsewhere; this evaluator stays total even if called directly
-    // with one that was never validated.
-    return { satisfied: false, reference: subject };
+    // with one that was never validated, and marks the refusal so a
+    // malformed pattern is never indistinguishable from a genuine no-match.
+    return {
+      satisfied: false,
+      reference: { ...subject, refused: "invalid-pattern" },
+    };
   }
 }

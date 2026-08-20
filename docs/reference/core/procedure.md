@@ -483,9 +483,13 @@ Four enforced properties:
 4. The **subject** is untrusted and therefore bounded: a resolved string longer
    than `M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH` (8192) is **refused, not
    scanned** — the arm evaluates `false` and the resolved reference is marked
-   `oversized`, so "no match" is never silently indistinguishable from "not
-   checked". Patterns are compiled once at `build()`, never with the `g` or `y`
-   flag, so no `lastIndex` state carries between cases or between runs.
+   `refused: "oversized"`, so "no match" is never silently indistinguishable
+   from "not checked". A pattern is **validated** at `build()` and compiled
+   **per evaluation**, never with the `g` or `y` flag, so no `lastIndex` state
+   carries between cases or between runs. A source that survives build-time
+   validation but still fails to compile — reachable only by calling
+   `evaluateProcedureCondition` directly, without `build()` — is reported as
+   `refused: "invalid-pattern"` rather than as a plain non-match.
 
 ### Explainability
 
@@ -498,9 +502,9 @@ interface M3LProcedureResolvedReference {
   readonly reference: string;
   /** `false` when the reference addressed something absent. */
   readonly present: boolean;
-  readonly resolved: M3LProcedureValue | undefined;
-  /** Set when a string was refused for exceeding the `matches` input bound. */
-  readonly oversized?: true;
+  readonly resolved: M3LProcedureValue;
+  /** Set when an arm declined a value that did resolve. */
+  readonly refused?: "oversized" | "invalid-pattern";
 }
 
 /** A tree mirroring the condition tree, one node per node. */
@@ -817,10 +821,12 @@ every guarantee on this page holds for every instance that exists.
 A procedure is inert and reusable: one `M3LProcedure` may be `run` repeatedly
 **and concurrently**. Everything run-scoped — the context chain, visit counts,
 step records, the trace buffer, the progress tracker — lives in the `run()` call
-frame, never on the instance. Exactly two things are instance state, both
+frame, never on the instance. Everything that _is_ instance state is
 immutable after `build()` and therefore shared safely: the digest (a string) and
-the compiled `matches` patterns (compiled once, never with the `g` or `y` flag,
-so they carry no `lastIndex` between runs).
+the frozen step, case and fallback tables the builder produced, plus the
+step-index map and the digest. All of it is immutable after `build()` and
+therefore shared safely across concurrent runs; no compiled `RegExp` is
+retained, so no `lastIndex` can carry between runs.
 
 ### Option validation
 
@@ -976,7 +982,12 @@ interface M3LProcedureOutcomeBase<TShape extends M3LProcedureShape> {
   readonly digest: string;
   /** `canonicalJsonHash` over this run's parameters. */
   readonly parametersDigest: string;
-  /** The allowlisted per-step trace, in execution order. */
+  /**
+   * The allowlisted per-step trace, in execution order — the same entries the
+   * sink received. **Empty unless `options.trace` was configured**: absent that
+   * option the engine does no tracing work at all and never calls
+   * `describeTrace`, so there is nothing to retain.
+   */
   readonly trace: readonly M3LProcedureTraceEntry[];
   readonly telemetry: M3LProcedureTelemetry<TShape>;
 }
@@ -1276,7 +1287,8 @@ interface M3LProcedureTraceEntry {
    * `M3LProcedureFlow`'s `{ goTo }` arm is an object, and a breadcrumb sink
    * drops a non-scalar payload entry — so the structured form would silently
    * vanish from exactly the trace that is supposed to explain the jump.
-   * `M3LProcedureStepRecord.flow` keeps the structured value.
+   * The structured directive is not surfaced to a caller; the trace's scalar
+   * projection is where a flow becomes observable.
    */
   readonly flow: string | undefined;
   readonly payload: Readonly<Record<string, M3LBreadcrumbScalar>>;
@@ -1365,6 +1377,9 @@ interface Triage extends Core.M3LProcedureShape {
 }
 
 const procedure = Core.createProcedureBuilder<Triage>("log-triage")
+  // Declares the parameter names at run time. Without this, `build()` rejects
+  // the `threshold` reference below under `ERR_PROCEDURE_UNKNOWN_REFERENCE`.
+  .parameters(["window", "threshold"])
   .step({
     id: "count-errors",
     label: "Count ERROR lines in the window",

@@ -27,6 +27,7 @@ import type {
   M3LProcedureOutcome,
   M3LProcedureShape,
   M3LProcedureStepRecord,
+  M3LProcedureStepResult,
   M3LProcedureTraceEntry,
   M3LProcedureTraceSink,
   M3LProcedureValue,
@@ -513,7 +514,111 @@ describe("core/procedure — guards and tracing", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 4. no-progress guard
+  // 4. undeclared jump guard
+  // -------------------------------------------------------------------------
+  describe("undeclared jump guard", () => {
+    // Unreachable from typed TypeScript by design: `jumpsTo` is the sole
+    // inference site for a step's `{ goTo }` target union (`NoInfer` blocks
+    // inference from `execute`'s return in `M3LProcedureStep`), so a typed
+    // caller gets a compile error for either shape below. Both tests reach
+    // the guard the same way the file's other untyped-path tests do — a cast
+    // on the returned step result — simulating an untyped (plain-JS) caller.
+
+    test("a goTo target that names no declared step at all yields a failed outcome under ERR_PROCEDURE_UNDECLARED_JUMP, and the run does not silently continue to the next step", async () => {
+      const nextStepSpy = vi.fn();
+      const { outcome, thrown } = await runCapturing(() => {
+        const procedure = createProcedureBuilder<TS>("undeclared-jump-unknown")
+          .step({
+            id: "s1",
+            label: "s1",
+            kind: "control",
+            jumpsTo: ["s2"] as const,
+            execute: () =>
+              ({
+                flow: { goTo: "ghost" },
+              }) as unknown as M3LProcedureStepResult<TS, "s2">,
+          })
+          .step({
+            id: "s2",
+            label: "s2",
+            kind: "gather",
+            execute: () => {
+              nextStepSpy();
+              return { flow: "stop" };
+            },
+          })
+          .case(ALWAYS_TRUE_CASE)
+          .build(DEFAULT_FALLBACK);
+        return procedure.run({ deps: {}, parameters: {} });
+      });
+
+      expect(thrown).toBeUndefined();
+      expect(outcome?.status).toBe("failed");
+      if (outcome?.status === "failed") {
+        const error = asM3LError(outcome.error);
+        expect(error.code).toBe("ERR_PROCEDURE_UNDECLARED_JUMP");
+      }
+      // The actual regression this guards against: the old engine folded
+      // an unresolved goTo into `index: target ?? index + 1` and silently
+      // ran the next declared step anyway. A code-only assertion would
+      // pass against that broken engine too, since it never checks
+      // whether s2 ran.
+      expect(nextStepSpy).not.toHaveBeenCalled();
+    });
+
+    test("a goTo target naming a declared step absent from the declaring step's own jumpsTo yields a failed outcome under ERR_PROCEDURE_UNDECLARED_JUMP, and the run does not silently continue to the next step", async () => {
+      const nextStepSpy = vi.fn();
+      const { outcome, thrown } = await runCapturing(() => {
+        const procedure = createProcedureBuilder<TS>(
+          "undeclared-jump-declared-elsewhere",
+        )
+          .step({
+            id: "s1",
+            label: "s1",
+            kind: "control",
+            // s1 only ever declares "s2" as a jump target...
+            jumpsTo: ["s2"] as const,
+            execute: () =>
+              // ...but returns "s3" — a step the procedure declares below,
+              // just not in s1's own jumpsTo allowlist. This is the
+              // subtler shape: a lookup that only checked "is this id a
+              // declared step" (ignoring jumpsTo) would wrongly accept it.
+              ({
+                flow: { goTo: "s3" },
+              }) as unknown as M3LProcedureStepResult<TS, "s2">,
+          })
+          .step({
+            id: "s2",
+            label: "s2",
+            kind: "gather",
+            execute: () => {
+              nextStepSpy();
+              return { flow: "stop" };
+            },
+          })
+          .step({
+            id: "s3",
+            label: "s3",
+            kind: "gather",
+            execute: () => ({ flow: "stop" }),
+          })
+          .case(ALWAYS_TRUE_CASE)
+          .build(DEFAULT_FALLBACK);
+        return procedure.run({ deps: {}, parameters: {} });
+      });
+
+      expect(thrown).toBeUndefined();
+      expect(outcome?.status).toBe("failed");
+      if (outcome?.status === "failed") {
+        const error = asM3LError(outcome.error);
+        expect(error.code).toBe("ERR_PROCEDURE_UNDECLARED_JUMP");
+      }
+      expect(nextStepSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 5. no-progress guard
   // -------------------------------------------------------------------------
   describe("no-progress guard", () => {
     function buildProgressProcedure(
@@ -555,8 +660,27 @@ describe("core/procedure — guards and tracing", () => {
     });
 
     test("maxStalledSteps consecutive unchanged samples trips a failed outcome under ERR_PROCEDURE_NO_PROGRESS with stalledSteps and lastStepId", async () => {
+      // maxStalledSteps is passed straight through to ProgressTracker: the
+      // guard trips only once maxStalledSteps + 1 total samples have been
+      // taken (one baseline, then maxStalledSteps consecutive unchanged
+      // ones). buildProgressProcedure's linear TS["stepId"] ids top out at
+      // 3, which yields only 2 continuing (sampled) steps — too few to trip
+      // a threshold of 3. A self-loop step samples once per revisit
+      // instead, so it can run as many continuing executions as needed
+      // while keeping maxStalledSteps: 3 and its stalledSteps assertion
+      // unchanged — only the number of steps executed grows.
       const { outcome, thrown } = await runCapturing(() => {
-        const procedure = buildProgressProcedure(() => ({ flow: "continue" }));
+        const procedure = createProcedureBuilder<TS>("progress-loop-test")
+          .step({
+            id: "s1",
+            label: "s1",
+            kind: "gather",
+            jumpsTo: ["s1"] as const,
+            loop: { reason: "repeat for progress sampling", maxRevisits: 20 },
+            execute: () => ({ flow: { goTo: "s1" } }),
+          })
+          .case(ALWAYS_TRUE_CASE)
+          .build(DEFAULT_FALLBACK);
         return procedure.run({
           deps: {},
           parameters: {},
@@ -573,6 +697,41 @@ describe("core/procedure — guards and tracing", () => {
         expect(error.context["stalledSteps"]).toBe(3);
         expect(typeof error.context["lastStepId"]).toBe("string");
       }
+    });
+
+    test("with maxStalledSteps: N, the guard trips on the N-th unchanged sample and not the (N-1)-th", async () => {
+      const N = 3;
+      let calls = 0;
+      const { outcome, thrown } = await runCapturing(() => {
+        const procedure = createProcedureBuilder<TS>("progress-boundary-test")
+          .step({
+            id: "s1",
+            label: "s1",
+            kind: "gather",
+            jumpsTo: ["s1"] as const,
+            loop: { reason: "repeat for progress sampling", maxRevisits: 20 },
+            execute: () => {
+              calls += 1;
+              // The first N executions each advance (and are sampled),
+              // producing exactly N total samples — one baseline plus
+              // N - 1 unchanged. That is one short of the N required to
+              // trip; the (N + 1)-th execution stops the run before a
+              // further sample could push it over.
+              return calls <= N ? { flow: { goTo: "s1" } } : { flow: "stop" };
+            },
+          })
+          .case(ALWAYS_TRUE_CASE)
+          .build(DEFAULT_FALLBACK);
+        return procedure.run({
+          deps: {},
+          parameters: {},
+          maxIterations: 50,
+          progress: { witness: () => "constant", maxStalledSteps: N },
+        });
+      });
+
+      expect(thrown).toBeUndefined();
+      expect(outcome?.status).toBe("matched");
     });
 
     test("a changing witness never trips the guard", async () => {
@@ -612,8 +771,32 @@ describe("core/procedure — guards and tracing", () => {
 
       expect(thrown).toBeUndefined();
       expect(outcome?.status).toBe("matched");
-      // Two steps declared: s1 continues, s2 is forced to "stop" by the
-      // helper — both are "continuing" executions from the guard's view.
+      // Two steps declared: s1 continues and advances to s2 — a genuinely
+      // "continuing" step, sampled. s2 is the last step, so the helper
+      // forces its flow to "stop", a terminal directive that ends phase 1
+      // without ever reaching the post-advance guard. Only s1 is sampled.
+      expect(witness).toHaveBeenCalledTimes(1);
+    });
+
+    test("the witness is sampled once for each of multiple advancing steps, still never on the terminal one", async () => {
+      const witness = vi.fn(() => "constant");
+      const { outcome, thrown } = await runCapturing(() => {
+        const procedure = buildProgressProcedure(
+          () => ({ flow: "continue" }),
+          3,
+        );
+        return procedure.run({
+          deps: {},
+          parameters: {},
+          progress: { witness, maxStalledSteps: 100 },
+        });
+      });
+
+      expect(thrown).toBeUndefined();
+      expect(outcome?.status).toBe("matched");
+      // s1 advances to s2, and s2 advances to s3 — two genuinely continuing
+      // steps, each sampled. s3 is the last step and is forced to "stop" by
+      // the helper, so it is never sampled.
       expect(witness).toHaveBeenCalledTimes(2);
     });
 
@@ -717,7 +900,7 @@ describe("core/procedure — guards and tracing", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 5. continueOnFailure and recovery
+  // 6. continueOnFailure and recovery
   // -------------------------------------------------------------------------
   describe("continueOnFailure and recovery", () => {
     test("without the flag, a step throw yields a failed outcome naming the step, carrying the thrown value verbatim (identity + cause chain)", async () => {
@@ -871,7 +1054,7 @@ describe("core/procedure — guards and tracing", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 6. cancellation
+  // 7. cancellation
   // -------------------------------------------------------------------------
   describe("cancellation", () => {
     test("an already-aborted signal yields status 'aborted' with zero steps executed", async () => {
@@ -1093,7 +1276,18 @@ describe("core/procedure — guards and tracing", () => {
             jumpsTo: ["s1"] as const,
             loop: { reason: "abort race", maxRevisits: 1000 },
             execute: (ctx) => {
-              if (ctx.iteration === 2) {
+              // maxStalledSteps and this iteration are load-bearing
+              // together: with maxStalledSteps: N passed straight through
+              // to ProgressTracker (one baseline sample, then N consecutive
+              // unchanged ones), the post-advance sample that trips the
+              // guard is always the execution at ctx.iteration === N. To
+              // exercise the actual race — abort firing on the very
+              // execution whose sample would otherwise trip the guard —
+              // the abort must land at ctx.iteration === N, not one
+              // execution later. Changing maxStalledSteps below without
+              // updating this iteration re-introduces the old off-by-one
+              // this fixture used to (silently) depend on.
+              if (ctx.iteration === 1) {
                 controller.abort();
               }
               return { flow: { goTo: "s1" } };
@@ -1107,6 +1301,43 @@ describe("core/procedure — guards and tracing", () => {
           maxIterations: 100,
           signal: controller.signal,
           progress: { witness: () => "constant", maxStalledSteps: 1 },
+        });
+      });
+
+      expect(thrown).toBeUndefined();
+      expect(outcome?.status).toBe("aborted");
+    });
+
+    test("an abort that lands well before any stall could trip still yields aborted", async () => {
+      const controller = new AbortController();
+
+      const { outcome, thrown } = await runCapturing(() => {
+        const procedure = createProcedureBuilder<TS>("abort-before-progress")
+          .step({
+            id: "s1",
+            label: "s1",
+            kind: "control",
+            jumpsTo: ["s1"] as const,
+            loop: { reason: "abort race", maxRevisits: 1000 },
+            execute: (ctx) => {
+              if (ctx.iteration === 0) {
+                controller.abort();
+              }
+              return { flow: { goTo: "s1" } };
+            },
+          })
+          .case(ALWAYS_TRUE_CASE)
+          .build(DEFAULT_FALLBACK);
+        return procedure.run({
+          deps: {},
+          parameters: {},
+          maxIterations: 100,
+          signal: controller.signal,
+          // A threshold far larger than the single execution that runs
+          // before the abort fires — the guard could not possibly have
+          // tripped yet, so this pins that the abort boundary wins on its
+          // own, not merely because it happens to coincide with a trip.
+          progress: { witness: () => "constant", maxStalledSteps: 50 },
         });
       });
 
@@ -1148,7 +1379,7 @@ describe("core/procedure — guards and tracing", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 7. tracing
+  // 8. tracing
   // -------------------------------------------------------------------------
   describe("tracing", () => {
     function makeSink(): { readonly record: Mock } {
@@ -1463,7 +1694,7 @@ describe("core/procedure — guards and tracing", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 8. tracing is never load-bearing
+  // 9. tracing is never load-bearing
   // -------------------------------------------------------------------------
   describe("tracing is never load-bearing", () => {
     function makeSink(record: Mock): { readonly record: Mock } {
@@ -1595,13 +1826,23 @@ describe("core/procedure — guards and tracing", () => {
 
       expect(thrown).toBeUndefined();
       expect(outcome?.status).toBe("matched");
-      expect(warningSpy).toHaveBeenCalledTimes(1);
-      const call = (warningSpy.mock.calls[0] ?? []) as readonly unknown[];
-      const message = String(call[0]);
-      expect(message).toContain("s1");
-      expect(message).not.toContain(SECRET);
-      expect(message).not.toContain("VeryDistinctiveName");
-      expect(message).not.toContain("ERR_TOTALLY_MADE_UP_CODE");
+      // The throwing sink trips tracing on both of its call sites:
+      // recordStep's per-step trace entry (labelled "s1") and
+      // recordOutcomeEntry's single per-run outcome entry (labelled
+      // "run outcome") — the two paths warn symmetrically, so both must be
+      // checked here, not just calls[0], or the second path's redaction
+      // goes unverified.
+      expect(warningSpy).toHaveBeenCalledTimes(2);
+      const messages = warningSpy.mock.calls.map((call) => String(call[0]));
+      for (const message of messages) {
+        expect(message).not.toContain(SECRET);
+        expect(message).not.toContain("VeryDistinctiveName");
+        expect(message).not.toContain("ERR_TOTALLY_MADE_UP_CODE");
+      }
+      expect(messages.some((message) => message.includes("s1"))).toBe(true);
+      expect(messages.some((message) => message.includes("run outcome"))).toBe(
+        true,
+      );
       expect(
         (M3L_ERROR_CODES as readonly string[]).includes(
           "ERR_TOTALLY_MADE_UP_CODE",
@@ -1665,7 +1906,7 @@ describe("core/procedure — guards and tracing", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 9. adversarial
+  // 10. adversarial
   // -------------------------------------------------------------------------
   describe("adversarial", () => {
     test("each offending non-scalar describeTrace entry is dropped individually while conforming keys survive", async () => {

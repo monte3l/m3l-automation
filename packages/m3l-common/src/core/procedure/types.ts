@@ -221,8 +221,8 @@ export interface M3LProcedureStep<
   readonly execute: (
     context: M3LProcedureContext<TShape>,
   ) =>
-    | M3LProcedureStepResult<TShape, TJump>
-    | Promise<M3LProcedureStepResult<TShape, TJump>>;
+    | M3LProcedureStepResult<TShape, NoInfer<TJump>>
+    | Promise<M3LProcedureStepResult<TShape, NoInfer<TJump>>>;
   /**
    * Called **before** `execute`, with the context `execute` is about to
    * receive — so what reaches the trace is the *resolved* value the step
@@ -349,15 +349,22 @@ export type M3LProcedureCondition<TShape extends M3LProcedureShape> =
  * _run-report grade_, not _breadcrumb grade_ — it reaches the outcome and is
  * never handed to a trace sink.
  */
-export interface M3LProcedureResolvedReference {
-  /** Canonical rendering, e.g. `"step:count-errors.count"`, `"literal:5"`. */
-  readonly reference: string;
-  /** `false` when the reference addressed something absent. */
-  readonly present: boolean;
-  readonly resolved: M3LProcedureValue | undefined;
-  /** Set when a string was refused for exceeding the `matches` input bound. */
-  readonly oversized?: true;
-}
+export type M3LProcedureResolvedReference =
+  | {
+      /** Canonical rendering, e.g. `"step:count-errors.count"`, `"literal:5"`. */
+      readonly reference: string;
+      readonly present: true;
+      readonly resolved: M3LProcedureValue;
+      /** Set when an arm declined a value that did resolve. */
+      readonly refused?: "oversized" | "invalid-pattern";
+    }
+  | {
+      /** Canonical rendering, e.g. `"step:count-errors.count"`, `"literal:5"`. */
+      readonly reference: string;
+      readonly present: false;
+      readonly resolved?: undefined;
+      readonly refused?: undefined;
+    };
 
 /**
  * A tree mirroring a {@link M3LProcedureCondition} tree, one evaluation node
@@ -545,9 +552,11 @@ interface M3LProcedureRunOptionsBase<TShape extends M3LProcedureShape> {
 
 /**
  * Options for {@link M3LProcedure.run}. `parameters` is conditionally
- * required: absent when `TShape["parameters"]` declares no keys, required
- * otherwise — the same mechanism `M3LOperationPipelineOptions` uses to make
- * `prepare` conditionally required on `TContext`.
+ * required: absent when `TShape["parameters"]` declares no keys, or when
+ * every declared key's value type is `never` (the `Record<string, never>`
+ * spelling of "no parameters"), required otherwise — the same mechanism
+ * `M3LOperationPipelineOptions` uses to make `prepare` conditionally required
+ * on `TContext`.
  *
  * @typeParam TShape - The procedure's declared shape.
  */
@@ -555,7 +564,9 @@ export type M3LProcedureRunOptions<TShape extends M3LProcedureShape> =
   M3LProcedureRunOptionsBase<TShape> &
     ([keyof TShape["parameters"]] extends [never]
       ? { readonly parameters?: Readonly<TShape["parameters"]> }
-      : { readonly parameters: Readonly<TShape["parameters"]> });
+      : [TShape["parameters"][keyof TShape["parameters"]]] extends [never]
+        ? { readonly parameters?: Readonly<TShape["parameters"]> }
+        : { readonly parameters: Readonly<TShape["parameters"]> });
 
 // ---------------------------------------------------------------------------
 // Outcome
@@ -697,7 +708,6 @@ export interface M3LProcedureTraceEntry {
    * `M3LProcedureFlow`'s `{ goTo }` arm is an object, and a breadcrumb sink
    * drops a non-scalar payload entry — so the structured form would silently
    * vanish from exactly the trace that is supposed to explain the jump.
-   * `M3LProcedureStepRecord.flow` keeps the structured value.
    */
   readonly flow: string | undefined;
   readonly payload: Readonly<Record<string, M3LBreadcrumbScalar>>;
@@ -826,7 +836,7 @@ export const M3L_PROCEDURE_MAX_PATTERN_LENGTH = 512;
 /**
  * The maximum length, in characters, a `matches` condition's resolved
  * subject string may have before the engine refuses to scan it (the arm
- * evaluates `false` and the reference is marked `oversized`, rather than
+ * evaluates `false` and the reference is marked `refused: "oversized"`, rather than
  * being scanned).
  *
  * @example

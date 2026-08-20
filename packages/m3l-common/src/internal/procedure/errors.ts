@@ -104,3 +104,23 @@ export class M3LProcedureNoProgressError extends M3LError {
     this.code = "ERR_PROCEDURE_NO_PROGRESS";
   }
 }
+
+/**
+ * Resolved as a `"failed"` outcome's `error` (never a rejection) by
+ * {@link M3LProcedure.run} when a step's `{ goTo }` flow directive names a
+ * target that either isn't a declared step id, or is declared but absent
+ * from the declaring step's own `jumpsTo` allowlist. Reported instead of
+ * silently falling through to the next declared step, or silently
+ * succeeding a jump the declaring step never listed.
+ * `context["stepId"]` names the step whose flow directive was rejected;
+ * `context["goTo"]` carries the rejected target.
+ */
+export class M3LProcedureUndeclaredJumpError extends M3LError {
+  /** Narrows the inherited `code` to the literal `"ERR_PROCEDURE_UNDECLARED_JUMP"`. */
+  override readonly code: "ERR_PROCEDURE_UNDECLARED_JUMP";
+
+  constructor(message: string, context: Record<string, unknown>) {
+    super(message, { code: "ERR_PROCEDURE_UNDECLARED_JUMP", context });
+    this.code = "ERR_PROCEDURE_UNDECLARED_JUMP";
+  }
+}
