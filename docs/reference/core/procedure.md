@@ -1455,9 +1455,13 @@ Recorded so the engine does not creep past its evidence
 ([ADR-0046](../../adr/0046-codified-procedure-engine.md) § _Deliberately out of
 scope_):
 
-- **Cross-script orchestration** — sequencing whole consumer scripts is
-  [ADR-0047](../../adr/0047-cross-script-orchestration-deferred.md), not this
-  engine.
+- **Cross-script orchestration** — this engine sequences steps **inside** one
+  script. Sequencing **whole scripts** as processes is `m3l flow`, designed in
+  [ADR-0056](../../adr/0056-cross-script-orchestration-engine.md) and placed in
+  `packages/m3l-cli` — never in `m3l-common` — by
+  [ADR-0047](../../adr/0047-cross-script-orchestration-deferred.md), whose
+  deferral is now lifted. The two engines are deliberately uncoupled and their
+  vocabularies stay distinct: steps within a script here, whole scripts there.
 - **Data-file definitions** (YAML/JSON validated at load) — declined: the
   library has no schema validator, compile-time exhaustiveness would be lost,
   and handlers must remain code regardless.
