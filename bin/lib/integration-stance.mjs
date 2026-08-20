@@ -1,7 +1,7 @@
-// Pure derivation for `bin/check-github-stance.mjs` (the ADR-0030 amendment's
-// drift gate). Nothing here reads a filesystem — the CLI wrapper collects
+// Pure derivation for `bin/check-integration-stance.mjs` (the ADR-0030
+// amendment's drift gate). Nothing here reads a filesystem — the CLI wrapper collects
 // `.claude/skills/*/SKILL.md` file contents and hands them to
-// `deriveGithubStanceIssues`, mirroring `bin/lib/command-catalog.mjs`'s
+// `deriveIntegrationStanceIssues`, mirroring `bin/lib/command-catalog.mjs`'s
 // gen/check-shared-derivation shape so this stays exercisable in tests
 // without spawning anything.
 //
@@ -63,7 +63,7 @@ function stripFrontmatter(content) {
  *   missingStanceNote: string[],
  *   retiredClaims: string[],
  *   mechanismMismatches: string[],
- * }} GithubStanceIssues
+ * }} IntegrationStanceIssues
  */
 
 /**
@@ -72,10 +72,10 @@ function stripFrontmatter(content) {
  * this only constrains skills that actually talk to GitHub.
  *
  * @param {SkillFile[]} skills
- * @returns {GithubStanceIssues}
+ * @returns {IntegrationStanceIssues}
  */
-export function deriveGithubStanceIssues(skills) {
-  /** @type {GithubStanceIssues} */
+export function deriveIntegrationStanceIssues(skills) {
+  /** @type {IntegrationStanceIssues} */
   const issues = {
     missingStanceNote: [],
     retiredClaims: [],

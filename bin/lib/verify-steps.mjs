@@ -267,9 +267,9 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:hooks",
   },
   {
-    ciStepName: "Check GitHub-integration stance (github-stance)",
-    id: "check-github-stance",
-    cmd: () => "pnpm check:github-stance",
+    ciStepName: "Check GitHub-integration stance (integration-stance)",
+    id: "check-integration-stance",
+    cmd: () => "pnpm check:integration-stance",
   },
   {
     ciStepName: "Check dependency-direction zones (zones)",
