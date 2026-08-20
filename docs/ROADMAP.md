@@ -154,6 +154,36 @@ per-phase detail in
 | **U13** | Phase B — private GitHub Packages publishing                 | To Do    |
 | **U14** | Phase C — single-file binary (gated on a future ADR)         | Deferred |
 
+### Agent-operator wave (V-series) — ADR-0058/0059/0060/0061/0062/0063
+
+The CLI-first programme's successor: AI agents (Claude via AWS Bedrock)
+operate the m3l fleet to replace the human for daily repetitive tasks. Three
+stages — repo-native operator first (`aws/bedrock-runtime` wrapper + loop
+primitives firing ADR-0039's gate, a policy layer that is the authorization
+control ADR-0048 disclaims, an append-only decision log, and
+`scripts/agent-operator` over a hardened CLI machine surface), then a
+runtime MCP surface (`packages/m3l-mcp`), then headless/scheduled operation.
+Secrets delivery and remote MCP stay gated behind future ADRs. Coarse
+summary only — the item source for sync is the V-series in
+[`IMPLEMENTATION.md`](./plans/IMPLEMENTATION.md#m3l-cli-build-out--adr-0042-activation-issue-333);
+per-phase detail in
+[`2026-08-20-agent-operator.md`](./plans/2026-08-20-agent-operator.md).
+
+| Item    | What                                                            | Status   |
+| ------- | --------------------------------------------------------------- | -------- |
+| **V1**  | Decisions & governance docs — ADR-0058…0063 + trackers          | Done     |
+| **V2**  | CLI machine-surface hardening (`run --json` envelope, `--help`) | To Do    |
+| **V3**  | Secrets-delivery hardening (gated on a future ADR)              | To Do    |
+| **V4**  | `aws/bedrock-runtime` wrapper (AWS 19 → 20, additive minor)     | To Do    |
+| **V5**  | Tool-use loop primitives                                        | To Do    |
+| **V6**  | Agent policy layer (graded autonomy as authorization)           | To Do    |
+| **V7**  | Agent decision log (append-only, names-never-values)            | To Do    |
+| **V8**  | `agent-operator` script + fleet-health-checks workload          | To Do    |
+| **V9**  | Workload expansion (ETL; log triage; queue flow after U10)      | To Do    |
+| **V10** | `packages/m3l-mcp` stdio MCP surface                            | To Do    |
+| **V11** | Headless/scheduled operation                                    | To Do    |
+| **V12** | Remote/HTTP MCP (gated on a future ADR)                         | Deferred |
+
 ## Priority 1 — Consumer fleet
 
 Before scoping or starting any AWS-consumer-script item below, check its
