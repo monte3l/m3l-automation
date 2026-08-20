@@ -339,6 +339,24 @@ export function paginate<T>(items: readonly T[], limit: number): Page<T> {
 - No magic numbers/strings in logic — lift them to named constants. **[enforced]**
   (`@typescript-eslint/no-magic-numbers`, ignoring `-1/0/1`)
 
+### Script config declarations (`M3LConfigParameter`)
+
+Codifies the fleet's already-consistent practice (2026-08-20 audit) for
+choosing a parameter's mode. **[advisory]**
+
+- **`required: true`** — the script cannot do anything sensible without it
+  and no fallback exists (an input path, a queue URL, `aws.profile` on an
+  AWS script). Missing → `M3LConfigMissingError` at config load.
+- **`defaultValue`** — optional with one sensible fallback. Every
+  confirm-gate flag (`yes`/`force`) uses this mode, fleet-wide.
+- **Neither (bare optional)** — needed only by some operations or
+  combinations; validated where the requirement is actually known: a
+  config-load-time cross-parameter `configValidators` entry, or a run-start
+  guard (`M3LOperationPipeline.requiredFields` /
+  `M3LConfigAccessor.required*`). Both placements are documented, deliberate
+  patterns — pick per the script's dispatch shape, and say which in the
+  script's contract page.
+
 ---
 
 ## Part 2 — Writing new tests

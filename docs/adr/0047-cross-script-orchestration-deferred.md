@@ -102,6 +102,21 @@ neither can be avoided by moving the orchestrator into the library.
   will have to be designed at that point rather than now.
 - **Semver impact:** **none.** No code, export, or `exports`-map entry changes.
 
+## Update 2026-08-20 — revisit trigger fired; engine activated
+
+The revisit trigger has fired: the maintainer named the first concrete
+multi-script flow — **sqs-etl → json-etl → dynamodb-crud → sqs-etl** (dump a
+queue, parse and selectively extract values, query DynamoDB and compare,
+selectively delete the matched messages), branching on each script's outcome.
+
+The deferral is therefore lifted. The engine's design decision is recorded in
+[ADR-0056](./0056-cross-script-orchestration-engine.md) (`m3l flow`,
+spawn-first with an in-process fast path per ADR-0054), and the work is
+tracked as U10 of the CLI-first evolution programme
+([ADR-0053](./0053-cli-first-evolution-programme.md)). The placement this ADR
+decided — `packages/m3l-cli`, never `m3l-common` — is unchanged; the Status
+stays Accepted, exactly as ADR-0042's own fired-trigger update did.
+
 ## Links
 
 - Related: [ADR-0046 (the in-script procedure engine)](./0046-codified-procedure-engine.md),

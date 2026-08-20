@@ -1,6 +1,6 @@
 # 0020. Drop release automation
 
-- **Status:** Accepted
+- **Status:** Partially superseded by ADR-0057
 - **Date:** 2026-07-06
 - **Deciders:** Enrico Lionello
 

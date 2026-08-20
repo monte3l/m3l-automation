@@ -64,7 +64,7 @@ surface).
 | 0017 | [Dependency loading, declaration, and pinning standard](./0017-dependency-loading-standard.md)                                                            | Accepted                         |
 | 0018 | [Ratify a single shared `M3LScriptOptions` bag for CLI and Lambda](./0018-shared-script-options-bag.md)                                                   | Accepted                         |
 | 0019 | [Remove the `scripts/` example-automation workspace](./0019-remove-scripts-workspace.md)                                                                  | Superseded by ADR-0022           |
-| 0020 | [Drop release automation](./0020-drop-release-automation.md)                                                                                              | Accepted                         |
+| 0020 | [Drop release automation](./0020-drop-release-automation.md)                                                                                              | Partially superseded by ADR-0057 |
 | 0021 | [Post-1.0.0 direction: deepen the library first, then build consumers](./0021-post-1.0-deepen-first-strategy.md)                                          | Superseded by ADR-0037           |
 | 0022 | [Re-introduce the `scripts/` workspace for real consumers](./0022-reintroduce-scripts-workspace.md)                                                       | Accepted                         |
 | 0023 | [Re-affirm the external code-index MCP deferral on new grounds](./0023-reaffirm-code-index-mcp-deferral.md)                                               | Accepted                         |
@@ -97,3 +97,8 @@ surface).
 | 0050 | [GitHub platform-feature stance](./0050-github-platform-feature-stance.md)                                                                                | Partially superseded by ADR-0052 |
 | 0051 | [Semantic priority vocabulary for labels, milestones, and tracker cells](./0051-semantic-priority-vocabulary.md)                                          | Accepted                         |
 | 0052 | [Hub board identity and field taxonomy](./0052-hub-board-identity-and-field-taxonomy.md)                                                                  | Accepted                         |
+| 0053 | [CLI-first evolution programme: from launcher to product](./0053-cli-first-evolution-programme.md)                                                        | Accepted                         |
+| 0054 | [Typed command-module contract and hybrid execution](./0054-command-module-contract-and-hybrid-execution.md)                                              | Accepted                         |
+| 0055 | [Declarative, enumerable operations in script config](./0055-declarative-operation-introspection.md)                                                      | Accepted                         |
+| 0056 | [Cross-script orchestration engine in `m3l-cli` (`m3l flow`)](./0056-cross-script-orchestration-engine.md)                                                | Accepted                         |
+| 0057 | [Distribute the CLI and its fleet via a private GitHub Packages registry](./0057-private-registry-distribution.md)                                        | Accepted                         |
