@@ -2,7 +2,7 @@
 // gate). Nothing here reads a filesystem or shells out — the CLI wrapper
 // collects a live `gh api repos/<repo>` payload and the committed
 // `.github/ISSUE_TEMPLATE/config.yml` text and hands them to
-// `deriveFeatureIssues`, mirroring `bin/lib/github-stance.mjs`'s
+// `deriveFeatureIssues`, mirroring `bin/lib/integration-stance.mjs`'s
 // gen/check-shared-derivation shape so this stays exercisable in tests
 // without spawning anything.
 //

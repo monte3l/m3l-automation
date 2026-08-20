@@ -7,13 +7,13 @@
 // survived, unchecked, for months in two skills.
 //
 // Usage:
-//   node bin/check-github-stance.mjs   # exits 0 on success, 1 on any drift
+//   node bin/check-integration-stance.mjs   # exits 0 on success, 1 on any drift
 import process from "node:process";
 import { readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { walk } from "./lib/agent-roster.mjs";
-import { deriveGithubStanceIssues } from "./lib/github-stance.mjs";
+import { deriveIntegrationStanceIssues } from "./lib/integration-stance.mjs";
 import { parseJsonFlag, createReporter } from "./lib/report.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -29,7 +29,7 @@ const skills = skillFiles.map((file) => ({
 }));
 
 const { missingStanceNote, retiredClaims, mechanismMismatches } =
-  deriveGithubStanceIssues(skills);
+  deriveIntegrationStanceIssues(skills);
 
 for (const name of missingStanceNote) {
   reporter.error(

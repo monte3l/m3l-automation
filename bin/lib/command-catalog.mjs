@@ -201,7 +201,7 @@ export const COMMAND_CATALOG = [
       "Verifies every .claude/settings.json hook command resolves to a real .claude/hooks/*.mjs file, every event name is a real Claude Code lifecycle event, and no hook file is left unwired. Run after editing hooks or settings.json.",
   },
   {
-    name: "check:github-stance",
+    name: "check:integration-stance",
     description:
       "Verifies every GitHub-talking .claude/skills/*/SKILL.md carries an ADR-0030 stance reference, contains no retired policy claim, and names the mechanism (gh CLI vs GitHub MCP) it actually uses. Run after editing a GitHub-facing skill.",
   },

@@ -439,8 +439,8 @@ jobs:
       # GitHub-integration stance (ADR-0030 amendment, 2026-07-27): every
       # GitHub-talking skill cites the governing ADR, carries no retired policy
       # claim, and names the mechanism (gh CLI vs GitHub MCP) it actually uses.
-      - name: Check GitHub-integration stance (github-stance)
-        run: pnpm check:github-stance
+      - name: Check GitHub-integration stance (integration-stance)
+        run: pnpm check:integration-stance
 
       # ADR-0009/ADR-0035 dependency direction: the import-x/no-restricted-paths
       # layering zones (internal sealing, aws island, core/script root) plus the
