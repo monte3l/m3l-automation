@@ -184,20 +184,45 @@ and settles it.
 
 ## Follow-ups filed
 
-- **`run()`'s state threading.** The extraction that cleared the 60-line cap uses
-  `setOperation`/`setSettings`/`setContext` writeback callbacks into `run()`'s
-  frame. `operation`/`settings` already flow as real return values, and `context`
-  is returned in `prepared.context` then discarded and smuggled via `setContext`.
-  Threading `context` as an explicit parameter would delete the whole mechanism.
-  Deliberately deferred: a structural refactor of the path just hardened against
-  a critical defect does not belong in the same change set. The 155 proven tests
-  make it safe to do next.
-- **`M3LBreadcrumbTrail` cannot honor a declared-secrets specifier** — it calls
-  `redactSensitiveLogValue` with no options, so a value declared sensitive
-  elsewhere is persisted verbatim unless its key name trips the heuristic.
-  Documented as a limit; wider than A6.
-- **Two unreachable defensive branches** remain: `validate.ts`'s `?? 0` on a
-  count read from a map built from the same array, and one arm of
-  `#buildGateOptions`. Both above the coverage floors.
-- **`toMatchTypeOf` is deprecated in Vitest 4** and used throughout the suite.
-  Repo-wide, not A6's to fix.
+Filed as F-rows in [`docs/plans/IMPLEMENTATION.md`](../plans/IMPLEMENTATION.md)
+§"Library friction (F-series)". Each was re-derived against `main` before
+filing, and two of them did not survive that re-derivation unchanged.
+
+- **F19 — `run()`'s state threading.** The extraction that cleared the 60-line
+  cap uses `setOperation`/`setSettings`/`setContext` writeback callbacks into
+  `run()`'s frame. `operation`/`settings` already flow as real return values, so
+  those two setters are redundant; `context` is returned in `prepared.context`
+  then discarded and smuggled via `setContext`. Threading `context` as an
+  explicit parameter would delete the whole mechanism. Deliberately deferred: a
+  structural refactor of the path just hardened against a critical defect does
+  not belong in the same change set. The 155 proven tests make it safe to do
+  next.
+- **F20 — the declared-secrets redaction port is dead in production.** Filed
+  **wider than this log first recorded it.** The claim here was that
+  `M3LBreadcrumbTrail` alone cannot honor a declared-secrets specifier. Checking
+  every call site shows `redactSensitiveLogValue` is called with no options by
+  _all four_ production sinks — `breadcrumbs.ts:764`,
+  `internal/script/diagnostics.ts:62`, `run-report.ts` and `format-error.ts` —
+  so `M3LRedactOptions.secrets` has no production consumer at all and is
+  exercised only by `tests/logging.test.ts`. Raised to the `Next` tier on that basis.
+- **F21 — one dead branch and one untested branch, not "two unreachable
+  defensive branches".** This log's original framing was half wrong, and
+  `coverage-final.json` is what settled it. `validate.ts:61`'s `?? 0` is
+  genuinely unreachable — the map is built from the same array the loop
+  re-iterates — and should be deleted. But `M3LOperationPipeline.ts:572-574`'s
+  `: {}` arm is perfectly **reachable**: `target`, `isSensitiveTarget` and
+  `yesSensitive` are independently optional, so a config declaring `target` and
+  omitting both predicates is type-legal, and no test covers it. That one needs
+  a test, not a deletion — the opposite fix. Both sit above the `branches: 80`
+  floor (95.00% and 97.73%), so no gate would ever have raised them.
+- **F22 — `toMatchTypeOf` is deprecated in Vitest 4** and used throughout the
+  suite: 190 occurrences across 32 test files on `vitest@4.1.10`. Repo-wide, not
+  A6's to fix.
+
+**Lesson, added on filing.** Writing "Follow-ups filed" is not filing them.
+These four sat in this section alone until #473 was closed out, unreachable by
+`sync:hub` and invisible on the board — while A1b–A5b, filed as rows, each got
+an issue automatically. A follow-up that lives only in a work log is a follow-up
+that does not exist. And re-deriving them at filing time changed two of the
+four: one was materially wider than recorded, and one had the wrong fix
+attached.
