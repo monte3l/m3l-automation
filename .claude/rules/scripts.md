@@ -104,6 +104,11 @@ paths:
   schema-time validators with `Core.M3LConfigValidators` (`range` / `regex` /
   `oneOf`) instead of hand-rolled checks. Never read `process.env` directly —
   config is the only input seam.
+- **Parameter mode rule** (style guide § Script config declarations):
+  `required: true` = always needed, no fallback; `defaultValue` = optional
+  with one sensible fallback (all confirm-gate `yes`/`force` flags);
+  bare-optional = operation-specific, validated via cross-parameter
+  `configValidators` or a run-start guard — state which in the contract page.
 - **When promoting a script's local config-read helper onto
   `Core.M3LConfigAccessor`, grep the whole file for `config.get(` afterward —
   not just for callers of the helper being deleted.** A boolean/string field
