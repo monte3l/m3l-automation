@@ -126,22 +126,23 @@ Once an idea is actually ready to be worked on:
 ## The board's views (one-time manual setup)
 
 `pnpm sync:hub-projects -- --init --apply` (also run as part of `sync:hub
---init`) reconciles the board's three saved views — **`Backlog`** (Table),
-**`Board`** (Board), **`Timeline`** (Roadmap) — via `bin/lib/hub-views.mjs`'s
-`VIEW_DEFS`: name, layout, filter, and visible columns. GitHub's GraphQL API
-does not expose everything a view needs, though (verified against the live
-schema — ADR-0052); these steps are manual and one-time, done once via the
+--init`) reconciles the board's two saved views — **`Backlog`** (Table) and
+**`Board`** (Board) — via `bin/lib/hub-views.mjs`'s `VIEW_DEFS`: name,
+layout, filter, and visible columns. GitHub's GraphQL API does not expose
+everything a view needs, though (verified against the live schema —
+ADR-0052; a Roadmap view was dropped entirely — see its 2026-08-20
+Update — since `ROADMAP_LAYOUT` rejects visible-column configuration on both
+create and update); these steps are manual and one-time, done once via the
 board's own UI:
 
-- Enable the built-in **`Type`** field (board "…" menu → Settings → Fields →
-  `Type`) if it is not already on — it does not exist as a selectable field
-  until a human turns it on, so no view can show it until this runs once.
 - **`Board`** view: verify it groups by `Status` (Board layout defaults to
   grouping by the first single-select field, which should already be
   `Status`).
 - **`Backlog`** view: sort by `Priority` ascending, then `Status`.
-- **`Timeline`** view: pair the roadmap to the built-in `Created` (start) and
-  `Updated` (target) date fields, and set the zoom level.
+- Optional: to show item Type as a column, enable the built-in **`Type`**
+  field (board "…" menu → Settings → Fields → `Type`) and add it to a view by
+  hand — neither step is settable via the API, and `sync:hub` does not
+  manage this column.
 
 ## For a bug report or a concrete feature request instead
 
