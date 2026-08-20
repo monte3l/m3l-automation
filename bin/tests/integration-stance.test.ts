@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 import {
-  deriveGithubStanceIssues,
+  deriveIntegrationStanceIssues,
   extractFrontmatterBlock,
-} from "../lib/github-stance.mjs";
+} from "../lib/integration-stance.mjs";
 
 // ---------------------------------------------------------------------------
 // extractFrontmatterBlock
@@ -22,10 +22,10 @@ describe("extractFrontmatterBlock", () => {
 });
 
 // ---------------------------------------------------------------------------
-// deriveGithubStanceIssues
+// deriveIntegrationStanceIssues
 // ---------------------------------------------------------------------------
 
-describe("deriveGithubStanceIssues", () => {
+describe("deriveIntegrationStanceIssues", () => {
   test("a skill with no gh or GitHub MCP surface is skipped entirely", () => {
     const skills = [
       {
@@ -33,7 +33,7 @@ describe("deriveGithubStanceIssues", () => {
         content: "---\nname: eslint-flat-config\n---\n\nNo GitHub here.",
       },
     ];
-    expect(deriveGithubStanceIssues(skills)).toEqual({
+    expect(deriveIntegrationStanceIssues(skills)).toEqual({
       missingStanceNote: [],
       retiredClaims: [],
       mechanismMismatches: [],
@@ -48,7 +48,7 @@ describe("deriveGithubStanceIssues", () => {
           "---\nname: triaging-ci\ndescription: >-\n  Uses the gh CLI (GitHub-integration stance: ADR-0030, amended 2026-07-27).\n---\n\n```bash\ngh run list --limit 5\n```",
       },
     ];
-    expect(deriveGithubStanceIssues(skills)).toEqual({
+    expect(deriveIntegrationStanceIssues(skills)).toEqual({
       missingStanceNote: [],
       retiredClaims: [],
       mechanismMismatches: [],
@@ -63,7 +63,7 @@ describe("deriveGithubStanceIssues", () => {
           "---\nname: resolving-pr-comments\ndescription: >-\n  GitHub-integration stance: ADR-0030 (amended 2026-07-27) — uses `mcp__github__*` tools rather than the gh CLI.\n---\n\n`mcp__github__list_pull_requests({ owner, repo })`",
       },
     ];
-    expect(deriveGithubStanceIssues(skills)).toEqual({
+    expect(deriveIntegrationStanceIssues(skills)).toEqual({
       missingStanceNote: [],
       retiredClaims: [],
       mechanismMismatches: [],
@@ -78,7 +78,7 @@ describe("deriveGithubStanceIssues", () => {
           "---\nname: creating-prs\ndescription: Requires gh CLI authentication.\n---\n\n```bash\ngh pr create --title foo\n```",
       },
     ];
-    expect(deriveGithubStanceIssues(skills)).toEqual({
+    expect(deriveIntegrationStanceIssues(skills)).toEqual({
       missingStanceNote: ["creating-prs"],
       retiredClaims: [],
       mechanismMismatches: [],
@@ -93,7 +93,7 @@ describe("deriveGithubStanceIssues", () => {
           "---\nname: triaging-ci\ndescription: GitHub MCP is blocked by enterprise policy.\n---\n\n```bash\ngh run list\n```",
       },
     ];
-    const result = deriveGithubStanceIssues(skills);
+    const result = deriveIntegrationStanceIssues(skills);
     expect(result.retiredClaims).toEqual(["triaging-ci"]);
   });
 
@@ -105,7 +105,7 @@ describe("deriveGithubStanceIssues", () => {
           "---\nname: resolving-pr-comments\ndescription: >-\n  GitHub-integration stance: ADR-0030 — uses the gh CLI.\n---\n\n`mcp__github__list_pull_requests({ owner, repo })`",
       },
     ];
-    const result = deriveGithubStanceIssues(skills);
+    const result = deriveIntegrationStanceIssues(skills);
     expect(result.mechanismMismatches).toEqual([
       "resolving-pr-comments: body uses mcp__github__ tools but the frontmatter stance note claims the gh CLI",
     ]);
@@ -119,7 +119,7 @@ describe("deriveGithubStanceIssues", () => {
           "---\nname: triaging-ci\ndescription: >-\n  GitHub-integration stance: ADR-0030 — uses `mcp__github__*` tools.\n---\n\n```bash\ngh run list --limit 5\n```",
       },
     ];
-    const result = deriveGithubStanceIssues(skills);
+    const result = deriveIntegrationStanceIssues(skills);
     expect(result.mechanismMismatches).toEqual([
       "triaging-ci: body uses gh CLI commands but the frontmatter stance note claims GitHub MCP",
     ]);
@@ -143,7 +143,7 @@ describe("deriveGithubStanceIssues", () => {
           "---\nname: retired-claim\ndescription: >-\n  GitHub-integration stance: ADR-0030 — uses the gh CLI. Previously blocked by enterprise policy.\n---\n\n```bash\ngh api foo\n```",
       },
     ];
-    const result = deriveGithubStanceIssues(skills);
+    const result = deriveIntegrationStanceIssues(skills);
     expect(result.missingStanceNote).toEqual(["no-note"]);
     expect(result.retiredClaims).toEqual(["retired-claim"]);
     expect(result.mechanismMismatches).toEqual([]);

@@ -53,7 +53,7 @@
     "scaffold:script": "node bin/scaffold-script.mjs",
     "check:agents": "node bin/check-agents.mjs",
     "check:hooks": "node bin/check-hooks.mjs",
-    "check:github-stance": "node bin/check-github-stance.mjs",
+    "check:integration-stance": "node bin/check-integration-stance.mjs",
     "check:github-features": "node bin/check-github-features.mjs",
     "check:label-drift": "node bin/check-label-drift.mjs",
     "check:zones": "node bin/check-eslint-zones.mjs",
