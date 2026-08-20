@@ -198,3 +198,34 @@ adding one was out of scope for this change.
   whose governance-is-not-a-tier rule this ADR extends to a new surface);
   `docs/contributing/filing-work.md` (the priority legend, now carrying a
   Type column and the manual view-setup steps)
+
+## Update (2026-08-20): the Roadmap view is dropped; `Type` is never a managed column
+
+Running `pnpm sync:hub -- --apply --init` against the live board surfaced two
+problems the schema check that produced the Views section above didn't catch,
+because it only verified the _input type_ accepted `visibleFieldIds` in the
+abstract, not that every layout accepts it in practice:
+
+- `createProjectV2View`/`updateProjectV2View` both reject
+  `configuration.visibleFieldIds` outright for `ROADMAP_LAYOUT`, with the
+  exact error `"Roadmap views do not support visible fields."` (confirmed
+  directly against the live API). `name`/`filter` still work without
+  `configuration`, but a Roadmap view's group-by and date-field pairing were
+  already unautomatable (the original Views section), leaving nothing this
+  module could usefully manage. The **`Timeline`** view is dropped from
+  `VIEW_DEFS` entirely rather than worked around — a view with only a name
+  and a filter, and every other setting requiring a manual visit, added
+  little over just creating it by hand.
+- The built-in **`Type`** field being requested in `Backlog`/`Board`'s
+  `fields` list warned on every `--init` run ("View field 'Type' is not on
+  the board yet"), indefinitely — there is no mutation to enable a built-in
+  field (`createProjectV2Field`'s `dataType` accepts only the custom-field
+  types: `TEXT`/`SINGLE_SELECT`/`MULTI_SELECT`/`NUMBER`/`DATE`/`ITERATION`,
+  never a built-in like `ISSUE_TYPE`), so the warning could never resolve
+  itself. `Type` is removed from both views' `fields` lists; showing it as a
+  board column is now purely an optional manual step
+  (`docs/contributing/filing-work.md`), not something `sync:hub` manages.
+
+The board's own Type/Status/Priority _fields_ (the org Issue Type assignment,
+the Status/Priority single-selects) are unaffected — this only trims which
+**views** exist and which columns they request.
