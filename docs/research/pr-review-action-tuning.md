@@ -433,6 +433,36 @@ patch is **501,454**, not 696,940. The irreducible-closure argument for why
 it cannot be split (~375,000, bound by per-file coverage thresholds) is
 computed from unique file sizes and is unaffected.
 
+## Outcome (2026-08-20c) — PR #523 dropped; the limit stands at 300000
+
+The temporary raise to 550000 (PR #568) has been reverted; `MAX_REVIEWABLE_BYTES`
+is back to **300000**, which is the standing value. PR #523 was closed and its
+branch deleted rather than landed, so `core/procedure` did not ship and
+issue #474 (B2) remains open. `main`'s trackers were never flipped — the B2 `Done`
+cells and the 22→23 submodule count lived only on that branch — so no tracker
+reconciliation was needed.
+
+What the episode established, independent of #523's fate:
+
+- The gate's two real defects are fixed and remain in force: the turn/denial
+  budget and verdict recovery (PR #566) and the `--patch` duplication (PR #569).
+  The first live run after them used 7 of 60 turns with **zero** denials, against
+  a prior baseline of 14-34 turns and 7-15 denials on every run.
+- Five review rounds on one module found three genuine boundary-validation
+  defects — unvalidated step `execute` / case `action`, a validate-then-re-read
+  reintroduced by the first fix for that, and unbounded recursion over caller
+  `run()` parameters. A follow-up audit then found three further sites of the
+  same unguarded-caller-read class (`internal/procedure/resolve.ts` breaking
+  `evaluateCondition`'s documented "Total" guarantee, `run()`'s capture helpers
+  throwing raw before validation, and `validate.ts`'s `field()` throwing raw out
+  of `build()`).
+- Two spokes truncated mid-task on this module, one of them a reviewer that
+  produced no findings after 13 minutes. Convergence was never reached.
+
+The durable conclusion is not about byte counts: a module of this size did not
+converge under repeated review, and the constraint has to shape authoring rather
+than be discovered at merge time.
+
 ## Sources
 
 - S1: Claude Code GitHub Actions docs — <https://code.claude.com/docs/en/github-actions> (docs)
