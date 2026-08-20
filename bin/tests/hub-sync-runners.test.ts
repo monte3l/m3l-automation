@@ -7,6 +7,7 @@ import {
   buildIssuePayload,
   HUB_PROJECT_TITLE,
   hubMarker,
+  ISSUE_TYPES,
 } from "../lib/hub-sync.mjs";
 import { extractImplementation, extractRoadmap } from "../lib/project-hub.mjs";
 
@@ -376,7 +377,7 @@ function issueListSyncRule(issues: unknown[]): GhRule {
     match: (a) =>
       a[0] === "issue" &&
       a[1] === "list" &&
-      a.includes("number,title,body,state,labels"),
+      a.includes("number,title,body,state,labels,issueType"),
     respond: () => JSON.stringify(issues),
   };
 }
@@ -407,7 +408,7 @@ function issueListAllRule(issues: unknown[]): GhRule {
     match: (a) =>
       a[0] === "issue" &&
       a[1] === "list" &&
-      a.includes("number,title,body,state,labels") &&
+      a.includes("number,title,body,state,labels,issueType") &&
       !a.includes("--label"),
     respond: () => JSON.stringify(issues),
   };
@@ -421,7 +422,7 @@ function issueListLabeledRule(issues: unknown[]): GhRule {
     match: (a) =>
       a[0] === "issue" &&
       a[1] === "list" &&
-      a.includes("number,title,body,state,labels") &&
+      a.includes("number,title,body,state,labels,issueType") &&
       a.includes("--label"),
     respond: () => JSON.stringify(issues),
   };
@@ -464,17 +465,55 @@ function projectCreateRule(project: unknown): GhRule {
   };
 }
 
+// `field-list` returns every field on the project in one call (never
+// filtered by name server-side) — accepts either a single field object
+// (wrapped in a 1-element array, the pre-ADR-0052 single-Status-field
+// shape) or an array of fields (needed once a stub must resolve BOTH
+// "Status" and "Priority" in the same test).
 function projectFieldListRule(field: unknown): GhRule {
+  const payload = Array.isArray(field) ? field : [field];
   return {
     match: (a) => a[0] === "project" && a[1] === "field-list",
-    respond: () => JSON.stringify([field]),
+    respond: () => JSON.stringify(payload),
   };
 }
 
+// Generic graphql fallback — safe only for mutations whose response is never
+// parsed (updateProjectV2Field, updateProjectV2View,
+// clearProjectV2ItemFieldValue). Place AFTER the shape-specific view rules
+// below in a rules array, since scriptedGh uses the first match.
 function graphqlRule(): GhRule {
   return {
     match: (a) => a[0] === "api" && a[1] === "graphql",
     respond: () => "",
+  };
+}
+
+// listExistingViews's read — `query { node(id: ...) { ... on ProjectV2 {
+// views(first: 20) { nodes { id name layout } } } } }`.
+function viewsListGraphqlRule(nodes: unknown[] = []): GhRule {
+  return {
+    match: (a) =>
+      a[0] === "api" &&
+      a[1] === "graphql" &&
+      typeof a[3] === "string" &&
+      a[3].includes("views(first: 20)"),
+    respond: () => JSON.stringify({ data: { node: { views: { nodes } } } }),
+  };
+}
+
+// createView's mutation — response shape createView's own JSON.parse reads.
+function createViewGraphqlRule(viewId = "VIEW_NEW"): GhRule {
+  return {
+    match: (a) =>
+      a[0] === "api" &&
+      a[1] === "graphql" &&
+      typeof a[3] === "string" &&
+      a[3].includes("createProjectV2View"),
+    respond: () =>
+      JSON.stringify({
+        data: { createProjectV2View: { projectV2View: { id: viewId } } },
+      }),
   };
 }
 
@@ -547,6 +586,15 @@ function isMutatingProjectCall(args: string[]): boolean {
   }
   if (args[0] === "api" && args[1] === "graphql") return true;
   return false;
+}
+
+// The value immediately following a named flag in a recorded argv array
+// (e.g. argAfter(["issue", "edit", "--type", "Friction"], "--type") ===
+// "Friction") — used to assert the ADR-0052 `--type` flag `gh issue
+// create`/`gh issue edit` now carry.
+function argAfter(args: string[], flag: string): string | undefined {
+  const index = args.indexOf(flag);
+  return index === -1 ? undefined : args[index + 1];
 }
 
 function expectEveryCallIsAnArgvArray(calls: string[][]): void {
@@ -750,6 +798,13 @@ describe("runIssueSync", () => {
     expect(createCalls).toHaveLength(4);
     // UA's stale body/title (1) + UC's reopen-triggered re-edit (1).
     expect(editCalls).toHaveLength(2);
+    // ADR-0052: every create/edit passes --type with a real ISSUE_TYPES value.
+    const validTypes = new Set(Object.values(ISSUE_TYPES));
+    for (const call of [...createCalls, ...editCalls]) {
+      const type = argAfter(call, "--type");
+      expect(type).toBeDefined();
+      expect(validTypes.has(type ?? "")).toBe(true);
+    }
     expect(closeCalls).toEqual([
       [
         "issue",
@@ -905,6 +960,7 @@ describe("runIssueSync", () => {
         body: payload.body,
         state: "OPEN",
         labels: payload.labels.map((name) => ({ name })),
+        issueType: { name: payload.type },
       },
     ];
     const { runGh, calls } = scriptedGh([
@@ -1038,6 +1094,10 @@ describe("runIssueSync", () => {
     // never reaches a `gh issue create` call.
     expect(createCalls).toHaveLength(1);
     expect(closeCalls).toHaveLength(1);
+    // ADR-0052: the backfilled create also carries --type.
+    expect(argAfter(required(createCalls[0], "createCalls[0]"), "--type")).toBe(
+      ISSUE_TYPES.capability,
+    );
 
     const createIndex = calls.indexOf(
       required(createCalls[0], "createCalls[0]"),
@@ -1161,6 +1221,58 @@ describe("runProjectSync", () => {
     expect(calls).toHaveLength(1);
   });
 
+  test("board title miss with exactly one owner project: reports a rename-detection error naming the real title/number, not the generic --init message", () => {
+    const { runGh, calls } = scriptedGh([
+      projectListRule([{ number: 42, title: "m3l-automation hub" }]),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runProjectSync({
+      runGh,
+      reporter,
+      apply: false,
+      init: false,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(reporter.errors).toHaveLength(1);
+    const message = required(reporter.errors[0], "reporter.errors[0]");
+    expect(message).toContain(HUB_PROJECT_TITLE);
+    expect(message).toContain("m3l-automation hub");
+    expect(message).toContain("#42");
+    expect(message).toMatch(/renamed on GitHub/);
+    expect(message).toMatch(/HUB_PROJECT_TITLE/);
+    // Never suggests --init here — that would create a second, empty board.
+    expect(message).not.toMatch(/run with --init/);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("board title miss with two or more owner projects: falls back to the generic --init message (not a rename guess)", () => {
+    const { runGh, calls } = scriptedGh([
+      projectListRule([
+        { number: 42, title: "Some other board" },
+        { number: 43, title: "Yet another board" },
+      ]),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runProjectSync({
+      runGh,
+      reporter,
+      apply: false,
+      init: false,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(reporter.errors).toHaveLength(1);
+    const message = required(reporter.errors[0], "reporter.errors[0]");
+    expect(message).toMatch(/run with --init to create it/);
+    expect(message).not.toMatch(/renamed on GitHub/);
+    expect(calls).toHaveLength(1);
+  });
+
   test("--init without --apply: returns { ok: true }, zero mutating calls, and previews the would-do plan", () => {
     const { runGh, calls } = scriptedGh([
       projectListRule([{ number: 7, title: HUB_PROJECT_TITLE }]),
@@ -1199,6 +1311,9 @@ describe("runProjectSync", () => {
       projectListRule([]),
       projectCreateRule(createdProject),
       projectFieldListRule({ name: "Status", id: "FIELD_1", options: [] }),
+      projectViewRule("PROJECT_ID"),
+      viewsListGraphqlRule([]),
+      createViewGraphqlRule(),
       graphqlRule(),
     ]);
     const reporter = createFakeReporter();
@@ -1273,22 +1388,36 @@ describe("runProjectSync", () => {
     ];
     const existingProjectItems = [
       { id: "PVTI_102", content: { number: 102 }, status: "Done" },
-      { id: "PVTI_103", content: { number: 103 }, status: "Pending" },
+      { id: "PVTI_103", content: { number: 103 }, status: "To Do" },
     ];
     const { runGh, calls } = scriptedGh([
       projectListRule([{ number: 7, title: HUB_PROJECT_TITLE }]),
       issueListProjectsRule(hubIssues),
       projectItemListRule(existingProjectItems),
       projectViewRule("PROJECT_ID"),
-      projectFieldListRule({
-        name: "Status",
-        id: "FIELD_1",
-        options: [
-          { name: "Pending", id: "opt-pending" },
-          { name: "In review", id: "opt-in-review" },
-          { name: "Done", id: "opt-done" },
-        ],
-      }),
+      projectFieldListRule([
+        {
+          name: "Status",
+          id: "FIELD_1",
+          options: [
+            { name: "To Do", id: "opt-todo" },
+            { name: "In Progress", id: "opt-in-progress" },
+            { name: "Blocked", id: "opt-blocked" },
+            { name: "Deferred", id: "opt-deferred" },
+            { name: "Done", id: "opt-done" },
+            { name: "Rejected", id: "opt-rejected" },
+          ],
+        },
+        {
+          name: "Priority",
+          id: "FIELD_2",
+          options: [
+            { name: "0-now", id: "opt-0-now" },
+            { name: "1-next", id: "opt-1-next" },
+            { name: "2-later", id: "opt-2-later" },
+          ],
+        },
+      ]),
       projectItemAddRule("PVTI_NEW"),
       projectItemEditRule(),
       projectItemArchiveRule(),
@@ -1314,11 +1443,12 @@ describe("runProjectSync", () => {
       (a) => a[0] === "project" && a[1] === "item-archive",
     );
     expect(addCalls).toHaveLength(1);
+    // add (status + priority) + setStatus + setPriority = 4 item-edit calls.
     expect(editCalls.length).toBeGreaterThanOrEqual(2);
     expect(archiveCalls).toHaveLength(1);
     expect(reporter.finishedWith).toMatchObject({
       applied: true,
-      board: { add: 1, setStatus: 1, archive: 1 },
+      board: { add: 1, setStatus: 1, setPriority: 1, archive: 1 },
     });
   });
 
