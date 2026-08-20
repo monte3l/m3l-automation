@@ -1123,8 +1123,19 @@ interface M3LProcedureValidationProblem {
 | `ERR_PROCEDURE_MISSING_FALLBACK`        | the fallback is absent or malformed (untyped callers only)                                                                                                                                                                                                                                                                                         |
 | `ERR_PROCEDURE_INVALID_PATTERN`         | a `matches` pattern is over-long, uncompilable, or contains a quantified group                                                                                                                                                                                                                                                                     |
 | `ERR_PROCEDURE_CONDITION_TOO_DEEP`      | a condition nests past `M3L_PROCEDURE_CONDITION_MAX_DEPTH`                                                                                                                                                                                                                                                                                         |
-| `ERR_PROCEDURE_UNKNOWN_REFERENCE`       | a condition references a step / value / parameter name that does not exist (untyped callers only)                                                                                                                                                                                                                                                  |
+| `ERR_PROCEDURE_UNKNOWN_REFERENCE`       | a condition references a **step** or **parameter** name that does not exist (untyped callers only)                                                                                                                                                                                                                                                 |
 | `ERR_PROCEDURE_INVALID_DECLARATION`     | a malformed declaration: an empty or non-string `id` / `label` / parameter name; a dangerous parameter or `values` key (`__proto__`, `constructor`, `prototype`); a duplicate parameter name; a non-finite or non-number case `priority`; a `loop.maxRevisits` that is not a finite integer > 0; a condition `literal` that is a non-finite number |
+
+A `value` reference is deliberately **not** build-validated, and cannot be. A
+step's `values` patch is produced inside its `execute` body at run time, so
+there is no declared set of value keys for `build()` to check against — and
+unlike `parameters`, adding a builder declaration would not help, because the
+question is not "which keys were declared" but "which keys will any step
+actually produce", which is a property of function bodies. The typed path
+already makes a misspelled `value` key a compile error via
+`keyof TShape["values"]`, and at run time an unresolvable `value` reference is
+reported as `present: false` with the condition evaluating `false` — the total,
+documented behaviour, not a silent gap.
 
 `ERR_PROCEDURE_INVALID_DECLARATION` exists because `build()` calls
 `canonicalJsonHash`, which rejects a non-finite number or a `BigInt` anywhere

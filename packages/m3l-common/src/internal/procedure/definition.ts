@@ -11,13 +11,15 @@
  * outside this package can name the parameter type (short of an explicit
  * `as` escape hatch, which no amount of API design can prevent).
  *
- * Kept minimal for the scaffold — just what the stub constructor assigns
- * today. The GREEN pass that implements `build()` widens this with whatever
- * else the engine needs at run time (the compiled step/case/fallback
- * tables, the compiled `matches` patterns, the `describe()` projection).
+ * Widened by the GREEN pass that implements `build()` to carry the
+ * `describe()` projection alongside the digest. A later pass (the engine
+ * loop) widens this further with whatever `run()` needs at run time (the
+ * compiled step/case/fallback tables, the compiled `matches` patterns).
  *
  * Private to `core/procedure`; never re-exported through a public barrel.
  */
+
+import type { M3LProcedureSummary } from "../../core/procedure/types.js";
 
 /**
  * The validated, frozen shape `build()` hands to `new M3LProcedure(...)`.
@@ -25,4 +27,6 @@
 export interface M3LProcedureBuiltDefinition {
   /** `canonicalJsonHash` over the built definition's serialisable projection. */
   readonly digest: string;
+  /** The exact projection `digest` hashes; returned verbatim by `describe()`. */
+  readonly summary: M3LProcedureSummary;
 }

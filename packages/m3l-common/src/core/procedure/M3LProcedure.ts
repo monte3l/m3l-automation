@@ -56,6 +56,8 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
   /** Computed once at build; copied onto every outcome. */
   readonly digest: string;
 
+  readonly #summary: M3LProcedureSummary;
+
   /**
    * @internal Constructed only by {@link M3LProcedureBuilder.build}. The
    * parameter type lives in `internal/procedure` and is never exported
@@ -63,6 +65,7 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
    */
   constructor(definition: M3LProcedureBuiltDefinition) {
     this.digest = definition.digest;
+    this.#summary = definition.summary;
   }
 
   /**
@@ -74,9 +77,7 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
    * @returns The definition summary.
    */
   describe(): M3LProcedureSummary {
-    throw new M3LProcedureInvalidDefinitionError(
-      "M3LProcedure.describe is not implemented yet",
-    );
+    return this.#summary;
   }
 
   /**

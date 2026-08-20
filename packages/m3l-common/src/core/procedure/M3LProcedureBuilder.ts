@@ -6,9 +6,17 @@
  * @packageDocumentation
  */
 
+import {
+  buildProcedureSummary,
+  computeProcedureDigest,
+} from "../../internal/procedure/digest.js";
 import { M3LProcedureInvalidDefinitionError } from "../../internal/procedure/errors.js";
+import {
+  collectProcedureProblems,
+  renderProcedureProblemsMessage,
+} from "../../internal/procedure/validate.js";
 
-import type { M3LProcedure } from "./M3LProcedure.js";
+import { M3LProcedure } from "./M3LProcedure.js";
 import type {
   M3LProcedureBuildOptions,
   M3LProcedureCase,
@@ -16,6 +24,7 @@ import type {
   M3LProcedureShape,
   M3LProcedureStep,
 } from "./types.js";
+import type { ValidatedProcedureDefinition } from "../../internal/procedure/validate.js";
 
 /**
  * Starts building a procedure over `TShape`. Every step id and case id
@@ -69,6 +78,9 @@ export class M3LProcedureBuilder<
   TPendingCases extends TShape["caseId"],
 > {
   readonly #name: string;
+  readonly #steps: unknown[] = [];
+  readonly #cases: unknown[] = [];
+  #parameters: readonly string[] = [];
 
   /**
    * @internal Constructed only by {@link createProcedureBuilder}.
@@ -96,10 +108,8 @@ export class M3LProcedureBuilder<
   >(
     step: M3LProcedureStep<TShape, TId, TJump>,
   ): M3LProcedureBuilder<TShape, Exclude<TPendingSteps, TId>, TPendingCases> {
-    throw new M3LProcedureInvalidDefinitionError(
-      `M3LProcedureBuilder.step is not implemented yet (procedure "${this.#name}")`,
-      { stepId: step.id },
-    );
+    this.#steps.push(step);
+    return this;
   }
 
   /**
@@ -114,10 +124,52 @@ export class M3LProcedureBuilder<
   case<const TId extends TPendingCases>(
     entry: M3LProcedureCase<TShape, TId>,
   ): M3LProcedureBuilder<TShape, TPendingSteps, Exclude<TPendingCases, TId>> {
-    throw new M3LProcedureInvalidDefinitionError(
-      `M3LProcedureBuilder.case is not implemented yet (procedure "${this.#name}")`,
-      { caseId: entry.id },
-    );
+    this.#cases.push(entry);
+    return this;
+  }
+
+  /**
+   * Declares the parameter names this procedure reads, **at run time**.
+   *
+   * `TShape["parameters"]` gives the compiler the names, but types are
+   * erased, so without this call `build()` has no way to know a `parameter`
+   * reference addresses something real, `describe()` has no `parameters`
+   * list to project into the digest, and `run()` cannot reject an
+   * undeclared key. The element type is constrained to the shape's own
+   * keys, so this cannot drift from the type — it can only be incomplete.
+   *
+   * Omitting it declares **none**, which is a loud failure rather than a
+   * quiet one: every `parameter` reference then fails `build()` under
+   * `ERR_PROCEDURE_UNKNOWN_REFERENCE`, and every key passed to `run()` fails
+   * under `ERR_PROCEDURE_INVALID_OPTION`. Both messages name this method as
+   * the remedy.
+   *
+   * @param names - The parameter names to declare, drawn from
+   *   `TShape["parameters"]`.
+   * @returns This builder, unchanged in its pending-steps/-cases unions.
+   *
+   * @example
+   * ```ts
+   * import { Core } from "@m3l-automation/m3l-common";
+   *
+   * interface Triage extends Core.M3LProcedureShape {
+   *   deps: { readonly logs: { query(q: string): Promise<number> } };
+   *   values: Record<string, never>;
+   *   parameters: { threshold: number };
+   *   conclusion: void;
+   *   stepId: "count-errors";
+   *   caseId: "quiet";
+   * }
+   *
+   * const builder =
+   *   Core.createProcedureBuilder<Triage>("log-triage").parameters([
+   *     "threshold",
+   *   ]);
+   * ```
+   */
+  parameters(names: readonly (keyof TShape["parameters"] & string)[]): this {
+    this.#parameters = [...names];
+    return this;
   }
 
   /**
@@ -134,12 +186,72 @@ export class M3LProcedureBuilder<
     fallback: M3LProcedureFallback<TShape>,
     options?: M3LProcedureBuildOptions,
   ): M3LProcedure<TShape> {
-    throw new M3LProcedureInvalidDefinitionError(
-      `M3LProcedureBuilder.build is not implemented yet (procedure "${this.#name}")`,
-      {
-        revision: options?.revision,
-        fallbackDescription: fallback.description,
+    const problems = collectProcedureProblems({
+      name: this.#name,
+      steps: this.#steps,
+      cases: this.#cases,
+      fallback,
+      declaredParameters: this.#parameters,
+      revision: options?.revision,
+    });
+
+    if (problems.length > 0) {
+      throw new M3LProcedureInvalidDefinitionError(
+        renderProcedureProblemsMessage(problems),
+        { problems },
+      );
+    }
+
+    const validated = this.#toValidatedDefinition(fallback, options);
+    const summary = buildProcedureSummary(validated);
+    const digest = computeProcedureDigest(summary);
+
+    return new M3LProcedure<TShape>({ digest, summary });
+  }
+
+  /**
+   * Projects the raw, accumulated steps/cases/fallback into the validated
+   * shape {@link buildProcedureSummary} consumes. Only ever called once
+   * {@link collectProcedureProblems} confirmed zero problems, so every field
+   * read here is trusted to already satisfy its documented invariant.
+   */
+  #toValidatedDefinition(
+    fallback: M3LProcedureFallback<TShape>,
+    options: M3LProcedureBuildOptions | undefined,
+  ): ValidatedProcedureDefinition {
+    return {
+      name: this.#name,
+      revision: options?.revision,
+      steps: this.#steps.map((raw) => {
+        const step = raw as M3LProcedureStep<
+          TShape,
+          TShape["stepId"],
+          TShape["stepId"]
+        >;
+        return {
+          id: step.id,
+          label: step.label,
+          kind: step.kind,
+          continueOnFailure: step.continueOnFailure ?? false,
+          jumpsTo: step.jumpsTo ?? [],
+          loop: step.loop,
+        };
+      }),
+      cases: this.#cases.map((raw) => {
+        const entry = raw as M3LProcedureCase<TShape, TShape["caseId"]>;
+        return {
+          id: entry.id,
+          description: entry.description,
+          prose: entry.prose,
+          priority: entry.priority,
+          condition: entry.condition,
+        };
+      }),
+      fallback: {
+        description: fallback.description,
+        prose: fallback.prose,
       },
-    );
+      parameters: this.#parameters,
+    };
   }
 }

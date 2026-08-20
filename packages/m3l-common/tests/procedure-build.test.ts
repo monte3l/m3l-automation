@@ -144,10 +144,40 @@ interface UntypedProcedureBuilder {
   build(fallback: unknown, options?: unknown): M3LProcedure<TestShape>;
 }
 
+// NOTE — default-parameter trap: `fallback: unknown = FALLBACK` below means
+// an OMITTED third argument and an explicitly-passed `undefined` third
+// argument are indistinguishable at the call site — JavaScript triggers a
+// parameter default in both cases identically. That is exactly what every
+// other-problem-code test wants (it doesn't care about the fallback, so
+// omitting it should still build a valid one), but it makes this helper
+// unusable for simulating a caller who genuinely omits the fallback — use
+// `buildProcedureWithFallbackAsGiven` below for that case instead.
 function buildProcedure(
   steps: readonly unknown[],
   cases: readonly unknown[],
   fallback: unknown = FALLBACK,
+  options?: M3LProcedureBuildOptions,
+  name = "test-procedure",
+): M3LProcedure<TestShape> {
+  let builder = createProcedureBuilder<TestShape>(
+    name,
+  ) as unknown as UntypedProcedureBuilder;
+  for (const step of steps) builder = builder.step(step);
+  for (const entry of cases) builder = builder.case(entry);
+  return builder.build(fallback, options);
+}
+
+/**
+ * Identical untyped-builder chain to `buildProcedure`, but with no default
+ * for `fallback` — required so a test can pass a literal `undefined` and have
+ * `build()` actually receive it, simulating a JS caller that omits the
+ * fallback argument entirely. Reach for this instead of `buildProcedure`
+ * whenever the fallback argument's absence is the thing under test.
+ */
+function buildProcedureWithFallbackAsGiven(
+  steps: readonly unknown[],
+  cases: readonly unknown[],
+  fallback: unknown,
   options?: M3LProcedureBuildOptions,
   name = "test-procedure",
 ): M3LProcedure<TestShape> {
@@ -498,7 +528,11 @@ describe("core/procedure — build-time validation", () => {
     // omits the argument entirely.
     test("[untyped path] an absent fallback is a problem", () => {
       const { problems } = captureProblems(() =>
-        buildProcedure([makeStep({ id: "a" })], [], undefined),
+        buildProcedureWithFallbackAsGiven(
+          [makeStep({ id: "a" })],
+          [],
+          undefined,
+        ),
       );
       expect(problemCodes(problems)).toContain(
         "ERR_PROCEDURE_MISSING_FALLBACK",
@@ -577,13 +611,13 @@ describe("core/procedure — build-time validation", () => {
       );
     });
 
-    // Unlike `stepId`, `TestShape.values`/`parameters` are fixed-shape
-    // objects, so an unknown key genuinely requires the untyped path.
-    test("[untyped path] a condition referencing an undeclared value key is a problem", () => {
+    // Unlike `stepId`, `TestShape.parameters` is a fixed-shape object, so an
+    // unknown key genuinely requires the untyped path.
+    test("[untyped path] a condition referencing an undeclared parameter key is a problem", () => {
       const condition: M3LProcedureCondition<TestShape> = {
         kind: "exists",
         subject: {
-          source: "value",
+          source: "parameter",
           key: "bogus",
         } as unknown as M3LProcedureReference<TestShape>,
       };
@@ -593,6 +627,31 @@ describe("core/procedure — build-time validation", () => {
       expect(problemCodes(problems)).toContain(
         "ERR_PROCEDURE_UNKNOWN_REFERENCE",
       );
+    });
+
+    // Narrowing (docs/reference/core/procedure.md § Build-time validation): a
+    // step's `values` patch is produced inside its `execute` body at run
+    // time, so `build()` has no declared set of value keys to check a
+    // condition against — unlike `parameters`, a builder declaration would
+    // not help, because the question is "which keys will any step actually
+    // produce", a property of function bodies, not "which keys were
+    // declared". This is deliberately a positive assertion that build()
+    // succeeds, not a deleted test: it locks the narrowing in so a later
+    // pass cannot quietly re-add an unimplementable check. The run-time
+    // counterpart — an unresolvable `value` reference reports
+    // `present: false` and the condition evaluates `false` — is covered in
+    // `procedure-conditions.test.ts`.
+    test("a `value` reference is deliberately not build-validated", () => {
+      const condition: M3LProcedureCondition<TestShape> = {
+        kind: "exists",
+        subject: {
+          source: "value",
+          key: "bogus",
+        } as unknown as M3LProcedureReference<TestShape>,
+      };
+      expect(() =>
+        buildProcedure([makeStep({ id: "a" })], [caseWithCondition(condition)]),
+      ).not.toThrow();
     });
   });
 
