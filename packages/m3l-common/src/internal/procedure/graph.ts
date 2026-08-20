@@ -60,9 +60,7 @@ function buildSuccessors(
   knownIds: ReadonlySet<string>,
 ): ReadonlyMap<string, readonly string[]> {
   const successors = new Map<string, string[]>();
-  for (let index = 0; index < steps.length; index += 1) {
-    const step = steps[index];
-    if (step === undefined) continue;
+  for (const [index, step] of steps.entries()) {
     const next = steps[index + 1];
     const implicit = next !== undefined ? [next.id] : [];
     successors.set(step.id, [...implicit, ...explicitEdgesFor(step, knownIds)]);
@@ -77,14 +75,8 @@ function buildSuccessors(
  * dedupes to the same key.
  */
 function canonicalRotationKey(cycle: readonly string[]): string {
-  let bestIndex = 0;
-  for (let index = 1; index < cycle.length; index += 1) {
-    const candidate = cycle[index];
-    const best = cycle[bestIndex];
-    if (candidate !== undefined && best !== undefined && candidate < best) {
-      bestIndex = index;
-    }
-  }
+  const smallest = cycle.reduce((a, b) => (b < a ? b : a));
+  const bestIndex = cycle.indexOf(smallest);
   return [...cycle.slice(bestIndex), ...cycle.slice(0, bestIndex)].join(" ");
 }
 
@@ -113,21 +105,22 @@ function popFrame(
 }
 
 /**
- * Consumes one successor of the frame at `frameNode`/`frameIndex`: recording
- * a cycle, descending into the successor, or skipping an already-explored
- * one. Returns the frame's incremented index for the caller to store — this
- * function never mutates the caller's frame object directly.
+ * Consumes one successor at `succs[frameIndex]`: recording a cycle,
+ * descending into the successor, or skipping an already-explored one.
+ * Returns the frame's incremented index for the caller to store — this
+ * function never mutates the caller's frame object directly. Takes the
+ * already-resolved `succs` list rather than re-deriving it from a node id,
+ * since {@link walkFrom} has already fetched it once to bounds-check
+ * `frameIndex` before calling this.
  */
 function advanceFrame(
   stack: DfsFrame[],
   path: string[],
   color: Map<string, NodeColor>,
   cyclesByKey: Map<string, readonly string[]>,
-  frameNode: string,
+  succs: readonly string[],
   frameIndex: number,
-  successors: ReadonlyMap<string, readonly string[]>,
 ): number {
-  const succs = successors.get(frameNode) ?? [];
   const next = succs[frameIndex];
   const advancedIndex = frameIndex + 1;
   if (next === undefined) return advancedIndex;
@@ -175,9 +168,8 @@ function walkFrom(
       path,
       color,
       cyclesByKey,
-      frame.node,
+      succs,
       frame.index,
-      successors,
     );
   }
 }

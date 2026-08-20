@@ -27,11 +27,8 @@ export class M3LProcedureInvalidDefinitionError extends M3LError {
   /** Narrows the inherited `code` to the literal `"ERR_PROCEDURE_INVALID_DEFINITION"`. */
   override readonly code: "ERR_PROCEDURE_INVALID_DEFINITION";
 
-  constructor(message: string, context?: Record<string, unknown>) {
-    super(message, {
-      code: "ERR_PROCEDURE_INVALID_DEFINITION",
-      ...(context !== undefined ? { context } : {}),
-    });
+  constructor(message: string, context: Record<string, unknown>) {
+    super(message, { code: "ERR_PROCEDURE_INVALID_DEFINITION", context });
     this.code = "ERR_PROCEDURE_INVALID_DEFINITION";
   }
 }
@@ -60,12 +57,12 @@ export class M3LProcedureInvalidOptionError extends M3LError {
    */
   constructor(
     message: string,
-    context?: Record<string, unknown>,
+    context: Record<string, unknown>,
     cause?: unknown,
   ) {
     super(message, {
       code: "ERR_PROCEDURE_INVALID_OPTION",
-      ...(context !== undefined ? { context } : {}),
+      context,
       ...(cause !== undefined ? { cause } : {}),
     });
     this.code = "ERR_PROCEDURE_INVALID_OPTION";
