@@ -242,6 +242,88 @@ the `core/index.ts` barrel line (`check:scaffold`);
 provenance sidecar; Core count 22 → 23 and total 41 → 42 at **every** count site via
 `pnpm gen:counts` — never hand-edited.
 
+### B2 — Landing plan (ADR-0072)
+
+B2 was attempted once as PR #523 and abandoned after five review rounds
+(non-convergence, not size — see `docs/plans/IMPLEMENTATION.md`'s F23 row for
+the full post-mortem) at 15,544 changed lines / 499,513 reviewable chars,
+1.7x the 300,000 `MAX_REVIEWABLE_BYTES` ceiling. F23 (#571) shipped
+ADR-0072's reviewable-slice discipline in response; this section records a
+landing plan for B2's re-attempt, derived by running the shipped gates
+against the abandoned branch (full measurements and reasoning:
+`docs/logs/2026-08-21-f23-field-test-b2.md`). `docs/reference/core/procedure.md`
+carries this same `## Landing plan` heading once it exists — the heading
+`check:scaffold-seam` enforces for any module in flight — and should be kept
+in sync with this section.
+
+**Before RED on the re-attempt:** the four oversized files from the original
+attempt must be authored pre-decomposed, not written as monoliths and split
+later:
+
+- `M3LProcedure.ts` — write the class as a thin orchestrator from the start;
+  externalize step-advancement, phase-one orchestration, and
+  execution/conclusion logic into new `internal/procedure/` modules, the same
+  pattern the original attempt already used for `resolve.ts`/`graph.ts`/
+  `evaluate.ts`/`trace.ts`.
+- `types.ts` — split along its own natural sections (values, references,
+  steps, conditions, cases, run/progress options, outcomes) into 3–4 files
+  re-exported from one place.
+- `validate.ts` — split normalization functions, duplicate/cycle/jump checks,
+  and the pattern-scanning helpers (the code R5's unbounded-recursion defect
+  lived in) into 2–3 files.
+- `procedure-guards.test.ts` — split along the "guards/tracing/adversarial"
+  seam already named in the original attempt's own Notes-column prose,
+  instead of writing one 81,143-byte file and discovering the seam after the
+  fact.
+
+**Slice sequence** (measured/estimated bytes from the field test; re-measure
+with `pnpm check:review-size` once each slice actually exists — do not treat
+these as committed numbers):
+
+1. **Conditions** — `docs/reference/core/procedure.md` (complete, with this
+   Landing plan heading), `core/procedure/conditions.ts`, a decomposed
+   `internal/procedure/evaluate.ts`, `tests/procedure-conditions.test.ts`.
+   ~70,100 reviewable bytes — under the 75,000 soft target as measured. The
+   one seam the original attempt identified in its own test file's imports
+   and never used.
+2. **Types + builder validation** — the split `types.ts` and `validate.ts`,
+   `M3LProcedureBuilder.ts`, `tests/procedure-build.test.ts`. ~139,462 bytes
+   pre-split — over target even before the file-level split's own byte
+   savings are counted; likely needs a further split (e.g. type declarations
+   separate from builder-validation logic) once slice 1 exists to build on.
+   This is where R3/R4's defect class (`build()` not validating step
+   `execute`/case `action`, then a fix for that reintroducing a
+   validate-then-re-read hazard) lived — review this slice against
+   `.claude/rules/library-src.md`'s boundary-validation rule explicitly, not
+   just for size.
+3. **The engine** — the decomposed `M3LProcedure.ts`, its extracted
+   `internal/procedure/` modules, the split `procedure-guards.test.ts`,
+   `procedure.test.ts`. ~271,095 bytes pre-decomposition — almost certainly
+   2–3 further slices once the file-level split is real; re-run
+   `check:review-size` after decomposing to get real numbers before
+   committing to a sub-sequence.
+4. **Infra touch-ups** — `breadcrumbs.ts` (flagged by `check:file-budget` as a
+   baseline-ratchet violation — it grows an already-over-limit file), the new
+   error codes in `core/errors/catalog.ts`/`M3LError.ts`, barrel wiring,
+   `check:zones` widening if still needed. ~14,589 bytes; land each piece
+   alongside the slice that first needs it rather than as a standalone PR.
+
+**Per-slice checklist:** `pnpm check:review-size` and `pnpm check:file-budget`
+both green; `perFile` coverage (90/83/80/89) holds for every `src` file the
+slice ships, using **only** tests in that same slice — verify this for real,
+it is not guaranteed by the byte estimates above; `knip` clean (nothing
+shipped before it's wired into the barrel); slice 1 carries the complete
+reference page and flips `check:doc-counts`' denominator; every later slice
+re-stamps `docs/reference/core/procedure.provenance.json` with `--update`
+rather than hand-editing it.
+
+**What this plan does not solve:** slicing addresses discovery cost and
+discarded-work risk, not the non-convergence itself. R4's core lesson — a fix
+reintroducing a hazard already removed on the same module — can recur inside
+any single slice regardless of its size. Review each slice against
+`library-src.md`'s boundary-validation rule as a first-class check, not an
+afterthought to the size gates.
+
 ### B3. `cloudwatch-logs-analysis` — the named consumer
 
 Scaffold with `pnpm scaffold:script` (ADR-0028 naming; `serviceNameErrors()` gates
