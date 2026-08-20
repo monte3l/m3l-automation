@@ -30,7 +30,7 @@ import type { ValidatedProcedureDefinition } from "./validate.js";
  * names, deduplicated and sorted.
  *
  * @param definition - The already-validated declaration
- *   {@link collectProcedureProblems} confirmed carries zero problems.
+ *   {@link validateProcedureDefinition} confirmed carries zero problems.
  * @returns The summary `M3LProcedure.describe()` returns verbatim.
  */
 export function buildProcedureSummary(
@@ -43,8 +43,8 @@ export function buildProcedureSummary(
       id: step.id,
       label: step.label,
       // `M3LProcedureStepKind` is a closed string union at the type level;
-      // `collectProcedureProblems`'s `checkStepKindDeclaration` enforces the
-      // runtime floor — "is a non-empty string" — before this projection
+      // `validateProcedureDefinition`'s `checkStepKindDeclaration` enforces
+      // the runtime floor — "is a non-empty string" — before this projection
       // ever runs, so an untyped caller's malformed `kind` is already an
       // `ERR_PROCEDURE_INVALID_DECLARATION` problem and never reaches here.
       // The cast below only recovers the type-level literal union from a

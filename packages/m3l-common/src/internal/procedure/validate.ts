@@ -96,7 +96,7 @@ export interface RawProcedureInput {
 }
 
 /** One summary-projection step, already validated - see `M3LProcedureSummary`. */
-export interface ValidatedStepProjection {
+interface ValidatedStepProjection {
   readonly id: string;
   readonly label: string;
   readonly kind: string;
@@ -107,7 +107,7 @@ export interface ValidatedStepProjection {
 }
 
 /** One summary-projection case, already validated - see `M3LProcedureSummary`. */
-export interface ValidatedCaseProjection {
+interface ValidatedCaseProjection {
   readonly id: string;
   readonly description: string;
   readonly prose: string;
@@ -1214,22 +1214,4 @@ export function validateProcedureDefinition(
     definition: buildValidatedDefinition(input, name, steps, cases, fallback),
     fallbackAction: fallback.action,
   };
-}
-
-/**
- * Convenience wrapper over {@link validateProcedureDefinition} for a caller
- * that only needs the problem list, e.g. to render a preview without
- * building. Delegates to the same normalization pass, so there is exactly
- * one implementation of "what counts as a problem" in this module.
- *
- * @param input - The raw name, steps, cases, fallback, declared parameter
- *   names, and revision `M3LProcedureBuilder.build()` collected.
- * @returns Every problem found, in the documented table order; empty when
- *   the declaration is valid.
- */
-export function collectProcedureProblems(
-  input: RawProcedureInput,
-): readonly M3LProcedureValidationProblem[] {
-  const outcome = validateProcedureDefinition(input);
-  return outcome.kind === "invalid" ? outcome.problems : [];
 }
