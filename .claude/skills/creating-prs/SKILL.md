@@ -102,7 +102,32 @@ reconcile doc metadata` commit (this repo's standard pattern) before
   git rebase --exec 'git commit --amend --no-edit -S' origin/main
   ```
 
-### 3 — Quality gates
+### 3 — Reviewable-size check (ADR-0072)
+
+Cheap, so it runs before the multi-minute quality gates. If
+`bin/check-review-size.mjs` exists on this branch, run it:
+
+```bash
+pnpm check:review-size
+```
+
+- **Under the soft target (75,000 reviewable chars):** passes quietly,
+  continue.
+- **Over the soft target, under the hard ceiling (300,000):** it warns and
+  names the top contributing files plus a suggested split axis. Split the PR
+  along one of ADR-0072's axes (docs-vs-code first — a markdown-only slice
+  measures ~0 reviewable chars — then path cluster, then commit boundary,
+  then public-surface subset for library work) **or** record in the PR body
+  why not splitting is the right call. Either way, continue.
+- **Over the hard ceiling:** splitting is not optional — the CI gate will
+  reject the PR outright with no review attempted (`claude-pr-review.yml`).
+  Stop, split the branch, and re-run this skill on each slice.
+
+If the script does not yet exist on this branch (bootstrap case — ADR-0072
+landed the gate in a follow-up PR to this repo), skip this step; the
+`claude-pr-review.yml` ceiling check still applies at push time regardless.
+
+### 4 — Quality gates
 
 Run the full verification pipeline. Fail fast: stop on the first failure and
 tell the user which gate failed. Do **not** push a branch that fails any gate.
@@ -111,7 +136,7 @@ tell the user which gate failed. Do **not** push a branch that fails any gate.
 pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build
 ```
 
-### 4 — Reconcile docs
+### 5 — Reconcile docs
 
 Bring doc metadata in line with the commits before they go up for review.
 Invoke the `/syncing-docs` skill — it re-stamps provenance sidecars to the
@@ -123,7 +148,7 @@ failure like any other gate (fail fast, hand back) rather than pushing past it.
 
 If `/syncing-docs` produced working-tree changes, commit them as a standalone
 reconciliation commit **before** the push, so the change is in the commit
-history the PR is generated from (Steps 9–11) — this skill otherwise never
+history the PR is generated from (Steps 10–12) — this skill otherwise never
 creates commits:
 
 ```bash
@@ -133,7 +158,7 @@ git commit -S -m "docs: reconcile doc metadata"
 
 If it produced no changes, there is nothing to commit — continue.
 
-### 5 — Archive the originating plan (if applicable)
+### 6 — Archive the originating plan (if applicable)
 
 If this session entered plan mode for this unit of work (a file exists under
 `~/.claude/plans/` for this task), decide whether it clears the archival bar
@@ -148,13 +173,13 @@ cross-cutting governance/infra change? If yes:
   `## Approach / Decisions`, and `## Outcome` cross-linking any related work log
   or ADR.
 - Add a row to `docs/plans/README.md`'s Archive table.
-- Fold both into the doc-reconciliation commit from Step 4 (or make a
-  standalone `docs: archive <slug> plan` commit if Step 4 produced no changes).
+- Fold both into the doc-reconciliation commit from Step 5 (or make a
+  standalone `docs: archive <slug> plan` commit if Step 5 produced no changes).
 
 If the unit is a routine submodule/script implementation (already covered by
 the mandatory work log) or a trivial one-off fix, skip this step.
 
-### 6 — Pre-push review
+### 7 — Pre-push review
 
 Check which files changed since main:
 
@@ -180,10 +205,10 @@ If the diff contains **only docs/automation changes** (no `src/**` files),
 dispatch `docs-consistency-reviewer` instead.
 
 After collecting spoke results: if any spoke reports a **Must-fix** finding,
-fix it and loop back through Steps 3, 4, and 6 before pushing. Do not push with
+fix it and loop back through Steps 4, 5, and 7 before pushing. Do not push with
 outstanding Must-fix findings.
 
-### 7 — Pre-existing code-scanning check
+### 8 — Pre-existing code-scanning check
 
 CodeQL runs via GitHub "default setup" and its `Analyze (...)` check-runs are
 required to merge (see `docs/contributing/branch-protection.md`). Before
@@ -201,14 +226,14 @@ gh api --method GET repos/{owner}/{repo}/code-scanning/alerts --paginate \
         | "\(.rule.id) \(.most_recent_instance.location.path)"'
 ```
 
-Cross-reference the paths against the changed set from Step 6
+Cross-reference the paths against the changed set from Step 7
 (`git diff main...HEAD --name-only`). If any alert path matches, list the
 matches and tell the user to triage them with the `triaging-scan-alerts` skill
 before merge. This is informational — alerts for **newly pushed** code only
 appear after the post-push scan, so `triaging-scan-alerts` is the follow-up once
 the PR is open.
 
-### 8 — Push the branch
+### 9 — Push the branch
 
 ```bash
 git push -u origin HEAD
@@ -235,19 +260,19 @@ own feature branch** but never on a shared branch (per CLAUDE.md, "never
 git push --force-with-lease
 ```
 
-### 9 — Gather commits since main
+### 10 — Gather commits since main
 
 ```bash
 git log main...HEAD --oneline
 ```
 
-### 10 — Generate the PR title
+### 11 — Generate the PR title
 
 Pick the most impactful commit (breaking > feat > fix > refactor/docs/chore).
 Format as a Conventional Commit, 70 chars max. The title alone must make the
 purpose of the branch clear to a reviewer skimming a PR list.
 
-### 11 — Generate the PR body
+### 12 — Generate the PR body
 
 Write a body that matches the quality and specificity of the examples below.
 The bullets in **Summary** should name actual symbols, files, or behaviours —
@@ -256,7 +281,7 @@ reflect the _actual files changed_, not a generic template. The **Notes** line
 must state the commit type, the public-API impact (additive / behavioural /
 breaking / none), and any migration instructions for breaking changes.
 
-### 12 — Submit the PR
+### 13 — Submit the PR
 
 ```bash
 gh pr create --title "..." --body "$(cat <<'EOF'
@@ -268,7 +293,7 @@ EOF
 Pass `--draft` if the branch name starts with `wip/` or if the user explicitly
 asked for a draft PR.
 
-### 13 — Confirm mergeability
+### 14 — Confirm mergeability
 
 After the PR exists, ask GitHub whether it merges cleanly:
 

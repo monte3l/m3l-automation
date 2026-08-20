@@ -180,6 +180,22 @@ commit counts in the README stay queryable from history.
   B's own commits. Used three times without conflict in the ADR-0030 tooling
   program (`docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md`).
 
+### PR size (ADR-0072)
+
+Prefer several small, independently reviewable PRs over a few large ones — a
+large PR is harder to review well and harder to recover from when review does
+not converge (`core/procedure`/B2, #523: five review rounds, ~$12.75 of gate
+spend, abandoned). `MAX_REVIEWABLE_BYTES` (300,000 chars,
+`claude-pr-review.yml`) is a hard rejection ceiling, not an authoring target;
+75,000 reviewable chars is the soft target `pnpm check:review-size` checks
+locally before a PR is opened (`creating-prs` runs it). Preferred split axes,
+in order: **docs vs. code** first — a markdown-only slice measures ~0
+reviewable chars and reviews for free — then **path cluster**, then **commit
+boundary**, then (library work) a **public-surface subset**. When a PR
+sequence spans several units, `starting-work` recommends the order and each
+slice's branch up front; the stacked-branch pattern above is how consecutive
+slices land as separate PRs before the previous one merges.
+
 ### Worktrees for parallel work
 
 Use a git worktree to work on more than one branch at once without stashing or

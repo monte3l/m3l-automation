@@ -69,7 +69,15 @@ separation intact here by handing off rather than implementing inline.
 5. Add a `docs/reference/<ns>/<module>.md` stub capturing the intended exports and
    behavioral contracts (so the module has an authoritative spec to implement
    against), and add a row for it to `docs/implementation-status.md` with status
-   🧪 (tests-written) and a note that scaffolding is in place.
+   🧪 (tests-written) and a note that scaffolding is in place. Include a
+   `## Landing plan` heading (placeholder text is fine here — `implementing-submodules`
+   Step 5 fills it in before RED) sited after `## Public API`, since the surface
+   must be enumerated before it can be partitioned; the page's de-facto spine is
+   `## Overview` → `## Public API` → module-specific sections → `## Usage` →
+   `## Notes and behavior` → `## See also`, and `## Landing plan` slots in
+   alongside the module-specific sections. `check:scaffold-seam` is being
+   extended to require this heading on any module not yet ✅ (ADR-0072) — add
+   it regardless of whether that extension has landed yet on your branch.
 6. Hand off: tell the user (or proceed, if asked) to run `implementing-submodules`
    for `<module>` to turn the red tests green under review.
 

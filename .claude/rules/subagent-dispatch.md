@@ -133,3 +133,12 @@ status`/`git diff`, re-run `tsc`/`eslint`/`vitest`/coverage) before deciding
   value" above: the defect here was semantically wrong but syntactically
   valid, so `typecheck`/`lint`/`build` all passed clean; only a check against
   the _documented contract_ caught it.
+- **A module whose seam plan (`implementing-submodules` Step 5, ADR-0072)
+  projects more than one slice is never dispatched as a single RED/GREEN
+  pair.** `core/procedure`/B2 (#523) tried to write and review a whole large
+  module as one turn per phase and hit non-convergence after five review
+  rounds and two mid-task truncations — including a reviewer returning
+  nothing after 13 minutes and 183k tokens. Dispatch each slice's Phase 2/3
+  as its own bounded turn, with its own Phase 4 review, landing as its own PR
+  before the next slice's dispatch begins — don't let "it's one module" carry
+  a many-file, many-concept RED/GREEN pair back into a single dispatch.

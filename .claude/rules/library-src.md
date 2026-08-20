@@ -208,17 +208,36 @@ number>` already relies on (found A4b: `LOG_LEVEL_FLOORS`).
   nothing, the denylist failed all four and regressed three times. Where the
   input is genuinely free text, say "best effort" in the TSDoc and reclassify
   the artifact instead of promising a guarantee.
-- **Never validate a caller value and then let something else re-read it.**
-  That is two observations of a mutable, caller-controlled graph, and it is
-  defeated by making them disagree — a non-idempotent getter, a non-enumerable
-  own `toJSON` invisible to `Object.keys` but applied by the serializer, own
-  non-index properties on an array, a `length` re-read mid-loop. Do the
-  traversal **once**: validate and project into a fresh structure, then derive
-  the downstream artifact (hash, digest, persisted bytes) from the projection,
-  never from the original. `core/checkpoint`'s A4 fingerprint proved it — three
-  guards were refuted in a row, each by a new route from the caller's object to
-  the hash, until the two reads were collapsed into one
-  (`docs/logs/2026-08-19-a4-checkpoint-fingerprint.md`).
+- **Every caller-supplied value crossing the public boundary is validated
+  once, at the boundary — including depth and recursion bounds — and that
+  validation's guarantee must hold all the way to where the value is used.**
+  This is the general class behind two separate incidents, not one narrow
+  rule: **(1) never validate a caller value and then let something else
+  re-read it.** That is two observations of a mutable, caller-controlled
+  graph, and it is defeated by making them disagree — a non-idempotent
+  getter, a non-enumerable own `toJSON` invisible to `Object.keys` but
+  applied by the serializer, own non-index properties on an array, a
+  `length` re-read mid-loop. Do the traversal **once**: validate and project
+  into a fresh structure, then derive the downstream artifact (hash, digest,
+  persisted bytes) from the projection, never from the original.
+  `core/checkpoint`'s A4 fingerprint proved it — three guards were refuted in
+  a row, each by a new route from the caller's object to the hash, until the
+  two reads were collapsed into one
+  (`docs/logs/2026-08-19-a4-checkpoint-fingerprint.md`). **(2) an unbounded
+  recursion or loop over caller-supplied structure is itself unvalidated
+  input**, even when every individual read is guarded — depth and iteration
+  count need their own explicit ceiling, checked before recursing, not
+  discovered as a bare `RangeError`/stack overflow at runtime. The
+  `core/procedure` review rounds (B2/#523 post-mortem, ADR-0072) found this
+  same class **four separate times** across one module: unvalidated step
+  `execute`/case `action` escaping as a bare `TypeError`; the first fix for
+  that reintroducing the re-read hazard `f875c52` had already removed;
+  unbounded recursion over caller `run()` parameters yielding a bare
+  `RangeError`; and three further sites of unguarded caller reads found only
+  by a dedicated follow-up audit. **A bare `TypeError`/`RangeError`/stack
+  overflow escaping the public boundary is the defect itself**, not a missing
+  message on an otherwise-acceptable throw — it means validation happened
+  somewhere the boundary doesn't cover.
 - **Two fix rounds bypassing the same mechanism means change the shape, not add
   a case.** A third patch to the same guard is a denylist by another name. Stop,
   name the structural property being violated, and fix that instead.
@@ -291,6 +310,20 @@ number>` already relies on (found A4b: `LOG_LEVEL_FLOORS`).
   is source-breaking, even when production code only ever _receives_ it (found
   A4a: a required `dryRun` on `M3LScriptHookContext` broke 7 consumer test
   fakes). Reading the type in isolation hides the semver event.
+- **Per-file size is ratcheted, not capped (ADR-0072).** `pnpm check:file-budget`
+  enforces `src` ≤ 25,000 chars against a committed baseline
+  (`bin/file-budget-baseline.json`): a baselined file may not **grow**; any
+  other file must stay under the ceiling from day one. This exists because
+  `vitest.config.ts`'s `perFile: true` v8 coverage threshold binds an
+  implementation file to every test file exercising it — a large file with
+  large tests can become structurally un-splittable after the fact
+  (`core/procedure`/B2, ~375,000 irreducible reviewable chars once both grew
+  past the point of retrofitting a split). Design a large module's file
+  boundaries — and its test file boundaries, `tests.md` — before either grows
+  past the ceiling, not after. Landing `internal/` helpers before the public
+  symbols that use them is **not** an escape from this: tests exercise only
+  the public barrel, so an internal-only slice ships `src/` with zero
+  coverage and still trips `perFile` once the public symbol lands.
 - **In a top-level catch whose job is to set an exit code, set it first.**
   Assign `process.exitCode` (or the equivalent scheduler signal) immediately,
   before any report/log work that could throw — the exit code is the only thing
