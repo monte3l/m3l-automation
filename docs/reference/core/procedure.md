@@ -713,11 +713,22 @@ interface M3LProcedureRunOptionsBase<TShape extends M3LProcedureShape> {
   readonly initialValues?: Readonly<Partial<TShape["values"]>>;
 }
 
-/** `parameters` is conditionally required — the mechanism
- *  `M3LOperationPipelineOptions` uses for `prepare`. */
+/**
+ * `parameters` is conditionally required — the mechanism
+ * `M3LOperationPipelineOptions` uses for `prepare`.
+ *
+ * The predicate tests the map's **value** type, not its key type. Testing
+ * `[keyof TShape["parameters"]] extends [never]` looks equivalent and is not:
+ * `keyof Record<string, never>` is `string`, so the most natural way to write
+ * "this procedure takes no parameters" would land on the *required* branch and
+ * demand an empty object at every call site. Both `Record<string, never>` and
+ * `Record<never, never>` make `parameters` optional under the value-type form,
+ * and every populated map — including one whose only property is optional —
+ * still makes it required.
+ */
 type M3LProcedureRunOptions<TShape extends M3LProcedureShape> =
   M3LProcedureRunOptionsBase<TShape> &
-    ([keyof TShape["parameters"]] extends [never]
+    ([TShape["parameters"][keyof TShape["parameters"]]] extends [never]
       ? { readonly parameters?: Readonly<TShape["parameters"]> }
       : { readonly parameters: Readonly<TShape["parameters"]> });
 
