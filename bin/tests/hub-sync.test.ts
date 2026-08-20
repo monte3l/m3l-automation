@@ -288,18 +288,30 @@ describe("PRIORITY_LABELS", () => {
 });
 
 describe("TYPE_LABELS", () => {
-  test("maps governance to its 'type:governance' label string", () => {
-    expect(TYPE_LABELS).toMatchObject({
-      governance: "type:governance",
+  test("maps every ISSUE_TYPES display-name value to its 'type:<x>' label string", () => {
+    expect(TYPE_LABELS).toEqual({
+      [ISSUE_TYPES.capability]: "type:capability",
+      [ISSUE_TYPES.consumerScript]: "type:consumer-script",
+      [ISSUE_TYPES.friction]: "type:friction",
+      [ISSUE_TYPES.governance]: "type:governance",
     });
+  });
+
+  test("is keyed by the ISSUE_TYPES display name, not the facet name, so TYPE_LABELS[item.type] resolves directly", () => {
+    expect(TYPE_LABELS[ISSUE_TYPES.governance]).toBe("type:governance");
+    expect(TYPE_LABELS.governance).toBeUndefined();
   });
 });
 
 describe("STATUS_LABELS", () => {
-  test("maps deferred/blocked statuses to their status:<x> label", () => {
-    expect(STATUS_LABELS).toMatchObject({
+  test("maps all six statuses (todo/in-progress/deferred/blocked/done/rejected) to their status:<x> label", () => {
+    expect(STATUS_LABELS).toEqual({
+      todo: "status:todo",
+      "in-progress": "status:in-progress",
       deferred: "status:deferred",
       blocked: "status:blocked",
+      done: "status:done",
+      rejected: "status:rejected",
     });
   });
 });
@@ -786,30 +798,63 @@ describe("buildIssuePayload", () => {
     expect(payload.body).toContain("**What:** a very specific detail");
   });
 
-  test.each(["todo", "in-progress", "done", "rejected"] as const)(
-    "labels carry no status label for status %s",
-    (status) => {
-      const item = makeItem({ priority: "p1", status });
-      const payload = buildIssuePayload(item) as { labels: string[] };
-      expect(payload.labels).toEqual(["hub-sync", "priority:1-next"]);
-    },
-  );
-
+  // ADR-0052's 2026-08-20 Update: every Item status — not just deferred/
+  // blocked — now resolves to a STATUS_LABELS entry unconditionally, applied
+  // after the (unconditional, since the same Update) TYPE_LABELS entry.
   test.each([
+    ["todo", "status:todo"],
+    ["in-progress", "status:in-progress"],
     ["deferred", "status:deferred"],
     ["blocked", "status:blocked"],
+    ["done", "status:done"],
+    ["rejected", "status:rejected"],
   ] as const)(
-    "labels append the STATUS_LABELS entry for status %s",
+    "labels always append the STATUS_LABELS entry for status %s (unconditional since ADR-0052)",
     (status, statusLabel) => {
       const item = makeItem({ priority: "p1", status });
       const payload = buildIssuePayload(item) as { labels: string[] };
       expect(payload.labels).toEqual([
         "hub-sync",
         "priority:1-next",
+        "type:capability",
         statusLabel,
       ]);
     },
   );
+
+  test.each([
+    [ISSUE_TYPES.capability, "type:capability"],
+    [ISSUE_TYPES.consumerScript, "type:consumer-script"],
+    [ISSUE_TYPES.friction, "type:friction"],
+    [ISSUE_TYPES.governance, "type:governance"],
+  ] as const)(
+    "labels always append the TYPE_LABELS entry for type %s",
+    (type, typeLabel) => {
+      const item = makeItem({ priority: "p1", status: "todo", type });
+      const payload = buildIssuePayload(item) as { labels: string[] };
+      expect(payload.labels).toContain(typeLabel);
+      // Exactly one type:* label — never duplicated or omitted.
+      expect(payload.labels.filter((l) => l.startsWith("type:"))).toEqual([
+        typeLabel,
+      ]);
+    },
+  );
+
+  test("throws when item.type has no TYPE_LABELS entry", () => {
+    const item = makeItem({
+      type: "Bogus type" as unknown as (typeof ISSUE_TYPES)[keyof typeof ISSUE_TYPES],
+    });
+    expect(() => buildIssuePayload(item)).toThrowError(/no TYPE_LABELS entry/);
+  });
+
+  test("throws when item.status has no STATUS_LABELS entry", () => {
+    const item = makeItem({
+      status: "bogus-status" as unknown as TestItem["status"],
+    });
+    expect(() => buildIssuePayload(item)).toThrowError(
+      /no STATUS_LABELS entry/,
+    );
+  });
 
   test.each([
     ["p0", "Now — unblock first"],
@@ -828,13 +873,23 @@ describe("buildIssuePayload", () => {
   );
 
   test("milestoneTitle is never null for a governance item: it resolves to the Governance milestone", () => {
-    const item = makeItem({ priority: "governance" });
+    const item = makeItem({
+      priority: "governance",
+      type: ISSUE_TYPES.governance,
+      status: "todo",
+    });
     const payload = buildIssuePayload(item) as {
       milestoneTitle: string | null;
       labels: string[];
     };
     expect(payload.milestoneTitle).toBe("Governance");
-    expect(payload.labels).toEqual(["hub-sync", "type:governance"]);
+    // Governance never carries a priority:* label (ADR-0051), but does carry
+    // the unconditional type + status labels (ADR-0052's 2026-08-20 Update).
+    expect(payload.labels).toEqual([
+      "hub-sync",
+      "type:governance",
+      "status:todo",
+    ]);
   });
 
   test("milestoneTitle is '2.0 / breaking' for an item keyed impl:friction:f3, regardless of its priority", () => {
@@ -1062,6 +1117,8 @@ interface IssueSyncResult {
     key: string;
     comment: string;
     reason: "completed" | "not planned";
+    payload?: { labels: string[] };
+    labelsStale?: boolean;
   }[];
   reopen: { number: number; key: string; payload: unknown }[];
   untouched: { number: number; reason: string }[];
@@ -1177,6 +1234,13 @@ describe("planIssueSync", () => {
     expect(result.close[0]?.key).toBe("roadmap:p0:c");
     expect(result.close[0]?.comment).toMatch(/done/i);
     expect(result.close[0]?.reason).toBe("completed");
+    // The existing issue still carries "status:todo" (the open item's label),
+    // stale relative to the closing payload's "status:done" — labelsStale is
+    // true, and payload is the full buildIssuePayload output (ADR-0052's
+    // 2026-08-20 Update — gh issue close cannot set labels itself, so the
+    // runner syncs labels via a separate edit before closing whenever true).
+    expect(result.close[0]?.labelsStale).toBe(true);
+    expect(result.close[0]?.payload?.labels).toContain("status:done");
     expect(result.update).toEqual([]);
     expect(result.reopen).toEqual([]);
   });
@@ -1203,6 +1267,27 @@ describe("planIssueSync", () => {
     expect(result.reopen).toEqual([]);
   });
 
+  test("closing an item whose current labels already match the closing payload sets labelsStale: false", () => {
+    const item = makeItem({
+      key: "roadmap:p0:already-labeled",
+      status: "done",
+    });
+    // Hand-crafted: an open issue that already carries the FULL closing
+    // payload's labels (as if a prior partial apply already synced them),
+    // even though it hasn't been closed yet — proves managedLabelsDiffer
+    // correctly reports no drift when the labels are already in sync,
+    // distinct from the common case (previous test) where the open item's
+    // stale "status:todo" label triggers labelsStale: true.
+    const existingIssue = issueFromPayload(18, item, "open");
+
+    const result = planIssueSync([item], [existingIssue]) as IssueSyncResult;
+
+    expect(result.close).toHaveLength(1);
+    expect(result.close[0]?.number).toBe(18);
+    expect(result.close[0]?.labelsStale).toBe(false);
+    expect(result.close[0]?.payload?.labels).toContain("status:done");
+  });
+
   test("an issue whose marker key vanished from items closes, with a 'removed' comment", () => {
     const vanished = makeItem({
       key: "roadmap:p0:vanished",
@@ -1217,6 +1302,11 @@ describe("planIssueSync", () => {
     expect(result.close[0]?.key).toBe("roadmap:p0:vanished");
     expect(result.close[0]?.comment).toMatch(/remov/i);
     expect(result.close[0]?.reason).toBe("not planned");
+    // The "item vanished" close path has no `item` to build a payload from —
+    // distinct from the isResolved() close path above, which always carries
+    // both fields.
+    expect(result.close[0]?.payload).toBeUndefined();
+    expect(result.close[0]?.labelsStale).toBeUndefined();
     expect(result.create).toEqual([]);
   });
 
@@ -1801,18 +1891,18 @@ describe("planProjectSync", () => {
     expect(result.archive).toEqual([]);
   });
 
-  test("adding a governance item resolves priority to null (board Priority left clear, not a fourth option)", () => {
+  test("adding a governance item resolves priority to 'Governance' (a real 4th board option, ADR-0052's 2026-08-20 Update)", () => {
     const trackedIssues: TrackedIssue[] = [
       { number: 31, state: "open", status: "todo", priority: "governance" },
     ];
     const result = planProjectSync(trackedIssues, []);
 
     expect(result.add).toEqual([
-      { issueNumber: 31, status: "To Do", priority: null },
+      { issueNumber: 31, status: "To Do", priority: "Governance" },
     ]);
   });
 
-  test("a governance item whose board Priority is still set (stale from before ADR-0052) gets setPriority to clear it", () => {
+  test("a governance item whose board Priority is stale (some other leftover value) gets setPriority to 'Governance'", () => {
     const trackedIssues: TrackedIssue[] = [
       { number: 32, state: "open", status: "todo", priority: "governance" },
     ];
@@ -1827,12 +1917,12 @@ describe("planProjectSync", () => {
     const result = planProjectSync(trackedIssues, existingProjectItems);
 
     expect(result.setPriority).toEqual([
-      { itemId: "PVTI_32", issueNumber: 32, priority: null },
+      { itemId: "PVTI_32", issueNumber: 32, priority: "Governance" },
     ]);
     expect(result.setStatus).toEqual([]);
   });
 
-  test("a governance item whose board Priority is already null (cleared) is not re-planned", () => {
+  test("a governance item whose board Priority is still null (stale from before ADR-0052) gets setPriority to correct it to 'Governance'", () => {
     const trackedIssues: TrackedIssue[] = [
       { number: 33, state: "open", status: "todo", priority: "governance" },
     ];
@@ -1842,6 +1932,26 @@ describe("planProjectSync", () => {
         issueNumber: 33,
         status: "To Do",
         priority: null,
+      },
+    ];
+    const result = planProjectSync(trackedIssues, existingProjectItems);
+
+    expect(result.setPriority).toEqual([
+      { itemId: "PVTI_33", issueNumber: 33, priority: "Governance" },
+    ]);
+    expect(result.setStatus).toEqual([]);
+  });
+
+  test("a governance item whose board Priority is already 'Governance' is not re-planned", () => {
+    const trackedIssues: TrackedIssue[] = [
+      { number: 34, state: "open", status: "todo", priority: "governance" },
+    ];
+    const existingProjectItems: ProjectItem[] = [
+      {
+        itemId: "PVTI_34",
+        issueNumber: 34,
+        status: "To Do",
+        priority: "Governance",
       },
     ];
     const result = planProjectSync(trackedIssues, existingProjectItems);
