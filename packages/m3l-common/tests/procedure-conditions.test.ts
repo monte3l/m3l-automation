@@ -1,18 +1,9 @@
 /**
  * Tests for `core/procedure`'s condition algebra — `evaluateProcedureCondition`
- * exercised in isolation (RED phase, ADR-0046, issue #474).
+ * exercised in isolation (ADR-0046, issue #474).
  *
  * Contract source: docs/reference/core/procedure.md § Values and references,
  * § Conditions (Deep structural equality, Pattern safety, Explainability).
- *
- * The implementation is a typed scaffold: `src/core/procedure/types.ts` is
- * the real, final public type surface, but `evaluateProcedureCondition`
- * (`src/core/procedure/conditions.ts`) unconditionally throws `M3LError`
- * with code `ERR_PROCEDURE_INVALID_DEFINITION` and a "not implemented yet"
- * message. Every behavioural assertion below is therefore expected to fail
- * RED for that reason — never for a typo or a bad import. The type-level
- * (`expectTypeOf`/`@ts-expect-error`) assertions exercise the already-real
- * type surface and are expected to pass today.
  *
  * Scope: `evaluateProcedureCondition` only, in isolation — no
  * `M3LProcedure`, no `M3LProcedureBuilder`. Sibling spokes cover
@@ -22,7 +13,6 @@
 
 import { describe, expect, expectTypeOf, test } from "vitest";
 
-import { M3LError } from "../src/core/errors/index.js";
 import {
   evaluateProcedureCondition,
   M3L_PROCEDURE_CONDITION_MAX_DEPTH,
@@ -785,6 +775,32 @@ describe("core/procedure — conditions", () => {
       expect(evaluation.references[0]?.oversized).toBe(true);
     });
 
+    test("a malformed pattern (one `new RegExp` rejects) makes the arm false, not a throw — reachable without build()", () => {
+      // "(" is an unterminated group; `new RegExp` genuinely rejects it.
+      // `build()` would refuse this at build time under
+      // ERR_PROCEDURE_INVALID_PATTERN, but `evaluateProcedureCondition` is
+      // public and reachable without `build()`, so it carries its own
+      // totality guarantee over a malformed pattern source. (Verified
+      // out-of-band that `new RegExp("(")` throws
+      // "Invalid regular expression: /(/: Unterminated group"; not asserted
+      // inline here because ESLint's `no-invalid-regexp` statically flags a
+      // literal invalid pattern passed directly to the `RegExp` constructor.)
+      const scope = buildScope({ output: "anything" });
+      const condition: M3LProcedureCondition<TestShape> = {
+        kind: "matches",
+        subject: { source: "step", step: "count-errors" },
+        pattern: "(",
+      };
+      expect(() =>
+        evaluateProcedureCondition<TestShape>(condition, scope),
+      ).not.toThrow();
+      const evaluation = evaluateProcedureCondition<TestShape>(
+        condition,
+        scope,
+      );
+      expect(evaluation.satisfied).toBe(false);
+    });
+
     test("evaluating the same matches condition twice yields the same result (no lastIndex carry)", () => {
       const scope = buildScope({ output: "ERROR: disk full" });
       const condition: M3LProcedureCondition<TestShape> = {
@@ -1144,6 +1160,62 @@ describe("core/procedure — conditions", () => {
         evaluation.operands[1]?.operands[1]?.references[0]?.reference,
       ).toBe("literal:third");
     });
+
+    /**
+     * Wraps `leaf` in `levels` nested single-operand `and` connectives. A
+     * single-operand `and` is a pass-through (`satisfied` equals its one
+     * operand's), which keeps the propagated result deterministic across the
+     * whole chain regardless of `M3L_PROCEDURE_CONDITION_MAX_DEPTH`'s parity —
+     * unlike a `not` chain, whose result would flip at every level.
+     */
+    function buildAndChain(
+      levels: number,
+      leaf: M3LProcedureCondition<TestShape>,
+    ): M3LProcedureCondition<TestShape> {
+      let condition = leaf;
+      for (let i = 0; i < levels; i += 1) {
+        condition = { kind: "and", operands: [condition] };
+      }
+      return condition;
+    }
+
+    const TRUE_LEAF: M3LProcedureCondition<TestShape> = {
+      kind: "exists",
+      subject: { source: "literal", literal: 1 },
+    };
+
+    test("a condition tree nested to exactly M3L_PROCEDURE_CONDITION_MAX_DEPTH evaluates normally", () => {
+      const condition = buildAndChain(
+        M3L_PROCEDURE_CONDITION_MAX_DEPTH,
+        TRUE_LEAF,
+      );
+      const evaluation = evaluateProcedureCondition<TestShape>(
+        condition,
+        EMPTY_SCOPE,
+      );
+      // The bound is inclusive: nested to exactly the bound, the leaf is
+      // still reached and its own (true) result passes through unchanged.
+      expect(evaluation.satisfied).toBe(true);
+    });
+
+    test("a condition tree nested one level past M3L_PROCEDURE_CONDITION_MAX_DEPTH is refused without throwing", () => {
+      const condition = buildAndChain(
+        M3L_PROCEDURE_CONDITION_MAX_DEPTH + 1,
+        TRUE_LEAF,
+      );
+      // The evaluator is total: assert it returns rather than that it
+      // throws, even one level past the bound.
+      expect(() =>
+        evaluateProcedureCondition<TestShape>(condition, EMPTY_SCOPE),
+      ).not.toThrow();
+      const evaluation = evaluateProcedureCondition<TestShape>(
+        condition,
+        EMPTY_SCOPE,
+      );
+      // The leaf itself is refused (never reached), which propagates as
+      // `false` through every `and` wrapper above it.
+      expect(evaluation.satisfied).toBe(false);
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -1221,6 +1293,34 @@ describe("core/procedure — conditions", () => {
       expect(evaluation.references[0]?.reference).toBe(
         "step:count-errors.count",
       );
+    });
+
+    test('the canonical rendering for a null literal is "literal:null"', () => {
+      const evaluation = evaluateProcedureCondition<TestShape>(
+        { kind: "exists", subject: { source: "literal", literal: null } },
+        EMPTY_SCOPE,
+      );
+      expect(evaluation.references[0]?.reference).toBe("literal:null");
+    });
+
+    test('the canonical rendering for a value reference with a path is "value:tags.0"', () => {
+      const scope = buildScope({ values: { tags: ["a", "b"] } });
+      const evaluation = evaluateProcedureCondition<TestShape>(
+        {
+          kind: "exists",
+          subject: { source: "value", key: "tags", path: ["0"] },
+        },
+        scope,
+      );
+      expect(evaluation.references[0]?.reference).toBe("value:tags.0");
+    });
+
+    test('the canonical rendering for a parameter reference is "parameter:threshold"', () => {
+      const evaluation = evaluateProcedureCondition<TestShape>(
+        { kind: "exists", subject: { source: "parameter", key: "threshold" } },
+        EMPTY_SCOPE,
+      );
+      expect(evaluation.references[0]?.reference).toBe("parameter:threshold");
     });
 
     test("an unresolvable reference is present: false and satisfied: false, never a throw", () => {
@@ -1384,22 +1484,5 @@ describe("core/procedure — conditions", () => {
         ">" | ">=" | "<" | "<=" | "==" | "!="
       >();
     });
-  });
-
-  // -------------------------------------------------------------------------
-  // RED sentinel
-  // -------------------------------------------------------------------------
-  test("[RED] evaluateProcedureCondition currently throws ERR_PROCEDURE_INVALID_DEFINITION", () => {
-    let thrown: unknown;
-    try {
-      evaluateProcedureCondition<TestShape>(
-        { kind: "exists", subject: { source: "literal", literal: 1 } },
-        EMPTY_SCOPE,
-      );
-    } catch (error) {
-      thrown = error;
-    }
-    expect(thrown).toBeInstanceOf(M3LError);
-    expect((thrown as M3LError).code).toBe("ERR_PROCEDURE_INVALID_DEFINITION");
   });
 });

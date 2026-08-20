@@ -188,6 +188,7 @@ export const M3L_ERROR_CATALOG: Readonly<
   ERR_PRESET_LOAD: { origin: "caller", retryable: false },
   ERR_PRESET_TOO_DEEP: { origin: "caller", retryable: false },
   ERR_PRESET_UNKNOWN_KEYS: { origin: "caller", retryable: false },
+  ERR_PROCEDURE_INVALID_DEFINITION: { origin: "caller", retryable: false },
   ERR_PROMPT_VALIDATION: { origin: "caller", retryable: false },
   ERR_RDS_DATA_OPERATION: { origin: "external", retryable: true },
   ERR_RDS_DATA_RESULT_TOO_LARGE: { origin: "caller", retryable: false },
