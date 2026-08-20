@@ -67,6 +67,12 @@ pre-push:
     # docs/contributing/script-docs-structure.md.
     check-script-docs:
       run: pnpm check:script-docs
+    # Reproduces claude-pr-review.yml's own reviewable-size gate locally
+    # (ADR-0072), before the CI review job ever spends a turn on an
+    # oversized PR. Resolves origin/main...HEAD itself when run bare; skips
+    # gracefully (never blocks) when that range can't be resolved.
+    check-review-size:
+      run: pnpm check:review-size
 
 # Fire after `git rebase` completes (including a no-op rebase with nothing to
 # replay) and after `git merge` completes. Regenerates the derived files the
