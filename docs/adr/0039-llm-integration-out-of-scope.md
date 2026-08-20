@@ -88,6 +88,23 @@ this ADR's LLM decision — tracked as a documentation follow-up, not code.
 - **Semver impact:** none. This ADR records a non-decision to build; no code,
   export, or `exports`-map entry changes.
 
+## Update 2026-08-20 — gate fired; Bedrock integration activated
+
+The condition this ADR recorded has been met: a consumer script genuinely
+needs LLM inference. The agent-operator programme
+([ADR-0058](./0058-agent-operator-programme.md)) names
+**`scripts/agent-operator`** — a policy-gated tool-use loop operating the
+m3l fleet with Claude via AWS Bedrock — as the call-site, and
+[ADR-0059](./0059-bedrock-runtime-wrapper-and-loop-primitives.md) is the
+intake-gate decision built against it (the `aws/bedrock-runtime` typed
+wrapper plus loop primitives), exactly as this ADR prescribed: against a
+named consumer, not ahead of one. The Status stays Accepted — this update
+activates the recorded stance's own revisit path rather than reversing it.
+
+Worth noting: the ReDoS-conscious untrusted-text parsing rule this ADR
+seeded into the style guide is now directly load-bearing — model-generated
+tool output is exactly the untrusted input class it anticipated.
+
 ## Links
 
 - Related: [ADR-0021 (post-1.0 deepen-first strategy — the broadening

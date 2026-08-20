@@ -253,6 +253,21 @@ The coverage matrix, toolset decision, and structural-blockers text in the
 stays gh-CLI-based; only the revisit mechanism changes. `docs/plans/IMPLEMENTATION.md`'s
 gated-decisions table records this row as `Rejected`, closing issue #344.
 
+## Amendment (2026-08-20)
+
+The agent-operator programme ([ADR-0058](./0058-agent-operator-programme.md))
+introduces a **second, runtime MCP surface** —
+[ADR-0062](./0062-runtime-mcp-surface.md)'s `packages/m3l-mcp`, exposing
+intent-grouped fleet operations (discovery, run, flow, health) to external
+MCP clients under the agent policy layer. This amendment records the
+boundary so the two servers are never conflated: `bin/mcp-server.mjs`
+(this ADR) remains the **dev-time repo-maintenance** surface — hub-only,
+devDependency-backed, workflow tools over repo state; `packages/m3l-mcp`
+is the **runtime operations** surface with its own dependency, lifecycle,
+and governance registration. Nothing in this ADR's decision items is
+superseded; the tool-design rules it adopted (fewer, workflow-shaped
+tools) apply to the runtime surface as well.
+
 ## Links
 
 - Supersedes / superseded by: the 2026-07-27 amendment supersedes decision
