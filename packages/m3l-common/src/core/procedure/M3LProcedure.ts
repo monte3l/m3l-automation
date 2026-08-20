@@ -19,6 +19,10 @@ import {
   M3LProcedureIterationLimitError,
   M3LProcedureNoProgressError,
 } from "../../internal/procedure/errors.js";
+import {
+  createProcedureTracer,
+  projectFlowToScalar,
+} from "../../internal/procedure/trace.js";
 import { M3LPollingInvalidOptionError } from "../../internal/polling/errors.js";
 import { ProgressTracker } from "../../internal/polling/progress.js";
 import {
@@ -32,6 +36,10 @@ import { M3L_PROCEDURE_MAX_ITERATIONS } from "./types.js";
 
 import type { M3LRunRecoveryEntry } from "../diagnostics/index.js";
 import type { M3LProcedureBuiltDefinition } from "../../internal/procedure/definition.js";
+import type {
+  M3LProcedureStepTraceClassification,
+  M3LProcedureTracer,
+} from "../../internal/procedure/trace.js";
 import type {
   M3LProcedureCase,
   M3LProcedureCaseEvaluation,
@@ -268,6 +276,30 @@ function isAbortErrorCode(error: unknown): boolean {
     "code" in error &&
     (error as { readonly code: unknown }).code === "ERR_OPERATION_ABORTED"
   );
+}
+
+/**
+ * Classifies a just-settled {@link StepExecutionOutcome} for
+ * `internal/procedure/trace.ts`'s tracer: `failed` is `true` whenever this
+ * attempt's `execute` threw — whether the throw ended phase 1
+ * (`"failed"`/`"aborted"`) or was absorbed into a `"recovered"` step record
+ * — with `flow` left `undefined` in every one of those cases; a clean
+ * (`"succeeded"`) advance reports `failed: false` and the step's own
+ * returned flow, projected to its scalar form.
+ */
+function classifyStepExecution<TShape extends M3LProcedureShape>(
+  executed: StepExecutionOutcome<TShape>,
+): M3LProcedureStepTraceClassification {
+  switch (executed.kind) {
+    case "aborted":
+    case "failed":
+      return { failed: true, flow: undefined };
+    case "advanced":
+      if (executed.record.status === "recovered") {
+        return { failed: true, flow: undefined };
+      }
+      return { failed: false, flow: projectFlowToScalar(executed.flow) };
+  }
 }
 
 /**
@@ -559,6 +591,7 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
   ): Promise<M3LProcedureOutcome<TShape>> {
     const startedAtMs = performance.now();
     const startedAt = new Date().toISOString();
+    const tracer = createProcedureTracer<TShape>(options.trace, options.logger);
 
     const initialContext = createInitialContext<TShape>({
       deps: options.deps,
@@ -573,26 +606,28 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
       initialContext,
       maxIterations,
       progress,
+      tracer,
     );
 
-    if (phaseOne.kind === "failed") {
-      return this.#buildFailedOutcome(phaseOne, startedAt, startedAtMs);
-    }
-    if (phaseOne.kind === "aborted") {
-      return this.#buildAbortedOutcome(phaseOne, startedAt, startedAtMs);
+    if (phaseOne.kind === "failed" || phaseOne.kind === "aborted") {
+      return this.#finishEarlyPhaseOne(
+        phaseOne,
+        tracer,
+        startedAt,
+        startedAtMs,
+      );
     }
 
     // Boundary check before phase 2 (case evaluation): `abortedAt` is
     // `undefined` here — phase 1 has already concluded, so there is no next
     // step boundary left to name.
-    const preCasesAbort = this.#checkAbortBoundary(phaseOne.context.signal);
-    if (preCasesAbort !== undefined) {
-      return this.#buildAbortedOutcome(
-        toAbortedPhaseOne(phaseOne, preCasesAbort),
-        startedAt,
-        startedAtMs,
-      );
-    }
+    const preCases = this.#checkAbortBeforePhase(
+      phaseOne,
+      tracer,
+      startedAt,
+      startedAtMs,
+    );
+    if (preCases !== undefined) return preCases;
 
     const pass =
       phaseOne.kind === "matched"
@@ -601,22 +636,84 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
     const earlyResolved = phaseOne.kind === "matched";
 
     // Boundary check before phase 3 (the concluding action).
-    const preConcludeAbort = this.#checkAbortBoundary(phaseOne.context.signal);
-    if (preConcludeAbort !== undefined) {
-      return this.#buildAbortedOutcome(
-        toAbortedPhaseOne(phaseOne, preConcludeAbort),
-        startedAt,
-        startedAtMs,
-      );
-    }
+    const preConclude = this.#checkAbortBeforePhase(
+      phaseOne,
+      tracer,
+      startedAt,
+      startedAtMs,
+    );
+    if (preConclude !== undefined) return preConclude;
 
-    return this.#conclude(
+    const concluded = await this.#conclude(
       phaseOne,
       pass,
       earlyResolved,
       startedAt,
       startedAtMs,
     );
+    return this.#finishOutcome(tracer, concluded);
+  }
+
+  /**
+   * Assembles and traces the outcome for phase 1 concluding via an
+   * unabsorbed step failure or an already-fired abort — the two
+   * `PhaseOneOutcome` arms `#runValidated` handles identically (build the
+   * matching outcome, then trace it), extracted purely to stay under that
+   * method's line budget.
+   */
+  #finishEarlyPhaseOne(
+    phaseOne: Extract<
+      PhaseOneOutcome<TShape>,
+      { kind: "failed" } | { kind: "aborted" }
+    >,
+    tracer: M3LProcedureTracer<TShape>,
+    startedAt: string,
+    startedAtMs: number,
+  ): M3LProcedureOutcome<TShape> {
+    const outcome =
+      phaseOne.kind === "failed"
+        ? this.#buildFailedOutcome(phaseOne, startedAt, startedAtMs)
+        : this.#buildAbortedOutcome(phaseOne, startedAt, startedAtMs);
+    return this.#finishOutcome(tracer, outcome);
+  }
+
+  /**
+   * Shared boundary check used both before phase 2 and before phase 3: when
+   * `phaseOne.context.signal` has already fired, assembles and traces the
+   * `"aborted"` outcome (`abortedAt: undefined` — phase 1 has already
+   * concluded, so there is no next step boundary left to name) and returns
+   * it; otherwise returns `undefined` so the caller keeps going.
+   */
+  #checkAbortBeforePhase(
+    phaseOne: PhaseOneAccumulated<TShape>,
+    tracer: M3LProcedureTracer<TShape>,
+    startedAt: string,
+    startedAtMs: number,
+  ): M3LProcedureOutcome<TShape> | undefined {
+    const abortError = this.#checkAbortBoundary(phaseOne.context.signal);
+    if (abortError === undefined) return undefined;
+    return this.#finishOutcome(
+      tracer,
+      this.#buildAbortedOutcome(
+        toAbortedPhaseOne(phaseOne, abortError),
+        startedAt,
+        startedAtMs,
+      ),
+    );
+  }
+
+  /**
+   * Records the single per-run `"procedure:outcome"` trace entry (a no-op
+   * when tracing isn't configured) and returns `outcome` unchanged — the
+   * one seam every `#runValidated` exit path funnels through, so the
+   * outcome tracer never needs to be invoked from more than this one place.
+   */
+  #finishOutcome(
+    tracer: M3LProcedureTracer<TShape>,
+    outcome: M3LProcedureOutcome<TShape>,
+  ): M3LProcedureOutcome<TShape> {
+    tracer.recordOutcome(outcome);
+    return outcome;
   }
 
   /**
@@ -632,6 +729,7 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
     initialContext: M3LProcedureContext<TShape>,
     maxIterations: number,
     progress: CapturedProgressConfig<TShape> | undefined,
+    tracer: M3LProcedureTracer<TShape>,
   ): Promise<PhaseOneOutcome<TShape>> {
     let context = initialContext;
     const executedSteps: M3LProcedureStepRecord[] = [];
@@ -653,17 +751,12 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
         return { kind: "ended", context, executedSteps, resolveChecks };
       }
 
-      const preStepFailure = this.#checkStepBoundary(
+      const folded = await this.#advanceOneStep(
         context,
         step,
         maxIterations,
+        tracer,
       );
-      if (preStepFailure !== undefined) {
-        return { ...preStepFailure, context, executedSteps, resolveChecks };
-      }
-
-      const executed = await this.#executeOneStep(context, step);
-      const folded = this.#foldStepExecution(executed, step);
       if (folded.kind === "return") {
         return { ...folded.result, context, executedSteps, resolveChecks };
       }
@@ -754,6 +847,52 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
       return { kind: "aborted", abortedAt: step.id, error: abortError };
     }
     return this.#checkIterationCeiling(context, step, maxIterations);
+  }
+
+  /**
+   * Runs the pre-step boundary guard, then (only if it passed) traces and
+   * executes `step`, folding the result — the whole "one step" unit
+   * `#runPhaseOne`'s loop advances by, extracted purely to stay under that
+   * method's line budget.
+   */
+  async #advanceOneStep(
+    context: M3LProcedureContext<TShape>,
+    step: M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>,
+    maxIterations: number,
+    tracer: M3LProcedureTracer<TShape>,
+  ): Promise<FoldedStepExecution<TShape>> {
+    const preStepFailure = this.#checkStepBoundary(
+      context,
+      step,
+      maxIterations,
+    );
+    if (preStepFailure !== undefined) {
+      return { kind: "return", result: preStepFailure };
+    }
+    const executed = await this.#executeTracedStep(context, step, tracer);
+    return this.#foldStepExecution(executed, step);
+  }
+
+  /**
+   * Computes this attempt's 1-based number and runs `step` through `tracer`
+   * — a thin seam kept out of `#runPhaseOne` purely to stay under that
+   * method's line budget; `tracer` itself degrades to calling
+   * `#executeOneStep` directly with no timing/describeTrace work when
+   * tracing isn't configured (see `internal/procedure/trace.ts`).
+   */
+  #executeTracedStep(
+    context: M3LProcedureContext<TShape>,
+    step: M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>,
+    tracer: M3LProcedureTracer<TShape>,
+  ): Promise<StepExecutionOutcome<TShape>> {
+    const attempt = (context.results[step.id]?.attempt ?? 0) + 1;
+    return tracer.runStep(
+      step,
+      context,
+      attempt,
+      () => this.#executeOneStep(context, step, attempt),
+      classifyStepExecution,
+    );
   }
 
   /**
@@ -1010,8 +1149,8 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
   async #executeOneStep(
     context: M3LProcedureContext<TShape>,
     step: M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>,
+    attempt: number,
   ): Promise<StepExecutionOutcome<TShape>> {
-    const attempt = (context.results[step.id]?.attempt ?? 0) + 1;
     const start = performance.now();
     try {
       const result = await step.execute(context);

@@ -456,15 +456,19 @@ function summarizeHttpError(
 }
 
 /**
- * Summarizes an `M3LOperationPipeline` `pipeline:phase` event
- * (`docs/reference/core/pipeline.md` § Tracing). Unlike
- * {@link summarizeGenericFallback}, this keeps `null` alongside
- * `string`/`number`/`boolean` — the engine's `describe` callback is typed
- * `Readonly<Record<string, M3LBreadcrumbScalar>>`, and `M3LBreadcrumbScalar`
- * admits `null`, so a `describe` return using `null` (e.g. "no bucket yet")
- * must survive this projection rather than silently vanishing.
+ * Summarizes a payload projected from a caller-supplied `describe`/
+ * `describeTrace` callback — `M3LOperationPipeline`'s `pipeline:phase`
+ * (`docs/reference/core/pipeline.md` § Tracing) and `M3LProcedure`'s
+ * `procedure:step`/`procedure:outcome` (`docs/reference/core/procedure.md`
+ * § Tracing) all share this one summarizer rather than each defining their
+ * own. Unlike {@link summarizeGenericFallback}, this keeps `null` alongside
+ * `string`/`number`/`boolean`: each of those three engines types its own
+ * callback's return as `Readonly<Record<string, M3LBreadcrumbScalar>>`, and
+ * `M3LBreadcrumbScalar` admits `null`, so a `describe`/`describeTrace`
+ * return using `null` (e.g. "no bucket yet") must survive this projection
+ * rather than silently vanishing.
  */
-function summarizePipelinePhase(
+function summarizeScalarWithNull(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {};
@@ -503,7 +507,7 @@ function summarizeGenericFallback(
 }
 
 /**
- * The 20 built-in event summarizers, keyed by event name. This registry's
+ * The 22 built-in event summarizers, keyed by event name. This registry's
  * keys double as the default `events` list for {@link M3LBreadcrumbTrail.attach}
  * when `options.events` is omitted.
  */
@@ -527,7 +531,9 @@ const SUMMARIZERS: Readonly<Record<string, Summarizer>> = {
   request: summarizeRequest,
   response: summarizeResponse,
   error: summarizeHttpError,
-  "pipeline:phase": summarizePipelinePhase,
+  "pipeline:phase": summarizeScalarWithNull,
+  "procedure:step": summarizeScalarWithNull,
+  "procedure:outcome": summarizeScalarWithNull,
 };
 
 /** The registry-keyed default event names {@link M3LBreadcrumbTrail.attach} subscribes to. */
@@ -632,9 +638,10 @@ function defaultSourceLabel(source: unknown): string {
  * library-emitted event with a named-field summarizer, this means a secret
  * riding a raw header, error instance, or caller record cannot reach the
  * trail through that event. For an event whose payload is caller-authored
- * instead — `pipeline:phase` (every scalar-valued key survives its
- * summarizer, by design), or any custom event recorded via {@link
- * M3LBreadcrumbTrail.record} directly — protection is **best effort** only:
+ * instead — `pipeline:phase`, `procedure:step`, `procedure:outcome` (every
+ * scalar-valued key survives its summarizer, by design), or any custom event
+ * recorded via {@link M3LBreadcrumbTrail.record} directly — protection is
+ * **best effort** only:
  * `redactSensitiveLogValue`'s key-name heuristic does not recognize an
  * arbitrary key name and does not catch a bare, context-free token in free
  * text.
@@ -687,7 +694,7 @@ export class M3LBreadcrumbTrail {
    * @param source - Any emitter exposing `on`/`off` — a real
    *   `M3LEventEmitterBase` subclass satisfies this structurally.
    * @param options - Optional `source` label override and `events` list
-   *   override; `events` defaults to this trail's full 20-event registry.
+   *   override; `events` defaults to this trail's full 22-event registry.
    * @returns An idempotent detach function; calling it more than once is a
    *   no-op.
    *
