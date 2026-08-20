@@ -49,8 +49,16 @@ jobs:
       #
       # 300000 is ~2.1x the largest reviewable patch in the measured
       # window (142,557 chars, `6c1bd73`) and clears every PR merged in
-      # it. PR #523 — 501,402 reviewable chars, 3.5x that maximum — is the
+      # it. PR #523 — 501,454 reviewable chars, 3.5x that maximum — is the
       # outlier class this catches.
+      #
+      # Both figures are now measured on a deduplicated unified diff. Until
+      # the `--patch` removal above, the gate measured the per-commit patch
+      # series, so #523 read as 696,940 rather than 501,454 and every
+      # multi-commit PR was over-measured in proportion to its commit
+      # count. The 142,557 calibration was always clean (squashed
+      # single-commit diffs), so the limit itself is unchanged — the fix
+      # makes the gate finally measure what the calibration assumed.
       #
       # TEMPORARILY RAISED to 550000 for PR #523 only. RESTORE TO 300000
       # once #523 lands.
@@ -232,7 +240,22 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          gh pr diff "$PR" -R "$REPO" --patch \
+          # NO --patch. `gh pr diff --patch` returns the per-commit patch
+          # SERIES, not a unified diff: on PR #523 it emitted 104
+          # `diff --git` headers for 44 unique files, with
+          # `M3LProcedure.ts` appearing 8 times and 309,876 reviewable
+          # chars of pure duplication (696,940 with --patch vs 501,454
+          # without). Two consequences, both bad: the reviewer paged
+          # through the same file once per commit that touched it — a large
+          # hidden turn sink, and it saw superseded intermediate states of
+          # code that a later commit had already fixed — and the size gate
+          # over-measured every multi-commit PR in proportion to its commit
+          # count, rejecting at an effective threshold ~28-39% stricter
+          # than MAX_REVIEWABLE_BYTES intends (that limit was calibrated on
+          # squashed single-commit diffs, which are never inflated).
+          # The default output is the same unified-diff format, so the
+          # filter below and the review prompt are unaffected.
+          gh pr diff "$PR" -R "$REPO" \
             > "$GITHUB_WORKSPACE/.claude-pr-diff.patch" \
             || rm -f "$GITHUB_WORKSPACE/.claude-pr-diff.patch"
           gh pr diff "$PR" -R "$REPO" --name-only \
