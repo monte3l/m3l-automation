@@ -389,11 +389,21 @@ jobs:
         run: pnpm check:doc-exports
 
       # Scaffold seam: every src/core|aws/<mod>/index.ts must carry its TDD test
-      # file (tests/<mod>.test.ts) and a row in docs/implementation-status.md.
-      # Backstop for the scaffolding-submodules scaffolding skill. Moved here
-      # from the `build` lane (it reads src/ and docs/ directly, never dist/).
-      - name: Check scaffold seam (test + status row)
+      # file (tests/<mod>.test.ts) and a row in docs/implementation-status.md;
+      # while that row is not yet ✅, its docs/reference/<ns>/<mod>.md must also
+      # carry a "## Landing plan" heading (ADR-0072). Backstop for the
+      # scaffolding-submodules scaffolding skill. Moved here from the `build`
+      # lane (it reads src/ and docs/ directly, never dist/).
+      - name: Check scaffold seam (test + status row + landing plan)
         run: pnpm check:scaffold-seam
+
+      # Per-file size ratchet (ADR-0072): a src/tests file not in
+      # bin/file-budget-baseline.json must stay under its ceiling; a baselined
+      # file may shrink but never grow. See ADR-0072 for the rationale — a
+      # large implementation file bound to large tests via perFile coverage
+      # became structurally un-splittable on core/procedure/B2 (#523).
+      - name: Check file budget
+        run: pnpm check:file-budget
 
       # Per-file test counts recorded in docs/implementation-status.md must match
       # the live suite. Derived from `vitest list` — a collection pass, not a

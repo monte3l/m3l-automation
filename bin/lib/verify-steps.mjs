@@ -234,9 +234,14 @@ export const VERIFY_STEPS = [
     conditional: true,
   },
   {
-    ciStepName: "Check scaffold seam (test + status row)",
+    ciStepName: "Check scaffold seam (test + status row + landing plan)",
     id: "check-scaffold-seam",
     cmd: () => "pnpm check:scaffold-seam",
+  },
+  {
+    ciStepName: "Check file budget",
+    id: "check-file-budget",
+    cmd: () => "pnpm check:file-budget",
   },
   {
     ciStepName: "Check script scaffold conformance",
