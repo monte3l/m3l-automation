@@ -270,6 +270,126 @@ normally and is unaffected).
 No new sources — this is an operational finding pending confirmation on
 the next real PR review run.
 
+## Addendum (2026-08-20) — measured: the denial tax, the saturated turn cap, and 37-88% wasted patch
+
+> Written after PR #523 failed the `review` gate three times in one morning
+> (runs `32356973634`, `32359063571`, `32363303781` — 7, 8 and 10 denials,
+> `error_max_turns` every time, ~$8.15 total, no verdict). Addenda b and c
+> above each shipped a fix inferred from an unchanged denial count. This one
+> replaces inference with measurement, and confirms addendum c's fix was
+> correct but incomplete.
+
+### The denial tax was never eliminated, and it is on every run
+
+Denials on the last ten runs that actually reviewed: 13, 12, 7, 15, 9, 10, 7,
+8, 10. Not a tail case — a denial on **every** run, median ~10, i.e. roughly
+30% of a 35-turn budget spent on rejected calls.
+
+### The turn cap had no margin left
+
+Turns used on runs that _succeeded_: 20, 24, 28, 31, 32, 34 — up to 97% of
+cap. `--max-turns 35` was set from "observed max 28/100" and was already
+stale when it shipped. PR #523 did not break a healthy system; it tipped a
+saturated one.
+
+### Most of the patch was content the gate declares non-reviewable
+
+`is_ignored()` marks `*.md`, `docs/**` and `.github/dependabot.yml`
+non-reviewable, but it only ever decided _whether_ to review — the
+pre-compute step filtered exactly one path, `pnpm-lock.yaml`, and handed
+every doc hunk over. Total vs. reviewable patch bytes across the 14 PRs
+merged before this change:
+
+| Merged PR                                         | Total    | Reviewable | Reviewable share |
+| ------------------------------------------------- | -------- | ---------- | ---------------- |
+| `24f7dea` semantic priority vocabulary            | 575,724  | 76,817     | 13%              |
+| `6c1bd73` pipeline phase trace                    | 257,523  | 142,557    | 55%              |
+| `ac1efcd` polling no-progress witness             | 244,035  | 103,691    | 42%              |
+| `cb92b81` hub board identity                      | 113,760  | 92,046     | 81%              |
+| `6557f91` ADR-0050 stance                         | 98,382   | 28,046     | 29%              |
+| `bdc5a50` / `55522bb` / `4db211a` docs programmes | 88k-138k | 4.2k-4.7k  | 3-5%             |
+
+The 581,270-char patch that reviewed successfully in 32 turns was `24f7dea`
+— 77KB of it was reviewable. This repo's markdown makes it worse than the
+percentages suggest: lines run up to **6,315 chars**, so a 5-line edit to
+`docs/implementation-status.md` contributed 61KB of patch and a 192-line edit
+to `docs/reference/core/errors.md` contributed 139KB. PR #523's patch was
+1,102,980 chars total, 696,940 reviewable — 4.9x the largest reviewable
+patch in the table.
+
+### Probe results: what was actually being denied (Claude Code 2.1.237)
+
+Run locally against the real CLI with `--safe-mode`, because the action
+hides its transcript and the SDK's denial reporting is undocumented:
+
+| Probe | `allowedTools`                                         | Action                       | Denials | Turns | Conclusion                                                   |
+| ----- | ------------------------------------------------------ | ---------------------------- | ------- | ----- | ------------------------------------------------------------ |
+| P1    | `Bash(cat:*)`                                          | `cat sample.txt`             | 0       | 2     | colon-prefix syntax IS valid                                 |
+| P2    | `Bash(cat:*)`                                          | `head -n 1 sample.txt`       | 0       | 2     | read-only builtins auto-approved when unlisted               |
+| P3    | `Bash(echo:*)`, `Edit(./out.txt)`                      | `echo -n x > ./out.txt`      | 0       | 2     | `Edit()` DOES grant a new-file redirect                      |
+| P4    | `Bash(echo:*)`, `Write(./out.txt)`                     | same redirect                | 3       | 4     | `Write()` is NOT consulted for redirects                     |
+| P5    | `Bash(echo:*)` only                                    | same redirect                | 4       | 5     | no grant -> denial spiral -> `error_max_turns`               |
+| P6    | `Read`                                                 | native `Grep` tool           | 0       | 1     | read-only native tools need no grant                         |
+| P7    | `Read`                                                 | native `TodoWrite` tool      | 0       | 4     | `TodoWrite` needs no grant                                   |
+| P8    | `Bash(cat:*)`, `Bash(grep:*)`                          | `cat f \| grep two`          | 0       | 2     | pipe fine when both granted                                  |
+| P9    | `Bash(cat:*)` only                                     | `cat f \| grep two`          | 0       | 2     | read-only builtins fine inside a pipe too                    |
+| P10   | `Bash(cat:*)`, `Bash(echo:*)`, `Bash(gh pr comment:*)` | heredoc a 2-line `body.md`   | **3**   | 4     | **no writable scratch path -> denial spiral**                |
+| P11   | + `Edit(./body2.md)`                                   | same heredoc                 | 0       | 2     | one grant removes it entirely                                |
+| P12   | `Bash(gh pr comment:*)`                                | `gh pr diff 523 --name-only` | **1**   | 2     | **`gh pr diff` denied — but the prompt told it to run that** |
+
+This settles the questions addenda b and c had to guess at. Addendum c's fix
+was right: `Edit()` on a plain relative path does grant a redirect (P3), and
+`Write()` genuinely is never consulted (P4). What it missed is that the
+verdict file was not the only write the reviewer needs. A multi-line markdown
+comment is naturally posted with `gh pr comment --body-file`, which requires
+writing the body to disk first — and no path was writable for it, so a
+_two-line_ heredoc cost 3 denials over 4 turns (P10). Separately, the prompt
+instructed a `gh pr diff` fallback that the allowlist forbade (P12).
+
+Also confirmed: denials consume turns and provoke retries (P5, P10), so the
+tax compounds. And several things previously suspected are simply not
+problems — `Bash(head:*)`/`Bash(tail:*)` grants are unnecessary (P2, P9), and
+`Grep`/`Glob`/`TodoWrite` need no grants (P6, P7).
+
+### A separate latent bug: the prior-PASS skip had never fired
+
+The guard step's comment fetch was written as:
+
+```bash
+gh api ... --paginate --slurp --jq '...' 2>/dev/null || true
+```
+
+`gh` rejects `--slurp` combined with `--jq` outright ("the `--slurp` option is
+not supported with `--jq` or `--template`", gh 2.97.0). The error went to
+`/dev/null`, `|| true` swallowed the exit code, and `body` was
+unconditionally empty — so the step always fell through to "No prior
+claude[bot] comment — running review" and the prior-PASS skip optimisation
+never once fired. It failed safe (over-reviewing, never under-reviewing),
+which is why it survived unnoticed. Fixed by piping to `jq` instead of using
+`--jq`.
+
+### Fixes applied
+
+- the pre-computed patch and changed-file list are now filtered by the same
+  predicate as `is_ignored()`, with a `(diff omitted — …)` marker per file
+- reviewable diffs over `MAX_REVIEWABLE_BYTES` (300,000) get a deterministic
+  `FAIL` plus a comment naming the largest contributors, with Claude never
+  starting — 2.1x the largest reviewable patch above, rejecting 0 of 14
+- the verdict falls back to the posted comment when the file is missing, but
+  only on a `claude-review-sha` match against the head commit
+- `Enforce review verdict` runs under `!cancelled()` so it is no longer
+  skipped exactly when the action fails
+- added `Edit(./.claude-review-comment.md)` and `Bash(gh pr diff:*)`; the
+  prompt now enumerates the permitted tools
+- `MAX_TURNS` (60) is a single job-level env shared by `claude_args` and the
+  metrics step; the near-cap warning is 90% of it rather than a hardcoded 33
+- the metrics step reports _which_ tools were denied, from the result
+  entry's `permission_denials` array (confirmed present by probe)
+
+Sourcing note: P1-P12 are local observations of Claude Code 2.1.237, not
+documentation. The action pinned in the workflow installs 2.1.233. Re-probe
+before relying on them across a major CLI bump.
+
 ## Sources
 
 - S1: Claude Code GitHub Actions docs — <https://code.claude.com/docs/en/github-actions> (docs)

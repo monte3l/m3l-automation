@@ -18,14 +18,40 @@ jobs:
     runs-on: ubuntu-latest
     # Anthropic publishes no recommended value; reviews average ~20 minutes
     # per code.claude.com/docs/en/code-review — 45 gives headroom for this
-    # repo's largest observed PRs (~5k changes) without leaving the GitHub
-    # default (360min) as an effective non-limit. See
+    # repo's largest observed PRs without leaving the GitHub default
+    # (360min) as an effective non-limit. Wall time has never been the
+    # binding constraint: the three runs that failed on PR #523 used
+    # 188-296s of this budget and died on TURNS, not time. See
     # docs/research/pr-review-action-tuning.md.
     timeout-minutes: 45
     permissions:
       contents: read
       pull-requests: write
       id-token: write
+    env:
+      # Single source of truth for the turn cap: referenced by claude_args
+      # and by the metrics step's summary/threshold below, so the two can
+      # no longer drift (they were hand-synced across four sites before).
+      #
+      # 60 replaces 35. The old value came from "observed max 28/100" when
+      # it shipped, but by 2026-08-20 the last six runs that actually
+      # reviewed had used 20, 24, 28, 31, 32 and 34 turns — up to 97% of
+      # cap, i.e. no margin at all — and ~30% of every budget was being
+      # burned on permission denials. Turns are a cap, not a target: a
+      # converged review stops early, so raising this does not raise
+      # typical cost. It buys headroom so one unlucky retry loop stops
+      # costing a whole $2.50 run.
+      MAX_TURNS: 60
+      # Above this many characters of *reviewable* patch (after the
+      # ignore-predicate filter in the pre-compute step), no single-pass
+      # review can be faithful, so the gate fails fast with an actionable
+      # message instead of burning a full budget and dying on max turns.
+      #
+      # 300000 is ~2.1x the largest reviewable patch in the measured
+      # window (142,557 chars, `6c1bd73`) and clears every PR merged in
+      # it. PR #523 — 696,940 reviewable chars, 4.9x that maximum — is the
+      # outlier class this catches.
+      MAX_REVIEWABLE_BYTES: 300000
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -111,11 +137,21 @@ jobs:
             exit 0
           fi
 
-          # --slurp so the jq filter runs once over all pages (a bare
+          # --slurp so the filter runs once over all pages (a bare
           # --paginate --jq applies `last` per page and can concatenate bodies).
-          body="$(gh api "repos/$REPO/issues/$PR/comments" --paginate --slurp \
-            --jq 'add | [.[] | select(.user.login == "claude[bot]")] | last // {} | .body // ""' \
-            2>/dev/null || true)"
+          #
+          # The filter is PIPED to jq rather than passed as --jq: gh rejects
+          # `--slurp` combined with `--jq` outright ("the --slurp option is not
+          # supported with --jq or --template", gh 2.97.0). Until 2026-08-20
+          # this was written as `--slurp --jq ...`, so the command always
+          # failed, `2>/dev/null || true` swallowed the error, and `body` was
+          # unconditionally empty — meaning this step always fell through to
+          # "No prior claude[bot] comment" and the prior-PASS skip below never
+          # once fired. It failed safe (over-reviewing, never under-reviewing),
+          # which is why it went unnoticed.
+          body="$(gh api "repos/$REPO/issues/$PR/comments" --paginate --slurp 2>/dev/null \
+            | jq -r 'add | [.[] | select(.user.login == "claude[bot]")] | last // {} | .body // ""' \
+              2>/dev/null || true)"
 
           if [ -z "$body" ]; then
             review "No prior claude[bot] comment — running review."
@@ -163,6 +199,7 @@ jobs:
       # deepening the clone. Non-fatal: on any gh failure the files are removed
       # and the review prompt falls back to fetching the diff itself.
       - name: Pre-compute PR diff for review
+        id: precompute
         if: steps.guard.outputs.should_review == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -177,24 +214,60 @@ jobs:
             > "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt" \
             || rm -f "$GITHUB_WORKSPACE/.claude-pr-changed-files.txt"
 
-          # pnpm-lock.yaml is mechanically regenerated and already validated
-          # elsewhere (`pnpm install --frozen-lockfile` in CI,
-          # dependency-review.yml) — its diff adds volume without review
-          # value. Strip that one hunk from the patch Claude reads; leave
-          # every other file's diff untouched. Non-fatal: on any failure the
-          # original patch is left as-is rather than the job aborting.
+          # Strip from the patch every file the reviewer is not meant to read,
+          # in one pass:
+          #
+          #   * the ignore predicate — `*.md`, `docs/**`,
+          #     `.github/dependabot.yml`. This MUST stay in lockstep with
+          #     `is_ignored()` in the `Check prior review verdict` step above;
+          #     that predicate decides *whether* to review, this one decides
+          #     *what* is handed over, and they have to mean the same thing.
+          #     Until 2026-08-20 only the first half existed, so the reviewer
+          #     was handed megabytes of docs it was explicitly told to ignore:
+          #     across the 14 PRs merged before this change, reviewable content
+          #     was 0-84% of the patch (`24f7dea`: 575,724 chars total,
+          #     74,676 reviewable — 87% waste). This repo's markdown makes it
+          #     worse than it sounds, since lines run up to 6,315 chars, so a
+          #     5-line edit to `docs/implementation-status.md` contributed
+          #     61KB of patch.
+          #   * `pnpm-lock.yaml` — mechanically regenerated and already
+          #     validated elsewhere (`pnpm install --frozen-lockfile` in CI,
+          #     dependency-review.yml), so its diff is volume without review
+          #     value. Not matched by the ignore predicate, hence separate.
+          #
+          # Each omitted file keeps its `diff --git` header plus a one-line
+          # marker, so the reviewer can still see that the file changed and
+          # never mistakes an omission for an unchanged file. Non-fatal: on any
+          # failure the original patch is left as-is rather than aborting.
           patch="$GITHUB_WORKSPACE/.claude-pr-diff.patch"
           if [ -f "$patch" ]; then
             awk '
-              /^diff --git a\/pnpm-lock\.yaml b\/pnpm-lock\.yaml$/ {
-                print
-                print "(diff omitted — pnpm-lock.yaml is mechanically generated;"
-                print " validated by `pnpm install --frozen-lockfile` in CI and"
-                print " dependency-review.yml, not by this reviewer)"
-                skip = 1
-                next
+              function ignored(p) {
+                if (p ~ /\.md$/) return 1
+                if (p ~ /^docs\//) return 1
+                if (p == ".github/dependabot.yml") return 1
+                return 0
               }
-              /^diff --git / { skip = 0 }
+              /^diff --git / {
+                path = $3; sub(/^a\//, "", path)
+                skip = 0
+                if (ignored(path)) {
+                  print
+                  print "(diff omitted — not reviewable by this gate: *.md,"
+                  print " docs/**, .github/dependabot.yml. Listed so you know"
+                  print " the file changed; do not review or Read it.)"
+                  skip = 1
+                  next
+                }
+                if (path == "pnpm-lock.yaml") {
+                  print
+                  print "(diff omitted — pnpm-lock.yaml is mechanically generated;"
+                  print " validated by `pnpm install --frozen-lockfile` in CI and"
+                  print " dependency-review.yml, not by this reviewer)"
+                  skip = 1
+                  next
+                }
+              }
               skip { next }
               { print }
             ' "$patch" > "$patch.stripped" 2>/dev/null \
@@ -202,9 +275,102 @@ jobs:
               || rm -f "$patch.stripped"
           fi
 
+          # Filter the changed-file list the same way. An unfiltered list
+          # invites the reviewer to `Read` files the patch just told it to
+          # ignore, which costs turns for nothing.
+          files="$GITHUB_WORKSPACE/.claude-pr-changed-files.txt"
+          if [ -f "$files" ]; then
+            is_ignored() {
+              case "$1" in
+                *.md) return 0 ;;
+                docs/*) return 0 ;;
+                .github/dependabot.yml) return 0 ;;
+                *) return 1 ;;
+              esac
+            }
+            : > "$files.filtered"
+            while IFS= read -r f; do
+              [ -z "$f" ] && continue
+              if ! is_ignored "$f"; then
+                printf '%s\n' "$f" >> "$files.filtered"
+              fi
+            done < "$files"
+            mv "$files.filtered" "$files"
+          fi
+
+          # Measure what is actually left to review and decide whether a
+          # faithful single-pass review is possible at all. Fail-safe: if the
+          # patch is missing (gh failed above), leave too_large=false so the
+          # review still runs and falls back to fetching the diff itself —
+          # exactly the pre-existing behaviour.
+          reviewable_bytes=0
+          if [ -f "$patch" ]; then
+            reviewable_bytes="$(wc -c < "$patch" | tr -d ' ')"
+          fi
+          echo "reviewable_bytes=$reviewable_bytes" >> "$GITHUB_OUTPUT"
+          echo "Reviewable patch: ${reviewable_bytes} chars (limit ${MAX_REVIEWABLE_BYTES})."
+
+          too_large=false
+          if [ "$reviewable_bytes" -gt "$MAX_REVIEWABLE_BYTES" ]; then
+            too_large=true
+          fi
+          echo "too_large=$too_large" >> "$GITHUB_OUTPUT"
+
+      # An oversized PR gets a deterministic, actionable FAIL instead of a
+      # review that burns the whole turn budget and dies on max turns with
+      # nothing posted (PR #523: three runs, ~$8.15, no verdict). Claude never
+      # starts, so this costs $0. See docs/contributing/branch-protection.md.
+      - name: Reject an unreviewably large PR
+        if: steps.precompute.outputs.too_large == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          REVIEWABLE_BYTES: ${{ steps.precompute.outputs.reviewable_bytes }}
+        run: |
+          set -euo pipefail
+          patch="$GITHUB_WORKSPACE/.claude-pr-diff.patch"
+
+          # Name the worst offenders so the author knows where to cut, rather
+          # than just being told "too big".
+          top="$(awk '
+            /^diff --git / { f = $3; sub(/^a\//, "", f) }
+            { b[f] += length($0) + 1 }
+            END { for (k in b) printf "%d\t%s\n", b[k], k }
+          ' "$patch" 2>/dev/null | sort -rn | head -n 5 \
+            | awk -F'\t' '{ printf "- `%s` — %d chars\n", $2, $1 }' || true)"
+
+          {
+            echo "## Claude PR Review — not run"
+            echo ""
+            echo "This PR's **reviewable** diff is ${REVIEWABLE_BYTES} characters,"
+            echo "over the ${MAX_REVIEWABLE_BYTES}-character limit for a single-pass"
+            echo "blocking review (docs and \`pnpm-lock.yaml\` are already excluded"
+            echo "from that figure). A review this size cannot be faithful, so the"
+            echo "gate fails fast instead of spending a full turn budget and"
+            echo "reporting nothing."
+            echo ""
+            echo "**Largest contributors:**"
+            echo ""
+            echo "${top:-- (could not compute)}"
+            echo ""
+            echo "Split this into smaller PRs and each one will review normally."
+            echo "See \`docs/contributing/branch-protection.md\` for the rationale"
+            echo "and the current limit."
+          } > "$GITHUB_WORKSPACE/.claude-oversize-comment.md"
+
+          # Posted with github.token, so this lands as github-actions[bot], not
+          # claude[bot] — the guard step's `.user.login == "claude[bot]"` filter
+          # and the verdict fallback below can never mistake it for a review.
+          gh pr comment "$PR" -R "$REPO" \
+            --body-file "$GITHUB_WORKSPACE/.claude-oversize-comment.md" || true
+
+          printf 'FAIL' > "$GITHUB_WORKSPACE/.claude-review-verdict"
+          echo "::error title=Claude PR Review::Reviewable diff is ${REVIEWABLE_BYTES} chars, over the ${MAX_REVIEWABLE_BYTES} limit — split this PR."
+
       - uses: anthropics/claude-code-action@9d7150bc8a3dae8149739a88019d192b579ad90c # v1
         id: claude-review
-        if: steps.guard.outputs.should_review == 'true'
+        if: steps.guard.outputs.should_review == 'true' && steps.precompute.outputs.too_large != 'true'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # --safe-mode drops CLAUDE.md, skills, plugins, hooks, MCP servers and
@@ -218,40 +384,55 @@ jobs:
           # sections moves per-machine context (cwd/platform/shell/OS) out of
           # the system prompt so a fresh runner's prefix can still hit a warm
           # cache from an earlier run on the same PR within the 1h TTL.
-          # --max-turns 35 replaces the old 100 (observed max 28/100 used).
+          # --max-turns comes from MAX_TURNS at the job level (single source of
+          # truth, shared with the metrics step).
+          #
           # --allowedTools stays scoped (no curl/wget/arbitrary exec against
-          # untrusted diff content) plus one narrow Edit(...) grant for the
-          # verdict file. The original scoped list (Bash(echo:*) etc. only)
-          # produced 20-23 permission denials per run in production (PRs
-          # #501/#502, 2026-08-19), burning most of the turn budget on
-          # retries: per Claude Code's permissions docs, a redirect target
-          # (the verdict write's `> path`) is checked separately as a file
-          # write against Edit(path) allow rules — a Bash command-prefix
-          # rule like Bash(echo:*) authorizes the command, never the
-          # redirect target. Write(path) rules are accepted but silently
-          # never consulted for this check, so Edit(...) is the only rule
-          # that actually grants it. Adding Edit(./.claude-review-verdict)
-          # alone did NOT resolve this in production (PR #502 re-ran with
-          # it present and still logged 19 denials, 2026-08-19): the
-          # verdict-write command below used to target
-          # "$GITHUB_WORKSPACE/.claude-review-verdict", and Claude Code's
-          # permission matcher evaluates the redirect target as written in
-          # the command, without resolving shell variables first — so the
-          # unexpanded literal never matched the Edit(...) rule's relative
-          # path. The prompt below now has the model write to the exact
-          # relative path ./.claude-review-verdict instead (the working
-          # directory is already the repo root), matching the allow rule
-          # by literal string. --safe-mode still removes
-          # guard-readonly-bash.mjs; the scoped Bash list plus this one
-          # Edit grant are now the write barrier, not a blanket allowance.
-          # See docs/research/pr-review-action-tuning.md for sourcing.
+          # untrusted diff content). A redirect target (`> path`) is checked
+          # separately from the command, as a file write against Edit(path)
+          # allow rules: a Bash command-prefix rule like Bash(echo:*)
+          # authorizes the command, never the redirect target, and Write(path)
+          # rules are accepted but silently never consulted for this check.
+          # That is why every writable path here needs its own Edit(...) grant,
+          # written as the exact literal string the command uses — the matcher
+          # does not expand shell variables, which is why PR #503's
+          # Edit(./.claude-review-verdict) grant did nothing until #504 changed
+          # the command from "$GITHUB_WORKSPACE/.claude-review-verdict" to the
+          # plain relative ./.claude-review-verdict.
+          #
+          # The two grants below were derived by probing Claude Code 2.1.237
+          # directly (2026-08-20) rather than inferred, after #503 and #504
+          # both shipped on inference and left 7-15 denials per run:
+          #
+          #   * Edit(./.claude-review-comment.md) — the review comment is
+          #     multi-line markdown, so the natural way to post it is
+          #     `gh pr comment --body-file`, which needs the body written to
+          #     disk first. With no writable path for it, a *two-line* heredoc
+          #     cost 3 denials over 4 turns in the probe; a full review comment
+          #     costs more. This was the single largest remaining denial source.
+          #   * Bash(gh pr diff:*) — the prompt's own fallback (further down)
+          #     tells the model to run `gh pr diff` when the patch file is
+          #     missing, but only Bash(gh pr comment:*) was granted, so that
+          #     instruction was guaranteed to be denied. Read-only API call.
+          #
+          # Deliberately NOT added, because the same probes showed they are
+          # already permitted and would be pure noise: Bash(head:*)/Bash(tail:*)
+          # and other read-only builtins are auto-approved even when unlisted
+          # (and stay approved inside a pipe), and the read-only native tools
+          # Grep/Glob/TodoWrite need no grant. Also deliberately absent:
+          # sed/awk/tee, all of which can write in place.
+          #
+          # --safe-mode still removes guard-readonly-bash.mjs; the scoped Bash
+          # list plus these Edit grants are the write barrier, not a blanket
+          # allowance. See docs/research/pr-review-action-tuning.md for the
+          # full probe table.
           claude_args: >-
             --safe-mode
             --model claude-opus-5
             --effort medium
             --exclude-dynamic-system-prompt-sections
-            --max-turns 35
-            --allowedTools "Read,Bash(gh pr comment:*),Bash(cat:*),Bash(echo:*),Bash(grep:*),Bash(rg:*),Bash(wc:*),Edit(./.claude-review-verdict)"
+            --max-turns ${{ env.MAX_TURNS }}
+            --allowedTools "Read,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(cat:*),Bash(echo:*),Bash(grep:*),Bash(rg:*),Bash(wc:*),Edit(./.claude-review-verdict),Edit(./.claude-review-comment.md)"
           use_sticky_comment: true
           prompt: |
             You are the blocking PR reviewer for this repo. Review ONLY what is visible in
@@ -373,6 +554,25 @@ jobs:
             `.claude-review-verdict`: a bounded, slightly-incomplete review that
             posts a verdict is far better than an exhausted run that posts nothing.
 
+            Every tool call you are permitted to make is listed below. Anything else is
+            denied, and a denied call costs you a turn and gets you no closer — so do not
+            reach for `sed`, `awk`, `split`, `tee`, the `Write` tool, or any `gh` subcommand
+            other than `gh pr comment` / `gh pr diff`.
+
+            - `Read` — the patch, and source files when a hunk lacks context
+            - `Grep`, `Glob` — searching the checkout
+            - `Bash`: `cat`, `echo`, `grep`, `rg`, `wc` (and read-only builtins like
+              `head` / `tail`)
+            - `Bash`: `gh pr comment` to post, `gh pr diff` only as the fallback below
+            - writes: ONLY `./.claude-review-comment.md` and `./.claude-review-verdict`
+
+            To post the comment, write the body to `./.claude-review-comment.md` (a
+            heredoc is fine — it is the one scratch path you may write) and post it with
+            `gh pr comment <n> -R <repo> --body-file ./.claude-review-comment.md`. Use
+            those exact relative paths: the permission matcher compares the literal string
+            in your command and does not expand shell variables, so a
+            `$GITHUB_WORKSPACE`-prefixed path will be denied.
+
             ## Verdict (REQUIRED — this gate is blocking)
 
             After posting the comment, your FINAL action MUST be to run exactly
@@ -400,6 +600,13 @@ jobs:
             fetch it yourself with
             `gh pr diff ${{ github.event.pull_request.number }} -R ${{ github.repository }}`.
 
+            Both files are already filtered to what this gate reviews: docs (`*.md`,
+            `docs/**`), `.github/dependabot.yml` and `pnpm-lock.yaml` have had their
+            hunks replaced by a one-line `(diff omitted — …)` marker under their
+            `diff --git` header. Those markers tell you the file changed; do NOT review
+            them, do NOT `Read` the underlying files, and do NOT report their absence as
+            a finding.
+
             Now review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}. Post a single PR comment in the Output format above, then write the verdict file as instructed.
 
       # Observability only: never affects the PASS/FAIL verdict or the
@@ -425,13 +632,16 @@ jobs:
             patch_chars="$(wc -c < "$GITHUB_WORKSPACE/.claude-pr-diff.patch" | tr -d ' ')"
           fi
 
-          # claude-code-action truncates diffs at 150k characters (no official
-          # numeric guard is published beyond that figure — see
-          # docs/research/pr-review-action-tuning.md). Warn loudly rather than
-          # let a silent truncation pass as a clean review.
+          # Early warning that a PR is drifting toward MAX_REVIEWABLE_BYTES,
+          # where the gate stops reviewing and starts rejecting. 120k is also
+          # roughly where claude-code-action is reported to truncate an
+          # injected diff — but that figure appears in no official doc, and it
+          # is unclear whether it even applies here, since the reviewer opens
+          # the patch itself with `Read` rather than receiving it inline. Treat
+          # this as a size signal, not a confirmed truncation.
           if echo "$patch_chars" | grep -qE '^[0-9]+$' && [ "$patch_chars" -ge 120000 ]; then
-            echo "::warning title=Claude PR Review::Patch is ${patch_chars} characters — near/over the action's ~150k truncation limit; the review may have seen a truncated diff"
-            echo "**⚠️ Diff may have been truncated** — patch is ${patch_chars} characters, near/over the action's ~150k truncation limit." >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning title=Claude PR Review::Reviewable patch is ${patch_chars} characters (limit ${MAX_REVIEWABLE_BYTES}) — large enough that the review may be shallow; consider splitting the PR"
+            echo "**⚠️ Large reviewable diff** — ${patch_chars} characters against a ${MAX_REVIEWABLE_BYTES} limit." >> "$GITHUB_STEP_SUMMARY"
           fi
 
           if [ -z "$EXECUTION_FILE" ] || [ ! -s "$EXECUTION_FILE" ]; then
@@ -456,24 +666,60 @@ jobs:
           cache_read="$(echo "$result" | jq -r '.usage.cache_read_input_tokens // "n/a"')"
           cache_write="$(echo "$result" | jq -r '.usage.cache_creation_input_tokens // "n/a"')"
 
+          # WHICH tools were denied, not just how many. Denials ran 7-15 per
+          # run for weeks (~30% of the budget) and were undiagnosable, because
+          # the action hides the SDK transcript and this step only ever read a
+          # count — so PRs #503 and #504 were both aimed at a guess. The result
+          # entry carries a structured `permission_denials` array (confirmed by
+          # probing Claude Code 2.1.237 directly); tool names only, inputs
+          # truncated hard, since the inputs quote untrusted diff content.
+          # Falls back to a count, then to the result entry's key names, so a
+          # future SDK schema change surfaces as "look here" instead of silence.
+          denied="$(echo "$result" \
+            | jq -r '[.permission_denials[]?.tool_name] | group_by(.)
+                     | map("\(.[0]) x\(length)") | join(", ")' 2>/dev/null)"
+          if [ -z "$denied" ] || [ "$denied" = "null" ]; then
+            denial_count="$(echo "$result" | jq -r '.permission_denials_count // "n/a"' 2>/dev/null)"
+            if [ "$denial_count" != "n/a" ] && [ "$denial_count" != "null" ]; then
+              denied="none reported (count=${denial_count}; no per-tool detail in this SDK version)"
+            else
+              denied="unavailable — result keys: $(echo "$result" | jq -r 'keys | join(",")' 2>/dev/null | head -c 300)"
+            fi
+          fi
+          denied_detail="$(echo "$result" \
+            | jq -r '.permission_denials[]? | "- `\(.tool_name)` — \((.tool_input | tostring)[0:160])"' \
+              2>/dev/null | head -n 12)"
+
           {
             echo "### Claude PR Review metrics"
             echo ""
             echo "| Metric | Value |"
             echo "| --- | --- |"
-            echo "| Turns | ${num_turns} / 35 |"
+            echo "| Turns | ${num_turns} / ${MAX_TURNS} |"
             echo "| Duration (wall / API) | ${duration_ms}ms / ${duration_api_ms}ms |"
             echo "| Cost | \$${cost_usd} |"
             echo "| Tokens (in / out) | ${input_tokens} / ${output_tokens} |"
             echo "| Cache (read / write) | ${cache_read} / ${cache_write} |"
             echo "| Result | subtype=${subtype}, is_error=${is_error} |"
-            echo "| Diff size | ${changed_files} files, ${patch_lines} patch lines |"
+            echo "| Reviewable diff | ${changed_files} files, ${patch_lines} patch lines, ${patch_chars} chars (limit ${MAX_REVIEWABLE_BYTES}) |"
+            echo "| Permission denials | ${denied} |"
+            if [ -n "$denied_detail" ]; then
+              echo ""
+              echo "<details><summary>Denied tool calls</summary>"
+              echo ""
+              echo "$denied_detail"
+              echo ""
+              echo "</details>"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-          if echo "$num_turns" | grep -qE '^[0-9]+$' && [ "$num_turns" -ge 33 ]; then
-            echo "::warning title=Claude PR Review::Used ${num_turns}/35 turns — at/near the cap, review may have been cut short"
+          # Warn from 90% of the cap rather than a hardcoded number, so this
+          # tracks MAX_TURNS automatically instead of needing a manual re-sync.
+          near_cap="$(( MAX_TURNS * 9 / 10 ))"
+          if echo "$num_turns" | grep -qE '^[0-9]+$' && [ "$num_turns" -ge "$near_cap" ]; then
+            echo "::warning title=Claude PR Review::Used ${num_turns}/${MAX_TURNS} turns — at/near the cap, review may have been cut short"
           else
-            echo "::notice title=Claude PR Review::Used ${num_turns}/35 turns (\$${cost_usd}, ${duration_ms}ms)"
+            echo "::notice title=Claude PR Review::Used ${num_turns}/${MAX_TURNS} turns (\$${cost_usd}, ${duration_ms}ms)"
           fi
 
       # Fallback for the one case Claude structurally cannot review: a PR
@@ -517,9 +763,59 @@ jobs:
       # reviewer explicitly wrote PASS — fail-closed if the review did not run.
       # Requires a branch-protection rule on `main` marking this check required;
       # see docs/contributing/branch-protection.md.
+      #
+      # `!cancelled()` rather than the default success(): without it this step
+      # is SKIPPED whenever the action step fails, which is exactly when its
+      # judgement is most needed. On PR #523 the reviewer twice posted a
+      # complete, well-formed FAIL and then died on max turns one turn later;
+      # both verdicts were discarded and the gate reported infrastructure
+      # failure instead of the real finding, costing a full re-run each time.
+      #
+      # Hence the fallback: if no verdict file exists, read the verdict out of
+      # the comment the reviewer already posted — but ONLY if that comment's
+      # claude-review-sha marker matches the commit under test. The SHA pin is
+      # what keeps this fail-closed: a stale PASS from an earlier push can
+      # never satisfy the gate, and a PR author cannot forge a claude[bot]
+      # comment. The guard step at the top of this job already trusts this
+      # exact signal to skip a review outright, which is a strictly stronger
+      # concession than reading a verdict from it.
       - name: Enforce review verdict
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           verdict="$(tr -d '[:space:]' < .claude-review-verdict 2>/dev/null || true)"
+
+          if [ -z "$verdict" ]; then
+            echo "No verdict file — falling back to the posted review comment."
+            # Piped to jq, not --jq: gh rejects --slurp with --jq (see the
+            # guard step above, where that combination silently disabled the
+            # prior-PASS skip for weeks).
+            body="$(gh api "repos/$REPO/issues/$PR/comments" --paginate --slurp 2>/dev/null \
+              | jq -r 'add | [.[] | select(.user.login == "claude[bot]")] | last // {} | .body // ""' \
+                2>/dev/null || true)"
+            if [ -z "$body" ]; then
+              echo "No claude[bot] comment found."
+            else
+              reviewed_sha="$(printf '%s' "$body" \
+                | sed -n 's/.*<!-- claude-review-sha: \([0-9a-f]*\) -->.*/\1/p' | head -n1)"
+              if [ "$reviewed_sha" != "$HEAD_SHA" ]; then
+                echo "Latest claude[bot] comment reviewed ${reviewed_sha:-<none>}, not ${HEAD_SHA} — ignoring it."
+              elif printf '%s' "$body" | grep -A2 '^### Verdict' | grep -qiw 'PASS'; then
+                verdict="PASS"
+                echo "Recovered PASS from the review comment for ${HEAD_SHA}."
+              elif printf '%s' "$body" | grep -A2 '^### Verdict' | grep -qiw 'FAIL'; then
+                verdict="FAIL"
+                echo "Recovered FAIL from the review comment for ${HEAD_SHA}."
+              else
+                echo "Comment for ${HEAD_SHA} has no parseable verdict line."
+              fi
+            fi
+          fi
+
           echo "Claude review verdict: ${verdict:-<missing>}"
           if [ "$verdict" != "PASS" ]; then
             echo "::error::Claude PR review did not pass (verdict: ${verdict:-missing}). See the review comment on the PR."

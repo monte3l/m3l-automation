@@ -131,11 +131,17 @@ new merge-latency floor (measured baseline: 8–28 turns actually used, median
 found the effort docs framing `medium` as Sonnet-5's/Opus-5's cost-saving
 step-down from default `high`, and the Code Review docs describing lower
 effort as reporting only the highest-confidence findings. `claude-pr-review.yml`
-now runs `claude-opus-5` at `--effort medium` with `--max-turns 35` (still
-above the observed max of 28) and `--safe-mode` to drop review-irrelevant
+now runs `claude-opus-5` at `--effort medium` with `--safe-mode` to drop
+review-irrelevant
 context (CLAUDE.md, skills, hooks, MCP servers). Model tier is unchanged —
 only effort and turn cap moved; see the addendum in
 `docs/research/pr-review-action-tuning.md` for full sourcing.
+
+The turn cap set here (`--max-turns 35`, chosen as "still above the observed
+max of 28") did not hold. By 2026-08-20 real reviews were using 20-34 turns
+with ~30% of every budget lost to permission denials, and the cap was raised
+to 60 and moved into a single `MAX_TURNS` job env. See the 2026-08-20
+addendum in the same research doc.
 
 **Context/output limits per tier, and their bearing on truncation risk.**
 Subagent mid-turn truncation (a spoke hitting `maxTurns: 40` or an
