@@ -232,6 +232,7 @@ describe("core/procedure", () => {
 
     test("declared parameter names surface on describe().parameters", () => {
       const procedure = createProcedureBuilder<ParamShape>("param-fixture")
+        .parameters(["threshold"])
         .step({
           id: "only",
           label: "Only step",
@@ -612,6 +613,7 @@ describe("core/procedure", () => {
       const procedure = createProcedureBuilder<ParamShape>(
         "cow-parameters-fixture",
       )
+        .parameters(["threshold"])
         .step({
           id: "only",
           label: "Only",
@@ -1009,17 +1011,24 @@ describe("core/procedure", () => {
           id: "gather",
           label: "Gather",
           kind: "gather",
-          // First resolve pass: count=6 would already satisfy "secondary" (>=5) but not
-          // "primary" (>=10) — only the FINAL pass's matches should be reported.
+          // First resolve pass: count=3 satisfies neither "primary" (>=10) nor
+          // "secondary" (>=5). A matching "resolve" pass terminates the run
+          // early (see 'a matching "resolve" terminates the run before later
+          // steps execute' above), so this pass MUST match nothing, or
+          // `transform` would never run and this test would prove nothing
+          // about which pass gets reported.
           execute: (): M3LProcedureStepResult<Shape> => ({
             flow: "resolve",
-            values: { count: 6 },
+            values: { count: 3 },
           }),
         })
         .step({
           id: "transform",
           label: "Transform",
           kind: "transform",
+          // Second (concluding) pass: count=12 satisfies BOTH cases, so this
+          // is the pass whose alsoMatched must be reported — the first
+          // pass's non-match must not leak into it.
           execute: (): M3LProcedureStepResult<Shape> => ({
             flow: "resolve",
             values: { count: 12 },
@@ -1397,6 +1406,7 @@ describe("core/procedure", () => {
       const procedure = createProcedureBuilder<ParamShape>(
         "digest-parameters-fixture",
       )
+        .parameters(["threshold"])
         .step({
           id: "only",
           label: "Only",
@@ -1523,6 +1533,7 @@ describe("core/procedure", () => {
             const label = ctx.values.label;
             return {
               flow: "continue",
+              ...(label !== undefined ? { output: label } : {}),
               values: label !== undefined ? { label } : {},
             };
           },
@@ -1657,16 +1668,25 @@ describe("core/procedure", () => {
     });
 
     test("build() with no fallback argument does not compile", () => {
-      const builder = createProcedureBuilder<Shape>("no-fallback-fixture").step(
-        {
+      // Wrapped in a never-invoked function: `build()` throws at runtime when
+      // the fallback is genuinely missing, so calling it for real — even
+      // past a `@ts-expect-error` — would fail this test for the wrong
+      // reason. `tsc` still type-checks an uncalled function body in full,
+      // which is all a `@ts-expect-error` needs (see `procedure-build.test.ts`'s
+      // matching "[type-level] build() without a fallback does not compile").
+      function typeOnly(): void {
+        const builder = createProcedureBuilder<Shape>(
+          "no-fallback-fixture",
+        ).step({
           id: "gather",
           label: "Gather",
           kind: "gather",
           execute: () => ({ flow: "continue" }),
-        },
-      );
-      // @ts-expect-error - fallback is a required positional argument to build().
-      builder.build();
+        });
+        // @ts-expect-error - fallback is a required positional argument to build().
+        builder.build();
+      }
+      expect(typeof typeOnly).toBe("function");
     });
   });
 });

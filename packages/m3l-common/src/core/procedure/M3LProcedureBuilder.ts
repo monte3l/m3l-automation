@@ -206,7 +206,26 @@ export class M3LProcedureBuilder<
     const summary = buildProcedureSummary(validated);
     const digest = computeProcedureDigest(summary);
 
-    return new M3LProcedure<TShape>({ digest, summary });
+    // Every raw entry pushed by `.step()`/`.case()` already satisfies its own
+    // typed `M3LProcedureStep`/`M3LProcedureCase` shape at its call site; the
+    // cast here just restores that type after it passed through the
+    // internal `unknown[]` accumulator, the same pattern
+    // `#toValidatedDefinition` already uses for the summary projection.
+    const steps = this.#steps.map(
+      (raw) =>
+        raw as M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>,
+    );
+    const cases = this.#cases.map(
+      (raw) => raw as M3LProcedureCase<TShape, TShape["caseId"]>,
+    );
+
+    return new M3LProcedure<TShape>({
+      digest,
+      summary,
+      steps,
+      cases,
+      fallback,
+    });
   }
 
   /**
