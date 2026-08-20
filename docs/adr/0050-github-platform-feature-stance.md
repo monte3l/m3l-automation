@@ -1,6 +1,10 @@
 # 0050. GitHub platform-feature stance
 
-- **Status:** Accepted
+- **Status:** Accepted; the board identity it records (§104-105) partially
+  superseded by [ADR-0052](0052-hub-board-identity-and-field-taxonomy.md),
+  which also extends the adopted-platform-feature set this ADR was silent on
+  (project custom fields, saved views, org Issue Types) — everything else
+  here remains in force
 - **Date:** 2026-08-19
 - **Deciders:** Enrico Lionello (maintainer); Claude (research)
 

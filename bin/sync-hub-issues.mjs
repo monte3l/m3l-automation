@@ -138,7 +138,7 @@ function listIssues(runGhFn, reporter, labelArgs) {
     "--state",
     "all",
     "--json",
-    "number,title,body,state,labels",
+    "number,title,body,state,labels,issueType",
     "--limit",
     String(LIST_LIMIT),
   ]);
@@ -156,6 +156,7 @@ function listIssues(runGhFn, reporter, labelArgs) {
     body: issue.body ?? "",
     state: issue.state === "CLOSED" ? "closed" : "open",
     labels: (issue.labels ?? []).map((label) => label.name),
+    type: issue.issueType?.name ?? null,
   }));
 }
 
@@ -217,6 +218,8 @@ function createIssue(runGhFn, payload) {
     payload.title,
     "--body",
     payload.body,
+    "--type",
+    payload.type,
   ];
   for (const label of payload.labels) args.push("--label", label);
   if (payload.milestoneTitle !== null) {
@@ -259,6 +262,8 @@ function editIssue(runGhFn, number, payload, currentIssue) {
     payload.title,
     "--body",
     payload.body,
+    "--type",
+    payload.type,
   ];
   for (const label of payload.labels) args.push("--add-label", label);
   for (const label of staleManagedLabels(currentIssue?.labels ?? [], payload)) {

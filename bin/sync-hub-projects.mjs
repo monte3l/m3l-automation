@@ -35,6 +35,7 @@ import {
   parseHubMarker,
   planProjectSync,
 } from "./lib/hub-sync.mjs";
+import { MANUAL_VIEW_STEPS, VIEW_DEFS } from "./lib/hub-views.mjs";
 import { createReporter, parseJsonFlag } from "./lib/report.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -43,10 +44,49 @@ const OWNER = "monte3l";
 const ROADMAP_PATH = "docs/ROADMAP.md";
 const IMPLEMENTATION_PATH = "docs/plans/IMPLEMENTATION.md";
 
-// The Status single-select's desired options — GitHub's project-create
-// default is "Todo"/"In Progress"/"Done"; ADR-0032 wants these three names,
-// matching the mapping baked into planProjectSync.
-const DESIRED_STATUS_OPTIONS = ["Pending", "In review", "Done"];
+// The Status single-select's desired options — the tracker's own 6-value
+// vocabulary, one-for-one (ADR-0052; matches PROJECT_STATUS_OPTIONS in
+// bin/lib/hub-sync.mjs). Widened from the original 3-value Pending/In
+// review/Done ADR-0032 board, which could not distinguish Deferred or
+// Blocked from a plain not-yet-started item.
+const DESIRED_STATUS_OPTIONS = [
+  { name: "To Do", color: "GRAY", description: "" },
+  { name: "In Progress", color: "GRAY", description: "" },
+  { name: "Blocked", color: "GRAY", description: "" },
+  { name: "Deferred", color: "GRAY", description: "" },
+  { name: "Done", color: "GRAY", description: "" },
+  { name: "Rejected", color: "GRAY", description: "" },
+];
+
+// Maps each ADR-0052 Status option name back to the pre-rename name it
+// replaces, so migrating the field preserves every item's current value —
+// updateSingleSelectOptions passes the old option's own id when renaming
+// rather than dropping and recreating it. A freshly `--init`'d board has no
+// option under the old name, so this lookup is a harmless no-op there.
+const STATUS_OPTION_RENAME_SOURCE = {
+  "To Do": "Pending",
+  "In Progress": "In review",
+  Done: "Done",
+};
+
+// The Priority single-select's desired options, mirroring PRIORITY_LABELS'
+// own "0-now"/"1-next"/"2-later" vocabulary exactly (ADR-0052) — the board's
+// own Priority field existed with zero options before this. Governance
+// items never get one of these; planProjectSync clears the field for them
+// instead (see PROJECT_PRIORITY_OPTIONS in bin/lib/hub-sync.mjs).
+const DESIRED_PRIORITY_OPTIONS = [
+  { name: "0-now", color: "RED", description: "Now — unblock-first work." },
+  {
+    name: "1-next",
+    color: "ORANGE",
+    description: "Next — the near-term consumer-fleet wave.",
+  },
+  {
+    name: "2-later",
+    color: "YELLOW",
+    description: "Later — gated or deferred backlog.",
+  },
+];
 
 // The --limit passed to `gh issue list` / `gh project item-list`. A result
 // whose length reaches this window means gh silently truncated the page —
@@ -129,8 +169,26 @@ function findProjectByTitle(projects) {
   );
 }
 
-/** Resolve the Status field's id and its option-name -> option-id map. */
-function resolveStatusField(runGhFn, projectNumber) {
+// Shared by both runProjectSync (non-init path) and runInit: when the
+// title lookup misses, a lone existing project on the owner is far more
+// likely a hand-renamed board than a genuinely missing one — the owner is
+// not expected to run more than the one hub board. Returns the loud-fail
+// message for that case, or `null` when the miss looks like a genuinely
+// missing board (0 or 2+ projects), in which case the caller's normal
+// "not found" / "would create" handling applies instead.
+function renameDetectionMessage(projects) {
+  if (projects.length !== 1) return null;
+  return (
+    `Project board "${HUB_PROJECT_TITLE}" not found, but the owner has exactly ` +
+    `one project: "${projects[0].title}" (#${projects[0].number}). The board may ` +
+    `have been renamed on GitHub without updating HUB_PROJECT_TITLE ` +
+    `(bin/lib/hub-sync.mjs) to match — fix the constant rather than running --init, ` +
+    `which would create a second, empty board.`
+  );
+}
+
+/** Resolve any single-select field's id and its option-name -> option-id map. */
+function resolveSingleSelectField(runGhFn, projectNumber, fieldName) {
   const raw = runGhFn([
     "project",
     "field-list",
@@ -142,16 +200,16 @@ function resolveStatusField(runGhFn, projectNumber) {
   ]);
   const parsed = JSON.parse(raw);
   const fields = Array.isArray(parsed) ? parsed : (parsed.fields ?? []);
-  const statusField = fields.find((field) => field.name === "Status");
-  if (!statusField) {
+  const field = fields.find((candidate) => candidate.name === fieldName);
+  if (!field) {
     throw new Error(
-      `Project #${projectNumber} has no "Status" field — run --init or add one manually.`,
+      `Project #${projectNumber} has no "${fieldName}" field — run --init or add one manually.`,
     );
   }
   return {
-    fieldId: statusField.id,
+    fieldId: field.id,
     optionIdByName: new Map(
-      (statusField.options ?? []).map((option) => [option.name, option.id]),
+      (field.options ?? []).map((option) => [option.name, option.id]),
     ),
   };
 }
@@ -160,109 +218,331 @@ function resolveStatusField(runGhFn, projectNumber) {
 // dynamic user input beyond the field id, which comes from GitHub's own
 // field-list response) — the "straightforward" case; anything more
 // elaborate (e.g. preserving existing option colors) is left to the manual
-// fallback below.
-function updateStatusFieldOptions(runGhFn, fieldId) {
-  const optionsLiteral = DESIRED_STATUS_OPTIONS.map(
-    (name) => `{name: ${JSON.stringify(name)}, color: GRAY, description: ""}`,
-  ).join(", ");
+// fallback below. `renameSource` (default `{}`) maps a desired option's name
+// to the pre-migration name it replaces; when the old name still resolves in
+// `optionIdByName`, that option's own id is included so the mutation renames
+// it in place (preserving every item's current value) instead of dropping
+// and recreating it.
+function updateSingleSelectOptions(
+  runGhFn,
+  fieldId,
+  optionIdByName,
+  desiredOptions,
+  renameSource = {},
+) {
+  const optionsLiteral = desiredOptions
+    .map((option) => {
+      const oldName = renameSource[option.name];
+      const existingId = oldName ? optionIdByName.get(oldName) : undefined;
+      const idField = existingId ? `id: ${JSON.stringify(existingId)}, ` : "";
+      return (
+        `{${idField}name: ${JSON.stringify(option.name)}, ` +
+        `color: ${option.color}, description: ${JSON.stringify(option.description)}}`
+      );
+    })
+    .join(", ");
   const mutation = `mutation { updateProjectV2Field(input: { fieldId: ${JSON.stringify(fieldId)}, singleSelectOptions: [${optionsLiteral}] }) { clientMutationId } }`;
   runGhFn(["api", "graphql", "-f", `query=${mutation}`]);
 }
 
-/** Whether a Status field's current options are exactly the desired set. */
-function statusOptionsMatch(optionIdByName) {
+/** Whether a single-select field's current options are exactly the desired set. */
+function singleSelectOptionsMatch(optionIdByName, desiredOptions) {
   const currentNames = [...optionIdByName.keys()];
+  const desiredNames = desiredOptions.map((option) => option.name);
   return (
-    currentNames.length === DESIRED_STATUS_OPTIONS.length &&
-    DESIRED_STATUS_OPTIONS.every((name) => optionIdByName.has(name))
+    currentNames.length === desiredNames.length &&
+    desiredNames.every((name) => optionIdByName.has(name))
   );
 }
 
 /**
- * Ensure the board's Status field carries exactly {@link DESIRED_STATUS_OPTIONS}.
- * Never throws: inspection or mutation failures are reported as a warning
- * with the exact manual step, and --init continues regardless.
+ * Ensure `fieldName` carries exactly `desiredOptions`. Never throws:
+ * inspection or mutation failures are reported as a warning with the exact
+ * manual step, and --init continues regardless.
  */
-function ensureStatusOptions(runGhFn, reporter, projectNumber) {
-  let statusField;
+function ensureSingleSelectOptions(
+  runGhFn,
+  reporter,
+  projectNumber,
+  fieldName,
+  desiredOptions,
+  renameSource = {},
+) {
+  const desiredNames = desiredOptions.map((option) => option.name).join(", ");
+  let field;
   try {
-    statusField = resolveStatusField(runGhFn, projectNumber);
+    field = resolveSingleSelectField(runGhFn, projectNumber, fieldName);
   } catch (cause) {
     reporter.warn(
-      `Could not inspect the Status field (${ghErrorMessage(cause)}). ` +
-        `Manually set its options to exactly: ${DESIRED_STATUS_OPTIONS.join(", ")}.`,
+      `Could not inspect the ${fieldName} field (${ghErrorMessage(cause)}). ` +
+        `Manually set its options to exactly: ${desiredNames}.`,
     );
     return;
   }
 
-  if (statusOptionsMatch(statusField.optionIdByName)) return;
+  if (singleSelectOptionsMatch(field.optionIdByName, desiredOptions)) return;
 
   try {
-    updateStatusFieldOptions(runGhFn, statusField.fieldId);
-    reporter.info(
-      `Status field options set to: ${DESIRED_STATUS_OPTIONS.join(", ")}.`,
+    updateSingleSelectOptions(
+      runGhFn,
+      field.fieldId,
+      field.optionIdByName,
+      desiredOptions,
+      renameSource,
     );
+    reporter.info(`${fieldName} field options set to: ${desiredNames}.`);
   } catch (cause) {
     reporter.warn(
-      `Could not set the Status field options automatically (${ghErrorMessage(cause)}). ` +
-        `Manually edit the board's Status field to exactly these options: ${DESIRED_STATUS_OPTIONS.join(", ")}.`,
+      `Could not set the ${fieldName} field options automatically (${ghErrorMessage(cause)}). ` +
+        `Manually edit the board's ${fieldName} field to exactly these options: ${desiredNames}.`,
     );
   }
 }
 
-// Read-only preview of what --init (without --apply) would do to the
-// Status field of an already-existing board — never mutates.
-function previewStatusOptions(runGhFn, reporter, projectNumber) {
-  let statusField;
+// Read-only preview of what --init (without --apply) would do to a
+// single-select field of an already-existing board — never mutates.
+function previewSingleSelectOptions(
+  runGhFn,
+  reporter,
+  projectNumber,
+  fieldName,
+  desiredOptions,
+) {
+  const desiredNames = desiredOptions.map((option) => option.name).join(", ");
+  let field;
   try {
-    statusField = resolveStatusField(runGhFn, projectNumber);
+    field = resolveSingleSelectField(runGhFn, projectNumber, fieldName);
   } catch (cause) {
     reporter.info(
-      `Could not inspect the Status field (${ghErrorMessage(cause)}); would attempt to set its ` +
-        `options to: ${DESIRED_STATUS_OPTIONS.join(", ")}.`,
+      `Could not inspect the ${fieldName} field (${ghErrorMessage(cause)}); would attempt to set its ` +
+        `options to: ${desiredNames}.`,
     );
     return;
   }
 
-  if (statusOptionsMatch(statusField.optionIdByName)) {
-    reporter.info(
-      `Status field options already match: ${DESIRED_STATUS_OPTIONS.join(", ")}.`,
-    );
+  if (singleSelectOptionsMatch(field.optionIdByName, desiredOptions)) {
+    reporter.info(`${fieldName} field options already match: ${desiredNames}.`);
     return;
   }
 
-  const currentNames = [...statusField.optionIdByName.keys()];
+  const currentNames = [...field.optionIdByName.keys()];
   reporter.info(
-    `Would set Status field options to: ${DESIRED_STATUS_OPTIONS.join(", ")} ` +
+    `Would set ${fieldName} field options to: ${desiredNames} ` +
       `(currently: ${currentNames.length > 0 ? currentNames.join(", ") : "none"}).`,
   );
 }
 
+/** All of a project's views, by id/name/layout — used to match VIEW_DEFS. */
+function listExistingViews(runGhFn, projectId) {
+  const query = `query { node(id: ${JSON.stringify(projectId)}) { ... on ProjectV2 { views(first: 20) { nodes { id name layout } } } } }`;
+  const raw = runGhFn(["api", "graphql", "-f", `query=${query}`]);
+  return JSON.parse(raw).data.node.views.nodes;
+}
+
 /**
- * Create (or reuse) the board, then ensure its Status field. Idempotent.
- * Without `apply`, only read-only probes run (project list, and — for an
- * already-existing board — field-list) and the function prints what it
- * WOULD do; with `apply`, it executes. Never calls `process.exit`; always
- * returns `{ ok: true }` (this path has no failure branch of its own —
- * `gh` failures propagate to the caller's try/catch).
+ * Resolve each of `fieldNames` to its live field id via `gh project
+ * field-list`. A name that doesn't currently resolve (most likely the
+ * built-in "Type" field before a human has enabled it — see
+ * {@link MANUAL_VIEW_STEPS}) is dropped with a warning rather than failing
+ * the whole view reconciliation.
+ */
+function resolveFieldIds(runGhFn, reporter, projectNumber, fieldNames) {
+  const raw = runGhFn([
+    "project",
+    "field-list",
+    String(projectNumber),
+    "--owner",
+    OWNER,
+    "--format",
+    "json",
+  ]);
+  const parsed = JSON.parse(raw);
+  const fields = Array.isArray(parsed) ? parsed : (parsed.fields ?? []);
+  const idByName = new Map(fields.map((field) => [field.name, field.id]));
+
+  const ids = [];
+  for (const name of fieldNames) {
+    const id = idByName.get(name);
+    if (id) {
+      ids.push(id);
+    } else {
+      reporter.warn(
+        `View field "${name}" is not on the board yet — omitting it from the ` +
+          `visible-column set. See the manual view-setup steps.`,
+      );
+    }
+  }
+  return ids;
+}
+
+// createProjectV2View cannot set `filter` (CreateProjectV2ViewInput has no
+// such field), so a freshly created view always needs the immediate
+// updateProjectV2View follow-up below to apply it.
+function createView(runGhFn, projectId, viewDef, fieldIds) {
+  const mutation =
+    `mutation { createProjectV2View(input: { projectId: ${JSON.stringify(projectId)}, ` +
+    `name: ${JSON.stringify(viewDef.name)}, layout: ${viewDef.layout}, ` +
+    `configuration: { visibleFieldIds: ${JSON.stringify(fieldIds)} } }) ` +
+    `{ projectV2View { id } } }`;
+  const raw = runGhFn(["api", "graphql", "-f", `query=${mutation}`]);
+  return JSON.parse(raw).data.createProjectV2View.projectV2View.id;
+}
+
+function updateView(runGhFn, viewId, viewDef, fieldIds) {
+  const mutation =
+    `mutation { updateProjectV2View(input: { viewId: ${JSON.stringify(viewId)}, ` +
+    `name: ${JSON.stringify(viewDef.name)}, layout: ${viewDef.layout}, ` +
+    `filter: ${JSON.stringify(viewDef.filter)}, ` +
+    `configuration: { visibleFieldIds: ${JSON.stringify(fieldIds)} } }) ` +
+    `{ clientMutationId } }`;
+  runGhFn(["api", "graphql", "-f", `query=${mutation}`]);
+}
+
+/**
+ * Ensure the board carries exactly {@link VIEW_DEFS}: create or update each
+ * by name (falling back to `legacyName` for the one pre-existing view), then
+ * print the {@link MANUAL_VIEW_STEPS} the API cannot perform. Never throws —
+ * a per-view mutation failure is reported as a warning so one bad view
+ * doesn't block the rest of --init.
+ */
+function ensureViews(runGhFn, reporter, projectNumber) {
+  const projectId = resolveProjectId(runGhFn, projectNumber);
+  const existingByName = new Map(
+    listExistingViews(runGhFn, projectId).map((view) => [view.name, view]),
+  );
+
+  for (const viewDef of VIEW_DEFS) {
+    const existing =
+      existingByName.get(viewDef.name) ??
+      (viewDef.legacyName ? existingByName.get(viewDef.legacyName) : undefined);
+    const fieldIds = resolveFieldIds(
+      runGhFn,
+      reporter,
+      projectNumber,
+      viewDef.fields,
+    );
+
+    try {
+      if (existing) {
+        updateView(runGhFn, existing.id, viewDef, fieldIds);
+        reporter.change(
+          "updated",
+          `view "${existing.name}" -> "${viewDef.name}" (${viewDef.layout})`,
+        );
+      } else {
+        const viewId = createView(runGhFn, projectId, viewDef, fieldIds);
+        updateView(runGhFn, viewId, viewDef, fieldIds);
+        reporter.change(
+          "created",
+          `view "${viewDef.name}" (${viewDef.layout})`,
+        );
+      }
+    } catch (cause) {
+      reporter.warn(
+        `Could not reconcile view "${viewDef.name}" (${ghErrorMessage(cause)}).`,
+      );
+    }
+  }
+
+  for (const step of MANUAL_VIEW_STEPS) {
+    reporter.info(`Manual step remaining: ${step}`);
+  }
+}
+
+// Read-only preview of what --init (without --apply) would do to the
+// board's views — never mutates.
+function previewViews(runGhFn, reporter, projectNumber) {
+  let projectId;
+  let existingByName;
+  try {
+    projectId = resolveProjectId(runGhFn, projectNumber);
+    existingByName = new Map(
+      listExistingViews(runGhFn, projectId).map((view) => [view.name, view]),
+    );
+  } catch (cause) {
+    reporter.info(
+      `Could not inspect the board's views (${ghErrorMessage(cause)}); would attempt to ` +
+        `create/update: ${VIEW_DEFS.map((view) => view.name).join(", ")}.`,
+    );
+    return;
+  }
+
+  for (const viewDef of VIEW_DEFS) {
+    const existing =
+      existingByName.get(viewDef.name) ??
+      (viewDef.legacyName ? existingByName.get(viewDef.legacyName) : undefined);
+    if (existing) {
+      reporter.info(
+        `Would update view "${existing.name}" -> "${viewDef.name}" (${viewDef.layout}, filter: ${viewDef.filter}).`,
+      );
+    } else {
+      reporter.info(
+        `Would create view "${viewDef.name}" (${viewDef.layout}, filter: ${viewDef.filter}).`,
+      );
+    }
+  }
+}
+
+/**
+ * Create (or reuse) the board, then ensure its Status/Priority fields and
+ * its three saved views. Idempotent. Without `apply`, only read-only probes
+ * run (project list, and — for an already-existing board — field-list) and
+ * the function prints what it WOULD do; with `apply`, it executes. Never
+ * calls `process.exit`; always returns `{ ok: true }` (this path has no
+ * failure branch of its own — `gh` failures propagate to the caller's
+ * try/catch).
  *
  * @returns {{ ok: boolean }}
  */
 function runInit({ runGh: runGhFn, reporter, apply, projects }) {
   const existingProject = findProjectByTitle(projects);
 
+  // Run the same rename-detection guard runProjectSync's non-init path
+  // uses, before splitting on apply — otherwise a title miss here would
+  // (in preview) misleadingly report "would create" or (with --apply)
+  // actually create a second, empty board, in exactly the scenario this
+  // guard exists to catch.
+  if (!existingProject) {
+    const renameMessage = renameDetectionMessage(projects);
+    if (renameMessage) {
+      reporter.error(renameMessage);
+      reporter.finish();
+      return { ok: false };
+    }
+  }
+
   if (!apply) {
     if (existingProject) {
       reporter.info(
         `Would reuse existing project "${HUB_PROJECT_TITLE}" (#${existingProject.number}).`,
       );
-      previewStatusOptions(runGhFn, reporter, existingProject.number);
+      previewSingleSelectOptions(
+        runGhFn,
+        reporter,
+        existingProject.number,
+        "Status",
+        DESIRED_STATUS_OPTIONS,
+      );
+      previewSingleSelectOptions(
+        runGhFn,
+        reporter,
+        existingProject.number,
+        "Priority",
+        DESIRED_PRIORITY_OPTIONS,
+      );
+      previewViews(runGhFn, reporter, existingProject.number);
     } else {
       reporter.info(
         `Would create project board "${HUB_PROJECT_TITLE}" (owner: ${OWNER}).`,
       );
       reporter.info(
-        `Would then set its Status field options to: ${DESIRED_STATUS_OPTIONS.join(", ")}.`,
+        `Would then set its Status field options to: ${DESIRED_STATUS_OPTIONS.map((o) => o.name).join(", ")}.`,
+      );
+      reporter.info(
+        `Would then set its Priority field options to: ${DESIRED_PRIORITY_OPTIONS.map((o) => o.name).join(", ")}.`,
+      );
+      reporter.info(
+        `Would then create/update its views: ${VIEW_DEFS.map((v) => v.name).join(", ")}.`,
       );
     }
     reporter.succeed("Dry run — pass --apply to execute.");
@@ -298,7 +578,22 @@ function runInit({ runGh: runGhFn, reporter, apply, projects }) {
     );
   }
 
-  ensureStatusOptions(runGhFn, reporter, project.number);
+  ensureSingleSelectOptions(
+    runGhFn,
+    reporter,
+    project.number,
+    "Status",
+    DESIRED_STATUS_OPTIONS,
+    STATUS_OPTION_RENAME_SOURCE,
+  );
+  ensureSingleSelectOptions(
+    runGhFn,
+    reporter,
+    project.number,
+    "Priority",
+    DESIRED_PRIORITY_OPTIONS,
+  );
+  ensureViews(runGhFn, reporter, project.number);
 
   reporter.succeed(
     `Project board ready: "${HUB_PROJECT_TITLE}" (#${project.number}).`,
@@ -362,6 +657,11 @@ function toTrackedIssue(issue, itemByKey) {
     number: issue.number,
     state: issue.state === "CLOSED" ? "closed" : "open",
     status: item ? item.status : "todo",
+    // Same "item vanished from the trackers" fallback resolveStatus uses for
+    // an off-vocabulary cell: default to the lowest tier rather than throw,
+    // since this path only matters defensively (the issue would already be
+    // closed by sync-hub-issues.mjs in the normal case).
+    priority: item ? item.priority : "p2",
   };
 }
 
@@ -395,6 +695,10 @@ function loadProjectItems(runGhFn, reporter, projectNumber) {
       status:
         typeof item.status === "string" && item.status !== ""
           ? item.status
+          : null,
+      priority:
+        typeof item.priority === "string" && item.priority !== ""
+          ? item.priority
           : null,
     }))
     .filter((item) => typeof item.issueNumber === "number");
@@ -432,18 +736,32 @@ function addProjectItem(runGhFn, projectNumber, issueNumber) {
   return JSON.parse(raw).id;
 }
 
-function setItemStatus(
+// Set (or, when `optionName` is `null`, clear) one single-select field on
+// one board item. `null` is how a governance item's Priority is represented
+// — cleared, never a stray option (see PROJECT_PRIORITY_OPTIONS in
+// bin/lib/hub-sync.mjs) — so this is the one write path that needs a
+// clear branch; Status never passes `null`.
+function setItemSingleSelect(
   runGhFn,
   projectId,
   fieldId,
   optionIdByName,
   itemId,
-  statusName,
+  fieldLabel,
+  optionName,
 ) {
-  const optionId = optionIdByName.get(statusName);
+  if (optionName === null) {
+    const mutation =
+      `mutation { clearProjectV2ItemFieldValue(input: { projectId: ${JSON.stringify(projectId)}, ` +
+      `itemId: ${JSON.stringify(itemId)}, fieldId: ${JSON.stringify(fieldId)} }) { clientMutationId } }`;
+    runGhFn(["api", "graphql", "-f", `query=${mutation}`]);
+    return;
+  }
+
+  const optionId = optionIdByName.get(optionName);
   if (!optionId) {
     throw new Error(
-      `Status option "${statusName}" not found on the board's Status field — run --init to (re)configure it.`,
+      `${fieldLabel} option "${optionName}" not found on the board's ${fieldLabel} field — run --init to (re)configure it.`,
     );
   }
   runGhFn([
@@ -474,13 +792,22 @@ function archiveProjectItem(runGhFn, projectNumber, itemId) {
 
 function printPlan(reporter, plan) {
   reporter.info(`Board items to add (${plan.add.length}):`);
-  for (const { issueNumber, status } of plan.add) {
-    reporter.info(`  + issue #${issueNumber} -> ${status}`);
+  for (const { issueNumber, status, priority } of plan.add) {
+    reporter.info(
+      `  + issue #${issueNumber} -> ${status}, priority ${priority ?? "(none)"}`,
+    );
   }
 
   reporter.info(`Board items to update status (${plan.setStatus.length}):`);
   for (const { issueNumber, status } of plan.setStatus) {
     reporter.info(`  ~ issue #${issueNumber} -> ${status}`);
+  }
+
+  reporter.info(`Board items to update priority (${plan.setPriority.length}):`);
+  for (const { issueNumber, priority } of plan.setPriority) {
+    reporter.info(
+      `  ~ issue #${issueNumber} -> priority ${priority ?? "(none)"}`,
+    );
   }
 
   reporter.info(`Board items to archive (${plan.archive.length}):`);
@@ -491,25 +818,72 @@ function printPlan(reporter, plan) {
 
 function applyProjectPlan({ runGh: runGhFn, reporter, projectNumber, plan }) {
   const projectId = resolveProjectId(runGhFn, projectNumber);
-  const { fieldId, optionIdByName } = resolveStatusField(
-    runGhFn,
-    projectNumber,
-  );
+  const status = resolveSingleSelectField(runGhFn, projectNumber, "Status");
+  const priority = resolveSingleSelectField(runGhFn, projectNumber, "Priority");
 
-  for (const { issueNumber, status } of plan.add) {
+  for (const {
+    issueNumber,
+    status: statusName,
+    priority: priorityName,
+  } of plan.add) {
     const itemId = addProjectItem(runGhFn, projectNumber, issueNumber);
-    setItemStatus(runGhFn, projectId, fieldId, optionIdByName, itemId, status);
+    setItemSingleSelect(
+      runGhFn,
+      projectId,
+      status.fieldId,
+      status.optionIdByName,
+      itemId,
+      "Status",
+      statusName,
+    );
+    setItemSingleSelect(
+      runGhFn,
+      projectId,
+      priority.fieldId,
+      priority.optionIdByName,
+      itemId,
+      "Priority",
+      priorityName,
+    );
     reporter.change(
       "created",
-      `board item for issue #${issueNumber} (status: ${status})`,
+      `board item for issue #${issueNumber} (status: ${statusName}, priority: ${priorityName ?? "none"})`,
     );
   }
 
-  for (const { itemId, issueNumber, status } of plan.setStatus) {
-    setItemStatus(runGhFn, projectId, fieldId, optionIdByName, itemId, status);
+  for (const { itemId, issueNumber, status: statusName } of plan.setStatus) {
+    setItemSingleSelect(
+      runGhFn,
+      projectId,
+      status.fieldId,
+      status.optionIdByName,
+      itemId,
+      "Status",
+      statusName,
+    );
     reporter.change(
       "updated",
-      `board item for issue #${issueNumber} -> status ${status}`,
+      `board item for issue #${issueNumber} -> status ${statusName}`,
+    );
+  }
+
+  for (const {
+    itemId,
+    issueNumber,
+    priority: priorityName,
+  } of plan.setPriority) {
+    setItemSingleSelect(
+      runGhFn,
+      projectId,
+      priority.fieldId,
+      priority.optionIdByName,
+      itemId,
+      "Priority",
+      priorityName,
+    );
+    reporter.change(
+      "updated",
+      `board item for issue #${issueNumber} -> priority ${priorityName ?? "none"}`,
     );
   }
 
@@ -570,8 +944,13 @@ export function runProjectSync({
 
     const project = findProjectByTitle(projects);
     if (!project) {
+      // See renameDetectionMessage: the same guard runInit uses (the one
+      // drift class nothing else detects, since the board is resolved by
+      // title, not by its stored node ID — see ADR-0032's 2026-07-22
+      // Update).
       reporter.error(
-        `Project board "${HUB_PROJECT_TITLE}" not found — run with --init to create it.`,
+        renameDetectionMessage(projects) ??
+          `Project board "${HUB_PROJECT_TITLE}" not found — run with --init to create it.`,
       );
       reporter.finish();
       return { ok: false };
@@ -618,7 +997,8 @@ export function runProjectSync({
     if (!apply) {
       reporter.succeed(
         `Dry run — pass --apply to execute. Would add ${plan.add.length}, ` +
-          `update status on ${plan.setStatus.length}, archive ${plan.archive.length}.`,
+          `update status on ${plan.setStatus.length}, update priority on ` +
+          `${plan.setPriority.length}, archive ${plan.archive.length}.`,
       );
       reporter.finish({
         applied: false,
@@ -626,6 +1006,7 @@ export function runProjectSync({
         board: {
           add: plan.add.length,
           setStatus: plan.setStatus.length,
+          setPriority: plan.setPriority.length,
           archive: plan.archive.length,
         },
       });
@@ -640,7 +1021,8 @@ export function runProjectSync({
     });
 
     reporter.succeed(
-      `Applied: added ${plan.add.length}, updated status on ${plan.setStatus.length}, archived ${plan.archive.length}.`,
+      `Applied: added ${plan.add.length}, updated status on ${plan.setStatus.length}, ` +
+        `updated priority on ${plan.setPriority.length}, archived ${plan.archive.length}.`,
     );
     reporter.finish({
       applied: true,
@@ -648,6 +1030,7 @@ export function runProjectSync({
       board: {
         add: plan.add.length,
         setStatus: plan.setStatus.length,
+        setPriority: plan.setPriority.length,
         archive: plan.archive.length,
       },
     });

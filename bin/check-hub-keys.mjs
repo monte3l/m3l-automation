@@ -49,8 +49,10 @@ import { fileURLToPath } from "node:url";
 import { extractImplementation, extractRoadmap } from "./lib/project-hub.mjs";
 import {
   actionableItems,
+  ISSUE_TYPES,
   MILESTONE_TITLES,
   PRIORITY_LABELS,
+  PROJECT_PRIORITY_OPTIONS,
   ROADMAP_ANCHORS,
 } from "./lib/hub-sync.mjs";
 import { createReporter, parseJsonFlag, repoRoot } from "./lib/report.mjs";
@@ -150,19 +152,26 @@ export function findKeyCollisions({ items, duplicateKeys }) {
  * {@link PRIORITY_LABELS} tier must resolve to a real {@link
  * MILESTONE_TITLES} entry — otherwise `buildIssuePayload` silently resolves
  * that tier's milestone to `undefined`, which only ever surfaces as a
- * confusing `gh` failure at `--apply` time — and every {@link
- * ROADMAP_ANCHORS} key must also be a `MILESTONE_TITLES` key, since an item
- * sourced from that anchor needs a milestone to file under. Added under
- * ADR-0051: a rename that updates three of these four tables (labels,
- * milestones, anchors) previously failed only at runtime.
+ * confusing `gh` failure at `--apply` time — every {@link ROADMAP_ANCHORS}
+ * key must also be a `MILESTONE_TITLES` key, since an item sourced from that
+ * anchor needs a milestone to file under; and every {@link
+ * PROJECT_PRIORITY_OPTIONS} tier (ADR-0052's board Priority field) must spell
+ * the same tier `PRIORITY_LABELS` does — `"priority:" + PROJECT_PRIORITY_OPTIONS[key]
+ * === PRIORITY_LABELS[key]` — so the label and the board field can never
+ * drift into two different spellings of the same three tiers. Added under
+ * ADR-0051 (labels/milestones/anchors) and widened under ADR-0052 (the board
+ * field): a rename that updates only some of these four registers previously
+ * failed only at runtime.
  *
  * Deliberately NOT blanket set equality: `MILESTONE_TITLES` legitimately
  * carries an extra `major` bucket with no priority-label counterpart
- * ({@link MAJOR_BUMP_ITEM_KEYS} routes to it independent of tier), and
+ * ({@link MAJOR_BUMP_ITEM_KEYS} routes to it independent of tier),
  * `ROADMAP_ANCHORS` legitimately omits `p2` — `docs/ROADMAP.md`'s Priority 2
- * section is parsed but never converted into items.
+ * section is parsed but never converted into items — and
+ * `PROJECT_PRIORITY_OPTIONS.governance` is legitimately `null` (cleared, not
+ * a spelled option — ADR-0051's "governance is a category, not a tier").
  *
- * @param {{ priorityLabels: Record<string, string>, milestoneTitles: Record<string, string>, roadmapAnchors: Record<string, string> }} tables
+ * @param {{ priorityLabels: Record<string, string>, milestoneTitles: Record<string, string>, roadmapAnchors: Record<string, string>, projectPriorityOptions: Record<string, string | null> }} tables
  * @returns {string[]}
  * @example
  * ```js
@@ -172,6 +181,7 @@ export function findKeyCollisions({ items, duplicateKeys }) {
  *   priorityLabels: { p0: "priority:0-now" },
  *   milestoneTitles: {},
  *   roadmapAnchors: {},
+ *   projectPriorityOptions: {},
  * }); // ['PRIORITY_LABELS.p0 ("priority:0-now") has no MILESTONE_TITLES.p0 entry.']
  * ```
  */
@@ -179,6 +189,7 @@ export function findPriorityVocabularyMismatches({
   priorityLabels,
   milestoneTitles,
   roadmapAnchors,
+  projectPriorityOptions,
 }) {
   const findings = [];
 
@@ -187,6 +198,16 @@ export function findPriorityVocabularyMismatches({
       findings.push(
         `PRIORITY_LABELS.${key} ("${label}") has no MILESTONE_TITLES.${key} entry — ` +
           `buildIssuePayload would silently resolve this tier's milestone to undefined.`,
+      );
+    }
+
+    const boardOption = projectPriorityOptions[key];
+    const expectedLabel = boardOption ? `priority:${boardOption}` : null;
+    if (expectedLabel !== null && expectedLabel !== label) {
+      findings.push(
+        `PRIORITY_LABELS.${key} ("${label}") and PROJECT_PRIORITY_OPTIONS.${key} ` +
+          `("${boardOption}") spell tier "${key}" differently — the label and the board ` +
+          `Priority field would show two different names for the same tier.`,
       );
     }
   }
@@ -201,6 +222,34 @@ export function findPriorityVocabularyMismatches({
   }
 
   return findings;
+}
+
+/**
+ * Assert every {@link actionableItems} result item carries a
+ * {@link ISSUE_TYPES} value (ADR-0052) — a section that gains an anchor
+ * (see {@link TYPE_BY_ROADMAP_SECTION}/{@link TYPE_BY_IMPLEMENTATION_SECTION}
+ * in `bin/lib/hub-sync.mjs`) but not a type would otherwise fail only when
+ * `sync:hub-issues --apply` tries `gh issue edit --type undefined`.
+ *
+ * @param {{ key: string, title: string, type?: string }[]} items
+ * @returns {string[]}
+ * @example
+ * ```js
+ * import { findMissingTypes } from "@m3l-automation/workspace/bin/check-hub-keys.mjs";
+ *
+ * findMissingTypes([{ key: "roadmap:p0:x", title: "X" }]);
+ * // ['Item "roadmap:p0:x" ("X") has no Issue Type — check TYPE_BY_ROADMAP_SECTION/TYPE_BY_IMPLEMENTATION_SECTION.']
+ * ```
+ */
+export function findMissingTypes(items) {
+  const validTypes = new Set(Object.values(ISSUE_TYPES));
+  return items
+    .filter((item) => !validTypes.has(item.type))
+    .map(
+      (item) =>
+        `Item "${item.key}" ("${item.title}") has no Issue Type — check ` +
+        `TYPE_BY_ROADMAP_SECTION/TYPE_BY_IMPLEMENTATION_SECTION.`,
+    );
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -230,13 +279,22 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       priorityLabels: PRIORITY_LABELS,
       milestoneTitles: MILESTONE_TITLES,
       roadmapAnchors: ROADMAP_ANCHORS,
+      projectPriorityOptions: PROJECT_PRIORITY_OPTIONS,
     });
+    const missingTypes = findMissingTypes(result.items);
 
-    if (findings.length > 0 || vocabularyMismatches.length > 0) {
+    if (
+      findings.length > 0 ||
+      vocabularyMismatches.length > 0 ||
+      missingTypes.length > 0
+    ) {
       for (const { message } of findings) {
         reporter.error(message, { file: IMPLEMENTATION_PATH });
       }
       for (const message of vocabularyMismatches) {
+        reporter.error(message, { file: "bin/lib/hub-sync.mjs" });
+      }
+      for (const message of missingTypes) {
         reporter.error(message, { file: "bin/lib/hub-sync.mjs" });
       }
       reporter.finish();
@@ -245,7 +303,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
     reporter.succeed(
       `${result.items.length} hub-sync item keys are unique (case-insensitively, aliases included), ` +
-        `and the priority label/milestone/anchor tables agree.`,
+        `every item carries an Issue Type, and the priority label/milestone/anchor/board-field tables agree.`,
     );
     reporter.finish();
   } catch (cause) {

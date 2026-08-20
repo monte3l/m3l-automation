@@ -1,11 +1,14 @@
 import { describe, expect, test } from "vitest";
 import {
   findKeyCollisions,
+  findMissingTypes,
   findPriorityVocabularyMismatches,
 } from "../check-hub-keys.mjs";
 import {
+  ISSUE_TYPES,
   MILESTONE_TITLES,
   PRIORITY_LABELS,
+  PROJECT_PRIORITY_OPTIONS,
   ROADMAP_ANCHORS,
 } from "../lib/hub-sync.mjs";
 
@@ -153,6 +156,7 @@ describe("findPriorityVocabularyMismatches", () => {
         p1: "Next — consumer fleet",
       },
       roadmapAnchors: { p0: "#priority-0" },
+      projectPriorityOptions: { p0: "0-now", p1: "1-next" },
     });
     expect(findings).toEqual([]);
   });
@@ -162,6 +166,7 @@ describe("findPriorityVocabularyMismatches", () => {
       priorityLabels: { p2: "priority:2-later" },
       milestoneTitles: {},
       roadmapAnchors: {},
+      projectPriorityOptions: { p2: "2-later" },
     });
     expect(findings).toHaveLength(1);
     expect(findings[0]).toContain("PRIORITY_LABELS.p2");
@@ -174,6 +179,7 @@ describe("findPriorityVocabularyMismatches", () => {
       priorityLabels: {},
       milestoneTitles: {},
       roadmapAnchors: { governance: "#governance-follow-ups" },
+      projectPriorityOptions: {},
     });
     expect(findings).toHaveLength(1);
     expect(findings[0]).toContain("ROADMAP_ANCHORS.governance");
@@ -193,19 +199,85 @@ describe("findPriorityVocabularyMismatches", () => {
         major: "2.0 / breaking",
       },
       roadmapAnchors: {},
+      projectPriorityOptions: { p0: "0-now" },
+    });
+    expect(findings).toEqual([]);
+  });
+
+  test("a priorityLabels entry that spells its tier differently from projectPriorityOptions is reported", () => {
+    // "priority:0-now" vs board option "0-later" — same key ("p0"), two
+    // different spellings of the tier.
+    const findings = findPriorityVocabularyMismatches({
+      priorityLabels: { p0: "priority:0-now" },
+      milestoneTitles: { p0: "Now — unblock first" },
+      roadmapAnchors: {},
+      projectPriorityOptions: { p0: "0-later" },
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain("PRIORITY_LABELS.p0");
+    expect(findings[0]).toContain("priority:0-now");
+    expect(findings[0]).toContain("PROJECT_PRIORITY_OPTIONS.p0");
+    expect(findings[0]).toContain("0-later");
+  });
+
+  test("a projectPriorityOptions entry that is null (governance) is NOT reported, even though it has no priority: label counterpart", () => {
+    const findings = findPriorityVocabularyMismatches({
+      priorityLabels: {},
+      milestoneTitles: {},
+      roadmapAnchors: {},
+      projectPriorityOptions: { governance: null },
     });
     expect(findings).toEqual([]);
   });
 
   // Regression lock: passing the REAL current tables through must stay []
-  // so a future partial ADR-0051-style rename (one table updated, another
-  // left stale) fails this test instead of only surfacing at `gh` call time.
-  test("the real PRIORITY_LABELS/MILESTONE_TITLES/ROADMAP_ANCHORS tables from hub-sync.mjs agree", () => {
+  // so a future partial ADR-0051/ADR-0052-style rename (one table updated,
+  // another left stale) fails this test instead of only surfacing at `gh`
+  // call time.
+  test("the real PRIORITY_LABELS/MILESTONE_TITLES/ROADMAP_ANCHORS/PROJECT_PRIORITY_OPTIONS tables from hub-sync.mjs agree", () => {
     const findings = findPriorityVocabularyMismatches({
       priorityLabels: PRIORITY_LABELS,
       milestoneTitles: MILESTONE_TITLES,
       roadmapAnchors: ROADMAP_ANCHORS,
+      projectPriorityOptions: PROJECT_PRIORITY_OPTIONS,
     });
     expect(findings).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findMissingTypes
+// ---------------------------------------------------------------------------
+
+describe("findMissingTypes", () => {
+  test("returns [] when every item carries a valid ISSUE_TYPES value", () => {
+    const findings = findMissingTypes([
+      { key: "roadmap:p0:x", title: "X", type: ISSUE_TYPES.capability },
+      { key: "impl:friction:f7", title: "F7", type: ISSUE_TYPES.friction },
+    ]);
+    expect(findings).toEqual([]);
+  });
+
+  test("an item with type: undefined is reported", () => {
+    const findings = findMissingTypes([
+      { key: "roadmap:p0:x", title: "X", type: undefined },
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain("roadmap:p0:x");
+    expect(findings[0]).toContain("X");
+    expect(findings[0]).toContain("Issue Type");
+  });
+
+  test("an item with an off-vocabulary type string is reported", () => {
+    const findings = findMissingTypes([
+      { key: "roadmap:p0:x", title: "X", type: "Bug" },
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain("roadmap:p0:x");
+  });
+
+  test("an item with no type property at all is reported the same as an undefined one", () => {
+    const findings = findMissingTypes([{ key: "roadmap:p0:x", title: "X" }]);
+    expect(findings).toHaveLength(1);
   });
 });

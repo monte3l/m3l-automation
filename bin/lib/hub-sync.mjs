@@ -34,10 +34,10 @@ export const HUB_LABEL = "hub-sync";
  * ```js
  * import { HUB_PROJECT_TITLE } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
  *
- * HUB_PROJECT_TITLE; // "m3l-automation hub"
+ * HUB_PROJECT_TITLE; // "m3l-automation"
  * ```
  */
-export const HUB_PROJECT_TITLE = "m3l-automation hub";
+export const HUB_PROJECT_TITLE = "m3l-automation";
 
 /**
  * Maps every non-governance {@link Item} priority to the GitHub label string
@@ -120,10 +120,45 @@ const IMPLEMENTATION_PATH = "docs/plans/IMPLEMENTATION.md";
 // includes the full heading text after the em dash/parenthetical — the prior
 // `#priority-0`/`#priority-1` values never matched a real anchor and every
 // synced deep-link for those two sections landed at the top of the file.
+/**
+ * The GitHub-org Issue Type every {@link Item} is assigned, one level
+ * coarser than {@link PRIORITY_LABELS}/{@link TYPE_LABELS}: it answers "what
+ * kind of work is this" (capability work, a consumer script, a friction
+ * report, a governance follow-up) rather than "how urgent." Assigned to the
+ * `monte3l` org's Issue Types via `gh issue edit --type`, not a label — see
+ * ADR-0052. Derived per tracker *section* ({@link TYPE_BY_ROADMAP_SECTION} /
+ * {@link TYPE_BY_IMPLEMENTATION_SECTION}), never hand-picked per item, the
+ * same shape {@link IMPLEMENTATION_ANCHORS}/{@link IMPLEMENTATION_NAMESPACES}
+ * already use.
+ *
+ * @example
+ * ```js
+ * import { ISSUE_TYPES } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ *
+ * ISSUE_TYPES.friction; // "Friction"
+ * ```
+ */
+export const ISSUE_TYPES = {
+  capability: "Capability",
+  consumerScript: "Consumer script",
+  friction: "Friction",
+  governance: "Governance",
+};
+
 export const ROADMAP_ANCHORS = {
   p0: "#priority-0--library-hardening-do-before-more-scripts",
   p1: "#priority-1--consumer-fleet",
   governance: "#governance-follow-ups-adr-0028--adr-0029",
+};
+
+// The {@link ISSUE_TYPES} value every ROADMAP.md section's items are
+// assigned, keyed identically to ROADMAP_ANCHORS above so a new ROADMAP
+// section cannot gain an anchor without also gaining a type (mirrors the
+// IMPLEMENTATION_ANCHORS/IMPLEMENTATION_NAMESPACES pairing below).
+const TYPE_BY_ROADMAP_SECTION = {
+  p0: ISSUE_TYPES.capability,
+  p1: ISSUE_TYPES.consumerScript,
+  governance: ISSUE_TYPES.governance,
 };
 
 const IMPLEMENTATION_ANCHORS = {
@@ -164,6 +199,25 @@ const IMPLEMENTATION_NAMESPACES = {
   m3lCliBuildOut: "cli",
   codifiedProcedureWave: "procedure",
   gated: "gated",
+};
+
+// The {@link ISSUE_TYPES} value every IMPLEMENTATION.md section's items are
+// assigned, keyed identically to IMPLEMENTATION_ANCHORS/IMPLEMENTATION_NAMESPACES
+// above so a new section cannot gain an anchor without also gaining a type.
+// Only the friction table is genuinely a friction report; every other
+// IMPLEMENTATION.md section is capability-deepening work by construction —
+// including `gated`, whose entries are individually mixed (a deferred
+// toolchain chore alongside genuine capability gaps) but for which
+// Capability is the defensible per-row default, with the nuance carried in
+// the row's own detail text rather than a per-item type override.
+const TYPE_BY_IMPLEMENTATION_SECTION = {
+  friction: ISSUE_TYPES.friction,
+  adr0035Rollout: ISSUE_TYPES.capability,
+  capabilityDeepeningWave: ISSUE_TYPES.capability,
+  postComparisonHardeningWave: ISSUE_TYPES.capability,
+  m3lCliBuildOut: ISSUE_TYPES.capability,
+  codifiedProcedureWave: ISSUE_TYPES.capability,
+  gated: ISSUE_TYPES.capability,
 };
 
 /**
@@ -337,6 +391,7 @@ export function parseHubMarker(body) {
  *   title: string,
  *   status: "done" | "todo" | "in-progress" | "deferred" | "blocked" | "rejected",
  *   priority: "p0" | "p1" | "p2" | "governance",
+ *   type: "Capability" | "Consumer script" | "Friction" | "Governance",
  *   sourcePath: string,
  *   sourceAnchor: string,
  *   detail: string,
@@ -476,6 +531,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[whatIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Roadmap"),
         priority: "p0",
+        type: TYPE_BY_ROADMAP_SECTION.p0,
         sourcePath: ROADMAP_PATH,
         sourceAnchor: ROADMAP_ANCHORS.p0,
         detail: buildDetail(header, row, new Set([itemIndex, statusIndex])),
@@ -497,6 +553,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${wave} — ${scripts}`,
         status: resolveStatus(row[statusIndex], key, "Roadmap"),
         priority: "p1",
+        type: TYPE_BY_ROADMAP_SECTION.p1,
         sourcePath: ROADMAP_PATH,
         sourceAnchor: ROADMAP_ANCHORS.p1,
         detail: buildDetail(
@@ -522,6 +579,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[whatIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Roadmap"),
         priority: "governance",
+        type: TYPE_BY_ROADMAP_SECTION.governance,
         sourcePath: ROADMAP_PATH,
         sourceAnchor: ROADMAP_ANCHORS.governance,
         detail: buildDetail(header, row, new Set([itemIndex, statusIndex])),
@@ -543,6 +601,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedId} — ${row[titleIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
+        type: TYPE_BY_IMPLEMENTATION_SECTION.friction,
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.friction,
         legacyKeys: [`impl:${strippedId}`],
@@ -565,6 +624,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedPhase} — ${row[changeIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
+        type: TYPE_BY_IMPLEMENTATION_SECTION.adr0035Rollout,
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.adr0035Rollout,
         legacyKeys: [`impl:${strippedPhase}`],
@@ -587,6 +647,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
+        type: TYPE_BY_IMPLEMENTATION_SECTION.capabilityDeepeningWave,
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.capabilityDeepeningWave,
         legacyKeys: [`impl:${slug(row[itemIndex] ?? "")}`],
@@ -609,6 +670,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
+        type: TYPE_BY_IMPLEMENTATION_SECTION.postComparisonHardeningWave,
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.postComparisonHardeningWave,
         legacyKeys: [`impl:${slug(row[itemIndex] ?? "")}`],
@@ -631,6 +693,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
+        type: TYPE_BY_IMPLEMENTATION_SECTION.m3lCliBuildOut,
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.m3lCliBuildOut,
         legacyKeys: [`impl:${slug(row[itemIndex] ?? "")}`],
@@ -653,6 +716,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
+        type: TYPE_BY_IMPLEMENTATION_SECTION.codifiedProcedureWave,
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.codifiedProcedureWave,
         legacyKeys: [`impl:${slug(row[itemIndex] ?? "")}`],
@@ -673,6 +737,7 @@ export function actionableItems(roadmap, implementation) {
         title: stripMarkdown(idCell),
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: "p2",
+        type: TYPE_BY_IMPLEMENTATION_SECTION.gated,
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.gated,
         legacyKeys: [`impl:${slug(idCell)}`],
@@ -702,7 +767,7 @@ export function actionableItems(roadmap, implementation) {
  * every item now resolves to a real milestone, including governance ones.
  *
  * @param {Item} item
- * @returns {{ title: string, body: string, labels: string[], milestoneTitle: string | null }}
+ * @returns {{ title: string, body: string, labels: string[], milestoneTitle: string | null, type: string }}
  * @example
  * ```js
  * import { buildIssuePayload } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
@@ -746,6 +811,7 @@ export function buildIssuePayload(item) {
       ...(statusLabel ? [statusLabel] : []),
     ],
     milestoneTitle,
+    type: item.type,
   };
 }
 
@@ -884,13 +950,15 @@ export function indexItemsByKey(items) {
  * Idempotency law: calling this again over the issue state its own plan
  * produced yields empty `create`/`update`/`close`/`reopen`.
  *
- * Dirty (triggers `update`) on a title/body change **or** a managed-label
+ * Dirty (triggers `update`) on a title/body change, a managed-label
  * drift (see {@link managedLabelsDiffer}) — the latter so a status-only
  * change (e.g. To Do → Deferred, same title/body) still reaches `editIssue`
- * and gets its {@link STATUS_LABELS} entry applied, not just its milestone.
+ * and gets its {@link STATUS_LABELS} entry applied, not just its milestone —
+ * **or** a changed/absent GitHub Issue Type, so `check:hub-drift` catches a
+ * hand-cleared {@link Item.type}.
  *
  * @param {Item[]} items
- * @param {{ number: number, title: string, body: string, state: "open" | "closed", labels: string[] }[]} existingIssues
+ * @param {{ number: number, title: string, body: string, state: "open" | "closed", labels: string[], type: string | null }[]} existingIssues
  * @returns {{
  *   create: { key: string, payload: ReturnType<typeof buildIssuePayload> }[],
  *   update: { number: number, key: string, payload: ReturnType<typeof buildIssuePayload> }[],
@@ -947,7 +1015,8 @@ export function planIssueSync(items, existingIssues) {
     const isDirty =
       issue.title !== payload.title ||
       issue.body !== payload.body ||
-      managedLabelsDiffer(issue.labels, payload);
+      managedLabelsDiffer(issue.labels, payload) ||
+      issue.type !== payload.type;
 
     if (issue.state === "closed") {
       if (isResolved(item.status)) {
@@ -994,21 +1063,18 @@ export function planIssueSync(items, existingIssues) {
   return { create, update, close, reopen, untouched };
 }
 
-// The board's single-select "Status" field carries only these three options
-// (never extended to match the tracker's 6-value vocabulary one-for-one —
-// that would need a board schema change this planner doesn't make). Every
-// Item status maps conservatively onto the closest of the three: "todo" /
-// "deferred" / "blocked" (all not-yet-actionable-or-waiting) collapse to
-// Pending, "in-progress" to In review, and "done" / "rejected" (both
-// resolved — a rejected item's issue is closed by planIssueSync, so this
-// mapping is only reached defensively) to Done.
+// The board's single-select "Status" field carries the tracker's own
+// 6-value vocabulary one-for-one (ADR-0052; widened from the original
+// 3-value Pending/In review/Done ADR-0032 board, which collapsed Deferred
+// and Blocked into an indistinguishable "Pending"). Every Item status now
+// maps directly onto its own board option — no lossy collapsing.
 const PROJECT_STATUS_OPTIONS = {
-  todo: "Pending",
-  "in-progress": "In review",
-  deferred: "Pending",
-  blocked: "Pending",
+  todo: "To Do",
+  "in-progress": "In Progress",
+  deferred: "Deferred",
+  blocked: "Blocked",
   done: "Done",
-  rejected: "Done",
+  rejected: "Rejected",
 };
 
 // Map an Item/tracked-issue status to its board single-select option name.
@@ -1031,34 +1097,65 @@ function projectStatusOption(status) {
   return option;
 }
 
+// Maps an Item priority (p0/p1/p2/governance) to the board Priority
+// single-select's option name — mirroring PRIORITY_LABELS' own
+// "0-now"/"1-next"/"2-later" vocabulary exactly, so the label and the board
+// field never drift into two different spellings of the same three tiers.
+// `governance` maps to `null` (clear the field, never an option) — ADR-0051
+// is explicit that governance is a category, not a tier, and giving it a
+// Priority option would contradict that on the one surface meant to project
+// the same taxonomy the labels already carry.
+export const PROJECT_PRIORITY_OPTIONS = {
+  p0: "0-now",
+  p1: "1-next",
+  p2: "2-later",
+  governance: null,
+};
+
+function projectPriorityOption(priority) {
+  if (!Object.hasOwn(PROJECT_PRIORITY_OPTIONS, priority)) {
+    throw new Error(
+      `projectPriorityOption: no board option mapped for priority "${priority}" — ` +
+        `PROJECT_PRIORITY_OPTIONS is missing an entry for a new priority value.`,
+    );
+  }
+  return PROJECT_PRIORITY_OPTIONS[priority];
+}
+
 /**
- * Plan the add/setStatus/archive actions that bring `existingProjectItems`
- * into sync with `trackedIssues` — the board is a view over the issues
- * hub-sync already owns, so it never adds a card for anything not in
- * `trackedIssues`, and a board item whose `issueNumber` is absent from
- * `trackedIssues` entirely (a human-added card) is always left alone.
+ * Plan the add/setStatus/setPriority/archive actions that bring
+ * `existingProjectItems` into sync with `trackedIssues` — the board is a
+ * view over the issues hub-sync already owns, so it never adds a card for
+ * anything not in `trackedIssues`, and a board item whose `issueNumber` is
+ * absent from `trackedIssues` entirely (a human-added card) is always left
+ * alone.
  *
  * Idempotency law: calling this again over the board state its own plan
- * produced yields empty `add`/`setStatus`/`archive`.
+ * produced yields empty `add`/`setStatus`/`setPriority`/`archive`.
  *
- * @param {{ number: number, state: "open" | "closed", status: Item["status"] }[]} trackedIssues
- * @param {{ itemId: string, issueNumber: number, status: string | null }[]} existingProjectItems
+ * @param {{ number: number, state: "open" | "closed", status: Item["status"], priority: Item["priority"] }[]} trackedIssues
+ * @param {{ itemId: string, issueNumber: number, status: string | null, priority: string | null }[]} existingProjectItems
  * @returns {{
- *   add: { issueNumber: number, status: string }[],
+ *   add: { issueNumber: number, status: string, priority: string | null }[],
  *   setStatus: { itemId: string, issueNumber: number, status: string }[],
+ *   setPriority: { itemId: string, issueNumber: number, priority: string | null }[],
  *   archive: { itemId: string, issueNumber: number }[],
  * }}
  * @example
  * ```js
  * import { planProjectSync } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
  *
- * planProjectSync([{ number: 1, state: "open", status: "todo" }], []);
- * // { add: [{ issueNumber: 1, status: "Pending" }], setStatus: [], archive: [] }
+ * planProjectSync(
+ *   [{ number: 1, state: "open", status: "todo", priority: "p0" }],
+ *   [],
+ * );
+ * // { add: [{ issueNumber: 1, status: "To Do", priority: "0-now" }], setStatus: [], setPriority: [], archive: [] }
  * ```
  */
 export function planProjectSync(trackedIssues, existingProjectItems) {
   const add = [];
   const setStatus = [];
+  const setPriority = [];
   const archive = [];
 
   const projectByIssueNumber = new Map(
@@ -1082,18 +1179,34 @@ export function planProjectSync(trackedIssues, existingProjectItems) {
     }
 
     const desiredStatus = projectStatusOption(issue.status);
+    const desiredPriority = projectPriorityOption(issue.priority);
+
     if (!projectItem) {
-      add.push({ issueNumber: issue.number, status: desiredStatus });
-    } else if (projectItem.status !== desiredStatus) {
+      add.push({
+        issueNumber: issue.number,
+        status: desiredStatus,
+        priority: desiredPriority,
+      });
+      continue;
+    }
+
+    if (projectItem.status !== desiredStatus) {
       setStatus.push({
         itemId: projectItem.itemId,
         issueNumber: issue.number,
         status: desiredStatus,
       });
     }
+    if ((projectItem.priority ?? null) !== desiredPriority) {
+      setPriority.push({
+        itemId: projectItem.itemId,
+        issueNumber: issue.number,
+        priority: desiredPriority,
+      });
+    }
   }
 
-  return { add, setStatus, archive };
+  return { add, setStatus, setPriority, archive };
 }
 
 // Plain Levenshtein edit distance between two strings — no dependency (this
