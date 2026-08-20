@@ -73,7 +73,10 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     PR #523 burned three runs and ~$8.15 that way. Split the PR and each
     slice reviews normally. The limit is ~2.1x the largest reviewable patch
     in the measured window and rejected none of the 14 PRs merged before it
-    landed.
+    landed. **This is a rejection ceiling, not an authoring target** — see
+    [ADR-0072](../adr/0072-reviewable-slice-discipline.md) for the 75,000-char
+    soft target `pnpm check:review-size` checks locally before a PR is opened,
+    and for the split axes to use when a PR runs over it.
 
     **Where the verdict comes from.** Primarily `.claude-review-verdict`, a
     file the reviewer writes as its final action. Because a `>` redirect

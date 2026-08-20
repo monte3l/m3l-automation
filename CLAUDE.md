@@ -132,7 +132,7 @@ Canonical **Style Guide**: `docs/contributing/style-guide.md` (`[enforced]` vs `
 
 - **Conventional Commits (required)**, with an AI co-authorship trailer when Claude authored/assisted. Enforced by the `commit-msg` hook. Trailer mechanics and canonical model names: `docs/contributing/contributing.md`.
 - **Before change-work, run the `starting-work` skill** — the pre-work decision gate that settles location / branch / PR / push (ADR-0016). Branch from `main`: `feat/<slug>`, `fix/<slug>`; `guard-branch-isolation.mjs` blocks `packages/*/src/**`, `scripts/*/src/**`, `**/tests/**` writes while `HEAD` is `main`.
-- Never `git push --force` to a shared branch. Commits should be small, incremental, and meaningful.
+- Never `git push --force` to a shared branch. Commits should be small, incremental, and meaningful. **Prefer several small, independently reviewable PRs over a few large ones** (ADR-0072); run `pnpm check:review-size` before opening one.
 - **Worktrees** (ADR-0013/0014): `pnpm worktree:new <slug>` / `pnpm worktree:remove <slug>` create/tear down an isolated sibling checkout. Full mechanics: the ADRs.
 
 ## Architecture & Decisions

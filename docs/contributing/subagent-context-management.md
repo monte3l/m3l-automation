@@ -213,6 +213,26 @@ log now records a **`Spoke incidents:`** line (see
 section against those counts, and update it when the evidence lands either
 way.
 
+**2026-08-20 update: two truncations on one module confirm prevention is the
+harder, still-unsolved half.** `core/procedure` (B2/#523, five review rounds,
+abandoned — see [ADR-0072](../adr/0072-reviewable-slice-discipline.md)) had
+**two** spokes truncate mid-task on the same module, one of them a reviewer
+that returned nothing after 13 minutes and 183k tokens. Both truncations
+happened despite the brief-bounding guidance above already being in force —
+scope-narrowing a single spoke's turn was not sufficient at this scale.
+Prevention needed a structural complement, not a tighter brief: the module's
+public surface was never partitioned into independently-testable slices
+before RED, so every dispatch — writer and reviewer alike — carried the whole
+module's surface regardless of how tightly its individual prompt was scoped.
+ADR-0072's seam plan (`implementing-submodules` Step 5) addresses this by
+moving the split decision earlier than the dispatch itself: the module is
+partitioned before any spoke is dispatched, so brief-bounding then has
+something genuinely bounded to scope each dispatch to, rather than a
+same-sized slice of an indivisibly large module. Brief-bounding and journaling
+remain necessary — they are what makes each individual slice's dispatch
+recoverable — but this is the first confirmed case where they were not
+sufficient on their own.
+
 ## A note on model tier and context window
 
 Context/output limits differ meaningfully by tier (see
