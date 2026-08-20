@@ -1422,6 +1422,226 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/polling/events.ts"
   },
+  "M3LProcedureShape": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureValue": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureScalar": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureValueMap": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedurePath": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureReference": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureStep": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureStepKind": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureStepResult": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureStepRecord": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureFlow": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureLoop": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureContext": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureCondition": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureConditionKind": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureCompareOperator": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureConditionScope": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureConditionEvaluation": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureResolvedReference": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "evaluateProcedureCondition": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/conditions.ts"
+  },
+  "M3LProcedureCase": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureFallback": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureCaseEvaluation": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureCaseMatch": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedure": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/M3LProcedure.ts"
+  },
+  "M3LProcedureSummary": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "createProcedureBuilder": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/M3LProcedureBuilder.ts"
+  },
+  "M3LProcedureBuilder": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/M3LProcedureBuilder.ts"
+  },
+  "M3LProcedureBuildOptions": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureRunOptions": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureProgressOptions": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureProgressWitness": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3L_PROCEDURE_MAX_ITERATIONS": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3L_PROCEDURE_CONDITION_MAX_DEPTH": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3L_PROCEDURE_MAX_PATTERN_LENGTH": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureOutcome": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureOutcomeBase": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureTelemetry": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureValidationProblem": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureProblemCode": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureTraceOptions": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureTraceSink": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
+  "M3LProcedureTraceEntry": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/types.ts"
+  },
   "confirmDestructive": {
     "submodule": "prompt",
     "namespace": "core",
