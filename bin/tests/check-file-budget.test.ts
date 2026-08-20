@@ -1,7 +1,21 @@
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { join, relative, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import * as fs from "node:fs";
+
+// ---------------------------------------------------------------------------
+// Mock setup for walkMatching / collectBudgetEntries (node:fs)
+// ---------------------------------------------------------------------------
+//
+// Spread the actual fs so vi.spyOn can intercept individual methods (ESM
+// namespace objects are non-writable by default — the spread makes them
+// plain, writable object properties), following
+// bin/tests/check-test-counts.test.ts and bin/tests/check-scaffold-seam.test.ts.
+vi.mock("node:fs", async () => {
+  const actual = await vi.importActual<typeof fs>("node:fs");
+  return { ...actual };
+});
+
 import {
   SRC_CEILING_BYTES,
   TEST_CEILING_BYTES,
@@ -13,6 +27,23 @@ import {
   buildBaseline,
 } from "../check-file-budget.mjs";
 
+// check-file-budget.mjs computes `root` as
+// dirname(dirname(fileURLToPath(import.meta.url)))` from its own location
+// (bin/check-file-budget.mjs), i.e. the repo root. This test file lives one
+// directory deeper (bin/tests/), so the same repo root needs one extra
+// dirname() hop from here.
+const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+const packagesDir = join(root, "packages");
+
+/** Minimal fake `Dirent` satisfying the shape `walkMatching` reads. */
+function fakeDirent(name: string, kind: "file" | "dir") {
+  return {
+    name,
+    isDirectory: () => kind === "dir",
+    isFile: () => kind === "file",
+  };
+}
+
 describe("SRC_CEILING_BYTES / TEST_CEILING_BYTES", () => {
   test("exports the documented ceilings", () => {
     expect(SRC_CEILING_BYTES).toBe(25_000);
@@ -21,33 +52,52 @@ describe("SRC_CEILING_BYTES / TEST_CEILING_BYTES", () => {
 });
 
 describe("walkMatching", () => {
-  let dir: string;
-
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "m3l-file-budget-"));
-  });
-
   afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
   });
 
   test("an empty directory yields no files", () => {
-    expect(walkMatching(dir, () => true)).toEqual([]);
+    vi.spyOn(fs, "readdirSync").mockReturnValue([]);
+
+    expect(walkMatching("/fake/empty-dir", () => true)).toEqual([]);
   });
 
   test("a missing directory yields no files rather than throwing", () => {
-    const missing = join(dir, "does-not-exist");
+    vi.spyOn(fs, "readdirSync").mockImplementation(() => {
+      const error = new Error(
+        "ENOENT: no such file or directory",
+      ) as NodeJS.ErrnoException;
+      error.code = "ENOENT";
+      throw error;
+    });
+    const missing = "/fake/does-not-exist";
+
     expect(() => walkMatching(missing, () => true)).not.toThrow();
     expect(walkMatching(missing, () => true)).toEqual([]);
   });
 
   test("recurses into nested directories and returns matches sorted", () => {
-    writeFileSync(join(dir, "a.ts"), "a");
-    writeFileSync(join(dir, "b.txt"), "b");
-    mkdirSync(join(dir, "subdir"), { recursive: true });
-    writeFileSync(join(dir, "subdir", "c.ts"), "c");
-    mkdirSync(join(dir, "subdir", "nested"), { recursive: true });
-    writeFileSync(join(dir, "subdir", "nested", "f.ts"), "f");
+    const dir = "/fake/nested-test";
+    const subdir = join(dir, "subdir");
+    const nested = join(subdir, "nested");
+
+    vi.spyOn(fs, "readdirSync").mockImplementation(((current: string) => {
+      const path = String(current);
+      if (path === dir) {
+        return [
+          fakeDirent("a.ts", "file"),
+          fakeDirent("b.txt", "file"),
+          fakeDirent("subdir", "dir"),
+        ];
+      }
+      if (path === subdir) {
+        return [fakeDirent("c.ts", "file"), fakeDirent("nested", "dir")];
+      }
+      if (path === nested) {
+        return [fakeDirent("f.ts", "file")];
+      }
+      throw new Error(`unexpected readdirSync call: ${path}`);
+    }) as typeof fs.readdirSync);
 
     const found = walkMatching(dir, (relPath) => relPath.endsWith(".ts"));
 
@@ -64,11 +114,24 @@ describe("walkMatching", () => {
   });
 
   test("prunes node_modules and dist subtrees entirely", () => {
-    writeFileSync(join(dir, "kept.ts"), "kept");
-    mkdirSync(join(dir, "node_modules", "pkg"), { recursive: true });
-    writeFileSync(join(dir, "node_modules", "pkg", "skip.ts"), "skip");
-    mkdirSync(join(dir, "dist"), { recursive: true });
-    writeFileSync(join(dir, "dist", "skip.ts"), "skip");
+    const dir = "/fake/prune-test";
+
+    // A readdirSync call into either pruned subtree throws, so this test
+    // fails loudly (rather than just missing an assertion) if walkMatching
+    // ever descends into node_modules/ or dist/ instead of skipping them.
+    vi.spyOn(fs, "readdirSync").mockImplementation(((current: string) => {
+      const path = String(current);
+      if (path === dir) {
+        return [
+          fakeDirent("kept.ts", "file"),
+          fakeDirent("node_modules", "dir"),
+          fakeDirent("dist", "dir"),
+        ];
+      }
+      throw new Error(
+        `unexpected readdirSync call into pruned subtree: ${path}`,
+      );
+    }) as typeof fs.readdirSync);
 
     const found = walkMatching(dir, (relPath) => relPath.endsWith(".ts"));
 
@@ -104,15 +167,112 @@ describe("isTestFile", () => {
 });
 
 describe("collectBudgetEntries", () => {
-  test("returns a non-empty array of well-formed entries from the live repo", () => {
+  const pkgADir = join(packagesDir, "fake-pkg-a");
+  const pkgASrcDir = join(pkgADir, "src");
+  const pkgATestsDir = join(pkgADir, "tests");
+  const pkgBDir = join(packagesDir, "fake-pkg-b");
+  const pkgBSrcDir = join(pkgBDir, "src");
+  const pkgBTestsDir = join(pkgBDir, "tests");
+
+  const fooTsPath = join(pkgASrcDir, "Foo.ts");
+  const fooTestPath = join(pkgATestsDir, "Foo.test.ts");
+  const barTsPath = join(pkgBSrcDir, "Bar.ts");
+  const barTestPath = join(pkgBTestsDir, "Bar.test.ts");
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("returns correctly-shaped entries (path, bytes, category) for a synthetic packages/ layout", () => {
+    const fooContent = "export const foo = 1;";
+    const fooTestContent = "test('foo', () => {});";
+    const barContent = "export const bar = 2;";
+    const barTestContent = "test('bar', () => {});";
+
+    vi.spyOn(fs, "readdirSync").mockImplementation(((current: string) => {
+      const path = String(current);
+      if (path === packagesDir) {
+        return [
+          fakeDirent("fake-pkg-a", "dir"),
+          fakeDirent("fake-pkg-b", "dir"),
+        ];
+      }
+      if (path === pkgASrcDir) {
+        // index.ts and Foo.d.ts are noise that isCoverageEligibleSrcFile
+        // must filter out.
+        return [
+          fakeDirent("Foo.ts", "file"),
+          fakeDirent("index.ts", "file"),
+          fakeDirent("Foo.d.ts", "file"),
+        ];
+      }
+      if (path === pkgATestsDir) {
+        // helper.ts is noise that isTestFile must filter out.
+        return [
+          fakeDirent("Foo.test.ts", "file"),
+          fakeDirent("helper.ts", "file"),
+        ];
+      }
+      if (path === pkgBSrcDir) {
+        return [fakeDirent("Bar.ts", "file")];
+      }
+      if (path === pkgBTestsDir) {
+        return [fakeDirent("Bar.test.ts", "file")];
+      }
+      const error = new Error(
+        `unexpected readdirSync call: ${path}`,
+      ) as NodeJS.ErrnoException;
+      error.code = "ENOENT";
+      throw error;
+    }) as typeof fs.readdirSync);
+
+    vi.spyOn(fs, "readFileSync").mockImplementation(((path: string) => {
+      const p = String(path);
+      if (p === fooTsPath) return fooContent;
+      if (p === fooTestPath) return fooTestContent;
+      if (p === barTsPath) return barContent;
+      if (p === barTestPath) return barTestContent;
+      throw new Error(`unexpected readFileSync call: ${p}`);
+    }) as typeof fs.readFileSync);
+
     const entries = collectBudgetEntries();
 
-    expect(entries.length).toBeGreaterThan(0);
-    for (const entry of entries) {
-      expect(["src", "test"]).toContain(entry.category);
-      expect(entry.bytes).toBeGreaterThan(0);
-      expect(typeof entry.path).toBe("string");
-    }
+    const expected = [
+      {
+        path: relative(root, fooTsPath),
+        bytes: Buffer.byteLength(fooContent, "utf8"),
+        category: "src" as const,
+      },
+      {
+        path: relative(root, fooTestPath),
+        bytes: Buffer.byteLength(fooTestContent, "utf8"),
+        category: "test" as const,
+      },
+      {
+        path: relative(root, barTsPath),
+        bytes: Buffer.byteLength(barContent, "utf8"),
+        category: "src" as const,
+      },
+      {
+        path: relative(root, barTestPath),
+        bytes: Buffer.byteLength(barTestContent, "utf8"),
+        category: "test" as const,
+      },
+    ].sort((a, b) => a.path.localeCompare(b.path));
+
+    expect(entries).toEqual(expected);
+  });
+
+  test("propagates a readdirSync(packages/) failure rather than swallowing it into an empty array", () => {
+    vi.spyOn(fs, "readdirSync").mockImplementation(((current: string) => {
+      const path = String(current);
+      if (path === packagesDir) {
+        throw new Error("EACCES: permission denied");
+      }
+      throw new Error(`unexpected readdirSync call: ${path}`);
+    }) as typeof fs.readdirSync);
+
+    expect(() => collectBudgetEntries()).toThrow("EACCES: permission denied");
   });
 });
 
