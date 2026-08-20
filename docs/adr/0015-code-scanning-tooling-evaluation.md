@@ -104,6 +104,9 @@ We chose **option 3**. Concretely:
   public published package; it grades repo-level supply-chain posture and uploads
   SARIF into the existing Security tab.
 - **Attest a CycloneDX SBOM at release**, alongside the existing npm provenance.
+  [**Stale (2026-08-20):** no longer planned — release automation was removed
+  (ADR-0020), so there is no release/publish path left to attest at. Retained
+  as historical record; see the 2026-07-06 and 2026-08-13 Updates above.]
 
 We **reject** the marketplace platforms as redundant here:
 
@@ -122,7 +125,9 @@ We **reject** the marketplace platforms as redundant here:
 - **Positive:** high-severity scanner findings now block merges; vulnerable
   dependencies get automatic fix PRs; the Actions supply chain is pinned and
   tracked; supply-chain posture is scored and visible; releases carry both
-  provenance and an SBOM.
+  provenance and an SBOM. [**Stale (2026-08-20):** no release/publish path
+  exists (ADR-0020), so nothing carries provenance or an SBOM today. Retained
+  as historical record; see the 2026-07-06 and 2026-08-13 Updates above.]
 - **Negative / trade-offs:** slightly more merge friction (two additional required
   checks); more Dependabot PR volume (npm security fixes + weekly Actions updates);
   a small ongoing maintenance surface for the Scorecard workflow.

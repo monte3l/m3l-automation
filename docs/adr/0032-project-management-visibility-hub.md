@@ -117,6 +117,10 @@ way it's the "second source of truth" driver's central risk.
 
 **Verified:** no GitHub Pages configuration exists in this repo today (no
 `actions/deploy-pages` step in `.github/workflows/`, no `gh-pages` branch).
+[**Stale (2026-08-20):** a pre-decision snapshot — this ADR went on to
+_choose_ this option, and `.github/workflows/pages.yml` now deploys the
+generated dashboard via `actions/deploy-pages`. See § Decision below and the
+2026-07-22 Update.]
 The standard pattern for a git-native generated dashboard (used by projects
 like Upptime and various `statuspage` generators) is: a script reads
 git-native data, emits a static site, and a GitHub Actions job deploys it
