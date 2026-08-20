@@ -108,3 +108,11 @@ surface).
 | 0061 | [Agent decision log: an append-only audit artifact class](./0061-agent-decision-log.md)                                                                   | Accepted                         |
 | 0062 | [Runtime MCP surface: `packages/m3l-mcp`](./0062-runtime-mcp-surface.md)                                                                                  | Accepted                         |
 | 0063 | [CLI structured run results: completing the machine surface](./0063-cli-structured-run-results.md)                                                        | Accepted                         |
+| 0064 | [m3l console programme: a full-stack operations console](./0064-m3l-console-programme.md)                                                                 | Accepted                         |
+| 0065 | [Console server architecture and execution integration](./0065-console-server-architecture.md)                                                            | Accepted                         |
+| 0066 | [Console API contract: REST commands, SSE live streams](./0066-console-api-rest-sse.md)                                                                   | Accepted                         |
+| 0067 | [Console frontend stack and the scoped bundler exception](./0067-console-frontend-stack.md)                                                               | Accepted                         |
+| 0068 | [Workbench sessions and the addressable-artifact convention](./0068-workbench-sessions.md)                                                                | Accepted                         |
+| 0069 | [Console embedded persistence: `node:sqlite` behind a repository seam](./0069-console-embedded-persistence.md)                                            | Accepted                         |
+| 0070 | [Console audit, self-observability, and the display-vs-persist rule](./0070-console-audit-and-observability.md)                                           | Accepted                         |
+| 0071 | [Console containerization and local-first deployment](./0071-console-containerization-deployment.md)                                                      | Accepted                         |

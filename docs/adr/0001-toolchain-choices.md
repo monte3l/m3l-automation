@@ -61,6 +61,18 @@ relitigated.
   clones are unaffected.
 - **Semver impact:** none (tooling only; no change to the public API).
 
+## Update 2026-08-20 — scoped bundler exception for browser-target packages
+
+The "build with `tsc`, no bundler" decision stands for every library,
+tool, and script package. [ADR-0067](./0067-console-frontend-stack.md)
+records the one scoped exception: **browser-target packages**
+(`packages/m3l-console-web`) build with Vite — a browser deliverable is a
+bundled artifact by nature, the consumer-vs-build-tool distinction
+ADR-0002 already drew. Nothing else changes: `m3l-common`, `m3l-cli`,
+`m3l-mcp`, `m3l-console-server`, and all `scripts/*` remain tsc-only ESM.
+**This exception does not unblock U14** — the Node SEA single-file binary
+still requires its own ADR per ADR-0057's gate.
+
 ## Links
 
 - Related: `CLAUDE.md` (Tech Stack, Commands, Git Workflow), `lefthook.yml`,
