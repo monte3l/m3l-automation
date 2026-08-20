@@ -11,16 +11,76 @@
 
 import { deepEqual } from "./equality.js";
 import { applyMatchesPattern, resolveReference } from "./resolve.js";
+import { isArray, isPlainObject, isString } from "../../core/utils/guards.js";
 
 import type {
   M3LProcedureCompareOperator,
   M3LProcedureCondition,
   M3LProcedureConditionEvaluation,
+  M3LProcedureConditionKind,
   M3LProcedureConditionScope,
   M3LProcedureShape,
   M3LProcedureValue,
 } from "../../core/procedure/types.js";
 import { M3L_PROCEDURE_CONDITION_MAX_DEPTH } from "../../core/procedure/types.js";
+
+/**
+ * Every declared {@link M3LProcedureConditionKind}, keyed for an
+ * `Object.hasOwn` membership check rather than a hand-maintained array —
+ * adding or removing a condition kind without updating this map is a
+ * compile error, the same guarantee `CATEGORY_RANK`-style lookups rely on
+ * elsewhere in this codebase.
+ */
+const CONDITION_KINDS: Record<M3LProcedureConditionKind, true> = {
+  compare: true,
+  matches: true,
+  contains: true,
+  exists: true,
+  and: true,
+  or: true,
+  not: true,
+};
+
+/**
+ * True when `value` has the minimal shape every {@link M3LProcedureCondition}
+ * node shares: a plain object whose `kind` is one of the seven declared
+ * condition kinds. `evaluateCondition` is public and documented as callable
+ * directly, bypassing `build()`'s own tree validation — so `and`/`or`/`not`
+ * recursing into an operand that was never proven to even be kind-shaped
+ * would fall through the exhaustive `switch`'s `default` arm with a value
+ * that isn't a real {@link M3LProcedureCondition}, which is exactly the
+ * crash this guard exists to prevent. Mirrors `applyMatchesPattern`
+ * (`internal/procedure/resolve.ts`), the in-file precedent for defending
+ * this evaluator against exactly this kind of unvalidated direct-call input.
+ */
+function isConditionNode<TShape extends M3LProcedureShape>(
+  value: unknown,
+): value is M3LProcedureCondition<TShape> {
+  return (
+    isPlainObject(value) &&
+    isString(value["kind"]) &&
+    Object.hasOwn(CONDITION_KINDS, value["kind"])
+  );
+}
+
+/**
+ * Evaluates `rawOperands` for an `and`/`or` node, degrading to an empty
+ * evaluation list instead of throwing when `rawOperands` isn't the
+ * non-empty array of well-formed condition nodes the type declares — any
+ * operand that fails {@link isConditionNode}'s shape check is dropped
+ * rather than recursed into. Kept total: this function is a pure array
+ * transform and never throws.
+ */
+function evaluateOperandsSafely<TShape extends M3LProcedureShape>(
+  rawOperands: unknown,
+  scope: M3LProcedureConditionScope<TShape>,
+  depth: number,
+): M3LProcedureConditionEvaluation[] {
+  if (!isArray(rawOperands)) return [];
+  return rawOperands
+    .filter(isConditionNode<TShape>)
+    .map((operand) => evaluateCondition(operand, scope, depth + 1));
+}
 
 /**
  * Caps a rendered `detail` string so a very long resolved value never leaks
@@ -216,12 +276,15 @@ function evaluateAndNode<TShape extends M3LProcedureShape>(
   scope: M3LProcedureConditionScope<TShape>,
   depth: number,
 ): M3LProcedureConditionEvaluation {
-  const operands = condition.operands.map((operand) =>
-    evaluateCondition(operand, scope, depth + 1),
-  );
+  const operands = evaluateOperandsSafely(condition.operands, scope, depth);
   return {
     kind: "and",
-    satisfied: operands.every((operand) => operand.satisfied),
+    // A malformed (non-array, or emptied-by-filtering) `operands` degrades
+    // to `false`, not the vacuous-truth `true` an empty `.every()` would
+    // otherwise report — an `and` with nothing genuinely evaluated is not
+    // "satisfied".
+    satisfied:
+      operands.length > 0 && operands.every((operand) => operand.satisfied),
     references: [],
     operands,
     detail: capDetail(
@@ -235,11 +298,11 @@ function evaluateOrNode<TShape extends M3LProcedureShape>(
   scope: M3LProcedureConditionScope<TShape>,
   depth: number,
 ): M3LProcedureConditionEvaluation {
-  const operands = condition.operands.map((operand) =>
-    evaluateCondition(operand, scope, depth + 1),
-  );
+  const operands = evaluateOperandsSafely(condition.operands, scope, depth);
   return {
     kind: "or",
+    // `.some()` on an empty (malformed-input) array already degrades to
+    // `false`, matching `and`'s deliberate fail-closed degrade above.
     satisfied: operands.some((operand) => operand.satisfied),
     references: [],
     operands,
@@ -254,7 +317,20 @@ function evaluateNotNode<TShape extends M3LProcedureShape>(
   scope: M3LProcedureConditionScope<TShape>,
   depth: number,
 ): M3LProcedureConditionEvaluation {
-  const operand = evaluateCondition(condition.operand, scope, depth + 1);
+  const rawOperand: unknown = condition.operand;
+  if (!isConditionNode<TShape>(rawOperand)) {
+    // A malformed `operand` degrades to `false` rather than recursing into
+    // `evaluateCondition` with something that was never proven to be a real
+    // condition node — see `isConditionNode`'s TSDoc.
+    return {
+      kind: "not",
+      satisfied: false,
+      references: [],
+      operands: [],
+      detail: capDetail("not (malformed operand)"),
+    };
+  }
+  const operand = evaluateCondition(rawOperand, scope, depth + 1);
   return {
     kind: "not",
     satisfied: !operand.satisfied,

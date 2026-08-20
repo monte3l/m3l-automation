@@ -983,6 +983,15 @@ describe("core/procedure — guards and tracing", () => {
         id: "s1",
         label: "s1",
         kind: "control",
+        // This self-entry is NOT a precondition for the retry below: `loop`
+        // and `jumpsTo` are independent optional fields, and the engine's
+        // own continueOnFailure retry is never routed through the
+        // `jumpsTo` allowlist check at all (see the dedicated regression
+        // "a loop step with continueOnFailure retries without needing a
+        // self-entry in jumpsTo" further down in this describe block,
+        // which omits `jumpsTo` entirely and still retries). It is left
+        // here only because this fixture happens to declare it, not
+        // because removing it would break the retry.
         jumpsTo: ["s1"] as const,
         loop: { reason: "repeated absorbed failures", maxRevisits: attempts },
         continueOnFailure: true,
@@ -1015,6 +1024,56 @@ describe("core/procedure — guards and tracing", () => {
         // Oldest evicted: the first entry's item should not be "failure #0".
         const first = outcome.telemetry.recovered[0];
         expect(first?.item).not.toBe("s1@0");
+      }
+    });
+
+    test("a loop step with continueOnFailure retries without needing a self-entry in jumpsTo", async () => {
+      // Regression for PR #523: the engine used to synthesize a loop
+      // step's absorbed-throw retry as a caller-shaped `{ goTo: step.id }`
+      // flow directive, which `#interpretGoTo` then validated against the
+      // declaring step's own `jumpsTo` allowlist. `loop` and `jumpsTo` are
+      // independent optional fields — nothing requires a step to list
+      // itself in `jumpsTo` just because it declares `loop` — so a step
+      // with `loop` + `continueOnFailure: true` and no self-entry in
+      // `jumpsTo` (indeed no `jumpsTo` at all, as here) never got its
+      // throw absorbed: the engine's own directive was rejected as an
+      // undeclared jump, and the run resolved `failed` under
+      // `ERR_PROCEDURE_UNDECLARED_JUMP` — blaming the step for a directive
+      // it never returned. Before the fix, this test failed with exactly
+      // that: a `failed` outcome instead of `matched`.
+      let calls = 0;
+      const { outcome, thrown } = await runCapturing(() => {
+        const procedure = createProcedureBuilder<TS>("loop-retry-no-jumps-to")
+          .step({
+            id: "s1",
+            label: "s1",
+            kind: "gather",
+            // Deliberately no `jumpsTo` at all.
+            loop: { reason: "retry an absorbed failure", maxRevisits: 1 },
+            continueOnFailure: true,
+            execute: () => {
+              calls += 1;
+              if (calls === 1) {
+                throw new Error("transient failure");
+              }
+              return { flow: "stop" };
+            },
+          })
+          .case(ALWAYS_TRUE_CASE)
+          .build(DEFAULT_FALLBACK);
+        return procedure.run({ deps: {}, parameters: {} });
+      });
+
+      expect(thrown).toBeUndefined();
+      expect(outcome?.status).toBe("matched");
+      expect(calls).toBeGreaterThan(1);
+      if (outcome?.status === "matched") {
+        expect(outcome.telemetry.recovered).toHaveLength(1);
+        expect(outcome.telemetry.recoveredTotal).toBe(1);
+        const record = outcome.telemetry.steps.find(
+          (step: M3LProcedureStepRecord) => step.id === "s1",
+        );
+        expect(record?.status).toBe("recovered");
       }
     });
 

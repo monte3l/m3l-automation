@@ -4,11 +4,10 @@
  * narrow on `instanceof M3LError` and the machine-readable `code`, not on a
  * subclass identity — see `docs/reference/core/procedure.md` § Public API.
  *
- * Additional `ERR_PROCEDURE_*` codes documented in
- * `docs/reference/core/procedure.md` § Errors and § Build-time validation
- * are added — each in the subclass and validation logic that emits it — as
- * the remaining GREEN passes fill in `build()`, `run()`, and
- * `evaluateProcedureCondition`.
+ * Every `ERR_PROCEDURE_*` code documented in `docs/reference/core/procedure.md`
+ * § Errors and § Build-time validation is defined by a subclass below,
+ * thrown or resolved by the validation logic in `M3LProcedureBuilder.build`
+ * or `M3LProcedure.run` that emits it.
  *
  * Private to `core/procedure`; never re-exported through a public barrel.
  */
@@ -16,12 +15,11 @@
 import { M3LError } from "../../core/errors/index.js";
 
 /**
- * Thrown (synchronously) or used to reject (from `M3LProcedure.run`) by
- * every currently-unimplemented `core/procedure` entry point in this
- * scaffold. Carries the stable code `ERR_PROCEDURE_INVALID_DEFINITION` — the
- * same code `build()`'s real validation failure will carry once
- * implemented, since a stub body is, from a caller's perspective, exactly
- * that: a procedure that cannot yet produce a valid definition.
+ * Thrown (synchronously) by `M3LProcedureBuilder.build` when a procedure's
+ * declared definition violates one of the builder's structural or
+ * cross-reference invariants — e.g. a duplicate step/case id, a `jumpsTo`
+ * target that names no declared step, or a case priority collision. Carries
+ * the stable code `ERR_PROCEDURE_INVALID_DEFINITION`.
  */
 export class M3LProcedureInvalidDefinitionError extends M3LError {
   /** Narrows the inherited `code` to the literal `"ERR_PROCEDURE_INVALID_DEFINITION"`. */

@@ -132,9 +132,18 @@ type PhaseOneOutcome<TShape extends M3LProcedureShape> =
 
 /**
  * How one step execution resolved: the flow directive it returned plus the
- * context/record it produced, or an unabsorbed failure. Pure — the caller
- * folds these into its own local `context`/`executedSteps`, nothing here
- * mutates a parameter.
+ * context/record it produced, an engine-synthesized retry, or an unabsorbed
+ * failure. Pure — the caller folds these into its own local
+ * `context`/`executedSteps`, nothing here mutates a parameter.
+ *
+ * `"retry"` is distinct from `"advanced"` on purpose: it is produced only by
+ * {@link M3LProcedure.#advanceFromRecovery} for a step that declares `loop`
+ * and just absorbed a `continueOnFailure` throw. It carries no `flow` —
+ * unlike a genuine advance, there was never a caller-returned directive to
+ * interpret, so it must never be routed through
+ * {@link M3LProcedure.#interpretFlow}/{@link M3LProcedure.#interpretGoTo}
+ * and validated against the declaring step's own `jumpsTo` allowlist. See
+ * {@link M3LProcedure.#resolveAfterRetry}.
  */
 type StepExecutionOutcome<TShape extends M3LProcedureShape> =
   | {
@@ -142,6 +151,11 @@ type StepExecutionOutcome<TShape extends M3LProcedureShape> =
       readonly context: M3LProcedureContext<TShape>;
       readonly record: M3LProcedureStepRecord;
       readonly flow: M3LProcedureFlow<string>;
+    }
+  | {
+      readonly kind: "retry";
+      readonly context: M3LProcedureContext<TShape>;
+      readonly record: M3LProcedureStepRecord;
     }
   | {
       readonly kind: "failed";
@@ -171,8 +185,11 @@ type StepGuardFailure<TShape extends M3LProcedureShape> =
 /**
  * What `#foldStepExecution` decided for one step's {@link StepExecutionOutcome}:
  * either the loop must return this outcome now (a failure or an abort,
- * neither of which advances phase 1's state), or the step advanced and the
- * caller should fold `context`/`record` into its own local state.
+ * neither of which advances phase 1's state), or the step genuinely advanced
+ * (`"advanced"`, carrying the flow directive to interpret), or an
+ * engine-synthesized retry occurred (`"retry"`, carrying no flow — see
+ * {@link StepExecutionOutcome}'s `"retry"` arm) — for either of the latter
+ * two, the caller folds `context`/`record` into its own local state.
  */
 type FoldedStepExecution<TShape extends M3LProcedureShape> =
   | { readonly kind: "return"; readonly result: StepGuardFailure<TShape> }
@@ -181,6 +198,11 @@ type FoldedStepExecution<TShape extends M3LProcedureShape> =
       readonly context: M3LProcedureContext<TShape>;
       readonly record: M3LProcedureStepRecord;
       readonly flow: M3LProcedureFlow<string>;
+    }
+  | {
+      readonly kind: "retry";
+      readonly context: M3LProcedureContext<TShape>;
+      readonly record: M3LProcedureStepRecord;
     };
 
 /**
@@ -323,6 +345,7 @@ function classifyStepExecution<TShape extends M3LProcedureShape>(
   switch (executed.kind) {
     case "aborted":
     case "failed":
+    case "retry":
       return { failed: true, flow: undefined };
     case "advanced":
       if (executed.record.status === "recovered") {
@@ -816,10 +839,10 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
       context = folded.context;
       executedSteps.push(folded.record);
 
-      const afterAdvance = this.#resolveAfterAdvance(
+      const afterAdvance = this.#resolveAfterFold(
         context,
         step,
-        folded.flow,
+        folded,
         index,
         resolveChecks,
         progressTracker,
@@ -839,15 +862,96 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
   }
 
   /**
+   * Dispatches one just-folded step advance to whichever post-advance
+   * resolver matches its kind: {@link M3LProcedure.#resolveAfterAdvance} for
+   * a genuine `"advanced"` fold (a caller-returned flow directive to
+   * interpret), or {@link M3LProcedure.#resolveAfterRetry} for an
+   * engine-synthesized `"retry"` fold. Extracted purely so `#runPhaseOne`'s
+   * call site stays a single expression regardless of which fold happened.
+   */
+  #resolveAfterFold(
+    context: M3LProcedureContext<TShape>,
+    step: M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>,
+    folded: Extract<
+      FoldedStepExecution<TShape>,
+      { kind: "advanced" } | { kind: "retry" }
+    >,
+    index: number,
+    resolveChecks: number,
+    progressTracker: ProgressTracker | undefined,
+    progress: CapturedProgressConfig<TShape> | undefined,
+  ): PostAdvanceResolution<TShape> {
+    if (folded.kind === "retry") {
+      return this.#resolveAfterRetry(
+        context,
+        step.id,
+        index,
+        resolveChecks,
+        progressTracker,
+        progress,
+      );
+    }
+    return this.#resolveAfterAdvance(
+      context,
+      step,
+      folded.flow,
+      index,
+      resolveChecks,
+      progressTracker,
+      progress,
+    );
+  }
+
+  /**
+   * What the phase-1 loop does once an engine-synthesized retry (an absorbed
+   * `continueOnFailure` throw for a step declaring `loop`) has advanced:
+   * runs the SAME post-advance guard a genuine advance would
+   * ({@link M3LProcedure.#checkAfterAdvance} — abort, then the no-progress
+   * sample), but resolves the next index as `index` itself — the very step
+   * being retried — rather than through {@link M3LProcedure.#interpretFlow}.
+   * This is the guarantee this helper exists to keep: an engine-synthesized
+   * retry can never reach {@link M3LProcedure.#interpretGoTo}'s `jumpsTo`
+   * allowlist, because it was never a caller-returned flow directive to
+   * validate against one — a step declaring `loop` has no obligation to
+   * also list itself in `jumpsTo`.
+   */
+  #resolveAfterRetry(
+    context: M3LProcedureContext<TShape>,
+    stepId: TShape["stepId"],
+    index: number,
+    resolveChecks: number,
+    progressTracker: ProgressTracker | undefined,
+    progress: CapturedProgressConfig<TShape> | undefined,
+  ): PostAdvanceResolution<TShape> {
+    const decision: Extract<FlowDecision<TShape>, { kind: "advance" }> = {
+      kind: "advance",
+      index,
+      resolveChecks,
+    };
+    const guardFailure = this.#checkAfterAdvance(
+      context,
+      decision,
+      stepId,
+      progressTracker,
+      progress,
+    );
+    if (guardFailure !== undefined) {
+      return { kind: "return", resolveChecks, result: guardFailure };
+    }
+    return { kind: "continue", resolveChecks, index };
+  }
+
+  /**
    * Combines {@link M3LProcedure.#interpretFlow} and
    * {@link M3LProcedure.#resolveStepFlow} into the single decision
-   * `#runPhaseOne`'s loop body branches on, carrying the updated
-   * `resolveChecks` alongside either the outcome to return now or the next
-   * `index` to continue from — extracted purely to keep `#runPhaseOne`
-   * under its line budget, with no change to the order it preserves:
-   * `interpretFlow` (which may itself run a `"resolve"` case pass) resolves
-   * first, then `resolveStepFlow`'s post-advance guard (abort, then
-   * no-progress) runs only for a genuine `"advance"`.
+   * {@link M3LProcedure.#resolveAfterFold} dispatches to for a genuine
+   * advance, carrying the updated `resolveChecks` alongside either the
+   * outcome to return now or the next `index` to continue from — extracted
+   * purely to keep `#runPhaseOne` under its line budget, with no change to
+   * the order it preserves: `interpretFlow` (which may itself run a
+   * `"resolve"` case pass) resolves first, then `resolveStepFlow`'s
+   * post-advance guard (abort, then no-progress) runs only for a genuine
+   * `"advance"`.
    */
   #resolveAfterAdvance(
     context: M3LProcedureContext<TShape>,
@@ -988,29 +1092,41 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
   /**
    * Folds one step's {@link StepExecutionOutcome} for the phase-1 loop: an
    * unabsorbed failure or an abort become a `"return"` — phase 1 ends here,
-   * with no context transition — while an advance is passed through as-is
-   * for the caller to fold into its own local `context`/`executedSteps`.
-   * Pure — `executed` and `step` are read, never mutated.
+   * with no context transition — while an advance or an engine-synthesized
+   * retry is passed through as-is for the caller to fold into its own local
+   * `context`/`executedSteps`. Pure — `executed` and `step` are read, never
+   * mutated.
    */
   #foldStepExecution(
     executed: StepExecutionOutcome<TShape>,
     step: M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>,
   ): FoldedStepExecution<TShape> {
-    if (executed.kind === "failed") {
-      return { kind: "return", result: executed };
+    switch (executed.kind) {
+      case "failed":
+        return { kind: "return", result: executed };
+      case "aborted":
+        return {
+          kind: "return",
+          result: {
+            kind: "aborted",
+            abortedAt: step.id,
+            error: executed.error,
+          },
+        };
+      case "retry":
+        return {
+          kind: "retry",
+          context: executed.context,
+          record: executed.record,
+        };
+      case "advanced":
+        return {
+          kind: "advanced",
+          context: executed.context,
+          record: executed.record,
+          flow: executed.flow,
+        };
     }
-    if (executed.kind === "aborted") {
-      return {
-        kind: "return",
-        result: { kind: "aborted", abortedAt: step.id, error: executed.error },
-      };
-    }
-    return {
-      kind: "advanced",
-      context: executed.context,
-      record: executed.record,
-      flow: executed.flow,
-    };
   }
 
   /**
@@ -1369,15 +1485,24 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
 
   /**
    * Folds an absorbed `execute` throw (`step.continueOnFailure === true`,
-   * already confirmed by the caller) into the `"advanced"` arm of
-   * {@link StepExecutionOutcome}: builds the `"recovered"` record, appends a
-   * {@link M3LRunRecoveryEntry}, and derives the next context. A step that
-   * threw never got to return its own flow directive — a step declaring
-   * `loop` has explicitly opted into being revisited, so for such a step the
-   * absorbed failure retries it (bounded by the step's own
+   * already confirmed by the caller) into a {@link StepExecutionOutcome}:
+   * builds the `"recovered"` record, appends a {@link M3LRunRecoveryEntry},
+   * and derives the next context. A step that threw never got to return its
+   * own flow directive.
+   *
+   * A step declaring `loop` has explicitly opted into being revisited on
+   * absorption, so its outcome is the `"retry"` kind — an engine-internal
+   * decision {@link M3LProcedure.#resolveAfterRetry} consumes directly,
+   * re-executing the SAME step (bounded by the step's own
    * `loop.maxRevisits`/`maxIterations`, same as an explicit `{ goTo }`)
-   * rather than silently advancing past a still-failing operation; a step
-   * with no `loop` declaration advances normally.
+   * rather than silently advancing past a still-failing operation. This is
+   * deliberately never a synthesized `{ goTo }` flow directive: routing it
+   * through {@link M3LProcedure.#interpretFlow} would validate it against
+   * the declaring step's own `jumpsTo` allowlist, but a step declaring
+   * `loop` has no obligation to also list itself in `jumpsTo` — that would
+   * reject the engine's own retry as an "undeclared jump" the step never
+   * returned. A step with no `loop` declaration advances normally via the
+   * `"advanced"` kind, with an implicit `"continue"` flow.
    */
   #advanceFromRecovery(
     context: M3LProcedureContext<TShape>,
@@ -1385,7 +1510,10 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
     attempt: number,
     start: number,
     error: unknown,
-  ): Extract<StepExecutionOutcome<TShape>, { kind: "advanced" }> {
+  ): Extract<
+    StepExecutionOutcome<TShape>,
+    { kind: "advanced" } | { kind: "retry" }
+  > {
     const record = this.#buildRecord(
       step,
       attempt,
@@ -1404,12 +1532,15 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
       record,
       recoveryEntry,
     });
-    return {
-      kind: "advanced",
-      context: nextContext,
-      record,
-      flow: step.loop === undefined ? "continue" : { goTo: step.id },
-    };
+    if (step.loop === undefined) {
+      return {
+        kind: "advanced",
+        context: nextContext,
+        record,
+        flow: "continue",
+      };
+    }
+    return { kind: "retry", context: nextContext, record };
   }
 
   #buildRecord(
