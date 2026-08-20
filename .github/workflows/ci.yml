@@ -315,6 +315,13 @@ jobs:
         if: github.event_name == 'pull_request'
         run: node bin/lint-commit.mjs --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }}
 
+      # Local reproduction of claude-pr-review.yml's own reviewable-size gate
+      # (ADR-0072) — reports the same over-soft-target/over-ceiling verdict
+      # the review job would, before that job spends any turn budget.
+      - name: Check review size
+        if: github.event_name == 'pull_request'
+        run: node bin/check-review-size.mjs --base ${{ github.event.pull_request.base.sha }} --head ${{ github.event.pull_request.head.sha }}
+
       # Doc-provenance sidecars anchor reference-page headings to source symbols
       # at a git commit. Fail if a heading or symbol is missing; warn on staleness.
       - name: Check doc provenance
