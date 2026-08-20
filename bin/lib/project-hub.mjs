@@ -149,14 +149,15 @@ export function columnIndex(header, name) {
  * legacy status emoji (kept for the count-enforced `implementation-status.md`
  * ledger, whose ✅/🧪/🟢/❌ cells are never rewritten to keywords).
  *
- * ADR-0032 documents this six-value vocabulary as distinct from the GitHub
- * Projects board's own three-option Status field (Pending/In review/Done,
- * `PROJECT_STATUS_OPTIONS` in `./hub-sync.mjs`) — a board-side token landing
- * in a *tracker* cell (e.g. `In review`) is an authoring mistake, not a
- * synonym, so `recognized: false` lets a caller surface it instead of
- * silently treating it as `kind: "todo"` (`docs/adr/0032-…md`'s
- * "the tracker's 6-value status vocabulary maps onto the Project board's
- * 3-value Status field" Update).
+ * ADR-0032 introduced this six-value tracker vocabulary distinct from the
+ * GitHub Projects board's original three-option Status field
+ * (Pending/In review/Done); ADR-0052 widened the board field to the same
+ * six values (`PROJECT_STATUS_OPTIONS` in `./hub-sync.mjs`) precisely so
+ * there is no longer a separate board-side spelling to leak into a tracker
+ * cell. `recognized: false` still catches any cell outside the six-value
+ * vocabulary (a typo, stray punctuation, or a since-retired board token like
+ * the pre-ADR-0052 `In review`) — surfacing it instead of silently treating
+ * it as `kind: "todo"`.
  *
  * @param {string} cell
  * @returns {{ kind: "done" | "todo" | "in-progress" | "deferred" | "blocked" | "rejected", recognized: boolean }}

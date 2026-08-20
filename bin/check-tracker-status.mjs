@@ -12,18 +12,20 @@
  * This is the durable fix for issue #429: `classifyStatus`
  * (`bin/lib/project-hub.mjs`) silently classified any unrecognized cell as
  * "todo", so a board-side token (`In review`, from the GitHub Projects
- * "Status" field's own three-option vocabulary — ADR-0032's
+ * "Status" field's original three-option vocabulary — ADR-0032's
  * "the tracker's 6-value status vocabulary maps onto the Project board's
- * 3-value Status field" Update) that leaked into a tracker cell read as a
- * quiet To Do instead of the error it was — issue #204's D4 `aws/rds-data`
- * row sat open with board status "Pending" despite already-shipped work
- * because of exactly this fallthrough. `classifyStatus`/`classifyStatusCell`
- * still default an unrecognized cell to "todo" for the dashboard renderer
- * (a bad cell still needs *some* badge), and `sync:hub`'s `actionableItems`
- * now warns on one (`resolveStatus`, `bin/lib/hub-sync.mjs`) — but a warning
- * in a dry-run log is the same channel that let this go unnoticed for weeks.
- * This check is the hard backstop: it fails the build the moment an
- * off-vocabulary Status cell lands, before it can reach `main`.
+ * 3-value Status field" Update; ADR-0052 later widened the board field to
+ * the same six values as the tracker, retiring that three-option vocabulary)
+ * that leaked into a tracker cell read as a quiet To Do instead of the error
+ * it was — issue #204's D4 `aws/rds-data` row sat open with board status
+ * "Pending" despite already-shipped work because of exactly this
+ * fallthrough. `classifyStatus`/`classifyStatusCell` still default an
+ * unrecognized cell to "todo" for the dashboard renderer (a bad cell still
+ * needs *some* badge), and `sync:hub`'s `actionableItems` now warns on one
+ * (`resolveStatus`, `bin/lib/hub-sync.mjs`) — but a warning in a dry-run log
+ * is the same channel that let this go unnoticed for weeks. This check is
+ * the hard backstop: it fails the build the moment an off-vocabulary Status
+ * cell lands, before it can reach `main`.
  *
  * The Priority half was added with issue #480 / F13. `P3` sat on the F12 row
  * with no `p3` tier, label, or milestone behind it, warning on every single
@@ -74,8 +76,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
           message:
             `${path}:${line}: "## ${heading}" row's Status cell ("${cell}") is not one of the ` +
             `six documented tracker values (Done/To Do/In Progress/Deferred/Blocked/Rejected) — ` +
-            `if this is a board-side status (e.g. "In review", "Pending"), that vocabulary belongs ` +
-            `only in the GitHub Projects Status field, not this tracker (docs/adr/0032-project-management-visibility-hub.md).`,
+            `check for a typo (docs/adr/0032-project-management-visibility-hub.md, ` +
+            `docs/adr/0052-hub-board-identity-and-field-taxonomy.md).`,
         });
       }
       for (const { line, heading, cell } of findOffVocabularyPriorityCells(

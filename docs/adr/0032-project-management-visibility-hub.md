@@ -5,7 +5,9 @@
   primary derived view over the entire documentation corpus, plus GitHub
   Projects and Issues/Milestones as one-way-synced read-only secondary
   surfaces); the priority-taxonomy portion (labels, milestones, tracker
-  cells) partially superseded by [ADR-0051](0051-semantic-priority-vocabulary.md)
+  cells) partially superseded by [ADR-0051](0051-semantic-priority-vocabulary.md);
+  the board-identity and board-field-set portions partially superseded by
+  [ADR-0052](0052-hub-board-identity-and-field-taxonomy.md)
 - **Date:** 2026-07-17
 - **Deciders:** Enrico Lionello (maintainer); Claude (research)
 
@@ -16,6 +18,16 @@
 > `type:governance`), and corrects the `ROADMAP_ANCHORS` values below. The
 > visibility-hub architecture, GitHub-projection design, and the key-namespacing
 > decisions in this ADR's Updates are unaffected and remain in force.
+>
+> **Partially superseded (2026-08-20).** [ADR-0052](0052-hub-board-identity-and-field-taxonomy.md)
+> renames the board to `m3l-automation`, widens its Status field from the
+> 3-value vocabulary the 2026-07-28 Update below established to the tracker's
+> full 6 values, populates its previously-empty Priority field, and adds
+> three saved views. The 2026-07-28 Update's "the board's own field set
+> [is] untouched" framing and its Status-field decision no longer hold; the
+> rest of this ADR (visibility-hub architecture, GitHub-projection design,
+> key-namespacing decisions, the 2026-08-19 Update's owner-scope/draft-item
+> findings) is unaffected and remains in force.
 
 ## Context and problem statement
 
