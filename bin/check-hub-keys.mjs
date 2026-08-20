@@ -168,8 +168,10 @@ export function findKeyCollisions({ items, duplicateKeys }) {
  * ({@link MAJOR_BUMP_ITEM_KEYS} routes to it independent of tier),
  * `ROADMAP_ANCHORS` legitimately omits `p2` — `docs/ROADMAP.md`'s Priority 2
  * section is parsed but never converted into items — and
- * `PROJECT_PRIORITY_OPTIONS.governance` is legitimately `null` (cleared, not
- * a spelled option — ADR-0051's "governance is a category, not a tier").
+ * `PROJECT_PRIORITY_OPTIONS.governance` is legitimately `"Governance"` with
+ * no `PRIORITY_LABELS` counterpart (ADR-0052's 2026-08-20 Update; governance
+ * still has no `priority:*` label — ADR-0051's "governance is a category,
+ * not a tier" rule — it just isn't left blank on the board either).
  *
  * @param {{ priorityLabels: Record<string, string>, milestoneTitles: Record<string, string>, roadmapAnchors: Record<string, string>, projectPriorityOptions: Record<string, string | null> }} tables
  * @returns {string[]}

@@ -7,23 +7,27 @@
 // last created and silently going stale.
 import {
   HUB_LABEL,
+  ISSUE_TYPES,
   PRIORITY_LABELS,
   STATUS_LABELS,
   TYPE_LABELS,
 } from "./hub-sync.mjs";
 
 /**
- * The hub-sync label, the three priority labels, the governance type label,
- * and the two status labels, plus the `triage` label
- * `.github/ISSUE_TEMPLATE/failure_report.yml` declares but which GitHub never
- * creates on its own — bootstrapped (create or `--force` update) by
- * `bin/sync-hub-issues.mjs` on every --apply run before any issue/milestone
- * action. `triage` is a literal, not a `bin/lib/hub-sync.mjs` constant: it is
- * never derived from a tracker row (nothing in ROADMAP.md/IMPLEMENTATION.md
- * maps to it), it exists purely so a template-filed failure report doesn't
- * silently drop a declared label. Names and descriptions carry the ADR-0051
- * semantic vocabulary (priority:0-now/1-next/2-later, type:governance),
- * replacing the original priority:p0/p1/p2/governance names.
+ * The hub-sync label, the three priority labels, one `type:*` label per
+ * {@link ISSUE_TYPES} value, one `status:*` label per {@link Item} status
+ * (ADR-0052's 2026-08-20 Update widened both label families to full
+ * coverage — originally `type:governance` and `status:deferred`/`blocked`
+ * only), plus the `triage` label `.github/ISSUE_TEMPLATE/failure_report.yml`
+ * declares but which GitHub never creates on its own — bootstrapped (create
+ * or `--force` update) by `bin/sync-hub-issues.mjs` on every --apply run
+ * before any issue/milestone action. `triage` is a literal, not a
+ * `bin/lib/hub-sync.mjs` constant: it is never derived from a tracker row
+ * (nothing in ROADMAP.md/IMPLEMENTATION.md maps to it), it exists purely so
+ * a template-filed failure report doesn't silently drop a declared label.
+ * Names and descriptions carry the ADR-0051 semantic vocabulary
+ * (priority:0-now/1-next/2-later), replacing the original
+ * priority:p0/p1/p2/governance names.
  *
  * @type {{ name: string, color: string, description: string }[]}
  * @example
@@ -56,10 +60,35 @@ export const LABEL_DEFS = [
     description: "Later — gated or deferred backlog; not yet scheduled.",
   },
   {
-    name: TYPE_LABELS.governance,
+    name: TYPE_LABELS[ISSUE_TYPES.capability],
+    color: "0052cc",
+    description: "Library capability work (A/B/C-series).",
+  },
+  {
+    name: TYPE_LABELS[ISSUE_TYPES.consumerScript],
+    color: "c2e0c6",
+    description: "A new or retrofitted consumer script (W-series).",
+  },
+  {
+    name: TYPE_LABELS[ISSUE_TYPES.friction],
+    color: "e99695",
+    description: "Library friction / defect report (F-series).",
+  },
+  {
+    name: TYPE_LABELS[ISSUE_TYPES.governance],
     color: "5319e7",
     description:
       "Governance follow-up (ADR/process work); outside the priority tiers.",
+  },
+  {
+    name: STATUS_LABELS.todo,
+    color: "c5def5",
+    description: "To Do — not yet started.",
+  },
+  {
+    name: STATUS_LABELS["in-progress"],
+    color: "1d76db",
+    description: "In Progress — actively being worked.",
   },
   {
     name: STATUS_LABELS.deferred,
@@ -70,6 +99,16 @@ export const LABEL_DEFS = [
     name: STATUS_LABELS.blocked,
     color: "cf222e",
     description: "Blocked — cannot proceed until an external condition clears.",
+  },
+  {
+    name: STATUS_LABELS.done,
+    color: "2ea44f",
+    description: "Done — completed.",
+  },
+  {
+    name: STATUS_LABELS.rejected,
+    color: "6a737d",
+    description: "Rejected — explicitly decided against, not merely deferred.",
   },
   {
     name: "triage",
@@ -92,6 +131,32 @@ for (const { name, description } of LABEL_DEFS) {
     throw new Error(
       `LABEL_DEFS["${name}"].description is ${description.length} chars, over GitHub's ` +
         `${LABEL_DESCRIPTION_MAX_LENGTH}-char label-description limit.`,
+    );
+  }
+}
+
+// `gh issue edit --add-label <name>` fails if the label doesn't already
+// exist on the repo — a PRIORITY_LABELS/TYPE_LABELS/STATUS_LABELS entry with
+// no matching LABEL_DEFS row would pass every local check silently and then
+// hard-fail the very first live --apply that needs it (bootstrapLabels only
+// ever creates what's listed here). Asserted at module load, the same
+// fail-fast-before-any-gh-call guarantee as the description-length check
+// above, rather than discovered as a `gh` 404 mid-apply. HUB_LABEL and
+// `triage` are exempt: HUB_LABEL is already required above by construction
+// (every LABEL_DEFS entry literal starting point), and `triage` is a
+// legitimate LABEL_DEFS-only extra with no hub-sync.mjs constant behind it.
+const managedLabelValues = [
+  ...Object.values(PRIORITY_LABELS),
+  ...Object.values(TYPE_LABELS),
+  ...Object.values(STATUS_LABELS),
+];
+const definedLabelNames = new Set(LABEL_DEFS.map((def) => def.name));
+for (const label of managedLabelValues) {
+  if (!definedLabelNames.has(label)) {
+    throw new Error(
+      `"${label}" is referenced by PRIORITY_LABELS/TYPE_LABELS/STATUS_LABELS but has no ` +
+        `LABEL_DEFS entry — bootstrapLabels would never create it, so the first --apply ` +
+        `needing it would fail with a "label not found" gh error. Add it to LABEL_DEFS.`,
     );
   }
 }

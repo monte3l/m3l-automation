@@ -62,28 +62,6 @@ export const PRIORITY_LABELS = {
 };
 
 /**
- * GitHub label strings for {@link Item} facets that are a *category*, not a
- * priority tier. `governance` moved here under ADR-0051: it was previously
- * `priority:governance`, but {@link classifyPriorityCell} has never had a
- * governance branch (a governance row's Priority cell is always the
- * untiered dash placeholder) — filing it under the `priority:` prefix
- * claimed it was a fourth tier when it never behaved like one. A governance
- * item now carries {@link TYPE_LABELS}.governance instead of any
- * {@link PRIORITY_LABELS} entry; it keeps its own {@link MILESTONE_TITLES}
- * entry unchanged.
- *
- * @example
- * ```js
- * import { TYPE_LABELS } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
- *
- * TYPE_LABELS.governance; // "type:governance"
- * ```
- */
-export const TYPE_LABELS = {
-  governance: "type:governance",
-};
-
-/**
  * Maps p0/p1/p2/governance priorities to their GitHub milestone title, plus
  * the `major` bucket {@link MAJOR_BUMP_ITEM_KEYS} routes specific items to
  * regardless of their priority. Every {@link Item} now resolves to a real
@@ -143,6 +121,34 @@ export const ISSUE_TYPES = {
   consumerScript: "Consumer script",
   friction: "Friction",
   governance: "Governance",
+};
+
+/**
+ * GitHub label string for every {@link ISSUE_TYPES} value (ADR-0052's
+ * 2026-08-20 Update) — keyed by the {@link ISSUE_TYPES} *display name*
+ * (how {@link Item.type} actually stores it), so `TYPE_LABELS[item.type]`
+ * resolves directly with no reverse lookup. `governance` predates the
+ * other three (ADR-0051): it was previously `priority:governance`, but
+ * {@link classifyPriorityCell} has never had a governance branch (a
+ * governance row's Priority cell is always the untiered dash placeholder)
+ * — filing it under the `priority:` prefix claimed it was a fourth tier
+ * when it never behaved like one. A governance item carries
+ * {@link TYPE_LABELS}["Governance"] instead of any {@link PRIORITY_LABELS}
+ * entry (see {@link facetLabel}); it keeps its own {@link MILESTONE_TITLES}
+ * entry unchanged.
+ *
+ * @example
+ * ```js
+ * import { TYPE_LABELS } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ *
+ * TYPE_LABELS[ISSUE_TYPES.friction]; // "type:friction"
+ * ```
+ */
+export const TYPE_LABELS = {
+  [ISSUE_TYPES.capability]: "type:capability",
+  [ISSUE_TYPES.consumerScript]: "type:consumer-script",
+  [ISSUE_TYPES.friction]: "type:friction",
+  [ISSUE_TYPES.governance]: "type:governance",
 };
 
 export const ROADMAP_ANCHORS = {
@@ -247,14 +253,14 @@ export const MAJOR_BUMP_ITEM_KEYS = new Set([
 ]);
 
 /**
- * Maps a Deferred/Blocked {@link Item} status to the GitHub label that makes
- * it visually distinguishable from a plain "not yet started" To Do issue.
- * Without this, Deferred, Blocked, and To Do were identical on GitHub — same
- * open state, same priority label — and the Status column itself is
- * excluded from the derived issue body, so a reader had no way to tell a
- * blocked item from an actionable one. `done`/`rejected` issues are closed
- * by {@link planIssueSync} instead of labeled; `todo`/`in-progress` carry no
- * status label — they already are the two "actionable now" states.
+ * Maps every {@link Item} status to a GitHub label (ADR-0052's 2026-08-20
+ * Update — originally Deferred/Blocked only, so Deferred/Blocked/To Do were
+ * visually identical on GitHub: same open state, same priority label, and
+ * the Status column itself excluded from the derived issue body). A Done/
+ * Rejected item's issue is still closed by {@link planIssueSync} — the
+ * label is additional, not a substitute for the closed state — and
+ * {@link planIssueSync}'s close path syncs it via a dedicated label-only
+ * edit before closing, since `gh issue close` cannot set labels itself.
  *
  * @example
  * ```js
@@ -264,8 +270,12 @@ export const MAJOR_BUMP_ITEM_KEYS = new Set([
  * ```
  */
 export const STATUS_LABELS = {
+  todo: "status:todo",
+  "in-progress": "status:in-progress",
   deferred: "status:deferred",
   blocked: "status:blocked",
+  done: "status:done",
+  rejected: "status:rejected",
 };
 
 // Strip markdown links (keeping the label), backticks, and emphasis markers
@@ -758,10 +768,12 @@ export function actionableItems(roadmap, implementation) {
  * `MAX_TITLE_LENGTH` — a tracker row's "Title & change" cell can run to
  * several sentences, and GitHub issue titles are meant to be scanned as
  * labels, not read as prose; the untruncated detail always survives in the
- * body. `labels` always carries {@link HUB_LABEL} plus either the item's
- * {@link PRIORITY_LABELS} entry (p0/p1/p2) or {@link TYPE_LABELS}.governance
- * (governance is a category, not a tier, so it never carries both), plus a
- * {@link STATUS_LABELS} entry when the item is Deferred/Blocked. The
+ * body. `labels` always carries {@link HUB_LABEL}, a {@link TYPE_LABELS}
+ * entry, and a {@link STATUS_LABELS} entry (ADR-0052's 2026-08-20 Update —
+ * every {@link Item} now resolves to both, unconditionally), plus the
+ * item's {@link PRIORITY_LABELS} entry for p0/p1/p2 only — governance is a
+ * category, not a tier (ADR-0051), so it never carries a `priority:*`
+ * label; {@link TYPE_LABELS}["Governance"] already identifies it. The
  * milestone is {@link MAJOR_BUMP_ITEM_KEYS}'s `major` bucket when the item's
  * key is in that set, else the priority's {@link MILESTONE_TITLES} entry —
  * every item now resolves to a real milestone, including governance ones.
@@ -777,20 +789,20 @@ export function actionableItems(roadmap, implementation) {
  *   title: "F7 — Opt-in tolerant handling",
  *   status: "deferred",
  *   priority: "p2",
+ *   type: "Friction",
  *   sourcePath: "docs/plans/IMPLEMENTATION.md",
  *   sourceAnchor: "#library-friction-f-series",
  *   detail: "**Source / call-site:** json-etl log F7",
  * });
  * ```
  */
-// The priority/category label for an item — governance is a category
-// (TYPE_LABELS.governance), every other priority is a tier (PRIORITY_LABELS
-// entry). Split out of buildIssuePayload so the "governance never gets a
-// priority:* label" rule lives in exactly one place.
+// The priority label for an item, or `undefined` for governance — split out
+// of buildIssuePayload so the "governance never gets a priority:* label"
+// rule (ADR-0051) lives in exactly one place. The type label that used to
+// stand in for it (TYPE_LABELS.governance) is now applied unconditionally
+// to every item via buildIssuePayload's own typeLabel lookup, not here.
 function facetLabel(priority) {
-  return priority === "governance"
-    ? TYPE_LABELS.governance
-    : PRIORITY_LABELS[priority];
+  return priority === "governance" ? undefined : PRIORITY_LABELS[priority];
 }
 
 export function buildIssuePayload(item) {
@@ -800,15 +812,33 @@ export function buildIssuePayload(item) {
     ? MILESTONE_TITLES.major
     : MILESTONE_TITLES[item.priority];
   const title = truncateTitle(stripTitleMarkdown(item.title));
+  const priorityLabel = facetLabel(item.priority);
+
+  // Exhaustiveness throws (matching projectStatusOption/projectPriorityOption
+  // below) — every item is now expected to always resolve both a type and a
+  // status label, so a table gap must fail loud at sync time, not silently
+  // omit a label an operator would otherwise never notice is missing.
+  const typeLabel = TYPE_LABELS[item.type];
+  if (typeLabel === undefined) {
+    throw new Error(
+      `buildIssuePayload: no TYPE_LABELS entry for type "${item.type}" — item "${item.key}".`,
+    );
+  }
   const statusLabel = STATUS_LABELS[item.status];
+  if (statusLabel === undefined) {
+    throw new Error(
+      `buildIssuePayload: no STATUS_LABELS entry for status "${item.status}" — item "${item.key}".`,
+    );
+  }
 
   return {
     title,
     body,
     labels: [
       HUB_LABEL,
-      facetLabel(item.priority),
-      ...(statusLabel ? [statusLabel] : []),
+      ...(priorityLabel ? [priorityLabel] : []),
+      typeLabel,
+      statusLabel,
     ],
     milestoneTitle,
     type: item.type,
@@ -957,12 +987,23 @@ export function indexItemsByKey(items) {
  * **or** a changed/absent GitHub Issue Type, so `check:hub-drift` catches a
  * hand-cleared {@link Item.type}.
  *
+ * A close entry for an item transitioning to Done/Rejected (not one for an
+ * issue whose item vanished entirely — that case has no `item` to build a
+ * payload from) carries `payload` and `labelsStale`
+ * (`managedLabelsDiffer(issue.labels, payload)`) — `gh issue close` cannot
+ * set labels itself, so the runner syncs labels via a separate edit call
+ * before closing, but only when `labelsStale` is true, avoiding an
+ * unconditional extra API call on every close (ADR-0052's 2026-08-20
+ * Update — every {@link STATUS_LABELS} value is now labeled, including
+ * `done`/`rejected`, so a closed issue's prior open-state status label
+ * would otherwise go stale).
+ *
  * @param {Item[]} items
  * @param {{ number: number, title: string, body: string, state: "open" | "closed", labels: string[], type: string | null }[]} existingIssues
  * @returns {{
  *   create: { key: string, payload: ReturnType<typeof buildIssuePayload> }[],
  *   update: { number: number, key: string, payload: ReturnType<typeof buildIssuePayload> }[],
- *   close: { number: number, key: string, comment: string, reason: "completed" | "not planned" }[],
+ *   close: { number: number, key: string, comment: string, reason: "completed" | "not planned", payload?: ReturnType<typeof buildIssuePayload>, labelsStale?: boolean }[],
  *   reopen: { number: number, key: string, payload: ReturnType<typeof buildIssuePayload> }[],
  *   untouched: { number: number, reason: string }[],
  * }}
@@ -1047,6 +1088,8 @@ export function planIssueSync(items, existingIssues) {
         key: item.key,
         comment: CLOSE_REASON[item.status],
         reason: CLOSE_STATE_REASON[item.status],
+        payload,
+        labelsStale: managedLabelsDiffer(issue.labels, payload),
       });
     } else if (isDirty) {
       update.push({ number: issue.number, key: item.key, payload });
@@ -1098,18 +1141,23 @@ function projectStatusOption(status) {
 }
 
 // Maps an Item priority (p0/p1/p2/governance) to the board Priority
-// single-select's option name — mirroring PRIORITY_LABELS' own
+// single-select's option name. p0/p1/p2 mirror PRIORITY_LABELS' own
 // "0-now"/"1-next"/"2-later" vocabulary exactly, so the label and the board
 // field never drift into two different spellings of the same three tiers.
-// `governance` maps to `null` (clear the field, never an option) — ADR-0051
-// is explicit that governance is a category, not a tier, and giving it a
-// Priority option would contradict that on the one surface meant to project
-// the same taxonomy the labels already carry.
+// `governance` maps to its own dedicated "Governance" option (ADR-0052's
+// 2026-08-20 Update) rather than a null-cleared field or a reused tier —
+// ADR-0051's "governance is a category, not a tier" rule still holds
+// (there is deliberately no `priority:governance` *label*), but leaving the
+// board's Priority column blank for every governance row read as
+// "forgotten" rather than "intentionally categorical," and reusing "2-later"
+// would have conflated governance rows with real Later-tier roadmap work
+// under any Priority-column sort/filter — exactly the conflation ADR-0051
+// eliminated at the label layer.
 export const PROJECT_PRIORITY_OPTIONS = {
   p0: "0-now",
   p1: "1-next",
   p2: "2-later",
-  governance: null,
+  governance: "Governance",
 };
 
 function projectPriorityOption(priority) {

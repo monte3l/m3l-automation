@@ -489,6 +489,26 @@ function graphqlRule(): GhRule {
   };
 }
 
+// Extracts one option's `{id: "...", name: "...", ...}` GraphQL literal out
+// of an updateProjectV2Field mutation string, by finding the `{` immediately
+// before that option's `name: "<optionName>"` field and the next `}` after
+// it — each option is a flat, non-nested object literal, so this is exact
+// without needing to know the option's color/description text (kept out of
+// scope here on purpose: this helper exists only to prove id-preservation,
+// not to pin the whole literal shape).
+function optionLiteral(mutationQuery: string, optionName: string): string {
+  const marker = `name: ${JSON.stringify(optionName)}`;
+  const markerIndex = mutationQuery.indexOf(marker);
+  if (markerIndex === -1) {
+    throw new Error(
+      `hub-sync-runners.test.ts: option literal for "${optionName}" not found in: ${mutationQuery}`,
+    );
+  }
+  const openBrace = mutationQuery.lastIndexOf("{", markerIndex);
+  const closeBrace = mutationQuery.indexOf("}", markerIndex);
+  return mutationQuery.slice(openBrace, closeBrace + 1);
+}
+
 // listExistingViews's read — `query { node(id: ...) { ... on ProjectV2 {
 // views(first: 20) { nodes { id name layout } } } } }`.
 function viewsListGraphqlRule(nodes: unknown[] = []): GhRule {
@@ -687,9 +707,12 @@ describe("runIssueSync", () => {
     const issueCreateCalls = calls.filter(
       (a) => a[0] === "issue" && a[1] === "create",
     );
-    // HUB_LABEL + 3 priority labels + 1 governance type label + 2 status
-    // labels (deferred/blocked) + triage.
-    expect(labelCalls).toHaveLength(8);
+    // bootstrapLabels iterates the entire LABEL_DEFS table unconditionally
+    // (not filtered by what this fixture's items actually use): HUB_LABEL +
+    // 3 priority labels + 4 type labels + 6 status labels + triage
+    // (ADR-0052's 2026-08-20 Update widened both label families to full
+    // coverage).
+    expect(labelCalls).toHaveLength(15);
     // Now — unblock first, Next — consumer fleet, Governance, Later —
     // gated/deferred — one per priority/type actually present among this
     // fixture's items.
@@ -796,15 +819,53 @@ describe("runIssueSync", () => {
     );
     // W1, T1, F1, D1-gated-thing have no matched issue yet.
     expect(createCalls).toHaveLength(4);
-    // UA's stale body/title (1) + UC's reopen-triggered re-edit (1).
-    expect(editCalls).toHaveLength(2);
-    // ADR-0052: every create/edit passes --type with a real ISSUE_TYPES value.
+    // UA's stale body/title (1) + UB's pre-close label-only sync (1, ADR-0052's
+    // 2026-08-20 Update: UB (302) is transitioning to Done and its existing
+    // labels ["hub-sync", "priority:0-now"] are stale relative to the new
+    // unconditional type:*/status:* labels, so planIssueSync's close entry
+    // carries labelsStale: true and the runner syncs labels before closing,
+    // since `gh issue close` cannot set labels itself) + UC's
+    // reopen-triggered re-edit (1).
+    expect(editCalls).toHaveLength(3);
+
+    // The label-only sync call carries no --title/--body — distinguishing it
+    // from the other two edits, which always set both.
+    const labelOnlyEditCalls = editCalls.filter(
+      (a) => argAfter(a, "--title") === undefined,
+    );
+    const fullEditCalls = editCalls.filter(
+      (a) => argAfter(a, "--title") !== undefined,
+    );
+    expect(labelOnlyEditCalls).toHaveLength(1);
+    expect(fullEditCalls).toHaveLength(2);
+    const labelSyncCall = required(
+      labelOnlyEditCalls[0],
+      "UB's label-sync edit call",
+    );
+    // Targets UB's issue (302), and only adds/removes managed labels.
+    expect(labelSyncCall[2]).toBe("302");
+    expect(labelSyncCall).toContain("--add-label");
+    expect(labelSyncCall).toContain("type:capability");
+    expect(labelSyncCall).toContain("status:done");
+
+    // ADR-0052: every create/edit that also sets title/body/type passes
+    // --type with a real ISSUE_TYPES value — the label-only sync call is
+    // exempt (it never sets --type).
     const validTypes = new Set(Object.values(ISSUE_TYPES));
-    for (const call of [...createCalls, ...editCalls]) {
+    for (const call of [...createCalls, ...fullEditCalls]) {
       const type = argAfter(call, "--type");
       expect(type).toBeDefined();
       expect(validTypes.has(type ?? "")).toBe(true);
     }
+    expect(argAfter(labelSyncCall, "--type")).toBeUndefined();
+
+    // The label sync runs before the close call it precedes.
+    const labelSyncIndex = calls.indexOf(labelSyncCall);
+    const closeIndexForUb = calls.findIndex(
+      (a) => a[0] === "issue" && a[1] === "close" && a[2] === "302",
+    );
+    expect(labelSyncIndex).toBeLessThan(closeIndexForUb);
+
     expect(closeCalls).toEqual([
       [
         "issue",
@@ -842,6 +903,80 @@ describe("runIssueSync", () => {
       applied: true,
       issues: { create: 4, update: 1, close: 1, reopen: 1 },
     });
+  });
+
+  test("--apply: closing an item whose labels already match the closing payload records no label-sync edit before close", () => {
+    const roadmapWithDoneItem = `# Roadmap — m3l-automation
+
+## Priority 0
+
+| Item   | What                       | Status | Why now / Notes |
+| ------ | --------------------------- | ------ | ------------------ |
+| **UD** | already-synced done thing    | Done   | notes               |
+
+## Priority 1
+
+| Wave   | Scripts | Status | Depends on |
+| ------ | ------- | ------ | ---------- |
+
+## Priority 2
+
+| Item                | Status   | Unblock condition |
+| --------------------- | -------- | -------------------- |
+
+## Governance follow-ups
+
+| Item   | What              | Status | Notes   |
+| ------ | ------------------ | ------ | ------- |
+`;
+    const items = computeItems(
+      roadmapWithDoneItem,
+      EMPTY_IMPLEMENTATION_FIXTURE,
+    );
+    const doneItem = required(items[0], "UD item");
+    const payload = buildIssuePayload(doneItem) as {
+      title: string;
+      body: string;
+      labels: string[];
+    };
+    // A pre-existing OPEN issue whose labels already match the closing
+    // payload exactly — proves labelsStale: false correctly skips the
+    // pre-close syncManagedLabels edit, distinct from the common case
+    // (previous test's UB) where stale open-state labels trigger it.
+    const existingIssues = [
+      {
+        number: 401,
+        title: payload.title,
+        body: payload.body,
+        state: "OPEN",
+        labels: payload.labels.map((name) => ({ name })),
+      },
+    ];
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      milestonesGetRule([]),
+      issueListSyncRule(existingIssues),
+      labelCreateRule(),
+      milestoneCreateRule(),
+      issueCloseRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueSync({
+      runGh,
+      reporter,
+      apply: true,
+      readDoc: makeReadDoc(roadmapWithDoneItem, EMPTY_IMPLEMENTATION_FIXTURE),
+    });
+
+    expect(outcome.ok).toBe(true);
+    const editCalls = calls.filter((a) => a[0] === "issue" && a[1] === "edit");
+    const closeCalls = calls.filter(
+      (a) => a[0] === "issue" && a[1] === "close",
+    );
+    expect(closeCalls).toHaveLength(1);
+    expect(closeCalls[0]?.[2]).toBe("401");
+    expect(editCalls).toHaveLength(0);
   });
 
   test("auth preflight failure: returns { ok: false }, reports the error, and makes no further gh calls", () => {
@@ -1345,6 +1480,166 @@ describe("runProjectSync", () => {
         (entry) => entry.kind === "created" && /project board/.test(entry.file),
       ),
     ).toBe(true);
+  });
+
+  // Regression for the 2026-08-20 live incident: adding a 4th Priority
+  // option ("Governance") alongside three EXISTING, UNRENAMED options
+  // ("0-now"/"1-next"/"2-later", no renameSource entry for any of them)
+  // must preserve those three options' ids in the singleSelectOptions
+  // mutation literal — omitting an id on an option that already exists
+  // under its own name makes GitHub create a brand-new option and silently
+  // orphan the old one (and every item's value pointing at it). Before the
+  // fix, `updateSingleSelectOptions` only ever attached an id via the
+  // renameSource lookup, so none of these three unchanged options would
+  // have carried one — this test fails against that pre-fix behavior.
+  test("--init --apply: adding a new single-select option preserves existing unrenamed options' ids", () => {
+    const createdProject = { number: 9, title: HUB_PROJECT_TITLE };
+    const { runGh, calls } = scriptedGh([
+      projectListRule([]),
+      projectCreateRule(createdProject),
+      projectFieldListRule([
+        {
+          name: "Status",
+          id: "FIELD_STATUS",
+          options: [
+            { name: "To Do", id: "opt-todo" },
+            { name: "In Progress", id: "opt-in-progress" },
+            { name: "Blocked", id: "opt-blocked" },
+            { name: "Deferred", id: "opt-deferred" },
+            { name: "Done", id: "opt-done" },
+            { name: "Rejected", id: "opt-rejected" },
+          ],
+        },
+        {
+          // Mirrors the live board immediately before the incident: three
+          // existing options under their own names, no "Governance" yet.
+          name: "Priority",
+          id: "FIELD_PRIORITY",
+          options: [
+            { name: "0-now", id: "opt-0-now" },
+            { name: "1-next", id: "opt-1-next" },
+            { name: "2-later", id: "opt-2-later" },
+          ],
+        },
+      ]),
+      projectViewRule("PROJECT_ID"),
+      viewsListGraphqlRule([]),
+      createViewGraphqlRule(),
+      graphqlRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runProjectSync({
+      runGh,
+      reporter,
+      apply: true,
+      init: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    // Status already matches its desired options exactly, so only Priority
+    // should have produced an updateProjectV2Field mutation.
+    const fieldMutationCalls = calls.filter(
+      (args) =>
+        args[0] === "api" &&
+        args[1] === "graphql" &&
+        typeof args[3] === "string" &&
+        args[3].includes("updateProjectV2Field"),
+    );
+    expect(fieldMutationCalls).toHaveLength(1);
+    const mutation = required(
+      fieldMutationCalls[0]?.[3],
+      "Priority updateProjectV2Field mutation query",
+    );
+    expect(mutation).toContain('fieldId: "FIELD_PRIORITY"');
+    expect(optionLiteral(mutation, "0-now")).toMatch(/^\{id: "opt-0-now",/);
+    expect(optionLiteral(mutation, "1-next")).toMatch(/^\{id: "opt-1-next",/);
+    expect(optionLiteral(mutation, "2-later")).toMatch(/^\{id: "opt-2-later",/);
+    // The genuinely new option must NOT carry an id of its own.
+    expect(optionLiteral(mutation, "Governance")).toMatch(
+      /^\{name: "Governance",/,
+    );
+  });
+
+  // Confirms the renameSource path (already in production use for the
+  // Status field's ADR-0052 migration) still preserves a renamed option's
+  // id, and that it keeps doing so in the SAME mutation as an unrelated,
+  // unchanged option resolved purely via the own-name lookup — i.e. the
+  // fix's "own name first, renameSource fallback" ordering serves both
+  // cases at once rather than one regressing the other.
+  test("--init --apply: renaming an option preserves its id alongside an unrelated unchanged option in the same mutation", () => {
+    const createdProject = { number: 11, title: HUB_PROJECT_TITLE };
+    const { runGh, calls } = scriptedGh([
+      projectListRule([]),
+      projectCreateRule(createdProject),
+      projectFieldListRule([
+        {
+          name: "Status",
+          id: "FIELD_STATUS",
+          options: [
+            // Pre-migration names: "Pending" -> "To Do" and "In review" ->
+            // "In Progress" are genuine renames (STATUS_OPTION_RENAME_SOURCE).
+            { name: "Pending", id: "opt-pending" },
+            { name: "In review", id: "opt-in-review" },
+            // "Blocked" already exists under its own (unchanged) desired
+            // name — not part of any rename mapping.
+            { name: "Blocked", id: "opt-blocked" },
+          ],
+        },
+        {
+          // Priority already matches exactly, so it produces no mutation —
+          // keeps this test's single mutation focused on Status.
+          name: "Priority",
+          id: "FIELD_PRIORITY",
+          options: [
+            { name: "0-now", id: "opt-0-now" },
+            { name: "1-next", id: "opt-1-next" },
+            { name: "2-later", id: "opt-2-later" },
+            { name: "Governance", id: "opt-governance" },
+          ],
+        },
+      ]),
+      projectViewRule("PROJECT_ID"),
+      viewsListGraphqlRule([]),
+      createViewGraphqlRule(),
+      graphqlRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runProjectSync({
+      runGh,
+      reporter,
+      apply: true,
+      init: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    const fieldMutationCalls = calls.filter(
+      (args) =>
+        args[0] === "api" &&
+        args[1] === "graphql" &&
+        typeof args[3] === "string" &&
+        args[3].includes("updateProjectV2Field"),
+    );
+    expect(fieldMutationCalls).toHaveLength(1);
+    const mutation = required(
+      fieldMutationCalls[0]?.[3],
+      "Status updateProjectV2Field mutation query",
+    );
+    expect(mutation).toContain('fieldId: "FIELD_STATUS"');
+    // Renamed options keep their pre-migration id.
+    expect(optionLiteral(mutation, "To Do")).toMatch(/^\{id: "opt-pending",/);
+    expect(optionLiteral(mutation, "In Progress")).toMatch(
+      /^\{id: "opt-in-review",/,
+    );
+    // The unrelated, unrenamed option keeps its own id via the own-name
+    // lookup — proves the fix's ordering doesn't disturb the rename path.
+    expect(optionLiteral(mutation, "Blocked")).toMatch(/^\{id: "opt-blocked",/);
+    // Genuinely new options (never existed under any name) carry no id.
+    expect(optionLiteral(mutation, "Deferred")).toMatch(/^\{name: "Deferred",/);
+    expect(optionLiteral(mutation, "Rejected")).toMatch(/^\{name: "Rejected",/);
   });
 
   test("steady-state dry run with a board present: returns { ok: true } and makes no mutating calls", () => {
