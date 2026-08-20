@@ -65,7 +65,14 @@ paths:
   one). Narrow the skip to the specific benign `code` and **re-throw** the rest.
 - **Filesystem error handling.** Ignore only `ENOENT` (denylist via a small
   `Set`) and **re-throw** `EACCES`/`EPERM`; scope any silent-skip to _parse
-  failures only_, never a whole `catch`.
+  failures only_, never a whole `catch`. The same rule applies to `bin/*.mjs`
+  tooling, which this file's path scope doesn't cover but which has no rules
+  file of its own: a directory read wrapped in `catch { return [] }` is only
+  safe when that directory's _absence_ is itself a legitimate case (a package
+  with no `tests/`) — a required root (e.g. the monorepo's `packages/`
+  itself) needs the same `ENOENT`-only discrimination, or a broken scan
+  silently reports a false-green "0 files checked" instead of failing loudly
+  (`bin/check-file-budget.mjs`, found by review during F23/ADR-0072).
 - **Guard the parse step, not just the read and the validation around it.** A
   read-then-`JSON.parse`-then-shape-validate sequence needs the same typed-error
   treatment on all three steps — the `parse` call sitting between two already-guarded

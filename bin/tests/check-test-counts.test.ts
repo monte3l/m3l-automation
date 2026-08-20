@@ -26,6 +26,7 @@ import {
   collectTests,
   countsByFile,
   diffCounts,
+  findUncountedFiles,
   formatCollectFailure,
   formatMismatch,
   parseRecordedCounts,
@@ -86,6 +87,35 @@ describe("countsByFile", () => {
     expect(result.get("beta")).toBe(1);
     expect(result.get("gamma")).toBe(1);
     expect(result.size).toBe(3);
+  });
+
+  test("keys a nested tests/ path as everything after the last /tests/ segment", () => {
+    const collected = [
+      { file: "/repo/packages/m3l-common/tests/foo/bar.test.ts" },
+    ];
+    const result = countsByFile(collected);
+    expect(result.get("foo/bar")).toBe(1);
+    expect(result.has("bar")).toBe(false);
+  });
+
+  test("keeps two files sharing a basename in different tests/ subdirectories as distinct entries, not summed into one", () => {
+    const collected = [
+      { file: "/a/tests/shared/thing.test.ts" },
+      { file: "/a/tests/other/thing.test.ts" },
+      { file: "/a/tests/other/thing.test.ts" },
+    ];
+    const result = countsByFile(collected);
+    expect(result.get("shared/thing")).toBe(1);
+    expect(result.get("other/thing")).toBe(2);
+    expect(result.has("thing")).toBe(false);
+    expect(result.size).toBe(2);
+  });
+
+  test("falls back to the whole normalized path (minus .test.ts) when there is no /tests/ segment", () => {
+    const collected = [{ file: "/repo/no-marker-here/polling.test.ts" }];
+    const result = countsByFile(collected);
+    expect(result.get("/repo/no-marker-here/polling")).toBe(1);
+    expect(result.size).toBe(1);
   });
 });
 
@@ -237,6 +267,59 @@ describe("diffCounts", () => {
     const { matches, mismatches } = diffCounts(new Map(), actual);
     expect(matches).toHaveLength(0);
     expect(mismatches).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findUncountedFiles
+// ---------------------------------------------------------------------------
+
+describe("findUncountedFiles", () => {
+  test("returns an empty result when every actual key has a matching recorded entry", () => {
+    const recorded = new Map([
+      ["polling", 10],
+      ["retry", 5],
+    ]);
+    const actual = new Map([
+      ["polling", 10],
+      ["retry", 5],
+    ]);
+    expect(findUncountedFiles(recorded, actual)).toEqual([]);
+  });
+
+  test("returns each actual-only key with its correct count", () => {
+    const recorded = new Map([["polling", 10]]);
+    const actual = new Map([
+      ["polling", 10],
+      ["polling-edge-cases", 3],
+    ]);
+    expect(findUncountedFiles(recorded, actual)).toEqual([
+      { key: "polling-edge-cases", count: 3 },
+    ]);
+  });
+
+  test("never returns a key present in both maps, even when the counts differ", () => {
+    // findUncountedFiles only cares about presence, not value equality —
+    // a mismatched-but-shared key is diffCounts's concern, not this function's.
+    const recorded = new Map([["polling", 10]]);
+    const actual = new Map([["polling", 999]]);
+    expect(findUncountedFiles(recorded, actual)).toEqual([]);
+  });
+
+  test("sorts the result alphabetically by key regardless of input order", () => {
+    const recorded = new Map<string, number>();
+    const actual = new Map([
+      ["zebra", 1],
+      ["alpha", 2],
+      ["mango", 3],
+    ]);
+    const result = findUncountedFiles(recorded, actual);
+    expect(result.map((r) => r.key)).toEqual(["alpha", "mango", "zebra"]);
+  });
+
+  test("returns an empty array for an empty actual map", () => {
+    const recorded = new Map([["polling", 10]]);
+    expect(findUncountedFiles(recorded, new Map())).toEqual([]);
   });
 });
 
