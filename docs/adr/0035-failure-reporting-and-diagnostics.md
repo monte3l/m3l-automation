@@ -427,6 +427,30 @@ The 2026-07-23 reclassification is again untouched; ADR-0063's structured
 run envelope likewise derives from the report under the allowlisted-scalar
 rule rather than re-emitting it.
 
+## Update (2026-08-20) — the display-vs-persist exposure rule, and a fourth artifact class
+
+The m3l console ([ADR-0070](./0070-console-audit-and-observability.md))
+adds two entries to this taxonomy:
+
+- **The human-action audit stream** — a sibling class beside the agent
+  decision log (2026-08-20 update above), same semantics: append-only
+  JSONL, names/references never values, non-sensitive by construction,
+  **loud** write failure (an unauditable action is refused).
+- **The display-vs-persist exposure rule**, governing every
+  sensitive-class artifact a UI touches: an **authenticated console may
+  transiently render** sensitive-class content (run-report contents,
+  live operation output) to its operator — each rendering itself an
+  audited _view_ action recorded by reference — while **persistent
+  records never absorb displayed values**: audit streams, telemetry,
+  session metadata, and API result envelopes carry names, references,
+  and allowlisted scalars only. Rendered diagnostic data surfaces its
+  provenance (allowlist-strong vs best-effort-redacted) so redaction
+  guarantees are never implied where only best-effort applies.
+
+The 2026-07-23 reclassification is untouched a third time: the run
+report remains sensitive; the console displays it under this rule rather
+than re-classifying it.
+
 ## Links
 
 - Related: [ADR-0005](./0005-error-hierarchy.md) (M3LError/M3LResult model —
