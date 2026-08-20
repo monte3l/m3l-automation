@@ -241,6 +241,11 @@ export const COMMAND_CATALOG = [
       "Reproduces claude-pr-review.yml's reviewable-size measurement locally against origin/main...HEAD (ADR-0072): warns above the 75,000-char soft target, fails above the workflow's MAX_REVIEWABLE_BYTES ceiling. Run before opening a PR.",
   },
   {
+    name: "check:file-budget",
+    description:
+      "Per-file size ratchet (ADR-0072) over each package's src/tests trees: a file not in bin/file-budget-baseline.json must stay under 25,000 (src) / 60,000 (tests) chars; a baselined file may shrink but never grow. Run --update to regenerate the baseline after a deliberate size change.",
+  },
+  {
     name: "check:workflows",
     description:
       "Verifies the .claude/workflows/ dynamic-workflow surface against the MODEL-MATRIX in docs/contributing/model-selection.md and the per-script agent-count guardrail (ADR-0025). Run after adding/editing a workflow script.",

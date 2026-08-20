@@ -50,7 +50,20 @@ const STATUS_COL = 5;
 const NOTES_COL = 8;
 
 /**
- * Reduce `vitest list --json`'s flat entry array to submodule → test count.
+ * Reduce `vitest list --json`'s flat entry array to a file-key → test count
+ * map. Keys are everything **after the last `/tests/` path segment** (with
+ * the `.test.ts` suffix stripped), not the bare basename — so a nested
+ * `tests/foo/bar.test.ts` keys as `foo/bar`, distinct from a top-level
+ * `tests/bar.test.ts` keying as `bar`. Marker-based rather than
+ * `path.relative`-against-{@link TESTS_SCOPE}, deliberately: `entry.file` is
+ * whatever `vitest list` reports (an absolute path in real runs, but this
+ * function is also exercised directly against synthetic fixture paths in
+ * tests), and finding the last `/tests/` segment gives the same collision
+ * safety without depending on the real filesystem root. The pre-ADR-0072
+ * keying (`path.basename(filePath)`) would make two files sharing a basename
+ * in different subtrees silently sum into one count; today's tree is flat
+ * (no such collision exists yet), but this keying makes it impossible for
+ * any tree structure, not just today's.
  *
  * The JSON shape is a flat list of individual tests (one entry per expanded
  * `test.each` case), each carrying the absolute `file` it was collected from —
@@ -62,15 +75,23 @@ const NOTES_COL = 8;
  * "collected nothing" guard reports precisely, not a TypeError here.
  *
  * @param {Array<{ file?: string }> | undefined} collected
- * @returns {Map<string, number>} submodule name → number of collected tests
+ * @returns {Map<string, number>} file key (path after the last `/tests/`
+ *   segment, no `.test.ts` suffix) → number of collected tests
  */
 export function countsByFile(collected) {
   const counts = new Map();
+  const marker = "/tests/";
   for (const entry of collected ?? []) {
     const filePath = entry?.file ?? "";
     if (!filePath) continue;
-    const submodule = path.basename(filePath).replace(/\.test\.ts$/, "");
-    counts.set(submodule, (counts.get(submodule) ?? 0) + 1);
+    const normalized = filePath.split(path.sep).join("/");
+    const markerIndex = normalized.lastIndexOf(marker);
+    const afterMarker =
+      markerIndex === -1
+        ? normalized
+        : normalized.slice(markerIndex + marker.length);
+    const key = afterMarker.replace(/\.test\.ts$/, "");
+    counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   return counts;
 }
@@ -134,6 +155,30 @@ export function diffCounts(recorded, actual) {
     }
   }
   return { matches, mismatches };
+}
+
+/**
+ * Find collected test files with no matching recorded row — sibling test
+ * files for a submodule (e.g. `procedure-guards.test.ts` alongside
+ * `procedure.test.ts`) whose file key doesn't match any submodule name in
+ * `docs/implementation-status.md`'s Notes column. {@link diffCounts} only
+ * iterates `recorded`, so a key present in `actual` but absent from
+ * `recorded` is otherwise silently invisible to this gate (ADR-0072) — this
+ * is a warning, not a hard failure: the Notes-column convention is
+ * per-submodule, not per-file, so an unmatched sibling file is expected, not
+ * necessarily a defect. It exists so a human notices the drift-blind spot
+ * rather than assuming every collected test is covered by a recorded count.
+ *
+ * @param {Map<string, number>} recorded
+ * @param {Map<string, number>} actual
+ * @returns {Array<{ key: string, count: number }>} sorted by key
+ */
+export function findUncountedFiles(recorded, actual) {
+  const uncounted = [];
+  for (const [key, count] of actual) {
+    if (!recorded.has(key)) uncounted.push({ key, count });
+  }
+  return uncounted.sort((a, b) => a.key.localeCompare(b.key));
 }
 
 /**
@@ -314,6 +359,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
 
   const { matches, mismatches } = diffCounts(recorded, actual);
+  const uncounted = findUncountedFiles(recorded, actual);
 
   for (const match of matches) {
     reporter.info(`✓  ${match.submodule}: ${match.count} tests`);
@@ -321,13 +367,23 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   for (const mismatch of mismatches) {
     reporter.error(formatMismatch(mismatch));
   }
+  // Non-fatal (ADR-0072): a sibling test file with no recorded row is expected
+  // — the Notes-column convention is per-submodule, not per-file — but it's a
+  // gate blind spot worth surfacing rather than leaving silently invisible.
+  for (const { key, count } of uncounted) {
+    reporter.warn(
+      `${key}: ${count} collected test(s) with no matching row in ` +
+        `docs/implementation-status.md's Notes column — this sibling test ` +
+        `file isn't tracked by check:test-counts.`,
+    );
+  }
 
   if (mismatches.length > 0) {
     if (!json)
       console.error(
         `\n✗  ${mismatches.length} count mismatch(es). Edit the Notes column in docs/implementation-status.md to match.`,
       );
-    reporter.finish({ mismatches });
+    reporter.finish({ mismatches, uncounted });
     process.exit(1);
   }
 
@@ -341,5 +397,5 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       `All test counts match (${recorded.size} submodule(s) verified).`,
     );
   }
-  reporter.finish({ mismatches });
+  reporter.finish({ mismatches, uncounted });
 }
