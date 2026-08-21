@@ -1,15 +1,19 @@
 import { describe, expect, test } from "vitest";
 import {
+  findImplementationSectionMismatches,
   findKeyCollisions,
   findMissingTypes,
   findPriorityVocabularyMismatches,
 } from "../check-hub-keys.mjs";
 import {
+  IMPLEMENTATION_ANCHORS,
+  IMPLEMENTATION_NAMESPACES,
   ISSUE_TYPES,
   MILESTONE_TITLES,
   PRIORITY_LABELS,
   PROJECT_PRIORITY_OPTIONS,
   ROADMAP_ANCHORS,
+  TYPE_BY_IMPLEMENTATION_SECTION,
 } from "../lib/hub-sync.mjs";
 
 // ---------------------------------------------------------------------------
@@ -283,5 +287,144 @@ describe("findMissingTypes", () => {
   test("an item with no type property at all is reported the same as an undefined one", () => {
     const findings = findMissingTypes([{ key: "roadmap:p0:x", title: "X" }]);
     expect(findings).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findImplementationSectionMismatches
+// ---------------------------------------------------------------------------
+
+describe("findImplementationSectionMismatches", () => {
+  test("returns [] when all three tables carry identical keys", () => {
+    const findings = findImplementationSectionMismatches(
+      { friction: "#friction", adr0035Rollout: "#adr0035" },
+      { friction: "friction", adr0035Rollout: "adr0035" },
+      {
+        friction: ISSUE_TYPES.friction,
+        adr0035Rollout: ISSUE_TYPES.libraryCapability,
+      },
+      [],
+    );
+    expect(findings).toEqual([]);
+  });
+
+  test("a key missing from IMPLEMENTATION_ANCHORS only is reported, naming the section key and that table", () => {
+    const findings = findImplementationSectionMismatches(
+      {},
+      { friction: "friction" },
+      { friction: ISSUE_TYPES.friction },
+      [],
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('"friction"');
+    expect(findings[0]).toContain("IMPLEMENTATION_ANCHORS");
+  });
+
+  test("a key missing from IMPLEMENTATION_NAMESPACES only is reported, naming the section key and that table", () => {
+    const findings = findImplementationSectionMismatches(
+      { friction: "#friction" },
+      {},
+      { friction: ISSUE_TYPES.friction },
+      [],
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('"friction"');
+    expect(findings[0]).toContain("IMPLEMENTATION_NAMESPACES");
+  });
+
+  test("a key missing from TYPE_BY_IMPLEMENTATION_SECTION only is reported, naming the section key and that table", () => {
+    const findings = findImplementationSectionMismatches(
+      { friction: "#friction" },
+      { friction: "friction" },
+      {},
+      [],
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain('"friction"');
+    expect(findings[0]).toContain("TYPE_BY_IMPLEMENTATION_SECTION");
+  });
+
+  test("a key missing from two tables produces two findings, one per missing table (not one collapsed finding)", () => {
+    const findings = findImplementationSectionMismatches(
+      { friction: "#friction" },
+      {},
+      {},
+      [],
+    );
+    expect(findings).toHaveLength(2);
+    expect(
+      findings.some((finding) => finding.includes("IMPLEMENTATION_NAMESPACES")),
+    ).toBe(true);
+    expect(
+      findings.some((finding) =>
+        finding.includes("TYPE_BY_IMPLEMENTATION_SECTION"),
+      ),
+    ).toBe(true);
+  });
+
+  // getterReality is a reference table (one row per AWS provider getter),
+  // registered as a tracker heading so check:tracker-coverage accepts its
+  // Status column, but it is never converted into backlog items — so it
+  // needs no anchor, namespace or default type. sectionsWithoutItems is what
+  // tells this function that absence is intentional rather than drift. This
+  // test exercises the exemption where it actually has teeth: the key IS
+  // present in one table (as it is in real life it could be, if a stray
+  // entry were ever added) yet still produces no finding once exempted.
+  test("sectionsWithoutItems suppresses a finding even when the exempt key is present in some (but not all) tables", () => {
+    const findings = findImplementationSectionMismatches(
+      { getterReality: "#getter-reality" },
+      {},
+      {},
+      ["getterReality"],
+    );
+    expect(findings).toEqual([]);
+  });
+
+  test("sectionsWithoutItems exempts a key present in none of the three tables (getterReality's actual case)", () => {
+    const findings = findImplementationSectionMismatches(
+      { friction: "#friction" },
+      { friction: "friction" },
+      { friction: ISSUE_TYPES.friction },
+      ["getterReality"],
+    );
+    expect(findings).toEqual([]);
+  });
+
+  test("the exemption only suppresses the exempt key — a different, genuinely drifted key still reports", () => {
+    const findings = findImplementationSectionMismatches(
+      { friction: "#friction" },
+      {},
+      {},
+      ["getterReality"],
+    );
+    expect(findings).toHaveLength(2);
+  });
+
+  test("returns [] when all three tables are empty (no keys, no findings)", () => {
+    expect(findImplementationSectionMismatches({}, {}, {}, [])).toEqual([]);
+  });
+
+  test("defaults sectionsWithoutItems to [] when the fourth argument is omitted", () => {
+    const findings = findImplementationSectionMismatches(
+      {},
+      { friction: "friction" },
+      {},
+    );
+    expect(findings.length).toBeGreaterThan(0);
+  });
+
+  // Regression lock: the real tables in bin/lib/hub-sync.mjs must stay keyed
+  // identically. The synthetic cases above prove the function's own logic;
+  // this one proves the tables it actually guards are in sync — ADR-0073
+  // added three entries to each by hand, which is exactly the kind of
+  // hand-edit this function exists to catch if it goes wrong next time.
+  test("the real IMPLEMENTATION_ANCHORS/IMPLEMENTATION_NAMESPACES/TYPE_BY_IMPLEMENTATION_SECTION tables from hub-sync.mjs are keyed identically", () => {
+    const findings = findImplementationSectionMismatches(
+      IMPLEMENTATION_ANCHORS,
+      IMPLEMENTATION_NAMESPACES,
+      TYPE_BY_IMPLEMENTATION_SECTION,
+      ["getterReality"],
+    );
+    expect(findings).toEqual([]);
   });
 });

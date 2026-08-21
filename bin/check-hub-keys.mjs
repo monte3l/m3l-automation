@@ -252,6 +252,17 @@ export function findPriorityVocabularyMismatches({
  * // ['Item "roadmap:p0:x" ("X") has no Issue Type — check TYPE_BY_ROADMAP_SECTION/TYPE_BY_IMPLEMENTATION_SECTION.']
  * ```
  */
+export function findMissingTypes(items) {
+  const validTypes = new Set(Object.values(ISSUE_TYPES));
+  return items
+    .filter((item) => !validTypes.has(item.type))
+    .map(
+      (item) =>
+        `Item "${item.key}" ("${item.title}") has no Issue Type — check ` +
+        `TYPE_BY_ROADMAP_SECTION/TYPE_BY_IMPLEMENTATION_SECTION.`,
+    );
+}
+
 /**
  * Assert the three parallel per-section tables in `bin/lib/hub-sync.mjs` carry
  * identical key sets: `IMPLEMENTATION_ANCHORS` (deep-link anchor),
@@ -313,17 +324,6 @@ export function findImplementationSectionMismatches(
     }
   }
   return findings;
-}
-
-export function findMissingTypes(items) {
-  const validTypes = new Set(Object.values(ISSUE_TYPES));
-  return items
-    .filter((item) => !validTypes.has(item.type))
-    .map(
-      (item) =>
-        `Item "${item.key}" ("${item.title}") has no Issue Type — check ` +
-        `TYPE_BY_ROADMAP_SECTION/TYPE_BY_IMPLEMENTATION_SECTION.`,
-    );
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

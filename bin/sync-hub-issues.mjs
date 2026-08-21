@@ -605,7 +605,18 @@ export function runIssueSync({
 
     for (const title of milestonePlan.create) {
       const def = MILESTONE_DEFS.find((entry) => entry.title === title);
-      createMilestone(runGhFn, title, def?.description ?? "");
+      if (def === undefined) {
+        // Unreachable today: every planMilestones `create` entry originates
+        // from a def's own `title`. Thrown rather than defaulted to "" because
+        // the failure mode of degrading is invisible — the milestone would be
+        // created description-less, then show up as describe-drift on the next
+        // run, with nothing pointing back to here.
+        throw new Error(
+          `planMilestones planned milestone "${title}" with no matching MILESTONE_DEFS entry — ` +
+            `create entries are derived from def titles, so this means the two have diverged.`,
+        );
+      }
+      createMilestone(runGhFn, title, def.description);
       reporter.change("created", `milestone: ${title}`);
     }
 
