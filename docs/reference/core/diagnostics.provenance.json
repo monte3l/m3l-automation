@@ -69,37 +69,37 @@
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
           "symbol": "M3LBreadcrumb",
           "lines": "40-64",
-          "blob": "ffa1395bd8613a07c78f4c953d13be327b6127c9"
+          "blob": "4da3bba1291d9d43ad2b17c9abdc772b042089e4"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
           "symbol": "M3LBreadcrumbScalar",
           "lines": "65-82",
-          "blob": "ffa1395bd8613a07c78f4c953d13be327b6127c9"
+          "blob": "4da3bba1291d9d43ad2b17c9abdc772b042089e4"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
           "symbol": "M3LBreadcrumbSource",
           "lines": "83-99",
-          "blob": "ffa1395bd8613a07c78f4c953d13be327b6127c9"
+          "blob": "4da3bba1291d9d43ad2b17c9abdc772b042089e4"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
           "symbol": "M3LBreadcrumbTrailOptions",
           "lines": "100-117",
-          "blob": "ffa1395bd8613a07c78f4c953d13be327b6127c9"
+          "blob": "4da3bba1291d9d43ad2b17c9abdc772b042089e4"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
           "symbol": "M3LBreadcrumbAttachOptions",
           "lines": "118-600",
-          "blob": "ffa1395bd8613a07c78f4c953d13be327b6127c9"
+          "blob": "4da3bba1291d9d43ad2b17c9abdc772b042089e4"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts",
           "symbol": "M3LBreadcrumbTrail",
           "lines": "601-768",
-          "blob": "ffa1395bd8613a07c78f4c953d13be327b6127c9"
+          "blob": "4da3bba1291d9d43ad2b17c9abdc772b042089e4"
         },
         {
           "file": "packages/m3l-common/src/core/diagnostics/collect.ts",
@@ -208,7 +208,7 @@
           "blob": "212e4ac19de15714e8251ecac5bba08b8828b363"
         }
       ],
-      "retrieved": "2026-08-19"
+      "retrieved": "2026-08-21"
     }
   ]
 }

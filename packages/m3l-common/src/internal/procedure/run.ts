@@ -9,6 +9,7 @@
 import { createInitialContext } from "./context.js";
 import { checkAbortBoundary } from "./guards.js";
 import { runPhaseOne, toConditionScope } from "./run-loop.js";
+import { createProcedureTracer } from "./trace.js";
 import {
   buildAbortedOutcome,
   buildFailedOutcome,
@@ -17,19 +18,25 @@ import {
   toAbortedPhaseOne,
 } from "./outcome.js";
 
-import type { M3LProcedureOutcome } from "../../core/procedure/run-types.js";
+import type { M3LLogger } from "../../core/logging/index.js";
+import type {
+  M3LProcedureOutcome,
+  M3LProcedureTraceOptions,
+} from "../../core/procedure/run-types.js";
 import type { M3LProcedureShape } from "../../core/procedure/types.js";
 import type {
   PhaseOneAccumulated,
   PhaseOneOutcome,
   ProcedureRuntime,
 } from "./run-state.js";
+import type { M3LProcedureTracer } from "./trace.js";
 
 /**
  * The already-validated, capture-by-value pieces {@link executeProcedureRun}
  * needs from `run()`'s options — every field here is what `run-options.ts`'s
  * `validateRunOptions` (for `maxIterations`/`parameters`/`initialValues`)
- * already resolved, plus `deps`/`signal` passed through unchanged.
+ * already resolved, plus `deps`/`signal`/`trace`/`logger` passed through
+ * unchanged.
  */
 export interface ExecuteProcedureRunInput<TShape extends M3LProcedureShape> {
   readonly deps: TShape["deps"];
@@ -37,6 +44,8 @@ export interface ExecuteProcedureRunInput<TShape extends M3LProcedureShape> {
   readonly maxIterations: number;
   readonly parameters: Readonly<TShape["parameters"]>;
   readonly initialValues: Readonly<Partial<TShape["values"]>>;
+  readonly trace: M3LProcedureTraceOptions | undefined;
+  readonly logger: M3LLogger | undefined;
 }
 
 /**
@@ -52,6 +61,7 @@ function checkAbortBeforePhase<TShape extends M3LProcedureShape>(
   phaseOne: PhaseOneAccumulated<TShape>,
   startedAt: string,
   startedAtMs: number,
+  tracer: M3LProcedureTracer<TShape>,
 ): M3LProcedureOutcome<TShape> | undefined {
   const abortError = checkAbortBoundary(phaseOne.context.signal);
   if (abortError === undefined) return undefined;
@@ -61,6 +71,7 @@ function checkAbortBeforePhase<TShape extends M3LProcedureShape>(
     toAbortedPhaseOne(phaseOne, abortError),
     startedAt,
     startedAtMs,
+    tracer,
   );
 }
 
@@ -78,6 +89,7 @@ async function runRemainingPhases<TShape extends M3LProcedureShape>(
   >,
   startedAt: string,
   startedAtMs: number,
+  tracer: M3LProcedureTracer<TShape>,
 ): Promise<M3LProcedureOutcome<TShape>> {
   // Boundary check before phase 2 (case evaluation): `abortedAt` is
   // `undefined` here — phase 1 has already concluded, so there is no next
@@ -88,6 +100,7 @@ async function runRemainingPhases<TShape extends M3LProcedureShape>(
     phaseOne,
     startedAt,
     startedAtMs,
+    tracer,
   );
   if (preCases !== undefined) return preCases;
 
@@ -104,6 +117,7 @@ async function runRemainingPhases<TShape extends M3LProcedureShape>(
     phaseOne,
     startedAt,
     startedAtMs,
+    tracer,
   );
   if (preConclude !== undefined) return preConclude;
 
@@ -115,6 +129,7 @@ async function runRemainingPhases<TShape extends M3LProcedureShape>(
     earlyResolved,
     startedAt,
     startedAtMs,
+    tracer,
   );
 }
 
@@ -131,10 +146,25 @@ function finishEarlyPhaseOne<TShape extends M3LProcedureShape>(
   >,
   startedAt: string,
   startedAtMs: number,
+  tracer: M3LProcedureTracer<TShape>,
 ): M3LProcedureOutcome<TShape> {
   return phaseOne.kind === "failed"
-    ? buildFailedOutcome(runtime, digest, phaseOne, startedAt, startedAtMs)
-    : buildAbortedOutcome(runtime, digest, phaseOne, startedAt, startedAtMs);
+    ? buildFailedOutcome(
+        runtime,
+        digest,
+        phaseOne,
+        startedAt,
+        startedAtMs,
+        tracer,
+      )
+    : buildAbortedOutcome(
+        runtime,
+        digest,
+        phaseOne,
+        startedAt,
+        startedAtMs,
+        tracer,
+      );
 }
 
 /**
@@ -155,6 +185,7 @@ export async function executeProcedureRun<TShape extends M3LProcedureShape>(
 ): Promise<M3LProcedureOutcome<TShape>> {
   const startedAtMs = performance.now();
   const startedAt = new Date().toISOString();
+  const tracer = createProcedureTracer<TShape>(input.trace, input.logger);
 
   const initialContext = createInitialContext<TShape>({
     deps: input.deps,
@@ -167,17 +198,28 @@ export async function executeProcedureRun<TShape extends M3LProcedureShape>(
     runtime,
     initialContext,
     input.maxIterations,
+    tracer,
   );
 
-  if (phaseOne.kind === "failed" || phaseOne.kind === "aborted") {
-    return finishEarlyPhaseOne(
-      runtime,
-      digest,
-      phaseOne,
-      startedAt,
-      startedAtMs,
-    );
-  }
+  const outcome =
+    phaseOne.kind === "failed" || phaseOne.kind === "aborted"
+      ? finishEarlyPhaseOne(
+          runtime,
+          digest,
+          phaseOne,
+          startedAt,
+          startedAtMs,
+          tracer,
+        )
+      : await runRemainingPhases(
+          runtime,
+          digest,
+          phaseOne,
+          startedAt,
+          startedAtMs,
+          tracer,
+        );
 
-  return runRemainingPhases(runtime, digest, phaseOne, startedAt, startedAtMs);
+  tracer.recordOutcome(outcome);
+  return outcome;
 }

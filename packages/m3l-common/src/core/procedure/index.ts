@@ -2,10 +2,10 @@
  * `core/procedure` — the codified-procedure engine (ADR-0046).
  *
  * This barrel surfaces the condition-evaluation subset (slice 1), the
- * builder and build-time validation surface (slice 2a), and — as of slice
- * 3a — {@link M3LProcedure.run}: the option/outcome/telemetry type family.
- * Opt-in tracing (`options.trace`/`options.logger`) and the no-progress
- * guard (`options.progress`) land in later slices as additive fields on
+ * builder and build-time validation surface (slice 2a), {@link M3LProcedure.run}
+ * (slice 3a) — the option/outcome/telemetry type family — and, as of slice
+ * 3b, opt-in tracing (`options.trace`/`options.logger`). The no-progress
+ * guard (`options.progress`) lands in a later slice as an additive field on
  * {@link M3LProcedureRunOptions}.
  *
  * @packageDocumentation
@@ -60,4 +60,6 @@ export type {
   M3LProcedureRunOptions,
   M3LProcedureTelemetry,
   M3LProcedureTraceEntry,
+  M3LProcedureTraceOptions,
+  M3LProcedureTraceSink,
 } from "./run-types.js";

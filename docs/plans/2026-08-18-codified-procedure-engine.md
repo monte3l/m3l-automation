@@ -308,7 +308,8 @@ these as committed numbers):
 3. **The engine** — re-measured against the decomposed file plan: **split
    into 3a (the core run loop, ~179,000 reviewable bytes — warns, does not
    fail), 3b (opt-in tracing, ~64,700 bytes), 3c (opt-in no-progress guard,
-   ~30,700 bytes)**, confirmed by reading `1684192`'s actual
+   ~30,700 bytes)**. **3a landed as PR #585; 3b (opt-in tracing) lands
+   alongside this update.** Confirmed by reading `1684192`'s actual
    `M3LProcedure.ts`/`context.ts`/`trace.ts`/`errors.ts`/`types.ts` and this
    repo's real gate source (`check:file-budget`, `check:review-size`,
    `vitest.config.ts`'s `perFile` thresholds) rather than the ~271,095-byte

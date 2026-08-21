@@ -392,11 +392,9 @@ function summarizeRequest(
 }
 
 /**
- * Summarizes an HTTP-client `response` event. `url` is deliberately reduced
- * to `origin + pathname` — the query string and any userinfo (`user:pass@`)
- * are dropped entirely, never merely redacted, since either can carry a
- * credential (`?x-api-key=`, `?access_token=`, presigned-S3 signature
- * params, basic-auth userinfo).
+ * Summarizes an HTTP-client `response` event. `url` is reduced to
+ * `origin + pathname` for the same credential-bearing reason as
+ * {@link summarizeRequest}.
  */
 function summarizeResponse(
   payload: Record<string, unknown>,
@@ -416,11 +414,8 @@ function summarizeResponse(
 }
 
 /**
- * Summarizes an HTTP-client `error` event. `url` is deliberately reduced to
- * `origin + pathname` — the query string and any userinfo (`user:pass@`) are
- * dropped entirely, never merely redacted, since either can carry a
- * credential (`?x-api-key=`, `?access_token=`, presigned-S3 signature
- * params, basic-auth userinfo).
+ * Summarizes an HTTP-client `error` event. `url` is reduced the same way as
+ * {@link summarizeRequest}.
  *
  * `errorMessage` is scrubbed via {@link scrubUrlsInText} before being kept:
  * `M3LHttpClientError.message` embeds the raw request URL verbatim, so the
@@ -457,12 +452,14 @@ function summarizeHttpError(
 
 /**
  * Summarizes an `M3LOperationPipeline` `pipeline:phase` event
- * (`docs/reference/core/pipeline.md` § Tracing). Unlike
- * {@link summarizeGenericFallback}, this keeps `null` alongside
- * `string`/`number`/`boolean` — the engine's `describe` callback is typed
- * `Readonly<Record<string, M3LBreadcrumbScalar>>`, and `M3LBreadcrumbScalar`
- * admits `null`, so a `describe` return using `null` (e.g. "no bucket yet")
- * must survive this projection rather than silently vanishing.
+ * (`docs/reference/core/pipeline.md` § Tracing) — also shared, unchanged, by
+ * `core/procedure`'s `procedure:step`/`procedure:outcome` events
+ * (`docs/reference/core/procedure.md` § Tracing): nothing below is
+ * pipeline- or procedure-specific. Unlike {@link summarizeGenericFallback}, this keeps
+ * `null` alongside `string`/`number`/`boolean` — each engine's payload is
+ * typed `Readonly<Record<string, M3LBreadcrumbScalar>>`, which admits `null`,
+ * so a `null` value (e.g. "no bucket yet") must survive this projection
+ * rather than silently vanishing.
  */
 function summarizePipelinePhase(
   payload: Record<string, unknown>,
@@ -503,7 +500,7 @@ function summarizeGenericFallback(
 }
 
 /**
- * The 20 built-in event summarizers, keyed by event name. This registry's
+ * The 22 built-in event summarizers, keyed by event name. This registry's
  * keys double as the default `events` list for {@link M3LBreadcrumbTrail.attach}
  * when `options.events` is omitted.
  */
@@ -528,6 +525,8 @@ const SUMMARIZERS: Readonly<Record<string, Summarizer>> = {
   response: summarizeResponse,
   error: summarizeHttpError,
   "pipeline:phase": summarizePipelinePhase,
+  "procedure:step": summarizePipelinePhase,
+  "procedure:outcome": summarizePipelinePhase,
 };
 
 /** The registry-keyed default event names {@link M3LBreadcrumbTrail.attach} subscribes to. */
@@ -628,12 +627,12 @@ function defaultSourceLabel(source: unknown): string {
  * to passively collect a trail of its recent events — useful for attaching
  * to the last few operations leading up to a failure in a run report. Every
  * recorded payload is projected through a per-event summarizer (scalars
- * only) and then redacted via `redactSensitiveLogValue` before storage. For a
- * library-emitted event with a named-field summarizer, this means a secret
- * riding a raw header, error instance, or caller record cannot reach the
- * trail through that event. For an event whose payload is caller-authored
- * instead — `pipeline:phase` (every scalar-valued key survives its
- * summarizer, by design), or any custom event recorded via {@link
+ * only) and then redacted via `redactSensitiveLogValue` before storage. A
+ * library-emitted event with a named-field summarizer keeps a secret riding
+ * a raw header, error instance, or caller record from reaching the trail
+ * through that event. For a caller-authored payload instead —
+ * `pipeline:phase`/`procedure:step`/`procedure:outcome` (every scalar-valued
+ * key survives, by design), or any custom event recorded via {@link
  * M3LBreadcrumbTrail.record} directly — protection is **best effort** only:
  * `redactSensitiveLogValue`'s key-name heuristic does not recognize an
  * arbitrary key name and does not catch a bare, context-free token in free
@@ -687,7 +686,7 @@ export class M3LBreadcrumbTrail {
    * @param source - Any emitter exposing `on`/`off` — a real
    *   `M3LEventEmitterBase` subclass satisfies this structurally.
    * @param options - Optional `source` label override and `events` list
-   *   override; `events` defaults to this trail's full 20-event registry.
+   *   override; `events` defaults to this trail's full 22-event registry.
    * @returns An idempotent detach function; calling it more than once is a
    *   no-op.
    *
