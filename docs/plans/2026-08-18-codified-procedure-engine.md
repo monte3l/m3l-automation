@@ -280,12 +280,22 @@ later:
 with `pnpm check:review-size` once each slice actually exists — do not treat
 these as committed numbers):
 
-1. **Conditions** — `docs/reference/core/procedure.md` (complete, with this
-   Landing plan heading), `core/procedure/conditions.ts`, a decomposed
-   `internal/procedure/evaluate.ts`, `tests/procedure-conditions.test.ts`.
-   ~70,100 reviewable bytes — under the 75,000 soft target as measured. The
-   one seam the original attempt identified in its own test file's imports
-   and never used.
+1. **Conditions** — **Landed as PR #580.** Actual scope grew beyond the
+   field-test estimate once transitive compile/lint requirements were
+   counted (barrel wiring, the 16 `ERR_PROCEDURE_*` catalog entries, the
+   `core → aws` zone ban) — ~104,000 reviewable bytes at PR-open, over the
+   75,000 soft target but the review-fix cycle's own regression tests grew
+   the final diff to ~131,400 chars by merge; `check:review-size` warns, not
+   fails, under the 300,000 ceiling either way. Three real defects were
+   found across three bot-review rounds and fixed before merge: an
+   unguarded caller-data read reachable through the "total, never throws"
+   evaluator, `==`/`!=` between two unresolved references wrongly
+   evaluating `true`, a non-enumerable property resolving through a path,
+   and (found last, one level up from the first fix) `and`/`or` never
+   propagating a child's `refused` state, reopening the fail-open via
+   `not(and([]))` — closed with a from-scratch Kleene three-valued-logic
+   design rather than a naive flag-OR. Full narrative:
+   `docs/logs/2026-08-21-core-procedure.md`.
 2. **Types + builder validation** — the split `types.ts` and `validate.ts`,
    `M3LProcedureBuilder.ts`, `tests/procedure-build.test.ts`. ~139,462 bytes
    pre-split — over target even before the file-level split's own byte
