@@ -154,9 +154,16 @@ Once an idea is actually ready to be worked on:
    labelled, and drift-checked like any other row. Do **not** hand-create a
    sub-issue on GitHub instead: it will carry no marker, so `sync:hub` cannot
    see it, and it ends up wearing hub-managed labels nothing manages
-   (issue #576 was exactly this, and ADR-0073 promoted it to a real row). Each
-   tracker section also gets one derived **epic** issue that parents its items;
-   you never author those.
+   (issue #576 was exactly this). Each tracker section also gets one derived
+   **epic** issue that parents its items; you never author those.
+
+   **Slice when you pick the item up, not when you file it.** ADR-0072 puts
+   seam planning immediately before RED, once the contract page has been read.
+   Filing a row does not require guessing its slices, and slicing the backlog
+   in advance is actively worse than leaving it whole: per-file coverage
+   thresholds bind a slice's tests to the files it ships, so a seam chosen
+   before anyone has read the contract can be unbuildable — which is what made
+   PR #523's after-the-fact split structurally impossible in the first place.
 
 4. **Run `pnpm sync:hub`** (dry-run first to preview, then `-- --apply`,
    maintainer-local — it needs your own `gh` auth; `GITHUB_TOKEN` cannot write
