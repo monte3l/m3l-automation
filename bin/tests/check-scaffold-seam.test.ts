@@ -22,6 +22,7 @@ vi.mock("node:fs", async () => {
 import {
   LANDING_PLAN_HEADING,
   STATUS_COL,
+  hasSeamTestFile,
   hasStatusRow,
   implementedModules,
   landingPlanVerdict,
@@ -103,6 +104,86 @@ describe("implementedModules", () => {
     vi.spyOn(fs, "existsSync").mockReturnValue(true);
 
     expect(implementedModules("/fake/src/core")).toEqual(["zeta", "alpha"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// hasSeamTestFile
+// ---------------------------------------------------------------------------
+
+describe("hasSeamTestFile", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("returns true when the exact <module>.test.ts file exists", () => {
+    vi.spyOn(fs, "existsSync").mockImplementation((p) =>
+      String(p).endsWith("polling.test.ts"),
+    );
+    const readdirSpy = vi.spyOn(fs, "readdirSync").mockReturnValue([]);
+
+    expect(hasSeamTestFile("/fake/tests", "polling")).toBe(true);
+    // the exact-file check short-circuits before readdirSync is consulted
+    expect(readdirSpy).not.toHaveBeenCalled();
+  });
+
+  test("returns true when only a hyphenated sibling exists (no exact file)", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    vi.spyOn(fs, "readdirSync").mockReturnValue([
+      "procedure-conditions.test.ts",
+    ]);
+
+    expect(hasSeamTestFile("/fake/tests", "procedure")).toBe(true);
+  });
+
+  test("returns true when multiple hyphenated siblings exist and none is the exact file", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    vi.spyOn(fs, "readdirSync").mockReturnValue([
+      "procedure-conditions.test.ts",
+      "procedure-transitions.test.ts",
+    ]);
+
+    expect(hasSeamTestFile("/fake/tests", "procedure")).toBe(true);
+  });
+
+  test("returns false when neither the exact file nor any hyphenated sibling exists, even in a non-empty directory", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    vi.spyOn(fs, "readdirSync").mockReturnValue([
+      "polling.test.ts",
+      "retry.test.ts",
+    ]);
+
+    expect(hasSeamTestFile("/fake/tests", "procedure")).toBe(false);
+  });
+
+  test("returns false when readdirSync throws (tests dir does not exist) and no exact file exists", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    vi.spyOn(fs, "readdirSync").mockImplementation(() => {
+      throw new Error("ENOENT: no such directory");
+    });
+
+    expect(hasSeamTestFile("/does/not/exist", "procedure")).toBe(false);
+  });
+
+  test("does not match a sibling-shaped filename missing the hyphen boundary (s3extra.test.ts)", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    vi.spyOn(fs, "readdirSync").mockReturnValue(["s3extra.test.ts"]);
+
+    expect(hasSeamTestFile("/fake/tests", "s3")).toBe(false);
+  });
+
+  test("does not match a filename where the module name is not anchored at the start (xs3-thing.test.ts)", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    vi.spyOn(fs, "readdirSync").mockReturnValue(["xs3-thing.test.ts"]);
+
+    expect(hasSeamTestFile("/fake/tests", "s3")).toBe(false);
+  });
+
+  test("matches a genuine hyphenated sibling sharing the module's prefix (s3-objects.test.ts)", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    vi.spyOn(fs, "readdirSync").mockReturnValue(["s3-objects.test.ts"]);
+
+    expect(hasSeamTestFile("/fake/tests", "s3")).toBe(true);
   });
 });
 
