@@ -95,6 +95,26 @@ work rather than worked around:
   marker, no tracker row and no native Issue Type. It is the template this
   plan replaces: PR 3 promotes it to a real B2 slice row.
 
+## Documentation reconciliation
+
+Three rows in [`README.md`](./README.md)'s Archive table (the CLI-evolution,
+agent-operator and m3l-console decision waves) record what each wave produced,
+including `impl:cli:u*` / `impl:cli:v*` / `impl:cli:x*` and, for the U-series,
+`Capability type`. Those statements are **accurate history and stay true until
+PR 3/PR 4 land** — the namespaces and the type vocabulary do not change before
+then, so rewriting them in PR 1 would make the table wrong at that moment
+instead of right.
+
+Reconcile them in **PR 3**, in the same change that actually moves the rows, and
+by _appending_ a forward reference rather than rewriting the historical claim —
+e.g. `impl:cli:u*` → ``impl:cli:u*`, re-homed to `impl:cli-evolution:u*` by
+ADR-0073``. The Archive table indexes frozen plans; its rows describe what
+shipped, so the fix is to point at current state, not to restate history as if
+it had always been this way.
+
+The archived plan files under `archive/**` themselves are **not** touched —
+they are explicitly frozen, and `archive/**` is excluded from `lint:md`.
+
 ## Definition of done
 
 - All seven PRs merged; `pnpm verify` green on `main`.
@@ -104,5 +124,6 @@ work rather than worked around:
 - On the live board: one view, `Type` and `Parent issue` populated, no item
   typed `Capability`, and the six declared milestones each carrying a
   description that matches its `priority:*` label's.
+- The three Archive-table rows reconciled per the section above (PR 3).
 - This file `git mv`d into [`archive/`](./archive/) with a landing date, and a
   row added to this directory's Archive table.
