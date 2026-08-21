@@ -467,6 +467,12 @@
       "M3LProcedureProblemCode",
       "M3LProcedureValidationProblem",
       "M3LProcedureSummary",
+      "M3LProcedureRunOptions",
+      "M3LProcedureTelemetry",
+      "M3LProcedureOutcomeBase",
+      "M3LProcedureOutcome",
+      "M3LProcedureTraceEntry",
+      "M3L_PROCEDURE_MAX_ITERATIONS",
       "resolveReference",
       "evaluateCondition",
       "deepEqual"

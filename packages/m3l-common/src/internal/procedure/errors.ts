@@ -4,11 +4,11 @@
  * narrow on `instanceof M3LError` and the machine-readable `code`, not on a
  * subclass identity — see `docs/reference/core/procedure.md` § Public API.
  *
- * Slice 2a (build-time validation) ships only
- * {@link M3LProcedureInvalidDefinitionError}; the run-loop codes
- * (`ERR_PROCEDURE_INVALID_OPTION`, `ERR_PROCEDURE_ITERATION_LIMIT`,
- * `ERR_PROCEDURE_NO_PROGRESS`, `ERR_PROCEDURE_UNDECLARED_JUMP`) land with the
- * `run()` slice that actually emits them.
+ * Slice 3a (`M3LProcedure.run()`) adds three more codes:
+ * {@link M3LProcedureInvalidOptionError}, {@link M3LProcedureIterationLimitError},
+ * and {@link M3LProcedureUndeclaredJumpError}. `ERR_PROCEDURE_NO_PROGRESS`
+ * (`M3LProcedureNoProgressError`) is deliberately NOT defined here — it has no
+ * call site until slice 3c's opt-in no-progress guard exists.
  *
  * Private to `core/procedure`; never re-exported through a public barrel.
  */
@@ -58,5 +58,139 @@ export class M3LProcedureInvalidDefinitionError extends M3LError {
       cause: options?.cause,
     });
     this.code = "ERR_PROCEDURE_INVALID_DEFINITION";
+  }
+}
+
+/**
+ * Thrown synchronously by {@link M3LProcedure.run} when a caller-supplied run
+ * option violates its contract — before any step executes. Distinct from
+ * `ERR_PROCEDURE_INVALID_DEFINITION`, which is a `build()`-time problem with
+ * the procedure's own declaration, not with a particular run's options.
+ *
+ * @example
+ * ```ts
+ * import { M3LError } from "@m3l-automation/m3l-common/core";
+ *
+ * declare const procedure: { run(options: unknown): Promise<unknown> };
+ *
+ * try {
+ *   await procedure.run({ maxIterations: -1 });
+ * } catch (error) {
+ *   if (error instanceof M3LError && error.code === "ERR_PROCEDURE_INVALID_OPTION") {
+ *     console.error(error.context["option"]);
+ *   }
+ * }
+ * ```
+ */
+export class M3LProcedureInvalidOptionError extends M3LError {
+  /** Narrows the inherited `code` to the literal `"ERR_PROCEDURE_INVALID_OPTION"`. */
+  override readonly code: "ERR_PROCEDURE_INVALID_OPTION";
+
+  /**
+   * @param message - Human-readable description of the failure.
+   * @param context - Structured diagnostic context (e.g. `{ option, value }`).
+   * @param options - Optional `cause` — a defense-in-depth chain for an
+   *   unexpected throw (e.g. a hostile getter) encountered while reading a
+   *   caller-supplied run option, distinct from the normal validation-failure
+   *   path which needs no `cause`.
+   */
+  constructor(
+    message: string,
+    context: Record<string, unknown>,
+    options?: { readonly cause?: unknown },
+  ) {
+    super(message, {
+      code: "ERR_PROCEDURE_INVALID_OPTION",
+      context,
+      cause: options?.cause,
+    });
+    this.code = "ERR_PROCEDURE_INVALID_OPTION";
+  }
+}
+
+/**
+ * Resolved as a `"failed"` outcome's `error` (never a rejection) by
+ * {@link M3LProcedure.run} when a run's step executions exceed a ceiling:
+ * either the overall run's iteration ceiling (`options.maxIterations`,
+ * defaulting to `M3L_PROCEDURE_MAX_ITERATIONS`) or one step's own declared
+ * `loop.maxRevisits` ceiling. `context["limit"]` discriminates the two —
+ * `"iterations"` or `"revisits"`.
+ *
+ * @example
+ * ```ts
+ * import { M3LError } from "@m3l-automation/m3l-common/core";
+ *
+ * declare const outcome: { status: string; error?: unknown };
+ *
+ * if (outcome.status === "failed" && outcome.error instanceof M3LError) {
+ *   if (outcome.error.code === "ERR_PROCEDURE_ITERATION_LIMIT") {
+ *     console.error(outcome.error.context["limit"]);
+ *   }
+ * }
+ * ```
+ */
+export class M3LProcedureIterationLimitError extends M3LError {
+  /** Narrows the inherited `code` to the literal `"ERR_PROCEDURE_ITERATION_LIMIT"`. */
+  override readonly code: "ERR_PROCEDURE_ITERATION_LIMIT";
+
+  /**
+   * @param message - Human-readable description of the failure.
+   * @param context - Structured diagnostic context, always carrying `limit`.
+   */
+  constructor(message: string, context: Record<string, unknown>) {
+    super(message, { code: "ERR_PROCEDURE_ITERATION_LIMIT", context });
+    this.code = "ERR_PROCEDURE_ITERATION_LIMIT";
+  }
+}
+
+/**
+ * Resolved as a `"failed"` outcome's `error` (never a rejection) by
+ * {@link M3LProcedure.run} when a step's `{ goTo }` flow directive names a
+ * target that either isn't a declared step id, or is declared but absent
+ * from the declaring step's own `jumpsTo` allowlist — or when the returned
+ * result's `flow` is malformed entirely (missing, `null`, a non-string
+ * `goTo`, or an unrecognized string outside the four recognized directive
+ * forms). Reported instead of silently falling through to the next declared
+ * step, silently succeeding a jump the declaring step never listed, or
+ * throwing a bare `TypeError`. `context["stepId"]` names the step whose flow
+ * directive was rejected; `context["goTo"]` carries the rejected target when
+ * one was attempted.
+ *
+ * @example
+ * ```ts
+ * import { M3LError } from "@m3l-automation/m3l-common/core";
+ *
+ * declare const outcome: { status: string; error?: unknown };
+ *
+ * if (outcome.status === "failed" && outcome.error instanceof M3LError) {
+ *   if (outcome.error.code === "ERR_PROCEDURE_UNDECLARED_JUMP") {
+ *     console.error(outcome.error.context["stepId"]);
+ *   }
+ * }
+ * ```
+ */
+export class M3LProcedureUndeclaredJumpError extends M3LError {
+  /** Narrows the inherited `code` to the literal `"ERR_PROCEDURE_UNDECLARED_JUMP"`. */
+  override readonly code: "ERR_PROCEDURE_UNDECLARED_JUMP";
+
+  /**
+   * @param message - Human-readable description of the failure.
+   * @param context - Structured diagnostic context, always carrying `stepId`.
+   * @param options - Optional `cause` — a defense-in-depth chain for an
+   *   unexpected throw (e.g. a hostile getter) encountered while reading a
+   *   step result's `flow`/`output`/`note`/`values` properties, distinct
+   *   from the normal malformed-flow path which needs no `cause`.
+   */
+  constructor(
+    message: string,
+    context: Record<string, unknown>,
+    options?: { readonly cause?: unknown },
+  ) {
+    super(message, {
+      code: "ERR_PROCEDURE_UNDECLARED_JUMP",
+      context,
+      cause: options?.cause,
+    });
+    this.code = "ERR_PROCEDURE_UNDECLARED_JUMP";
   }
 }

@@ -47,13 +47,15 @@ consumer. The measured slice sequence lives in
 (ADR-0072)" — keep that section in sync with the table below as each slice
 lands.
 
-| Slice                     | Contents                                                                                                                                                                                                   | Status                                                  |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| 1 — contract + conditions | This page (complete); `evaluateProcedureCondition`, the condition/value/reference type families, `M3L_PROCEDURE_CONDITION_MAX_DEPTH`, `M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH`                               | Landed (PR #580)                                        |
-| 2a — builder + validation | The step/case/build type families, `M3LProcedureBuilder`/`createProcedureBuilder`, build-time validation, a reduced `M3LProcedure` (constructor + `digest` + `describe()` only — `run()` lands in slice 3) | Landed (PR #582)                                        |
-| 2b — build-time hardening | The exhaustive declaration/cycle/pattern edge battery plus an adversarial boundary review pass over slice 2a                                                                                               | Landed (this PR)                                        |
-| 3 — the engine            | `M3LProcedure`, run-loop execution, tracing, cancellation                                                                                                                                                  | Not started                                             |
-| 4 — infra touch-ups       | Error-code catalog entries not needed by an earlier slice, barrel wiring, zone widening                                                                                                                    | Landing alongside the slice that first needs each piece |
+| Slice                         | Contents                                                                                                                                                                                                   | Status                                                  |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| 1 — contract + conditions     | This page (complete); `evaluateProcedureCondition`, the condition/value/reference type families, `M3L_PROCEDURE_CONDITION_MAX_DEPTH`, `M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH`                               | Landed (PR #580)                                        |
+| 2a — builder + validation     | The step/case/build type families, `M3LProcedureBuilder`/`createProcedureBuilder`, build-time validation, a reduced `M3LProcedure` (constructor + `digest` + `describe()` only — `run()` lands in slice 3) | Landed (PR #582)                                        |
+| 2b — build-time hardening     | The exhaustive declaration/cycle/pattern edge battery plus an adversarial boundary review pass over slice 2a                                                                                               | Landed (PR #583)                                        |
+| 3a — the core run loop        | `M3LProcedure.run()`, option validation, phases 1–3 (steps/cases/conclusion), flow directives, jump validation, iteration ceiling, cancellation, `continueOnFailure`/recovery, outcome + telemetry         | In progress                                             |
+| 3b — opt-in tracing           | `options.trace`/`options.logger`, the trace sink/entry types                                                                                                                                               | Not started                                             |
+| 3c — opt-in no-progress guard | `options.progress`, the no-progress guard, `ERR_PROCEDURE_NO_PROGRESS` (the 16th and final code)                                                                                                           | Not started                                             |
+| 4 — infra touch-ups           | Error-code catalog entries not needed by an earlier slice, barrel wiring, zone widening                                                                                                                    | Landing alongside the slice that first needs each piece |
 
 This page documents the **full, eventual** public surface (all 44 exports);
 `check:doc-exports` walks exports → docs, so a symbol documented here but not
@@ -321,6 +323,14 @@ The **engine**, never the step, interprets a directive:
   acyclicity is a build-time problem, so a jump cannot fail at run time from
   typed TypeScript. An untyped caller that returns a target outside `jumpsTo`
   gets `ERR_PROCEDURE_UNDECLARED_JUMP`.
+
+A step's returned result is caller data, not a trusted value: an untyped
+caller can return a `flow` that is `null`, a `goTo` that isn't a string, an
+unrecognized string outside the four forms above, or a result missing `flow`
+entirely. Every one of these is treated as an invalid jump target — the run
+resolves `"failed"` under `ERR_PROCEDURE_UNDECLARED_JUMP` rather than throwing
+a bare `TypeError` or silently advancing as if `"continue"` had been
+returned.
 
 ## Context
 
@@ -903,17 +913,25 @@ and throws `ERR_PROCEDURE_INVALID_OPTION` on any of:
   run is about to begin execution number `maxIterations + 1`.
 - `progress.witness` that is not a function, or `progress.maxStalledSteps` that
   is not a finite integer greater than `0`.
-- a `parameters` key the shape never declared, a `parameters` value containing a
-  non-finite number or a `BigInt` (it would fail `parametersDigest`), or a
-  dangerous parameter name (`__proto__`, `constructor`, `prototype`).
+- a `parameters` key the shape never declared, a `parameters` or `initialValues`
+  value containing a non-finite number or a `BigInt` (it would fail
+  `parametersDigest`, or a downstream condition's deep-equality check), a
+  dangerous key anywhere in either (`__proto__`, `constructor`, `prototype`),
+  or either value nesting deeper than `M3L_PROCEDURE_CONDITION_MAX_DEPTH`.
 
-`parameters` and `initialValues` are read **exactly once**, each property into a
-local, and copied into fresh frozen objects. A caller's object may be getter- or
-`Proxy`-backed and free to return a different value on every access, so
-validating one read and then storing a second, separate read would reproduce the
-"two observations of a mutable caller graph" defect `captureProgressConfig` was
-extracted to eliminate. Mutating the caller's object after `run()` is entered
-cannot change the run.
+`parameters` and `initialValues` are each walked through the **same** bounded,
+validating projection, **exactly once**: every property is read into a local
+and copied into a fresh, deeply frozen plain-data clone as it is validated, so
+neither value is ever read a second time by a later consumer (`parametersDigest`
+included). A caller's object may be getter- or `Proxy`-backed and free to return
+a different value on every access, so validating one read and then storing a
+second, separate read would reproduce the "two observations of a mutable caller
+graph" defect `captureProgressConfig` was extracted to eliminate — the same
+depth bound and single-pass projection additionally close an unbounded
+recursion over a caller-supplied `parameters`/`initialValues` graph (a
+maliciously deep or self-referential object), rather than letting it exhaust
+the call stack. Mutating the caller's object after `run()` is entered cannot
+change the run.
 
 ### What "frozen" means here
 
@@ -948,14 +966,32 @@ Starting at the first declared step, for each iteration:
    ordering [`core/pipeline`](./pipeline.md#describe-runs-at-phase-entry)
    established.
 5. **`execute`** — awaited. A throw ends the run with a `failed` outcome, unless
-   the step declares `continueOnFailure`.
+   the step declares `continueOnFailure`. `execute`'s **return value** is
+   distinct from a throw: a settled result that does not conform to
+   `M3LProcedureStepResult` (missing `flow`, or a `flow` outside the four
+   recognized directive forms — see [Flow directives](#flow-directives)) is an
+   engine-level contract violation, not a step failure, and is **never**
+   absorbed by `continueOnFailure` even when the step declares it — absorbing
+   it would let a step's own implementation bug masquerade as an ordinary,
+   expected failure.
 6. **Recovery** — with `continueOnFailure`, the failure is serialised **now**,
    while its context is still available, into an `M3LRunRecoveryEntry`
    (`{ item: <step id>, error: serializeErrorChain(error), recordedAt }` —
    [`core/diagnostics`](./diagnostics.md)'s shape and its redaction), appended
    under the `M3L_RECOVERY_LIMIT` ring buffer with the oldest evicted, and
    `recoveredTotal` incremented uncapped. The step's record is
-   `status: "recovered"` with no output, and the run advances.
+   `status: "recovered"` with no output. A step with no `loop` declaration
+   then **advances** to the next step in declaration order, exactly like a
+   `"continue"` directive — it never returned one, having thrown instead. A
+   step that **does** declare `loop` instead **retries**: the engine
+   re-executes the same step rather than advancing past it, because `loop`'s
+   whole purpose (see [Steps](#steps)) is a step the author has explicitly
+   opted into revisiting. This retry is bounded exactly like an explicit
+   `goTo` back-edge — by `loop.maxRevisits`, reported as
+   `ERR_PROCEDURE_ITERATION_LIMIT` with `context.limit === "revisits"` once
+   exceeded — and is never itself a synthesized `"goTo"` flow directive: that
+   would require the step to name itself in its own `jumpsTo`, an obligation
+   `loop` exists precisely to avoid.
 7. **Fold** — a **new** frozen context is derived.
 8. **Directive** — as [Flow directives](#flow-directives) defines. A `"resolve"`
    runs phase 2 immediately; on a match the run concludes with the remaining
