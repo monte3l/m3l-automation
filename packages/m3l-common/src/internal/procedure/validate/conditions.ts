@@ -2,7 +2,11 @@
  * `internal/procedure/validate/conditions` — walks every case's condition
  * tree exactly once, both validating (pattern safety, depth bound, unknown
  * references, literal scalar-ness) and, in the SAME pass, constructing a
- * fresh, plain, primitives-only projected copy of the tree.
+ * fresh, plain, primitives-only projected copy of the tree. The leaf-level
+ * validators this walk calls at each node (operator membership, pattern
+ * safety, scalar-literal checks, discriminant rendering) live in the sibling
+ * `./condition-literals.js` — this file owns only the recursive
+ * walk-and-project orchestration and its accumulator state.
  *
  * **Defect fix (ADR-0072, slice 2a review):** the projected copy — never the
  * caller's original `condition` reference — is what {@link walkAllConditions}
@@ -20,136 +24,53 @@
  * detection: this walk's recursion is bounded by a logical depth counter,
  * incremented on every `and`/`or`/`not` descent regardless of the input's
  * actual object identity, so a self-referencing node simply hits
- * `M3L_PROCEDURE_CONDITION_MAX_DEPTH` like any other too-deep tree.
+ * `M3L_PROCEDURE_CONDITION_MAX_DEPTH` like any other too-deep tree — **and**
+ * by a total-visit counter ({@link M3L_PROCEDURE_CONDITION_MAX_NODE_VISITS}),
+ * incremented on every node visited regardless of depth or identity. The
+ * depth bound alone only stops a chain; it does nothing for BREADTH — a
+ * shared/aliased sub-tree referenced multiple times by one parent (e.g. an
+ * `and` node whose `operands` array holds three references to itself) makes
+ * a fresh projected node get allocated per *visit*, not per unique input
+ * object, so branching-factor `^` depth visits are possible well within the
+ * depth bound. A legal, non-circular DAG can reproduce the same explosion on
+ * the success path, so this is a genuine unbounded-breadth bound, not merely
+ * a circularity guard.
  *
  * Private to `core/procedure`; never re-exported through a public barrel.
  */
 
-import {
-  M3L_PROCEDURE_CONDITION_MAX_DEPTH,
-  M3L_PROCEDURE_MAX_PATTERN_LENGTH,
-} from "../../../core/procedure/types.js";
+import { M3L_PROCEDURE_CONDITION_MAX_DEPTH } from "../../../core/procedure/types.js";
 
-import { DANGEROUS_KEYS, field, problem } from "./shared.js";
+import {
+  describeInvalidLiteral,
+  describeUnknownDiscriminant,
+  isPatternSafe,
+  isValidCompareOperator,
+  isValidScalarLiteral,
+} from "./condition-literals.js";
+import {
+  DANGEROUS_KEYS,
+  MAX_REFERENCE_ARRAY_LENGTH,
+  field,
+  problem,
+} from "./shared.js";
 import type { NormalizedCase } from "./shared.js";
 import type { M3LProcedureValidationProblem } from "../../../core/procedure/build-types.js";
-import type { M3LProcedureScalar } from "../../../core/procedure/types.js";
-
-/** The scan's two flags: whether the previous character was an unconsumed `\\`, and whether the scan is inside a `[...]` character class. */
-interface PatternScanState {
-  readonly inEscape: boolean;
-  readonly inClass: boolean;
-}
-
-/** Whether `char` would repeat a preceding group — the four quantifier starts this scan treats as "quantified". */
-function isQuantifierChar(char: string | undefined): boolean {
-  return char === "+" || char === "*" || char === "?" || char === "{";
-}
 
 /**
- * Advances the scan by one character, returning the next state and whether
- * THIS character is an unescaped, out-of-class `)` immediately followed by a
- * quantifier — the one signal {@link hasQuantifiedGroup} looks for.
+ * Ceiling on the TOTAL number of condition nodes visited while projecting
+ * one case's condition tree — distinct from
+ * {@link M3L_PROCEDURE_CONDITION_MAX_DEPTH}, which only bounds recursion
+ * DEPTH and does nothing to stop an aliased sub-tree from being visited an
+ * exponential number of times at a legal depth. Internal build-time safety
+ * bound only — not part of the documented public contract, so it is not
+ * re-exported through the public barrel. A few thousand is generous for any
+ * legitimate, hand-authored condition tree (depth 16 with reasonable
+ * branching per level is nowhere close to this) while remaining firm against
+ * the demonstrated exploit (a handful of aliased nodes reaching millions of
+ * visits well under the depth bound).
  */
-function advancePatternScan(
-  state: PatternScanState,
-  char: string,
-  next: string | undefined,
-): { readonly state: PatternScanState; readonly quantifiedClose: boolean } {
-  if (state.inEscape) {
-    return {
-      state: { inEscape: false, inClass: state.inClass },
-      quantifiedClose: false,
-    };
-  }
-  if (char === "\\") {
-    return {
-      state: { inEscape: true, inClass: state.inClass },
-      quantifiedClose: false,
-    };
-  }
-  if (state.inClass) {
-    return {
-      state: { inEscape: false, inClass: char !== "]" },
-      quantifiedClose: false,
-    };
-  }
-  if (char === "[") {
-    return {
-      state: { inEscape: false, inClass: true },
-      quantifiedClose: false,
-    };
-  }
-  return { state, quantifiedClose: char === ")" && isQuantifierChar(next) };
-}
-
-/**
- * Scans `pattern` left-to-right for a `)` that closes a group and is
- * immediately followed by a quantifier (`+`, `*`, `?`, `{`), tracking two
- * flags — "in escape" and "in character class" — so an escaped `\\)` and a
- * `)` inside `[...]` are never mistaken for a group closer.
- */
-function hasQuantifiedGroup(pattern: string): boolean {
-  let state: PatternScanState = { inEscape: false, inClass: false };
-  for (let index = 0; index < pattern.length; index += 1) {
-    const char = pattern[index];
-    if (char === undefined) continue;
-    const result = advancePatternScan(state, char, pattern[index + 1]);
-    if (result.quantifiedClose) return true;
-    state = result.state;
-  }
-  return false;
-}
-
-function isPatternSafe(pattern: string): boolean {
-  if (pattern.length > M3L_PROCEDURE_MAX_PATTERN_LENGTH) return false;
-  if (hasQuantifiedGroup(pattern)) return false;
-  try {
-    // Caller-authored, build-time-only compile check; the whole point of
-    // this pass is to catch a pattern `new RegExp` rejects before it ever
-    // reaches a run.
-    new RegExp(pattern);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** One of the four types {@link M3LProcedureScalar} admits — `bigint`, a plain object, a function, and a symbol are all rejected. */
-function isValidScalarLiteral(value: unknown): value is M3LProcedureScalar {
-  return (
-    typeof value === "string" ||
-    (typeof value === "number" && Number.isFinite(value)) ||
-    typeof value === "boolean" ||
-    value === null
-  );
-}
-
-/** A short, safe-to-interpolate description of a rejected literal's shape — never calls `String()` on the value itself, since a hostile `Symbol` or object could throw or leak content. */
-function describeInvalidLiteral(value: unknown): string {
-  if (value === undefined) return "undefined";
-  if (typeof value === "number") return "a non-finite number";
-  return `a value of type '${typeof value}'`;
-}
-
-/**
- * Renders an unrecognized `source`/`kind` discriminant for a message or a
- * projected placeholder without ever calling `.toString()`/`String()` on an
- * object or symbol — both could stringify to `"[object Object]"` or throw.
- */
-function describeUnknownDiscriminant(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (value === undefined) return "undefined";
-  if (value === null) return "null";
-  if (
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    typeof value === "bigint"
-  ) {
-    return String(value);
-  }
-  return typeof value;
-}
+const M3L_PROCEDURE_CONDITION_MAX_NODE_VISITS = 5000;
 
 interface ConditionWalkAccumulator {
   readonly caseId: string;
@@ -159,11 +80,49 @@ interface ConditionWalkAccumulator {
   readonly tooDeepProblems: M3LProcedureValidationProblem[];
   readonly unknownReferenceProblems: M3LProcedureValidationProblem[];
   readonly declarationProblems: M3LProcedureValidationProblem[];
+  /**
+   * Mutable list, shared across one case's whole walk, whose LENGTH counts
+   * every {@link projectCondition} visit regardless of depth or object
+   * identity — see the module doc for why the depth bound alone cannot stop
+   * an aliased sub-tree from being visited an exponential number of times.
+   * Mutated only via `.push()`, never property assignment, matching every
+   * other accumulator field in this file — a plain `count` property would
+   * trip `no-param-reassign`'s `props: true` check on `acc`.
+   */
+  readonly nodeVisits: unknown[];
 }
 
-/** Fresh copy of a reference's `path`, filtering any non-string entry — mirrors `normalizeJumpsTo`'s filter-and-copy shape. Returns `undefined` when there is nothing to carry (never an empty array). */
-function projectPath(rawPath: unknown): readonly string[] | undefined {
-  if (!Array.isArray(rawPath)) return undefined;
+/**
+ * Fresh copy of a reference's `path`, filtering any non-string entry —
+ * mirrors `normalizeJumpsTo`'s filter-and-copy shape. Returns `undefined`
+ * when there is nothing to carry (never an empty array). A non-array `path`
+ * stays `undefined` with no problem reported — there is simply nothing to
+ * carry. A `path` that IS an array but declares more than
+ * {@link MAX_REFERENCE_ARRAY_LENGTH} entries is a genuinely malformed
+ * declaration: silently projecting it to `undefined` (as a length-only
+ * sparse array otherwise would, forcing `.filter()` to perform one
+ * `HasProperty` check per declared index) would make the reference resolve
+ * the ROOT value instead of the nested one it was written to reach — a
+ * caller-visible correctness bug, not just a cost concern — so this reports
+ * `ERR_PROCEDURE_INVALID_DECLARATION` instead.
+ */
+function projectPath(
+  rawPath: unknown,
+  acc: ConditionWalkAccumulator,
+): readonly string[] | undefined {
+  if (!Array.isArray(rawPath)) {
+    return undefined;
+  }
+  if (rawPath.length > MAX_REFERENCE_ARRAY_LENGTH) {
+    acc.declarationProblems.push(
+      problem({
+        code: "ERR_PROCEDURE_INVALID_DECLARATION",
+        message: `M3LProcedure: case '${acc.caseId}' has a reference path array with more than ${MAX_REFERENCE_ARRAY_LENGTH} entries`,
+        caseId: acc.caseId,
+      }),
+    );
+    return undefined;
+  }
   const path = rawPath.filter(
     (entry): entry is string => typeof entry === "string",
   );
@@ -209,7 +168,7 @@ function projectStepReference(
       }),
     );
   }
-  const path = projectPath(field(reference, "path"));
+  const path = projectPath(field(reference, "path"), acc);
   return {
     source: "step",
     step: typeof step === "string" ? step : "",
@@ -238,7 +197,7 @@ function projectValueReference(
       }),
     );
   }
-  const path = projectPath(field(reference, "path"));
+  const path = projectPath(field(reference, "path"), acc);
   return {
     source: "value",
     key: typeof key === "string" ? key : "",
@@ -275,7 +234,7 @@ function projectParameterReference(
       );
     }
   }
-  const path = projectPath(field(reference, "path"));
+  const path = projectPath(field(reference, "path"), acc);
   return {
     source: "parameter",
     key: typeof key === "string" ? key : "",
@@ -296,7 +255,16 @@ function projectReference(
   reference: unknown,
   acc: ConditionWalkAccumulator,
 ): unknown {
-  if (reference === null || typeof reference !== "object") return undefined;
+  if (reference === null || typeof reference !== "object") {
+    acc.declarationProblems.push(
+      problem({
+        code: "ERR_PROCEDURE_INVALID_DECLARATION",
+        message: `M3LProcedure: case '${acc.caseId}' has a reference that is not an object (received ${describeUnknownDiscriminant(reference)})`,
+        caseId: acc.caseId,
+      }),
+    );
+    return undefined;
+  }
   const source = field(reference, "source");
 
   switch (source) {
@@ -320,13 +288,19 @@ function projectReference(
   }
 }
 
-/** Reports the too-deep problem at most once per case, regardless of how many branches independently trip the depth bound. */
-function reportConditionTooDeep(acc: ConditionWalkAccumulator): void {
+/**
+ * Reports the too-deep/too-large problem at most once per case, regardless
+ * of how many branches independently trip either bound. Reused for BOTH the
+ * depth bound and the node-visit-count bound — see the module doc — since
+ * both describe the same underlying condition: this case's tree is too
+ * large to build safely.
+ */
+function reportConditionTooLarge(acc: ConditionWalkAccumulator): void {
   if (acc.tooDeepProblems.length > 0) return;
   acc.tooDeepProblems.push(
     problem({
       code: "ERR_PROCEDURE_CONDITION_TOO_DEEP",
-      message: `M3LProcedure: case '${acc.caseId}' condition nests past the max depth`,
+      message: `M3LProcedure: case '${acc.caseId}' condition nests past the max depth or visits too many total nodes`,
       caseId: acc.caseId,
     }),
   );
@@ -356,6 +330,13 @@ function projectMatchesNode(
   };
 }
 
+/**
+ * Projects a `compare` node, validating `operator` against the six literals
+ * `M3LProcedureCompareOperator` admits — the defect fix: before this, ANY
+ * string (a typo, a garbage value) flowed straight through into the runtime
+ * case table and the digest, unvalidated, mirroring how an unrecognized
+ * condition `kind` or reference `source` is now handled.
+ */
 function projectCompareNode(
   condition: unknown,
   acc: ConditionWalkAccumulator,
@@ -363,10 +344,19 @@ function projectCompareNode(
   const left = projectReference(field(condition, "left"), acc);
   const operator = field(condition, "operator");
   const right = projectReference(field(condition, "right"), acc);
+  if (!isValidCompareOperator(operator)) {
+    acc.declarationProblems.push(
+      problem({
+        code: "ERR_PROCEDURE_INVALID_DECLARATION",
+        message: `M3LProcedure: case '${acc.caseId}' has a compare condition with an unrecognized operator '${describeUnknownDiscriminant(operator)}'`,
+        caseId: acc.caseId,
+      }),
+    );
+  }
   return {
     kind: "compare",
     left,
-    operator: typeof operator === "string" ? operator : "",
+    operator: isValidCompareOperator(operator) ? operator : "",
     right,
   };
 }
@@ -447,18 +437,40 @@ function projectConditionNode(
  * {@link M3L_PROCEDURE_CONDITION_MAX_DEPTH} levels deep regardless of the
  * input's actual object shape — a self-referencing (circular) node is
  * caught by this bound rather than needing its own cycle check, since the
- * depth counter increments on every descent independent of object identity.
+ * depth counter increments on every descent independent of object identity
+ * — AND bounded to at most {@link M3L_PROCEDURE_CONDITION_MAX_NODE_VISITS}
+ * total visits across the whole tree, checked and incremented on every
+ * single call regardless of depth: an aliased sub-tree referenced multiple
+ * times by one parent is visited (and a fresh node allocated) once per
+ * occurrence, not once per unique object, so the depth bound alone cannot
+ * stop `branchingFactor ^ depth` visits from happening at a legal, shallow
+ * depth. A non-object condition (a garbage `kind`-less value some caller
+ * substituted for a real node) is likewise `ERR_PROCEDURE_INVALID_DECLARATION`
+ * rather than silently projecting to `undefined`.
  */
 function projectCondition(
   condition: unknown,
   acc: ConditionWalkAccumulator,
   depth: number,
 ): unknown {
-  if (depth > M3L_PROCEDURE_CONDITION_MAX_DEPTH) {
-    reportConditionTooDeep(acc);
+  acc.nodeVisits.push(undefined);
+  if (
+    acc.nodeVisits.length > M3L_PROCEDURE_CONDITION_MAX_NODE_VISITS ||
+    depth > M3L_PROCEDURE_CONDITION_MAX_DEPTH
+  ) {
+    reportConditionTooLarge(acc);
     return undefined;
   }
-  if (condition === null || typeof condition !== "object") return undefined;
+  if (condition === null || typeof condition !== "object") {
+    acc.declarationProblems.push(
+      problem({
+        code: "ERR_PROCEDURE_INVALID_DECLARATION",
+        message: `M3LProcedure: case '${acc.caseId}' has a condition that is not an object (received ${describeUnknownDiscriminant(condition)})`,
+        caseId: acc.caseId,
+      }),
+    );
+    return undefined;
+  }
   return projectConditionNode(condition, field(condition, "kind"), acc, depth);
 }
 
@@ -496,6 +508,7 @@ export function walkAllConditions(
       tooDeepProblems: [],
       unknownReferenceProblems: [],
       declarationProblems: [],
+      nodeVisits: [],
     };
     // `entry.condition` was already read once, in `normalizeCase` — this
     // walk reads the tree's nested fields (never `entry.raw` again) and
