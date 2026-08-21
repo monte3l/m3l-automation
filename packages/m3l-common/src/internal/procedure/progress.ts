@@ -9,7 +9,11 @@
  * Private to `core/procedure`; never re-exported through a public barrel.
  */
 
-import { isFunction, isNumber } from "../../core/utils/guards.js";
+import {
+  isFunction,
+  isNumber,
+  isPlainObject,
+} from "../../core/utils/guards.js";
 
 import { M3LPollingInvalidOptionError } from "../polling/errors.js";
 import { ProgressTracker } from "../polling/progress.js";
@@ -43,14 +47,26 @@ export interface CapturedProgressConfig<TShape extends M3LProcedureShape> {
  * between this read and a later one (the same "two observations of a
  * mutable caller graph" hazard `parameters`/`initialValues`/`trace` capture
  * already close). Returns `undefined` when `progress` is `undefined` — the
- * guard is opt-in.
+ * guard is opt-in. Rejects a present, non-plain-object value (`null`, an
+ * array, a primitive) with {@link M3LProcedureInvalidOptionError} before
+ * reading either field, mirroring `validateTraceOption`/
+ * `ensurePlainRunOption`'s convention in `run-options.ts` for exactly this
+ * shape of caller input.
  */
 export function captureProgressOptions<TShape extends M3LProcedureShape>(
-  progress: M3LProcedureProgressOptions<TShape> | undefined,
+  progress: unknown,
 ): CapturedProgressConfig<TShape> | undefined {
   if (progress === undefined) return undefined;
-  const witness = progress.witness;
-  const maxStalledSteps = progress.maxStalledSteps;
+  if (!isPlainObject(progress)) {
+    throw new M3LProcedureInvalidOptionError(
+      "progress must be a plain object when supplied",
+      { option: "progress" },
+    );
+  }
+  const typedProgress =
+    progress as unknown as M3LProcedureProgressOptions<TShape>;
+  const witness = typedProgress.witness;
+  const maxStalledSteps = typedProgress.maxStalledSteps;
   return Object.freeze({ witness, maxStalledSteps });
 }
 

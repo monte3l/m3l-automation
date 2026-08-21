@@ -34,6 +34,7 @@ import type {
   M3LProcedureCase,
   M3LProcedureContext,
   M3LProcedureFallback,
+  M3LProcedureProgressOptions,
   M3LProcedureProgressWitness,
   M3LProcedureShape,
 } from "../src/core/procedure/index.js";
@@ -802,6 +803,35 @@ describe("no-progress guard", () => {
         expect(error.code).toBe("ERR_PROCEDURE_INVALID_OPTION");
         expect(error.context["option"]).toBe("progress.maxStalledSteps");
         expect(error.context["value"]).toBe(badValue);
+        expect(execSpy).not.toHaveBeenCalled();
+      },
+    );
+
+    test.each([
+      ["null", null],
+      ["an array", []],
+      ["a string", "not-an-object"],
+    ])(
+      "progress that is %s throws ERR_PROCEDURE_INVALID_OPTION before any step executes",
+      (_label, badProgress) => {
+        const execSpy = vi.fn();
+        const thrown = captureSyncThrow(() => {
+          const procedure = buildValidationProcedure(execSpy);
+          void procedure.run({
+            deps: {},
+            parameters: {},
+            // Deliberate runtime-only violation of the declared
+            // `M3LProcedureProgressOptions<TShape> | undefined` type (an
+            // untyped caller could still hand back `null`, an array, or a
+            // primitive) — proves the boundary guard rejects a malformed
+            // `progress` itself, distinct from a malformed `progress.witness`
+            // or `progress.maxStalledSteps` sub-field covered above.
+            progress: badProgress as unknown as M3LProcedureProgressOptions<TS>,
+          });
+        });
+        const error = asM3LError(thrown);
+        expect(error.code).toBe("ERR_PROCEDURE_INVALID_OPTION");
+        expect(error.context["option"]).toBe("progress");
         expect(execSpy).not.toHaveBeenCalled();
       },
     );
