@@ -3,10 +3,12 @@
  *
  * This barrel surfaces the condition-evaluation subset (slice 1), the
  * builder and build-time validation surface (slice 2a), {@link M3LProcedure.run}
- * (slice 3a) — the option/outcome/telemetry type family — and, as of slice
- * 3b, opt-in tracing (`options.trace`/`options.logger`). The no-progress
- * guard (`options.progress`) lands in a later slice as an additive field on
- * {@link M3LProcedureRunOptions}.
+ * (slice 3a) — the option/outcome/telemetry type family — slice 3b's opt-in
+ * tracing (`options.trace`/`options.logger`), and, as of slice 3c, the
+ * opt-in no-progress guard (`options.progress`,
+ * {@link M3LProcedureProgressOptions}, {@link M3LProcedureProgressWitness})
+ * — completing the engine's public surface (44 exports total per the
+ * landing plan in `docs/reference/core/procedure.md`).
  *
  * @packageDocumentation
  */
@@ -57,6 +59,8 @@ export {
 export type {
   M3LProcedureOutcome,
   M3LProcedureOutcomeBase,
+  M3LProcedureProgressOptions,
+  M3LProcedureProgressWitness,
   M3LProcedureRunOptions,
   M3LProcedureTelemetry,
   M3LProcedureTraceEntry,

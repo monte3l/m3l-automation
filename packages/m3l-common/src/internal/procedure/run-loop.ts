@@ -14,6 +14,7 @@
 import { checkAfterAdvance, checkStepBoundary } from "./guards.js";
 import { interpretFlow } from "./flow.js";
 import { evaluateCases } from "./outcome.js";
+import { createProgressTracker } from "./progress.js";
 import { executeOneStep } from "./step-exec.js";
 import { projectFlowToScalar } from "./trace.js";
 
@@ -26,6 +27,8 @@ import type {
   M3LProcedureShape,
   M3LProcedureStepRecord,
 } from "../../core/procedure/types.js";
+import type { ProgressTracker } from "../polling/progress.js";
+import type { CapturedProgressConfig } from "./progress.js";
 import type {
   CasesPass,
   FlowDecision,
@@ -151,14 +154,17 @@ async function advanceOneStep<TShape extends M3LProcedureShape>(
  * `flow.ts`'s `interpretFlow` has classified its directive. `"failed"` (an
  * undeclared flow) ends the run immediately — it never reaches the
  * post-advance guard, since it was never a genuine advance. For the
- * `"advance"` arm, the post-advance guard (abort only, this slice) wins
- * first if it fires; otherwise the caller continues looping from the
- * resolved index.
+ * `"advance"` arm, the post-advance guard (abort, then the opt-in
+ * no-progress sample) wins first if it fires; otherwise the caller
+ * continues looping from the resolved index.
  */
 function resolveStepFlow<TShape extends M3LProcedureShape>(
   runtime: ProcedureRuntime<TShape>,
   context: M3LProcedureContext<TShape>,
   decision: FlowDecision<TShape>,
+  stepId: TShape["stepId"],
+  progressTracker: ProgressTracker | undefined,
+  progress: CapturedProgressConfig<TShape> | undefined,
 ): FlowResolution<TShape> {
   switch (decision.kind) {
     case "failed":
@@ -178,7 +184,14 @@ function resolveStepFlow<TShape extends M3LProcedureShape>(
         result: { kind: "matched", pass: decision.pass },
       };
     case "advance": {
-      const afterAdvance = checkAfterAdvance(runtime, context, decision);
+      const afterAdvance = checkAfterAdvance(
+        runtime,
+        context,
+        decision,
+        stepId,
+        progressTracker,
+        progress,
+      );
       if (afterAdvance !== undefined) {
         return { kind: "return", result: afterAdvance };
       }
@@ -200,6 +213,8 @@ function resolveAfterAdvance<TShape extends M3LProcedureShape>(
   flow: unknown,
   index: number,
   resolveChecks: number,
+  progressTracker: ProgressTracker | undefined,
+  progress: CapturedProgressConfig<TShape> | undefined,
 ): PostAdvanceResolution<TShape> {
   const isLast = index === runtime.steps.length - 1;
   const decision = interpretFlow(
@@ -212,7 +227,14 @@ function resolveAfterAdvance<TShape extends M3LProcedureShape>(
     resolveChecks,
     (ctx): CasesPass<TShape> => evaluateCases(runtime, toConditionScope(ctx)),
   );
-  const flowResolution = resolveStepFlow(runtime, context, decision);
+  const flowResolution = resolveStepFlow(
+    runtime,
+    context,
+    decision,
+    step.id,
+    progressTracker,
+    progress,
+  );
   if (flowResolution.kind === "return") {
     return {
       kind: "return",
@@ -239,13 +261,23 @@ function resolveAfterRetry<TShape extends M3LProcedureShape>(
   context: M3LProcedureContext<TShape>,
   index: number,
   resolveChecks: number,
+  stepId: TShape["stepId"],
+  progressTracker: ProgressTracker | undefined,
+  progress: CapturedProgressConfig<TShape> | undefined,
 ): PostAdvanceResolution<TShape> {
   const decision: Extract<FlowDecision<TShape>, { kind: "advance" }> = {
     kind: "advance",
     index,
     resolveChecks,
   };
-  const guardFailure = checkAfterAdvance(runtime, context, decision);
+  const guardFailure = checkAfterAdvance(
+    runtime,
+    context,
+    decision,
+    stepId,
+    progressTracker,
+    progress,
+  );
   if (guardFailure !== undefined) {
     return { kind: "return", resolveChecks, result: guardFailure };
   }
@@ -266,9 +298,19 @@ function resolveAfterFold<TShape extends M3LProcedureShape>(
   >,
   index: number,
   resolveChecks: number,
+  progressTracker: ProgressTracker | undefined,
+  progress: CapturedProgressConfig<TShape> | undefined,
 ): PostAdvanceResolution<TShape> {
   if (folded.kind === "retry") {
-    return resolveAfterRetry(runtime, context, index, resolveChecks);
+    return resolveAfterRetry(
+      runtime,
+      context,
+      index,
+      resolveChecks,
+      step.id,
+      progressTracker,
+      progress,
+    );
   }
   return resolveAfterAdvance(
     runtime,
@@ -277,6 +319,8 @@ function resolveAfterFold<TShape extends M3LProcedureShape>(
     folded.flow,
     index,
     resolveChecks,
+    progressTracker,
+    progress,
   );
 }
 
@@ -288,14 +332,23 @@ function resolveAfterFold<TShape extends M3LProcedureShape>(
  * otherwise ends ordinarily (`"ended"`) once `"stop"` fires or the last
  * declared step returns `"continue"` — the caller then runs the final,
  * concluding case pass.
+ *
+ * `progress` opts a run into the no-progress guard sampled after each
+ * continuing step's advance — see `internal/procedure/guards.ts`'s
+ * `checkAfterAdvance`.
  */
 export async function runPhaseOne<TShape extends M3LProcedureShape>(
   runtime: ProcedureRuntime<TShape>,
   initialContext: M3LProcedureContext<TShape>,
   maxIterations: number,
   tracer: M3LProcedureTracer<TShape>,
+  progress: CapturedProgressConfig<TShape> | undefined,
 ): Promise<PhaseOneOutcome<TShape>> {
   let context = initialContext;
+  const progressTracker = createProgressTracker<TShape>(
+    progress,
+    () => context,
+  );
   const executedSteps: M3LProcedureStepRecord[] = [];
   let resolveChecks = 0;
   let index = 0;
@@ -325,6 +378,8 @@ export async function runPhaseOne<TShape extends M3LProcedureShape>(
       folded,
       index,
       resolveChecks,
+      progressTracker,
+      progress,
     );
     resolveChecks = afterAdvance.resolveChecks;
     if (afterAdvance.kind === "return") {
