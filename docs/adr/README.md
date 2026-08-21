@@ -95,8 +95,8 @@ surface).
 | 0048 | [Grade the destructive confirmation by target, not only by action](./0048-target-graded-destructive-confirmation.md)                                      | Accepted                         |
 | 0049 | [A cooperative cancellation contract for long-running operations](./0049-cooperative-cancellation-contract.md)                                            | Accepted                         |
 | 0050 | [GitHub platform-feature stance](./0050-github-platform-feature-stance.md)                                                                                | Partially superseded by ADR-0052 |
-| 0051 | [Semantic priority vocabulary for labels, milestones, and tracker cells](./0051-semantic-priority-vocabulary.md)                                          | Accepted                         |
-| 0052 | [Hub board identity and field taxonomy](./0052-hub-board-identity-and-field-taxonomy.md)                                                                  | Accepted                         |
+| 0051 | [Semantic priority vocabulary for labels, milestones, and tracker cells](./0051-semantic-priority-vocabulary.md)                                          | Accepted; amended by ADR-0073    |
+| 0052 | [Hub board identity and field taxonomy](./0052-hub-board-identity-and-field-taxonomy.md)                                                                  | Partially superseded by ADR-0073 |
 | 0053 | [CLI-first evolution programme: from launcher to product](./0053-cli-first-evolution-programme.md)                                                        | Accepted                         |
 | 0054 | [Typed command-module contract and hybrid execution](./0054-command-module-contract-and-hybrid-execution.md)                                              | Accepted                         |
 | 0055 | [Declarative, enumerable operations in script config](./0055-declarative-operation-introspection.md)                                                      | Accepted                         |
@@ -117,3 +117,4 @@ surface).
 | 0070 | [Console audit, self-observability, and the display-vs-persist rule](./0070-console-audit-and-observability.md)                                           | Accepted                         |
 | 0071 | [Console containerization and local-first deployment](./0071-console-containerization-deployment.md)                                                      | Accepted                         |
 | 0072 | [Reviewable-slice discipline for PRs and submodule landings](./0072-reviewable-slice-discipline.md)                                                       | Accepted                         |
+| 0073 | [Hub board classification, hierarchy, and a single authoritative view](./0073-hub-board-classification-and-hierarchy.md)                                  | Accepted                         |

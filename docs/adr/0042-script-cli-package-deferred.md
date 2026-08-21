@@ -257,3 +257,15 @@ U-series in `docs/plans/IMPLEMENTATION.md`'s m3l-cli build-out section.
   pattern)](./0039-llm-integration-out-of-scope.md).
 - Source evaluation: `docs/plans/archive/2026-08-13-post-comparison-hardening-wave.md`
   §8.
+
+## Update (2026-08-21): the U-series moved out of the build-out section
+
+This ADR's activation record placed the U-series in
+`docs/plans/IMPLEMENTATION.md`'s "m3l-cli build-out" section.
+[ADR-0073](0073-hub-board-classification-and-hierarchy.md) moved it to a
+dedicated `## CLI evolution wave (U-series)` section, because that one section
+had accumulated three separate programmes (U/V/X) and so forced a single
+section-derived Issue Type onto all of them. The build-out section itself
+**remains**, holding this ADR's own shipped 8b–8g phases on the unchanged
+`impl:cli:` key namespace — nothing recorded here about the deferral, the
+activation, or the 8b–8g scope changes.
