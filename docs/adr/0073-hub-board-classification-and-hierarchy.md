@@ -394,7 +394,9 @@ cause, for a setting nothing in the pipeline writes, would be noise.
   [ADR-0072](0072-reviewable-slice-discipline.md) (the slice discipline the
   epic/slice hierarchy exists to make trackable);
   `docs/contributing/filing-work.md` (the Priority/Type/Status legends and the
-  view-setup steps, rewritten alongside this ADR).
+  view-setup steps, rewritten alongside this ADR);
+  [`docs/plans/2026-08-21-hub-board-restructure.md`](../plans/2026-08-21-hub-board-restructure.md)
+  (the seven-PR landing sequence and its migration hazards).
 - Issues: #576 (the hand-built B2 landing plan promoted to a tracker row here);
   #474 (B2, whose closed-vs-`To Do` mismatch is the other half of the live
   `check:hub-drift` failure).
