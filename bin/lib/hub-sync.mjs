@@ -226,6 +226,9 @@ const IMPLEMENTATION_ANCHORS = {
   postComparisonHardeningWave:
     "#post-comparison-hardening-wave--adr-0040004100420043",
   m3lCliBuildOut: "#m3l-cli-build-out--adr-0042-activation-issue-333",
+  cliEvolutionWave: "#cli-evolution-wave-u-series",
+  agentOperatorWave: "#agent-operator-wave-v-series",
+  consoleWave: "#m3l-console-wave-x-series",
   codifiedProcedureWave:
     "#codified-procedure-engine-wave--adr-0046004700480049",
   gated: "#gated-library-modules--deferred-decisions-later",
@@ -255,6 +258,14 @@ const IMPLEMENTATION_NAMESPACES = {
   capabilityDeepeningWave: "capability",
   postComparisonHardeningWave: "hardening",
   m3lCliBuildOut: "cli",
+  // ADR-0073's three programme namespaces. Every row moved out of the `cli`
+  // namespace carries its old `impl:cli:<slug>` key as a legacyKey (see the
+  // section blocks below), so an issue whose marker still holds the old key
+  // resolves to its item instead of reading as vanished — which planIssueSync
+  // would close as "removed from source trackers".
+  cliEvolutionWave: "cli-evolution",
+  agentOperatorWave: "agent-operator",
+  consoleWave: "console",
   codifiedProcedureWave: "procedure",
   gated: "gated",
 };
@@ -281,6 +292,9 @@ const TYPE_BY_IMPLEMENTATION_SECTION = {
   capabilityDeepeningWave: ISSUE_TYPES.libraryCapability,
   postComparisonHardeningWave: ISSUE_TYPES.libraryCapability,
   m3lCliBuildOut: ISSUE_TYPES.cliCapability,
+  cliEvolutionWave: ISSUE_TYPES.cliCapability,
+  agentOperatorWave: ISSUE_TYPES.libraryCapability,
+  consoleWave: ISSUE_TYPES.packageCapability,
   codifiedProcedureWave: ISSUE_TYPES.libraryCapability,
   gated: ISSUE_TYPES.libraryCapability,
 };
@@ -823,6 +837,111 @@ export function actionableItems(roadmap, implementation) {
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.m3lCliBuildOut,
         legacyKeys: [`impl:${slug(row[itemIndex] ?? "")}`],
+        detail: buildDetail(header, row, new Set([itemIndex, statusIndex])),
+      });
+    }
+  }
+
+  if (implementation.cliEvolutionWave) {
+    // Both legacyKeys are DERIVED, never hand-typed, so they cannot drift
+    // from the real key-generation logic above: the first is the
+    // `impl:cli:<slug>` key every one of these rows was filed under before
+    // ADR-0073 split this section three ways, the second the pre-namespacing
+    // flat key that predates issue #480 / F13. Without the first, every
+    // already-open issue for these rows reads as an item that vanished from
+    // the trackers, and planIssueSync closes it as "removed from source
+    // trackers" and files a duplicate. The acceptance test is a `sync:hub`
+    // dry run reporting `Issues to close (0)`.
+    const { header, rows } = implementation.cliEvolutionWave;
+    const itemIndex = columnIndex(header, "Item");
+    const priorityIndex = columnIndex(header, "Priority");
+    const statusIndex = columnIndex(header, "Status");
+    const changeIndex = columnIndex(header, "Change");
+    for (const row of rows) {
+      const strippedItem = stripMarkdown(row[itemIndex] ?? "");
+      const itemSlug = slug(row[itemIndex] ?? "");
+      const key = `impl:${IMPLEMENTATION_NAMESPACES.cliEvolutionWave}:${itemSlug}`;
+      addItem({
+        key,
+        title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
+        status: resolveStatus(row[statusIndex], key, "Implementation"),
+        priority: resolvePriority(row[priorityIndex], key),
+        type: resolveType(
+          header,
+          row,
+          TYPE_BY_IMPLEMENTATION_SECTION.cliEvolutionWave,
+          key,
+        ),
+        sourcePath: IMPLEMENTATION_PATH,
+        sourceAnchor: IMPLEMENTATION_ANCHORS.cliEvolutionWave,
+        legacyKeys: [
+          `impl:${IMPLEMENTATION_NAMESPACES.m3lCliBuildOut}:${itemSlug}`,
+          `impl:${itemSlug}`,
+        ],
+        detail: buildDetail(header, row, new Set([itemIndex, statusIndex])),
+      });
+    }
+  }
+
+  if (implementation.agentOperatorWave) {
+    const { header, rows } = implementation.agentOperatorWave;
+    const itemIndex = columnIndex(header, "Item");
+    const priorityIndex = columnIndex(header, "Priority");
+    const statusIndex = columnIndex(header, "Status");
+    const changeIndex = columnIndex(header, "Change");
+    for (const row of rows) {
+      const strippedItem = stripMarkdown(row[itemIndex] ?? "");
+      const itemSlug = slug(row[itemIndex] ?? "");
+      const key = `impl:${IMPLEMENTATION_NAMESPACES.agentOperatorWave}:${itemSlug}`;
+      addItem({
+        key,
+        title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
+        status: resolveStatus(row[statusIndex], key, "Implementation"),
+        priority: resolvePriority(row[priorityIndex], key),
+        type: resolveType(
+          header,
+          row,
+          TYPE_BY_IMPLEMENTATION_SECTION.agentOperatorWave,
+          key,
+        ),
+        sourcePath: IMPLEMENTATION_PATH,
+        sourceAnchor: IMPLEMENTATION_ANCHORS.agentOperatorWave,
+        legacyKeys: [
+          `impl:${IMPLEMENTATION_NAMESPACES.m3lCliBuildOut}:${itemSlug}`,
+          `impl:${itemSlug}`,
+        ],
+        detail: buildDetail(header, row, new Set([itemIndex, statusIndex])),
+      });
+    }
+  }
+
+  if (implementation.consoleWave) {
+    const { header, rows } = implementation.consoleWave;
+    const itemIndex = columnIndex(header, "Item");
+    const priorityIndex = columnIndex(header, "Priority");
+    const statusIndex = columnIndex(header, "Status");
+    const changeIndex = columnIndex(header, "Change");
+    for (const row of rows) {
+      const strippedItem = stripMarkdown(row[itemIndex] ?? "");
+      const itemSlug = slug(row[itemIndex] ?? "");
+      const key = `impl:${IMPLEMENTATION_NAMESPACES.consoleWave}:${itemSlug}`;
+      addItem({
+        key,
+        title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
+        status: resolveStatus(row[statusIndex], key, "Implementation"),
+        priority: resolvePriority(row[priorityIndex], key),
+        type: resolveType(
+          header,
+          row,
+          TYPE_BY_IMPLEMENTATION_SECTION.consoleWave,
+          key,
+        ),
+        sourcePath: IMPLEMENTATION_PATH,
+        sourceAnchor: IMPLEMENTATION_ANCHORS.consoleWave,
+        legacyKeys: [
+          `impl:${IMPLEMENTATION_NAMESPACES.m3lCliBuildOut}:${itemSlug}`,
+          `impl:${itemSlug}`,
+        ],
         detail: buildDetail(header, row, new Set([itemIndex, statusIndex])),
       });
     }
