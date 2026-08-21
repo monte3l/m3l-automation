@@ -2,7 +2,12 @@
 // Verifies the scaffolding seam laid down by the `scaffolding-submodules` skill stays
 // intact: every submodule directory under src/core/ and src/aws/ that contains
 // an index.ts must have ALL of
-//   (a) a matching test file at packages/m3l-common/tests/<module>.test.ts,
+//   (a) a matching test file — either packages/m3l-common/tests/<module>.test.ts
+//       exactly, or at least one packages/m3l-common/tests/<module>-*.test.ts
+//       sibling (a module whose test suite lands across several ADR-0072
+//       slices, e.g. `procedure-conditions.test.ts` before `procedure.test.ts`
+//       itself exists, still has a seam — this only fails when NEITHER form
+//       is present),
 //   (b) a row for <module> in docs/implementation-status.md, and
 //   (c) while that row's status is not yet ✅, a "## Landing plan" heading on
 //       docs/reference/<ns>/<module>.md (ADR-0072) — the seam-plan record
@@ -41,6 +46,30 @@ export function implementedModules(dir) {
   } catch {
     return [];
   }
+}
+
+/**
+ * True if `testsDir` contains `<module>.test.ts` exactly, or at least one
+ * `<module>-*.test.ts` sibling. A module landing across several ADR-0072
+ * slices may ship only sibling-named test files for a while (e.g.
+ * `procedure-conditions.test.ts` before `procedure.test.ts` itself exists) —
+ * this only fails when the module has NEITHER form, i.e. no test coverage at
+ * all.
+ *
+ * @param {string} testsDir
+ * @param {string} module
+ * @returns {boolean}
+ */
+export function hasSeamTestFile(testsDir, module) {
+  if (existsSync(join(testsDir, `${module}.test.ts`))) return true;
+  let entries;
+  try {
+    entries = readdirSync(testsDir);
+  } catch {
+    return false;
+  }
+  const siblingRe = new RegExp(`^${module}-.+\\.test\\.ts$`);
+  return entries.some((name) => siblingRe.test(name));
 }
 
 /**
@@ -126,11 +155,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
 
   for (const ns of namespaces) {
+    const testsDir = join(pkg, "tests");
     for (const mod of implementedModules(join(pkg, "src", ns))) {
-      const testFile = join(pkg, "tests", `${mod}.test.ts`);
-      if (!existsSync(testFile)) {
+      if (!hasSeamTestFile(testsDir, mod)) {
         reporter.error(
-          `src/${ns}/${mod}/index.ts exists but tests/${mod}.test.ts is missing (scaffold seam broken)`,
+          `src/${ns}/${mod}/index.ts exists but neither tests/${mod}.test.ts nor a tests/${mod}-*.test.ts sibling is present (scaffold seam broken)`,
           { file: `packages/m3l-common/src/${ns}/${mod}/index.ts` },
         );
         errors++;

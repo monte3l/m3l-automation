@@ -1,0 +1,209 @@
+{
+  "$schema": "../provenance.schema.json",
+  "doc": "core/procedure.md",
+  "sections": [
+    {
+      "heading": "Public API",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/procedure/conditions.ts",
+          "symbol": "evaluateProcedureCondition",
+          "blob": "af4901908be66c510bf602745f364cb146e02aa1"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureShape",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureScalar",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureValue",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureValueMap",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedurePath",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureReference",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureStepKind",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureStepRecord",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureCompareOperator",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureConditionKind",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureCondition",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureResolvedReference",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureConditionEvaluation",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureConditionScope",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3L_PROCEDURE_CONDITION_MAX_DEPTH",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3L_PROCEDURE_MAX_PATTERN_LENGTH",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        }
+      ],
+      "retrieved": "2026-08-21"
+    },
+    {
+      "heading": "Values and references",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureShape",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureScalar",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureValue",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureValueMap",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedurePath",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureReference",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/internal/procedure/resolve.ts",
+          "symbol": "resolveReference",
+          "blob": "6be1a4459cf011976c1fe5275e12768bbb417f23"
+        }
+      ],
+      "retrieved": "2026-08-21"
+    },
+    {
+      "heading": "Conditions",
+      "sources": [
+        {
+          "file": "packages/m3l-common/src/core/procedure/conditions.ts",
+          "symbol": "evaluateProcedureCondition",
+          "blob": "af4901908be66c510bf602745f364cb146e02aa1"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureCompareOperator",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureConditionKind",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureCondition",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureResolvedReference",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureConditionEvaluation",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3LProcedureConditionScope",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3L_PROCEDURE_CONDITION_MAX_DEPTH",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3L_PROCEDURE_MAX_PATTERN_LENGTH",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/types.ts",
+          "symbol": "M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH",
+          "blob": "f1ecb387563b387995493fdc44a319a18a3113f4"
+        },
+        {
+          "file": "packages/m3l-common/src/internal/procedure/evaluate.ts",
+          "symbol": "evaluateCondition",
+          "blob": "ad501e0d53f2950e05bcb762c30bb2895160616c"
+        },
+        {
+          "file": "packages/m3l-common/src/internal/procedure/equality.ts",
+          "symbol": "deepEqual",
+          "blob": "b34b19fa71219ff9cb60504aec4e78a6b14bc969"
+        }
+      ],
+      "retrieved": "2026-08-21"
+    }
+  ]
+}

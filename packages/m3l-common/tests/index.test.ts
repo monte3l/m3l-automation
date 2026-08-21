@@ -71,6 +71,7 @@ const CORE_REACHABILITY_CASES: ReadonlyArray<
   ["network", "M3LHttpClient", "function"],
   ["pipeline", "M3LOperationPipeline", "function"],
   ["polling", "M3LPoller", "function"],
+  ["procedure", "evaluateProcedureCondition", "function"],
   ["prompt", "M3LPrompt", "function"],
   ["script", "M3LScript", "function"],
   ["security", "isDangerousKey", "function"],
