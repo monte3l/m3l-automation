@@ -52,8 +52,8 @@ lands.
 | 1 — contract + conditions     | This page (complete); `evaluateProcedureCondition`, the condition/value/reference type families, `M3L_PROCEDURE_CONDITION_MAX_DEPTH`, `M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH`                               | Landed (PR #580)                                        |
 | 2a — builder + validation     | The step/case/build type families, `M3LProcedureBuilder`/`createProcedureBuilder`, build-time validation, a reduced `M3LProcedure` (constructor + `digest` + `describe()` only — `run()` lands in slice 3) | Landed (PR #582)                                        |
 | 2b — build-time hardening     | The exhaustive declaration/cycle/pattern edge battery plus an adversarial boundary review pass over slice 2a                                                                                               | Landed (PR #583)                                        |
-| 3a — the core run loop        | `M3LProcedure.run()`, option validation, phases 1–3 (steps/cases/conclusion), flow directives, jump validation, iteration ceiling, cancellation, `continueOnFailure`/recovery, outcome + telemetry         | In progress                                             |
-| 3b — opt-in tracing           | `options.trace`/`options.logger`, the trace sink/entry types                                                                                                                                               | Not started                                             |
+| 3a — the core run loop        | `M3LProcedure.run()`, option validation, phases 1–3 (steps/cases/conclusion), flow directives, jump validation, iteration ceiling, cancellation, `continueOnFailure`/recovery, outcome + telemetry         | Landed (PR #585)                                        |
+| 3b — opt-in tracing           | `options.trace`/`options.logger`, the trace sink/entry types                                                                                                                                               | In progress                                             |
 | 3c — opt-in no-progress guard | `options.progress`, the no-progress guard, `ERR_PROCEDURE_NO_PROGRESS` (the 16th and final code)                                                                                                           | Not started                                             |
 | 4 — infra touch-ups           | Error-code catalog entries not needed by an earlier slice, barrel wiring, zone widening                                                                                                                    | Landing alongside the slice that first needs each piece |
 
@@ -1391,7 +1391,7 @@ interface M3LProcedureTraceEntry {
    * The structured directive is not surfaced to a caller; the trace's scalar
    * projection is where a flow becomes observable.
    */
-  readonly flow: string | undefined;
+  readonly flow: "continue" | "stop" | "resolve" | `goTo:${string}` | undefined;
   readonly payload: Readonly<Record<string, M3LBreadcrumbScalar>>;
 }
 ```
@@ -1415,10 +1415,24 @@ Two events are recorded:
   `failed` is present as `false` on a clean step rather than omitted, so a
   payload-equality assertion has one shape to match. A step whose `execute`
   **threw** still records its entry, with `failed: true` and `flow: undefined`,
-  before the run ends.
+  before the run ends. `failed: true, flow: undefined` is recorded identically
+  for an **absorbed** `continueOnFailure` throw (whether or not the step also
+  declares `loop`) — `execute` threw on this attempt regardless of whether the
+  engine went on to synthesize a `"continue"`/retry directive for it — and for
+  a **malformed result** (a missing or unrecognized flow directive, or an
+  unreadable/invalid `output`/`note`/`values`): `execute` didn't throw there,
+  but the result never became a genuine advance either, so it is traced the
+  same as a throw rather than as a clean step.
 - **`procedure:outcome`** — engine-owned scalars only: `status`,
   `primaryCaseId`, `alsoMatchedCount`, `iterations`, `resolveChecks`,
   `earlyResolved`, `digest`. Case ids are author-written code, not caller data.
+  `primaryCaseId` is `null` — never omitted — on the `unrecognized`/`failed`/
+  `aborted` arms, where no primary case exists; `undefined` is not an
+  `M3LBreadcrumbScalar`, so `null` is the one representable "no case" value,
+  matching `failed`'s "always present" convention above. Recorded once the
+  outcome is fully resolved, on all four arms — never when a case or fallback
+  `action` itself throws, since `run()`'s promise then rejects and no outcome
+  is ever built to record.
 
 There is deliberately **no case-evaluation event**: an evaluation tree carries
 resolved caller values and is report-grade, not breadcrumb-grade.
@@ -1436,7 +1450,14 @@ resolved caller values and is report-grade, not breadcrumb-grade.
   `sink.record` cannot change an outcome. The warning logged names the step and
   the error's `code` **only when that code is a member of `M3L_ERROR_CODES`** —
   never its `message`, `stack` or `name`, all of which can embed caller data.
-  The `logger.warning` call is itself guarded.
+  The `logger.warning` call is itself guarded. At most **one** `logger.warning`
+  call is made per `run()` call, regardless of how many distinct guarded
+  failures occur (a broken `describeTrace` on several steps, a broken `sink`
+  failing both a `procedure:step` and the final `procedure:outcome` record) —
+  a persistently misconfigured `trace`/`logger` reports its first failure and
+  falls silent for the rest of that run rather than spamming the log once per
+  step. `options.logger` is scoped per `run()` call, so a fresh call always
+  gets its own first warning.
 - [`core/diagnostics`](./diagnostics.md) registers summarizers for both events,
   so a default `trail.attach()` timeline keeps the engine's scalar keys —
   including `null` — instead of dropping them through the generic fallback.

@@ -472,6 +472,8 @@
       "M3LProcedureOutcomeBase",
       "M3LProcedureOutcome",
       "M3LProcedureTraceEntry",
+      "M3LProcedureTraceOptions",
+      "M3LProcedureTraceSink",
       "M3L_PROCEDURE_MAX_ITERATIONS",
       "resolveReference",
       "evaluateCondition",

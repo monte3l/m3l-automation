@@ -15,6 +15,7 @@ import { checkAfterAdvance, checkStepBoundary } from "./guards.js";
 import { interpretFlow } from "./flow.js";
 import { evaluateCases } from "./outcome.js";
 import { executeOneStep } from "./step-exec.js";
+import { projectFlowToScalar } from "./trace.js";
 
 import type {
   M3LProcedureContext,
@@ -33,7 +34,12 @@ import type {
   PhaseOneOutcome,
   PostAdvanceResolution,
   ProcedureRuntime,
+  StepExecutionOutcome,
 } from "./run-state.js";
+import type {
+  M3LProcedureStepTraceClassification,
+  M3LProcedureTracer,
+} from "./trace.js";
 
 /** Projects a context into the read-only scope a condition evaluates against. */
 export function toConditionScope<TShape extends M3LProcedureShape>(
@@ -86,21 +92,57 @@ function foldStepExecution<TShape extends M3LProcedureShape>(
 }
 
 /**
+ * Classifies one step's settled {@link StepExecutionOutcome} for tracing: a
+ * clean `"advanced"` whose record status is `"succeeded"` is
+ * `failed: false` carrying its own projected flow; every other case — an
+ * `"advanced"` with a `"recovered"` status (an absorbed
+ * `continueOnFailure` throw on a step with no `loop`), a `"retry"` (the same
+ * absorption on a step declaring `loop`), a `"failed"` (an unabsorbed throw
+ * or a malformed result), or an `"aborted"` — is
+ * `failed: true, flow: undefined` per `docs/reference/core/procedure.md` §
+ * Tracing's "traced identically to a throw" rule.
+ */
+function classifyStepExecution<TShape extends M3LProcedureShape>(
+  executed: StepExecutionOutcome<TShape>,
+): M3LProcedureStepTraceClassification {
+  switch (executed.kind) {
+    case "advanced":
+      return executed.record.status === "recovered"
+        ? { failed: true, flow: undefined }
+        : { failed: false, flow: projectFlowToScalar(executed.flow) };
+    case "retry":
+    case "failed":
+    case "aborted":
+      return { failed: true, flow: undefined };
+  }
+}
+
+/**
  * Runs the pre-step boundary guard, then (only if it passed) executes
- * `step`, folding the result — the whole "one step" unit the phase-1 loop
- * advances by.
+ * `step` through `tracer.runStep` — recording one `"procedure:step"` entry
+ * when tracing is configured — folding the result: the whole "one step"
+ * unit the phase-1 loop advances by. A pre-step guard failure (abort or
+ * ceiling) never reaches the tracer: it fires before `step`'s own execution
+ * would even begin.
  */
 async function advanceOneStep<TShape extends M3LProcedureShape>(
   context: M3LProcedureContext<TShape>,
   step: M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>,
   maxIterations: number,
+  tracer: M3LProcedureTracer<TShape>,
 ): Promise<FoldedStepExecution<TShape>> {
   const preStepFailure = checkStepBoundary(context, step, maxIterations);
   if (preStepFailure !== undefined) {
     return { kind: "return", result: preStepFailure };
   }
   const attempt = (context.results[step.id]?.attempt ?? 0) + 1;
-  const executed = await executeOneStep(context, step, attempt);
+  const executed = await tracer.runStep(
+    step,
+    context,
+    attempt,
+    () => executeOneStep(context, step, attempt),
+    classifyStepExecution,
+  );
   return foldStepExecution(executed, step);
 }
 
@@ -251,6 +293,7 @@ export async function runPhaseOne<TShape extends M3LProcedureShape>(
   runtime: ProcedureRuntime<TShape>,
   initialContext: M3LProcedureContext<TShape>,
   maxIterations: number,
+  tracer: M3LProcedureTracer<TShape>,
 ): Promise<PhaseOneOutcome<TShape>> {
   let context = initialContext;
   const executedSteps: M3LProcedureStepRecord[] = [];
@@ -268,7 +311,7 @@ export async function runPhaseOne<TShape extends M3LProcedureShape>(
       return { kind: "ended", context, executedSteps, resolveChecks };
     }
 
-    const folded = await advanceOneStep(context, step, maxIterations);
+    const folded = await advanceOneStep(context, step, maxIterations, tracer);
     if (folded.kind === "return") {
       return { ...folded.result, context, executedSteps, resolveChecks };
     }

@@ -2,16 +2,17 @@
  * `core/procedure/run-types` — options and outcome types for
  * {@link M3LProcedure.run}.
  *
- * Slice 3a scope: `M3LProcedureRunOptions` carries `deps`/`signal`/
- * `maxIterations`/`initialValues`/`parameters` only. The opt-in no-progress
- * guard (`progress`) and tracing (`trace`/`logger`) land in later slices
- * (3c/3b) as additive optional fields on this same base interface — nothing
- * here needs to change shape to admit them.
+ * Slice 3b scope: `M3LProcedureRunOptions` carries `deps`/`signal`/
+ * `maxIterations`/`initialValues`/`parameters`/`trace`/`logger`. The opt-in
+ * no-progress guard (`progress`) lands in a later slice (3c) as an additive
+ * optional field on this same base interface — nothing here needs to change
+ * shape to admit it.
  *
- * `M3LProcedureOutcomeBase.trace` IS part of this slice's shape, always an
- * empty array until a later slice's tracer exists: `M3LProcedureOutcome` is
- * one discriminated union type a caller narrows on immediately, so every arm
- * needs the same base fields from the start rather than gaining one later.
+ * `M3LProcedureOutcomeBase.trace` IS part of this slice's shape: empty
+ * unless `options.trace` is configured, in which case it carries the same
+ * entries the sink received — `M3LProcedureOutcome` is one discriminated
+ * union type a caller narrows on immediately, so every arm needs the same
+ * base fields from the start rather than gaining one later.
  *
  * @packageDocumentation
  */
@@ -21,6 +22,7 @@ import type {
   M3LRunRecoveryEntry,
 } from "../diagnostics/index.js";
 import type { M3LOperationAbortedError } from "../errors/index.js";
+import type { M3LLogger } from "../logging/index.js";
 import type {
   M3LProcedureCaseEvaluation,
   M3LProcedureCaseMatch,
@@ -49,6 +51,15 @@ interface M3LProcedureRunOptionsBase<TShape extends M3LProcedureShape> {
   /** Ceiling on step *executions*. Defaults to `M3L_PROCEDURE_MAX_ITERATIONS`. */
   readonly maxIterations?: number;
   readonly initialValues?: Readonly<Partial<TShape["values"]>>;
+  /** Opt-in step/outcome tracing (`docs/reference/core/procedure.md` § Tracing). */
+  readonly trace?: M3LProcedureTraceOptions;
+  /**
+   * Used only to warn on a guarded tracing failure; never load-bearing. At
+   * most one `logger.warning` call is made per `run()` call, regardless of
+   * how many distinct guarded tracing failures occur in that run
+   * (`docs/reference/core/procedure.md` § Tracing).
+   */
+  readonly logger?: M3LLogger;
 }
 
 /**
@@ -133,12 +144,48 @@ export interface M3LProcedureTelemetry<TShape extends M3LProcedureShape> {
 }
 
 /**
+ * The sink a caller supplies to receive `procedure:step`/`procedure:outcome`
+ * breadcrumb-shaped events. Structurally satisfied by
+ * `M3LBreadcrumbTrail` — a script can hand the same trail instance to both
+ * `core/pipeline` and `core/procedure` with no adapter.
+ *
+ * @example
+ * ```ts
+ * import type { Core } from "@m3l-automation/m3l-common";
+ *
+ * const sink: Core.M3LProcedureTraceSink = {
+ *   record: (source, event, payload) => console.log(source, event, payload),
+ * };
+ * ```
+ */
+export interface M3LProcedureTraceSink {
+  record(source: string, event: string, payload?: unknown): void;
+}
+
+/**
+ * Opts a `run()` call into tracing (`docs/reference/core/procedure.md` §
+ * Tracing). Absent this option, the engine touches no sink and does no
+ * tracing work at all.
+ *
+ * @example
+ * ```ts
+ * import type { Core } from "@m3l-automation/m3l-common";
+ *
+ * declare const sink: Core.M3LProcedureTraceSink;
+ * const trace: Core.M3LProcedureTraceOptions = { sink, source: "my-script" };
+ * ```
+ */
+export interface M3LProcedureTraceOptions {
+  readonly sink: M3LProcedureTraceSink;
+  /** Overrides the default `"M3LProcedure"` source label. */
+  readonly source?: string;
+}
+
+/**
  * One `procedure:step` trace entry: the engine's own scalar keys plus a
- * step's `describeTrace` allowlist-projected return. Not yet populated in
- * this slice — {@link M3LProcedureOutcomeBase.trace} is always empty until a
- * later slice's opt-in tracer exists — but the shape is declared now because
- * `trace`'s element type must resolve for every consumer of
- * {@link M3LProcedureOutcome}, not only once tracing ships.
+ * step's `describeTrace` allowlist-projected return. Empty unless
+ * `options.trace` is configured — {@link M3LProcedureOutcomeBase.trace}
+ * retains the same entries the sink received.
  *
  * @example
  * ```ts
@@ -186,8 +233,9 @@ export interface M3LProcedureOutcomeBase<TShape extends M3LProcedureShape> {
   /** `canonicalJsonHash` over this run's parameters. */
   readonly parametersDigest: string;
   /**
-   * The allowlisted per-step trace, in execution order. Empty in this slice
-   * — no tracer exists yet, so there is nothing to retain.
+   * The allowlisted per-step trace, in execution order — the same entries
+   * the sink received. Empty unless `options.trace` was configured for this
+   * run.
    */
   readonly trace: readonly M3LProcedureTraceEntry[];
   readonly telemetry: M3LProcedureTelemetry<TShape>;
