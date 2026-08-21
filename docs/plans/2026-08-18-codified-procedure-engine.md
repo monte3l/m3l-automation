@@ -296,22 +296,31 @@ these as committed numbers):
    `not(and([]))` — closed with a from-scratch Kleene three-valued-logic
    design rather than a naive flag-OR. Full narrative:
    `docs/logs/2026-08-21-core-procedure.md`.
-2. **Types + builder validation** — the split `types.ts` and `validate.ts`,
-   `M3LProcedureBuilder.ts`, `tests/procedure-build.test.ts`. ~139,462 bytes
-   pre-split — over target even before the file-level split's own byte
-   savings are counted; likely needs a further split (e.g. type declarations
-   separate from builder-validation logic) once slice 1 exists to build on.
-   This is where R3/R4's defect class (`build()` not validating step
-   `execute`/case `action`, then a fix for that reintroducing a
-   validate-then-re-read hazard) lived — review this slice against
-   `.claude/rules/library-src.md`'s boundary-validation rule explicitly, not
-   just for size.
-3. **The engine** — the decomposed `M3LProcedure.ts`, its extracted
-   `internal/procedure/` modules, the split `procedure-guards.test.ts`,
-   `procedure.test.ts`. ~271,095 bytes pre-decomposition — almost certainly
-   2–3 further slices once the file-level split is real; re-run
-   `check:review-size` after decomposing to get real numbers before
-   committing to a sub-sequence.
+2. **Types + builder validation** — **Landed as PR #582 (2a) and PR #583
+   (2b).** Split into a builder-ships-first slice (2a) and an exhaustive
+   edge-battery + adversarial-review-pass slice (2b), per
+   `docs/reference/core/procedure.md`'s own Landing plan table. R3/R4's
+   defect class (`build()` not validating step `execute`/case `action`) was
+   fixed in 2a; 2b's adversarial pass found and fixed six further real
+   defects (an unbounded-breadth condition-tree walk, a `matches` ReDoS
+   bypass, a fail-open `compare` operator, and three further boundary gaps).
+   Full narrative: `docs/logs/2026-08-21-core-procedure.md`.
+3. **The engine** — re-measured against the decomposed file plan: **split
+   into 3a (the core run loop, ~179,000 reviewable bytes — warns, does not
+   fail), 3b (opt-in tracing, ~64,700 bytes), 3c (opt-in no-progress guard,
+   ~30,700 bytes)**, confirmed by reading `1684192`'s actual
+   `M3LProcedure.ts`/`context.ts`/`trace.ts`/`errors.ts`/`types.ts` and this
+   repo's real gate source (`check:file-budget`, `check:review-size`,
+   `vitest.config.ts`'s `perFile` thresholds) rather than the ~271,095-byte
+   pre-decomposition estimate above. The three-way (not two-way) cut is
+   forced by `perFile` coverage: `errors.ts` can't carry
+   `M3LProcedureNoProgressError` or the `cause`-bearing form of
+   `M3LProcedureInvalidOptionError` until the no-progress guard (3c) gives
+   them a real call site, and `trace.ts` at its full reference size has too
+   little headroom under the 25,000 B ceiling to survive a single hardening
+   round without a pre-emptive split into `trace.ts` + `trace-payload.ts`.
+   Full defect-watch list and file-by-file byte estimates recorded in the
+   work log for each sub-slice as it lands (`docs/logs/`).
 4. **Infra touch-ups** — `breadcrumbs.ts` (flagged by `check:file-budget` as a
    baseline-ratchet violation — it grows an already-over-limit file), the new
    error codes in `core/errors/catalog.ts`/`M3LError.ts`, barrel wiring,
