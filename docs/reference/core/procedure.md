@@ -43,17 +43,19 @@ rounds (non-convergence, not size — full post-mortem:
 `docs/plans/IMPLEMENTATION.md`'s F23 row). F23 (#571) shipped ADR-0072's
 reviewable-slice discipline in response, and this submodule is its first real
 consumer. The measured slice sequence lives in
-`docs/plans/2026-08-18-codified-procedure-engine.md` § "B2 — Landing plan
-(ADR-0072)" — keep that section in sync with the table below as each slice
-lands.
+`docs/plans/archive/2026-08-18-codified-procedure-engine.md` § "B2 — Landing
+plan (ADR-0072)"; the condensed shipped narrative is
+`docs/plans/archive/2026-08-21-codified-procedure-engine.md`.
 
-| Slice                     | Contents                                                                                                                                                                                                   | Status                                                  |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| 1 — contract + conditions | This page (complete); `evaluateProcedureCondition`, the condition/value/reference type families, `M3L_PROCEDURE_CONDITION_MAX_DEPTH`, `M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH`                               | Landed (PR #580)                                        |
-| 2a — builder + validation | The step/case/build type families, `M3LProcedureBuilder`/`createProcedureBuilder`, build-time validation, a reduced `M3LProcedure` (constructor + `digest` + `describe()` only — `run()` lands in slice 3) | Landed (PR #582)                                        |
-| 2b — build-time hardening | The exhaustive declaration/cycle/pattern edge battery plus an adversarial boundary review pass over slice 2a                                                                                               | Landed (this PR)                                        |
-| 3 — the engine            | `M3LProcedure`, run-loop execution, tracing, cancellation                                                                                                                                                  | Not started                                             |
-| 4 — infra touch-ups       | Error-code catalog entries not needed by an earlier slice, barrel wiring, zone widening                                                                                                                    | Landing alongside the slice that first needs each piece |
+| Slice                         | Contents                                                                                                                                                                                                   | Status                                                   |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| 1 — contract + conditions     | This page (complete); `evaluateProcedureCondition`, the condition/value/reference type families, `M3L_PROCEDURE_CONDITION_MAX_DEPTH`, `M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH`                               | Landed (PR #580)                                         |
+| 2a — builder + validation     | The step/case/build type families, `M3LProcedureBuilder`/`createProcedureBuilder`, build-time validation, a reduced `M3LProcedure` (constructor + `digest` + `describe()` only — `run()` lands in slice 3) | Landed (PR #582)                                         |
+| 2b — build-time hardening     | The exhaustive declaration/cycle/pattern edge battery plus an adversarial boundary review pass over slice 2a                                                                                               | Landed (PR #583)                                         |
+| 3a — the core run loop        | `M3LProcedure.run()`, option validation, phases 1–3 (steps/cases/conclusion), flow directives, jump validation, iteration ceiling, cancellation, `continueOnFailure`/recovery, outcome + telemetry         | Landed (PR #585)                                         |
+| 3b — opt-in tracing           | `options.trace`/`options.logger`, the trace sink/entry types                                                                                                                                               | Landed (PR #586)                                         |
+| 3c — opt-in no-progress guard | `options.progress`, the no-progress guard, `ERR_PROCEDURE_NO_PROGRESS` (the 16th and final code)                                                                                                           | Landed (PR #587)                                         |
+| 4 — infra touch-ups           | Error-code catalog entries not needed by an earlier slice, barrel wiring, zone widening                                                                                                                    | Landed (folded into 1/2a/3a/3b/3c, each as first needed) |
 
 This page documents the **full, eventual** public surface (all 44 exports);
 `check:doc-exports` walks exports → docs, so a symbol documented here but not
@@ -321,6 +323,14 @@ The **engine**, never the step, interprets a directive:
   acyclicity is a build-time problem, so a jump cannot fail at run time from
   typed TypeScript. An untyped caller that returns a target outside `jumpsTo`
   gets `ERR_PROCEDURE_UNDECLARED_JUMP`.
+
+A step's returned result is caller data, not a trusted value: an untyped
+caller can return a `flow` that is `null`, a `goTo` that isn't a string, an
+unrecognized string outside the four forms above, or a result missing `flow`
+entirely. Every one of these is treated as an invalid jump target — the run
+resolves `"failed"` under `ERR_PROCEDURE_UNDECLARED_JUMP` rather than throwing
+a bare `TypeError` or silently advancing as if `"continue"` had been
+returned.
 
 ## Context
 
@@ -903,17 +913,25 @@ and throws `ERR_PROCEDURE_INVALID_OPTION` on any of:
   run is about to begin execution number `maxIterations + 1`.
 - `progress.witness` that is not a function, or `progress.maxStalledSteps` that
   is not a finite integer greater than `0`.
-- a `parameters` key the shape never declared, a `parameters` value containing a
-  non-finite number or a `BigInt` (it would fail `parametersDigest`), or a
-  dangerous parameter name (`__proto__`, `constructor`, `prototype`).
+- a `parameters` key the shape never declared, a `parameters` or `initialValues`
+  value containing a non-finite number or a `BigInt` (it would fail
+  `parametersDigest`, or a downstream condition's deep-equality check), a
+  dangerous key anywhere in either (`__proto__`, `constructor`, `prototype`),
+  or either value nesting deeper than `M3L_PROCEDURE_CONDITION_MAX_DEPTH`.
 
-`parameters` and `initialValues` are read **exactly once**, each property into a
-local, and copied into fresh frozen objects. A caller's object may be getter- or
-`Proxy`-backed and free to return a different value on every access, so
-validating one read and then storing a second, separate read would reproduce the
-"two observations of a mutable caller graph" defect `captureProgressConfig` was
-extracted to eliminate. Mutating the caller's object after `run()` is entered
-cannot change the run.
+`parameters` and `initialValues` are each walked through the **same** bounded,
+validating projection, **exactly once**: every property is read into a local
+and copied into a fresh, deeply frozen plain-data clone as it is validated, so
+neither value is ever read a second time by a later consumer (`parametersDigest`
+included). A caller's object may be getter- or `Proxy`-backed and free to return
+a different value on every access, so validating one read and then storing a
+second, separate read would reproduce the "two observations of a mutable caller
+graph" defect `captureProgressConfig` was extracted to eliminate — the same
+depth bound and single-pass projection additionally close an unbounded
+recursion over a caller-supplied `parameters`/`initialValues` graph (a
+maliciously deep or self-referential object), rather than letting it exhaust
+the call stack. Mutating the caller's object after `run()` is entered cannot
+change the run.
 
 ### What "frozen" means here
 
@@ -948,30 +966,58 @@ Starting at the first declared step, for each iteration:
    ordering [`core/pipeline`](./pipeline.md#describe-runs-at-phase-entry)
    established.
 5. **`execute`** — awaited. A throw ends the run with a `failed` outcome, unless
-   the step declares `continueOnFailure`.
+   the step declares `continueOnFailure`. `execute`'s **return value** is
+   distinct from a throw: a settled result that does not conform to
+   `M3LProcedureStepResult` (missing `flow`, or a `flow` outside the four
+   recognized directive forms — see [Flow directives](#flow-directives)) is an
+   engine-level contract violation, not a step failure, and is **never**
+   absorbed by `continueOnFailure` even when the step declares it — absorbing
+   it would let a step's own implementation bug masquerade as an ordinary,
+   expected failure.
 6. **Recovery** — with `continueOnFailure`, the failure is serialised **now**,
    while its context is still available, into an `M3LRunRecoveryEntry`
    (`{ item: <step id>, error: serializeErrorChain(error), recordedAt }` —
    [`core/diagnostics`](./diagnostics.md)'s shape and its redaction), appended
    under the `M3L_RECOVERY_LIMIT` ring buffer with the oldest evicted, and
    `recoveredTotal` incremented uncapped. The step's record is
-   `status: "recovered"` with no output, and the run advances.
+   `status: "recovered"` with no output. A step with no `loop` declaration
+   then **advances** to the next step in declaration order, exactly like a
+   `"continue"` directive — it never returned one, having thrown instead. A
+   step that **does** declare `loop` instead **retries**: the engine
+   re-executes the same step rather than advancing past it, because `loop`'s
+   whole purpose (see [Steps](#steps)) is a step the author has explicitly
+   opted into revisiting. This retry is bounded exactly like an explicit
+   `goTo` back-edge — by `loop.maxRevisits`, reported as
+   `ERR_PROCEDURE_ITERATION_LIMIT` with `context.limit === "revisits"` once
+   exceeded — and is never itself a synthesized `"goTo"` flow directive: that
+   would require the step to name itself in its own `jumpsTo`, an obligation
+   `loop` exists precisely to avoid.
 7. **Fold** — a **new** frozen context is derived.
 8. **Directive** — as [Flow directives](#flow-directives) defines. A `"resolve"`
    runs phase 2 immediately; on a match the run concludes with the remaining
    steps unexecuted.
 9. **No-progress guard** — when `progress` is configured, the witness is sampled
    **exactly once** per continuing step, after the context is derived (so the
-   sample sees this step's contribution) and after the flow is applied. Tripping
-   ends the run with a `failed` outcome under `ERR_PROCEDURE_NO_PROGRESS`.
+   sample sees this step's contribution) and after the flow is applied. This
+   includes an engine-synthesized **retry** (a `continueOnFailure`-absorbed
+   throw on a step declaring `loop`) — a repeatedly-failing `loop` step with an
+   unchanged witness value can trip the guard before `loop.maxRevisits` is
+   exhausted; there is no "after the flow is applied" step to wait for on a
+   retry, so the sample runs at the same post-advance boundary regardless.
+   Tripping ends the run with a `failed` outcome under
+   `ERR_PROCEDURE_NO_PROGRESS`.
 
 Phase 1 also ends when the last declared step returns `"continue"`.
 
-An abort **always wins**: over `continueOnFailure`, over a no-progress trip, and
-over a step's own thrown error. A step that declares `continueOnFailure` and
-throws an abort is **not** absorbed — absorbing it would continue past a
-cancellation the operator asked for, and ADR-0049's whole posture is that a
-cancelled operation is never retried.
+An abort **always wins**: over `continueOnFailure`, over a no-progress trip,
+over a malfunctioning progress witness (one that throws or returns a
+non-primitive — the abort re-check that follows every guard sample discards
+that mid-run `ERR_PROCEDURE_INVALID_OPTION` the same way it discards a trip,
+in favour of the `aborted` outcome), and over a step's own thrown error. A
+step that declares `continueOnFailure` and throws an abort is **not**
+absorbed — absorbing it would continue past a cancellation the operator
+asked for, and ADR-0049's whole posture is that a cancelled operation is
+never retried.
 
 The abort is recognised by `code === "ERR_OPERATION_ABORTED"`, not by
 `instanceof` — the library rule is to discriminate on the machine-readable code.
@@ -1126,19 +1172,19 @@ Every code below is registered in `M3L_ERROR_CODES` and `M3L_ERROR_CATALOG`
 
 ### Thrown
 
-| Code                               | Thrown by                                                                                                                    |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `ERR_PROCEDURE_INVALID_DEFINITION` | `build()` — the one outer code; every finding in `context.problems`                                                          |
-| `ERR_PROCEDURE_INVALID_OPTION`     | `run()` — a bad `maxIterations`, a non-finite `parameters` value, a non-function / throwing / non-primitive progress witness |
+| Code                               | Thrown by                                                                                                                                                                                    |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ERR_PROCEDURE_INVALID_DEFINITION` | `build()` — the one outer code; every finding in `context.problems`                                                                                                                          |
+| `ERR_PROCEDURE_INVALID_OPTION`     | `run()` — a bad `maxIterations`, a non-finite `parameters` value, a `progress.witness` that is not a function, or a `progress.maxStalledSteps` that is not a finite integer greater than `0` |
 
 ### Carried by a `failed` outcome's `error`
 
-| Code                            | Fires when                                                                                                                                                                                                                                 |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ERR_PROCEDURE_ITERATION_LIMIT` | the iteration ceiling, or a `loop` step's `maxRevisits`; `context.limit` is `"iterations"` or `"revisits"`                                                                                                                                 |
-| `ERR_PROCEDURE_NO_PROGRESS`     | the stall guard tripped; `context` carries `stalledSteps` and `lastStepId`                                                                                                                                                                 |
-| `ERR_PROCEDURE_INVALID_OPTION`  | the progress witness **threw**, or returned a non-primitive, mid-run. The option was only provably bad once sampled, so it surfaces as a `failed` outcome with the thrown value chained as `cause` rather than breaking "`run()` resolves" |
-| `ERR_PROCEDURE_UNDECLARED_JUMP` | a `goTo` outside the step's `jumpsTo` — unreachable from typed TypeScript                                                                                                                                                                  |
+| Code                            | Fires when                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ERR_PROCEDURE_ITERATION_LIMIT` | the iteration ceiling, or a `loop` step's `maxRevisits`; `context.limit` is `"iterations"` or `"revisits"`                                                                                                                                                                                                                                                                                                 |
+| `ERR_PROCEDURE_NO_PROGRESS`     | the stall guard tripped; `context` carries `stalledSteps` and `lastStepId`                                                                                                                                                                                                                                                                                                                                 |
+| `ERR_PROCEDURE_INVALID_OPTION`  | the progress witness **threw**, or returned a non-primitive (an object, array, or function — `null` counts as non-primitive here since `typeof null === "object"`; `undefined` does not, since it never reaches that check), mid-run. The option was only provably bad once sampled, so it surfaces as a `failed` outcome with the thrown value chained as `cause` rather than breaking "`run()` resolves" |
+| `ERR_PROCEDURE_UNDECLARED_JUMP` | a `goTo` outside the step's `jumpsTo` — unreachable from typed TypeScript                                                                                                                                                                                                                                                                                                                                  |
 
 `ERR_PROCEDURE_NO_PROGRESS` is deliberately **not**
 [`core/polling`](./polling.md)'s `ERR_NO_PROGRESS`, which is
@@ -1355,7 +1401,7 @@ interface M3LProcedureTraceEntry {
    * The structured directive is not surfaced to a caller; the trace's scalar
    * projection is where a flow becomes observable.
    */
-  readonly flow: string | undefined;
+  readonly flow: "continue" | "stop" | "resolve" | `goTo:${string}` | undefined;
   readonly payload: Readonly<Record<string, M3LBreadcrumbScalar>>;
 }
 ```
@@ -1379,10 +1425,24 @@ Two events are recorded:
   `failed` is present as `false` on a clean step rather than omitted, so a
   payload-equality assertion has one shape to match. A step whose `execute`
   **threw** still records its entry, with `failed: true` and `flow: undefined`,
-  before the run ends.
+  before the run ends. `failed: true, flow: undefined` is recorded identically
+  for an **absorbed** `continueOnFailure` throw (whether or not the step also
+  declares `loop`) — `execute` threw on this attempt regardless of whether the
+  engine went on to synthesize a `"continue"`/retry directive for it — and for
+  a **malformed result** (a missing or unrecognized flow directive, or an
+  unreadable/invalid `output`/`note`/`values`): `execute` didn't throw there,
+  but the result never became a genuine advance either, so it is traced the
+  same as a throw rather than as a clean step.
 - **`procedure:outcome`** — engine-owned scalars only: `status`,
   `primaryCaseId`, `alsoMatchedCount`, `iterations`, `resolveChecks`,
   `earlyResolved`, `digest`. Case ids are author-written code, not caller data.
+  `primaryCaseId` is `null` — never omitted — on the `unrecognized`/`failed`/
+  `aborted` arms, where no primary case exists; `undefined` is not an
+  `M3LBreadcrumbScalar`, so `null` is the one representable "no case" value,
+  matching `failed`'s "always present" convention above. Recorded once the
+  outcome is fully resolved, on all four arms — never when a case or fallback
+  `action` itself throws, since `run()`'s promise then rejects and no outcome
+  is ever built to record.
 
 There is deliberately **no case-evaluation event**: an evaluation tree carries
 resolved caller values and is report-grade, not breadcrumb-grade.
@@ -1400,7 +1460,14 @@ resolved caller values and is report-grade, not breadcrumb-grade.
   `sink.record` cannot change an outcome. The warning logged names the step and
   the error's `code` **only when that code is a member of `M3L_ERROR_CODES`** —
   never its `message`, `stack` or `name`, all of which can embed caller data.
-  The `logger.warning` call is itself guarded.
+  The `logger.warning` call is itself guarded. At most **one** `logger.warning`
+  call is made per `run()` call, regardless of how many distinct guarded
+  failures occur (a broken `describeTrace` on several steps, a broken `sink`
+  failing both a `procedure:step` and the final `procedure:outcome` record) —
+  a persistently misconfigured `trace`/`logger` reports its first failure and
+  falls silent for the rest of that run rather than spamming the log once per
+  step. `options.logger` is scoped per `run()` call, so a fresh call always
+  gets its own first warning.
 - [`core/diagnostics`](./diagnostics.md) registers summarizers for both events,
   so a default `trail.attach()` timeline keeps the engine's scalar keys —
   including `null` — instead of dropping them through the generic fallback.

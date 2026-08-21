@@ -1,14 +1,14 @@
 /**
  * `core/procedure` — the codified-procedure engine (ADR-0046).
  *
- * This barrel now surfaces the condition-evaluation subset (slice 1) plus
- * the builder and build-time validation surface (slice 2a):
- * {@link createProcedureBuilder}, {@link M3LProcedureBuilder},
- * {@link M3LProcedure} (constructor + `digest` + `describe()` only), the
- * step/case/fallback/build-option/validation-problem/summary type family,
- * and {@link evaluateProcedureCondition} with the `M3LProcedureCondition`
- * type family and related limit constants. `M3LProcedure.run()` and its
- * outcome/tracing types land in a later slice.
+ * This barrel surfaces the condition-evaluation subset (slice 1), the
+ * builder and build-time validation surface (slice 2a), {@link M3LProcedure.run}
+ * (slice 3a) — the option/outcome/telemetry type family — slice 3b's opt-in
+ * tracing (`options.trace`/`options.logger`), and, as of slice 3c, the
+ * opt-in no-progress guard (`options.progress`,
+ * {@link M3LProcedureProgressOptions}, {@link M3LProcedureProgressWitness})
+ * — completing the engine's public surface (44 exports total per the
+ * landing plan in `docs/reference/core/procedure.md`).
  *
  * @packageDocumentation
  */
@@ -52,6 +52,18 @@ export type {
 } from "./types.js";
 export {
   M3L_PROCEDURE_CONDITION_MAX_DEPTH,
+  M3L_PROCEDURE_MAX_ITERATIONS,
   M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH,
   M3L_PROCEDURE_MAX_PATTERN_LENGTH,
 } from "./types.js";
+export type {
+  M3LProcedureOutcome,
+  M3LProcedureOutcomeBase,
+  M3LProcedureProgressOptions,
+  M3LProcedureProgressWitness,
+  M3LProcedureRunOptions,
+  M3LProcedureTelemetry,
+  M3LProcedureTraceEntry,
+  M3LProcedureTraceOptions,
+  M3LProcedureTraceSink,
+} from "./run-types.js";

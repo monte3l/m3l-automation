@@ -8,7 +8,7 @@ in `docs/reference/core/procedure.md`'s `## Landing plan` and
 This log records what shipped, what matched the plan, what diverged across
 three bot-review rounds, and durable lessons for slices 2–4.
 
-Plan of record: [`docs/plans/2026-08-18-codified-procedure-engine.md`](../plans/2026-08-18-codified-procedure-engine.md)
+Plan of record: [`docs/plans/2026-08-18-codified-procedure-engine.md`](../plans/archive/2026-08-18-codified-procedure-engine.md)
 
 ## Summary
 

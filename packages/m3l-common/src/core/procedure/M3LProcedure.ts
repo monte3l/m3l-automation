@@ -3,17 +3,22 @@
  * {@link M3LProcedureBuilder.build}: a multi-step procedure whose control
  * flow and conclusions are data rather than hand-written branching.
  *
- * Slice 2a ships the constructor, `digest`, and `describe()` only — `run()`
- * lands in a later slice.
- *
  * @packageDocumentation
  */
 
 import { M3LError } from "../errors/index.js";
+import { validateRunOptions } from "../../internal/procedure/run-options.js";
+import { executeProcedureRun } from "../../internal/procedure/run.js";
 
 import type { M3LProcedureBuiltDefinition } from "../../internal/procedure/definition.js";
-import type { M3LProcedureSummary } from "./build-types.js";
+import type { ProcedureRuntime } from "../../internal/procedure/run-state.js";
+import type { M3LProcedureCase, M3LProcedureSummary } from "./build-types.js";
+import type { M3LProcedureStep } from "./step-types.js";
 import type { M3LProcedureShape } from "./types.js";
+import type {
+  M3LProcedureOutcome,
+  M3LProcedureRunOptions,
+} from "./run-types.js";
 
 /**
  * Module-scoped witness value gating {@link M3LProcedure}'s construction.
@@ -83,6 +88,8 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
   readonly digest: string;
 
   readonly #summary: M3LProcedureSummary;
+  /** The frozen step/case/fallback table `run()`'s internal pipeline reads. */
+  readonly #runtime: ProcedureRuntime<TShape>;
 
   /**
    * @internal Constructed only via
@@ -92,6 +99,27 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
   private constructor(definition: M3LProcedureBuiltDefinition<TShape>) {
     this.digest = definition.digest;
     this.#summary = definition.summary;
+
+    // Cases are sorted once, descending by `priority` — safe because
+    // `build()` already proved every priority unique, so this ordering is
+    // stable and never needs to be recomputed per run.
+    const cases: readonly M3LProcedureCase<TShape, TShape["caseId"]>[] = [
+      ...definition.cases,
+    ].sort((a, b) => b.priority - a.priority);
+    const stepIndexById = new Map<string, number>(
+      definition.steps.map(
+        (
+          step: M3LProcedureStep<TShape, TShape["stepId"], TShape["stepId"]>,
+          index: number,
+        ) => [step.id, index],
+      ),
+    );
+    this.#runtime = Object.freeze({
+      steps: definition.steps,
+      cases,
+      fallback: definition.fallback,
+      stepIndexById,
+    });
   }
 
   /**
@@ -125,5 +153,46 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
    */
   describe(): M3LProcedureSummary {
     return this.#summary;
+  }
+
+  /**
+   * Runs the three-phase contract — steps, cases, conclusion — over
+   * `options` and resolves the outcome. `run()` resolves for all four
+   * outcome arms (`matched`, `unrecognized`, `failed`, `aborted`); only a
+   * contract violation (a malformed run option) throws. A throw from a case
+   * action or the fallback action propagates unmodified — it is a caller bug
+   * in the conclusion, not a run conclusion — so the returned promise
+   * rejects in that case rather than resolving a `failed` outcome.
+   *
+   * Deliberately not `async`: option validation must throw *synchronously*
+   * out of `run()` itself. An `async` method turns every throw in its body
+   * into a rejected promise instead of a synchronous throw, and a caller
+   * relying on a synchronous `try`/`catch` around the `run()` call — before
+   * ever awaiting the result — would observe nothing. Validation runs here,
+   * then the rest of the work is delegated to `executeProcedureRun`, whose
+   * promise this method returns unchanged.
+   *
+   * @param options - The dependency bag, optional signal, iteration
+   *   ceiling, initial values, the opt-in `progress` no-progress guard, and
+   *   the opt-in `trace`/`logger` tracing configuration.
+   * @returns The resolved outcome.
+   */
+  run(
+    options: M3LProcedureRunOptions<TShape>,
+  ): Promise<M3LProcedureOutcome<TShape>> {
+    const validated = validateRunOptions<TShape>(
+      options,
+      this.#summary.parameters,
+    );
+    return executeProcedureRun<TShape>(this.#runtime, this.digest, {
+      deps: options.deps,
+      signal: options.signal,
+      maxIterations: validated.maxIterations,
+      parameters: validated.parameters,
+      initialValues: validated.initialValues,
+      trace: validated.trace,
+      logger: options.logger,
+      progress: validated.progress,
+    });
   }
 }

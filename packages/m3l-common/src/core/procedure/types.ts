@@ -279,6 +279,20 @@ export interface M3LProcedureConditionScope<TShape extends M3LProcedureShape> {
 // ---------------------------------------------------------------------------
 
 /**
+ * The default ceiling on step *executions* per `run()` call, used when
+ * `M3LProcedureRunOptions.maxIterations` is absent. A `goTo` loop counts
+ * every pass, not every distinct step.
+ *
+ * @example
+ * ```ts
+ * import { M3L_PROCEDURE_MAX_ITERATIONS } from "@m3l-automation/m3l-common/core";
+ *
+ * console.log(M3L_PROCEDURE_MAX_ITERATIONS); // 100
+ * ```
+ */
+export const M3L_PROCEDURE_MAX_ITERATIONS = 100;
+
+/**
  * The maximum nesting depth a {@link M3LProcedureCondition} tree, or a
  * {@link M3LProcedurePath} walk, may reach before the engine refuses to
  * recurse further.
