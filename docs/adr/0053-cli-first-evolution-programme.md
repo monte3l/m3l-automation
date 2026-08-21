@@ -125,3 +125,19 @@ trackers, not a technical dependency.
   preserves)](./0029-script-dependency-boundary.md),
   [ADR-0046 (the uncoupled in-script engine)](./0046-codified-procedure-engine.md).
 - Plan: [`docs/plans/2026-08-20-cli-evolution.md`](../plans/2026-08-20-cli-evolution.md).
+
+## Update (2026-08-21): tracker identity re-homed by ADR-0073
+
+The Tracker identity paragraph above recorded the U-series as living in
+`docs/plans/IMPLEMENTATION.md`'s "m3l-cli build-out" section under keys
+`impl:cli:u*` with Issue Type `Capability` and "no sync-code or label-taxonomy
+change". [ADR-0073](0073-hub-board-classification-and-hierarchy.md) changes all
+three: that section held this programme plus the V- and X-series, which is what
+made 48 of 60 open board items type `Capability`. The U-series now lives in its
+own `## CLI evolution wave (U-series)` section under keys
+`impl:cli-evolution:u*` (the old keys retained as `legacyKeys`, so no issue is
+re-filed), and its rows carry the layer-based Issue Types — mostly
+`CLI capability`, with `Library capability` for U3/U4, `Fleet retrofit` for
+U5/U6, `Tooling & gates` for U2, `Infrastructure` for U13/U14, and
+`Governance` for U1. The programme's scope, phases, and plan document are
+unaffected; only its tracker address and classification move.

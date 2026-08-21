@@ -144,3 +144,15 @@ until then). W7/B2 remain uncoupled.
   [ADR-0048 (destructive gate — the disclaimer ADR-0060 answers)](./0048-target-graded-destructive-confirmation.md).
 - Research: [`docs/research/agent-cli-integration.md`](../research/agent-cli-integration.md).
 - Plan: [`docs/plans/2026-08-20-agent-operator.md`](../plans/2026-08-20-agent-operator.md).
+
+## Update (2026-08-21): tracker identity re-homed by ADR-0073
+
+The Tracker identity paragraph above recorded the V-series under keys
+`impl:cli:v*` with Issue Type `Capability` and "no sync-code or label changes".
+[ADR-0073](0073-hub-board-classification-and-hierarchy.md) supersedes that: the
+V-series moves to its own `## Agent-operator wave (V-series)` section under keys
+`impl:agent-operator:v*` (old keys retained as `legacyKeys`), and its rows take
+the layer-based Issue Types — `Library capability` for V4–V7,
+`CLI capability` for V2/V3, `Consumer script` for V8/V9, `Package capability`
+for V10, `Infrastructure` for V11/V12, and `Governance` for V1. Programme scope
+and phasing are unaffected.

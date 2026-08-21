@@ -137,3 +137,15 @@ escalate-by-default posture until they ship; the W-series is untouched.
   [ADR-0062](./0062-runtime-mcp-surface.md) (package-precedent),
   [ADR-0063](./0063-cli-structured-run-results.md).
 - Plan: [`docs/plans/2026-08-20-m3l-console.md`](../plans/2026-08-20-m3l-console.md).
+
+## Update (2026-08-21): tracker identity re-homed by ADR-0073
+
+The Tracker identity note above recorded the X-series under keys
+`impl:cli:x*` with `Capability` type and "zero sync-code or label changes".
+[ADR-0073](0073-hub-board-classification-and-hierarchy.md) supersedes that: the
+X-series moves to its own `## m3l console wave (X-series)` section under keys
+`impl:console:x*` (old keys retained as `legacyKeys`), and its rows take the
+layer-based Issue Types — `Package capability` for X2/X3/X4/X6/X7/X8/X9/X13,
+`UI` for X10/X11, `Infrastructure` for X12/X14/X15/X16, `Fleet retrofit` for
+X5, and `Governance` for X1. Programme scope, phasing, and the deferral
+conditions on X14–X16 are unaffected.
