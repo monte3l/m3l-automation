@@ -7,6 +7,7 @@ import {
   classifyPriorityCell,
   classifyStatus,
   classifyStatusCell,
+  classifyTypeCell,
   columnIndex,
   escapeHtml,
   extractImplementation,
@@ -14,6 +15,7 @@ import {
   extractRoadmap,
   findOffVocabularyPriorityCells,
   findOffVocabularyStatusCells,
+  findOffVocabularyTypeCells,
   findUncoveredStatusHeadings,
   parseAdr,
   parseDatedDoc,
@@ -939,12 +941,14 @@ describe("classifyPriorityCell", () => {
     ["now", "p0"],
     ["next", "p1"],
     ["later", "p2"],
+    ["Gated", "p3"],
+    ["gated", "p3"],
   ] as const)("%j is recognized as %j", (cell, priority) => {
     const result = classifyPriorityCell(cell);
     expect(result).toEqual({ priority, recognized: true });
   });
 
-  test.each(["**Now**", "`Next`", "**Later**", "`now`"] as const)(
+  test.each(["**Now**", "`Next`", "**Later**", "`now`", "**Gated**"] as const)(
     "markdown-wrapped %j is recognized",
     (cell) => {
       const { recognized } = classifyPriorityCell(cell);
@@ -961,6 +965,19 @@ describe("classifyPriorityCell", () => {
       });
     },
   );
+
+  // Regression lock: ADR-0073 added a real p3 tier ("Gated"), but the dash
+  // placeholder must NOT be repointed to it. The dash marks a row that is
+  // genuinely untiered (e.g. a capability-deepening wave row with no
+  // priority tier at all), never a row that is blocked on an external gate.
+  // Repointing the dash to p3 would misfile every untiered wave row as
+  // gate-blocked, which is a materially different (and false) claim.
+  test("the dash placeholder still resolves to p2, not p3, even after ADR-0073 added a real Gated tier", () => {
+    expect(classifyPriorityCell("—")).toEqual({
+      priority: "p2",
+      recognized: true,
+    });
+  });
 
   test("an empty string is NOT recognized (an omission, not a deliberate statement)", () => {
     expect(classifyPriorityCell("")).toEqual({
@@ -1064,6 +1081,141 @@ describe("findOffVocabularyPriorityCells", () => {
 | d    | —        |
 `;
     expect(findOffVocabularyPriorityCells(content)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// classifyTypeCell
+// ---------------------------------------------------------------------------
+
+const SAMPLE_TYPES = [
+  "Library capability",
+  "CLI capability",
+  "UI",
+  "Tooling & gates",
+  "Friction",
+];
+
+describe("classifyTypeCell", () => {
+  test.each(SAMPLE_TYPES)("%j is recognized against the vocabulary", (type) => {
+    expect(classifyTypeCell(type, SAMPLE_TYPES)).toEqual({
+      type,
+      recognized: true,
+      placeholder: false,
+    });
+  });
+
+  test.each([
+    ["library capability", "Library capability"],
+    ["LIBRARY CAPABILITY", "Library capability"],
+    ["ui", "UI"],
+    ["tooling & gates", "Tooling & gates"],
+  ] as const)("matches %j case-insensitively to %j", (cell, expected) => {
+    expect(classifyTypeCell(cell, SAMPLE_TYPES)).toEqual({
+      type: expected,
+      recognized: true,
+      placeholder: false,
+    });
+  });
+
+  test.each([
+    ["**UI**", "UI"],
+    ["`Friction`", "Friction"],
+    ["_CLI capability_", "CLI capability"],
+  ] as const)(
+    "strips markdown markers from %j before matching",
+    (cell, expected) => {
+      expect(classifyTypeCell(cell, SAMPLE_TYPES)).toEqual({
+        type: expected,
+        recognized: true,
+        placeholder: false,
+      });
+    },
+  );
+
+  test.each(["—", "–", "-", "---", "——"] as const)(
+    "dash variant %j is recognized as the section-default placeholder",
+    (cell) => {
+      expect(classifyTypeCell(cell, SAMPLE_TYPES)).toEqual({
+        type: null,
+        recognized: true,
+        placeholder: true,
+      });
+    },
+  );
+
+  test("an empty string is NOT recognized (an omission, not a deliberate placeholder)", () => {
+    expect(classifyTypeCell("", SAMPLE_TYPES)).toEqual({
+      type: null,
+      recognized: false,
+      placeholder: false,
+    });
+  });
+
+  test("an unknown word is NOT recognized", () => {
+    expect(classifyTypeCell("Widget", SAMPLE_TYPES)).toEqual({
+      type: null,
+      recognized: false,
+      placeholder: false,
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findOffVocabularyTypeCells
+// ---------------------------------------------------------------------------
+
+describe("findOffVocabularyTypeCells", () => {
+  test("reports a bad Type cell with the correct line, heading, and cell text", () => {
+    const content = `## Wave
+
+| Item | Type |
+| ---- | ---- |
+| x    | Widget |
+`;
+    expect(findOffVocabularyTypeCells(content, SAMPLE_TYPES)).toEqual([
+      { line: 5, heading: "Wave", cell: "Widget" },
+    ]);
+  });
+
+  test("a table with NO Type column produces no findings — this is what keeps the column optional", () => {
+    // findOffVocabularyCells skips any table lacking the named column
+    // outright, so a tracker table that never grows a Type column is never
+    // flagged. This is the property that lets every existing table stay
+    // untouched while a new one opts in.
+    const content = `## Wave
+
+| Item | Status |
+| ---- | ------ |
+| x    | Done   |
+`;
+    expect(findOffVocabularyTypeCells(content, SAMPLE_TYPES)).toEqual([]);
+  });
+
+  test("two back-to-back tables where only the second has a Type column: only the second is scanned", () => {
+    const content = `## Adjacent
+
+| Item | Status |
+| ---- | ------ |
+| a    | Done   |
+| Notes | Type |
+| ----- | ---- |
+| b     | Widget |
+`;
+    expect(findOffVocabularyTypeCells(content, SAMPLE_TYPES)).toEqual([
+      { line: 8, heading: "Adjacent", cell: "Widget" },
+    ]);
+  });
+
+  test("recognized cells (a valid type, or the dash placeholder) produce no findings", () => {
+    const content = `## Clean
+
+| Item | Type |
+| ---- | ---- |
+| a    | UI   |
+| b    | —    |
+`;
+    expect(findOffVocabularyTypeCells(content, SAMPLE_TYPES)).toEqual([]);
   });
 });
 

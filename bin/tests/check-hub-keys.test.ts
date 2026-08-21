@@ -252,7 +252,11 @@ describe("findPriorityVocabularyMismatches", () => {
 describe("findMissingTypes", () => {
   test("returns [] when every item carries a valid ISSUE_TYPES value", () => {
     const findings = findMissingTypes([
-      { key: "roadmap:p0:x", title: "X", type: ISSUE_TYPES.capability },
+      {
+        key: "roadmap:p0:x",
+        title: "X",
+        type: ISSUE_TYPES.libraryCapability,
+      },
       { key: "impl:friction:f7", title: "F7", type: ISSUE_TYPES.friction },
     ]);
     expect(findings).toEqual([]);
