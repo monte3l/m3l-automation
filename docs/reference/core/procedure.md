@@ -547,6 +547,16 @@ interface M3LProcedureConditionEvaluation {
   readonly operands: readonly M3LProcedureConditionEvaluation[];
   /** A short rendered explanation, e.g. `"12 > 5"`. Length-capped. */
   readonly detail: string | undefined;
+  /**
+   * Set when this node could not be genuinely evaluated — its recursive
+   * evaluation degraded (a hostile getter threw), hit the depth bound, or
+   * was shape-malformed — as distinct from a node that WAS evaluated and is
+   * simply unsatisfied. Absent (not `false`) when the node was genuinely
+   * evaluated. `not` propagates a refused child as `satisfied: false,
+   * refused: true` rather than inverting it — negating "we don't know"
+   * into "true" would be a fail-open in the engine's decision path.
+   */
+  readonly refused?: true;
 }
 
 interface M3LProcedureConditionScope<TShape extends M3LProcedureShape> {

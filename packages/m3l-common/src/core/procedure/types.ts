@@ -247,6 +247,15 @@ export interface M3LProcedureConditionEvaluation {
   readonly operands: readonly M3LProcedureConditionEvaluation[];
   /** A short rendered explanation, e.g. `"12 > 5"`. Length-capped. */
   readonly detail: string | undefined;
+  /**
+   * Set when this node could not be genuinely evaluated — its recursive
+   * evaluation degraded (a hostile getter threw), hit the depth bound, or
+   * was shape-malformed — as distinct from a node that WAS evaluated and is
+   * simply unsatisfied. Absent (not `false`) when the node was genuinely
+   * evaluated, mirroring the optional-field convention already used by
+   * {@link M3LProcedureResolvedReference.refused}.
+   */
+  readonly refused?: true;
 }
 
 /**

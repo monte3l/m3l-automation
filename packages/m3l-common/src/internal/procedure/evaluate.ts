@@ -360,16 +360,33 @@ function evaluateNotNode<TShape extends M3LProcedureShape>(
   if (!isConditionNode<TShape>(rawOperand)) {
     // A malformed `operand` degrades to `false` rather than recursing into
     // `evaluateCondition` with something that was never proven to be a real
-    // condition node — see `isConditionNode`'s TSDoc.
+    // condition node — see `isConditionNode`'s TSDoc. Nothing was genuinely
+    // evaluated here either, so this is a refusal like the main branch below.
     return {
       kind: "not",
       satisfied: false,
+      refused: true,
       references: [],
       operands: [],
       detail: capDetail("not (malformed operand)"),
     };
   }
   const operand = evaluateCondition(rawOperand, scope, depth + 1);
+  if (operand.refused) {
+    // The child couldn't be genuinely evaluated (degraded, too-deep, or
+    // shape-malformed) — all of which already report `satisfied: false`.
+    // Inverting that would report `not` as satisfied even though nothing was
+    // actually evaluated, a fail-open in the engine's decision path. Propagate
+    // the refusal instead of inverting.
+    return {
+      kind: "not",
+      satisfied: false,
+      refused: true,
+      references: [],
+      operands: [operand],
+      detail: capDetail(`not (${operand.detail ?? ""})`),
+    };
+  }
   return {
     kind: "not",
     satisfied: !operand.satisfied,
@@ -394,6 +411,7 @@ function malformedRootEvaluation(): M3LProcedureConditionEvaluation {
   return {
     kind: "exists",
     satisfied: false,
+    refused: true,
     references: [],
     operands: [],
     detail: capDetail("condition is malformed (not a recognised node)"),
@@ -407,6 +425,7 @@ function tooDeepEvaluation<TShape extends M3LProcedureShape>(
   return {
     kind: condition.kind,
     satisfied: false,
+    refused: true,
     references: [],
     operands: [],
     detail: capDetail("condition nesting exceeds the max depth"),
@@ -430,6 +449,7 @@ function degradedEvaluation<TShape extends M3LProcedureShape>(
   return {
     kind: condition.kind,
     satisfied: false,
+    refused: true,
     references: [],
     operands: [],
     detail: capDetail("evaluation failed: a value could not be read"),
