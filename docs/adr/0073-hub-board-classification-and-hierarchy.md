@@ -400,3 +400,15 @@ cause, for a setting nothing in the pipeline writes, would be noise.
 - Issues: #576 (the hand-built B2 landing plan promoted to a tracker row here);
   #474 (B2, whose closed-vs-`To Do` mismatch is the other half of the live
   `check:hub-drift` failure).
+
+## Update (2026-08-22): the retained-row count was 8, not 9
+
+The Migration-scope section above states that keeping the `m3l-cli build-out`
+section "leaves the nine closed 8b–8g issues untouched." Counting the actual
+rows while performing the split, it is **eight**: the ADR-0042 activation
+record, 8b, 8c, 8d, 8e, the `M3LConfigParameter.secret` library prerequisite,
+8f, and 8g. The 42-row figure for the moved U/V/X rows is correct (14 + 12 +
+16), as is every consequence drawn from it — only the retained-row count was
+wrong, and it was inherited from a synthesis rather than derived from the file.
+
+Recorded rather than silently corrected, since this ADR is Accepted.
