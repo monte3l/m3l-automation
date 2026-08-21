@@ -62,8 +62,12 @@ Once an idea is actually ready to be worked on:
    - `docs/plans/IMPLEMENTATION.md` — the detailed per-item backlog. Registered
      `##`-level headings: `Library friction (F-series)`, `ADR-0035 rollout`,
      `Capability-deepening wave`, `Post-comparison hardening wave`,
-     `m3l-cli build-out`, `Codified-procedure engine wave`,
-     `AWS getter reality`, `Gated library modules & deferred decisions (Later)`.
+     `m3l-cli build-out`, `CLI evolution wave (U-series)`,
+     `Agent-operator wave (V-series)`, `m3l console wave (X-series)`,
+     `Codified-procedure engine wave`, `AWS getter reality`,
+     `Gated library modules & deferred decisions (Later)`. The last three
+     programme waves were split out of `m3l-cli build-out` by ADR-0073, which
+     keeps that section for its own shipped 8b–8g history.
    - **Adding a new `##`-level section to either file?** Run
      `pnpm check:tracker-coverage` right after — an unregistered heading with
      a `Status` column is a silent no-op to the sync, which is exactly the
@@ -84,36 +88,55 @@ Once an idea is actually ready to be worked on:
    values the sync actually applies; `PROJECT_PRIORITY_OPTIONS` — ADR-0052 —
    is the same three tiers projected onto the board's own `Priority` field):
 
-   | Cell    | GitHub label       | Milestone                           | Board Priority field | Pick this when…                                                                                |
-   | ------- | ------------------ | ----------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------- |
-   | `Now`   | `priority:0-now`   | `Now — unblock first`               | `0-now`              | the item blocks other work landing — do it before more scripts consume the library.            |
-   | `Next`  | `priority:1-next`  | `Next — consumer fleet`             | `1-next`             | it's the near-term consumer-fleet wave — real, scheduled, not urgent.                          |
-   | `Later` | `priority:2-later` | `Later — gated/deferred`            | `2-later`            | it's gated on a future trigger (a second consumer, an ADR intake gate) or explicitly deferred. |
-   | —       | (none)             | (none, unless another tier applies) | (cleared)            | the row's table has no Priority column at all (untiered by design — e.g. a wave sub-table).    |
+   | Cell    | GitHub label       | Milestone                           | Board Priority field | Pick this when…                                                                                         |
+   | ------- | ------------------ | ----------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------- |
+   | `Now`   | `priority:0-now`   | `Now — unblock first`               | `0-now`              | the item blocks other work landing — do it before more scripts consume the library.                     |
+   | `Next`  | `priority:1-next`  | `Next — scheduled`                  | `1-next`             | it's the near-term wave — real, scheduled, not urgent.                                                  |
+   | `Later` | `priority:2-later` | `Later — not yet scheduled`         | `2-later`            | it's real work you intend to do, but it isn't scheduled yet. **Nothing external is blocking it.**       |
+   | `Gated` | `priority:3-gated` | `Gated — awaiting trigger`          | `3-gated`            | it **cannot start** until an external gate opens — a second consumer, an ADR intake gate, a future ADR. |
+   | —       | (none)             | (none, unless another tier applies) | (cleared)            | the row's table has no Priority column at all (untiered by design — e.g. a wave sub-table).             |
+
+   `Later` vs `Gated` is the distinction ADR-0073 added: ask "could I start this
+   today if I wanted to?" If yes, it's `Later`; if something outside the repo has
+   to happen first, it's `Gated`. The dash placeholder still means `2-later`, not
+   `3-gated` — it marks an untiered-but-real row, never a blocked one.
 
    `Governance` is **not** a priority tier — it's a category for ADR/process
    follow-up work that sits in its own `docs/ROADMAP.md` section and carries
    `type:governance` (not a `priority:*` label) plus its own `Governance`
    milestone. A governance row has no Priority column to fill in; don't force
-   one of the three tiers onto it. The board's Priority field gets its own
+   one of the four tiers onto it. The board's Priority field gets its own
    dedicated `Governance` option instead (ADR-0052's 2026-08-20 Update) — not
    `2-later` (which would conflate it with real Later-tier work under a
    sort/filter) and no longer cleared/blank; `priority:*` labels are
-   unaffected, still exactly the three tiers above.
+   unaffected, still exactly the four tiers above.
 
-   **Type legend** (ADR-0052 — assigned as the item's GitHub Issue Type, not
-   a label; `bin/lib/hub-sync.mjs`'s `TYPE_BY_ROADMAP_SECTION`/
-   `TYPE_BY_IMPLEMENTATION_SECTION` derive it per tracker section, never
-   hand-picked per row. Each Issue Type also carries a matching `type:*`
-   GitHub label, applied to every issue unconditionally alongside its
+   **Type legend** (ADR-0073 — assigned as the item's GitHub Issue Type, not
+   a label. The axis is **which layer of the monorepo the work lands in**.
+   `bin/lib/hub-sync.mjs`'s `TYPE_BY_ROADMAP_SECTION`/
+   `TYPE_BY_IMPLEMENTATION_SECTION` supply a **default per tracker section**;
+   a row may override it with its own optional `Type` cell, and a dash there
+   means "use this section's default". Each Issue Type also carries a matching
+   `type:*` GitHub label, applied to every issue unconditionally alongside its
    Priority/Status labels — ADR-0052's 2026-08-20 Update):
 
-   | Issue Type        | GitHub label           | Tracker series     | Source section(s)                                                           |
-   | ----------------- | ---------------------- | ------------------ | --------------------------------------------------------------------------- |
-   | `Capability`      | `type:capability`      | A/B/C/U/V/X-series | ROADMAP Priority 0; every IMPLEMENTATION.md section except Library friction |
-   | `Consumer script` | `type:consumer-script` | W-series           | ROADMAP Priority 1 (the Wave/Scripts table)                                 |
-   | `Friction`        | `type:friction`        | F-series           | IMPLEMENTATION.md's Library friction table                                  |
-   | `Governance`      | `type:governance`      | T-series           | ROADMAP Governance follow-ups                                               |
+   | Issue Type           | GitHub label              | The work lands in                                          |
+   | -------------------- | ------------------------- | ---------------------------------------------------------- |
+   | `Library capability` | `type:library-capability` | `packages/m3l-common` — `core/`, `aws/`                    |
+   | `CLI capability`     | `type:cli-capability`     | `packages/m3l-cli`                                         |
+   | `Package capability` | `type:package-capability` | any other workspace package — creating **or** building out |
+   | `UI`                 | `type:ui`                 | a browser-facing surface                                   |
+   | `Infrastructure`     | `type:infrastructure`     | deployment, packaging, or runtime substrate                |
+   | `Fleet retrofit`     | `type:fleet-retrofit`     | changes to existing consumers under `scripts/*`            |
+   | `Tooling & gates`    | `type:tooling-gates`      | `bin/`, `.github/`, `.claude/`                             |
+   | `Consumer script`    | `type:consumer-script`    | a **new** consumer script under `scripts/*`                |
+   | `Friction`           | `type:friction`           | a library friction / defect report (the F-series)          |
+   | `Governance`         | `type:governance`         | an ADR / process follow-up                                 |
+
+   `Capability` was retired by ADR-0073: it had grown to 48 of 60 open board
+   items, because one tracker section held three separate programmes.
+   `Package capability` is deliberately wider than "new package" — several
+   console items build _inside_ `m3l-console-server` without creating it.
 
    **Status legend** — every one of the six `Status` cell values now carries
    a matching GitHub label too (ADR-0052's 2026-08-20 Update; originally
@@ -122,6 +145,18 @@ Once an idea is actually ready to be worked on:
    (`bin/lib/hub-sync.mjs`'s `STATUS_LABELS`). A Done/Rejected issue still
    closes as before — the label is additional context on the closed issue,
    not a substitute for its closed state.
+
+   **Is this one row, or a row plus slices?** ADR-0072 puts the soft authoring
+   target at 75,000 reviewable chars per PR. If the item plainly can't land in
+   one PR, file it as a parent row plus **slice sub-rows** whose IDs extend the
+   parent's (`X10` → `X10a`, `X10b`, …). The sync derives the parent link from
+   the ID, so each slice becomes a real GitHub sub-issue — marker-bearing,
+   labelled, and drift-checked like any other row. Do **not** hand-create a
+   sub-issue on GitHub instead: it will carry no marker, so `sync:hub` cannot
+   see it, and it ends up wearing hub-managed labels nothing manages
+   (issue #576 was exactly this, and ADR-0073 promoted it to a real row). Each
+   tracker section also gets one derived **epic** issue that parents its items;
+   you never author those.
 
 4. **Run `pnpm sync:hub`** (dry-run first to preview, then `-- --apply`,
    maintainer-local — it needs your own `gh` auth; `GITHUB_TOKEN` cannot write
@@ -135,26 +170,45 @@ Once an idea is actually ready to be worked on:
    GitHub ever drift apart on `main` — it is not a substitute for running
    `sync:hub` yourself; it only tells you that you (or someone) forgot to.
 
-## The board's views (one-time manual setup)
+## The board's view (and the two steps the API can't do)
+
+The board has **one** saved view, **`Backlog`** (Table, filtered `is:open`).
+ADR-0073 dropped the `Board` view — a Board layout's one load-bearing setting
+is its grouping, which the API cannot write, and its Kanban reading of `Status`
+duplicated a column the table already sorts and filters.
 
 `pnpm sync:hub-projects -- --init --apply` (also run as part of `sync:hub
---init`) reconciles the board's two saved views — **`Backlog`** (Table) and
-**`Board`** (Board) — via `bin/lib/hub-views.mjs`'s `VIEW_DEFS`: name,
-layout, filter, and visible columns. GitHub's GraphQL API does not expose
-everything a view needs, though (verified against the live schema —
-ADR-0052; a Roadmap view was dropped entirely — see its 2026-08-20
-Update — since `ROADMAP_LAYOUT` rejects visible-column configuration on both
-create and update); these steps are manual and one-time, done once via the
-board's own UI:
+--init`) reconciles that view from `bin/lib/hub-views.mjs`'s `VIEW_DEFS`: name,
+layout, filter, and the visible-column set. **`VIEW_DEFS` is authoritative** —
+any view on the board that isn't declared there is deleted, so don't build an
+ad-hoc view expecting it to survive the next `--init`.
 
-- **`Board`** view: verify it groups by `Status` (Board layout defaults to
-  grouping by the first single-select field, which should already be
-  `Status`).
-- **`Backlog`** view: sort by `Priority` ascending, then `Status`.
-- Optional: to show item Type as a column, enable the built-in **`Type`**
-  field (board "…" menu → Settings → Fields → `Type`) and add it to a view by
-  hand — neither step is settable via the API, and `sync:hub` does not
-  manage this column.
+Two settings remain manual, because GraphQL can read them but not write them
+(`ProjectV2ViewConfigurationInput` accepts only `visibleFieldIds`; the built-in
+`Type` field has no `createProjectV2Field` counterpart). Both are asserted by
+`pnpm check:hub-views`, so a drifted board fails a gate rather than going
+unnoticed the way the old prose-only instructions did:
+
+- Enable the built-in **`Type`** field: board "…" menu → Settings → Fields →
+  `Type`. Once enabled, the next `--init --apply` adds it as a `Backlog` column
+  on its own; until then the runner reports its absence as `info`, not a
+  warning, and `check:hub-views` is the loud channel.
+- **`Backlog`** sort: `Priority` ascending, then `Created` ascending — oldest
+  highest-priority work first. Set it under the view's "…" menu → Sort.
+
+Everything else on the board is written by the sync from the trackers: `Status`,
+`Priority` and `Programme` per item, and `Parent issue` indirectly (it is a
+read-only projection of the issue's own sub-issue link, so the sync sets the
+link, never the field).
+
+### Board workflows
+
+The board's six built-in workflows are deliberately left as they are: only
+**`Auto-add sub-issues to project`** is enabled, which is what makes an
+ADR-0072 slice sub-issue appear on the board. Every other one writes `Status`,
+and `sync-hub-projects.mjs` already owns `Status` from the tracker — enabling
+one would make the board flicker between two writers rather than converge. See
+ADR-0073's workflow review before turning any of them on.
 
 ## For a bug report or a concrete feature request instead
 
@@ -168,11 +222,18 @@ unless the maintainer decides to promote them into one.
 
 - [ADR-0032](../adr/0032-project-management-visibility-hub.md) — the
   visibility hub this whole sync pipeline implements.
+- [ADR-0073](../adr/0073-hub-board-classification-and-hierarchy.md) — the
+  current Issue Type / `Programme` / four-tier Priority taxonomy, the
+  epic-and-slice issue hierarchy, the single authoritative view, and the
+  milestone title set. **Read this one first** — it amends or partially
+  supersedes both of the next two.
 - [ADR-0051](../adr/0051-semantic-priority-vocabulary.md) — the priority
-  label/milestone/tracker-cell vocabulary.
+  label/milestone/tracker-cell vocabulary (amended by ADR-0073, which added
+  the fourth tier and renamed two milestones).
 - [ADR-0052](../adr/0052-hub-board-identity-and-field-taxonomy.md) — the
-  board's identity (`m3l-automation`) and its Type/Status/Priority field
-  taxonomy and saved views.
+  board's identity (`m3l-automation`) and its Status field; its Type and
+  Priority vocabularies and its two-view set are partially superseded by
+  ADR-0073.
 - [ADR-0050](../adr/0050-github-platform-feature-stance.md) — why Discussions
   and the Project board are configured the way they are.
 - [`docs/ROADMAP.md`'s Maintenance section](../ROADMAP.md#maintenance) and

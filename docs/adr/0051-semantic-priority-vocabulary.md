@@ -1,6 +1,6 @@
 # 0051. Semantic priority vocabulary for labels, milestones, and tracker cells
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by ADR-0073
 - **Date:** 2026-08-20
 - **Deciders:** Enrico Lionello (maintainer); Claude (audit + implementation)
 
