@@ -1079,21 +1079,19 @@ describe("core/procedure — build-time validation", () => {
       expect(problem?.message).toContain("mystery-source");
     });
 
-    test("a malformed (non-object) reference projects to undefined rather than throwing", () => {
+    test("a malformed (non-object) reference is ERR_PROCEDURE_INVALID_DECLARATION naming the case", () => {
       const condition = {
         kind: "exists",
         subject: "not-a-reference-object",
       } as unknown as M3LProcedureCondition<TestShape>;
-      let procedure: M3LProcedure<TestShape> | undefined;
-      expect(() => {
-        procedure = buildProcedure(
-          [makeStep({ id: "a" })],
-          [caseWithCondition(condition)],
-        );
-      }).not.toThrow();
-      expect(procedure?.describe().cases[0]?.condition).toMatchObject({
-        kind: "exists",
-      });
+      const { problems } = captureProblems(() =>
+        buildProcedure([makeStep({ id: "a" })], [caseWithCondition(condition)]),
+      );
+      const problem = problems.find(
+        (candidate) => candidate.code === "ERR_PROCEDURE_INVALID_DECLARATION",
+      );
+      expect(problem?.message).toContain("case-under-test");
+      expect(problem?.message).toContain("not-a-reference-object");
     });
 
     test("build() succeeds with a `compare` condition, and describe() reflects the projected (not raw-reference) node", () => {

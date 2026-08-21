@@ -26,6 +26,7 @@ import type {
   M3LProcedureCondition,
   M3LProcedureConditionKind,
   M3LProcedureConditionScope,
+  M3LProcedureReference,
   M3LProcedureShape,
   M3LProcedureStepRecord,
 } from "../src/core/procedure/index.js";
@@ -273,6 +274,42 @@ describe("core/procedure — conditions (boundary)", () => {
         EMPTY_SCOPE,
       );
       expectMalformedRoot(evaluation);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // unrecognised reference source — `renderReferenceString` and
+  // `rootValueFor` (internal/procedure/resolve.ts) both dispatch on
+  // `reference.source` and each fall through to a `default:` arm that is
+  // reachable ONLY by a hand-crafted, untyped `M3LProcedureReference` whose
+  // `source` is some other string — impossible through TypeScript's type
+  // system, but directly reachable by a caller who invokes the public
+  // `resolveReference`/`evaluateProcedureCondition` functions directly,
+  // bypassing `M3LProcedureBuilder.build()`'s validation. A `compare`
+  // condition's `left` reference exercises both arms in one call:
+  // `resolveReference` renders the reference string first (exercising
+  // `renderReferenceString`'s default), then resolves the value via
+  // `rootValueFor` (exercising its own default, which yields `undefined`).
+  // -------------------------------------------------------------------------
+  describe("unrecognised reference source", () => {
+    test("a compare condition whose left reference has an unrecognised source renders a placeholder string and resolves to absent", () => {
+      const unrecognisedReference = {
+        source: "not-a-real-source",
+      } as unknown as M3LProcedureReference<TestShape>;
+      const condition: M3LProcedureCondition<TestShape> = {
+        kind: "compare",
+        left: unrecognisedReference,
+        operator: "==",
+        right: { source: "literal", literal: 0 },
+      };
+      const evaluation = evaluateProcedureCondition<TestShape>(
+        condition,
+        EMPTY_SCOPE,
+      );
+      expect(evaluation.kind).toBe("compare");
+      const [left] = evaluation.references;
+      expect(left?.reference).toBe("unknown-reference");
+      expect(left?.present).toBe(false);
     });
   });
 

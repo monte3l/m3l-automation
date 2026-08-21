@@ -317,25 +317,26 @@ describe("internal/procedure/validate/conditions — sibling coverage battery", 
     });
   });
 
-  describe("compare — non-string-operator fallback", () => {
-    test("a compare condition whose operator is a number projects operator:'' without a native throw", () => {
+  describe("compare — unrecognized-operator guard", () => {
+    test("a compare condition whose operator is a number is ERR_PROCEDURE_INVALID_DECLARATION naming the case", () => {
       const condition = {
         kind: "compare",
         left: { source: "literal", literal: 1 },
         operator: 7,
         right: { source: "literal", literal: 2 },
       } as unknown as M3LProcedureCondition<TestShape>;
-      let procedure: M3LProcedure<TestShape> | undefined;
-      expect(() => {
-        procedure = buildProcedure(
-          [makeStep({ id: "a" })],
-          [caseWithCondition(condition)],
-        );
-      }).not.toThrow();
-      expect(procedure?.describe().cases[0]?.condition).toMatchObject({
-        kind: "compare",
-        operator: "",
-      });
+      const { problems } = captureProblems(() =>
+        buildProcedure([makeStep({ id: "a" })], [caseWithCondition(condition)]),
+      );
+      expect(problemCodes(problems)).toContain(
+        "ERR_PROCEDURE_INVALID_DECLARATION",
+      );
+      const problem = problems.find(
+        (candidate) => candidate.code === "ERR_PROCEDURE_INVALID_DECLARATION",
+      );
+      expect(problem?.message).toBe(
+        "M3LProcedure: case 'case-under-test' has a compare condition with an unrecognized operator '7'",
+      );
     });
   });
 
@@ -386,19 +387,26 @@ describe("internal/procedure/validate/conditions — sibling coverage battery", 
 
   describe("projectCondition — top-level non-object condition guard", () => {
     test.each([
-      ["a bare string", "not-an-object"],
-      ["null", null],
+      ["a bare string", "not-an-object", "not-an-object"],
+      ["null", null, "null"],
     ] as const)(
-      "a case whose condition field is %s (not an object at all) projects to an undefined condition without a throw",
-      (_label, rawCondition) => {
-        let procedure: M3LProcedure<TestShape> | undefined;
-        expect(() => {
-          procedure = buildProcedure(
+      "a case whose condition field is %s (not an object at all) is ERR_PROCEDURE_INVALID_DECLARATION naming the case",
+      (_label, rawCondition, described) => {
+        const { problems } = captureProblems(() =>
+          buildProcedure(
             [makeStep({ id: "a" })],
             [caseWithCondition(rawCondition)],
-          );
-        }).not.toThrow();
-        expect(procedure?.describe().cases[0]?.condition).toBeUndefined();
+          ),
+        );
+        expect(problemCodes(problems)).toContain(
+          "ERR_PROCEDURE_INVALID_DECLARATION",
+        );
+        const problem = problems.find(
+          (candidate) => candidate.code === "ERR_PROCEDURE_INVALID_DECLARATION",
+        );
+        expect(problem?.message).toBe(
+          `M3LProcedure: case 'case-under-test' has a condition that is not an object (received ${described})`,
+        );
       },
     );
   });
@@ -413,6 +421,13 @@ describe("internal/procedure/validate/conditions — sibling coverage battery", 
   // `boolean` with no runtime type check.
   // ---------------------------------------------------------------------------
   describe("continueOnFailure declaration — non-boolean vs. default-absent", () => {
+    const validCondition: M3LProcedureCondition<TestShape> = {
+      kind: "compare",
+      operator: "==",
+      left: { source: "literal", literal: 1 },
+      right: { source: "literal", literal: 1 },
+    };
+
     test("a step declared with continueOnFailure: 'false' (a non-boolean string) is ERR_PROCEDURE_INVALID_DECLARATION naming the step", () => {
       // Not expressible via the typed fluent chain (`continueOnFailure` is
       // `boolean | undefined` at the type level) — cast through `unknown` to
@@ -422,7 +437,7 @@ describe("internal/procedure/validate/conditions — sibling coverage battery", 
         continueOnFailure: "false",
       } as unknown;
       const { problems } = captureProblems(() =>
-        buildProcedure([step], [caseWithCondition(undefined)]),
+        buildProcedure([step], [caseWithCondition(validCondition)]),
       );
       const problem = problems.find(
         (candidate) => candidate.code === "ERR_PROCEDURE_INVALID_DECLARATION",
@@ -434,7 +449,7 @@ describe("internal/procedure/validate/conditions — sibling coverage battery", 
     test("a step with continueOnFailure absent builds successfully, defaulting to false", () => {
       const procedure = buildProcedure(
         [makeStep({ id: "a" })],
-        [caseWithCondition(undefined)],
+        [caseWithCondition(validCondition)],
       );
       expect(procedure.describe().steps[0]?.continueOnFailure).toBe(false);
     });
@@ -444,14 +459,17 @@ describe("internal/procedure/validate/conditions — sibling coverage battery", 
         ...makeStep({ id: "b" }),
         continueOnFailure: undefined,
       } as unknown;
-      const procedure = buildProcedure([step], [caseWithCondition(undefined)]);
+      const procedure = buildProcedure(
+        [step],
+        [caseWithCondition(validCondition)],
+      );
       expect(procedure.describe().steps[0]?.continueOnFailure).toBe(false);
     });
 
     test("a step declared with continueOnFailure: true (an actual boolean) builds successfully, preserving the value", () => {
       const procedure = buildProcedure(
         [makeStep({ id: "c", continueOnFailure: true })],
-        [caseWithCondition(undefined)],
+        [caseWithCondition(validCondition)],
       );
       expect(procedure.describe().steps[0]?.continueOnFailure).toBe(true);
     });

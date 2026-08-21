@@ -63,6 +63,60 @@ function isConditionNode<TShape extends M3LProcedureShape>(
   );
 }
 
+/**
+ * Ceiling on the TOTAL number of condition nodes visited across one
+ * {@link evaluateCondition} call tree, independent of nesting depth.
+ * `depth` alone bounds how deeply nested a tree may be, but a hand-crafted
+ * condition object — reachable because this evaluator is public and
+ * documented as callable directly, bypassing `build()`'s own tree
+ * validation — whose `operands` array is shared/aliased by its own parent
+ * (the same node object appearing more than once) multiplies re-evaluation
+ * work by the branching factor at every level, so a shallow, depth-legal
+ * tree can still cost `branching^depth` evaluations. Mirrors the sibling
+ * total-node-visit counter added to the build-time condition-tree walk
+ * (`internal/procedure/validate/conditions.ts`'s
+ * `M3L_PROCEDURE_CONDITION_MAX_NODE_VISITS`) for the identical amplification
+ * hazard — this value is set to match it exactly.
+ */
+const M3L_PROCEDURE_MAX_VISITED_NODES = 5000;
+
+/**
+ * Shared by reference across one whole {@link evaluateCondition} call tree:
+ * counts the total number of condition nodes visited so far — every visit,
+ * not just distinct objects — and reports once
+ * {@link M3L_PROCEDURE_MAX_VISITED_NODES} is exceeded. A class (rather than a
+ * plain mutable `{ count }` object threaded through every recursive call)
+ * so the counter mutates its own instance field instead of a function
+ * parameter's property, which the project's `no-param-reassign` lint rule
+ * (`props: true`) disallows. Threaded alongside `depth` through
+ * `dispatchCondition`/`evaluateAndNode`/`evaluateOrNode`/`evaluateNotNode`/
+ * {@link evaluateOperandsSafely} so every recursive call shares the same
+ * instance.
+ */
+class EvaluationBudget {
+  private count = 0;
+
+  /** Records one more node visit; returns `true` once the ceiling is exceeded. */
+  visit(): boolean {
+    this.count += 1;
+    return this.count > M3L_PROCEDURE_MAX_VISITED_NODES;
+  }
+}
+
+/** The evaluation returned once the total node-visit budget is exhausted, without recursing further. */
+function budgetExceededEvaluation<TShape extends M3LProcedureShape>(
+  condition: M3LProcedureCondition<TShape>,
+): M3LProcedureConditionEvaluation {
+  return {
+    kind: condition.kind,
+    satisfied: false,
+    refused: true,
+    references: [],
+    operands: [],
+    detail: capDetail("evaluation aborted: exceeded the node visit budget"),
+  };
+}
+
 /** The result of {@link evaluateOperandsSafely}: the evaluated conforming
  * operands, plus how many raw entries were dropped by the shape filter —
  * tracked so `and`/`or` can render the same "malformed operand" visibility
@@ -85,12 +139,13 @@ function evaluateOperandsSafely<TShape extends M3LProcedureShape>(
   rawOperands: unknown,
   scope: M3LProcedureConditionScope<TShape>,
   depth: number,
+  budget: EvaluationBudget,
 ): OperandsEvaluation {
   if (!isArray(rawOperands)) return { operands: [], malformedCount: 0 };
   const conforming = rawOperands.filter(isConditionNode<TShape>);
   return {
     operands: conforming.map((operand) =>
-      evaluateCondition(operand, scope, depth + 1),
+      evaluateCondition(operand, scope, depth + 1, budget),
     ),
     malformedCount: rawOperands.length - conforming.length,
   };
@@ -174,11 +229,18 @@ function evaluateOrderingOperator(
     case "<=":
       return left <= right;
     default: {
-      /* istanbul ignore next -- unreachable: every ordering operator is
-         handled above; this arm exists only to fail loud if a new one is
-         ever added without a matching case. */
+      // Reachable: `evaluateCondition` is public and documented as callable
+      // directly with a hand-crafted, untyped `compare` condition whose
+      // `operator` was never proven to be one of the four ordering
+      // operators (unlike `condition.kind`, `condition.operator` has no
+      // shape guard analogous to `isConditionNode` anywhere upstream). The
+      // `never` annotation below is a compile-time completeness check only
+      // — it provides no runtime protection — so an unrecognised operator
+      // must fail closed (never satisfied) rather than pass the raw,
+      // non-boolean operator value through as `satisfied`.
       const exhaustive: never = operator;
-      return exhaustive;
+      void exhaustive;
+      return false;
     }
   }
 }
@@ -310,11 +372,13 @@ function evaluateAndNode<TShape extends M3LProcedureShape>(
   condition: Extract<M3LProcedureCondition<TShape>, { readonly kind: "and" }>,
   scope: M3LProcedureConditionScope<TShape>,
   depth: number,
+  budget: EvaluationBudget,
 ): M3LProcedureConditionEvaluation {
   const { operands, malformedCount } = evaluateOperandsSafely(
     condition.operands,
     scope,
     depth,
+    budget,
   );
   // Kleene three-valued logic: AND is confidently `false` (not refused)
   // whenever at least one operand is a *confirmed false* — genuinely
@@ -351,11 +415,13 @@ function evaluateOrNode<TShape extends M3LProcedureShape>(
   condition: Extract<M3LProcedureCondition<TShape>, { readonly kind: "or" }>,
   scope: M3LProcedureConditionScope<TShape>,
   depth: number,
+  budget: EvaluationBudget,
 ): M3LProcedureConditionEvaluation {
   const { operands, malformedCount } = evaluateOperandsSafely(
     condition.operands,
     scope,
     depth,
+    budget,
   );
   // Mirrors `evaluateAndNode`'s three-valued logic, swapping true/false: OR
   // is confidently `true` (not refused) whenever at least one operand is a
@@ -387,6 +453,7 @@ function evaluateNotNode<TShape extends M3LProcedureShape>(
   condition: Extract<M3LProcedureCondition<TShape>, { readonly kind: "not" }>,
   scope: M3LProcedureConditionScope<TShape>,
   depth: number,
+  budget: EvaluationBudget,
 ): M3LProcedureConditionEvaluation {
   const rawOperand: unknown = condition.operand;
   if (!isConditionNode<TShape>(rawOperand)) {
@@ -403,7 +470,7 @@ function evaluateNotNode<TShape extends M3LProcedureShape>(
       detail: capDetail("not (malformed operand)"),
     };
   }
-  const operand = evaluateCondition(rawOperand, scope, depth + 1);
+  const operand = evaluateCondition(rawOperand, scope, depth + 1, budget);
   if (operand.refused) {
     // The child couldn't be genuinely evaluated (degraded, too-deep, or
     // shape-malformed) — all of which already report `satisfied: false`.
@@ -498,6 +565,7 @@ function dispatchCondition<TShape extends M3LProcedureShape>(
   condition: M3LProcedureCondition<TShape>,
   scope: M3LProcedureConditionScope<TShape>,
   depth: number,
+  budget: EvaluationBudget,
 ): M3LProcedureConditionEvaluation {
   switch (condition.kind) {
     case "compare":
@@ -509,11 +577,11 @@ function dispatchCondition<TShape extends M3LProcedureShape>(
     case "exists":
       return evaluateExistsNode(condition, scope);
     case "and":
-      return evaluateAndNode(condition, scope, depth);
+      return evaluateAndNode(condition, scope, depth, budget);
     case "or":
-      return evaluateOrNode(condition, scope, depth);
+      return evaluateOrNode(condition, scope, depth, budget);
     case "not":
-      return evaluateNotNode(condition, scope, depth);
+      return evaluateNotNode(condition, scope, depth, budget);
     default: {
       /* istanbul ignore next -- unreachable: every M3LProcedureConditionKind
          is handled above; this arm exists only to fail loud if a new kind is
@@ -537,7 +605,14 @@ function dispatchCondition<TShape extends M3LProcedureShape>(
  * {@link M3L_PROCEDURE_CONDITION_MAX_DEPTH} (inclusive), guarding a
  * pathologically deep tree built by a caller who invokes this evaluator
  * directly rather than through `build()` (which validates tree depth
- * up front, in a later pass). A root `condition` that fails
+ * up front, in a later pass). `budget` independently bounds the TOTAL number
+ * of nodes visited across the whole call tree by
+ * {@link M3L_PROCEDURE_MAX_VISITED_NODES} — depth alone does not catch a
+ * shallow tree whose `operands` array shares/aliases the same node object
+ * more than once, which multiplies re-evaluation work exponentially; caller
+ * code never passes this parameter explicitly, since a fresh budget must
+ * start at every root call and only recursive calls within this module
+ * thread the same shared counter forward. A root `condition` that fails
  * {@link isConditionNode}'s shape check — another consequence of this
  * evaluator being callable directly, bypassing `build()`'s tree validation —
  * also degrades (to {@link malformedRootEvaluation}) rather than reaching
@@ -547,13 +622,17 @@ export function evaluateCondition<TShape extends M3LProcedureShape>(
   condition: M3LProcedureCondition<TShape>,
   scope: M3LProcedureConditionScope<TShape>,
   depth = 0,
+  budget: EvaluationBudget = new EvaluationBudget(),
 ): M3LProcedureConditionEvaluation {
   if (!isConditionNode<TShape>(condition)) return malformedRootEvaluation();
+  if (budget.visit()) {
+    return budgetExceededEvaluation(condition);
+  }
   if (depth > M3L_PROCEDURE_CONDITION_MAX_DEPTH)
     return tooDeepEvaluation(condition);
 
   try {
-    return dispatchCondition(condition, scope, depth);
+    return dispatchCondition(condition, scope, depth, budget);
   } catch {
     return degradedEvaluation(condition);
   }

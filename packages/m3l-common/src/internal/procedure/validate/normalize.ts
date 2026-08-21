@@ -20,7 +20,7 @@
 
 import { isNonEmptyString } from "../../../core/utils/guards.js";
 
-import { field, problem } from "./shared.js";
+import { MAX_REFERENCE_ARRAY_LENGTH, field, problem } from "./shared.js";
 import type {
   NormalizedCase,
   NormalizedFallback,
@@ -167,12 +167,24 @@ function normalizeContinueOnFailure(raw: unknown): NormalizedContinueOnFailure {
   return { continueOnFailure: false, isValid: false };
 }
 
-/** Reads a step's `jumpsTo` exactly once, dropping any non-string entry. */
+/**
+ * Reads a step's `jumpsTo` exactly once, dropping any non-string entry. A
+ * non-array `jumpsTo` — and, per {@link MAX_REFERENCE_ARRAY_LENGTH}, an
+ * array declaring more entries than any legitimate step could need — is
+ * treated the same way: nothing to jump to, rather than paying an
+ * `Array.prototype.filter` pass over a hostile length-only sparse array.
+ */
 function normalizeJumpsTo(raw: unknown): readonly string[] {
   const rawJumpsTo = field(raw, "jumpsTo");
-  return Array.isArray(rawJumpsTo)
-    ? rawJumpsTo.filter((entry): entry is string => typeof entry === "string")
-    : [];
+  if (
+    !Array.isArray(rawJumpsTo) ||
+    rawJumpsTo.length > MAX_REFERENCE_ARRAY_LENGTH
+  ) {
+    return [];
+  }
+  return rawJumpsTo.filter(
+    (entry): entry is string => typeof entry === "string",
+  );
 }
 
 /** Reads a step's `loop` exactly once, validating `maxRevisits` in the same pass. */
