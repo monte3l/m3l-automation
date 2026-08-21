@@ -95,14 +95,32 @@ interface ConditionWalkAccumulator {
 /**
  * Fresh copy of a reference's `path`, filtering any non-string entry —
  * mirrors `normalizeJumpsTo`'s filter-and-copy shape. Returns `undefined`
- * when there is nothing to carry (never an empty array), and also when
- * `rawPath` is an array declaring more than {@link MAX_REFERENCE_ARRAY_LENGTH}
- * entries — the same fallback a non-array `path` already gets, since a
- * length-only sparse array (`Array.isArray` accepts one) would otherwise
- * make `.filter()` perform one `HasProperty` check per declared index.
+ * when there is nothing to carry (never an empty array). A non-array `path`
+ * stays `undefined` with no problem reported — there is simply nothing to
+ * carry. A `path` that IS an array but declares more than
+ * {@link MAX_REFERENCE_ARRAY_LENGTH} entries is a genuinely malformed
+ * declaration: silently projecting it to `undefined` (as a length-only
+ * sparse array otherwise would, forcing `.filter()` to perform one
+ * `HasProperty` check per declared index) would make the reference resolve
+ * the ROOT value instead of the nested one it was written to reach — a
+ * caller-visible correctness bug, not just a cost concern — so this reports
+ * `ERR_PROCEDURE_INVALID_DECLARATION` instead.
  */
-function projectPath(rawPath: unknown): readonly string[] | undefined {
-  if (!Array.isArray(rawPath) || rawPath.length > MAX_REFERENCE_ARRAY_LENGTH) {
+function projectPath(
+  rawPath: unknown,
+  acc: ConditionWalkAccumulator,
+): readonly string[] | undefined {
+  if (!Array.isArray(rawPath)) {
+    return undefined;
+  }
+  if (rawPath.length > MAX_REFERENCE_ARRAY_LENGTH) {
+    acc.declarationProblems.push(
+      problem({
+        code: "ERR_PROCEDURE_INVALID_DECLARATION",
+        message: `M3LProcedure: case '${acc.caseId}' has a reference path array with more than ${MAX_REFERENCE_ARRAY_LENGTH} entries`,
+        caseId: acc.caseId,
+      }),
+    );
     return undefined;
   }
   const path = rawPath.filter(
@@ -150,7 +168,7 @@ function projectStepReference(
       }),
     );
   }
-  const path = projectPath(field(reference, "path"));
+  const path = projectPath(field(reference, "path"), acc);
   return {
     source: "step",
     step: typeof step === "string" ? step : "",
@@ -179,7 +197,7 @@ function projectValueReference(
       }),
     );
   }
-  const path = projectPath(field(reference, "path"));
+  const path = projectPath(field(reference, "path"), acc);
   return {
     source: "value",
     key: typeof key === "string" ? key : "",
@@ -216,7 +234,7 @@ function projectParameterReference(
       );
     }
   }
-  const path = projectPath(field(reference, "path"));
+  const path = projectPath(field(reference, "path"), acc);
   return {
     source: "parameter",
     key: typeof key === "string" ? key : "",

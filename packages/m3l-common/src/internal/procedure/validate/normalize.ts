@@ -102,6 +102,31 @@ function checkStepLoopDeclaration(
 }
 
 /**
+ * A `jumpsTo` array declaring more entries than {@link MAX_REFERENCE_ARRAY_LENGTH}
+ * is `ERR_PROCEDURE_INVALID_DECLARATION`, naming the step's id — a genuinely
+ * malformed declaration, unlike an absent/non-array `jumpsTo`, which stays
+ * valid (there is simply nothing to jump to). Silently dropping every
+ * declared jump target for an over-length array would otherwise let the
+ * procedure build "successfully" with a graph missing those edges, and
+ * `findProcedureCycles` would report no cycle for a definition that
+ * genuinely has one.
+ */
+function checkStepJumpsToDeclaration(
+  isValid: boolean,
+  id: string,
+  hasValidId: boolean,
+): readonly M3LProcedureValidationProblem[] {
+  if (isValid) return [];
+  return [
+    problem({
+      code: "ERR_PROCEDURE_INVALID_DECLARATION",
+      message: `M3LProcedure: step '${id}' has a jumpsTo array with more than ${MAX_REFERENCE_ARRAY_LENGTH} entries`,
+      ...(hasValidId ? { stepId: id } : {}),
+    }),
+  ];
+}
+
+/**
  * A present-but-non-boolean `continueOnFailure` is
  * `ERR_PROCEDURE_INVALID_DECLARATION`, naming the step's id. `undefined`/
  * `null` stay valid — they already default to `false` in
@@ -167,24 +192,35 @@ function normalizeContinueOnFailure(raw: unknown): NormalizedContinueOnFailure {
   return { continueOnFailure: false, isValid: false };
 }
 
+/** {@link normalizeJumpsTo}'s result: the coerced value plus its validity. */
+interface NormalizedJumpsTo {
+  readonly jumpsTo: readonly string[];
+  readonly isValid: boolean;
+}
+
 /**
  * Reads a step's `jumpsTo` exactly once, dropping any non-string entry. A
- * non-array `jumpsTo` — and, per {@link MAX_REFERENCE_ARRAY_LENGTH}, an
- * array declaring more entries than any legitimate step could need — is
- * treated the same way: nothing to jump to, rather than paying an
- * `Array.prototype.filter` pass over a hostile length-only sparse array.
+ * non-array `jumpsTo` stays valid — there is simply nothing to jump to. An
+ * array declaring more entries than {@link MAX_REFERENCE_ARRAY_LENGTH} is a
+ * genuinely malformed declaration (`isValid: false`, reported by
+ * {@link checkStepJumpsToDeclaration}), rather than paying an
+ * `Array.prototype.filter` pass over a hostile length-only sparse array and
+ * silently dropping every declared jump target.
  */
-function normalizeJumpsTo(raw: unknown): readonly string[] {
+function normalizeJumpsTo(raw: unknown): NormalizedJumpsTo {
   const rawJumpsTo = field(raw, "jumpsTo");
-  if (
-    !Array.isArray(rawJumpsTo) ||
-    rawJumpsTo.length > MAX_REFERENCE_ARRAY_LENGTH
-  ) {
-    return [];
+  if (!Array.isArray(rawJumpsTo)) {
+    return { jumpsTo: [], isValid: true };
   }
-  return rawJumpsTo.filter(
-    (entry): entry is string => typeof entry === "string",
-  );
+  if (rawJumpsTo.length > MAX_REFERENCE_ARRAY_LENGTH) {
+    return { jumpsTo: [], isValid: false };
+  }
+  return {
+    jumpsTo: rawJumpsTo.filter(
+      (entry): entry is string => typeof entry === "string",
+    ),
+    isValid: true,
+  };
 }
 
 /** Reads a step's `loop` exactly once, validating `maxRevisits` in the same pass. */
@@ -233,7 +269,8 @@ export function normalizeStep(raw: unknown, index: number): NormalizedStep {
 
   const continueOnFailureInfo = normalizeContinueOnFailure(raw);
   const continueOnFailure = continueOnFailureInfo.continueOnFailure;
-  const jumpsTo = normalizeJumpsTo(raw);
+  const jumpsToInfo = normalizeJumpsTo(raw);
+  const jumpsTo = jumpsToInfo.jumpsTo;
   const loopInfo = normalizeLoop(raw);
 
   const execute = field(raw, "execute");
@@ -263,6 +300,7 @@ export function normalizeStep(raw: unknown, index: number): NormalizedStep {
         id,
         hasValidId,
       ),
+      ...checkStepJumpsToDeclaration(jumpsToInfo.isValid, id, hasValidId),
       ...checkStepExecuteDeclaration(hasValidExecute, id, hasValidId),
     ],
   };
