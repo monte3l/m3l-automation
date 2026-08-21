@@ -942,6 +942,457 @@ describe("core/procedure — build-time validation", () => {
   });
 
   // -------------------------------------------------------------------------
+  // Coverage backfill (ADR-0072 landing plan): the perFile gate (90/83/80/89)
+  // failed on six internal/core files whose full battery is slice 2b's; these
+  // are the minimum tests pulled forward to close exactly those gaps, without
+  // dropping src or letting 2a import a 2b test file.
+  // -------------------------------------------------------------------------
+  describe("coverage backfill: internal/procedure/validate/conditions", () => {
+    describe("isPatternSafe", () => {
+      test("[near miss] an escaped \\) followed by a quantifier is not a quantified group", () => {
+        const condition: M3LProcedureCondition<TestShape> = {
+          kind: "matches",
+          subject: { source: "value", key: "label" },
+          pattern: "a\\)+",
+        };
+        expect(() =>
+          buildProcedure(
+            [makeStep({ id: "a" })],
+            [caseWithCondition(condition)],
+          ),
+        ).not.toThrow();
+      });
+
+      test("[near miss] a ) inside a character class is not a quantified group", () => {
+        const condition: M3LProcedureCondition<TestShape> = {
+          kind: "matches",
+          subject: { source: "value", key: "label" },
+          pattern: "[)]+",
+        };
+        expect(() =>
+          buildProcedure(
+            [makeStep({ id: "a" })],
+            [caseWithCondition(condition)],
+          ),
+        ).not.toThrow();
+      });
+
+      test("an uncompilable pattern (new RegExp rejects it) is ERR_PROCEDURE_INVALID_PATTERN", () => {
+        const condition: M3LProcedureCondition<TestShape> = {
+          kind: "matches",
+          subject: { source: "value", key: "label" },
+          pattern: "(abc",
+        };
+        const { problems } = captureProblems(() =>
+          buildProcedure(
+            [makeStep({ id: "a" })],
+            [caseWithCondition(condition)],
+          ),
+        );
+        expect(problemCodes(problems)).toContain(
+          "ERR_PROCEDURE_INVALID_PATTERN",
+        );
+      });
+    });
+
+    describe("describeInvalidLiteral — two distinct rejected-literal shapes", () => {
+      test("an undefined condition literal is described as 'undefined'", () => {
+        const condition = {
+          kind: "exists",
+          subject: { source: "literal", literal: undefined },
+        } as unknown as M3LProcedureCondition<TestShape>;
+        const { problems } = captureProblems(() =>
+          buildProcedure(
+            [makeStep({ id: "a" })],
+            [caseWithCondition(condition)],
+          ),
+        );
+        const problem = problems.find(
+          (candidate) => candidate.code === "ERR_PROCEDURE_INVALID_DECLARATION",
+        );
+        expect(problem?.message).toContain("undefined");
+      });
+
+      test("a non-finite-number condition literal is described as 'a non-finite number'", () => {
+        const condition: M3LProcedureCondition<TestShape> = {
+          kind: "exists",
+          subject: { source: "literal", literal: Number.POSITIVE_INFINITY },
+        };
+        const { problems } = captureProblems(() =>
+          buildProcedure(
+            [makeStep({ id: "a" })],
+            [caseWithCondition(condition)],
+          ),
+        );
+        const problem = problems.find(
+          (candidate) => candidate.code === "ERR_PROCEDURE_INVALID_DECLARATION",
+        );
+        expect(problem?.message).toContain("a non-finite number");
+      });
+    });
+
+    describe("describeUnknownDiscriminant via an unrecognized condition kind", () => {
+      test("a bigint kind renders via String(value), not the object/symbol fallback", () => {
+        const condition = {
+          kind: 7n,
+        } as unknown as M3LProcedureCondition<TestShape>;
+        const { problems } = captureProblems(() =>
+          buildProcedure(
+            [makeStep({ id: "a" })],
+            [caseWithCondition(condition)],
+          ),
+        );
+        const problem = problems.find(
+          (candidate) => candidate.code === "ERR_PROCEDURE_INVALID_DECLARATION",
+        );
+        expect(problem?.message).toContain("'7'");
+      });
+
+      test("a plain-object kind falls through to the bare typeof description", () => {
+        const condition = {
+          kind: {},
+        } as unknown as M3LProcedureCondition<TestShape>;
+        const { problems } = captureProblems(() =>
+          buildProcedure(
+            [makeStep({ id: "a" })],
+            [caseWithCondition(condition)],
+          ),
+        );
+        const problem = problems.find(
+          (candidate) => candidate.code === "ERR_PROCEDURE_INVALID_DECLARATION",
+        );
+        expect(problem?.message).toContain("'object'");
+      });
+    });
+
+    test("an unrecognized reference source is ERR_PROCEDURE_INVALID_DECLARATION naming it, never silently skipped", () => {
+      const condition = {
+        kind: "exists",
+        subject: { source: "mystery-source" },
+      } as unknown as M3LProcedureCondition<TestShape>;
+      const { problems } = captureProblems(() =>
+        buildProcedure([makeStep({ id: "a" })], [caseWithCondition(condition)]),
+      );
+      const problem = problems.find(
+        (candidate) => candidate.code === "ERR_PROCEDURE_INVALID_DECLARATION",
+      );
+      expect(problem?.message).toContain("mystery-source");
+    });
+
+    test("a malformed (non-object) reference projects to undefined rather than throwing", () => {
+      const condition = {
+        kind: "exists",
+        subject: "not-a-reference-object",
+      } as unknown as M3LProcedureCondition<TestShape>;
+      let procedure: M3LProcedure<TestShape> | undefined;
+      expect(() => {
+        procedure = buildProcedure(
+          [makeStep({ id: "a" })],
+          [caseWithCondition(condition)],
+        );
+      }).not.toThrow();
+      expect(procedure?.describe().cases[0]?.condition).toMatchObject({
+        kind: "exists",
+      });
+    });
+
+    test("build() succeeds with a `compare` condition, and describe() reflects the projected (not raw-reference) node", () => {
+      const condition: M3LProcedureCondition<TestShape> = {
+        kind: "compare",
+        left: { source: "value", key: "count" },
+        operator: ">",
+        right: { source: "literal", literal: 5 },
+      };
+      const procedure = buildProcedure(
+        [makeStep({ id: "a" })],
+        [caseWithCondition(condition)],
+      );
+      expect(procedure.describe().cases[0]?.condition).toEqual({
+        kind: "compare",
+        left: { source: "value", key: "count" },
+        operator: ">",
+        right: { source: "literal", literal: 5 },
+      });
+    });
+
+    test.each(["and", "or"] as const)(
+      "build() succeeds with a top-level %s junction condition, projecting both operands",
+      (kind) => {
+        const condition: M3LProcedureCondition<TestShape> = {
+          kind,
+          operands: [ALWAYS_TRUE_CONDITION, ALWAYS_TRUE_CONDITION],
+        };
+        const procedure = buildProcedure(
+          [makeStep({ id: "a" })],
+          [caseWithCondition(condition)],
+        );
+        const projected = procedure.describe().cases[0]?.condition as {
+          kind: string;
+          operands: readonly unknown[];
+        };
+        expect(projected.kind).toBe(kind);
+        expect(projected.operands).toHaveLength(2);
+      },
+    );
+
+    test("an unrecognized condition node kind is ERR_PROCEDURE_INVALID_DECLARATION, not silently skipped", () => {
+      const condition = {
+        kind: "bogus-kind",
+      } as unknown as M3LProcedureCondition<TestShape>;
+      const { problems } = captureProblems(() =>
+        buildProcedure([makeStep({ id: "a" })], [caseWithCondition(condition)]),
+      );
+      const problem = problems.find(
+        (candidate) => candidate.code === "ERR_PROCEDURE_INVALID_DECLARATION",
+      );
+      expect(problem?.message).toContain("bogus-kind");
+    });
+
+    test.each([
+      ["value", "__proto__"],
+      ["parameter", "constructor"],
+    ] as const)(
+      "a dangerous %s reference key ('%s') is ERR_PROCEDURE_INVALID_DECLARATION",
+      (source, key) => {
+        const condition = {
+          kind: "exists",
+          subject: { source, key },
+        } as unknown as M3LProcedureCondition<TestShape>;
+        const { problems } = captureProblems(() =>
+          buildProcedure(
+            [makeStep({ id: "a" })],
+            [caseWithCondition(condition)],
+          ),
+        );
+        expect(problemCodes(problems)).toContain(
+          "ERR_PROCEDURE_INVALID_DECLARATION",
+        );
+      },
+    );
+
+    test("two independently too-deep branches under one 'and' report CONDITION_TOO_DEEP exactly once", () => {
+      const condition: M3LProcedureCondition<TestShape> = {
+        kind: "and",
+        operands: [
+          nestedNot(M3L_PROCEDURE_CONDITION_MAX_DEPTH + 5),
+          nestedNot(M3L_PROCEDURE_CONDITION_MAX_DEPTH + 5),
+        ],
+      };
+      const { problems } = captureProblems(() =>
+        buildProcedure([makeStep({ id: "a" })], [caseWithCondition(condition)]),
+      );
+      const tooDeep = problems.filter(
+        (problem) => problem.code === "ERR_PROCEDURE_CONDITION_TOO_DEEP",
+      );
+      expect(tooDeep).toHaveLength(1);
+    });
+  });
+
+  describe("coverage backfill: internal/procedure/validate/normalize", () => {
+    test("a non-string step kind is INVALID_DECLARATION and names the (valid) stepId", () => {
+      const { problems } = captureProblems(() =>
+        buildProcedure(
+          [
+            {
+              id: "valid-id",
+              label: "l",
+              kind: 42,
+              execute: () => ({ flow: "continue" }),
+            },
+          ],
+          [caseWithCondition(ALWAYS_TRUE_CONDITION)],
+        ),
+      );
+      const problem = problems.find(
+        (candidate) =>
+          candidate.code === "ERR_PROCEDURE_INVALID_DECLARATION" &&
+          candidate.message.includes("kind"),
+      );
+      expect(problem?.stepId).toBe("valid-id");
+    });
+
+    test("an empty step label is INVALID_DECLARATION and names the (valid) stepId", () => {
+      const { problems } = captureProblems(() =>
+        buildProcedure(
+          [makeStep({ id: "valid-id", label: "" })],
+          [caseWithCondition(ALWAYS_TRUE_CONDITION)],
+        ),
+      );
+      const problem = problems.find(
+        (candidate) =>
+          candidate.code === "ERR_PROCEDURE_INVALID_DECLARATION" &&
+          candidate.message.includes("label"),
+      );
+      expect(problem?.stepId).toBe("valid-id");
+    });
+
+    test("a step declared as a bare null reports every field problem with no stepId", () => {
+      const { problems } = captureProblems(() =>
+        buildProcedure([null], [caseWithCondition(ALWAYS_TRUE_CONDITION)]),
+      );
+      const idProblem = problems.find((candidate) =>
+        candidate.message.includes("empty or non-string id"),
+      );
+      expect(idProblem).toBeDefined();
+      expect(idProblem?.stepId).toBeUndefined();
+    });
+
+    const INVALID_MAX_REVISITS: ReadonlyArray<readonly [string, unknown]> = [
+      ["zero", 0],
+      ["negative", -1],
+      ["a non-integer", 1.5],
+      ["non-finite", Number.POSITIVE_INFINITY],
+      ["non-numeric", "three"],
+    ];
+
+    test.each(INVALID_MAX_REVISITS)(
+      "a loop.maxRevisits that is %s is ERR_PROCEDURE_INVALID_DECLARATION",
+      (_label, maxRevisits) => {
+        const { problems } = captureProblems(() =>
+          buildProcedure(
+            [
+              {
+                id: "a",
+                label: "a",
+                kind: "gather",
+                execute: () => ({ flow: "continue" }),
+                loop: { maxRevisits, reason: "retry" },
+              },
+            ],
+            [caseWithCondition(ALWAYS_TRUE_CONDITION)],
+          ),
+        );
+        const problem = problems.find((candidate) =>
+          candidate.message.includes("loop.maxRevisits"),
+        );
+        expect(problem).toBeDefined();
+      },
+    );
+
+    test("a loop's non-string reason normalizes to '', and the annotated back edge is excluded from cycle detection", () => {
+      const procedure = buildProcedure(
+        [
+          makeStep({ id: "q" }),
+          {
+            id: "p",
+            label: "p",
+            kind: "gather",
+            execute: () => ({ flow: "continue" }),
+            jumpsTo: ["q"],
+            loop: { maxRevisits: 3, reason: 42 },
+          },
+        ],
+        [caseWithCondition(ALWAYS_TRUE_CONDITION)],
+      );
+      const stepP = procedure.describe().steps.find((step) => step.id === "p");
+      expect(stepP?.loop).toEqual({ maxRevisits: 3, reason: "" });
+    });
+
+    test("a valid loop annotation carries reason/maxRevisits into describe(), and its back edge is not a reported cycle", () => {
+      const procedure = buildProcedure(
+        [
+          makeStep({ id: "q" }),
+          makeStep({
+            id: "p",
+            jumpsTo: ["q"],
+            loop: { maxRevisits: 3, reason: "retry" },
+          }),
+        ],
+        [caseWithCondition(ALWAYS_TRUE_CONDITION)],
+      );
+      const stepP = procedure.describe().steps.find((step) => step.id === "p");
+      expect(stepP?.loop).toEqual({ maxRevisits: 3, reason: "retry" });
+    });
+
+    test("a fallback with a valid action but empty description/prose is MISSING_FALLBACK, distinctly from a missing action", () => {
+      const { problems } = captureProblems(() =>
+        buildProcedure([makeStep({ id: "a" })], [], {
+          action: () => ({ verdict: "x" }),
+        }),
+      );
+      expect(problemCodes(problems)).toEqual([
+        "ERR_PROCEDURE_MISSING_FALLBACK",
+      ]);
+    });
+  });
+
+  describe("coverage backfill: M3LProcedureBuilder — .parameters() and optional-field spreads", () => {
+    test(".parameters() declares run-time parameter names that flow into describe().parameters", () => {
+      const builder = createProcedureBuilder<TestShape>(
+        "with-params",
+      ).parameters(["threshold"]) as unknown as UntypedProcedureBuilder;
+      const procedure = builder
+        .step(makeStep({ id: "a" }))
+        .case(caseWithCondition(ALWAYS_TRUE_CONDITION))
+        .build(FALLBACK);
+      expect(procedure.describe().parameters).toEqual(["threshold"]);
+    });
+
+    test("a step with describeTrace declared builds successfully (the optional-field spread's true side)", () => {
+      expect(() =>
+        buildProcedure(
+          [makeStep({ id: "a", describeTrace: () => ({ note: "trace" }) })],
+          [caseWithCondition(ALWAYS_TRUE_CONDITION)],
+        ),
+      ).not.toThrow();
+    });
+  });
+
+  describe("coverage backfill: M3LProcedure.createFromBuiltDefinition witness guard", () => {
+    test("a forged construction witness is rejected with ERR_INVALID_ARGUMENT, never constructing an instance", () => {
+      const createFromBuiltDefinitionUntyped = (
+        witness: unknown,
+        definition: unknown,
+      ): M3LProcedure<TestShape> =>
+        (
+          M3LProcedure as unknown as {
+            createFromBuiltDefinition: (
+              w: unknown,
+              d: unknown,
+            ) => M3LProcedure<TestShape>;
+          }
+        ).createFromBuiltDefinition(witness, definition);
+      let thrown: unknown;
+      try {
+        createFromBuiltDefinitionUntyped(Symbol("forged-witness"), {});
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(M3LError);
+      expect((thrown as M3LError).code).toBe("ERR_INVALID_ARGUMENT");
+    });
+  });
+
+  describe("coverage backfill: internal/procedure/graph", () => {
+    test("two steps independently jumping to a shared later step (a diamond) is not a reported cycle", () => {
+      const procedure = buildProcedure(
+        [
+          makeStep({ id: "start", jumpsTo: ["left", "right"] }),
+          makeStep({ id: "left", jumpsTo: ["end"] }),
+          makeStep({ id: "right" }),
+          makeStep({ id: "end" }),
+        ],
+        [caseWithCondition(ALWAYS_TRUE_CONDITION)],
+      );
+      expect(procedure).toBeInstanceOf(M3LProcedure);
+    });
+
+    test("a 3-node cycle (mid -> alpha -> zeta -> mid) is detected regardless of lexical rotation order", () => {
+      const { problems } = captureProblems(() =>
+        buildProcedure(
+          [
+            makeStep({ id: "mid" }),
+            makeStep({ id: "alpha" }),
+            makeStep({ id: "zeta", jumpsTo: ["mid"] }),
+          ],
+          [caseWithCondition(ALWAYS_TRUE_CONDITION)],
+        ),
+      );
+      expect(problemCodes(problems)).toContain("ERR_PROCEDURE_CYCLE_DETECTED");
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // 4. Type-level
   // -------------------------------------------------------------------------
   describe("type-level", () => {
