@@ -84,6 +84,21 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 | Item | Priority | Status | Change | Source / notes |
 | ---- | -------- | ------ | ------ | ----------------- |
 
+## CLI evolution wave (U-series)
+
+| Item | Priority | Status | Change | Source / notes |
+| ---- | -------- | ------ | ------ | ----------------- |
+
+## Agent-operator wave (V-series)
+
+| Item | Priority | Status | Change | Source / notes |
+| ---- | -------- | ------ | ------ | ----------------- |
+
+## m3l console wave (X-series)
+
+| Item | Priority | Status | Change | Source / notes |
+| ---- | -------- | ------ | ------ | ----------------- |
+
 ## Codified-procedure engine wave — ADR-0046/0047/0048/0049
 
 | Item | Priority | Status | Change |
@@ -141,6 +156,21 @@ const EMPTY_IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automatio
 | ---- | -------- | ------ | ------ | ----------------- |
 
 ## m3l-cli build-out — ADR-0042 activation (issue #333)
+
+| Item | Priority | Status | Change | Source / notes |
+| ---- | -------- | ------ | ------ | ----------------- |
+
+## CLI evolution wave (U-series)
+
+| Item | Priority | Status | Change | Source / notes |
+| ---- | -------- | ------ | ------ | ----------------- |
+
+## Agent-operator wave (V-series)
+
+| Item | Priority | Status | Change | Source / notes |
+| ---- | -------- | ------ | ------ | ----------------- |
+
+## m3l console wave (X-series)
 
 | Item | Priority | Status | Change | Source / notes |
 | ---- | -------- | ------ | ------ | ----------------- |
