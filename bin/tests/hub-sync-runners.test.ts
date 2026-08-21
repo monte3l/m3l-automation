@@ -709,10 +709,11 @@ describe("runIssueSync", () => {
     );
     // bootstrapLabels iterates the entire LABEL_DEFS table unconditionally
     // (not filtered by what this fixture's items actually use): HUB_LABEL +
-    // 3 priority labels + 4 type labels + 6 status labels + triage
-    // (ADR-0052's 2026-08-20 Update widened both label families to full
-    // coverage).
-    expect(labelCalls).toHaveLength(15);
+    // 4 priority labels (p0-p3) + 10 type labels + 6 status labels + triage
+    // = 22 rows (ADR-0052's 2026-08-20 Update widened both label families to
+    // full coverage; a p3 priority label and a "capability" split into
+    // libraryCapability/cliCapability/packageCapability were added since).
+    expect(labelCalls).toHaveLength(22);
     // Now — unblock first, Next — consumer fleet, Governance, Later —
     // gated/deferred — one per priority/type actually present among this
     // fixture's items.
@@ -845,7 +846,7 @@ describe("runIssueSync", () => {
     // Targets UB's issue (302), and only adds/removes managed labels.
     expect(labelSyncCall[2]).toBe("302");
     expect(labelSyncCall).toContain("--add-label");
-    expect(labelSyncCall).toContain("type:capability");
+    expect(labelSyncCall).toContain("type:library-capability");
     expect(labelSyncCall).toContain("status:done");
 
     // ADR-0052: every create/edit that also sets title/body/type passes
@@ -1231,7 +1232,7 @@ describe("runIssueSync", () => {
     expect(closeCalls).toHaveLength(1);
     // ADR-0052: the backfilled create also carries --type.
     expect(argAfter(required(createCalls[0], "createCalls[0]"), "--type")).toBe(
-      ISSUE_TYPES.capability,
+      ISSUE_TYPES.libraryCapability,
     );
 
     const createIndex = calls.indexOf(
@@ -1596,6 +1597,7 @@ describe("runProjectSync", () => {
             { name: "0-now", id: "opt-0-now" },
             { name: "1-next", id: "opt-1-next" },
             { name: "2-later", id: "opt-2-later" },
+            { name: "3-gated", id: "opt-3-gated" },
             { name: "Governance", id: "opt-governance" },
           ],
         },

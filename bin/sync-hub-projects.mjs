@@ -69,9 +69,10 @@ const STATUS_OPTION_RENAME_SOURCE = {
   Done: "Done",
 };
 
-// The Priority single-select's desired options: the three tiers mirroring
-// PRIORITY_LABELS' own "0-now"/"1-next"/"2-later" vocabulary exactly
-// (ADR-0052), plus a dedicated "Governance" option (ADR-0052's 2026-08-20
+// The Priority single-select's desired options: the four tiers mirroring
+// PRIORITY_LABELS' own "0-now"/"1-next"/"2-later"/"3-gated" vocabulary
+// exactly (ADR-0052, fourth tier added by ADR-0073), plus a dedicated
+// "Governance" option (ADR-0052's 2026-08-20
 // Update) — governance items get this instead of a null-cleared field or a
 // reused tier, so the board's Priority column is never blank and never
 // conflates governance rows with real Later-tier work under a sort/filter
@@ -90,6 +91,19 @@ const DESIRED_PRIORITY_OPTIONS = [
     name: "2-later",
     color: "YELLOW",
     description: "Later — gated or deferred backlog.",
+  },
+  // Order is load-bearing: a board single-select sorts by declared option
+  // order and the Backlog view sorts Priority ascending, so "3-gated" sitting
+  // here — after 2-later, before Governance — is where gated work lands in
+  // the view. Must stay in lockstep with PROJECT_PRIORITY_OPTIONS in
+  // bin/lib/hub-sync.mjs: that table is what resolves an item's option NAME,
+  // and setItemSingleSelect throws if the name isn't on the live board, so a
+  // tier present there but missing here breaks the first --apply that meets
+  // a Gated row.
+  {
+    name: "3-gated",
+    color: "GRAY",
+    description: "Gated — cannot start until an external gate opens.",
   },
   {
     name: "Governance",

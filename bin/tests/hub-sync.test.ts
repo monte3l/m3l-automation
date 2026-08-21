@@ -7,8 +7,10 @@ import {
   MAJOR_BUMP_ITEM_KEYS,
   MILESTONE_TITLES,
   PRIORITY_LABELS,
+  PROJECT_PRIORITY_OPTIONS,
   STATUS_LABELS,
   TYPE_LABELS,
+  TYPE_VALUES,
   actionableItems,
   buildIssuePayload,
   hubMarker,
@@ -224,6 +226,22 @@ const IMPLEMENTATION_BAD_STATUS_FIXTURE = `# Implementation backlog — m3l-auto
 | **F7** | Later    | Reviewing | still relevant          | json-etl log F7        |
 `;
 
+// Exercises resolveType (ADR-0073): a friction table carrying the optional
+// `Type` column, with one row naming a valid type (wins over the section
+// default), one row using the dash placeholder (falls back to the section
+// default, "Friction"), and one row with a genuinely off-vocabulary cell
+// (falls back to the section default AND appends a warning).
+const IMPLEMENTATION_TYPE_COLUMN_FIXTURE = `# Implementation backlog — m3l-automation
+
+## Library friction (F-series)
+
+| ID     | Priority | Status   | Type   | Title & change    | Source / call-site |
+| ------ | -------- | -------- | ------ | -------------------- | --------------------- |
+| **F1** | Later    | Deferred | UI     | valid type row        | call-site-1            |
+| **F2** | Later    | Deferred | —      | dash placeholder row  | call-site-2            |
+| **F3** | Later    | Deferred | Widget | garbage type row      | call-site-3            |
+`;
+
 // ---------------------------------------------------------------------------
 // makeItem — a well-formed Item builder for the planner-level tests, which
 // don't need to route through actionableItems (that mapping is covered
@@ -235,7 +253,7 @@ interface TestItem {
   key: string;
   title: string;
   status: "done" | "todo" | "in-progress" | "deferred" | "blocked" | "rejected";
-  priority: "p0" | "p1" | "p2" | "governance";
+  priority: "p0" | "p1" | "p2" | "p3" | "governance";
   type: (typeof ISSUE_TYPES)[keyof typeof ISSUE_TYPES];
   sourcePath: string;
   sourceAnchor: string;
@@ -249,7 +267,7 @@ function makeItem(overrides: Partial<TestItem> = {}): TestItem {
     title: "Sample item",
     status: "todo",
     priority: "p0",
-    type: ISSUE_TYPES.capability,
+    type: ISSUE_TYPES.libraryCapability,
     sourcePath: "docs/ROADMAP.md",
     sourceAnchor: "#priority-0--library-hardening-do-before-more-scripts",
     detail: "**What:** a sample item",
@@ -279,6 +297,7 @@ describe("PRIORITY_LABELS", () => {
       p0: "priority:0-now",
       p1: "priority:1-next",
       p2: "priority:2-later",
+      p3: "priority:3-gated",
     });
   });
 
@@ -287,10 +306,71 @@ describe("PRIORITY_LABELS", () => {
   });
 });
 
+describe("PROJECT_PRIORITY_OPTIONS", () => {
+  test("maps every priority tier plus governance to its board option label", () => {
+    expect(PROJECT_PRIORITY_OPTIONS).toStrictEqual({
+      p0: "0-now",
+      p1: "1-next",
+      p2: "2-later",
+      p3: "3-gated",
+      governance: "Governance",
+    });
+  });
+
+  // The declaration order below is load-bearing, not cosmetic (ADR-0073): a
+  // GitHub Projects single-select field sorts its options by the order they
+  // are declared, and the board's Backlog view sorts by Priority ascending.
+  // So "3-gated" sitting between "2-later" and "Governance" is where gated
+  // work physically appears in that view. Reordering these keys — even an
+  // innocuous alphabetical "tidy-up" — silently reorders the live board.
+  test("declares keys p0, p1, p2, p3, governance in that exact order — reordering silently reorders the live Backlog view (ADR-0073)", () => {
+    expect(Object.keys(PROJECT_PRIORITY_OPTIONS)).toEqual([
+      "p0",
+      "p1",
+      "p2",
+      "p3",
+      "governance",
+    ]);
+  });
+});
+
+describe("ISSUE_TYPES", () => {
+  test("has exactly the ten ADR-0073 display-name values, in declaration order", () => {
+    expect(Object.values(ISSUE_TYPES)).toEqual([
+      "Library capability",
+      "CLI capability",
+      "Package capability",
+      "UI",
+      "Infrastructure",
+      "Fleet retrofit",
+      "Tooling & gates",
+      "Consumer script",
+      "Friction",
+      "Governance",
+    ]);
+  });
+});
+
+describe("TYPE_VALUES", () => {
+  test("matches Object.values(ISSUE_TYPES) exactly", () => {
+    expect(TYPE_VALUES).toEqual(Object.values(ISSUE_TYPES));
+  });
+
+  test("is frozen", () => {
+    expect(Object.isFrozen(TYPE_VALUES)).toBe(true);
+  });
+});
+
 describe("TYPE_LABELS", () => {
   test("maps every ISSUE_TYPES display-name value to its 'type:<x>' label string", () => {
     expect(TYPE_LABELS).toEqual({
-      [ISSUE_TYPES.capability]: "type:capability",
+      [ISSUE_TYPES.libraryCapability]: "type:library-capability",
+      [ISSUE_TYPES.cliCapability]: "type:cli-capability",
+      [ISSUE_TYPES.packageCapability]: "type:package-capability",
+      [ISSUE_TYPES.ui]: "type:ui",
+      [ISSUE_TYPES.infrastructure]: "type:infrastructure",
+      [ISSUE_TYPES.fleetRetrofit]: "type:fleet-retrofit",
+      [ISSUE_TYPES.toolingGates]: "type:tooling-gates",
       [ISSUE_TYPES.consumerScript]: "type:consumer-script",
       [ISSUE_TYPES.friction]: "type:friction",
       [ISSUE_TYPES.governance]: "type:governance",
@@ -317,14 +397,29 @@ describe("STATUS_LABELS", () => {
 });
 
 describe("MILESTONE_TITLES", () => {
-  test("maps p0/p1/p2/governance to their milestone titles, plus a major bucket", () => {
+  test("maps p0/p1/p2/p3/governance to their milestone titles, plus a major bucket", () => {
     expect(MILESTONE_TITLES).toMatchObject({
       p0: "Now — unblock first",
       p1: "Next — consumer fleet",
       p2: "Later — gated/deferred",
+      p3: "Gated — awaiting trigger",
       governance: "Governance",
       major: "2.0 / breaking",
     });
+  });
+
+  // ADR-0073 renames p1/p2 to "Next — scheduled" / "Later — not yet
+  // scheduled", but that rename is deliberately deferred: `planMilestones`
+  // is create-only, so flipping these titles today would CREATE the new
+  // milestones and orphan the existing "Next — consumer fleet" (30 open
+  // issues) and "Later — gated/deferred" (69 open issues) milestones rather
+  // than renaming them in place. The rename ships once `planMilestones`
+  // grows an in-place PATCH path and a `legacyTitles` table to drive it —
+  // see the source comment on MILESTONE_TITLES. This test locks the
+  // pre-ADR-0073 wording so a future edit can't silently jump the gun.
+  test("p1 and p2 keep their pre-ADR-0073 wording until the in-place PATCH rename path exists", () => {
+    expect(MILESTONE_TITLES.p1).toBe("Next — consumer fleet");
+    expect(MILESTONE_TITLES.p2).toBe("Later — gated/deferred");
   });
 });
 
@@ -708,6 +803,64 @@ describe("actionableItems", () => {
     expect(warnings).toEqual([]);
   });
 
+  test("resolveType: a row naming a valid Type cell wins over the section default", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(
+      IMPLEMENTATION_TYPE_COLUMN_FIXTURE,
+    );
+    const { items, warnings } = actionableItems(roadmap, implementation);
+
+    const f1 = items.find((item) => item.key === "impl:friction:f1");
+    expect(f1?.type).toBe("UI");
+    // This fixture's f3 row deliberately has an unrecognized Type cell and
+    // is expected to warn (covered separately below) — only assert this
+    // row (f1) produced no warning of its own.
+    expect(
+      warnings.some((warning) => warning.includes("impl:friction:f1")),
+    ).toBe(false);
+  });
+
+  test("resolveType: a dash placeholder Type cell falls back to the section default silently", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(
+      IMPLEMENTATION_TYPE_COLUMN_FIXTURE,
+    );
+    const { items, warnings } = actionableItems(roadmap, implementation);
+
+    const f2 = items.find((item) => item.key === "impl:friction:f2");
+    expect(f2?.type).toBe(ISSUE_TYPES.friction);
+    // This fixture's f3 row deliberately has an unrecognized Type cell and
+    // is expected to warn (covered separately below) — only assert this
+    // row (f2) produced no warning of its own.
+    expect(
+      warnings.some((warning) => warning.includes("impl:friction:f2")),
+    ).toBe(false);
+  });
+
+  test("resolveType: an unrecognized Type cell falls back to the section default AND appends a warning naming the row's key and raw cell", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(
+      IMPLEMENTATION_TYPE_COLUMN_FIXTURE,
+    );
+    const { items, warnings } = actionableItems(roadmap, implementation);
+
+    const f3 = items.find((item) => item.key === "impl:friction:f3");
+    expect(f3?.type).toBe(ISSUE_TYPES.friction);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("impl:friction:f3");
+    expect(warnings[0]).toContain("Widget");
+  });
+
+  test("resolveType: a table with no Type column at all still resolves every row to its section default", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
+    const { items, warnings } = actionableItems(roadmap, implementation);
+
+    const f7 = items.find((item) => item.key === "impl:friction:f7");
+    expect(f7?.type).toBe(ISSUE_TYPES.friction);
+    expect(warnings).toEqual([]);
+  });
+
   test("duplicateKeys is empty when no two rows share a key", () => {
     const roadmap = extractRoadmap(ROADMAP_FIXTURE);
     const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
@@ -816,14 +969,20 @@ describe("buildIssuePayload", () => {
       expect(payload.labels).toEqual([
         "hub-sync",
         "priority:1-next",
-        "type:capability",
+        "type:library-capability",
         statusLabel,
       ]);
     },
   );
 
   test.each([
-    [ISSUE_TYPES.capability, "type:capability"],
+    [ISSUE_TYPES.libraryCapability, "type:library-capability"],
+    [ISSUE_TYPES.cliCapability, "type:cli-capability"],
+    [ISSUE_TYPES.packageCapability, "type:package-capability"],
+    [ISSUE_TYPES.ui, "type:ui"],
+    [ISSUE_TYPES.infrastructure, "type:infrastructure"],
+    [ISSUE_TYPES.fleetRetrofit, "type:fleet-retrofit"],
+    [ISSUE_TYPES.toolingGates, "type:tooling-gates"],
     [ISSUE_TYPES.consumerScript, "type:consumer-script"],
     [ISSUE_TYPES.friction, "type:friction"],
     [ISSUE_TYPES.governance, "type:governance"],
@@ -839,6 +998,12 @@ describe("buildIssuePayload", () => {
       ]);
     },
   );
+
+  test("a 'Tooling & gates' item yields the 'type:tooling-gates' label", () => {
+    const item = makeItem({ type: ISSUE_TYPES.toolingGates });
+    const payload = buildIssuePayload(item) as { labels: string[] };
+    expect(payload.labels).toContain("type:tooling-gates");
+  });
 
   test("throws when item.type has no TYPE_LABELS entry", () => {
     const item = makeItem({
@@ -860,6 +1025,7 @@ describe("buildIssuePayload", () => {
     ["p0", "Now — unblock first"],
     ["p1", "Next — consumer fleet"],
     ["p2", "Later — gated/deferred"],
+    ["p3", "Gated — awaiting trigger"],
     ["governance", "Governance"],
   ] as const)(
     "milestoneTitle for priority %s is %j",
@@ -871,6 +1037,16 @@ describe("buildIssuePayload", () => {
       expect(payload.milestoneTitle).toBe(expectedTitle);
     },
   );
+
+  test("a p3 item's labels carry priority:3-gated and its milestone is 'Gated — awaiting trigger'", () => {
+    const item = makeItem({ priority: "p3" });
+    const payload = buildIssuePayload(item) as {
+      labels: string[];
+      milestoneTitle: string | null;
+    };
+    expect(payload.labels).toContain("priority:3-gated");
+    expect(payload.milestoneTitle).toBe("Gated — awaiting trigger");
+  });
 
   test("milestoneTitle is never null for a governance item: it resolves to the Governance milestone", () => {
     const item = makeItem({
@@ -1446,7 +1622,7 @@ describe("planIssueSync", () => {
     const item = makeItem({
       key: "roadmap:p0:type-drift",
       status: "todo",
-      type: ISSUE_TYPES.capability,
+      type: ISSUE_TYPES.libraryCapability,
     });
     const payload = buildIssuePayload(item) as {
       title: string;
