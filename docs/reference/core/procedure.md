@@ -43,19 +43,19 @@ rounds (non-convergence, not size — full post-mortem:
 `docs/plans/IMPLEMENTATION.md`'s F23 row). F23 (#571) shipped ADR-0072's
 reviewable-slice discipline in response, and this submodule is its first real
 consumer. The measured slice sequence lives in
-`docs/plans/2026-08-18-codified-procedure-engine.md` § "B2 — Landing plan
-(ADR-0072)" — keep that section in sync with the table below as each slice
-lands.
+`docs/plans/archive/2026-08-18-codified-procedure-engine.md` § "B2 — Landing
+plan (ADR-0072)"; the condensed shipped narrative is
+`docs/plans/archive/2026-08-21-codified-procedure-engine.md`.
 
-| Slice                         | Contents                                                                                                                                                                                                   | Status                                                  |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| 1 — contract + conditions     | This page (complete); `evaluateProcedureCondition`, the condition/value/reference type families, `M3L_PROCEDURE_CONDITION_MAX_DEPTH`, `M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH`                               | Landed (PR #580)                                        |
-| 2a — builder + validation     | The step/case/build type families, `M3LProcedureBuilder`/`createProcedureBuilder`, build-time validation, a reduced `M3LProcedure` (constructor + `digest` + `describe()` only — `run()` lands in slice 3) | Landed (PR #582)                                        |
-| 2b — build-time hardening     | The exhaustive declaration/cycle/pattern edge battery plus an adversarial boundary review pass over slice 2a                                                                                               | Landed (PR #583)                                        |
-| 3a — the core run loop        | `M3LProcedure.run()`, option validation, phases 1–3 (steps/cases/conclusion), flow directives, jump validation, iteration ceiling, cancellation, `continueOnFailure`/recovery, outcome + telemetry         | Landed (PR #585)                                        |
-| 3b — opt-in tracing           | `options.trace`/`options.logger`, the trace sink/entry types                                                                                                                                               | Landed (PR #586)                                        |
-| 3c — opt-in no-progress guard | `options.progress`, the no-progress guard, `ERR_PROCEDURE_NO_PROGRESS` (the 16th and final code)                                                                                                           | In progress                                             |
-| 4 — infra touch-ups           | Error-code catalog entries not needed by an earlier slice, barrel wiring, zone widening                                                                                                                    | Landing alongside the slice that first needs each piece |
+| Slice                         | Contents                                                                                                                                                                                                   | Status                                                   |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| 1 — contract + conditions     | This page (complete); `evaluateProcedureCondition`, the condition/value/reference type families, `M3L_PROCEDURE_CONDITION_MAX_DEPTH`, `M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH`                               | Landed (PR #580)                                         |
+| 2a — builder + validation     | The step/case/build type families, `M3LProcedureBuilder`/`createProcedureBuilder`, build-time validation, a reduced `M3LProcedure` (constructor + `digest` + `describe()` only — `run()` lands in slice 3) | Landed (PR #582)                                         |
+| 2b — build-time hardening     | The exhaustive declaration/cycle/pattern edge battery plus an adversarial boundary review pass over slice 2a                                                                                               | Landed (PR #583)                                         |
+| 3a — the core run loop        | `M3LProcedure.run()`, option validation, phases 1–3 (steps/cases/conclusion), flow directives, jump validation, iteration ceiling, cancellation, `continueOnFailure`/recovery, outcome + telemetry         | Landed (PR #585)                                         |
+| 3b — opt-in tracing           | `options.trace`/`options.logger`, the trace sink/entry types                                                                                                                                               | Landed (PR #586)                                         |
+| 3c — opt-in no-progress guard | `options.progress`, the no-progress guard, `ERR_PROCEDURE_NO_PROGRESS` (the 16th and final code)                                                                                                           | Landed (PR #587)                                         |
+| 4 — infra touch-ups           | Error-code catalog entries not needed by an earlier slice, barrel wiring, zone widening                                                                                                                    | Landed (folded into 1/2a/3a/3b/3c, each as first needed) |
 
 This page documents the **full, eventual** public surface (all 44 exports);
 `check:doc-exports` walks exports → docs, so a symbol documented here but not

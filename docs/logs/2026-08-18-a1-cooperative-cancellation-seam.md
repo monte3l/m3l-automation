@@ -9,7 +9,7 @@ that is already in flight. It ran through the hub-and-spoke TDD pipeline
 shipped, what matched the plan, what diverged, and the durable lessons — most of
 which are about spoke context management, which dominated this run.
 
-Plan of record: [`docs/plans/2026-08-18-codified-procedure-engine.md`](../plans/2026-08-18-codified-procedure-engine.md)
+Plan of record: [`docs/plans/2026-08-18-codified-procedure-engine.md`](../plans/archive/2026-08-18-codified-procedure-engine.md)
 (item A1). Decision: [ADR-0049](../adr/0049-cooperative-cancellation-contract.md).
 
 ## Summary

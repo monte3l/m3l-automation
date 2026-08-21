@@ -8,7 +8,7 @@ real remote calls. Ran through the hub-and-spoke TDD pipeline — docs-spec firs
 fix round. A5 is the last Wave-A prerequisite for **B2**, which reuses this as its
 runtime loop guard.
 
-Plan of record: [`docs/plans/2026-08-18-codified-procedure-engine.md`](../plans/2026-08-18-codified-procedure-engine.md) §A5
+Plan of record: [`docs/plans/2026-08-18-codified-procedure-engine.md`](../plans/archive/2026-08-18-codified-procedure-engine.md) §A5
 Decision of record: [ADR-0046](../adr/0046-codified-procedure-engine.md) §Run time
 
 ## Summary

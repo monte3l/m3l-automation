@@ -13,7 +13,7 @@ not actually provide**.
 This is the **library PR only**; the fleet retrofit of the 11 call-site scripts is
 tracked as **A2b**, following the A1/A1b two-PR precedent.
 
-Plan of record: [`docs/plans/2026-08-18-codified-procedure-engine.md`](../plans/2026-08-18-codified-procedure-engine.md)
+Plan of record: [`docs/plans/2026-08-18-codified-procedure-engine.md`](../plans/archive/2026-08-18-codified-procedure-engine.md)
 (item A2). Decision: [ADR-0048](../adr/0048-target-graded-destructive-confirmation.md).
 
 ## Summary

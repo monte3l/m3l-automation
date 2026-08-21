@@ -9,7 +9,7 @@ refute passes. It records what shipped, what matched the plan, the four defects
 and two regressions the refute passes found, and the one durable lesson this item
 exists to teach.
 
-Plan of record: [`docs/plans/2026-08-18-codified-procedure-engine.md`](../plans/2026-08-18-codified-procedure-engine.md) §A4
+Plan of record: [`docs/plans/2026-08-18-codified-procedure-engine.md`](../plans/archive/2026-08-18-codified-procedure-engine.md) §A4
 
 ## Summary
 
