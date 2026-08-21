@@ -1617,6 +1617,16 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/procedure/run-types.ts"
   },
+  "M3LProcedureTraceOptions": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/run-types.ts"
+  },
+  "M3LProcedureTraceSink": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/run-types.ts"
+  },
   "M3L_PROCEDURE_MAX_ITERATIONS": {
     "submodule": "procedure",
     "namespace": "core",

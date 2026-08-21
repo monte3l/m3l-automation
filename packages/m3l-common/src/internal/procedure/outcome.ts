@@ -3,9 +3,9 @@
  * concluding action), plus the outcome/telemetry assemblers every exit path
  * of `run()` funnels through.
  *
- * `docs/reference/core/procedure.md` § Outcome: `outcome.trace` is always an
- * empty array in this slice — no tracer exists yet (added in a later slice),
- * so every outcome built here sets `trace: []` unconditionally.
+ * `docs/reference/core/procedure.md` § Outcome: `outcome.trace` retains the
+ * given `tracer`'s accumulated entries — empty unless `options.trace` was
+ * configured for this run.
  *
  * Private to `core/procedure`; never re-exported through a public barrel.
  */
@@ -27,6 +27,7 @@ import type {
   M3LProcedureOutcome,
   M3LProcedureTelemetry,
 } from "../../core/procedure/run-types.js";
+import type { M3LProcedureTracer } from "./trace.js";
 import type {
   CaseEvaluationPair,
   CasesPass,
@@ -142,6 +143,7 @@ export async function conclude<TShape extends M3LProcedureShape>(
   earlyResolved: boolean,
   startedAt: string,
   startedAtMs: number,
+  tracer: M3LProcedureTracer<TShape>,
 ): Promise<M3LProcedureOutcome<TShape>> {
   const telemetry = buildTelemetry(
     runtime,
@@ -153,7 +155,7 @@ export async function conclude<TShape extends M3LProcedureShape>(
   const base = {
     digest,
     parametersDigest: canonicalJsonHash(phaseOne.context.parameters),
-    trace: [],
+    trace: tracer.entries(),
     telemetry,
   };
 
@@ -192,11 +194,12 @@ export function buildFailedOutcome<TShape extends M3LProcedureShape>(
   phaseOne: Extract<PhaseOneOutcome<TShape>, { kind: "failed" }>,
   startedAt: string,
   startedAtMs: number,
+  tracer: M3LProcedureTracer<TShape>,
 ): M3LProcedureOutcome<TShape> {
   return {
     digest,
     parametersDigest: canonicalJsonHash(phaseOne.context.parameters),
-    trace: [],
+    trace: tracer.entries(),
     telemetry: buildTelemetry(
       runtime,
       phaseOne,
@@ -219,11 +222,12 @@ export function buildAbortedOutcome<TShape extends M3LProcedureShape>(
   phaseOne: Extract<PhaseOneOutcome<TShape>, { kind: "aborted" }>,
   startedAt: string,
   startedAtMs: number,
+  tracer: M3LProcedureTracer<TShape>,
 ): M3LProcedureOutcome<TShape> {
   return {
     digest,
     parametersDigest: canonicalJsonHash(phaseOne.context.parameters),
-    trace: [],
+    trace: tracer.entries(),
     telemetry: buildTelemetry(runtime, phaseOne, false, startedAt, startedAtMs),
     status: "aborted",
     abortedAt: phaseOne.abortedAt,
