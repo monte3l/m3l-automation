@@ -219,13 +219,18 @@ export function classifyStatus(cell) {
  * priority-tiered at all — and is recognized as a deliberate authoring
  * choice that resolves to `p2`, not as a mistake.
  *
+ * `Gated` maps to `p3` (ADR-0073), the tier for work that *cannot start*
+ * until an external gate opens, split out of `Later`'s original
+ * "gated/deferred" meaning so `Later` can mean "real work, not yet
+ * scheduled". The dash placeholder deliberately still resolves to `p2`, not
+ * `p3`: it marks an untiered-but-real row, never a blocked one, so
+ * repointing it would misfile every wave sub-table row as gate-blocked.
+ *
  * Anything else falls back to `p2` with `recognized: false` so a caller can
  * surface it. That distinction is the point: the placeholder used to warn on
  * every single `pnpm sync:hub` run despite being intentional, which buried
  * the one genuinely off-vocabulary cell (`P3`, on the F12 row) in five lines
- * of expected noise for long enough that nobody acted on it. There is no
- * `p3` tier — `PRIORITY_LABELS`/`MILESTONE_TITLES` (`./hub-sync.mjs`) have
- * no entry for one, and no GitHub milestone backs it.
+ * of expected noise for long enough that nobody acted on it.
  *
  * Lives here rather than in `./hub-sync.mjs` (which is where it is consumed)
  * because `bin/check-tracker-status.mjs` needs the same vocabulary to gate
@@ -234,14 +239,15 @@ export function classifyStatus(cell) {
  * {@link classifyStatusCell}'s shape exactly.
  *
  * @param {string} cell
- * @returns {{ priority: "p0" | "p1" | "p2", recognized: boolean }}
+ * @returns {{ priority: "p0" | "p1" | "p2" | "p3", recognized: boolean }}
  * @example
  * ```js
  * import { classifyPriorityCell } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
  *
- * classifyPriorityCell("**Next**"); // { priority: "p1", recognized: true }
- * classifyPriorityCell("—");        // { priority: "p2", recognized: true }
- * classifyPriorityCell("P3");       // { priority: "p2", recognized: false }
+ * classifyPriorityCell("**Next**");  // { priority: "p1", recognized: true }
+ * classifyPriorityCell("Gated");     // { priority: "p3", recognized: true }
+ * classifyPriorityCell("—");         // { priority: "p2", recognized: true }
+ * classifyPriorityCell("P3");        // { priority: "p2", recognized: false }
  * ```
  */
 export function classifyPriorityCell(cell) {
@@ -249,6 +255,7 @@ export function classifyPriorityCell(cell) {
   if (/^now$/i.test(stripped)) return { priority: "p0", recognized: true };
   if (/^next$/i.test(stripped)) return { priority: "p1", recognized: true };
   if (/^later$/i.test(stripped)) return { priority: "p2", recognized: true };
+  if (/^gated$/i.test(stripped)) return { priority: "p3", recognized: true };
   // The untiered placeholder, in any dash the authoring tools produce
   // (em dash, en dash, hyphen, or a run of them). An *empty* cell is
   // deliberately NOT recognized: a missing Priority is an omission, whereas
@@ -451,12 +458,13 @@ export function findOffVocabularyStatusCells(content) {
 
 /**
  * Every Priority cell in `content` that {@link classifyPriorityCell} does not
- * recognize — anything that is neither a `P0`/`P1`/`P2` tier nor the
- * documented untiered dash placeholder, e.g. the `P3` that sat on the F12
- * row emitting a warning on every `pnpm sync:hub` run with no `p3` tier,
- * label, or milestone behind it. See {@link findOffVocabularyCells} for the
- * scan's semantics — including why this is scoped to
- * `docs/plans/IMPLEMENTATION.md` without naming it.
+ * recognize — anything that is neither a `Now`/`Next`/`Later`/`Gated` tier nor
+ * the documented untiered dash placeholder. The historical example is the
+ * literal `P3` that sat on the F12 row emitting a warning on every
+ * `pnpm sync:hub` run; note that ADR-0073 later added a real fourth tier, but
+ * it is spelled `Gated`, so `P3` remains off-vocabulary. See {@link
+ * findOffVocabularyCells} for the scan's semantics — including why this is
+ * scoped to `docs/plans/IMPLEMENTATION.md` without naming it.
  *
  * @param {string} content a tracker file's full contents
  * @returns {Array<{ line: number, heading: string, cell: string }>} one entry
@@ -473,6 +481,83 @@ export function findOffVocabularyStatusCells(content) {
  */
 export function findOffVocabularyPriorityCells(content) {
   return findOffVocabularyCells(content, "Priority", classifyPriorityCell);
+}
+
+/**
+ * Classify a tracker table's optional `Type` cell into one of `validTypes`,
+ * reporting whether the cell was in-vocabulary and whether it was the dash
+ * **placeholder** (ADR-0073). Mirrors {@link classifyStatusCell} /
+ * {@link classifyPriorityCell}: markdown markers are stripped first, matching
+ * is case-insensitive, and a dash is a deliberate authoring choice rather
+ * than a mistake.
+ *
+ * The dash means "use this section's default type"
+ * (`TYPE_BY_ROADMAP_SECTION`/`TYPE_BY_IMPLEMENTATION_SECTION` in
+ * `./hub-sync.mjs`) — which is what lets one tracker section hold rows of
+ * genuinely different layers without hand-typing a Type on all 145 rows. An
+ * **empty** cell in a table that has a Type column is deliberately NOT
+ * recognized, the same rule Priority uses: a blank is an omission, a dash is
+ * a statement.
+ *
+ * `validTypes` is injected rather than imported because this module is the
+ * base of the import graph — `./hub-sync.mjs` (which owns `ISSUE_TYPES`)
+ * imports *from* here, so reading it here would be a cycle.
+ *
+ * @param {string} cell
+ * @param {readonly string[]} validTypes the `ISSUE_TYPES` values, in any order
+ * @returns {{ type: string | null, recognized: boolean, placeholder: boolean }}
+ * @example
+ * ```js
+ * import { classifyTypeCell } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
+ *
+ * classifyTypeCell("**UI**", ["UI"]);
+ * // { type: "UI", recognized: true, placeholder: false }
+ * classifyTypeCell("—", ["UI"]);
+ * // { type: null, recognized: true, placeholder: true }
+ * classifyTypeCell("Widget", ["UI"]);
+ * // { type: null, recognized: false, placeholder: false }
+ * ```
+ */
+export function classifyTypeCell(cell, validTypes) {
+  const stripped = cell.replace(/[`*_]/g, "").trim();
+  if (/^[—–-]+$/.test(stripped)) {
+    return { type: null, recognized: true, placeholder: true };
+  }
+  const match = validTypes.find(
+    (candidate) => candidate.toLowerCase() === stripped.toLowerCase(),
+  );
+  if (match !== undefined) {
+    return { type: match, recognized: true, placeholder: false };
+  }
+  return { type: null, recognized: false, placeholder: false };
+}
+
+/**
+ * Every `Type` cell in `content` that {@link classifyTypeCell} does not
+ * recognize against `validTypes`. Because {@link findOffVocabularyCells}
+ * skips any table lacking the named column outright, the `Type` column stays
+ * **optional** for free: a tracker table that never grows one is never
+ * reported.
+ *
+ * @param {string} content a tracker file's full contents
+ * @param {readonly string[]} validTypes the `ISSUE_TYPES` values
+ * @returns {Array<{ line: number, heading: string, cell: string }>} one entry
+ *   per off-vocabulary Type cell, in document order; `line` is 1-indexed
+ * @example
+ * ```js
+ * import { findOffVocabularyTypeCells } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
+ *
+ * findOffVocabularyTypeCells(
+ *   "## Wave\n\n| Item | Type |\n| --- | --- |\n| x | Widget |\n",
+ *   ["UI"],
+ * );
+ * // [{ line: 5, heading: "Wave", cell: "Widget" }]
+ * ```
+ */
+export function findOffVocabularyTypeCells(content, validTypes) {
+  return findOffVocabularyCells(content, "Type", (cell) =>
+    classifyTypeCell(cell, validTypes),
+  );
 }
 
 function classifyAdrStatusKind(statusText) {

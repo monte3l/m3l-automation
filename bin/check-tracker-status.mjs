@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 /**
- * Asserts that every Status cell, and every Priority cell, in every pipe
- * table under every `## `/`### ` heading, in `docs/ROADMAP.md` and
- * `docs/plans/IMPLEMENTATION.md` is in vocabulary. Status must be one of
- * ADR-0032's six documented tracker values — Done / To Do / In Progress /
- * Deferred / Blocked / Rejected (or one of the four legacy status emoji
- * `classifyStatusCell` also accepts). Priority must be Now, Next, Later, or
- * the dash placeholder marking a row as deliberately untiered (the
- * ADR-0051 semantic vocabulary, replacing the original P0/P1/P2).
+ * Asserts that every Status cell, every Priority cell, and every optional
+ * `Type` cell, in every pipe table under every `## `/`### ` heading, in
+ * `docs/ROADMAP.md` and `docs/plans/IMPLEMENTATION.md` is in vocabulary.
+ * Status must be one of ADR-0032's six documented tracker values — Done /
+ * To Do / In Progress / Deferred / Blocked / Rejected (or one of the four
+ * legacy status emoji `classifyStatusCell` also accepts). Priority must be
+ * Now, Next, Later, Gated, or the dash placeholder marking a row as
+ * deliberately untiered (the ADR-0051 semantic vocabulary, replacing the
+ * original P0/P1/P2, with `Gated` added by ADR-0073). Type, where a table
+ * carries the column at all, must be one of the ten ADR-0073 Issue Types or
+ * the dash placeholder meaning "use this section's default".
  *
  * This is the durable fix for issue #429: `classifyStatus`
  * (`bin/lib/project-hub.mjs`) silently classified any unrecognized cell as
@@ -36,9 +39,21 @@
  * column, so that file simply yields nothing rather than being special-cased.
  * Cell vocabulary renamed P0/P1/P2 -> Now/Next/Later under ADR-0051; the
  * dash placeholder and the off-vocabulary-cell gate are otherwise unchanged.
+ * ADR-0073 then added a real fourth tier, `Gated` — note that the literal
+ * `P3` this half was built for stays off-vocabulary, since the new tier is
+ * spelled `Gated`, not `P3`.
+ *
+ * The Type half was added by ADR-0073, which replaced a single `Capability`
+ * Issue Type (48 of 60 open board items) with ten layer-based ones. The
+ * column is **optional**: `findOffVocabularyTypeCells` inherits the shared
+ * scan's "a table without the named column is skipped, not reported" rule,
+ * so a table that never grows a Type column is never flagged. What this
+ * gate buys is that a row which *does* carry one can't quietly fall back to
+ * its section default on a typo — `resolveType` warns, but a warning in a
+ * dry-run log is the same channel the Status half already proved unreliable.
  *
  * Exit codes:
- *   0  Every Status and Priority cell in both trackers is in-vocabulary.
+ *   0  Every Status, Priority and Type cell in both trackers is in-vocabulary.
  *   1  At least one is not, or a tracker file could not be read.
  *
  * Usage:
@@ -52,7 +67,9 @@ import { fileURLToPath } from "node:url";
 import {
   findOffVocabularyPriorityCells,
   findOffVocabularyStatusCells,
+  findOffVocabularyTypeCells,
 } from "./lib/project-hub.mjs";
+import { TYPE_VALUES } from "./lib/hub-sync.mjs";
 import { createReporter, parseJsonFlag, repoRoot } from "./lib/report.mjs";
 
 const root = repoRoot(import.meta.url);
@@ -88,9 +105,23 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
           line,
           message:
             `${path}:${line}: "## ${heading}" row's Priority cell ("${cell}") is not one of ` +
-            `Now/Next/Later, nor the untiered dash placeholder — there is no tier beyond Later ` +
-            `(PRIORITY_LABELS/MILESTONE_TITLES in bin/lib/hub-sync.mjs have no entry for one, ` +
-            `and no GitHub milestone backs it), so sync:hub silently files this row under Later.`,
+            `Now/Next/Later/Gated, nor the untiered dash placeholder — so sync:hub silently ` +
+            `files this row under Later. Note the fourth tier is spelled "Gated", not "P3" ` +
+            `(PRIORITY_LABELS/MILESTONE_TITLES in bin/lib/hub-sync.mjs, ADR-0073).`,
+        });
+      }
+      for (const { line, heading, cell } of findOffVocabularyTypeCells(
+        content,
+        TYPE_VALUES,
+      )) {
+        errors.push({
+          file: path,
+          line,
+          message:
+            `${path}:${line}: "## ${heading}" row's Type cell ("${cell}") is not one of ` +
+            `${TYPE_VALUES.join("/")}, nor the dash placeholder meaning "use this section's ` +
+            `default" (TYPE_BY_ROADMAP_SECTION/TYPE_BY_IMPLEMENTATION_SECTION in ` +
+            `bin/lib/hub-sync.mjs) — so sync:hub silently files this row under that default.`,
         });
       }
     }
@@ -109,8 +140,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
 
   reporter.succeed(
-    "Every Status cell in both trackers is in the six-value vocabulary, and " +
-      "every Priority cell is Now/Next/Later or the untiered placeholder.",
+    "Every Status cell in both trackers is in the six-value vocabulary, " +
+      "every Priority cell is Now/Next/Later/Gated or the untiered " +
+      "placeholder, and every Type cell (where a table carries the column) " +
+      "is one of the ten Issue Types or the section-default placeholder.",
   );
   reporter.finish();
 }

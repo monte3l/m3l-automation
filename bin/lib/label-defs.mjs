@@ -55,19 +55,61 @@ export const LABEL_DEFS = [
     description: "Next — the near-term consumer-fleet wave.",
   },
   {
+    // Description narrows to "real work, not yet scheduled" in the same change
+    // that renames this tier's milestone (ADR-0073) — the two must move
+    // together, and the rename needs the in-place PATCH path first.
     name: PRIORITY_LABELS.p2,
     color: "fbca04",
     description: "Later — gated or deferred backlog; not yet scheduled.",
   },
   {
-    name: TYPE_LABELS[ISSUE_TYPES.capability],
+    name: PRIORITY_LABELS.p3,
+    color: "fef2c0",
+    description:
+      "Gated — cannot start until an external gate or future ADR opens.",
+  },
+  {
+    name: TYPE_LABELS[ISSUE_TYPES.libraryCapability],
     color: "0052cc",
-    description: "Library capability work (A/B/C-series).",
+    description: "Library capability — packages/m3l-common (core/, aws/).",
+  },
+  {
+    name: TYPE_LABELS[ISSUE_TYPES.cliCapability],
+    color: "1d76db",
+    description: "CLI capability — packages/m3l-cli.",
+  },
+  {
+    name: TYPE_LABELS[ISSUE_TYPES.packageCapability],
+    color: "0e8a16",
+    description:
+      "Package capability — creating or building out another workspace package.",
+  },
+  {
+    name: TYPE_LABELS[ISSUE_TYPES.ui],
+    color: "f9d0c4",
+    description: "UI — a browser-facing surface.",
+  },
+  {
+    name: TYPE_LABELS[ISSUE_TYPES.infrastructure],
+    color: "6f42c1",
+    description:
+      "Infrastructure — deployment, packaging, or runtime substrate.",
+  },
+  {
+    name: TYPE_LABELS[ISSUE_TYPES.fleetRetrofit],
+    color: "bfd4f2",
+    description:
+      "Fleet retrofit — changes to existing consumers under scripts/*.",
+  },
+  {
+    name: TYPE_LABELS[ISSUE_TYPES.toolingGates],
+    color: "006b75",
+    description: "Tooling & gates — bin/, .github/, .claude/.",
   },
   {
     name: TYPE_LABELS[ISSUE_TYPES.consumerScript],
     color: "c2e0c6",
-    description: "A new or retrofitted consumer script (W-series).",
+    description: "A new consumer script under scripts/*.",
   },
   {
     name: TYPE_LABELS[ISSUE_TYPES.friction],

@@ -21,7 +21,14 @@ describe("LABEL_DEFS", () => {
     "priority:0-now",
     "priority:1-next",
     "priority:2-later",
-    "type:capability",
+    "priority:3-gated",
+    "type:library-capability",
+    "type:cli-capability",
+    "type:package-capability",
+    "type:ui",
+    "type:infrastructure",
+    "type:fleet-retrofit",
+    "type:tooling-gates",
     "type:consumer-script",
     "type:friction",
     "type:governance",
@@ -34,7 +41,7 @@ describe("LABEL_DEFS", () => {
     "triage",
   ];
 
-  test("declares exactly the 15 ADR-0032/ADR-0052 (2026-08-20 Update) hub-managed labels, in the ADR-0051 semantic vocabulary", () => {
+  test("declares exactly the 22 ADR-0032/ADR-0052 (2026-08-20 Update) hub-managed labels, in the ADR-0051 semantic vocabulary", () => {
     expect(LABEL_DEFS.map((def) => def.name)).toEqual(EXPECTED_NAMES);
   });
 

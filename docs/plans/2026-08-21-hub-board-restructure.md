@@ -127,3 +127,44 @@ they are explicitly frozen, and `archive/**` is excluded from `lint:md`.
 - The three Archive-table rows reconciled per the section above (PR 3).
 - This file `git mv`d into [`archive/`](./archive/) with a landing date, and a
   row added to this directory's Archive table.
+
+## Update (2026-08-22): PR boundaries corrected against the gates
+
+The seven-PR table above split "tracker vocabulary" (PR 2) from the
+`hub-sync.mjs` constant tables (PR 4), and put the three new section headings
+in PR 2 ahead of the tables in PR 3. Reading the gates rather than the prose,
+neither boundary holds. Four assertions force a different split:
+
+- `bin/check-hub-keys.mjs:199` — `PRIORITY_LABELS.p3` requires a
+  `MILESTONE_TITLES.p3`, and `:208` requires an identically-spelled
+  `PROJECT_PRIORITY_OPTIONS.p3`.
+- `bin/lib/label-defs.mjs:143-162` — any `TYPE_LABELS` entry with no
+  `LABEL_DEFS` row **throws at module load**, so the type vocabulary and its
+  labels are one atomic unit.
+- `bin/check-hub-keys.mjs:246` — `findMissingTypes` validates every item's type
+  against `Object.values(ISSUE_TYPES)`, so PR 3 cannot author a `Type` cell
+  before the new type names exist.
+- `bin/lib/project-hub.mjs`'s `extractImplementation` pushes an error for a
+  section whose table is missing, and **both** `bin/gen-project-hub.mjs:138`
+  and `bin/check-hub-keys.mjs:271` exit 1 on any extraction error. Registering
+  a heading before its table therefore fails `check:hub-keys` in the same
+  `pre-push` that would land it, and would break the Pages build on `main`.
+
+Corrected boundaries:
+
+| PR  | Contents                                                                                                                                                                                                                                      |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2   | **The vocabulary.** Cell classifiers (`Gated` tier, `classifyTypeCell`, `findOffVocabularyTypeCells`), all `hub-sync.mjs` constant tables, `resolveType` per-row override, `LABEL_DEFS`, `check:tracker-status`'s Type half.                  |
+| 3   | **The move.** The three section headings _and_ their tables together, plus the anchors/namespaces/section blocks with `legacyKeys`, the row move, `Type` cells, re-tiering and slice sub-rows. Docs **and** ~30 lines of code, not docs-only. |
+| 4   | **The behaviour.** Epics, `planParentLinks`, the `planMilestones` widening, and `milestone-defs.mjs` with the shared `PRIORITY_TIERS` descriptions.                                                                                           |
+
+`milestone-defs.mjs` and `PRIORITY_TIERS` stay in PR 4 deliberately: nothing in
+PR 3 reads them, and a "shared" description table with one consumer is
+premature. `MILESTONE_TITLES.p3` lands in PR 2 as a bare string because
+`check:hub-keys` demands it there.
+
+PR 3 loses its docs-only, ~0-reviewable-chars property as a result. That is the
+right trade: a heading and the table it matches cannot be separated without
+failing a gate, and the alternative — making the three new sections optional in
+`extractImplementation` — would weaken a real invariant to accommodate a
+transient state.

@@ -11,6 +11,7 @@ import {
   blobUrl,
   classifyPriorityCell,
   classifyStatusCell,
+  classifyTypeCell,
   columnIndex,
 } from "./project-hub.mjs";
 
@@ -48,6 +49,11 @@ export const HUB_PROJECT_TITLE = "m3l-automation";
  * order in the label sidebar. `governance` has no entry here — see
  * {@link TYPE_LABELS}.
  *
+ * `p3` was added by ADR-0073, splitting `p2`'s original "gated/deferred"
+ * meaning in two: `p2` is now real work that simply isn't scheduled, `p3` is
+ * work that *cannot start* until an external gate opens. Before the split,
+ * 31 of 60 open board items sat in `p2`, which made the tier unreadable.
+ *
  * @example
  * ```js
  * import { PRIORITY_LABELS } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
@@ -59,6 +65,7 @@ export const PRIORITY_LABELS = {
   p0: "priority:0-now",
   p1: "priority:1-next",
   p2: "priority:2-later",
+  p3: "priority:3-gated",
 };
 
 /**
@@ -73,6 +80,21 @@ export const PRIORITY_LABELS = {
  * are untouched by that rename — governance was never a tier, and `major` was
  * always its own semantic bucket.
  *
+ * ADR-0073 added `p3`, the milestone behind the new gated tier. A brand-new
+ * title is safe to add here because {@link planMilestones} creates what is
+ * missing.
+ *
+ * **A rename is not.** `gh issue create/edit --milestone` resolves by
+ * *title*, {@link planIssueSync}'s `isDirty` does not compare milestones, and
+ * {@link planMilestones} is create-only — so editing `p1`/`p2` here today
+ * would have the sync CREATE the new title and silently orphan the old one,
+ * which currently holds 30 and 69 issues respectively. ADR-0073 also renames
+ * those two (`Next — consumer fleet` is already wrong: of the 28 open `p1`
+ * items exactly 2 are consumer scripts; `Later — gated/deferred` becomes
+ * wrong the moment `p3` exists). Both renames are deliberately deferred
+ * until `planMilestones` grows the in-place `PATCH` path and a `legacyTitles`
+ * table to drive it — do not edit these two strings before then.
+ *
  * @example
  * ```js
  * import { MILESTONE_TITLES } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
@@ -82,8 +104,11 @@ export const PRIORITY_LABELS = {
  */
 export const MILESTONE_TITLES = {
   p0: "Now — unblock first",
+  // Renamed to "Next — scheduled" / "Later — not yet scheduled" only once the
+  // in-place rename path exists — see the note above.
   p1: "Next — consumer fleet",
   p2: "Later — gated/deferred",
+  p3: "Gated — awaiting trigger",
   governance: "Governance",
   major: "2.0 / breaking",
 };
@@ -117,11 +142,32 @@ const IMPLEMENTATION_PATH = "docs/plans/IMPLEMENTATION.md";
  * ```
  */
 export const ISSUE_TYPES = {
-  capability: "Capability",
+  libraryCapability: "Library capability",
+  cliCapability: "CLI capability",
+  packageCapability: "Package capability",
+  ui: "UI",
+  infrastructure: "Infrastructure",
+  fleetRetrofit: "Fleet retrofit",
+  toolingGates: "Tooling & gates",
   consumerScript: "Consumer script",
   friction: "Friction",
   governance: "Governance",
 };
+
+/**
+ * Every {@link ISSUE_TYPES} value as a flat, frozen array — the vocabulary
+ * {@link classifyTypeCell} validates a tracker `Type` cell against, and
+ * `bin/check-tracker-status.mjs` gates on. Exported so neither re-derives
+ * `Object.values(ISSUE_TYPES)` independently and drifts.
+ *
+ * @example
+ * ```js
+ * import { TYPE_VALUES } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ *
+ * TYPE_VALUES.includes("UI"); // true
+ * ```
+ */
+export const TYPE_VALUES = Object.freeze(Object.values(ISSUE_TYPES));
 
 /**
  * GitHub label string for every {@link ISSUE_TYPES} value (ADR-0052's
@@ -145,7 +191,13 @@ export const ISSUE_TYPES = {
  * ```
  */
 export const TYPE_LABELS = {
-  [ISSUE_TYPES.capability]: "type:capability",
+  [ISSUE_TYPES.libraryCapability]: "type:library-capability",
+  [ISSUE_TYPES.cliCapability]: "type:cli-capability",
+  [ISSUE_TYPES.packageCapability]: "type:package-capability",
+  [ISSUE_TYPES.ui]: "type:ui",
+  [ISSUE_TYPES.infrastructure]: "type:infrastructure",
+  [ISSUE_TYPES.fleetRetrofit]: "type:fleet-retrofit",
+  [ISSUE_TYPES.toolingGates]: "type:tooling-gates",
   [ISSUE_TYPES.consumerScript]: "type:consumer-script",
   [ISSUE_TYPES.friction]: "type:friction",
   [ISSUE_TYPES.governance]: "type:governance",
@@ -162,7 +214,7 @@ export const ROADMAP_ANCHORS = {
 // section cannot gain an anchor without also gaining a type (mirrors the
 // IMPLEMENTATION_ANCHORS/IMPLEMENTATION_NAMESPACES pairing below).
 const TYPE_BY_ROADMAP_SECTION = {
-  p0: ISSUE_TYPES.capability,
+  p0: ISSUE_TYPES.libraryCapability,
   p1: ISSUE_TYPES.consumerScript,
   governance: ISSUE_TYPES.governance,
 };
@@ -210,20 +262,27 @@ const IMPLEMENTATION_NAMESPACES = {
 // The {@link ISSUE_TYPES} value every IMPLEMENTATION.md section's items are
 // assigned, keyed identically to IMPLEMENTATION_ANCHORS/IMPLEMENTATION_NAMESPACES
 // above so a new section cannot gain an anchor without also gaining a type.
-// Only the friction table is genuinely a friction report; every other
-// IMPLEMENTATION.md section is capability-deepening work by construction —
-// including `gated`, whose entries are individually mixed (a deferred
-// toolchain chore alongside genuine capability gaps) but for which
-// Capability is the defensible per-row default, with the nuance carried in
-// the row's own detail text rather than a per-item type override.
+//
+// This is a *default*, not a verdict: ADR-0073 added an optional per-row
+// `Type` cell that overrides it (see resolveType), which is what finally
+// answers the admission the previous version of this comment made — that
+// `gated`'s entries are "individually mixed (a deferred toolchain chore
+// alongside genuine capability gaps)" and were all typed Capability anyway,
+// "with the nuance carried in the row's own detail text rather than a
+// per-item type override." The override now exists, so the nuance lives in
+// the Type cell where a filter can see it.
+//
+// The defaults below name each section's *predominant* layer. `gated` keeps
+// the library default because its D4/D5 intake rows are library work; its
+// toolchain-chore rows carry an explicit `Tooling & gates` cell instead.
 const TYPE_BY_IMPLEMENTATION_SECTION = {
   friction: ISSUE_TYPES.friction,
-  adr0035Rollout: ISSUE_TYPES.capability,
-  capabilityDeepeningWave: ISSUE_TYPES.capability,
-  postComparisonHardeningWave: ISSUE_TYPES.capability,
-  m3lCliBuildOut: ISSUE_TYPES.capability,
-  codifiedProcedureWave: ISSUE_TYPES.capability,
-  gated: ISSUE_TYPES.capability,
+  adr0035Rollout: ISSUE_TYPES.libraryCapability,
+  capabilityDeepeningWave: ISSUE_TYPES.libraryCapability,
+  postComparisonHardeningWave: ISSUE_TYPES.libraryCapability,
+  m3lCliBuildOut: ISSUE_TYPES.cliCapability,
+  codifiedProcedureWave: ISSUE_TYPES.libraryCapability,
+  gated: ISSUE_TYPES.libraryCapability,
 };
 
 /**
@@ -400,13 +459,19 @@ export function parseHubMarker(body) {
  *   key: string,
  *   title: string,
  *   status: "done" | "todo" | "in-progress" | "deferred" | "blocked" | "rejected",
- *   priority: "p0" | "p1" | "p2" | "governance",
- *   type: "Capability" | "Consumer script" | "Friction" | "Governance",
+ *   priority: "p0" | "p1" | "p2" | "p3" | "governance",
+ *   type: (typeof ISSUE_TYPES)[keyof typeof ISSUE_TYPES],
  *   sourcePath: string,
  *   sourceAnchor: string,
  *   detail: string,
  *   legacyKeys?: string[],
  * }} Item
+ *
+ * `type` is derived from {@link ISSUE_TYPES} rather than spelled out as a
+ * literal union: ADR-0073 took the vocabulary from four values to ten, and
+ * the hardcoded copy that used to live here went stale silently — a typedef
+ * is not covered by the module-load assertions that keep
+ * {@link TYPE_LABELS} and `LABEL_DEFS` honest.
  *
  * `legacyKeys` lists every key this item used to be filed under, so an issue
  * whose marker still carries an older key is matched to it instead of being
@@ -512,6 +577,32 @@ export function actionableItems(roadmap, implementation) {
     return priority;
   }
 
+  // Resolve one row's Issue Type: the section default unless the table
+  // carries an optional `Type` column AND this row's cell names a real type
+  // (ADR-0073). Three distinct cases collapse to the default, deliberately:
+  // no column at all (every table today), a dash placeholder ("use the
+  // default"), and an unrecognized cell. Only the last one warns —
+  // check:tracker-status is the hard gate that makes it an authoring-time
+  // error rather than a silent default, exactly as it already does for
+  // Status and Priority.
+  function resolveType(header, row, sectionDefault, key) {
+    const typeIndex = columnIndex(header, "Type");
+    if (typeIndex === -1) return sectionDefault;
+    const cell = row[typeIndex] ?? "";
+    const { type, recognized, placeholder } = classifyTypeCell(
+      cell,
+      TYPE_VALUES,
+    );
+    if (placeholder) return sectionDefault;
+    if (!recognized) {
+      warnings.push(
+        `Implementation: item "${key}" has an unrecognized Type cell ("${cell}") — defaulted to ${sectionDefault}.`,
+      );
+      return sectionDefault;
+    }
+    return type;
+  }
+
   // Resolve any tracker row's Status cell, appending a warning when it
   // wasn't recognized (see classifyStatusCell). `label` names the tracker
   // section in the warning ("Roadmap" or "Implementation") the way
@@ -541,7 +632,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[whatIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Roadmap"),
         priority: "p0",
-        type: TYPE_BY_ROADMAP_SECTION.p0,
+        type: resolveType(header, row, TYPE_BY_ROADMAP_SECTION.p0, key),
         sourcePath: ROADMAP_PATH,
         sourceAnchor: ROADMAP_ANCHORS.p0,
         detail: buildDetail(header, row, new Set([itemIndex, statusIndex])),
@@ -563,7 +654,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${wave} — ${scripts}`,
         status: resolveStatus(row[statusIndex], key, "Roadmap"),
         priority: "p1",
-        type: TYPE_BY_ROADMAP_SECTION.p1,
+        type: resolveType(header, row, TYPE_BY_ROADMAP_SECTION.p1, key),
         sourcePath: ROADMAP_PATH,
         sourceAnchor: ROADMAP_ANCHORS.p1,
         detail: buildDetail(
@@ -589,7 +680,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[whatIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Roadmap"),
         priority: "governance",
-        type: TYPE_BY_ROADMAP_SECTION.governance,
+        type: resolveType(header, row, TYPE_BY_ROADMAP_SECTION.governance, key),
         sourcePath: ROADMAP_PATH,
         sourceAnchor: ROADMAP_ANCHORS.governance,
         detail: buildDetail(header, row, new Set([itemIndex, statusIndex])),
@@ -611,7 +702,12 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedId} — ${row[titleIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
-        type: TYPE_BY_IMPLEMENTATION_SECTION.friction,
+        type: resolveType(
+          header,
+          row,
+          TYPE_BY_IMPLEMENTATION_SECTION.friction,
+          key,
+        ),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.friction,
         legacyKeys: [`impl:${strippedId}`],
@@ -634,7 +730,12 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedPhase} — ${row[changeIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
-        type: TYPE_BY_IMPLEMENTATION_SECTION.adr0035Rollout,
+        type: resolveType(
+          header,
+          row,
+          TYPE_BY_IMPLEMENTATION_SECTION.adr0035Rollout,
+          key,
+        ),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.adr0035Rollout,
         legacyKeys: [`impl:${strippedPhase}`],
@@ -657,7 +758,12 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
-        type: TYPE_BY_IMPLEMENTATION_SECTION.capabilityDeepeningWave,
+        type: resolveType(
+          header,
+          row,
+          TYPE_BY_IMPLEMENTATION_SECTION.capabilityDeepeningWave,
+          key,
+        ),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.capabilityDeepeningWave,
         legacyKeys: [`impl:${slug(row[itemIndex] ?? "")}`],
@@ -680,7 +786,12 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
-        type: TYPE_BY_IMPLEMENTATION_SECTION.postComparisonHardeningWave,
+        type: resolveType(
+          header,
+          row,
+          TYPE_BY_IMPLEMENTATION_SECTION.postComparisonHardeningWave,
+          key,
+        ),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.postComparisonHardeningWave,
         legacyKeys: [`impl:${slug(row[itemIndex] ?? "")}`],
@@ -703,7 +814,12 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
-        type: TYPE_BY_IMPLEMENTATION_SECTION.m3lCliBuildOut,
+        type: resolveType(
+          header,
+          row,
+          TYPE_BY_IMPLEMENTATION_SECTION.m3lCliBuildOut,
+          key,
+        ),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.m3lCliBuildOut,
         legacyKeys: [`impl:${slug(row[itemIndex] ?? "")}`],
@@ -726,7 +842,12 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
-        type: TYPE_BY_IMPLEMENTATION_SECTION.codifiedProcedureWave,
+        type: resolveType(
+          header,
+          row,
+          TYPE_BY_IMPLEMENTATION_SECTION.codifiedProcedureWave,
+          key,
+        ),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.codifiedProcedureWave,
         legacyKeys: [`impl:${slug(row[itemIndex] ?? "")}`],
@@ -747,7 +868,12 @@ export function actionableItems(roadmap, implementation) {
         title: stripMarkdown(idCell),
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: "p2",
-        type: TYPE_BY_IMPLEMENTATION_SECTION.gated,
+        type: resolveType(
+          header,
+          row,
+          TYPE_BY_IMPLEMENTATION_SECTION.gated,
+          key,
+        ),
         sourcePath: IMPLEMENTATION_PATH,
         sourceAnchor: IMPLEMENTATION_ANCHORS.gated,
         legacyKeys: [`impl:${slug(idCell)}`],
@@ -1141,9 +1267,9 @@ function projectStatusOption(status) {
 }
 
 // Maps an Item priority (p0/p1/p2/governance) to the board Priority
-// single-select's option name. p0/p1/p2 mirror PRIORITY_LABELS' own
-// "0-now"/"1-next"/"2-later" vocabulary exactly, so the label and the board
-// field never drift into two different spellings of the same three tiers.
+// single-select's option name. p0/p1/p2/p3 mirror PRIORITY_LABELS' own
+// "0-now"/"1-next"/"2-later"/"3-gated" vocabulary exactly, so the label and
+// the board field never drift into two different spellings of the same tier.
 // `governance` maps to its own dedicated "Governance" option (ADR-0052's
 // 2026-08-20 Update) rather than a null-cleared field or a reused tier —
 // ADR-0051's "governance is a category, not a tier" rule still holds
@@ -1157,6 +1283,12 @@ export const PROJECT_PRIORITY_OPTIONS = {
   p0: "0-now",
   p1: "1-next",
   p2: "2-later",
+  // Declaration ORDER is load-bearing, not cosmetic: a board single-select
+  // sorts by the order its options are declared, and the Backlog view sorts
+  // Priority ascending — so `3-gated` sitting between `2-later` and
+  // `Governance` *is* where gated work lands in the view. Moving it would
+  // silently reorder the board (ADR-0073).
+  p3: "3-gated",
   governance: "Governance",
 };
 
