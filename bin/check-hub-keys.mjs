@@ -158,7 +158,7 @@ export function findKeyCollisions({ items, duplicateKeys }) {
  * PROJECT_PRIORITY_OPTIONS} tier (ADR-0052's board Priority field) must spell
  * the same tier `PRIORITY_LABELS` does — `"priority:" + PROJECT_PRIORITY_OPTIONS[key]
  * === PRIORITY_LABELS[key]` — so the label and the board field can never
- * drift into two different spellings of the same three tiers. Added under
+ * drift into two different spellings of the same tier. Added under
  * ADR-0051 (labels/milestones/anchors) and widened under ADR-0052 (the board
  * field): a rename that updates only some of these four registers previously
  * failed only at runtime.

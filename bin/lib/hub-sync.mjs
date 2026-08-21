@@ -1267,9 +1267,9 @@ function projectStatusOption(status) {
 }
 
 // Maps an Item priority (p0/p1/p2/governance) to the board Priority
-// single-select's option name. p0/p1/p2 mirror PRIORITY_LABELS' own
-// "0-now"/"1-next"/"2-later" vocabulary exactly, so the label and the board
-// field never drift into two different spellings of the same three tiers.
+// single-select's option name. p0/p1/p2/p3 mirror PRIORITY_LABELS' own
+// "0-now"/"1-next"/"2-later"/"3-gated" vocabulary exactly, so the label and
+// the board field never drift into two different spellings of the same tier.
 // `governance` maps to its own dedicated "Governance" option (ADR-0052's
 // 2026-08-20 Update) rather than a null-cleared field or a reused tier —
 // ADR-0051's "governance is a category, not a tier" rule still holds
