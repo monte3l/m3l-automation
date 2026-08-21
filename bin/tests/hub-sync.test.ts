@@ -104,6 +104,24 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 | ------ | -------- | -------- | ----------------------------------- | --------------------------- |
 | **A7** | Later    | Rejected | Residual free-text redaction gaps    | Accepted per ADR update      |
 
+## CLI evolution wave (U-series)
+
+| Item                                  | Priority | Status | Change                          |
+| --------------------------------------- | -------- | ------ | ------------------------------------ |
+| **U2 — CLI structure + doc gates**       | Next     | To Do  | scaffold cli command structure        |
+
+## Agent-operator wave (V-series)
+
+| Item                                  | Priority | Status      | Change                       |
+| --------------------------------------- | -------- | ----------- | --------------------------------- |
+| **V4 — aws/bedrock-runtime wrapper**     | Now      | In Progress | typed Bedrock runtime wrapper       |
+
+## m3l console wave (X-series)
+
+| Item                                  | Priority | Status   | Change                      |
+| --------------------------------------- | -------- | -------- | -------------------------------- |
+| **X10 — run-launcher UI MVP**            | Later    | Deferred | console run-launcher screen       |
+
 ## AWS getter reality
 
 | Provider getter | AWS service | Status | Wrapper submodule | Consuming script(s) | ADR / precedent |
@@ -801,6 +819,125 @@ describe("actionableItems", () => {
       "#m3l-cli-build-out--adr-0042-activation-issue-333",
     );
     expect(warnings).toEqual([]);
+  });
+
+  // ADR-0073 split the old m3l-cli build-out section three ways
+  // (cliEvolutionWave/agentOperatorWave/consoleWave). Each row keeps its own
+  // section's namespace, anchor, and Issue-Type default — asserted per
+  // section below.
+  test("extracts cliEvolutionWave rows with key impl:cli-evolution:<slug(Item)>, sourceAnchor, sourcePath, and the section-default Issue Type", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
+    const { items, warnings } = actionableItems(roadmap, implementation);
+
+    const u2Slug = slug("U2 — CLI structure + doc gates");
+    const u2 = items.find(
+      (item) => item.key === `impl:cli-evolution:${u2Slug}`,
+    );
+    expect(u2).toBeDefined();
+    expect(u2?.priority).toBe("p1");
+    expect(u2?.status).toBe("todo");
+    expect(u2?.sourceAnchor).toBe("#cli-evolution-wave-u-series");
+    expect(u2?.sourcePath).toBe("docs/plans/IMPLEMENTATION.md");
+    expect(u2?.type).toBe(ISSUE_TYPES.cliCapability);
+    expect(
+      warnings.some((warning) =>
+        warning.includes(`impl:cli-evolution:${u2Slug}`),
+      ),
+    ).toBe(false);
+  });
+
+  test("extracts agentOperatorWave rows with key impl:agent-operator:<slug(Item)>, sourceAnchor, sourcePath, and the section-default Issue Type", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
+    const { items, warnings } = actionableItems(roadmap, implementation);
+
+    const v4Slug = slug("V4 — aws/bedrock-runtime wrapper");
+    const v4 = items.find(
+      (item) => item.key === `impl:agent-operator:${v4Slug}`,
+    );
+    expect(v4).toBeDefined();
+    expect(v4?.priority).toBe("p0");
+    expect(v4?.status).toBe("in-progress");
+    expect(v4?.sourceAnchor).toBe("#agent-operator-wave-v-series");
+    expect(v4?.sourcePath).toBe("docs/plans/IMPLEMENTATION.md");
+    expect(v4?.type).toBe(ISSUE_TYPES.libraryCapability);
+    expect(
+      warnings.some((warning) =>
+        warning.includes(`impl:agent-operator:${v4Slug}`),
+      ),
+    ).toBe(false);
+  });
+
+  test("extracts consoleWave rows with key impl:console:<slug(Item)>, sourceAnchor, sourcePath, and the section-default Issue Type", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
+    const { items, warnings } = actionableItems(roadmap, implementation);
+
+    const x10Slug = slug("X10 — run-launcher UI MVP");
+    const x10 = items.find((item) => item.key === `impl:console:${x10Slug}`);
+    expect(x10).toBeDefined();
+    expect(x10?.priority).toBe("p2");
+    expect(x10?.status).toBe("deferred");
+    expect(x10?.sourceAnchor).toBe("#m3l-console-wave-x-series");
+    expect(x10?.sourcePath).toBe("docs/plans/IMPLEMENTATION.md");
+    expect(x10?.type).toBe(ISSUE_TYPES.packageCapability);
+    expect(
+      warnings.some((warning) => warning.includes(`impl:console:${x10Slug}`)),
+    ).toBe(false);
+  });
+
+  // THE test that matters most in this file. Every row ADR-0073 moved out of
+  // "m3l-cli build-out" into one of the three programme waves carries TWO
+  // derived legacyKeys, in this exact order: `impl:cli:<slug>` (the key the
+  // row was filed under before the split — every already-open GitHub issue
+  // for these rows still carries THIS key in its hidden marker) and
+  // `impl:<slug>` (the older, pre-namespacing flat key). If the first entry
+  // is ever dropped, `indexItemsByKey`/`planIssueSync` can no longer resolve
+  // an already-open issue for one of these ~39 rows back to its current
+  // item: every one of them reads as "removed from the source trackers",
+  // planIssueSync closes the live issue, and a duplicate gets filed on the
+  // real repo. Do not "simplify" this to `toContain` — the ORDER and the
+  // EXACT two-element shape are both load-bearing (see indexItemsByKey,
+  // which indexes every legacyKey unconditionally, but a human reading a
+  // GitHub issue body's marker cares which key is "current" vs "legacy").
+  test("[ADR-0073 split] cliEvolutionWave/agentOperatorWave/consoleWave rows carry legacyKeys exactly [impl:cli:<slug>, impl:<slug>] in that order — dropping the first re-derives a 'vanished from trackers' false positive and files duplicate issues for every moved row", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
+    const { items, warnings } = actionableItems(roadmap, implementation);
+    expect(warnings).toEqual([]);
+
+    const u2Slug = slug("U2 — CLI structure + doc gates");
+    const u2 = items.find(
+      (item) => item.key === `impl:cli-evolution:${u2Slug}`,
+    );
+    expect(u2?.legacyKeys).toEqual([`impl:cli:${u2Slug}`, `impl:${u2Slug}`]);
+
+    const v4Slug = slug("V4 — aws/bedrock-runtime wrapper");
+    const v4 = items.find(
+      (item) => item.key === `impl:agent-operator:${v4Slug}`,
+    );
+    expect(v4?.legacyKeys).toEqual([`impl:cli:${v4Slug}`, `impl:${v4Slug}`]);
+
+    const x10Slug = slug("X10 — run-launcher UI MVP");
+    const x10 = items.find((item) => item.key === `impl:console:${x10Slug}`);
+    expect(x10?.legacyKeys).toEqual([`impl:cli:${x10Slug}`, `impl:${x10Slug}`]);
+  });
+
+  // The split kept m3lCliBuildOut in place for its own shipped 8b-8g
+  // history: its rows must NOT gain the two-key derived legacyKeys pattern
+  // the three moved sections above get, and must still key under the
+  // original "impl:cli:" namespace (unmoved by ADR-0073).
+  test("m3lCliBuildOut rows still key under impl:cli: and are not moved by the ADR-0073 split (single flat legacyKey, not the two-key derived pattern)", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(IMPLEMENTATION_WAVES_FIXTURE);
+    const { items, warnings } = actionableItems(roadmap, implementation);
+    expect(warnings).toEqual([]);
+
+    const itemSlug = slug("8b — scaffold + discovery");
+    const wave = items.find((item) => item.key === `impl:cli:${itemSlug}`);
+    expect(wave).toBeDefined();
+    expect(wave?.legacyKeys).toEqual([`impl:${itemSlug}`]);
   });
 
   test("resolveType: a row naming a valid Type cell wins over the section default", () => {

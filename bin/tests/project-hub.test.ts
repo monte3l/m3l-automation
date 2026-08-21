@@ -123,6 +123,27 @@ const IMPLEMENTATION_FIXTURE = `# Implementation backlog — m3l-automation
 | **ADR-0042 activation record**                     | P2       | Done   | tracker section added               | ADR-0042, issue #333                          |
 | **8b — scaffold + discovery (\`list\`, \`inspect\`)** | P2       | To Do  | \`packages/m3l-cli\` skeleton         | ADR-0042 phasing 8b                           |
 
+## CLI evolution wave (U-series)
+
+| Item   | Priority | Status | Change                                | Source / notes        |
+| ------ | -------- | ------ | ---------------------------------------- | ------------------------ |
+| **U1** | P0       | Done   | ADR-0053 evolution programme kickoff     | ADR-0053                 |
+| **U2** | P1       | To Do  | ADR-0054 typed command-module contract   | ADR-0054                 |
+
+## Agent-operator wave (V-series)
+
+| Item   | Priority | Status      | Change                                    | Source / notes |
+| ------ | -------- | ----------- | -------------------------------------------- | ----------------- |
+| **V1** | P0       | In Progress | ADR-0058 agent-operator programme kickoff    | ADR-0058          |
+| **V2** | P1       | To Do       | ADR-0060 agent policy layer                  | ADR-0060          |
+
+## m3l console wave (X-series)
+
+| Item   | Priority | Status  | Change                                | Source / notes |
+| ------ | -------- | ------- | ---------------------------------------- | ----------------- |
+| **X1** | P0       | Done    | ADR-0064 console programme kickoff       | ADR-0064          |
+| **X2** | P1       | Blocked | ADR-0065 console server architecture     | ADR-0065          |
+
 ## Codified-procedure engine wave — ADR-0046/0047/0048/0049
 
 | Item   | Priority | Status      | Change                       |
@@ -750,9 +771,79 @@ describe("extractImplementation", () => {
     expect(b1Row?.[statusIndex]).toBe("In Progress");
   });
 
-  test("all eight sections produce no errors when every heading is present", () => {
+  test("all eleven sections produce no errors when every heading is present", () => {
     const result = extractImplementation(IMPLEMENTATION_FIXTURE);
     expect(result.errors).toEqual([]);
+  });
+
+  test("cliEvolutionWave table is parsed with its header and rows", () => {
+    const result = extractImplementation(IMPLEMENTATION_FIXTURE);
+    expect(result.cliEvolutionWave).not.toBeNull();
+    expect(result.cliEvolutionWave?.header).toEqual([
+      "Item",
+      "Priority",
+      "Status",
+      "Change",
+      "Source / notes",
+    ]);
+    expect(result.cliEvolutionWave?.rows).toHaveLength(2);
+    const statusIndex = columnIndex(
+      result.cliEvolutionWave?.header ?? [],
+      "Status",
+    );
+    const u1Row = result.cliEvolutionWave?.rows.find(
+      (row) => row[0] === "**U1**",
+    );
+    expect(u1Row?.[statusIndex]).toBe("Done");
+  });
+
+  test("agentOperatorWave table is parsed with its header and rows", () => {
+    const result = extractImplementation(IMPLEMENTATION_FIXTURE);
+    expect(result.agentOperatorWave).not.toBeNull();
+    expect(result.agentOperatorWave?.header).toEqual([
+      "Item",
+      "Priority",
+      "Status",
+      "Change",
+      "Source / notes",
+    ]);
+    expect(result.agentOperatorWave?.rows).toHaveLength(2);
+    const statusIndex = columnIndex(
+      result.agentOperatorWave?.header ?? [],
+      "Status",
+    );
+    const v1Row = result.agentOperatorWave?.rows.find(
+      (row) => row[0] === "**V1**",
+    );
+    expect(v1Row?.[statusIndex]).toBe("In Progress");
+  });
+
+  test("consoleWave table is parsed with its header and rows", () => {
+    const result = extractImplementation(IMPLEMENTATION_FIXTURE);
+    expect(result.consoleWave).not.toBeNull();
+    expect(result.consoleWave?.header).toEqual([
+      "Item",
+      "Priority",
+      "Status",
+      "Change",
+      "Source / notes",
+    ]);
+    expect(result.consoleWave?.rows).toHaveLength(2);
+    const statusIndex = columnIndex(result.consoleWave?.header ?? [], "Status");
+    const x2Row = result.consoleWave?.rows.find((row) => row[0] === "**X2**");
+    expect(x2Row?.[statusIndex]).toBe("Blocked");
+  });
+
+  test("IMPLEMENTATION_SECTION_HEADINGS carries the three ADR-0073 wave keys with their labels", () => {
+    expect(IMPLEMENTATION_SECTION_HEADINGS.cliEvolutionWave.label).toBe(
+      "CLI evolution wave (U-series)",
+    );
+    expect(IMPLEMENTATION_SECTION_HEADINGS.agentOperatorWave.label).toBe(
+      "Agent-operator wave (V-series)",
+    );
+    expect(IMPLEMENTATION_SECTION_HEADINGS.consoleWave.label).toBe(
+      "m3l console wave (X-series)",
+    );
   });
 
   test("reports descriptive errors for capabilityDeepeningWave, postComparisonHardeningWave, and m3lCliBuildOut when their headings are absent", () => {
@@ -778,6 +869,28 @@ describe("extractImplementation", () => {
     expect(result.adr0035Rollout).not.toBeNull();
     expect(result.getterReality).not.toBeNull();
     expect(result.gated).not.toBeNull();
+  });
+
+  // This fixture deliberately never grew the three ADR-0073 wave headings
+  // (cliEvolutionWave/agentOperatorWave/consoleWave), so extracting it also
+  // exercises their "not found" error path for free — same fixture, same
+  // deliberately-incomplete-heading-set contract as the assertions above.
+  test("reports descriptive errors for cliEvolutionWave, agentOperatorWave, and consoleWave when their headings are absent", () => {
+    const result = extractImplementation(
+      IMPLEMENTATION_MISSING_NEW_WAVES_FIXTURE,
+    );
+    expect(result.cliEvolutionWave).toBeNull();
+    expect(result.agentOperatorWave).toBeNull();
+    expect(result.consoleWave).toBeNull();
+    expect(
+      result.errors.some((error) => /CLI evolution wave/i.test(error)),
+    ).toBe(true);
+    expect(
+      result.errors.some((error) => /Agent-operator wave/i.test(error)),
+    ).toBe(true);
+    expect(result.errors.some((error) => /m3l console wave/i.test(error))).toBe(
+      true,
+    );
   });
 });
 
@@ -874,7 +987,7 @@ Just some prose, no table here at all.
     ]);
   });
 
-  test("regression lock: the real IMPLEMENTATION_SECTION_HEADINGS registry covers all eight real headings", () => {
+  test("regression lock: the real IMPLEMENTATION_SECTION_HEADINGS registry covers all eleven real headings", () => {
     const content = `## Library friction (F-series)
 
 | Item | Status |
@@ -904,6 +1017,24 @@ Just some prose, no table here at all.
 | Item | Status |
 | ---- | ------ |
 | 8b   | To Do  |
+
+## CLI evolution wave (U-series)
+
+| Item | Status |
+| ---- | ------ |
+| U1   | Done   |
+
+## Agent-operator wave (V-series)
+
+| Item | Status      |
+| ---- | ----------- |
+| V1   | In Progress |
+
+## m3l console wave (X-series)
+
+| Item | Status  |
+| ---- | ------- |
+| X1   | Blocked |
 
 ## Codified-procedure engine wave — ADR-0046/0047/0048/0049
 

@@ -718,6 +718,26 @@ export const IMPLEMENTATION_SECTION_HEADINGS = {
     label: "m3l-cli build-out — ADR-0042 activation (issue #333)",
     regex: /^## m3l-cli build-out(?=[\s(]|$)/m,
   },
+  // The three programme waves ADR-0073 split out of m3lCliBuildOut, which had
+  // accumulated all three and so forced one section-derived Issue Type onto
+  // 42 rows. m3lCliBuildOut stays, holding its own shipped 8b-8g history.
+  //
+  // These headings deliberately carry no ADR-list suffix: the GitHub anchor
+  // slug then follows straight from the heading text, which is what the
+  // ROADMAP_ANCHORS `#priority-0` incident (see hub-sync.mjs) got wrong by
+  // hand-writing a truncated anchor that never matched.
+  cliEvolutionWave: {
+    label: "CLI evolution wave (U-series)",
+    regex: /^## CLI evolution wave(?=[\s(]|$)/m,
+  },
+  agentOperatorWave: {
+    label: "Agent-operator wave (V-series)",
+    regex: /^## Agent-operator wave(?=[\s(]|$)/m,
+  },
+  consoleWave: {
+    label: "m3l console wave (X-series)",
+    regex: /^## m3l console wave(?=[\s(]|$)/m,
+  },
   codifiedProcedureWave: {
     label: "Codified-procedure engine wave — ADR-0046/0047/0048/0049",
     regex: /^## Codified-procedure engine wave(?=[\s(]|$)/m,
@@ -734,15 +754,16 @@ export const IMPLEMENTATION_SECTION_HEADINGS = {
 };
 
 /**
- * Extract the eight `docs/plans/IMPLEMENTATION.md` sections (library friction,
- * ADR-0035 rollout, capability-deepening wave, post-comparison hardening
- * wave, m3l-cli build-out, codified-procedure engine wave, AWS getter
- * reality, gated/deferred) as parsed
+ * Extract the eleven `docs/plans/IMPLEMENTATION.md` sections (library
+ * friction, ADR-0035 rollout, capability-deepening wave, post-comparison
+ * hardening wave, m3l-cli build-out, CLI evolution wave, agent-operator wave,
+ * m3l console wave, codified-procedure engine wave, AWS getter reality,
+ * gated/deferred) as parsed
  * tables. Same missing-section -> `errors` contract as {@link extractRoadmap};
  * never throws.
  *
  * @param {string} content `docs/plans/IMPLEMENTATION.md` contents
- * @returns {{ friction: ReturnType<typeof parseMarkdownTable>, adr0035Rollout: ReturnType<typeof parseMarkdownTable>, capabilityDeepeningWave: ReturnType<typeof parseMarkdownTable>, postComparisonHardeningWave: ReturnType<typeof parseMarkdownTable>, m3lCliBuildOut: ReturnType<typeof parseMarkdownTable>, codifiedProcedureWave: ReturnType<typeof parseMarkdownTable>, getterReality: ReturnType<typeof parseMarkdownTable>, gated: ReturnType<typeof parseMarkdownTable>, errors: string[] }}
+ * @returns {{ friction: ReturnType<typeof parseMarkdownTable>, adr0035Rollout: ReturnType<typeof parseMarkdownTable>, capabilityDeepeningWave: ReturnType<typeof parseMarkdownTable>, postComparisonHardeningWave: ReturnType<typeof parseMarkdownTable>, m3lCliBuildOut: ReturnType<typeof parseMarkdownTable>, cliEvolutionWave: ReturnType<typeof parseMarkdownTable>, agentOperatorWave: ReturnType<typeof parseMarkdownTable>, consoleWave: ReturnType<typeof parseMarkdownTable>, codifiedProcedureWave: ReturnType<typeof parseMarkdownTable>, getterReality: ReturnType<typeof parseMarkdownTable>, gated: ReturnType<typeof parseMarkdownTable>, errors: string[] }}
  * @example
  * ```js
  * import { extractImplementation } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
@@ -1278,6 +1299,24 @@ export function renderHubPage(model) {
       "backlog-m3l-cli-build-out",
       "m3l-cli build-out — ADR-0042 activation (issue #333)",
       backlog.m3lCliBuildOut,
+      "docs/plans",
+    ),
+    renderOptionalTable(
+      "backlog-cli-evolution-wave",
+      "CLI evolution wave (U-series)",
+      backlog.cliEvolutionWave,
+      "docs/plans",
+    ),
+    renderOptionalTable(
+      "backlog-agent-operator-wave",
+      "Agent-operator wave (V-series)",
+      backlog.agentOperatorWave,
+      "docs/plans",
+    ),
+    renderOptionalTable(
+      "backlog-console-wave",
+      "m3l console wave (X-series)",
+      backlog.consoleWave,
       "docs/plans",
     ),
     renderOptionalTable(
