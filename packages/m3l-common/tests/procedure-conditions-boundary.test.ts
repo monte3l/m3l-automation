@@ -275,4 +275,135 @@ describe("core/procedure — conditions (boundary)", () => {
       expectMalformedRoot(evaluation);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // and/or refused propagation — `evaluateAndNode`/`evaluateOrNode`
+  // (internal/procedure/evaluate.ts) compute their own `refused` flag with
+  // Kleene three-valued logic: a *confirmed* false (AND) or confirmed true
+  // (OR) operand — one that was genuinely evaluated, not itself refused —
+  // determines the connective's result on its own, regardless of any other
+  // unknown operand. Only when there is no such confirming operand does an
+  // unknown source (a refused operand, a dropped/malformed raw operand, or
+  // an empty operand list) propagate as the connective's own `refused: true`.
+  // Without this, `not` wrapping an `and`/`or` that only ever degrades to
+  // `satisfied: false` (never setting `refused`) fail-opens to `true`.
+  // -------------------------------------------------------------------------
+  describe("and/or refused propagation", () => {
+    // Shared scope: `count` reads normally (drives genuine true/false
+    // operands); `flag` is a hostile getter (drives refused operands), per
+    // the pattern already established in the "hostile accessors" block above.
+    const hostileFlagValues = {
+      count: 10,
+      get flag(): never {
+        throw new Error("hostile getter fired");
+      },
+    };
+    const scope: M3LProcedureConditionScope<TestShape> = {
+      results: {},
+      values: hostileFlagValues,
+      parameters: DEFAULT_PARAMETERS,
+    };
+
+    const genuineTrueOperand: M3LProcedureCondition<TestShape> = {
+      kind: "compare",
+      left: { source: "value", key: "count" },
+      operator: "==",
+      right: { source: "literal", literal: 10 },
+    };
+    const genuineFalseOperand: M3LProcedureCondition<TestShape> = {
+      kind: "compare",
+      left: { source: "value", key: "count" },
+      operator: "==",
+      right: { source: "literal", literal: 999 },
+    };
+    const refusedOperand: M3LProcedureCondition<TestShape> = {
+      kind: "compare",
+      left: { source: "value", key: "flag" },
+      operator: "==",
+      right: { source: "literal", literal: true },
+    };
+
+    test("and with one genuine-true operand and one refused operand is refused", () => {
+      const condition: M3LProcedureCondition<TestShape> = {
+        kind: "and",
+        operands: [genuineTrueOperand, refusedOperand],
+      };
+      const evaluation = evaluateProcedureCondition<TestShape>(
+        condition,
+        scope,
+      );
+      expect(evaluation.satisfied).toBe(false);
+      expect(evaluation.refused).toBe(true);
+    });
+
+    test("and with one genuine-false operand and one refused operand is decided by the confirmed false, not refused", () => {
+      const condition: M3LProcedureCondition<TestShape> = {
+        kind: "and",
+        operands: [genuineFalseOperand, refusedOperand],
+      };
+      const evaluation = evaluateProcedureCondition<TestShape>(
+        condition,
+        scope,
+      );
+      expect(evaluation.satisfied).toBe(false);
+      expect(evaluation.refused).toBeUndefined();
+      expect(Object.hasOwn(evaluation, "refused")).toBe(false);
+    });
+
+    test("or with one refused operand and one genuine-false operand is refused", () => {
+      const condition: M3LProcedureCondition<TestShape> = {
+        kind: "or",
+        operands: [refusedOperand, genuineFalseOperand],
+      };
+      const evaluation = evaluateProcedureCondition<TestShape>(
+        condition,
+        scope,
+      );
+      expect(evaluation.satisfied).toBe(false);
+      expect(evaluation.refused).toBe(true);
+    });
+
+    test("or with one refused operand and one genuine-true operand is decided by the confirmed true, not refused", () => {
+      const condition: M3LProcedureCondition<TestShape> = {
+        kind: "or",
+        operands: [refusedOperand, genuineTrueOperand],
+      };
+      const evaluation = evaluateProcedureCondition<TestShape>(
+        condition,
+        scope,
+      );
+      expect(evaluation.satisfied).toBe(true);
+      expect(evaluation.refused).toBeUndefined();
+      expect(Object.hasOwn(evaluation, "refused")).toBe(false);
+    });
+
+    test("and with an empty operands array is refused (no confirmed false, nothing genuinely evaluated)", () => {
+      const condition = {
+        kind: "and",
+        operands: [],
+      } as unknown as M3LProcedureCondition<TestShape>;
+      const evaluation = evaluateProcedureCondition<TestShape>(
+        condition,
+        EMPTY_SCOPE,
+      );
+      expect(evaluation.satisfied).toBe(false);
+      expect(evaluation.refused).toBe(true);
+    });
+
+    // The literal bug repro: before the fix, `evaluateAndNode` never set its
+    // own `refused`, so this degraded-but-unmarked `and` inverted through
+    // `evaluateNotNode` to a false-positive `satisfied: true`.
+    test("not wrapping an empty and no longer fail-opens to satisfied true", () => {
+      const condition = {
+        kind: "not",
+        operand: { kind: "and", operands: [] },
+      } as unknown as M3LProcedureCondition<TestShape>;
+      const evaluation = evaluateProcedureCondition<TestShape>(
+        condition,
+        EMPTY_SCOPE,
+      );
+      expect(evaluation.satisfied).toBe(false);
+      expect(evaluation.refused).toBe(true);
+    });
+  });
 });

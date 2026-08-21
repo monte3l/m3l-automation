@@ -454,7 +454,17 @@ values and never throws, never coerces.
 - **`exists`** — `true` when the reference resolves to anything other than
   `undefined`. `null` **exists**; a missing key does not.
 - **`and` / `or` / `not`** — `and` is `true` when every operand is; `or` when
-  any is.
+  any is. For a direct call bypassing `build()`, an operand can be _refused_
+  — its own evaluation degraded (a hostile getter threw), hit the depth
+  bound, or was shape-malformed — rather than genuinely resolving `true` or
+  `false`. `and`/`or`/`not` never let a refusal masquerade as a confident
+  result: `and` is confidently `false` only when it has a genuinely-false
+  operand (any unknown elsewhere doesn't change that), `or` is confidently
+  `true` only when it has a genuinely-true operand, and otherwise a refusal
+  anywhere among the operands propagates up as `refused: true` on the
+  connective itself. `not` propagates a refused operand's refusal rather
+  than inverting it — negating "we don't know" into "true" would be a
+  fail-open in the engine's decision path.
 
 ### Deep structural equality
 

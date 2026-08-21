@@ -316,6 +316,22 @@ function evaluateAndNode<TShape extends M3LProcedureShape>(
     scope,
     depth,
   );
+  // Kleene three-valued logic: AND is confidently `false` (not refused)
+  // whenever at least one operand is a *confirmed false* — genuinely
+  // evaluated (not itself refused) and unsatisfied — because that alone
+  // determines the conjunction regardless of any unknown elsewhere.
+  // Otherwise, any unknown source (a refused operand, a dropped/malformed
+  // raw operand, or an empty operand list) means the `false` result isn't
+  // confident, and must be marked `refused` — or `evaluateNotNode` would
+  // invert an unknown into a false-positive `true`.
+  const hasConfirmedFalse = operands.some(
+    (operand) => !operand.satisfied && operand.refused !== true,
+  );
+  const hasUnknown =
+    malformedCount > 0 ||
+    operands.length === 0 ||
+    operands.some((operand) => operand.refused === true);
+  const refused = !hasConfirmedFalse && hasUnknown;
   return {
     kind: "and",
     // A malformed (non-array, or emptied-by-filtering) `operands` degrades
@@ -327,6 +343,7 @@ function evaluateAndNode<TShape extends M3LProcedureShape>(
     references: [],
     operands,
     detail: joinOperandDetails(operands, malformedCount, "and"),
+    ...(refused ? { refused: true } : {}),
   };
 }
 
@@ -340,6 +357,20 @@ function evaluateOrNode<TShape extends M3LProcedureShape>(
     scope,
     depth,
   );
+  // Mirrors `evaluateAndNode`'s three-valued logic, swapping true/false: OR
+  // is confidently `true` (not refused) whenever at least one operand is a
+  // *confirmed true* — genuinely evaluated (not itself refused) and
+  // satisfied — because that alone determines the disjunction regardless of
+  // any unknown elsewhere. Otherwise, any unknown source means the `false`
+  // result isn't confident and must be marked `refused`.
+  const hasConfirmedTrue = operands.some(
+    (operand) => operand.satisfied && operand.refused !== true,
+  );
+  const hasUnknown =
+    malformedCount > 0 ||
+    operands.length === 0 ||
+    operands.some((operand) => operand.refused === true);
+  const refused = !hasConfirmedTrue && hasUnknown;
   return {
     kind: "or",
     // `.some()` on an empty (malformed-input) array already degrades to
@@ -348,6 +379,7 @@ function evaluateOrNode<TShape extends M3LProcedureShape>(
     references: [],
     operands,
     detail: joinOperandDetails(operands, malformedCount, "or"),
+    ...(refused ? { refused: true } : {}),
   };
 }
 
