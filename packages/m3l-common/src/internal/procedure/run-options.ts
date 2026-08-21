@@ -30,9 +30,11 @@ import { isDangerousKey } from "../../core/security/DangerousKeys.js";
 import {
   isArray,
   isBigInt,
+  isFunction,
   isNumber,
   isObject,
   isPlainObject,
+  isString,
 } from "../../core/utils/guards.js";
 
 import { M3LProcedureInvalidOptionError } from "./errors.js";
@@ -42,7 +44,10 @@ import {
   M3L_PROCEDURE_MAX_ITERATIONS,
 } from "../../core/procedure/types.js";
 
-import type { M3LProcedureRunOptions } from "../../core/procedure/run-types.js";
+import type {
+  M3LProcedureRunOptions,
+  M3LProcedureTraceOptions,
+} from "../../core/procedure/run-types.js";
 import type { M3LProcedureShape } from "../../core/procedure/types.js";
 
 /** The resolved, validated, capture-by-value pieces `run()`'s options reduce to. */
@@ -50,6 +55,7 @@ export interface ValidatedRunOptions<TShape extends M3LProcedureShape> {
   readonly maxIterations: number;
   readonly parameters: Readonly<TShape["parameters"]>;
   readonly initialValues: Readonly<Partial<TShape["values"]>>;
+  readonly trace: M3LProcedureTraceOptions | undefined;
 }
 
 /**
@@ -70,6 +76,43 @@ function validateMaxIterations(maxIterations: number | undefined): number {
     );
   }
   return maxIterations;
+}
+
+/**
+ * Validates `options.trace`, when present: it must be a plain object whose
+ * `sink` is an object exposing a callable `record` method (the shape
+ * {@link M3LProcedureTraceSink} declares), and whose optional `source` —
+ * when supplied — must be a string. `undefined` passes through unchanged,
+ * since tracing is opt-in.
+ */
+function validateTraceOption(
+  trace: unknown,
+): M3LProcedureTraceOptions | undefined {
+  if (trace === undefined) return undefined;
+  if (!isPlainObject(trace)) {
+    throw new M3LProcedureInvalidOptionError(
+      "trace must be a plain object when supplied",
+      { option: "trace" },
+    );
+  }
+  const sink: unknown = trace["sink"];
+  if (
+    !isObject(sink) ||
+    !isFunction((sink as Record<string, unknown>)["record"])
+  ) {
+    throw new M3LProcedureInvalidOptionError(
+      "trace.sink must be an object with a callable record method",
+      { option: "trace" },
+    );
+  }
+  const source: unknown = trace["source"];
+  if (source !== undefined && !isString(source)) {
+    throw new M3LProcedureInvalidOptionError(
+      "trace.source must be a string when supplied",
+      { option: "trace" },
+    );
+  }
+  return trace as unknown as M3LProcedureTraceOptions;
 }
 
 /**
@@ -275,5 +318,6 @@ export function validateRunOptions<TShape extends M3LProcedureShape>(
     declaredParameters,
   );
   const initialValues = projectInitialValues<TShape>(options.initialValues);
-  return { maxIterations, parameters, initialValues };
+  const trace = validateTraceOption(options.trace);
+  return { maxIterations, parameters, initialValues, trace };
 }

@@ -190,7 +190,7 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
       maxIterations: validated.maxIterations,
       parameters: validated.parameters,
       initialValues: validated.initialValues,
-      trace: options.trace,
+      trace: validated.trace,
       logger: options.logger,
     });
   }
