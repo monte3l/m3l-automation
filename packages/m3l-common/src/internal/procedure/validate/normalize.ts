@@ -102,6 +102,27 @@ function checkStepLoopDeclaration(
 }
 
 /**
+ * A present-but-non-boolean `continueOnFailure` is
+ * `ERR_PROCEDURE_INVALID_DECLARATION`, naming the step's id. `undefined`/
+ * `null` stay valid — they already default to `false` in
+ * {@link normalizeContinueOnFailure}.
+ */
+function checkStepContinueOnFailureDeclaration(
+  hasValidContinueOnFailure: boolean,
+  id: string,
+  hasValidId: boolean,
+): readonly M3LProcedureValidationProblem[] {
+  if (hasValidContinueOnFailure) return [];
+  return [
+    problem({
+      code: "ERR_PROCEDURE_INVALID_DECLARATION",
+      message: `M3LProcedure: step '${id}' has a continueOnFailure that is not a boolean`,
+      ...(hasValidId ? { stepId: id } : {}),
+    }),
+  ];
+}
+
+/**
  * A non-function `execute` is `ERR_PROCEDURE_INVALID_DECLARATION`, naming
  * the step's id — the R3/R4 defect fix. `execute` is captured on the
  * returned `NormalizedStep` regardless of validity, so the caller's raw step
@@ -122,12 +143,28 @@ function checkStepExecuteDeclaration(
   ];
 }
 
-/** Reads a step's `continueOnFailure` exactly once, defaulting absent/null to `false`. */
-function normalizeContinueOnFailure(raw: unknown): boolean {
+/** {@link normalizeContinueOnFailure}'s result: the coerced value plus its validity. */
+interface NormalizedContinueOnFailure {
+  readonly continueOnFailure: boolean;
+  readonly isValid: boolean;
+}
+
+/**
+ * Reads a step's `continueOnFailure` exactly once, defaulting absent/null to
+ * `false` and validating any other present value is actually a `boolean` — an
+ * untyped caller's truthy non-boolean (e.g. the string `"false"`) would
+ * otherwise flow straight into the digest and invert this field's semantics
+ * at run time.
+ */
+function normalizeContinueOnFailure(raw: unknown): NormalizedContinueOnFailure {
   const rawContinueOnFailure = field(raw, "continueOnFailure");
-  return rawContinueOnFailure === undefined || rawContinueOnFailure === null
-    ? false
-    : (rawContinueOnFailure as boolean);
+  if (rawContinueOnFailure === undefined || rawContinueOnFailure === null) {
+    return { continueOnFailure: false, isValid: true };
+  }
+  if (typeof rawContinueOnFailure === "boolean") {
+    return { continueOnFailure: rawContinueOnFailure, isValid: true };
+  }
+  return { continueOnFailure: false, isValid: false };
 }
 
 /** Reads a step's `jumpsTo` exactly once, dropping any non-string entry. */
@@ -182,7 +219,8 @@ export function normalizeStep(raw: unknown, index: number): NormalizedStep {
   const hasValidKind = isNonEmptyString(rawKind);
   const kind = hasValidKind ? rawKind : "";
 
-  const continueOnFailure = normalizeContinueOnFailure(raw);
+  const continueOnFailureInfo = normalizeContinueOnFailure(raw);
+  const continueOnFailure = continueOnFailureInfo.continueOnFailure;
   const jumpsTo = normalizeJumpsTo(raw);
   const loopInfo = normalizeLoop(raw);
 
@@ -208,6 +246,11 @@ export function normalizeStep(raw: unknown, index: number): NormalizedStep {
       ...checkStepLabelDeclaration(hasValidLabel, id, hasValidId),
       ...checkStepKindDeclaration(hasValidKind, id, hasValidId),
       ...checkStepLoopDeclaration(loopInfo.isValidMaxRevisits, id, hasValidId),
+      ...checkStepContinueOnFailureDeclaration(
+        continueOnFailureInfo.isValid,
+        id,
+        hasValidId,
+      ),
       ...checkStepExecuteDeclaration(hasValidExecute, id, hasValidId),
     ],
   };

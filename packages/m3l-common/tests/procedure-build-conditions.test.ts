@@ -402,4 +402,58 @@ describe("internal/procedure/validate/conditions — sibling coverage battery", 
       },
     );
   });
+
+  // ---------------------------------------------------------------------------
+  // `internal/procedure/validate/normalize.ts` regression coverage — sited here
+  // (rather than `procedure-build.test.ts`, its natural home) because that
+  // sibling file sits at 59,528/60,000 bytes, near the ADR-0072 file-budget
+  // ceiling, while this file has ample headroom. Confirms the fix landed for
+  // PR #582's `claude-pr-review` Must-fix: `normalizeContinueOnFailure`
+  // previously cast any non-null/undefined `continueOnFailure` straight to
+  // `boolean` with no runtime type check.
+  // ---------------------------------------------------------------------------
+  describe("continueOnFailure declaration — non-boolean vs. default-absent", () => {
+    test("a step declared with continueOnFailure: 'false' (a non-boolean string) is ERR_PROCEDURE_INVALID_DECLARATION naming the step", () => {
+      // Not expressible via the typed fluent chain (`continueOnFailure` is
+      // `boolean | undefined` at the type level) — cast through `unknown` to
+      // reach the untyped/dynamically-assembled runtime path this guards.
+      const step = {
+        ...makeStep({ id: "flaky-step" }),
+        continueOnFailure: "false",
+      } as unknown;
+      const { problems } = captureProblems(() =>
+        buildProcedure([step], [caseWithCondition(undefined)]),
+      );
+      const problem = problems.find(
+        (candidate) => candidate.code === "ERR_PROCEDURE_INVALID_DECLARATION",
+      );
+      expect(problem?.message).toContain("continueOnFailure");
+      expect(problem?.stepId).toBe("flaky-step");
+    });
+
+    test("a step with continueOnFailure absent builds successfully, defaulting to false", () => {
+      const procedure = buildProcedure(
+        [makeStep({ id: "a" })],
+        [caseWithCondition(undefined)],
+      );
+      expect(procedure.describe().steps[0]?.continueOnFailure).toBe(false);
+    });
+
+    test("a step with continueOnFailure explicitly undefined builds successfully, defaulting to false", () => {
+      const step = {
+        ...makeStep({ id: "b" }),
+        continueOnFailure: undefined,
+      } as unknown;
+      const procedure = buildProcedure([step], [caseWithCondition(undefined)]);
+      expect(procedure.describe().steps[0]?.continueOnFailure).toBe(false);
+    });
+
+    test("a step declared with continueOnFailure: true (an actual boolean) builds successfully, preserving the value", () => {
+      const procedure = buildProcedure(
+        [makeStep({ id: "c", continueOnFailure: true })],
+        [caseWithCondition(undefined)],
+      );
+      expect(procedure.describe().steps[0]?.continueOnFailure).toBe(true);
+    });
+  });
 });
