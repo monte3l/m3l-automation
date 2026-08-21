@@ -27,9 +27,26 @@ export const DANGEROUS_KEYS: ReadonlySet<string> = new Set([
 /** The minimum repeat count that makes an id/priority "duplicated". */
 export const DUPLICATE_THRESHOLD = 2;
 
-/** Safe own-property reader over an `unknown` — an untyped caller's raw declaration may be anything. */
+/**
+ * Safety ceiling on a `jumpsTo`/condition-reference `path` array's length. A
+ * legitimate hand-authored declaration never needs more than a few hundred
+ * entries; this exists solely so a length-only sparse array (`Array.isArray`
+ * accepts one, e.g. `new Array(2 ** 32 - 1)`) cannot make `.filter()`/
+ * iteration perform one `HasProperty` check per index against a huge
+ * declared length while holding no real elements.
+ */
+export const MAX_REFERENCE_ARRAY_LENGTH = 256;
+
+/**
+ * Safe own-property reader over an `unknown` — an untyped caller's raw
+ * declaration may be anything. Checks `Object.hasOwn` first so a key that
+ * only resolves via the prototype chain (inherited, or — on a polluted
+ * `Object.prototype` — attacker-controlled) reads as absent rather than
+ * returning that inherited value.
+ */
 export function field(value: unknown, key: string): unknown {
   if (value === null || typeof value !== "object") return undefined;
+  if (!Object.hasOwn(value, key)) return undefined;
   return (value as Record<string, unknown>)[key];
 }
 

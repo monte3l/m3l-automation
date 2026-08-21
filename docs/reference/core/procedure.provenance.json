@@ -98,12 +98,12 @@
         {
           "file": "packages/m3l-common/src/core/procedure/M3LProcedureBuilder.ts",
           "symbol": "createProcedureBuilder",
-          "blob": "ebfefedb735e2ed7dc925d22b4671df50cf2e29b"
+          "blob": "17ff9c1c04e7d6ced92b5a8b058958d5d350ec60"
         },
         {
           "file": "packages/m3l-common/src/core/procedure/M3LProcedureBuilder.ts",
           "symbol": "M3LProcedureBuilder",
-          "blob": "ebfefedb735e2ed7dc925d22b4671df50cf2e29b"
+          "blob": "17ff9c1c04e7d6ced92b5a8b058958d5d350ec60"
         },
         {
           "file": "packages/m3l-common/src/core/procedure/M3LProcedure.ts",
@@ -214,7 +214,7 @@
         {
           "file": "packages/m3l-common/src/internal/procedure/resolve.ts",
           "symbol": "resolveReference",
-          "blob": "6be1a4459cf011976c1fe5275e12768bbb417f23"
+          "blob": "dfcea61de0e21d8c9a5a9b0596e5f93eb7ee20f3"
         }
       ],
       "retrieved": "2026-08-21"
@@ -275,7 +275,7 @@
         {
           "file": "packages/m3l-common/src/internal/procedure/evaluate.ts",
           "symbol": "evaluateCondition",
-          "blob": "ad501e0d53f2950e05bcb762c30bb2895160616c"
+          "blob": "a7bc625188c86bb12c53bc1cea7308aef62f98d9"
         },
         {
           "file": "packages/m3l-common/src/internal/procedure/equality.ts",

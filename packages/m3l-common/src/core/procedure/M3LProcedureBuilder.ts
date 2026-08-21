@@ -170,7 +170,20 @@ export class M3LProcedureBuilder<
    * ```
    */
   parameters(names: readonly (keyof TShape["parameters"] & string)[]): this {
-    this.#parameters = [...names];
+    try {
+      this.#parameters = [...names];
+    } catch (cause) {
+      // A hostile array-like (a throwing `Symbol.iterator`/`length`
+      // getter, a Proxy trap) must not escape this public method as a bare,
+      // non-`M3LError` exception — every other entry point in this module
+      // reads caller values through a guarded path (`field()`, or
+      // `build()`'s own try/catch backstop); this mirrors that.
+      throw new M3LProcedureInvalidDefinitionError(
+        "M3LProcedureBuilder.parameters(): the declared names could not be read",
+        { problems: [] },
+        { cause },
+      );
+    }
     return this;
   }
 

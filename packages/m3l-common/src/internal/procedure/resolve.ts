@@ -134,11 +134,14 @@ function renderReferenceString<TShape extends M3LProcedureShape>(
     case "parameter":
       return joinWithPath(`parameter:${reference.key}`, reference.path);
     default: {
-      /* istanbul ignore next -- unreachable: every M3LProcedureReference
-         source is handled above; this arm exists only to fail loud if a new
-         source is ever added without a matching case. */
+      // Reachable, same as `rootValueFor`'s default arm below: a
+      // hand-crafted, untyped reference can carry a `source` this module
+      // doesn't recognise. `String(exhaustive)` would stringify the whole
+      // raw reference object into a nonsensical render string; an honest
+      // placeholder is safer and no less informative for `detail` prose.
       const exhaustive: never = reference;
-      return String(exhaustive);
+      void exhaustive;
+      return "unknown-reference";
     }
   }
 }
@@ -159,11 +162,19 @@ function rootValueFor<TShape extends M3LProcedureShape>(
     case "parameter":
       return scope.parameters[reference.key];
     default: {
-      /* istanbul ignore next -- unreachable: every non-literal
-         M3LProcedureReference source is handled above; this arm exists only
-         to fail loud if a new source is ever added without a matching case. */
+      // Reachable: `resolveReference` (via `evaluateCondition`) is public
+      // and documented as callable directly with a hand-crafted, untyped
+      // reference whose `source` was never proven to be one of the three
+      // non-literal sources handled above. The `never` annotation is a
+      // compile-time completeness check only — it provides no runtime
+      // protection — so returning `exhaustive` here would hand the raw
+      // reference object back as if it were the resolved VALUE. Fail toward
+      // "nothing there", matching every sibling arm's `undefined` for an
+      // absent value and this module's documented "an absent step record…
+      // yields `present: false`, never a throw" contract.
       const exhaustive: never = reference;
-      return exhaustive;
+      void exhaustive;
+      return undefined;
     }
   }
 }
