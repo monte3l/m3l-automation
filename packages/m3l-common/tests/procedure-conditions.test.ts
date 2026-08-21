@@ -1430,6 +1430,59 @@ describe("core/procedure — conditions", () => {
   });
 
   // -------------------------------------------------------------------------
+  // 8b. malformed root condition — `evaluateCondition` shape-validates the
+  // root node before dispatching, so a root that is not one of the seven
+  // recognised kinds degrades to `malformedRootEvaluation()` instead of
+  // falling through the exhaustive `switch`'s `default` arm and echoing the
+  // raw input back to the caller as if it were a real evaluation.
+  // -------------------------------------------------------------------------
+  describe("malformed root condition", () => {
+    /**
+     * Asserts the exact degraded shape `malformedRootEvaluation()` returns
+     * (`internal/procedure/evaluate.ts`): unlike a hostile-accessor
+     * degradation, this shape is fixed and caller-independent, so every
+     * field — including `kind` and `detail`'s exact wording — is pinned.
+     */
+    function expectMalformedRoot(
+      evaluation: ReturnType<typeof evaluateProcedureCondition<TestShape>>,
+    ): void {
+      expect(evaluation).toStrictEqual({
+        kind: "exists",
+        satisfied: false,
+        references: [],
+        operands: [],
+        detail: "condition is malformed (not a recognised node)",
+      });
+    }
+
+    test("a root with an unrecognised kind does not throw and degrades to the malformed-root evaluation", () => {
+      const condition = {
+        kind: "bogus",
+      } as unknown as M3LProcedureCondition<TestShape>;
+      expect(() =>
+        evaluateProcedureCondition<TestShape>(condition, EMPTY_SCOPE),
+      ).not.toThrow();
+      const evaluation = evaluateProcedureCondition<TestShape>(
+        condition,
+        EMPTY_SCOPE,
+      );
+      expectMalformedRoot(evaluation);
+    });
+
+    test("a root that is not a plain object at all does not throw and degrades to the malformed-root evaluation", () => {
+      const condition = null as unknown as M3LProcedureCondition<TestShape>;
+      expect(() =>
+        evaluateProcedureCondition<TestShape>(condition, EMPTY_SCOPE),
+      ).not.toThrow();
+      const evaluation = evaluateProcedureCondition<TestShape>(
+        condition,
+        EMPTY_SCOPE,
+      );
+      expectMalformedRoot(evaluation);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // 9. explainability
   // -------------------------------------------------------------------------
   describe("explainability", () => {

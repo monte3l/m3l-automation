@@ -379,6 +379,27 @@ function evaluateNotNode<TShape extends M3LProcedureShape>(
   };
 }
 
+/**
+ * The evaluation returned when the ROOT `condition` argument to
+ * {@link evaluateCondition} fails {@link isConditionNode}'s shape check —
+ * the root-node counterpart to {@link evaluateNotNode}'s malformed-operand
+ * branch. Unlike that branch, there is no parent-declared `kind` to fall
+ * back on here: a malformed root has no trustworthy field to read at all,
+ * and {@link M3LProcedureConditionEvaluation}'s `kind` has no "unknown" or
+ * "invalid" member to report instead. `"exists"` is therefore a fixed,
+ * documented placeholder — the actual "malformed" signal lives in
+ * `satisfied: false` and `detail`, never in `kind`.
+ */
+function malformedRootEvaluation(): M3LProcedureConditionEvaluation {
+  return {
+    kind: "exists",
+    satisfied: false,
+    references: [],
+    operands: [],
+    detail: capDetail("condition is malformed (not a recognised node)"),
+  };
+}
+
 /** The evaluation returned once condition-tree nesting exceeds the bound, without recursing further. */
 function tooDeepEvaluation<TShape extends M3LProcedureShape>(
   condition: M3LProcedureCondition<TShape>,
@@ -464,13 +485,18 @@ function dispatchCondition<TShape extends M3LProcedureShape>(
  * {@link M3L_PROCEDURE_CONDITION_MAX_DEPTH} (inclusive), guarding a
  * pathologically deep tree built by a caller who invokes this evaluator
  * directly rather than through `build()` (which validates tree depth
- * up front, in a later pass).
+ * up front, in a later pass). A root `condition` that fails
+ * {@link isConditionNode}'s shape check — another consequence of this
+ * evaluator being callable directly, bypassing `build()`'s tree validation —
+ * also degrades (to {@link malformedRootEvaluation}) rather than reaching
+ * the exhaustive dispatch `switch`.
  */
 export function evaluateCondition<TShape extends M3LProcedureShape>(
   condition: M3LProcedureCondition<TShape>,
   scope: M3LProcedureConditionScope<TShape>,
   depth = 0,
 ): M3LProcedureConditionEvaluation {
+  if (!isConditionNode<TShape>(condition)) return malformedRootEvaluation();
   if (depth > M3L_PROCEDURE_CONDITION_MAX_DEPTH)
     return tooDeepEvaluation(condition);
 
