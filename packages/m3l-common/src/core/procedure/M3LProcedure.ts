@@ -173,8 +173,8 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
    * promise this method returns unchanged.
    *
    * @param options - The dependency bag, optional signal, iteration
-   *   ceiling, initial values, and the opt-in `trace`/`logger` tracing
-   *   configuration.
+   *   ceiling, initial values, the opt-in `progress` no-progress guard, and
+   *   the opt-in `trace`/`logger` tracing configuration.
    * @returns The resolved outcome.
    */
   run(
@@ -192,6 +192,7 @@ export class M3LProcedure<TShape extends M3LProcedureShape> {
       initialValues: validated.initialValues,
       trace: validated.trace,
       logger: options.logger,
+      progress: validated.progress,
     });
   }
 }

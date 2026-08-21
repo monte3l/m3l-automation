@@ -204,6 +204,7 @@ export const M3L_ERROR_CATALOG: Readonly<
   ERR_PROCEDURE_INVALID_PATTERN: { origin: "caller", retryable: false },
   ERR_PROCEDURE_ITERATION_LIMIT: { origin: "caller", retryable: false },
   ERR_PROCEDURE_MISSING_FALLBACK: { origin: "caller", retryable: false },
+  ERR_PROCEDURE_NO_PROGRESS: { origin: "caller", retryable: false },
   ERR_PROCEDURE_UNDECLARED_JUMP: { origin: "caller", retryable: false },
   ERR_PROCEDURE_UNKNOWN_REFERENCE: { origin: "caller", retryable: false },
   ERR_PROMPT_VALIDATION: { origin: "caller", retryable: false },

@@ -2,11 +2,10 @@
  * `core/procedure/run-types` — options and outcome types for
  * {@link M3LProcedure.run}.
  *
- * Slice 3b scope: `M3LProcedureRunOptions` carries `deps`/`signal`/
- * `maxIterations`/`initialValues`/`parameters`/`trace`/`logger`. The opt-in
- * no-progress guard (`progress`) lands in a later slice (3c) as an additive
- * optional field on this same base interface — nothing here needs to change
- * shape to admit it.
+ * `M3LProcedureRunOptions` carries `deps`/`signal`/`maxIterations`/
+ * `progress`/`trace`/`logger`/`initialValues`/`parameters` — as of slice 3c,
+ * the opt-in no-progress guard (`progress`) has landed alongside 3a's core
+ * run contract and 3b's tracing, completing this base interface's shape.
  *
  * `M3LProcedureOutcomeBase.trace` IS part of this slice's shape: empty
  * unless `options.trace` is configured, in which case it carries the same
@@ -27,11 +26,62 @@ import type {
   M3LProcedureCaseEvaluation,
   M3LProcedureCaseMatch,
 } from "./build-types.js";
+import type { M3LProcedureContext } from "./step-types.js";
 import type {
   M3LProcedureShape,
   M3LProcedureStepKind,
   M3LProcedureStepRecord,
 } from "./types.js";
+
+// ---------------------------------------------------------------------------
+// The opt-in no-progress guard
+// ---------------------------------------------------------------------------
+
+/**
+ * A cheap, side-effect-free sample of a run's progress, taken from the
+ * step's just-derived context. Must return a primitive — an object/function
+ * result would compare unequal on every sample (a fresh reference each
+ * call), so the guard would silently never fire.
+ *
+ * @typeParam TShape - The procedure's declared shape.
+ *
+ * @example
+ * ```ts
+ * import type { Core } from "@m3l-automation/m3l-common";
+ *
+ * const witness: Core.M3LProcedureProgressWitness<Core.M3LProcedureShape> = (
+ *   context,
+ * ) => context.values["pageToken"] as string;
+ * ```
+ */
+export type M3LProcedureProgressWitness<TShape extends M3LProcedureShape> = (
+  context: M3LProcedureContext<TShape>,
+) => string | number | bigint | boolean;
+
+/**
+ * Opts a `run()` call into the no-progress guard
+ * (`docs/reference/core/procedure.md` § The run contract, Phase 1 step 9).
+ * Absent this option, the engine samples nothing and the iteration ceiling
+ * alone bounds a runaway loop.
+ *
+ * @typeParam TShape - The procedure's declared shape.
+ *
+ * @example
+ * ```ts
+ * import type { Core } from "@m3l-automation/m3l-common";
+ *
+ * const progress: Core.M3LProcedureProgressOptions<Core.M3LProcedureShape> = {
+ *   witness: (context) => context.values["pageToken"] as string,
+ *   maxStalledSteps: 3,
+ * };
+ * ```
+ */
+export interface M3LProcedureProgressOptions<TShape extends M3LProcedureShape> {
+  /** Sampled once per continuing step. Must be cheap and side-effect-free. */
+  readonly witness: M3LProcedureProgressWitness<TShape>;
+  /** Consecutive unchanged samples after the baseline that trip the guard. */
+  readonly maxStalledSteps: number;
+}
 
 // ---------------------------------------------------------------------------
 // Run options
@@ -50,7 +100,12 @@ interface M3LProcedureRunOptionsBase<TShape extends M3LProcedureShape> {
   readonly signal?: AbortSignal;
   /** Ceiling on step *executions*. Defaults to `M3L_PROCEDURE_MAX_ITERATIONS`. */
   readonly maxIterations?: number;
-  readonly initialValues?: Readonly<Partial<TShape["values"]>>;
+  /**
+   * The no-progress guard. **Opt-in**, exactly as `M3LPollerOptions` and
+   * `M3LRetryRunnerOptions` have it: absent, no guard runs and the engine
+   * samples nothing. The iteration ceiling still bounds a runaway loop.
+   */
+  readonly progress?: M3LProcedureProgressOptions<TShape>;
   /** Opt-in step/outcome tracing (`docs/reference/core/procedure.md` § Tracing). */
   readonly trace?: M3LProcedureTraceOptions;
   /**
@@ -60,6 +115,7 @@ interface M3LProcedureRunOptionsBase<TShape extends M3LProcedureShape> {
    * (`docs/reference/core/procedure.md` § Tracing).
    */
   readonly logger?: M3LLogger;
+  readonly initialValues?: Readonly<Partial<TShape["values"]>>;
 }
 
 /**

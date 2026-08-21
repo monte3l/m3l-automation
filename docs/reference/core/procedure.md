@@ -53,8 +53,8 @@ lands.
 | 2a — builder + validation     | The step/case/build type families, `M3LProcedureBuilder`/`createProcedureBuilder`, build-time validation, a reduced `M3LProcedure` (constructor + `digest` + `describe()` only — `run()` lands in slice 3) | Landed (PR #582)                                        |
 | 2b — build-time hardening     | The exhaustive declaration/cycle/pattern edge battery plus an adversarial boundary review pass over slice 2a                                                                                               | Landed (PR #583)                                        |
 | 3a — the core run loop        | `M3LProcedure.run()`, option validation, phases 1–3 (steps/cases/conclusion), flow directives, jump validation, iteration ceiling, cancellation, `continueOnFailure`/recovery, outcome + telemetry         | Landed (PR #585)                                        |
-| 3b — opt-in tracing           | `options.trace`/`options.logger`, the trace sink/entry types                                                                                                                                               | In progress                                             |
-| 3c — opt-in no-progress guard | `options.progress`, the no-progress guard, `ERR_PROCEDURE_NO_PROGRESS` (the 16th and final code)                                                                                                           | Not started                                             |
+| 3b — opt-in tracing           | `options.trace`/`options.logger`, the trace sink/entry types                                                                                                                                               | Landed (PR #586)                                        |
+| 3c — opt-in no-progress guard | `options.progress`, the no-progress guard, `ERR_PROCEDURE_NO_PROGRESS` (the 16th and final code)                                                                                                           | In progress                                             |
 | 4 — infra touch-ups           | Error-code catalog entries not needed by an earlier slice, barrel wiring, zone widening                                                                                                                    | Landing alongside the slice that first needs each piece |
 
 This page documents the **full, eventual** public surface (all 44 exports);
@@ -998,16 +998,26 @@ Starting at the first declared step, for each iteration:
    steps unexecuted.
 9. **No-progress guard** — when `progress` is configured, the witness is sampled
    **exactly once** per continuing step, after the context is derived (so the
-   sample sees this step's contribution) and after the flow is applied. Tripping
-   ends the run with a `failed` outcome under `ERR_PROCEDURE_NO_PROGRESS`.
+   sample sees this step's contribution) and after the flow is applied. This
+   includes an engine-synthesized **retry** (a `continueOnFailure`-absorbed
+   throw on a step declaring `loop`) — a repeatedly-failing `loop` step with an
+   unchanged witness value can trip the guard before `loop.maxRevisits` is
+   exhausted; there is no "after the flow is applied" step to wait for on a
+   retry, so the sample runs at the same post-advance boundary regardless.
+   Tripping ends the run with a `failed` outcome under
+   `ERR_PROCEDURE_NO_PROGRESS`.
 
 Phase 1 also ends when the last declared step returns `"continue"`.
 
-An abort **always wins**: over `continueOnFailure`, over a no-progress trip, and
-over a step's own thrown error. A step that declares `continueOnFailure` and
-throws an abort is **not** absorbed — absorbing it would continue past a
-cancellation the operator asked for, and ADR-0049's whole posture is that a
-cancelled operation is never retried.
+An abort **always wins**: over `continueOnFailure`, over a no-progress trip,
+over a malfunctioning progress witness (one that throws or returns a
+non-primitive — the abort re-check that follows every guard sample discards
+that mid-run `ERR_PROCEDURE_INVALID_OPTION` the same way it discards a trip,
+in favour of the `aborted` outcome), and over a step's own thrown error. A
+step that declares `continueOnFailure` and throws an abort is **not**
+absorbed — absorbing it would continue past a cancellation the operator
+asked for, and ADR-0049's whole posture is that a cancelled operation is
+never retried.
 
 The abort is recognised by `code === "ERR_OPERATION_ABORTED"`, not by
 `instanceof` — the library rule is to discriminate on the machine-readable code.
@@ -1162,19 +1172,19 @@ Every code below is registered in `M3L_ERROR_CODES` and `M3L_ERROR_CATALOG`
 
 ### Thrown
 
-| Code                               | Thrown by                                                                                                                    |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `ERR_PROCEDURE_INVALID_DEFINITION` | `build()` — the one outer code; every finding in `context.problems`                                                          |
-| `ERR_PROCEDURE_INVALID_OPTION`     | `run()` — a bad `maxIterations`, a non-finite `parameters` value, a non-function / throwing / non-primitive progress witness |
+| Code                               | Thrown by                                                                                                                                                                                    |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ERR_PROCEDURE_INVALID_DEFINITION` | `build()` — the one outer code; every finding in `context.problems`                                                                                                                          |
+| `ERR_PROCEDURE_INVALID_OPTION`     | `run()` — a bad `maxIterations`, a non-finite `parameters` value, a `progress.witness` that is not a function, or a `progress.maxStalledSteps` that is not a finite integer greater than `0` |
 
 ### Carried by a `failed` outcome's `error`
 
-| Code                            | Fires when                                                                                                                                                                                                                                 |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ERR_PROCEDURE_ITERATION_LIMIT` | the iteration ceiling, or a `loop` step's `maxRevisits`; `context.limit` is `"iterations"` or `"revisits"`                                                                                                                                 |
-| `ERR_PROCEDURE_NO_PROGRESS`     | the stall guard tripped; `context` carries `stalledSteps` and `lastStepId`                                                                                                                                                                 |
-| `ERR_PROCEDURE_INVALID_OPTION`  | the progress witness **threw**, or returned a non-primitive, mid-run. The option was only provably bad once sampled, so it surfaces as a `failed` outcome with the thrown value chained as `cause` rather than breaking "`run()` resolves" |
-| `ERR_PROCEDURE_UNDECLARED_JUMP` | a `goTo` outside the step's `jumpsTo` — unreachable from typed TypeScript                                                                                                                                                                  |
+| Code                            | Fires when                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ERR_PROCEDURE_ITERATION_LIMIT` | the iteration ceiling, or a `loop` step's `maxRevisits`; `context.limit` is `"iterations"` or `"revisits"`                                                                                                                                                                                                                                                                                                 |
+| `ERR_PROCEDURE_NO_PROGRESS`     | the stall guard tripped; `context` carries `stalledSteps` and `lastStepId`                                                                                                                                                                                                                                                                                                                                 |
+| `ERR_PROCEDURE_INVALID_OPTION`  | the progress witness **threw**, or returned a non-primitive (an object, array, or function — `null` counts as non-primitive here since `typeof null === "object"`; `undefined` does not, since it never reaches that check), mid-run. The option was only provably bad once sampled, so it surfaces as a `failed` outcome with the thrown value chained as `cause` rather than breaking "`run()` resolves" |
+| `ERR_PROCEDURE_UNDECLARED_JUMP` | a `goTo` outside the step's `jumpsTo` — unreachable from typed TypeScript                                                                                                                                                                                                                                                                                                                                  |
 
 `ERR_PROCEDURE_NO_PROGRESS` is deliberately **not**
 [`core/polling`](./polling.md)'s `ERR_NO_PROGRESS`, which is
