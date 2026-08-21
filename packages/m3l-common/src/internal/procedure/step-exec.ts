@@ -94,6 +94,18 @@ interface ValidatedStepResult<TShape extends M3LProcedureShape> {
 }
 
 /**
+ * The outcome of {@link validateStepResult}: either a successfully validated
+ * projection, or a failure that distinguishes a genuinely malformed-but-
+ * readable result (no `cause` — there is nothing to chain) from an unreadable
+ * property (a hostile getter thrown while reading `flow`/`output`/`note`/
+ * `values`), which carries the original throw as `cause` so the caller can
+ * chain it onto `M3LProcedureUndeclaredJumpError` rather than dropping it.
+ */
+type StepResultValidation<TShape extends M3LProcedureShape> =
+  | { readonly ok: true; readonly result: ValidatedStepResult<TShape> }
+  | { readonly ok: false; readonly cause?: unknown };
+
+/**
  * True unless `value` could never plausibly be an {@link M3LProcedureValue} —
  * a function, a `Symbol`, or a `BigInt`. Deliberately shallow: this validates
  * one step's own single output value, not a nested caller structure like
@@ -114,16 +126,18 @@ function isPlausibleStepOutput(value: unknown): boolean {
  * (a hostile getter on any of them is caught here, not on a later, separate
  * read). `flow` is classified via `flow.ts`'s `classifyFlowShape`; `note`
  * must be `undefined` or a `string`; `values` must be `undefined` or a plain
- * object; `output` must pass {@link isPlausibleStepOutput}. Any failure —
- * malformed shape, an unreadable property, or an invalid value — returns
- * `undefined` uniformly; the caller folds all of them into the SAME
- * `ERR_PROCEDURE_UNDECLARED_JUMP` failure, never absorbed by
- * `continueOnFailure`.
+ * object; `output` must pass {@link isPlausibleStepOutput}. A genuinely
+ * malformed-but-readable shape returns `{ ok: false }` with no `cause` —
+ * there is nothing to chain. An unreadable property (a hostile getter
+ * thrown while reading `flow`/`output`/`note`/`values`) returns
+ * `{ ok: false, cause }`, carrying the original throw so the caller can chain
+ * it onto `ERR_PROCEDURE_UNDECLARED_JUMP` instead of dropping it. Neither
+ * failure kind is ever absorbed by `continueOnFailure`.
  */
 function validateStepResult<TShape extends M3LProcedureShape>(
   result: unknown,
-): ValidatedStepResult<TShape> | undefined {
-  if (!isPlainObject(result)) return undefined;
+): StepResultValidation<TShape> {
+  if (!isPlainObject(result)) return { ok: false };
 
   let flowValue: unknown;
   let output: unknown;
@@ -134,24 +148,27 @@ function validateStepResult<TShape extends M3LProcedureShape>(
     output = result["output"];
     note = result["note"];
     values = result["values"];
-  } catch {
-    return undefined;
+  } catch (cause) {
+    return { ok: false, cause };
   }
 
   const flowShape = classifyFlowShape(flowValue);
-  if (flowShape === undefined) return undefined;
-  if (note !== undefined && !isString(note)) return undefined;
-  if (values !== undefined && !isPlainObject(values)) return undefined;
-  if (!isPlausibleStepOutput(output)) return undefined;
+  if (flowShape === undefined) return { ok: false };
+  if (note !== undefined && !isString(note)) return { ok: false };
+  if (values !== undefined && !isPlainObject(values)) return { ok: false };
+  if (!isPlausibleStepOutput(output)) return { ok: false };
 
   return {
-    flowShape,
-    // Validated above: `output` is `undefined` or excludes a function/Symbol/
-    // BigInt; `values` is `undefined` or a plain object. Neither is validated
-    // any deeper than that (see `isPlausibleStepOutput`'s TSDoc).
-    output: output as M3LProcedureValue | undefined,
-    note,
-    values: values as Readonly<Partial<TShape["values"]>> | undefined,
+    ok: true,
+    result: {
+      flowShape,
+      // Validated above: `output` is `undefined` or excludes a function/
+      // Symbol/BigInt; `values` is `undefined` or a plain object. Neither is
+      // validated any deeper than that (see `isPlausibleStepOutput`'s TSDoc).
+      output: output as M3LProcedureValue | undefined,
+      note,
+      values: values as Readonly<Partial<TShape["values"]>> | undefined,
+    },
   };
 }
 
@@ -336,15 +353,16 @@ export async function executeOneStep<TShape extends M3LProcedureShape>(
   // the continueOnFailure absorption path — it is an engine-level contract
   // violation, not a step failure (D6).
   const validated = validateStepResult<TShape>(result);
-  if (validated === undefined) {
+  if (!validated.ok) {
     return {
       kind: "failed",
       stepId: step.id,
       error: new M3LProcedureUndeclaredJumpError(
         `step "${step.id}" returned a result that could not be validated — a missing or unrecognized flow directive, or an output/note/values that could not be read or had an invalid type`,
         { stepId: step.id },
+        { cause: validated.cause },
       ),
     };
   }
-  return advanceFromResult(context, step, attempt, start, validated);
+  return advanceFromResult(context, step, attempt, start, validated.result);
 }

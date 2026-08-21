@@ -117,6 +117,7 @@ function projectValue(
       throw new M3LProcedureInvalidOptionError(
         `${optionName} contains a value that could not be read`,
         { option: optionName },
+        { cause },
       );
     }
   }
@@ -174,10 +175,11 @@ function projectRecord(
     let raw: unknown;
     try {
       raw = value[key];
-    } catch {
+    } catch (cause) {
       throw new M3LProcedureInvalidOptionError(
         `${optionName} key "${key}" could not be read`,
         { option: optionName, key },
+        { cause },
       );
     }
     projected[key] = projectValue(raw, optionName, depth);

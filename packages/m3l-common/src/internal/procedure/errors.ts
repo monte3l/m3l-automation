@@ -67,12 +67,6 @@ export class M3LProcedureInvalidDefinitionError extends M3LError {
  * `ERR_PROCEDURE_INVALID_DEFINITION`, which is a `build()`-time problem with
  * the procedure's own declaration, not with a particular run's options.
  *
- * @remarks
- * This slice's constructor is deliberately 2-arg only (`message`, `context`)
- * — no `cause` parameter. A later slice (3c) widens this to accept an
- * optional `cause` for the in-flight progress-witness failure mode; that
- * mode has no call site yet, so there is nothing to chain here.
- *
  * @example
  * ```ts
  * import { M3LError } from "@m3l-automation/m3l-common/core";
@@ -95,9 +89,21 @@ export class M3LProcedureInvalidOptionError extends M3LError {
   /**
    * @param message - Human-readable description of the failure.
    * @param context - Structured diagnostic context (e.g. `{ option, value }`).
+   * @param options - Optional `cause` — a defense-in-depth chain for an
+   *   unexpected throw (e.g. a hostile getter) encountered while reading a
+   *   caller-supplied run option, distinct from the normal validation-failure
+   *   path which needs no `cause`.
    */
-  constructor(message: string, context: Record<string, unknown>) {
-    super(message, { code: "ERR_PROCEDURE_INVALID_OPTION", context });
+  constructor(
+    message: string,
+    context: Record<string, unknown>,
+    options?: { readonly cause?: unknown },
+  ) {
+    super(message, {
+      code: "ERR_PROCEDURE_INVALID_OPTION",
+      context,
+      cause: options?.cause,
+    });
     this.code = "ERR_PROCEDURE_INVALID_OPTION";
   }
 }
@@ -170,9 +176,21 @@ export class M3LProcedureUndeclaredJumpError extends M3LError {
   /**
    * @param message - Human-readable description of the failure.
    * @param context - Structured diagnostic context, always carrying `stepId`.
+   * @param options - Optional `cause` — a defense-in-depth chain for an
+   *   unexpected throw (e.g. a hostile getter) encountered while reading a
+   *   step result's `flow`/`output`/`note`/`values` properties, distinct
+   *   from the normal malformed-flow path which needs no `cause`.
    */
-  constructor(message: string, context: Record<string, unknown>) {
-    super(message, { code: "ERR_PROCEDURE_UNDECLARED_JUMP", context });
+  constructor(
+    message: string,
+    context: Record<string, unknown>,
+    options?: { readonly cause?: unknown },
+  ) {
+    super(message, {
+      code: "ERR_PROCEDURE_UNDECLARED_JUMP",
+      context,
+      cause: options?.cause,
+    });
     this.code = "ERR_PROCEDURE_UNDECLARED_JUMP";
   }
 }
