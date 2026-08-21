@@ -15,6 +15,9 @@
 //                            core/logging/{M3LLogEvent,M3LLogEventCategory}.ts
 //                            (ADR-0009, ADR-0040, ADR-0041).
 //   3. core/script root    — no other core module may import core/script (ADR-0009).
+//   3b. core -> aws ban    — no core/** module may import aws/** (ADR-0009, ADR-0027;
+//                            core/procedure, B2/#474, reaches AWS only via an
+//                            injected dependency bag, never a static import).
 //   4. no-cycle            — packages/m3l-common/src/**/*.ts AND scripts/*/src/**/*.ts
 //                            are a DAG, `maxDepth: Infinity` (ADR-0035 A8) — see
 //                            eslint.config.js's own comment on why this covers
@@ -117,6 +120,13 @@ requireZone(
   (zone) =>
     norm(zone.target).endsWith("/src/core") &&
     norm(zone.from).endsWith("/src/core/script"),
+);
+
+requireZone(
+  "core -> aws ban (no core module may import aws/*, the reverse of the aws island)",
+  (zone) =>
+    norm(zone.target).endsWith("/src/core") &&
+    norm(zone.from).endsWith("/src/aws"),
 );
 
 // The no-cycle rule isn't a `no-restricted-paths` zone, so it needs its own

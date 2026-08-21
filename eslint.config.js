@@ -581,6 +581,15 @@ export default tseslint.config(
     // import it. Scoped to core/** but excluding core/script itself (its own
     // intra-module imports are legitimate) and the core barrel (which re-exports
     // it). See the ADR-0009 layering comment above.
+    //
+    // Same block also carries the reverse of Zone A: no core/** module may
+    // import aws/** (`core/procedure`, B2/#474 — the engine is documented as
+    // "prompt-agnostic" and aws-agnostic, reaching AWS only through an
+    // injected dependency bag, never a static import). aws/ is a leaf island
+    // that already may not import back into core beyond the Zone A allowlist,
+    // so this closes the cycle from the other direction; without it, nothing
+    // stops a future core/** module from statically importing @aws-sdk/* via
+    // aws/**, which ADR-0027 reserves for aws/ wrappers alone.
     files: ["packages/m3l-common/src/core/**/*.ts"],
     ignores: [
       "packages/m3l-common/src/core/script/**",
@@ -596,6 +605,12 @@ export default tseslint.config(
               from: "./packages/m3l-common/src/core/script",
               message:
                 "core/script is the composition root; no other core module may import it (ADR-0009 layering).",
+            },
+            {
+              target: "./packages/m3l-common/src/core",
+              from: "./packages/m3l-common/src/aws",
+              message:
+                "core/* may not import aws/* — aws/ is a separate island reached only through an injected dependency bag (ADR-0009 layering, ADR-0027).",
             },
             {
               target: "./packages/m3l-common/src",
