@@ -38,6 +38,7 @@ import {
 } from "../../core/utils/guards.js";
 
 import { M3LProcedureInvalidOptionError } from "./errors.js";
+import { captureProgressOptions, validateProgressOptions } from "./progress.js";
 
 import {
   M3L_PROCEDURE_CONDITION_MAX_DEPTH,
@@ -45,10 +46,12 @@ import {
 } from "../../core/procedure/types.js";
 
 import type {
+  M3LProcedureProgressOptions,
   M3LProcedureRunOptions,
   M3LProcedureTraceOptions,
 } from "../../core/procedure/run-types.js";
 import type { M3LProcedureShape } from "../../core/procedure/types.js";
+import type { CapturedProgressConfig } from "./progress.js";
 
 /** The resolved, validated, capture-by-value pieces `run()`'s options reduce to. */
 export interface ValidatedRunOptions<TShape extends M3LProcedureShape> {
@@ -56,6 +59,7 @@ export interface ValidatedRunOptions<TShape extends M3LProcedureShape> {
   readonly parameters: Readonly<TShape["parameters"]>;
   readonly initialValues: Readonly<Partial<TShape["values"]>>;
   readonly trace: M3LProcedureTraceOptions | undefined;
+  readonly progress: CapturedProgressConfig<TShape> | undefined;
 }
 
 /**
@@ -254,6 +258,22 @@ function ensurePlainRunOption(
 }
 
 /**
+ * Validates and captures `options.progress` by value, mirroring
+ * {@link validateTraceOption}'s shape: `undefined` passes through unchanged
+ * (the no-progress guard is opt-in), otherwise `witness`/`maxStalledSteps`
+ * are each read into a local exactly once
+ * (`internal/procedure/progress.ts`'s `captureProgressOptions`) before being
+ * validated (`validateProgressOptions`).
+ */
+function resolveProgressOption<TShape extends M3LProcedureShape>(
+  progress: M3LProcedureProgressOptions<TShape> | undefined,
+): CapturedProgressConfig<TShape> | undefined {
+  const captured = captureProgressOptions<TShape>(progress);
+  validateProgressOptions<TShape>(captured);
+  return captured;
+}
+
+/**
  * Validates and captures `options.parameters` by value: every own key must be
  * declared by this procedure's shape (per `M3LProcedure.describe()`'s
  * `parameters` list, top-level only), must not be a dangerous name anywhere
@@ -319,5 +339,6 @@ export function validateRunOptions<TShape extends M3LProcedureShape>(
   );
   const initialValues = projectInitialValues<TShape>(options.initialValues);
   const trace = validateTraceOption(options.trace);
-  return { maxIterations, parameters, initialValues, trace };
+  const progress = resolveProgressOption<TShape>(options.progress);
+  return { maxIterations, parameters, initialValues, trace, progress };
 }

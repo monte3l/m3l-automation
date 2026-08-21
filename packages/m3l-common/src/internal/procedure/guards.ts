@@ -4,10 +4,12 @@
  *
  * `docs/reference/core/procedure.md` § Cancellation: the signal is checked
  * at every step boundary, before phase 2, and before phase 3 — an abort
- * always wins, over `continueOnFailure`, over a no-progress trip (a later
- * slice's concern), and over a step's own thrown error. This slice's
- * `checkAfterAdvance` covers only the abort check; the no-progress sample is
- * an additive expansion of the same function in slice 3c.
+ * always wins, over `continueOnFailure`, over a no-progress trip, and over a
+ * step's own thrown error. `checkAfterAdvance` runs the abort check first
+ * and, only once that passes, samples the opt-in no-progress guard —
+ * re-checking abort a second time afterward, since the witness is caller
+ * code and can itself fire the signal as a side effect of the very sample
+ * that just tripped.
  *
  * Private to `core/procedure`; never re-exported through a public barrel.
  */
@@ -15,12 +17,15 @@
 import { M3LOperationAbortedError } from "../../core/errors/M3LOperationAbortedError.js";
 
 import { checkIterationCeiling } from "./flow.js";
+import { sampleProgress } from "./progress.js";
 
 import type {
   M3LProcedureContext,
   M3LProcedureStep,
 } from "../../core/procedure/step-types.js";
 import type { M3LProcedureShape } from "../../core/procedure/types.js";
+import type { ProgressTracker } from "../polling/progress.js";
+import type { CapturedProgressConfig } from "./progress.js";
 import type {
   FlowDecision,
   ProcedureRuntime,
@@ -89,22 +94,43 @@ function toAbortedStepGuardFailure<TShape extends M3LProcedureShape>(
 /**
  * Runs the checks common to every step that just advanced: the abort
  * boundary right after this step's context was derived, so an abort always
- * wins. Only ever called for a genuine `"advance"` decision — a step whose
- * flow directive already ended phase 1 (`"ended"`/`"matched"`/`"failed"`)
- * never reaches this guard. `decision.index` names the step phase 1 would
- * run next, which an abort caught here reports as `abortedAt`.
+ * wins — then, only once that passes, the opt-in no-progress guard's sample
+ * for the step that just completed (`stepId`). Only ever called for a
+ * genuine `"advance"` decision — a step whose flow directive already ended
+ * phase 1 (`"ended"`/`"matched"`/`"failed"`) never reaches this guard.
+ * `decision.index` names the step phase 1 would run next, which an abort
+ * caught here reports as `abortedAt`.
  *
- * This slice's version is abort-only; the no-progress sample is an additive
- * expansion of this same function in a later slice.
+ * A no-progress trip is re-checked against abort a SECOND time before being
+ * returned: the witness is caller code and can itself fire the signal as a
+ * side effect of the very sample that just tripped, and an abort must still
+ * win even then.
  */
 export function checkAfterAdvance<TShape extends M3LProcedureShape>(
   runtime: ProcedureRuntime<TShape>,
   context: M3LProcedureContext<TShape>,
   decision: Extract<FlowDecision<TShape>, { kind: "advance" }>,
+  stepId: TShape["stepId"],
+  progressTracker: ProgressTracker | undefined,
+  progress: CapturedProgressConfig<TShape> | undefined,
 ): StepGuardFailure<TShape> | undefined {
   const abortError = checkAbortBoundary(context.signal);
   if (abortError !== undefined) {
     return toAbortedStepGuardFailure(runtime, abortError, decision.index);
   }
-  return undefined;
+  if (progressTracker === undefined || progress === undefined) {
+    return undefined;
+  }
+  const stallFailure = sampleProgress(
+    progressTracker,
+    progress.maxStalledSteps,
+    stepId,
+  );
+  if (stallFailure === undefined) return undefined;
+
+  const postSampleAbort = checkAbortBoundary(context.signal);
+  if (postSampleAbort !== undefined) {
+    return toAbortedStepGuardFailure(runtime, postSampleAbort, decision.index);
+  }
+  return stallFailure;
 }

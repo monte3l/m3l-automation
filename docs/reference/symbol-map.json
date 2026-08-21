@@ -1627,6 +1627,16 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/procedure/run-types.ts"
   },
+  "M3LProcedureProgressOptions": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/run-types.ts"
+  },
+  "M3LProcedureProgressWitness": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/run-types.ts"
+  },
   "M3L_PROCEDURE_MAX_ITERATIONS": {
     "submodule": "procedure",
     "namespace": "core",

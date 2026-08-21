@@ -6,9 +6,9 @@
  *
  * Slice 3a (`M3LProcedure.run()`) adds three more codes:
  * {@link M3LProcedureInvalidOptionError}, {@link M3LProcedureIterationLimitError},
- * and {@link M3LProcedureUndeclaredJumpError}. `ERR_PROCEDURE_NO_PROGRESS`
- * (`M3LProcedureNoProgressError`) is deliberately NOT defined here — it has no
- * call site until slice 3c's opt-in no-progress guard exists.
+ * and {@link M3LProcedureUndeclaredJumpError}. Slice 3c adds the sixteenth and
+ * final code, {@link M3LProcedureNoProgressError} — the opt-in no-progress
+ * guard's failure.
  *
  * Private to `core/procedure`; never re-exported through a public barrel.
  */
@@ -66,6 +66,13 @@ export class M3LProcedureInvalidDefinitionError extends M3LError {
  * option violates its contract — before any step executes. Distinct from
  * `ERR_PROCEDURE_INVALID_DEFINITION`, which is a `build()`-time problem with
  * the procedure's own declaration, not with a particular run's options.
+ *
+ * Also resolved (never thrown) as a `"failed"` outcome's `error`, mid-run,
+ * by `sampleProgress` (`internal/procedure/progress.ts`) when the opt-in
+ * `options.progress` witness throws or returns a non-primitive value while
+ * being sampled after a step completes — a witness-vocabulary failure
+ * re-wrapped under this engine-native code so a `core/procedure` caller never
+ * observes the underlying polling code.
  *
  * @example
  * ```ts
@@ -192,5 +199,41 @@ export class M3LProcedureUndeclaredJumpError extends M3LError {
       cause: options?.cause,
     });
     this.code = "ERR_PROCEDURE_UNDECLARED_JUMP";
+  }
+}
+
+/**
+ * Resolved as a `"failed"` outcome's `error` (never a rejection) by
+ * {@link M3LProcedure.run} when the opt-in no-progress guard's
+ * `ProgressTracker` reports `maxStalledSteps` consecutive unchanged samples.
+ * `context["stalledSteps"]` carries the configured threshold that was
+ * reached; `context["lastStepId"]` names the step that just completed when
+ * the trip was observed.
+ *
+ * @example
+ * ```ts
+ * import { M3LError } from "@m3l-automation/m3l-common/core";
+ *
+ * declare const outcome: { status: string; error?: unknown };
+ *
+ * if (outcome.status === "failed" && outcome.error instanceof M3LError) {
+ *   if (outcome.error.code === "ERR_PROCEDURE_NO_PROGRESS") {
+ *     console.error(outcome.error.context["stalledSteps"]);
+ *   }
+ * }
+ * ```
+ */
+export class M3LProcedureNoProgressError extends M3LError {
+  /** Narrows the inherited `code` to the literal `"ERR_PROCEDURE_NO_PROGRESS"`. */
+  override readonly code: "ERR_PROCEDURE_NO_PROGRESS";
+
+  /**
+   * @param message - Human-readable description of the failure.
+   * @param context - Structured diagnostic context, always carrying
+   *   `stalledSteps` and `lastStepId`.
+   */
+  constructor(message: string, context: Record<string, unknown>) {
+    super(message, { code: "ERR_PROCEDURE_NO_PROGRESS", context });
+    this.code = "ERR_PROCEDURE_NO_PROGRESS";
   }
 }

@@ -24,6 +24,7 @@ import type {
   M3LProcedureTraceOptions,
 } from "../../core/procedure/run-types.js";
 import type { M3LProcedureShape } from "../../core/procedure/types.js";
+import type { CapturedProgressConfig } from "./progress.js";
 import type {
   PhaseOneAccumulated,
   PhaseOneOutcome,
@@ -34,9 +35,9 @@ import type { M3LProcedureTracer } from "./trace.js";
 /**
  * The already-validated, capture-by-value pieces {@link executeProcedureRun}
  * needs from `run()`'s options — every field here is what `run-options.ts`'s
- * `validateRunOptions` (for `maxIterations`/`parameters`/`initialValues`)
- * already resolved, plus `deps`/`signal`/`trace`/`logger` passed through
- * unchanged.
+ * `validateRunOptions` (for `maxIterations`/`parameters`/`initialValues`/
+ * `progress`) already resolved, plus `deps`/`signal`/`trace`/`logger` passed
+ * through unchanged.
  */
 export interface ExecuteProcedureRunInput<TShape extends M3LProcedureShape> {
   readonly deps: TShape["deps"];
@@ -46,6 +47,7 @@ export interface ExecuteProcedureRunInput<TShape extends M3LProcedureShape> {
   readonly initialValues: Readonly<Partial<TShape["values"]>>;
   readonly trace: M3LProcedureTraceOptions | undefined;
   readonly logger: M3LLogger | undefined;
+  readonly progress: CapturedProgressConfig<TShape> | undefined;
 }
 
 /**
@@ -199,6 +201,7 @@ export async function executeProcedureRun<TShape extends M3LProcedureShape>(
     initialContext,
     input.maxIterations,
     tracer,
+    input.progress,
   );
 
   const outcome =

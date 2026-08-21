@@ -108,7 +108,7 @@
         {
           "file": "packages/m3l-common/src/core/procedure/M3LProcedure.ts",
           "symbol": "M3LProcedure",
-          "blob": "750c67c78d6a25e194b1166f9cf87444ad7ebdab"
+          "blob": "f87f0a1bfd18068c1dbdc3ee58c19e172ccacdbb"
         },
         {
           "file": "packages/m3l-common/src/core/procedure/step-types.ts",
@@ -178,37 +178,47 @@
         {
           "file": "packages/m3l-common/src/core/procedure/run-types.ts",
           "symbol": "M3LProcedureRunOptions",
-          "blob": "8699a0df20771cc71068a2fea9845849b49858a6"
+          "blob": "39263ff83e95beac345726f9652dce92557d5626"
         },
         {
           "file": "packages/m3l-common/src/core/procedure/run-types.ts",
           "symbol": "M3LProcedureTelemetry",
-          "blob": "8699a0df20771cc71068a2fea9845849b49858a6"
+          "blob": "39263ff83e95beac345726f9652dce92557d5626"
         },
         {
           "file": "packages/m3l-common/src/core/procedure/run-types.ts",
           "symbol": "M3LProcedureOutcomeBase",
-          "blob": "8699a0df20771cc71068a2fea9845849b49858a6"
+          "blob": "39263ff83e95beac345726f9652dce92557d5626"
         },
         {
           "file": "packages/m3l-common/src/core/procedure/run-types.ts",
           "symbol": "M3LProcedureOutcome",
-          "blob": "8699a0df20771cc71068a2fea9845849b49858a6"
+          "blob": "39263ff83e95beac345726f9652dce92557d5626"
         },
         {
           "file": "packages/m3l-common/src/core/procedure/run-types.ts",
           "symbol": "M3LProcedureTraceEntry",
-          "blob": "8699a0df20771cc71068a2fea9845849b49858a6"
+          "blob": "39263ff83e95beac345726f9652dce92557d5626"
         },
         {
           "file": "packages/m3l-common/src/core/procedure/run-types.ts",
           "symbol": "M3LProcedureTraceOptions",
-          "blob": "8699a0df20771cc71068a2fea9845849b49858a6"
+          "blob": "39263ff83e95beac345726f9652dce92557d5626"
         },
         {
           "file": "packages/m3l-common/src/core/procedure/run-types.ts",
           "symbol": "M3LProcedureTraceSink",
-          "blob": "8699a0df20771cc71068a2fea9845849b49858a6"
+          "blob": "39263ff83e95beac345726f9652dce92557d5626"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/run-types.ts",
+          "symbol": "M3LProcedureProgressOptions",
+          "blob": "39263ff83e95beac345726f9652dce92557d5626"
+        },
+        {
+          "file": "packages/m3l-common/src/core/procedure/run-types.ts",
+          "symbol": "M3LProcedureProgressWitness",
+          "blob": "39263ff83e95beac345726f9652dce92557d5626"
         },
         {
           "file": "packages/m3l-common/src/core/procedure/types.ts",
