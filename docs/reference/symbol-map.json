@@ -1512,6 +1512,86 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/procedure/types.ts"
   },
+  "createProcedureBuilder": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/M3LProcedureBuilder.ts"
+  },
+  "M3LProcedureBuilder": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/M3LProcedureBuilder.ts"
+  },
+  "M3LProcedure": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/M3LProcedure.ts"
+  },
+  "M3LProcedureStep": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/step-types.ts"
+  },
+  "M3LProcedureStepResult": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/step-types.ts"
+  },
+  "M3LProcedureFlow": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/step-types.ts"
+  },
+  "M3LProcedureLoop": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/step-types.ts"
+  },
+  "M3LProcedureContext": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/step-types.ts"
+  },
+  "M3LProcedureCase": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/build-types.ts"
+  },
+  "M3LProcedureFallback": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/build-types.ts"
+  },
+  "M3LProcedureCaseEvaluation": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/build-types.ts"
+  },
+  "M3LProcedureCaseMatch": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/build-types.ts"
+  },
+  "M3LProcedureBuildOptions": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/build-types.ts"
+  },
+  "M3LProcedureProblemCode": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/build-types.ts"
+  },
+  "M3LProcedureValidationProblem": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/build-types.ts"
+  },
+  "M3LProcedureSummary": {
+    "submodule": "procedure",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/procedure/build-types.ts"
+  },
   "resolveReference": {
     "submodule": "procedure",
     "namespace": "core",
