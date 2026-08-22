@@ -525,6 +525,14 @@ jobs:
       # tracker row, never the label objects themselves — a hand-renamed or
       # hand-deleted managed label went undetected without this. Push-only,
       # same rationale as the two steps above.
+      # A literal control byte makes a source file binary to git, so it has no
+      # diff and cannot be reviewed — while prettier, eslint and gitleaks all
+      # stay green (four NUL bytes survived three pushes that way, PR #599).
+      # Needs no network or auth, so unlike the drift gates above this runs on
+      # pull_request too, which is where it has to fire to be useful.
+      - name: Check for literal control characters
+        run: pnpm check:control-chars
+
       - name: Check label drift (push-only)
         if: github.event_name == 'push'
         env:

@@ -286,6 +286,11 @@ export const COMMAND_CATALOG = [
       "CI-gated dry-run of sync:hub-issues that fails when the plan is non-empty — GitHub Issues/Milestones no longer match ROADMAP.md/IMPLEMENTATION.md. Needs gh auth; run push-only in CI (ci.yml), and locally before pushing to main if you have gh authenticated.",
   },
   {
+    name: "check:control-chars",
+    description:
+      "Fails when any git-tracked source file carries a LITERAL control byte (C0 plus DEL; tab and newline excepted). Such a byte makes the whole file binary to git — no diff, no review — while prettier, eslint and gitleaks all still pass. Exemption-free by design: a control character written as an escape sequence (`\\x00`) is byte-identical at runtime and stays reviewable, so the fix is always to escape it; genuinely binary formats are skipped by extension via BINARY_EXTENSIONS. Needs no network or auth, so it runs on pre-push and on every CI event.",
+  },
+  {
     name: "check:hub-views",
     description:
       "Asserts the GitHub Projects board matches bin/lib/hub-views.mjs: the view set both directions, each view's layout, filter, ordered columns and sort, the presence of the built-in Issue Type field, and the Status/Priority option sets (ADR-0073). Needs a `gh` session with the `project` OAuth scope; GITHUB_TOKEN cannot read Projects v2, so without it the gate prints each unverified facet and exits 0 rather than failing for a missing capability. Run push-only in CI (ci.yml) and locally before an apply session.",

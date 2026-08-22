@@ -57,6 +57,11 @@ pre-push:
     # layer is branch-protection "Require signed commits" (ADR-0016).
     verify-signatures:
       run: node bin/verify-signed-range.mjs
+    # A literal control byte makes a file binary to git, so it cannot be
+    # reviewed at all — this is the one gate whose whole value is firing BEFORE
+    # the file reaches a reviewer, and it costs ~0.2s.
+    check-control-chars:
+      run: pnpm check:control-chars
     # Catch agent/model-matrix drift locally instead of first in CI (was
     # CI-only; see docs/contributing/model-selection.md "Enforcement").
     check-agents:
