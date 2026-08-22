@@ -183,7 +183,7 @@ has produced the same deviation, which is itself worth surfacing to
   truncation that did happen was on a smaller, later, narrower dispatch
   (fix-round edits, review reports), suggesting the split-by-family heuristic
   from the `confirmDestructive` log generalizes past that one promotion.
-- **Two independent review spokes converging on the same architectural
+- **Two independent review spokes converging on the same architectural _(promoted → .claude/rules/subagent-dispatch.md)_
   finding (duplicate collaborator construction) is a strong confirm signal —
   act on it even when each individual finding is only "should-fix."**
   `silent-failure-hunter` (framed as a divergence-risk) and

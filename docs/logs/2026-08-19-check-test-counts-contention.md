@@ -181,7 +181,7 @@ alone would have missed half.
   know the cause, it should report what it observed — exit code, signal, the
   child's own output — and let the reader conclude.
 
-- **"Tests pass, lint is clean" is not "this compiles."** In a tree no typecheck
+- **"Tests pass, lint is clean" is not "this compiles."** In a tree no typecheck _(promoted → .claude/rules/tests.md)_
   project covers, those are three separate claims and only two of them have a
   gate. The same blind spot produced a wrong JSDoc type and six unnarrowed-union
   errors in one session — and it will keep producing them until `bin/tests/` is

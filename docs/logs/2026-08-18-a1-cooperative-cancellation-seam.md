@@ -198,7 +198,7 @@ immediately. Treat the threshold ERROR lines from the run itself as the
 authoritative gate signal — absence from the JSON is never evidence of full
 coverage.
 
-### 7. Two new exports passed `check:doc-exports` but broke `sync:docs`
+### 7. Two new exports passed `check:doc-exports` but broke `sync:docs` _(promoted → .claude/rules/tests.md)_
 
 `sync:docs` stopped at its barrel↔sidecar step: both new symbols were missing
 from the provenance sidecars' `sections[].sources[]`, even though

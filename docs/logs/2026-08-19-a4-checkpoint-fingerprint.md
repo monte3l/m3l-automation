@@ -133,7 +133,7 @@ every claim the surrounding TSDoc makes — and re-run the leak audit rather tha
 carrying forward the previous round's clean result. A moved call invalidates the
 audit that covered it.
 
-### 3. Every defect was found by execution; none by reading
+### 3. Every defect was found by execution; none by reading _(promoted → .claude/rules/subagent-dispatch.md)_
 
 Four defects and two regressions, all found by probing built `dist/`. Each had
 already been read over — by a review spoke, and in the round-1 case by the hub
@@ -151,7 +151,7 @@ self-corrupting-write bug predated A4 entirely and surfaced only because the pas
 was told to attack the interaction between checksum computation and
 serialisation.
 
-### 4. A test could not catch the regression it was named for
+### 4. A test could not catch the regression it was named for _(promoted → .claude/rules/tests.md)_
 
 The round-1 test "both checksum and fingerprint are wrong → `ERR_CHECKPOINT_CORRUPT`
 (integrity check wins over meaning check)" built its store with **no
