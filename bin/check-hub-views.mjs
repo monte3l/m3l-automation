@@ -100,6 +100,29 @@ export function isScopeError(message) {
 }
 
 /**
+ * One view's visible column names, guarding the per-view connection window.
+ *
+ * Same convention as the two top-level windows: reaching it is a hard error,
+ * never a silent under-read. Truncating a view's column list here would be
+ * worse than a bare under-read — it would produce a confident, MISLEADING
+ * column-drift finding naming columns the view actually shows.
+ */
+function viewColumns(view) {
+  const nodes = view.fields?.nodes ?? [];
+  if (nodes.length >= FIELD_WINDOW) {
+    throw new Error(
+      `View "${view.name}" returned ${nodes.length} visible columns, reaching ` +
+        `the first:${FIELD_WINDOW} window — its column list may be truncated, ` +
+        `which would produce a misleading column-drift finding. Raise ` +
+        `FIELD_WINDOW.`,
+    );
+  }
+  return nodes
+    .map((field) => field?.name)
+    .filter((name) => typeof name === "string");
+}
+
+/**
  * Read the board's views and fields in one GraphQL round trip.
  *
  * Fields come from GraphQL rather than `gh project field-list` because the
@@ -160,9 +183,7 @@ export function readBoard(runGhFn, projectId) {
       field: entry?.field?.name ?? null,
       direction: entry?.direction ?? null,
     })),
-    columns: (view.fields?.nodes ?? [])
-      .map((field) => field?.name)
-      .filter((name) => typeof name === "string"),
+    columns: viewColumns(view),
   }));
 
   const fields = fieldNodes.map((field) => ({
@@ -231,7 +252,7 @@ export function runHubViewsCheck({ runGh: runGhFn, reporter }) {
           `create it, or check whether it was renamed (this gate resolves the ` +
           `board by title, not by stored id).`,
       );
-      reporter.finish();
+      reporter.finish({ findings: [], skipped: false });
       return { ok: false, skipped: false, findings: [] };
     }
 

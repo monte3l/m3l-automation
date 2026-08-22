@@ -372,21 +372,94 @@ describe("runHubViewsCheck", () => {
     expect(message).toMatch(/would go unreported/);
   });
 
-  test("every finish() payload carries `findings`, including the non-scope failure path", () => {
-    // A JSON consumer (ADR-0030 structured report) otherwise sees the key on
-    // three paths and absent on exactly one.
-    const { runGh } = boardGh(compliantBoardPayload(), {
-      throwOn: { match: /api graphql/, message: "HTTP 502: Bad gateway" },
-    });
+  // Every exit path, not one of them. The earlier version of this test
+  // exercised only the non-scope failure, which is exactly why the
+  // board-title-miss path kept shipping without the keys the test claims are
+  // universal.
+  test.each([
+    ["clean", () => boardGh(compliantBoardPayload()), { skipped: false }],
+    [
+      "drift",
+      () =>
+        boardGh(
+          compliantBoardPayload({
+            views: [
+              {
+                ...(viewPayload([...DECLARED.fields]) as Record<
+                  string,
+                  unknown
+                >),
+                sortByFields: { nodes: [] },
+              },
+            ],
+          }),
+        ),
+      { skipped: false },
+    ],
+    [
+      "scope-error skip",
+      () =>
+        boardGh(compliantBoardPayload(), {
+          throwOn: {
+            match: /api graphql/,
+            message: "not been granted the required scopes",
+          },
+        }),
+      { findings: [], skipped: true },
+    ],
+    [
+      "non-scope failure",
+      () =>
+        boardGh(compliantBoardPayload(), {
+          throwOn: { match: /api graphql/, message: "HTTP 502: Bad gateway" },
+        }),
+      { findings: [], skipped: false },
+    ],
+    [
+      "board title miss",
+      () =>
+        boardGh(compliantBoardPayload(), {
+          projects: [{ number: 9, title: "m3l-automation hub" }],
+        }),
+      { findings: [], skipped: false },
+    ],
+  ])(
+    "the %s path's finish() payload carries both findings and skipped",
+    (_label, makeGh, expected) => {
+      const { runGh } = makeGh();
+      const reporter = createFakeReporter();
+
+      runHubViewsCheck({ runGh, reporter });
+
+      expect(reporter.finishedWith).toHaveProperty("findings");
+      expect(reporter.finishedWith).toHaveProperty("skipped");
+      expect(reporter.finishedWith).toMatchObject(expected);
+    },
+  );
+
+  test("a view whose own column connection reaches its window fails loudly rather than reporting misleading column drift", () => {
+    // Under-reading a view's columns is worse than a bare under-read: it
+    // produces a confident column-drift finding naming columns the view
+    // actually shows.
+    const { runGh } = boardGh(
+      compliantBoardPayload({
+        views: [
+          viewPayload(
+            Array.from({ length: 50 }, (_unused, index) => `Column ${index}`),
+          ),
+        ],
+      }),
+    );
     const reporter = createFakeReporter();
 
-    runHubViewsCheck({ runGh, reporter });
+    const outcome = runHubViewsCheck({ runGh, reporter });
 
-    expect(reporter.finishedWith).toHaveProperty("findings");
-    expect(reporter.finishedWith).toMatchObject({
-      findings: [],
-      skipped: false,
-    });
+    expect(outcome).toMatchObject({ ok: false, skipped: false });
+    const message = required(reporter.errors[0], "reporter.errors[0]");
+    expect(message).toMatch(/reaching the first:50 window/);
+    expect(message).toMatch(/misleading column-drift/);
+    // Must NOT have produced a column-drift finding instead.
+    expect(outcome.findings).toEqual([]);
   });
 
   test("a board title miss fails with a rename hint, and never reads the board", () => {
