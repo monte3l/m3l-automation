@@ -326,3 +326,53 @@ cannot see a `gh api graphql` mutation, which carries no `-X`. Matching on
 `graphql` alone would be wrong in the other direction, since the preflight read
 is also a `gh api graphql` call — the predicate has to key off the operation
 keyword.
+
+## Update (2026-08-22e): PR 5b shipped; F27's issue filed ahead of the session
+
+`--retype-closed` landed as `planClosedRetype` (pure) plus `runClosedRetype`
+(I/O). Live dry run: **131 closed issues to retype, 1 unmatched** — matching the
+census in Update 5d exactly. Only one of the 131 is a genuine
+re-classification (#474, `Capability` → `Library capability`); the other 130 are
+`(no type) → <type>` backfills.
+
+Three properties worth naming, since each is a deliberate narrowing:
+
+- **Type-only edit.** `setIssueType` issues `gh issue edit <n> --type <name>`
+  and nothing else, rather than reusing `editIssue`. Reusing it would rewrite
+  131 finished issues' titles, bodies, labels and milestones to correct one
+  field, and would post fresh activity on every one of them.
+- **Preflight sits after the dry-run return**, so a dry run needs no org read
+  access at all — the same reasoning that keeps it off `runIssueSync`'s
+  `--check` path, applied one level down. `gh issue edit --type` 422s on an
+  unknown name exactly as `create` does, so the apply path still needs it.
+- **`unmatched` is report-only and does not fail the command.** #359's tracker
+  row is gone, so nothing can supply its type; counting it as failure would make
+  `--retype-closed` permanently non-clean.
+
+### F27's issue was filed by hand, convergently
+
+At the maintainer's direction, `impl:friction:f27` was filed as
+[#596](https://github.com/monte3l/m3l-automation/issues/596) before the apply
+session rather than by it — the tracker row had merged (#594) but no issue
+existed, and the rest of the session is still pending.
+
+It converges rather than diverging, and that was the condition for doing it:
+
+| Field         | Filed as                     | Resolves to                                                            |
+| ------------- | ---------------------------- | ---------------------------------------------------------------------- |
+| marker        | `impl:friction:f27`          | matches — the sync files no duplicate                                  |
+| type / labels | `Friction` + all four labels | already correct                                                        |
+| milestone     | `Next — consumer fleet` (#2) | the session's in-place `PATCH` renames #2, carrying this issue with it |
+| parent        | unset                        | `planParentLinks` sets it once `epic:impl:friction` exists             |
+
+The payload came from `buildIssuePayload(item)` rather than being hand-written,
+with only the milestone title swapped for its `legacyTitles` entry — the
+declared title does not exist live yet. Verified: the next dry run plans **7
+creates instead of 8** (the epics alone) and lists F27 in no `update` bucket, so
+the bytes match what the sync itself would have produced.
+
+The one thing that made this safe is a property PR 4a built deliberately: a
+milestone rename is a `PATCH` by number, so associations survive. Filing under
+the _declared_ title would have failed outright (it does not exist); filing with
+**no** milestone would have been worse than either, because `isDirty` ignores
+milestone and the gap would never have been repaired.
