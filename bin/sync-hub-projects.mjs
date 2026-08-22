@@ -589,6 +589,20 @@ function pruneUndeclaredViews(
 
   const named = undeclared.map((view) => `"${view.name}"`).join(", ");
 
+  // FIRST, before the two safety guards below: they explain why a REQUESTED
+  // prune was refused, so reaching them without --prune-views would warn about
+  // an operation nobody asked for and suppress the notice that names the flag.
+  if (!pruneViews) {
+    reporter.info(
+      `Undeclared view(s) on the board: ${named}. VIEW_DEFS declares only ` +
+        `${[...declaredNames].map((name) => `"${name}"`).join(", ")}. Deleting a ` +
+        `view is irreversible through the API (a board view's group-by cannot ` +
+        `be restored by any mutation), so it is opt-in: re-run with ` +
+        `--prune-views to preview the deletion, then --prune-views --apply.`,
+    );
+    return;
+  }
+
   if (!allReconciled) {
     reporter.warn(
       `Not pruning undeclared view(s) ${named}: at least one declared view ` +
@@ -603,17 +617,6 @@ function pruneUndeclaredViews(
       `Not pruning undeclared view(s) ${named}: doing so would leave the board ` +
         `with no views at all. Declare a view in VIEW_DEFS and re-run --init ` +
         `first.`,
-    );
-    return;
-  }
-
-  if (!pruneViews) {
-    reporter.info(
-      `Undeclared view(s) on the board: ${named}. VIEW_DEFS declares only ` +
-        `${[...declaredNames].map((name) => `"${name}"`).join(", ")}. Deleting a ` +
-        `view is irreversible through the API (a board view's group-by cannot ` +
-        `be restored by any mutation), so it is opt-in: re-run with ` +
-        `--prune-views to preview the deletion, then --prune-views --apply.`,
     );
     return;
   }
@@ -740,7 +743,14 @@ function previewViews(runGhFn, reporter, projectNumber, pruneViews = false) {
  *
  * @returns {{ ok: boolean }}
  */
-function runInit({ runGh: runGhFn, reporter, apply, projects, pruneViews }) {
+function runInit({
+  runGh: runGhFn,
+  reporter,
+  apply,
+  projects,
+  pruneViews,
+  allowCreate = true,
+}) {
   const existingProject = findProjectByTitle(projects);
 
   // Run the same rename-detection guard runProjectSync's non-init path
@@ -806,6 +816,19 @@ function runInit({ runGh: runGhFn, reporter, apply, projects, pruneViews }) {
     reporter.info(
       `Project "${HUB_PROJECT_TITLE}" already exists (#${project.number}); reusing it.`,
     );
+  } else if (!allowCreate) {
+    // Reached only via the --prune-views implied-init path. That flag is
+    // documented as deleting undeclared views; silently PROVISIONING a board
+    // would be a wider blast radius than the flag claims, and would contradict
+    // this module's own convention that such an operation needs its own
+    // explicit flag. --init is that flag, so say so.
+    reporter.error(
+      `Project board "${HUB_PROJECT_TITLE}" not found, and --prune-views will ` +
+        `not create one — it only reconciles and prunes an existing board's ` +
+        `views. Run with --init --apply first if the board really is missing.`,
+    );
+    reporter.finish();
+    return { ok: false };
   } else {
     const raw = runGhFn([
       "project",
@@ -1196,6 +1219,9 @@ export function runProjectSync({
         apply,
         projects,
         pruneViews,
+        // Only an explicit --init may create the board; --prune-views alone
+        // implies the view path, not provisioning.
+        allowCreate: init,
       });
     }
 

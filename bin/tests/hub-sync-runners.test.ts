@@ -3391,6 +3391,128 @@ describe("runProjectSync view pruning", () => {
     ).toBe(true);
   });
 
+  test("--prune-views --apply against a MISSING board refuses rather than creating one", () => {
+    // The implied-init path routes through runInit, whose create branch would
+    // otherwise provision a board off a flag documented only as "deletes
+    // undeclared views" -- a wider blast radius than the flag claims, and a
+    // contradiction of this module's own one-flag-per-destructive-op rule.
+    const { runGh, calls } = scriptedGh([
+      // Two projects, so renameDetectionMessage does not fire and the run
+      // reaches the create branch this test is about.
+      projectListRule([
+        { number: 41, title: "Some other board" },
+        { number: 42, title: "Yet another board" },
+      ]),
+      projectCreateRule({ number: 99, title: HUB_PROJECT_TITLE }),
+      fullFieldListRule(),
+      projectViewRule("PROJECT_ID"),
+      viewsListGraphqlRule([]),
+      createViewGraphqlRule(),
+      deleteViewGraphqlRule(),
+      graphqlRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runProjectSync({
+      runGh,
+      reporter,
+      apply: true,
+      init: false,
+      pruneViews: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(
+      calls.some((args) => args[0] === "project" && args[1] === "create"),
+    ).toBe(false);
+    const message = required(
+      reporter.errors.find((entry) =>
+        /--prune-views will not create/.test(entry),
+      ),
+      "refusal error",
+    );
+    expect(message).toMatch(/--init --apply first/);
+  });
+
+  test("--init --apply DOES still create a missing board (the refusal is scoped to the implied-init path)", () => {
+    const { runGh, calls } = scriptedGh([
+      projectListRule([
+        { number: 41, title: "Some other board" },
+        { number: 42, title: "Yet another board" },
+      ]),
+      projectCreateRule({ number: 99, title: HUB_PROJECT_TITLE }),
+      fullFieldListRule(),
+      projectViewRule("PROJECT_ID"),
+      viewsListGraphqlRule([]),
+      createViewGraphqlRule(),
+      deleteViewGraphqlRule(),
+      graphqlRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runProjectSync({
+      runGh,
+      reporter,
+      apply: true,
+      init: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(
+      calls.some((args) => args[0] === "project" && args[1] === "create"),
+    ).toBe(true);
+  });
+
+  test("a plain --init --apply never warns about NOT pruning, and does name the flag", () => {
+    // The two safety guards explain a REFUSED prune, so reaching them without
+    // --prune-views would warn about an operation nobody requested and swallow
+    // the notice naming the flag. Forced here by making a declared view's
+    // update fail, which is what trips the !allReconciled guard.
+    const { runGh } = scriptedGh([
+      projectListRule([{ number: 7, title: HUB_PROJECT_TITLE }]),
+      fullFieldListRule(),
+      projectViewRule("PROJECT_ID"),
+      viewsListGraphqlRule([
+        viewNode({ id: "VIEW_BACKLOG", name: DECLARED }),
+        viewNode({ id: "VIEW_BOARD", name: "Board", layout: "BOARD_LAYOUT" }),
+      ]),
+      deleteViewGraphqlRule(),
+      {
+        match: (a) =>
+          a[0] === "api" &&
+          a[1] === "graphql" &&
+          typeof a[3] === "string" &&
+          a[3].includes("updateProjectV2View"),
+        respond: () => {
+          throw new Error("HTTP 502");
+        },
+      },
+      graphqlRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runProjectSync({
+      runGh,
+      reporter,
+      apply: true,
+      init: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(
+      reporter.warnings.some((message) => /Not pruning/.test(message)),
+    ).toBe(false);
+    expect(
+      reporter.infos.some(
+        (message) =>
+          /Undeclared view/.test(message) && /--prune-views/.test(message),
+      ),
+    ).toBe(true);
+  });
+
   test("--prune-views implies the view path without --init, and stays read-only without --apply", () => {
     const { runGh, calls } = scriptedGh(
       viewRules([
