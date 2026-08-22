@@ -16,6 +16,7 @@ import {
 import { extractImplementation, extractRoadmap } from "../lib/project-hub.mjs";
 import { MILESTONE_DEFS } from "../lib/milestone-defs.mjs";
 import { ISSUE_TYPE_DEFS } from "../lib/issue-type-defs.mjs";
+import { OPTIONAL_VIEW_FIELDS, VIEW_DEFS } from "../lib/hub-views.mjs";
 
 // ---------------------------------------------------------------------------
 // Fixed identifiers the two runners hard-code internally (bin/sync-hub-issues.mjs,
@@ -645,6 +646,85 @@ function createViewGraphqlRule(viewId = "VIEW_NEW"): GhRule {
   };
 }
 
+// deleteView's mutation. MUST be placed BEFORE graphqlRule() in a rules
+// array: scriptedGh is first-match-wins and the generic fallback matches any
+// `gh api graphql`, so behind it this rule never fires and a test asserting
+// "nothing was deleted" would pass vacuously — the same trap the
+// isMutatingProjectCall fix hit.
+function deleteViewGraphqlRule(): GhRule {
+  return {
+    match: (a) =>
+      a[0] === "api" &&
+      a[1] === "graphql" &&
+      typeof a[3] === "string" &&
+      a[3].includes("deleteProjectV2View"),
+    respond: () => JSON.stringify({ data: { deleteProjectV2View: {} } }),
+  };
+}
+
+// Every call recorded by a stub that carries a deleteProjectV2View mutation,
+// so a "no deletion" assertion never has to spell the shape out again.
+function deleteViewCalls(calls: string[][]): string[][] {
+  return calls.filter(
+    (args) =>
+      args[0] === "api" &&
+      args[1] === "graphql" &&
+      typeof args[3] === "string" &&
+      args[3].includes("deleteProjectV2View"),
+  );
+}
+
+// A field-list payload resolving every MANDATORY name in VIEW_DEFS[0].fields
+// — i.e. all of them except the ones in OPTIONAL_VIEW_FIELDS. Built off the
+// declaration rather than hardcoded, so adding a column to VIEW_DEFS does not
+// silently turn these fixtures into all-or-nothing skips.
+function fullFieldListRule(extra: { name: string; id: string }[] = []): GhRule {
+  const mandatory = required(VIEW_DEFS[0], "VIEW_DEFS[0]").fields.filter(
+    (name: string) => !OPTIONAL_VIEW_FIELDS.has(name),
+  );
+  const fields = [
+    ...mandatory.map((name: string, index: number) => ({
+      name,
+      id: `FIELD_${index}`,
+      options: [],
+    })),
+    ...extra,
+  ];
+  return {
+    match: (a) => a[0] === "project" && a[1] === "field-list",
+    respond: () => JSON.stringify(fields),
+  };
+}
+
+// One live view node shaped like listExistingViews's widened selection.
+function viewNode({
+  id,
+  name,
+  layout = "TABLE_LAYOUT",
+  filter = "is:open",
+  sort = [] as { field: string; direction: string }[],
+}: {
+  id: string;
+  name: string;
+  layout?: string;
+  filter?: string;
+  sort?: { field: string; direction: string }[];
+}): unknown {
+  return {
+    id,
+    name,
+    layout,
+    filter,
+    sortByFields: {
+      nodes: sort.map((pair) => ({
+        direction: pair.direction,
+        field: { name: pair.field },
+      })),
+    },
+    fields: { nodes: [] },
+  };
+}
+
 function issueListProjectsRule(issues: unknown[]): GhRule {
   return {
     match: (a) =>
@@ -718,7 +798,14 @@ function isMutatingProjectCall(args: string[]): boolean {
   ) {
     return true;
   }
-  if (args[0] === "api" && args[1] === "graphql") return true;
+  // Narrowed from "any `gh api graphql` is mutating" once listExistingViews
+  // joined the read-only PREVIEW path — a blanket rule made every dry-run
+  // assertion fail on a legitimate read. Exact rather than heuristic: every
+  // graphql payload this runner builds begins `query {` or `mutation {`, so
+  // matching the latter catches every mutation without admitting a read.
+  if (args[0] === "api" && args[1] === "graphql") {
+    return typeof args[3] === "string" && args[3].includes("mutation {");
+  }
   return false;
 }
 
@@ -2630,6 +2717,11 @@ describe("runProjectSync", () => {
           { name: "Done", id: "opt-done" },
         ],
       }),
+      // Without these two, previewViews bails at resolveProjectId and its
+      // whole view branch goes unexercised — the assertion below would hold
+      // vacuously.
+      projectViewRule("PROJECT_ID"),
+      viewsListGraphqlRule([viewNode({ id: "VIEW_1", name: "Backlog" })]),
     ]);
     const reporter = createFakeReporter();
 
@@ -2984,6 +3076,408 @@ describe("runProjectSync", () => {
       true,
     );
     expect(calls.every((args) => !isMutatingProjectCall(args))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// View pruning (--prune-views)
+//
+// The board carries one declared view (VIEW_DEFS: "Backlog"); anything else
+// live is undeclared. Deleting a view is irreversible through the API, so
+// these pin that it happens ONLY behind the flag, only by id, and only when
+// the board is in a known-good state.
+// ---------------------------------------------------------------------------
+
+describe("runProjectSync view pruning", () => {
+  const DECLARED = required(VIEW_DEFS[0], "VIEW_DEFS[0]").name;
+
+  // The four calls every --init --apply view path makes, in rule order.
+  // deleteViewGraphqlRule comes BEFORE graphqlRule() deliberately — see its
+  // own comment.
+  function viewRules(liveViews: unknown[]): GhRule[] {
+    return [
+      projectListRule([{ number: 7, title: HUB_PROJECT_TITLE }]),
+      fullFieldListRule(),
+      projectViewRule("PROJECT_ID"),
+      viewsListGraphqlRule(liveViews),
+      createViewGraphqlRule(),
+      deleteViewGraphqlRule(),
+      graphqlRule(),
+    ];
+  }
+
+  test("--init --apply without --prune-views: reports the undeclared view, naming the flag, and issues no deleteProjectV2View at all", () => {
+    const { runGh, calls } = scriptedGh(
+      viewRules([
+        viewNode({ id: "VIEW_BACKLOG", name: DECLARED }),
+        viewNode({ id: "VIEW_BOARD", name: "Board", layout: "BOARD_LAYOUT" }),
+      ]),
+    );
+    const reporter = createFakeReporter();
+
+    const outcome = runProjectSync({
+      runGh,
+      reporter,
+      apply: true,
+      init: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(deleteViewCalls(calls)).toHaveLength(0);
+    expect(reporter.changes.every((entry) => entry.kind !== "removed")).toBe(
+      true,
+    );
+    // Reported, and the remedy is named — the whole point of the default-off
+    // behaviour is that item 1 still happens, once, explicitly.
+    const notice = required(
+      reporter.infos.find((message) => /Undeclared view/.test(message)),
+      "undeclared-view notice",
+    );
+    expect(notice).toContain('"Board"');
+    expect(notice).toContain("--prune-views");
+  });
+
+  test("--prune-views --apply: deletes the undeclared view by id, never by name", () => {
+    const { runGh, calls } = scriptedGh(
+      viewRules([
+        viewNode({ id: "VIEW_BACKLOG", name: DECLARED }),
+        viewNode({ id: "VIEW_BOARD", name: "Board", layout: "BOARD_LAYOUT" }),
+      ]),
+    );
+    const reporter = createFakeReporter();
+
+    const outcome = runProjectSync({
+      runGh,
+      reporter,
+      apply: true,
+      init: true,
+      pruneViews: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    const deletions = deleteViewCalls(calls);
+    expect(deletions).toHaveLength(1);
+    const mutation = required(deletions[0]?.[3], "delete mutation");
+    expect(mutation).toContain('viewId: "VIEW_BOARD"');
+    // The declared view must not be in the blast radius.
+    expect(mutation).not.toContain("VIEW_BACKLOG");
+    // By id only — a name would be matched against user-editable text.
+    expect(mutation).not.toContain('"Board"');
+    // "removed", not "deleted" — createReporter's change() indexes a fixed
+    // {updated,created,removed} bag, so an invented kind throws at runtime.
+    expect(
+      reporter.changes.some(
+        (entry) => entry.kind === "removed" && /"Board"/.test(entry.file),
+      ),
+    ).toBe(true);
+  });
+
+  test("--prune-views --apply: a view created by this same run is not pruned by it (prune reads back, never the stale pre-update map)", () => {
+    // Live board has ONLY the undeclared view, so the declared one is created
+    // in this run. The re-read must see both, prune the undeclared one, and
+    // leave the newborn alone.
+    let listCount = 0;
+    const readBackRule: GhRule = {
+      match: (a) =>
+        a[0] === "api" &&
+        a[1] === "graphql" &&
+        typeof a[3] === "string" &&
+        a[3].includes("views(first: 20)"),
+      respond: () => {
+        listCount += 1;
+        const nodes =
+          listCount === 1
+            ? [viewNode({ id: "VIEW_OLD", name: "Board" })]
+            : [
+                viewNode({ id: "VIEW_OLD", name: "Board" }),
+                viewNode({ id: "VIEW_NEW", name: DECLARED }),
+              ];
+        return JSON.stringify({ data: { node: { views: { nodes } } } });
+      },
+    };
+    const { runGh, calls } = scriptedGh([
+      projectListRule([{ number: 7, title: HUB_PROJECT_TITLE }]),
+      fullFieldListRule(),
+      projectViewRule("PROJECT_ID"),
+      readBackRule,
+      createViewGraphqlRule("VIEW_NEW"),
+      deleteViewGraphqlRule(),
+      graphqlRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runProjectSync({
+      runGh,
+      reporter,
+      apply: true,
+      init: true,
+      pruneViews: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    const deletions = deleteViewCalls(calls);
+    expect(deletions).toHaveLength(1);
+    const mutation = required(deletions[0]?.[3], "delete mutation");
+    expect(mutation).toContain('viewId: "VIEW_OLD"');
+    expect(mutation).not.toContain("VIEW_NEW");
+  });
+
+  test("--prune-views --apply: deletes nothing when a declared view's update failed", () => {
+    const { runGh, calls } = scriptedGh([
+      projectListRule([{ number: 7, title: HUB_PROJECT_TITLE }]),
+      fullFieldListRule(),
+      projectViewRule("PROJECT_ID"),
+      viewsListGraphqlRule([
+        viewNode({ id: "VIEW_BACKLOG", name: DECLARED }),
+        viewNode({ id: "VIEW_BOARD", name: "Board", layout: "BOARD_LAYOUT" }),
+      ]),
+      deleteViewGraphqlRule(),
+      // updateProjectV2View throws — the declared view is left in an unknown
+      // state, so its undeclared neighbour must survive.
+      {
+        match: (a) =>
+          a[0] === "api" &&
+          a[1] === "graphql" &&
+          typeof a[3] === "string" &&
+          a[3].includes("updateProjectV2View"),
+        respond: () => {
+          throw new Error("HTTP 502");
+        },
+      },
+      graphqlRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runProjectSync({
+      runGh,
+      reporter,
+      apply: true,
+      init: true,
+      pruneViews: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(deleteViewCalls(calls)).toHaveLength(0);
+    expect(
+      reporter.warnings.some((message) =>
+        /Not pruning.*failed to reconcile/s.test(message),
+      ),
+    ).toBe(true);
+  });
+
+  test("--prune-views --apply: deletes nothing when doing so would empty the board", () => {
+    // Every live view is undeclared (the declared one does not exist yet), so
+    // pruning would leave zero views. GitHub's own last-view refusal is a
+    // backstop; this is the guard.
+    const { runGh, calls } = scriptedGh(
+      viewRules([viewNode({ id: "VIEW_ONLY", name: "Board" })]),
+    );
+    const reporter = createFakeReporter();
+
+    const outcome = runProjectSync({
+      runGh,
+      reporter,
+      apply: true,
+      init: true,
+      pruneViews: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(deleteViewCalls(calls)).toHaveLength(0);
+    expect(
+      reporter.warnings.some((message) =>
+        /Not pruning.*no views at all/s.test(message),
+      ),
+    ).toBe(true);
+  });
+
+  test("a declared column that fails to resolve skips the view update instead of writing a truncated visibleFieldIds", () => {
+    // field-list resolves everything EXCEPT one mandatory declared column.
+    // visibleFieldIds is a full replace, so writing the short list would
+    // delete every other column — the 2026-08-20 Priority-wipe shape.
+    const mandatory = required(VIEW_DEFS[0], "VIEW_DEFS[0]").fields.filter(
+      (name: string) => !OPTIONAL_VIEW_FIELDS.has(name),
+    );
+    const dropped = required(mandatory.at(-1), "last mandatory field");
+    const { runGh, calls } = scriptedGh([
+      projectListRule([{ number: 7, title: HUB_PROJECT_TITLE }]),
+      {
+        match: (a) => a[0] === "project" && a[1] === "field-list",
+        respond: () =>
+          JSON.stringify(
+            mandatory
+              .filter((name: string) => name !== dropped)
+              .map((name: string, index: number) => ({
+                name,
+                id: `FIELD_${index}`,
+                options: [],
+              })),
+          ),
+      },
+      projectViewRule("PROJECT_ID"),
+      viewsListGraphqlRule([viewNode({ id: "VIEW_BACKLOG", name: DECLARED })]),
+      createViewGraphqlRule(),
+      deleteViewGraphqlRule(),
+      graphqlRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runProjectSync({
+      runGh,
+      reporter,
+      apply: true,
+      init: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    // No view mutation of any kind — not a partial one.
+    const viewMutations = calls.filter(
+      (args) =>
+        args[0] === "api" &&
+        args[1] === "graphql" &&
+        typeof args[3] === "string" &&
+        (args[3].includes("updateProjectV2View") ||
+          args[3].includes("createProjectV2View")),
+    );
+    expect(viewMutations).toHaveLength(0);
+    const warning = required(
+      reporter.warnings.find((message) => /did not resolve/.test(message)),
+      "unresolved-field warning",
+    );
+    expect(warning).toContain(dropped);
+    expect(warning).toMatch(/full replace/);
+  });
+
+  test("the optional built-in Type column is omitted with an info note, not a warning, and does not block the update", () => {
+    const { runGh, calls } = scriptedGh(
+      viewRules([viewNode({ id: "VIEW_BACKLOG", name: DECLARED })]),
+    );
+    const reporter = createFakeReporter();
+
+    const outcome = runProjectSync({
+      runGh,
+      reporter,
+      apply: true,
+      init: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    // fullFieldListRule deliberately omits every OPTIONAL_VIEW_FIELDS name.
+    for (const optional of OPTIONAL_VIEW_FIELDS) {
+      expect(
+        reporter.infos.some(
+          (message) =>
+            message.includes(optional) && /not on the board yet/.test(message),
+        ),
+      ).toBe(true);
+      expect(
+        reporter.warnings.some((message) => message.includes(optional)),
+      ).toBe(false);
+    }
+    // The view still got its columns.
+    expect(
+      calls.some(
+        (args) =>
+          typeof args[3] === "string" &&
+          args[3].includes("updateProjectV2View"),
+      ),
+    ).toBe(true);
+  });
+
+  test("--prune-views implies the view path without --init, and stays read-only without --apply", () => {
+    const { runGh, calls } = scriptedGh(
+      viewRules([
+        viewNode({ id: "VIEW_BACKLOG", name: DECLARED }),
+        viewNode({ id: "VIEW_BOARD", name: "Board", layout: "BOARD_LAYOUT" }),
+      ]),
+    );
+    const reporter = createFakeReporter();
+
+    const outcome = runProjectSync({
+      runGh,
+      reporter,
+      apply: false,
+      init: false,
+      pruneViews: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(deleteViewCalls(calls)).toHaveLength(0);
+    expect(calls.every((args) => !isMutatingProjectCall(args))).toBe(true);
+    expect(
+      reporter.infos.some((message) =>
+        /Would DELETE undeclared view/.test(message),
+      ),
+    ).toBe(true);
+  });
+
+  test("an existing view's sort is captured before the column update and a loss is warned about, not silently swallowed", () => {
+    // updateProjectV2View with configuration.visibleFieldIds may or may not
+    // preserve sortByFields — the schema says only that sort is not an INPUT.
+    // Sort is readable but not writable, so a loss needs a manual fix and must
+    // never be reported as success.
+    let listCount = 0;
+    const sortLosingRule: GhRule = {
+      match: (a) =>
+        a[0] === "api" &&
+        a[1] === "graphql" &&
+        typeof a[3] === "string" &&
+        a[3].includes("views(first: 20)"),
+      respond: () => {
+        listCount += 1;
+        const nodes = [
+          viewNode({
+            id: "VIEW_BACKLOG",
+            name: DECLARED,
+            // First read: sorted. Every read after the update: sort gone.
+            sort:
+              listCount === 1
+                ? [
+                    { field: "Priority", direction: "ASC" },
+                    { field: "Created", direction: "ASC" },
+                  ]
+                : [],
+          }),
+        ];
+        return JSON.stringify({ data: { node: { views: { nodes } } } });
+      },
+    };
+    const { runGh } = scriptedGh([
+      projectListRule([{ number: 7, title: HUB_PROJECT_TITLE }]),
+      fullFieldListRule(),
+      projectViewRule("PROJECT_ID"),
+      sortLosingRule,
+      createViewGraphqlRule(),
+      deleteViewGraphqlRule(),
+      graphqlRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runProjectSync({
+      runGh,
+      reporter,
+      apply: true,
+      init: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    const warning = required(
+      reporter.warnings.find((message) => /lost its sort order/.test(message)),
+      "sort-loss warning",
+    );
+    // The captured names AND directions, so the manual fix is spelled out.
+    expect(warning).toContain("Priority ASC");
+    expect(warning).toContain("Created ASC");
+    expect(warning).toMatch(/NOT writable/);
   });
 });
 
