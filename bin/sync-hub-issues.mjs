@@ -17,6 +17,10 @@
 //   node bin/sync-hub-issues.mjs             # dry run
 //   node bin/sync-hub-issues.mjs --apply     # execute the plan
 //   node bin/sync-hub-issues.mjs --json      # ADR-0030 structured report
+//   node bin/sync-hub-issues.mjs --init-issue-types [--apply]
+//                                            # provision the ORG's Issue Types
+//                                            # (ADR-0073) — opt-in, org-wide
+//                                            # blast radius, never part of --apply
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -25,13 +29,16 @@ import { fileURLToPath } from "node:url";
 import { extractImplementation, extractRoadmap } from "./lib/project-hub.mjs";
 import {
   actionableItems,
+  countIssuesByType,
   HUB_LABEL,
   parseHubMarker,
   planBackfill,
   planIssueSync,
+  planIssueTypes,
   planMilestones,
   planParentLinks,
 } from "./lib/hub-sync.mjs";
+import { ISSUE_TYPE_DEFS } from "./lib/issue-type-defs.mjs";
 import { LABEL_DEFS } from "./lib/label-defs.mjs";
 import { MILESTONE_DEFS } from "./lib/milestone-defs.mjs";
 import { createReporter, parseJsonFlag } from "./lib/report.mjs";
@@ -292,6 +299,80 @@ function createIssue(runGhFn, payload, parentNumber) {
   return parseInt(match[1], 10);
 }
 
+// ---------------------------------------------------------------------------
+// Org Issue Types (ADR-0073). Issue Types are an ORG-level resource, not a
+// repo one, and only GraphQL exposes them — `gh issue create --type <name>`
+// resolves by name against whatever the org happens to have, and 422s on a
+// name that isn't there. The whole point of reading them is to turn that
+// mid-batch 422 into a refusal before the first write.
+// ---------------------------------------------------------------------------
+
+const ORG = "monte3l";
+
+// The org's node id AND its Issue Types in one query: `createIssueType` needs
+// the id as `ownerId`, and every caller that wants one wants the other.
+function loadOrgIssueTypes(runGhFn) {
+  const raw = runGhFn([
+    "api",
+    "graphql",
+    "-f",
+    `query=query { organization(login: "${ORG}") { id issueTypes(first: 50) { nodes { id name description color isEnabled } } } }`,
+  ]);
+  const parsed = JSON.parse(raw);
+  const organization = parsed?.data?.organization;
+  if (!organization || typeof organization.id !== "string") {
+    throw new Error(
+      `Could not read ${ORG}'s Issue Types — the response carried no organization id. ` +
+        `Issue Types are org-scoped, so this usually means the token lacks org read access: ${raw}`,
+    );
+  }
+  return {
+    ownerId: organization.id,
+    types: (organization.issueTypes?.nodes ?? []).map((type) => ({
+      id: type.id,
+      name: type.name,
+      description: type.description ?? null,
+      color: type.color ?? null,
+      isEnabled: type.isEnabled === true,
+    })),
+  };
+}
+
+function createIssueType(runGhFn, ownerId, def) {
+  runGhFn([
+    "api",
+    "graphql",
+    "-f",
+    "query=mutation($ownerId: ID!, $name: String!, $description: String, $color: IssueTypeColor) { " +
+      "createIssueType(input: { ownerId: $ownerId, name: $name, description: $description, color: $color, isEnabled: true }) " +
+      "{ issueType { id name } } }",
+    // `-f` (string), never `-F` (typed): `-F` coerces a value that looks
+    // numeric or boolean, and a type name/description is always a string.
+    "-f",
+    `ownerId=${ownerId}`,
+    "-f",
+    `name=${def.name}`,
+    "-f",
+    `description=${def.description}`,
+    "-f",
+    `color=${def.color}`,
+  ]);
+}
+
+// Irreversible and org-wide: the type is gone for every repo in the org, not
+// just this one. Only ever called on a `planIssueTypes.retire` entry, which is
+// gated on a zero-issue census — see that planner's `blocked` output.
+function deleteIssueType(runGhFn, id) {
+  runGhFn([
+    "api",
+    "graphql",
+    "-f",
+    "query=mutation($issueTypeId: ID!) { deleteIssueType(input: { issueTypeId: $issueTypeId }) { clientMutationId } }",
+    "-f",
+    `issueTypeId=${id}`,
+  ]);
+}
+
 // A priority:*/type:*/status:* label the currently-fetched issue carries but
 // the desired payload does not — stale from a prior run whose item priority
 // or status (Deferred/Blocked) changed, or a leftover `priority:*`/`type:*`
@@ -473,6 +554,145 @@ function printBackfillPlan(reporter, backfillPlan) {
 }
 
 /**
+ * Apply-path guard: every {@link ISSUE_TYPE_DEFS} name must already exist on
+ * the org. Returns `null` when it does, or the error message (naming the
+ * missing types and the remedy) when it does not.
+ *
+ * Reads only the type census, never the issue census — a create-only question
+ * needs no `loadAllIssues` page, and this runs on every `--apply`.
+ */
+function issueTypePreflight(runGhFn) {
+  const { types } = loadOrgIssueTypes(runGhFn);
+  const { create } = planIssueTypes(types, ISSUE_TYPE_DEFS, new Map());
+  if (create.length === 0) return null;
+  return (
+    `The ${ORG} org is missing ${create.length} of the ${ISSUE_TYPE_DEFS.length} declared GitHub ` +
+    `Issue Type(s): ${create.map((def) => `"${def.name}"`).join(", ")}. ` +
+    `\`gh issue create --type\` would 422 partway through this batch. ` +
+    `Provision them first: \`pnpm sync:hub-issues -- --init-issue-types --apply\`.`
+  );
+}
+
+/**
+ * Provisions the org's GitHub Issue Types against {@link ISSUE_TYPE_DEFS}:
+ * creates every declared type the org lacks, and retires every undeclared one
+ * no issue still carries.
+ *
+ * A separate opt-in entry point rather than a step inside {@link runIssueSync},
+ * because the blast radius is different in kind. Issue Types are **org**-level:
+ * a create is visible to every repo `monte3l` owns and a delete removes the
+ * type from all of them. That does not belong on the routine
+ * tracker-reconciliation path a maintainer runs whenever a Status cell changes.
+ *
+ * Dry-run by default, like every other runner here — `apply` executes.
+ *
+ * @param {{ runGh: (args: string[]) => string, reporter: ReturnType<typeof createReporter>, apply: boolean }} options
+ * @returns {{ ok: boolean }}
+ */
+export function runIssueTypeInit({ runGh: runGhFn, reporter, apply }) {
+  try {
+    const authError = checkGhAuth(runGhFn);
+    if (authError !== null) {
+      reporter.error(authError);
+      reporter.finish();
+      return { ok: false };
+    }
+
+    const { ownerId, types } = loadOrgIssueTypes(runGhFn);
+
+    // The retire half needs the issue census, and it needs it over BOTH
+    // states: a closed issue still carrying a type is enough to make deleting
+    // that type destructive, and closed issues are the majority here.
+    const allIssues = loadAllIssues(runGhFn, reporter);
+    if (allIssues === null) {
+      reporter.finish();
+      return { ok: false };
+    }
+
+    const plan = planIssueTypes(
+      types,
+      ISSUE_TYPE_DEFS,
+      countIssuesByType(allIssues),
+    );
+
+    reporter.info(`Issue Types to create (${plan.create.length}):`);
+    for (const def of plan.create) {
+      reporter.info(`  + ${def.name} [${def.color}] — ${def.description}`);
+    }
+
+    reporter.info(`Issue Types to retire (${plan.retire.length}):`);
+    for (const type of plan.retire) {
+      reporter.info(`  - ${type.name} (no issue carries it)`);
+    }
+
+    // Report-only, and deliberately not counted as failure: this is the
+    // expected mid-migration state. ADR-0073 retypes 47 open issues off
+    // `Capability` on the routine --apply and 131 closed ones via
+    // --retype-closed; until both have run, `Capability` is blocked here and
+    // that is correct, not an error.
+    if (plan.blocked.length > 0) {
+      reporter.info(
+        `Undeclared Issue Types still in use, NOT retired (${plan.blocked.length}):`,
+      );
+      for (const type of plan.blocked) {
+        reporter.info(
+          `  ! ${type.name} — ${type.count} issue(s) still carry it; retype them first ` +
+            `(\`pnpm sync:hub-issues -- --apply\` for open, \`--retype-closed --apply\` for closed)`,
+        );
+      }
+    }
+
+    if (!apply) {
+      reporter.succeed(
+        `Dry run — pass --apply to execute. Would create ${plan.create.length} and retire ` +
+          `${plan.retire.length} Issue Type(s); ${plan.blocked.length} undeclared type(s) still in use.`,
+      );
+      reporter.finish({
+        applied: false,
+        issueTypes: {
+          create: plan.create.length,
+          retire: plan.retire.length,
+          blocked: plan.blocked.length,
+        },
+      });
+      return { ok: true };
+    }
+
+    // Creates before retires: if a retire were to fail, the vocabulary the
+    // rest of the sync depends on is already in place.
+    for (const def of plan.create) {
+      createIssueType(runGhFn, ownerId, def);
+      reporter.change("created", `Issue Type: ${def.name}`);
+    }
+
+    for (const type of plan.retire) {
+      deleteIssueType(runGhFn, type.id);
+      reporter.change("removed", `Issue Type: ${type.name}`);
+    }
+
+    reporter.succeed(
+      `Applied: ${plan.create.length} Issue Type(s) created, ${plan.retire.length} retired; ` +
+        `${plan.blocked.length} undeclared type(s) left in place because issues still carry them.`,
+    );
+    reporter.finish({
+      applied: true,
+      issueTypes: {
+        create: plan.create.length,
+        retire: plan.retire.length,
+        blocked: plan.blocked.length,
+      },
+    });
+    return { ok: true };
+  } catch (cause) {
+    reporter.error(
+      `Issue Type provisioning failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+    reporter.finish();
+    return { ok: false };
+  }
+}
+
+/**
  * The full read -> plan -> (print | apply) pipeline. Every I/O dependency is
  * injected so the orchestration itself stays testable; the main-guard below
  * wires the real `gh`/filesystem implementations. NEVER calls
@@ -647,6 +867,24 @@ export function runIssueSync({
       );
       reporter.finish(summary);
       return { ok: true };
+    }
+
+    // Issue-Type preflight — apply path ONLY, and before the first mutation.
+    // `gh issue create/edit --type <name>` resolves by name against the org's
+    // Issue Types and 422s on an unknown one, so a vocabulary the org has not
+    // been provisioned with fails partway through a ~50-issue batch, leaving
+    // half of it written. Refusing up front is the difference between "nothing
+    // happened" and "reconcile a half-applied run by hand".
+    //
+    // Not on the dry-run/`--check` path on purpose: `check:hub-drift` runs in
+    // CI with the Actions GITHUB_TOKEN, which is repo-scoped and cannot read
+    // an ORG-level resource — asserting there would fail the gate for a
+    // permission reason with nothing to do with tracker drift.
+    const preflightError = issueTypePreflight(runGhFn);
+    if (preflightError !== null) {
+      reporter.error(preflightError);
+      reporter.finish();
+      return { ok: false };
     }
 
     bootstrapLabels(runGhFn);
@@ -854,12 +1092,33 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const apply = argv.includes("--apply");
   const check = argv.includes("--check");
   const backfill = argv.includes("--backfill");
+  const initIssueTypes = argv.includes("--init-issue-types");
   const reporter = createReporter(json);
 
   if (apply && check) {
     reporter.error("--apply and --check are mutually exclusive.");
     reporter.finish();
     process.exit(1);
+  }
+
+  // --init-issue-types is a whole different runner, not a phase of the sync:
+  // it touches an ORG-level resource and reconciles nothing against the
+  // trackers. Combining it with --check (a drift question about tracker rows)
+  // or --backfill (a historical-issue pass) is always a mistake, so say so
+  // rather than silently ignoring the other flag.
+  if (initIssueTypes && (check || backfill)) {
+    reporter.error(
+      "--init-issue-types cannot be combined with --check or --backfill — it provisions org " +
+        "Issue Types and reconciles no tracker rows. Run it on its own.",
+    );
+    reporter.finish();
+    process.exit(1);
+  }
+
+  if (initIssueTypes) {
+    const outcome = runIssueTypeInit({ runGh, reporter, apply });
+    if (!outcome.ok) process.exit(1);
+    process.exit(0);
   }
 
   const outcome = runIssueSync({

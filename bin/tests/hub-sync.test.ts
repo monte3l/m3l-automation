@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { extractImplementation, extractRoadmap } from "../lib/project-hub.mjs";
 import { LABEL_DEFS } from "../lib/label-defs.mjs";
 import { MILESTONE_DEFS } from "../lib/milestone-defs.mjs";
+import { ISSUE_TYPE_DEFS } from "../lib/issue-type-defs.mjs";
 import {
   EPIC_KEYS,
   HUB_LABEL,
@@ -13,10 +14,12 @@ import {
   PRIORITY_TIERS,
   PROJECT_PRIORITY_OPTIONS,
   STATUS_LABELS,
+  TYPE_KINDS,
   TYPE_LABELS,
   TYPE_VALUES,
   actionableItems,
   buildIssuePayload,
+  countIssuesByType,
   epicPriority,
   epicStatus,
   hubMarker,
@@ -24,6 +27,7 @@ import {
   parseHubMarker,
   planBackfill,
   planIssueSync,
+  planIssueTypes,
   planMilestones,
   planParentLinks,
   planProjectSync,
@@ -2958,5 +2962,116 @@ describe("planBackfill skips epics", () => {
 
     expect(result.create).toHaveLength(1);
     expect(result.create[0]?.key).toBe("roadmap:p0:backfill-done-non-epic");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// planIssueTypes (ADR-0073) — Issue Type provisioning/retirement plan
+// ---------------------------------------------------------------------------
+
+describe("planIssueTypes", () => {
+  test("a declared type with no live type of that name lands in create, carrying its description and color", () => {
+    const result = planIssueTypes([], ISSUE_TYPE_DEFS, new Map());
+
+    expect(result.create).toEqual(ISSUE_TYPE_DEFS);
+    const friction = result.create.find((def) => def.name === "Friction");
+    expect(friction?.description).toBe(TYPE_KINDS.friction.description);
+    expect(friction?.color).toBe(TYPE_KINDS.friction.color);
+  });
+
+  test("idempotent: a live type whose name is declared lands in neither create nor retire", () => {
+    const liveTypes = [{ id: "IT_1", name: "Friction" }];
+    const result = planIssueTypes(liveTypes, ISSUE_TYPE_DEFS, new Map());
+
+    expect(result.create.some((def) => def.name === "Friction")).toBe(false);
+    expect(result.retire.some((type) => type.name === "Friction")).toBe(false);
+  });
+
+  test("an undeclared live type with count 0 retires, carrying its id (what deleteIssueType needs)", () => {
+    const liveTypes = [{ id: "IT_LEGACY", name: "Capability" }];
+    const counts = new Map([["Capability", 0]]);
+    const result = planIssueTypes(liveTypes, ISSUE_TYPE_DEFS, counts);
+
+    expect(result.retire).toEqual([{ id: "IT_LEGACY", name: "Capability" }]);
+  });
+
+  test("an undeclared live type absent from the counts map is treated as 0 and retires (absence means no issues carry it, not unknown)", () => {
+    const liveTypes = [{ id: "IT_LEGACY", name: "Capability" }];
+    const result = planIssueTypes(liveTypes, ISSUE_TYPE_DEFS, new Map());
+
+    expect(result.retire).toEqual([{ id: "IT_LEGACY", name: "Capability" }]);
+  });
+
+  test("an undeclared live type with count > 0 is blocked, not retired — this guard keeps retirement non-destructive", () => {
+    const liveTypes = [{ id: "IT_LEGACY", name: "Capability" }];
+    const counts = new Map([["Capability", 48]]);
+    const result = planIssueTypes(liveTypes, ISSUE_TYPE_DEFS, counts);
+
+    expect(result.blocked).toEqual([
+      { id: "IT_LEGACY", name: "Capability", count: 48 },
+    ]);
+    expect(result.retire).toEqual([]);
+  });
+
+  test("a declared live type is never retired even with zero issues (a freshly provisioned kind legitimately has none yet)", () => {
+    const liveTypes = [{ id: "IT_NEW", name: "UI" }];
+    const counts = new Map([["UI", 0]]);
+    const result = planIssueTypes(liveTypes, ISSUE_TYPE_DEFS, counts);
+
+    expect(result.retire).toEqual([]);
+    expect(result.blocked).toEqual([]);
+  });
+
+  test("realistic live state: 4 live types incl. undeclared Capability at 48 issues -> 7 to create, none to retire, Capability blocked", () => {
+    const liveTypes = [
+      { id: "IT_CAP", name: "Capability" },
+      { id: "IT_FRI", name: "Friction" },
+      { id: "IT_CS", name: "Consumer script" },
+      { id: "IT_GOV", name: "Governance" },
+    ];
+    const counts = new Map([["Capability", 48]]);
+    const result = planIssueTypes(liveTypes, ISSUE_TYPE_DEFS, counts);
+
+    expect(result.create).toHaveLength(7);
+    expect(result.retire).toEqual([]);
+    expect(result.blocked).toEqual([
+      { id: "IT_CAP", name: "Capability", count: 48 },
+    ]);
+  });
+
+  test("idempotency law: feeding the post-apply state (all declared types live, nothing undeclared) plans nothing in any bucket", () => {
+    const liveTypes = ISSUE_TYPE_DEFS.map((def, index) => ({
+      id: `IT_${index}`,
+      name: def.name,
+    }));
+    const result = planIssueTypes(liveTypes, ISSUE_TYPE_DEFS, new Map());
+
+    expect(result).toEqual({ create: [], retire: [], blocked: [] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// countIssuesByType
+// ---------------------------------------------------------------------------
+
+describe("countIssuesByType", () => {
+  test("untyped issues (type: null) are excluded, and a name absent from the input is absent from the Map (not 0)", () => {
+    const counts = countIssuesByType([{ type: "Friction" }, { type: null }]);
+
+    expect(counts.get("Friction")).toBe(1);
+    expect(counts.has("Governance")).toBe(false);
+    expect(counts.get("Governance")).toBeUndefined();
+  });
+
+  test("sums repeats across both open and closed issues", () => {
+    const counts = countIssuesByType([
+      { type: "Capability" },
+      { type: "Capability" },
+      { type: "Capability" },
+      { type: "Friction" },
+    ]);
+
+    expect(counts.get("Capability")).toBe(3);
+    expect(counts.get("Friction")).toBe(1);
   });
 });
