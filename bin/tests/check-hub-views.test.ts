@@ -119,7 +119,13 @@ function viewPayload(columns: string[]): unknown {
         }),
       ),
     },
-    fields: { nodes: columns.map((name) => ({ name })) },
+    // configuration.visibleFields, not the sibling view-level `fields`: only
+    // this connection is ordered, and the gate asserts order. Shaping the
+    // fixture like the wrong connection is what let the ordering bug survive
+    // a green suite, so the query-text test below guards the shape directly.
+    configuration: {
+      visibleFields: { nodes: columns.map((name) => ({ name })) },
+    },
   };
 }
 
@@ -226,6 +232,35 @@ describe("runHubViewsCheck", () => {
     expect(reporter.succeeded).toHaveLength(1);
   });
 
+  test("columns are read from configuration.visibleFields, never from the view's own `fields` connection", () => {
+    // The one assertion in this file that inspects the QUERY rather than a
+    // response. Every other column test feeds a fixture through boardGh, so it
+    // proves only that the gate parses whatever shape the fixture happens to
+    // use -- if the fixture mirrors the wrong connection, the suite stays green
+    // while the gate reads the wrong thing off the real board. That is exactly
+    // what happened: `ProjectV2View.fields` and
+    // `configuration.visibleFields` return the same SET in different ORDER, so
+    // reading `fields` produced a permanent column-order finding against a
+    // correct board while every fixture test passed. Only the query text
+    // distinguishes them.
+    const { runGh, calls } = boardGh(compliantBoardPayload());
+    const reporter = createFakeReporter();
+
+    runHubViewsCheck({ runGh, reporter });
+
+    const graphql = required(
+      calls.find((args) => args[0] === "api" && args[1] === "graphql"),
+      "the board GraphQL call",
+    );
+    const query = required(graphql[3], "the query argument");
+    expect(query).toContain("configuration { visibleFields(first:");
+    // The board-level `fields(...)` read stays -- it is the right connection
+    // for dataType and the single-select option sets. What must not come back
+    // is a VIEW-level one, which is why this matches the nesting rather than
+    // the bare word.
+    expect(query).not.toMatch(/filter[^}]*\bfields\(first:/);
+  });
+
   test("a board with the ISSUE_TYPE field NOT yet enabled and the optional column absent is also clean", () => {
     // The exemption path, as its own fixture rather than as a property of the
     // compliant one: before a human enables the field, neither the field nor
@@ -265,7 +300,7 @@ describe("runHubViewsCheck", () => {
             layout: "BOARD_LAYOUT",
             filter: "is:open",
             sortByFields: { nodes: [] },
-            fields: { nodes: [] },
+            configuration: { visibleFields: { nodes: [] } },
           },
         ],
       }),
@@ -359,7 +394,7 @@ describe("runHubViewsCheck", () => {
       layout: "TABLE_LAYOUT",
       filter: "is:open",
       sortByFields: { nodes: [] },
-      fields: { nodes: [] },
+      configuration: { visibleFields: { nodes: [] } },
     }));
     const { runGh } = boardGh(compliantBoardPayload({ views: overflowing }));
     const reporter = createFakeReporter();
@@ -445,7 +480,9 @@ describe("runHubViewsCheck", () => {
         views: [
           {
             ...(viewPayload([...DECLARED.fields]) as Record<string, unknown>),
-            fields: { nodes: [{ name: "Title" }, {}] },
+            configuration: {
+              visibleFields: { nodes: [{ name: "Title" }, {}] },
+            },
           },
         ],
       }),
