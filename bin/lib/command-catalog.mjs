@@ -133,12 +133,12 @@ export const COMMAND_CATALOG = [
   {
     name: "sync:hub-issues",
     description:
-      "Maintainer-run, local-only: syncs docs/ROADMAP.md + IMPLEMENTATION.md into GitHub Issues/Milestones. Dry-run by default; pass `-- --apply` to execute, `-- --check` for the CI drift-gate mode (fails on a non-empty plan), or `-- --backfill` (composes with `--apply`) for the one-time historical backfill of Done/Rejected rows that predate sync:hub — creates each backfilled issue already closed, with a fuzzy-match collision guard against every existing issue title.",
+      "Maintainer-run, local-only: syncs docs/ROADMAP.md + IMPLEMENTATION.md into GitHub Issues/Milestones (title, body, labels, milestone, and GitHub Issue Type). Dry-run by default; pass `-- --apply` to execute, or `-- --check` for the CI drift-gate mode (fails on a non-empty plan). Three one-shots, each mutually exclusive with the others: `-- --backfill` (composes with `--apply`) for the historical backfill of Done/Rejected rows that predate sync:hub — creates each backfilled issue already closed, with a fuzzy-match collision guard against every existing issue title; `-- --init-issue-types` to provision the org's Issue Types from ISSUE_TYPE_DEFS and retire the ones no longer declared (needs org admin); and `-- --retype-closed` to backfill the type on closed marker-bearing issues, a type-only edit that never rewrites their title, body, labels or milestone.",
   },
   {
     name: "sync:hub-projects",
     description:
-      "Maintainer-run, local-only: syncs hub-sync-tracked issues onto the GitHub Projects (v2) board. Dry-run by default; pass `-- --apply`, and `-- --init` once to create/reuse the board.",
+      "Maintainer-run, local-only: syncs hub-sync-tracked issues onto the GitHub Projects (v2) board. Dry-run by default; pass `-- --apply`, and `-- --init` once to create/reuse the board and reconcile its fields and saved views. `-- --prune-views` additionally deletes any view VIEW_DEFS does not declare — opt-in and never a side effect of `--init`, because deleting a view is irreversible through the API.",
   },
   {
     name: "sync:hub",
