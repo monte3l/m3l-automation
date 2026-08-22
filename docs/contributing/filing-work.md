@@ -165,6 +165,25 @@ Once an idea is actually ready to be worked on:
    repo-scoped Actions `GITHUB_TOKEN`, which cannot read an org-level resource
    at all.
 
+   Closed issues need their own one-shot pass. `planIssueSync` never recomputes
+   a closed-and-resolved issue's payload (ADR-0032's 2026-07-28 Update), and
+   `--type` reached the runner long after most of the backlog was closed — so
+   131 of the 136 closed marker-bearing issues carry no Issue Type at all:
+
+   ```bash
+   pnpm sync:hub-issues -- --retype-closed            # dry run
+   pnpm sync:hub-issues -- --retype-closed --apply    # backfill
+   ```
+
+   It is a **type-only** edit (`gh issue edit <n> --type`), never a full
+   `editIssue` — rewriting 131 finished issues' titles and bodies to fix a type
+   would trade one gap for a much larger churn, and would show as fresh activity
+   on every one of them. Idempotent, so re-running is safe. A closed issue whose
+   marker matches no current tracker row is reported and left alone: nothing can
+   supply its type, and guessing one would be worse than the gap. Like
+   `--init-issue-types`, it runs on its own and is rejected in combination with
+   `--check`, `--backfill`, or the other one-shot.
+
    A description is written once per kind, in `TYPE_KINDS`
    (`bin/lib/hub-sync.mjs`), and read by both the `type:*` label and the org
    Issue Type — the same single-source arrangement `PRIORITY_TIERS` gives a

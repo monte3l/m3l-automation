@@ -21,6 +21,10 @@
 //                                            # provision the ORG's Issue Types
 //                                            # (ADR-0073) — opt-in, org-wide
 //                                            # blast radius, never part of --apply
+//   node bin/sync-hub-issues.mjs --retype-closed [--apply]
+//                                            # one-shot: backfill the Issue Type
+//                                            # on closed issues, which the
+//                                            # routine path never revisits
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -33,6 +37,7 @@ import {
   HUB_LABEL,
   parseHubMarker,
   planBackfill,
+  planClosedRetype,
   planIssueSync,
   planIssueTypes,
   planMilestones,
@@ -692,6 +697,136 @@ export function runIssueTypeInit({ runGh: runGhFn, reporter, apply }) {
   }
 }
 
+// Narrow, type-only edit. Deliberately NOT `editIssue`, which also rewrites
+// title/body/labels/milestone: `planIssueSync` leaves a closed-and-resolved
+// issue's payload completely alone by design (ADR-0032's 2026-07-28 Update),
+// and rewriting 131 closed bodies to fix a type would trade one gap for a far
+// larger churn — plus every one of those edits would show as activity on a
+// finished issue.
+function setIssueType(runGhFn, number, typeName) {
+  runGhFn(["issue", "edit", String(number), "-R", REPO, "--type", typeName]);
+}
+
+/**
+ * One-shot backfill: gives every closed hub-sync issue the GitHub Issue Type
+ * its tracker row says it should have.
+ *
+ * Opt-in and separate from {@link runIssueSync} for the same reason
+ * {@link planClosedRetype} is separate from `planIssueSync` — the routine path
+ * must not churn closed issues. Idempotent, so re-running it is safe: the
+ * planner only emits a retype where the live type actually differs.
+ *
+ * @param {{ runGh: (args: string[]) => string, reporter: ReturnType<typeof createReporter>, apply: boolean, readDoc: (relativePath: string) => string }} options
+ * @returns {{ ok: boolean }}
+ */
+export function runClosedRetype({
+  runGh: runGhFn,
+  reporter,
+  apply,
+  readDoc: readDocFn,
+}) {
+  try {
+    const authError = checkGhAuth(runGhFn);
+    if (authError !== null) {
+      reporter.error(authError);
+      reporter.finish();
+      return { ok: false };
+    }
+
+    const roadmap = extractRoadmap(readDocFn(ROADMAP_PATH));
+    const implementation = extractImplementation(
+      readDocFn(IMPLEMENTATION_PATH),
+    );
+    const extractionErrors = [...roadmap.errors, ...implementation.errors];
+    if (extractionErrors.length > 0) {
+      for (const message of extractionErrors) reporter.error(message);
+      reporter.finish();
+      return { ok: false };
+    }
+
+    const { items, warnings } = actionableItems(roadmap, implementation);
+    for (const message of warnings) reporter.warn(message);
+
+    // The UNFILTERED read: a closed issue filed before the hub-sync label
+    // existed still carries its marker, and the marker is what this matches
+    // on. loadExistingIssues' label filter would miss exactly those.
+    const allIssues = loadAllIssues(runGhFn, reporter);
+    if (allIssues === null) {
+      reporter.finish();
+      return { ok: false };
+    }
+
+    const plan = planClosedRetype(items, allIssues);
+
+    reporter.info(`Closed issues to retype (${plan.set.length}):`);
+    for (const { number, key, from, to } of plan.set) {
+      reporter.info(`  ~ #${number} [${key}] ${from ?? "(no type)"} -> ${to}`);
+    }
+
+    // Report-only. Their tracker rows are gone, so nothing can supply a type;
+    // naming them is the whole remedy, and counting them as failure would make
+    // this command permanently non-clean.
+    if (plan.unmatched.length > 0) {
+      reporter.info(
+        `Closed issues whose marker matches no tracker row, NOT retyped (${plan.unmatched.length}):`,
+      );
+      for (const { number, key, from } of plan.unmatched) {
+        reporter.info(
+          `  ! #${number} [${key}] currently ${from ?? "(no type)"} — the row was removed from the trackers`,
+        );
+      }
+    }
+
+    if (!apply) {
+      reporter.succeed(
+        `Dry run — pass --apply to execute. Would retype ${plan.set.length} closed issue(s); ` +
+          `${plan.unmatched.length} unmatched (report only).`,
+      );
+      reporter.finish({
+        applied: false,
+        closedRetype: {
+          set: plan.set.length,
+          unmatched: plan.unmatched.length,
+        },
+      });
+      return { ok: true };
+    }
+
+    // `gh issue edit --type` resolves by NAME against the org's Issue Types
+    // and 422s on one it does not have, exactly as `gh issue create --type`
+    // does — so this path needs the same preflight the sync's --apply has.
+    const preflightError = issueTypePreflight(runGhFn);
+    if (preflightError !== null) {
+      reporter.error(preflightError);
+      reporter.finish();
+      return { ok: false };
+    }
+
+    for (const { number, key, from, to } of plan.set) {
+      setIssueType(runGhFn, number, to);
+      reporter.change(
+        "updated",
+        `issue #${number} [${key}] type ${from ?? "(none)"} -> ${to}`,
+      );
+    }
+
+    reporter.succeed(
+      `Applied: ${plan.set.length} closed issue(s) retyped; ${plan.unmatched.length} unmatched, left alone.`,
+    );
+    reporter.finish({
+      applied: true,
+      closedRetype: { set: plan.set.length, unmatched: plan.unmatched.length },
+    });
+    return { ok: true };
+  } catch (cause) {
+    reporter.error(
+      `Closed-issue retype failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+    reporter.finish();
+    return { ok: false };
+  }
+}
+
 /**
  * The full read -> plan -> (print | apply) pipeline. Every I/O dependency is
  * injected so the orchestration itself stays testable; the main-guard below
@@ -1093,6 +1228,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const check = argv.includes("--check");
   const backfill = argv.includes("--backfill");
   const initIssueTypes = argv.includes("--init-issue-types");
+  const retypeClosed = argv.includes("--retype-closed");
   const reporter = createReporter(json);
 
   if (apply && check) {
@@ -1115,8 +1251,28 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     process.exit(1);
   }
 
+  // Both one-shots are their own runner, so combining them with each other or
+  // with a tracker-reconciliation flag is always a mistake rather than a
+  // composition — say so instead of silently honouring one and dropping the
+  // rest. (--backfill, by contrast, IS composable with --apply: it is a phase
+  // of the same reconciliation.)
+  if (retypeClosed && (check || backfill || initIssueTypes)) {
+    reporter.error(
+      "--retype-closed cannot be combined with --check, --backfill or --init-issue-types — it is a " +
+        "one-shot pass over closed issues. Run it on its own.",
+    );
+    reporter.finish();
+    process.exit(1);
+  }
+
   if (initIssueTypes) {
     const outcome = runIssueTypeInit({ runGh, reporter, apply });
+    if (!outcome.ok) process.exit(1);
+    process.exit(0);
+  }
+
+  if (retypeClosed) {
+    const outcome = runClosedRetype({ runGh, reporter, apply, readDoc });
     if (!outcome.ok) process.exit(1);
     process.exit(0);
   }

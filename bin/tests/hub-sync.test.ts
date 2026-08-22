@@ -26,6 +26,7 @@ import {
   indexItemsByKey,
   parseHubMarker,
   planBackfill,
+  planClosedRetype,
   planIssueSync,
   planIssueTypes,
   planMilestones,
@@ -3047,6 +3048,233 @@ describe("planIssueTypes", () => {
     const result = planIssueTypes(liveTypes, ISSUE_TYPE_DEFS, new Map());
 
     expect(result).toEqual({ create: [], retire: [], blocked: [] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// planClosedRetype
+// ---------------------------------------------------------------------------
+
+describe("planClosedRetype", () => {
+  test("a closed, untyped, marker-bearing issue backfills to its item's type — the dominant live case (131 of 136), a backfill rather than a re-classification", () => {
+    const item = makeItem({
+      key: "impl:friction:f1",
+      type: ISSUE_TYPES.friction,
+    });
+    const issue = {
+      number: 7,
+      body: hubMarker("impl:friction:f1"),
+      state: "closed" as const,
+      type: null,
+    };
+
+    const result = planClosedRetype([item], [issue]);
+
+    expect(result.set).toEqual([
+      {
+        number: 7,
+        key: "impl:friction:f1",
+        from: null,
+        to: ISSUE_TYPES.friction,
+      },
+    ]);
+    expect(result.unmatched).toEqual([]);
+  });
+
+  test("idempotency law: a closed issue whose live type already equals its item's type lands in neither bucket", () => {
+    const item = makeItem({
+      key: "impl:friction:f2",
+      type: ISSUE_TYPES.friction,
+    });
+    const issue = {
+      number: 8,
+      body: hubMarker("impl:friction:f2"),
+      state: "closed" as const,
+      type: ISSUE_TYPES.friction,
+    };
+
+    const result = planClosedRetype([item], [issue]);
+
+    expect(result.set).toEqual([]);
+    expect(result.unmatched).toEqual([]);
+  });
+
+  test("a closed issue carrying the retired 'Capability' type retypes to its item's current type — the one live genuine re-classification (#474 -> Library capability)", () => {
+    const item = makeItem({
+      key: "impl:library:c1",
+      type: ISSUE_TYPES.libraryCapability,
+    });
+    const issue = {
+      number: 474,
+      body: hubMarker("impl:library:c1"),
+      state: "closed" as const,
+      type: "Capability",
+    };
+
+    const result = planClosedRetype([item], [issue]);
+
+    expect(result.set).toEqual([
+      {
+        number: 474,
+        key: "impl:library:c1",
+        from: "Capability",
+        to: ISSUE_TYPES.libraryCapability,
+      },
+    ]);
+  });
+
+  test("an open issue is ignored entirely, even with a wrong type — planIssueSync's isDirty already owns open issues' type", () => {
+    const item = makeItem({
+      key: "impl:friction:f3",
+      type: ISSUE_TYPES.friction,
+    });
+    const issue = {
+      number: 9,
+      body: hubMarker("impl:friction:f3"),
+      state: "open" as const,
+      type: null,
+    };
+
+    const result = planClosedRetype([item], [issue]);
+
+    expect(result.set).toEqual([]);
+    expect(result.unmatched).toEqual([]);
+  });
+
+  test("a closed, markerless issue is ignored entirely — match is by marker only, so a hand-filed issue is never written to", () => {
+    const item = makeItem({
+      key: "impl:friction:f4",
+      type: ISSUE_TYPES.friction,
+    });
+    const issue = {
+      number: 10,
+      body: "A hand-filed issue with no hub-sync marker at all.",
+      state: "closed" as const,
+      type: null,
+    };
+
+    const result = planClosedRetype([item], [issue]);
+
+    expect(result.set).toEqual([]);
+    expect(result.unmatched).toEqual([]);
+  });
+
+  test("a closed issue whose marker resolves to no item lands in unmatched, keyed on the marker — nothing can supply a type for a removed row (live: #359)", () => {
+    const issue = {
+      number: 359,
+      body: hubMarker("roadmap:w4:removed-row"),
+      state: "closed" as const,
+      type: null,
+    };
+
+    const result = planClosedRetype([], [issue]);
+
+    expect(result.unmatched).toEqual([
+      { number: 359, key: "roadmap:w4:removed-row", from: null },
+    ]);
+    expect(result.set).toEqual([]);
+  });
+
+  test("a closed issue whose marker is a legacy key still retypes, and the emitted key is the item's current key, not the legacy marker matched on", () => {
+    const item = makeItem({
+      key: "impl:cli:c2",
+      type: ISSUE_TYPES.cliCapability,
+      legacyKeys: ["impl:c2"],
+    });
+    const issue = {
+      number: 11,
+      body: hubMarker("impl:c2"),
+      state: "closed" as const,
+      type: null,
+    };
+
+    const result = planClosedRetype([item], [issue]);
+
+    expect(result.set).toEqual([
+      {
+        number: 11,
+        key: "impl:cli:c2",
+        from: null,
+        to: ISSUE_TYPES.cliCapability,
+      },
+    ]);
+  });
+
+  test("a mixed batch partitions correctly: backfill, already-correct, re-classified, open, markerless, and unmatched each land where expected without cross-contamination", () => {
+    const backfillItem = makeItem({
+      key: "impl:friction:f1",
+      type: ISSUE_TYPES.friction,
+    });
+    const correctItem = makeItem({
+      key: "impl:friction:f2",
+      type: ISSUE_TYPES.friction,
+    });
+    const reclassifiedItem = makeItem({
+      key: "impl:library:c1",
+      type: ISSUE_TYPES.libraryCapability,
+    });
+
+    const issues = [
+      {
+        number: 7,
+        body: hubMarker("impl:friction:f1"),
+        state: "closed" as const,
+        type: null,
+      },
+      {
+        number: 8,
+        body: hubMarker("impl:friction:f2"),
+        state: "closed" as const,
+        type: ISSUE_TYPES.friction,
+      },
+      {
+        number: 474,
+        body: hubMarker("impl:library:c1"),
+        state: "closed" as const,
+        type: "Capability",
+      },
+      {
+        number: 9,
+        body: hubMarker("impl:friction:f3"),
+        state: "open" as const,
+        type: null,
+      },
+      {
+        number: 10,
+        body: "A hand-filed issue with no hub-sync marker at all.",
+        state: "closed" as const,
+        type: null,
+      },
+      {
+        number: 359,
+        body: hubMarker("roadmap:w4:removed-row"),
+        state: "closed" as const,
+        type: null,
+      },
+    ];
+
+    const result = planClosedRetype(
+      [backfillItem, correctItem, reclassifiedItem],
+      issues,
+    );
+
+    expect(result.set).toEqual([
+      {
+        number: 7,
+        key: "impl:friction:f1",
+        from: null,
+        to: ISSUE_TYPES.friction,
+      },
+      {
+        number: 474,
+        key: "impl:library:c1",
+        from: "Capability",
+        to: ISSUE_TYPES.libraryCapability,
+      },
+    ]);
+    expect(result.unmatched).toEqual([
+      { number: 359, key: "roadmap:w4:removed-row", from: null },
+    ]);
   });
 });
 

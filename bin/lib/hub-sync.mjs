@@ -2061,6 +2061,82 @@ function projectPriorityOption(priority) {
 }
 
 /**
+ * A one-shot pass over **closed** hub-sync issues whose GitHub Issue Type does
+ * not match their tracker row's. Pure.
+ *
+ * This exists because {@link planIssueSync} deliberately never recomputes a
+ * closed-and-resolved issue's payload — the gap ADR-0032's 2026-07-28 Update
+ * records, kept because reopening that door risks the idempotency law for
+ * cosmetic corrections. A type is not cosmetic once `Type` is a board column
+ * and a search facet, but it is also not worth loosening that rule for: hence a
+ * separate, opt-in, run-once planner rather than a new branch inside
+ * `planIssueSync`.
+ *
+ * Measured on the live repo (ADR-0073's 2026-08-22 Update): of 136 closed
+ * marker-bearing issues, **131 carry no Issue Type at all** — `--type` reached
+ * `createIssue`/`editIssue` long after most of them were filed and closed. So
+ * this is overwhelmingly a *backfill*, not a re-classification; only one closed
+ * issue carries the retired `Capability`.
+ *
+ * - `set` — the retype list. `from` is the live type (`null` when untyped),
+ *   `to` the item's. Only ever emitted when the two differ, so re-running over
+ *   its own applied output yields an empty `set`.
+ * - `unmatched` — a closed marker-bearing issue whose marker resolves to no
+ *   current tracker row, so nothing can supply its type. **Report-only**: the
+ *   row was removed from the trackers, and inventing a type for it would be a
+ *   guess. One exists live (#359, a W4 row dropped per ADR-0031).
+ *
+ * A **markerless** issue is skipped entirely and appears in neither bucket —
+ * the same safety property `planIssueSync` has: match is by marker only, so a
+ * hand-filed issue that happens to carry the `hub-sync` label is never written
+ * to. Open issues are likewise ignored; the routine `--apply` owns those,
+ * because `planIssueSync`'s `isDirty` already compares `issue.type`.
+ *
+ * @param {Item[]} items every tracker-derived item, resolved ones included
+ * @param {{ number: number, body: string, state: "open" | "closed", type: string | null }[]} allIssues
+ *   normally `loadAllIssues`' output — the UNFILTERED read, since a closed
+ *   issue predating the `hub-sync` label still carries its marker
+ * @returns {{ set: { number: number, key: string, from: string | null, to: string }[], unmatched: { number: number, key: string, from: string | null }[] }}
+ * @example
+ * ```js
+ * import { planClosedRetype } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ *
+ * planClosedRetype(items, [
+ *   { number: 7, body: hubMarker("impl:friction:f1"), state: "closed", type: null },
+ * ]).set; // [{ number: 7, key: "impl:friction:f1", from: null, to: "Friction" }]
+ * ```
+ */
+export function planClosedRetype(items, allIssues) {
+  const set = [];
+  const unmatched = [];
+  const itemByKey = indexItemsByKey(items);
+
+  for (const issue of allIssues) {
+    if (issue.state !== "closed") continue;
+
+    const key = parseHubMarker(issue.body);
+    if (key === null) continue;
+
+    const item = itemByKey.get(key);
+    const from = issue.type ?? null;
+    if (!item) {
+      unmatched.push({ number: issue.number, key, from });
+      continue;
+    }
+
+    // Keyed on the marker, so an issue still filed under a legacy key retypes
+    // correctly without its body being rewritten — the marker migration is
+    // planIssueSync's job, and doing both here would make one --retype-closed
+    // run indistinguishable from a full re-sync of the closed backlog.
+    if (from !== item.type) {
+      set.push({ number: issue.number, key: item.key, from, to: item.type });
+    }
+  }
+
+  return { set, unmatched };
+}
+
+/**
  * Plan the add/setStatus/setPriority/archive actions that bring
  * `existingProjectItems` into sync with `trackedIssues` — the board is a
  * view over the issues hub-sync already owns, so it never adds a card for
