@@ -151,7 +151,7 @@ now-superfluous `export` keyword.
 
 ## Lessons learned
 
-- **Combined `test.each` blocks need a shared-requirements check.** Before
+- **Combined `test.each` blocks need a shared-requirements check.** Before _(promoted → .claude/rules/tests.md)_
   parameterizing a test across multiple operation names, verify every member
   shares the same required-config-field set from the documented "Required
   for" matrix — naming similarity is not evidence of shared requirements.

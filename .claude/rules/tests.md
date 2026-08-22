@@ -25,6 +25,18 @@ paths:
   Damerau-Levenshtein helper at ~10%, asserting nothing). If a behavioral stage's
   only test is "doesn't throw", it is a coverage gap — read
   `coverage/coverage-final.json` to catch a named-but-unexercised path.
+- **A test that names a precedence, an ordering, or an "every X" guarantee must
+  make every arm reachable in its own setup.** Distinct from the proxy rule
+  above: the assertion can be exactly right and still prove nothing, because the
+  precondition that discriminates never exists. A test named "integrity check
+  wins over meaning check" built its store with no `definition`, so the mismatch
+  branch could never fire — it would have passed identically under the opposite
+  implementation (`2026-08-19-a4-checkpoint-fingerprint.md`). Three assertions
+  passed trivially because the fields under test are _omitted_ when invalid, so
+  "the planted secret is absent" held whether validation ran or not
+  (`2026-08-19-a3-partial-run-outcome.md`). An invariant named over a set has to
+  **enumerate** the set — `test.each` over every exit path, not one of them — or
+  it silently becomes a test of one member.
 - **Assert barrel reachability through the package entry point.** Every test
   here imports `src/` paths directly, so none of them can observe a broken
   namespace re-export. A `core/index.ts` missing its
@@ -150,6 +162,13 @@ throw "a string";
   `tsc -b`. Run `pnpm typecheck` as its own gate on every test file you touch —
   in RED, the only expected diagnostics are the not-yet-existing module's
   missing symbols; anything else is a test-file defect to fix now.
+- **`pnpm build` is a distinct gate from `pnpm typecheck`, not a slower version
+  of it.** `isolatedDeclarations` is set only in each package's
+  `tsconfig.build.json` (deliberately kept out of `tsconfig.base.json` — see its
+  own comment there), so the two commands check structurally different things: an
+  additive `as const satisfies` formulation passed `typecheck` and failed `build`
+  with TS9010 (`2026-08-19-a3-partial-run-outcome.md`). Any change touching an
+  **exported type** needs both before you call it green.
 - **eslint runs in-loop** (`post-edit-verify`: prettier → eslint → typecheck →
   vitest). Resolve eslint findings as you write — don't defer them to a later
   `pnpm lint` pass; that defeats the in-loop signal.

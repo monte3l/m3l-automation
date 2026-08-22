@@ -133,7 +133,7 @@ below) — a test file that mocks a named export via `vi.mock()` must also
 call `vi.mocked(theExport).mockReset()` per mocked export in `afterEach`,
 not rely on `restoreAllMocks()` alone.
 
-### 3. The checkpoint/resume feature was fundamentally broken and passed 78/78 tests anyway
+### 3. The checkpoint/resume feature was fundamentally broken and passed 78/78 tests anyway _(promoted → .claude/rules/tests.md)_
 
 `run-dynamo-crud.ts` derived the checkpoint filename from `correlationId` —
 but `correlationId` defaults to a fresh `crypto.randomUUID()` on every CLI

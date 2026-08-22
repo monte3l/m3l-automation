@@ -228,7 +228,7 @@ alone in this file.
   operator hardens one and breaks the other.
   _(promoted → .claude/rules/library-src.md)_
 
-- **For a security-shaped guard, trust the reviewer that executes over the reviewer
+- **For a security-shaped guard, trust the reviewer that executes over the reviewer _(promoted → .claude/rules/subagent-dispatch.md)_
   that reads.** Two spokes examined the same line; the one running probes against
   built `dist/` found a fail-open bypass the one reasoning from the type signature
   pronounced sound. This confirms the existing "Execute, do not read" rule in

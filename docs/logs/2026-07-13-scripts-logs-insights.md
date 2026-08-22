@@ -183,7 +183,7 @@ named type is genuinely needed, capture it via `ReturnType<typeof
 someLocalWrapperFunction>` after calling `vi.spyOn` inside that wrapper,
 never by parameterizing the overloaded library function directly.
 
-### 6. Two independent reviewers converged on the same Must-fix: an unguarded `JSON.parse` on the resume checkpoint
+### 6. Two independent reviewers converged on the same Must-fix: an unguarded `JSON.parse` on the resume checkpoint _(promoted → .claude/rules/subagent-dispatch.md)_
 
 `checkpoint.ts`'s `readCheckpoint` wrapped the file _read_ in error handling
 and the shape-validation _failure_ in a typed `M3LError`, but the

@@ -156,7 +156,7 @@ diagnosing.
 - **Widening a shared type owns its pin sweep** — stale `expectTypeOf`/
   literal pins are silent until GREEN; make the sweep an explicit RED-brief
   step. _(promoted → .claude/agents/test-author.md)_
-- **Security claims need execution, not prose** — both proven leaks in this
+- **Security claims need execution, not prose** — both proven leaks in this _(promoted → .claude/rules/subagent-dispatch.md)_
   series (cache-persisted secret default; help-rendered env default) were
   invisible to reading and trivial to demonstrate with a planted fixture
   against built `dist/`. The mandatory security-reviewer on secret-touching
