@@ -321,16 +321,56 @@ describe("deriveViewDrift", () => {
     expect(findings[0]).toMatch(/Created DESC/);
   });
 
-  test("a view def with no declared sort does not assert one", () => {
+  test("a view def with no declared sort means EXPECT no sort — it is not an opt-out", () => {
+    // Omitting the key must not silently disable the assertion: sort is the one
+    // facet no mutation can repair, so a blind spot here is the worst kind.
     const { sort: _sort, ...noSortDef } = BACKLOG_DEF;
     const board = compliantBoard();
+
+    // Live board also has no sort — matches.
+    expect(
+      deriveViewDrift({
+        ...board,
+        viewDefs: [noSortDef],
+        liveViews: [{ ...liveBacklog(board), sort: [] }],
+      }),
+    ).toEqual([]);
+
+    // Live board HAS a sort the def doesn't declare — now reported, where
+    // previously the assertion was skipped entirely.
     const findings = deriveViewDrift({
       ...board,
       viewDefs: [noSortDef],
-      liveViews: [{ ...liveBacklog(board), sort: [] }],
+      liveViews: [
+        {
+          ...liveBacklog(board),
+          sort: [{ field: "Milestone", direction: "DESC" }],
+        },
+      ],
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatch(/sort is Milestone DESC, expected none/);
+  });
+
+  test("two live views sharing a name are reported — a name-keyed match would check only one", () => {
+    // The API does not constrain view names to be unique, so the duplicate was
+    // neither compared (shadowed in the Map) nor caught by the undeclared-view
+    // check, since its name IS declared.
+    const board = compliantBoard();
+    const findings = deriveViewDrift({
+      ...board,
+      liveViews: [
+        liveBacklog(board),
+        { ...liveBacklog(board), id: "VIEW_DUP" },
+      ],
     });
 
-    expect(findings).toEqual([]);
+    const finding = required(
+      findings.find((message) => /2 views named/.test(message)),
+      "duplicate-name finding",
+    );
+    expect(finding).toContain('"Backlog"');
+    expect(finding).toMatch(/only one of them is being checked/);
   });
 
   test('a missing ISSUE_TYPE field is matched on dataType, not on the name "Type"', () => {

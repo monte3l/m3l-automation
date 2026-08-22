@@ -192,6 +192,27 @@ export function deriveViewDrift({
   const liveByName = new Map(liveViews.map((view) => [view.name, view]));
   const declaredNames = new Set(viewDefs.map((def) => def.name));
 
+  // The API does not constrain view names to be unique, and a Map keyed on name
+  // silently keeps only the last -- so a duplicate is neither compared (it is
+  // shadowed) nor caught by the undeclared-view loop below (its name IS
+  // declared). Reported explicitly rather than left as a hole.
+  if (liveByName.size !== liveViews.length) {
+    const counts = new Map();
+    for (const view of liveViews) {
+      counts.set(view.name, (counts.get(view.name) ?? 0) + 1);
+    }
+    for (const [name, count] of counts) {
+      if (count > 1) {
+        findings.push(
+          `The board has ${count} views named "${name}". View names are not ` +
+            `unique-constrained by the API, and this gate matches views by ` +
+            `name, so only one of them is being checked. Rename or remove the ` +
+            `duplicates by hand.`,
+        );
+      }
+    }
+  }
+
   // Matched on dataType rather than name: it is the only ISSUE_TYPE-typed field
   // a board can have, and matching the name would break under localization —
   // and would let a hand-made single-select called "Type" satisfy it.
@@ -270,9 +291,14 @@ export function deriveViewDrift({
       );
     }
 
+    // Bidirectional, like every other facet here: a def with no `sort` key
+    // means "expect NO sort", not "don't check". Omitting the key must not be a
+    // way to silently disable an assertion -- the same rule
+    // OPTIONAL_COLUMN_EXEMPTIONS enforces for columns, and it matters more here
+    // because no mutation can repair a sort.
     const declaredSort = def.sort ?? [];
     const liveSort = live.sort ?? [];
-    if (declaredSort.length > 0 && !sameSort(liveSort, declaredSort)) {
+    if (!sameSort(liveSort, declaredSort)) {
       findings.push(
         `View "${def.name}" sort is ${formatSort(liveSort)}, expected ` +
           `${formatSort(declaredSort)}. Sort is readable but NOT writable ` +

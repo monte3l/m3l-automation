@@ -143,9 +143,15 @@ function viewColumns(view) {
         `FIELD_WINDOW.`,
     );
   }
-  return nodes
-    .map((field) => field?.name)
-    .filter((name) => typeof name === "string");
+  const names = nodes.map((field) => field?.name);
+  if (names.some((name) => typeof name !== "string")) {
+    throw new Error(
+      `View "${view.name}" returned a visible column with no name. Dropping it ` +
+        `would yield a confident but WRONG column-drift finding, so this fails ` +
+        `instead — the same reason the window guards above are hard errors.`,
+    );
+  }
+  return names;
 }
 
 /**
@@ -348,7 +354,15 @@ export function runHubViewsCheck({ runGh: runGhFn, reporter }) {
       );
     }
 
-    reporter.error(`Board check failed: ${message}`);
+    // Keep the stack for an UNEXPECTED failure: `message` alone is enough for a
+    // `gh` error (ghErrorMessage prefers stderr), but a TypeError from an
+    // unforeseen payload shape is only debuggable with its stack.
+    const stack = cause instanceof Error ? cause.stack : undefined;
+    reporter.error(
+      stack && !stack.startsWith(`Error: ${message}`)
+        ? `Board check failed: ${message}\n${stack}`
+        : `Board check failed: ${message}`,
+    );
     reporter.finish({ findings: [], skipped: false });
     return { ok: false, skipped: false, findings: [] };
   }
