@@ -376,3 +376,63 @@ milestone rename is a `PATCH` by number, so associations survive. Filing under
 the _declared_ title would have failed outright (it does not exist); filing with
 **no** milestone would have been worse than either, because `isDirty` ignores
 milestone and the gap would never have been repaired.
+
+## Update (2026-08-22f): PR 6 shipped — one authoritative view, prunable on request
+
+`VIEW_DEFS` is one entry. Three things the original plan got wrong were
+re-derived from the live board rather than trusted, and all three changed the
+implementation:
+
+**The declaration was 6 columns against 8 live.** `Created` and `Parent issue`
+were already columns but were never declared, so the next `--init --apply` would
+have stripped both — the two columns item 2 asked for. Confirmed after the fact
+by running the new gate (Update 2026-08-22g): the live column set really is
+`Title, Status, Labels, Linked pull requests, Milestone, Parent issue, Created,
+Priority`. Declaring all 9 lands in the same commit as any pruning.
+
+**Pruning is opt-in behind `--prune-views`, not a side effect of `--init
+--apply`.** Deleting a view is irreversible through the API — a Board layout's
+grouping is not settable by any mutation — so it follows the precedent
+`--init-issue-types` and `--retype-closed` already set. Four guards: skipped if
+any declared view failed to reconcile, matched off a re-read rather than the
+stale pre-update map, aborted if the prune set would empty the board, and by
+**id**, never by name.
+
+**`resolveFieldIds` became all-or-nothing.** It warned-and-skipped an
+unresolvable name, which turned one typo in `VIEW_DEFS` into a truncated view —
+the 2026-08-20 Priority-wipe shape, since `visibleFieldIds` is a full replace.
+`OPTIONAL_VIEW_FIELDS` exempts the built-in `Type` column so it stays declared
+without warning on every run.
+
+The plan's stated reason for relocating the three `DESIRED_*_OPTIONS` tables was
+false — no `check:zones` rule covers `bin/`. They moved anyway, on the ground
+that they were the last declared-vocabulary facet inside a runner while
+`LABEL_DEFS`/`MILESTONE_DEFS`/`ISSUE_TYPE_DEFS` all sit in `bin/lib/`, and PR 7's
+gate cannot assert an option set it cannot import.
+
+`Programme` is deferred, and `filing-work.md` had wrongly listed it among the
+fields the sync writes. With slices cut at pickup there are no depth-2 rows, so
+every item's `Parent issue` already _is_ its programme epic. This leaves an
+Accepted ADR's decision (ADR-0073 § `Programme`) unimplemented by design — noted
+in the docs rather than ratified, since ratifying it would want its own ADR.
+
+**Sort loss is now detectable rather than unknowable.** The plan listed this as
+unresolved and offered a scratch board or an instrumented apply. Instrumented
+apply shipped, and it is strictly better than a one-off probe: the runner
+captures the view's sort before the update and re-reads it after, so the answer
+is observed on every run rather than once. On loss it warns with the captured
+field names and directions plus the UI path, never a silent success.
+
+Two test-harness assertions turned out not to be asserting. `isMutatingProjectCall`
+treated any `gh api graphql` as mutating, which was true until `listExistingViews`
+joined the read-only preview path; it now matches `mutation {` exactly. And the
+pre-existing "--init without --apply" test's stub omitted `projectViewRule`, so
+`previewViews` threw at `resolveProjectId` and its whole view branch went
+unexercised behind a green no-mutation assertion.
+
+`tsc -p bin` caught a crash the suite could not: the prune path reported
+`reporter.change("deleted", ...)`, but `createReporter` indexes a fixed
+`{updated,created,removed}` bag, so `report["deleted"].push` would have thrown on
+the first real deletion. The fake reporter accepts any kind, so only the
+type-check saw it. This is the second time the 108-error `tsc -p bin` baseline
+diff has earned its keep — the count is the signal, not zero (tracker item F14).
