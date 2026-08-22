@@ -186,7 +186,7 @@ diagnostics as the tell.
 - **Run `check:test-counts` dead last.** Any test added after `sync:docs`
   invalidates the count while the suite still passes — this bit #215 and twice
   more here. Reconcile counts only after the final test lands.
-- **Executed probes beat read-throughs for correctness bugs.** Every
+- **Executed probes beat read-throughs for correctness bugs.** Every _(promoted → .claude/rules/subagent-dispatch.md)_
   critical/must-fix defect across ADR-0035 phases 2–4a was found by running
   built `dist/`, not by reading the diff; reviewers reading code found the
   design issues, probes found the wrong answers. The silent-failure reviewer's

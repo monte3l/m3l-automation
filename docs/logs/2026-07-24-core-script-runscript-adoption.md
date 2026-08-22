@@ -190,7 +190,7 @@ composite's step order, tracked as an unfiled follow-up in the A4b log.)
   test-author's stale journal TODO made it look unfinished when all four test
   groups were done. Verify disk state directly; read the journal for intent, not
   as proof of completion.
-- **Executed hostile-input probes are the acceptance test for a path-resolution
+- **Executed hostile-input probes are the acceptance test for a path-resolution _(promoted → .claude/rules/subagent-dispatch.md)_
   refactor.** The security reviewer confirmed the traversal/symlink guards held
   by running `"../../../../OUTSIDE"`, absolute paths, NUL, and a planted symlink
   against rebuilt `dist/` and checking the sibling dir stayed empty — a

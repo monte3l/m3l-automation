@@ -181,7 +181,7 @@ verify-then-re-stamp — filed below.)
   decisions (drop the config-file tier; fail loud on bad values) turned a
   "needs new `M3LLogger` API" phase into a constructor-local change. The
   question that most shrinks the work is the one about what _not_ to build.
-- **Executed probes still beat read-throughs for the exit-facing contract.**
+- **Executed probes still beat read-throughs for the exit-facing contract.** _(promoted → .claude/rules/subagent-dispatch.md)_
   The 12 `dist/` child-process probes proved the operator-visible behavior a
   reviewer reading code can't: that an invalid value exits `1` with the code on
   stderr and a custom logger exits `0`. Consistent with every ADR-0035 phase.

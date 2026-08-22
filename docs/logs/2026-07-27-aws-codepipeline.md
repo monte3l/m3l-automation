@@ -179,7 +179,7 @@ graph — not just "happy path + failure path" per field.
   future-server-value lie the module's own enum-asymmetry rule exists to
   avoid. The fix is a runtime `assertKnownEnumValue`-style guard at the write
   boundary, keeping the public type `string` on both directions.
-- **A regression-lock test needs a runtime fixture that actually carries the
+- **A regression-lock test needs a runtime fixture that actually carries the _(promoted → .claude/rules/tests.md)_
   forbidden field, not just a type-level assertion against the declared
   interface.** `expectTypeOf<T>().not.toHaveProperty("secret")` only proves
   the _declared_ type is clean today — it says nothing about what a future

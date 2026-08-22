@@ -144,7 +144,7 @@ pass answers "can I break it?" Only the second one found either defect. On a
 security-sensitive surface, the refute pass is not optional polish — it is the
 step that works.
 
-### 5c. `pnpm typecheck` cannot catch what `pnpm build` catches
+### 5c. `pnpm typecheck` cannot catch what `pnpm build` catches _(promoted → .claude/rules/tests.md)_
 
 The additive `as const satisfies` formulation for `M3LErrorExitCode` passed
 `pnpm typecheck` and failed `pnpm build` with TS9010. `isolatedDeclarations` is
@@ -162,7 +162,7 @@ registry code.
 **Lesson:** for any change touching exported types, `pnpm build` is a distinct
 gate from `pnpm typecheck`, not a slower version of it.
 
-### 6. Three test defects, all passing vacuously
+### 6. Three test defects, all passing vacuously _(promoted → .claude/rules/tests.md)_
 
 - Assertions built on `Extract<>` over an intersection-with-union resolved to
   `never`, so the subjects passed vacuously. **The control assertions caught

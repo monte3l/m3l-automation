@@ -146,7 +146,7 @@ a must-fix fix is itself new code that can introduce new must-fixes. When adding
 state to `M3LScript`, check it against the `resetForInvocation()` contract (reset
 per invocation unless it is deliberately warm-start state like SDK clients).
 
-### 5. A hollow "did you mean" test hid the Damerau-Levenshtein path at ~10% coverage
+### 5. A hollow "did you mean" test hid the Damerau-Levenshtein path at ~10% coverage _(promoted → .claude/rules/tests.md)_
 
 The preset-loader typo-suggestion test built `new M3LScriptPresetLoader()` with no
 schema, so `declaredNames` was empty, `findClosestMatch(key, [])` returned

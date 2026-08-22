@@ -49,6 +49,15 @@ occurrences. The checklist:
   instruction — stop once its checklist is answered rather than re-verifying
   indefinitely; a spoke that never converges is indistinguishable from a
   stalled one.
+- **Two independent review lenses landing on the same line is signal, not
+  redundancy.** Different-lens convergence has repeatedly marked the real
+  defect: error-hierarchy and security reviewers on one unguarded `JSON.parse`
+  (`2026-07-13-scripts-logs-insights.md`), three spokes on one identical bug
+  with one of them finding a subtler second (`2026-07-18-s3-objects.md`), two on
+  a duplicate collaborator construction
+  (`2026-07-26-w5-promote-checkpoint-store.md`). Treat a convergent finding as
+  confirmed and fix it — never discount the second report as a duplicate of the
+  first.
 - **Re-review every substantive fix round, bounded.** Must-fix fixes are new
   writer code with no reviewer between them and the commit; post-review fix
   batches introduced fresh Must-fix defects in at least four pipelines
@@ -57,6 +66,18 @@ occurrences. The checklist:
   focused confirmation pass — the reviewer(s) whose findings drove the fixes,
   scoped to the changed files only, not a fresh full fan-out — before declaring
   the review loop closed.
+- **When a reader and an executor disagree about a guard, the executor wins.** A
+  review spoke reasoning over source answers "does the `try` enclose the call";
+  only one running a probe answers "when is the property actually read".
+  `safeDescribe` was read and cleared by `code-reviewer`, `type-design-analyzer`
+  and `spec-conformance-reviewer`, then broken independently by
+  `silent-failure-hunter` and `security-reviewer` probing built `dist/`
+  (`2026-08-20-a6-pipeline-phase-trace.md`). In
+  `2026-08-19-a4-checkpoint-fingerprint.md` every defect and both regressions
+  were found by probe and none by reading — each lived in the gap between two
+  components' assumptions, which a reader checking each component against its
+  own contract structurally cannot see. So point a refute pass at the **seam,
+  not the diff**, and never let a clean read-through overturn a failing probe.
 - **Hand writer spokes (`test-author`, `code-implementer`) an explicit journal
   path** in the dispatch prompt. `.claude/hooks/guard-writer-dispatch-journal.mjs`
   warns (non-blocking) when one is missing.

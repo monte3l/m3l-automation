@@ -161,7 +161,7 @@ real (non-mock) starting point.
   assertable-as-uncalled AND stubbable-per-test should wrap it as
   `vi.fn(actual.x)` in the `vi.mock` factory from the start, with an explicit
   reset in `afterEach`.
-- **Reviewers converging on the same doc line from different angles finds
+- **Reviewers converging on the same doc line from different angles finds _(promoted → .claude/rules/subagent-dispatch.md)_
   bugs a single reviewer wouldn't.** `code-reviewer` and `security-reviewer`
   both flagged issues rooted in the same contract sentence ("omitting
   `output` logs the result instead of persisting it") but from opposite
@@ -172,7 +172,7 @@ real (non-mock) starting point.
   reveals the full picture; running both reviewers unconditionally on every
   AWS-touching script (per this repo's standing `security-reviewer`-always
   rule) is what surfaced this.
-- **A green test suite doesn't prove full coverage of an exported symbol.**
+- **A green test suite doesn't prove full coverage of an exported symbol.** _(promoted → .claude/rules/tests.md)_
   `code-reviewer`'s Must-fix on the missing `hooks.test.ts` is the concrete
   reminder: `getCorrelationId()` and its one throw path had zero test
   coverage, invisible to any "does the suite pass" check because nothing

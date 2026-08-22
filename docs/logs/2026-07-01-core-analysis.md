@@ -238,7 +238,7 @@ while `HEAD` is `main`, mirroring the existing `dist/`/`version` protections and
 - **Fail loud on caller/config errors, stay lenient only on external data.** A
   `NaN`/empty path that is correct for imported cell data is a silent-failure bug
   when applied to a caller-authored value — validate rule inputs at the boundary.
-- **Multi-lens review fan-out catches convergent defects.** Running
+- **Multi-lens review fan-out catches convergent defects.** Running _(promoted → .claude/rules/subagent-dispatch.md)_
   type-design + silent-failure + code-review + conformance in parallel surfaced
   one real Must-fix that three lenses independently confirmed; keep that quartet
   on any module with coercion/comparison logic.

@@ -72,7 +72,7 @@ interface. Resolved as a `record()`-shaped sink.
 impossible. Check the conjunction against the code's actual state ordering before
 treating a signature as settled.
 
-### 3. Three reviewers read the guard and called it sound; two that executed broke it
+### 3. Three reviewers read the guard and called it sound; two that executed broke it _(promoted → .claude/rules/subagent-dispatch.md)_
 
 The critical defect: `safeDescribe` guarded the _call_ to `describe`, but the
 returned object's property reads happened later during payload assembly, outside
@@ -168,7 +168,7 @@ than resuming, and gave a result I had verified myself rather than been told.
 **Lesson:** when a spoke truncates, check whether what remains is work or
 verification. Verification is cheaper to do than to delegate again.
 
-### 9. A near-vacuous security test, avoided by one observation
+### 9. A near-vacuous security test, avoided by one observation _(promoted → .claude/rules/tests.md)_
 
 The dangerous-key test would have passed for the wrong reason: a literal
 `__proto__:` key in an object literal sets the created object's prototype instead

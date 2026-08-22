@@ -58,7 +58,7 @@ The first full-implementation dispatch (SQS + Athena types/client/template/error
 
 **Fix for future:** For a multi-file, multi-symbol dispatch, consider explicitly sequencing the final "wire the barrel and verify" step as its own numbered item in the prompt with its own verification command, so a truncation mid-verification still leaves the wiring done — this wave's dispatches already ask for a journal, which is what made the truncations cheap to recover from; the barrel-wiring step specifically seems to be the one most often left for last and most often where truncation lands.
 
-### 4. A confirmation re-review caught a residual security leak the first fix round missed entirely
+### 4. A confirmation re-review caught a residual security leak the first fix round missed entirely _(promoted → .claude/rules/subagent-dispatch.md)_
 
 The first-pass `security-reviewer` flagged that `redrive`'s defensive exhaustive-switch throw embedded the whole caller-returned decision object in its error `message`. The fix round correctly scoped the `message` text to just the `action` field — but left `{ cause: exhaustive }` unchanged, still chaining the entire original value. The **confirmation** re-review (explicitly dispatched per the skill's "re-review every substantive fix round" rule) caught this on its own initiative, demonstrating via an executed probe that `error.toJSON()`/`console.error(error)` still leaked the planted secret through the `cause` channel even though `error.message` was now clean.
 
@@ -66,7 +66,7 @@ The first-pass `security-reviewer` flagged that `redrive`'s defensive exhaustive
 
 **Fix for future:** This is a second, independent confirmation of the existing `.claude/rules/library-src.md` "per-channel audit" rule (a security claim proven for one observable channel — `message`, a resolved value — is not automatically true for another — `cause`, `toJSON()`, console inspection). When a security finding involves an error object, the fix-round dispatch should explicitly ask the implementer to check every field being set on the thrown error (`message`, `cause`, `context`), not just the one the original finding named — and the confirmation re-review after any security fix round is not a formality; it found a real, un-caught defect here.
 
-### 5. The regression test for finding #4 initially didn't guard the vulnerability it was meant to catch
+### 5. The regression test for finding #4 initially didn't guard the vulnerability it was meant to catch _(promoted → .claude/rules/tests.md)_
 
 The first version of the leak-regression test used an object-shaped malformed decision (`{ action: "bogus", leakedSecret: SECRET }`). `String()` on a plain object already evaluates to `"[object Object]"` in JavaScript regardless of the fix, so this test would have passed against both the buggy and the fixed implementation — it didn't discriminate. The confirmation re-review's replay of the pre-fix behavior against this exact fixture surfaced the gap; the fixture was then changed to a bare string decision (`String(secretString) === secretString`, which does discriminate the fix) in a follow-up `test-author` dispatch.
 
