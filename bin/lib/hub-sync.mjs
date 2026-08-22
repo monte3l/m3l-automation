@@ -503,6 +503,163 @@ export function parseHubMarker(body) {
 }
 
 /**
+ * The derived epic issue each tracker section rolls its items up into
+ * (ADR-0073). Keyed by declared *section*, not by issue-key namespace —
+ * ROADMAP Priority 1's rows namespace themselves per wave (`roadmap:W3:...`,
+ * from each row's own Wave cell), so keying epics off the namespace would
+ * scatter one documented section across seven epics.
+ *
+ * The `epic:` prefix keeps these outside every `impl:`/`roadmap:` namespace,
+ * so an epic can never collide with a real tracker row's key.
+ *
+ * @example
+ * ```js
+ * import { EPIC_KEYS } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ *
+ * EPIC_KEYS.consoleWave; // "epic:impl:console"
+ * ```
+ */
+export const EPIC_KEYS = {
+  roadmapP0: "epic:roadmap:p0",
+  roadmapP1: "epic:roadmap:p1",
+  roadmapGovernance: "epic:roadmap:gov",
+  friction: "epic:impl:friction",
+  adr0035Rollout: "epic:impl:adr0035",
+  capabilityDeepeningWave: "epic:impl:capability",
+  postComparisonHardeningWave: "epic:impl:hardening",
+  m3lCliBuildOut: "epic:impl:cli",
+  cliEvolutionWave: "epic:impl:cli-evolution",
+  agentOperatorWave: "epic:impl:agent-operator",
+  consoleWave: "epic:impl:console",
+  codifiedProcedureWave: "epic:impl:procedure",
+  gated: "epic:impl:gated",
+};
+
+// One def per EPIC_KEYS entry. `type` is the section's own default Issue
+// Type, so an epic reads as the same kind of work it groups.
+const EPIC_DEFS = [
+  {
+    key: EPIC_KEYS.roadmapP0,
+    title: "Epic — Priority 0: library hardening",
+    type: TYPE_BY_ROADMAP_SECTION.p0,
+    sourcePath: ROADMAP_PATH,
+    sourceAnchor: ROADMAP_ANCHORS.p0,
+  },
+  {
+    key: EPIC_KEYS.roadmapP1,
+    title: "Epic — Priority 1: consumer fleet",
+    type: TYPE_BY_ROADMAP_SECTION.p1,
+    sourcePath: ROADMAP_PATH,
+    sourceAnchor: ROADMAP_ANCHORS.p1,
+  },
+  {
+    key: EPIC_KEYS.roadmapGovernance,
+    title: "Epic — Governance follow-ups",
+    type: TYPE_BY_ROADMAP_SECTION.governance,
+    sourcePath: ROADMAP_PATH,
+    sourceAnchor: ROADMAP_ANCHORS.governance,
+  },
+  ...[
+    ["friction", "Epic — Library friction (F-series)"],
+    ["adr0035Rollout", "Epic — ADR-0035 rollout"],
+    ["capabilityDeepeningWave", "Epic — Capability-deepening wave"],
+    ["postComparisonHardeningWave", "Epic — Post-comparison hardening wave"],
+    ["m3lCliBuildOut", "Epic — m3l-cli build-out"],
+    ["cliEvolutionWave", "Epic — CLI evolution wave (U-series)"],
+    ["agentOperatorWave", "Epic — Agent-operator wave (V-series)"],
+    ["consoleWave", "Epic — m3l console wave (X-series)"],
+    ["codifiedProcedureWave", "Epic — Codified-procedure engine wave"],
+    ["gated", "Epic — Gated library modules & deferred decisions"],
+  ].map(([section, title]) => ({
+    key: EPIC_KEYS[section],
+    title,
+    type: TYPE_BY_IMPLEMENTATION_SECTION[section],
+    sourcePath: IMPLEMENTATION_PATH,
+    sourceAnchor: IMPLEMENTATION_ANCHORS[section],
+  })),
+];
+
+// Every EPIC_KEYS entry needs a def, or a section's items would carry a
+// parentKey pointing at an epic nothing ever emits — leaving planParentLinks
+// reporting them `pending` forever. Asserted at module load.
+for (const key of Object.values(EPIC_KEYS)) {
+  if (!EPIC_DEFS.some((def) => def.key === key)) {
+    throw new Error(
+      `EPIC_KEYS has "${key}" with no EPIC_DEFS entry — items pointing at it ` +
+        `would wait on an epic that is never emitted.`,
+    );
+  }
+}
+
+// A status is "resolved" when its item needs no further work: the two states
+// planIssueSync closes an issue for.
+const RESOLVED_STATUSES = new Set(["done", "rejected"]);
+
+/**
+ * Fold an epic's children into the epic's own status: whichever unresolved
+ * state comes first in `in-progress` -> `todo` -> `blocked` -> `deferred`.
+ * The order answers "is there startable work here", which is what a reader
+ * scanning the board wants from a grouping row.
+ *
+ * Never returns a resolved status, because an epic with no unresolved
+ * children is not emitted at all (see {@link actionableItems}) — so `done`
+ * is unreachable by construction rather than merely unused.
+ *
+ * @param {{ status: string }[]} children
+ * @returns {"in-progress" | "todo" | "blocked" | "deferred"}
+ * @example
+ * ```js
+ * import { epicStatus } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ *
+ * epicStatus([{ status: "done" }, { status: "blocked" }]); // "blocked"
+ * ```
+ */
+export function epicStatus(children) {
+  const unresolved = children
+    .map((child) => child.status)
+    .filter((status) => !RESOLVED_STATUSES.has(status));
+  for (const candidate of ["in-progress", "todo", "blocked", "deferred"]) {
+    if (unresolved.includes(candidate)) return candidate;
+  }
+  return "todo";
+}
+
+// Tier order for epicPriority's fold. Governance ranks last because it is a
+// category rather than a tier (ADR-0051) — an epic mixing governance rows
+// with real tiered work should read as the tiered work.
+const PRIORITY_RANK = { p0: 0, p1: 1, p2: 2, p3: 3, governance: 4 };
+
+/**
+ * Fold an epic's children into the epic's own priority: the most urgent tier
+ * any **unresolved** child carries. Resolved children are excluded so a
+ * finished `p0` item cannot keep an epic pinned at the top of a
+ * Priority-ascending board view long after its remaining work dropped to
+ * `p2`.
+ *
+ * @param {{ status: string, priority: string }[]} children
+ * @returns {"p0" | "p1" | "p2" | "p3" | "governance"}
+ * @example
+ * ```js
+ * import { epicPriority } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ *
+ * epicPriority([{ status: "todo", priority: "p2" }, { status: "todo", priority: "p1" }]); // "p1"
+ * ```
+ */
+export function epicPriority(children) {
+  const unresolved = children.filter(
+    (child) => !RESOLVED_STATUSES.has(child.status),
+  );
+  const pool = unresolved.length > 0 ? unresolved : children;
+  let best = "governance";
+  for (const child of pool) {
+    if (PRIORITY_RANK[child.priority] < PRIORITY_RANK[best]) {
+      best = child.priority;
+    }
+  }
+  return best;
+}
+
+/**
  * @typedef {{
  *   key: string,
  *   title: string,
@@ -680,6 +837,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[whatIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Roadmap"),
         priority: "p0",
+        parentKey: EPIC_KEYS.roadmapP0,
         type: resolveType(header, row, TYPE_BY_ROADMAP_SECTION.p0, key),
         sourcePath: ROADMAP_PATH,
         sourceAnchor: ROADMAP_ANCHORS.p0,
@@ -702,6 +860,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${wave} — ${scripts}`,
         status: resolveStatus(row[statusIndex], key, "Roadmap"),
         priority: "p1",
+        parentKey: EPIC_KEYS.roadmapP1,
         type: resolveType(header, row, TYPE_BY_ROADMAP_SECTION.p1, key),
         sourcePath: ROADMAP_PATH,
         sourceAnchor: ROADMAP_ANCHORS.p1,
@@ -728,6 +887,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[whatIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Roadmap"),
         priority: "governance",
+        parentKey: EPIC_KEYS.roadmapGovernance,
         type: resolveType(header, row, TYPE_BY_ROADMAP_SECTION.governance, key),
         sourcePath: ROADMAP_PATH,
         sourceAnchor: ROADMAP_ANCHORS.governance,
@@ -750,6 +910,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedId} — ${row[titleIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
+        parentKey: EPIC_KEYS.friction,
         type: resolveType(
           header,
           row,
@@ -778,6 +939,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedPhase} — ${row[changeIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
+        parentKey: EPIC_KEYS.adr0035Rollout,
         type: resolveType(
           header,
           row,
@@ -806,6 +968,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
+        parentKey: EPIC_KEYS.capabilityDeepeningWave,
         type: resolveType(
           header,
           row,
@@ -834,6 +997,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
+        parentKey: EPIC_KEYS.postComparisonHardeningWave,
         type: resolveType(
           header,
           row,
@@ -862,6 +1026,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
+        parentKey: EPIC_KEYS.m3lCliBuildOut,
         type: resolveType(
           header,
           row,
@@ -900,6 +1065,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
+        parentKey: EPIC_KEYS.cliEvolutionWave,
         type: resolveType(
           header,
           row,
@@ -932,6 +1098,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
+        parentKey: EPIC_KEYS.agentOperatorWave,
         type: resolveType(
           header,
           row,
@@ -964,6 +1131,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
+        parentKey: EPIC_KEYS.consoleWave,
         type: resolveType(
           header,
           row,
@@ -995,6 +1163,7 @@ export function actionableItems(roadmap, implementation) {
         title: `${strippedItem} — ${row[changeIndex] ?? ""}`,
         status: resolveStatus(row[statusIndex], key, "Implementation"),
         priority: resolvePriority(row[priorityIndex], key),
+        parentKey: EPIC_KEYS.codifiedProcedureWave,
         type: resolveType(
           header,
           row,
@@ -1028,6 +1197,7 @@ export function actionableItems(roadmap, implementation) {
         // "real work, not yet scheduled, nothing blocking it", which is the
         // opposite of every row here.
         priority: "p3",
+        parentKey: EPIC_KEYS.gated,
         type: resolveType(
           header,
           row,
@@ -1040,6 +1210,49 @@ export function actionableItems(roadmap, implementation) {
         detail: buildDetail(header, row, new Set([idIndex, statusIndex])),
       });
     }
+  }
+
+  // Derived epics, appended after every section so each can see its children.
+  //
+  // Emitted only when a section still has UNRESOLVED work. The alternative —
+  // emit whenever a section has any child — was measured against the real
+  // trackers and produces 19 epics, 12 of which would be created and closed
+  // in the same breath because their sections are fully shipped. Those 12
+  // never appear on the board (its view filters `is:open`), so they are pure
+  // issue-feed noise. With this guard the same trackers yield 7 epics, all of
+  // them grouping live work.
+  //
+  // The trade-off, stated because it is not obvious: when a section's last
+  // item lands, its epic stops being emitted, so planIssueSync closes it via
+  // the vanished-item path and its close comment reads "removed from source
+  // trackers" rather than "completed". The behaviour is right (a grouping row
+  // with nothing left to group should close); only the reason string is
+  // imprecise, and an epic is derived scaffolding rather than tracked work.
+  for (const def of EPIC_DEFS) {
+    const children = items.filter((item) => item.parentKey === def.key);
+    const unresolved = children.filter(
+      (child) => !RESOLVED_STATUSES.has(child.status),
+    );
+    if (unresolved.length === 0) continue;
+
+    addItem({
+      key: def.key,
+      title: def.title,
+      status: epicStatus(children),
+      priority: epicPriority(children),
+      type: def.type,
+      sourcePath: def.sourcePath,
+      sourceAnchor: def.sourceAnchor,
+      isEpic: true,
+      // Deliberately does NOT enumerate its children. GitHub renders the
+      // sub-issue list and progress bar itself, and an enumeration here
+      // would make every child edit rewrite this epic's body.
+      detail:
+        `Derived grouping issue for this tracker section — not itself a unit of work. ` +
+        `Its children are linked as sub-issues by \`pnpm sync:hub-issues --apply\`; ` +
+        `GitHub renders the list and progress. Closes when the section has no ` +
+        `unresolved rows left.`,
+    });
   }
 
   return { items, warnings, duplicateKeys };
@@ -1327,6 +1540,105 @@ export function indexItemsByKey(items) {
 }
 
 /**
+ * Plan the GitHub sub-issue links that make each item a child of its
+ * section's epic (ADR-0073).
+ *
+ * `Parent issue` on the board needs **no board write at all** — it is a
+ * read-only projection of the issue's own parent relationship, so setting the
+ * link is enough for the column to fill in.
+ *
+ * Returns three buckets:
+ *
+ * - `set` — the issue exists, its epic exists, and its current parent differs
+ *   from the epic (including having none).
+ * - `clear` — the issue has a parent but its item declares none, so the link
+ *   is stale.
+ * - `pending` — the item's epic has no issue yet, typically because this is
+ *   the run that will create it. **Not drift.** Callers must keep it out of
+ *   any is-the-plan-empty test: a pending link always coexists with a
+ *   non-empty create plan, so counting it would double-report, and counting
+ *   it when the epic genuinely cannot be resolved would make the drift gate
+ *   unfixable. Each entry carries the child's own issue `number` so an
+ *   `--apply` run can link it the moment it files the epic, converging in one
+ *   run instead of requiring a second.
+ *
+ * Epics themselves are skipped — an epic never gets a parent, so the
+ * hierarchy stays exactly two levels deep.
+ *
+ * Resolution goes through {@link indexItemsByKey}, so an issue whose marker
+ * still carries a legacy key resolves to its current item rather than reading
+ * as parentless.
+ *
+ * @param {Item[]} items
+ * @param {{ number: number, body: string, state: string, parentNumber: number | null }[]} existingIssues
+ * @returns {{ set: { number: number, key: string, parentNumber: number, parentKey: string }[], clear: { number: number, key: string }[], pending: { number: number, key: string, parentKey: string }[] }}
+ * @example
+ * ```js
+ * import { planParentLinks } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ *
+ * planParentLinks(items, existingIssues);
+ * // { set: [{ number: 526, key: "impl:cli-evolution:u2", parentNumber: 700, parentKey: "epic:impl:cli-evolution" }], clear: [], pending: [] }
+ * ```
+ */
+export function planParentLinks(items, existingIssues) {
+  const itemByKey = indexItemsByKey(items);
+
+  // Marker -> issue number, for every marker-bearing issue. Built from the
+  // resolved item's CURRENT key so a legacy-marker issue is still findable as
+  // its item's parent target.
+  const numberByKey = new Map();
+  const issueByKey = new Map();
+  for (const issue of existingIssues) {
+    const marker = parseHubMarker(issue.body);
+    if (marker === null) continue;
+    const item = itemByKey.get(marker);
+    const key = item ? item.key : marker;
+    numberByKey.set(key, issue.number);
+    issueByKey.set(key, issue);
+  }
+
+  const set = [];
+  const clear = [];
+  const pending = [];
+
+  for (const item of items) {
+    if (item.isEpic) continue;
+
+    const issue = issueByKey.get(item.key);
+    // No issue yet: its create will carry --parent, so there is nothing to
+    // reconcile here.
+    if (issue === undefined) continue;
+    // A closed issue's parent is left alone — relinking historical issues is
+    // churn with no reader.
+    if (issue.state === "closed") continue;
+
+    const parentKey = item.parentKey;
+    if (parentKey === undefined) {
+      if (issue.parentNumber !== null) {
+        clear.push({ number: issue.number, key: item.key });
+      }
+      continue;
+    }
+
+    const parentNumber = numberByKey.get(parentKey);
+    if (parentNumber === undefined) {
+      pending.push({ number: issue.number, key: item.key, parentKey });
+      continue;
+    }
+    if (issue.parentNumber !== parentNumber) {
+      set.push({
+        number: issue.number,
+        key: item.key,
+        parentNumber,
+        parentKey,
+      });
+    }
+  }
+
+  return { set, clear, pending };
+}
+
+/**
  * Plan the create/update/close/reopen actions that bring `existingIssues`
  * into sync with `items`. Matching is **only** by
  * `parseHubMarker(issue.body) === item.key` — never by title or label — so a
@@ -1456,7 +1768,15 @@ export function planIssueSync(items, existingIssues) {
 
   for (const item of items) {
     if (matchedKeys.has(item.key) || isResolved(item.status)) continue;
-    create.push({ key: item.key, payload: buildIssuePayload(item) });
+    // `isEpic` and `parentKey` ride along so the runner can create epics
+    // first and pass `--parent` on each child's create — a link established
+    // at create time needs no follow-up reconciliation pass.
+    create.push({
+      key: item.key,
+      payload: buildIssuePayload(item),
+      ...(item.isEpic === true && { isEpic: true }),
+      ...(item.parentKey !== undefined && { parentKey: item.parentKey }),
+    });
   }
 
   return { create, update, close, reopen, untouched };
@@ -1710,6 +2030,14 @@ export function planBackfill(items, existingIssues, { threshold = 0.85 } = {}) {
   const create = [];
   const needsReview = [];
 
+  // Epics are derived scaffolding, never historical work: an epic is only
+  // emitted while its section still has unresolved rows, so a "historical"
+  // epic cannot exist by construction. Backfilling one would file a closed
+  // issue for a grouping row that never had a life of its own, and the fuzzy
+  // title match below would happily pair "Epic — Library friction" with a
+  // real friction issue.
+  const backfillable = items.filter((item) => item.isEpic !== true);
+
   const markedKeys = new Set(
     existingIssues
       .map((issue) => parseHubMarker(issue.body))
@@ -1726,7 +2054,7 @@ export function planBackfill(items, existingIssues, { threshold = 0.85 } = {}) {
       .filter((key) => key !== undefined),
   );
 
-  for (const item of items) {
+  for (const item of backfillable) {
     if (!isResolved(item.status) || markedItemKeys.has(item.key)) continue;
 
     const payload = buildIssuePayload(item);

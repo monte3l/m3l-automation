@@ -454,7 +454,7 @@ function issueListSyncRule(issues: unknown[]): GhRule {
     match: (a) =>
       a[0] === "issue" &&
       a[1] === "list" &&
-      a.includes("number,title,body,state,labels,issueType"),
+      a.includes("number,title,body,state,labels,issueType,parent"),
     respond: () => JSON.stringify(issues),
   };
 }
@@ -485,7 +485,7 @@ function issueListAllRule(issues: unknown[]): GhRule {
     match: (a) =>
       a[0] === "issue" &&
       a[1] === "list" &&
-      a.includes("number,title,body,state,labels,issueType") &&
+      a.includes("number,title,body,state,labels,issueType,parent") &&
       !a.includes("--label"),
     respond: () => JSON.stringify(issues),
   };
@@ -499,7 +499,7 @@ function issueListLabeledRule(issues: unknown[]): GhRule {
     match: (a) =>
       a[0] === "issue" &&
       a[1] === "list" &&
-      a.includes("number,title,body,state,labels,issueType") &&
+      a.includes("number,title,body,state,labels,issueType,parent") &&
       a.includes("--label"),
     respond: () => JSON.stringify(issues),
   };
@@ -728,7 +728,10 @@ describe("runIssueSync", () => {
     expect(reporter.finishedWith).toMatchObject({
       applied: false,
       milestones: { create: 4 },
-      issues: { create: 5, update: 0, close: 0, reopen: 0, untouched: 0 },
+      // 5 tracker rows (P0A, W1, D1, T1, F1) + 5 derived epics (one per
+      // section, each with exactly one unresolved child — see ADR-0073's
+      // actionableItems epic-emission guard).
+      issues: { create: 10, update: 0, close: 0, reopen: 0, untouched: 0 },
     });
   });
 
@@ -795,7 +798,9 @@ describe("runIssueSync", () => {
     // gated/deferred — one per priority/type actually present among this
     // fixture's items.
     expect(milestoneCreateCalls).toHaveLength(4);
-    expect(issueCreateCalls).toHaveLength(5);
+    // 5 tracker rows + 5 derived epics (ADR-0073) — see the dry-run test's
+    // comment for the exact accounting.
+    expect(issueCreateCalls).toHaveLength(10);
 
     const firstLabelIndex = calls.findIndex((a) => a[0] === "label");
     const firstMilestoneCreateIndex = calls.findIndex(
@@ -895,25 +900,42 @@ describe("runIssueSync", () => {
     const reopenCalls = calls.filter(
       (a) => a[0] === "issue" && a[1] === "reopen",
     );
-    // W1, T1, F1, D1-gated-thing have no matched issue yet.
-    expect(createCalls).toHaveLength(4);
+    // W1, T1, F1, D1-gated-thing have no matched issue yet (4), plus the 5
+    // derived epics this fixture's sections still have unresolved rows for —
+    // roadmapP0 (UA/UC To Do), roadmapP1 (W1), roadmapGovernance (T1), friction
+    // (F1), and gated (D1) — none of which has a scripted issue either
+    // (ADR-0073). 4 + 5 = 9.
+    expect(createCalls).toHaveLength(9);
     // UA's stale body/title (1) + UB's pre-close label-only sync (1, ADR-0052's
     // 2026-08-20 Update: UB (302) is transitioning to Done and its existing
     // labels ["hub-sync", "priority:0-now"] are stale relative to the new
     // unconditional type:*/status:* labels, so planIssueSync's close entry
     // carries labelsStale: true and the runner syncs labels before closing,
     // since `gh issue close` cannot set labels itself) + UC's
-    // reopen-triggered re-edit (1).
-    expect(editCalls).toHaveLength(3);
+    // reopen-triggered re-edit (1) + planParentLinks' follow-up --parent edit
+    // for UA (301) and UB (302) — both existing (not newly-created-this-run)
+    // OPEN issues whose item now carries a parentKey (roadmapP0's freshly
+    // created epic), so their sub-issue link is set via a separate `gh issue
+    // edit --parent` call. UC (303) is excluded: it started CLOSED, and
+    // planParentLinks deliberately leaves a closed issue's parent alone. 1 +
+    // 1 + 1 + 2 = 5.
+    expect(editCalls).toHaveLength(5);
 
-    // The label-only sync call carries no --title/--body — distinguishing it
-    // from the other two edits, which always set both.
+    // The parent-link-only edits carry no --title and no --add-label, so
+    // excluding them from the label-only bucket (which is UB's --add-label
+    // sync, also title-less) keeps the two buckets distinguishing what they
+    // always did: "sets title/body" vs. "label-only sync", with the new
+    // parent-link edits tracked separately.
+    const parentOnlyEditCalls = editCalls.filter(
+      (a) => a.includes("--parent") && !a.includes("--add-label"),
+    );
     const labelOnlyEditCalls = editCalls.filter(
-      (a) => argAfter(a, "--title") === undefined,
+      (a) => argAfter(a, "--title") === undefined && a.includes("--add-label"),
     );
     const fullEditCalls = editCalls.filter(
       (a) => argAfter(a, "--title") !== undefined,
     );
+    expect(parentOnlyEditCalls).toHaveLength(2);
     expect(labelOnlyEditCalls).toHaveLength(1);
     expect(fullEditCalls).toHaveLength(2);
     const labelSyncCall = required(
@@ -979,7 +1001,7 @@ describe("runIssueSync", () => {
 
     expect(reporter.finishedWith).toMatchObject({
       applied: true,
-      issues: { create: 4, update: 1, close: 1, reopen: 1 },
+      issues: { create: 9, update: 1, close: 1, reopen: 1 },
     });
   });
 
@@ -1153,10 +1175,15 @@ describe("runIssueSync", () => {
     );
     expect(reporter.succeeded).toEqual([]);
     expect(calls.every((args) => !isMutatingIssueCall(args))).toBe(true);
+    // The default fixtures (makeReadDoc()) carry 5 base items — P0A, W1, T1,
+    // F1, D1-gated-thing — plus the 5 derived epics their sections each still
+    // have unresolved rows for (roadmapP0, roadmapP1, roadmapGovernance,
+    // friction, gated), and the issue list is empty, so every one of the 10
+    // is a create (ADR-0073). 5 + 5 = 10.
     expect(reporter.finishedWith).toMatchObject({
       applied: false,
       milestones: { create: 4 },
-      issues: { create: 5 },
+      issues: { create: 10 },
     });
   });
 
@@ -1166,6 +1193,11 @@ describe("runIssueSync", () => {
       EMPTY_IMPLEMENTATION_FIXTURE,
     );
     const payload = buildIssuePayload(required(items[0], "items[0]"));
+    // items[1] is the derived roadmap-P0 epic (ADR-0073) — it must already
+    // have its own issue too, and the child's scripted issue must already
+    // carry `parent: { number: <epic's number> }`, or planParentLinks sees
+    // a link still to set/clear and the plan is not empty.
+    const epicPayload = buildIssuePayload(required(items[1], "items[1]"));
     const existingIssues = [
       {
         number: 701,
@@ -1174,6 +1206,16 @@ describe("runIssueSync", () => {
         state: "OPEN",
         labels: payload.labels.map((name) => ({ name })),
         issueType: { name: payload.type },
+        parent: { number: 702 },
+      },
+      {
+        number: 702,
+        title: epicPayload.title,
+        body: epicPayload.body,
+        state: "OPEN",
+        labels: epicPayload.labels.map((name) => ({ name })),
+        issueType: { name: epicPayload.type },
+        parent: null,
       },
     ];
     // The p0 milestone must be an EXACT match — number, title, AND
@@ -1213,10 +1255,12 @@ describe("runIssueSync", () => {
       reporter.succeeded.some((message) => /drift check passed/i.test(message)),
     ).toBe(true);
     expect(calls.every((args) => !isMutatingIssueCall(args))).toBe(true);
+    // Both the P0 row's issue AND its derived epic issue (ADR-0073) already
+    // exist and match, so both land in `untouched` — 2, not 1.
     expect(reporter.finishedWith).toMatchObject({
       applied: false,
       milestones: { create: 0 },
-      issues: { create: 0, update: 0, close: 0, reopen: 0, untouched: 1 },
+      issues: { create: 0, update: 0, close: 0, reopen: 0, untouched: 2 },
     });
   });
 
@@ -1402,6 +1446,11 @@ describe("runIssueSync", () => {
       EMPTY_IMPLEMENTATION_FIXTURE,
     );
     const payload = buildIssuePayload(required(items[0], "items[0]"));
+    // items[1] is the derived roadmap-P0 epic (ADR-0073) — it must already
+    // have its own issue too, and the child's scripted issue must already
+    // carry `parent: { number: <epic's number> }`, or planParentLinks sees
+    // a link still to set/clear and the plan is not empty.
+    const epicPayload = buildIssuePayload(required(items[1], "items[1]"));
     const existingIssues = [
       {
         number: 701,
@@ -1410,6 +1459,16 @@ describe("runIssueSync", () => {
         state: "OPEN",
         labels: payload.labels.map((name) => ({ name })),
         issueType: { name: payload.type },
+        parent: { number: 702 },
+      },
+      {
+        number: 702,
+        title: epicPayload.title,
+        body: epicPayload.body,
+        state: "OPEN",
+        labels: epicPayload.labels.map((name) => ({ name })),
+        issueType: { name: epicPayload.type },
+        parent: null,
       },
     ];
     const p0Def = milestoneDef("p0");
@@ -1626,6 +1685,10 @@ describe("runIssueSync", () => {
       issueListSyncRule(existingIssues),
       labelCreateRule(),
       milestoneCreateRule(),
+      // The roadmap-P0 epic (ADR-0073) has no existing issue in this
+      // fixture, so --apply must file it (and then link UE under it) before
+      // any of this test's own assertions run.
+      issueCreateRule(),
       issueEditRule(),
     ]);
     const reporter = createFakeReporter();
@@ -1653,6 +1716,256 @@ describe("runIssueSync", () => {
       .map((index) => editCall?.[index + 1]);
     expect(removedLabels).toEqual(["status:blocked"]);
     expect(removedLabels).not.toContain("priority:0-now");
+  });
+
+  // -------------------------------------------------------------------------
+  // ADR-0073 sub-issue hierarchy — epic-first create ordering, one-run
+  // convergence, and the dry-run drift verdict's set/pending asymmetry.
+  // CHECK_EMPTY_ROADMAP_FIXTURE + EMPTY_IMPLEMENTATION_FIXTURE is the
+  // smallest fixture that emits a hierarchy: exactly one real row
+  // (roadmap:p0:ck1) plus its derived epic (epic:roadmap:p0).
+  //
+  // `issueCreateRule` always returns the SAME number for every create, which
+  // can't discriminate "the child's --parent carries the epic's own
+  // just-returned number" from "the child's --parent carries some hardcoded
+  // constant". This local variant hands out distinct, increasing numbers
+  // instead, one per call, in create order.
+  // -------------------------------------------------------------------------
+
+  function sequencedIssueCreateRule(startNumber: number): GhRule {
+    let next = startNumber;
+    return {
+      match: (a) => a[0] === "issue" && a[1] === "create",
+      respond: () => {
+        const number = next;
+        next += 1;
+        return `https://github.com/${REPO}/issues/${String(number)}\n`;
+      },
+    };
+  }
+
+  test("--apply: an epic's create precedes its child's, and the child's create carries --parent <the epic's returned number>", () => {
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      milestonesGetRule([]),
+      issueListSyncRule([]),
+      labelCreateRule(),
+      milestoneCreateRule(),
+      sequencedIssueCreateRule(800),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueSync({
+      runGh,
+      reporter,
+      apply: true,
+      readDoc: makeReadDoc(
+        CHECK_EMPTY_ROADMAP_FIXTURE,
+        EMPTY_IMPLEMENTATION_FIXTURE,
+      ),
+    });
+
+    expect(outcome.ok).toBe(true);
+    const createCalls = calls.filter(
+      (a) => a[0] === "issue" && a[1] === "create",
+    );
+    expect(createCalls).toHaveLength(2);
+
+    // The epic itself has no parentKey, so its own create carries no
+    // --parent flag; the child's does.
+    const epicCreateCall = required(
+      createCalls.find((a) => !a.includes("--parent")),
+      "epic create call (no --parent)",
+    );
+    const childCreateCall = required(
+      createCalls.find((a) => a.includes("--parent")),
+      "child create call (with --parent)",
+    );
+
+    const epicCreateIndex = calls.indexOf(epicCreateCall);
+    const childCreateIndex = calls.indexOf(childCreateCall);
+    expect(epicCreateIndex).toBeGreaterThanOrEqual(0);
+    expect(epicCreateIndex).toBeLessThan(childCreateIndex);
+
+    // sequencedIssueCreateRule(800) hands out 800 to whichever create call
+    // happens first — asserting it against the epic call specifically (not
+    // just "the number 800") ties this to the real mechanism: the child's
+    // --parent is populated from numberByKey, which was seeded from the
+    // epic's own just-returned create number.
+    expect(argAfter(childCreateCall, "--parent")).toBe("800");
+  });
+
+  test("--apply: a single run both files a missing epic AND links its pre-existing child under it, converging in one pass instead of two", () => {
+    // Without this ordering (epic create -> resolve `parentPlan.pending`
+    // against the freshly-created epic's number, all inside the same
+    // --apply), a first-time sync would leave the child unlinked until a
+    // second --apply run resolved it.
+    const items = computeItems(
+      CHECK_EMPTY_ROADMAP_FIXTURE,
+      EMPTY_IMPLEMENTATION_FIXTURE,
+    );
+    const payload = buildIssuePayload(required(items[0], "items[0]"));
+    // The child already has an issue, with a marker-matching, otherwise
+    // fully in-sync title/body/labels/type — so nothing but the sub-issue
+    // link is outstanding for it. No issue is scripted for the epic at all:
+    // it does not exist yet.
+    const existingIssues = [
+      {
+        number: 950,
+        title: payload.title,
+        body: payload.body,
+        state: "OPEN",
+        labels: payload.labels.map((name) => ({ name })),
+        issueType: { name: payload.type },
+        parent: null,
+      },
+    ];
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      milestonesGetRule([]),
+      issueListSyncRule(existingIssues),
+      labelCreateRule(),
+      milestoneCreateRule(),
+      issueCreateRule(900),
+      issueEditRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueSync({
+      runGh,
+      reporter,
+      apply: true,
+      readDoc: makeReadDoc(
+        CHECK_EMPTY_ROADMAP_FIXTURE,
+        EMPTY_IMPLEMENTATION_FIXTURE,
+      ),
+    });
+
+    expect(outcome.ok).toBe(true);
+
+    const epicCreateCall = required(
+      calls.find((a) => a[0] === "issue" && a[1] === "create"),
+      "epic create call",
+    );
+    const parentLinkEditCall = required(
+      calls.find(
+        (a) =>
+          a[0] === "issue" &&
+          a[1] === "edit" &&
+          a[2] === "950" &&
+          a.includes("--parent"),
+      ),
+      "child's --parent link edit call",
+    );
+
+    const epicCreateIndex = calls.indexOf(epicCreateCall);
+    const parentLinkEditIndex = calls.indexOf(parentLinkEditCall);
+    expect(epicCreateIndex).toBeLessThan(parentLinkEditIndex);
+    expect(argAfter(parentLinkEditCall, "--parent")).toBe("900");
+
+    // planParentLinks runs BEFORE apply, against pre-apply state, so this
+    // link starts out in `pending` (the epic's issue doesn't exist yet) and
+    // is only resolved to a `setIssueParent` call once the epic's number is
+    // known — not via `parentPlan.set`, which reflects only pre-apply state.
+    expect(reporter.finishedWith).toMatchObject({
+      applied: true,
+      parents: { set: 0, clear: 0, pending: 1 },
+    });
+  });
+
+  // planParentLinks' `clear` bucket fires only when an item has NO
+  // `parentKey` but its existing issue already carries a parent link to
+  // remove. Every actionableItems row that isn't itself an epic is
+  // unconditionally assigned a parentKey (one per tracker section — see
+  // EPIC_DEFS/EPIC_KEYS in bin/lib/hub-sync.mjs), and planParentLinks skips
+  // `isEpic` items outright (`if (item.isEpic) continue;`), so there is
+  // currently no item this test file's fixtures — or any real tracker row —
+  // can construct that reaches the `clear` branch. Per this task's own
+  // instruction, that unreachable state is reported rather than contrived
+  // into a test: `parentPlan.clear` is exercised only by
+  // bin/tests/hub-sync.test.ts's unit-level `planParentLinks` tests, which
+  // can hand it a synthetic item lacking `parentKey` directly.
+
+  test("check: true reports drift from an outstanding parentPlan.set link alone, with every other bucket (create/update/close/reopen/clear/pending) at zero", () => {
+    // The dry-run verdict (planIsEmpty in bin/sync-hub-issues.mjs) counts
+    // parentPlan.set and parentPlan.clear, but never parentPlan.pending. This
+    // test isolates `set` as the sole source of drift to prove that half of
+    // the asymmetry directly. Isolating `pending` as a counterexample (drift
+    // from `pending` alone, with `create` at zero) is not constructible: an
+    // item lands in `pending` only when its epic has no matching existing
+    // issue, and actionableItems only emits an epic once it has >=1
+    // unresolved child — so "the epic's issue does not exist" is exactly the
+    // condition that also puts the epic into `issuePlan.create`, which the
+    // dry-run verdict already counts. `pending` cannot fire without an
+    // accompanying create in this design; see the report for this finding.
+    const items = computeItems(
+      CHECK_EMPTY_ROADMAP_FIXTURE,
+      EMPTY_IMPLEMENTATION_FIXTURE,
+    );
+    const payload = buildIssuePayload(required(items[0], "items[0]"));
+    const epicPayload = buildIssuePayload(required(items[1], "items[1]"));
+    const existingIssues = [
+      {
+        number: 701,
+        title: payload.title,
+        body: payload.body,
+        state: "OPEN",
+        labels: payload.labels.map((name) => ({ name })),
+        issueType: { name: payload.type },
+        // Both issues already exist and both already match their item's
+        // payload exactly — the ONLY outstanding drift in this fixture is
+        // that the child has never been linked under its (already-filed)
+        // epic.
+        parent: null,
+      },
+      {
+        number: 702,
+        title: epicPayload.title,
+        body: epicPayload.body,
+        state: "OPEN",
+        labels: epicPayload.labels.map((name) => ({ name })),
+        issueType: { name: epicPayload.type },
+        parent: null,
+      },
+    ];
+    const p0Def = milestoneDef("p0");
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      milestonesGetRule([
+        {
+          number: 1,
+          title: p0Def.title,
+          description: p0Def.description,
+          state: "open",
+        },
+      ]),
+      issueListSyncRule(existingIssues),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueSync({
+      runGh,
+      reporter,
+      apply: false,
+      check: true,
+      readDoc: makeReadDoc(
+        CHECK_EMPTY_ROADMAP_FIXTURE,
+        EMPTY_IMPLEMENTATION_FIXTURE,
+      ),
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(reporter.errors.some((message) => /drift/i.test(message))).toBe(
+      true,
+    );
+    expect(reporter.succeeded).toEqual([]);
+    expect(calls.every((args) => !isMutatingIssueCall(args))).toBe(true);
+    expect(reporter.finishedWith).toMatchObject({
+      applied: false,
+      milestones: { create: 0 },
+      issues: { create: 0, update: 0, close: 0, reopen: 0, untouched: 2 },
+      parents: { set: 1, clear: 0, pending: 0 },
+    });
   });
 });
 
