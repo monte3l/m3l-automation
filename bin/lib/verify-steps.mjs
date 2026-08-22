@@ -329,6 +329,13 @@ export const VERIFY_STEPS = [
     skipReason:
       "needs a `gh`-authenticated session and live GitHub state; ci.yml also runs it push-only, not on PRs",
   },
+  {
+    ciStepName: "Check hub board views (push-only)",
+    id: "check-hub-views",
+    cmd: () => "pnpm check:hub-views",
+    skipReason:
+      "needs a `gh` session with the `project` OAuth scope, which GITHUB_TOKEN never carries; ci.yml also runs it push-only, not on PRs",
+  },
 ];
 
 /**
