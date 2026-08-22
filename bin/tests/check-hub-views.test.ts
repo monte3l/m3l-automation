@@ -89,37 +89,54 @@ const MANDATORY_COLUMNS = DECLARED.fields.filter(
   (name: string) => !OPTIONAL_VIEW_FIELDS.has(name),
 );
 
+function statusFieldPayload(): unknown {
+  return {
+    name: "Status",
+    dataType: "SINGLE_SELECT",
+    options: DESIRED_STATUS_OPTIONS.map((option) => ({ name: option.name })),
+  };
+}
+
+function priorityFieldPayload(): unknown {
+  return {
+    name: "Priority",
+    dataType: "SINGLE_SELECT",
+    options: DESIRED_PRIORITY_OPTIONS.map((option) => ({ name: option.name })),
+  };
+}
+
+function viewPayload(columns: string[]): unknown {
+  return {
+    id: "VIEW_1",
+    name: DECLARED.name,
+    layout: DECLARED.layout,
+    filter: DECLARED.filter,
+    sortByFields: {
+      nodes: (DECLARED.sort ?? []).map(
+        (pair: { field: string; direction: string }) => ({
+          direction: pair.direction,
+          field: { name: pair.field },
+        }),
+      ),
+    },
+    fields: { nodes: columns.map((name) => ({ name })) },
+  };
+}
+
+/**
+ * A board that matches the declaration in every asserted respect: the
+ * ISSUE_TYPE field enabled AND every declared column shown. The two travel
+ * together — an optional column is exempt only while its field cannot exist,
+ * so a payload claiming the field but omitting the column is drift, not a
+ * clean board.
+ */
 function compliantBoardPayload(
   overrides: { views?: unknown[]; fields?: unknown[] } = {},
 ): string {
-  const views = overrides.views ?? [
-    {
-      id: "VIEW_1",
-      name: DECLARED.name,
-      layout: DECLARED.layout,
-      filter: DECLARED.filter,
-      sortByFields: {
-        nodes: (DECLARED.sort ?? []).map(
-          (pair: { field: string; direction: string }) => ({
-            direction: pair.direction,
-            field: { name: pair.field },
-          }),
-        ),
-      },
-      fields: { nodes: MANDATORY_COLUMNS.map((name: string) => ({ name })) },
-    },
-  ];
+  const views = overrides.views ?? [viewPayload([...DECLARED.fields])];
   const fields = overrides.fields ?? [
-    {
-      name: "Status",
-      dataType: "SINGLE_SELECT",
-      options: DESIRED_STATUS_OPTIONS.map((o) => ({ name: o.name })),
-    },
-    {
-      name: "Priority",
-      dataType: "SINGLE_SELECT",
-      options: DESIRED_PRIORITY_OPTIONS.map((o) => ({ name: o.name })),
-    },
+    statusFieldPayload(),
+    priorityFieldPayload(),
     { name: "Type", dataType: "ISSUE_TYPE" },
   ];
   return JSON.stringify({
@@ -209,9 +226,27 @@ describe("runHubViewsCheck", () => {
     expect(reporter.succeeded).toHaveLength(1);
   });
 
-  test("the compliant fixture omits every optional column, proving the Type exemption is what makes it pass", () => {
-    // Guards the fixture itself: if OPTIONAL_VIEW_FIELDS ever shrank to empty,
-    // the test above would start passing for the wrong reason.
+  test("a board with the ISSUE_TYPE field NOT yet enabled and the optional column absent is also clean", () => {
+    // The exemption path, as its own fixture rather than as a property of the
+    // compliant one: before a human enables the field, neither the field nor
+    // the column can exist, and the ISSUE_TYPE finding alone names that cause.
+    const { runGh } = boardGh(
+      compliantBoardPayload({
+        views: [viewPayload(MANDATORY_COLUMNS)],
+        fields: [statusFieldPayload(), priorityFieldPayload()],
+      }),
+    );
+    const reporter = createFakeReporter();
+
+    const outcome = runHubViewsCheck({ runGh, reporter });
+
+    // Exactly one finding, and it is the ISSUE_TYPE one — no column complaint
+    // piled on top naming the same cause.
+    expect(outcome.findings).toHaveLength(1);
+    expect(outcome.findings[0]).toMatch(/no ISSUE_TYPE field/);
+  });
+
+  test("the two fixtures actually differ, so neither passes for the wrong reason", () => {
     expect(OPTIONAL_VIEW_FIELDS.size).toBeGreaterThan(0);
     expect(MANDATORY_COLUMNS.length).toBeLessThan(DECLARED.fields.length);
   });
@@ -221,14 +256,8 @@ describe("runHubViewsCheck", () => {
       compliantBoardPayload({
         views: [
           {
-            id: "VIEW_1",
-            name: DECLARED.name,
-            layout: DECLARED.layout,
-            filter: DECLARED.filter,
+            ...(viewPayload([...DECLARED.fields]) as Record<string, unknown>),
             sortByFields: { nodes: [] },
-            fields: {
-              nodes: MANDATORY_COLUMNS.map((name: string) => ({ name })),
-            },
           },
           {
             id: "VIEW_2",
@@ -300,6 +329,64 @@ describe("runHubViewsCheck", () => {
     expect(outcome).toMatchObject({ ok: false, skipped: false });
     expect(reporter.errors.some((message) => /502/.test(message))).toBe(true);
     expect(reporter.warnings).toEqual([]);
+  });
+
+  test("a null `node` in the GraphQL response fails with a board-shaped diagnostic, not a TypeError", () => {
+    // A real response: the board can be deleted, or its id become unreadable,
+    // between the `project view` call and this query. Dereferencing it blind
+    // surfaced as "Cannot read properties of null (reading 'views')".
+    const { runGh } = boardGh(JSON.stringify({ data: { node: null } }));
+    const reporter = createFakeReporter();
+
+    const outcome = runHubViewsCheck({ runGh, reporter });
+
+    expect(outcome).toMatchObject({ ok: false, skipped: false });
+    const message = required(reporter.errors[0], "reporter.errors[0]");
+    expect(message).toMatch(/returned no data/);
+    expect(message).toMatch(/may have been deleted/);
+    expect(message).not.toMatch(/Cannot read properties/);
+    // A missing board is a failure, never a graceful skip.
+    expect(reporter.warnings).toEqual([]);
+  });
+
+  test("a view page that reaches its window fails loudly rather than under-reading", () => {
+    // An undeclared view past the window would be invisible to the
+    // both-directions assertion, so reaching it is a hard error -- the same
+    // convention LIST_LIMIT uses in bin/sync-hub-projects.mjs.
+    const overflowing = Array.from({ length: 20 }, (_unused, index) => ({
+      id: `VIEW_${index}`,
+      name: index === 0 ? DECLARED.name : `Extra ${index}`,
+      layout: "TABLE_LAYOUT",
+      filter: "is:open",
+      sortByFields: { nodes: [] },
+      fields: { nodes: [] },
+    }));
+    const { runGh } = boardGh(compliantBoardPayload({ views: overflowing }));
+    const reporter = createFakeReporter();
+
+    const outcome = runHubViewsCheck({ runGh, reporter });
+
+    expect(outcome).toMatchObject({ ok: false, skipped: false });
+    const message = required(reporter.errors[0], "reporter.errors[0]");
+    expect(message).toMatch(/reaching the first:20 window/);
+    expect(message).toMatch(/would go unreported/);
+  });
+
+  test("every finish() payload carries `findings`, including the non-scope failure path", () => {
+    // A JSON consumer (ADR-0030 structured report) otherwise sees the key on
+    // three paths and absent on exactly one.
+    const { runGh } = boardGh(compliantBoardPayload(), {
+      throwOn: { match: /api graphql/, message: "HTTP 502: Bad gateway" },
+    });
+    const reporter = createFakeReporter();
+
+    runHubViewsCheck({ runGh, reporter });
+
+    expect(reporter.finishedWith).toHaveProperty("findings");
+    expect(reporter.finishedWith).toMatchObject({
+      findings: [],
+      skipped: false,
+    });
   });
 
   test("a board title miss fails with a rename hint, and never reads the board", () => {

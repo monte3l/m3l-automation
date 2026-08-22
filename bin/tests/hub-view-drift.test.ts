@@ -175,6 +175,34 @@ describe("deriveViewDrift", () => {
     ).toBe(true);
   });
 
+  test("an optional column removed BY HAND while its field IS enabled is reported — the exemption is not unconditional", () => {
+    // The silent-miss this gate exists to close. The exemption previously keyed
+    // on the live column's absence, so with the ISSUE_TYPE field enabled and
+    // the "Type" column deleted from the view, neither the column check nor the
+    // ISSUE_TYPE check fired and the board read as clean.
+    const board = compliantBoard();
+    const findings = deriveViewDrift({
+      ...board,
+      liveViews: [
+        {
+          ...liveBacklog(board),
+          columns: ["Title", "Priority", "Status"],
+        },
+      ],
+      // Field present — so "Type" is mandatory, not exempt.
+      liveFields: [ISSUE_TYPE_FIELD, statusField(), priorityField()],
+    });
+
+    expect(findings).toHaveLength(1);
+    const finding = findings[0] ?? "";
+    expect(finding).toMatch(/columns are \[Title, Priority, Status\]/);
+    expect(finding).toMatch(/expected \[Title, Priority, Type, Status\]/);
+    // And NOT the ISSUE_TYPE message — the field is there; the column isn't.
+    expect(
+      findings.some((message) => /no ISSUE_TYPE field/.test(message)),
+    ).toBe(false);
+  });
+
   test("a cleared sort is reported as a MANUAL fix, never as something a sync can repair", () => {
     const board = compliantBoard();
     const findings = deriveViewDrift({

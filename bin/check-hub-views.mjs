@@ -40,6 +40,14 @@ import { createReporter, parseJsonFlag } from "./lib/report.mjs";
 
 const OWNER = "monte3l";
 
+// The GraphQL connection windows. A result whose length REACHES its window
+// means the page was silently truncated, and an undeclared view (or a field)
+// past it would be invisible to a gate that asserts the set in both
+// directions. Mirrors LIST_LIMIT's convention in bin/sync-hub-projects.mjs:
+// reaching the window is a hard error, never a silent under-read.
+const VIEW_WINDOW = 20;
+const FIELD_WINDOW = 50;
+
 /**
  * The single injected `gh` execution seam: every call in this file goes
  * through this function (or a test double shaped like it), mirroring
@@ -105,15 +113,45 @@ export function isScopeError(message) {
 export function readBoard(runGhFn, projectId) {
   const query =
     `query { node(id: ${JSON.stringify(projectId)}) { ... on ProjectV2 { ` +
-    `views(first: 20) { nodes { id name layout filter ` +
+    `views(first: ${VIEW_WINDOW}) { nodes { id name layout filter ` +
     `sortByFields(first: 10) { nodes { direction field { ... on ProjectV2FieldCommon { name } } } } ` +
-    `fields(first: 50) { nodes { ... on ProjectV2FieldCommon { name } } } } } ` +
-    `fields(first: 50) { nodes { ... on ProjectV2FieldCommon { name dataType } ` +
+    `fields(first: ${FIELD_WINDOW}) { nodes { ... on ProjectV2FieldCommon { name } } } } } ` +
+    `fields(first: ${FIELD_WINDOW}) { nodes { ... on ProjectV2FieldCommon { name dataType } ` +
     `... on ProjectV2SingleSelectField { options { name } } } } } } }`;
   const raw = runGhFn(["api", "graphql", "-f", `query=${query}`]);
-  const node = JSON.parse(raw).data.node;
+  const node = JSON.parse(raw)?.data?.node;
 
-  const views = (node.views?.nodes ?? []).map((view) => ({
+  // `{"data":{"node":null}}` is a real response: the board can be deleted, or
+  // its id become unreadable, between the `project view` call and this query.
+  // Dereferencing it blind surfaced as "Cannot read properties of null
+  // (reading 'views')" -- technically a failure, but not a board-shaped
+  // diagnostic the reader can act on.
+  if (!node) {
+    throw new Error(
+      `The board (id ${projectId}) returned no data — it may have been deleted, ` +
+        `or this token may not be able to read it. Re-run to re-resolve the ` +
+        `board by title.`,
+    );
+  }
+
+  const viewNodes = node.views?.nodes ?? [];
+  const fieldNodes = node.fields?.nodes ?? [];
+  if (viewNodes.length >= VIEW_WINDOW) {
+    throw new Error(
+      `The board returned ${viewNodes.length} views, reaching the ` +
+        `first:${VIEW_WINDOW} window — the page may be truncated, so an ` +
+        `undeclared view past it would go unreported. Raise VIEW_WINDOW.`,
+    );
+  }
+  if (fieldNodes.length >= FIELD_WINDOW) {
+    throw new Error(
+      `The board returned ${fieldNodes.length} fields, reaching the ` +
+        `first:${FIELD_WINDOW} window — the page may be truncated, so a ` +
+        `missing field would go unreported. Raise FIELD_WINDOW.`,
+    );
+  }
+
+  const views = viewNodes.map((view) => ({
     id: view.id,
     name: view.name,
     layout: view.layout,
@@ -127,7 +165,7 @@ export function readBoard(runGhFn, projectId) {
       .filter((name) => typeof name === "string"),
   }));
 
-  const fields = (node.fields?.nodes ?? []).map((field) => ({
+  const fields = fieldNodes.map((field) => ({
     name: field.name,
     dataType: field.dataType,
     options: field.options ?? [],
@@ -254,7 +292,7 @@ export function runHubViewsCheck({ runGh: runGhFn, reporter }) {
     }
 
     reporter.error(`Board check failed: ${message}`);
-    reporter.finish({ skipped: false });
+    reporter.finish({ findings: [], skipped: false });
     return { ok: false, skipped: false, findings: [] };
   }
 }
