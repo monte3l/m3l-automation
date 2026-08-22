@@ -205,3 +205,52 @@ intends to remove would otherwise make `check:hub-drift` permanently red.
 **`3-gated` reached 8 open items, not the ~13 the ADR estimated** — 5 from the
 programme waves plus C1, C2 and the TypeScript 6→7 hold, once the gated
 section's blanket move to `p3` landed. Open spread is 28 / 23 / 8.
+
+## Update (2026-08-22c): epic model, and two unreachable states
+
+Three decisions in PR 4b departed from the plan, each from measuring rather than
+reading:
+
+- **Epics are keyed per declared section, not per issue-key namespace.**
+  ROADMAP Priority 1's rows namespace themselves per wave (`roadmap:W3:...`,
+  from each row's own Wave cell), so a namespace-keyed model would scatter one
+  documented section across seven epics.
+- **An epic is emitted only while its section has unresolved work.** The plan
+  specified a zero-child guard. Against the real trackers that yields 19 epics,
+  12 created and closed in the same run because their sections are fully
+  shipped — and invisible on a board filtered `is:open`. The guard yields 7.
+  Accepted wart: when a section's last row lands its epic stops being emitted
+  and closes via the vanished-item path, so the close reason reads "removed
+  from source trackers" rather than "completed".
+- **`pending` entries carry the child's own issue number.** Without it, a
+  first-time sync would file the epics in run 1 and link nothing, because
+  `parentPlan` is computed against pre-apply state and every existing child of
+  a not-yet-filed epic lands in `pending` rather than `set`. One `--apply` now
+  files 7 epics and links all 59 children.
+
+Two states turned out unreachable, found while writing tests rather than
+assumed:
+
+- **`parentPlan.clear` cannot fire from real data** — every non-epic item is
+  unconditionally assigned a `parentKey` and epics are skipped. The branch is
+  kept as the recovery path for a future section block authored without one,
+  and is covered by a synthetic item at the planner level.
+- **`pending` alone is not constructible** — it fires only when an epic has no
+  issue, which is precisely the condition that puts that epic into
+  `issuePlan.create`. This strengthens the decision to exclude `pending` from
+  the drift verdict: it does not merely risk double-reporting, it always would.
+
+### Dispatch note
+
+Four spokes on this PR truncated at 40–41 tool calls, the `maxTurns` ceiling.
+The common factor was not output volume — the two that finished their writes
+truncated only in their final report. What burned turns was **discovery**: a
+spoke asked which fixture yields which items spends twenty-odd calls finding
+out. Pre-resolving those facts in the brief (for instance: "this fixture pair
+emits exactly `roadmap:p0:ck1` plus `epic:roadmap:p0`, and a truly-empty plan
+also needs the child's `parent` scripted") reduced the next dispatch to a few
+calls.
+
+`.claude/rules/subagent-dispatch.md` bounds a spoke's **output** (≤40 tests, one
+file). The sharper constraint is bounding its **input discovery** — resolve the
+facts the spoke would otherwise derive, and hand it the answers.
