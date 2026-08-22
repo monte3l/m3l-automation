@@ -126,15 +126,33 @@ function viewSort(view) {
 }
 
 /**
- * One view's visible column names, guarding the per-view connection window.
+ * One view's visible column names, **in configured order**, guarding the
+ * per-view connection window.
  *
- * Same convention as the two top-level windows: reaching it is a hard error,
- * never a silent under-read. Truncating a view's column list here would be
- * worse than a bare under-read — it would produce a confident, MISLEADING
- * column-drift finding naming columns the view actually shows.
+ * Reads `configuration.visibleFields`, NOT the sibling `ProjectV2View.fields`.
+ * The two return the same SET and differ in ORDER, which is why the wrong one
+ * looks correct until the orders are diffed: `view.fields` yields the visible
+ * fields in the board's field-DEFINITION order, while only
+ * `configuration.visibleFields` is documented as "the fields visible in the
+ * view, in configured order". Against the live board on 2026-08-23 the same
+ * view read as `Title, Status, Labels, Linked pull requests, Milestone, Parent
+ * issue, Created, Priority` through `fields` and `Title, Priority, Status,
+ * Milestone, Parent issue, Labels, Created, Linked pull requests` through
+ * `configuration.visibleFields` — the latter being what the board actually
+ * shows. Reading `fields` therefore produced a permanent, confident
+ * column-order finding against a correct board.
+ *
+ * Same window convention as the two top-level windows: reaching it is a hard
+ * error, never a silent under-read. Truncating a view's column list here would
+ * be worse than a bare under-read — it would produce a confident, MISLEADING
+ * column-drift finding naming columns the view actually shows. The node count
+ * is the only available signal: `visibleFields` rejects `totalCount` outright
+ * (the server answers with a bare "Something went wrong while executing your
+ * query"), so `pageInfo.hasNextPage` is the alternative if a second one is ever
+ * wanted.
  */
 function viewColumns(view) {
-  const nodes = view.fields?.nodes ?? [];
+  const nodes = view.configuration?.visibleFields?.nodes ?? [];
   if (nodes.length >= FIELD_WINDOW) {
     throw new Error(
       `View "${view.name}" returned ${nodes.length} visible columns, reaching ` +
@@ -170,7 +188,7 @@ export function readBoard(runGhFn, projectId) {
     `query { node(id: ${JSON.stringify(projectId)}) { ... on ProjectV2 { ` +
     `views(first: ${VIEW_WINDOW}) { nodes { id name layout filter ` +
     `sortByFields(first: ${SORT_WINDOW}) { nodes { direction field { ... on ProjectV2FieldCommon { name } } } } ` +
-    `fields(first: ${FIELD_WINDOW}) { nodes { ... on ProjectV2FieldCommon { name } } } } } ` +
+    `configuration { visibleFields(first: ${FIELD_WINDOW}) { nodes { ... on ProjectV2FieldCommon { name } } } } } } ` +
     `fields(first: ${FIELD_WINDOW}) { nodes { ... on ProjectV2FieldCommon { name dataType } ` +
     `... on ProjectV2SingleSelectField { options { name } } } } } } }`;
   const raw = runGhFn(["api", "graphql", "-f", `query=${query}`]);
