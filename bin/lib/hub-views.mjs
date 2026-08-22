@@ -14,9 +14,12 @@
 // `UpdateProjectV2ViewInput` adds `filter`. Neither accepts `groupByFields` or
 // `sortByFields` — those are readable on `ProjectV2View` but not writable
 // through either mutation (verified against the live schema, 2026-08-20).
-// Reconciliation therefore covers name, layout, filter, and the
-// visible-column set; sort order is a documented one-time manual step
-// (docs/contributing/filing-work.md) that `check:hub-views` then asserts.
+// Reconciliation therefore covers name, layout and filter. The
+// visible-column set is written only when CREATING a view: on an existing one
+// a full-replace `visibleFieldIds` would strip the built-in Type column, which
+// is invisible to GraphQL and so cannot be included in the replacement
+// (ADR-0075). Column order and sort order are both documented one-time manual
+// steps (docs/contributing/filing-work.md) that `check:hub-views` then asserts.
 //
 // A Roadmap view was dropped (the ADR-0052 Update): `ROADMAP_LAYOUT` rejects
 // `configuration.visibleFieldIds` outright on both create and update
@@ -42,9 +45,10 @@
  * `--prune-views --apply` would then delete "User" outright.
  *
  * `fields` names must match a live project field's `name` exactly (as
- * returned by `gh project field-list`), and the list is **ordered** —
- * `configuration.visibleFieldIds` is a full replace, so this array is the
- * board's column order, not a set of columns to add.
+ * returned by `gh project field-list`), and the list is **ordered** — it is
+ * the board's column order, not a set of columns to add. It is the order
+ * `check:hub-views` ASSERTS; it is written only on view creation (ADR-0075),
+ * so on the live board it is maintained by hand.
  */
 export const VIEW_DEFS = [
   {
@@ -84,14 +88,17 @@ export const VIEW_DEFS = [
  * View field names that may legitimately be absent from the live board, so a
  * miss downgrades from a warning to an informational note.
  *
- * "Type" is the built-in Issue Type column. It does not exist on the board
- * until a human enables it via the project UI ("..." menu -> Settings ->
- * Fields), and the GraphQL API has no mutation to enable it
- * (`createProjectV2Field`'s `dataType` only accepts the custom-field types —
- * TEXT/SINGLE_SELECT/MULTI_SELECT/NUMBER/DATE/ITERATION, not a built-in like
- * ISSUE_TYPE). Without this exemption it would warn on every `--init` run
- * indefinitely; with it, the column is still declared, so it lands in the
- * visible set on the first run after a maintainer enables the field.
+ * "Type" is the built-in Issue Type column, and it is absent from the API's
+ * view of the board **permanently** — not "until a human enables it".
+ * `ProjectV2FieldConfiguration` has no issue-type member, so the field appears
+ * in neither `ProjectV2.fields` nor `configuration.visibleFields` even while
+ * the board UI renders the column, and `projectV2.field(name: "Type")` answers
+ * NOT_FOUND (verified 2026-08-23, ADR-0075). It is therefore added by hand from
+ * the view's field picker and can never be resolved to an id, synced, or
+ * asserted.
+ *
+ * It stays declared here so the intended column order is recorded in one place
+ * and `check:hub-views` treats its absence as expected rather than as drift.
  *
  * Every OTHER declared name is mandatory: a name that fails to resolve skips
  * the view's update entirely rather than sending a short list into a
@@ -106,8 +113,9 @@ export const OPTIONAL_VIEW_FIELDS = new Set(["Type"]);
  * doesn't need to re-derive them from source.
  */
 export const MANUAL_VIEW_STEPS = [
-  "Backlog view: sort by Priority ascending, then Created ascending — not settable via the API. --init --apply warns if a column update clears it, and check:hub-views catches one cleared by hand.",
-  'Enable the built-in "Type" field (Project "..." menu -> Settings -> Fields -> Type) so it resolves to an id and lands in the Backlog view\'s columns — the field itself has no enabling mutation, but the column is declared in VIEW_DEFS and syncs automatically once it exists.',
+  "Backlog view: sort by Priority ascending, then Created ascending — not settable via the API. check:hub-views catches one cleared by hand.",
+  'Backlog view: add the built-in "Type" column from the view\'s field picker. It is invisible to GraphQL (ADR-0075), so it cannot be synced and no gate can confirm it is there — check the board by eye.',
+  "Backlog view: keep the columns in VIEW_DEFS order. Only a newly CREATED view gets its columns written; on an existing one a full-replace write would strip the Type column, so check:hub-views asserts the order and you fix it from the field picker.",
 ];
 
 // The Status single-select's desired options — the tracker's own 6-value

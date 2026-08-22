@@ -130,20 +130,21 @@ function viewPayload(columns: string[]): unknown {
 }
 
 /**
- * A board that matches the declaration in every asserted respect: the
- * ISSUE_TYPE field enabled AND every declared column shown. The two travel
- * together — an optional column is exempt only while its field cannot exist,
- * so a payload claiming the field but omitting the column is drift, not a
- * clean board.
+ * A board that matches the declaration in every asserted respect.
+ *
+ * The visible columns are the MANDATORY ones — not all of `DECLARED.fields` —
+ * and the field list carries no ISSUE_TYPE entry, because that is what a live
+ * read actually returns. The built-in Type column is invisible to GraphQL
+ * (ADR-0075): the board UI shows it, every API read omits it. A fixture
+ * including it would model a board that cannot exist.
  */
 function compliantBoardPayload(
   overrides: { views?: unknown[]; fields?: unknown[] } = {},
 ): string {
-  const views = overrides.views ?? [viewPayload([...DECLARED.fields])];
+  const views = overrides.views ?? [viewPayload(MANDATORY_COLUMNS)];
   const fields = overrides.fields ?? [
     statusFieldPayload(),
     priorityFieldPayload(),
-    { name: "Type", dataType: "ISSUE_TYPE" },
   ];
   return JSON.stringify({
     data: { node: { views: { nodes: views }, fields: { nodes: fields } } },
@@ -255,16 +256,27 @@ describe("runHubViewsCheck", () => {
     const query = required(graphql[3], "the query argument");
     expect(query).toContain("configuration { visibleFields(first:");
     // The board-level `fields(...)` read stays -- it is the right connection
-    // for dataType and the single-select option sets. What must not come back
-    // is a VIEW-level one, which is why this matches the nesting rather than
-    // the bare word.
-    expect(query).not.toMatch(/filter[^}]*\bfields\(first:/);
+    // for dataType and the single-select option sets -- so this counts bare
+    // reads rather than forbidding the word. Exactly ONE is correct; a second
+    // is the view-level read this guards against. The lookbehind is what
+    // makes it a BARE read: without it, `sortByFields(first:` and
+    // `visibleFields(first:` both match and the count is meaningless.
+    //
+    // Counting, not a positional regex. An earlier attempt here anchored on
+    // `/filter[^}]*\bfields\(first:/`, which cannot match either query: in
+    // the buggy one the view-level `fields(` sits AFTER the sortByFields
+    // block, so `}` characters separate it from `filter` and `[^}]*` can
+    // never span them. It passed on the bug and the fix alike.
+    const bareFieldReads = query.match(/(?<![A-Za-z])fields\(first:/g) ?? [];
+    expect(bareFieldReads).toHaveLength(1);
   });
 
-  test("a board with the ISSUE_TYPE field NOT yet enabled and the optional column absent is also clean", () => {
-    // The exemption path, as its own fixture rather than as a property of the
-    // compliant one: before a human enables the field, neither the field nor
-    // the column can exist, and the ISSUE_TYPE finding alone names that cause.
+  test("the absent built-in Type field raises NO finding — the assertion ADR-0073 asked for is unsatisfiable", () => {
+    // Regression guard for the false failure that shipped in the original
+    // gate. `ProjectV2FieldType` lists ISSUE_TYPE, which made "its absence is
+    // gateable" look true, but `ProjectV2FieldConfiguration` has no
+    // issue-type member so no field node is ever materialized -- the finding
+    // could never be cleared by any board state or any manual step.
     const { runGh } = boardGh(
       compliantBoardPayload({
         views: [viewPayload(MANDATORY_COLUMNS)],
@@ -275,10 +287,10 @@ describe("runHubViewsCheck", () => {
 
     const outcome = runHubViewsCheck({ runGh, reporter });
 
-    // Exactly one finding, and it is the ISSUE_TYPE one — no column complaint
-    // piled on top naming the same cause.
-    expect(outcome.findings).toHaveLength(1);
-    expect(outcome.findings[0]).toMatch(/no ISSUE_TYPE field/);
+    expect(outcome).toMatchObject({ ok: true, findings: [] });
+    expect(outcome.findings.some((finding) => /ISSUE_TYPE/.test(finding))).toBe(
+      false,
+    );
   });
 
   test("the two fixtures actually differ, so neither passes for the wrong reason", () => {
@@ -291,7 +303,7 @@ describe("runHubViewsCheck", () => {
       compliantBoardPayload({
         views: [
           {
-            ...(viewPayload([...DECLARED.fields]) as Record<string, unknown>),
+            ...(viewPayload(MANDATORY_COLUMNS) as Record<string, unknown>),
             sortByFields: { nodes: [] },
           },
           {
@@ -709,8 +721,10 @@ describe("check-hub-views: the real VIEW_DEFS against a live board payload", () 
       desiredPriorityOptions: DESIRED_PRIORITY_OPTIONS,
     });
 
-    // Missing view, missing ISSUE_TYPE field, missing Status, missing Priority.
-    expect(findings).toHaveLength(4);
+    // Missing view, missing Status, missing Priority. NOT a missing-Type
+    // finding: that assertion was unsatisfiable and is gone (ADR-0075).
+    expect(findings).toHaveLength(3);
+    expect(findings.some((finding) => /ISSUE_TYPE/.test(finding))).toBe(false);
     // Every finding must tell the reader what to do, not just what is wrong.
     for (const finding of findings) {
       expect(finding).toMatch(/run `pnpm|enable it by hand|by hand/);

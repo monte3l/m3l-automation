@@ -315,18 +315,24 @@ function previewSingleSelectOptions(
  * undeclared ones, and (by check:hub-views, reading the same shape) to assert
  * the board against its declaration.
  *
- * Reads more than the reconciler strictly needs. `filter`, `sortByFields` and
- * `fields` are all readable on `ProjectV2View` even though sort is not
- * writable through any mutation, and reading them is what lets a caller
- * capture a view's sort BEFORE a full-replace column update and diff it
- * after — the one loss this module cannot repair automatically.
+ * Reads more than the reconciler strictly needs. Only `id`, `name` and
+ * `sortByFields` are consumed today — the sort capture that lets a caller diff
+ * a view's sort before and after an update, the one loss this module cannot
+ * repair automatically. `filter` and the column list are read for the dry-run
+ * preview, which reports live-vs-declared columns now that no update writes
+ * them.
+ *
+ * Columns come from `configuration.visibleFields`, not the sibling
+ * `ProjectV2View.fields`: only the former is ordered ("the fields visible in
+ * the view, in configured order"). The two return the same SET, so the wrong
+ * one looks right until the orders are diffed — see ADR-0075.
  */
 function listExistingViews(runGhFn, projectId) {
   const query =
     `query { node(id: ${JSON.stringify(projectId)}) { ... on ProjectV2 { ` +
     `views(first: 20) { nodes { id name layout filter ` +
     `sortByFields(first: 10) { nodes { direction field { ... on ProjectV2FieldCommon { name } } } } ` +
-    `fields(first: 50) { nodes { ... on ProjectV2FieldCommon { name } } } } } } } }`;
+    `configuration { visibleFields(first: 50) { nodes { ... on ProjectV2FieldCommon { name } } } } } } } } }`;
   const raw = runGhFn(["api", "graphql", "-f", `query=${query}`]);
   return JSON.parse(raw).data.node.views.nodes;
 }
@@ -392,9 +398,11 @@ function resolveFieldIds(runGhFn, reporter, projectNumber, fieldNames) {
       ids.push(id);
     } else if (OPTIONAL_VIEW_FIELDS.has(name)) {
       reporter.info(
-        `View field "${name}" is not on the board yet — omitting it from the ` +
-          `visible-column set. It is declared, so it will sync automatically ` +
-          `once the field is enabled. See the manual view-setup steps.`,
+        `View field "${name}" did not resolve to a board field id — omitting ` +
+          `it from the visible-column set for this newly created view. It ` +
+          `cannot be synced later either: the built-in Issue Type field is ` +
+          `invisible to GraphQL (ADR-0075), so add the column by hand from the ` +
+          `view's field picker. See the manual view-setup steps.`,
       );
     } else {
       missing.push(name);
@@ -416,6 +424,10 @@ function resolveFieldIds(runGhFn, reporter, projectNumber, fieldNames) {
 // createProjectV2View cannot set `filter` (CreateProjectV2ViewInput has no
 // such field), so a freshly created view always needs the immediate
 // updateProjectV2View follow-up below to apply it.
+//
+// This is the ONE path that writes columns, and it is safe here for a reason
+// updateView does not share: a view that does not exist yet has no
+// hand-added Type column for a full-replace write to strip (ADR-0075).
 function createView(runGhFn, projectId, viewDef, fieldIds) {
   const mutation =
     `mutation { createProjectV2View(input: { projectId: ${JSON.stringify(projectId)}, ` +
@@ -426,12 +438,30 @@ function createView(runGhFn, projectId, viewDef, fieldIds) {
   return JSON.parse(raw).data.createProjectV2View.projectV2View.id;
 }
 
-function updateView(runGhFn, viewId, viewDef, fieldIds) {
+/**
+ * Update an EXISTING view's name, layout and filter — deliberately NOT its
+ * columns.
+ *
+ * `configuration.visibleFieldIds` is a full REPLACE, and the board's built-in
+ * Issue Type column is invisible to GraphQL (ADR-0075): it appears in neither
+ * `ProjectV2.fields` nor `configuration.visibleFields`, so it cannot be
+ * resolved to an id and cannot be included in the replacement list. Writing
+ * the resolvable ids therefore STRIPS a Type column a maintainer added by
+ * hand — the 2026-08-20 Priority-wipe shape again, except this one is
+ * undetectable: the API reports the same visible-field count whether or not
+ * Type is present, so no guard here can see the column it is about to delete.
+ *
+ * So the split is asymmetric ON PURPOSE, and is the whole safety property:
+ * {@link createView} writes columns (a view being created has none to lose),
+ * this does not. Do not "simplify" the two back into symmetry. Column drift on
+ * an existing view is asserted by `check:hub-views` and fixed by hand, exactly
+ * like sort.
+ */
+function updateView(runGhFn, viewId, viewDef) {
   const mutation =
     `mutation { updateProjectV2View(input: { viewId: ${JSON.stringify(viewId)}, ` +
     `name: ${JSON.stringify(viewDef.name)}, layout: ${viewDef.layout}, ` +
-    `filter: ${JSON.stringify(viewDef.filter)}, ` +
-    `configuration: { visibleFieldIds: ${JSON.stringify(fieldIds)} } }) ` +
+    `filter: ${JSON.stringify(viewDef.filter)} }) ` +
     `{ clientMutationId } }`;
   runGhFn(["api", "graphql", "-f", `query=${mutation}`]);
 }
@@ -470,31 +500,34 @@ function reconcileView(
   viewDef,
   existing,
 ) {
-  const fieldIds = resolveFieldIds(
-    runGhFn,
-    reporter,
-    projectNumber,
-    viewDef.fields,
-  );
-  if (fieldIds === null) {
-    reporter.warn(
-      `Skipped view "${viewDef.name}" — see the unresolved-field warning above.`,
-    );
-    return false;
-  }
-
+  // Field ids are resolved only on the CREATE path, because that is the only
+  // path that writes columns (see updateView). Resolving them for an update
+  // would be dead work whose only effect is to abort a name/layout/filter
+  // reconciliation over a column list nobody is going to send.
   const sortBefore = existing ? viewSortPairs(existing) : [];
 
   try {
     if (existing) {
-      updateView(runGhFn, existing.id, viewDef, fieldIds);
+      updateView(runGhFn, existing.id, viewDef);
       reporter.change(
         "updated",
         `view "${existing.name}" -> "${viewDef.name}" (${viewDef.layout})`,
       );
     } else {
+      const fieldIds = resolveFieldIds(
+        runGhFn,
+        reporter,
+        projectNumber,
+        viewDef.fields,
+      );
+      if (fieldIds === null) {
+        reporter.warn(
+          `Skipped view "${viewDef.name}" — see the unresolved-field warning above.`,
+        );
+        return false;
+      }
       const viewId = createView(runGhFn, projectId, viewDef, fieldIds);
-      updateView(runGhFn, viewId, viewDef, fieldIds);
+      updateView(runGhFn, viewId, viewDef);
       reporter.change("created", `view "${viewDef.name}" (${viewDef.layout})`);
     }
   } catch (cause) {
@@ -690,9 +723,17 @@ function previewViews(runGhFn, reporter, projectNumber, pruneViews = false) {
       reporter.info(
         `Would update view "${existing.name}" -> "${viewDef.name}" (${viewDef.layout}, filter: ${viewDef.filter}).`,
       );
+      // Reported, not "would set": an update never writes columns (ADR-0075).
+      // The live list is what the API can SEE, which excludes a built-in Type
+      // column even when the board shows one — so a difference here is not
+      // automatically drift.
+      const columnsNow = (
+        existing.configuration?.visibleFields?.nodes ?? []
+      ).map((field) => field?.name);
       reporter.info(
-        `Would set its columns to: ${viewDef.fields.join(", ")} (ordered — ` +
-          `visibleFieldIds is a full replace).`,
+        `Its columns are currently ${columnsNow.join(", ") || "none"}; ` +
+          `declared: ${viewDef.fields.join(", ")}. Columns are NOT written on ` +
+          `update — asserted by check:hub-views, fixed by hand.`,
       );
       const sortNow = viewSortPairs(existing);
       reporter.info(

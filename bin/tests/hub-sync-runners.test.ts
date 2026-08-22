@@ -3296,10 +3296,12 @@ describe("runProjectSync view pruning", () => {
     ).toBe(true);
   });
 
-  test("a declared column that fails to resolve skips the view update instead of writing a truncated visibleFieldIds", () => {
+  test("on the CREATE path a mandatory column that fails to resolve skips the view entirely instead of writing a truncated visibleFieldIds", () => {
     // field-list resolves everything EXCEPT one mandatory declared column.
     // visibleFieldIds is a full replace, so writing the short list would
-    // delete every other column — the 2026-08-20 Priority-wipe shape.
+    // delete every other column — the 2026-08-20 Priority-wipe shape. Create
+    // is the only path that writes columns now (ADR-0075), so it is the only
+    // path that needs this protection.
     const mandatory = required(VIEW_DEFS[0], "VIEW_DEFS[0]").fields.filter(
       (name: string) => !OPTIONAL_VIEW_FIELDS.has(name),
     );
@@ -3320,7 +3322,7 @@ describe("runProjectSync view pruning", () => {
           ),
       },
       projectViewRule("PROJECT_ID"),
-      viewsListGraphqlRule([viewNode({ id: "VIEW_BACKLOG", name: DECLARED })]),
+      viewsListGraphqlRule([]),
       createViewGraphqlRule(),
       deleteViewGraphqlRule(),
       graphqlRule(),
@@ -3354,10 +3356,10 @@ describe("runProjectSync view pruning", () => {
     expect(warning).toMatch(/full replace/);
   });
 
-  test("the optional built-in Type column is omitted with an info note, not a warning, and does not block the update", () => {
-    const { runGh, calls } = scriptedGh(
-      viewRules([viewNode({ id: "VIEW_BACKLOG", name: DECLARED })]),
-    );
+  test("on the CREATE path the optional built-in Type column is omitted with an info note, not a warning, and does not block the create", () => {
+    // Create, not update: an existing view never resolves field ids at all
+    // now, because no update writes columns (ADR-0075).
+    const { runGh, calls } = scriptedGh(viewRules([]));
     const reporter = createFakeReporter();
 
     const outcome = runProjectSync({
@@ -3374,21 +3376,94 @@ describe("runProjectSync view pruning", () => {
       expect(
         reporter.infos.some(
           (message) =>
-            message.includes(optional) && /not on the board yet/.test(message),
+            message.includes(optional) &&
+            /did not resolve to a board field id/.test(message),
         ),
       ).toBe(true);
       expect(
         reporter.warnings.some((message) => message.includes(optional)),
       ).toBe(false);
     }
-    // The view still got its columns.
-    expect(
-      calls.some(
-        (args) =>
-          typeof args[3] === "string" &&
-          args[3].includes("updateProjectV2View"),
-      ),
-    ).toBe(true);
+    // The view was still created, with columns.
+    const created = calls.filter(
+      (args) =>
+        typeof args[3] === "string" && args[3].includes("createProjectV2View"),
+    );
+    expect(created).toHaveLength(1);
+    expect(required(created[0], "the create call")[3]).toContain(
+      "visibleFieldIds",
+    );
+  });
+
+  test("every GraphQL document this runner emits is brace-balanced", () => {
+    // Cheap syntax net. The test doubles answer on a regex match, so they
+    // happily accept a malformed query and the suite stays green while the
+    // real API rejects it -- which is exactly what happened when
+    // listExistingViews gained a `configuration {` wrapper without the extra
+    // closing brace, surfacing only as "Expected NAME, actual: (none)" from a
+    // live dry run.
+    const { runGh, calls } = scriptedGh(
+      viewRules([viewNode({ id: "VIEW_BACKLOG", name: DECLARED })]),
+    );
+    const reporter = createFakeReporter();
+
+    runProjectSync({
+      runGh,
+      reporter,
+      apply: true,
+      init: true,
+      readDoc: makeReadDoc(),
+    });
+
+    const documents = calls
+      .filter((args) => args[0] === "api" && args[1] === "graphql")
+      .map((args) => String(args[3]));
+    expect(documents.length).toBeGreaterThan(0);
+    for (const document of documents) {
+      let depth = 0;
+      for (const character of document) {
+        if (character === "{") depth += 1;
+        if (character === "}") depth -= 1;
+        // A negative depth means a stray closing brace, which the final
+        // zero-check would mask if a later `{` rebalanced it.
+        expect(depth).toBeGreaterThanOrEqual(0);
+      }
+      expect(depth).toBe(0);
+    }
+  });
+
+  test("updateProjectV2View NEVER sends visibleFieldIds — a full replace would strip the API-invisible Type column", () => {
+    // The destructive-bug regression guard (ADR-0075). resolveFieldIds cannot
+    // resolve the built-in Type field, so the ids it CAN resolve are a short
+    // list; visibleFieldIds is a full REPLACE, so writing them deletes a Type
+    // column a maintainer added by hand. It is undetectable from here -- the
+    // API reports the same visible-field count either way -- so the only safe
+    // guard is to never send the key on an update at all.
+    const { runGh, calls } = scriptedGh(
+      viewRules([viewNode({ id: "VIEW_BACKLOG", name: DECLARED })]),
+    );
+    const reporter = createFakeReporter();
+
+    const outcome = runProjectSync({
+      runGh,
+      reporter,
+      apply: true,
+      init: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    const updates = calls.filter(
+      (args) =>
+        typeof args[3] === "string" && args[3].includes("updateProjectV2View"),
+    );
+    // The name/layout/filter reconciliation still happens...
+    expect(updates.length).toBeGreaterThan(0);
+    // ...but never carries a column write.
+    for (const update of updates) {
+      expect(update[3]).not.toContain("visibleFieldIds");
+      expect(update[3]).not.toContain("configuration");
+    }
   });
 
   test("--prune-views --apply against a MISSING board refuses rather than creating one", () => {
