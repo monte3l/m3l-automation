@@ -239,11 +239,17 @@ duplicated a column the table already sorts and filters.
 
 `pnpm sync:hub-projects -- --init --apply` (also run as part of `sync:hub
 --init`) reconciles that view from `bin/lib/hub-views.mjs`'s `VIEW_DEFS`: name,
-layout, filter, and the ordered visible-column set. `visibleFieldIds` is a full
-**replace**, so `VIEW_DEFS[0].fields` is the board's column order, not a set of
-columns to add — and a declared name that fails to resolve to a live field id
-skips the whole column update rather than writing the short list, which would
+layout and filter. The **visible-column set is written only when the view is
+CREATED** (ADR-0075). `visibleFieldIds` is a full **replace**, and the built-in
+`Type` column cannot be included in the replacement because the API cannot see
+it — so writing the resolvable ids to an existing view would silently strip a
+`Type` column added by hand. On the create path, a declared name that fails to
+resolve skips the whole view rather than writing the short list, which would
 delete every other column.
+
+`VIEW_DEFS[0].fields` is therefore the column order `check:hub-views`
+**asserts**, maintained by hand on the live board — the same arrangement sort
+has always had.
 
 **`VIEW_DEFS` is authoritative, but deleting is opt-in.** An undeclared view is
 _reported_ by `--init`, never removed by it; `pnpm sync:hub-projects --
@@ -256,22 +262,29 @@ created in the same run is never pruned by it), and aborts rather than leaving
 the board with zero views. Still: don't build an ad-hoc view expecting it to
 survive a `--prune-views` run.
 
-Two settings remain manual, because GraphQL can read them but not write them
-(`ProjectV2ViewConfigurationInput` accepts only `visibleFieldIds`; the built-in
-`Type` field has no `createProjectV2Field` counterpart). Both are asserted by
-`pnpm check:hub-views`, so a drifted board fails a gate rather than going
-unnoticed the way the old prose-only instructions did:
+Three settings remain manual, because GraphQL cannot write them
+(`ProjectV2ViewConfigurationInput` accepts only `visibleFieldIds`, and
+`createProjectV2Field`'s `dataType` accepts no built-in type). Two of the three
+are asserted by `pnpm check:hub-views`, so a drifted board fails a gate rather
+than going unnoticed the way the old prose-only instructions did:
 
-- Enable the built-in **`Type`** field: board "…" menu → Settings → Fields →
-  `Type`. Once enabled, the next `--init --apply` adds it as a `Backlog` column
-  on its own; until then the runner reports its absence as `info`, not a
-  warning, and `check:hub-views` is the loud channel.
+- Add the built-in **`Type`** column from the `Backlog` view's own field
+  picker. This one is **not** gate-asserted and cannot be: the field is
+  invisible to GraphQL by every path — absent from `ProjectV2.fields` and from
+  `configuration.visibleFields`, and `projectV2.field(name: "Type")` answers
+  `NOT_FOUND` — even while the board UI renders the column (ADR-0075). Check it
+  by eye. ADR-0073 assumed the opposite and shipped a gate assertion no board
+  could ever satisfy.
+- **`Backlog`** columns, in `VIEW_DEFS[0].fields` order. Add and reorder them
+  from the field picker; `check:hub-views` asserts the API-visible ones. The
+  declared position of `Type` within that list is documentary only — neither
+  writable nor assertable.
 - **`Backlog`** sort: `Priority` ascending, then `Created` ascending — oldest
   highest-priority work first. Set it under the view's "…" menu → Sort.
   Because sort is readable but not writable, `--init --apply` captures the
-  view's sort before the column update and re-reads it after; if the update
-  cleared it, the runner warns with the exact fields and directions to restore
-  by hand rather than reporting a clean success.
+  view's sort before an update and re-reads it after; if the update cleared it,
+  the runner warns with the exact fields and directions to restore by hand
+  rather than reporting a clean success.
 
 Everything else on the board is written by the sync from the trackers: `Status`
 and `Priority` per item, and `Parent issue` indirectly (it is a read-only

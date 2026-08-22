@@ -23,7 +23,11 @@ const BACKLOG_DEF = {
 const STATUS_OPTIONS = [{ name: "To Do" }, { name: "Done" }];
 const PRIORITY_OPTIONS = [{ name: "0-now" }, { name: "1-next" }];
 
-const ISSUE_TYPE_FIELD = { name: "Type", dataType: "ISSUE_TYPE" };
+// There is deliberately no ISSUE_TYPE field fixture. No board can have one:
+// ProjectV2FieldConfiguration has no issue-type member, so the built-in Type
+// field is absent from every API read even while the board UI shows the column
+// (ADR-0075). A fixture claiming one would model an impossible board and test
+// behavior that can never run.
 
 function required<T>(value: T | undefined, what: string): T {
   if (value === undefined) {
@@ -59,10 +63,12 @@ function compliantBoard() {
           { field: "Priority", direction: "ASC" },
           { field: "Created", direction: "ASC" },
         ],
-        columns: ["Title", "Priority", "Type", "Status"],
+        // No "Type": the declared column exists on the real board but is
+        // invisible to the API, so a live read never returns it.
+        columns: ["Title", "Priority", "Status"],
       },
     ],
-    liveFields: [ISSUE_TYPE_FIELD, statusField(), priorityField()],
+    liveFields: [statusField(), priorityField()],
     optionalFields: new Set(["Type"]),
     desiredStatusOptions: STATUS_OPTIONS,
     desiredPriorityOptions: PRIORITY_OPTIONS,
@@ -139,24 +145,30 @@ describe("deriveViewDrift", () => {
       liveViews: [
         {
           ...liveBacklog(board),
-          // Same four columns, Priority and Title swapped.
-          columns: ["Priority", "Title", "Type", "Status"],
+          // The same visible columns, Priority and Title swapped.
+          columns: ["Priority", "Title", "Status"],
         },
       ],
     });
 
     expect(findings).toHaveLength(1);
     const finding = findings[0] ?? "";
-    expect(finding).toMatch(/columns are \[Priority, Title, Type, Status\]/);
-    expect(finding).toMatch(/expected \[Title, Priority, Type, Status\]/);
+    expect(finding).toMatch(/columns are \[Priority, Title, Status\]/);
+    // "Type" is dropped from the EXPECTED list too — it is unconditionally
+    // exempt, so the gate never asks the board for a column it cannot see.
+    expect(finding).toMatch(/expected \[Title, Priority, Status\]/);
     // The reason the order matters is carried with the finding.
     expect(finding).toMatch(/not a set/);
+    // And the remedy is by hand: no mutation writes columns on an existing
+    // view any more.
+    expect(finding).toMatch(/by hand/);
   });
 
-  test("an optional column absent from the live board is not counted as column drift", () => {
-    // "Type" is declared but the field isn't enabled, so it is legitimately
-    // missing from both the field list and the view's columns. The ISSUE_TYPE
-    // finding covers that cause; a column finding would name it twice.
+  test("an optional column absent from the live board is not counted as column drift, and raises no finding at all", () => {
+    // "Type" is declared but invisible to the API, so it is legitimately
+    // missing from every live read. That is the normal steady state, not
+    // drift -- and unlike the pre-ADR-0075 behavior there is no ISSUE_TYPE
+    // finding standing in for it either, because no board could ever clear one.
     const board = compliantBoard();
     const findings = deriveViewDrift({
       ...board,
@@ -169,10 +181,7 @@ describe("deriveViewDrift", () => {
       liveFields: [statusField(), priorityField()],
     });
 
-    expect(findings.some((message) => /columns are/.test(message))).toBe(false);
-    expect(
-      findings.some((message) => /no ISSUE_TYPE field/.test(message)),
-    ).toBe(true);
+    expect(findings).toEqual([]);
   });
 
   test("sort comparison is element-wise, not a rendered-string compare", () => {
@@ -258,32 +267,44 @@ describe("deriveViewDrift", () => {
     expect(findings.some((message) => /columns are/.test(message))).toBe(true);
   });
 
-  test("an optional column removed BY HAND while its field IS enabled is reported — the exemption is not unconditional", () => {
-    // The silent-miss this gate exists to close. The exemption previously keyed
-    // on the live column's absence, so with the ISSUE_TYPE field enabled and
-    // the "Type" column deleted from the view, neither the column check nor the
-    // ISSUE_TYPE check fired and the board read as clean.
+  test("an optional column is exempt by its own declared reason, not because the live view happens to lack it", () => {
+    // The silent-miss this gate exists to close, restated for a permanently
+    // exempt column. "Type" is exempt because OPTIONAL_COLUMN_EXEMPTIONS says
+    // so, NOT because the live column list is short -- so a MANDATORY column
+    // going missing beside it is still reported, and the expected list still
+    // omits Type rather than quietly matching whatever the board returned.
     const board = compliantBoard();
     const findings = deriveViewDrift({
       ...board,
       liveViews: [
         {
           ...liveBacklog(board),
-          columns: ["Title", "Priority", "Status"],
+          // "Status" -- mandatory -- removed by hand.
+          columns: ["Title", "Priority"],
         },
       ],
-      // Field present — so "Type" is mandatory, not exempt.
-      liveFields: [ISSUE_TYPE_FIELD, statusField(), priorityField()],
     });
 
     expect(findings).toHaveLength(1);
     const finding = findings[0] ?? "";
-    expect(finding).toMatch(/columns are \[Title, Priority, Status\]/);
-    expect(finding).toMatch(/expected \[Title, Priority, Type, Status\]/);
-    // And NOT the ISSUE_TYPE message — the field is there; the column isn't.
-    expect(
-      findings.some((message) => /no ISSUE_TYPE field/.test(message)),
-    ).toBe(false);
+    expect(finding).toMatch(/columns are \[Title, Priority\]/);
+    expect(finding).toMatch(/expected \[Title, Priority, Status\]/);
+  });
+
+  test("an unmapped optional column is reported rather than silently exempted", () => {
+    // The rule that keeps the exemption table honest: declaring a column
+    // optional is not enough, it needs a stated reason. Regression guard for
+    // the one property ADR-0075 did NOT relax.
+    const board = compliantBoard();
+    const findings = deriveViewDrift({
+      ...board,
+      optionalFields: new Set(["Type", "Assignees"]),
+    });
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0] ?? "").toMatch(
+      /Column "Assignees" is in OPTIONAL_VIEW_FIELDS but has no entry/,
+    );
   });
 
   test("a cleared sort is reported as a MANUAL fix, never as something a sync can repair", () => {
@@ -373,31 +394,11 @@ describe("deriveViewDrift", () => {
     expect(finding).toMatch(/only one of them is being checked/);
   });
 
-  test('a missing ISSUE_TYPE field is matched on dataType, not on the name "Type"', () => {
-    const board = compliantBoard();
-    const findings = deriveViewDrift({
-      ...board,
-      // A field literally NAMED "Type" but of the wrong dataType must not
-      // satisfy the assertion — that would pass for a hand-made single-select
-      // masquerading as the built-in.
-      liveFields: [
-        { name: "Type", dataType: "SINGLE_SELECT", options: [] },
-        statusField(),
-        priorityField(),
-      ],
-    });
-
-    expect(
-      findings.some((message) => /no ISSUE_TYPE field/.test(message)),
-    ).toBe(true);
-  });
-
   test("a missing and an undeclared single-select option are reported separately, each with its own remedy", () => {
     const board = compliantBoard();
     const findings = deriveViewDrift({
       ...board,
       liveFields: [
-        ISSUE_TYPE_FIELD,
         statusField([{ name: "To Do" }, { name: "Archived" }]),
         priorityField(),
       ],
@@ -422,7 +423,6 @@ describe("deriveViewDrift", () => {
     const findings = deriveViewDrift({
       ...board,
       liveFields: [
-        ISSUE_TYPE_FIELD,
         statusField(),
         priorityField([{ name: "1-next" }, { name: "0-now" }]),
       ],
@@ -439,11 +439,7 @@ describe("deriveViewDrift", () => {
     const board = compliantBoard();
     const findings = deriveViewDrift({
       ...board,
-      liveFields: [
-        ISSUE_TYPE_FIELD,
-        statusField(),
-        priorityField([{ name: "1-next" }]),
-      ],
+      liveFields: [statusField(), priorityField([{ name: "1-next" }])],
     });
 
     expect(findings.some((message) => /wrong order/.test(message))).toBe(false);
@@ -456,7 +452,7 @@ describe("deriveViewDrift", () => {
     const board = compliantBoard();
     const findings = deriveViewDrift({
       ...board,
-      liveFields: [ISSUE_TYPE_FIELD],
+      liveFields: [],
     });
 
     expect(
