@@ -436,3 +436,51 @@ unexercised behind a green no-mutation assertion.
 the first real deletion. The fake reporter accepts any kind, so only the
 type-check saw it. This is the second time the 108-error `tsc -p bin` baseline
 diff has earned its keep — the count is the signal, not zero (tracker item F14).
+
+## Update (2026-08-22g): PR 7 shipped — `check:hub-views`, and what it found live
+
+The gate exists because two of the board's facets are UI-only and prose was
+their only enforcement. That is not hypothetical: it is precisely how
+`MANUAL_VIEW_STEPS` came to claim a sort ("Priority ascending, then Status")
+that has never matched the live board, undetected until this plan re-derived it.
+
+Two design points worth recording:
+
+**Positional comparison, not set comparison.** `visibleFieldIds` IS the column
+order and a single-select sorts by declared option order, so a reorder is real
+drift even when both sets are equal. Two suppressions stop one cause being named
+twice: an order complaint is withheld while the option sets still differ, and an
+optional column missing from the board is not reported when the ISSUE_TYPE
+finding already explains it.
+
+**The graceful skip is the risky part, so `isScopeError` is narrow and tested in
+both directions.** A broad match would turn every outage into a silent pass —
+the one failure mode a skip-on-missing-capability gate must not have. The gate
+exports its seams (unlike `check-label-drift.mjs`, which keeps everything behind
+the main guard) precisely so the exit-0 branch is assertable; otherwise a
+regression in it would be indistinguishable from a clean board.
+
+Run live against the board it will guard, it reports **four** findings, each one
+fixed by a step of the pending apply session:
+
+| Finding                                                                                                         | Fixed by                         |
+| --------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `Backlog` columns are `Title, Status, Labels, Linked pull requests, Milestone, Parent issue, Created, Priority` | step 7 (`--init --apply`)        |
+| `Board` view is undeclared                                                                                      | step 8 (`--prune-views --apply`) |
+| No ISSUE_TYPE field, so no `Type` column                                                                        | step 6 (manual UI enable)        |
+| `Priority` is missing `3-gated`                                                                                 | step 7 (`--init --apply`)        |
+
+That output doubles as independent confirmation of Update 2026-08-22f's first
+correction: the live column set is the 8 named above, `Created` and `Parent
+issue` among them. A 6-name declaration would have deleted two of them.
+
+`Status`'s option set drew no finding, so the ADR-0052 rename has fully
+converged live.
+
+The gate is wired into CI push-only but is **expected to take its skip path
+there** — `GITHUB_TOKEN` cannot read Projects v2 at all. Real enforcement is a
+maintainer running it locally with the `project` scope; CI registration exists so
+the command stays on the `check:verify-parity` inventory and starts failing for
+real the day a token can read the board. Deliberately not on `lefthook.yml`:
+that would fail for every contributor and force a CLAUDE.md cadence-table edit
+that `check:cadence` gates.
