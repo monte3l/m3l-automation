@@ -437,6 +437,43 @@ describe("runHubViewsCheck", () => {
     },
   );
 
+  test("a visible column with no name fails loudly rather than being dropped", () => {
+    // Dropping it would yield a confident but WRONG column-drift finding --
+    // the same failure mode the window guards are hard errors for.
+    const { runGh } = boardGh(
+      compliantBoardPayload({
+        views: [
+          {
+            ...(viewPayload([...DECLARED.fields]) as Record<string, unknown>),
+            fields: { nodes: [{ name: "Title" }, {}] },
+          },
+        ],
+      }),
+    );
+    const reporter = createFakeReporter();
+
+    const outcome = runHubViewsCheck({ runGh, reporter });
+
+    expect(outcome).toMatchObject({ ok: false, skipped: false });
+    const message = required(reporter.errors[0], "reporter.errors[0]");
+    expect(message).toMatch(/visible column with no name/);
+    expect(outcome.findings).toEqual([]);
+  });
+
+  test("an unexpected non-gh failure surfaces its stack, not just its message", () => {
+    // A `gh` error is fully described by stderr, but a TypeError from an
+    // unforeseen payload shape is only debuggable with a stack.
+    const { runGh } = boardGh("this is not json");
+    const reporter = createFakeReporter();
+
+    const outcome = runHubViewsCheck({ runGh, reporter });
+
+    expect(outcome).toMatchObject({ ok: false, skipped: false });
+    const message = required(reporter.errors[0], "reporter.errors[0]");
+    expect(message).toMatch(/Board check failed:/);
+    expect(message).toMatch(/at .*check-hub-views/);
+  });
+
   test("a view whose SORT connection reaches its window fails loudly rather than reporting a misleading sort finding", () => {
     // The worst under-read of the three: a sort finding's only remedy is a
     // manual UI edit, so a truncated sort sends the maintainer to "fix" a sort
