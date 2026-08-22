@@ -117,4 +117,5 @@ surface).
 | 0070 | [Console audit, self-observability, and the display-vs-persist rule](./0070-console-audit-and-observability.md)                                           | Accepted                         |
 | 0071 | [Console containerization and local-first deployment](./0071-console-containerization-deployment.md)                                                      | Accepted                         |
 | 0072 | [Reviewable-slice discipline for PRs and submodule landings](./0072-reviewable-slice-discipline.md)                                                       | Accepted                         |
-| 0073 | [Hub board classification, hierarchy, and a single authoritative view](./0073-hub-board-classification-and-hierarchy.md)                                  | Accepted                         |
+| 0073 | [Hub board classification, hierarchy, and a single authoritative view](./0073-hub-board-classification-and-hierarchy.md)                                  | Accepted; amended by ADR-0074    |
+| 0074 | [Retitle the `major` milestone to `Breaking`](./0074-milestone-major-tier-title.md)                                                                       | Accepted                         |

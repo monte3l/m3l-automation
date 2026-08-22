@@ -436,7 +436,7 @@ describe("MILESTONE_TITLES", () => {
       p2: "Later — not yet scheduled",
       p3: "Gated — awaiting trigger",
       governance: "Governance",
-      major: "2.0 / breaking",
+      major: "Breaking",
     });
   });
 
@@ -1231,7 +1231,7 @@ describe("buildIssuePayload", () => {
     ]);
   });
 
-  test("milestoneTitle is '2.0 / breaking' for an item keyed impl:friction:f3, regardless of its priority", () => {
+  test("milestoneTitle is 'Breaking' for an item keyed impl:friction:f3, regardless of its priority", () => {
     // MAJOR_BUMP_ITEM_KEYS now contains impl:friction:f3 (namespaced), not impl:F3.
     const item = makeItem({
       key: `impl:friction:${slug("F3")}`,
@@ -1240,7 +1240,7 @@ describe("buildIssuePayload", () => {
     const payload = buildIssuePayload(item) as {
       milestoneTitle: string | null;
     };
-    expect(payload.milestoneTitle).toBe("2.0 / breaking");
+    expect(payload.milestoneTitle).toBe("Breaking");
   });
 
   test("milestoneTitle is the normal priority-derived title for an item outside MAJOR_BUMP_ITEM_KEYS", () => {
@@ -1527,18 +1527,37 @@ describe("planMilestones", () => {
   // breaking" exist). Title match must win over the legacy match — GitHub
   // rejects a PATCH that would duplicate an existing title — so the
   // legacy-titled sibling is reported as an orphan instead of renamed.
-  test("title-match-beats-legacy: when a def's current title AND one of its legacyTitles both exist live, the legacy one orphans rather than renaming (major's real 'Breaking' + '2.0 / breaking' state)", () => {
+  // The orientation is pinned with literals rather than with MAJOR_DEF.title
+  // and MAJOR_DEF.legacyTitles[0]: expressed in terms of the def, this test
+  // passes whichever way round the row is declared, and the direction is the
+  // entire point. ADR-0074 put the declared title on "Breaking" because that
+  // is the milestone carrying the closed breaking work (#338, #196). Declared
+  // the other way, the orphan is the milestone holding every breaking issue —
+  // and since planMilestones never deletes an orphan, that split is permanent.
+  test("title-match-beats-legacy: 'Breaking' is claimed and the legacy '2.0 / breaking' orphans — never the reverse", () => {
+    expect(MAJOR_DEF.title).toBe("Breaking");
+    expect(MAJOR_DEF.legacyTitles).toEqual(["2.0 / breaking"]);
+
     const existingMilestones = [
       makeMilestone({
         number: 10,
-        title: MAJOR_DEF.title,
+        title: "Breaking",
         description: MAJOR_DEF.description,
       }),
-      makeMilestone({ number: 11, title: "Breaking", description: null }),
+      makeMilestone({ number: 11, title: "2.0 / breaking", description: null }),
     ];
     const result = planMilestones([], existingMilestones, MILESTONE_DEFS);
+
     expect(result.rename).toEqual([]);
-    expect(result.orphan).toContainEqual({ number: 11, title: "Breaking" });
+    expect(result.orphan).toContainEqual({
+      number: 11,
+      title: "2.0 / breaking",
+    });
+    // The claimed side, asserted explicitly rather than left implied: #10 is
+    // neither orphaned nor re-described, which is what "claimed" means here.
+    expect(result.orphan).not.toContainEqual({ number: 10, title: "Breaking" });
+    expect(result.describe).toEqual([]);
+    expect(result.create).toEqual([]);
   });
 
   // Applies plan1's create/rename/describe to a starting live state, then
@@ -1572,14 +1591,20 @@ describe("planMilestones", () => {
         title: MAJOR_DEF.title,
         description: MAJOR_DEF.description,
       }),
-      makeMilestone({ number: 11, title: "Breaking", description: null }),
+      // major's legacy title, mirroring the real #5/#9 board state: the def's
+      // own title on one milestone and the stale title on another.
+      makeMilestone({
+        number: 11,
+        title: "2.0 / breaking",
+        description: null,
+      }),
     ];
 
     const plan1 = planMilestones(items, initial, MILESTONE_DEFS);
     expect(plan1.create.length).toBeGreaterThan(0);
     expect(plan1.rename.length).toBeGreaterThan(0);
     expect(plan1.describe.length).toBeGreaterThan(0);
-    expect(plan1.orphan).toEqual([{ number: 11, title: "Breaking" }]);
+    expect(plan1.orphan).toEqual([{ number: 11, title: "2.0 / breaking" }]);
 
     // Apply the plan: renames update the live title, describes update the
     // live description, creates become brand-new live entries with the
@@ -1608,7 +1633,7 @@ describe("planMilestones", () => {
     expect(plan2.create).toEqual([]);
     expect(plan2.rename).toEqual([]);
     expect(plan2.describe).toEqual([]);
-    expect(plan2.orphan).toEqual([{ number: 11, title: "Breaking" }]);
+    expect(plan2.orphan).toEqual([{ number: 11, title: "2.0 / breaking" }]);
   });
 });
 

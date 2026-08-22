@@ -200,7 +200,7 @@ describe("findPriorityVocabularyMismatches", () => {
       priorityLabels: { p0: "priority:0-now" },
       milestoneTitles: {
         p0: "Now — unblock first",
-        major: "2.0 / breaking",
+        major: "Breaking",
       },
       roadmapAnchors: {},
       projectPriorityOptions: { p0: "0-now" },

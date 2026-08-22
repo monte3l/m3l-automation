@@ -9,8 +9,10 @@
 // check:label-drift gate, the board's single-selects had DESIRED_*_OPTIONS
 // reconciled by --init, and milestones had a bare title string in
 // MILESTONE_TITLES and a create-only planner. The consequence was visible on
-// the live repo: all five milestones carried a null description, and a stale
-// "Breaking" sat beside the "2.0 / breaking" the sync kept wanting to create.
+// the live repo: all five milestones carried a null description, and the
+// `major` tier had accumulated two milestones -- "Breaking" and
+// "2.0 / breaking" -- because a create-only planner could never describe or
+// rename its way back to one.
 import { MILESTONE_TITLES, PRIORITY_TIERS } from "./hub-sync.mjs";
 
 /**
@@ -22,7 +24,8 @@ import { MILESTONE_TITLES, PRIORITY_TIERS } from "./hub-sync.mjs";
  * that would strand them. Two entries carry one because ADR-0073 renamed
  * them — `Next — consumer fleet` was already wrong (of the 28 open `p1` items
  * exactly 2 were consumer scripts) and `Later — gated/deferred` became wrong
- * the moment the `3-gated` tier existed.
+ * the moment the `3-gated` tier existed. A third, `major`, carries one because
+ * ADR-0074 reverted its title rather than renaming it forward.
  *
  * A `legacyTitles` entry is **not** a promise to rename: if the def's current
  * title already exists live, that milestone is the match and the
@@ -30,6 +33,8 @@ import { MILESTONE_TITLES, PRIORITY_TIERS } from "./hub-sync.mjs";
  * duplicate an existing title. That is the live situation for `major` — both
  * `Breaking` and `2.0 / breaking` exist — and it is why `planMilestones`
  * prefers a title match over a legacy match rather than renaming blindly.
+ * ADR-0074 chose `Breaking` as the declared title so that match lands on the
+ * milestone actually holding the closed breaking work, not the empty one.
  *
  * Descriptions for the four priority tiers come from {@link PRIORITY_TIERS},
  * the same table `LABEL_DEFS` reads, so a tier's label and its milestone
@@ -79,9 +84,13 @@ export const MILESTONE_DEFS = [
     key: "major",
     title: MILESTONE_TITLES.major,
     description: "Work that needs a major version bump before it can be built.",
-    // "Breaking" predates the "2.0 / breaking" title. Both exist live, so this
-    // resolves as an orphan report, not a rename — see the note above.
-    legacyTitles: ["Breaking"],
+    // ADR-0074 reverted this to "Breaking". `m3l-common` is at 4.x, so "2.0"
+    // named no reachable version — ADR-0044 found the same thing back at
+    // 2.4.0 — and every other title here is a horizon, not a version. Both
+    // titles exist live, so this resolves as an orphan report rather than a
+    // rename, and the title match is the milestone carrying the closed
+    // breaking work. See the note above.
+    legacyTitles: ["2.0 / breaking"],
   },
 ];
 
