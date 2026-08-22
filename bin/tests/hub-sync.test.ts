@@ -3,6 +3,7 @@ import { extractImplementation, extractRoadmap } from "../lib/project-hub.mjs";
 import { LABEL_DEFS } from "../lib/label-defs.mjs";
 import { MILESTONE_DEFS } from "../lib/milestone-defs.mjs";
 import {
+  EPIC_KEYS,
   HUB_LABEL,
   HUB_PROJECT_TITLE,
   ISSUE_TYPES,
@@ -16,12 +17,15 @@ import {
   TYPE_VALUES,
   actionableItems,
   buildIssuePayload,
+  epicPriority,
+  epicStatus,
   hubMarker,
   indexItemsByKey,
   parseHubMarker,
   planBackfill,
   planIssueSync,
   planMilestones,
+  planParentLinks,
   planProjectSync,
   slug,
   titleSimilarity,
@@ -280,6 +284,8 @@ interface TestItem {
   sourceAnchor: string;
   detail: string;
   legacyKeys?: string[];
+  parentKey?: string;
+  isEpic?: boolean;
 }
 
 function makeItem(overrides: Partial<TestItem> = {}): TestItem {
@@ -1627,7 +1633,12 @@ interface TestIssue {
 }
 
 interface IssueSyncResult {
-  create: { key: string; payload: unknown }[];
+  create: {
+    key: string;
+    payload: unknown;
+    isEpic?: boolean;
+    parentKey?: string;
+  }[];
   update: { number: number; key: string; payload: unknown }[];
   close: {
     number: number;
@@ -2544,5 +2555,408 @@ describe("planProjectSync", () => {
     expect(() => planProjectSync(trackedIssues, [])).toThrow(
       /no board option mapped for status "bogus"/,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// epicStatus (ADR-0073)
+// ---------------------------------------------------------------------------
+
+describe("epicStatus", () => {
+  test.each<[string, { status: string }[], string]>([
+    [
+      "in-progress beats todo/blocked/deferred",
+      [
+        { status: "deferred" },
+        { status: "blocked" },
+        { status: "todo" },
+        { status: "in-progress" },
+      ],
+      "in-progress",
+    ],
+    [
+      "todo beats blocked/deferred when no in-progress child exists",
+      [{ status: "deferred" }, { status: "blocked" }, { status: "todo" }],
+      "todo",
+    ],
+    [
+      "blocked beats deferred when no in-progress/todo child exists",
+      [{ status: "deferred" }, { status: "blocked" }],
+      "blocked",
+    ],
+    [
+      "deferred is the floor when nothing more urgent exists",
+      [{ status: "deferred" }],
+      "deferred",
+    ],
+  ])("%s", (_label, children, expected) => {
+    expect(epicStatus(children)).toBe(expected);
+  });
+
+  test("a resolved-only child set (done/rejected) never yields a resolved status", () => {
+    const result = epicStatus([{ status: "done" }, { status: "rejected" }]);
+    expect(result).not.toBe("done");
+    expect(result).not.toBe("rejected");
+  });
+
+  test("done/rejected children are ignored when an unresolved child exists", () => {
+    expect(epicStatus([{ status: "done" }, { status: "blocked" }])).toBe(
+      "blocked",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// epicPriority (ADR-0073)
+// ---------------------------------------------------------------------------
+
+describe("epicPriority", () => {
+  test.each<[string, { status: string; priority: string }[], string]>([
+    [
+      "p0 beats p1/p2 among unresolved children",
+      [
+        { status: "todo", priority: "p2" },
+        { status: "todo", priority: "p0" },
+        { status: "todo", priority: "p1" },
+      ],
+      "p0",
+    ],
+    [
+      "p2 beats p3 among unresolved children",
+      [
+        { status: "todo", priority: "p3" },
+        { status: "todo", priority: "p2" },
+      ],
+      "p2",
+    ],
+    [
+      "p3 beats governance among unresolved children",
+      [
+        { status: "todo", priority: "governance" },
+        { status: "todo", priority: "p3" },
+      ],
+      "p3",
+    ],
+    [
+      "governance is the floor when nothing more urgent exists",
+      [{ status: "todo", priority: "governance" }],
+      "governance",
+    ],
+  ])("%s", (_label, children, expected) => {
+    expect(epicPriority(children)).toBe(expected);
+  });
+
+  // The important one: a finished urgent item must not pin the epic to the
+  // top of the board's Priority-ascending sort long after its remaining
+  // work dropped to a lower tier.
+  test("a done p0 child alongside an open p2 child yields p2, not p0 — a finished urgent item cannot pin the epic to the top of the board", () => {
+    const children = [
+      { status: "done", priority: "p0" },
+      { status: "todo", priority: "p2" },
+    ];
+    expect(epicPriority(children)).toBe("p2");
+  });
+
+  test("an empty child list falls back to governance", () => {
+    expect(epicPriority([])).toBe("governance");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Epic emission via actionableItems (ADR-0073)
+// ---------------------------------------------------------------------------
+
+describe("actionableItems: epic emission", () => {
+  test("a section with at least one unresolved row yields exactly one grouping epic, with isEpic/type/sourcePath set", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
+    const { items } = actionableItems(roadmap, implementation);
+
+    // Library friction (F-series) has F7 (Deferred) alongside F9 (Done) —
+    // at least one unresolved row, so the epic is emitted exactly once.
+    const frictionEpics = items.filter(
+      (item) => item.key === EPIC_KEYS.friction,
+    );
+    expect(frictionEpics).toHaveLength(1);
+    const epic = frictionEpics[0];
+    expect(epic?.isEpic).toBe(true);
+    expect(epic?.type).toBe(ISSUE_TYPES.friction);
+    expect(epic?.sourcePath).toBe("docs/plans/IMPLEMENTATION.md");
+  });
+
+  // Named for the 19-vs-7 measurement in ADR-0073: emitting on "any child"
+  // instead of "any UNRESOLVED child" would create-and-immediately-close 12
+  // epics whose sections already shipped in full — pure issue-feed noise
+  // that never shows on the board's `is:open` view.
+  test("[19-vs-7] a section whose every row is already Done/Rejected emits no epic", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
+    const { items } = actionableItems(roadmap, implementation);
+
+    // ADR-0035 rollout's only row (A7) is Rejected — a fully-resolved
+    // section with nothing left to group.
+    expect(items.some((item) => item.key === EPIC_KEYS.adr0035Rollout)).toBe(
+      false,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parentKey (ADR-0073)
+// ---------------------------------------------------------------------------
+
+describe("parentKey", () => {
+  test("items from a given section carry that section's EPIC_KEYS value", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
+    const { items } = actionableItems(roadmap, implementation);
+
+    const f7 = items.find((item) => item.key === "impl:friction:f7");
+    expect(f7?.parentKey).toBe(EPIC_KEYS.friction);
+  });
+
+  // The decision this pins: ROADMAP Priority 1 namespaces its OWN item keys
+  // per wave ("roadmap:W3:...", not "roadmap:p1:..."), but its parentKey
+  // still resolves to the single Priority-1 epic — keyed by declared
+  // *section*, not by the row's own key namespace.
+  test("a ROADMAP Priority 1 row carries EPIC_KEYS.roadmapP1 even though its own key is namespaced by wave, not by section", () => {
+    const roadmap = extractRoadmap(ROADMAP_FIXTURE);
+    const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
+    const { items } = actionableItems(roadmap, implementation);
+
+    const w3 = items.find((item) => item.key === "roadmap:W3:ecs-ops");
+    expect(w3).toBeDefined();
+    expect(w3?.key.startsWith("roadmap:p1:")).toBe(false);
+    expect(w3?.parentKey).toBe(EPIC_KEYS.roadmapP1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// planParentLinks (ADR-0073)
+// ---------------------------------------------------------------------------
+
+interface ParentLinkIssue {
+  number: number;
+  body: string;
+  state: "open" | "closed";
+  parentNumber: number | null;
+}
+
+function issueWithParent(
+  number: number,
+  key: string,
+  state: "open" | "closed",
+  parentNumber: number | null,
+): ParentLinkIssue {
+  return { number, body: hubMarker(key), state, parentNumber };
+}
+
+describe("planParentLinks", () => {
+  const epicItem = makeItem({ key: EPIC_KEYS.friction, isEpic: true });
+  const childItem = makeItem({
+    key: "impl:friction:f7",
+    parentKey: EPIC_KEYS.friction,
+  });
+
+  test("set: an open issue whose current parent differs from its item's epic gets the epic's issue number", () => {
+    const epicIssue = issueWithParent(100, epicItem.key, "open", null);
+    const childIssue = issueWithParent(200, childItem.key, "open", null);
+
+    const result = planParentLinks(
+      [epicItem, childItem],
+      [epicIssue, childIssue],
+    );
+
+    expect(result.set).toEqual([
+      {
+        number: 200,
+        key: childItem.key,
+        parentNumber: 100,
+        parentKey: EPIC_KEYS.friction,
+      },
+    ]);
+    expect(result.clear).toEqual([]);
+    expect(result.pending).toEqual([]);
+  });
+
+  test("clear: an issue with a parent whose item now declares none is cleared", () => {
+    const epicIssue = issueWithParent(101, epicItem.key, "open", null);
+    const orphanedChild = makeItem({ key: "impl:friction:f9" });
+    const childIssue = issueWithParent(201, orphanedChild.key, "open", 101);
+
+    const result = planParentLinks(
+      [epicItem, orphanedChild],
+      [epicIssue, childIssue],
+    );
+
+    expect(result.clear).toEqual([{ number: 201, key: orphanedChild.key }]);
+    expect(result.set).toEqual([]);
+    expect(result.pending).toEqual([]);
+  });
+
+  test("pending: the epic has no issue yet, so the child's link waits, carrying the child's own issue number", () => {
+    const childIssue = issueWithParent(202, childItem.key, "open", null);
+
+    const result = planParentLinks([epicItem, childItem], [childIssue]);
+
+    expect(result.pending).toEqual([
+      { number: 202, key: childItem.key, parentKey: EPIC_KEYS.friction },
+    ]);
+    expect(result.set).toEqual([]);
+    expect(result.clear).toEqual([]);
+  });
+
+  test("an epic is never given a parent, even when it declares one itself", () => {
+    const epicWithParentKey = makeItem({
+      key: EPIC_KEYS.friction,
+      isEpic: true,
+      parentKey: EPIC_KEYS.gated,
+    });
+    const parentEpicIssue = issueWithParent(300, EPIC_KEYS.gated, "open", null);
+    const epicIssue = issueWithParent(301, epicWithParentKey.key, "open", null);
+
+    const result = planParentLinks(
+      [epicWithParentKey],
+      [parentEpicIssue, epicIssue],
+    );
+
+    expect(result.set).toEqual([]);
+    expect(result.clear).toEqual([]);
+    expect(result.pending).toEqual([]);
+  });
+
+  test("a closed issue's parent link is left alone, even when it would otherwise need a set", () => {
+    const epicIssue = issueWithParent(102, epicItem.key, "open", null);
+    const closedChildIssue = issueWithParent(
+      203,
+      childItem.key,
+      "closed",
+      null,
+    );
+
+    const result = planParentLinks(
+      [epicItem, childItem],
+      [epicIssue, closedChildIssue],
+    );
+
+    expect(result.set).toEqual([]);
+    expect(result.clear).toEqual([]);
+    expect(result.pending).toEqual([]);
+  });
+
+  test("a legacy-marker issue still resolves to its item for parent linking", () => {
+    const legacyChild = makeItem({
+      key: "impl:friction:f7",
+      parentKey: EPIC_KEYS.friction,
+      legacyKeys: ["impl:F7"],
+    });
+    const epicIssue = issueWithParent(103, epicItem.key, "open", null);
+    const legacyMarkerIssue = issueWithParent(204, "impl:F7", "open", null);
+
+    const result = planParentLinks(
+      [epicItem, legacyChild],
+      [epicIssue, legacyMarkerIssue],
+    );
+
+    expect(result.set).toEqual([
+      {
+        number: 204,
+        key: legacyChild.key,
+        parentNumber: 103,
+        parentKey: EPIC_KEYS.friction,
+      },
+    ]);
+  });
+
+  test("idempotency: applying the plan's set and re-planning yields empty set/clear", () => {
+    const epicIssue = issueWithParent(104, epicItem.key, "open", null);
+    const childIssue = issueWithParent(205, childItem.key, "open", null);
+
+    const firstRun = planParentLinks(
+      [epicItem, childItem],
+      [epicIssue, childIssue],
+    );
+    expect(firstRun.set).toHaveLength(1);
+
+    const appliedChildIssue: ParentLinkIssue = {
+      ...childIssue,
+      parentNumber: firstRun.set[0]?.parentNumber ?? null,
+    };
+    const secondRun = planParentLinks(
+      [epicItem, childItem],
+      [epicIssue, appliedChildIssue],
+    );
+
+    expect(secondRun.set).toEqual([]);
+    expect(secondRun.clear).toEqual([]);
+    expect(secondRun.pending).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// planIssueSync create entries: isEpic / parentKey (ADR-0073)
+// ---------------------------------------------------------------------------
+
+describe("planIssueSync create entries carry isEpic/parentKey", () => {
+  test("an epic item's create entry has isEpic: true", () => {
+    const epicItem = makeItem({
+      key: EPIC_KEYS.friction,
+      isEpic: true,
+      status: "todo",
+    });
+    const result = planIssueSync([epicItem], []) as IssueSyncResult;
+
+    expect(result.create).toHaveLength(1);
+    expect(result.create[0]?.isEpic).toBe(true);
+  });
+
+  test("a child item's create entry carries its parentKey", () => {
+    const childItem = makeItem({
+      key: "impl:friction:f7",
+      parentKey: EPIC_KEYS.friction,
+      status: "todo",
+    });
+    const result = planIssueSync([childItem], []) as IssueSyncResult;
+
+    expect(result.create).toHaveLength(1);
+    expect(result.create[0]?.parentKey).toBe(EPIC_KEYS.friction);
+  });
+
+  test("a plain item's create entry carries neither isEpic nor parentKey (conditionally spread, not present as undefined)", () => {
+    const plainItem = makeItem({ key: "roadmap:p0:plain", status: "todo" });
+    const result = planIssueSync([plainItem], []) as IssueSyncResult;
+
+    expect(result.create).toHaveLength(1);
+    expect(result.create[0]).not.toHaveProperty("isEpic");
+    expect(result.create[0]).not.toHaveProperty("parentKey");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// planBackfill skips epics (ADR-0073)
+// ---------------------------------------------------------------------------
+
+describe("planBackfill skips epics", () => {
+  test("a Done epic item is never backfilled, even with no marker anywhere", () => {
+    const doneEpic = makeItem({
+      key: EPIC_KEYS.friction,
+      isEpic: true,
+      status: "done",
+    });
+    const result = planBackfill([doneEpic], []) as BackfillResult;
+
+    expect(result.create).toEqual([]);
+    expect(result.needsReview).toEqual([]);
+  });
+
+  test("a Done non-epic item with the same status is still backfilled", () => {
+    const doneItem = makeItem({
+      key: "roadmap:p0:backfill-done-non-epic",
+      status: "done",
+    });
+    const result = planBackfill([doneItem], []) as BackfillResult;
+
+    expect(result.create).toHaveLength(1);
+    expect(result.create[0]?.key).toBe("roadmap:p0:backfill-done-non-epic");
   });
 });

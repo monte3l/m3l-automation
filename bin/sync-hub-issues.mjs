@@ -26,9 +26,11 @@ import { extractImplementation, extractRoadmap } from "./lib/project-hub.mjs";
 import {
   actionableItems,
   HUB_LABEL,
+  parseHubMarker,
   planBackfill,
   planIssueSync,
   planMilestones,
+  planParentLinks,
 } from "./lib/hub-sync.mjs";
 import { LABEL_DEFS } from "./lib/label-defs.mjs";
 import { MILESTONE_DEFS } from "./lib/milestone-defs.mjs";
@@ -149,7 +151,7 @@ function listIssues(runGhFn, reporter, labelArgs) {
     "--state",
     "all",
     "--json",
-    "number,title,body,state,labels,issueType",
+    "number,title,body,state,labels,issueType,parent",
     "--limit",
     String(LIST_LIMIT),
   ]);
@@ -168,6 +170,11 @@ function listIssues(runGhFn, reporter, labelArgs) {
     state: issue.state === "CLOSED" ? "closed" : "open",
     labels: (issue.labels ?? []).map((label) => label.name),
     type: issue.issueType?.name ?? null,
+    // `null` when the issue has no parent. planIssueSync's isDirty
+    // deliberately ignores this — parent links are reconciled by their own
+    // planner, so fixing one link must not trigger a full title/body/label
+    // rewrite of the issue.
+    parentNumber: issue.parent?.number ?? null,
   }));
 }
 
@@ -182,6 +189,25 @@ function loadExistingIssues(runGhFn, reporter) {
 // planBackfill's collision guard exists to catch.
 function loadAllIssues(runGhFn, reporter) {
   return listIssues(runGhFn, reporter, []);
+}
+
+// Re-parent (or un-parent) an existing issue. `gh issue edit` exposes
+// --parent/--remove-parent directly, so no GraphQL node ids are needed and
+// the board's read-only `Parent issue` column fills in with zero board writes.
+function setIssueParent(runGhFn, number, parentNumber) {
+  runGhFn([
+    "issue",
+    "edit",
+    String(number),
+    "-R",
+    REPO,
+    "--parent",
+    String(parentNumber),
+  ]);
+}
+
+function clearIssueParent(runGhFn, number) {
+  runGhFn(["issue", "edit", String(number), "-R", REPO, "--remove-parent"]);
 }
 
 /** `hub-sync create --force` every fixed label; safe/idempotent to re-run. */
@@ -233,7 +259,7 @@ function patchMilestone(runGhFn, number, fields) {
 // doesn't need the number (the next sync run finds it via its marker) and
 // discards the return value; the backfill path does, to close the issue in
 // the same pass.
-function createIssue(runGhFn, payload) {
+function createIssue(runGhFn, payload, parentNumber) {
   const args = [
     "issue",
     "create",
@@ -249,6 +275,12 @@ function createIssue(runGhFn, payload) {
   for (const label of payload.labels) args.push("--label", label);
   if (payload.milestoneTitle !== null) {
     args.push("--milestone", payload.milestoneTitle);
+  }
+  // Establishing the sub-issue link at create time means the follow-up
+  // reconciliation pass has nothing to do for a freshly created child, so a
+  // first-time sync converges in one run instead of two.
+  if (parentNumber !== undefined) {
+    args.push("--parent", String(parentNumber));
   }
   const output = runGhFn(args).trim();
   const match = /\/issues\/(\d+)\s*$/.exec(output);
@@ -337,7 +369,7 @@ function reopenIssue(runGhFn, number) {
   runGhFn(["issue", "reopen", String(number), "-R", REPO]);
 }
 
-function printPlan(reporter, milestonePlan, issuePlan) {
+function printPlan(reporter, milestonePlan, issuePlan, parentPlan) {
   reporter.info(`Milestones to create (${milestonePlan.create.length}):`);
   for (const title of milestonePlan.create) reporter.info(`  + ${title}`);
 
@@ -385,6 +417,28 @@ function printPlan(reporter, milestonePlan, issuePlan) {
   }
 
   reporter.info(`Untouched: ${issuePlan.untouched.length}`);
+
+  reporter.info(`Sub-issue links to set (${parentPlan.set.length}):`);
+  for (const { number, key, parentNumber, parentKey } of parentPlan.set) {
+    reporter.info(
+      `  ^ #${number} [${key}] -> parent #${parentNumber} [${parentKey}]`,
+    );
+  }
+
+  reporter.info(`Sub-issue links to clear (${parentPlan.clear.length}):`);
+  for (const { number, key } of parentPlan.clear) {
+    reporter.info(`  x #${number} [${key}]`);
+  }
+
+  // Deferred, not drift: a pending link always coexists with a non-empty
+  // create plan (the epic is being filed on this very run), so counting it in
+  // the emptiness test below would double-report the same work.
+  reporter.info(
+    `Sub-issue links deferred until their epic is filed (${parentPlan.pending.length}):`,
+  );
+  for (const { key, parentKey } of parentPlan.pending) {
+    reporter.info(`  … [${key}] awaits [${parentKey}]`);
+  }
 }
 
 // backfillPlan is `null` when --backfill wasn't passed — omit the section
@@ -513,6 +567,7 @@ export function runIssueSync({
       MILESTONE_DEFS,
     );
     const issuePlan = planIssueSync(items, existingIssues);
+    const parentPlan = planParentLinks(items, existingIssues);
 
     let backfillPlan = null;
     if (backfill) {
@@ -524,7 +579,7 @@ export function runIssueSync({
       backfillPlan = planBackfill(items, allIssues);
     }
 
-    printPlan(reporter, milestonePlan, issuePlan);
+    printPlan(reporter, milestonePlan, issuePlan, parentPlan);
     printBackfillPlan(reporter, backfillPlan);
 
     if (!apply) {
@@ -535,7 +590,9 @@ export function runIssueSync({
         issuePlan.create.length === 0 &&
         issuePlan.update.length === 0 &&
         issuePlan.close.length === 0 &&
-        issuePlan.reopen.length === 0;
+        issuePlan.reopen.length === 0 &&
+        parentPlan.set.length === 0 &&
+        parentPlan.clear.length === 0;
       const summary = {
         applied: false,
         milestones: {
@@ -550,6 +607,11 @@ export function runIssueSync({
           close: issuePlan.close.length,
           reopen: issuePlan.reopen.length,
           untouched: issuePlan.untouched.length,
+        },
+        parents: {
+          set: parentPlan.set.length,
+          clear: parentPlan.clear.length,
+          pending: parentPlan.pending.length,
         },
         ...(backfillPlan && {
           backfill: {
@@ -620,8 +682,30 @@ export function runIssueSync({
       reporter.change("created", `milestone: ${title}`);
     }
 
-    for (const { key, payload } of issuePlan.create) {
-      createIssue(runGhFn, payload);
+    // Epics are created before their children so each child's create can
+    // carry `--parent <number>`. Without this ordering the parent number does
+    // not exist yet, every child falls through to the reconciliation pass
+    // below, and a first-time sync needs a second `--apply` to converge.
+    const numberByKey = new Map();
+    for (const issue of existingIssues) {
+      const marker = parseHubMarker(issue.body);
+      if (marker !== null) numberByKey.set(marker, issue.number);
+    }
+
+    const [epicCreates, childCreates] = [
+      issuePlan.create.filter((entry) => entry.isEpic === true),
+      issuePlan.create.filter((entry) => entry.isEpic !== true),
+    ];
+
+    for (const { key, payload } of epicCreates) {
+      numberByKey.set(key, createIssue(runGhFn, payload));
+      reporter.change("created", `epic issue [${key}] ${payload.title}`);
+    }
+
+    for (const { key, payload, parentKey } of childCreates) {
+      const parentNumber =
+        parentKey === undefined ? undefined : numberByKey.get(parentKey);
+      numberByKey.set(key, createIssue(runGhFn, payload, parentNumber));
       reporter.change("created", `issue [${key}] ${payload.title}`);
     }
 
@@ -657,6 +741,44 @@ export function runIssueSync({
       reopenIssue(runGhFn, number);
       editIssue(runGhFn, number, payload, existingIssuesByNumber.get(number));
       reporter.change("updated", `issue #${number} [${key}] reopened`);
+    }
+
+    // Parent links last: every issue this run creates or reopens already
+    // exists by now, so `numberByKey` can resolve an epic filed moments ago
+    // and the run converges without needing a second --apply.
+    for (const { number, key, parentNumber, parentKey } of parentPlan.set) {
+      const resolved = numberByKey.get(parentKey) ?? parentNumber;
+      setIssueParent(runGhFn, number, resolved);
+      reporter.change(
+        "updated",
+        `issue #${number} [${key}] -> sub-issue of #${resolved} [${parentKey}]`,
+      );
+    }
+
+    for (const { number, key } of parentPlan.clear) {
+      clearIssueParent(runGhFn, number);
+      reporter.change("updated", `issue #${number} [${key}] parent cleared`);
+    }
+
+    // `pending` was computed against the PRE-apply state, so on a first-time
+    // sync every existing child of a not-yet-filed epic lands here rather than
+    // in `set`. Now that the epics have been created above, their numbers are
+    // in `numberByKey` — so resolve and link them in this same run instead of
+    // leaving the whole hierarchy for a second --apply.
+    for (const { number, key, parentKey } of parentPlan.pending) {
+      const parentNumber = numberByKey.get(parentKey);
+      if (parentNumber === undefined) {
+        reporter.warn(
+          `Sub-issue link deferred: [${key}] -> [${parentKey}] — the epic has no issue ` +
+            `even after this run's creates. Re-run --apply once it is filed.`,
+        );
+        continue;
+      }
+      setIssueParent(runGhFn, number, parentNumber);
+      reporter.change(
+        "updated",
+        `issue #${number} [${key}] -> sub-issue of #${parentNumber} [${parentKey}]`,
+      );
     }
 
     if (backfillPlan) {
@@ -704,6 +826,11 @@ export function runIssueSync({
         close: issuePlan.close.length,
         reopen: issuePlan.reopen.length,
         untouched: issuePlan.untouched.length,
+      },
+      parents: {
+        set: parentPlan.set.length,
+        clear: parentPlan.clear.length,
+        pending: parentPlan.pending.length,
       },
       ...(backfillPlan && {
         backfill: {
