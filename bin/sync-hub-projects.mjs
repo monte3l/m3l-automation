@@ -312,7 +312,8 @@ function previewSingleSelectOptions(
 
 /**
  * All of a project's views — used to match {@link VIEW_DEFS}, to prune the
- * undeclared ones, and (by check:hub-views, reading the same shape) to assert
+ * undeclared ones, and (by the planned check:hub-views gate, reading the same
+ * shape) to assert
  * the board against its declaration.
  *
  * Reads more than the reconciler strictly needs. `filter`, `sortByFields` and
@@ -511,6 +512,18 @@ function reconcileView(
       const after = listExistingViews(runGhFn, projectId).find(
         (view) => view.id === existing.id,
       );
+      // A view that VANISHED is not a view whose sort was cleared — reporting
+      // the latter would send the maintainer to re-apply a sort on something
+      // that no longer exists.
+      if (!after) {
+        reporter.warn(
+          `View "${viewDef.name}" (id ${existing.id}) was not found when ` +
+            `re-reading the board after its update, so its sort ` +
+            `(${formatSort(sortBefore)}) could not be confirmed. The view may ` +
+            `have been deleted or recreated concurrently — inspect the board.`,
+        );
+        return true;
+      }
       const sortAfter = viewSortPairs(after);
       if (sortAfter.length === 0) {
         reporter.warn(

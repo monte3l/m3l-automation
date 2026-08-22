@@ -3419,6 +3419,64 @@ describe("runProjectSync view pruning", () => {
     ).toBe(true);
   });
 
+  test("a view missing from the post-update re-read is reported as vanished, not as a cleared sort", () => {
+    // Distinct failure, distinct message: telling the maintainer to re-apply a
+    // sort on a view that no longer exists is not actionable.
+    let listCount = 0;
+    const vanishingRule: GhRule = {
+      match: (a) =>
+        a[0] === "api" &&
+        a[1] === "graphql" &&
+        typeof a[3] === "string" &&
+        a[3].includes("views(first: 20)"),
+      respond: () => {
+        listCount += 1;
+        // First read: present, with a sort. After the update: gone entirely.
+        const nodes =
+          listCount === 1
+            ? [
+                viewNode({
+                  id: "VIEW_BACKLOG",
+                  name: DECLARED,
+                  sort: [{ field: "Priority", direction: "ASC" }],
+                }),
+              ]
+            : [viewNode({ id: "VIEW_OTHER", name: DECLARED })];
+        return JSON.stringify({ data: { node: { views: { nodes } } } });
+      },
+    };
+    const { runGh } = scriptedGh([
+      projectListRule([{ number: 7, title: HUB_PROJECT_TITLE }]),
+      fullFieldListRule(),
+      projectViewRule("PROJECT_ID"),
+      vanishingRule,
+      createViewGraphqlRule(),
+      deleteViewGraphqlRule(),
+      graphqlRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runProjectSync({
+      runGh,
+      reporter,
+      apply: true,
+      init: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    const warning = required(
+      reporter.warnings.find((message) => /was not found when/.test(message)),
+      "vanished-view warning",
+    );
+    expect(warning).toContain("VIEW_BACKLOG");
+    expect(warning).toContain("Priority ASC");
+    // Must NOT claim the sort was cleared — that is a different diagnosis.
+    expect(
+      reporter.warnings.some((message) => /lost its sort order/.test(message)),
+    ).toBe(false);
+  });
+
   test("an existing view's sort is captured before the column update and a loss is warned about, not silently swallowed", () => {
     // updateProjectV2View with configuration.visibleFieldIds may or may not
     // preserve sortByFields — the schema says only that sort is not an INPUT.
