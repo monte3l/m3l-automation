@@ -1110,7 +1110,7 @@ describe("M3LTableFormatter", () => {
   test("ANSI-aware width: a colored cell and a plain cell of equal visible width produce equal column layout", () => {
     const formatter = new M3LTableFormatter();
     const columns: readonly M3LTableColumn[] = [{ key: "label" }];
-    const colored = "[31mABC[39m";
+    const colored = "\x1b[31mABC\x1b[39m";
 
     const coloredOutput = formatter.format(
       [{ label: colored }, { label: "wide-plain-label" }],

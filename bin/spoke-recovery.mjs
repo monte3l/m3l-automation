@@ -211,7 +211,7 @@ function gitDiffStat(cwd) {
  */
 export function globToRegExp(pattern) {
   const normalized = pattern.replace(/\\/g, "/");
-  const DOUBLE_STAR = " DOUBLESTAR ";
+  const DOUBLE_STAR = "\x00DOUBLESTAR\x00";
   const withPlaceholder = normalized.split("**").join(DOUBLE_STAR);
   const escaped = withPlaceholder.replace(/[.+^${}()|[\]\\]/g, "\\$&");
   const withStars = escaped.replace(/\*/g, "[^/]*");
