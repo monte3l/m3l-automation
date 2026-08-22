@@ -255,10 +255,19 @@ describe("runHubViewsCheck", () => {
     const query = required(graphql[3], "the query argument");
     expect(query).toContain("configuration { visibleFields(first:");
     // The board-level `fields(...)` read stays -- it is the right connection
-    // for dataType and the single-select option sets. What must not come back
-    // is a VIEW-level one, which is why this matches the nesting rather than
-    // the bare word.
-    expect(query).not.toMatch(/filter[^}]*\bfields\(first:/);
+    // for dataType and the single-select option sets -- so this counts bare
+    // reads rather than forbidding the word. Exactly ONE is correct; a second
+    // is the view-level read this guards against. The lookbehind is what
+    // makes it a BARE read: without it, `sortByFields(first:` and
+    // `visibleFields(first:` both match and the count is meaningless.
+    //
+    // Counting, not a positional regex. An earlier attempt here anchored on
+    // `/filter[^}]*\bfields\(first:/`, which cannot match either query: in
+    // the buggy one the view-level `fields(` sits AFTER the sortByFields
+    // block, so `}` characters separate it from `filter` and `[^}]*` can
+    // never span them. It passed on the bug and the fix alike.
+    const bareFieldReads = query.match(/(?<![A-Za-z])fields\(first:/g) ?? [];
+    expect(bareFieldReads).toHaveLength(1);
   });
 
   test("a board with the ISSUE_TYPE field NOT yet enabled and the optional column absent is also clean", () => {
