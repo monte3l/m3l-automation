@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { runIssueSync, runIssueTypeInit } from "../sync-hub-issues.mjs";
+import {
+  runClosedRetype,
+  runIssueSync,
+  runIssueTypeInit,
+} from "../sync-hub-issues.mjs";
 import { runProjectSync } from "../sync-hub-projects.mjs";
 import { runPhases } from "../sync-hub.mjs";
 import {
@@ -2278,6 +2282,263 @@ describe("runIssueTypeInit", () => {
 
     expect(outcome.ok).toBe(true);
     expectEveryCallIsAnArgvArray(calls);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runClosedRetype
+// ---------------------------------------------------------------------------
+
+describe("runClosedRetype", () => {
+  // The default fixtures' real P0A item — key/type computed via the same
+  // extraction pipeline the runner uses, rather than hand-guessed (see
+  // computeItems' own comment above): "roadmap:p0:p0a", type "Library
+  // capability".
+  const items = computeItems(ROADMAP_FIXTURE, IMPLEMENTATION_FIXTURE);
+  const p0aItem = required(
+    items.find((item) => item.key === "roadmap:p0:p0a"),
+    "P0A item in the default fixtures",
+  );
+
+  test("dry run with one closed untyped issue matching a tracker row: plans the retype, makes no mutating call, and never reads org Issue Types at all", () => {
+    const closedIssues = [
+      {
+        number: 501,
+        title: "an old issue",
+        body: `${hubMarker(p0aItem.key)}\n`,
+        state: "CLOSED",
+        labels: [],
+        issueType: null,
+      },
+    ];
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      issueListSyncRule(closedIssues),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runClosedRetype({
+      runGh,
+      reporter,
+      apply: false,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(reporter.finishedWith).toMatchObject({
+      applied: false,
+      closedRetype: { set: 1, unmatched: 0 },
+    });
+    expect(calls.every((args) => !isMutatingIssueCall(args))).toBe(true);
+    // The preflight (an `api graphql` read) is --apply-only in this runner —
+    // pinning its absence here is what proves a dry run needs no org read
+    // access at all, distinct from runIssueTypeInit where the read is
+    // unconditional.
+    expect(
+      calls.some((args) => args[0] === "api" && args[1] === "graphql"),
+    ).toBe(false);
+  });
+
+  test("--apply issues exactly one type-only issue edit, carrying none of --title/--body/--add-label/--milestone", () => {
+    const closedIssues = [
+      {
+        number: 501,
+        title: "an old issue",
+        body: `${hubMarker(p0aItem.key)}\n`,
+        state: "CLOSED",
+        labels: [],
+        issueType: null,
+      },
+    ];
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      issueListSyncRule(closedIssues),
+      orgIssueTypesGraphqlRule(),
+      issueEditRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runClosedRetype({
+      runGh,
+      reporter,
+      apply: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    const editCalls = calls.filter(
+      (args) => args[0] === "issue" && args[1] === "edit",
+    );
+    expect(editCalls).toHaveLength(1);
+    const editCall = required(editCalls[0], "the single issue edit call");
+    expect(argAfter(editCall, "--type")).toBe(p0aItem.type);
+    // setIssueType is deliberately narrower than editIssue (see its own
+    // comment in sync-hub-issues.mjs): a closed-and-resolved issue's
+    // title/body/labels/milestone must stay untouched, only the type moves.
+    for (const flag of ["--title", "--body", "--add-label", "--milestone"]) {
+      expect(editCall).not.toContain(flag);
+    }
+    expectEveryCallIsAnArgvArray(calls);
+  });
+
+  test("--apply runs the Issue-Type preflight first: an under-provisioned org blocks with { ok: false } naming --init-issue-types, and issues no edit at all", () => {
+    const closedIssues = [
+      {
+        number: 501,
+        title: "an old issue",
+        body: `${hubMarker(p0aItem.key)}\n`,
+        state: "CLOSED",
+        labels: [],
+        issueType: null,
+      },
+    ];
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      issueListSyncRule(closedIssues),
+      // Only one of the ten declared types is live, so the preflight finds
+      // nine missing and refuses to start the edit loop.
+      orgIssueTypesGraphqlRule([
+        { id: "IT_0", name: required(ISSUE_TYPE_DEFS[0], "def 0").name },
+      ]),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runClosedRetype({
+      runGh,
+      reporter,
+      apply: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(
+      reporter.errors.some((message) => /--init-issue-types/.test(message)),
+    ).toBe(true);
+    expect(
+      calls.some((args) => args[0] === "issue" && args[1] === "edit"),
+    ).toBe(false);
+  });
+
+  test("an issue already carrying the correct type is left alone: set:0 and no issue edit", () => {
+    const closedIssues = [
+      {
+        number: 501,
+        title: "an old issue",
+        body: `${hubMarker(p0aItem.key)}\n`,
+        state: "CLOSED",
+        labels: [],
+        issueType: { name: p0aItem.type },
+      },
+    ];
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      issueListSyncRule(closedIssues),
+      orgIssueTypesGraphqlRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runClosedRetype({
+      runGh,
+      reporter,
+      apply: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(reporter.finishedWith).toMatchObject({
+      closedRetype: { set: 0, unmatched: 0 },
+    });
+    expect(
+      calls.some((args) => args[0] === "issue" && args[1] === "edit"),
+    ).toBe(false);
+  });
+
+  test("an OPEN issue with a wrong type is ignored (set:0) — the closed-only filter at the runner level", () => {
+    const openIssues = [
+      {
+        number: 501,
+        title: "a live issue",
+        body: `${hubMarker(p0aItem.key)}\n`,
+        // Uppercase, matching the real `gh` CLI's JSON — listIssues is what
+        // lowercases this, and open must not be mistaken for closed here.
+        state: "OPEN",
+        labels: [],
+        issueType: { name: "Governance" },
+      },
+    ];
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      issueListSyncRule(openIssues),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runClosedRetype({
+      runGh,
+      reporter,
+      apply: false,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(reporter.finishedWith).toMatchObject({
+      closedRetype: { set: 0, unmatched: 0 },
+    });
+    expect(calls.every((args) => !isMutatingIssueCall(args))).toBe(true);
+  });
+
+  test("a closed issue whose marker matches no tracker row is named in reporter.infos as unmatched, not retyped, and { ok: true } still holds", () => {
+    const closedIssues = [
+      {
+        number: 502,
+        title: "a removed row's issue",
+        body: `${hubMarker("roadmap:p0:vanished")}\n`,
+        state: "CLOSED",
+        labels: [],
+        issueType: null,
+      },
+    ];
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      issueListSyncRule(closedIssues),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runClosedRetype({
+      runGh,
+      reporter,
+      apply: false,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(
+      reporter.infos.some((message) =>
+        /#502 \[roadmap:p0:vanished\] currently/.test(message),
+      ),
+    ).toBe(true);
+    expect(reporter.finishedWith).toMatchObject({
+      closedRetype: { set: 0, unmatched: 1 },
+    });
+    expect(
+      calls.some((args) => args[0] === "issue" && args[1] === "edit"),
+    ).toBe(false);
+  });
+
+  test("auth failure short-circuits: { ok: false }, and no gh call runs beyond auth status", () => {
+    const { runGh, calls } = scriptedGh([authFailRule("not logged in")]);
+    const reporter = createFakeReporter();
+
+    const outcome = runClosedRetype({
+      runGh,
+      reporter,
+      apply: false,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(reporter.errors).toHaveLength(1);
+    expect(reporter.errors[0]).toMatch(/gh auth login/);
+    expect(calls).toHaveLength(1);
   });
 });
 
