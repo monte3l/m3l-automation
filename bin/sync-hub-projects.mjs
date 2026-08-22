@@ -20,6 +20,7 @@
 //   node bin/sync-hub-projects.mjs             # dry run
 //   node bin/sync-hub-projects.mjs --init      # one-time: create/reuse the board
 //   node bin/sync-hub-projects.mjs --apply     # execute the plan
+//   node bin/sync-hub-projects.mjs --prune-views  # delete views VIEW_DEFS omits
 //   node bin/sync-hub-projects.mjs --json      # ADR-0030 structured report
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -35,7 +36,14 @@ import {
   parseHubMarker,
   planProjectSync,
 } from "./lib/hub-sync.mjs";
-import { MANUAL_VIEW_STEPS, VIEW_DEFS } from "./lib/hub-views.mjs";
+import {
+  DESIRED_PRIORITY_OPTIONS,
+  DESIRED_STATUS_OPTIONS,
+  MANUAL_VIEW_STEPS,
+  OPTIONAL_VIEW_FIELDS,
+  STATUS_OPTION_RENAME_SOURCE,
+  VIEW_DEFS,
+} from "./lib/hub-views.mjs";
 import { createReporter, parseJsonFlag } from "./lib/report.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -43,75 +51,6 @@ const REPO = "monte3l/m3l-automation";
 const OWNER = "monte3l";
 const ROADMAP_PATH = "docs/ROADMAP.md";
 const IMPLEMENTATION_PATH = "docs/plans/IMPLEMENTATION.md";
-
-// The Status single-select's desired options — the tracker's own 6-value
-// vocabulary, one-for-one (ADR-0052; matches PROJECT_STATUS_OPTIONS in
-// bin/lib/hub-sync.mjs). Widened from the original 3-value Pending/In
-// review/Done ADR-0032 board, which could not distinguish Deferred or
-// Blocked from a plain not-yet-started item.
-const DESIRED_STATUS_OPTIONS = [
-  { name: "To Do", color: "GRAY", description: "" },
-  { name: "In Progress", color: "GRAY", description: "" },
-  { name: "Blocked", color: "GRAY", description: "" },
-  { name: "Deferred", color: "GRAY", description: "" },
-  { name: "Done", color: "GRAY", description: "" },
-  { name: "Rejected", color: "GRAY", description: "" },
-];
-
-// Maps each ADR-0052 Status option name back to the pre-rename name it
-// replaces, so migrating the field preserves every item's current value —
-// updateSingleSelectOptions passes the old option's own id when renaming
-// rather than dropping and recreating it. A freshly `--init`'d board has no
-// option under the old name, so this lookup is a harmless no-op there.
-const STATUS_OPTION_RENAME_SOURCE = {
-  "To Do": "Pending",
-  "In Progress": "In review",
-  Done: "Done",
-};
-
-// The Priority single-select's desired options: the four tiers mirroring
-// PRIORITY_LABELS' own "0-now"/"1-next"/"2-later"/"3-gated" vocabulary
-// exactly (ADR-0052, fourth tier added by ADR-0073), plus a dedicated
-// "Governance" option (ADR-0052's 2026-08-20
-// Update) — governance items get this instead of a null-cleared field or a
-// reused tier, so the board's Priority column is never blank and never
-// conflates governance rows with real Later-tier work under a sort/filter
-// (see PROJECT_PRIORITY_OPTIONS in bin/lib/hub-sync.mjs for the full
-// rationale). "Governance" is board-only, with no `priority:*` label
-// counterpart — ADR-0051's "governance is a category, not a tier" rule is
-// unaffected.
-const DESIRED_PRIORITY_OPTIONS = [
-  { name: "0-now", color: "RED", description: "Now — unblock-first work." },
-  {
-    name: "1-next",
-    color: "ORANGE",
-    description: "Next — the near-term consumer-fleet wave.",
-  },
-  {
-    name: "2-later",
-    color: "YELLOW",
-    description: "Later — gated or deferred backlog.",
-  },
-  // Order is load-bearing: a board single-select sorts by declared option
-  // order and the Backlog view sorts Priority ascending, so "3-gated" sitting
-  // here — after 2-later, before Governance — is where gated work lands in
-  // the view. Must stay in lockstep with PROJECT_PRIORITY_OPTIONS in
-  // bin/lib/hub-sync.mjs: that table is what resolves an item's option NAME,
-  // and setItemSingleSelect throws if the name isn't on the live board, so a
-  // tier present there but missing here breaks the first --apply that meets
-  // a Gated row.
-  {
-    name: "3-gated",
-    color: "GRAY",
-    description: "Gated — cannot start until an external gate opens.",
-  },
-  {
-    name: "Governance",
-    color: "PURPLE",
-    description:
-      "Governance — ADR/process follow-up work; outside the priority tiers.",
-  },
-];
 
 // The --limit passed to `gh issue list` / `gh project item-list`. A result
 // whose length reaches this window means gh silently truncated the page —
@@ -371,19 +310,66 @@ function previewSingleSelectOptions(
   );
 }
 
-/** All of a project's views, by id/name/layout — used to match VIEW_DEFS. */
+/**
+ * All of a project's views — used to match {@link VIEW_DEFS}, to prune the
+ * undeclared ones, and (by the planned check:hub-views gate, reading the same
+ * shape) to assert
+ * the board against its declaration.
+ *
+ * Reads more than the reconciler strictly needs. `filter`, `sortByFields` and
+ * `fields` are all readable on `ProjectV2View` even though sort is not
+ * writable through any mutation, and reading them is what lets a caller
+ * capture a view's sort BEFORE a full-replace column update and diff it
+ * after — the one loss this module cannot repair automatically.
+ */
 function listExistingViews(runGhFn, projectId) {
-  const query = `query { node(id: ${JSON.stringify(projectId)}) { ... on ProjectV2 { views(first: 20) { nodes { id name layout } } } } }`;
+  const query =
+    `query { node(id: ${JSON.stringify(projectId)}) { ... on ProjectV2 { ` +
+    `views(first: 20) { nodes { id name layout filter ` +
+    `sortByFields(first: 10) { nodes { direction field { ... on ProjectV2FieldCommon { name } } } } ` +
+    `fields(first: 50) { nodes { ... on ProjectV2FieldCommon { name } } } } } } } }`;
   const raw = runGhFn(["api", "graphql", "-f", `query=${query}`]);
   return JSON.parse(raw).data.node.views.nodes;
 }
 
 /**
+ * Flatten one view node's `sortByFields` connection into the plain
+ * `{field, direction}` shape {@link VIEW_DEFS}'s own `sort` uses, so the two
+ * are directly comparable. A view with no sort yields `[]`.
+ */
+function viewSortPairs(view) {
+  return (view?.sortByFields?.nodes ?? []).map((node) => ({
+    field: node?.field?.name ?? null,
+    direction: node?.direction ?? null,
+  }));
+}
+
+/** Render a sort list as "Priority ASC, Created ASC" for reporting. */
+function formatSort(pairs) {
+  return pairs.length > 0
+    ? pairs.map((pair) => `${pair.field} ${pair.direction}`).join(", ")
+    : "none";
+}
+
+/**
  * Resolve each of `fieldNames` to its live field id via `gh project
- * field-list`. A name that doesn't currently resolve (most likely the
- * built-in "Type" field before a human has enabled it — see
- * {@link MANUAL_VIEW_STEPS}) is dropped with a warning rather than failing
- * the whole view reconciliation.
+ * field-list`.
+ *
+ * All-or-nothing on the mandatory names. `configuration.visibleFieldIds` is a
+ * full REPLACE, so a short list does not mean "skip that column" — it means
+ * "these are now the only columns". Warning-and-skipping a name that failed to
+ * resolve therefore turns one typo in {@link VIEW_DEFS} into a silently
+ * truncated view, which is the exact shape of the 2026-08-20 incident that
+ * wiped 21 items' Priority. A miss on a mandatory name returns `null` and the
+ * caller skips that view's update entirely.
+ *
+ * A name in {@link OPTIONAL_VIEW_FIELDS} (the built-in "Type" column, which
+ * has no enabling mutation — see {@link MANUAL_VIEW_STEPS}) is exempt: it is
+ * omitted with an informational note rather than a warning, since it is
+ * legitimately absent until a human enables the field.
+ *
+ * @returns {string[] | null} the ordered field ids, or `null` if any
+ *   mandatory name did not resolve
  */
 function resolveFieldIds(runGhFn, reporter, projectNumber, fieldNames) {
   const raw = runGhFn([
@@ -400,16 +386,30 @@ function resolveFieldIds(runGhFn, reporter, projectNumber, fieldNames) {
   const idByName = new Map(fields.map((field) => [field.name, field.id]));
 
   const ids = [];
+  const missing = [];
   for (const name of fieldNames) {
     const id = idByName.get(name);
     if (id) {
       ids.push(id);
-    } else {
-      reporter.warn(
+    } else if (OPTIONAL_VIEW_FIELDS.has(name)) {
+      reporter.info(
         `View field "${name}" is not on the board yet — omitting it from the ` +
-          `visible-column set. See the manual view-setup steps.`,
+          `visible-column set. It is declared, so it will sync automatically ` +
+          `once the field is enabled. See the manual view-setup steps.`,
       );
+    } else {
+      missing.push(name);
     }
+  }
+
+  if (missing.length > 0) {
+    reporter.warn(
+      `Declared view field(s) ${missing.map((name) => `"${name}"`).join(", ")} ` +
+        `did not resolve to a board field id. Skipping this view's column ` +
+        `update rather than writing a partial visibleFieldIds — that key is a ` +
+        `full replace, so a short list would delete every other column.`,
+    );
+    return null;
   }
   return ids;
 }
@@ -438,50 +438,226 @@ function updateView(runGhFn, viewId, viewDef, fieldIds) {
 }
 
 /**
- * Ensure the board carries exactly {@link VIEW_DEFS}: create or update each
- * by name (falling back to `legacyName` for the one pre-existing view), then
- * print the {@link MANUAL_VIEW_STEPS} the API cannot perform. Never throws —
- * a per-view mutation failure is reported as a warning so one bad view
- * doesn't block the rest of --init.
+ * Delete one view by its node id. Never by name: a name is user-editable and
+ * two views can be renamed into each other between the read and the write,
+ * whereas an id read in this same run identifies exactly the view that was
+ * inspected.
  */
-function ensureViews(runGhFn, reporter, projectNumber) {
+function deleteView(runGhFn, viewId) {
+  const mutation =
+    `mutation { deleteProjectV2View(input: { viewId: ${JSON.stringify(viewId)} }) ` +
+    `{ clientMutationId } }`;
+  runGhFn(["api", "graphql", "-f", `query=${mutation}`]);
+}
+
+/**
+ * Reconcile one view def against the board, returning whether it succeeded.
+ *
+ * Captures the view's sort BEFORE the update and re-reads it after, because
+ * whether `updateProjectV2View` with `configuration.visibleFieldIds`
+ * preserves `sortByFields` is not answerable from the schema — it documents
+ * only that sort is not an *input*, not what the resolver does to it. Sort is
+ * readable but not writable, so a loss can only be repaired by hand; on loss
+ * this warns with the captured field names and directions plus the UI path,
+ * rather than reporting a silent success.
+ *
+ * @returns {boolean} true if the view was created or updated
+ */
+function reconcileView(
+  runGhFn,
+  reporter,
+  projectNumber,
+  projectId,
+  viewDef,
+  existing,
+) {
+  const fieldIds = resolveFieldIds(
+    runGhFn,
+    reporter,
+    projectNumber,
+    viewDef.fields,
+  );
+  if (fieldIds === null) {
+    reporter.warn(
+      `Skipped view "${viewDef.name}" — see the unresolved-field warning above.`,
+    );
+    return false;
+  }
+
+  const sortBefore = existing ? viewSortPairs(existing) : [];
+
+  try {
+    if (existing) {
+      updateView(runGhFn, existing.id, viewDef, fieldIds);
+      reporter.change(
+        "updated",
+        `view "${existing.name}" -> "${viewDef.name}" (${viewDef.layout})`,
+      );
+    } else {
+      const viewId = createView(runGhFn, projectId, viewDef, fieldIds);
+      updateView(runGhFn, viewId, viewDef, fieldIds);
+      reporter.change("created", `view "${viewDef.name}" (${viewDef.layout})`);
+    }
+  } catch (cause) {
+    reporter.warn(
+      `Could not reconcile view "${viewDef.name}" (${ghErrorMessage(cause)}).`,
+    );
+    return false;
+  }
+
+  // Only meaningful when there was a sort to lose — a freshly created view
+  // never had one.
+  if (sortBefore.length > 0) {
+    try {
+      const after = listExistingViews(runGhFn, projectId).find(
+        (view) => view.id === existing.id,
+      );
+      // A view that VANISHED is not a view whose sort was cleared — reporting
+      // the latter would send the maintainer to re-apply a sort on something
+      // that no longer exists.
+      if (!after) {
+        reporter.warn(
+          `View "${viewDef.name}" (id ${existing.id}) was not found when ` +
+            `re-reading the board after its update, so its sort ` +
+            `(${formatSort(sortBefore)}) could not be confirmed. The view may ` +
+            `have been deleted or recreated concurrently — inspect the board.`,
+        );
+        return true;
+      }
+      const sortAfter = viewSortPairs(after);
+      if (sortAfter.length === 0) {
+        reporter.warn(
+          `View "${viewDef.name}" lost its sort order (${formatSort(sortBefore)}) ` +
+            `to the column update. Sort is readable but NOT writable through any ` +
+            `mutation, so restore it by hand: open the view, click the field ` +
+            `header, and re-apply ${formatSort(sortBefore)}.`,
+        );
+      }
+    } catch (cause) {
+      reporter.warn(
+        `Could not re-read view "${viewDef.name}" to confirm its sort survived ` +
+          `the column update (${ghErrorMessage(cause)}); verify ` +
+          `${formatSort(sortBefore)} by hand.`,
+      );
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Report — or, with `pruneViews`, delete — every view on the board that
+ * {@link VIEW_DEFS} does not declare.
+ *
+ * Deletion is opt-in behind `--prune-views` and is never a side effect of
+ * `--init --apply`. Deleting a view is irreversible through the API: a board
+ * view's group-by is not settable by any mutation, so a wrongly-deleted one
+ * can only be rebuilt by hand. Same precedent as `--init-issue-types` and
+ * `--retype-closed` — an irreversible or wide-blast-radius operation gets its
+ * own flag.
+ *
+ * Four guards, in order:
+ * - skipped entirely if any view create/update failed, so a def that failed to
+ *   create cannot have its predecessor deleted;
+ * - matched off a RE-READ of the live views rather than the stale pre-update
+ *   map, so a view this run created or renamed is not pruned by it;
+ * - aborted if the prune set would empty the board (GitHub's own last-view
+ *   refusal is a backstop, not the guard);
+ * - by id, never by name.
+ */
+function pruneUndeclaredViews(
+  runGhFn,
+  reporter,
+  projectId,
+  pruneViews,
+  allReconciled,
+) {
+  const declaredNames = new Set(VIEW_DEFS.map((viewDef) => viewDef.name));
+
+  let live;
+  try {
+    live = listExistingViews(runGhFn, projectId);
+  } catch (cause) {
+    reporter.warn(
+      `Could not re-read the board's views to check for undeclared ones ` +
+        `(${ghErrorMessage(cause)}).`,
+    );
+    return;
+  }
+
+  const undeclared = live.filter((view) => !declaredNames.has(view.name));
+  if (undeclared.length === 0) return;
+
+  const named = undeclared.map((view) => `"${view.name}"`).join(", ");
+
+  if (!allReconciled) {
+    reporter.warn(
+      `Not pruning undeclared view(s) ${named}: at least one declared view ` +
+        `failed to reconcile this run, and deleting a view while the board is ` +
+        `in an unknown state risks removing the only usable surface.`,
+    );
+    return;
+  }
+
+  if (undeclared.length >= live.length) {
+    reporter.warn(
+      `Not pruning undeclared view(s) ${named}: doing so would leave the board ` +
+        `with no views at all. Declare a view in VIEW_DEFS and re-run --init ` +
+        `first.`,
+    );
+    return;
+  }
+
+  if (!pruneViews) {
+    reporter.info(
+      `Undeclared view(s) on the board: ${named}. VIEW_DEFS declares only ` +
+        `${[...declaredNames].map((name) => `"${name}"`).join(", ")}. Deleting a ` +
+        `view is irreversible through the API (a board view's group-by cannot ` +
+        `be restored by any mutation), so it is opt-in: re-run with ` +
+        `--prune-views to preview the deletion, then --prune-views --apply.`,
+    );
+    return;
+  }
+
+  for (const view of undeclared) {
+    try {
+      deleteView(runGhFn, view.id);
+      reporter.change("removed", `view "${view.name}" (${view.layout})`);
+    } catch (cause) {
+      reporter.warn(
+        `Could not delete view "${view.name}" (${ghErrorMessage(cause)}).`,
+      );
+    }
+  }
+}
+
+/**
+ * Ensure the board carries exactly {@link VIEW_DEFS}: create or update each,
+ * optionally prune the undeclared ones, then print the
+ * {@link MANUAL_VIEW_STEPS} the API cannot perform. Never throws — a per-view
+ * mutation failure is reported as a warning so one bad view doesn't block the
+ * rest of --init.
+ */
+function ensureViews(runGhFn, reporter, projectNumber, pruneViews = false) {
   const projectId = resolveProjectId(runGhFn, projectNumber);
   const existingByName = new Map(
     listExistingViews(runGhFn, projectId).map((view) => [view.name, view]),
   );
 
+  let allReconciled = true;
   for (const viewDef of VIEW_DEFS) {
-    const existing =
-      existingByName.get(viewDef.name) ??
-      (viewDef.legacyName ? existingByName.get(viewDef.legacyName) : undefined);
-    const fieldIds = resolveFieldIds(
+    const ok = reconcileView(
       runGhFn,
       reporter,
       projectNumber,
-      viewDef.fields,
+      projectId,
+      viewDef,
+      existingByName.get(viewDef.name),
     );
-
-    try {
-      if (existing) {
-        updateView(runGhFn, existing.id, viewDef, fieldIds);
-        reporter.change(
-          "updated",
-          `view "${existing.name}" -> "${viewDef.name}" (${viewDef.layout})`,
-        );
-      } else {
-        const viewId = createView(runGhFn, projectId, viewDef, fieldIds);
-        updateView(runGhFn, viewId, viewDef, fieldIds);
-        reporter.change(
-          "created",
-          `view "${viewDef.name}" (${viewDef.layout})`,
-        );
-      }
-    } catch (cause) {
-      reporter.warn(
-        `Could not reconcile view "${viewDef.name}" (${ghErrorMessage(cause)}).`,
-      );
-    }
+    if (!ok) allReconciled = false;
   }
+
+  pruneUndeclaredViews(runGhFn, reporter, projectId, pruneViews, allReconciled);
 
   for (const step of MANUAL_VIEW_STEPS) {
     reporter.info(`Manual step remaining: ${step}`);
@@ -490,14 +666,12 @@ function ensureViews(runGhFn, reporter, projectNumber) {
 
 // Read-only preview of what --init (without --apply) would do to the
 // board's views — never mutates.
-function previewViews(runGhFn, reporter, projectNumber) {
+function previewViews(runGhFn, reporter, projectNumber, pruneViews = false) {
   let projectId;
-  let existingByName;
+  let live;
   try {
     projectId = resolveProjectId(runGhFn, projectNumber);
-    existingByName = new Map(
-      listExistingViews(runGhFn, projectId).map((view) => [view.name, view]),
-    );
+    live = listExistingViews(runGhFn, projectId);
   } catch (cause) {
     reporter.info(
       `Could not inspect the board's views (${ghErrorMessage(cause)}); would attempt to ` +
@@ -506,13 +680,22 @@ function previewViews(runGhFn, reporter, projectNumber) {
     return;
   }
 
+  const existingByName = new Map(live.map((view) => [view.name, view]));
+
   for (const viewDef of VIEW_DEFS) {
-    const existing =
-      existingByName.get(viewDef.name) ??
-      (viewDef.legacyName ? existingByName.get(viewDef.legacyName) : undefined);
+    const existing = existingByName.get(viewDef.name);
     if (existing) {
       reporter.info(
         `Would update view "${existing.name}" -> "${viewDef.name}" (${viewDef.layout}, filter: ${viewDef.filter}).`,
+      );
+      reporter.info(
+        `Would set its columns to: ${viewDef.fields.join(", ")} (ordered — ` +
+          `visibleFieldIds is a full replace).`,
+      );
+      const sortNow = viewSortPairs(existing);
+      reporter.info(
+        `Its sort is currently ${formatSort(sortNow)}; declared: ` +
+          `${formatSort(viewDef.sort ?? [])} (not settable via the API).`,
       );
     } else {
       reporter.info(
@@ -520,11 +703,36 @@ function previewViews(runGhFn, reporter, projectNumber) {
       );
     }
   }
+
+  // Mirrors ensureViews's prune reporting. In preview there is nothing to
+  // re-read after, so this runs against the same single read — and
+  // `allReconciled` is true because nothing has been attempted yet.
+  const declaredNames = new Set(VIEW_DEFS.map((viewDef) => viewDef.name));
+  const undeclared = live.filter((view) => !declaredNames.has(view.name));
+  if (undeclared.length > 0) {
+    const named = undeclared.map((view) => `"${view.name}"`).join(", ");
+    if (undeclared.length >= live.length) {
+      reporter.info(
+        `Would NOT prune undeclared view(s) ${named}: doing so would leave the ` +
+          `board with no views at all.`,
+      );
+    } else if (pruneViews) {
+      reporter.info(
+        `Would DELETE undeclared view(s) ${named} by id. Irreversible through ` +
+          `the API — a board view's group-by cannot be restored by any mutation.`,
+      );
+    } else {
+      reporter.info(
+        `Undeclared view(s) on the board: ${named}. Not deleted without ` +
+          `--prune-views.`,
+      );
+    }
+  }
 }
 
 /**
  * Create (or reuse) the board, then ensure its Status/Priority fields and
- * its three saved views. Idempotent. Without `apply`, only read-only probes
+ * its saved views. Idempotent. Without `apply`, only read-only probes
  * run (project list, and — for an already-existing board — field-list) and
  * the function prints what it WOULD do; with `apply`, it executes. Never
  * calls `process.exit`; always returns `{ ok: true }` (this path has no
@@ -533,7 +741,7 @@ function previewViews(runGhFn, reporter, projectNumber) {
  *
  * @returns {{ ok: boolean }}
  */
-function runInit({ runGh: runGhFn, reporter, apply, projects }) {
+function runInit({ runGh: runGhFn, reporter, apply, projects, pruneViews }) {
   const existingProject = findProjectByTitle(projects);
 
   // Run the same rename-detection guard runProjectSync's non-init path
@@ -569,7 +777,7 @@ function runInit({ runGh: runGhFn, reporter, apply, projects }) {
         "Priority",
         DESIRED_PRIORITY_OPTIONS,
       );
-      previewViews(runGhFn, reporter, existingProject.number);
+      previewViews(runGhFn, reporter, existingProject.number, pruneViews);
     } else {
       reporter.info(
         `Would create project board "${HUB_PROJECT_TITLE}" (owner: ${OWNER}).`,
@@ -632,7 +840,7 @@ function runInit({ runGh: runGhFn, reporter, apply, projects }) {
     "Priority",
     DESIRED_PRIORITY_OPTIONS,
   );
-  ensureViews(runGhFn, reporter, project.number);
+  ensureViews(runGhFn, reporter, project.number, pruneViews);
 
   reporter.succeed(
     `Project board ready: "${HUB_PROJECT_TITLE}" (#${project.number}).`,
@@ -949,6 +1157,7 @@ function applyProjectPlan({ runGh: runGhFn, reporter, projectNumber, plan }) {
  *   reporter: ReturnType<typeof createReporter>,
  *   apply: boolean,
  *   init: boolean,
+ *   pruneViews?: boolean,
  *   readDoc: typeof readDoc,
  * }} deps
  * @returns {{ ok: boolean }}
@@ -972,13 +1181,23 @@ export function runProjectSync({
   reporter,
   apply,
   init,
+  pruneViews = false,
   readDoc: readDocFn,
 }) {
   try {
     const projects = probeProjects(runGhFn);
 
-    if (init) {
-      return runInit({ runGh: runGhFn, reporter, apply, projects });
+    // --prune-views implies the view-reconciliation path: pruning is only
+    // meaningful once VIEW_DEFS has been reconciled in the same run, so the
+    // flag runs --init's board setup rather than needing both flags typed.
+    if (init || pruneViews) {
+      return runInit({
+        runGh: runGhFn,
+        reporter,
+        apply,
+        projects,
+        pruneViews,
+      });
     }
 
     const project = findProjectByTitle(projects);
@@ -1087,8 +1306,16 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { json, argv } = parseJsonFlag();
   const apply = argv.includes("--apply");
   const init = argv.includes("--init");
+  const pruneViews = argv.includes("--prune-views");
   const reporter = createReporter(json);
 
-  const outcome = runProjectSync({ runGh, reporter, apply, init, readDoc });
+  const outcome = runProjectSync({
+    runGh,
+    reporter,
+    apply,
+    init,
+    pruneViews,
+    readDoc,
+  });
   if (!outcome.ok) process.exit(1);
 }

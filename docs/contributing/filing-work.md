@@ -239,9 +239,22 @@ duplicated a column the table already sorts and filters.
 
 `pnpm sync:hub-projects -- --init --apply` (also run as part of `sync:hub
 --init`) reconciles that view from `bin/lib/hub-views.mjs`'s `VIEW_DEFS`: name,
-layout, filter, and the visible-column set. **`VIEW_DEFS` is authoritative** —
-any view on the board that isn't declared there is deleted, so don't build an
-ad-hoc view expecting it to survive the next `--init`.
+layout, filter, and the ordered visible-column set. `visibleFieldIds` is a full
+**replace**, so `VIEW_DEFS[0].fields` is the board's column order, not a set of
+columns to add — and a declared name that fails to resolve to a live field id
+skips the whole column update rather than writing the short list, which would
+delete every other column.
+
+**`VIEW_DEFS` is authoritative, but deleting is opt-in.** An undeclared view is
+_reported_ by `--init`, never removed by it; `pnpm sync:hub-projects --
+--prune-views` (preview) and `-- --prune-views --apply` are what delete it.
+Deleting a view is irreversible through the API — a Board layout's grouping
+can't be written back by any mutation — so it gets its own flag rather than
+riding along on a routine `--init`. Pruning is skipped entirely if any declared
+view failed to reconcile, matches by view **id** off a re-read (so a view
+created in the same run is never pruned by it), and aborts rather than leaving
+the board with zero views. Still: don't build an ad-hoc view expecting it to
+survive a `--prune-views` run.
 
 Two settings remain manual, because GraphQL can read them but not write them
 (`ProjectV2ViewConfigurationInput` accepts only `visibleFieldIds`; the built-in
@@ -255,11 +268,23 @@ unnoticed the way the old prose-only instructions did:
   warning, and `check:hub-views` is the loud channel.
 - **`Backlog`** sort: `Priority` ascending, then `Created` ascending — oldest
   highest-priority work first. Set it under the view's "…" menu → Sort.
+  Because sort is readable but not writable, `--init --apply` captures the
+  view's sort before the column update and re-reads it after; if the update
+  cleared it, the runner warns with the exact fields and directions to restore
+  by hand rather than reporting a clean success.
 
-Everything else on the board is written by the sync from the trackers: `Status`,
-`Priority` and `Programme` per item, and `Parent issue` indirectly (it is a
-read-only projection of the issue's own sub-issue link, so the sync sets the
-link, never the field).
+Everything else on the board is written by the sync from the trackers: `Status`
+and `Priority` per item, and `Parent issue` indirectly (it is a read-only
+projection of the issue's own sub-issue link, so the sync sets the link, never
+the field).
+
+ADR-0073 also specifies a `Programme` single-select, **deferred and not
+implemented**. With slices cut at pickup rather than in advance, the board has
+no depth-2 rows, so every item's `Parent issue` already _is_ its programme epic
+— the field would duplicate a populated, free column at the cost of ~60 extra
+board writes per sync. It earns its keep the day a slice row exists, whose
+parent is its item rather than the epic (which is exactly the non-redundancy
+case ADR-0073 argues from).
 
 ### Board workflows
 
