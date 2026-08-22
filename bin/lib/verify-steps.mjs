@@ -330,6 +330,11 @@ export const VERIFY_STEPS = [
       "needs a `gh`-authenticated session and live GitHub state; ci.yml also runs it push-only, not on PRs",
   },
   {
+    ciStepName: "Check for literal control characters",
+    id: "check-control-chars",
+    cmd: () => "pnpm check:control-chars",
+  },
+  {
     ciStepName: "Check hub board views (push-only)",
     id: "check-hub-views",
     cmd: () => "pnpm check:hub-views",

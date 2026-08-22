@@ -455,8 +455,8 @@ describe("purposeErrors", () => {
   test.each([
     ["a newline", "line one\nline two"],
     ["a tab", "purpose\twith a tab"],
-    ["a null byte", "purpose here"],
-    ["a DEL control character", "purposehere"],
+    ["a null byte", "purpose\x00here"],
+    ["a DEL control character", "purpose\x7fhere"],
   ])("rejects a purpose containing %s", (_label, purpose) => {
     expect(purposeErrors(purpose)).toEqual([
       "purpose must not contain newlines or control characters",
