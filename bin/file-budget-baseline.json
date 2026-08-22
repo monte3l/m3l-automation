@@ -6,7 +6,7 @@
   "packages/m3l-common/src/aws/rds-data/client.ts": 27078,
   "packages/m3l-common/src/aws/sqs/client.ts": 31744,
   "packages/m3l-common/src/core/checkpoint/M3LCheckpointStore.ts": 49710,
-  "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts": 29546,
+  "packages/m3l-common/src/core/diagnostics/breadcrumbs.ts": 29387,
   "packages/m3l-common/src/core/diagnostics/run-report.ts": 62468,
   "packages/m3l-common/src/core/network/M3LHttpClient.ts": 40251,
   "packages/m3l-common/src/core/pipeline/types.ts": 28210,
