@@ -11,6 +11,7 @@ import {
   PRIORITY_LABELS,
   PRIORITY_TIERS,
   STATUS_LABELS,
+  TYPE_KINDS,
   TYPE_LABELS,
 } from "./hub-sync.mjs";
 
@@ -29,6 +30,12 @@ import {
  * Names and descriptions carry the ADR-0051 semantic vocabulary
  * (priority:0-now/1-next/2-later), replacing the original
  * priority:p0/p1/p2/governance names.
+ *
+ * Descriptions are shared, not restated: a `priority:*` row reads
+ * {@link PRIORITY_TIERS} and a `type:*` row reads {@link TYPE_KINDS}, the same
+ * tables `MILESTONE_DEFS` and `ISSUE_TYPE_DEFS` read. `color` is not shared —
+ * a label takes a hex string while a milestone has none and an Issue Type
+ * takes an 8-value enum, so those stay per-surface.
  *
  * @type {{ name: string, color: string, description: string }[]}
  * @example
@@ -68,56 +75,52 @@ export const LABEL_DEFS = [
   {
     name: TYPE_LABELS[ISSUE_TYPES.libraryCapability],
     color: "0052cc",
-    description: "Library capability — packages/m3l-common (core/, aws/).",
+    description: TYPE_KINDS.libraryCapability.description,
   },
   {
     name: TYPE_LABELS[ISSUE_TYPES.cliCapability],
     color: "1d76db",
-    description: "CLI capability — packages/m3l-cli.",
+    description: TYPE_KINDS.cliCapability.description,
   },
   {
     name: TYPE_LABELS[ISSUE_TYPES.packageCapability],
     color: "0e8a16",
-    description:
-      "Package capability — creating or building out another workspace package.",
+    description: TYPE_KINDS.packageCapability.description,
   },
   {
     name: TYPE_LABELS[ISSUE_TYPES.ui],
     color: "f9d0c4",
-    description: "UI — a browser-facing surface.",
+    description: TYPE_KINDS.ui.description,
   },
   {
     name: TYPE_LABELS[ISSUE_TYPES.infrastructure],
     color: "6f42c1",
-    description:
-      "Infrastructure — deployment, packaging, or runtime substrate.",
+    description: TYPE_KINDS.infrastructure.description,
   },
   {
     name: TYPE_LABELS[ISSUE_TYPES.fleetRetrofit],
     color: "bfd4f2",
-    description:
-      "Fleet retrofit — changes to existing consumers under scripts/*.",
+    description: TYPE_KINDS.fleetRetrofit.description,
   },
   {
     name: TYPE_LABELS[ISSUE_TYPES.toolingGates],
     color: "006b75",
-    description: "Tooling & gates — bin/, .github/, .claude/.",
+    description: TYPE_KINDS.toolingGates.description,
   },
   {
     name: TYPE_LABELS[ISSUE_TYPES.consumerScript],
     color: "c2e0c6",
-    description: "A new consumer script under scripts/*.",
+    description: TYPE_KINDS.consumerScript.description,
   },
   {
     name: TYPE_LABELS[ISSUE_TYPES.friction],
     color: "e99695",
-    description: "Library friction / defect report (F-series).",
+    description: TYPE_KINDS.friction.description,
   },
   {
     name: TYPE_LABELS[ISSUE_TYPES.governance],
     color: "5319e7",
-    description:
-      "Governance follow-up (ADR/process work); outside the priority tiers.",
+    description: TYPE_KINDS.governance.description,
   },
   {
     name: STATUS_LABELS.todo,
