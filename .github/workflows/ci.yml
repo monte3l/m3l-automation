@@ -531,6 +531,26 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm check:label-drift
 
+      # ADR-0073's board surface: the view set, each view's layout/filter/
+      # ordered columns/sort, the built-in Issue Type field, and the
+      # Status/Priority option sets, all against bin/lib/hub-views.mjs.
+      # Push-only, same rationale as the two steps above.
+      #
+      # GITHUB_TOKEN cannot read Projects v2 at ALL, so in CI this step is
+      # expected to take its loud graceful-skip path: it prints each facet it
+      # could not verify and exits 0. That is deliberate — a missing
+      # capability is not drift, and a gate that fails for a reason no
+      # contributor can fix trains people to ignore it. The real enforcement
+      # is a maintainer running `pnpm check:hub-views` locally with the
+      # `project` scope. The step is wired here anyway so the command stays on
+      # the verify/CI inventory (check:verify-parity) and starts failing for
+      # real the day a token can read the board.
+      - name: Check hub board views (push-only)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm check:hub-views
+
   # The required status check branch protection looks for. Fails if the
   # changes job itself didn't succeed (see comment below), or if any lane
   # failed or was cancelled; passes if every lane succeeded or was
