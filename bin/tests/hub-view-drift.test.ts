@@ -175,6 +175,54 @@ describe("deriveViewDrift", () => {
     ).toBe(true);
   });
 
+  test("sort comparison is element-wise, not a rendered-string compare", () => {
+    // Same separator ambiguity sameOrder removes for columns: a field name can
+    // contain both a space and a comma, so comparing "A, B ASC" strings can
+    // read two different sorts as equal.
+    const board = compliantBoard();
+    const findings = deriveViewDrift({
+      ...board,
+      viewDefs: [
+        {
+          ...BACKLOG_DEF,
+          sort: [{ field: "A, B", direction: "ASC" }],
+        },
+      ],
+      liveViews: [
+        {
+          ...liveBacklog(board),
+          sort: [
+            { field: "A", direction: "ASC" },
+            { field: "B", direction: "ASC" },
+          ],
+        },
+      ],
+    });
+
+    expect(findings.some((message) => /sort is/.test(message))).toBe(true);
+  });
+
+  test("an unmapped optional column is reported ONCE, not once per declared view", () => {
+    const board = compliantBoard();
+    const findings = deriveViewDrift({
+      ...board,
+      viewDefs: [
+        { ...BACKLOG_DEF, name: "One", fields: ["Title"] },
+        { ...BACKLOG_DEF, name: "Two", fields: ["Title"] },
+      ],
+      liveViews: [
+        { ...liveBacklog(board), name: "One", columns: ["Title"] },
+        { ...liveBacklog(board), name: "Two", columns: ["Title"] },
+      ],
+      optionalFields: new Set(["Reviewers"]),
+    });
+
+    // A property of the DECLARATION, not of any one view.
+    expect(
+      findings.filter((message) => /no entry in/.test(message)),
+    ).toHaveLength(1);
+  });
+
   test("an optional column with no stated exemption reason is reported, not silently exempted", () => {
     // A gate must not grow blind spots by declaration alone: adding a name to
     // OPTIONAL_VIEW_FIELDS without saying WHY it may be absent would otherwise

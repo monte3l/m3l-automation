@@ -224,7 +224,10 @@ export function readBoard(runGhFn, projectId) {
  * `bin/sync-hub-projects.mjs` uses, and the same reason: a board is renamed
  * far more often than it is recreated.
  *
- * @returns {string | null} the node id, or `null` if no board carries the title
+ * @returns {{ id: string | null, unverifiable: boolean }} the node id; `id` is
+ *   `null` when no board carries the title, and `unverifiable` is true when the
+ *   read could not prove the token sees projects at all (an empty list), which
+ *   the caller must treat as a skip rather than a failure
  */
 export function resolveBoardId(runGhFn) {
   const listed = JSON.parse(
@@ -240,6 +243,14 @@ export function resolveBoardId(runGhFn) {
     ]),
   );
   const projects = Array.isArray(listed) ? listed : (listed.projects ?? []);
+  if (projects.length === 0) {
+    // Not "the board is missing" — this cannot tell that from "the token sees
+    // no projects". `gh` does not always THROW on an unauthorized Projects v2
+    // read; a filtered empty list is a documented shape for the Actions
+    // GITHUB_TOKEN. Failing here would break the graceful-skip contract that
+    // makes this gate safe to wire push-only.
+    return { id: null, unverifiable: true };
+  }
   if (projects.length >= PROJECT_WINDOW) {
     throw new Error(
       `\`gh project list\` returned ${projects.length} projects, reaching the ` +
@@ -248,7 +259,7 @@ export function resolveBoardId(runGhFn) {
     );
   }
   const match = projects.find((project) => project.title === HUB_PROJECT_TITLE);
-  if (!match) return null;
+  if (!match) return { id: null, unverifiable: false };
 
   const viewed = JSON.parse(
     runGhFn([
@@ -265,7 +276,7 @@ export function resolveBoardId(runGhFn) {
   // would otherwise pass as `undefined` and JSON.stringify would interpolate
   // the literal token `undefined` into the query — surfacing as a raw GraphQL
   // parse error instead of the board-shaped diagnostic below.
-  return viewed?.id ?? null;
+  return { id: viewed?.id ?? null, unverifiable: false };
 }
 
 /**
@@ -279,7 +290,16 @@ export function resolveBoardId(runGhFn) {
  */
 export function runHubViewsCheck({ runGh: runGhFn, reporter }) {
   try {
-    const projectId = resolveBoardId(runGhFn);
+    const { id: projectId, unverifiable } = resolveBoardId(runGhFn);
+    if (unverifiable) {
+      return reportSkip(
+        reporter,
+        `\`gh project list\` returned no projects at all, so this session may ` +
+          `not be able to see GitHub Projects v2 — which is indistinguishable ` +
+          `from the board being absent. Treated as unverified rather than as ` +
+          `drift.`,
+      );
+    }
     if (projectId === null) {
       reporter.error(
         `No project board titled "${HUB_PROJECT_TITLE}" under owner ` +
@@ -320,36 +340,45 @@ export function runHubViewsCheck({ runGh: runGhFn, reporter }) {
     const message = ghErrorMessage(cause);
 
     if (isScopeError(message)) {
-      // Loud, itemised, exit 0 — a reader must be able to tell "not checked"
-      // from "checked and clean" without opening the source.
-      reporter.warn(
-        `Skipping the board check: this \`gh\` session cannot read GitHub ` +
-          `Projects v2 (${message}). The Actions GITHUB_TOKEN never can, so ` +
-          `this is expected in CI on a fork or without the \`project\` scope.`,
+      return reportSkip(
+        reporter,
+        `this \`gh\` session cannot read GitHub Projects v2 (${message}). The ` +
+          `Actions GITHUB_TOKEN never can, so this is expected in CI on a fork ` +
+          `or without the \`project\` scope.`,
       );
-      for (const unverified of [
-        `the view set (declared: ${VIEW_DEFS.map((def) => def.name).join(", ")})`,
-        "each view's layout and filter",
-        "each view's ordered visible columns",
-        "each view's sort order (UI-only; no mutation can repair it)",
-        "the built-in ISSUE_TYPE field's presence",
-        "the Status and Priority option sets and their order",
-      ]) {
-        reporter.warn(`NOT verified: ${unverified}.`);
-      }
-      reporter.warn(
-        "Run `pnpm check:hub-views` locally with a `gh` session carrying the " +
-          "`project` scope to verify these.",
-      );
-      reporter.succeed("Board check skipped — see the warnings above.");
-      reporter.finish({ findings: [], skipped: true });
-      return { ok: true, skipped: true, findings: [] };
     }
 
     reporter.error(`Board check failed: ${message}`);
     reporter.finish({ findings: [], skipped: false });
     return { ok: false, skipped: false, findings: [] };
   }
+}
+
+/**
+ * The one graceful-skip exit: loud, itemised, and `ok: true` so CI stays green
+ * for a missing capability. A reader must be able to tell "not checked" from
+ * "checked and clean" without opening the source, which is why it enumerates
+ * every facet rather than printing one line.
+ */
+function reportSkip(reporter, why) {
+  reporter.warn(`Skipping the board check: ${why}`);
+  for (const unverified of [
+    `the view set (declared: ${VIEW_DEFS.map((def) => def.name).join(", ")})`,
+    "each view's layout and filter",
+    "each view's ordered visible columns",
+    "each view's sort order (UI-only; no mutation can repair it)",
+    "the built-in ISSUE_TYPE field's presence",
+    "the Status and Priority option sets and their order",
+  ]) {
+    reporter.warn(`NOT verified: ${unverified}.`);
+  }
+  reporter.warn(
+    "Run `pnpm check:hub-views` locally with a `gh` session carrying the " +
+      "`project` scope to verify these.",
+  );
+  reporter.succeed("Board check skipped — see the warnings above.");
+  reporter.finish({ findings: [], skipped: true });
+  return { ok: true, skipped: true, findings: [] };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

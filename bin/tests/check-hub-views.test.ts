@@ -520,6 +520,41 @@ describe("runHubViewsCheck", () => {
     expect(outcome.findings).toEqual([]);
   });
 
+  test("an EMPTY project list is a graceful skip, not a board-missing failure", () => {
+    // The gate is wired push-only in CI, where GITHUB_TOKEN cannot read
+    // Projects v2. `gh` does not always THROW on an unauthorized read -- a
+    // filtered empty list is a real shape -- and only a thrown error reaches
+    // isScopeError. Failing here would break the graceful-skip contract that
+    // makes the CI wiring safe in the first place.
+    const { runGh, calls } = boardGh(compliantBoardPayload(), { projects: [] });
+    const reporter = createFakeReporter();
+
+    const outcome = runHubViewsCheck({ runGh, reporter });
+
+    expect(outcome).toMatchObject({ ok: true, skipped: true, findings: [] });
+    expect(reporter.errors).toEqual([]);
+    const warnings = reporter.warnings.join("\n");
+    expect(warnings).toMatch(/returned no projects at all/);
+    // Still itemises everything unverified, like the scope-error path.
+    expect(warnings).toMatch(/NOT verified/);
+    // And never went on to query a board.
+    expect(
+      calls.some((args) => args[0] === "api" && args[1] === "graphql"),
+    ).toBe(false);
+  });
+
+  test("a NON-empty list with no title match is still a hard failure — the list proves the token can see projects", () => {
+    const { runGh } = boardGh(compliantBoardPayload(), {
+      projects: [{ number: 9, title: "Some other board" }],
+    });
+    const reporter = createFakeReporter();
+
+    const outcome = runHubViewsCheck({ runGh, reporter });
+
+    expect(outcome).toMatchObject({ ok: false, skipped: false });
+    expect(reporter.warnings).toEqual([]);
+  });
+
   test("a board title miss fails with a rename hint, and never reads the board", () => {
     const { runGh, calls } = boardGh(compliantBoardPayload(), {
       projects: [{ number: 9, title: "m3l-automation hub" }],

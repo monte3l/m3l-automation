@@ -62,6 +62,24 @@ function sameOrder(left, right) {
   );
 }
 
+/**
+ * Ordered element-wise equality for sort pairs. Same reasoning as
+ * {@link sameOrder}, which this deliberately mirrors rather than reusing
+ * `formatSort`: comparing the RENDERED strings reintroduces exactly the
+ * separator ambiguity sameOrder exists to remove, since a field name can
+ * contain both a space and a comma.
+ */
+function sameSort(left, right) {
+  return (
+    left.length === right.length &&
+    left.every(
+      (pair, index) =>
+        pair.field === right[index]?.field &&
+        pair.direction === right[index]?.direction,
+    )
+  );
+}
+
 /** Render a sort list as "Priority ASC, Created ASC". */
 function formatSort(pairs) {
   return pairs.length > 0
@@ -181,26 +199,30 @@ export function deriveViewDrift({
     (field) => field.dataType === "ISSUE_TYPE",
   );
 
-  /**
-   * Whether a declared column is currently exempt from the column assertion.
-   * A mandatory column never is; an optional one is exempt only while its own
-   * documented condition holds.
-   */
-  const isExempt = (name) => {
-    if (!optionalFields.has(name)) return false;
-    const condition = Object.hasOwn(OPTIONAL_COLUMN_EXEMPTIONS, name)
-      ? OPTIONAL_COLUMN_EXEMPTIONS[name]
-      : undefined;
-    if (!condition) {
+  // Reported ONCE, before the per-view loop: an unmapped optional column is a
+  // property of the declaration, not of any one view, so checking it inside the
+  // loop emitted a duplicate finding per declared view.
+  for (const name of optionalFields) {
+    if (!Object.hasOwn(OPTIONAL_COLUMN_EXEMPTIONS, name)) {
       findings.push(
         `Column "${name}" is in OPTIONAL_VIEW_FIELDS but has no entry in ` +
           `OPTIONAL_COLUMN_EXEMPTIONS, so there is no stated reason it may be ` +
           `absent. Add one in bin/lib/hub-view-drift.mjs, or drop it from the ` +
           `optional set — otherwise it is an untested blind spot.`,
       );
-      return false;
     }
-    return condition(liveFields);
+  }
+
+  /**
+   * Whether a declared column is currently exempt from the column assertion.
+   * A mandatory column never is; an optional one is exempt only while its own
+   * documented condition holds. An unmapped optional column is never exempt —
+   * it was already reported above.
+   */
+  const isExempt = (name) => {
+    if (!optionalFields.has(name)) return false;
+    if (!Object.hasOwn(OPTIONAL_COLUMN_EXEMPTIONS, name)) return false;
+    return OPTIONAL_COLUMN_EXEMPTIONS[name](liveFields);
   };
 
   for (const def of viewDefs) {
@@ -250,10 +272,7 @@ export function deriveViewDrift({
 
     const declaredSort = def.sort ?? [];
     const liveSort = live.sort ?? [];
-    if (
-      declaredSort.length > 0 &&
-      formatSort(liveSort) !== formatSort(declaredSort)
-    ) {
+    if (declaredSort.length > 0 && !sameSort(liveSort, declaredSort)) {
       findings.push(
         `View "${def.name}" sort is ${formatSort(liveSort)}, expected ` +
           `${formatSort(declaredSort)}. Sort is readable but NOT writable ` +
