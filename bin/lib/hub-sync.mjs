@@ -144,7 +144,7 @@ export const MILESTONE_TITLES = {
   p2: "Later — not yet scheduled",
   p3: "Gated — awaiting trigger",
   governance: "Governance",
-  major: "2.0 / breaking",
+  major: "Breaking",
 };
 
 const ROADMAP_PATH = "docs/ROADMAP.md";
@@ -453,7 +453,7 @@ export const TYPE_BY_IMPLEMENTATION_SECTION = {
 };
 
 /**
- * {@link Item} keys routed to the `MILESTONE_TITLES.major` ("2.0 / breaking")
+ * {@link Item} keys routed to the `MILESTONE_TITLES.major` ("Breaking")
  * milestone regardless of their table-derived priority — work explicitly
  * recorded as needing a major-version bump before it can be built (F3's own
  * text: "Re-file against a real 2.0 milestone if one is ever opened"; the
@@ -1469,24 +1469,32 @@ export function buildIssuePayload(item) {
  * has drifted, and *name* — never delete — anything left over.
  *
  * ADR-0073 widened this from create-only. The create-only version was why
- * every live milestone carried a `null` description and why a stale
- * `Breaking` sat beside the `2.0 / breaking` the sync kept planning to
- * create: with no rename or describe path, neither drift was expressible, so
- * neither was ever reported.
+ * every live milestone carried a `null` description, and why the `major` tier
+ * ended up with two milestones: `Breaking` already served it, but the declared
+ * title was `2.0 / breaking`, so the sync kept planning to create that one
+ * instead of describing or renaming what was already there. With no rename or
+ * describe path, neither drift was expressible, so neither was ever reported.
  *
  * **Title match beats legacy match.** A def whose current title already
  * exists live resolves to that milestone, and any milestone holding one of
  * that def's `legacyTitles` becomes an `orphan` instead of a rename —
  * because GitHub rejects a `PATCH` that would duplicate an existing title.
  * This is not hypothetical: `major` is in exactly that state, with both
- * `Breaking` and `2.0 / breaking` present.
+ * `Breaking` and `2.0 / breaking` present. ADR-0074 made `Breaking` the
+ * declared title precisely so the match lands on the milestone carrying the
+ * closed breaking work, leaving the empty `2.0 / breaking` as the orphan.
+ * Declared the other way round — as it was until ADR-0074 — the orphan is the
+ * milestone holding every breaking issue, and since `orphan` is never deleted
+ * that split is permanent. Read the two directions before reversing this.
  *
  * **`orphan` is report-only.** A milestone matching no def is named so a
  * maintainer can decide, never deleted — it may still carry closed issues,
  * and deleting a milestone strips it from every issue that ever held it.
  * `orphan` is deliberately excluded from `planIsEmpty`'s drift verdict for
  * the same reason: an unclaimed milestone nobody intends to remove would
- * otherwise make `check:hub-drift` permanently unfixable.
+ * otherwise make `check:hub-drift` permanently unfixable. `2.0 / breaking` is
+ * the one current orphan and holds no issues at all, open or closed, which is
+ * the entire reason ADR-0074 could sanction deleting it by hand.
  *
  * A `create` is only planned for a milestone some item actually needs, so an
  * unused tier costs nothing; `rename` and `describe` apply to every def, since

@@ -52,9 +52,15 @@ describe("MILESTONE_DEFS", () => {
       expect(p2?.legacyTitles).toEqual(["Later — gated/deferred"]);
     });
 
-    test("major's legacy title is 'Breaking', the pre-existing title that predates '2.0 / breaking'", () => {
+    test("major's title is the version-agnostic 'Breaking', with the stale '2.0 / breaking' as its legacy title (ADR-0074)", () => {
       const major = MILESTONE_DEFS.find((def) => def.key === "major");
-      expect(major?.legacyTitles).toEqual(["Breaking"]);
+      // Both halves matter and are asserted together: the title must not name
+      // a version (m3l-common is at 4.x, and ADR-0044 found "2.0" unreachable
+      // as far back as 2.4.0), and the stale title must stay declared so the
+      // empty live milestone still resolves as an orphan rather than silently
+      // matching nothing.
+      expect(major?.title).toBe("Breaking");
+      expect(major?.legacyTitles).toEqual(["2.0 / breaking"]);
     });
 
     test.each(["p0", "p3", "governance"])(
