@@ -34,18 +34,32 @@
 /**
  * Why each optional column may legitimately be absent, keyed by column name.
  *
- * A predicate per column, rather than one shared condition: the exemption for
- * "Type" is specifically "the ISSUE_TYPE field is not enabled", and a future
- * optional column would silently inherit that unrelated condition if the
- * exemption were keyed on the set as a whole. An optional column with no entry
- * here is reported rather than quietly exempted — a gate must not grow silent
- * blind spots by declaration alone.
+ * A predicate per column, rather than one shared condition: "Type" is exempt
+ * because the API cannot see it at all, and a future optional column would
+ * silently inherit that unrelated reason if the exemption were keyed on the set
+ * as a whole. An optional column with no entry here is reported rather than
+ * quietly exempted — a gate must not grow silent blind spots by declaration
+ * alone. A predicate that ignores its argument is still the right shape: the
+ * next entry may well be conditional.
  */
 const OPTIONAL_COLUMN_EXEMPTIONS = {
-  // The built-in Issue Type column: no mutation can enable its field, so until
-  // a human does, neither field nor column can exist.
-  Type: (liveFields) =>
-    !liveFields.some((field) => field.dataType === "ISSUE_TYPE"),
+  // The built-in Issue Type column is INVISIBLE to GraphQL, so it can never be
+  // asserted — hence an unconditional exemption rather than a predicate over
+  // liveFields (ADR-0075). Verified against the live schema on 2026-08-23:
+  // `ProjectV2FieldConfiguration` is a union of exactly ProjectV2Field,
+  // ProjectV2IterationField, ProjectV2MultiSelectField and
+  // ProjectV2SingleSelectField — no issue-type member — and no
+  // `ProjectV2IssueTypeField` exists anywhere in the schema. So
+  // `projectV2.field(name: "Type")` answers NOT_FOUND, and the column is
+  // absent from both `ProjectV2.fields` and `configuration.visibleFields` even
+  // while the board UI renders it. `ProjectV2FieldType` does list ISSUE_TYPE,
+  // which is what made the opposite look true, but no field node is ever
+  // materialized under it.
+  //
+  // Kept in this table rather than dropped from OPTIONAL_VIEW_FIELDS so the
+  // "an optional column must carry a STATED reason" rule still holds and the
+  // reason lives next to the exemption.
+  Type: () => true,
 };
 
 /**
@@ -146,15 +160,16 @@ function optionSetFindings(fieldName, declared, live) {
  * Asserts, per ADR-0073: the view set in **both** directions (a declared view
  * missing, and an undeclared view still present); each declared view's layout
  * and filter; its **ordered** visible columns; its sort against
- * `VIEW_DEFS[n].sort`; the presence of a `dataType: ISSUE_TYPE` field; and the
- * `Status`/`Priority` option sets.
+ * `VIEW_DEFS[n].sort`; and the `Status`/`Priority` option sets. NOT the
+ * built-in Issue Type field: ADR-0073 asserted its presence on the premise
+ * that its absence was gateable, which the schema does not support (ADR-0075).
  *
- * A column named in `optionalFields` is exempt **only while the ISSUE_TYPE
- * field is absent** — that is the built-in `Type` column, which no mutation can
- * enable, and the ISSUE_TYPE finding already covers that cause with the right
- * remediation (reporting both would name one cause twice). Once the field
- * exists the column is mandatory like any other, so removing it by hand is
- * reported.
+ * A column named in `optionalFields` is exempt while its entry in
+ * {@link OPTIONAL_COLUMN_EXEMPTIONS} says it may be absent. Today that is only
+ * the built-in `Type` column, whose exemption is unconditional because the
+ * column is invisible to GraphQL by any path (ADR-0075) — there is no board
+ * state in which it could be asserted, so this gate cannot police it in either
+ * direction.
  *
  * @param {{
  *   viewDefs: { name: string, layout: string, filter: string, fields: string[], sort?: SortPair[] }[],
@@ -213,13 +228,6 @@ export function deriveViewDrift({
     }
   }
 
-  // Matched on dataType rather than name: it is the only ISSUE_TYPE-typed field
-  // a board can have, and matching the name would break under localization —
-  // and would let a hand-made single-select called "Type" satisfy it.
-  const issueTypeFieldPresent = liveFields.some(
-    (field) => field.dataType === "ISSUE_TYPE",
-  );
-
   // Reported ONCE, before the per-view loop: an unmapped optional column is a
   // property of the declaration, not of any one view, so checking it inside the
   // loop emitted a duplicate finding per declared view.
@@ -270,24 +278,27 @@ export function deriveViewDrift({
       );
     }
 
-    // Ordered, not set-wise: visibleFieldIds IS the column order, so a
+    // Ordered, not set-wise: the configured column order IS the contract, so a
     // reordered view is real drift even when every column is present.
     //
-    // An optional column is exempt only while its own documented condition
-    // holds — not merely because the live view happens to lack it. Keying the
-    // exemption on the live column instead (as this originally did) meant a
-    // `Type` column removed by hand while the field was enabled matched neither
-    // this check nor the ISSUE_TYPE one below, and the gate reported a clean
-    // board: precisely the silent miss it exists to close.
+    // An optional column is exempt only per its own entry in
+    // OPTIONAL_COLUMN_EXEMPTIONS — never merely because the live view happens
+    // to lack it. Keying the exemption on the live column instead (as this
+    // originally did) meant a column removed by hand matched no check at all
+    // and the gate reported a clean board: precisely the silent miss it exists
+    // to close.
     const expectedColumns = def.fields.filter((name) => !isExempt(name));
     const liveColumns = live.columns ?? [];
     if (!sameOrder(liveColumns, expectedColumns)) {
       findings.push(
         `View "${def.name}" columns are [${liveColumns.join(", ")}], expected ` +
-          `[${expectedColumns.join(", ")}] — run ` +
-          `\`pnpm sync:hub-projects -- --init --apply\`. The order is part of ` +
-          `the assertion: configuration.visibleFieldIds is the column order, ` +
-          `not a set.`,
+          `[${expectedColumns.join(", ")}]. The order is part of the ` +
+          `assertion: the configured order IS the column order, not a set. ` +
+          `Fix it by hand — open the board, select the "${def.name}" view, and ` +
+          `add/reorder columns from its field picker. No sync can do this: ` +
+          `\`--init --apply\` writes visibleFieldIds only when CREATING a view, ` +
+          `because a full-replace write on an existing one would silently strip ` +
+          `the built-in Type column that the API cannot see (ADR-0075).`,
       );
     }
 
@@ -319,16 +330,6 @@ export function deriveViewDrift({
           `separate opt-in flag.`,
       );
     }
-  }
-
-  if (!issueTypeFieldPresent) {
-    findings.push(
-      `The board has no ISSUE_TYPE field, so the "Type" column cannot exist. ` +
-        `This one is UI-only — createProjectV2Field's dataType accepts only ` +
-        `the custom types, never a built-in — so enable it by hand: board "…" ` +
-        `menu -> Settings -> Fields -> Type. The next ` +
-        `\`pnpm sync:hub-projects -- --init --apply\` then adds the column.`,
-    );
   }
 
   const fieldByName = new Map(liveFields.map((field) => [field.name, field]));
