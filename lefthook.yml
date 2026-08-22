@@ -62,6 +62,11 @@ pre-push:
     # the file reaches a reviewer, and it costs ~0.2s.
     check-control-chars:
       run: pnpm check:control-chars
+    # ADR-0072's per-file size ratchet. Was CI-only, which meant a 6-byte
+    # overrun was discovered only after a push with all eleven other pre-push
+    # gates green (#604). Costs ~0.05s.
+    check-file-budget:
+      run: pnpm check:file-budget
     # Catch agent/model-matrix drift locally instead of first in CI (was
     # CI-only; see docs/contributing/model-selection.md "Enforcement").
     check-agents:
