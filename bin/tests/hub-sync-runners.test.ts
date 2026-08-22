@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { runIssueSync } from "../sync-hub-issues.mjs";
+import { runIssueSync, runIssueTypeInit } from "../sync-hub-issues.mjs";
 import { runProjectSync } from "../sync-hub-projects.mjs";
 import { runPhases } from "../sync-hub.mjs";
 import {
@@ -11,6 +11,7 @@ import {
 } from "../lib/hub-sync.mjs";
 import { extractImplementation, extractRoadmap } from "../lib/project-hub.mjs";
 import { MILESTONE_DEFS } from "../lib/milestone-defs.mjs";
+import { ISSUE_TYPE_DEFS } from "../lib/issue-type-defs.mjs";
 
 // ---------------------------------------------------------------------------
 // Fixed identifiers the two runners hard-code internally (bin/sync-hub-issues.mjs,
@@ -385,6 +386,32 @@ function authFailRule(message = "not logged in"): GhRule {
   };
 }
 
+// The apply path's Issue-Type preflight read (bin/sync-hub-issues.mjs
+// loadOrgIssueTypes) — org-scoped, GraphQL-only, and it now runs before the
+// first mutation on every --apply, so every --apply fixture must answer it or
+// the runner refuses to start. Defaults to the full declared vocabulary, i.e.
+// "the org is already provisioned", which is what an --apply test asserting
+// something else entirely wants.
+function orgIssueTypesGraphqlRule(
+  types: { id: string; name: string }[] = ISSUE_TYPE_DEFS.map((def, i) => ({
+    id: `IT_${i}`,
+    name: def.name,
+  })),
+  ownerId = "O_ORG",
+): GhRule {
+  return {
+    match: (a) =>
+      a[0] === "api" &&
+      a[1] === "graphql" &&
+      typeof a[3] === "string" &&
+      a[3].includes("issueTypes(first: 50)"),
+    respond: () =>
+      JSON.stringify({
+        data: { organization: { id: ownerId, issueTypes: { nodes: types } } },
+      }),
+  };
+}
+
 // A single live GitHub milestone, shaped like loadExistingMilestones' own
 // mapped output (ADR-0073 widened this from a bare title string) — `number`
 // is what makes a rename/describe PATCH addressable at all, so every
@@ -671,6 +698,12 @@ function isMutatingIssueCall(args: string[]): boolean {
     return true;
   }
   if (args[0] === "api" && args.includes("-X")) return true;
+  // A GraphQL call carries no `-X`, so the check above cannot see one. Match
+  // on the operation keyword instead of on `graphql` itself: the Issue-Type
+  // preflight is also a `gh api graphql` call, and it is a read.
+  if (args[0] === "api" && args[1] === "graphql") {
+    return args.some((token) => token.includes("query=mutation"));
+  }
   return false;
 }
 
@@ -762,6 +795,7 @@ describe("runIssueSync", () => {
   test("--apply: records mutating calls in order (label bootstrap, then milestones, then issue create), each argv an array", () => {
     const { runGh, calls } = scriptedGh([
       authOkRule(),
+      orgIssueTypesGraphqlRule(),
       milestonesGetRule([]),
       issueListSyncRule([]),
       labelCreateRule(),
@@ -869,6 +903,7 @@ describe("runIssueSync", () => {
     ];
     const { runGh, calls } = scriptedGh([
       authOkRule(),
+      orgIssueTypesGraphqlRule(),
       milestonesGetRule([]),
       issueListSyncRule(existingIssues),
       labelCreateRule(),
@@ -1054,6 +1089,7 @@ describe("runIssueSync", () => {
     ];
     const { runGh, calls } = scriptedGh([
       authOkRule(),
+      orgIssueTypesGraphqlRule(),
       milestonesGetRule([]),
       issueListSyncRule(existingIssues),
       labelCreateRule(),
@@ -1276,6 +1312,7 @@ describe("runIssueSync", () => {
 
     const { runGh, calls } = scriptedGh([
       authOkRule(),
+      orgIssueTypesGraphqlRule(),
       // Live p1 milestone sits under its legacy title with the CURRENT
       // description already — isolates the rename from any describe, so
       // this test's ordering assertion is about rename alone.
@@ -1334,6 +1371,7 @@ describe("runIssueSync", () => {
     const p0Def = milestoneDef("p0");
     const { runGh, calls } = scriptedGh([
       authOkRule(),
+      orgIssueTypesGraphqlRule(),
       milestonesGetRule([]),
       issueListSyncRule([]),
       labelCreateRule(),
@@ -1579,6 +1617,7 @@ describe("runIssueSync", () => {
     ];
     const { runGh, calls } = scriptedGh([
       authOkRule(),
+      orgIssueTypesGraphqlRule(),
       milestonesGetRule([]),
       issueListLabeledRule([]),
       issueListAllRule(allIssues),
@@ -1681,6 +1720,7 @@ describe("runIssueSync", () => {
     ];
     const { runGh, calls } = scriptedGh([
       authOkRule(),
+      orgIssueTypesGraphqlRule(),
       milestonesGetRule([]),
       issueListSyncRule(existingIssues),
       labelCreateRule(),
@@ -1747,6 +1787,7 @@ describe("runIssueSync", () => {
   test("--apply: an epic's create precedes its child's, and the child's create carries --parent <the epic's returned number>", () => {
     const { runGh, calls } = scriptedGh([
       authOkRule(),
+      orgIssueTypesGraphqlRule(),
       milestonesGetRule([]),
       issueListSyncRule([]),
       labelCreateRule(),
@@ -1822,6 +1863,7 @@ describe("runIssueSync", () => {
     ];
     const { runGh, calls } = scriptedGh([
       authOkRule(),
+      orgIssueTypesGraphqlRule(),
       milestonesGetRule([]),
       issueListSyncRule(existingIssues),
       labelCreateRule(),
@@ -1966,6 +2008,276 @@ describe("runIssueSync", () => {
       issues: { create: 0, update: 0, close: 0, reopen: 0, untouched: 2 },
       parents: { set: 1, clear: 0, pending: 0 },
     });
+  });
+
+  // ---------------------------------------------------------------------------
+  // issueTypePreflight — the apply-path guard added ahead of every mutation.
+  // A half-provisioned org (missing even one declared type) must refuse the
+  // WHOLE batch before the first write: `gh issue create --type` 422s
+  // partway through otherwise, leaving some issues filed and some not.
+  // ---------------------------------------------------------------------------
+
+  test("--apply: an org missing a declared Issue Type refuses the whole batch before any mutation, naming the remedy", () => {
+    // Only "Friction" is live; the other 9 ISSUE_TYPE_DEFS entries are
+    // missing, so issueTypePreflight's `create` bucket is non-empty and the
+    // whole --apply must refuse before bootstrapLabels (the first mutation)
+    // ever runs.
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      orgIssueTypesGraphqlRule([{ id: "IT_0", name: "Friction" }]),
+      milestonesGetRule([]),
+      issueListSyncRule([]),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueSync({
+      runGh,
+      reporter,
+      apply: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(reporter.errors).toHaveLength(1);
+    const message = required(reporter.errors[0], "reporter.errors[0]");
+    expect(message).toMatch(/missing/i);
+    expect(message).toMatch(/--init-issue-types/);
+    // The whole point: no partial batch. Not one mutating call (label
+    // bootstrap, milestone create, issue create) ever reaches `gh`.
+    expect(calls.every((args) => !isMutatingIssueCall(args))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runIssueTypeInit — the separate opt-in provisioning entry point for org
+// Issue Types (ADR-0073). Never reads the trackers (no readDoc); reads only
+// the live Issue Type census and the unfiltered issue list (for the retire
+// census), then creates every missing declared type and retires every
+// undeclared, zero-issue one. Creates always run before retires.
+// ---------------------------------------------------------------------------
+
+describe("runIssueTypeInit", () => {
+  // Three of the ten declared kinds already live on the org under their new
+  // (post-ADR-0073 split) names — a realistic "partially migrated" org,
+  // leaving the other seven to create and nothing to retire.
+  function partiallyProvisionedTypes(): { id: string; name: string }[] {
+    return ["libraryCapability", "cliCapability", "packageCapability"].map(
+      (key, index) => ({
+        id: `IT_CAP_${String(index)}`,
+        name: required(
+          ISSUE_TYPE_DEFS.find((def) => def.key === key),
+          `ISSUE_TYPE_DEFS entry for key "${key}"`,
+        ).name,
+      }),
+    );
+  }
+
+  test("dry run with an under-provisioned org plans the missing creates and makes no mutating call", () => {
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      orgIssueTypesGraphqlRule(partiallyProvisionedTypes()),
+      issueListAllRule([]),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueTypeInit({ runGh, reporter, apply: false });
+
+    expect(outcome.ok).toBe(true);
+    // 10 declared kinds minus the 3 already-live capability ones.
+    expect(calls.every((args) => !isMutatingIssueCall(args))).toBe(true);
+    expect(reporter.finishedWith).toMatchObject({
+      applied: false,
+      issueTypes: { create: 7, retire: 0, blocked: 0 },
+    });
+  });
+
+  test("--apply issues one createIssueType mutation per missing type, each carrying that def's real name/description/color and the read ownerId", () => {
+    const liveTypes = partiallyProvisionedTypes();
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      // A distinct, non-default ownerId proves the id is threaded from the
+      // graphql read into each mutation, not hardcoded.
+      orgIssueTypesGraphqlRule(liveTypes, "O_TEST_ORG"),
+      issueListAllRule([]),
+      graphqlRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueTypeInit({ runGh, reporter, apply: true });
+
+    expect(outcome.ok).toBe(true);
+    const liveNames = new Set(liveTypes.map((type) => type.name));
+    const missingDefs = ISSUE_TYPE_DEFS.filter(
+      (def) => !liveNames.has(def.name),
+    );
+    expect(missingDefs).toHaveLength(7);
+
+    for (const def of missingDefs) {
+      const mutationCall = required(
+        calls.find((call) => call.includes(`name=${def.name}`)),
+        `createIssueType mutation call for "${def.name}"`,
+      );
+      expect(mutationCall).toContain("ownerId=O_TEST_ORG");
+      expect(mutationCall).toContain(`description=${def.description}`);
+      expect(mutationCall).toContain(`color=${def.color}`);
+    }
+    // No live type is undeclared here, so nothing is retired.
+    expect(
+      calls.some((call) => call.some((t) => t.startsWith("issueTypeId="))),
+    ).toBe(false);
+    expect(
+      reporter.changes.filter((entry) => entry.kind === "created"),
+    ).toHaveLength(7);
+  });
+
+  test("an undeclared live type no issue carries is deleted, with the mutation carrying that type's id", () => {
+    const liveTypes = [
+      ...ISSUE_TYPE_DEFS.map((def, index) => ({
+        id: `IT_${String(index)}`,
+        name: def.name,
+      })),
+      // A leftover from before the ADR-0073 vocabulary split — matches no
+      // current ISSUE_TYPE_DEFS name.
+      { id: "IT_OLD", name: "Capability" },
+    ];
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      orgIssueTypesGraphqlRule(liveTypes),
+      issueListAllRule([]),
+      graphqlRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueTypeInit({ runGh, reporter, apply: true });
+
+    expect(outcome.ok).toBe(true);
+    const deleteCall = required(
+      calls.find((call) => call.includes("issueTypeId=IT_OLD")),
+      "deleteIssueType mutation call",
+    );
+    expect(deleteCall[0]).toBe("api");
+    expect(deleteCall[1]).toBe("graphql");
+    // No declared type is missing, so no create ever fires alongside it.
+    expect(calls.some((call) => call.some((t) => t.startsWith("name=")))).toBe(
+      false,
+    );
+    expect(reporter.changes).toContainEqual({
+      kind: "removed",
+      file: "Issue Type: Capability",
+      note: undefined,
+    });
+  });
+
+  test("an undeclared live type an issue still carries (even closed) is NOT deleted, and is named in reporter.infos with its count", () => {
+    const liveTypes = [
+      ...ISSUE_TYPE_DEFS.map((def, index) => ({
+        id: `IT_${String(index)}`,
+        name: def.name,
+      })),
+      { id: "IT_OLD", name: "Capability" },
+    ];
+    // A CLOSED issue still carrying the undeclared type — proves a closed
+    // issue counts too, which is exactly what makes deleting the type
+    // destructive.
+    const allIssues = [
+      {
+        number: 1,
+        title: "an old issue",
+        body: "",
+        state: "CLOSED",
+        labels: [],
+        issueType: { name: "Capability" },
+      },
+    ];
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      orgIssueTypesGraphqlRule(liveTypes),
+      issueListAllRule(allIssues),
+      graphqlRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueTypeInit({ runGh, reporter, apply: true });
+
+    expect(outcome.ok).toBe(true);
+    // Every declared type is live and the one undeclared type is blocked, so
+    // --apply has literally nothing to mutate.
+    expect(calls.every((args) => !isMutatingIssueCall(args))).toBe(true);
+    expect(
+      calls.some((call) => call.some((t) => t.startsWith("issueTypeId="))),
+    ).toBe(false);
+    expect(
+      reporter.infos.some((message) => /Capability — 1 issue/.test(message)),
+    ).toBe(true);
+    expect(reporter.finishedWith).toMatchObject({
+      applied: true,
+      issueTypes: { create: 0, retire: 0, blocked: 1 },
+    });
+  });
+
+  test("--apply runs every create before any retire", () => {
+    // Drop one declared kind from the live set (a create) and add one
+    // undeclared, zero-issue leftover (a retire), so both buckets are
+    // non-empty in the same run.
+    const liveTypes = [
+      ...ISSUE_TYPE_DEFS.filter((def) => def.key !== "governance").map(
+        (def, index) => ({ id: `IT_${String(index)}`, name: def.name }),
+      ),
+      { id: "IT_OLD", name: "Capability" },
+    ];
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      orgIssueTypesGraphqlRule(liveTypes),
+      issueListAllRule([]),
+      graphqlRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueTypeInit({ runGh, reporter, apply: true });
+
+    expect(outcome.ok).toBe(true);
+    const createIndex = calls.findIndex((call) =>
+      call.includes("name=Governance"),
+    );
+    const deleteIndex = calls.findIndex((call) =>
+      call.includes("issueTypeId=IT_OLD"),
+    );
+    expect(createIndex).toBeGreaterThanOrEqual(0);
+    expect(deleteIndex).toBeGreaterThanOrEqual(0);
+    expect(createIndex).toBeLessThan(deleteIndex);
+  });
+
+  test("auth failure short-circuits: { ok: false }, and no gh call runs beyond auth status", () => {
+    const { runGh, calls } = scriptedGh([authFailRule("not logged in")]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueTypeInit({ runGh, reporter, apply: false });
+
+    expect(outcome.ok).toBe(false);
+    expect(reporter.errors).toHaveLength(1);
+    expect(reporter.errors[0]).toMatch(/gh auth login/);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("every recorded call is an argv array of strings, across a run mixing creates and retires", () => {
+    const liveTypes = [
+      ...ISSUE_TYPE_DEFS.filter((def) => def.key !== "governance").map(
+        (def, index) => ({ id: `IT_${String(index)}`, name: def.name }),
+      ),
+      { id: "IT_OLD", name: "Capability" },
+    ];
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      orgIssueTypesGraphqlRule(liveTypes),
+      issueListAllRule([]),
+      graphqlRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueTypeInit({ runGh, reporter, apply: true });
+
+    expect(outcome.ok).toBe(true);
+    expectEveryCallIsAnArgvArray(calls);
   });
 });
 

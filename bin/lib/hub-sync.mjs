@@ -189,6 +189,125 @@ export const ISSUE_TYPES = {
 };
 
 /**
+ * One description **and** one GitHub Issue-Type colour per {@link ISSUE_TYPES}
+ * kind, read by **both** `LABEL_DEFS` (as the `type:*` label description) and
+ * `ISSUE_TYPE_DEFS` (as the org Issue Type's description/colour). Exactly the
+ * {@link PRIORITY_TIERS} pattern, applied to the other axis: a kind's label and
+ * its Issue Type now say the same thing by construction.
+ *
+ * The drift this closes was live and measurable. Before ADR-0073 the org's
+ * four Issue Types carried descriptions written by hand
+ * (`Capability` → "Library capability work (A/B/C-series)."), while the
+ * matching `type:*` labels carried different prose for the same idea — two
+ * surfaces describing one concept, with nothing comparing them.
+ *
+ * Descriptions are held to the label side's asserted 100-character limit
+ * (`LABEL_DESCRIPTION_MAX_LENGTH`) for the same reason `PRIORITY_TIERS` is:
+ * a shared string can only be as long as its strictest reader.
+ *
+ * `color` is an `IssueTypeColor` **enum** value, not the hex a label uses —
+ * two different systems, so the two colours are deliberately not shared. The
+ * enum has 8 values for 10 kinds, so exactly two pairs must share one; the
+ * pairs chosen are the two semantically closest, keeping the chip informative
+ * even where it is not unique: (`Infrastructure`, `Tooling & gates`) are both
+ * substrate/plumbing, and (`Consumer script`, `Fleet retrofit`) are both
+ * `scripts/*` fleet work.
+ *
+ * @example
+ * ```js
+ * import { TYPE_KINDS } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ *
+ * TYPE_KINDS.ui.color; // "PINK"
+ * ```
+ */
+export const TYPE_KINDS = {
+  libraryCapability: {
+    description: "Library capability — packages/m3l-common (core/, aws/).",
+    color: "BLUE",
+  },
+  cliCapability: {
+    description: "CLI capability — packages/m3l-cli.",
+    color: "ORANGE",
+  },
+  packageCapability: {
+    description:
+      "Package capability — creating or building out another workspace package.",
+    color: "GREEN",
+  },
+  ui: { description: "UI — a browser-facing surface.", color: "PINK" },
+  infrastructure: {
+    description:
+      "Infrastructure — deployment, packaging, or runtime substrate.",
+    color: "GRAY",
+  },
+  fleetRetrofit: {
+    description:
+      "Fleet retrofit — changes to existing consumers under scripts/*.",
+    color: "YELLOW",
+  },
+  toolingGates: {
+    description: "Tooling & gates — bin/, .github/, .claude/.",
+    color: "GRAY",
+  },
+  consumerScript: {
+    description: "A new consumer script under scripts/*.",
+    color: "YELLOW",
+  },
+  friction: {
+    description: "Library friction / defect report (F-series).",
+    color: "RED",
+  },
+  governance: {
+    description:
+      "Governance follow-up (ADR/process work); outside the priority tiers.",
+    color: "PURPLE",
+  },
+};
+
+/**
+ * The eight values GitHub's `IssueTypeColor` GraphQL enum accepts, introspected
+ * from the live schema (2026-08-22). Exported so `ISSUE_TYPE_DEFS`' load-time
+ * assertion rejects a typo'd colour here rather than at the `createIssueType`
+ * mutation, which fails the whole provisioning run partway through.
+ */
+export const ISSUE_TYPE_COLORS = Object.freeze([
+  "GRAY",
+  "BLUE",
+  "GREEN",
+  "YELLOW",
+  "ORANGE",
+  "RED",
+  "PINK",
+  "PURPLE",
+]);
+
+// Every ISSUE_TYPES kind must have exactly one TYPE_KINDS entry, in both
+// directions. Asserted at module load, next to the table itself, because both
+// consumers (LABEL_DEFS, ISSUE_TYPE_DEFS) index INTO it by key — a missing
+// entry would otherwise surface as `undefined.description` deep inside a
+// label bootstrap or a GraphQL mutation, long after the real mistake.
+{
+  const kindKeys = Object.keys(TYPE_KINDS);
+  const typeKeys = Object.keys(ISSUE_TYPES);
+  for (const key of typeKeys) {
+    if (!Object.hasOwn(TYPE_KINDS, key)) {
+      throw new Error(
+        `hub-sync.mjs: ISSUE_TYPES.${key} has no TYPE_KINDS entry — every kind needs a ` +
+          `description and colour, since LABEL_DEFS and ISSUE_TYPE_DEFS both read them from here.`,
+      );
+    }
+  }
+  for (const key of kindKeys) {
+    if (!Object.hasOwn(ISSUE_TYPES, key)) {
+      throw new Error(
+        `hub-sync.mjs: TYPE_KINDS.${key} names no ISSUE_TYPES kind — a stale entry left ` +
+          `behind by a rename, which nothing reads.`,
+      );
+    }
+  }
+}
+
+/**
  * Every {@link ISSUE_TYPES} value as a flat, frozen array — the vocabulary
  * {@link classifyTypeCell} validates a tracker `Type` cell against, and
  * `bin/check-tracker-status.mjs` gates on. Exported so neither re-derives
@@ -1501,6 +1620,95 @@ function managedLabelsDiffer(currentLabels, payload) {
     if (!current.has(label)) return true;
   }
   return false;
+}
+
+/**
+ * Reconciles the `monte3l` org's GitHub Issue Types against
+ * {@link ISSUE_TYPE_DEFS}. Pure: the caller reads the live types and the issue
+ * census, this decides what to do about them.
+ *
+ * Three outputs rather than two, because retiring a type is the only
+ * irreversible half and it needs a precondition the planner can actually
+ * check:
+ *
+ * - `create` — a declared def with no live type of that name. This is also
+ *   what the apply-path **preflight** reads: a non-empty `create` means
+ *   `gh issue create --type` would 422 partway through a ~50-issue batch, so
+ *   the sync refuses to start rather than fail half-applied.
+ * - `retire` — a live type outside the declared vocabulary that **no issue
+ *   still carries**. Derived, never a hardcoded name list, so a type retired
+ *   from `ISSUE_TYPES` needs no second edit here.
+ * - `blocked` — a live type outside the vocabulary that issues still carry,
+ *   with the count. Report-only. ADR-0073 originally sequenced this as
+ *   "delete `Capability` after the retype pass"; a zero-issue precondition is
+ *   the same intent expressed as a condition the runner can verify, instead of
+ *   an ordering a human has to remember.
+ *
+ * Deliberately **no `describe`/recolour output.** `updateIssueType` exists, so
+ * drift there is fixable, but nothing gates it — adding a silent repair path
+ * with no check behind it is how the milestone descriptions went five-null and
+ * unnoticed (ADR-0073). Left for the gate that would assert it.
+ *
+ * @param {{ id: string, name: string }[]} liveTypes org Issue Types as read
+ *   from `organization.issueTypes`
+ * @param {{ key: string, name: string, description: string, color: string }[]} typeDefs
+ *   normally {@link ISSUE_TYPE_DEFS}
+ * @param {Map<string, number>} issueCountsByType how many issues (any state)
+ *   currently carry each type name; a name absent from the map counts as 0
+ * @returns {{ create: { key: string, name: string, description: string, color: string }[], retire: { id: string, name: string }[], blocked: { id: string, name: string, count: number }[] }}
+ * @example
+ * ```js
+ * import { planIssueTypes } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ * import { ISSUE_TYPE_DEFS } from "@m3l-automation/workspace/bin/lib/issue-type-defs.mjs";
+ *
+ * planIssueTypes(
+ *   [{ id: "IT_1", name: "Capability" }],
+ *   ISSUE_TYPE_DEFS,
+ *   new Map([["Capability", 0]]),
+ * ).retire; // [{ id: "IT_1", name: "Capability" }]
+ * ```
+ */
+export function planIssueTypes(liveTypes, typeDefs, issueCountsByType) {
+  const liveByName = new Map(liveTypes.map((type) => [type.name, type]));
+  const declaredNames = new Set(typeDefs.map((def) => def.name));
+
+  const create = typeDefs.filter((def) => !liveByName.has(def.name));
+
+  const retire = [];
+  const blocked = [];
+  for (const type of liveTypes) {
+    if (declaredNames.has(type.name)) continue;
+    const count = issueCountsByType.get(type.name) ?? 0;
+    if (count === 0) retire.push({ id: type.id, name: type.name });
+    else blocked.push({ id: type.id, name: type.name, count });
+  }
+
+  return { create, retire, blocked };
+}
+
+/**
+ * How many issues carry each Issue Type name, counting **both** open and
+ * closed. Closed issues matter as much as open ones here: they are the
+ * majority of the repo's issues, `planIssueSync` never revisits a
+ * closed-and-resolved one, and a single closed issue still carrying a type is
+ * enough to make retiring it destructive.
+ *
+ * @param {{ type: string | null }[]} issues normally `loadAllIssues`' output
+ * @returns {Map<string, number>} keyed by type name; untyped issues are not counted
+ * @example
+ * ```js
+ * import { countIssuesByType } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ *
+ * countIssuesByType([{ type: "Friction" }, { type: null }]).get("Friction"); // 1
+ * ```
+ */
+export function countIssuesByType(issues) {
+  const counts = new Map();
+  for (const issue of issues) {
+    if (issue.type === null || issue.type === undefined) continue;
+    counts.set(issue.type, (counts.get(issue.type) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /**
