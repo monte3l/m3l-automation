@@ -10,6 +10,7 @@ import {
   ISSUE_TYPES,
 } from "../lib/hub-sync.mjs";
 import { extractImplementation, extractRoadmap } from "../lib/project-hub.mjs";
+import { MILESTONE_DEFS } from "../lib/milestone-defs.mjs";
 
 // ---------------------------------------------------------------------------
 // Fixed identifiers the two runners hard-code internally (bin/sync-hub-issues.mjs,
@@ -384,22 +385,68 @@ function authFailRule(message = "not logged in"): GhRule {
   };
 }
 
+// A single live GitHub milestone, shaped like loadExistingMilestones' own
+// mapped output (ADR-0073 widened this from a bare title string) — `number`
+// is what makes a rename/describe PATCH addressable at all, so every
+// scripted fixture must carry one, not just a title.
+interface ScriptedMilestone {
+  number: number;
+  title: string;
+  description?: string | null;
+  state?: "open" | "closed";
+}
+
 // `state=all` (not the API's `open` default) so a closed milestone doesn't
-// look absent and get re-`POST`ed — see loadExistingMilestoneTitles.
-function milestonesGetRule(titles: string[]): GhRule {
+// look absent and get re-`POST`ed — see loadExistingMilestones.
+function milestonesGetRule(milestones: ScriptedMilestone[]): GhRule {
   return {
     match: (a) =>
       a[0] === "api" && a[1] === `repos/${REPO}/milestones?state=all`,
-    respond: () => JSON.stringify(titles.map((title) => ({ title }))),
+    respond: () =>
+      JSON.stringify(
+        milestones.map((m) => ({
+          number: m.number,
+          title: m.title,
+          description: m.description ?? null,
+          state: m.state ?? "open",
+        })),
+      ),
   };
 }
 
 function milestoneCreateRule(): GhRule {
   return {
     match: (a) =>
-      a[0] === "api" && a[1] === `repos/${REPO}/milestones` && a.includes("-X"),
+      a[0] === "api" &&
+      a[1] === `repos/${REPO}/milestones` &&
+      a.includes("-X") &&
+      a.includes("POST"),
     respond: () => "",
   };
+}
+
+// The in-place PATCH-by-number path patchMilestone() calls for both a
+// rename (title=) and a description-only fix (description=) — matched by
+// path shape rather than by exact number, so one rule serves every test
+// regardless of which milestone number it patches.
+function milestonePatchRule(): GhRule {
+  return {
+    match: (a) =>
+      a[0] === "api" &&
+      typeof a[1] === "string" &&
+      a[1].startsWith(`repos/${REPO}/milestones/`) &&
+      a.includes("-X") &&
+      a.includes("PATCH"),
+    respond: () => "",
+  };
+}
+
+/** Look up one MILESTONE_DEFS entry by key, failing loudly if it's missing. */
+function milestoneDef(key: string): (typeof MILESTONE_DEFS)[number] {
+  return required(
+    MILESTONE_DEFS.find((def) => def.key === key),
+    `MILESTONE_DEFS entry for key "${key}"`,
+  );
 }
 
 function issueListSyncRule(issues: unknown[]): GhRule {
@@ -1129,9 +1176,22 @@ describe("runIssueSync", () => {
         issueType: { name: payload.type },
       },
     ];
+    // The p0 milestone must be an EXACT match — number, title, AND
+    // description all equal to its MILESTONE_DEFS entry — or planMilestones
+    // reports a rename/describe drift and the plan is no longer empty. A
+    // bare title (the pre-ADR-0073 shape) can never satisfy the description
+    // comparison, which is exactly the bug this fixture used to hide.
+    const p0Def = milestoneDef("p0");
     const { runGh, calls } = scriptedGh([
       authOkRule(),
-      milestonesGetRule(["Now — unblock first"]),
+      milestonesGetRule([
+        {
+          number: 1,
+          title: p0Def.title,
+          description: p0Def.description,
+          state: "open",
+        },
+      ]),
       issueListSyncRule(existingIssues),
     ]);
     const reporter = createFakeReporter();
@@ -1157,6 +1217,239 @@ describe("runIssueSync", () => {
       applied: false,
       milestones: { create: 0 },
       issues: { create: 0, update: 0, close: 0, reopen: 0, untouched: 1 },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // ADR-0073 milestone parity — rename/describe PATCH, ordering ahead of any
+  // issue write, and the deliberate orphan/rename+describe asymmetry in the
+  // dry-run drift verdict (planIsEmpty counts rename+describe, never orphan).
+  // -------------------------------------------------------------------------
+
+  test("--apply: a milestone rename PATCHes before the first issue create/edit, with the argv shape gh api expects", () => {
+    const p1Def = milestoneDef("p1");
+    const legacyTitle = required(p1Def.legacyTitles[0], "p1 legacy title");
+
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      // Live p1 milestone sits under its legacy title with the CURRENT
+      // description already — isolates the rename from any describe, so
+      // this test's ordering assertion is about rename alone.
+      milestonesGetRule([
+        {
+          number: 55,
+          title: legacyTitle,
+          description: p1Def.description,
+          state: "open",
+        },
+      ]),
+      issueListSyncRule([]),
+      labelCreateRule(),
+      milestonePatchRule(),
+      milestoneCreateRule(),
+      issueCreateRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueSync({
+      runGh,
+      reporter,
+      apply: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+
+    const patchIndex = calls.findIndex(
+      (a) => a[0] === "api" && a.includes("-X") && a.includes("PATCH"),
+    );
+    const firstIssueWriteIndex = calls.findIndex(
+      (a) => a[0] === "issue" && ["create", "edit"].includes(a[1] ?? ""),
+    );
+    expect(patchIndex).toBeGreaterThanOrEqual(0);
+    expect(firstIssueWriteIndex).toBeGreaterThanOrEqual(0);
+    // The whole reason for this ordering: `gh issue create/edit --milestone`
+    // resolves the milestone by TITLE, so an issue write that ran before the
+    // rename would still ask for the now-renamed-away legacy title.
+    expect(patchIndex).toBeLessThan(firstIssueWriteIndex);
+
+    const patchCall = required(calls[patchIndex], "patch call");
+    expect(patchCall[0]).toBe("api");
+    expect(patchCall[1]).toBe(`repos/${REPO}/milestones/55`);
+    expect(patchCall).toContain("-X");
+    expect(patchCall).toContain("PATCH");
+    expect(patchCall).toContain("-f");
+    expect(patchCall).toContain(`title=${p1Def.title}`);
+
+    expect(reporter.finishedWith).toMatchObject({
+      milestones: { rename: 1 },
+    });
+  });
+
+  test("--apply: creating a new milestone sends both title= and description= fields", () => {
+    const p0Def = milestoneDef("p0");
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      milestonesGetRule([]),
+      issueListSyncRule([]),
+      labelCreateRule(),
+      milestoneCreateRule(),
+      issueCreateRule(),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueSync({
+      runGh,
+      reporter,
+      apply: true,
+      readDoc: makeReadDoc(),
+    });
+
+    expect(outcome.ok).toBe(true);
+    const p0CreateCall = required(
+      calls.find(
+        (a) =>
+          a[0] === "api" &&
+          a[1] === `repos/${REPO}/milestones` &&
+          a.includes(`title=${p0Def.title}`),
+      ),
+      "p0 create call",
+    );
+    expect(p0CreateCall).toContain("-X");
+    expect(p0CreateCall).toContain("POST");
+    expect(p0CreateCall).toContain(`description=${p0Def.description}`);
+  });
+
+  test.each([
+    {
+      label: "rename",
+      buildMilestones: (p0Def: ReturnType<typeof milestoneDef>) => [
+        {
+          number: 1,
+          title: p0Def.title,
+          description: p0Def.description,
+          state: "open" as const,
+        },
+        {
+          number: 2,
+          title: required(
+            milestoneDef("p1").legacyTitles[0],
+            "p1 legacy title",
+          ),
+          description: milestoneDef("p1").description,
+          state: "open" as const,
+        },
+      ],
+    },
+    {
+      label: "describe",
+      buildMilestones: (p0Def: ReturnType<typeof milestoneDef>) => [
+        {
+          number: 1,
+          title: p0Def.title,
+          description: "a stale description, not the managed one",
+          state: "open" as const,
+        },
+      ],
+    },
+  ])(
+    "check: true — a milestone $label alone (no create/update/close/reopen) is reported as drift",
+    ({ buildMilestones }) => {
+      const items = computeItems(
+        CHECK_EMPTY_ROADMAP_FIXTURE,
+        EMPTY_IMPLEMENTATION_FIXTURE,
+      );
+      const payload = buildIssuePayload(required(items[0], "items[0]"));
+      const existingIssues = [
+        {
+          number: 701,
+          title: payload.title,
+          body: payload.body,
+          state: "OPEN",
+          labels: payload.labels.map((name) => ({ name })),
+          issueType: { name: payload.type },
+        },
+      ];
+      const p0Def = milestoneDef("p0");
+      const { runGh } = scriptedGh([
+        authOkRule(),
+        milestonesGetRule(buildMilestones(p0Def)),
+        issueListSyncRule(existingIssues),
+      ]);
+      const reporter = createFakeReporter();
+
+      const outcome = runIssueSync({
+        runGh,
+        reporter,
+        apply: false,
+        check: true,
+        readDoc: makeReadDoc(
+          CHECK_EMPTY_ROADMAP_FIXTURE,
+          EMPTY_IMPLEMENTATION_FIXTURE,
+        ),
+      });
+
+      expect(outcome.ok).toBe(false);
+      expect(reporter.errors.some((message) => /drift/i.test(message))).toBe(
+        true,
+      );
+    },
+  );
+
+  test("check: true — an orphaned milestone alone (matching no MILESTONE_DEFS title or legacy title) is NOT reported as drift", () => {
+    const items = computeItems(
+      CHECK_EMPTY_ROADMAP_FIXTURE,
+      EMPTY_IMPLEMENTATION_FIXTURE,
+    );
+    const payload = buildIssuePayload(required(items[0], "items[0]"));
+    const existingIssues = [
+      {
+        number: 701,
+        title: payload.title,
+        body: payload.body,
+        state: "OPEN",
+        labels: payload.labels.map((name) => ({ name })),
+        issueType: { name: payload.type },
+      },
+    ];
+    const p0Def = milestoneDef("p0");
+    const { runGh, calls } = scriptedGh([
+      authOkRule(),
+      milestonesGetRule([
+        {
+          number: 1,
+          title: p0Def.title,
+          description: p0Def.description,
+          state: "open",
+        },
+        {
+          number: 99,
+          title: "A hand-filed milestone nobody's def ever named",
+          description: "not managed by MILESTONE_DEFS",
+          state: "open",
+        },
+      ]),
+      issueListSyncRule(existingIssues),
+    ]);
+    const reporter = createFakeReporter();
+
+    const outcome = runIssueSync({
+      runGh,
+      reporter,
+      apply: false,
+      check: true,
+      readDoc: makeReadDoc(
+        CHECK_EMPTY_ROADMAP_FIXTURE,
+        EMPTY_IMPLEMENTATION_FIXTURE,
+      ),
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(reporter.errors).toEqual([]);
+    expect(calls.every((args) => !isMutatingIssueCall(args))).toBe(true);
+    expect(reporter.finishedWith).toMatchObject({
+      applied: false,
+      milestones: { create: 0, rename: 0, describe: 0, orphan: 1 },
     });
   });
 

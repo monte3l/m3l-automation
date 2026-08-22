@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { extractImplementation, extractRoadmap } from "../lib/project-hub.mjs";
+import { LABEL_DEFS } from "../lib/label-defs.mjs";
+import { MILESTONE_DEFS } from "../lib/milestone-defs.mjs";
 import {
   HUB_LABEL,
   HUB_PROJECT_TITLE,
@@ -7,6 +9,7 @@ import {
   MAJOR_BUMP_ITEM_KEYS,
   MILESTONE_TITLES,
   PRIORITY_LABELS,
+  PRIORITY_TIERS,
   PROJECT_PRIORITY_OPTIONS,
   STATUS_LABELS,
   TYPE_LABELS,
@@ -418,26 +421,32 @@ describe("MILESTONE_TITLES", () => {
   test("maps p0/p1/p2/p3/governance to their milestone titles, plus a major bucket", () => {
     expect(MILESTONE_TITLES).toMatchObject({
       p0: "Now — unblock first",
-      p1: "Next — consumer fleet",
-      p2: "Later — gated/deferred",
+      p1: "Next — scheduled",
+      p2: "Later — not yet scheduled",
       p3: "Gated — awaiting trigger",
       governance: "Governance",
       major: "2.0 / breaking",
     });
   });
 
-  // ADR-0073 renames p1/p2 to "Next — scheduled" / "Later — not yet
-  // scheduled", but that rename is deliberately deferred: `planMilestones`
-  // is create-only, so flipping these titles today would CREATE the new
-  // milestones and orphan the existing "Next — consumer fleet" (30 open
-  // issues) and "Later — gated/deferred" (69 open issues) milestones rather
-  // than renaming them in place. The rename ships once `planMilestones`
-  // grows an in-place PATCH path and a `legacyTitles` table to drive it —
-  // see the source comment on MILESTONE_TITLES. This test locks the
-  // pre-ADR-0073 wording so a future edit can't silently jump the gun.
-  test("p1 and p2 keep their pre-ADR-0073 wording until the in-place PATCH rename path exists", () => {
-    expect(MILESTONE_TITLES.p1).toBe("Next — consumer fleet");
-    expect(MILESTONE_TITLES.p2).toBe("Later — gated/deferred");
+  // ADR-0073's rename of p1/p2 ("Next — consumer fleet" -> "Next —
+  // scheduled", "Later — gated/deferred" -> "Later — not yet scheduled") is
+  // only safe now that `planMilestones` has an in-place PATCH path driven by
+  // `legacyTitles` (bin/lib/milestone-defs.mjs). This test replaces the
+  // pre-ADR-0073 wording lock above: it asserts the successor invariant —
+  // renaming a MILESTONE_TITLES entry without also recording its prior
+  // wording in MILESTONE_DEFS' legacyTitles strands every issue on the old
+  // milestone (28 open p1 issues, 31 open p2 issues at the time of the
+  // rename), because `gh issue create/edit --milestone` resolves by title
+  // and planMilestones can only PATCH a title it knows to look for.
+  test("p1 and p2's new titles each have their pre-ADR-0073 wording recorded in MILESTONE_DEFS.legacyTitles", () => {
+    expect(MILESTONE_TITLES.p1).toBe("Next — scheduled");
+    expect(MILESTONE_TITLES.p2).toBe("Later — not yet scheduled");
+
+    const p1Def = MILESTONE_DEFS.find((def) => def.key === "p1");
+    const p2Def = MILESTONE_DEFS.find((def) => def.key === "p2");
+    expect(p1Def?.legacyTitles).toContain("Next — consumer fleet");
+    expect(p2Def?.legacyTitles).toContain("Later — gated/deferred");
   });
 });
 
@@ -525,7 +534,13 @@ describe("actionableItems", () => {
     expect(keys).toContain("impl:friction:f7");
   });
 
-  test("emits the gated (P2) item keyed off the slugged ID cell, priority p2", () => {
+  // ADR-0073 moved the gated table's items from p2 to p3: the table has no
+  // Priority column by design (the section IS the gated tier by
+  // construction — every row is unscheduled until an external gate opens),
+  // so its priority is hardcoded in actionableItems rather than read off a
+  // cell. p2 now means "real work, not yet scheduled, nothing blocking it",
+  // the opposite of what this section has always held.
+  test("emits the gated (P3) item keyed off the slugged ID cell, priority p3", () => {
     const roadmap = extractRoadmap(ROADMAP_FIXTURE);
     const implementation = extractImplementation(IMPLEMENTATION_FIXTURE);
     const { items, warnings } = actionableItems(roadmap, implementation);
@@ -534,7 +549,7 @@ describe("actionableItems", () => {
     const gated = items.find((item) => item.key === "impl:gated:d4-ssm-config");
 
     expect(gated).toBeDefined();
-    expect(gated?.priority).toBe("p2");
+    expect(gated?.priority).toBe("p3");
     expect(gated?.status).toBe("deferred");
     expect(gated?.detail).toContain("Unblock condition");
     expect(gated?.detail).toContain(
@@ -1160,8 +1175,8 @@ describe("buildIssuePayload", () => {
 
   test.each([
     ["p0", "Now — unblock first"],
-    ["p1", "Next — consumer fleet"],
-    ["p2", "Later — gated/deferred"],
+    ["p1", "Next — scheduled"],
+    ["p2", "Later — not yet scheduled"],
     ["p3", "Gated — awaiting trigger"],
     ["governance", "Governance"],
   ] as const)(
@@ -1222,7 +1237,7 @@ describe("buildIssuePayload", () => {
     const payload = buildIssuePayload(item) as {
       milestoneTitle: string | null;
     };
-    expect(payload.milestoneTitle).toBe("Later — gated/deferred");
+    expect(payload.milestoneTitle).toBe("Later — not yet scheduled");
   });
 
   test("item.type flows into payload.type verbatim (ADR-0052 Issue Type)", () => {
@@ -1365,48 +1380,237 @@ describe("buildIssuePayload determinism", () => {
 // planMilestones
 // ---------------------------------------------------------------------------
 
+// A live GitHub milestone fixture — { number, title, description, state } —
+// matching planMilestones' `existingMilestones` shape. `state` defaults to
+// "open" since none of these tests exercise closed-milestone handling.
+function makeMilestone(overrides: {
+  number: number;
+  title: string;
+  description: string | null;
+  state?: "open" | "closed";
+}): {
+  number: number;
+  title: string;
+  description: string | null;
+  state: string;
+} {
+  return { state: "open", ...overrides };
+}
+
+// The `major` def as MILESTONE_DEFS actually declares it, reused by the
+// title-match-beats-legacy test below so that test tracks the real def
+// rather than a hand-typed copy of its description.
+const MAJOR_DEF = MILESTONE_DEFS.find((def) => def.key === "major");
+if (MAJOR_DEF === undefined) {
+  throw new Error("MILESTONE_DEFS has no 'major' entry — fixture is stale.");
+}
+
 describe("planMilestones", () => {
-  test("creates only the milestone titles missing from existingTitles", () => {
+  test("create: only titles needed by items and absent (by title or legacy title) from existingMilestones", () => {
     const items = [
       makeItem({ key: "a", priority: "p0" }),
       makeItem({ key: "b", priority: "p1" }),
       makeItem({ key: "c", priority: "p2" }),
     ];
-    const result = planMilestones(items, ["Now — unblock first"]);
-    expect(result.create).toEqual([
-      "Next — consumer fleet",
-      "Later — gated/deferred",
-    ]);
+    const existingMilestones = [
+      makeMilestone({
+        number: 1,
+        title: MILESTONE_TITLES.p0,
+        description: PRIORITY_TIERS.p0.description,
+      }),
+    ];
+    const result = planMilestones(items, existingMilestones, MILESTONE_DEFS);
+    expect(result.create).toEqual([MILESTONE_TITLES.p1, MILESTONE_TITLES.p2]);
   });
 
-  test("de-duplicates milestone titles required by multiple items", () => {
+  test("create: de-duplicates when multiple items need the same tier's milestone", () => {
     const items = [
       makeItem({ key: "a", priority: "p0" }),
       makeItem({ key: "b", priority: "p0" }),
       makeItem({ key: "c", priority: "p0" }),
     ];
-    const result = planMilestones(items, []);
-    expect(result.create).toEqual(["Now — unblock first"]);
+    const result = planMilestones(items, [], MILESTONE_DEFS);
+    expect(result.create).toEqual([MILESTONE_TITLES.p0]);
   });
 
-  test("plans the Governance milestone for governance items (no longer milestone-less)", () => {
+  test("create: plans the Governance milestone for governance items (no longer milestone-less)", () => {
     const items = [makeItem({ key: "gov", priority: "governance" })];
-    const result = planMilestones(items, []);
-    expect(result.create).toEqual(["Governance"]);
+    const result = planMilestones(items, [], MILESTONE_DEFS);
+    expect(result.create).toEqual([MILESTONE_TITLES.governance]);
   });
 
-  test("is empty when every required milestone already exists", () => {
+  test("create: empty when every needed milestone already exists under its current title", () => {
     const items = [
       makeItem({ key: "a", priority: "p0" }),
       makeItem({ key: "b", priority: "p1" }),
     ];
-    const result = planMilestones(items, [
-      "Now — unblock first",
-      "Next — consumer fleet",
-      "Later — gated/deferred",
+    const existingMilestones = [
+      makeMilestone({
+        number: 1,
+        title: MILESTONE_TITLES.p0,
+        description: PRIORITY_TIERS.p0.description,
+      }),
+      makeMilestone({
+        number: 2,
+        title: MILESTONE_TITLES.p1,
+        description: PRIORITY_TIERS.p1.description,
+      }),
+    ];
+    const result = planMilestones(items, existingMilestones, MILESTONE_DEFS);
+    expect(result.create).toEqual([]);
+    expect(result.rename).toEqual([]);
+    expect(result.describe).toEqual([]);
+  });
+
+  test("rename: a legacy-titled milestone is PATCHed to the def's current title when that title isn't already live", () => {
+    const items = [makeItem({ key: "a", priority: "p1" })];
+    const existingMilestones = [
+      makeMilestone({
+        number: 5,
+        title: "Next — consumer fleet",
+        description: null,
+      }),
+    ];
+    const result = planMilestones(items, existingMilestones, MILESTONE_DEFS);
+    expect(result.rename).toEqual([
+      { number: 5, from: "Next — consumer fleet", to: MILESTONE_TITLES.p1 },
     ]);
+    // Renamed in place, not created anew.
     expect(result.create).toEqual([]);
   });
+
+  test("describe: a resolved milestone (by title or by rename) whose live description drifted from the def's is queued for a PATCH", () => {
+    const existingMilestones = [
+      makeMilestone({
+        number: 1,
+        title: MILESTONE_TITLES.p0,
+        description: "some stale wording from before the tier existed",
+      }),
+    ];
+    const result = planMilestones([], existingMilestones, MILESTONE_DEFS);
+    expect(result.describe).toEqual([
+      {
+        number: 1,
+        title: MILESTONE_TITLES.p0,
+        description: PRIORITY_TIERS.p0.description,
+      },
+    ]);
+  });
+
+  test("orphan: a live milestone matching no def's title or legacyTitles is named, not deleted", () => {
+    const existingMilestones = [
+      makeMilestone({
+        number: 99,
+        title: "Some Unrelated Milestone",
+        description: null,
+      }),
+    ];
+    const result = planMilestones([], existingMilestones, MILESTONE_DEFS);
+    expect(result.orphan).toEqual([
+      { number: 99, title: "Some Unrelated Milestone" },
+    ]);
+  });
+
+  // Regression guard, not a hypothetical: MILESTONE_DEFS records this as the
+  // live state of the `major` def today (both "Breaking" and "2.0 /
+  // breaking" exist). Title match must win over the legacy match — GitHub
+  // rejects a PATCH that would duplicate an existing title — so the
+  // legacy-titled sibling is reported as an orphan instead of renamed.
+  test("title-match-beats-legacy: when a def's current title AND one of its legacyTitles both exist live, the legacy one orphans rather than renaming (major's real 'Breaking' + '2.0 / breaking' state)", () => {
+    const existingMilestones = [
+      makeMilestone({
+        number: 10,
+        title: MAJOR_DEF.title,
+        description: MAJOR_DEF.description,
+      }),
+      makeMilestone({ number: 11, title: "Breaking", description: null }),
+    ];
+    const result = planMilestones([], existingMilestones, MILESTONE_DEFS);
+    expect(result.rename).toEqual([]);
+    expect(result.orphan).toContainEqual({ number: 11, title: "Breaking" });
+  });
+
+  // Applies plan1's create/rename/describe to a starting live state, then
+  // re-plans against the result: the reconciled facets (create/rename/
+  // describe) must all go empty, since nothing about the live state still
+  // drifts from MILESTONE_DEFS. `orphan` is the deliberate exception —
+  // nothing in planMilestones ever deletes an orphan, so it must persist
+  // across the re-plan rather than disappearing or being re-reported as
+  // something else.
+  test("idempotency: applying the plan and re-planning yields empty create/rename/describe, with orphan persisting", () => {
+    const items = [
+      makeItem({ key: "a", priority: "p0" }),
+      makeItem({ key: "b", priority: "p1" }),
+      makeItem({ key: "c", priority: "p2" }),
+      makeItem({ key: "d", priority: "p3" }),
+      makeItem({ key: "e", priority: "governance" }),
+    ];
+    const initial = [
+      makeMilestone({
+        number: 1,
+        title: MILESTONE_TITLES.p0,
+        description: "wrong wording",
+      }),
+      makeMilestone({
+        number: 2,
+        title: "Next — consumer fleet", // p1's legacy title
+        description: null,
+      }),
+      makeMilestone({
+        number: 10,
+        title: MAJOR_DEF.title,
+        description: MAJOR_DEF.description,
+      }),
+      makeMilestone({ number: 11, title: "Breaking", description: null }),
+    ];
+
+    const plan1 = planMilestones(items, initial, MILESTONE_DEFS);
+    expect(plan1.create.length).toBeGreaterThan(0);
+    expect(plan1.rename.length).toBeGreaterThan(0);
+    expect(plan1.describe.length).toBeGreaterThan(0);
+    expect(plan1.orphan).toEqual([{ number: 11, title: "Breaking" }]);
+
+    // Apply the plan: renames update the live title, describes update the
+    // live description, creates become brand-new live entries with the
+    // def's own description. Orphans are left untouched.
+    const applied = initial.map((m) => ({ ...m }));
+    for (const r of plan1.rename) {
+      const target = applied.find((m) => m.number === r.number);
+      if (target !== undefined) target.title = r.to;
+    }
+    for (const d of plan1.describe) {
+      const target = applied.find((m) => m.number === d.number);
+      if (target !== undefined) target.description = d.description;
+    }
+    let nextNumber = 1000;
+    for (const title of plan1.create) {
+      const def = MILESTONE_DEFS.find((d) => d.title === title);
+      applied.push({
+        number: nextNumber++,
+        title,
+        description: def?.description ?? null,
+        state: "open",
+      });
+    }
+
+    const plan2 = planMilestones(items, applied, MILESTONE_DEFS);
+    expect(plan2.create).toEqual([]);
+    expect(plan2.rename).toEqual([]);
+    expect(plan2.describe).toEqual([]);
+    expect(plan2.orphan).toEqual([{ number: 11, title: "Breaking" }]);
+  });
+});
+
+describe("PRIORITY_TIERS parity with LABEL_DEFS", () => {
+  test.each(["p0", "p1", "p2", "p3"] as const)(
+    "the priority:*-tier label for %s carries the identical PRIORITY_TIERS description",
+    (tier) => {
+      const label = LABEL_DEFS.find(
+        (def) => def.name === PRIORITY_LABELS[tier],
+      );
+      expect(label?.description).toBe(PRIORITY_TIERS[tier].description);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------

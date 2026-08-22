@@ -9,6 +9,7 @@ import {
   HUB_LABEL,
   ISSUE_TYPES,
   PRIORITY_LABELS,
+  PRIORITY_TIERS,
   STATUS_LABELS,
   TYPE_LABELS,
 } from "./hub-sync.mjs";
@@ -47,26 +48,22 @@ export const LABEL_DEFS = [
   {
     name: PRIORITY_LABELS.p0,
     color: "b60205",
-    description: "Now — unblock-first work; do before more consumer scripts.",
+    description: PRIORITY_TIERS.p0.description,
   },
   {
     name: PRIORITY_LABELS.p1,
     color: "d93f0b",
-    description: "Next — the near-term consumer-fleet wave.",
+    description: PRIORITY_TIERS.p1.description,
   },
   {
-    // Description narrows to "real work, not yet scheduled" in the same change
-    // that renames this tier's milestone (ADR-0073) — the two must move
-    // together, and the rename needs the in-place PATCH path first.
     name: PRIORITY_LABELS.p2,
     color: "fbca04",
-    description: "Later — gated or deferred backlog; not yet scheduled.",
+    description: PRIORITY_TIERS.p2.description,
   },
   {
     name: PRIORITY_LABELS.p3,
     color: "fef2c0",
-    description:
-      "Gated — cannot start until an external gate or future ADR opens.",
+    description: PRIORITY_TIERS.p3.description,
   },
   {
     name: TYPE_LABELS[ISSUE_TYPES.libraryCapability],
