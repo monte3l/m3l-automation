@@ -175,6 +175,27 @@ describe("deriveViewDrift", () => {
     ).toBe(true);
   });
 
+  test("an optional column with no stated exemption reason is reported, not silently exempted", () => {
+    // A gate must not grow blind spots by declaration alone: adding a name to
+    // OPTIONAL_VIEW_FIELDS without saying WHY it may be absent would otherwise
+    // exempt it from the column assertion forever.
+    const board = compliantBoard();
+    const findings = deriveViewDrift({
+      ...board,
+      viewDefs: [{ ...BACKLOG_DEF, fields: ["Title", "Reviewers"] }],
+      liveViews: [{ ...liveBacklog(board), columns: ["Title"] }],
+      optionalFields: new Set(["Reviewers"]),
+    });
+
+    const finding = required(
+      findings.find((message) => /no entry in/.test(message)),
+      "unmapped-exemption finding",
+    );
+    expect(finding).toContain("Reviewers");
+    expect(finding).toMatch(/OPTIONAL_COLUMN_EXEMPTIONS/);
+    expect(finding).toMatch(/untested blind spot/);
+  });
+
   test("column comparison is element-wise, so a split name is not read as equal to a spaced one", () => {
     // Declared names contain spaces ("Parent issue", "Linked pull requests"),
     // so a joined-string compare would read ["Parent issue"] and

@@ -437,6 +437,64 @@ describe("runHubViewsCheck", () => {
     },
   );
 
+  test("a view whose SORT connection reaches its window fails loudly rather than reporting a misleading sort finding", () => {
+    // The worst under-read of the three: a sort finding's only remedy is a
+    // manual UI edit, so a truncated sort sends the maintainer to "fix" a sort
+    // that is already correct.
+    const { runGh } = boardGh(
+      compliantBoardPayload({
+        views: [
+          {
+            ...(viewPayload([...DECLARED.fields]) as Record<string, unknown>),
+            sortByFields: {
+              nodes: Array.from({ length: 10 }, (_unused, index) => ({
+                direction: "ASC",
+                field: { name: `Field ${index}` },
+              })),
+            },
+          },
+        ],
+      }),
+    );
+    const reporter = createFakeReporter();
+
+    const outcome = runHubViewsCheck({ runGh, reporter });
+
+    expect(outcome).toMatchObject({ ok: false, skipped: false });
+    const message = required(reporter.errors[0], "reporter.errors[0]");
+    expect(message).toMatch(/reaching the first:10 window/);
+    expect(message).toMatch(/manual UI edit/);
+    expect(outcome.findings).toEqual([]);
+  });
+
+  test("a project-view response with no `id` fails with the board-shaped diagnostic, not a GraphQL parse error", () => {
+    // The caller tests `=== null`, so a bare `.id` let `undefined` through and
+    // JSON.stringify interpolated the literal token `undefined` into the query.
+    const calls: string[][] = [];
+    function runGh(args: string[]): string {
+      calls.push(args);
+      if (args[0] === "project" && args[1] === "list") {
+        return JSON.stringify([{ number: 2, title: HUB_PROJECT_TITLE }]);
+      }
+      if (args[0] === "project" && args[1] === "view") {
+        // Well-formed JSON, no `id`.
+        return JSON.stringify({ number: 2, title: HUB_PROJECT_TITLE });
+      }
+      throw new Error(`unscripted: ${JSON.stringify(args)}`);
+    }
+    const reporter = createFakeReporter();
+
+    const outcome = runHubViewsCheck({ runGh, reporter });
+
+    expect(outcome).toMatchObject({ ok: false, skipped: false });
+    const message = required(reporter.errors[0], "reporter.errors[0]");
+    expect(message).toMatch(/No project board titled/);
+    // Never reached the GraphQL query with an undefined id.
+    expect(
+      calls.some((args) => args[0] === "api" && args[1] === "graphql"),
+    ).toBe(false);
+  });
+
   test("a view whose own column connection reaches its window fails loudly rather than reporting misleading column drift", () => {
     // Under-reading a view's columns is worse than a bare under-read: it
     // produces a confident column-drift finding naming columns the view

@@ -32,6 +32,23 @@
  */
 
 /**
+ * Why each optional column may legitimately be absent, keyed by column name.
+ *
+ * A predicate per column, rather than one shared condition: the exemption for
+ * "Type" is specifically "the ISSUE_TYPE field is not enabled", and a future
+ * optional column would silently inherit that unrelated condition if the
+ * exemption were keyed on the set as a whole. An optional column with no entry
+ * here is reported rather than quietly exempted — a gate must not grow silent
+ * blind spots by declaration alone.
+ */
+const OPTIONAL_COLUMN_EXEMPTIONS = {
+  // The built-in Issue Type column: no mutation can enable its field, so until
+  // a human does, neither field nor column can exist.
+  Type: (liveFields) =>
+    !liveFields.some((field) => field.dataType === "ISSUE_TYPE"),
+};
+
+/**
  * Ordered element-wise equality. Deliberately not a joined-string compare:
  * declared column names contain spaces ("Parent issue", "Linked pull
  * requests"), so joining on " " would read ["Parent issue"] and
@@ -164,6 +181,28 @@ export function deriveViewDrift({
     (field) => field.dataType === "ISSUE_TYPE",
   );
 
+  /**
+   * Whether a declared column is currently exempt from the column assertion.
+   * A mandatory column never is; an optional one is exempt only while its own
+   * documented condition holds.
+   */
+  const isExempt = (name) => {
+    if (!optionalFields.has(name)) return false;
+    const condition = Object.hasOwn(OPTIONAL_COLUMN_EXEMPTIONS, name)
+      ? OPTIONAL_COLUMN_EXEMPTIONS[name]
+      : undefined;
+    if (!condition) {
+      findings.push(
+        `Column "${name}" is in OPTIONAL_VIEW_FIELDS but has no entry in ` +
+          `OPTIONAL_COLUMN_EXEMPTIONS, so there is no stated reason it may be ` +
+          `absent. Add one in bin/lib/hub-view-drift.mjs, or drop it from the ` +
+          `optional set — otherwise it is an untested blind spot.`,
+      );
+      return false;
+    }
+    return condition(liveFields);
+  };
+
   for (const def of viewDefs) {
     const live = liveByName.get(def.name);
     if (!live) {
@@ -191,16 +230,13 @@ export function deriveViewDrift({
     // Ordered, not set-wise: visibleFieldIds IS the column order, so a
     // reordered view is real drift even when every column is present.
     //
-    // An optional column is exempt only while its FIELD cannot exist, which is
-    // the documented rationale — not merely because the live view happens to
-    // lack it. Keying the exemption on the live column instead (as this
-    // originally did) meant a `Type` column removed by hand while the field was
-    // enabled matched neither this check nor the ISSUE_TYPE one below, and the
-    // gate reported a clean board: precisely the silent miss it exists to
-    // close.
-    const expectedColumns = def.fields.filter(
-      (name) => !optionalFields.has(name) || issueTypeFieldPresent,
-    );
+    // An optional column is exempt only while its own documented condition
+    // holds — not merely because the live view happens to lack it. Keying the
+    // exemption on the live column instead (as this originally did) meant a
+    // `Type` column removed by hand while the field was enabled matched neither
+    // this check nor the ISSUE_TYPE one below, and the gate reported a clean
+    // board: precisely the silent miss it exists to close.
+    const expectedColumns = def.fields.filter((name) => !isExempt(name));
     const liveColumns = live.columns ?? [];
     if (!sameOrder(liveColumns, expectedColumns)) {
       findings.push(

@@ -47,6 +47,8 @@ const OWNER = "monte3l";
 // reaching the window is a hard error, never a silent under-read.
 const VIEW_WINDOW = 20;
 const FIELD_WINDOW = 50;
+const SORT_WINDOW = 10;
+const PROJECT_WINDOW = 100;
 
 /**
  * The single injected `gh` execution seam: every call in this file goes
@@ -100,6 +102,30 @@ export function isScopeError(message) {
 }
 
 /**
+ * One view's sort pairs, guarding its connection window.
+ *
+ * A truncated sort is the worst of the under-read cases: deriveViewDrift would
+ * emit a confident "sort is X, expected Y" finding whose only remedy is a
+ * manual UI edit, sending the maintainer to "fix" a sort that is already
+ * correct.
+ */
+function viewSort(view) {
+  const nodes = view.sortByFields?.nodes ?? [];
+  if (nodes.length >= SORT_WINDOW) {
+    throw new Error(
+      `View "${view.name}" returned ${nodes.length} sort entries, reaching the ` +
+        `first:${SORT_WINDOW} window — its sort may be truncated, which would ` +
+        `produce a misleading sort finding whose only remedy is a manual UI ` +
+        `edit. Raise SORT_WINDOW.`,
+    );
+  }
+  return nodes.map((entry) => ({
+    field: entry?.field?.name ?? null,
+    direction: entry?.direction ?? null,
+  }));
+}
+
+/**
  * One view's visible column names, guarding the per-view connection window.
  *
  * Same convention as the two top-level windows: reaching it is a hard error,
@@ -137,7 +163,7 @@ export function readBoard(runGhFn, projectId) {
   const query =
     `query { node(id: ${JSON.stringify(projectId)}) { ... on ProjectV2 { ` +
     `views(first: ${VIEW_WINDOW}) { nodes { id name layout filter ` +
-    `sortByFields(first: 10) { nodes { direction field { ... on ProjectV2FieldCommon { name } } } } ` +
+    `sortByFields(first: ${SORT_WINDOW}) { nodes { direction field { ... on ProjectV2FieldCommon { name } } } } ` +
     `fields(first: ${FIELD_WINDOW}) { nodes { ... on ProjectV2FieldCommon { name } } } } } ` +
     `fields(first: ${FIELD_WINDOW}) { nodes { ... on ProjectV2FieldCommon { name dataType } ` +
     `... on ProjectV2SingleSelectField { options { name } } } } } } }`;
@@ -179,10 +205,7 @@ export function readBoard(runGhFn, projectId) {
     name: view.name,
     layout: view.layout,
     filter: view.filter,
-    sort: (view.sortByFields?.nodes ?? []).map((entry) => ({
-      field: entry?.field?.name ?? null,
-      direction: entry?.direction ?? null,
-    })),
+    sort: viewSort(view),
     columns: viewColumns(view),
   }));
 
@@ -213,14 +236,21 @@ export function resolveBoardId(runGhFn) {
       "--format",
       "json",
       "--limit",
-      "100",
+      String(PROJECT_WINDOW),
     ]),
   );
   const projects = Array.isArray(listed) ? listed : (listed.projects ?? []);
+  if (projects.length >= PROJECT_WINDOW) {
+    throw new Error(
+      `\`gh project list\` returned ${projects.length} projects, reaching the ` +
+        `--limit ${PROJECT_WINDOW} window — the board may be past it and would ` +
+        `be misreported as missing. Raise PROJECT_WINDOW.`,
+    );
+  }
   const match = projects.find((project) => project.title === HUB_PROJECT_TITLE);
   if (!match) return null;
 
-  return JSON.parse(
+  const viewed = JSON.parse(
     runGhFn([
       "project",
       "view",
@@ -230,7 +260,12 @@ export function resolveBoardId(runGhFn) {
       "--format",
       "json",
     ]),
-  ).id;
+  );
+  // `?? null`, not the bare `.id`: the caller tests `=== null`, so an absent id
+  // would otherwise pass as `undefined` and JSON.stringify would interpolate
+  // the literal token `undefined` into the query — surfacing as a raw GraphQL
+  // parse error instead of the board-shaped diagnostic below.
+  return viewed?.id ?? null;
 }
 
 /**
@@ -276,9 +311,8 @@ export function runHubViewsCheck({ runGh: runGhFn, reporter }) {
 
     reporter.succeed(
       `Board "${HUB_PROJECT_TITLE}" matches its declaration: ` +
-        `${VIEW_DEFS.length} view(s), ${VIEW_DEFS[0]?.fields.length ?? 0} ` +
-        `declared column(s), and the Status/Priority option sets ` +
-        `(ADR-0073 board surface).`,
+        `${VIEW_DEFS.map((def) => `"${def.name}" (${def.fields.length} column(s))`).join(", ")}, ` +
+        `plus the Status/Priority option sets (ADR-0073 board surface).`,
     );
     reporter.finish({ findings, skipped: false });
     return { ok: true, skipped: false, findings };
