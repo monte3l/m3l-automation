@@ -175,6 +175,20 @@ describe("deriveViewDrift", () => {
     ).toBe(true);
   });
 
+  test("column comparison is element-wise, so a split name is not read as equal to a spaced one", () => {
+    // Declared names contain spaces ("Parent issue", "Linked pull requests"),
+    // so a joined-string compare would read ["Parent issue"] and
+    // ["Parent", "issue"] as identical.
+    const board = compliantBoard();
+    const findings = deriveViewDrift({
+      ...board,
+      viewDefs: [{ ...BACKLOG_DEF, fields: ["Parent issue"] }],
+      liveViews: [{ ...liveBacklog(board), columns: ["Parent", "issue"] }],
+    });
+
+    expect(findings.some((message) => /columns are/.test(message))).toBe(true);
+  });
+
   test("an optional column removed BY HAND while its field IS enabled is reported — the exemption is not unconditional", () => {
     // The silent-miss this gate exists to close. The exemption previously keyed
     // on the live column's absence, so with the ISSUE_TYPE field enabled and
