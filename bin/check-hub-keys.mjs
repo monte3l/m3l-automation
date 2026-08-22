@@ -50,14 +50,23 @@ import { extractImplementation, extractRoadmap } from "./lib/project-hub.mjs";
 import {
   actionableItems,
   ISSUE_TYPES,
+  IMPLEMENTATION_ANCHORS,
+  IMPLEMENTATION_NAMESPACES,
   MILESTONE_TITLES,
   PRIORITY_LABELS,
   PROJECT_PRIORITY_OPTIONS,
   ROADMAP_ANCHORS,
+  TYPE_BY_IMPLEMENTATION_SECTION,
 } from "./lib/hub-sync.mjs";
 import { createReporter, parseJsonFlag, repoRoot } from "./lib/report.mjs";
 
 const root = repoRoot(import.meta.url);
+
+// Sections registered as tracker headings but deliberately never converted
+// into backlog items, so they need no anchor / namespace / default type.
+// `getterReality` is a reference table — one row per AWS provider getter —
+// registered so check:tracker-coverage accepts its Status column.
+const SECTIONS_WITHOUT_ITEMS = ["getterReality"];
 
 const ROADMAP_PATH = "docs/ROADMAP.md";
 const IMPLEMENTATION_PATH = "docs/plans/IMPLEMENTATION.md";
@@ -254,6 +263,69 @@ export function findMissingTypes(items) {
     );
 }
 
+/**
+ * Assert the three parallel per-section tables in `bin/lib/hub-sync.mjs` carry
+ * identical key sets: `IMPLEMENTATION_ANCHORS` (deep-link anchor),
+ * `IMPLEMENTATION_NAMESPACES` (issue-key namespace) and
+ * `TYPE_BY_IMPLEMENTATION_SECTION` (default Issue Type).
+ *
+ * Those tables' own comments already claim this invariant — "keyed identically
+ * ... so a new section cannot gain an anchor without also gaining a type" —
+ * but nothing enforced it, and ADR-0073 added three entries to each by hand.
+ * A section present in one table and missing from another fails in a
+ * different way per table: no anchor means every synced issue for that
+ * section deep-links to the top of the file (the `#priority-0` bug
+ * ROADMAP_ANCHORS carried for months), no namespace means a `TypeError` on
+ * key construction, and no type means `findMissingTypes` rejects every one of
+ * its rows.
+ *
+ * `sectionsWithoutItems` names the keys registered as headings but
+ * deliberately never converted to items — `getterReality` is one: it is a
+ * reference table (one row per AWS getter), registered so
+ * `check:tracker-coverage` accepts its Status column, but it produces no
+ * backlog items and therefore needs no anchor, namespace or type.
+ *
+ * @param {Record<string, string>} anchors
+ * @param {Record<string, string>} namespaces
+ * @param {Record<string, string>} typesBySection
+ * @param {readonly string[]} sectionsWithoutItems
+ * @returns {string[]} one finding per key missing from at least one table
+ * @example
+ * ```js
+ * findImplementationSectionMismatches({ a: "#a" }, { a: "a" }, {}, []);
+ * // ['Section "a" has no TYPE_BY_IMPLEMENTATION_SECTION entry ...']
+ * ```
+ */
+export function findImplementationSectionMismatches(
+  anchors,
+  namespaces,
+  typesBySection,
+  sectionsWithoutItems = [],
+) {
+  const exempt = new Set(sectionsWithoutItems);
+  const tables = [
+    ["IMPLEMENTATION_ANCHORS", anchors],
+    ["IMPLEMENTATION_NAMESPACES", namespaces],
+    ["TYPE_BY_IMPLEMENTATION_SECTION", typesBySection],
+  ];
+  const every = new Set(tables.flatMap(([, table]) => Object.keys(table)));
+
+  const findings = [];
+  for (const key of every) {
+    if (exempt.has(key)) continue;
+    for (const [name, table] of tables) {
+      if (!(key in table)) {
+        findings.push(
+          `Section "${key}" has no ${name} entry, but appears in the other ` +
+            `per-section table(s) — these three are keyed identically by ` +
+            `contract, so a section cannot gain one without the others.`,
+        );
+      }
+    }
+  }
+  return findings;
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { json } = parseJsonFlag();
   const reporter = createReporter(json);
@@ -284,16 +356,26 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       projectPriorityOptions: PROJECT_PRIORITY_OPTIONS,
     });
     const missingTypes = findMissingTypes(result.items);
+    const sectionMismatches = findImplementationSectionMismatches(
+      IMPLEMENTATION_ANCHORS,
+      IMPLEMENTATION_NAMESPACES,
+      TYPE_BY_IMPLEMENTATION_SECTION,
+      SECTIONS_WITHOUT_ITEMS,
+    );
 
     if (
       findings.length > 0 ||
       vocabularyMismatches.length > 0 ||
-      missingTypes.length > 0
+      missingTypes.length > 0 ||
+      sectionMismatches.length > 0
     ) {
       for (const { message } of findings) {
         reporter.error(message, { file: IMPLEMENTATION_PATH });
       }
       for (const message of vocabularyMismatches) {
+        reporter.error(message, { file: "bin/lib/hub-sync.mjs" });
+      }
+      for (const message of sectionMismatches) {
         reporter.error(message, { file: "bin/lib/hub-sync.mjs" });
       }
       for (const message of missingTypes) {
@@ -305,7 +387,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
     reporter.succeed(
       `${result.items.length} hub-sync item keys are unique (case-insensitively, aliases included), ` +
-        `every item carries an Issue Type, and the priority label/milestone/anchor/board-field tables agree.`,
+        `every item carries an Issue Type, the priority label/milestone/anchor/board-field tables agree, ` +
+        `and the three per-section tables (anchors/namespaces/types) are keyed identically.`,
     );
     reporter.finish();
   } catch (cause) {

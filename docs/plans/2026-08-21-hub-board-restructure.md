@@ -168,3 +168,40 @@ right trade: a heading and the table it matches cannot be separated without
 failing a gate, and the alternative — making the three new sections optional in
 `extractImplementation` — would weaken a real invariant to accommodate a
 transient state.
+
+## Update (2026-08-22b): PR 4 split; the `major` milestone resolves as an orphan
+
+PR 4 as tabled held two independent concerns — milestones and the epic/slice
+hierarchy. Split so each is separately reviewable, matching the reasoning that
+split PR 3:
+
+| PR  | Contents                                                                                                                                                                                                                                             |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 4a  | **Milestones**, end to end: `milestone-defs.mjs`, the shared `PRIORITY_TIERS`, the two renames, `planMilestones`' four outputs, the runner's `patchMilestone` path, the gated section's `p2`→`p3`, and `check:hub-keys`' three-map parity assertion. |
+| 4b  | **Hierarchy**: derived per-section epics, `planParentLinks`, and the `planIssueSync`/`planBackfill`/`Item`-typedef changes they need.                                                                                                                |
+
+The runner's milestone read had to move into 4a rather than waiting for PR 5:
+`planMilestones`' parameter widened from `string[]` to
+`{ number, title, description, state }[]`, and a planner whose contract has
+changed under a runner still passing strings is a runtime break that
+`check:hub-drift` would hit immediately.
+
+**A live-state hazard the plan did not anticipate.** The plan assumed `major`
+would rename `Breaking` → `2.0 / breaking`. Re-deriving against the live repo,
+**both titles now exist** — `2.0 / breaking` was created at some point between
+the plan being written and PR 4a starting. GitHub rejects a `PATCH` that would
+duplicate an existing title, so renaming blindly would 422 mid-apply.
+
+`planMilestones` therefore resolves **title match before legacy match**: a def
+whose current title exists live claims that milestone, and any milestone holding
+one of its `legacyTitles` becomes an `orphan` instead. `Breaking` is that
+orphan, and being report-only it is named for a maintainer to decide rather than
+deleted — deleting a milestone strips it from every issue that ever held it, and
+this one holds closed history.
+
+That is also why `orphan` is excluded from the drift verdict: an orphan nobody
+intends to remove would otherwise make `check:hub-drift` permanently red.
+
+**`3-gated` reached 8 open items, not the ~13 the ADR estimated** — 5 from the
+programme waves plus C1, C2 and the TypeScript 6→7 hold, once the gated
+section's blanket move to `p3` landed. Open spread is 28 / 23 / 8.

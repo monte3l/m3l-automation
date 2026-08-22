@@ -61,6 +61,40 @@ export const HUB_PROJECT_TITLE = "m3l-automation";
  * PRIORITY_LABELS.p1; // "priority:1-next"
  * ```
  */
+/**
+ * One description per priority tier, read by **both** `LABEL_DEFS` (as the
+ * `priority:*` label description) and `MILESTONE_DEFS` (as the milestone
+ * description). ADR-0073 made milestones a declared, described facet; sharing
+ * the string is what makes "a tier's label and its milestone say the same
+ * thing" true by construction rather than by a reviewer noticing.
+ *
+ * Held to the label side's asserted 100-character limit
+ * (`LABEL_DESCRIPTION_MAX_LENGTH`), the tighter of the two consumers —
+ * GitHub allows far more on a milestone, but a shared string can only be as
+ * long as its strictest reader.
+ *
+ * @example
+ * ```js
+ * import { PRIORITY_TIERS } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ *
+ * PRIORITY_TIERS.p1.description; // "Next — the near-term scheduled wave."
+ * ```
+ */
+export const PRIORITY_TIERS = {
+  p0: {
+    description: "Now — unblock-first work; do before more consumer scripts.",
+  },
+  p1: { description: "Next — the near-term scheduled wave." },
+  p2: {
+    description:
+      "Later — real work, not yet scheduled; nothing external is blocking it.",
+  },
+  p3: {
+    description:
+      "Gated — cannot start until an external gate or future ADR opens.",
+  },
+};
+
 export const PRIORITY_LABELS = {
   p0: "priority:0-now",
   p1: "priority:1-next",
@@ -84,16 +118,18 @@ export const PRIORITY_LABELS = {
  * title is safe to add here because {@link planMilestones} creates what is
  * missing.
  *
- * **A rename is not.** `gh issue create/edit --milestone` resolves by
- * *title*, {@link planIssueSync}'s `isDirty` does not compare milestones, and
- * {@link planMilestones} is create-only — so editing `p1`/`p2` here today
- * would have the sync CREATE the new title and silently orphan the old one,
- * which currently holds 30 and 69 issues respectively. ADR-0073 also renames
- * those two (`Next — consumer fleet` is already wrong: of the 28 open `p1`
- * items exactly 2 are consumer scripts; `Later — gated/deferred` becomes
- * wrong the moment `p3` exists). Both renames are deliberately deferred
- * until `planMilestones` grows the in-place `PATCH` path and a `legacyTitles`
- * table to drive it — do not edit these two strings before then.
+ * `p1` and `p2` were then renamed, once {@link planMilestones} grew the
+ * in-place `PATCH` path this needed: `Next — consumer fleet` was already
+ * wrong (of the 28 open `p1` items exactly 2 are consumer scripts), and
+ * `Later — gated/deferred` became wrong the moment `p3` existed.
+ *
+ * **Editing a title here is still not self-applying.**
+ * `gh issue create/edit --milestone` resolves by *title* and
+ * {@link planIssueSync}'s `isDirty` does not compare milestones, so a title
+ * changed here without a matching `legacyTitles` entry in
+ * `bin/lib/milestone-defs.mjs` makes the sync CREATE the new milestone and
+ * strand every issue on the old one — 28 and 31 open issues respectively, at
+ * the time of the rename. Change the two together, always.
  *
  * @example
  * ```js
@@ -104,10 +140,8 @@ export const PRIORITY_LABELS = {
  */
 export const MILESTONE_TITLES = {
   p0: "Now — unblock first",
-  // Renamed to "Next — scheduled" / "Later — not yet scheduled" only once the
-  // in-place rename path exists — see the note above.
-  p1: "Next — consumer fleet",
-  p2: "Later — gated/deferred",
+  p1: "Next — scheduled",
+  p2: "Later — not yet scheduled",
   p3: "Gated — awaiting trigger",
   governance: "Governance",
   major: "2.0 / breaking",
@@ -219,7 +253,7 @@ const TYPE_BY_ROADMAP_SECTION = {
   governance: ISSUE_TYPES.governance,
 };
 
-const IMPLEMENTATION_ANCHORS = {
+export const IMPLEMENTATION_ANCHORS = {
   friction: "#library-friction-f-series",
   adr0035Rollout: "#adr-0035-rollout--failure-reporting--diagnostics",
   capabilityDeepeningWave: "#capability-deepening-wave--adr-003700380039",
@@ -252,7 +286,7 @@ const IMPLEMENTATION_ANCHORS = {
 // (`roadmap:p0:` / `roadmap:<wave>:` / `roadmap:gov:`); this brings
 // IMPLEMENTATION.md's in line. See issue #480 / F13 and ADR-0032's dated
 // Update.
-const IMPLEMENTATION_NAMESPACES = {
+export const IMPLEMENTATION_NAMESPACES = {
   friction: "friction",
   adr0035Rollout: "adr0035",
   capabilityDeepeningWave: "capability",
@@ -286,7 +320,7 @@ const IMPLEMENTATION_NAMESPACES = {
 // The defaults below name each section's *predominant* layer. `gated` keeps
 // the library default because its D4/D5 intake rows are library work; its
 // toolchain-chore rows carry an explicit `Tooling & gates` cell instead.
-const TYPE_BY_IMPLEMENTATION_SECTION = {
+export const TYPE_BY_IMPLEMENTATION_SECTION = {
   friction: ISSUE_TYPES.friction,
   adr0035Rollout: ISSUE_TYPES.libraryCapability,
   capabilityDeepeningWave: ISSUE_TYPES.libraryCapability,
@@ -986,7 +1020,14 @@ export function actionableItems(roadmap, implementation) {
         key,
         title: stripMarkdown(idCell),
         status: resolveStatus(row[statusIndex], key, "Implementation"),
-        priority: "p2",
+        // Hardcoded, because this table has no Priority column by design: the
+        // section IS the gated tier, so every row in it is gate-blocked by
+        // construction ("Deliberately unscheduled until the gate opens", per
+        // the section's own preamble). ADR-0073 moved it from p2 to p3, the
+        // tier that finally means what this section always did — p2 now means
+        // "real work, not yet scheduled, nothing blocking it", which is the
+        // opposite of every row here.
+        priority: "p3",
         type: resolveType(
           header,
           row,
@@ -1091,35 +1132,105 @@ export function buildIssuePayload(item) {
 }
 
 /**
- * Plan the milestones that need creating: the unique milestone titles
- * required by `items` (via {@link buildIssuePayload}) that are not already in
- * `existingTitles`, in first-needed order. Never plans a delete/close — a
- * milestone no longer required by any item is left alone.
+ * Reconcile the repo's milestones against `MILESTONE_DEFS`: create what is
+ * missing, rename in place what is living under a former title, describe what
+ * has drifted, and *name* — never delete — anything left over.
+ *
+ * ADR-0073 widened this from create-only. The create-only version was why
+ * every live milestone carried a `null` description and why a stale
+ * `Breaking` sat beside the `2.0 / breaking` the sync kept planning to
+ * create: with no rename or describe path, neither drift was expressible, so
+ * neither was ever reported.
+ *
+ * **Title match beats legacy match.** A def whose current title already
+ * exists live resolves to that milestone, and any milestone holding one of
+ * that def's `legacyTitles` becomes an `orphan` instead of a rename —
+ * because GitHub rejects a `PATCH` that would duplicate an existing title.
+ * This is not hypothetical: `major` is in exactly that state, with both
+ * `Breaking` and `2.0 / breaking` present.
+ *
+ * **`orphan` is report-only.** A milestone matching no def is named so a
+ * maintainer can decide, never deleted — it may still carry closed issues,
+ * and deleting a milestone strips it from every issue that ever held it.
+ * `orphan` is deliberately excluded from `planIsEmpty`'s drift verdict for
+ * the same reason: an unclaimed milestone nobody intends to remove would
+ * otherwise make `check:hub-drift` permanently unfixable.
+ *
+ * A `create` is only planned for a milestone some item actually needs, so an
+ * unused tier costs nothing; `rename` and `describe` apply to every def, since
+ * a mis-titled milestone is wrong whether or not this run has work in it.
  *
  * @param {Item[]} items
- * @param {string[]} existingTitles
- * @returns {{ create: string[] }}
+ * @param {{ number: number, title: string, description: string | null, state: string }[]} existingMilestones
+ * @param {{ key: string, title: string, description: string, legacyTitles: string[] }[]} milestoneDefs
+ * @returns {{ create: string[], rename: { number: number, from: string, to: string }[], describe: { number: number, title: string, description: string }[], orphan: { number: number, title: string }[] }}
  * @example
  * ```js
  * import { planMilestones } from "@m3l-automation/workspace/bin/lib/hub-sync.mjs";
+ * import { MILESTONE_DEFS } from "@m3l-automation/workspace/bin/lib/milestone-defs.mjs";
  *
- * planMilestones(items, ["Now — unblock first"]); // { create: ["Next — consumer fleet", "Later — gated/deferred"] }
+ * planMilestones(items, liveMilestones, MILESTONE_DEFS);
+ * // { create: ["Gated — awaiting trigger"], rename: [...], describe: [...], orphan: [...] }
  * ```
  */
-export function planMilestones(items, existingTitles) {
-  const existing = new Set(existingTitles);
-  const seen = new Set();
+export function planMilestones(items, existingMilestones, milestoneDefs) {
+  const byTitle = new Map(existingMilestones.map((m) => [m.title, m]));
   const create = [];
+  const rename = [];
+  const describe = [];
+  const claimedNumbers = new Set();
 
+  // Which milestone titles this run's items actually need.
+  const needed = new Set();
   for (const item of items) {
     const { milestoneTitle } = buildIssuePayload(item);
-    if (milestoneTitle === null) continue;
-    if (existing.has(milestoneTitle) || seen.has(milestoneTitle)) continue;
-    seen.add(milestoneTitle);
-    create.push(milestoneTitle);
+    if (milestoneTitle !== null) needed.add(milestoneTitle);
   }
 
-  return { create };
+  for (const def of milestoneDefs) {
+    const exact = byTitle.get(def.title);
+    if (exact !== undefined) {
+      claimedNumbers.add(exact.number);
+      // A legacy-titled sibling cannot be renamed into an occupied title;
+      // leaving it unclaimed is what surfaces it as an orphan below.
+      if ((exact.description ?? "") !== def.description) {
+        describe.push({
+          number: exact.number,
+          title: def.title,
+          description: def.description,
+        });
+      }
+      continue;
+    }
+
+    const legacy = def.legacyTitles
+      .map((title) => byTitle.get(title))
+      .find(
+        (found) => found !== undefined && !claimedNumbers.has(found.number),
+      );
+    if (legacy !== undefined) {
+      claimedNumbers.add(legacy.number);
+      rename.push({ number: legacy.number, from: legacy.title, to: def.title });
+      if ((legacy.description ?? "") !== def.description) {
+        describe.push({
+          number: legacy.number,
+          title: def.title,
+          description: def.description,
+        });
+      }
+      continue;
+    }
+
+    // Nothing to rename and nothing to describe: only create it if this run
+    // has an item that needs it.
+    if (needed.has(def.title)) create.push(def.title);
+  }
+
+  const orphan = existingMilestones
+    .filter((m) => !claimedNumbers.has(m.number))
+    .map((m) => ({ number: m.number, title: m.title }));
+
+  return { create, rename, describe, orphan };
 }
 
 // Comment text explaining a planned close, for the three distinct reasons a

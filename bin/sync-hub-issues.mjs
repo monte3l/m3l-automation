@@ -31,6 +31,7 @@ import {
   planMilestones,
 } from "./lib/hub-sync.mjs";
 import { LABEL_DEFS } from "./lib/label-defs.mjs";
+import { MILESTONE_DEFS } from "./lib/milestone-defs.mjs";
 import { createReporter, parseJsonFlag } from "./lib/report.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -106,13 +107,23 @@ function checkGhAuth(runGhFn) {
 // API's `state` query param defaults to `open`, which used to make
 // planMilestones re-`POST` (and 422-fail the whole apply) any milestone a
 // maintainer had since closed.
-function loadExistingMilestoneTitles(runGhFn) {
+function loadExistingMilestones(runGhFn) {
   const raw = runGhFn([
     "api",
     `repos/${REPO}/milestones?state=all`,
     "--paginate",
   ]);
-  return parseJsonArray(raw, "milestones").map((milestone) => milestone.title);
+  // `number` is what makes an in-place rename possible at all (a PATCH is by
+  // number, so every issue association survives); `description` is what
+  // ADR-0073 made a managed field. The pre-ADR-0073 version returned bare
+  // titles, which is why neither a rename nor a description drift was
+  // expressible, and therefore why neither was ever reported.
+  return parseJsonArray(raw, "milestones").map((milestone) => ({
+    number: milestone.number,
+    title: milestone.title,
+    description: milestone.description ?? null,
+    state: milestone.state,
+  }));
 }
 
 // Every hub-sync-managed issue carries the hub-sync label (this runner is
@@ -191,7 +202,7 @@ function bootstrapLabels(runGhFn) {
   }
 }
 
-function createMilestone(runGhFn, title) {
+function createMilestone(runGhFn, title, description) {
   runGhFn([
     "api",
     `repos/${REPO}/milestones`,
@@ -199,7 +210,21 @@ function createMilestone(runGhFn, title) {
     "POST",
     "-f",
     `title=${title}`,
+    "-f",
+    `description=${description}`,
   ]);
+}
+
+// In-place edit by milestone number. This is the whole reason a rename is safe:
+// a PATCH keeps the milestone's identity, so all of its open AND closed issue
+// associations survive. Renaming by create-new-then-abandon-old would strand
+// them — 28 and 31 open issues, at the time ADR-0073 renamed p1 and p2.
+function patchMilestone(runGhFn, number, fields) {
+  const args = ["api", `repos/${REPO}/milestones/${number}`, "-X", "PATCH"];
+  for (const [name, value] of Object.entries(fields)) {
+    args.push("-f", `${name}=${value}`);
+  }
+  runGhFn(args);
 }
 
 // Returns the created issue's number, parsed from `gh issue create`'s
@@ -315,6 +340,29 @@ function reopenIssue(runGhFn, number) {
 function printPlan(reporter, milestonePlan, issuePlan) {
   reporter.info(`Milestones to create (${milestonePlan.create.length}):`);
   for (const title of milestonePlan.create) reporter.info(`  + ${title}`);
+
+  reporter.info(`Milestones to rename (${milestonePlan.rename.length}):`);
+  for (const { number, from, to } of milestonePlan.rename) {
+    reporter.info(`  ~ #${number} "${from}" -> "${to}"`);
+  }
+
+  reporter.info(`Milestones to describe (${milestonePlan.describe.length}):`);
+  for (const { number, title } of milestonePlan.describe) {
+    reporter.info(`  ~ #${number} ${title}`);
+  }
+
+  // Report-only: a milestone matching no def may still carry closed issues,
+  // and deleting one strips it from every issue that ever held it. Excluded
+  // from the drift verdict below for the same reason — an orphan nobody
+  // intends to remove would make check:hub-drift permanently unfixable.
+  reporter.info(
+    `Orphaned milestones, report only (${milestonePlan.orphan.length}):`,
+  );
+  for (const { number, title } of milestonePlan.orphan) {
+    reporter.info(
+      `  ? #${number} "${title}" — matches no MILESTONE_DEFS entry`,
+    );
+  }
 
   reporter.info(`Issues to create (${issuePlan.create.length}):`);
   for (const { key, payload } of issuePlan.create) {
@@ -449,7 +497,7 @@ export function runIssueSync({
     const { items, warnings } = actionableItems(roadmap, implementation);
     for (const message of warnings) reporter.warn(message);
 
-    const existingMilestoneTitles = loadExistingMilestoneTitles(runGhFn);
+    const existingMilestones = loadExistingMilestones(runGhFn);
     const existingIssues = loadExistingIssues(runGhFn, reporter);
     if (existingIssues === null) {
       reporter.finish();
@@ -459,7 +507,11 @@ export function runIssueSync({
       existingIssues.map((issue) => [issue.number, issue]),
     );
 
-    const milestonePlan = planMilestones(items, existingMilestoneTitles);
+    const milestonePlan = planMilestones(
+      items,
+      existingMilestones,
+      MILESTONE_DEFS,
+    );
     const issuePlan = planIssueSync(items, existingIssues);
 
     let backfillPlan = null;
@@ -478,13 +530,20 @@ export function runIssueSync({
     if (!apply) {
       const planIsEmpty =
         milestonePlan.create.length === 0 &&
+        milestonePlan.rename.length === 0 &&
+        milestonePlan.describe.length === 0 &&
         issuePlan.create.length === 0 &&
         issuePlan.update.length === 0 &&
         issuePlan.close.length === 0 &&
         issuePlan.reopen.length === 0;
       const summary = {
         applied: false,
-        milestones: { create: milestonePlan.create.length },
+        milestones: {
+          create: milestonePlan.create.length,
+          rename: milestonePlan.rename.length,
+          describe: milestonePlan.describe.length,
+          orphan: milestonePlan.orphan.length,
+        },
         issues: {
           create: issuePlan.create.length,
           update: issuePlan.update.length,
@@ -518,7 +577,8 @@ export function runIssueSync({
       reporter.succeed(
         (check
           ? "Drift check passed — GitHub Issues/Milestones already match the trackers."
-          : `Dry run — pass --apply to execute. Would create ${milestonePlan.create.length} milestone(s); ` +
+          : `Dry run — pass --apply to execute. Would create ${milestonePlan.create.length}, rename ` +
+            `${milestonePlan.rename.length} and describe ${milestonePlan.describe.length} milestone(s); ` +
             `${issuePlan.create.length} issue(s) to create, ${issuePlan.update.length} to update, ` +
             `${issuePlan.close.length} to close, ${issuePlan.reopen.length} to reopen, ` +
             `${issuePlan.untouched.length} untouched.`) + backfillSummary,
@@ -529,8 +589,34 @@ export function runIssueSync({
 
     bootstrapLabels(runGhFn);
 
+    // Milestones are applied before any issue write, and renames before
+    // creates: `gh issue create/edit --milestone` resolves by TITLE, so an
+    // issue edit that runs before its milestone has been renamed silently
+    // fails to move. Same ordering rationale as bootstrapLabels above.
+    for (const { number, from, to } of milestonePlan.rename) {
+      patchMilestone(runGhFn, number, { title: to });
+      reporter.change("updated", `milestone #${number}: "${from}" -> "${to}"`);
+    }
+
+    for (const { number, title, description } of milestonePlan.describe) {
+      patchMilestone(runGhFn, number, { description });
+      reporter.change("updated", `milestone #${number} description: ${title}`);
+    }
+
     for (const title of milestonePlan.create) {
-      createMilestone(runGhFn, title);
+      const def = MILESTONE_DEFS.find((entry) => entry.title === title);
+      if (def === undefined) {
+        // Unreachable today: every planMilestones `create` entry originates
+        // from a def's own `title`. Thrown rather than defaulted to "" because
+        // the failure mode of degrading is invisible — the milestone would be
+        // created description-less, then show up as describe-drift on the next
+        // run, with nothing pointing back to here.
+        throw new Error(
+          `planMilestones planned milestone "${title}" with no matching MILESTONE_DEFS entry — ` +
+            `create entries are derived from def titles, so this means the two have diverged.`,
+        );
+      }
+      createMilestone(runGhFn, title, def.description);
       reporter.change("created", `milestone: ${title}`);
     }
 
@@ -599,13 +685,19 @@ export function runIssueSync({
         `${backfillPlan.needsReview.length} skipped for manual review.`
       : "";
     reporter.succeed(
-      `Applied: ${milestonePlan.create.length} milestone(s) created; ${issuePlan.create.length} issue(s) created, ` +
+      `Applied: ${milestonePlan.create.length} milestone(s) created, ${milestonePlan.rename.length} renamed, ` +
+        `${milestonePlan.describe.length} described; ${issuePlan.create.length} issue(s) created, ` +
         `${issuePlan.update.length} updated, ${issuePlan.close.length} closed, ${issuePlan.reopen.length} reopened.` +
         backfillAppliedSummary,
     );
     reporter.finish({
       applied: true,
-      milestones: { create: milestonePlan.create.length },
+      milestones: {
+        create: milestonePlan.create.length,
+        rename: milestonePlan.rename.length,
+        describe: milestonePlan.describe.length,
+        orphan: milestonePlan.orphan.length,
+      },
       issues: {
         create: issuePlan.create.length,
         update: issuePlan.update.length,
