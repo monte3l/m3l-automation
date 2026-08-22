@@ -420,13 +420,19 @@ The Migration-scope section frames the closed half of the work as "retyping"
 carry `Capability`. Measured against the live repo before implementing it, they
 do not:
 
-| Live, 2026-08-22            | Count |
-| --------------------------- | ----- |
-| Closed, marker-bearing      | 136   |
-| …with **no Issue Type**     | 132   |
-| …carrying `Capability`      | 1     |
-| …already correctly typed    | 4     |
-| Open, carrying `Capability` | 47    |
+| Live, 2026-08-22                                    | Count |
+| --------------------------------------------------- | ----- |
+| Closed, marker-bearing                              | 136   |
+| …with **no Issue Type**                             | 131   |
+| …carrying `Capability`                              | 1     |
+| …already correctly typed (Friction 1, Governance 3) | 4     |
+| Open, carrying `Capability`                         | 47    |
+
+The rows sum to 136 exactly, and every count is over **marker-bearing** issues
+only. The repo has 137 closed issues; the extra one is #576, which this ADR's
+Context already names — closed, untyped, and markerless, so no `--retype-closed`
+pass can reach it. Counting it would make the table's arithmetic disagree with
+its own first row.
 
 `--type` reached `createIssue`/`editIssue` well after most of those issues were
 filed and closed, and `planIssueSync` never revisits a closed-and-resolved

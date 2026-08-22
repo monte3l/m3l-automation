@@ -276,9 +276,13 @@ as moving them off `Capability`. Measured against the live repo first:
 | Live, 2026-08-22            | Count |
 | --------------------------- | ----- |
 | Closed, marker-bearing      | 136   |
-| …with **no** Issue Type     | 132   |
+| …with **no** Issue Type     | 131   |
 | …carrying `Capability`      | 1     |
+| …already correctly typed    | 4     |
 | Open, carrying `Capability` | 47    |
+
+Counts are over **marker-bearing** issues only, so the closed rows sum to 136
+exactly. The repo has 137 closed issues; the extra is markerless #576.
 
 `--type` reached `createIssue`/`editIssue` long after most of those issues were
 closed, and `planIssueSync` never revisits a closed-and-resolved issue — so the
