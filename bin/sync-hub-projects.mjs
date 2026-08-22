@@ -312,8 +312,7 @@ function previewSingleSelectOptions(
 
 /**
  * All of a project's views — used to match {@link VIEW_DEFS}, to prune the
- * undeclared ones, and (by the planned check:hub-views gate, reading the same
- * shape) to assert
+ * undeclared ones, and (by check:hub-views, reading the same shape) to assert
  * the board against its declaration.
  *
  * Reads more than the reconciler strictly needs. `filter`, `sortByFields` and

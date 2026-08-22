@@ -16,9 +16,7 @@
 // through either mutation (verified against the live schema, 2026-08-20).
 // Reconciliation therefore covers name, layout, filter, and the
 // visible-column set; sort order is a documented one-time manual step
-// (docs/contributing/filing-work.md). A follow-up `check:hub-views` gate is
-// planned to assert it; until that lands, nothing detects a sort cleared
-// outside a sync run.
+// (docs/contributing/filing-work.md) that `check:hub-views` then asserts.
 //
 // A Roadmap view was dropped (the ADR-0052 Update): `ROADMAP_LAYOUT` rejects
 // `configuration.visibleFieldIds` outright on both create and update
@@ -71,11 +69,10 @@ export const VIEW_DEFS = [
       "Linked pull requests",
     ],
     // Not writable through either view mutation, but readable — recorded
-    // here as data so the planned check:hub-views gate can assert the manual
-    // step actually happened and stayed. Within THIS module its only consumers
-    // are the runner's preview line and its before/after sort-loss capture —
-    // so a sort cleared outside a sync run is currently undetected.
-    // Oldest highest-priority item first.
+    // here as data so check:hub-views can assert the manual step actually
+    // happened and stayed — the runner's own before/after capture only sees a
+    // sort cleared BY a sync run, so the gate is what catches one cleared by
+    // hand. Oldest highest-priority item first.
     sort: [
       { field: "Priority", direction: "ASC" },
       { field: "Created", direction: "ASC" },
@@ -109,7 +106,7 @@ export const OPTIONAL_VIEW_FIELDS = new Set(["Type"]);
  * doesn't need to re-derive them from source.
  */
 export const MANUAL_VIEW_STEPS = [
-  "Backlog view: sort by Priority ascending, then Created ascending — not settable via the API. --init --apply warns if a column update clears it, but nothing yet detects a sort cleared outside a sync run, so re-check it after editing the view by hand.",
+  "Backlog view: sort by Priority ascending, then Created ascending — not settable via the API. --init --apply warns if a column update clears it, and check:hub-views catches one cleared by hand.",
   'Enable the built-in "Type" field (Project "..." menu -> Settings -> Fields -> Type) so it resolves to an id and lands in the Backlog view\'s columns — the field itself has no enabling mutation, but the column is declared in VIEW_DEFS and syncs automatically once it exists.',
 ];
 

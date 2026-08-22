@@ -286,6 +286,11 @@ export const COMMAND_CATALOG = [
       "CI-gated dry-run of sync:hub-issues that fails when the plan is non-empty — GitHub Issues/Milestones no longer match ROADMAP.md/IMPLEMENTATION.md. Needs gh auth; run push-only in CI (ci.yml), and locally before pushing to main if you have gh authenticated.",
   },
   {
+    name: "check:hub-views",
+    description:
+      "Asserts the GitHub Projects board matches bin/lib/hub-views.mjs: the view set both directions, each view's layout, filter, ordered columns and sort, the presence of the built-in Issue Type field, and the Status/Priority option sets (ADR-0073). Needs a `gh` session with the `project` OAuth scope; GITHUB_TOKEN cannot read Projects v2, so without it the gate prints each unverified facet and exits 0 rather than failing for a missing capability. Run push-only in CI (ci.yml) and locally before an apply session.",
+  },
+  {
     name: "check:worktree",
     description:
       ".worktreeinclude hygiene gate: every literal entry is gitignored and every path resolves, so `pnpm worktree:setup` provisions a fresh worktree correctly. Run after editing .worktreeinclude.",
