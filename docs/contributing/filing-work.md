@@ -138,6 +138,40 @@ Once an idea is actually ready to be worked on:
    `Package capability` is deliberately wider than "new package" — several
    console items build _inside_ `m3l-console-server` without creating it.
 
+   Issue Types are an **org**-level GitHub resource, not a repo one, and
+   `gh issue create --type <name>` 422s on a name the org does not have. So
+   they are declared in `bin/lib/issue-type-defs.mjs` (`ISSUE_TYPE_DEFS`,
+   derived from `ISSUE_TYPES` + `TYPE_KINDS` so a new kind cannot be added to
+   the vocabulary and forgotten) and provisioned by their own opt-in runner:
+
+   ```bash
+   pnpm sync:hub-issues -- --init-issue-types            # dry run
+   pnpm sync:hub-issues -- --init-issue-types --apply    # create/retire
+   ```
+
+   It stays off `--apply`'s routine path because the blast radius is org-wide:
+   a create is visible to every repo `monte3l` owns and a retire removes the
+   type from all of them. It creates every declared type the org lacks, and
+   retires an **undeclared** one only when the issue census (open _and_ closed)
+   shows nothing still carries it — a type that is still in use is reported,
+   never deleted. `--init-issue-types` cannot be combined with `--check` or
+   `--backfill`.
+
+   Every `--apply` run of the sync itself begins with an Issue-Type
+   **preflight**: if any declared type is missing from the org it names them
+   and refuses, rather than 422-ing partway through a ~50-issue batch and
+   leaving half of it written. The preflight deliberately does **not** run on
+   the dry-run or `--check` path — `check:hub-drift` runs in CI with the
+   repo-scoped Actions `GITHUB_TOKEN`, which cannot read an org-level resource
+   at all.
+
+   A description is written once per kind, in `TYPE_KINDS`
+   (`bin/lib/hub-sync.mjs`), and read by both the `type:*` label and the org
+   Issue Type — the same single-source arrangement `PRIORITY_TIERS` gives a
+   tier's label and its milestone. Colours are not shared: a label takes a hex
+   string and an Issue Type takes one of GitHub's eight `IssueTypeColor` enum
+   values.
+
    **Status legend** — every one of the six `Status` cell values now carries
    a matching GitHub label too (ADR-0052's 2026-08-20 Update; originally
    Deferred/Blocked only): `status:todo`, `status:in-progress`,

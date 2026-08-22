@@ -254,3 +254,71 @@ calls.
 `.claude/rules/subagent-dispatch.md` bounds a spoke's **output** (≤40 tests, one
 file). The sharper constraint is bounding its **input discovery** — resolve the
 facts the spoke would otherwise derive, and hand it the answers.
+
+## Update (2026-08-22d): PR 5 split, and the closed backlog is untyped
+
+PR 5 is split the same way PR 4 was, and for the same reason — the two halves
+answer different questions and one is a one-shot:
+
+- **PR 5a — Issue-Type provisioning** (`feat/hub-issue-type-provisioning`): the
+  apply-path preflight, `--init-issue-types`, `TYPE_KINDS`, and
+  `bin/lib/issue-type-defs.mjs`. This is the piece that unblocks
+  `sync:hub --apply` at all.
+- **PR 5b — `--retype-closed`**: a `planClosedRetype` planner plus its narrow
+  `gh issue edit --type` runner path. Genuinely separate: it reconciles nothing
+  and runs once.
+
+### The measurement that changed the design
+
+The plan describes `--retype-closed` as retyping the 136 closed issues, framed
+as moving them off `Capability`. Measured against the live repo first:
+
+| Live, 2026-08-22            | Count |
+| --------------------------- | ----- |
+| Closed, marker-bearing      | 136   |
+| …with **no** Issue Type     | 132   |
+| …carrying `Capability`      | 1     |
+| Open, carrying `Capability` | 47    |
+
+`--type` reached `createIssue`/`editIssue` long after most of those issues were
+closed, and `planIssueSync` never revisits a closed-and-resolved issue — so the
+closed backlog was never typed at all. `--retype-closed` therefore **backfills**
+a type onto 131 issues; it is not what unblocks retiring `Capability`. The 47
+open ones are, and the routine `--apply` already handles them, because
+`isDirty` compares `issue.type` against the payload.
+
+### Retirement is a precondition, not an ordering
+
+The plan sequences the delete as "`deleteIssueType` for `Capability` only after
+the retype pass" — a rule a human has to remember at the right moment.
+`planIssueTypes` expresses the same intent as a condition it can check: an
+undeclared live type is retired only when the issue census (open **and** closed)
+shows nothing carries it, and is otherwise reported as `blocked` with the count.
+The live dry run reports `Capability` blocked at 48, which is the correct
+mid-migration answer rather than an error. It also drops the hardcoded
+`Capability` name — "undeclared" is derived from `ISSUE_TYPES`, so a future
+retirement needs no second edit.
+
+### The preflight cannot be on the `--check` path
+
+`check:hub-drift` runs in CI (`ci.yml`, push-only) with the Actions
+`GITHUB_TOKEN`, which is repo-scoped; Issue Types are an **org** resource. A
+preflight there would fail the gate for a permission reason unrelated to tracker
+drift. So it runs on `--apply` only — verified by the 9 existing `--apply`
+runner tests going red the moment it landed, and the dry-run and `--check` tests
+staying green.
+
+### Dispatch note (F27 applied)
+
+The three test spokes for this PR were briefed with every fact pre-resolved —
+the exact failing test names, the exact unscripted `gh` argv, the rule helper to
+add, and the precise reason `isMutatingIssueCall` needed widening. This is the
+input-discovery discipline F27 files; the contrast with PR 4b's four truncations
+is the point.
+
+One such pre-resolved fact was itself a defect found while briefing:
+`isMutatingIssueCall` treats `api … -X …` as the mutation signature, so it
+cannot see a `gh api graphql` mutation, which carries no `-X`. Matching on
+`graphql` alone would be wrong in the other direction, since the preflight read
+is also a `gh api graphql` call — the predicate has to key off the operation
+keyword.

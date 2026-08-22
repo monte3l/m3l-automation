@@ -412,3 +412,49 @@ record, 8b, 8c, 8d, 8e, the `M3LConfigParameter.secret` library prerequisite,
 wrong, and it was inherited from a synthesis rather than derived from the file.
 
 Recorded rather than silently corrected, since this ADR is Accepted.
+
+## Update (2026-08-22): the closed-issue backlog is untyped, not `Capability`
+
+The Migration-scope section frames the closed half of the work as "retyping"
+196 issues, and the `--retype-closed` sketch reads as if the 136 closed ones
+carry `Capability`. Measured against the live repo before implementing it, they
+do not:
+
+| Live, 2026-08-22            | Count |
+| --------------------------- | ----- |
+| Closed, marker-bearing      | 136   |
+| …with **no Issue Type**     | 132   |
+| …carrying `Capability`      | 1     |
+| …already correctly typed    | 4     |
+| Open, carrying `Capability` | 47    |
+
+`--type` reached `createIssue`/`editIssue` well after most of those issues were
+filed and closed, and `planIssueSync` never revisits a closed-and-resolved
+issue — so the closed backlog was never typed at all. Two corrections follow:
+
+- **`--retype-closed` backfills a type onto 131 issues; it does not move them
+  off `Capability`.** Its value is a complete Type axis over the project's
+  history, which is a weaker claim than "unblocks retiring `Capability`" — the
+  47 open ones are what carry that, and the routine `--apply` already handles
+  them, because `planIssueSync`'s `isDirty` compares `issue.type` against the
+  payload.
+- **Retiring an Issue Type is gated on a zero-issue census, not on ordering.**
+  The Decision above sequences it as `deleteIssueType` on `Capability` "only
+  after the retype pass". A precondition the runner can verify is the same
+  intent without the human memory: `planIssueTypes` retires an undeclared type
+  only when no issue in either state carries it, and reports it as `blocked`
+  with the count otherwise. The live dry run reports `Capability` blocked at 48
+  today, which is the correct mid-migration answer rather than an error.
+
+One closed issue (#359, a W4 row dropped per ADR-0031) has a marker matching no
+current tracker row, so no item can supply its type. It is reported, not
+guessed.
+
+Also settled while implementing: a kind's description is written once in
+`TYPE_KINDS` (`bin/lib/hub-sync.mjs`) and read by both its `type:*` label and
+its org Issue Type, extending the `PRIORITY_TIERS` arrangement this ADR
+introduced for a tier's label and milestone. Issue-Type **colour** is not
+shared with the label's — GitHub takes an 8-value `IssueTypeColor` enum there
+against a label's hex string, so with 10 kinds exactly two pairs must share a
+colour; the pairs are chosen semantically (`Infrastructure`/`Tooling & gates`,
+`Consumer script`/`Fleet retrofit`).
