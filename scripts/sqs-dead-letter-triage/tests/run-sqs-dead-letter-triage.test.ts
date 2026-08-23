@@ -27,11 +27,21 @@ const {
   reportValidationMock,
   explainRunbookMock,
   convertRunbookMock,
+  triageQueueMock,
+  createDynamoDBLookupMock,
+  buildTriageReportMock,
+  logTriageReportMock,
+  writeJsonArtifactMock,
 } = vi.hoisted(() => ({
   validateRunbooksMock: vi.fn(),
   reportValidationMock: vi.fn(),
   explainRunbookMock: vi.fn(),
   convertRunbookMock: vi.fn(),
+  triageQueueMock: vi.fn(),
+  createDynamoDBLookupMock: vi.fn(),
+  buildTriageReportMock: vi.fn(),
+  logTriageReportMock: vi.fn(),
+  writeJsonArtifactMock: vi.fn(),
 }));
 
 vi.mock("../src/steps/validate-runbooks.js", () => ({
@@ -44,17 +54,44 @@ vi.mock("../src/steps/explain-runbook.js", () => ({
 vi.mock("../src/steps/convert-runbook.js", () => ({
   convertRunbook: convertRunbookMock,
 }));
+vi.mock("../src/steps/triage-queue.js", () => ({
+  triageQueue: triageQueueMock,
+}));
+vi.mock("../src/steps/lookup-entity.js", () => ({
+  createDynamoDBLookup: createDynamoDBLookupMock,
+}));
+vi.mock("../src/steps/report.js", () => ({
+  buildTriageReport: buildTriageReportMock,
+  logTriageReport: logTriageReportMock,
+}));
+vi.mock("../src/steps/write-artifact.js", () => ({
+  writeJsonArtifact: writeJsonArtifactMock,
+}));
 
 import { Core } from "@m3l-automation/m3l-common";
+import type { AWS } from "@m3l-automation/m3l-common";
 
 import { runSqsDeadLetterTriage } from "../src/steps/run-sqs-dead-letter-triage.js";
+import {
+  createFakeDynamoDBOperations,
+  createFakeSqsOperations,
+} from "./support/aws-fakes.js";
 
 const paths = new Core.M3LPaths();
 const PRESET_CODE = "ERR_DLQ_TRIAGE_PRESET";
 
-/** Builds the full `RunTriageDeps` bag from a flat config-values record. */
+/**
+ * Builds the full `RunTriageDeps` bag from a flat config-values record.
+ * `sqs`/`dynamo` default to `undefined` — the legitimate no-credentials
+ * state (`aws.profile` is declared but not `required: true`) — and a
+ * caller exercising the `triage` dispatch path overrides them with fakes.
+ */
 function buildDeps(
   configValues: Record<string, unknown>,
+  overrides: {
+    readonly sqs?: AWS.M3LSQSOperations;
+    readonly dynamo?: AWS.M3LDynamoDBOperations;
+  } = {},
 ): Parameters<typeof runSqsDeadLetterTriage>[0] {
   const config = new Core.M3LConfig();
   for (const [key, value] of Object.entries(configValues)) {
@@ -66,6 +103,9 @@ function buildDeps(
     prompt: new Core.M3LPrompt(),
     paths,
     reader: new Core.M3LInputFileReader({ paths, code: PRESET_CODE }),
+    sqs: overrides.sqs,
+    dynamo: overrides.dynamo,
+    signal: undefined,
   };
 }
 
@@ -78,6 +118,11 @@ afterEach(() => {
   reportValidationMock.mockReset();
   explainRunbookMock.mockReset();
   convertRunbookMock.mockReset();
+  triageQueueMock.mockReset();
+  createDynamoDBLookupMock.mockReset();
+  buildTriageReportMock.mockReset();
+  logTriageReportMock.mockReset();
+  writeJsonArtifactMock.mockReset();
 });
 
 describe("runSqsDeadLetterTriage — per-operation dispatch wiring", () => {
@@ -213,6 +258,180 @@ describe("runSqsDeadLetterTriage — per-operation required-field guards (reacha
       code: "ERR_DLQ_TRIAGE_CONFIG",
     });
     expect(convertRunbookMock).not.toHaveBeenCalled();
+  });
+
+  test("throws ERR_DLQ_TRIAGE_CONFIG when 'triage' is missing 'queueUrl', before dispatch", async () => {
+    const deps = buildDeps(
+      { operation: "triage", queue: "orders-dlq" },
+      {
+        sqs: createFakeSqsOperations(),
+        dynamo: createFakeDynamoDBOperations(),
+      },
+    );
+
+    await expect(runSqsDeadLetterTriage(deps)).rejects.toMatchObject({
+      code: "ERR_DLQ_TRIAGE_CONFIG",
+    });
+    expect(triageQueueMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("runSqsDeadLetterTriage — 'triage' dispatch (drains, reports, writes the artifact)", () => {
+  test("drains via triageQueue, builds/logs the report, and writes triage-<timestamp>.json", async () => {
+    const sqs = createFakeSqsOperations();
+    const dynamo = createFakeDynamoDBOperations();
+    const lookup = { get: vi.fn() };
+    createDynamoDBLookupMock.mockReturnValue(lookup);
+    const triageResult = {
+      queue: "orders-dlq",
+      title: "Orders DLQ triage",
+      depth: 1,
+      archivePath: "orders-dlq/drain-2026-08-23T12-00-00.000Z.json",
+      drained: 1,
+      outcomes: [],
+      messages: [{ messageId: "msg-1", body: "body" }],
+      escalateTo: "orders-team",
+      followUps: ["fu1"],
+    };
+    triageQueueMock.mockResolvedValue(triageResult);
+    const report = {
+      queue: "orders-dlq",
+      generatedAt: "2026-08-23T12:00:00.000Z",
+    };
+    buildTriageReportMock.mockReturnValue(report);
+
+    const deps = buildDeps(
+      {
+        operation: "triage",
+        queue: "orders-dlq",
+        queueUrl: "https://sqs.example/orders-dlq",
+      },
+      { sqs, dynamo },
+    );
+
+    await runSqsDeadLetterTriage(deps);
+
+    expect(createDynamoDBLookupMock).toHaveBeenCalledWith({
+      operations: dynamo,
+      signal: undefined,
+    });
+    expect(triageQueueMock).toHaveBeenCalledWith({
+      sqs,
+      lookup,
+      reader: deps.reader,
+      paths: deps.paths,
+      logger: deps.logger,
+      runbookDir: "runbooks",
+      queue: "orders-dlq",
+      queueUrl: "https://sqs.example/orders-dlq",
+      maxMessages: 100,
+      visibilityTimeout: 1800,
+      signal: undefined,
+    });
+    expect(buildTriageReportMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        result: triageResult,
+        queueUrl: "https://sqs.example/orders-dlq",
+        messages: triageResult.messages,
+        escalateTo: triageResult.escalateTo,
+        followUps: triageResult.followUps,
+      }),
+    );
+    expect(logTriageReportMock).toHaveBeenCalledWith(deps.logger, report);
+    expect(writeJsonArtifactMock).toHaveBeenCalledWith(
+      deps.paths,
+      "orders-dlq/triage-2026-08-23T12-00-00.000Z.json",
+      report,
+    );
+  });
+});
+
+describe("runSqsDeadLetterTriage — 'triage' cancelled mid-drain", () => {
+  // A trailing "aborted" outcome must still yield a written, logged report
+  // for however many messages WERE triaged (partial evidence must survive
+  // cancellation) — and only THEN throw M3LOperationAbortedError. An
+  // orchestrator would otherwise see a resolved 'triage' as fully complete
+  // even though the queue was only half-drained. Both halves are asserted:
+  // the artifact write, and the throw.
+  test("still builds/logs/writes the report, then throws M3LOperationAbortedError", async () => {
+    const sqs = createFakeSqsOperations();
+    const dynamo = createFakeDynamoDBOperations();
+    const lookup = { get: vi.fn() };
+    createDynamoDBLookupMock.mockReturnValue(lookup);
+    const triageResult = {
+      queue: "orders-dlq",
+      title: "Orders DLQ triage",
+      depth: 2,
+      archivePath: "orders-dlq/drain-2026-08-23T12-00-00.000Z.json",
+      drained: 2,
+      outcomes: [
+        { messageId: "msg-1", status: "matched", conclusion: {} },
+        { messageId: "msg-2", status: "aborted", failure: "cancelled" },
+      ],
+      messages: [{ messageId: "msg-1", body: "body" }],
+      escalateTo: "orders-team",
+      followUps: [],
+    };
+    triageQueueMock.mockResolvedValue(triageResult);
+    const report = {
+      queue: "orders-dlq",
+      generatedAt: "2026-08-23T12:00:00.000Z",
+    };
+    buildTriageReportMock.mockReturnValue(report);
+
+    const deps = buildDeps(
+      {
+        operation: "triage",
+        queue: "orders-dlq",
+        queueUrl: "https://sqs.example/orders-dlq",
+      },
+      { sqs, dynamo },
+    );
+
+    await expect(runSqsDeadLetterTriage(deps)).rejects.toBeInstanceOf(
+      Core.M3LOperationAbortedError,
+    );
+
+    expect(buildTriageReportMock).toHaveBeenCalledWith(
+      expect.objectContaining({ result: triageResult }),
+    );
+    expect(logTriageReportMock).toHaveBeenCalledWith(deps.logger, report);
+    expect(writeJsonArtifactMock).toHaveBeenCalledWith(
+      deps.paths,
+      "orders-dlq/triage-2026-08-23T12-00-00.000Z.json",
+      report,
+    );
+  });
+});
+
+describe("runSqsDeadLetterTriage — 'triage' with no AWS credentials configured", () => {
+  // This is the whole reason `aws.profile` is declared without
+  // `required: true` (`config.ts`): `sqs`/`dynamo` arrive `undefined`
+  // exactly when `script.aws` was never provisioned, and `dispatchTriage`
+  // must fail loud naming the parameter rather than crash on a missing
+  // client.
+  test("throws ERR_DLQ_TRIAGE_CONFIG naming aws.profile when sqs/dynamo are undefined", async () => {
+    const deps = buildDeps({
+      operation: "triage",
+      queue: "orders-dlq",
+      queueUrl: "https://sqs.example/orders-dlq",
+    }); // sqs/dynamo default to undefined — the legitimate no-credentials state
+
+    let thrown: unknown;
+    try {
+      await runSqsDeadLetterTriage(deps);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Core.M3LError);
+    expect((thrown as Core.M3LError).code).toBe("ERR_DLQ_TRIAGE_CONFIG");
+    expect((thrown as Core.M3LError).message).toContain(
+      Core.AWS_PROFILE_PARAM_NAME,
+    );
+    expect(triageQueueMock).not.toHaveBeenCalled();
+    expect(buildTriageReportMock).not.toHaveBeenCalled();
+    expect(writeJsonArtifactMock).not.toHaveBeenCalled();
   });
 });
 

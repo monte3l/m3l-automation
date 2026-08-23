@@ -4,7 +4,7 @@ import type * as NodeFsPromises from "node:fs/promises";
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import { explainRunbook } from "../src/steps/explain-runbook.js";
+import { explainRunbook, presetPathFor } from "../src/steps/explain-runbook.js";
 
 /**
  * Contract: `docs/reference/scripts/sqs-dead-letter-triage.md`'s `explain`
@@ -286,5 +286,23 @@ describe("explainRunbook — failure paths", () => {
     expect(error.code).toBe(PRESET_CODE);
     expect(error.message).toContain("missing-dlq");
     expect(error.cause).toBe(cause);
+  });
+});
+
+describe("presetPathFor", () => {
+  // A pure, total string-interpolation function — `${runbookDir}/${queue}.json`
+  // — with nothing to throw on for any string input; `config.ts`'s traversal
+  // guard is what rejects a hostile `queue` value before it ever reaches
+  // here, so there is no failure path of this function's own to cover.
+  it("joins runbookDir and queue with the .json preset extension", () => {
+    expect(presetPathFor("runbooks", "orders-dlq")).toBe(
+      "runbooks/orders-dlq.json",
+    );
+  });
+
+  it("honours a non-default runbookDir", () => {
+    expect(presetPathFor("custom-runbooks", "shipments-dlq")).toBe(
+      "custom-runbooks/shipments-dlq.json",
+    );
   });
 });
