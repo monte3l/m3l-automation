@@ -6,6 +6,7 @@
     { "path": "./scripts/api-gateway-client/tsconfig.build.json" },
     { "path": "./scripts/athena-query/tsconfig.build.json" },
     { "path": "./scripts/cloudformation-stacks/tsconfig.build.json" },
+    { "path": "./scripts/cloudwatch-logs-analysis/tsconfig.build.json" },
     { "path": "./scripts/cloudwatch-logs-insights/tsconfig.build.json" },
     { "path": "./scripts/codepipeline-ops/tsconfig.build.json" },
     { "path": "./scripts/dynamodb-crud/tsconfig.build.json" },

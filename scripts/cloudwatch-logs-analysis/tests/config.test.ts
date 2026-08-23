@@ -1,0 +1,183 @@
+import { describe, expect, it } from "vitest";
+
+import { Core } from "@m3l-automation/m3l-common";
+
+import {
+  ANALYSIS_OPERATIONS,
+  configParameters,
+  configValidators,
+  MAX_DEPTH_DEFAULT,
+  RUNBOOK_DIR_DEFAULT,
+} from "../src/config.js";
+
+/**
+ * Contract: `docs/reference/scripts/cloudwatch-logs-analysis.md`,
+ * "Configuration schema". This smoke test asserts the DECLARATION and the
+ * cross-parameter validators only — never resolution or coercion, which are
+ * the library's own tested pipeline.
+ */
+
+/** Builds a raw `Core.M3LConfig` store directly, bypassing provider resolution. */
+function buildConfig(values: Record<string, unknown>): Core.M3LConfig {
+  const config = new Core.M3LConfig();
+  for (const [key, value] of Object.entries(values)) config.set(key, value);
+  return config;
+}
+
+/** Runs every declared validator, returning the first failure message. */
+function firstFailure(config: Core.M3LConfig): string | undefined {
+  for (const validator of configValidators) {
+    const result = validator(config);
+    if (result !== true) return result;
+  }
+  return undefined;
+}
+
+describe("cloudwatch-logs-analysis config declaration", () => {
+  it("declares every parameter via M3LConfigParameter with a unique name", () => {
+    const names = configParameters.map((parameter) => parameter.getName());
+    expect(new Set(names).size).toBe(names.length);
+    for (const parameter of configParameters) {
+      expect(parameter).toBeInstanceOf(Core.M3LConfigParameter);
+    }
+  });
+
+  it("declares exactly the thirteen parameters named in the contract table", () => {
+    expect(new Set(configParameters.map((p) => p.getName()))).toEqual(
+      new Set([
+        "operation",
+        Core.AWS_PROFILE_PARAM_NAME,
+        "alarm",
+        "triggeredAt",
+        "runbookDir",
+        "source",
+        "leadMinutes",
+        "lagMinutes",
+        "severityLadder",
+        "maxDepth",
+        "interactive",
+        "output",
+        "format",
+      ]),
+    );
+  });
+
+  it("declares aws.profile without required:true, so the offline operations need no credentials", () => {
+    const profile = configParameters.find(
+      (parameter) => parameter.getName() === Core.AWS_PROFILE_PARAM_NAME,
+    );
+    expect(profile).toBeDefined();
+    expect(profile?.isRequired()).toBe(false);
+  });
+
+  it("declares no parameter as required:true — requiredness is per-operation", () => {
+    expect(configParameters.filter((p) => p.isRequired())).toEqual([]);
+  });
+
+  it("defaults runbookDir, maxDepth, operation, interactive and format only", () => {
+    const withDefaults = configParameters
+      .filter((parameter) => parameter.getDefaultValue() !== undefined)
+      .map((parameter) => parameter.getName());
+    expect(new Set(withDefaults)).toEqual(
+      new Set(["operation", "runbookDir", "maxDepth", "interactive", "format"]),
+    );
+  });
+
+  it("leaves the preset-override parameters undefaulted, so absent means 'the preset decides'", () => {
+    for (const name of ["leadMinutes", "lagMinutes", "severityLadder"]) {
+      const parameter = configParameters.find((p) => p.getName() === name);
+      expect(parameter?.getDefaultValue()).toBeUndefined();
+    }
+  });
+
+  it("exposes the declared defaults as named constants the steps read back", () => {
+    const runbookDir = configParameters.find(
+      (parameter) => parameter.getName() === "runbookDir",
+    );
+    const maxDepth = configParameters.find(
+      (parameter) => parameter.getName() === "maxDepth",
+    );
+    expect(runbookDir?.getDefaultValue()).toBe(RUNBOOK_DIR_DEFAULT);
+    expect(maxDepth?.getDefaultValue()).toBe(MAX_DEPTH_DEFAULT);
+  });
+
+  it("declares the four operations the dispatcher handles", () => {
+    expect([...ANALYSIS_OPERATIONS]).toEqual([
+      "analyze",
+      "validate",
+      "explain",
+      "convert",
+    ]);
+  });
+});
+
+describe("configValidators (cross-parameter requiredness)", () => {
+  it("accepts a fully specified analyze run", () => {
+    expect(
+      firstFailure(
+        buildConfig({
+          operation: "analyze",
+          [Core.AWS_PROFILE_PARAM_NAME]: "example-profile",
+          alarm: "example-gateway-5xx",
+          triggeredAt: "2026-08-23T14:32:00Z",
+        }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it.each([[Core.AWS_PROFILE_PARAM_NAME], ["alarm"], ["triggeredAt"]])(
+    "rejects an analyze run missing %s",
+    (missing) => {
+      const values: Record<string, unknown> = {
+        operation: "analyze",
+        [Core.AWS_PROFILE_PARAM_NAME]: "example-profile",
+        alarm: "example-gateway-5xx",
+        triggeredAt: "2026-08-23T14:32:00Z",
+      };
+      delete values[missing];
+      expect(firstFailure(buildConfig(values))).toContain(missing);
+    },
+  );
+
+  it("accepts a validate run with no alarm, no profile and no timestamp", () => {
+    expect(
+      firstFailure(buildConfig({ operation: "validate" })),
+    ).toBeUndefined();
+  });
+
+  it("requires only alarm for explain", () => {
+    expect(firstFailure(buildConfig({ operation: "explain" }))).toContain(
+      "alarm",
+    );
+    expect(
+      firstFailure(buildConfig({ operation: "explain", alarm: "example" })),
+    ).toBeUndefined();
+  });
+
+  it("requires only source for convert", () => {
+    expect(firstFailure(buildConfig({ operation: "convert" }))).toContain(
+      "source",
+    );
+    expect(
+      firstFailure(buildConfig({ operation: "convert", source: "a.md" })),
+    ).toBeUndefined();
+  });
+
+  it("treats an absent operation as analyze, the declared default", () => {
+    expect(firstFailure(buildConfig({}))).toContain("analyze");
+  });
+
+  it("rejects a triggeredAt that is not an ISO-8601 timestamp", () => {
+    expect(
+      firstFailure(
+        buildConfig({ operation: "validate", triggeredAt: "yesterday" }),
+      ),
+    ).toContain("ISO-8601");
+  });
+
+  it("accepts an absent triggeredAt for an operation that does not need one", () => {
+    expect(
+      firstFailure(buildConfig({ operation: "validate" })),
+    ).toBeUndefined();
+  });
+});

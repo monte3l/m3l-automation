@@ -1,0 +1,45 @@
+{
+  "alarm": "example-function-errors",
+  "title": "Example function is reporting invocation errors",
+  "entry": {
+    "logGroups": ["/example/lambda/report-generator"],
+    "query": "fields @timestamp, @message, level | filter level = 'ERROR' | sort @timestamp desc",
+    "limit": 100
+  },
+  "window": { "leadMinutes": 10, "lagMinutes": 10 },
+  "correlation": {
+    "field": "@message",
+    "pattern": "requestId=([0-9a-f-]+)",
+    "label": "request id"
+  },
+  "signature": {
+    "field": "@message",
+    "pattern": "([A-Za-z.]+(?:Exception|Error))",
+    "levelField": "level"
+  },
+  "cases": [
+    {
+      "id": "function-out-of-memory",
+      "description": "the function exhausted its configured memory",
+      "prose": "The function ran out of memory. The runbook's recorded action is to raise the memory ceiling for the next release.",
+      "priority": 200,
+      "pattern": "OutOfMemoryError",
+      "verdict": "known-open-issue",
+      "ticket": "EXAMPLE-0005",
+      "resolution": "Raise the configured memory ceiling; tracked against the owning team."
+    },
+    {
+      "id": "function-throttled",
+      "description": "a downstream call was throttled",
+      "prose": "A downstream call was throttled. This clears on the built-in retry.",
+      "priority": 100,
+      "pattern": "ThrottlingException",
+      "verdict": "transient-downstream",
+      "resolution": "No action while the retry succeeds."
+    }
+  ],
+  "escalateTo": "example-owning-team",
+  "followUps": [
+    "Confirm the function's error-rate metric returned to baseline."
+  ]
+}

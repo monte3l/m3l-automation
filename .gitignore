@@ -28,6 +28,11 @@ data/output/*
 # Git worktrees created by `claude --worktree` / isolated spokes (nested checkouts)
 .claude/worktrees/
 
+# Local scratch/working directory: untracked operator source material read
+# while authoring presets. Never committed, never formatted, never linted —
+# mirrored in .prettierignore and the `lint:md` exclude list.
+tmp/
+
 # Logs and OS cruft
 *.log
 .DS_Store
