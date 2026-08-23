@@ -1,4 +1,4 @@
-import type { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 /**
  * How a `runbook`-handled preset's queue is otherwise governed, when it is
@@ -241,11 +241,88 @@ export interface TriageEntityLookup {
   ): Promise<Readonly<Record<string, unknown>> | undefined>;
 }
 
+/**
+ * The mutable, per-run seams the step graph writes through and later steps
+ * read back — the entity-lookup counterpart to `values` for data too large
+ * or non-scalar to live in the procedure engine's own value map (a resolved
+ * payload, the selected arm, the looked-up entity record).
+ *
+ * Deliberately plain and synchronous: a unit test constructs one directly
+ * with `createTriageRunState()` and drives a single step's `execute` against
+ * it, with no procedure run and no lifecycle required.
+ *
+ * @example
+ * ```typescript
+ * import { createTriageRunState } from "./preset.js";
+ *
+ * const state = createTriageRunState();
+ * state.setPayload({ orderId: "42" });
+ * console.log(state.payload); // { orderId: "42" }
+ * ```
+ */
+export interface TriageRunState {
+  /** Records the payload `parse-envelope` resolved from the message body. */
+  setPayload(payload: unknown): void;
+  /** Records the arm `route-event` selected for this message. */
+  selectArm(arm: TriageArm): void;
+  /** Records the entity `lookup-entity` found, or `undefined` on a miss. */
+  setEntity(entity: Readonly<Record<string, unknown>> | undefined): void;
+  /** The payload most recently set by `setPayload`; `undefined` until then. */
+  readonly payload: unknown;
+  /** The arm most recently set by `selectArm`; `undefined` until then. */
+  readonly arm: TriageArm | undefined;
+  /** The entity most recently set by `setEntity`; `undefined` until then. */
+  readonly entity: Readonly<Record<string, unknown>> | undefined;
+}
+
+/**
+ * Builds a fresh, empty {@link TriageRunState}. One instance is constructed
+ * per run and threaded through `TriageDeps.state` — every step reads and
+ * writes the same instance across the whole procedure execution.
+ *
+ * @returns A new run-state instance with no payload, arm, or entity set.
+ *
+ * @example
+ * ```typescript
+ * import { createTriageRunState } from "./preset.js";
+ *
+ * const state = createTriageRunState();
+ * console.log(state.arm); // undefined
+ * ```
+ */
+export function createTriageRunState(): TriageRunState {
+  let payload: unknown;
+  let arm: TriageArm | undefined;
+  let entity: Readonly<Record<string, unknown>> | undefined;
+  return {
+    setPayload(nextPayload: unknown): void {
+      payload = nextPayload;
+    },
+    selectArm(nextArm: TriageArm): void {
+      arm = nextArm;
+    },
+    setEntity(nextEntity: Readonly<Record<string, unknown>> | undefined): void {
+      entity = nextEntity;
+    },
+    get payload(): unknown {
+      return payload;
+    },
+    get arm(): TriageArm | undefined {
+      return arm;
+    },
+    get entity(): Readonly<Record<string, unknown>> | undefined {
+      return entity;
+    },
+  };
+}
+
 /** The dependency bag the procedure's steps read. Opaque to the engine. */
 export interface TriageDeps {
   readonly preset: TriagePreset;
   readonly message: TriageMessage;
   readonly lookup: TriageEntityLookup;
+  /** The per-run mutable seams the step graph reads and writes through. */
+  readonly state: TriageRunState;
 }
 
 /**
@@ -304,4 +381,40 @@ export interface TriageShape extends Core.M3LProcedureShape {
  */
 export function normaliseProgression(states: readonly string[]): string {
   return `,${states.map((state) => state.toLowerCase()).join(",")},`;
+}
+
+/**
+ * Reads a simple dot-path (`"a.b.c"`) off untrusted, arbitrary message data —
+ * the shared reader every path field in a preset (`envelope.payloadPath`,
+ * `key.path`, `state.fromState`/`nextState`/`progression`) is walked through.
+ *
+ * Only own, enumerable properties of a **plain object** resolve at each hop
+ * — an array is never indexed (numeric segments are out of scope here), and
+ * `Object.hasOwn` is checked at every hop so a `__proto__`/inherited property
+ * can never resolve, even when the source is hostile JSON. Total: a missing
+ * segment, a non-object intermediate value, or an empty path all yield
+ * `undefined` rather than throwing.
+ *
+ * @param source - The value to walk into. Never mutated.
+ * @param path - The dot-delimited path, e.g. `"detail.orderId"`.
+ * @returns The resolved value, or `undefined` when any hop misses.
+ *
+ * @example
+ * ```typescript
+ * import { readPath } from "./preset.js";
+ *
+ * readPath({ detail: { orderId: "42" } }, "detail.orderId"); // "42"
+ * readPath({ detail: { orderId: "42" } }, "detail.missing"); // undefined
+ * readPath(JSON.parse('{"__proto__":{"polluted":true}}'), "__proto__.polluted"); // undefined
+ * ```
+ */
+export function readPath(source: unknown, path: string): unknown {
+  let current: unknown = source;
+  for (const segment of path.split(".")) {
+    if (!Core.isPlainObject(current) || !Object.hasOwn(current, segment)) {
+      return undefined;
+    }
+    current = current[segment];
+  }
+  return current;
 }
