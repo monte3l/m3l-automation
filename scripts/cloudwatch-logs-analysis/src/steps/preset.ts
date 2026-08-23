@@ -3,32 +3,31 @@ import type { Core } from "@m3l-automation/m3l-common";
 /**
  * The closed verdict vocabulary `cloudwatch-logs-analysis` concludes with.
  *
- * Five verdicts are authored per known-case row in a preset
- * (`known-no-action`, `known-open-issue`, `known-closed-issue`,
- * `transient-downstream`, `unrecognised`); the remaining three are reached
- * only through the codified terminal cases and are rejected in a preset's
- * `cases[].verdict` by {@link parseRunbookPreset}'s trust-boundary check, so
- * an author cannot claim "no evidence" for a row that only matches when
- * evidence exists.
+ * Five verdicts are authorable per known-case row in a preset — see
+ * {@link AUTHORABLE_VERDICTS}, the runtime list the trust boundary validates
+ * against. The remaining three (`no-correlation-id`, `no-evidence`,
+ * `unsupported`) are reached only through the codified terminal cases and are
+ * rejected in a preset's `cases[].verdict`, so an author cannot claim "no
+ * evidence" for a row that only matches when evidence exists.
+ *
+ * A union rather than a `readonly` tuple: nothing needs the full list at run
+ * time, and the two would have to be kept in step by hand.
  */
-export const ANALYSIS_VERDICTS = [
-  "known-no-action",
-  "known-open-issue",
-  "known-closed-issue",
-  "transient-downstream",
-  "no-correlation-id",
-  "no-evidence",
-  "unsupported",
-  "unrecognised",
-] as const;
-
-/** One member of {@link ANALYSIS_VERDICTS}. */
-export type AnalysisVerdict = (typeof ANALYSIS_VERDICTS)[number];
+export type AnalysisVerdict =
+  | "known-no-action"
+  | "known-open-issue"
+  | "known-closed-issue"
+  | "transient-downstream"
+  | "no-correlation-id"
+  | "no-evidence"
+  | "unsupported"
+  | "unrecognised";
 
 /**
- * The subset of {@link ANALYSIS_VERDICTS} a preset's own known-case rows may
- * declare. The three terminal verdicts are reserved for the codified cases
- * in `build-procedure.ts`.
+ * The subset of {@link AnalysisVerdict} a preset's own known-case rows may
+ * declare, as a runtime list the trust boundary checks against. The three
+ * terminal verdicts are reserved for the codified cases in
+ * `build-procedure.ts`.
  */
 export const AUTHORABLE_VERDICTS = [
   "known-no-action",
@@ -213,7 +212,7 @@ export interface RunbookPreset {
 }
 
 /** One trace hop's gathered rows, kept in hop order. */
-export interface AnalysisTraceHop {
+interface AnalysisTraceHop {
   readonly label: string;
   readonly rows: readonly AnalysisRow[];
 }

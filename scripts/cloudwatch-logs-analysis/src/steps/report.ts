@@ -17,7 +17,7 @@ import type {
 export const MAX_REPORTED_ROWS = 50;
 
 /** One evidence stage as it appears in the persisted report. */
-export interface ReportedStage {
+interface ReportedStage {
   readonly label: string;
   /** Rows the stage returned, before {@link MAX_REPORTED_ROWS} truncation. */
   readonly rowCount: number;
@@ -25,7 +25,7 @@ export interface ReportedStage {
 }
 
 /** One case the run evaluated, and whether it was satisfied. */
-export interface ReportedCase {
+interface ReportedCase {
   readonly caseId: string;
   readonly description: string;
   readonly priority: number;

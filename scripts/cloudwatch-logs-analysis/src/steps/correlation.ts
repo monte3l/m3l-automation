@@ -7,7 +7,7 @@ import type {
 } from "./preset.js";
 
 /** The error code a malformed extraction rule surfaces under. */
-export const EXTRACTION_CODE = "ERR_LOGS_ANALYSIS_EXTRACTION";
+const EXTRACTION_CODE = "ERR_LOGS_ANALYSIS_EXTRACTION";
 
 /**
  * Mirrors `Core.M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH`. A field value longer

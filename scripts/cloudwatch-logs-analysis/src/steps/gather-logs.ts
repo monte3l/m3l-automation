@@ -8,7 +8,7 @@ import type {
 } from "./preset.js";
 
 /** The error code a failed evidence query surfaces under. */
-export const GATHER_CODE = "ERR_LOGS_ANALYSIS_GATHER";
+const GATHER_CODE = "ERR_LOGS_ANALYSIS_GATHER";
 
 /** AWS caps `StartQuery.logGroupNames` at 50 entries. */
 export const MAX_LOG_GROUPS = 50;

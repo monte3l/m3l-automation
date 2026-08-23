@@ -7,7 +7,7 @@ import { listRunbooks, loadRunbook } from "./load-runbook.js";
 export const VALIDATE_CODE = "ERR_LOGS_ANALYSIS_VALIDATION";
 
 /** One problem found in one preset. */
-export interface RunbookProblem {
+interface RunbookProblem {
   /** The preset's path, relative to the input directory. */
   readonly preset: string;
   /** The `M3LProcedureProblemCode`, or the trust-boundary error's own code. */

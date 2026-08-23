@@ -14,7 +14,7 @@ import type {
 } from "./preset.js";
 
 /** The error code a step raises when the preset it was compiled from is unusable. */
-export const PROCEDURE_CODE = "ERR_LOGS_ANALYSIS_PROCEDURE";
+const PROCEDURE_CODE = "ERR_LOGS_ANALYSIS_PROCEDURE";
 
 /**
  * The token a preset's trace-hop query carries where the extracted

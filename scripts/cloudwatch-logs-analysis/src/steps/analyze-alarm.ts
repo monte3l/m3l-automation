@@ -8,7 +8,7 @@ import { loadRunbook } from "./load-runbook.js";
 import { createEvidence } from "./preset.js";
 import { buildReport, logReport } from "./report.js";
 import type { AnalysisReport } from "./report.js";
-import type { RunbookPreset } from "./preset.js";
+import type { AnalysisDeps, RunbookPreset } from "./preset.js";
 
 /** The error code a run that never reached a verdict fails with. */
 export const ANALYZE_CODE = "ERR_LOGS_ANALYSIS_RUN";
@@ -109,19 +109,21 @@ export async function analyzeAlarm(
   const procedure = buildAnalysisProcedure(preset);
   const evidence = createEvidence();
 
-  const outcome = await procedure.run({
-    deps: {
-      preset,
-      gatherer: createLogsInsightsGatherer({
-        client: deps.client,
-        logger: deps.logger,
-      }),
+  const runtime: AnalysisDeps = {
+    preset,
+    gatherer: createLogsInsightsGatherer({
+      client: deps.client,
       logger: deps.logger,
-      prompt: deps.prompt,
-      interactive: deps.interactive,
-      maxDepth: deps.maxDepth,
-      evidence,
-    },
+    }),
+    logger: deps.logger,
+    prompt: deps.prompt,
+    interactive: deps.interactive,
+    maxDepth: deps.maxDepth,
+    evidence,
+  };
+
+  const outcome = await procedure.run({
+    deps: runtime,
     parameters: { alarm: deps.alarm, triggeredAt: deps.triggeredAt },
     initialValues: INITIAL_VALUES,
     ...(deps.signal !== undefined && { signal: deps.signal }),
