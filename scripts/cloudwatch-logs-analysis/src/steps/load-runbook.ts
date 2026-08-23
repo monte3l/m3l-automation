@@ -3,7 +3,11 @@ import * as path from "node:path";
 
 import { Core } from "@m3l-automation/m3l-common";
 
-import { AUTHORABLE_VERDICTS, RESERVED_PRIORITY_CEILING } from "./preset.js";
+import {
+  AUTHORABLE_VERDICTS,
+  RESERVED_PRIORITY_CEILING,
+  SAFE_QUERY_VALUE,
+} from "./preset.js";
 import type {
   AnalysisVerdict,
   RunbookAuthorizerStage,
@@ -100,6 +104,27 @@ function optionalStringArray(
 ): readonly string[] {
   const values = reader.optionalArrayField(record, field);
   return values === undefined ? [] : toStringArray(values, field);
+}
+
+/**
+ * Rejects a severity rung that is not safe to substitute into a query.
+ *
+ * A rung is interpolated verbatim into the entry query wherever
+ * `severityPlaceholder` appears, so it reaches the same substitution boundary
+ * the extracted correlation key does and is held to the same
+ * {@link SAFE_QUERY_VALUE} allow-list. Checked here, at the trust boundary,
+ * so the message names the preset field.
+ */
+function requireSafeLadder(rungs: readonly string[]): readonly string[] {
+  for (const [index, rung] of rungs.entries()) {
+    if (!SAFE_QUERY_VALUE.test(rung)) {
+      throw new Core.M3LError(
+        `'severityLadder[${String(index)}]' is substituted into the entry query and must contain only word characters, '.', ':', '/', '@', '#', '=', '+' or '-'`,
+        { code: PRESET_CODE },
+      );
+    }
+  }
+  return rungs;
 }
 
 /** Parses the `logGroups`/`query`/`limit` triple every query stage shares. */
@@ -338,7 +363,9 @@ export function parseRunbookPreset(
       entryRecord === undefined
         ? undefined
         : parseQueryStage(reader, entryRecord, "entry"),
-    severityLadder: optionalStringArray(reader, record, "severityLadder"),
+    severityLadder: requireSafeLadder(
+      optionalStringArray(reader, record, "severityLadder"),
+    ),
     severityPlaceholder: reader.optionalStringField(
       record,
       "severityPlaceholder",

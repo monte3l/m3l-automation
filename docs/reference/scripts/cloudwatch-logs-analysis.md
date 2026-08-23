@@ -144,7 +144,16 @@ message naming the offending field.
 
 A **query stage** is `{ logGroups: string[], query: string, limit?: number }`.
 A trace hop's `query` may carry the token `{{key}}`, which is replaced by the
-current correlation key.
+current correlation key; the entry query may carry `severityPlaceholder`,
+which is replaced by the selected ladder rung.
+
+**Both substituted values are allow-listed, never escaped.** A correlation key
+or a severity rung must match `/^[\w.:/@#=+-]{1,256}$/` — enough for severity
+levels, UUIDs, trace ids, request ids and ARNs, and not enough to break out of
+a quoted literal. A rung is checked at whichever boundary it arrived through
+(the preset trust boundary, or `applyRunOverrides` for the `severityLadder`
+config override); a key that fails the check stops the analysis with the
+`no-correlation-id` verdict rather than running an altered query.
 
 A **case row** is
 `{ id, description, prose, priority, pattern, level?, service?, verdict, ticket?, resolution?, escalateTo?, followUps? }`.

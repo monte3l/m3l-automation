@@ -131,11 +131,18 @@ field by field at the trust boundary. Its notable commitments:
 - **Patterns are validated where they are authored.** Every regular expression
   is compiled and length-bounded at load, so a bad pattern is a preset problem,
   not a `SyntaxError` from inside a step.
-- **An extracted correlation key is allow-listed before substitution.** Keys are
-  interpolated into a Logs Insights query string; the allow-list
-  (`/^[\w.:/@#=+-]{1,256}$/`) admits every key shape the parse patterns produce
-  and nothing that can break out of a quoted literal. A key that fails it stops
-  the analysis rather than running an altered query.
+- **Every value substituted into a query is allow-listed, not escaped.** Two
+  values reach a Logs Insights query string: the extracted correlation key and
+  the selected severity rung. Both are held to one shared rule,
+  `SAFE_QUERY_VALUE` (`/^[\w.:/@#=+-]{1,256}$/`), which admits every shape
+  these substitutions legitimately produce (severity levels, UUIDs, trace ids,
+  request ids, ARNs) and nothing that can break out of a quoted literal. A key
+  that fails it stops the analysis rather than running an altered query; a rung
+  that fails it is rejected at whichever boundary it arrived through — the
+  preset trust boundary for an authored ladder, `applyRunOverrides` for the
+  `severityLadder` config override, whose schema validator only checks
+  `nonEmpty`. Guarding one path and leaving the other open is worse than
+  guarding neither, because it reads as if the boundary were closed.
 - **`todos` is load-bearing.** `convert` records what it could not extract
   there, and a non-empty `todos` **fails** `validate` — a partially converted
   runbook cannot produce a confident wrong verdict.

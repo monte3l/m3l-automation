@@ -159,6 +159,31 @@ describe("parseRunbookPreset", () => {
     ).toContain("512");
   });
 
+  it("accepts an ordinary severity ladder", () => {
+    expect(
+      parseRunbookPreset(
+        reader,
+        minimal({ severityLadder: ["ERROR", "WARN", "INFO"] }),
+        "e.json",
+      ).severityLadder,
+    ).toEqual(["ERROR", "WARN", "INFO"]);
+  });
+
+  it.each([
+    ["X' | fields @message", "a query-breaking quote and pipe"],
+    ["ERROR OR 1=1", "embedded whitespace"],
+    ["a\nb", "a newline"],
+    ['a"b', "a double quote"],
+    ["a\\b", "a backslash"],
+  ])(
+    "rejects a severity rung containing %s, which is substituted into the query",
+    (rung) => {
+      expect(rejectionOf(minimal({ severityLadder: [rung] }))).toContain(
+        "severityLadder[0]",
+      );
+    },
+  );
+
   it("rejects a case row claiming a reserved terminal priority", () => {
     expect(
       rejectionOf(

@@ -21,7 +21,7 @@ Four operations. `analyze` reaches AWS through `M3LLogsInsightsClient` — no ne
 wrapper. `validate`, `explain` and `convert` are offline and need no
 credentials, which is what makes `validate` a CI gate.
 
-12 `src/` modules, 3 example presets, 174 tests across 13 files. Library
+12 `src/` modules, 3 example presets, 188 tests across 14 files. Library
 untouched; `check:api` did not move.
 
 ## What went as planned
@@ -79,6 +79,39 @@ untouched; `check:api` did not move.
   were moved to `logger.text` with inline rendering. Worth knowing before
   putting anything operator-facing in a data bag.
 
+## What the review round changed
+
+`claude-pr-review` returned FAIL on the first push. Both Must-fix items were
+real, and one Should-fix was worth taking on the spot.
+
+- **`getCorrelationId` had no test file at all.** Added; the never-captured
+  throw path needs `vi.resetModules()` plus a dynamic import, because the
+  captured id is module state and any earlier test in the file poisons it.
+  Worth knowing: the fresh module gets its **own copy of the library**, so the
+  `M3LError` it throws has a different class identity and `instanceof` against
+  the statically imported class fails. Assert by message or `code`, not
+  `instanceof`, across a `resetModules` boundary.
+- **`presets.test.ts` reads the real filesystem.** Kept, deliberately, with the
+  rationale now in the file: its subject _is_ the committed artifacts, so
+  mocking the reads would leave it validating a copy pasted into the test —
+  exactly the drift it exists to catch. `packages/m3l-common/tests/text.test.ts`
+  is the precedent (real committed fixture paths, unmocked). `readdirSync` is
+  load-bearing, not incidental: it is what makes a fourth preset added later
+  fail this suite rather than ship unvalidated.
+- **A Should-fix that was a real injection vector I introduced.** The severity
+  rung is substituted into the entry query verbatim, and `severityLadder` is a
+  config override validated only as `nonEmpty` — while the correlation key on
+  the _same_ substitution path was already allow-listed. The two now share one
+  rule (`SAFE_QUERY_VALUE` in `preset.ts`), enforced at both entry points: the
+  preset trust boundary for an authored ladder, `applyRunOverrides` for the
+  override. **The lesson is the asymmetry, not the vector:** guarding one of
+  two paths into the same sink is worse than guarding neither, because the
+  guard that exists reads as if the boundary were closed. When you write an
+  allow-list, enumerate every value that reaches the sink.
+
+Two Nits were left open (an unterminated final fence in `convert` is dropped
+silently; `vi.restoreAllMocks()` sits in test bodies rather than `afterEach`).
+
 ## Confidentiality
 
 The design derives from operator runbooks held in an untracked working
@@ -130,5 +163,5 @@ trusting the authored text — the failure mode `docs/logs/2026-08-19-hub-sync-k
   end.
 - **A live `analyze` has not been run.** It needs a real profile and real
   presets, so it is out-of-repo maintainer verification. Offline coverage is
-  `validate` + `explain` + the `convert`→`validate` round trip + 174 tests
+  `validate` + `explain` + the `convert`→`validate` round trip + 188 tests
   against a fake gatherer.

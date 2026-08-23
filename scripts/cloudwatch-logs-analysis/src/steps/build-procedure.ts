@@ -6,6 +6,7 @@ import {
   matchPattern,
   maxNumericField,
 } from "./correlation.js";
+import { SAFE_QUERY_VALUE } from "./preset.js";
 import type {
   AnalysisShape,
   RunbookCase,
@@ -23,15 +24,6 @@ const PROCEDURE_CODE = "ERR_LOGS_ANALYSIS_PROCEDURE";
  * author's call, so it is not an error.
  */
 export const CORRELATION_TOKEN = "{{key}}";
-
-/**
- * Correlation keys are substituted into a Logs Insights query string, so the
- * extracted value is allow-listed rather than escaped: quotes, backslashes,
- * pipes and newlines would all change the query's meaning. The set covers
- * every key shape the corpora's parse patterns produce (UUIDs, trace ids,
- * request ids, ARNs) and nothing that can break out of a quoted literal.
- */
-const SAFE_KEY = /^[\w.:/@#=+-]{1,256}$/u;
 
 const SECONDS_PER_MINUTE = 60;
 const MS_PER_SECOND = 1000;
@@ -275,7 +267,7 @@ function extractCorrelationStep(
           note: `stopped: no ${rule.label} in the evidence`,
         };
       }
-      if (!SAFE_KEY.test(key)) {
+      if (!SAFE_QUERY_VALUE.test(key)) {
         return {
           flow: "stop",
           note: `stopped: extracted ${rule.label} is not query-safe`,
@@ -411,7 +403,7 @@ function rekey(
   for (const row of rows) {
     for (const value of Object.values(row)) {
       const next = matchPattern(value, pattern, "trace.rekeyPattern");
-      if (next !== undefined && next.length > 0 && SAFE_KEY.test(next))
+      if (next !== undefined && next.length > 0 && SAFE_QUERY_VALUE.test(next))
         return next;
     }
   }

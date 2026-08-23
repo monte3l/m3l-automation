@@ -47,6 +47,31 @@ export const AUTHORABLE_VERDICTS = [
  */
 export const RESERVED_PRIORITY_CEILING = 9;
 
+/**
+ * The allow-list every value substituted into a Logs Insights query string
+ * must satisfy — the extracted correlation key and the selected severity rung
+ * alike.
+ *
+ * An allow-list rather than escaping: quotes, backslashes, pipes, whitespace
+ * and newlines would each change the query's meaning, and the set below
+ * covers every value shape these two substitutions legitimately produce
+ * (severity levels, UUIDs, trace ids, request ids, ARNs) while admitting
+ * nothing that can break out of a quoted literal.
+ *
+ * Both substitution paths are guarded, not just one: guarding the key and
+ * leaving the rung open is worse than guarding neither, because it reads as
+ * if the boundary were closed.
+ *
+ * @example
+ * ```typescript
+ * import { SAFE_QUERY_VALUE } from "./preset.js";
+ *
+ * SAFE_QUERY_VALUE.test("ERROR"); // true
+ * SAFE_QUERY_VALUE.test("X' | fields @message"); // false
+ * ```
+ */
+export const SAFE_QUERY_VALUE: RegExp = /^[\w.:/@#=+-]{1,256}$/u;
+
 /** One normalized Logs Insights result row: field name to field value. */
 export type AnalysisRow = Readonly<Record<string, string>>;
 

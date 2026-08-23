@@ -14,6 +14,21 @@ import { parseRunbookPreset, PRESET_CODE } from "../src/steps/load-runbook.js";
  * structural example per stage combination. This is the same check
  * `--operation validate` performs, run against the shipped examples so a
  * change to the schema or the step graph cannot leave them stale.
+ *
+ * **This file reads the real filesystem, deliberately, and that is the one
+ * exception in this package.** Every sibling test mocks `node:fs/promises`
+ * because their subject is a *behaviour* that happens to do I/O. Here the
+ * subject IS the committed artifacts: mocking the reads would leave the test
+ * validating a copy pasted into the test file, which is exactly the drift it
+ * exists to catch. `packages/m3l-common/tests/text.test.ts` takes the same
+ * shape for the same reason — it hands real committed fixture paths to the
+ * extractor unmocked.
+ *
+ * The reads are also all module-level and synchronous, so they run once at
+ * collection rather than per test, and nothing here is order-dependent or
+ * mutates disk. `readdirSync` is load-bearing rather than incidental: it is
+ * what makes a *fourth* preset added later fail this suite instead of
+ * shipping unvalidated.
  */
 const presetsDir = join(
   dirname(fileURLToPath(import.meta.url)),

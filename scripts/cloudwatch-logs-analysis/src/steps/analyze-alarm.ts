@@ -5,7 +5,7 @@ import { buildAnalysisProcedure, INITIAL_VALUES } from "./build-procedure.js";
 import { presetPathFor } from "./explain-runbook.js";
 import { createLogsInsightsGatherer } from "./gather-logs.js";
 import { loadRunbook } from "./load-runbook.js";
-import { createEvidence } from "./preset.js";
+import { createEvidence, SAFE_QUERY_VALUE } from "./preset.js";
 import { buildReport, logReport } from "./report.js";
 import type { AnalysisReport } from "./report.js";
 import type { AnalysisDeps, RunbookPreset } from "./preset.js";
@@ -49,6 +49,19 @@ export function applyRunOverrides(
   preset: RunbookPreset,
   overrides: RunOverrides,
 ): RunbookPreset {
+  // A config-supplied rung reaches the same query-substitution boundary a
+  // preset-supplied one does, but arrives through the schema's `nonEmpty`
+  // validator rather than the preset trust boundary — so it is held to the
+  // same allow-list here, or the override would be the one unguarded path
+  // into the entry query.
+  for (const rung of overrides.severityLadder ?? []) {
+    if (!SAFE_QUERY_VALUE.test(rung)) {
+      throw new Core.M3LError(
+        `severityLadder rung '${rung}' is substituted into the entry query and must contain only word characters, '.', ':', '/', '@', '#', '=', '+' or '-'`,
+        { code: ANALYZE_CODE },
+      );
+    }
+  }
   return {
     ...preset,
     window: {

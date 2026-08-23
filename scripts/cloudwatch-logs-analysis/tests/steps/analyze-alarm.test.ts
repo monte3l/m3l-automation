@@ -88,6 +88,26 @@ describe("applyRunOverrides", () => {
     ).toEqual(preset);
   });
 
+  it("rejects an override rung that is not safe to substitute into the query", () => {
+    expect(() =>
+      applyRunOverrides(basePreset(), {
+        leadMinutes: undefined,
+        lagMinutes: undefined,
+        severityLadder: ["X' | fields @message"],
+      }),
+    ).toThrow(expect.objectContaining({ code: ANALYZE_CODE }));
+  });
+
+  it("accepts an ordinary override ladder", () => {
+    expect(
+      applyRunOverrides(basePreset(), {
+        leadMinutes: undefined,
+        lagMinutes: undefined,
+        severityLadder: ["FATAL", "ERROR"],
+      }).severityLadder,
+    ).toEqual(["FATAL", "ERROR"]);
+  });
+
   it("applies each supplied override independently of the others", () => {
     const applied = applyRunOverrides(basePreset(), {
       leadMinutes: 60,

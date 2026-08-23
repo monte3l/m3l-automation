@@ -417,7 +417,7 @@ not executed. That is what keeps "no new AWS wrapper needed" true. Alarms whose
 evidence is not in a log group at all are **declared** `unsupported` by their
 preset, never guessed at.
 
-174 tests: config declaration, per-step units against a fake gatherer, and
+188 tests: config declaration, per-step units against a fake gatherer, and
 procedure-level tests for priority ordering, the ladder looping then giving up,
 the no-correlation short circuit, the depth cap, the fallback carrying
 `investigated`, and preset problems surfacing as validation problems.
