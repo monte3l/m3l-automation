@@ -23,10 +23,10 @@ import type {
 } from "./preset.js";
 
 /** The error code every preset trust-boundary rejection carries. */
-const PRESET_CODE = "ERR_DLQ_TRIAGE_PRESET";
+export const PRESET_CODE = "ERR_DLQ_TRIAGE_PRESET";
 
 /** The file extension a preset is recognised by inside the runbook directory. */
-const PRESET_EXTENSION = ".json";
+export const PRESET_EXTENSION = ".json";
 
 /** Every value {@link TriageOnMissing} may take. */
 const ON_MISSING_MODES = [

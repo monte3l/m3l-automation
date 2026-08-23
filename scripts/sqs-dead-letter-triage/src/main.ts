@@ -1,7 +1,8 @@
 import { Core } from "@m3l-automation/m3l-common";
 
-import { configParameters } from "./config.js";
+import { configParameters, configValidators } from "./config.js";
 import { hooks } from "./hooks.js";
+import { PRESET_CODE } from "./steps/load-runbook.js";
 import { runSqsDeadLetterTriage } from "./steps/run-sqs-dead-letter-triage.js";
 
 // Composition root ONLY (ADR-0022): construct the script, wire config/hooks,
@@ -10,14 +11,13 @@ import { runSqsDeadLetterTriage } from "./steps/run-sqs-dead-letter-triage.js";
 //
 // `runScript`'s main function takes no arguments; reach the library through
 // the script instance (`script.logger`, `await script.getConfiguration()`,
-// `script.aws`) and inject what each step needs as parameters. Wrapping with
-// `Core.runScript` (rather than bare `script.run`) adds process guards, a
-// top-level catch with origin-specific `process.exitCode`, and a persisted
-// run report; passing `{ dryRun }` runs validation stages 1-5 (env/config/AWS)
-// without executing the main function.
+// `script.paths`, `script.prompt`) and inject what each step needs as
+// parameters. This slice never declares `aws.profile` — every operation runs
+// with no AWS credentials at all, which is what lets `validate` be a CI
+// gate.
 const script = new Core.M3LScript({
   metadata: { name: "sqs-dead-letter-triage", version: "0.0.0" },
-  config: { params: configParameters },
+  config: { params: configParameters, validate: configValidators },
   hooks,
 });
 
@@ -29,12 +29,17 @@ const dryRun = process.argv.includes("--dry-run");
 await Core.runScript(
   script,
   async () => {
-    // Resolve the declared config (CLI + preset + env + defaults) and inject
-    // what the step needs as a single options object — never reach for
-    // `process.env` or a global. Add `script.aws` / `M3LPaths` dirs here too
-    // when the step needs them.
     const config = await script.getConfiguration();
-    await runSqsDeadLetterTriage({ logger: script.logger, config });
+    await runSqsDeadLetterTriage({
+      config,
+      logger: script.logger,
+      prompt: script.prompt,
+      paths: script.paths,
+      reader: new Core.M3LInputFileReader({
+        paths: script.paths,
+        code: PRESET_CODE,
+      }),
+    });
   },
   { dryRun },
 );
