@@ -1,0 +1,14 @@
+{
+  "alarm": "example-broker-memory",
+  "title": "Example message broker is above its memory threshold",
+  "unsupported": {
+    "reason": "This alarm fires on a broker memory metric. There is no log group carrying the evidence, so no log analysis can reach a verdict.",
+    "manualSteps": [
+      "Open the broker's memory metric graph for the alarm window.",
+      "Compare consumer lag against the runbook's recorded baseline.",
+      "Escalate to the owning team with both graphs if the trend is not recovering."
+    ]
+  },
+  "escalateTo": "example-owning-team",
+  "followUps": ["Capture the verdict in the incident record."]
+}

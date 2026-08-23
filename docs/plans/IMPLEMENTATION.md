@@ -265,7 +265,7 @@ capability the library does not have: an engine for multi-step procedures whose
 control flow and conclusions are data rather than hand-written branching. A1, A3
 and A5 are prerequisites for B2 — they supply its execution context and runtime
 loop guard — which is why Wave A is sequenced first. The named consumer is
-[**W7**](#w7--codified-log-analysis-p1-to-do) and the two deferrals are
+[**W7**](#w7--codified-log-analysis-p1-done) and the two deferrals are
 **C1**/**C2** in the gated table below.
 
 | Item    | Priority | Status | Type           | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -368,24 +368,59 @@ Steps duplicated across ≥2 scripts graduate into the library (ADR-0021 F4 stan
 - **Record-field readers (§ write-\*.ts cluster)** — **done.** Promoted the record-field reader cluster hand-duplicated across 5 consumer scripts' write steps (`readOptionalStringField`/`readOptionalNumberField`/`readOptionalBooleanField`/`readRequiredStringField`/`requireInput` and siblings) into 8 new methods on `Core.M3LInputFileReader` (`requireRecord`/`requiredStringField`/`requiredArrayField`/`optionalStringField`/`optionalNumberField`/`optionalBooleanField`/`optionalArrayField`/`optionalRecordField`, `core/files`, `docs/reference/core/files.md`). Landed as a 2-PR chain: the library methods first (**PR:** #266 — a pre-push review fan-out also caught and fixed a prototype-chain read (`record[field]` walking to an inherited `Object.prototype` value for a non-own field) via `Object.hasOwn` guards on every reader), then a fleet retrofit onto `ecs-ops`/`cloudformation-stacks`/`lambda-ops`/`codepipeline-ops`/`eks-ops` (**PR:** #267). Every adopted `optional*Field` call is a deliberate behavior change: a present-but-wrong-typed field now throws `M3LError` instead of silently resolving `undefined` — each script's write-step tests gained a regression case locking this. `codepipeline-ops` preserves its `ERR_CODEPIPELINE_OPS_CONFIG`/`ERR_CODEPIPELINE_OPS_INPUT` split; `eks-ops` needed no dependency threading (already had `deps.reader`) and decomposes its nested `resourcesVpcConfig.subnetIds` check via `optionalRecordField` → `requireRecord` → `requiredArrayField`. Closes issue #262. `pnpm check:dup` dropped from 3.32%/99 clones to 3.23%/98 clones. See `docs/logs/2026-07-28-w5-record-field-readers.md`.
 - **Config-accessor completion (required-variant readers)** — **done.** Closed the config-accessor promotion's 3 remaining deferred sites by adding `requiredString`/`requiredNumber`/`requiredBoolean`/`requiredStringArray`/`optionalNonEmptyString` to `Core.M3LConfigAccessor` (`core/config`, `docs/reference/core/config.md`). Landed as a 4-PR chain: the library methods first (**PR:** #269), a mechanical fleet retrofit onto `dynamodb-crud`/`api-gateway-client`/`sqs-etl`/`s3-objects`/`json-etl` (**PR:** #270, `pnpm check:dup` 3.23%/98 → 2.90%/87 clones), then a behavior-changing retrofit dropping `athena-query`/`cloudwatch-logs-insights`'s local `AthenaSettingsError`/`LogsInsightsSettingsError` subclasses and `eventbridge-schedules`'s local `config-helpers.ts` read functions in favor of the shared accessor (**PR:** #271 — a review fan-out caught and fixed a real silent-failure bug: `delete-rule.ts`'s `force` and `run-eventbridge-schedules.ts`'s `yes` confirm-gate bypass both read `config.get(name) === true` directly, silently defaulting any wrong-typed value to `false` instead of throwing). Every adopted required-variant call is a deliberate behavior change: a present-but-wrong-typed or empty required value now throws `M3LError` instead of silently resolving a default. Closes issues #263, #264, #265. See `docs/logs/2026-07-28-w5-config-accessor-completion.md`.
 
-### W7 — codified log-analysis (P1, to do)
+### W7 — codified log-analysis (P1, done)
 
 `cloudwatch-logs-analysis` — the named consumer that opens
-[ADR-0046](../adr/0046-codified-procedure-engine.md)'s intake gate. Depends on
-**B2** (`core/procedure`); consumes the already-wrapped
+[ADR-0046](../adr/0046-codified-procedure-engine.md)'s intake gate.
+**Shipped**, closing #466. It consumes the already-wrapped
 `aws/cloudwatch-logs-insights` through `M3LLogsInsightsClient`, so no new AWS
-wrapper is needed and this is **1-PR scope** once B2 lands (confirmed against the
-[AWS getter reality table](#aws-getter-reality) — the getter is wrapped, not raw).
+wrapper was needed and it landed in **1 PR** as forecast (confirmed against the
+[AWS getter reality table](#aws-getter-reality) — the getter is wrapped, not
+raw). `pnpm check:review-size` measured 234,783 chars, under the 300,000
+ceiling, so the ADR-0072 fallback split was not taken.
 
 Deliberately a **new** workspace rather than an extension of
 `cloudwatch-logs-insights`: that script already carries checkpoint/resume and
 window planning, and the step vocabulary should settle against a clean consumer
-before a shipped script is migrated onto it. Procedure shape: gather steps issuing
-Logs Insights queries, transform steps extracting fields, check steps asserting
-conditions, a `decide` step where an operator choice is genuinely required, and a
-prioritised case list whose prose is what the operator reads. Log groups, time
-windows, thresholds and expected patterns are config parameters and presets, not
-code.
+before a shipped script is migrated onto it.
+
+**The design decision is where code stops and data starts**, recorded as
+[ADR-0076](../adr/0076-codified-runbook-analysis-presets.md). The analysis
+spine is **codified in TypeScript** — one ten-step graph, identical for every
+alarm, so `AnalysisShape["stepId"]` stays a closed literal union and `jumpsTo`
+targets plus build-time cycle detection keep full compile-time checking. Its
+steps exercise the engine genuinely rather than decoratively: `goTo` +
+`loop`/`maxRevisits` for the severity ladder, a self-jump capped by the decided
+depth for the trace chain, `stop` for a missing correlation key, unique
+`priority` for known-case specificity, the mandatory `fallback` carrying
+`investigated`, `decide` + `M3LPrompt` for the operator choice, `digest` for
+comparable re-runs, and `script.signal` into
+`LogsInsightsAwaitOptions.signal`. Log groups, query text, window offsets, the
+correlation rule, chain depth, thresholds, escalation target and the
+known-cases table are **preset data**.
+
+**The accepted cost** is that `caseId` is typed `string` — a preset's rows are
+declared in a loop, so case-id and priority uniqueness becomes a `build()`-time
+`M3LProcedureValidationProblem` rather than a compile error. Two offline
+operations keep that out of an incident: **`validate`** builds every preset and
+reports every problem at once, and **`explain`** prints the compiled step
+graph, cases and digest. Neither makes an AWS call or needs credentials, so
+`validate` is CI-runnable. A third, **`convert`**, turns a runbook markdown
+file into a preset skeleton and records what it could not extract as `todos` —
+and a non-empty `todos` fails `validate`, so a partial conversion cannot
+produce a confident wrong verdict.
+
+**Scope boundary.** Everything downstream of the log verdict — table lookups,
+artifact/checksum verification, read-model SQL, metric graphs, configuration
+checks, chat notification, ticket creation — is emitted as report follow-ups,
+not executed. That is what keeps "no new AWS wrapper needed" true. Alarms whose
+evidence is not in a log group at all are **declared** `unsupported` by their
+preset, never guessed at.
+
+188 tests: config declaration, per-step units against a fake gatherer, and
+procedure-level tests for priority ordering, the ladder looping then giving up,
+the no-correlation short circuit, the depth cap, the fallback carrying
+`investigated`, and preset problems surfacing as validation problems.
 
 ## Gated library modules & deferred decisions (Later)
 

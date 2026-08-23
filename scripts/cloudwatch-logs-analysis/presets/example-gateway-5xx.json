@@ -1,0 +1,98 @@
+{
+  "alarm": "example-gateway-5xx",
+  "title": "Example API gateway is returning 5xx responses",
+  "entry": {
+    "logGroups": ["/example/api-gateway/access"],
+    "query": "fields @timestamp, @message, status, authorizerLatency, requestId | filter status >= 500 and level = '%LEVEL%' | sort @timestamp desc",
+    "limit": 200
+  },
+  "severityLadder": ["ERROR", "WARN", "INFO"],
+  "severityPlaceholder": "%LEVEL%",
+  "window": { "leadMinutes": 5, "lagMinutes": 15 },
+  "authorizer": {
+    "logGroups": ["/example/lambda/authorizer"],
+    "query": "fields @timestamp, @message | filter @message like /{{key}}/ | sort @timestamp desc",
+    "limit": 50,
+    "latencyField": "authorizerLatency",
+    "latencyThresholdMs": 2000
+  },
+  "correlation": {
+    "field": "@message",
+    "pattern": "\\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\\]",
+    "label": "correlation id"
+  },
+  "trace": [
+    {
+      "label": "example-request-handler",
+      "logGroups": ["/example/lambda/request-handler"],
+      "query": "fields @timestamp, @message, level, service, traceId | filter @message like /{{key}}/ | sort @timestamp desc",
+      "limit": 100,
+      "rekeyPattern": "trace=([0-9a-f]{16})"
+    },
+    {
+      "label": "example-downstream-worker",
+      "logGroups": ["/example/ecs/downstream-worker"],
+      "query": "fields @timestamp, @message, level, service | filter @message like /{{key}}/ | sort @timestamp desc",
+      "limit": 100
+    }
+  ],
+  "signature": {
+    "field": "@message",
+    "pattern": "(?:ERROR|FATAL)\\s+([A-Za-z.]+(?:Exception|Error))",
+    "levelField": "level",
+    "serviceField": "service"
+  },
+  "cases": [
+    {
+      "id": "downstream-connect-timeout",
+      "description": "the downstream worker could not open a connection in time",
+      "prose": "The downstream worker timed out connecting to its dependency. This is the known transient failure recorded in the runbook; it clears on retry.",
+      "priority": 400,
+      "pattern": "ConnectTimeoutException",
+      "service": "example-downstream-worker",
+      "verdict": "transient-downstream",
+      "ticket": "EXAMPLE-0001",
+      "resolution": "No action while the retry succeeds. Escalate if the rate exceeds the runbook's threshold.",
+      "followUps": [
+        "Confirm the downstream dependency's own health dashboard is green."
+      ]
+    },
+    {
+      "id": "authorizer-token-expired",
+      "description": "the authorizer rejected an expired token",
+      "prose": "The request carried an expired token, so the authorizer rejected it. This is expected client behaviour, not a platform fault.",
+      "priority": 300,
+      "pattern": "TokenExpiredError",
+      "level": "ERROR",
+      "verdict": "known-no-action",
+      "ticket": "EXAMPLE-0002",
+      "resolution": "No action. The caller refreshes its token and retries."
+    },
+    {
+      "id": "handler-null-payload",
+      "description": "the request handler dereferenced an absent payload field",
+      "prose": "The request handler failed on an absent payload field. This defect is open against the owning team.",
+      "priority": 200,
+      "pattern": "NullPointerException",
+      "verdict": "known-open-issue",
+      "ticket": "EXAMPLE-0003",
+      "resolution": "Track the open defect; no operator action resolves it.",
+      "escalateTo": "example-platform-team"
+    },
+    {
+      "id": "handler-serialization",
+      "description": "the request handler could not deserialise an upstream response",
+      "prose": "The request handler could not deserialise an upstream response. The recorded fix shipped, so a recurrence needs consensus before it is treated as known.",
+      "priority": 100,
+      "pattern": "SerializationException",
+      "verdict": "known-closed-issue",
+      "ticket": "EXAMPLE-0004",
+      "resolution": "The recorded fix is already released — reopen with the evidence below."
+    }
+  ],
+  "escalateTo": "example-owning-team",
+  "followUps": [
+    "Check the gateway's 5xx metric graph for the same window.",
+    "Capture the verdict in the incident record."
+  ]
+}

@@ -120,3 +120,4 @@ surface).
 | 0073 | [Hub board classification, hierarchy, and a single authoritative view](./0073-hub-board-classification-and-hierarchy.md)                                  | Accepted; amended by ADR-0074, ADR-0075 |
 | 0074 | [Retitle the `major` milestone to `Breaking`](./0074-milestone-major-tier-title.md)                                                                       | Accepted                                |
 | 0075 | [The board's Type column is invisible to GraphQL; view columns become assert-only](./0075-issue-type-invisible-columns-assert-only.md)                    | Accepted                                |
+| 0076 | [A codified analysis spine with preset-driven known cases](./0076-codified-runbook-analysis-presets.md)                                                   | Accepted                                |
