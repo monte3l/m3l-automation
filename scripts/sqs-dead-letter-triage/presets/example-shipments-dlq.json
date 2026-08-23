@@ -1,0 +1,74 @@
+{
+  "queue": "example-shipments-dlq",
+  "title": "Example FIFO shipments dead-letter queue triage",
+  "handling": "runbook",
+  "prohibitions": [
+    "Never redrive this queue: the downstream carrier API is not idempotent, so a re-sent shipment event books a second pickup."
+  ],
+  "fifo": true,
+  "orderBy": "shipmentId",
+  "sourceQueue": "example-shipments-source.fifo",
+  "envelope": { "bodyIsJson": true },
+  "routeOn": "eventType",
+  "arms": [
+    {
+      "label": "default",
+      "key": { "path": "shipmentId" },
+      "lookup": [
+        {
+          "label": "shipments-table",
+          "table": "shipments",
+          "keyField": "shipmentId"
+        },
+        {
+          "label": "shipments-archive-table",
+          "table": "shipments-archive",
+          "keyField": "shipmentId"
+        }
+      ],
+      "onMissing": "hold",
+      "state": {
+        "fromState": "status",
+        "nextState": "status",
+        "progression": "statusHistory"
+      },
+      "cases": [
+        {
+          "id": "shipment-already-delivered",
+          "description": "the shipment reached a terminal state before this event was processed",
+          "prose": "The shipment entity already shows 'delivered', which is terminal. This dead-lettered event cannot change it, so the message is a safe duplicate.",
+          "priority": 100,
+          "fromState": "delivered",
+          "verdict": "remove",
+          "resolution": "Delete the message. The shipment's own state is terminal and already correct."
+        },
+        {
+          "id": "shipment-dispatch-out-of-order",
+          "description": "a dispatch event arrived before the shipment was ever packed",
+          "prose": "The shipment has no 'packed' entry in its history, so this 'shipment.dispatched' event overtook the event that should have preceded it. It would normally be re-inserted to be re-applied in order — but this queue prohibits redrive.",
+          "priority": 90,
+          "nextState": "dispatched",
+          "requiredProgression": ["created"],
+          "verdict": "reinsert",
+          "resolution": "Re-insert so the event is re-applied once the preceding event has landed.",
+          "followUps": [
+            "Confirm the carrier has not already been notified before replaying this event by hand."
+          ]
+        },
+        {
+          "id": "shipment-cancelled-after-dispatch",
+          "description": "a cancellation raced a dispatch that had already completed",
+          "prose": "The shipment history contains both 'packed' and 'dispatched', so the carrier already has the parcel. A cancellation cannot be applied automatically and needs a human to call the carrier.",
+          "priority": 80,
+          "nextState": "cancelled",
+          "requiredProgression": ["packed", "dispatched"],
+          "verdict": "escalate",
+          "resolution": "Escalate. The parcel is already with the carrier; cancellation is a manual carrier-side action."
+        }
+      ]
+    }
+  ],
+  "escalateTo": "example-shipments-team",
+  "followUps": [],
+  "todos": []
+}

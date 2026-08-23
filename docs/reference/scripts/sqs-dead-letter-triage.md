@@ -23,33 +23,57 @@ operator amends after an incident.
 [`sqs-etl`](./sqs-etl.md) keeps the raw dump / send / redrive / delete / purge
 operations; neither script absorbs the other.
 
-> **Landing status.** The offline spine — `validate`, `explain`, `convert`, the
-> preset schema, and the compiled step graph — is implemented. The AWS-facing
-> `triage` and `execute` operations are **not yet implemented** and are absent
-> from the configuration schema below; they land in the following slice
-> (ADR-0072 reviewable-slice discipline). Nothing on this page describes
-> behaviour the script does not currently have.
+> **Landing status.** The offline spine (`validate`, `explain`, `convert`) and
+> the read-only AWS path (`triage`) are implemented. The `execute` operation —
+> applying the remediation a verdict implies, behind the graded destructive
+> gate — is **not yet implemented** and is absent from the configuration schema
+> below; it lands in the following slice (ADR-0072 reviewable-slice
+> discipline). Nothing on this page describes behaviour the script does not
+> currently have.
 
 ## Configuration schema
 
 Every value is declared through the config seam; the script never reads
 `process.env` directly.
 
-| Parameter    | Type     | Default    | Required for | Notes                                                        |
-| ------------ | -------- | ---------- | ------------ | ------------------------------------------------------------ |
-| `operation`  | `STRING` | `validate` | —            | One of `validate`, `explain`, `convert`.                     |
-| `runbookDir` | `STRING` | `runbooks` | —            | Preset directory, resolved under `M3L_INPUT_DIR`.            |
-| `queue`      | `STRING` | —          | `explain`    | The queue a preset is keyed by. Selects `<queue>.json`.      |
-| `source`     | `STRING` | —          | `convert`    | Markdown runbook to convert, resolved under `M3L_INPUT_DIR`. |
-| `output`     | `STRING` | —          | —            | Artifact name for `convert`; defaults to `<queue>.json`.     |
+| Parameter           | Type     | Default    | Required for        | Notes                                                                        |
+| ------------------- | -------- | ---------- | ------------------- | ---------------------------------------------------------------------------- |
+| `operation`         | `STRING` | `validate` | —                   | One of `validate`, `explain`, `convert`, `triage`.                           |
+| `runbookDir`        | `STRING` | `runbooks` | —                   | Preset directory, resolved under `M3L_INPUT_DIR`.                            |
+| `queue`             | `STRING` | —          | `explain`, `triage` | The queue a preset is keyed by. Selects `<queue>.json`.                      |
+| `queueUrl`          | `STRING` | —          | `triage`            | The dead-letter queue's AWS URL. Deliberately separate from `queue`.         |
+| `source`            | `STRING` | —          | `convert`           | Markdown runbook to convert, resolved under `M3L_INPUT_DIR`.                 |
+| `output`            | `STRING` | —          | —                   | Artifact name for `convert`; defaults to `<queue>.json`.                     |
+| `maxMessages`       | `INT`    | `100`      | —                   | Total messages one `triage` drain pulls across all pages (1–10,000).         |
+| `visibilityTimeout` | `INT`    | `1800`     | —                   | Seconds the drained batch stays invisible (0–43,200).                        |
+| `aws.profile`       | `STRING` | —          | —                   | Declared but **not** `required`; absent is legitimate for the offline three. |
+
+`queue` and `queueUrl` are two different things and neither derives from the
+other. `queue` selects the preset file, so it is filename-safe and guarded
+against `/` and `..`; a queue URL contains path separators and could never be
+one. `queueUrl` addresses the real AWS queue, and the SQS wrapper exposes no
+`getQueueUrl` to bridge them. Supplying a `queueUrl` that does not correspond
+to `queue`'s preset is an operator error the script cannot detect.
 
 Per-operation requiredness is enforced by cross-parameter `configValidators`
 in `src/config.ts`, so a missing `--queue` on `explain` fails during
 configuration resolution rather than midway through a run.
 
-`aws.profile` is **not** declared yet — every operation in this slice is
-offline by construction, which is what lets `validate` run as a CI gate with no
-credentials.
+`aws.profile` is declared but not `required: true`. Declaring the parameter is
+what makes `M3LScript` provision the `script.aws` facade at all, and it does so
+whenever the parameter is _declared_ — not only when a value is supplied
+(`M3LScript.provisionAws`). An absent or empty `aws.profile` is a valid config:
+the provider defers to the SDK's default credential chain rather than this seam
+duplicating credential validation.
+
+Two consequences worth being precise about. `validate`, `explain` and `convert`
+stay runnable with no credentials at all — provisioning a facade is not the
+same as using it — which is what keeps `validate` viable as a CI gate. And
+`triage` does **not** pre-flight your credentials: with none configured, it
+fails at the first SQS call with `ERR_SQS_OPERATION` naming
+`GetQueueAttributes`, not with a tidy "set `aws.profile`" message. The
+handler's own `ERR_DLQ_TRIAGE_CONFIG` guard covers only the case where the
+facade genuinely failed to provision.
 
 ## Steps
 
@@ -152,6 +176,10 @@ anywhere, because the lookup is a typed key.
 | `ERR_DLQ_TRIAGE_PRESET`    | A preset fails the trust boundary (shape, regex, reserved value). |
 | `ERR_DLQ_TRIAGE_VALIDATE`  | `validate` found problems across one or more presets.             |
 | `ERR_DLQ_TRIAGE_PROCEDURE` | The compiled procedure was asked for a stage the preset omits.    |
+| `ERR_DLQ_TRIAGE_DRAIN`     | The queue could not be drained or its attributes not read.        |
+| `ERR_DLQ_TRIAGE_LOOKUP`    | An entity lookup rejected; the underlying error is the `cause`.   |
+| `ERR_DLQ_TRIAGE_RUN`       | `triage` could not reach a verdict for the queue as a whole.      |
+| `ERR_OPERATION_ABORTED`    | A cancellation signal fired; raised by the library, not remapped. |
 
 ## Inputs and outputs
 
@@ -159,7 +187,20 @@ anywhere, because the lookup is a typed key.
 `convert`, a markdown runbook under `M3L_INPUT_DIR`.
 
 **Outputs** — `convert` writes a preset skeleton to `M3L_OUTPUT_DIR`;
-`validate` and `explain` produce logger output only.
+`validate` and `explain` produce logger output only. `triage` writes two
+artifacts under `M3L_OUTPUT_DIR/<queue>/`:
+
+| Artifact                  | Contents                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------- |
+| `drain-<timestamp>.json`  | The full drained batch — **raw bodies verbatim**, message ids, receipt handles. |
+| `triage-<timestamp>.json` | One row per message: verdict, case id, follow-ups, and a bounded body excerpt.  |
+
+The two differ deliberately. The drain artifact is the archive-before-destroy
+evidence, so truncating it would defeat its only purpose — a shortened body
+cannot reconstruct a deleted message. The report is the artifact a human reads
+and a later run diffs, so it carries only the first 256 characters of each body
+plus the true untruncated length. Neither the excerpt nor the raw body is ever
+written to a log line.
 
 Presets are operator-owned and live outside this repository. Only invented
 examples and fixtures are committed here.
@@ -170,5 +211,5 @@ examples and fixtures are committed here.
 - [ADR-0046](../../adr/0046-codified-procedure-engine.md) — the procedure engine
 - [ADR-0076](../../adr/0076-codified-runbook-analysis-presets.md) — the code/data split precedent
 - [`core/procedure`](../core/procedure.md) — the engine's API
-- [`aws/sqs`](../aws/sqs.md) — the typed SQS wrapper the next slice consumes
+- [`aws/sqs`](../aws/sqs.md) — the typed SQS wrapper `triage` drains through
 - [`cloudwatch-logs-analysis`](./cloudwatch-logs-analysis.md) — the sibling codified-runbook consumer
