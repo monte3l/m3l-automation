@@ -19,7 +19,8 @@ library-owned types so a caller never touches an `@aws-sdk/client-sqs` type.
   `M3LSQSDeleteEntry`, `M3LSQSBatchFailure<T>`, `M3LSQSBatchResult<T>`,
   `M3LSQSReceiveOptions`, `M3LSQSRedriveDecision`, `M3LSQSRedriveProcessor`,
   `M3LSQSReceiveDeduplicationMode`, `M3LSQSRedriveOptions`,
-  `M3LSQSRedriveResult`.
+  `M3LSQSRedriveResult`, `M3LSQSQueueAttributes`, `M3LSQSRedrivePolicy`,
+  `M3LSQSRedrivePermission`, `M3LSQSRedriveAllowPolicy`.
 
 ## Public API
 
@@ -36,13 +37,14 @@ for you, sharing the underlying `sqs` client's lifecycle).
 | `sendBatch(queueUrl, entries)`                                           | Yes       | `Promise<M3LSQSBatchResult<M3LSQSSendEntry>>`   | `M3LSQSOperationError` |
 | `deleteBatch(queueUrl, entries)`                                         | Yes       | `Promise<M3LSQSBatchResult<M3LSQSDeleteEntry>>` | `M3LSQSOperationError` |
 | `purgeQueue(queueUrl)`                                                   | No        | `Promise<void>`                                 | `M3LSQSOperationError` |
+| `getQueueAttributes(queueUrl)`                                           | Yes       | `Promise<M3LSQSQueueAttributes>`                | `M3LSQSOperationError` |
 | `redrive(sourceQueueUrl, destinationQueueUrl, processMessage, options?)` | Composed¹ | `Promise<M3LSQSRedriveResult>`                  | `M3LSQSOperationError` |
 
 ¹ `redrive` issues no raw SDK call of its own — it composes `receive` /
 `sendBatch` / `deleteBatch`, so retry behavior is exactly the union of theirs
 (see below).
 
-**Retry:** `sendBatch`/`deleteBatch` wrap the raw SDK `.send()` call in
+**Retry:** `sendBatch`/`deleteBatch`/`getQueueAttributes` wrap the raw SDK `.send()` call in
 `M3LRetryRunner` configured by `M3LPollingPolicies.sqsBatchSend()`
 (throttling/network classifiers, exponential backoff 100ms→3s). A per-entry
 failure inside a _successful_ response (SQS's `Failed[]`) is never retried —
@@ -195,6 +197,34 @@ deduplicated, moveFailed, deleteFailed }`. `received` is the total messages
   entries — messages left in the source queue) and `deleteFailed` is
   `readonly M3LSQSBatchFailure<M3LSQSDeleteEntry>[]` (failed `deleteBatch`
   entries, from either the post-move or the drop path).
+- **`M3LSQSQueueAttributes`** — `{ approximateNumberOfMessages,
+approximateNumberOfMessagesNotVisible, approximateNumberOfMessagesDelayed,
+queueArn, fifoQueue, redrivePolicy?, redriveAllowPolicy? }`, the converted
+  form of a `GetQueueAttributes` response. SQS reports every attribute as a
+  string; the three counters are parsed to finite `number`s (an absent,
+  empty, whitespace-only or non-numeric counter throws
+  `M3LSQSOperationError` rather than resolving `0`) and `FifoQueue` to a
+  `boolean` — absent means `false`, so a standard queue reports
+  `fifoQueue: false`. There is no oldest-message-age field:
+  `ApproximateAgeOfOldestMessage` is a CloudWatch metric, not a
+  `QueueAttributeName` — derive per-message age from the `SentTimestamp`
+  system attribute via `receive`'s `systemAttributeNames` instead.
+- **`M3LSQSRedrivePolicy`** — `{ deadLetterTargetArn, maxReceiveCount }`, the
+  parsed `RedrivePolicy` attribute. This is set on a **source** queue and
+  names the dead-letter queue it feeds, so a DLQ generally does not carry
+  one.
+- **`M3LSQSRedrivePermission`** — `"allowAll" | "denyAll" | "byQueue"`. A
+  value outside the union throws `M3LSQSOperationError`.
+- **`M3LSQSRedriveAllowPolicy`** — `{ redrivePermission, sourceQueueArns? }`,
+  the parsed `RedriveAllowPolicy` attribute. This is set on the **dead-letter
+  queue** and enumerates the source queues permitted to redrive to it —
+  the direction opposite to `M3LSQSRedrivePolicy`. `sourceQueueArns` is
+  **omitted**, not set to `undefined`, when the policy does not list any.
+
+  Both policy attributes arrive as JSON strings and are parsed and
+  shape-validated at the wrapper boundary, so malformed JSON surfaces as
+  `M3LSQSOperationError` rather than a `SyntaxError` in the caller. The raw
+  payload is never embedded in the error message.
 
 ### Field-mapping details (`receive`)
 

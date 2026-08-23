@@ -121,3 +121,4 @@ surface).
 | 0074 | [Retitle the `major` milestone to `Breaking`](./0074-milestone-major-tier-title.md)                                                                       | Accepted                                |
 | 0075 | [The board's Type column is invisible to GraphQL; view columns become assert-only](./0075-issue-type-invisible-columns-assert-only.md)                    | Accepted                                |
 | 0076 | [A codified analysis spine with preset-driven known cases](./0076-codified-runbook-analysis-presets.md)                                                   | Accepted                                |
+| 0077 | [Codified dead-letter-queue triage: one preset per queue, predicates as the matcher](./0077-dead-letter-queue-triage-procedure.md)                        | Accepted                                |
