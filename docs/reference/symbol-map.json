@@ -3530,5 +3530,25 @@
     "submodule": "sqs",
     "namespace": "aws",
     "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSQueueAttributes": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSRedrivePolicy": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSRedrivePermission": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
+  },
+  "M3LSQSRedriveAllowPolicy": {
+    "submodule": "sqs",
+    "namespace": "aws",
+    "file": "packages/m3l-common/src/aws/sqs/types.ts"
   }
 }
